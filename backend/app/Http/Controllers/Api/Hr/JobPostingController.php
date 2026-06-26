@@ -1,0 +1,65 @@
+<?php
+
+namespace App\Http\Controllers\Api\Hr;
+
+use App\Http\Controllers\Controller;
+use App\Models\HrJobPosting;
+use Illuminate\Http\Request;
+
+class JobPostingController extends Controller
+{
+    public function index(Request $request)
+    {
+        $query = HrJobPosting::query();
+        if ($request->filled('status') && $request->status !== 'All') {
+            $query->where('status', $request->status);
+        }
+        return response()->json($query->latest()->get());
+    }
+
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'title'              => 'required|string|max:200',
+            'department'         => 'required|string|max:100',
+            'location'           => 'required|string|max:100',
+            'job_type'           => 'required|in:Full-time,Part-time,Contract,Internship,Remote',
+            'posting_type'       => 'required|in:Internal,External,Both',
+            'description'        => 'nullable|string',
+            'requirements'       => 'nullable|string',
+            'salary_from'        => 'nullable|numeric',
+            'salary_to'          => 'nullable|numeric',
+            'number_of_openings' => 'required|integer|min:1',
+            'closing_date'       => 'nullable|date',
+            'status'             => 'in:Active,Draft,Closed',
+            'sources'            => 'nullable|array',
+        ]);
+
+        $job = HrJobPosting::create([...$validated, 'status' => $validated['status'] ?? 'Active']);
+        return response()->json($job, 201);
+    }
+
+    public function show(HrJobPosting $jobPosting)
+    {
+        return response()->json($jobPosting->load('candidates'));
+    }
+
+    public function update(Request $request, HrJobPosting $jobPosting)
+    {
+        $jobPosting->update($request->all());
+        return response()->json($jobPosting);
+    }
+
+    public function updateStatus(Request $request, HrJobPosting $jobPosting)
+    {
+        $request->validate(['status' => 'required|in:Active,Draft,Closed']);
+        $jobPosting->update(['status' => $request->status]);
+        return response()->json($jobPosting);
+    }
+
+    public function destroy(HrJobPosting $jobPosting)
+    {
+        $jobPosting->delete();
+        return response()->json(['message' => 'Deleted']);
+    }
+}
