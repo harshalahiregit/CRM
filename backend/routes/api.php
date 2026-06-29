@@ -14,11 +14,32 @@ use Illuminate\Support\Facades\Route;
 
 // ── Public Auth Routes ──────────────────────────────────────────────────
 Route::prefix('auth')->group(function () {
-    Route::post('/login',           [AuthController::class, 'login']);
+    Route::post('/login',           [AuthController::class, 'login'])->name('login');
     Route::post('/register',        [AuthController::class, 'register']);
     Route::post('/register/vendor', [AuthController::class, 'registerVendor']);
     Route::post('/register/tpv',    [AuthController::class, 'registerTPV']);
     Route::post('/register/client', [AuthController::class, 'registerClient']);
+});
+
+// ── Test Route (NO AUTH) ────────────────────────────────────────────────
+Route::get('/test-dashboard', function () {
+    return response()->json([
+        'status' => 'success',
+        'message' => 'API is working!',
+        'timestamp' => now()->toDateTimeString()
+    ]);
+});
+
+// ── Test HR Dashboard (NO AUTH - for debugging) ─────────────────────────
+Route::get('/test-hr-dashboard', function () {
+    $user = \App\Models\User::where('email', 'admin@demo.com')->first();
+    if (!$user) {
+        return response()->json(['error' => 'User not found']);
+    }
+    
+    auth()->login($user);
+    $controller = new \App\Http\Controllers\Api\Hr\HRDashboardController();
+    return $controller->index();
 });
 
 // ── Protected Routes (Sanctum) ──────────────────────────────────────────

@@ -1,0 +1,279 @@
+import { useTheme } from '@/context/ThemeContext'
+import { useAuth } from '@/context/AuthContext'
+import { useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
+import { hrApi } from '@/services/hrApi'
+import {
+  Users, Briefcase, Calendar, FileText, TrendingUp,
+  CheckCircle, XCircle, Clock, Bell, Mail, MessageCircle, ArrowRight, Timer, AlertCircle
+} from 'lucide-react'
+
+const KPI = ({ label, value, icon: Icon, gradient, shadow, sub, onClick }) => (
+  <div 
+    className={`kpi-3d relative overflow-hidden ${onClick ? 'cursor-pointer hover:scale-[1.02] transition-transform' : ''}`}
+    onClick={onClick}
+  >
+    <div className="absolute -top-4 -right-4 w-20 h-20 rounded-full opacity-[0.07]" style={{ background: gradient }} />
+    <div className="flex items-start justify-between relative z-10">
+      <div className="w-11 h-11 rounded-2xl flex items-center justify-center" style={{ background: gradient, boxShadow: `0 6px 18px ${shadow}40, inset 0 1px 0 rgba(255,255,255,0.25)` }}>
+        <Icon size={20} className="text-white" />
+      </div>
+    </div>
+    <p className="text-2xl font-black mt-3 relative z-10" style={{ color: 'var(--text-h)', letterSpacing: '-0.03em' }}>{value}</p>
+    <p className="text-sm font-medium relative z-10" style={{ color: 'var(--text-muted)' }}>{label}</p>
+    {sub && <p className="text-xs mt-1 relative z-10" style={{ color: 'var(--text-muted)' }}>{sub}</p>}
+  </div>
+)
+
+const pc = p => p==='High'?{bg:'rgba(239,68,68,0.1)',color:'#f87171',bdr:'rgba(239,68,68,0.2)'}:p==='Medium'?{bg:'rgba(245,158,11,0.1)',color:'#fbbf24',bdr:'rgba(245,158,11,0.2)'}:{bg:'rgba(16,185,129,0.1)',color:'#10b981',bdr:'rgba(16,185,129,0.2)'}
+const sc = s => s==='Approved'?{bg:'rgba(16,185,129,0.1)',color:'#10b981'}:s==='Rejected'?{bg:'rgba(239,68,68,0.1)',color:'#f87171'}:{bg:'rgba(245,158,11,0.1)',color:'#fbbf24'}
+
+export default function HRDashboard() {
+  const navigate = useNavigate()
+  const { user } = useAuth()
+  
+  // Fetch dashboard data from API
+  const { data: dashboardData, isLoading } = useQuery({
+    queryKey: ['hr-dashboard'],
+    queryFn: hrApi.dashboard.get,
+    refetchInterval: 30000, // Refresh every 30 seconds
+  })
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6 animate-fade-in">
+        <div className="skeleton h-12 w-64 rounded-xl" style={{ background: 'var(--border)' }} />
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {[1,2,3,4].map(i => (
+            <div key={i} className="skeleton h-32 rounded-2xl" style={{ background: 'var(--border)' }} />
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  const kpis = dashboardData?.kpis || {}
+  const pipeline = dashboardData?.pipeline || []
+  const sourceBreakdown = dashboardData?.source_breakdown || []
+  const recentRequests = dashboardData?.recent_requests || []
+  const todayInterviews = dashboardData?.today_interviews || []
+  const hiringTrend = dashboardData?.hiring_trend || []
+
+  const maxS = Math.max(...sourceBreakdown.map(s => s.count), 1)
+  const isManager = user?.role === 'hiring_manager' || user?.role === 'admin'
+
+  return (
+    <div className="space-y-6 animate-[tiltIn_0.35s_ease_forwards]">
+      <div>
+        <p className="label-caps mb-1">HR & Recruitment</p>
+        <h1 className="font-black" style={{ fontSize:'clamp(1.4rem,2.5vw,1.9rem)', color:'var(--text-h)', letterSpacing:'-0.02em' }}>
+          Recruitment <span className="text-gradient">Overview</span>
+        </h1>
+        <p className="text-sm mt-0.5" style={{ color:'var(--text-muted)' }}>Live dashboard · updated in real-time</p>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <KPI 
+          label="Open Positions" 
+          value={kpis.open_positions || 0} 
+          icon={Briefcase} 
+          gradient="linear-gradient(145deg,#9f67ff,#7C3AED)" 
+          shadow="#7C3AED" 
+        />
+        <KPI 
+          label="Active Candidates" 
+          value={kpis.active_candidates || 0} 
+          icon={Users} 
+          gradient="linear-gradient(145deg,#34d399,#10B981)" 
+          shadow="#10b981" 
+        />
+        <KPI 
+          label="Today's Interviews" 
+          value={kpis.today_interviews || 0} 
+          icon={Calendar} 
+          gradient="linear-gradient(145deg,#fcd34d,#F59E0B)" 
+          shadow="#f59e0b" 
+        />
+        <KPI 
+          label="Offers Released" 
+          value={kpis.offers_released || 0} 
+          icon={FileText} 
+          gradient="linear-gradient(145deg,#f87171,#EF4444)" 
+          shadow="#ef4444" 
+          sub="This month"
+        />
+      </div>
+      
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <KPI 
+          label="Hired This Month" 
+          value={kpis.hired_this_month || 0} 
+          icon={CheckCircle} 
+          gradient="linear-gradient(145deg,#34d399,#059669)" 
+          shadow="#059669" 
+        />
+        
+        {/* ⭐ NEW: Time to Hire */}
+        <KPI 
+          label="Time to Hire" 
+          value={kpis.time_to_hire_days ? `${kpis.time_to_hire_days} days` : 'N/A'} 
+          icon={Timer} 
+          gradient="linear-gradient(145deg,#818cf8,#6366f1)" 
+          shadow="#6366f1"
+          sub="Average"
+        />
+        
+        {/* ⭐ NEW: Pending Approvals (Manager only) */}
+        {isManager && kpis.pending_approvals > 0 && (
+          <KPI 
+            label="Pending Approvals" 
+            value={kpis.pending_approvals} 
+            icon={AlertCircle} 
+            gradient="linear-gradient(145deg,#fb923c,#f97316)" 
+            shadow="#f97316"
+            sub="Awaiting your action"
+            onClick={() => navigate('/app/hr/manpower-requests?status=Pending')}
+          />
+        )}
+        
+        <KPI 
+          label="Pending Feedback" 
+          value={kpis.pending_feedback || 0} 
+          icon={Clock} 
+          gradient="linear-gradient(145deg,#a78bfa,#8b5cf6)" 
+          shadow="#8b5cf6" 
+        />
+        
+        <KPI 
+          label="Rejected" 
+          value={kpis.rejected || 0} 
+          icon={XCircle} 
+          gradient="linear-gradient(145deg,#f87171,#dc2626)" 
+          shadow="#dc2626" 
+        />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <div className="card-3d lg:col-span-2" style={{ padding:'24px' }}>
+          <div className="flex items-center justify-between mb-5">
+            <div>
+              <h2 className="font-bold text-base" style={{ color:'var(--text-h)' }}>Recruitment Pipeline</h2>
+              <p className="text-xs mt-0.5" style={{ color:'var(--text-muted)' }}>End-to-end candidate funnel</p>
+            </div>
+            <button onClick={()=>navigate('/app/hr/candidates')} className="text-xs font-semibold flex items-center gap-1" style={{ color:'#a78bfa' }}>View all <ArrowRight size={11}/></button>
+          </div>
+          <div className="space-y-3">
+            {pipeline.length > 0 ? pipeline.map(p=>{
+              const pct = pipeline[0]?.count > 0 ? Math.round((p.count / pipeline[0].count) * 100) : 0
+              const color = p.stage === 'Hired' ? '#059669' : p.stage === 'Offer' ? '#10b981' : p.stage === 'Interview' ? '#f59e0b' : p.stage === 'Screening' || p.stage === 'Assessment' ? '#a78bfa' : '#3b82f6'
+              return(
+                <div key={p.stage} className="flex items-center gap-3">
+                  <span className="text-xs font-semibold w-20 text-right flex-shrink-0" style={{ color:'var(--text-muted)' }}>{p.stage}</span>
+                  <div className="flex-1 h-7 rounded-xl overflow-hidden relative" style={{ background:'var(--bg-input)', border:'1px solid var(--border)' }}>
+                    <div className="h-full rounded-xl flex items-center px-3" style={{ width:`${pct}%`, background:`linear-gradient(90deg,${color}99,${color})`, boxShadow:`0 0 10px ${color}25` }}>
+                      <span className="text-xs font-black text-white">{p.count}</span>
+                    </div>
+                    <div className="absolute inset-0 rounded-xl" style={{ background:'linear-gradient(180deg,rgba(255,255,255,0.05) 0%,transparent 50%)' }}/>
+                  </div>
+                  <span className="text-xs font-bold w-8 flex-shrink-0" style={{ color }}>{pct}%</span>
+                </div>
+              )
+            }) : (
+              <p className="text-sm text-center py-8" style={{ color: 'var(--text-muted)' }}>No pipeline data available</p>
+            )}
+          </div>
+        </div>
+        <div className="card-3d" style={{ padding:'24px' }}>
+          <h2 className="font-bold text-base mb-4" style={{ color:'var(--text-h)' }}>Source Wise Analytics</h2>
+          <div className="space-y-3">
+            {sourceBreakdown.length > 0 ? sourceBreakdown.map((s, idx)=>{
+              const colors = ['#0077b5', '#7C3AED', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6']
+              const color = colors[idx % colors.length]
+              return (
+                <div key={s.source || idx}>
+                  <div className="flex justify-between mb-1">
+                    <span className="text-xs font-medium" style={{ color:'var(--text-muted)' }}>{s.source || 'Unknown'}</span>
+                    <span className="text-xs font-bold" style={{ color }}>{s.count}</span>
+                  </div>
+                  <div className="h-1.5 rounded-full" style={{ background:'var(--bg-input)' }}>
+                    <div className="h-full rounded-full" style={{ width:`${(s.count/maxS)*100}%`, background:color }}/>
+                  </div>
+                </div>
+              )
+            }) : (
+              <p className="text-sm text-center py-8" style={{ color: 'var(--text-muted)' }}>No source data available</p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <div className="card-3d lg:col-span-2" style={{ padding:'24px' }}>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-bold text-base" style={{ color:'var(--text-h)' }}>Recent Manpower Requests</h2>
+            <button onClick={()=>navigate('/app/hr/manpower-requests')} className="text-xs font-semibold flex items-center gap-1" style={{ color:'#a78bfa' }}>View all <ArrowRight size={11}/></button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{['ID','Department','Position','Posts','Priority','Status','Date'].map(h=><th key={h} className="pb-2 text-left pr-3 label-caps">{h}</th>)}</tr></thead>
+              <tbody>
+                {recentRequests.length > 0 ? recentRequests.slice(0, 5).map(r=>{
+                  const p=pc(r.priority)
+                  const s=sc(r.status)
+                  return(
+                    <tr key={r.id} style={{ borderBottom:'1px solid var(--border)' }} onMouseEnter={e=>e.currentTarget.style.background='rgba(124,58,237,0.04)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                      <td className="py-2.5 pr-3 font-bold" style={{ color:'#a78bfa' }}>MR-{r.id}</td>
+                      <td className="py-2.5 pr-3" style={{ color:'var(--text-h)' }}>{r.department}</td>
+                      <td className="py-2.5 pr-3 max-w-[120px] truncate" style={{ color:'var(--text-muted)' }}>{r.position_title}</td>
+                      <td className="py-2.5 pr-3 text-center font-bold" style={{ color:'var(--text-h)' }}>{r.number_of_posts}</td>
+                      <td className="py-2.5 pr-3"><span className="px-2 py-0.5 rounded-lg text-[10px] font-bold" style={{ background:p.bg,color:p.color,border:`1px solid ${p.bdr}` }}>{r.priority}</span></td>
+                      <td className="py-2.5 pr-3"><span className="px-2 py-0.5 rounded-lg text-[10px] font-bold" style={{ background:s.bg,color:s.color }}>{r.status}</span></td>
+                      <td className="py-2.5" style={{ color:'var(--text-muted)' }}>{new Date(r.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</td>
+                    </tr>
+                  )
+                }) : (
+                  <tr><td colSpan="7" className="py-8 text-center" style={{ color: 'var(--text-muted)' }}>No requests found</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div className="card-3d" style={{ padding:'20px' }}>
+            <h2 className="font-bold text-sm mb-3 flex items-center gap-2" style={{ color:'var(--text-h)' }}>
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"/>Today's Interviews
+            </h2>
+            <div className="space-y-2.5">
+              {todayInterviews.length > 0 ? todayInterviews.map((iv,i)=>(
+                <div key={i} className="flex items-center gap-2.5 p-2.5 rounded-xl" style={{ background:'var(--bg-input)', border:'1px solid var(--border)' }}>
+                  <div className="w-8 h-8 rounded-xl flex items-center justify-center text-[10px] font-black text-white flex-shrink-0" style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>
+                    {iv.candidate ? iv.candidate.split(' ').map(n=>n[0]).join('').slice(0,2) : '??'}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold truncate" style={{ color:'var(--text-h)' }}>{iv.candidate || 'N/A'}</p>
+                    <p className="text-[10px]" style={{ color:'var(--text-muted)' }}>{iv.round || 'Interview'} · {iv.time || 'TBD'}</p>
+                  </div>
+                </div>
+              )) : (
+                <p className="text-xs text-center py-4" style={{ color: 'var(--text-muted)' }}>No interviews today</p>
+              )}
+            </div>
+          </div>
+          <div className="card-3d" style={{ padding:'20px' }}>
+            <h2 className="font-bold text-sm mb-3" style={{ color:'var(--text-h)' }}>Notifications</h2>
+            <div className="space-y-2">
+              {[{icon:Mail,label:'Email Sent',count:24,color:'#3b82f6'},{icon:MessageCircle,label:'WhatsApp',count:18,color:'#25D366'},{icon:Bell,label:'In-App',count:7,color:'#a78bfa'}].map(n=>(
+                <div key={n.label} className="flex items-center gap-2.5 p-2 rounded-xl" style={{ background:'var(--bg-input)' }}>
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background:`${n.color}20` }}><n.icon size={13} style={{ color:n.color }}/></div>
+                  <span className="text-xs font-medium flex-1" style={{ color:'var(--text-muted)' }}>{n.label}</span>
+                  <span className="text-xs font-black" style={{ color:n.color }}>{n.count}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
