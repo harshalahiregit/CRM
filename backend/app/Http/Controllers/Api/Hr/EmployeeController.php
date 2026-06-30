@@ -10,7 +10,7 @@ class EmployeeController extends Controller
 {
     public function index(Request $request)
     {
-        $query = HrEmployee::query();
+        $query = HrEmployee::where('tenant_id', $request->user()->tenant_id);
         if ($request->filled('status') && $request->status !== 'All') {
             $query->where('status', $request->status);
         }
@@ -40,7 +40,8 @@ class EmployeeController extends Controller
             'status'                 => 'in:Active,On Leave,Inactive',
         ]);
 
-        $empCode = 'SNE-'.date('Y').'-'.str_pad(HrEmployee::count() + 1, 3, '0', STR_PAD_LEFT);
+        $validated['tenant_id'] = $request->user()->tenant_id;
+        $empCode = 'SNE-'.date('Y').'-'.str_pad(HrEmployee::where('tenant_id', $request->user()->tenant_id)->count() + 1, 3, '0', STR_PAD_LEFT);
         $employee = HrEmployee::create([...$validated, 'employee_code' => $empCode]);
         return response()->json($employee, 201);
     }
@@ -62,14 +63,15 @@ class EmployeeController extends Controller
         return response()->json(['message' => 'Deleted']);
     }
 
-    public function stats()
+    public function stats(Request $request)
     {
+        $tenantId = $request->user()->tenant_id;
         return response()->json([
-            'total'    => HrEmployee::count(),
-            'active'   => HrEmployee::where('status','Active')->count(),
-            'on_leave' => HrEmployee::where('status','On Leave')->count(),
-            'inactive' => HrEmployee::where('status','Inactive')->count(),
-            'by_dept'  => HrEmployee::select('department')
+            'total'    => HrEmployee::where('tenant_id', $tenantId)->count(),
+            'active'   => HrEmployee::where('tenant_id', $tenantId)->where('status','Active')->count(),
+            'on_leave' => HrEmployee::where('tenant_id', $tenantId)->where('status','On Leave')->count(),
+            'inactive' => HrEmployee::where('tenant_id', $tenantId)->where('status','Inactive')->count(),
+            'by_dept'  => HrEmployee::where('tenant_id', $tenantId)->select('department')
                 ->selectRaw('count(*) as count')
                 ->groupBy('department')->get(),
         ]);

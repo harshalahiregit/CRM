@@ -14,7 +14,8 @@ class ManpowerRequestController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $query = HrManpowerRequest::with(['requester', 'assignedManager', 'approver']);
+        $query = HrManpowerRequest::where('tenant_id', $user->tenant_id)
+            ->with(['requester', 'assignedManager', 'approver']);
 
         // Filter based on role
         if ($user->role === 'hiring_manager') {

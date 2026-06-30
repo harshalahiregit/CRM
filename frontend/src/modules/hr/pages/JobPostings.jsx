@@ -153,6 +153,16 @@ export default function JobPostings() {
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
+                <div><label className="label">Status</label>
+                  <select className="input-3d text-sm" value={form.status} onChange={e=>setForm({...form,status:e.target.value})}>
+                    <option value="Active">Active</option>
+                    <option value="Draft">Draft</option>
+                    <option value="Closed">Closed</option>
+                  </select>
+                </div>
+                <div></div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
                 <div><label className="label">Salary From (₹)</label><input type="number" className="input-3d text-sm" placeholder="500000" value={form.salary_from} onChange={e=>setForm({...form,salary_from:e.target.value})}/></div>
                 <div><label className="label">Salary To (₹)</label><input type="number" className="input-3d text-sm" placeholder="1200000" value={form.salary_to} onChange={e=>setForm({...form,salary_to:e.target.value})}/></div>
               </div>

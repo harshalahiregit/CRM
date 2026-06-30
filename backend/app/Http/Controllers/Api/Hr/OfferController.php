@@ -11,7 +11,10 @@ class OfferController extends Controller
 {
     public function index(Request $request)
     {
-        $query = HrOffer::with('candidate');
+        $query = HrOffer::with('candidate')
+            ->whereHas('candidate', function($q) use ($request) {
+                $q->where('tenant_id', $request->user()->tenant_id);
+            });
         if ($request->filled('status') && $request->status !== 'All') {
             $query->where('status', $request->status);
         }
@@ -31,10 +34,17 @@ class OfferController extends Controller
             'validity_date'   => 'nullable|date',
         ]);
 
+        // Verify candidate belongs to user's tenant
+        $candidate = HrCandidate::where('id', $validated['candidate_id'])
+            ->where('tenant_id', $request->user()->tenant_id)
+            ->firstOrFail();
+
         $offer = HrOffer::create([...$validated, 'status' => 'Generated']);
 
         // Move candidate to Offer stage
-        HrCandidate::where('id', $validated['candidate_id'])->update(['stage' => 'Offer']);
+        HrCandidate::where('id', $validated['candidate_id'])
+            ->where('tenant_id', $request->user()->tenant_id)
+            ->update(['stage' => 'Offer']);
 
         return response()->json($offer->load('candidate'), 201);
     }

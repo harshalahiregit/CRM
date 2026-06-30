@@ -37,12 +37,11 @@ export const hrApi = {
 
   // ── Manpower Requests ───────────────────────────────────────────────
   manpower: {
-    list:         (params = {}) => api.get('/hr/manpower-requests', { params }).then(r => r.data),
+    list:         (params = {}) => api.get('/hr/manpower-requests', { params }).then(r => r.data), // Backend returns array directly
     get:          (id)          => api.get(`/hr/manpower-requests/${id}`).then(r => r.data),
     create:       (data)        => api.post('/hr/manpower-requests', data).then(r => r.data),
     updateStatus: (id, payload) => api.patch(`/hr/manpower-requests/${id}/status`, typeof payload === 'string' ? { status: payload } : payload).then(r => r.data),
     delete:       (id)          => api.delete(`/hr/manpower-requests/${id}`).then(r => r.data),
-
   },
 
   // ── Job Postings ────────────────────────────────────────────────────
@@ -96,7 +95,6 @@ export const hrApi = {
     toggleStep:     (id, step)    => api.patch(`/hr/onboarding/${id}/step`, { step }).then(r => r.data),
     updateChecklist:(id, checklist)=> api.patch(`/hr/onboarding/${id}/step`, { checklist }).then(r => r.data),
     delete:         (id)          => api.delete(`/hr/onboarding/${id}`).then(r => r.data),
-
   },
 
   // ── Employees ───────────────────────────────────────────────────────

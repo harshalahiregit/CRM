@@ -12,7 +12,8 @@ class CandidateController extends Controller
 {
     public function index(Request $request)
     {
-        $query = HrCandidate::with('jobPosting');
+        $query = HrCandidate::with('jobPosting')
+            ->where('tenant_id', $request->user()->tenant_id);
 
         if ($request->filled('stage') && $request->stage !== 'All') {
             $query->where('stage', $request->stage);
@@ -51,10 +52,14 @@ class CandidateController extends Controller
             'notes'            => 'nullable|string',
         ]);
 
+        // Add tenant_id
+        $validated['tenant_id'] = $request->user()->tenant_id;
+
         // Duplicate email check per job posting
         if (!empty($validated['email']) && !empty($validated['job_posting_id'])) {
             $exists = HrCandidate::where('email', $validated['email'])
                 ->where('job_posting_id', $validated['job_posting_id'])
+                ->where('tenant_id', $validated['tenant_id'])
                 ->exists();
             if ($exists) {
                 return response()->json(['message' => 'A candidate with this email already applied for this job.'], 422);

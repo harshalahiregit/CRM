@@ -10,7 +10,7 @@ class JobPostingController extends Controller
 {
     public function index(Request $request)
     {
-        $query = HrJobPosting::query();
+        $query = HrJobPosting::where('tenant_id', $request->user()->tenant_id);
         if ($request->filled('status') && $request->status !== 'All') {
             $query->where('status', $request->status);
         }

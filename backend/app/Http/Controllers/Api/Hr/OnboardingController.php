@@ -12,7 +12,7 @@ class OnboardingController extends Controller
 {
     public function index(Request $request)
     {
-        $query = HrOnboarding::query();
+        $query = HrOnboarding::where('tenant_id', $request->user()->tenant_id);
         if ($request->filled('status') && $request->status !== 'All') {
             $query->where('status', $request->status);
         }
@@ -29,6 +29,7 @@ class OnboardingController extends Controller
             'department'     => 'nullable|string',
         ]);
 
+        $validated['tenant_id'] = $request->user()->tenant_id;
         $record = HrOnboarding::create([...$validated, 'status' => 'Pending']);
         return response()->json($record, 201);
     }
@@ -40,6 +41,13 @@ class OnboardingController extends Controller
 
     public function toggleStep(Request $request, HrOnboarding $onboarding)
     {
+        // Handle document checklist updates
+        if ($request->has('checklist')) {
+            $onboarding->update(['document_checklist' => $request->checklist]);
+            return response()->json($onboarding->fresh());
+        }
+
+        // Handle step toggles
         $request->validate(['step' => 'required|in:doc_verification,joining_confirmed,emp_id_generated,dept_assigned,manager_assigned,record_created']);
 
         $col = 'step_'.$request->step;
@@ -60,8 +68,9 @@ class OnboardingController extends Controller
 
         // If all done, auto-create employee record
         if ($status === 'Completed' && !HrEmployee::where('candidate_id', $onboarding->candidate_id)->exists()) {
-            $empCode = 'SNE-'.date('Y').'-'.str_pad(HrEmployee::count() + 1, 3, '0', STR_PAD_LEFT);
+            $empCode = 'SNE-'.date('Y').'-'.str_pad(HrEmployee::where('tenant_id', $onboarding->tenant_id)->count() + 1, 3, '0', STR_PAD_LEFT);
             HrEmployee::create([
+                'tenant_id'              => $onboarding->tenant_id,
                 'employee_code'          => $empCode,
                 'candidate_id'           => $onboarding->candidate_id,
                 'onboarding_id'          => $onboarding->id,

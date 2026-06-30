@@ -13,7 +13,10 @@ class InterviewController extends Controller
 {
     public function index(Request $request)
     {
-        $query = HrInterviewRound::with('candidate');
+        $query = HrInterviewRound::with('candidate')
+            ->whereHas('candidate', function($q) use ($request) {
+                $q->where('tenant_id', $request->user()->tenant_id);
+            });
 
         if ($request->filled('status') && $request->status !== 'All') {
             $query->where('status', $request->status);
@@ -41,6 +44,11 @@ class InterviewController extends Controller
             'meet_link'        => 'nullable|url',
         ]);
 
+        // Verify candidate belongs to user's tenant
+        $candidate = HrCandidate::where('id', $validated['candidate_id'])
+            ->where('tenant_id', $request->user()->tenant_id)
+            ->firstOrFail();
+
         // Auto-generate Google Meet link if not provided
         if (empty($validated['meet_link'])) {
             $code = strtolower(Str::random(3).'-'.Str::random(4).'-'.Str::random(3));
@@ -51,6 +59,7 @@ class InterviewController extends Controller
 
         // Move candidate to Interview stage
         HrCandidate::where('id', $validated['candidate_id'])
+            ->where('tenant_id', $request->user()->tenant_id)
             ->whereIn('stage', ['Applied','Screening','Assessment'])
             ->update(['stage' => 'Interview']);
 
