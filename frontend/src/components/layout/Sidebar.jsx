@@ -4,7 +4,8 @@ import {
   BarChart2, Settings, ChevronLeft, ChevronRight,
   LogOut, User, Moon, Sun, Sparkles, Zap, Package,
   UserCheck, CalendarDays, FileText, Rocket, Building2,
-  ClipboardList, ChevronDown
+  ClipboardList, ChevronDown, IndianRupee, FileSignature,
+  CreditCard, FileX, ShoppingBag
 } from 'lucide-react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
@@ -37,11 +38,23 @@ const HR_SUB_ITEMS = [
   { label: 'Employees',         path: '/app/hr/employees',         icon: Building2       },
 ]
 
+const SALES_SUB_ITEMS = [
+  { label: 'Sales Dashboard',  path: '/app/sales/dashboard',       icon: LayoutDashboard },
+  { label: 'Proposals',        path: '/app/sales/proposals',       icon: FileSignature   },
+  { label: 'Estimates',        path: '/app/sales/estimates',       icon: ClipboardList   },
+  { label: 'Invoices',         path: '/app/sales/invoices',        icon: Receipt         },
+  { label: 'Delivery Notes',   path: '/app/sales/delivery-notes',  icon: Truck           },
+  { label: 'Payments',         path: '/app/sales/payments',        icon: CreditCard      },
+  { label: 'Credit Notes',     path: '/app/sales/credit-notes',    icon: FileX           },
+  { label: 'Items',            path: '/app/sales/items',           icon: ShoppingBag     },
+]
+
 export default function Sidebar({ collapsed, onToggle }) {
   const { user, tenant, logout } = useAuth()
   const { isDark, toggleTheme } = useTheme()
   const navigate = useNavigate()
   const [hrExpanded, setHrExpanded] = useState(true)
+  const [salesExpanded, setSalesExpanded] = useState(true)
   const hrInstalled = isModuleInstalled('hr')
 
   const handleLogout = async () => { await logout(); navigate('/auth/login') }
@@ -176,6 +189,35 @@ export default function Sidebar({ collapsed, onToggle }) {
             ))}
           </div>
         )}
+
+        {/* ── Sales Module sub-nav ── */}
+        <div className="mt-2">
+          {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>Sales & Revenue</p>}
+          <button
+            onClick={() => setSalesExpanded(e => !e)}
+            title={collapsed ? 'Sales & Revenue' : ''}
+            className="nav-3d mb-0.5 w-full"
+            style={{ justifyContent: collapsed ? 'center' : undefined, color: '#a78bfa' }}
+          >
+            <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.15)' }}>
+              <IndianRupee size={13} style={{ color: '#a78bfa' }} />
+            </div>
+            {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Sales & Revenue</span><ChevronDown size={13} className={clsx('transition-transform duration-200', salesExpanded && 'rotate-180')} /></>}
+          </button>
+          {(salesExpanded || collapsed) && SALES_SUB_ITEMS.map(({ label, path, icon: Icon }) => (
+            <NavLink key={path} to={path}>
+              {({ isActive }) => (
+                <div title={collapsed ? label : ''} className={clsx('nav-3d mb-0.5', isActive && 'nav-3d-active')} style={{ justifyContent: collapsed ? 'center' : undefined, paddingLeft: collapsed ? undefined : '28px' }}>
+                  <div className="flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: isActive ? 'rgba(255,255,255,0.15)' : 'rgba(124,58,237,0.06)' }}>
+                    <Icon size={12} />
+                  </div>
+                  {!collapsed && <span className="truncate text-xs">{label}</span>}
+                  {isActive && !collapsed && <div className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: '#c4b5fd' }} />}
+                </div>
+              )}
+            </NavLink>
+          ))}
+        </div>
       </nav>
 
       {/* ── Bottom Controls ────────────────────────────────── */}

@@ -91,7 +91,6 @@ export default function Onboarding() {
         ))}
       </div>
 
-      {/* Step legend */}
       <div className="card-3d" style={{ padding:'18px' }}>
         <p className="text-xs font-bold mb-3" style={{ color:'var(--text-h)' }}>Onboarding Process</p>
         <div className="flex gap-2 overflow-x-auto scrollbar-hide">
@@ -104,7 +103,6 @@ export default function Onboarding() {
         </div>
       </div>
 
-      {/* Filters */}
       <div className="flex gap-2">
         {['All','In Progress','Completed','Pending'].map(f=>(
           <button key={f} onClick={()=>setFilterS(f)} className="px-3 py-1.5 rounded-xl text-xs font-bold transition-all"
@@ -137,7 +135,6 @@ export default function Onboarding() {
                   </div>
                 </div>
 
-                {/* Progress bar */}
                 <div>
                   <div className="flex gap-0.5 mb-1.5">
                     {STEPS.map(s=>(
@@ -147,8 +144,8 @@ export default function Onboarding() {
                   <p className="text-[10px]" style={{ color:'var(--text-muted)' }}>{done}/{STEPS.length} steps completed</p>
                 </div>
 
-                {/* Expanded steps */}
                 {expanded===r.id && (
+                  <>
                   <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-2.5">
                     {STEPS.map(s=>{
                       const isDone = getStepDone(r, s.key)
@@ -167,7 +164,6 @@ export default function Onboarding() {
                     })}
                   </div>
 
-                  {/* Document Checklist */}
                   <div className="mt-4 pt-3" style={{ borderTop:'1px solid var(--border)' }}>
                     <p className="text-xs font-bold mb-2" style={{ color:'var(--text-h)' }}>📋 Document Checklist</p>
                     <div className="grid grid-cols-2 gap-2">
@@ -185,6 +181,7 @@ export default function Onboarding() {
                       })}
                     </div>
                   </div>
+                  </>
                 )}
               </div>
             )
@@ -193,7 +190,6 @@ export default function Onboarding() {
         </div>
       )}
 
-      {/* Start Onboarding Modal */}
       {showModal && (
         <div className="modal-backdrop" onClick={()=>setShowModal(false)}>
           <div className="modal-box max-w-md" onClick={e=>e.stopPropagation()}>

@@ -29,6 +29,17 @@ const OfferLetters     = lazy(() => import('@/modules/hr/pages/OfferLetters'))
 const Onboarding       = lazy(() => import('@/modules/hr/pages/Onboarding'))
 const Employees        = lazy(() => import('@/modules/hr/pages/Employees'))
 
+// Sales Module (lazy)
+const SalesLayout      = lazy(() => import('@/modules/sales/SalesLayout'))
+const SalesDashboard   = lazy(() => import('@/modules/sales/pages/SalesDashboard'))
+const Proposals        = lazy(() => import('@/modules/sales/pages/Proposals'))
+const Estimates        = lazy(() => import('@/modules/sales/pages/Estimates'))
+const SalesInvoices    = lazy(() => import('@/modules/sales/pages/Invoices'))
+const DeliveryNotes    = lazy(() => import('@/modules/sales/pages/DeliveryNotes'))
+const SalesPayments    = lazy(() => import('@/modules/sales/pages/Payments'))
+const CreditNotes      = lazy(() => import('@/modules/sales/pages/CreditNotes'))
+const SalesItems       = lazy(() => import('@/modules/sales/pages/Items'))
+
 function ComingSoon({ name }) {
   return (
     <div className="flex flex-col items-center justify-center min-h-[55vh] gap-4 animate-fade-in">
@@ -103,6 +114,19 @@ export default function App() {
                 <Route path="offers"            element={<S><OfferLetters /></S>} />
                 <Route path="onboarding"        element={<S><Onboarding /></S>} />
                 <Route path="employees"         element={<S><Employees /></S>} />
+              </Route>
+
+              {/* SALES MODULE */}
+              <Route path="sales" element={<S><SalesLayout /></S>}>
+                <Route index element={<Navigate to="dashboard" replace />} />
+                <Route path="dashboard"      element={<S><SalesDashboard /></S>} />
+                <Route path="proposals"      element={<S><Proposals /></S>} />
+                <Route path="estimates"      element={<S><Estimates /></S>} />
+                <Route path="invoices"       element={<S><SalesInvoices /></S>} />
+                <Route path="delivery-notes" element={<S><DeliveryNotes /></S>} />
+                <Route path="payments"       element={<S><SalesPayments /></S>} />
+                <Route path="credit-notes"   element={<S><CreditNotes /></S>} />
+                <Route path="items"          element={<S><SalesItems /></S>} />
               </Route>
 
               {/* Core CRM */}
