@@ -1,155 +1,393 @@
 import { useState, useEffect } from 'react'
-import { Plus, Search, Send, CreditCard, Trash2, X, MoreVertical, Copy, Bell } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Plus, Send, CreditCard, Trash2, X, MoreVertical, Copy, Bell, RefreshCw, Tag, User } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
+import StatusBadge from '../components/StatusBadge'
 
-const fmt = (v) => '₹' + Number(v).toLocaleString('en-IN')
-const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
-const sc = s => s === 'Paid' ? { bg: 'rgba(16,185,129,0.1)', color: '#10b981' } : s === 'Overdue' ? { bg: 'rgba(239,68,68,0.1)', color: '#f87171' } : s === 'Partially Paid' ? { bg: 'rgba(245,158,11,0.1)', color: '#fbbf24' } : s === 'Unpaid' ? { bg: 'rgba(124,58,237,0.1)', color: '#a78bfa' } : s === 'Draft' ? { bg: 'rgba(100,116,139,0.1)', color: '#94a3b8' } : { bg: 'rgba(239,68,68,0.08)', color: '#f87171' }
+const fmt = v => '₹' + Number(v||0).toLocaleString('en-IN')
+const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) : '—'
+const STAFF = ['Zafar Farooque','Priya Sharma','Rohit Verma','Anjali Singh','Karan Mehta']
+const PAY_MODES = ['Bank Transfer','Cash','Cheque','Stripe','Razorpay','PayPal','UPI']
+const STATUSES = ['Draft','Unpaid','Partially Paid','Paid','Overdue','Cancelled']
+
+const EMPTY = {
+  client:'', project_id:'', date: new Date().toISOString().split('T')[0],
+  due_date:'', currency:'INR', sale_agent:'', discount_type:'none',
+  recurring: false, recur_interval:'1', recur_type:'month', cycles:'0',
+  allowed_modes: ['Bank Transfer','UPI','Razorpay'],
+  cancel_overdue_reminders: false,
+  adminnote:'', clientnote:'', terms:'', tags:''
+}
+
+const EMPTY_PAY = { amount:'', mode:'Bank Transfer', reference:'' }
 
 export default function Invoices() {
-  const [data, setData] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState('All')
-  const [showModal, setShowModal] = useState(false)
+  const navigate = useNavigate()
+  const [data, setData]         = useState([])
+  const [loading, setLoading]   = useState(true)
+  const [filter, setFilter]     = useState('All')
+  const [showDrawer, setShowDrawer] = useState(false)
   const [showPayModal, setShowPayModal] = useState(false)
   const [selectedInv, setSelectedInv] = useState(null)
-  const [toast, setToast] = useState(null)
+  const [toast, setToast]       = useState(null)
   const [openMenu, setOpenMenu] = useState(null)
-  const [form, setForm] = useState({ client: '', due_date: '' })
-  const [payForm, setPayForm] = useState({ amount: '', mode: 'Bank Transfer', reference: '' })
+  const [form, setForm]         = useState(EMPTY)
+  const [payForm, setPayForm]   = useState(EMPTY_PAY)
 
-  const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000) }
+  const showToast = (msg,type='success') => { setToast({msg,type}); setTimeout(()=>setToast(null),3000) }
+  const sf = (k,v) => setForm(p=>({...p,[k]:v}))
+  const toggleMode = (m) => sf('allowed_modes', form.allowed_modes.includes(m) ? form.allowed_modes.filter(x=>x!==m) : [...form.allowed_modes,m])
 
-  useEffect(() => {
+  const load = () => {
     setLoading(true)
-    salesApi.invoices.list({ status: filter !== 'All' ? filter : undefined }).then(d => { setData(d); setLoading(false) })
-  }, [filter])
-
-  const stats = { total: data.length, unpaid: data.filter(i => i.status === 'Unpaid').length, paid: data.filter(i => i.status === 'Paid').length, overdue: data.filter(i => i.status === 'Overdue').length, totalAmt: data.reduce((s, i) => s + i.amount, 0), totalBal: data.reduce((s, i) => s + i.balance, 0) }
+    salesApi.invoices.list({status: filter!=='All'?filter:undefined}).then(d=>{setData(d);setLoading(false)})
+  }
+  useEffect(()=>{ load() },[filter])
 
   const handleCreate = async () => {
-    if (!form.client) return showToast('Client required', 'error')
-    await salesApi.invoices.create({ ...form, amount: 0 })
-    showToast('Invoice created!')
-    setShowModal(false)
-    setForm({ client: '', due_date: '' })
-    salesApi.invoices.list({}).then(setData)
+    if(!form.client) return showToast('Client required','error')
+    await salesApi.invoices.create({...form, amount:0})
+    showToast('Invoice created!'); setShowDrawer(false); setForm(EMPTY); load()
+  }
+  const handlePay = async () => {
+    if(!payForm.amount) return showToast('Amount required','error')
+    await salesApi.invoices.recordPayment(selectedInv.id, payForm)
+    showToast('Payment recorded!'); setShowPayModal(false); setPayForm(EMPTY_PAY)
   }
 
-  const handlePay = async () => {
-    if (!payForm.amount) return showToast('Amount required', 'error')
-    await salesApi.invoices.recordPayment(selectedInv.id, payForm)
-    showToast('Payment recorded!')
-    setShowPayModal(false)
-    setPayForm({ amount: '', mode: 'Bank Transfer', reference: '' })
+  const stats = {
+    total: data.length,
+    unpaid: data.filter(i=>i.status==='Unpaid').length,
+    overdue: data.filter(i=>i.status==='Overdue').length,
+    paid: data.filter(i=>i.status==='Paid').length,
+    totalAmt: data.reduce((s,i)=>s+i.amount,0),
+    outstanding: data.reduce((s,i)=>s+i.balance,0),
   }
 
   return (
-    <div className="space-y-6 animate-[tiltIn_0.35s_ease_forwards]">
-      {toast && <div className="fixed top-5 right-5 z-[9999] px-5 py-3 rounded-2xl text-sm font-semibold text-white shadow-2xl" style={{ background: toast.type === 'success' ? 'linear-gradient(135deg,#10b981,#059669)' : 'linear-gradient(135deg,#f87171,#ef4444)' }}>{toast.msg}</div>}
+    <>
+      <div className="space-y-6 animate-[tiltIn_0.35s_ease_forwards]" onClick={()=>setOpenMenu(null)}>
+        {toast && <div className="fixed top-5 right-5 z-[9999] px-5 py-3 rounded-2xl text-sm font-semibold text-white shadow-2xl animate-[slideDown_0.3s_ease]" style={{background:toast.type==='success'?'linear-gradient(135deg,#10b981,#059669)':'linear-gradient(135deg,#f87171,#ef4444)'}}>{toast.msg}</div>}
 
+      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <div><p className="label-caps mb-1">Sales & Revenue</p><h1 className="font-black" style={{ fontSize: 'clamp(1.3rem,2vw,1.7rem)', color: 'var(--text-h)', letterSpacing: '-0.02em' }}><span className="text-gradient">Invoices</span></h1></div>
-        <button onClick={() => setShowModal(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)', boxShadow: '0 4px 14px rgba(124,58,237,0.4)' }}><Plus size={15} /> New Invoice</button>
+        <div>
+          <p className="label-caps mb-1">Sales & Revenue</p>
+          <h1 className="font-black" style={{fontSize:'clamp(1.3rem,2vw,1.8rem)',color:'var(--text-h)',letterSpacing:'-0.02em'}}><span className="text-gradient">Invoices</span></h1>
+          <p className="text-xs mt-0.5" style={{color:'var(--text-muted)'}}>Billing documents sent to customers</p>
+        </div>
+        <button onClick={()=>setShowDrawer(true)} className="flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold text-white hover:scale-[1.03] transition-all" style={{background:'linear-gradient(135deg,#9f67ff,#7C3AED,#5b21b6)',boxShadow:'0 6px 20px rgba(124,58,237,0.45)'}}>
+          <Plus size={15}/> New Invoice
+        </button>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="kpi-3d"><p className="text-2xl font-black" style={{ color: '#7C3AED' }}>{fmt(stats.totalAmt)}</p><p className="text-sm font-medium mt-1" style={{ color: 'var(--text-muted)' }}>Total Invoiced</p></div>
-        <div className="kpi-3d"><p className="text-2xl font-black" style={{ color: '#f87171' }}>{fmt(stats.totalBal)}</p><p className="text-sm font-medium mt-1" style={{ color: 'var(--text-muted)' }}>Outstanding</p></div>
-        <div className="kpi-3d"><p className="text-3xl font-black" style={{ color: '#10b981' }}>{stats.paid}</p><p className="text-sm font-medium mt-1" style={{ color: 'var(--text-muted)' }}>Paid</p></div>
-        <div className="kpi-3d"><p className="text-3xl font-black" style={{ color: '#f87171' }}>{stats.overdue}</p><p className="text-sm font-medium mt-1" style={{ color: 'var(--text-muted)' }}>Overdue</p></div>
-      </div>
-
-      <div className="flex gap-2 flex-wrap">
-        {['All', 'Draft', 'Unpaid', 'Partially Paid', 'Paid', 'Overdue', 'Cancelled'].map(f => (
-          <button key={f} onClick={() => setFilter(f)} className="px-3 py-1.5 rounded-xl text-xs font-bold transition-all"
-            style={{ background: filter === f ? 'linear-gradient(135deg,#7C3AED,#5b21b6)' : 'var(--bg-input)', color: filter === f ? '#fff' : 'var(--text-muted)', border: `1px solid ${filter === f ? 'transparent' : 'var(--border)'}` }}>{f}</button>
+      {/* KPIs */}
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
+        {[
+          {l:'Total Invoiced', v:fmt(stats.totalAmt), c:'#7C3AED'},
+          {l:'Outstanding', v:fmt(stats.outstanding), c:'#f87171'},
+          {l:'Total', v:stats.total, c:'#7C3AED'},
+          {l:'Unpaid', v:stats.unpaid, c:'#a78bfa'},
+          {l:'Overdue', v:stats.overdue, c:'#f87171'},
+          {l:'Paid', v:stats.paid, c:'#10b981'},
+        ].map(k=>(
+          <div key={k.l} className="kpi-3d py-4 px-4">
+            <p className="text-xl font-black" style={{color:k.c}}>{k.v}</p>
+            <p className="text-xs font-semibold mt-1" style={{color:'var(--text-muted)'}}>{k.l}</p>
+          </div>
         ))}
       </div>
 
-      {loading ? <div className="text-center py-12" style={{ color: 'var(--text-muted)' }}>Loading…</div> : (
-        <div className="card-3d overflow-hidden" style={{ padding: 0 }}>
+      {/* Filter tabs */}
+      <div className="flex gap-1.5 p-1 rounded-2xl w-fit" style={{background:'var(--bg-input)',border:'1px solid var(--border)'}}>
+        {['All',...STATUSES].map(f=>(
+          <button key={f} onClick={()=>setFilter(f)} className="px-3 py-1.5 rounded-xl text-xs font-bold transition-all"
+            style={{background:filter===f?'linear-gradient(135deg,#7C3AED,#5b21b6)':'transparent',color:filter===f?'#fff':'var(--text-muted)'}}>
+            {f}
+          </button>
+        ))}
+      </div>
+
+      {/* Table */}
+      {loading ? <div className="space-y-2">{[1,2,3].map(i=><div key={i} className="skeleton h-14 rounded-xl" style={{background:'var(--border)'}}/>)}</div> : (
+        <div className="card-3d overflow-hidden" style={{padding:0}}>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
-              <thead><tr style={{ borderBottom: '1px solid var(--border)' }}>
-                {['Invoice', 'Client', 'Issue Date', 'Due Date', 'Amount', 'Balance', 'Status', ''].map(h => <th key={h} className="py-3 px-4 text-left label-caps">{h}</th>)}
-              </tr></thead>
+              <thead>
+                <tr style={{background:'rgba(124,58,237,0.04)',borderBottom:'1px solid var(--border)'}}>
+                  {['Invoice','Client','Issue Date','Due Date','Amount','Balance','Status',''].map(h=>(
+                    <th key={h} className="py-3.5 px-4 text-left label-caps whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
               <tbody>
-                {data.map(inv => {
-                  const s = sc(inv.status)
-                  return (
-                    <tr key={inv.id} className="transition-colors" style={{ borderBottom: '1px solid var(--border)' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(124,58,237,0.04)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                      <td className="py-3 px-4 font-bold" style={{ color: '#a78bfa' }}>{inv.number}</td>
-                      <td className="py-3 px-4 font-semibold" style={{ color: 'var(--text-h)' }}>{inv.client}</td>
-                      <td className="py-3 px-4" style={{ color: 'var(--text-muted)' }}>{fmtDate(inv.issue_date)}</td>
-                      <td className="py-3 px-4" style={{ color: 'var(--text-muted)' }}>{fmtDate(inv.due_date)}</td>
-                      <td className="py-3 px-4 font-bold" style={{ color: 'var(--text-h)' }}>{fmt(inv.amount)}</td>
-                      <td className="py-3 px-4 font-bold" style={{ color: inv.balance > 0 ? '#f87171' : '#10b981' }}>{fmt(inv.balance)}</td>
-                      <td className="py-3 px-4"><span className="px-2.5 py-1 rounded-xl text-[10px] font-bold" style={{ background: s.bg, color: s.color }}>{inv.status}{inv.recurring ? ' 🔄' : ''}</span></td>
-                      <td className="py-3 px-4 relative">
-                        <button onClick={() => setOpenMenu(openMenu === inv.id ? null : inv.id)} className="p-1.5 rounded-lg transition-colors hover:bg-[rgba(124,58,237,0.08)]"><MoreVertical size={14} style={{ color: 'var(--text-muted)' }} /></button>
-                        {openMenu === inv.id && (
-                          <div className="absolute right-4 top-10 z-50 rounded-xl shadow-2xl py-1 min-w-[170px]" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-                            {[
-                              { icon: CreditCard, label: 'Record Payment', action: () => { setSelectedInv(inv); setShowPayModal(true) } },
-                              { icon: Send, label: 'Send Invoice', action: () => showToast('Invoice sent!') },
-                              { icon: Bell, label: 'Send Reminder', action: () => showToast('Reminder sent!') },
-                              { icon: Copy, label: 'Duplicate', action: () => showToast('Duplicated!') },
-                              { icon: Trash2, label: 'Delete', action: () => showToast('Deleted!', 'error') },
-                            ].map(a => (
-                              <button key={a.label} onClick={() => { a.action(); setOpenMenu(null) }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium transition-colors hover:bg-[rgba(124,58,237,0.06)]" style={{ color: a.label === 'Delete' ? '#f87171' : 'var(--text-h)' }}>
-                                <a.icon size={12} />{a.label}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
-                {data.length === 0 && <tr><td colSpan="8" className="py-10 text-center" style={{ color: 'var(--text-muted)' }}>No invoices found.</td></tr>}
+                {data.map(inv=>(
+                  <tr key={inv.id} className="cursor-pointer transition-colors" style={{borderBottom:'1px solid var(--border)'}}
+                    onClick={()=>navigate(`/app/sales/invoices/${inv.id}`)}
+                    onMouseEnter={e=>e.currentTarget.style.background='rgba(124,58,237,0.04)'}
+                    onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                    <td className="py-3.5 px-4 font-bold" style={{color:'#a78bfa'}}>{inv.number}{inv.recurring&&<span className="ml-1 text-[10px]">🔄</span>}</td>
+                    <td className="py-3.5 px-4 font-semibold" style={{color:'var(--text-h)'}}>{inv.client}</td>
+                    <td className="py-3.5 px-4 whitespace-nowrap" style={{color:'var(--text-muted)'}}>{fmtDate(inv.issue_date)}</td>
+                    <td className="py-3.5 px-4 whitespace-nowrap" style={{color:inv.status==='Overdue'?'#f87171':'var(--text-muted)'}}>{fmtDate(inv.due_date)}</td>
+                    <td className="py-3.5 px-4 font-bold whitespace-nowrap" style={{color:'var(--text-h)'}}>{fmt(inv.amount)}</td>
+                    <td className="py-3.5 px-4 font-bold whitespace-nowrap" style={{color:inv.balance>0?'#f87171':'#10b981'}}>{fmt(inv.balance)}</td>
+                    <td className="py-3.5 px-4"><StatusBadge status={inv.status}/></td>
+                    <td className="py-3.5 px-4 relative" onClick={e=>e.stopPropagation()}>
+                      <button onClick={()=>setOpenMenu(openMenu===inv.id?null:inv.id)} className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-[rgba(124,58,237,0.08)] transition-colors">
+                        <MoreVertical size={14} style={{color:'var(--text-muted)'}}/>
+                      </button>
+                      {openMenu===inv.id && (
+                        <div className="absolute right-2 top-10 z-50 rounded-2xl shadow-2xl py-1.5 min-w-[180px] overflow-hidden"
+                          style={{background:'var(--bg-card)',border:'1px solid var(--border-purple)',boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
+                          {[
+                            {icon:CreditCard, label:'Record Payment', action:()=>{setSelectedInv(inv);setShowPayModal(true)}},
+                            {icon:Send, label:'Send Invoice', action:()=>showToast('Invoice sent!')},
+                            {icon:Bell, label:'Send Reminder', action:()=>showToast('Reminder sent!')},
+                            {icon:Copy, label:'Duplicate', action:()=>showToast('Duplicated!')},
+                            {icon:Trash2, label:'Delete', action:()=>showToast('Deleted!','error'), danger:true},
+                          ].map(a=>(
+                            <button key={a.label} onClick={()=>{a.action();setOpenMenu(null)}}
+                              className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-medium transition-colors"
+                              onMouseEnter={e=>e.currentTarget.style.background=a.danger?'rgba(239,68,68,0.06)':'rgba(124,58,237,0.06)'}
+                              onMouseLeave={e=>e.currentTarget.style.background='transparent'}
+                              style={{color:a.danger?'#f87171':'var(--text-h)'}}>
+                              <a.icon size={13}/>{a.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {data.length===0 && <tr><td colSpan="8" className="py-16 text-center">
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl" style={{background:'rgba(124,58,237,0.08)'}}>🧾</div>
+                    <p className="text-sm font-semibold" style={{color:'var(--text-muted)'}}>No invoices found</p>
+                    <button onClick={()=>setShowDrawer(true)} className="text-xs font-bold" style={{color:'#a78bfa'}}>+ Create first invoice</button>
+                  </div>
+                </td></tr>}
               </tbody>
             </table>
           </div>
         </div>
       )}
 
-      {showModal && (
-        <div className="modal-backdrop" onClick={() => setShowModal(false)}>
-          <div className="modal-box max-w-lg" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-5"><h2 className="font-black text-lg" style={{ color: 'var(--text-h)' }}>New Invoice</h2><button onClick={() => setShowModal(false)} style={{ color: 'var(--text-muted)' }}><X size={18} /></button></div>
+      </div>
+
+      {/* ── New Invoice Drawer ── */}
+      {showDrawer && (
+        <>
+          <div className="drawer-backdrop" onClick={() => setShowDrawer(false)} />
+          <div className="drawer-panel" style={{ width: 'min(640px, 95vw)' }}>
+            {/* Header */}
+            <div className="drawer-header">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: 'linear-gradient(135deg,#9f67ff,#7C3AED)', boxShadow: '0 4px 12px rgba(124,58,237,0.4)' }}>
+                  <CreditCard size={14} className="text-white" />
+                </div>
+                <div>
+                  <h2 className="font-black text-lg" style={{ color: 'var(--text-h)', letterSpacing: '-0.02em' }}>New Invoice</h2>
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Create a billing document for a customer</p>
+                </div>
+              </div>
+              <button onClick={() => setShowDrawer(false)} className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-[rgba(239,68,68,0.08)] transition-colors" style={{ border: '1px solid var(--border)' }}>
+                <X size={16} style={{ color: 'var(--text-muted)' }} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="drawer-body">
+              {/* Basic */}
+              <div>
+                <p className="label-caps mb-4" style={{ color: '#a78bfa' }}>Basic Information</p>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="label">Customer *</label>
+                      <select className="input-3d text-sm" value={form.client} onChange={e => sf('client', e.target.value)}>
+                        <option value="">Select customer…</option>
+                        {salesApi.clients.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label">Link to Project</label>
+                      <input className="input-3d text-sm" placeholder="Project (optional)" value={form.project_id} onChange={e => sf('project_id', e.target.value)} />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="label">Invoice Date</label>
+                      <input type="date" className="input-3d text-sm" value={form.date} onChange={e => sf('date', e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="label">Due Date</label>
+                      <input type="date" className="input-3d text-sm" value={form.due_date} onChange={e => sf('due_date', e.target.value)} />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="label"><User size={10} className="inline mr-1" />Sale Agent</label>
+                      <select className="input-3d text-sm" value={form.sale_agent} onChange={e => sf('sale_agent', e.target.value)}>
+                        <option value="">Not assigned</option>
+                        {STAFF.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label">Discount Type</label>
+                      <select className="input-3d text-sm" value={form.discount_type} onChange={e => sf('discount_type', e.target.value)}>
+                        <option value="none">No Discount</option>
+                        <option value="before_tax">Before Tax</option>
+                        <option value="after_tax">After Tax</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Recurring */}
+              <div>
+                <p className="label-caps mb-4" style={{ color: '#a78bfa' }}>Recurring Settings</p>
+                <div className="p-4 rounded-2xl space-y-4" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: 'rgba(59,130,246,0.1)' }}>
+                        <RefreshCw size={14} style={{ color: '#3b82f6' }} />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold" style={{ color: 'var(--text-h)' }}>Recurring Invoice</p>
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Auto-create new invoice on schedule</p>
+                      </div>
+                    </div>
+                    <button onClick={() => sf('recurring', !form.recurring)} className="relative w-12 h-6 rounded-full transition-all duration-300" style={{ background: form.recurring ? 'linear-gradient(135deg,#3b82f6,#2563eb)' : 'rgba(255,255,255,0.1)' }}>
+                      <span className="absolute top-0.5 h-5 w-5 bg-white rounded-full shadow transition-all duration-300" style={{ left: form.recurring ? '26px' : '2px' }} />
+                    </button>
+                  </div>
+                  {form.recurring && (
+                    <div className="grid grid-cols-3 gap-3 pt-1">
+                      <div>
+                        <label className="label">Every</label>
+                        <input type="number" min="1" className="input-3d text-sm" value={form.recur_interval} onChange={e => sf('recur_interval', e.target.value)} />
+                      </div>
+                      <div>
+                        <label className="label">Period</label>
+                        <select className="input-3d text-sm" value={form.recur_type} onChange={e => sf('recur_type', e.target.value)}>
+                          {['day', 'week', 'month', 'year'].map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="label">Cycles (0=∞)</label>
+                        <input type="number" min="0" className="input-3d text-sm" value={form.cycles} onChange={e => sf('cycles', e.target.value)} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Payment Modes */}
+              <div>
+                <p className="label-caps mb-4" style={{ color: '#a78bfa' }}>Allowed Payment Modes</p>
+                <div className="flex flex-wrap gap-2">
+                  {PAY_MODES.map(m => {
+                    const active = form.allowed_modes.includes(m)
+                    return (
+                      <button key={m} onClick={() => toggleMode(m)}
+                        className="px-3 py-2 rounded-xl text-xs font-bold transition-all"
+                        style={{
+                          background: active ? 'linear-gradient(135deg,#7C3AED,#5b21b6)' : 'var(--bg-input)',
+                          color: active ? '#fff' : 'var(--text-muted)',
+                          border: `1px solid ${active ? 'transparent' : 'var(--border)'}`,
+                          boxShadow: active ? '0 3px 10px rgba(124,58,237,0.3)' : 'none',
+                        }}>
+                        {m}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Overdue Reminder */}
+              <div className="flex items-center justify-between p-4 rounded-2xl" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+                <div>
+                  <p className="text-sm font-semibold" style={{ color: 'var(--text-h)' }}>Cancel Overdue Reminders</p>
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Stop automatic overdue emails for this invoice</p>
+                </div>
+                <button onClick={() => sf('cancel_overdue_reminders', !form.cancel_overdue_reminders)}
+                  className="relative w-12 h-6 rounded-full transition-all duration-300"
+                  style={{ background: form.cancel_overdue_reminders ? 'linear-gradient(135deg,#f87171,#ef4444)' : 'rgba(255,255,255,0.1)' }}>
+                  <span className="absolute top-0.5 h-5 w-5 bg-white rounded-full shadow transition-all duration-300" style={{ left: form.cancel_overdue_reminders ? '26px' : '2px' }} />
+                </button>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <p className="label-caps mb-4" style={{ color: '#a78bfa' }}>Notes & Terms</p>
+                <div className="space-y-4">
+                  <div>
+                    <label className="label flex items-center gap-1">
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ background: 'rgba(239,68,68,0.1)', color: '#f87171' }}>🔒 INTERNAL</span>
+                      Admin Note
+                    </label>
+                    <textarea className="input-3d text-sm resize-none" rows={2} placeholder="Internal notes (not visible to customer)…" value={form.adminnote} onChange={e => sf('adminnote', e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="label flex items-center gap-1">
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ background: 'rgba(16,185,129,0.1)', color: '#10b981' }}>VISIBLE</span>
+                      Client Note
+                    </label>
+                    <textarea className="input-3d text-sm resize-none" rows={2} placeholder="Note visible on the invoice…" value={form.clientnote} onChange={e => sf('clientnote', e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="label">Terms & Conditions</label>
+                    <textarea className="input-3d text-sm resize-none" rows={2} placeholder="Payment terms, conditions…" value={form.terms} onChange={e => sf('terms', e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="label"><Tag size={10} className="inline mr-1" />Tags</label>
+                    <input className="input-3d text-sm" placeholder="e.g. q3-2026, recurring, priority" value={form.tags} onChange={e => sf('tags', e.target.value)} />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="drawer-footer">
+              <button onClick={() => setShowDrawer(false)} className="flex-1 py-3 rounded-2xl text-sm font-semibold" style={{ background: 'var(--bg-input)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Cancel</button>
+              <button onClick={handleCreate} className="flex-[2] py-3 rounded-2xl text-sm font-bold text-white hover:scale-[1.01] transition-all" style={{ background: 'linear-gradient(135deg,#9f67ff,#7C3AED,#5b21b6)', boxShadow: '0 6px 20px rgba(124,58,237,0.4)' }}>Create Invoice</button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── Record Payment Modal ── */}
+      {showPayModal && selectedInv && (
+        <div className="modal-backdrop" onClick={()=>setShowPayModal(false)}>
+          <div className="modal-box max-w-md" onClick={e=>e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="font-black text-lg" style={{color:'var(--text-h)'}}>Record Payment</h2>
+              <button onClick={()=>setShowPayModal(false)} style={{color:'var(--text-muted)'}}><X size={18}/></button>
+            </div>
+            <div className="p-3 rounded-xl mb-4" style={{background:'rgba(124,58,237,0.06)',border:'1px solid rgba(124,58,237,0.15)'}}>
+              <p className="text-xs font-bold" style={{color:'#a78bfa'}}>{selectedInv.number}</p>
+              <p className="text-xs mt-0.5" style={{color:'var(--text-muted)'}}>{selectedInv.client} · Balance: {fmt(selectedInv.balance)}</p>
+            </div>
             <div className="space-y-3">
-              <div><label className="label">Client *</label><select className="input-3d text-sm" value={form.client} onChange={e => setForm({ ...form, client: e.target.value })}><option value="">Select client</option>{salesApi.clients.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
-              <div><label className="label">Due Date</label><input type="date" className="input-3d text-sm" value={form.due_date} onChange={e => setForm({ ...form, due_date: e.target.value })} /></div>
+              <div><label className="label">Amount *</label><input type="number" className="input-3d text-sm" placeholder="Payment amount" value={payForm.amount} onChange={e=>setPayForm(p=>({...p,amount:e.target.value}))}/></div>
+              <div><label className="label">Payment Mode</label>
+                <select className="input-3d text-sm" value={payForm.mode} onChange={e=>setPayForm(p=>({...p,mode:e.target.value}))}>
+                  {PAY_MODES.map(m=><option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+              <div><label className="label">Transaction Reference</label><input className="input-3d text-sm" placeholder="Txn ID / Reference" value={payForm.reference} onChange={e=>setPayForm(p=>({...p,reference:e.target.value}))}/></div>
               <div className="flex gap-3 pt-1">
-                <button onClick={() => setShowModal(false)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold" style={{ background: 'var(--bg-input)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Cancel</button>
-                <button onClick={handleCreate} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>Create Invoice</button>
+                <button onClick={()=>setShowPayModal(false)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold" style={{background:'var(--bg-input)',color:'var(--text-muted)',border:'1px solid var(--border)'}}>Cancel</button>
+                <button onClick={handlePay} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white" style={{background:'linear-gradient(135deg,#10b981,#059669)'}}>Record Payment</button>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {showPayModal && selectedInv && (
-        <div className="modal-backdrop" onClick={() => setShowPayModal(false)}>
-          <div className="modal-box max-w-md" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-5"><h2 className="font-black text-lg" style={{ color: 'var(--text-h)' }}>Record Payment</h2><button onClick={() => setShowPayModal(false)} style={{ color: 'var(--text-muted)' }}><X size={18} /></button></div>
-            <div className="p-3 rounded-xl mb-4" style={{ background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.15)' }}>
-              <p className="text-xs font-bold" style={{ color: '#a78bfa' }}>{selectedInv.number}</p>
-              <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{selectedInv.client} · Balance: {fmt(selectedInv.balance)}</p>
-            </div>
-            <div className="space-y-3">
-              <div><label className="label">Amount *</label><input type="number" className="input-3d text-sm" placeholder="Payment amount" value={payForm.amount} onChange={e => setPayForm({ ...payForm, amount: e.target.value })} /></div>
-              <div><label className="label">Payment Mode</label><select className="input-3d text-sm" value={payForm.mode} onChange={e => setPayForm({ ...payForm, mode: e.target.value })}>{['Bank Transfer', 'Cash', 'Cheque', 'Stripe', 'Razorpay', 'PayPal', 'UPI'].map(m => <option key={m} value={m}>{m}</option>)}</select></div>
-              <div><label className="label">Reference / Txn ID</label><input className="input-3d text-sm" placeholder="Transaction reference" value={payForm.reference} onChange={e => setPayForm({ ...payForm, reference: e.target.value })} /></div>
-              <div className="flex gap-3 pt-1">
-                <button onClick={() => setShowPayModal(false)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold" style={{ background: 'var(--bg-input)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Cancel</button>
-                <button onClick={handlePay} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background: 'linear-gradient(135deg,#10b981,#059669)' }}>Record Payment</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+      <style>{`@keyframes slideInRight{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}`}</style>
+    </>
   )
 }
