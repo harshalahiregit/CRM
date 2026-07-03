@@ -64,7 +64,18 @@ export const hrApi = {
     updateDecision:(id, decision)=> api.patch(`/hr/candidates/${id}/decision`, { final_decision: decision }).then(r => r.data),
     delete:        (id)          => api.delete(`/hr/candidates/${id}`).then(r => r.data),
     linkedinParse: (url)         => api.post('/hr/candidates/linkedin-parse', { url }).then(r => r.data),
+    // Resume
+    uploadResume:  (id, file)    => {
+      const fd = new FormData()
+      fd.append('resume', file)
+      return api.post(`/hr/candidates/${id}/resume`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      }).then(r => r.data)
+    },
+    resumeUrl:     (id)          => `${BASE}/hr/candidates/${id}/resume`,
+    deleteResume:  (id)          => api.delete(`/hr/candidates/${id}/resume`).then(r => r.data),
   },
+
 
   // ── Interviews ──────────────────────────────────────────────────────
   interviews: {
@@ -83,7 +94,7 @@ export const hrApi = {
     get:          (id)          => api.get(`/hr/offers/${id}`).then(r => r.data),
     create:       (data)        => api.post('/hr/offers', data).then(r => r.data),
     send:         (id)          => api.patch(`/hr/offers/${id}/send`).then(r => r.data),
-    updateStatus: (id, status)  => api.patch(`/hr/offers/${id}/status`, { status }).then(r => r.data),
+    updateStatus: (id, payload)  => api.patch(`/hr/offers/${id}/status`, typeof payload === 'string' ? { status: payload } : payload).then(r => r.data),
     delete:       (id)          => api.delete(`/hr/offers/${id}`).then(r => r.data),
   },
 

@@ -15,7 +15,7 @@ class HrCandidate extends Model
         'tenant_id','job_posting_id','name','email','phone','location',
         'current_company','experience_years','source','stage',
         'linkedin_url','linkedin_data','resume_path','ai_score','ai_breakdown',
-        'skills','notes','final_decision',
+        'skills','notes','final_decision','whatsapp_opt_in','whatsapp_number',
     ];
 
     protected $casts = [
@@ -23,6 +23,7 @@ class HrCandidate extends Model
         'ai_breakdown'     => 'array',
         'skills'           => 'array',
         'experience_years' => 'decimal:1',
+        'whatsapp_opt_in'  => 'boolean',
     ];
 
     public function jobPosting()
@@ -43,5 +44,26 @@ class HrCandidate extends Model
     public function onboarding()
     {
         return $this->hasOne(HrOnboarding::class, 'candidate_id');
+    }
+
+    public function whatsappLogs()
+    {
+        return $this->hasMany(HrWhatsAppLog::class, 'candidate_id')->latest();
+    }
+
+    /**
+     * Get the phone number to use for WhatsApp.
+     */
+    public function getWhatsAppNumber(): ?string
+    {
+        return $this->whatsapp_number ?? $this->phone;
+    }
+
+    /**
+     * Check if candidate has opted in for WhatsApp.
+     */
+    public function canReceiveWhatsApp(): bool
+    {
+        return $this->whatsapp_opt_in && !empty($this->getWhatsAppNumber());
     }
 }

@@ -33,10 +33,15 @@ class EmployeeController extends Controller
             'name'                   => 'required|string',
             'email'                  => 'nullable|email',
             'phone'                  => 'nullable|string',
+            'dob'                    => 'nullable|date',
+            'gender'                 => 'nullable|in:Male,Female,Other,Prefer not to say',
+            'address'                => 'nullable|string',
             'department'             => 'required|string',
             'designation'            => 'required|string',
             'reporting_manager_name' => 'nullable|string',
             'joining_date'           => 'required|date',
+            'probation_end_date'     => 'nullable|date',
+            'confirmation_date'      => 'nullable|date',
             'status'                 => 'in:Active,On Leave,Inactive',
         ]);
 
@@ -45,6 +50,7 @@ class EmployeeController extends Controller
         $employee = HrEmployee::create([...$validated, 'employee_code' => $empCode]);
         return response()->json($employee, 201);
     }
+
 
     public function show(HrEmployee $employee)
     {

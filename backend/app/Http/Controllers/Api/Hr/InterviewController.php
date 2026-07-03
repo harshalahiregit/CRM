@@ -8,6 +8,7 @@ use App\Models\HrCandidate;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Carbon\Carbon;
+use App\Notifications\WhatsApp\InterviewScheduledNotification;
 
 class InterviewController extends Controller
 {
@@ -62,6 +63,17 @@ class InterviewController extends Controller
             ->where('tenant_id', $request->user()->tenant_id)
             ->whereIn('stage', ['Applied','Screening','Assessment'])
             ->update(['stage' => 'Interview']);
+
+        // Send email notification to candidate
+        if ($candidate->email) {
+            \Mail::to($candidate->email)->send(
+                new \App\Mail\InterviewScheduledMail($round, 'candidate')
+            );
+            $round->update(['email_sent_candidate' => true]);
+        }
+
+        // Send WhatsApp notification
+        InterviewScheduledNotification::send($round);
 
         return response()->json($round->load('candidate'), 201);
     }
@@ -124,6 +136,24 @@ class InterviewController extends Controller
             'whatsapp'          => 'whatsapp_sent',
             'calendar'          => 'calendar_event_created',
         ];
+
+        // Send actual emails
+        if ($request->type === 'email_candidate' && $interviewRound->candidate && $interviewRound->candidate->email) {
+            \Mail::to($interviewRound->candidate->email)->send(
+                new \App\Mail\InterviewScheduledMail($interviewRound, 'candidate')
+            );
+        }
+
+        if ($request->type === 'email_interviewer' && $interviewRound->interviewer_email) {
+            \Mail::to($interviewRound->interviewer_email)->send(
+                new \App\Mail\InterviewScheduledMail($interviewRound, 'interviewer')
+            );
+        }
+
+        // Send WhatsApp notification
+        if ($request->type === 'whatsapp') {
+            InterviewScheduledNotification::send($interviewRound);
+        }
 
         $interviewRound->update([$map[$request->type] => true]);
         return response()->json(['success' => true, 'type' => $request->type]);

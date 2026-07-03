@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\Hr\HRDashboardController;
 use App\Http\Controllers\Api\Hr\ManpowerRequestController;
 use App\Http\Controllers\Api\Hr\JobPostingController;
 use App\Http\Controllers\Api\Hr\CandidateController;
+use App\Http\Controllers\Api\Hr\ResumeController;
 use App\Http\Controllers\Api\Hr\InterviewController;
 use App\Http\Controllers\Api\Hr\OfferController;
 use App\Http\Controllers\Api\Hr\OnboardingController;
@@ -83,6 +84,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/candidates/{candidate}/stage',       [CandidateController::class, 'updateStage']);
         Route::patch('/candidates/{candidate}/decision',    [CandidateController::class, 'updateDecision']);
         Route::delete('/candidates/{candidate}',            [CandidateController::class, 'destroy']);
+        // Resume upload / download / delete
+        Route::post('/candidates/{candidate}/resume',       [ResumeController::class, 'upload']);
+        Route::get('/candidates/{candidate}/resume',        [ResumeController::class, 'download']);
+        Route::delete('/candidates/{candidate}/resume',     [ResumeController::class, 'delete']);
 
         // Interviews
         Route::get('/interviews',                               [InterviewController::class, 'index']);

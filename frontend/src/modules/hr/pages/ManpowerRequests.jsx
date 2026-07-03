@@ -216,49 +216,53 @@ export default function ManpowerRequests() {
       {/* Create Modal */}
       {showModal && (
         <div className="modal-backdrop" onClick={()=>setShowModal(false)}>
-          <div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-5">
+          <div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()} style={{ maxHeight:'85vh', overflowY:'auto' }}>
+            <div className="flex items-center justify-between mb-4">
               <h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>New Manpower Request</h2>
               <button onClick={()=>setShowModal(false)} style={{ color:'var(--text-muted)' }}><X size={18}/></button>
             </div>
-            <div className="space-y-3">
+            <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="label">Department *</label>
+                  <label className="block text-xs font-bold mb-2" style={{ color:'var(--text-h)' }}>Department *</label>
                   <select className="input-3d text-sm" value={form.department} onChange={e=>setForm({...form,department:e.target.value})}>
                     <option value="">Select...</option>
                     {['Engineering','Sales','HR','Operations','Finance','Product','Marketing'].map(d=><option key={d}>{d}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="label">Job Type</label>
+                  <label className="block text-xs font-bold mb-2" style={{ color:'var(--text-h)' }}>Job Type</label>
                   <select className="input-3d text-sm" value={form.job_type} onChange={e=>setForm({...form,job_type:e.target.value})}>
                     {['Full-time','Part-time','Contract','Internship'].map(t=><option key={t}>{t}</option>)}
                   </select>
                 </div>
               </div>
+              
               <div>
-                <label className="label">Position Title *</label>
+                <label className="block text-xs font-bold mb-2" style={{ color:'var(--text-h)' }}>Position Title *</label>
                 <input className="input-3d text-sm" placeholder="e.g. Senior React Developer" value={form.position_title} onChange={e=>setForm({...form,position_title:e.target.value})}/>
               </div>
+              
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="label">No. of Posts</label>
+                  <label className="block text-xs font-bold mb-2" style={{ color:'var(--text-h)' }}>No. of Posts</label>
                   <input type="number" min="1" className="input-3d text-sm" value={form.number_of_posts} onChange={e=>setForm({...form,number_of_posts:parseInt(e.target.value)||1})}/>
                 </div>
                 <div>
-                  <label className="label">Priority</label>
+                  <label className="block text-xs font-bold mb-2" style={{ color:'var(--text-h)' }}>Priority</label>
                   <select className="input-3d text-sm" value={form.priority} onChange={e=>setForm({...form,priority:e.target.value})}>
                     {['Low','Medium','High'].map(p=><option key={p}>{p}</option>)}
                   </select>
                 </div>
               </div>
+              
               <div>
-                <label className="label">Required By Date</label>
+                <label className="block text-xs font-bold mb-2" style={{ color:'var(--text-h)' }}>Required By Date</label>
                 <input type="date" className="input-3d text-sm" value={form.required_by_date} onChange={e=>setForm({...form,required_by_date:e.target.value})}/>
               </div>
+              
               <div>
-                <label className="label">Justification</label>
+                <label className="block text-xs font-bold mb-2" style={{ color:'var(--text-h)' }}>Justification</label>
                 <textarea rows={3} className="input-3d text-sm resize-none" placeholder="Why is this position needed?" value={form.justification} onChange={e=>setForm({...form,justification:e.target.value})}/>
               </div>
               <div className="flex gap-3 pt-1">

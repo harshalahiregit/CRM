@@ -57,21 +57,42 @@ class OfferController extends Controller
     public function send(HrOffer $offer)
     {
         $offer->update(['status' => 'Sent', 'sent_at' => now()]);
+        
+        // Send offer letter email
+        if ($offer->candidate && $offer->candidate->email) {
+            \Mail::to($offer->candidate->email)->send(
+                new \App\Mail\OfferLetterMail($offer)
+            );
+        }
+        
         return response()->json($offer);
     }
 
     public function updateStatus(Request $request, HrOffer $offer)
     {
-        $request->validate(['status' => 'required|in:Generated,Sent,Accepted,Rejected']);
+        $request->validate([
+            'status'           => 'required|in:Generated,Sent,Accepted,Rejected',
+            'rejection_reason' => 'nullable|string|max:500',
+        ]);
+
         $data = ['status' => $request->status];
+
         if ($request->status === 'Accepted') {
             $data['accepted_at'] = now();
             // Move candidate to Hired
             HrCandidate::where('id', $offer->candidate_id)->update(['stage' => 'Hired', 'final_decision' => 'Selected']);
         }
+
+        if ($request->status === 'Rejected') {
+            $data['rejection_reason'] = $request->rejection_reason;
+            // Update candidate's final decision
+            HrCandidate::where('id', $offer->candidate_id)->update(['final_decision' => 'Rejected']);
+        }
+
         $offer->update($data);
         return response()->json($offer);
     }
+
 
     public function destroy(HrOffer $offer)
     {

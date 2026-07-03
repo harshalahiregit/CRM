@@ -31,6 +31,17 @@ class OnboardingController extends Controller
 
         $validated['tenant_id'] = $request->user()->tenant_id;
         $record = HrOnboarding::create([...$validated, 'status' => 'Pending']);
+        
+        // Send welcome email
+        if ($validated['candidate_id']) {
+            $candidate = HrCandidate::find($validated['candidate_id']);
+            if ($candidate && $candidate->email) {
+                \Mail::to($candidate->email)->send(
+                    new \App\Mail\OnboardingWelcomeMail($record)
+                );
+            }
+        }
+        
         return response()->json($record, 201);
     }
 
