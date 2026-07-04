@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
 import StatusBadge from '../components/StatusBadge'
+import LineItemsTable from '../components/LineItemsTable'
 
 const fmt = v => '₹' + Number(v || 0).toLocaleString('en-IN')
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
@@ -19,7 +20,8 @@ const EMPTY_FORM = {
   currency: 'INR', discount_type: 'none', status: 'Open',
   assigned: '', proposal_to: '',
   address: '', city: '', state: '', country: 'India', zip: '',
-  email: '', phone: '', allow_comments: false, tags: '', notes: ''
+  email: '', phone: '', allow_comments: false, tags: '', notes: '',
+  line_items: [],
 }
 
 export default function Proposals() {
@@ -70,8 +72,6 @@ export default function Proposals() {
 
   return (
     <>
-      <div className="space-y-6 animate-[tiltIn_0.35s_ease_forwards]" onClick={() => setOpenMenu(null)}>
-
       {/* Toast */}
       {toast && (
         <div className="fixed top-5 right-5 z-[9999] flex items-center gap-2.5 px-5 py-3 rounded-2xl text-sm font-semibold text-white shadow-2xl animate-[slideDown_0.3s_ease]"
@@ -79,6 +79,8 @@ export default function Proposals() {
           {toast.msg}
         </div>
       )}
+
+      <div className="space-y-6 animate-[tiltIn_0.35s_ease_forwards]" onClick={() => setOpenMenu(null)}>
 
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -393,6 +395,15 @@ export default function Proposals() {
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* Section: Line Items */}
+              <div>
+                <p className="label-caps mb-4" style={{ color: '#a78bfa' }}>Line Items</p>
+                <LineItemsTable
+                  items={form.line_items}
+                  onChange={rows => sf('line_items', rows)}
+                />
               </div>
 
               {/* Section: Tags & Notes */}

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Plus, Send, CreditCard, Trash2, X, MoreVertical, Copy, Bell, RefreshCw, Tag, User } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
 import StatusBadge from '../components/StatusBadge'
+import LineItemsTable from '../components/LineItemsTable'
 
 const fmt = v => '₹' + Number(v||0).toLocaleString('en-IN')
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) : '—'
@@ -16,7 +17,8 @@ const EMPTY = {
   recurring: false, recur_interval:'1', recur_type:'month', cycles:'0',
   allowed_modes: ['Bank Transfer','UPI','Razorpay'],
   cancel_overdue_reminders: false,
-  adminnote:'', clientnote:'', terms:'', tags:''
+  adminnote:'', clientnote:'', terms:'', tags:'',
+  line_items: [],
 }
 
 const EMPTY_PAY = { amount:'', mode:'Bank Transfer', reference:'' }
@@ -66,8 +68,8 @@ export default function Invoices() {
 
   return (
     <>
+      {toast && <div className="fixed top-5 right-5 z-[9999] px-5 py-3 rounded-2xl text-sm font-semibold text-white shadow-2xl animate-[slideDown_0.3s_ease]" style={{background:toast.type==='success'?'linear-gradient(135deg,#10b981,#059669)':'linear-gradient(135deg,#f87171,#ef4444)'}}>{toast.msg}</div>}
       <div className="space-y-6 animate-[tiltIn_0.35s_ease_forwards]" onClick={()=>setOpenMenu(null)}>
-        {toast && <div className="fixed top-5 right-5 z-[9999] px-5 py-3 rounded-2xl text-sm font-semibold text-white shadow-2xl animate-[slideDown_0.3s_ease]" style={{background:toast.type==='success'?'linear-gradient(135deg,#10b981,#059669)':'linear-gradient(135deg,#f87171,#ef4444)'}}>{toast.msg}</div>}
 
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -243,6 +245,15 @@ export default function Invoices() {
                     </div>
                   </div>
                 </div>
+
+              {/* Line Items */}
+              <div>
+                <p className="label-caps mb-4" style={{ color: '#a78bfa' }}>Line Items</p>
+                <LineItemsTable
+                  items={form.line_items}
+                  onChange={rows => sf('line_items', rows)}
+                />
+              </div>
               </div>
 
               {/* Recurring */}
@@ -358,36 +369,96 @@ export default function Invoices() {
         </>
       )}
 
-      {/* ── Record Payment Modal ── */}
+      {/* ── Record Payment Drawer ── */}
       {showPayModal && selectedInv && (
-        <div className="modal-backdrop" onClick={()=>setShowPayModal(false)}>
-          <div className="modal-box max-w-md" onClick={e=>e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="font-black text-lg" style={{color:'var(--text-h)'}}>Record Payment</h2>
-              <button onClick={()=>setShowPayModal(false)} style={{color:'var(--text-muted)'}}><X size={18}/></button>
-            </div>
-            <div className="p-3 rounded-xl mb-4" style={{background:'rgba(124,58,237,0.06)',border:'1px solid rgba(124,58,237,0.15)'}}>
-              <p className="text-xs font-bold" style={{color:'#a78bfa'}}>{selectedInv.number}</p>
-              <p className="text-xs mt-0.5" style={{color:'var(--text-muted)'}}>{selectedInv.client} · Balance: {fmt(selectedInv.balance)}</p>
-            </div>
-            <div className="space-y-3">
-              <div><label className="label">Amount *</label><input type="number" className="input-3d text-sm" placeholder="Payment amount" value={payForm.amount} onChange={e=>setPayForm(p=>({...p,amount:e.target.value}))}/></div>
-              <div><label className="label">Payment Mode</label>
-                <select className="input-3d text-sm" value={payForm.mode} onChange={e=>setPayForm(p=>({...p,mode:e.target.value}))}>
-                  {PAY_MODES.map(m=><option key={m} value={m}>{m}</option>)}
-                </select>
+        <>
+          <div className="drawer-backdrop" onClick={() => setShowPayModal(false)} />
+          <div className="drawer-panel" style={{ width: 'min(480px, 95vw)' }}>
+            <div className="drawer-header">
+              <div>
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl flex items-center justify-center"
+                    style={{ background: 'linear-gradient(135deg,#10b981,#059669)', boxShadow: '0 4px 12px rgba(16,185,129,0.4)' }}>
+                    <CreditCard size={14} className="text-white" />
+                  </div>
+                  <h2 className="font-black text-lg" style={{ color: 'var(--text-h)', letterSpacing: '-0.02em' }}>Record Payment</h2>
+                </div>
+                <p className="text-xs mt-1 ml-[42px]" style={{ color: 'var(--text-muted)' }}>Record a payment received for this invoice</p>
               </div>
-              <div><label className="label">Transaction Reference</label><input className="input-3d text-sm" placeholder="Txn ID / Reference" value={payForm.reference} onChange={e=>setPayForm(p=>({...p,reference:e.target.value}))}/></div>
-              <div className="flex gap-3 pt-1">
-                <button onClick={()=>setShowPayModal(false)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold" style={{background:'var(--bg-input)',color:'var(--text-muted)',border:'1px solid var(--border)'}}>Cancel</button>
-                <button onClick={handlePay} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white" style={{background:'linear-gradient(135deg,#10b981,#059669)'}}>Record Payment</button>
+              <button onClick={() => setShowPayModal(false)}
+                className="w-9 h-9 rounded-xl flex items-center justify-center transition-colors hover:bg-[rgba(239,68,68,0.08)]"
+                style={{ border: '1px solid var(--border)' }}>
+                <X size={16} style={{ color: 'var(--text-muted)' }} />
+              </button>
+            </div>
+            <div className="drawer-body">
+              <div className="p-4 rounded-2xl" style={{ background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.15)' }}>
+                <p className="text-xs font-bold" style={{ color: '#a78bfa' }}>{selectedInv.number}</p>
+                <div className="flex justify-between items-center mt-1">
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{selectedInv.client}</p>
+                  <p className="text-sm font-black" style={{ color: 'var(--text-h)' }}>Balance: {fmt(selectedInv.balance)}</p>
+                </div>
               </div>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="label">Amount *</label>
+                    <input type="number" className="input-3d text-sm" placeholder={`Max: ${selectedInv.balance}`}
+                      value={payForm.amount} onChange={e => setPayForm(p => ({...p, amount: e.target.value}))} />
+                  </div>
+                  <div>
+                    <label className="label">Payment Date</label>
+                    <input type="date" className="input-3d text-sm"
+                      value={payForm.date || new Date().toISOString().split('T')[0]}
+                      onChange={e => setPayForm(p => ({...p, date: e.target.value}))} />
+                  </div>
+                </div>
+                <div>
+                  <label className="label">Payment Mode</label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {PAY_MODES.map(m => {
+                      const mc = m==='Bank Transfer'?'#3b82f6':m==='Cash'?'#10b981':m==='Cheque'?'#f59e0b':m==='Razorpay'?'#528ff0':m==='Stripe'?'#635bff':m==='UPI'?'#00baf2':'#a78bfa'
+                      return (
+                        <button key={m} onClick={() => setPayForm(p => ({...p, mode: m}))}
+                          className="py-2 px-1 rounded-xl text-[10px] font-bold transition-all text-center"
+                          style={{
+                            background: payForm.mode===m ? mc+'20' : 'var(--bg-input)',
+                            color: payForm.mode===m ? mc : 'var(--text-muted)',
+                            border: `1px solid ${payForm.mode===m ? mc+'60' : 'var(--border)'}`,
+                          }}>
+                          {m}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <label className="label">Transaction / Reference ID</label>
+                  <input className="input-3d text-sm" placeholder="Bank ref, UTR, Stripe charge ID…"
+                    value={payForm.reference} onChange={e => setPayForm(p => ({...p, reference: e.target.value}))} />
+                </div>
+                <div>
+                  <label className="label">Note</label>
+                  <textarea className="input-3d text-sm resize-none" rows={3} placeholder="Optional payment note…"
+                    value={payForm.note || ''} onChange={e => setPayForm(p => ({...p, note: e.target.value}))} />
+                </div>
+              </div>
+            </div>
+            <div className="drawer-footer">
+              <button onClick={() => setShowPayModal(false)}
+                className="flex-1 py-3 rounded-2xl text-sm font-semibold"
+                style={{ background: 'var(--bg-input)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+                Cancel
+              </button>
+              <button onClick={handlePay}
+                className="flex-[2] py-3 rounded-2xl text-sm font-bold text-white transition-all hover:scale-[1.01]"
+                style={{ background: 'linear-gradient(135deg,#10b981,#059669)', boxShadow: '0 6px 20px rgba(16,185,129,0.4)' }}>
+                Record Payment
+              </button>
             </div>
           </div>
-        </div>
+        </>
       )}
-
-      <style>{`@keyframes slideInRight{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}`}</style>
     </>
   )
 }

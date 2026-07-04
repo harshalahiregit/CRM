@@ -10,6 +10,14 @@ use App\Http\Controllers\Api\Hr\InterviewController;
 use App\Http\Controllers\Api\Hr\OfferController;
 use App\Http\Controllers\Api\Hr\OnboardingController;
 use App\Http\Controllers\Api\Hr\EmployeeController;
+// Sales module
+use App\Http\Controllers\Api\Sales\SalesDashboardController;
+use App\Http\Controllers\Api\Sales\ItemController;
+use App\Http\Controllers\Api\Sales\ProposalController;
+use App\Http\Controllers\Api\Sales\EstimateController;
+use App\Http\Controllers\Api\Sales\InvoiceController;
+use App\Http\Controllers\Api\Sales\CreditNoteController;
+use App\Http\Controllers\Api\Sales\DeliveryNoteController;
 use Illuminate\Support\Facades\Route;
 
 // ── Public Auth Routes ──────────────────────────────────────────────────
@@ -116,5 +124,63 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/employees/{employee}',     [EmployeeController::class, 'update']);
         Route::delete('/employees/{employee}',  [EmployeeController::class, 'destroy']);
     });
+
+    // ── Sales & Revenue Module ──────────────────────────────────────────
+    Route::prefix('sales')->group(function () {
+
+        // Dashboard
+        Route::get('/dashboard', [SalesDashboardController::class, 'index']);
+
+        // Items catalog
+        Route::get('/items',              [ItemController::class, 'index']);
+        Route::post('/items',             [ItemController::class, 'store']);
+        Route::get('/items/{item}',       [ItemController::class, 'show']);
+        Route::put('/items/{item}',       [ItemController::class, 'update']);
+        Route::delete('/items/{item}',    [ItemController::class, 'destroy']);
+
+        // Proposals
+        Route::get('/proposals',                              [ProposalController::class, 'index']);
+        Route::post('/proposals',                             [ProposalController::class, 'store']);
+        Route::get('/proposals/{proposal}',                   [ProposalController::class, 'show']);
+        Route::put('/proposals/{proposal}',                   [ProposalController::class, 'update']);
+        Route::delete('/proposals/{proposal}',                [ProposalController::class, 'destroy']);
+        Route::patch('/proposals/{proposal}/send',            [ProposalController::class, 'send']);
+        Route::patch('/proposals/{proposal}/status',          [ProposalController::class, 'updateStatus']);
+
+        // Estimates
+        Route::get('/estimates',                                   [EstimateController::class, 'index']);
+        Route::post('/estimates',                                  [EstimateController::class, 'store']);
+        Route::get('/estimates/{estimate}',                        [EstimateController::class, 'show']);
+        Route::put('/estimates/{estimate}',                        [EstimateController::class, 'update']);
+        Route::delete('/estimates/{estimate}',                     [EstimateController::class, 'destroy']);
+        Route::patch('/estimates/{estimate}/send',                 [EstimateController::class, 'send']);
+        Route::post('/estimates/{estimate}/convert-to-invoice',    [EstimateController::class, 'convertToInvoice']);
+
+        // Invoices
+        Route::get('/invoices',                                    [InvoiceController::class, 'index']);
+        Route::post('/invoices',                                   [InvoiceController::class, 'store']);
+        Route::get('/invoices/{invoice}',                          [InvoiceController::class, 'show']);
+        Route::put('/invoices/{invoice}',                          [InvoiceController::class, 'update']);
+        Route::delete('/invoices/{invoice}',                       [InvoiceController::class, 'destroy']);
+        Route::patch('/invoices/{invoice}/send',                   [InvoiceController::class, 'send']);
+        Route::post('/invoices/{invoice}/payments',                [InvoiceController::class, 'recordPayment']);
+
+        // Credit Notes
+        Route::get('/credit-notes',                                [CreditNoteController::class, 'index']);
+        Route::post('/credit-notes',                               [CreditNoteController::class, 'store']);
+        Route::get('/credit-notes/{creditNote}',                   [CreditNoteController::class, 'show']);
+        Route::delete('/credit-notes/{creditNote}',                [CreditNoteController::class, 'destroy']);
+        Route::post('/credit-notes/{creditNote}/apply',            [CreditNoteController::class, 'applyToInvoice']);
+        Route::post('/credit-notes/{creditNote}/refund',           [CreditNoteController::class, 'refund']);
+
+        // Delivery Notes
+        Route::get('/delivery-notes',                              [DeliveryNoteController::class, 'index']);
+        Route::post('/delivery-notes',                             [DeliveryNoteController::class, 'store']);
+        Route::get('/delivery-notes/{deliveryNote}',               [DeliveryNoteController::class, 'show']);
+        Route::put('/delivery-notes/{deliveryNote}',               [DeliveryNoteController::class, 'update']);
+        Route::patch('/delivery-notes/{deliveryNote}/deliver',     [DeliveryNoteController::class, 'markDelivered']);
+        Route::delete('/delivery-notes/{deliveryNote}',            [DeliveryNoteController::class, 'destroy']);
+    });
 });
+
 

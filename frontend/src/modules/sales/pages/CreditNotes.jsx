@@ -51,8 +51,8 @@ export default function CreditNotes() {
 
   return (
     <>
+      {toast && <div className="fixed top-5 right-5 z-[9999] px-5 py-3 rounded-2xl text-sm font-semibold text-white shadow-2xl" style={{background:toast.type==='success'?'linear-gradient(135deg,#10b981,#059669)':'linear-gradient(135deg,#f87171,#ef4444)'}}>{toast.msg}</div>}
       <div className="space-y-6 animate-[tiltIn_0.35s_ease_forwards]" onClick={()=>setOpenMenu(null)}>
-        {toast && <div className="fixed top-5 right-5 z-[9999] px-5 py-3 rounded-2xl text-sm font-semibold text-white shadow-2xl" style={{background:toast.type==='success'?'linear-gradient(135deg,#10b981,#059669)':'linear-gradient(135deg,#f87171,#ef4444)'}}>{toast.msg}</div>}
 
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
@@ -232,34 +232,85 @@ export default function CreditNotes() {
         </>
       )}
 
-      {/* ── Refund Modal ── */}
+      {/* ── Refund Drawer ── */}
       {showRefund && selectedCN && (
-        <div className="modal-backdrop" onClick={()=>setShowRefund(false)}>
-          <div className="modal-box max-w-md" onClick={e=>e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-5"><h2 className="font-black text-lg" style={{color:'var(--text-h)'}}>Create Refund</h2><button onClick={()=>setShowRefund(false)} style={{color:'var(--text-muted)'}}><X size={18}/></button></div>
-            <div className="p-3 rounded-xl mb-4" style={{background:'rgba(16,185,129,0.06)',border:'1px solid rgba(16,185,129,0.2)'}}>
-              <p className="text-xs font-bold" style={{color:'#10b981'}}>{selectedCN.number}</p>
-              <p className="text-xs mt-0.5" style={{color:'var(--text-muted)'}}>{selectedCN.client} · Credit: {fmt(selectedCN.amount)}</p>
+        <>
+          <div className="drawer-backdrop" onClick={() => setShowRefund(false)} />
+          <div className="drawer-panel" style={{ width: 'min(460px, 95vw)' }}>
+            <div className="drawer-header">
+              <div>
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl flex items-center justify-center"
+                    style={{ background: 'linear-gradient(135deg,#10b981,#059669)', boxShadow: '0 4px 12px rgba(16,185,129,0.4)' }}>
+                    <Receipt size={14} className="text-white" />
+                  </div>
+                  <h2 className="font-black text-lg" style={{ color: 'var(--text-h)', letterSpacing: '-0.02em' }}>Create Refund</h2>
+                </div>
+                <p className="text-xs mt-1 ml-[42px]" style={{ color: 'var(--text-muted)' }}>Issue a cash refund against this credit note</p>
+              </div>
+              <button onClick={() => setShowRefund(false)}
+                className="w-9 h-9 rounded-xl flex items-center justify-center transition-colors hover:bg-[rgba(239,68,68,0.08)]"
+                style={{ border: '1px solid var(--border)' }}>
+                <X size={16} style={{ color: 'var(--text-muted)' }} />
+              </button>
             </div>
-            <div className="space-y-3">
-              <div><label className="label">Refund Amount *</label><input type="number" className="input-3d text-sm" placeholder="Amount to refund" value={refundForm.amount} onChange={e=>setRefundForm(p=>({...p,amount:e.target.value}))}/></div>
-              <div><label className="label">Refund Method</label>
-                <select className="input-3d text-sm" value={refundForm.mode} onChange={e=>setRefundForm(p=>({...p,mode:e.target.value}))}>
-                  {PAY_MODES.map(m=><option key={m} value={m}>{m}</option>)}
-                </select>
+            <div className="drawer-body">
+              <div className="p-4 rounded-2xl" style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)' }}>
+                <p className="text-xs font-bold" style={{ color: '#10b981' }}>{selectedCN.number}</p>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{selectedCN.client} · Credit: {fmt(selectedCN.amount)}</p>
               </div>
-              <div><label className="label">Reference</label><input className="input-3d text-sm" placeholder="Transaction reference" value={refundForm.reference} onChange={e=>setRefundForm(p=>({...p,reference:e.target.value}))}/></div>
-              <div><label className="label">Note</label><input className="input-3d text-sm" placeholder="Refund reason / note" value={refundForm.note} onChange={e=>setRefundForm(p=>({...p,note:e.target.value}))}/></div>
-              <div className="flex gap-3 pt-1">
-                <button onClick={()=>setShowRefund(false)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold" style={{background:'var(--bg-input)',color:'var(--text-muted)',border:'1px solid var(--border)'}}>Cancel</button>
-                <button onClick={handleRefund} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white" style={{background:'linear-gradient(135deg,#10b981,#059669)'}}>Record Refund</button>
+              <div className="space-y-4">
+                <div>
+                  <label className="label">Refund Amount *</label>
+                  <input type="number" className="input-3d text-sm" placeholder="Amount to refund"
+                    value={refundForm.amount} onChange={e => setRefundForm(p => ({...p, amount: e.target.value}))} />
+                </div>
+                <div>
+                  <label className="label">Refund Method</label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {PAY_MODES.map(m => {
+                      const mc = m==='Bank Transfer'?'#3b82f6':m==='Cash'?'#10b981':m==='Cheque'?'#f59e0b':m==='Razorpay'?'#528ff0':m==='Stripe'?'#635bff':m==='UPI'?'#00baf2':'#a78bfa'
+                      return (
+                        <button key={m} onClick={() => setRefundForm(p => ({...p, mode: m}))}
+                          className="py-2 px-1 rounded-xl text-[10px] font-bold transition-all text-center"
+                          style={{
+                            background: refundForm.mode===m ? mc+'20' : 'var(--bg-input)',
+                            color: refundForm.mode===m ? mc : 'var(--text-muted)',
+                            border: `1px solid ${refundForm.mode===m ? mc+'60' : 'var(--border)'}`,
+                          }}>
+                          {m}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <label className="label">Reference</label>
+                  <input className="input-3d text-sm" placeholder="Transaction reference"
+                    value={refundForm.reference} onChange={e => setRefundForm(p => ({...p, reference: e.target.value}))} />
+                </div>
+                <div>
+                  <label className="label">Note</label>
+                  <textarea className="input-3d text-sm resize-none" rows={3} placeholder="Refund reason / note"
+                    value={refundForm.note} onChange={e => setRefundForm(p => ({...p, note: e.target.value}))} />
+                </div>
               </div>
+            </div>
+            <div className="drawer-footer">
+              <button onClick={() => setShowRefund(false)}
+                className="flex-1 py-3 rounded-2xl text-sm font-semibold"
+                style={{ background: 'var(--bg-input)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+                Cancel
+              </button>
+              <button onClick={handleRefund}
+                className="flex-[2] py-3 rounded-2xl text-sm font-bold text-white transition-all hover:scale-[1.01]"
+                style={{ background: 'linear-gradient(135deg,#10b981,#059669)', boxShadow: '0 6px 20px rgba(16,185,129,0.4)' }}>
+                Record Refund
+              </button>
             </div>
           </div>
-        </div>
+        </>
       )}
-
-      <style>{`@keyframes slideInRight{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}`}</style>
     </>
   )
 }

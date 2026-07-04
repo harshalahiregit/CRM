@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Plus, Send, Receipt, Copy, Trash2, X, MoreVertical,
-  LayoutGrid, List, FileText, User, Tag
+  LayoutGrid, List, FileText, User, Tag, MapPin, ChevronDown
 } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
 import StatusBadge from '../components/StatusBadge'
+import LineItemsTable from '../components/LineItemsTable'
 
 const fmt = v => '₹' + Number(v || 0).toLocaleString('en-IN')
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
@@ -18,6 +20,8 @@ const EMPTY_FORM = {
   valid_until: '', currency: 'INR',
   discount_type: 'none', sale_agent: '', status: 'Draft',
   adminnote: '', clientnote: '', terms: '', tags: '',
+  address: '', city: '', state: '', country: 'India', zip: '',
+  line_items: [],
 }
 
 const PIPE_COLS = [
@@ -29,11 +33,13 @@ const PIPE_COLS = [
 ]
 
 export default function Estimates() {
+  const navigate = useNavigate()
   const [data, setData]         = useState([])
   const [loading, setLoading]   = useState(true)
   const [filter, setFilter]     = useState('All')
   const [viewMode, setViewMode] = useState('table')   // table | pipeline
   const [showDrawer, setShowDrawer] = useState(false)
+  const [showAddr, setShowAddr]  = useState(false)
   const [toast, setToast]       = useState(null)
   const [openMenu, setOpenMenu] = useState(null)
   const [form, setForm]         = useState(EMPTY_FORM)
@@ -67,14 +73,14 @@ export default function Estimates() {
 
   return (
     <>
-      <div className="space-y-6 animate-[tiltIn_0.35s_ease_forwards]" onClick={() => setOpenMenu(null)}>
-
       {toast && (
-        <div className="fixed top-5 right-5 z-[9999] px-5 py-3 rounded-2xl text-sm font-semibold text-white shadow-2xl animate-[slideDown_0.3s_ease]"
+        <div className="fixed top-5 right-5 z-[9999] flex items-center gap-2.5 px-5 py-3 rounded-2xl text-sm font-semibold text-white shadow-2xl animate-[slideDown_0.3s_ease]"
           style={{ background: toast.type === 'success' ? 'linear-gradient(135deg,#10b981,#059669)' : 'linear-gradient(135deg,#f87171,#ef4444)' }}>
           {toast.msg}
         </div>
       )}
+
+      <div className="space-y-6 animate-[tiltIn_0.35s_ease_forwards]" onClick={() => setOpenMenu(null)}>
 
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -160,7 +166,8 @@ export default function Estimates() {
                 </thead>
                 <tbody>
                   {data.map(e => (
-                    <tr key={e.id} className="transition-colors" style={{ borderBottom: '1px solid var(--border)' }}
+                    <tr key={e.id} className="cursor-pointer transition-colors" style={{ borderBottom: '1px solid var(--border)' }}
+                      onClick={() => navigate(`/app/sales/estimates/${e.id}`)}
                       onMouseEnter={ev => ev.currentTarget.style.background = 'rgba(124,58,237,0.04)'}
                       onMouseLeave={ev => ev.currentTarget.style.background = 'transparent'}>
                       <td className="py-3.5 px-4 font-bold whitespace-nowrap" style={{ color: '#a78bfa' }}>{e.reference}</td>
@@ -376,6 +383,43 @@ export default function Estimates() {
                     </div>
                   </div>
                 </div>
+              </div>
+
+              {/* Billing Address */}
+              <div>
+                <button
+                  onClick={() => setShowAddr(a => !a)}
+                  className="flex items-center gap-2 w-full text-left"
+                  style={{ color: '#a78bfa' }}>
+                  <MapPin size={13} />
+                  <span className="label-caps" style={{ color: '#a78bfa' }}>Billing / Shipping Address</span>
+                  <ChevronDown size={13} className={`ml-auto transition-transform ${showAddr ? 'rotate-180' : ''}`} />
+                </button>
+                {showAddr && (
+                  <div className="mt-4 space-y-4">
+                    <div>
+                      <label className="label">Street Address</label>
+                      <input className="input-3d text-sm" placeholder="Street address" value={form.address} onChange={e => sf('address', e.target.value)} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div><label className="label">City</label><input className="input-3d text-sm" placeholder="Mumbai" value={form.city} onChange={e => sf('city', e.target.value)} /></div>
+                      <div><label className="label">State</label><input className="input-3d text-sm" placeholder="Maharashtra" value={form.state} onChange={e => sf('state', e.target.value)} /></div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div><label className="label">Country</label><input className="input-3d text-sm" placeholder="India" value={form.country} onChange={e => sf('country', e.target.value)} /></div>
+                      <div><label className="label">ZIP / PIN</label><input className="input-3d text-sm" placeholder="400001" value={form.zip} onChange={e => sf('zip', e.target.value)} /></div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Line Items */}
+              <div>
+                <p className="label-caps mb-4" style={{ color: '#a78bfa' }}>Line Items</p>
+                <LineItemsTable
+                  items={form.line_items}
+                  onChange={rows => sf('line_items', rows)}
+                />
               </div>
 
               {/* Notes section */}
