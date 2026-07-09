@@ -2,7 +2,7 @@
 
 namespace App\Notifications\WhatsApp;
 
-use App\Models\HrCandidate;
+use App\Models\Hr\HrCandidate;
 use App\Services\WhatsAppService;
 use Illuminate\Support\Facades\Log;
 

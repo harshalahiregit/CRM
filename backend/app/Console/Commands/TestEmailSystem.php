@@ -3,9 +3,9 @@
 namespace App\Console\Commands;
 
 use App\Models\User;
-use App\Models\HrJobPosting;
-use App\Models\HrCandidate;
-use App\Models\HrInterviewRound;
+use App\Models\Hr\HrJobPosting;
+use App\Models\Hr\HrCandidate;
+use App\Models\Hr\HrInterviewRound;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Mail;
 

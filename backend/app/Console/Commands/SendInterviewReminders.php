@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Models\HrInterviewRound;
+use App\Models\Hr\HrInterviewRound;
 use App\Notifications\WhatsApp\InterviewReminderNotification;
 use Illuminate\Console\Command;
 use Carbon\Carbon;

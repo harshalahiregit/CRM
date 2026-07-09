@@ -2,8 +2,8 @@
 
 namespace App\Console\Commands;
 
-use App\Models\HrCandidate;
-use App\Models\HrInterviewRound;
+use App\Models\Hr\HrCandidate;
+use App\Models\Hr\HrInterviewRound;
 use App\Services\WhatsAppService;
 use App\Notifications\WhatsApp\ApplicationReceivedNotification;
 use App\Notifications\WhatsApp\InterviewScheduledNotification;

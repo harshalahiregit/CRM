@@ -1,240 +1,37 @@
-// Sales & Revenue — Real API Service
-// Uses the shared axios instance from @/lib/api (Bearer token auto-attached)
-// All calls go to /api/sales/*
+// Sales & Revenue — aggregates the per-resource API modules below.
+// Kept for backward compatibility with existing `salesApi.xxx.yyy()` call
+// sites; new code should import the per-resource modules directly
+// (leadApi, proposalApi, estimateApi, invoiceApi, creditNoteApi,
+// deliveryNoteApi, itemApi, dashboardApi, leadSettingsApi).
 
-import api from '@/lib/api'
-
-// ── Helpers ───────────────────────────────────────────────────────────
-
-const handleErr = (err) => {
-  const msg = err?.response?.data?.error
-           || err?.response?.data?.message
-           || 'Something went wrong'
-  throw new Error(msg)
-}
-
-// ── API ───────────────────────────────────────────────────────────────
+import { leadApi } from '@/services/leadApi'
+import { leadSettingsApi } from '@/services/leadSettingsApi'
+import { proposalApi } from '@/services/proposalApi'
+import { estimateApi } from '@/services/estimateApi'
+import { invoiceApi, paymentApi } from '@/services/invoiceApi'
+import { creditNoteApi } from '@/services/creditNoteApi'
+import { deliveryNoteApi } from '@/services/deliveryNoteApi'
+import { itemApi } from '@/services/itemApi'
+import { dashboardApi } from '@/services/dashboardApi'
 
 export const salesApi = {
-
-  dashboard: {
-    get: () => api.get('/sales/dashboard').then(r => r.data).catch(handleErr),
-  },
-
-  proposals: {
-    list: (params = {}) =>
-      api.get('/sales/proposals', { params }).then(r => r.data).catch(handleErr),
-
-    get: (id) =>
-      api.get(`/sales/proposals/${id}`).then(r => r.data).catch(handleErr),
-
-    create: (data) =>
-      api.post('/sales/proposals', data).then(r => r.data).catch(handleErr),
-
-    update: (id, data) =>
-      api.put(`/sales/proposals/${id}`, data).then(r => r.data).catch(handleErr),
-
-    delete: (id) =>
-      api.delete(`/sales/proposals/${id}`).then(r => r.data).catch(handleErr),
-
-    send: (id) =>
-      api.patch(`/sales/proposals/${id}/send`).then(r => r.data).catch(handleErr),
-
-    updateStatus: (id, status) =>
-      api.patch(`/sales/proposals/${id}/status`, { status }).then(r => r.data).catch(handleErr),
-  },
-
-  estimates: {
-    list: (params = {}) =>
-      api.get('/sales/estimates', { params }).then(r => r.data).catch(handleErr),
-
-    get: (id) =>
-      api.get(`/sales/estimates/${id}`).then(r => r.data).catch(handleErr),
-
-    create: (data) =>
-      api.post('/sales/estimates', data).then(r => r.data).catch(handleErr),
-
-    update: (id, data) =>
-      api.put(`/sales/estimates/${id}`, data).then(r => r.data).catch(handleErr),
-
-    delete: (id) =>
-      api.delete(`/sales/estimates/${id}`).then(r => r.data).catch(handleErr),
-
-    send: (id) =>
-      api.patch(`/sales/estimates/${id}/send`).then(r => r.data).catch(handleErr),
-
-    convertToInvoice: (id, data = {}) =>
-      api.post(`/sales/estimates/${id}/convert-to-invoice`, data).then(r => r.data).catch(handleErr),
-  },
-
-  invoices: {
-    list: (params = {}) =>
-      api.get('/sales/invoices', { params }).then(r => r.data).catch(handleErr),
-
-    get: (id) =>
-      api.get(`/sales/invoices/${id}`).then(r => r.data).catch(handleErr),
-
-    create: (data) =>
-      api.post('/sales/invoices', data).then(r => r.data).catch(handleErr),
-
-    update: (id, data) =>
-      api.put(`/sales/invoices/${id}`, data).then(r => r.data).catch(handleErr),
-
-    delete: (id) =>
-      api.delete(`/sales/invoices/${id}`).then(r => r.data).catch(handleErr),
-
-    send: (id) =>
-      api.patch(`/sales/invoices/${id}/send`).then(r => r.data).catch(handleErr),
-
-    recordPayment: (id, paymentData) =>
-      api.post(`/sales/invoices/${id}/payments`, paymentData).then(r => r.data).catch(handleErr),
-  },
-
-  creditNotes: {
-    list: (params = {}) =>
-      api.get('/sales/credit-notes', { params }).then(r => r.data).catch(handleErr),
-
-    get: (id) =>
-      api.get(`/sales/credit-notes/${id}`).then(r => r.data).catch(handleErr),
-
-    create: (data) =>
-      api.post('/sales/credit-notes', data).then(r => r.data).catch(handleErr),
-
-    applyToInvoice: (id, invoiceId) =>
-      api.post(`/sales/credit-notes/${id}/apply`, { invoice_id: invoiceId }).then(r => r.data).catch(handleErr),
-
-    refund: (id, data) =>
-      api.post(`/sales/credit-notes/${id}/refund`, data).then(r => r.data).catch(handleErr),
-
-    void: (id) =>
-      api.delete(`/sales/credit-notes/${id}`).then(r => r.data).catch(handleErr),
-  },
-
-  deliveryNotes: {
-    list: (params = {}) =>
-      api.get('/sales/delivery-notes', { params }).then(r => r.data).catch(handleErr),
-
-    get: (id) =>
-      api.get(`/sales/delivery-notes/${id}`).then(r => r.data).catch(handleErr),
-
-    create: (data) =>
-      api.post('/sales/delivery-notes', data).then(r => r.data).catch(handleErr),
-
-    update: (id, data) =>
-      api.put(`/sales/delivery-notes/${id}`, data).then(r => r.data).catch(handleErr),
-
-    markDelivered: (id) =>
-      api.patch(`/sales/delivery-notes/${id}/deliver`).then(r => r.data).catch(handleErr),
-
-    delete: (id) =>
-      api.delete(`/sales/delivery-notes/${id}`).then(r => r.data).catch(handleErr),
-  },
-
-  payments: {
-    list: (params = {}) =>
-      api.get('/sales/invoices', { params: { ...params, include_payments: true } })
-        .then(r => r.data.flatMap(inv => (inv.payments || []).map(p => ({ ...p, invoice_number: inv.number, client: inv.client_id }))))
-        .catch(handleErr),
-  },
-
-  items: {
-    list: (params = {}) =>
-      api.get('/sales/items', { params }).then(r => r.data).catch(handleErr),
-
-    get: (id) =>
-      api.get(`/sales/items/${id}`).then(r => r.data).catch(handleErr),
-
-    create: (data) =>
-      api.post('/sales/items', data).then(r => r.data).catch(handleErr),
-
-    update: (id, data) =>
-      api.put(`/sales/items/${id}`, data).then(r => r.data).catch(handleErr),
-
-    delete: (id) =>
-      api.delete(`/sales/items/${id}`).then(r => r.data).catch(handleErr),
-  },
-
-  // ── Leads ──────────────────────────────────────────────────────────
-
-  leads: {
-    list: (params = {}) =>
-      api.get('/sales/leads', { params }).then(r => r.data).catch(handleErr),
-
-    get: (id) =>
-      api.get(`/sales/leads/${id}`).then(r => r.data).catch(handleErr),
-
-    create: (data) =>
-      api.post('/sales/leads', data).then(r => r.data).catch(handleErr),
-
-    update: (id, data) =>
-      api.put(`/sales/leads/${id}`, data).then(r => r.data).catch(handleErr),
-
-    delete: (id) =>
-      api.delete(`/sales/leads/${id}`).then(r => r.data).catch(handleErr),
-
-    kanban: () =>
-      api.get('/sales/leads/kanban').then(r => r.data).catch(handleErr),
-
-    summary: () =>
-      api.get('/sales/leads/summary').then(r => r.data).catch(handleErr),
-
-    updateStatus: (id, statusId) =>
-      api.patch(`/sales/leads/${id}/status`, { status_id: statusId }).then(r => r.data).catch(handleErr),
-
-    assign: (id, userId) =>
-      api.patch(`/sales/leads/${id}/assign`, { assigned_to: userId }).then(r => r.data).catch(handleErr),
-
-    markLost: (id) =>
-      api.patch(`/sales/leads/${id}/lost`).then(r => r.data).catch(handleErr),
-
-    markJunk: (id) =>
-      api.patch(`/sales/leads/${id}/junk`).then(r => r.data).catch(handleErr),
-
-    restore: (id) =>
-      api.patch(`/sales/leads/${id}/restore`).then(r => r.data).catch(handleErr),
-
-    convert: (id, data = {}) =>
-      api.post(`/sales/leads/${id}/convert`, data).then(r => r.data).catch(handleErr),
-
-    addNote: (id, data) =>
-      api.post(`/sales/leads/${id}/notes`, data).then(r => r.data).catch(handleErr),
-
-    submitQuestionnaire: (id, data) =>
-      api.post(`/sales/leads/${id}/questionnaire-response`, data).then(r => r.data).catch(handleErr),
-
-    bulkAction: (data) =>
-      api.post('/sales/leads/bulk', data).then(r => r.data).catch(handleErr),
-  },
-
-  leadStatuses: {
-    list: () => api.get('/sales/lead-statuses').then(r => r.data).catch(handleErr),
-    create: (data) => api.post('/sales/lead-statuses', data).then(r => r.data).catch(handleErr),
-    update: (id, data) => api.put(`/sales/lead-statuses/${id}`, data).then(r => r.data).catch(handleErr),
-    delete: (id) => api.delete(`/sales/lead-statuses/${id}`).then(r => r.data).catch(handleErr),
-  },
-
-  leadSources: {
-    list: () => api.get('/sales/lead-sources').then(r => r.data).catch(handleErr),
-    create: (data) => api.post('/sales/lead-sources', data).then(r => r.data).catch(handleErr),
-    update: (id, data) => api.put(`/sales/lead-sources/${id}`, data).then(r => r.data).catch(handleErr),
-    delete: (id) => api.delete(`/sales/lead-sources/${id}`).then(r => r.data).catch(handleErr),
-  },
-
-  leadGoals: {
-    list: (params = {}) => api.get('/sales/lead-goals', { params }).then(r => r.data).catch(handleErr),
-    create: (data) => api.post('/sales/lead-goals', data).then(r => r.data).catch(handleErr),
-    update: (id, data) => api.put(`/sales/lead-goals/${id}`, data).then(r => r.data).catch(handleErr),
-    delete: (id) => api.delete(`/sales/lead-goals/${id}`).then(r => r.data).catch(handleErr),
-  },
-
-  leadQuestionnaires: {
-    list: () => api.get('/sales/lead-questionnaires').then(r => r.data).catch(handleErr),
-    create: (data) => api.post('/sales/lead-questionnaires', data).then(r => r.data).catch(handleErr),
-    update: (id, data) => api.put(`/sales/lead-questionnaires/${id}`, data).then(r => r.data).catch(handleErr),
-    delete: (id) => api.delete(`/sales/lead-questionnaires/${id}`).then(r => r.data).catch(handleErr),
-  },
+  dashboard: dashboardApi.sales,
+  proposals: proposalApi,
+  estimates: estimateApi,
+  invoices: invoiceApi,
+  creditNotes: creditNoteApi,
+  deliveryNotes: deliveryNoteApi,
+  payments: paymentApi,
+  items: itemApi,
+  leads: leadApi,
+  leadStatuses: leadSettingsApi.statuses,
+  leadSources: leadSettingsApi.sources,
+  leadGoals: leadSettingsApi.goals,
+  leadQuestionnaires: leadSettingsApi.questionnaires,
 
   // Kept for dropdowns that need a flat client list
   // Replace with a real /contacts endpoint when that module is built
   clients: [],
 }
+
+export default salesApi

@@ -3,45 +3,28 @@
 namespace App\Http\Controllers\Api\Hr;
 
 use App\Http\Controllers\Controller;
-use App\Models\HrOnboarding;
-use App\Models\HrEmployee;
+use App\Http\Requests\Hr\StoreOnboardingRequest;
+use App\Models\Hr\HrOnboarding;
+use App\Services\Hr\OnboardingService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
 
 class OnboardingController extends Controller
 {
-    public function index(Request $request)
+    public function __construct(private OnboardingService $onboardingService)
     {
-        $query = HrOnboarding::where('tenant_id', $request->user()->tenant_id);
-        if ($request->filled('status') && $request->status !== 'All') {
-            $query->where('status', $request->status);
-        }
-        return response()->json($query->latest()->get());
     }
 
-    public function store(Request $request)
+    public function index(Request $request)
     {
-        $validated = $request->validate([
-            'candidate_id'   => 'nullable|exists:hr_candidates,id',
-            'candidate_name' => 'required|string',
-            'position'       => 'required|string',
-            'joining_date'   => 'required|date',
-            'department'     => 'nullable|string',
-        ]);
+        return response()->json(
+            $this->onboardingService->list($request->user()->tenant_id, $request->only('status'))
+        );
+    }
 
-        $validated['tenant_id'] = $request->user()->tenant_id;
-        $record = HrOnboarding::create([...$validated, 'status' => 'Pending']);
-        
-        // Send welcome email
-        if ($validated['candidate_id']) {
-            $candidate = HrCandidate::find($validated['candidate_id']);
-            if ($candidate && $candidate->email) {
-                \Mail::to($candidate->email)->send(
-                    new \App\Mail\OnboardingWelcomeMail($record)
-                );
-            }
-        }
-        
+    public function store(StoreOnboardingRequest $request)
+    {
+        $record = $this->onboardingService->create($request->validated(), $request->user()->tenant_id);
+
         return response()->json($record, 201);
     }
 
@@ -54,52 +37,25 @@ class OnboardingController extends Controller
     {
         // Handle document checklist updates
         if ($request->has('checklist')) {
-            $onboarding->update(['document_checklist' => $request->checklist]);
-            return response()->json($onboarding->fresh());
+            $updated = $this->onboardingService->toggleChecklist($onboarding, $request->input('checklist'));
+
+            return response()->json($updated);
         }
 
         // Handle step toggles
-        $request->validate(['step' => 'required|in:doc_verification,joining_confirmed,emp_id_generated,dept_assigned,manager_assigned,record_created']);
+        $validated = $request->validate([
+            'step' => 'required|in:doc_verification,joining_confirmed,emp_id_generated,dept_assigned,manager_assigned,record_created',
+        ]);
 
-        $col = 'step_'.$request->step;
-        $onboarding->update([$col => !$onboarding->$col]);
+        $updated = $this->onboardingService->toggleStep($onboarding, $validated['step']);
 
-        // Recalculate status
-        $steps = [
-            $onboarding->step_doc_verification,
-            $onboarding->step_joining_confirmed,
-            $onboarding->step_emp_id_generated,
-            $onboarding->step_dept_assigned,
-            $onboarding->step_manager_assigned,
-            $onboarding->step_record_created,
-        ];
-        $doneCount = count(array_filter($steps));
-        $status = $doneCount === 0 ? 'Pending' : ($doneCount === 6 ? 'Completed' : 'In Progress');
-        $onboarding->update(['status' => $status]);
-
-        // If all done, auto-create employee record
-        if ($status === 'Completed' && !HrEmployee::where('candidate_id', $onboarding->candidate_id)->exists()) {
-            $empCode = 'SNE-'.date('Y').'-'.str_pad(HrEmployee::where('tenant_id', $onboarding->tenant_id)->count() + 1, 3, '0', STR_PAD_LEFT);
-            HrEmployee::create([
-                'tenant_id'              => $onboarding->tenant_id,
-                'employee_code'          => $empCode,
-                'candidate_id'           => $onboarding->candidate_id,
-                'onboarding_id'          => $onboarding->id,
-                'name'                   => $onboarding->candidate_name,
-                'department'             => $onboarding->department,
-                'designation'            => $onboarding->position,
-                'reporting_manager_name' => $onboarding->reporting_manager_name,
-                'joining_date'           => $onboarding->joining_date,
-                'status'                 => 'Active',
-            ]);
-        }
-
-        return response()->json($onboarding->fresh());
+        return response()->json($updated);
     }
 
     public function destroy(HrOnboarding $onboarding)
     {
-        $onboarding->delete();
+        $this->onboardingService->destroy($onboarding);
+
         return response()->json(['message' => 'Deleted']);
     }
 }

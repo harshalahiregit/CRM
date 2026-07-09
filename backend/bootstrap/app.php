@@ -1,9 +1,12 @@
 <?php
 
+use App\Exceptions\BusinessException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -25,10 +28,33 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        // Log every caught exception with full stack context
+        $exceptions->report(function (\Throwable $e) {
+            Log::channel('errors')->error($e->getMessage(), [
+                'exception' => get_class($e),
+                'file'      => $e->getFile(),
+                'line'      => $e->getLine(),
+                'trace'     => $e->getTraceAsString(),
+            ]);
+        });
+
         // JSON error responses for API routes
         $exceptions->render(function (\Throwable $e, Request $request) {
             if ($request->is('api/*') || $request->wantsJson()) {
-                $status = method_exists($e, 'getStatusCode') ? $e->getStatusCode() : 500;
+                // Preserve the existing {status, message, errors} shape the frontend
+                // was already built against for form-validation failures.
+                if ($e instanceof ValidationException) {
+                    return response()->json([
+                        'status'  => 'error',
+                        'message' => 'Validation failed',
+                        'errors'  => $e->errors(),
+                    ], $e->status);
+                }
+
+                $status = $e instanceof BusinessException
+                    ? $e->getStatusCode()
+                    : (method_exists($e, 'getStatusCode') ? $e->getStatusCode() : 500);
+
                 return response()->json([
                     'status'  => 'error',
                     'message' => $e->getMessage() ?: 'Server error',

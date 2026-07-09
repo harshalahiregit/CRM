@@ -2,7 +2,7 @@
 
 namespace App\Services;
 
-use App\Models\HrWhatsAppLog;
+use App\Models\Hr\HrWhatsAppLog;
 use Illuminate\Support\Facades\Log;
 use Twilio\Rest\Client;
 

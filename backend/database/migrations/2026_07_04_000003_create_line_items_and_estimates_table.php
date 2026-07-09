@@ -11,7 +11,7 @@ return new class extends Migration
         // Shared line_items table for proposals, estimates, invoices, credit_notes
         Schema::create('sales_line_items', function (Blueprint $table) {
             $table->id();
-            $table->string('lineable_type');  // e.g. App\Models\Proposal
+            $table->string('lineable_type');  // e.g. App\Models\Sales\Proposal
             $table->unsignedBigInteger('lineable_id');
             $table->foreignId('item_id')->nullable()->constrained('sales_items')->nullOnDelete();
             $table->string('item_name');

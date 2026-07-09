@@ -3,50 +3,30 @@
 namespace App\Http\Controllers\Api\Hr;
 
 use App\Http\Controllers\Controller;
-use App\Models\HrOffer;
-use App\Models\HrCandidate;
+use App\Http\Requests\Hr\StoreOfferRequest;
+use App\Http\Requests\Hr\UpdateOfferStatusRequest;
+use App\Models\Hr\HrOffer;
+use App\Services\Hr\OfferService;
 use Illuminate\Http\Request;
 
 class OfferController extends Controller
 {
-    public function index(Request $request)
+    public function __construct(private OfferService $offerService)
     {
-        $query = HrOffer::with('candidate')
-            ->whereHas('candidate', function($q) use ($request) {
-                $q->where('tenant_id', $request->user()->tenant_id);
-            });
-        if ($request->filled('status') && $request->status !== 'All') {
-            $query->where('status', $request->status);
-        }
-        return response()->json($query->latest()->get());
     }
 
-    public function store(Request $request)
+    public function index(Request $request)
     {
-        $validated = $request->validate([
-            'candidate_id'    => 'required|exists:hr_candidates,id',
-            'position'        => 'required|string',
-            'department'      => 'required|string',
-            'offered_ctc'     => 'required|numeric|min:0',
-            'joining_date'    => 'required|date',
-            'probation_period'=> 'nullable|string',
-            'notice_period'   => 'nullable|string',
-            'validity_date'   => 'nullable|date',
-        ]);
+        return response()->json(
+            $this->offerService->list($request->user()->tenant_id, $request->only('status'))
+        );
+    }
 
-        // Verify candidate belongs to user's tenant
-        $candidate = HrCandidate::where('id', $validated['candidate_id'])
-            ->where('tenant_id', $request->user()->tenant_id)
-            ->firstOrFail();
+    public function store(StoreOfferRequest $request)
+    {
+        $offer = $this->offerService->create($request->validated(), $request->user()->tenant_id);
 
-        $offer = HrOffer::create([...$validated, 'status' => 'Generated']);
-
-        // Move candidate to Offer stage
-        HrCandidate::where('id', $validated['candidate_id'])
-            ->where('tenant_id', $request->user()->tenant_id)
-            ->update(['stage' => 'Offer']);
-
-        return response()->json($offer->load('candidate'), 201);
+        return response()->json($offer, 201);
     }
 
     public function show(HrOffer $offer)
@@ -56,47 +36,22 @@ class OfferController extends Controller
 
     public function send(HrOffer $offer)
     {
-        $offer->update(['status' => 'Sent', 'sent_at' => now()]);
-        
-        // Send offer letter email
-        if ($offer->candidate && $offer->candidate->email) {
-            \Mail::to($offer->candidate->email)->send(
-                new \App\Mail\OfferLetterMail($offer)
-            );
-        }
-        
-        return response()->json($offer);
+        $updated = $this->offerService->send($offer);
+
+        return response()->json($updated);
     }
 
-    public function updateStatus(Request $request, HrOffer $offer)
+    public function updateStatus(UpdateOfferStatusRequest $request, HrOffer $offer)
     {
-        $request->validate([
-            'status'           => 'required|in:Generated,Sent,Accepted,Rejected',
-            'rejection_reason' => 'nullable|string|max:500',
-        ]);
+        $updated = $this->offerService->updateStatus($offer, $request->validated('status'), $request->validated('rejection_reason'));
 
-        $data = ['status' => $request->status];
-
-        if ($request->status === 'Accepted') {
-            $data['accepted_at'] = now();
-            // Move candidate to Hired
-            HrCandidate::where('id', $offer->candidate_id)->update(['stage' => 'Hired', 'final_decision' => 'Selected']);
-        }
-
-        if ($request->status === 'Rejected') {
-            $data['rejection_reason'] = $request->rejection_reason;
-            // Update candidate's final decision
-            HrCandidate::where('id', $offer->candidate_id)->update(['final_decision' => 'Rejected']);
-        }
-
-        $offer->update($data);
-        return response()->json($offer);
+        return response()->json($updated);
     }
-
 
     public function destroy(HrOffer $offer)
     {
-        $offer->delete();
+        $this->offerService->destroy($offer);
+
         return response()->json(['message' => 'Deleted']);
     }
 }
