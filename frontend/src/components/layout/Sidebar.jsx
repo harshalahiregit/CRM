@@ -4,9 +4,9 @@ import {
   BarChart2, Settings, ChevronLeft, ChevronRight,
   LogOut, User, Moon, Sun, Sparkles, Zap, Package,
   UserCheck, CalendarDays, FileText, Rocket, Building2,
-  ClipboardList, ChevronDown, Shield, UserCog
-  ClipboardList, ChevronDown, IndianRupee, FileSignature,
-  CreditCard, FileX, ShoppingBag, UserPlus
+  ClipboardList, ChevronDown, Shield, UserCog,
+  IndianRupee, FileSignature, CreditCard, FileX,
+  ShoppingBag, UserPlus
 } from 'lucide-react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
