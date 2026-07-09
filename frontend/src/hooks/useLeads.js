@@ -83,6 +83,38 @@ export function useConvertLead() {
   })
 }
 
+export function useMarkLeadLost() {
+  const invalidate = useInvalidateLeads()
+  return useMutation({
+    mutationFn: (id) => leadApi.markLost(id),
+    onSuccess: invalidate,
+  })
+}
+
+export function useMarkLeadJunk() {
+  const invalidate = useInvalidateLeads()
+  return useMutation({
+    mutationFn: (id) => leadApi.markJunk(id),
+    onSuccess: invalidate,
+  })
+}
+
+export function useRestoreLead() {
+  const invalidate = useInvalidateLeads()
+  return useMutation({
+    mutationFn: (id) => leadApi.restore(id),
+    onSuccess: invalidate,
+  })
+}
+
+export function useAddLeadNote() {
+  const invalidate = useInvalidateLeads()
+  return useMutation({
+    mutationFn: ({ id, data }) => leadApi.addNote(id, data),
+    onSuccess: invalidate,
+  })
+}
+
 export function useBulkLeadAction() {
   const invalidate = useInvalidateLeads()
   return useMutation({
