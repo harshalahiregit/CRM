@@ -57,10 +57,7 @@ export default function AppShell() {
         className="transition-all duration-300 pt-16 pb-20 md:pb-6 min-h-screen"
         style={{ paddingLeft: `${sidebarW}px` }}
       >
-        {/* Page content with 3D tilt-in animation */}
-        <div
-          className="p-4 md:p-6 max-w-[1440px] mx-auto animate-[tiltIn_0.35s_ease_forwards]"
-        >
+        <div className="p-4 md:p-6 max-w-[1440px] mx-auto">
           <Outlet />
         </div>
       </main>

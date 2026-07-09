@@ -6,31 +6,46 @@ import AppShell from '@/components/layout/AppShell'
 import { Suspense, lazy } from 'react'
 
 // Auth pages (eager)
-import LoginPage           from '@/pages/auth/LoginPage'
-import RegisterPage        from '@/pages/auth/RegisterPage'
-import VendorRegisterPage  from '@/pages/auth/VendorRegisterPage'
-import TPVRegisterPage     from '@/pages/auth/TPVRegisterPage'
-import ClientRegisterPage  from '@/pages/auth/ClientRegisterPage'
+import LoginPage from '@/pages/auth/LoginPage'
+import RegisterPage from '@/pages/auth/RegisterPage'
+import VendorRegisterPage from '@/pages/auth/VendorRegisterPage'
+import TPVRegisterPage from '@/pages/auth/TPVRegisterPage'
+import ClientRegisterPage from '@/pages/auth/ClientRegisterPage'
 import PendingApprovalPage from '@/pages/auth/PendingApprovalPage'
 
 // Core pages (lazy)
 const DashboardPage = lazy(() => import('@/pages/dashboard/DashboardPage'))
-const ModulesPage   = lazy(() => import('@/pages/modules/ModulesPage'))
+const ModulesPage = lazy(() => import('@/pages/modules/ModulesPage'))
 
 // HR Module (lazy)
-const HRLayout         = lazy(() => import('@/modules/hr/HRLayout'))
-const HRDashboard      = lazy(() => import('@/modules/hr/pages/HRDashboard'))
+const HRLayout = lazy(() => import('@/modules/hr/HRLayout'))
+const HRDashboard = lazy(() => import('@/modules/hr/pages/HRDashboard'))
 const ManpowerRequests = lazy(() => import('@/modules/hr/pages/ManpowerRequests'))
-const JobPostings      = lazy(() => import('@/modules/hr/pages/JobPostings'))
-const Candidates       = lazy(() => import('@/modules/hr/pages/Candidates'))
+const JobPostings = lazy(() => import('@/modules/hr/pages/JobPostings'))
+const Candidates = lazy(() => import('@/modules/hr/pages/Candidates'))
 const CandidateProfile = lazy(() => import('@/modules/hr/pages/CandidateProfile'))
-const Interviews       = lazy(() => import('@/modules/hr/pages/Interviews'))
-const OfferLetters     = lazy(() => import('@/modules/hr/pages/OfferLetters'))
-const Onboarding       = lazy(() => import('@/modules/hr/pages/Onboarding'))
-const Employees        = lazy(() => import('@/modules/hr/pages/Employees'))
+const Interviews = lazy(() => import('@/modules/hr/pages/Interviews'))
+const OfferLetters = lazy(() => import('@/modules/hr/pages/OfferLetters'))
+const Onboarding = lazy(() => import('@/modules/hr/pages/Onboarding'))
+const Employees = lazy(() => import('@/modules/hr/pages/Employees'))
 
 // Admin Module (lazy)
-const StaffManagement  = lazy(() => import('@/pages/admin/StaffManagementPage'))
+const StaffManagement = lazy(() => import('@/pages/admin/StaffManagementPage'))
+
+// Sales Module (lazy)
+const SalesLayout = lazy(() => import('@/modules/sales/SalesLayout'))
+const SalesDashboard = lazy(() => import('@/modules/sales/pages/SalesDashboard'))
+const Proposals = lazy(() => import('@/modules/sales/pages/Proposals'))
+const Estimates = lazy(() => import('@/modules/sales/pages/Estimates'))
+const SalesInvoices = lazy(() => import('@/modules/sales/pages/Invoices'))
+const DeliveryNotes = lazy(() => import('@/modules/sales/pages/DeliveryNotes'))
+const SalesPayments = lazy(() => import('@/modules/sales/pages/Payments'))
+const CreditNotes = lazy(() => import('@/modules/sales/pages/CreditNotes'))
+const SalesItems = lazy(() => import('@/modules/sales/pages/Items'))
+const ProposalDetail = lazy(() => import('@/modules/sales/pages/ProposalDetail'))
+const InvoiceDetail = lazy(() => import('@/modules/sales/pages/InvoiceDetail'))
+const EstimateDetail = lazy(() => import('@/modules/sales/pages/EstimateDetail'))
+const Leads = lazy(() => import('@/modules/sales/pages/Leads'))
 
 function ComingSoon({ name }) {
   return (
@@ -54,7 +69,7 @@ function PageLoader() {
     <div className="space-y-4 animate-fade-in p-2">
       <div className="skeleton h-8 w-48 rounded-xl" style={{ background: 'var(--border)' }} />
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[1,2,3,4].map(i => (
+        {[1, 2, 3, 4].map(i => (
           <div key={i} className="kpi-3d space-y-3">
             <div className="skeleton w-11 h-11 rounded-2xl" style={{ background: 'var(--border)' }} />
             <div className="skeleton h-7 w-16 rounded-xl" style={{ background: 'var(--border)' }} />
@@ -78,21 +93,21 @@ export default function App() {
 
             {/* Auth routes */}
             <Route path="/auth">
-              <Route path="login"    element={<GuestRoute><LoginPage /></GuestRoute>} />
+              <Route path="login" element={<GuestRoute><LoginPage /></GuestRoute>} />
               <Route path="register" element={<RegisterPage />} />
-              <Route path="register/vendor"  element={<VendorRegisterPage />} />
-              <Route path="register/tpv"     element={<TPVRegisterPage />} />
-              <Route path="register/client"  element={<ClientRegisterPage />} />
+              <Route path="register/vendor" element={<VendorRegisterPage />} />
+              <Route path="register/tpv" element={<TPVRegisterPage />} />
+              <Route path="register/client" element={<ClientRegisterPage />} />
               <Route path="pending-approval" element={<PendingApprovalPage />} />
-              <Route path="forgot-password"  element={<GuestRoute><ComingSoon name="Forgot Password" /></GuestRoute>} />
-              <Route path="verify-email"     element={<ComingSoon name="Email Verification" />} />
+              <Route path="forgot-password" element={<GuestRoute><ComingSoon name="Forgot Password" /></GuestRoute>} />
+              <Route path="verify-email" element={<ComingSoon name="Email Verification" />} />
             </Route>
 
             {/* Protected app routes */}
             <Route path="/app" element={<ProtectedRoute><AppShell /></ProtectedRoute>}>
               <Route index element={<Navigate to="dashboard" replace />} />
               <Route path="dashboard" element={<S><DashboardPage /></S>} />
-              <Route path="modules"   element={<S><ModulesPage /></S>} />
+              <Route path="modules" element={<S><ModulesPage /></S>} />
 
               {/* ADMIN MODULE (Admin Only) */}
               <Route path="admin">
@@ -102,31 +117,48 @@ export default function App() {
               {/* HR MODULE */}
               <Route path="hr" element={<S><HRLayout /></S>}>
                 <Route index element={<Navigate to="dashboard" replace />} />
-                <Route path="dashboard"         element={<S><HRDashboard /></S>} />
+                <Route path="dashboard" element={<S><HRDashboard /></S>} />
                 <Route path="manpower-requests" element={<S><ManpowerRequests /></S>} />
-                <Route path="jobs"              element={<S><JobPostings /></S>} />
-                <Route path="candidates"        element={<S><Candidates /></S>} />
-                <Route path="candidates/:id"    element={<S><CandidateProfile /></S>} />
-                <Route path="interviews"        element={<S><Interviews /></S>} />
-                <Route path="offers"            element={<S><OfferLetters /></S>} />
-                <Route path="onboarding"        element={<S><Onboarding /></S>} />
-                <Route path="employees"         element={<S><Employees /></S>} />
+                <Route path="jobs" element={<S><JobPostings /></S>} />
+                <Route path="candidates" element={<S><Candidates /></S>} />
+                <Route path="candidates/:id" element={<S><CandidateProfile /></S>} />
+                <Route path="interviews" element={<S><Interviews /></S>} />
+                <Route path="offers" element={<S><OfferLetters /></S>} />
+                <Route path="onboarding" element={<S><Onboarding /></S>} />
+                <Route path="employees" element={<S><Employees /></S>} />
+              </Route>
+
+              {/* SALES MODULE */}
+              <Route path="sales" element={<S><SalesLayout /></S>}>
+                <Route index element={<Navigate to="dashboard" replace />} />
+                <Route path="dashboard" element={<S><SalesDashboard /></S>} />
+                <Route path="proposals" element={<S><Proposals /></S>} />
+                <Route path="estimates" element={<S><Estimates /></S>} />
+                <Route path="invoices" element={<S><SalesInvoices /></S>} />
+                <Route path="delivery-notes" element={<S><DeliveryNotes /></S>} />
+                <Route path="payments" element={<S><SalesPayments /></S>} />
+                <Route path="credit-notes" element={<S><CreditNotes /></S>} />
+                <Route path="items" element={<S><SalesItems /></S>} />
+                <Route path="proposals/:id" element={<S><ProposalDetail /></S>} />
+                <Route path="invoices/:id" element={<S><InvoiceDetail /></S>} />
+                <Route path="estimates/:id" element={<S><EstimateDetail /></S>} />
+                <Route path="leads" element={<S><Leads /></S>} />
               </Route>
 
               {/* Core CRM */}
-              <Route path="contacts"     element={<ComingSoon name="Contacts" />} />
+              <Route path="contacts" element={<ComingSoon name="Contacts" />} />
               <Route path="contacts/new" element={<ComingSoon name="New Contact" />} />
               <Route path="contacts/:id" element={<ComingSoon name="Contact Detail" />} />
-              <Route path="deals"        element={<ComingSoon name="Deals" />} />
-              <Route path="deals/new"    element={<ComingSoon name="New Deal" />} />
-              <Route path="deals/:id"    element={<ComingSoon name="Deal Detail" />} />
-              <Route path="tasks"        element={<ComingSoon name="Tasks" />} />
-              <Route path="projects"     element={<ComingSoon name="Projects" />} />
-              <Route path="invoices"     element={<ComingSoon name="Invoices" />} />
-              <Route path="vendors"      element={<ComingSoon name="Vendors" />} />
-              <Route path="tickets"      element={<ComingSoon name="Tickets" />} />
-              <Route path="reports/*"    element={<ComingSoon name="Reports" />} />
-              <Route path="settings/*"   element={<ComingSoon name="Settings" />} />
+              <Route path="deals" element={<ComingSoon name="Deals" />} />
+              <Route path="deals/new" element={<ComingSoon name="New Deal" />} />
+              <Route path="deals/:id" element={<ComingSoon name="Deal Detail" />} />
+              <Route path="tasks" element={<ComingSoon name="Tasks" />} />
+              <Route path="projects" element={<ComingSoon name="Projects" />} />
+              <Route path="invoices" element={<ComingSoon name="Invoices" />} />
+              <Route path="vendors" element={<ComingSoon name="Vendors" />} />
+              <Route path="tickets" element={<ComingSoon name="Tickets" />} />
+              <Route path="reports/*" element={<ComingSoon name="Reports" />} />
+              <Route path="settings/*" element={<ComingSoon name="Settings" />} />
             </Route>
 
             <Route path="/vendor-portal/*" element={<ComingSoon name="Vendor Portal" />} />

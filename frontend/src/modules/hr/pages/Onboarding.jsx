@@ -243,24 +243,12 @@ export default function Onboarding() {
                       {STEPS.map(s => {
                         const isDone = getStepDone(r, s.key)
                         return (
-                          <div
-                            key={s.key}
-                            onClick={() => handleToggle(r.id, s.key)}
-                            className="px-3 py-2.5 rounded-xl cursor-pointer transition-all"
-                            style={{
-                              background: isDone ? 'rgba(16,185,129,0.1)' : 'var(--bg-input)',
-                              border: `1px solid ${isDone ? 'rgba(16,185,129,0.3)' : 'var(--border)'}`
-                            }}
-                          >
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="text-base">{s.icon}</span>
-                              <div className="w-5 h-5 rounded-lg flex items-center justify-center" style={{ background: isDone ? 'rgba(16,185,129,0.2)' : 'var(--bg-card)' }}>
-                                {isDone ? (
-                                  <Check size={10} style={{ color: '#10b981' }} />
-                                ) : (
-                                  <div className="w-2 h-2 rounded-full" style={{ background: 'var(--border)' }} />
-                                )}
-                              </div>
+                        <div key={s.key} onClick={()=>handleToggle(r.id, s.key)} className="px-3 py-2.5 rounded-xl cursor-pointer transition-all"
+                          style={{ background:isDone?'rgba(16,185,129,0.1)':'var(--bg-input)', border:`1px solid ${isDone?'rgba(16,185,129,0.3)':'var(--border)'}` }}>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-base">{s.icon}</span>
+                            <div className="w-5 h-5 rounded-lg flex items-center justify-center" style={{ background:isDone?'rgba(16,185,129,0.2)':'var(--bg-card)' }}>
+                              {isDone?<Check size={10} style={{ color:'#10b981' }}/>:<div className="w-2 h-2 rounded-full" style={{ background:'var(--border)' }}/>}
                             </div>
                             <p className="text-[10px] font-bold" style={{ color: isDone ? '#10b981' : 'var(--text-muted)' }}>
                               {s.label}
@@ -270,118 +258,104 @@ export default function Onboarding() {
                       })}
                     </div>
 
-                    <div className="mt-4 pt-3" style={{ borderTop: '1px solid var(--border)' }}>
-                      <p className="text-xs font-bold mb-2" style={{ color: 'var(--text-h)' }}>Document Checklist</p>
-                      <div className="grid grid-cols-2 gap-2">
-                        {DOC_ITEMS.map(docKey => {
-                          const checked = !!(r.document_checklist?.[docKey])
-                          return (
-                            <div
-                              key={docKey}
-                              onClick={() => handleDocToggle(r.id, docKey, checked)}
-                              className="flex items-center gap-2 px-2.5 py-2 rounded-xl cursor-pointer transition-all"
-                              style={{
-                                background: checked ? 'rgba(16,185,129,0.08)' : 'var(--bg-input)',
-                                border: `1px solid ${checked ? 'rgba(16,185,129,0.25)' : 'var(--border)'}`
-                              }}
-                            >
-                              <div
-                                className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0"
-                                style={{
-                                  background: checked ? 'rgba(16,185,129,0.2)' : 'var(--bg-card)',
-                                  border: `1px solid ${checked ? '#10b981' : 'var(--border)'}`
-                                }}
-                              >
-                                {checked && <Check size={8} style={{ color: '#10b981' }} />}
-                              </div>
-                              <span className="text-[10px] font-semibold" style={{ color: checked ? '#10b981' : 'var(--text-muted)' }}>
-                                {DOC_LABELS[docKey]}
-                              </span>
+                  <div className="mt-4 pt-3" style={{ borderTop:'1px solid var(--border)' }}>
+                    <p className="text-xs font-bold mb-2" style={{ color:'var(--text-h)' }}>📋 Document Checklist</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {DOC_ITEMS.map(docKey=>{
+                        const checked = !!(r.document_checklist?.[docKey])
+                        return(
+                          <div key={docKey} onClick={()=>handleDocToggle(r.id,docKey,checked)} className="flex items-center gap-2 px-2.5 py-2 rounded-xl cursor-pointer transition-all"
+                            style={{ background:checked?'rgba(16,185,129,0.08)':'var(--bg-input)', border:`1px solid ${checked?'rgba(16,185,129,0.25)':'var(--border)'}` }}>
+                            <div className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0" style={{ background:checked?'rgba(16,185,129,0.2)':'var(--bg-card)', border:`1px solid ${checked?'#10b981':'var(--border)'}` }}>
+                              {checked && <Check size={8} style={{ color:'#10b981' }}/>}
                             </div>
-                          )
-                        })}
-                      </div>
+                            <span className="text-[10px] font-semibold" style={{ color:checked?'#10b981':'var(--text-muted)' }}>{DOC_LABELS[docKey]}</span>
+                          </div>
+                        )
+                      })}
                     </div>
+                  </div>
                   </>
+                )}
+                  </div>
+                )
+          })}
+                {records.length === 0 && (
+                  <p className="text-center py-10" style={{ color: 'var(--text-muted)' }}>No onboarding records found.</p>
                 )}
               </div>
             )
-          })}
-          {records.length === 0 && (
-            <p className="text-center py-10" style={{ color: 'var(--text-muted)' }}>No onboarding records found.</p>
-          )}
-        </div>
-      )}
+          }
 
-      {showModal && (
-        <div className="modal-backdrop" onClick={() => setShowModal(false)}>
-          <div className="modal-box max-w-md" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="font-black text-lg" style={{ color: 'var(--text-h)' }}>Start Onboarding</h2>
-              <button onClick={() => setShowModal(false)} style={{ color: 'var(--text-muted)' }}>
-                <X size={18} />
-              </button>
-            </div>
-            <div className="space-y-3">
-              <div>
-                <label className="label">Candidate Name *</label>
-                <input
-                  className="input-3d text-sm"
-                  placeholder="Full name"
-                  value={form.candidate_name}
-                  onChange={e => setForm({ ...form, candidate_name: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="label">Position *</label>
-                <input
-                  className="input-3d text-sm"
-                  placeholder="Job title"
-                  value={form.position}
-                  onChange={e => setForm({ ...form, position: e.target.value })}
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="label">Department</label>
-                  <input
-                    className="input-3d text-sm"
-                    placeholder="Department"
-                    value={form.department}
-                    onChange={e => setForm({ ...form, department: e.target.value })}
-                  />
+      { showModal && (
+              <div className="modal-backdrop" onClick={() => setShowModal(false)}>
+                <div className="modal-box max-w-md" onClick={e => e.stopPropagation()}>
+                  <div className="flex items-center justify-between mb-5">
+                    <h2 className="font-black text-lg" style={{ color: 'var(--text-h)' }}>Start Onboarding</h2>
+                    <button onClick={() => setShowModal(false)} style={{ color: 'var(--text-muted)' }}>
+                      <X size={18} />
+                    </button>
+                  </div>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="label">Candidate Name *</label>
+                      <input
+                        className="input-3d text-sm"
+                        placeholder="Full name"
+                        value={form.candidate_name}
+                        onChange={e => setForm({ ...form, candidate_name: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="label">Position *</label>
+                      <input
+                        className="input-3d text-sm"
+                        placeholder="Job title"
+                        value={form.position}
+                        onChange={e => setForm({ ...form, position: e.target.value })}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="label">Department</label>
+                        <input
+                          className="input-3d text-sm"
+                          placeholder="Department"
+                          value={form.department}
+                          onChange={e => setForm({ ...form, department: e.target.value })}
+                        />
+                      </div>
+                      <div>
+                        <label className="label">Joining Date *</label>
+                        <input
+                          type="date"
+                          className="input-3d text-sm"
+                          value={form.joining_date}
+                          onChange={e => setForm({ ...form, joining_date: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex gap-3 pt-1">
+                      <button
+                        onClick={() => setShowModal(false)}
+                        className="flex-1 py-2.5 rounded-xl text-sm font-semibold"
+                        style={{ background: 'var(--bg-input)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleCreate}
+                        disabled={saving}
+                        className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white"
+                        style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)', opacity: saving ? 0.7 : 1 }}
+                      >
+                        {saving ? 'Starting...' : 'Start Onboarding'}
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <label className="label">Joining Date *</label>
-                  <input
-                    type="date"
-                    className="input-3d text-sm"
-                    value={form.joining_date}
-                    onChange={e => setForm({ ...form, joining_date: e.target.value })}
-                  />
-                </div>
               </div>
-              <div className="flex gap-3 pt-1">
-                <button
-                  onClick={() => setShowModal(false)}
-                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold"
-                  style={{ background: 'var(--bg-input)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleCreate}
-                  disabled={saving}
-                  className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white"
-                  style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)', opacity: saving ? 0.7 : 1 }}
-                >
-                  {saving ? 'Starting...' : 'Start Onboarding'}
-                </button>
-              </div>
-            </div>
-          </div>
+            )}
         </div>
-      )}
-    </div>
-  )
-}
+      )
+      }
