@@ -3,39 +3,30 @@
 namespace App\Http\Controllers\Api\Hr;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Hr\StoreJobPostingRequest;
+use App\Http\Requests\Hr\UpdateJobPostingExternalIdRequest;
+use App\Http\Requests\Hr\UpdateJobPostingStatusRequest;
 use App\Models\HrJobPosting;
+use App\Services\Hr\JobPostingService;
 use Illuminate\Http\Request;
 
 class JobPostingController extends Controller
 {
-    public function index(Request $request)
+    public function __construct(private JobPostingService $jobPostingService)
     {
-        $query = HrJobPosting::where('tenant_id', $request->user()->tenant_id);
-        if ($request->filled('status') && $request->status !== 'All') {
-            $query->where('status', $request->status);
-        }
-        return response()->json($query->latest()->get());
     }
 
-    public function store(Request $request)
+    public function index(Request $request)
     {
-        $validated = $request->validate([
-            'title'              => 'required|string|max:200',
-            'department'         => 'required|string|max:100',
-            'location'           => 'required|string|max:100',
-            'job_type'           => 'required|in:Full-time,Part-time,Contract,Internship,Remote',
-            'posting_type'       => 'required|in:Internal,External,Both',
-            'description'        => 'nullable|string',
-            'requirements'       => 'nullable|string',
-            'salary_from'        => 'nullable|numeric',
-            'salary_to'          => 'nullable|numeric',
-            'number_of_openings' => 'required|integer|min:1',
-            'closing_date'       => 'nullable|date',
-            'status'             => 'in:Active,Draft,Closed',
-            'sources'            => 'nullable|array',
-        ]);
+        return response()->json(
+            $this->jobPostingService->list($request->user()->tenant_id, $request->only('status'))
+        );
+    }
 
-        $job = HrJobPosting::create([...$validated, 'status' => $validated['status'] ?? 'Active']);
+    public function store(StoreJobPostingRequest $request)
+    {
+        $job = $this->jobPostingService->create($request->validated());
+
         return response()->json($job, 201);
     }
 
@@ -46,40 +37,38 @@ class JobPostingController extends Controller
 
     public function update(Request $request, HrJobPosting $jobPosting)
     {
-        $jobPosting->update($request->all());
-        return response()->json($jobPosting);
+        $updated = $this->jobPostingService->update($jobPosting, $request->all());
+
+        return response()->json($updated);
     }
 
-    public function updateStatus(Request $request, HrJobPosting $jobPosting)
+    public function updateStatus(UpdateJobPostingStatusRequest $request, HrJobPosting $jobPosting)
     {
-        $request->validate(['status' => 'required|in:Active,Draft,Closed']);
-        $jobPosting->update(['status' => $request->status]);
-        return response()->json($jobPosting);
+        $updated = $this->jobPostingService->updateStatus($jobPosting, $request->validated('status'));
+
+        return response()->json($updated);
     }
 
     public function destroy(HrJobPosting $jobPosting)
     {
-        $jobPosting->delete();
+        $this->jobPostingService->destroy($jobPosting);
+
         return response()->json(['message' => 'Deleted']);
     }
 
     /**
      * Update external job ID (after manual posting to external platforms)
      */
-    public function updateExternalId(Request $request, HrJobPosting $jobPosting)
+    public function updateExternalId(UpdateJobPostingExternalIdRequest $request, HrJobPosting $jobPosting)
     {
-        $request->validate([
-            'platform' => 'required|in:trulytalents,linkedin,naukri,indeed,monster',
-            'external_id' => 'required|string|max:100',
-        ]);
-
-        $externalIds = $jobPosting->external_job_ids ?? [];
-        $externalIds[$request->platform] = $request->external_id;
-        
-        $jobPosting->update(['external_job_ids' => $externalIds]);
+        $externalIds = $this->jobPostingService->updateExternalId(
+            $jobPosting,
+            $request->validated('platform'),
+            $request->validated('external_id')
+        );
 
         return response()->json([
-            'message' => 'External job ID saved successfully',
+            'message'      => 'External job ID saved successfully',
             'external_ids' => $externalIds,
         ]);
     }

@@ -30,6 +30,8 @@
 | 13 | **No shared UI components** — No Table, Modal, Drawer | `components/` |
 | 14 | **Test scripts in root** — `check_users.php`, `test_api.php` | `backend/` root |
 | 15 | **Debug routes in production** — `/test-dashboard`, `/test-hr-dashboard` | `routes/api.php` |
+| 16 | **Multiple classes per file** — 3 classes in one file breaks PSR-4 one-class-per-file | `app/Models/CreditNote.php` |
+| 17 | **Flat Models folder** — 28 models in one directory, no domain grouping | `app/Models/` |
 
 ---
 
@@ -181,36 +183,55 @@ app/
 │           └── RecordPaymentRequest.php
 │
 ├── Models/                             # SLIMMED — relations, casts, scopes only
+│   │                                   # ORGANISED by domain to mirror Controllers/Api/*
 │   ├── Traits/
 │   │   ├── BelongsToTenant.php         # scopeForTenant + auto-set tenant on create
 │   │   └── HasActivityLog.php          # logActivity() extracted from Lead model
-│   ├── User.php
-│   ├── Tenant.php
-│   ├── Lead.php                        # Relations + casts ONLY (scoring moved to Service)
-│   ├── LeadStatus.php
-│   ├── LeadSource.php
-│   ├── LeadActivity.php
-│   ├── LeadNote.php
-│   ├── LeadGoal.php
-│   ├── LeadQuestionnaire.php
-│   ├── LeadQuestionnaireField.php
-│   ├── LeadQuestionnaireResponse.php
-│   ├── Proposal.php
-│   ├── Estimate.php
-│   ├── SalesInvoice.php
-│   ├── SalesLineItem.php
-│   ├── SalesItem.php
-│   ├── SalesPayment.php
-│   ├── CreditNote.php
-│   ├── DeliveryNote.php
-│   ├── HrManpowerRequest.php
-│   ├── HrJobPosting.php
-│   ├── HrCandidate.php
-│   ├── HrInterviewRound.php
-│   ├── HrOffer.php
-│   ├── HrOnboarding.php
-│   ├── HrEmployee.php
-│   └── HrApprovalHistory.php
+│   │
+│   ├── User.php                        # Core — stays at App\Models root
+│   ├── Tenant.php                      # Core — stays at App\Models root
+│   │
+│   ├── Sales/                          # namespace App\Models\Sales
+│   │   ├── Lead.php                    # Relations + casts ONLY (scoring moved to Service)
+│   │   ├── LeadStatus.php
+│   │   ├── LeadSource.php
+│   │   ├── LeadActivity.php
+│   │   ├── LeadNote.php
+│   │   ├── LeadGoal.php
+│   │   ├── LeadQuestionnaire.php
+│   │   ├── LeadQuestionnaireField.php
+│   │   ├── LeadQuestionnaireResponse.php
+│   │   ├── Proposal.php
+│   │   ├── Estimate.php
+│   │   ├── SalesInvoice.php
+│   │   ├── SalesLineItem.php
+│   │   ├── SalesItem.php
+│   │   ├── SalesPayment.php
+│   │   ├── CreditNote.php              # SPLIT — currently holds 3 classes (see note below)
+│   │   ├── CreditNoteApplication.php   # NEW file — extracted from CreditNote.php
+│   │   ├── CreditNoteRefund.php        # NEW file — extracted from CreditNote.php
+│   │   └── DeliveryNote.php
+│   │
+│   └── Hr/                             # namespace App\Models\Hr
+│       ├── HrManpowerRequest.php
+│       ├── HrJobPosting.php
+│       ├── HrCandidate.php
+│       ├── HrInterviewRound.php
+│       ├── HrOffer.php
+│       ├── HrOnboarding.php
+│       ├── HrEmployee.php
+│       ├── HrApprovalHistory.php
+│       └── HrWhatsAppLog.php           # WhatsApp message audit log
+│
+│   # ⚠ Moving models into subfolders changes their namespace
+│   #   (App\Models\Lead → App\Models\Sales\Lead). This touches ~42
+│   #   referencing files plus cross-domain `use` imports inside models
+│   #   (e.g. User::class in Sales/Hr relations). Mechanical but wide —
+│   #   run a project-wide grep for `App\Models\` afterward to verify.
+│   #
+│   # ⚠ CreditNote.php currently declares THREE classes in one file
+│   #   (CreditNote, CreditNoteApplication, CreditNoteRefund). Split into
+│   #   one-class-per-file to satisfy PSR-4 autoloading under the new namespace.
 │
 ├── Services/                           # NEW — All business logic lives here
 │   ├── Auth/
