@@ -452,7 +452,7 @@ html.light .header-3d {
     backdrop-filter: blur(12px);
   }
   .modal-box {
-    @apply rounded-2xl p-6 w-full max-w-md mx-4 animate-scale-in;
+    @apply rounded-2xl p-5 w-full max-w-md mx-4 animate-scale-in;
     background: var(--bg-card);
     border: 1px solid var(--border-purple);
     box-shadow: 0 30px 80px rgba(0,0,0,0.4), 0 0 40px rgba(124,58,237,0.15),

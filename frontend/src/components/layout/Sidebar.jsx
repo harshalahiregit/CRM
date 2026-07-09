@@ -4,6 +4,7 @@ import {
   BarChart2, Settings, ChevronLeft, ChevronRight,
   LogOut, User, Moon, Sun, Sparkles, Zap, Package,
   UserCheck, CalendarDays, FileText, Rocket, Building2,
+  ClipboardList, ChevronDown, Shield, UserCog
   ClipboardList, ChevronDown, IndianRupee, FileSignature,
   CreditCard, FileX, ShoppingBag, UserPlus
 } from 'lucide-react'
@@ -15,39 +16,39 @@ import { useState, useEffect } from 'react'
 import clsx from 'clsx'
 
 const NAV_ITEMS = [
-  { label: 'Dashboard',  icon: LayoutDashboard, path: '/app/dashboard' },
-  { label: 'Contacts',   icon: Users,            path: '/app/contacts'  },
-  { label: 'Deals',      icon: Briefcase,        path: '/app/deals'     },
-  { label: 'Tasks',      icon: CheckSquare,      path: '/app/tasks'     },
-  { label: 'Projects',   icon: FolderOpen,       path: '/app/projects'  },
-  { label: 'Invoices',   icon: Receipt,          path: '/app/invoices'  },
-  { label: 'Vendors',    icon: Truck,            path: '/app/vendors'   },
-  { label: 'Tickets',    icon: LifeBuoy,         path: '/app/tickets'   },
-  { label: 'Reports',    icon: BarChart2,        path: '/app/reports'   },
-  { label: 'Settings',   icon: Settings,         path: '/app/settings'  },
+  { label: 'Dashboard', icon: LayoutDashboard, path: '/app/dashboard' },
+  { label: 'Contacts', icon: Users, path: '/app/contacts' },
+  { label: 'Deals', icon: Briefcase, path: '/app/deals' },
+  { label: 'Tasks', icon: CheckSquare, path: '/app/tasks' },
+  { label: 'Projects', icon: FolderOpen, path: '/app/projects' },
+  { label: 'Invoices', icon: Receipt, path: '/app/invoices' },
+  { label: 'Vendors', icon: Truck, path: '/app/vendors' },
+  { label: 'Tickets', icon: LifeBuoy, path: '/app/tickets' },
+  { label: 'Reports', icon: BarChart2, path: '/app/reports' },
+  { label: 'Settings', icon: Settings, path: '/app/settings' },
 ]
 
 const HR_SUB_ITEMS = [
-  { label: 'HR Dashboard',      path: '/app/hr/dashboard',         icon: LayoutDashboard },
-  { label: 'Manpower Requests', path: '/app/hr/manpower-requests', icon: ClipboardList   },
-  { label: 'Job Postings',      path: '/app/hr/jobs',              icon: Briefcase       },
-  { label: 'Candidates',        path: '/app/hr/candidates',        icon: Users           },
-  { label: 'Interviews',        path: '/app/hr/interviews',        icon: CalendarDays    },
-  { label: 'Offer Letters',     path: '/app/hr/offers',            icon: FileText        },
-  { label: 'Onboarding',        path: '/app/hr/onboarding',        icon: Rocket          },
-  { label: 'Employees',         path: '/app/hr/employees',         icon: Building2       },
+  { label: 'HR Dashboard', path: '/app/hr/dashboard', icon: LayoutDashboard },
+  { label: 'Manpower Requests', path: '/app/hr/manpower-requests', icon: ClipboardList },
+  { label: 'Job Postings', path: '/app/hr/jobs', icon: Briefcase },
+  { label: 'Candidates', path: '/app/hr/candidates', icon: Users },
+  { label: 'Interviews', path: '/app/hr/interviews', icon: CalendarDays },
+  { label: 'Offer Letters', path: '/app/hr/offers', icon: FileText },
+  { label: 'Onboarding', path: '/app/hr/onboarding', icon: Rocket },
+  { label: 'Employees', path: '/app/hr/employees', icon: Building2 },
 ]
 
 const SALES_SUB_ITEMS = [
-  { label: 'Sales Dashboard',  path: '/app/sales/dashboard',       icon: LayoutDashboard },
-  { label: 'Leads',            path: '/app/sales/leads',            icon: UserPlus        },
-  { label: 'Proposals',        path: '/app/sales/proposals',       icon: FileSignature   },
-  { label: 'Estimates',        path: '/app/sales/estimates',       icon: ClipboardList   },
-  { label: 'Invoices',         path: '/app/sales/invoices',        icon: Receipt         },
-  { label: 'Delivery Notes',   path: '/app/sales/delivery-notes',  icon: Truck           },
-  { label: 'Payments',         path: '/app/sales/payments',        icon: CreditCard      },
-  { label: 'Credit Notes',     path: '/app/sales/credit-notes',    icon: FileX           },
-  { label: 'Items',            path: '/app/sales/items',           icon: ShoppingBag     },
+  { label: 'Sales Dashboard', path: '/app/sales/dashboard', icon: LayoutDashboard },
+  { label: 'Leads', path: '/app/sales/leads', icon: UserPlus },
+  { label: 'Proposals', path: '/app/sales/proposals', icon: FileSignature },
+  { label: 'Estimates', path: '/app/sales/estimates', icon: ClipboardList },
+  { label: 'Invoices', path: '/app/sales/invoices', icon: Receipt },
+  { label: 'Delivery Notes', path: '/app/sales/delivery-notes', icon: Truck },
+  { label: 'Payments', path: '/app/sales/payments', icon: CreditCard },
+  { label: 'Credit Notes', path: '/app/sales/credit-notes', icon: FileX },
+  { label: 'Items', path: '/app/sales/items', icon: ShoppingBag },
 ]
 
 export default function Sidebar({ collapsed, onToggle }) {
@@ -191,6 +192,37 @@ export default function Sidebar({ collapsed, onToggle }) {
           </div>
         )}
 
+        {/* ── ADMIN SECTION (Admin Only) ── */}
+        {user?.role === 'admin' && (
+          <div className="mt-2">
+            {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#10b981' }}>Admin Tools</p>}
+            <NavLink to="/app/admin/staff">
+              {({ isActive }) => (
+                <div
+                  title={collapsed ? 'Staff Management' : ''}
+                  className={clsx('nav-3d mb-0.5', isActive && 'nav-3d-active')}
+                  style={{ justifyContent: collapsed ? 'center' : undefined }}
+                >
+                  <div
+                    className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center"
+                    style={{
+                      background: isActive
+                        ? 'rgba(16,185,129,0.2)'
+                        : 'rgba(16,185,129,0.1)',
+                    }}
+                  >
+                    <UserCog size={14} style={{ color: '#10b981' }} />
+                  </div>
+                  {!collapsed && <span className="truncate text-sm" style={{ color: isActive ? '#10b981' : undefined }}>Staff Management</span>}
+                  {isActive && !collapsed && (
+                    <div className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: '#10b981' }} />
+                  )}
+                </div>
+              )}
+            </NavLink>
+          </div>
+        )}
+
         {/* ── Sales Module sub-nav ── */}
         <div className="mt-2">
           {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>Sales & Revenue</p>}
@@ -272,12 +304,12 @@ export default function Sidebar({ collapsed, onToggle }) {
                 boxShadow: '0 3px 10px rgba(124,58,237,0.4), inset 0 1px 0 rgba(255,255,255,0.2)',
               }}
             >
-              {user?.name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0,2) || 'U'}
+              {user?.name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || 'U'}
             </div>
             <div className="flex-1 overflow-hidden">
               <p className="text-xs font-semibold truncate" style={{ color: 'var(--text-h)' }}>{user?.name}</p>
               <p className="text-[10px] truncate capitalize" style={{ color: 'var(--text-muted)' }}>
-                {user?.role?.replace(/_/g,' ')}
+                {user?.role?.replace(/_/g, ' ')}
               </p>
             </div>
             <Zap size={11} style={{ color: '#a78bfa', flexShrink: 0 }} />

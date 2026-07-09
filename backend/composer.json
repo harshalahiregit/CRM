@@ -10,7 +10,8 @@
         "laravel/framework": "^12.0",
         "laravel/sanctum": "^4.3",
         "laravel/tinker": "^2.10.1",
-        "smalot/pdfparser": "^2.12"
+        "smalot/pdfparser": "^2.12",
+        "twilio/sdk": "^8.11"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",

@@ -1,0 +1,1373 @@
+﻿
+
+================================================================================
+FILE: AIR Talent Prediction Engine
+================================================================================
+
+AIR Talent Prediction Engine (ATPE)
+Mission: Hire the right person with 90%+ prediction accuracy while reducing hiring mistakes.
+Part 1:
+AI Prediction Score
+Instead of "Selected / Rejected", every candidate gets an AI score:
+Talent Score – 100
+Learning Ability – 100
+Integrity Score – 100
+Stability Score – 100
+Leadership Score – 100
+Culture Fit – 100
+Communication Score – 100
+Stress Handling – 100
+Problem Solving – 100
+Growth Potential – 100
+Final Result:
+AIR Hire Probability = 94.2%
+
+1. Resume Intelligence
+AI extracts and evaluates:
+Career progression
+Promotion history
+Frequent job changes
+Employment gaps
+Industry exposure
+Company quality
+Achievement orientation
+Skill consistency
+Salary growth
+Career stability
+
+2. Behavioral Intelligence
+Using psychology-based questions, AI predicts:
+Honesty
+Emotional intelligence
+Decision making
+Leadership
+Teamwork
+Adaptability
+Ownership mindset
+Learning attitude
+Accountability
+
+3. Voice Intelligence
+Candidate answers recorded.
+AI analyzes:
+Confidence
+Nervousness
+Communication clarity
+Emotional stability
+Speaking speed
+Leadership tone
+Persuasiveness
+
+4. Video Intelligence
+AI observes:
+Eye contact
+Facial expressions
+Confidence
+Body language
+Authenticity
+Engagement
+Professionalism
+
+5. Cognitive Intelligence
+Adaptive assessments measure:
+IQ
+Logical reasoning
+Numerical ability
+Verbal ability
+Pattern recognition
+Decision speed
+Memory
+
+6. Personality Intelligence
+Instead of relying only on personality tests, AI predicts:
+Big Five personality traits
+DISC profile
+Working style
+Leadership style
+Motivation
+Risk appetite
+
+7. Long-Term Retention Prediction
+AI estimates:
+Probability of staying 6 months
+Probability of staying 1 year
+Probability of staying 3 years
+Flight risk
+Salary risk
+Manager compatibility
+Commute risk
+Work-life balance expectations
+Example:
+6 Months: 97%
+1 Year: 91%
+3 Years: 82%
+
+8. Fraud Detection
+AI identifies:
+Fake experience
+Resume inconsistencies
+Fake certificates
+Skill exaggeration
+Suspicious employment patterns
+AI-generated resume content
+Identity mismatch
+
+9. Job Success Prediction
+AI predicts future KPIs:
+Sales potential
+Productivity
+Customer satisfaction
+Error rate
+Leadership potential
+Promotion readiness
+Innovation capability
+
+10. Company Culture Match
+AI compares candidate behavior with:
+Company values
+Team culture
+Manager style
+Department dynamics
+Organizational maturity
+
+11. Industry-Specific Intelligence
+The model adapts to different sectors:
+Manufacturing
+Logistics & Transport
+IT & Software
+Healthcare
+Banking
+Retail
+Construction
+Hospitality
+Education
+Pharma
+Oil & Gas
+Government
+
+12. AI Learning Engine
+After hiring, AI continuously learns from:
+Attendance
+Productivity
+KPI achievement
+Promotions
+Resignations
+Performance reviews
+Disciplinary records
+Training completion
+Engagement surveys
+The prediction model becomes more accurate with every hiring cycle.
+
+AIR Hire Confidence Dashboard
+Factor
+Score
+
+Skill Match
+92
+
+Experience
+88
+
+Learning Ability
+95
+
+Integrity
+97
+
+Leadership
+82
+
+Culture Fit
+91
+
+Retention
+93
+
+Productivity
+90
+
+Communication
+86
+
+Overall AIR Score
+91.4
+
+Recommendation: Hire with High Confidence.
+
+Unique Differentiator for Sangoe AIR OS
+Move beyond an Applicant Tracking System (ATS) to an Artificial Intelligence Recruitment Operating System (AIROS) that predicts not only who can do the job, but who will succeed and stay.
+The platform should generate executive insights such as:
+Success Probability (% chance of becoming a top performer)
+Retention Probability (% chance of staying long term)
+Promotion Readiness (estimated time to next role)
+Integrity Risk Index
+Burnout Risk
+Resignation Risk
+Training Investment ROI
+Expected Time to Full Productivity
+Expected Team Compatibility
+Future Leadership Potential
+This predictive, continuously learning approach would differentiate Sangoe AIR OS from conventional recruitment software by helping organizations make evidence-informed hiring decisions that improve productivity, reduce attrition, and identify future leaders across industries and job levels.
+
+Part 2:
+Yes. In fact, this is a better architecture for an MVP and even many enterprise deployments. You do not need separate AI agents for each role. A single prediction engine with configurable models can generate all of these insights in structured text.
+Instead of multiple AI agents, build a Universal Talent Intelligence Engine (UTIE) that processes candidate inputs (resume, application form, assessments, interview responses, references, and company/job requirements) and returns a comprehensive textual evaluation.
+For every candidate, the system can produce a report like this:
+
+Candidate Intelligence Report
+Overall Hiring Recommendation: Strong Hire
+Overall Match Score: 91/100
+Confidence Level: High (92%)
+1. Technical Competency
+Strong alignment with required skills.
+Demonstrates practical experience in relevant tools and responsibilities.
+Skill gap is minimal and can be addressed with onboarding.
+Score: 90/100
+2. Learning Agility
+Learns new concepts quickly.
+Likely to adapt well to changing business needs.
+Suitable for future upskilling.
+Score: 94/100
+3. Leadership Potential
+Shows ownership and initiative.
+Comfortable making decisions.
+Could progress into a leadership role within 2–3 years.
+Score: 82/100
+4. Communication
+Clear and professional communicator.
+Active listener.
+Good stakeholder interaction potential.
+Score: 88/100
+5. Integrity Assessment
+No major inconsistencies detected.
+Responses appear authentic.
+Low perceived integrity risk.
+Score: 96/100
+6. Culture Fit
+Aligns well with company values.
+Likely to collaborate effectively.
+Comfortable in structured environments.
+Score: 91/100
+7. Stability Prediction
+Expected to remain with the organization for a meaningful period.
+Low probability of early attrition.
+Retention Probability: 87%
+8. Productivity Prediction
+Expected to achieve productivity targets within 60–90 days.
+Likely to be a high performer after onboarding.
+9. Risk Assessment
+Resume Risk: Low
+Job-Hopping Risk: Medium
+Burnout Risk: Low
+Attendance Risk: Low
+Performance Risk: Low
+10. Development Plan
+Strengthen presentation skills.
+Gain advanced domain expertise.
+Participate in leadership development after one year.
+Final Recommendation
+Decision: Hire
+Reason: Strong technical foundation, high learning ability, good cultural alignment, and low overall hiring risk.
+
+How are these predictions generated without AI agents?
+A single prediction engine combines multiple inputs into one analysis:
+Resume and career history
+Job description
+Application form
+Skills assessments
+Psychometric and behavioral questionnaires
+Interview responses (text or transcript)
+Reference feedback
+Historical hiring and performance data (if available)
+The engine applies weighted scoring, statistical models, and large language model reasoning to produce a unified report.
+Advantages over AI agents
+Simpler architecture
+Lower infrastructure cost
+Faster response times
+Easier maintenance
+Consistent scoring across all roles
+Easier to train and improve using your organization's hiring outcomes
+For Sangoe AIR OS, I recommend building one Universal Prediction Engine with role-specific scoring templates (e.g., Sales, Finance, HR, Operations, IT, Drivers, Executives). The underlying engine remains the same; only the evaluation criteria and weightings change. This gives you enterprise-grade predictive hiring without the complexity of managing multiple specialized AI agents.
+
+Part 3:
+Based on everything we've discussed, I would broaden the vision. Don't build a recruitment software. Build an AI Workforce Intelligence Platform that helps organizations hire right, retain longer, and grow talent predictably.
+Final Model
+Sangoe AIR OS – Predictive Workforce Intelligence Platform
+Mission
+Help organizations recruit the right people, reduce hiring failures, improve employee retention, and build high-performing teams using predictive intelligence.
+Vision
+To become the world's most trusted AI platform for predicting human success at work.
+
+The AIR Framework
+Phase 1 – ATTRACT
+Goal: Attract the right candidates before they apply.
+The system should:
+AI-generated job descriptions
+Salary benchmarking
+Talent market insights
+Employer branding recommendations
+Predict application quality
+Recommend the best sourcing channels
+Prediction:
+Application Quality Score
+Candidate Availability Score
+Hiring Difficulty Index
+
+Phase 2 – DISCOVER
+Goal: Identify the best candidates.
+Evaluate:
+Resume quality
+Skills
+Experience
+Learning ability
+Domain knowledge
+Communication
+Behaviour
+Career progression
+Employment stability
+Achievement orientation
+Output:
+Overall Candidate Score
+Technical Match
+Business Match
+Learning Potential
+Leadership Potential
+
+Phase 3 – PREDICT
+This is the core intelligence engine.
+Predict:
+Offer Acceptance Probability
+Joining Probability
+90-Day Success Probability
+1-Year Retention Probability
+3-Year Retention Probability
+Performance Potential
+Leadership Potential
+Cultural Fit
+Team Compatibility
+Manager Compatibility
+Learning Agility
+Productivity Potential
+Promotion Readiness
+Burnout Risk
+Attrition Risk
+Integrity Risk
+Compliance Risk
+Attendance Risk
+Career Stability Index
+Every prediction should include:
+Score
+Confidence level
+Reasons
+Risk factors
+Recommended actions
+
+Phase 4 – ENGAGE
+From offer acceptance until Day 90.
+Track:
+Communication quality
+Document completion
+Candidate engagement
+Joining readiness
+Onboarding progress
+Training completion
+Manager interactions
+Predict:
+No-show risk
+Early resignation risk
+Onboarding success
+
+Phase 5 – RETAIN
+Continuous employee intelligence.
+Track:
+Weekly pulse surveys
+Recognition frequency
+Manager feedback
+Performance trends
+Learning activity
+Leave patterns
+Workload
+Internal mobility
+Career aspirations
+Predict:
+Resignation probability
+Burnout
+Disengagement
+Internal conflict
+High-performer risk
+Promotion timing
+
+Phase 6 – GROW
+Recommend:
+Career paths
+Internal job opportunities
+Training
+Mentoring
+Leadership development
+Successors for critical roles
+Predict:
+Future leaders
+Future managers
+Subject-matter experts
+Employees at risk of stagnation
+
+Human Intelligence Layer
+Beyond traditional HR data, evaluate:
+Professional Intelligence
+Skills
+Experience
+Industry exposure
+Certifications
+Problem-solving
+Behavioural Intelligence
+Accountability
+Ownership
+Teamwork
+Adaptability
+Integrity
+Emotional maturity
+Cognitive Intelligence
+Critical thinking
+Decision making
+Learning speed
+Analytical ability
+Creativity
+Workplace Intelligence
+Communication
+Leadership
+Collaboration
+Customer orientation
+Conflict resolution
+Career Intelligence
+Stability
+Growth trajectory
+Promotion history
+Salary progression
+Career consistency
+
+Predictive Dashboard
+For every candidate or employee:
+Overall Workforce Intelligence Score
+Hire Recommendation
+Offer Acceptance Probability
+Joining Probability
+Retention Probability
+Performance Prediction
+Leadership Potential
+Promotion Readiness
+Learning Agility
+Cultural Fit
+Manager Compatibility
+Team Compatibility
+Productivity Forecast
+Attrition Risk
+Burnout Risk
+Integrity Risk
+Engagement Score
+Recommended Interventions
+
+AI Recommendations
+Instead of only reporting scores, the system recommends actions such as:
+Increase compensation by 8–10% to improve offer acceptance.
+Assign a mentor during the first 60 days.
+Schedule weekly manager check-ins.
+Enroll in communication training.
+Discuss career progression within 90 days.
+Reduce workload to lower burnout risk.
+Recognize recent achievements to improve engagement.
+
+What Makes Sangoe AIR OS Different
+Most systems answer:
+Who applied?
+Who was hired?
+Who resigned?
+Sangoe AIR OS should answer:
+Who is most likely to succeed?
+Who is most likely to stay?
+Why might someone not join?
+What intervention will improve retention?
+Who will become the next leader?
+Which manager develops talent best?
+Which teams have the healthiest culture?
+What is the financial cost of a poor hiring decision?
+How can the organization prevent that outcome?
+
+Commercial Positioning
+Position Sangoe AIR OS as a Predictive Workforce Intelligence Platform, not merely an ATS, HRMS, or recruitment tool.
+Tagline:
+Hire Smarter. Retain Longer. Grow Future Leaders.
+
+One recommendation that I believe would make Sangoe AIR OS truly distinctive
+Add a Workplace Relationship Intelligence (WRI) module.
+Research and practical experience both show that many employees leave because of interpersonal friction rather than technical inability. WRI would monitor signals such as manager-employee communication, onboarding feedback, role clarity, workload balance, recognition, and engagement. It would identify early warning signs of misunderstandings or dissatisfaction and recommend timely interventions before they result in resignation.
+This shifts the platform from being a hiring solution to a workforce success platform that helps organizations improve hiring quality, employee experience, and long-term retention. I believe this would be one of the strongest differentiators for Sangoe AIR OS in the HR technology market.
+
+
+
+================================================================================
+FILE: Sangoe AIR OS Part 1
+================================================================================
+
+Sangoe AIR OS™
+Autonomous Intelligence Recruitment Operating System
+Mission
+To build the world's first AI-native Recruitment Operating System where AI autonomously discovers, engages, evaluates, predicts, coordinates, and continuously improves hiring while humans retain authority over final decisions.
+
+Core Design Principles
+Every feature should satisfy at least one of these objectives:
+Eliminate repetitive work.
+Reduce human bias where possible through transparent, evidence-based recommendations.
+Increase hiring quality.
+Reduce time-to-hire.
+Improve candidate experience.
+Learn continuously from outcomes.
+Predict future outcomes rather than only recording history.
+Operate 24×7.
+Require recruiters to intervene only when human judgment adds value.
+Integrate recruitment into the broader business operating system.
+
+The AI Agent Architecture
+Instead of modules, Sangoe AIR should consist of specialized AI agents.
+                           CEO / HR Head Dashboard
+                                     │
+                          Recruitment Command Center
+                                     │
+──────────────────────────────────────────────────────────────
+                    AI ORCHESTRATION ENGINE
+──────────────────────────────────────────────────────────────
+
+AI Workforce Planning Agent
+      │
+      ▼
+AI Job Intelligence Agent
+      │
+      ▼
+AI Talent Discovery Agent
+      │
+      ▼
+AI Candidate Enrichment Agent
+      │
+      ▼
+AI Resume Intelligence Agent
+      │
+      ▼
+AI Candidate Ranking Agent
+      │
+      ▼
+AI Communication Agent
+      │
+      ▼
+AI Voice Recruiter
+      │
+      ▼
+AI Screening Agent
+      │
+      ▼
+AI Interview Coordinator
+      │
+      ▼
+AI Interview Intelligence Agent
+      │
+      ▼
+AI Offer Intelligence Agent
+      │
+      ▼
+AI Joining Agent
+      │
+      ▼
+AI Onboarding Agent
+      │
+      ▼
+AI Retention Intelligence Agent
+      │
+      ▼
+Learning Engine
+Every AI agent learns from previous hiring outcomes.
+
+High-Level Process Flow
+Hiring Request Raised
+        │
+        ▼
+AI understands:
+• Position
+• Business Unit
+• Budget
+• Team
+• Urgency
+• Historical Hiring Data
+        │
+        ▼
+AI recommends
+• Salary
+• JD
+• Skills
+• Interview Panel
+• Hiring Timeline
+        │
+        ▼
+Manager Approval
+        │
+        ▼
+AI publishes jobs
+        │
+        ▼
+AI searches connected talent sources
+        │
+        ▼
+AI builds unified candidate profiles
+        │
+        ▼
+AI verifies data
+        │
+        ▼
+AI ranks candidates
+        │
+        ▼
+AI contacts candidates
+        │
+        ▼
+AI conducts first-round screening
+        │
+        ▼
+AI predicts:
+• Interview probability
+• Offer acceptance
+• Joining probability
+• Retention probability
+        │
+        ▼
+Recruiter reviews shortlisted candidates
+        │
+        ▼
+AI schedules interviews
+        │
+        ▼
+Interview feedback captured
+        │
+        ▼
+AI recommends next action
+        │
+        ▼
+Offer generated
+        │
+        ▼
+AI negotiates within policy
+        │
+        ▼
+Candidate accepts
+        │
+        ▼
+AI collects documents
+        │
+        ▼
+AI onboarding
+        │
+        ▼
+Employee joins
+        │
+        ▼
+Learning Engine updates future recommendations
+
+The Continuous Intelligence Loop
+This is the real moat.
+Every Resume
+        │
+Every Call
+        │
+Every Interview
+        │
+Every Offer
+        │
+Every Rejection
+        │
+Every Joining
+        │
+Every Performance Review
+        │
+Every Promotion
+        │
+Every Exit
+        │
+───────────────
+Learning Engine
+───────────────
+        │
+Improves
+
+Candidate Ranking
+
+Salary Recommendation
+
+Interview Questions
+
+Hiring Success Prediction
+
+Retention Prediction
+
+Recruiter Coaching
+
+Hiring Manager Insights
+
+Future Hiring Strategy
+The system should improve every day without manual rule updates.
+
+Data Sources
+The operating system should be able to ingest information from:
+Internal talent database.
+Previous applicants.
+Employee referrals.
+Company career portal.
+Connected recruiter accounts on supported job platforms.
+Email applications.
+WhatsApp applications.
+Assessment platforms.
+Background verification providers.
+HRMS.
+Payroll.
+Learning Management System.
+Performance Management System.
+Attendance.
+Exit interviews.
+Public professional information where legally permitted.
+Everything should become one unified talent graph.
+
+AI Prediction Engine
+Every candidate receives dynamic scores.
+Skill Match
+
+Experience Match
+
+Learning Potential
+
+Interview Success
+
+Offer Acceptance
+
+Joining Probability
+
+90-Day Retention
+
+1-Year Retention
+
+Promotion Potential
+
+Leadership Potential
+
+Salary Negotiation Risk
+
+Counter Offer Risk
+
+Document Completion Risk
+
+Response Probability
+
+Availability Score
+
+Overall Hiring Confidence
+Each prediction must include why the score was generated so recruiters can review the reasoning instead of relying on a black box.
+
+AI Memory
+The system remembers every interaction.
+Applied
+
+Rejected
+
+Upskilled
+
+Reapplied
+
+Interviewed
+
+Offered
+
+Declined
+
+Re-engaged
+
+Joined
+
+Promoted
+The profile becomes richer over time.
+
+Recruiter Workspace
+Recruiters should not manage tasks.
+They should manage decisions.
+Today's Priorities
+
+AI found 146 new candidates
+
+32 awaiting approval
+
+11 interviews scheduled
+
+5 offers ready
+
+2 candidates at risk
+
+1 counter-offer likely
+
+3 joining tomorrow
+
+Recommended Actions
+No spreadsheets.
+No sticky notes.
+No manual follow-ups.
+
+Candidate Experience
+The candidate should never wonder what's happening.
+Applied
+
+↓
+
+AI Welcome
+
+↓
+
+Application Tracking
+
+↓
+
+Screening
+
+↓
+
+Interview Scheduling
+
+↓
+
+Interview Preparation
+
+↓
+
+Status Updates
+
+↓
+
+Offer
+
+↓
+
+Document Collection
+
+↓
+
+Joining Checklist
+
+↓
+
+Onboarding
+
+↓
+
+Employee Journey
+A transparent experience improves employer branding.
+
+Integration Across Sangoe Business OS
+Recruitment should not be isolated.
+Recruitment
+      │
+HRMS
+      │
+Payroll
+      │
+Attendance
+      │
+Learning
+      │
+Performance
+      │
+Goals
+      │
+Project Allocation
+      │
+Expense
+      │
+Compliance
+      │
+Asset Management
+      │
+Exit Management
+The hiring engine learns from downstream outcomes.
+
+Roadmap
+Phase 1 (Foundation)
+Recruitment workflow.
+AI resume intelligence.
+AI semantic search.
+Unified talent database.
+ATS.
+Candidate CRM.
+WhatsApp integration.
+Email automation.
+Interview scheduling.
+Dashboards.
+Phase 2 (AI)
+AI voice recruiter.
+AI screening.
+AI predictions.
+Recruiter Copilot.
+Hiring Brain.
+Recruiter performance analytics.
+Hiring manager analytics.
+Phase 3 (Autonomous)
+Multi-agent orchestration.
+Autonomous sourcing.
+Autonomous communication.
+Autonomous scheduling.
+Autonomous follow-up.
+Autonomous negotiation within policy.
+Self-learning recommendation engine.
+Phase 4 (Intelligence Network)
+Cross-company benchmarking (using aggregated, privacy-preserving insights).
+Industry hiring intelligence.
+Global talent graph.
+Workforce forecasting.
+Skills evolution analytics.
+
+One strategic recommendation before development
+I strongly recommend not writing a single line of code until you complete a Product Requirements Document (PRD) of roughly 250–400 pages. It sounds large, but for a platform of this scope it's appropriate.
+The PRD should define:
+Every user role (Recruiter, Hiring Manager, HR Head, Candidate, CEO, Interviewer, Agency, Referral Partner).
+Every screen and workflow.
+Every AI agent's responsibilities.
+Every decision point.
+Every integration.
+Every notification.
+Every permission.
+Every API.
+Every data model.
+Every prediction model and its explainability requirements.
+Security, privacy, audit, and governance requirements.
+Performance targets and success metrics.
+This investment will dramatically reduce rework and help your engineering team build a coherent platform rather than a collection of disconnected features.
+Given your vision for Sangoe as a complete Business Operating System, I would treat Sangoe AIR OS as the intelligence layer that eventually connects recruitment with workforce planning, HR, performance, learning, and business execution—creating a closed-loop system that continuously improves how organizations hire and develop talent. That is a much stronger long-term position than competing feature-for-feature with existing ATS vendors.
+
+
+
+================================================================================
+FILE: Sangoe AIR OS Part 2
+================================================================================
+
+For Sangoe AIR OS, I recommend not starting with AI. Start with a data-first architecture. AI is only as good as the data it receives. If your data model is designed correctly, you can continuously improve predictions without rebuilding the platform.
+Below is a practical development structure suitable for a junior-to-mid-level engineering team.
+
+Sangoe AIR OS Architecture
+Users
+│
+├── Super Admin
+├── Organization
+├── HR
+├── Hiring Manager
+├── Department Head
+├── Interviewer
+├── Employee
+├── Candidate
+└── Consultant
+                │
+                ▼
+        AIR Intelligence Engine
+                │
+ ┌──────────────┼───────────────┐
+ │              │               │
+Recruitment   Employee      Prediction
+ Module        Module          Engine
+
+Module 1: Organization
+Master Data
+Company
+Branch
+Department
+Designation
+Grade
+Reporting Structure
+Cost Center
+Business Unit
+Skills Library
+Competency Library
+
+Module 2: Job Requisition
+Fields
+Job ID
+Department
+Hiring Manager
+Required Skills
+Preferred Skills
+Experience
+Education
+Salary Range
+Location
+Employment Type
+Hiring Priority
+Target Joining Date
+Criticality
+Output
+Job Readiness Score
+
+Module 3: Candidate Database
+Store everything.
+Personal
+Name
+Mobile
+Email
+DOB
+Address
+Education
+Experience
+Skills
+Certifications
+Languages
+Salary
+Notice Period
+References
+Resume
+
+Module 4: AI Resume Parser
+Extract
+Skills
+Companies
+Duration
+Promotions
+Gaps
+Education
+Certifications
+Keywords
+Generate
+Resume Intelligence Report
+
+Module 5: Candidate Assessment
+Sections
+Technical Test
+Behavior Test
+Psychometric Test
+Situational Test
+Communication Test
+Logical Test
+Integrity Questionnaire
+Learning Agility
+Leadership Questionnaire
+
+Module 6: Interview
+Every interviewer submits structured ratings instead of only comments.
+Examples
+Knowledge
+Communication
+Confidence
+Ownership
+Learning Ability
+Decision Making
+Leadership
+Integrity
+Problem Solving
+Culture Fit
+Strengths
+Concerns
+Recommendation
+
+Module 7: AIR Prediction Engine
+This is one service.
+Input
+Resume
+Assessment
+Interview
+Job
+Organization
+Manager
+Department
+History
+Output
+Overall Score
+
+Hire Probability
+
+Offer Acceptance Probability
+
+Joining Probability
+
+Performance Prediction
+
+Retention Prediction
+
+Leadership Prediction
+
+Learning Ability
+
+Manager Compatibility
+
+Team Compatibility
+
+Integrity Risk
+
+Burnout Risk
+
+Absconding Risk
+
+Job Hopping Risk
+
+Promotion Potential
+
+Culture Fit
+
+Overall Recommendation
+
+Module 8: Offer Management
+Track
+Offer Sent
+Offer Accepted
+Negotiation
+Document Collection
+Joining Date
+Background Verification
+No Show Prediction
+
+Module 9: Onboarding
+Checklist
+Documents
+Training
+IT Assets
+Reporting Manager
+Buddy Assigned
+Policies Read
+Welcome Calls
+30 Day Review
+60 Day Review
+90 Day Review
+
+Module 10: Employee Intelligence
+Track
+Attendance
+Leave
+Performance
+Learning
+Rewards
+Warnings
+Appreciation
+Projects
+Achievements
+Internal Transfers
+Promotion
+
+Module 11: AIR Pulse
+Weekly survey
+Questions
+Today's Mood
+Manager Support
+Workload
+Role Clarity
+Learning
+Recognition
+Stress
+Relationship
+Growth
+Suggestion
+AI converts responses into
+Employee Happiness Score
+Burnout Score
+Retention Score
+Manager Score
+
+Module 12: Exit Intelligence
+Capture
+Actual Reason
+Hidden Reason
+Manager Issue
+Salary Issue
+Growth Issue
+Family Issue
+Health
+Work Culture
+Relocation
+Better Offer
+Generate
+Attrition Intelligence Report
+
+Master Prediction Database
+Store every prediction.
+Example
+Candidate ID
+
+Prediction Date
+
+Hire Probability
+
+Offer Probability
+
+Joining Probability
+
+90 Day Success
+
+Retention
+
+Leadership
+
+Burnout
+
+Actual Result
+
+Prediction Accuracy
+This allows continuous improvement.
+
+AI Recommendation Engine
+Instead of just showing numbers
+Suggest actions
+Example
+Candidate has high joining risk.
+
+Reason
+
+Salary mismatch
+
+Manager communication low
+
+Joining delayed
+
+Recommendation
+
+Call candidate within 24 hours.
+
+Assign buddy.
+
+Send welcome kit.
+
+Increase joining bonus.
+
+Weekly follow-up.
+
+Database Structure (Core Tables)
+organizations
+
+departments
+
+designations
+
+employees
+
+candidates
+
+jobs
+
+applications
+
+interviews
+
+interview_scores
+
+assessments
+
+assessment_results
+
+offers
+
+joining_status
+
+onboarding
+
+employee_profiles
+
+employee_performance
+
+pulse_surveys
+
+manager_feedback
+
+training_records
+
+promotion_history
+
+exit_interviews
+
+prediction_history
+
+recommendation_logs
+
+audit_logs
+
+Technology Stack
+Frontend
+Flutter (Android, iOS, Web)
+React (Admin Portal)
+Backend
+Laravel 12 (REST API)
+PostgreSQL
+Redis (Queue & Cache)
+Storage
+AWS S3 or Cloudflare R2 (documents)
+Authentication
+JWT + OAuth
+Multi-tenant architecture
+AI Layer (Phase 2)
+OpenAI or another LLM for reasoning
+OCR for resume parsing
+Embedding-based semantic matching
+Rule engine + ML models for predictive scoring
+
+Development Roadmap
+Phase 1 (8–12 weeks):
+Organization setup
+Job requisitions
+Candidate database
+Resume parsing
+Assessments
+Interview workflows
+Offer management
+Basic dashboards
+Phase 2 (6–8 weeks):
+Prediction engine
+AI-generated reports
+Pulse surveys
+Onboarding tracking
+Employee intelligence
+Phase 3 (8–10 weeks):
+Continuous learning from hiring outcomes
+Manager and team compatibility models
+Attrition prediction
+Workforce analytics
+Executive dashboards
+One architectural decision I strongly recommend
+Keep all scoring logic configurable through an admin interface rather than hard-coding it.
+For example, let administrators define:
+Which factors are scored.
+Weightage for each factor by job family.
+Mandatory vs. optional criteria.
+Pass/fail thresholds.
+Prediction confidence thresholds.
+This makes Sangoe AIR OS adaptable across industries (manufacturing, logistics, IT, healthcare, retail, etc.) without changing application code, giving it a significant long-term competitive advantage.
+
+
+
+================================================================================
+FILE: HR_Recruitment_UpdatedFlow
+================================================================================
+
+HR & Recruitment CRM Module - Requirement Specification
+Project: Recruitment CRM ModuleSource: Meeting recording requirement analysis
+Overview
+This document summarizes the functional requirements discussed in the meeting for the Recruitment CRM module.
+1. Dashboard
+Dashboard should display Manpower Requests, Job Postings, Candidates, Interviews, Offer Letters, Onboarding and Employee statistics.
+2. Manpower Request
+Internal request creation, department/job/project/salary/level/JD summary, requester tracking, L1 Department Head approval, L2 Management approval before HR execution.
+3. Job Posting
+Convert approved manpower request into Job Description, edit missing details, AI JD improvement, publish to TrulyTalent and other portals, maintain posting status.
+4. Candidate
+Fetch applicants from TrulyTalent, AI resume screening, JD vs Resume matching score, mandatory/custom questions, candidate stages.
+5. Interview
+Support HR/L1/L2/Client/Vendor/Third Party interviewers, Google Meet link generation, Email & WhatsApp notifications, reminders, interview comments and history.
+6. Onboarding
+Selected candidates complete onboarding forms before offer letter generation, document verification, onboarding status tracking.
+7. Offer Letter
+Generate PDF offer letter from template after onboarding approval, auto-fill candidate details, email delivery.
+8. Candidate Journey
+Track complete journey from request → approval → job posting → application → interview → onboarding → offer letter → employee.
+9. AI Features
+AI JD enhancement, AI resume score, AI recommendation, AI question analysis.
+10. Future Enhancements
+Analytics, reports, notification center, audit logs, integrations.
+Business Rules
+L1 approval by Department Head.
+L2 approval by Management.
+HR can post only after approvals.
+Job Posting created from approved request.
+Interview notifications through Email, WhatsApp and Calendar.
+Offer Letter only after onboarding completion.
+Every candidate maintains full workflow history.
+

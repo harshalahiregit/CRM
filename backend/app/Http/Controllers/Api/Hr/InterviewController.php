@@ -8,12 +8,16 @@ use App\Models\HrCandidate;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Carbon\Carbon;
+use App\Notifications\WhatsApp\InterviewScheduledNotification;
 
 class InterviewController extends Controller
 {
     public function index(Request $request)
     {
-        $query = HrInterviewRound::with('candidate');
+        $query = HrInterviewRound::with('candidate')
+            ->whereHas('candidate', function($q) use ($request) {
+                $q->where('tenant_id', $request->user()->tenant_id);
+            });
 
         if ($request->filled('status') && $request->status !== 'All') {
             $query->where('status', $request->status);
@@ -41,18 +45,40 @@ class InterviewController extends Controller
             'meet_link'        => 'nullable|url',
         ]);
 
-        // Auto-generate Google Meet link if not provided
+        // Verify candidate belongs to user's tenant
+        $candidate = HrCandidate::where('id', $validated['candidate_id'])
+            ->where('tenant_id', $request->user()->tenant_id)
+            ->firstOrFail();
+
+        // Auto-generate Google Meet link only for video-based rounds (not telephonic)
         if (empty($validated['meet_link'])) {
-            $code = strtolower(Str::random(3).'-'.Str::random(4).'-'.Str::random(3));
-            $validated['meet_link'] = "https://meet.google.com/{$code}";
+            $telephonic_rounds = ['HR Telephonic', 'Telephonic', 'Phone Screen', 'Telephonic Round'];
+            
+            // Only generate Meet link if it's NOT a telephonic round
+            if (!in_array($validated['round_name'], $telephonic_rounds)) {
+                $code = strtolower(Str::random(3).'-'.Str::random(4).'-'.Str::random(3));
+                $validated['meet_link'] = "https://meet.google.com/{$code}";
+            }
         }
 
         $round = HrInterviewRound::create($validated);
 
         // Move candidate to Interview stage
         HrCandidate::where('id', $validated['candidate_id'])
+            ->where('tenant_id', $request->user()->tenant_id)
             ->whereIn('stage', ['Applied','Screening','Assessment'])
             ->update(['stage' => 'Interview']);
+
+        // Send email notification to candidate
+        if ($candidate->email) {
+            \Mail::to($candidate->email)->send(
+                new \App\Mail\InterviewScheduledMail($round, 'candidate')
+            );
+            $round->update(['email_sent_candidate' => true]);
+        }
+
+        // Send WhatsApp notification
+        InterviewScheduledNotification::send($round);
 
         return response()->json($round->load('candidate'), 201);
     }
@@ -115,6 +141,24 @@ class InterviewController extends Controller
             'whatsapp'          => 'whatsapp_sent',
             'calendar'          => 'calendar_event_created',
         ];
+
+        // Send actual emails
+        if ($request->type === 'email_candidate' && $interviewRound->candidate && $interviewRound->candidate->email) {
+            \Mail::to($interviewRound->candidate->email)->send(
+                new \App\Mail\InterviewScheduledMail($interviewRound, 'candidate')
+            );
+        }
+
+        if ($request->type === 'email_interviewer' && $interviewRound->interviewer_email) {
+            \Mail::to($interviewRound->interviewer_email)->send(
+                new \App\Mail\InterviewScheduledMail($interviewRound, 'interviewer')
+            );
+        }
+
+        // Send WhatsApp notification
+        if ($request->type === 'whatsapp') {
+            InterviewScheduledNotification::send($interviewRound);
+        }
 
         $interviewRound->update([$map[$request->type] => true]);
         return response()->json(['success' => true, 'type' => $request->type]);

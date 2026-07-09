@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useTheme } from '@/context/ThemeContext'
-import { Plus, X, Users, Calendar, MapPin } from 'lucide-react'
+import { Plus, X, Users, Calendar, MapPin, Eye } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+import ExternalPostingCard from '@/components/hr/ExternalPostingCard'
 
 const STATUS_S = s => s==='Active'?{c:'#10b981',bg:'rgba(16,185,129,0.12)'}:s==='Draft'?{c:'#fbbf24',bg:'rgba(245,158,11,0.12)'}:{c:'#f87171',bg:'rgba(239,68,68,0.1)'}
 const TYPE_COLOR = { 'Full-time':'#7C3AED','Part-time':'#3b82f6','Contract':'#f59e0b','Remote':'#10b981','Internship':'#ec4899' }
@@ -16,6 +17,8 @@ export default function JobPostings() {
   const [loading, setLoading]     = useState(true)
   const [tab, setTab]             = useState('All')
   const [showModal, setShowModal] = useState(false)
+  const [showDetailModal, setShowDetailModal] = useState(false)
+  const [selectedJob, setSelectedJob] = useState(null)
   const [form, setForm]           = useState(EMPTY)
   const [saving, setSaving]       = useState(false)
   const [toast, setToast]         = useState(null)
@@ -56,6 +59,21 @@ export default function JobPostings() {
   const toggleSource = (src) => {
     const sources = Array.isArray(form.sources)?form.sources:[]
     setForm({...form, sources: sources.includes(src) ? sources.filter(s=>s!==src) : [...sources,src]})
+  }
+
+  const openDetailModal = (job) => {
+    setSelectedJob(job)
+    setShowDetailModal(true)
+  }
+
+  const handleJobUpdate = () => {
+    // Refresh job data after external ID is saved
+    fetchData()
+    if (selectedJob) {
+      // Update selectedJob to reflect changes
+      const updated = jobs.find(j => j.id === selectedJob.id)
+      if (updated) setSelectedJob(updated)
+    }
   }
 
   return (
@@ -114,6 +132,7 @@ export default function JobPostings() {
                   </div>
                 )}
                 <div className="flex gap-2 mt-auto">
+                  <button onClick={()=>openDetailModal(job)} className="flex-1 py-2 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1" style={{ background:'rgba(124,58,237,0.08)', color:'#a78bfa', border:'1px solid rgba(124,58,237,0.15)' }}><Eye size={12}/> View Details</button>
                   {job.status !== 'Closed' && <button onClick={()=>handleClose(job.id)} className="flex-1 py-2 rounded-xl text-[10px] font-bold" style={{ background:'rgba(239,68,68,0.08)', color:'#f87171', border:'1px solid rgba(239,68,68,0.15)' }}>Close Job</button>}
                   {job.status === 'Closed' && <span className="flex-1 text-center text-[10px] py-2 font-semibold" style={{ color:'var(--text-muted)' }}>Closed</span>}
                 </div>
@@ -127,45 +146,84 @@ export default function JobPostings() {
       {/* Post Job Modal */}
       {showModal && (
         <div className="modal-backdrop" onClick={()=>setShowModal(false)}>
-          <div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()} style={{ maxHeight:'90vh', overflowY:'auto' }}>
-            <div className="flex items-center justify-between mb-5"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>Post New Job</h2><button onClick={()=>setShowModal(false)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
-            <div className="space-y-3">
-              <div><label className="label">Job Title *</label><input className="input-3d text-sm" placeholder="e.g. Senior React Developer" value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/></div>
+          <div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()} style={{ maxHeight:'85vh', overflowY:'auto' }}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>Post New Job</h2>
+              <button onClick={()=>setShowModal(false)} style={{ color:'var(--text-muted)' }}><X size={18}/></button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color:'var(--text-h)' }}>Job Title *</label>
+                <input className="input-3d text-sm" placeholder="e.g. Senior React Developer" value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/>
+              </div>
+              
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="label">Department *</label>
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5" style={{ color:'var(--text-h)' }}>Department *</label>
                   <select className="input-3d text-sm" value={form.department} onChange={e=>setForm({...form,department:e.target.value})}>
                     <option value="">Select...</option>
                     {['Engineering','Sales','HR','Operations','Finance','Product','Marketing'].map(d=><option key={d}>{d}</option>)}
                   </select>
                 </div>
-                <div><label className="label">Location *</label><input className="input-3d text-sm" placeholder="Bangalore / Remote" value={form.location} onChange={e=>setForm({...form,location:e.target.value})}/></div>
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5" style={{ color:'var(--text-h)' }}>Location *</label>
+                  <input className="input-3d text-sm" placeholder="Bangalore / Remote" value={form.location} onChange={e=>setForm({...form,location:e.target.value})}/>
+                </div>
               </div>
+              
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="label">Job Type</label>
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5" style={{ color:'var(--text-h)' }}>Job Type</label>
                   <select className="input-3d text-sm" value={form.job_type} onChange={e=>setForm({...form,job_type:e.target.value})}>
                     {['Full-time','Part-time','Contract','Internship','Remote'].map(t=><option key={t}>{t}</option>)}
                   </select>
                 </div>
-                <div><label className="label">Posting Type</label>
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5" style={{ color:'var(--text-h)' }}>Posting Type</label>
                   <select className="input-3d text-sm" value={form.posting_type} onChange={e=>setForm({...form,posting_type:e.target.value})}>
                     {['Both','Internal','External'].map(t=><option key={t}>{t}</option>)}
                   </select>
                 </div>
               </div>
+              
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="label">Salary From (₹)</label><input type="number" className="input-3d text-sm" placeholder="500000" value={form.salary_from} onChange={e=>setForm({...form,salary_from:e.target.value})}/></div>
-                <div><label className="label">Salary To (₹)</label><input type="number" className="input-3d text-sm" placeholder="1200000" value={form.salary_to} onChange={e=>setForm({...form,salary_to:e.target.value})}/></div>
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5" style={{ color:'var(--text-h)' }}>Status</label>
+                  <select className="input-3d text-sm" value={form.status} onChange={e=>setForm({...form,status:e.target.value})}>
+                    <option value="Active">Active</option>
+                    <option value="Draft">Draft</option>
+                    <option value="Closed">Closed</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5" style={{ color:'var(--text-h)' }}>No. of Openings</label>
+                  <input type="number" min="1" className="input-3d text-sm" value={form.number_of_openings} onChange={e=>setForm({...form,number_of_openings:parseInt(e.target.value)||1})}/>
+                </div>
               </div>
+              
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="label">No. of Openings</label><input type="number" min="1" className="input-3d text-sm" value={form.number_of_openings} onChange={e=>setForm({...form,number_of_openings:parseInt(e.target.value)||1})}/></div>
-                <div><label className="label">Closing Date</label><input type="date" className="input-3d text-sm" value={form.closing_date} onChange={e=>setForm({...form,closing_date:e.target.value})}/></div>
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5" style={{ color:'var(--text-h)' }}>Salary From (₹)</label>
+                  <input type="number" className="input-3d text-sm" placeholder="500000" value={form.salary_from} onChange={e=>setForm({...form,salary_from:e.target.value})}/>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5" style={{ color:'var(--text-h)' }}>Salary To (₹)</label>
+                  <input type="number" className="input-3d text-sm" placeholder="1200000" value={form.salary_to} onChange={e=>setForm({...form,salary_to:e.target.value})}/>
+                </div>
               </div>
+              
               <div>
-                <label className="label">Description</label>
-                <textarea rows={2} className="input-3d text-sm resize-none" placeholder="Job description..." value={form.description} onChange={e=>setForm({...form,description:e.target.value})}/>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color:'var(--text-h)' }}>Closing Date</label>
+                <input type="date" className="input-3d text-sm" value={form.closing_date} onChange={e=>setForm({...form,closing_date:e.target.value})}/>
               </div>
+              
               <div>
-                <label className="label">Posting Sources</label>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color:'var(--text-h)' }}>Description</label>
+                <textarea rows={3} className="input-3d text-sm resize-none" placeholder="Job description..." value={form.description} onChange={e=>setForm({...form,description:e.target.value})}/>
+              </div>
+              
+              <div>
+                <label className="block text-xs font-semibold mb-2" style={{ color:'var(--text-h)' }}>Posting Sources</label>
                 <div className="flex gap-2 flex-wrap">
                   {['LinkedIn','Naukri','Career Page','Internal Portal','Employee Referral'].map(s=>{
                     const selected = (form.sources||[]).includes(s)
@@ -178,6 +236,46 @@ export default function JobPostings() {
                 <button onClick={handleCreate} disabled={saving} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)', opacity:saving?0.7:1 }}>{saving?'Posting…':'Post Job'}</button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Job Detail Modal with External Posting */}
+      {showDetailModal && selectedJob && (
+        <div className="modal-backdrop" onClick={()=>setShowDetailModal(false)}>
+          <div className="modal-box max-w-3xl" onClick={e=>e.stopPropagation()} style={{ maxHeight:'90vh', overflowY:'auto' }}>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="font-black text-xl" style={{ color:'var(--text-h)' }}>{selectedJob.title}</h2>
+                <p className="text-sm mt-1" style={{ color:'var(--text-muted)' }}>{selectedJob.department} • {selectedJob.location}</p>
+              </div>
+              <button onClick={()=>setShowDetailModal(false)} style={{ color:'var(--text-muted)' }}><X size={20}/></button>
+            </div>
+            
+            {/* Job Info */}
+            <div className="mb-6 p-4 rounded-xl" style={{ background:'var(--bg-card)', border:'1px solid var(--border)' }}>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div>
+                  <p className="text-xs mb-1" style={{ color:'var(--text-muted)' }}>Job Type</p>
+                  <p className="font-semibold" style={{ color:'var(--text-h)' }}>{selectedJob.job_type}</p>
+                </div>
+                <div>
+                  <p className="text-xs mb-1" style={{ color:'var(--text-muted)' }}>Status</p>
+                  <p className="font-semibold" style={{ color:'var(--text-h)' }}>{selectedJob.status}</p>
+                </div>
+                <div>
+                  <p className="text-xs mb-1" style={{ color:'var(--text-muted)' }}>Openings</p>
+                  <p className="font-semibold" style={{ color:'var(--text-h)' }}>{selectedJob.number_of_openings}</p>
+                </div>
+                <div>
+                  <p className="text-xs mb-1" style={{ color:'var(--text-muted)' }}>Applicants</p>
+                  <p className="font-semibold" style={{ color:'var(--text-h)' }}>{selectedJob.applicant_count}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* External Posting Card */}
+            <ExternalPostingCard job={selectedJob} onUpdate={handleJobUpdate} />
           </div>
         </div>
       )}

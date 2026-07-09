@@ -8,7 +8,7 @@ const STATUS_S = s => s==='Active'?{c:'#10b981',bg:'rgba(16,185,129,0.12)'}:s===
 const initials = n => (n||'').split(' ').slice(0,2).map(x=>x[0]).join('').toUpperCase()
 const fmtDate  = d => d ? new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) : '—'
 
-const EMPTY_FORM = { name:'', email:'', phone:'', department:'', designation:'', reporting_manager_name:'', joining_date:'', status:'Active' }
+const EMPTY_FORM = { name:'', email:'', phone:'', dob:'', gender:'', address:'', department:'', designation:'', reporting_manager_name:'', joining_date:'', probation_end_date:'', confirmation_date:'', status:'Active' }
 
 export default function Employees() {
   const { isDark } = useTheme()
@@ -118,15 +118,21 @@ export default function Employees() {
                       <div className="mt-3 pt-3 space-y-2" style={{ borderTop:'1px solid var(--border)' }}>
                         {emp.email && <div className="flex items-center gap-2"><Mail size={11} style={{ color:'var(--text-muted)' }}/><span className="text-xs" style={{ color:'var(--text-muted)' }}>{emp.email}</span></div>}
                         {emp.phone && <div className="flex items-center gap-2"><Phone size={11} style={{ color:'var(--text-muted)' }}/><span className="text-xs" style={{ color:'var(--text-muted)' }}>{emp.phone}</span></div>}
+                        {emp.address && <p className="text-xs" style={{ color:'var(--text-muted)' }}>📍 {emp.address}</p>}
                         <div className="grid grid-cols-2 gap-2 mt-2">
                           <div className="px-2.5 py-2 rounded-xl" style={{ background:'var(--bg-input)' }}><p className="text-[10px]" style={{ color:'var(--text-muted)' }}>Reports To</p><p className="text-xs font-semibold" style={{ color:'var(--text-h)' }}>{emp.reporting_manager_name||'—'}</p></div>
                           <div className="px-2.5 py-2 rounded-xl" style={{ background:'var(--bg-input)' }}><p className="text-[10px]" style={{ color:'var(--text-muted)' }}>Joined</p><p className="text-xs font-semibold" style={{ color:'var(--text-h)' }}>{fmtDate(emp.joining_date)}</p></div>
+                          {emp.dob && <div className="px-2.5 py-2 rounded-xl" style={{ background:'var(--bg-input)' }}><p className="text-[10px]" style={{ color:'var(--text-muted)' }}>DOB</p><p className="text-xs font-semibold" style={{ color:'var(--text-h)' }}>{fmtDate(emp.dob)}</p></div>}
+                          {emp.gender && <div className="px-2.5 py-2 rounded-xl" style={{ background:'var(--bg-input)' }}><p className="text-[10px]" style={{ color:'var(--text-muted)' }}>Gender</p><p className="text-xs font-semibold" style={{ color:'var(--text-h)' }}>{emp.gender}</p></div>}
+                          {emp.probation_end_date && <div className="px-2.5 py-2 rounded-xl" style={{ background:'var(--bg-input)' }}><p className="text-[10px]" style={{ color:'var(--text-muted)' }}>Probation End</p><p className="text-xs font-semibold" style={{ color:'var(--text-h)' }}>{fmtDate(emp.probation_end_date)}</p></div>}
+                          {emp.confirmation_date && <div className="px-2.5 py-2 rounded-xl" style={{ background:'var(--bg-input)' }}><p className="text-[10px]" style={{ color:'var(--text-muted)' }}>Confirmed</p><p className="text-xs font-semibold" style={{ color:'#10b981' }}>{fmtDate(emp.confirmation_date)}</p></div>}
                         </div>
                         <div className="flex justify-end mt-1">
                           <button onClick={(e)=>{e.stopPropagation(); handleDelete(emp.id)}} className="text-[10px] font-semibold px-3 py-1.5 rounded-xl" style={{ background:'rgba(239,68,68,0.1)', color:'#f87171' }}>Remove</button>
                         </div>
                       </div>
                     )}
+
                   </div>
                 )
               })}
@@ -163,7 +169,7 @@ export default function Employees() {
       {/* Add Employee Modal */}
       {showModal && (
         <div className="modal-backdrop" onClick={()=>setShowModal(false)}>
-          <div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()}>
+          <div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()} style={{ maxHeight:'90vh', overflowY:'auto' }}>
             <div className="flex items-center justify-between mb-5"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>Add Employee</h2><button onClick={()=>setShowModal(false)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
             <div className="space-y-3">
               <div><label className="label">Full Name *</label><input className="input-3d text-sm" placeholder="Arjun Sharma" value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></div>
@@ -171,6 +177,16 @@ export default function Employees() {
                 <div><label className="label">Email</label><input type="email" className="input-3d text-sm" value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/></div>
                 <div><label className="label">Phone</label><input className="input-3d text-sm" value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})}/></div>
               </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="label">Date of Birth</label><input type="date" className="input-3d text-sm" value={form.dob} onChange={e=>setForm({...form,dob:e.target.value})}/></div>
+                <div><label className="label">Gender</label>
+                  <select className="input-3d text-sm" value={form.gender} onChange={e=>setForm({...form,gender:e.target.value})}>
+                    <option value="">Select...</option>
+                    {['Male','Female','Other','Prefer not to say'].map(g=><option key={g}>{g}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div><label className="label">Address</label><textarea rows={2} className="input-3d text-sm resize-none" value={form.address} onChange={e=>setForm({...form,address:e.target.value})}/></div>
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="label">Department *</label>
                   <select className="input-3d text-sm" value={form.department} onChange={e=>setForm({...form,department:e.target.value})}>
@@ -183,6 +199,10 @@ export default function Employees() {
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="label">Reporting Manager</label><input className="input-3d text-sm" value={form.reporting_manager_name} onChange={e=>setForm({...form,reporting_manager_name:e.target.value})}/></div>
                 <div><label className="label">Joining Date *</label><input type="date" className="input-3d text-sm" value={form.joining_date} onChange={e=>setForm({...form,joining_date:e.target.value})}/></div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="label">Probation End Date</label><input type="date" className="input-3d text-sm" value={form.probation_end_date} onChange={e=>setForm({...form,probation_end_date:e.target.value})}/></div>
+                <div><label className="label">Confirmation Date</label><input type="date" className="input-3d text-sm" value={form.confirmation_date} onChange={e=>setForm({...form,confirmation_date:e.target.value})}/></div>
               </div>
               <div className="flex gap-3 pt-1">
                 <button onClick={()=>setShowModal(false)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold" style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}>Cancel</button>

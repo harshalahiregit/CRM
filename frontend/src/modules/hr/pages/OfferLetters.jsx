@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useTheme } from '@/context/ThemeContext'
-import { Plus, Send, Eye, X, Mail } from 'lucide-react'
+import { Plus, Send, Eye, X, Mail, AlertCircle } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 
 const STATUS_S = s => s==='Accepted'?{c:'#10b981',bg:'rgba(16,185,129,0.12)'}:s==='Sent'?{c:'#a78bfa',bg:'rgba(124,58,237,0.12)'}:s==='Rejected'?{c:'#f87171',bg:'rgba(239,68,68,0.1)'}:{c:'#fbbf24',bg:'rgba(245,158,11,0.12)'}
@@ -19,6 +19,7 @@ export default function OfferLetters() {
   const [form, setForm]           = useState(EMPTY_FORM)
   const [saving, setSaving]       = useState(false)
   const [toast, setToast]         = useState(null)
+  const [rejectModal, setRejectModal] = useState({ open:false, id:null, reason:'' })
 
   const showToast = (msg, type='success') => { setToast({msg,type}); setTimeout(()=>setToast(null),3000) }
 
@@ -52,12 +53,32 @@ export default function OfferLetters() {
     } catch { showToast('Failed','error') }
   }
 
-  const handleStatus = async (id, status) => {
+  const handleStatus = async (id, status, rejection_reason = '') => {
     try {
-      const updated = await hrApi.offers.updateStatus(id, status)
+      const updated = await hrApi.offers.updateStatus(id, { status, rejection_reason })
       setOffers(prev=>prev.map(o=>o.id===id?updated:o))
       showToast(`Offer ${status}!`)
+      setRejectModal({ open:false, id:null, reason:'' })
     } catch { showToast('Failed','error') }
+  }
+
+  const openOfferReject = (id) => setRejectModal({ open:true, id, reason:'' })
+
+  const handleStartOnboarding = async (offer) => {
+    try {
+      const onboardingData = {
+        candidate_id: offer.candidate_id,
+        candidate_name: offer.candidate?.name || '',
+        position: offer.position,
+        department: offer.department,
+        joining_date: offer.joining_date
+      }
+      
+      await hrApi.onboarding.start(onboardingData)
+      showToast('Onboarding started successfully! Check Onboarding page.')
+    } catch (e) {
+      showToast(e.response?.data?.message || 'Failed to start onboarding', 'error')
+    }
   }
 
   const stats = { generated:offers.length, sent:offers.filter(o=>['Sent','Accepted'].includes(o.status)).length, accepted:offers.filter(o=>o.status==='Accepted').length, pending:offers.filter(o=>o.status==='Generated').length }
@@ -115,9 +136,16 @@ export default function OfferLetters() {
                   {offer.status==='Generated' && <button onClick={()=>handleSend(offer.id)} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold text-white" style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)' }}><Send size={11}/> Send</button>}
                   {offer.status==='Sent' && <>
                     <button onClick={()=>handleStatus(offer.id,'Accepted')} className="flex-1 py-2 rounded-xl text-xs font-bold text-white" style={{ background:'linear-gradient(135deg,#10b981,#059669)' }}>✓ Accept</button>
-                    <button onClick={()=>handleStatus(offer.id,'Rejected')} className="flex-1 py-2 rounded-xl text-xs font-bold" style={{ background:'rgba(239,68,68,0.1)', color:'#f87171' }}>Reject</button>
+                    <button onClick={()=>openOfferReject(offer.id)} className="flex-1 py-2 rounded-xl text-xs font-bold" style={{ background:'rgba(239,68,68,0.1)', color:'#f87171' }}>Reject</button>
                   </>}
-                  {offer.status==='Accepted' && <span className="flex-1 text-center text-xs py-2 font-semibold" style={{ color:'#10b981' }}>✓ Accepted</span>}
+                  {offer.status==='Accepted' && (
+                    <div className="flex-1 flex flex-col gap-2">
+                      <span className="text-center text-xs py-1.5 font-semibold rounded-xl" style={{ color:'#10b981', background:'rgba(16,185,129,0.1)' }}>✓ Accepted</span>
+                      <button onClick={()=>handleStartOnboarding(offer)} className="py-2 rounded-xl text-xs font-bold text-white" style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>
+                        Start Onboarding →
+                      </button>
+                    </div>
+                  )}
                   {offer.status==='Rejected' && <span className="flex-1 text-center text-xs py-2 font-semibold" style={{ color:'#f87171' }}>Rejected</span>}
                 </div>
               </div>
@@ -155,6 +183,31 @@ export default function OfferLetters() {
               <div className="flex gap-3 pt-1">
                 <button onClick={()=>setShowModal(false)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold" style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}>Cancel</button>
                 <button onClick={handleCreate} disabled={saving} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)', opacity:saving?0.7:1 }}>{saving?'Generating…':'Generate'}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Offer Reject Reason Modal */}
+      {rejectModal.open && (
+        <div className="modal-backdrop" onClick={()=>setRejectModal({open:false,id:null,reason:''})}>
+          <div className="modal-box max-w-md" onClick={e=>e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-2">
+                <AlertCircle size={18} style={{ color:'#f87171' }}/>
+                <h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>Reject Offer</h2>
+              </div>
+              <button onClick={()=>setRejectModal({open:false,id:null,reason:''})} style={{ color:'var(--text-muted)' }}><X size={18}/></button>
+            </div>
+            <div className="space-y-4">
+              <p className="text-sm" style={{ color:'var(--text-muted)' }}>Please provide a reason for rejecting this offer. This will be recorded and can be communicated to the candidate.</p>
+              <div>
+                <label className="label">Rejection Reason *</label>
+                <textarea rows={3} className="input-3d text-sm resize-none" placeholder="e.g. Candidate declined the offer, salary mismatch..." value={rejectModal.reason} onChange={e=>setRejectModal(m=>({...m,reason:e.target.value}))}/>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={()=>setRejectModal({open:false,id:null,reason:''})} className="flex-1 py-2.5 rounded-xl text-sm font-semibold" style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}>Cancel</button>
+                <button onClick={()=>handleStatus(rejectModal.id,'Rejected',rejectModal.reason)} disabled={!rejectModal.reason || saving} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background:'linear-gradient(135deg,#ef4444,#dc2626)', opacity:(!rejectModal.reason||saving)?0.5:1 }}>Confirm Reject</button>
               </div>
             </div>
           </div>

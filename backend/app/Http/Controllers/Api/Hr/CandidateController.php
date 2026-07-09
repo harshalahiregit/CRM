@@ -7,12 +7,15 @@ use App\Models\HrCandidate;
 use App\Models\HrJobPosting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use App\Notifications\WhatsApp\ApplicationReceivedNotification;
+use App\Notifications\WhatsApp\StatusUpdateNotification;
 
 class CandidateController extends Controller
 {
     public function index(Request $request)
     {
-        $query = HrCandidate::with('jobPosting');
+        $query = HrCandidate::with('jobPosting')
+            ->where('tenant_id', $request->user()->tenant_id);
 
         if ($request->filled('stage') && $request->stage !== 'All') {
             $query->where('stage', $request->stage);
@@ -51,10 +54,14 @@ class CandidateController extends Controller
             'notes'            => 'nullable|string',
         ]);
 
+        // Add tenant_id
+        $validated['tenant_id'] = $request->user()->tenant_id;
+
         // Duplicate email check per job posting
         if (!empty($validated['email']) && !empty($validated['job_posting_id'])) {
             $exists = HrCandidate::where('email', $validated['email'])
                 ->where('job_posting_id', $validated['job_posting_id'])
+                ->where('tenant_id', $validated['tenant_id'])
                 ->exists();
             if ($exists) {
                 return response()->json(['message' => 'A candidate with this email already applied for this job.'], 422);
@@ -72,6 +79,16 @@ class CandidateController extends Controller
         if ($candidate->job_posting_id) {
             HrJobPosting::where('id', $candidate->job_posting_id)->increment('applicant_count');
         }
+
+        // Send application received email
+        if ($candidate->email) {
+            \Mail::to($candidate->email)->send(
+                new \App\Mail\ApplicationReceivedMail($candidate->load('jobPosting'))
+            );
+        }
+
+        // Send WhatsApp notification
+        ApplicationReceivedNotification::send($candidate);
 
         return response()->json($candidate, 201);
     }
@@ -101,7 +118,28 @@ class CandidateController extends Controller
             return response()->json(['message' => 'Stage can only move forward in the pipeline.'], 422);
         }
 
+        $oldStage = $candidate->stage;
         $candidate->update(['stage' => $request->stage]);
+        
+        // Send status update email
+        if ($candidate->email && $oldStage !== $request->stage) {
+            $message = '';
+            if ($request->stage === 'Rejected') {
+                $message = 'We appreciate your interest and wish you the best in your career endeavors.';
+            } elseif ($request->stage === 'Hired') {
+                $message = 'Congratulations on successfully completing all rounds!';
+            }
+            
+            \Mail::to($candidate->email)->send(
+                new \App\Mail\ApplicationStatusMail($candidate->load('jobPosting'), $request->stage, $message)
+            );
+        }
+        
+        // Send WhatsApp notification
+        if ($oldStage !== $request->stage) {
+            StatusUpdateNotification::send($candidate, $request->stage);
+        }
+        
         return response()->json($candidate);
     }
 

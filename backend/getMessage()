@@ -1,0 +1,14 @@
+Total users: 8
+ID:1 | Role:admin | Email:admin@mlacrm.com | Tenant:1 | Status:active
+ID:2 | Role:vendor | Email:vendor@mlacrm.com | Tenant:1 | Status:active
+ID:3 | Role:third_party_vendor | Email:tpv@mlacrm.com | Tenant:1 | Status:active
+ID:4 | Role:client | Email:client@mlacrm.com | Tenant:1 | Status:active
+ID:5 | Role:admin | Email:admin@demo.com | Tenant:2 | Status:active
+ID:6 | Role:staff | Email:hr@demo.com | Tenant:2 | Status:active
+ID:7 | Role:staff | Email:manager@demo.com | Tenant:2 | Status:active
+ID:8 | Role:admin | Email:hr@test.com | Tenant:1 | Status:pending
+
+Staff count: 2
+Admin count: 3
+
+Parse error: syntax error, unexpected token "=" in Command line code on line 1

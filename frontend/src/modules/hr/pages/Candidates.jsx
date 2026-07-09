@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTheme } from '@/context/ThemeContext'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Search, X, Linkedin, Loader2 } from 'lucide-react'
+import { Plus, Search, X, Linkedin, Loader2, Upload, FileText } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 
 const STAGES = ['Applied','Screening','Assessment','Interview','Offer','Hired','Rejected']
@@ -28,6 +28,10 @@ export default function Candidates() {
   const [liUrl, setLiUrl]         = useState('')
   const [liLoading, setLiLoading] = useState(false)
   const [liNote, setLiNote]       = useState('')
+  // Resume for new candidate
+  const [resumeFile, setResumeFile] = useState(null)
+  const [resumeDrag, setResumeDrag] = useState(false)
+  const resumeInputRef = useRef(null)
 
   const showToast = (msg, type='success') => { setToast({msg,type}); setTimeout(()=>setToast(null),3000) }
 
@@ -72,8 +76,12 @@ export default function Candidates() {
     try {
       const payload = { ...form, linkedin_url: liUrl || form.linkedin_url }
       const cand = await hrApi.candidates.create(payload)
+      // Auto-upload resume if one was selected
+      if (resumeFile) {
+        try { await hrApi.candidates.uploadResume(cand.id, resumeFile) } catch {}
+      }
       setCands(prev => [cand, ...prev])
-      setShowModal(false); setForm(EMPTY_FORM); setLiUrl(''); setLiNote('')
+      setShowModal(false); setForm(EMPTY_FORM); setLiUrl(''); setLiNote(''); setResumeFile(null)
       showToast('Candidate added!')
     } catch (e) {
       showToast(e.response?.data?.message || 'Failed to add','error')
@@ -274,6 +282,37 @@ export default function Candidates() {
               <div>
                 <label className="label">Skills (comma separated)</label>
                 <input className="input-3d text-sm" placeholder="React.js, Node.js, AWS" value={(form.skills||[]).join(', ')} onChange={e=>setForm({...form,skills:e.target.value.split(',').map(s=>s.trim()).filter(Boolean)})}/>
+              </div>
+              {/* Resume Upload */}
+              <div>
+                <label className="label">Resume (optional)</label>
+                <div
+                  onDragOver={e=>{e.preventDefault();setResumeDrag(true)}}
+                  onDragLeave={()=>setResumeDrag(false)}
+                  onDrop={e=>{e.preventDefault();setResumeDrag(false);const f=e.dataTransfer.files?.[0];if(f)setResumeFile(f)}}
+                  onClick={()=>resumeInputRef.current?.click()}
+                  className="flex items-center gap-3 px-4 py-3 rounded-xl cursor-pointer transition-all"
+                  style={{ border:`2px dashed ${resumeDrag?'#7C3AED':'var(--border)'}`, background:resumeDrag?'rgba(124,58,237,0.06)':'transparent' }}
+                >
+                  {resumeFile ? (
+                    <>
+                      <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background:'rgba(239,68,68,0.12)' }}>
+                        <FileText size={14} style={{ color:'#f87171' }}/>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold truncate" style={{ color:'var(--text-h)' }}>{resumeFile.name}</p>
+                        <p className="text-[10px]" style={{ color:'var(--text-muted)' }}>{(resumeFile.size/1024).toFixed(0)} KB · Will upload after save</p>
+                      </div>
+                      <button onClick={e=>{e.stopPropagation();setResumeFile(null)}} style={{ color:'var(--text-muted)' }}><X size={14}/></button>
+                    </>
+                  ) : (
+                    <>
+                      <Upload size={16} style={{ color:'var(--text-muted)' }}/>
+                      <span className="text-xs" style={{ color:'var(--text-muted)' }}>Drop PDF/DOC/DOCX here or click to browse (max 5MB)</span>
+                    </>
+                  )}
+                  <input ref={resumeInputRef} type="file" accept=".pdf,.doc,.docx" className="hidden" onChange={e=>setResumeFile(e.target.files?.[0]||null)}/>
+                </div>
               </div>
               <div className="flex gap-3 pt-1">
                 <button onClick={()=>setShowModal(false)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold" style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}>Cancel</button>
