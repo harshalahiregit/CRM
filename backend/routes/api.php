@@ -18,6 +18,8 @@ use App\Http\Controllers\Api\Sales\EstimateController;
 use App\Http\Controllers\Api\Sales\InvoiceController;
 use App\Http\Controllers\Api\Sales\CreditNoteController;
 use App\Http\Controllers\Api\Sales\DeliveryNoteController;
+use App\Http\Controllers\Api\Sales\LeadController;
+use App\Http\Controllers\Api\Sales\LeadSettingController;
 use Illuminate\Support\Facades\Route;
 
 // ── Public Auth Routes ──────────────────────────────────────────────────
@@ -180,6 +182,49 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/delivery-notes/{deliveryNote}',               [DeliveryNoteController::class, 'update']);
         Route::patch('/delivery-notes/{deliveryNote}/deliver',     [DeliveryNoteController::class, 'markDelivered']);
         Route::delete('/delivery-notes/{deliveryNote}',            [DeliveryNoteController::class, 'destroy']);
+
+        // ── Leads Module ────────────────────────────────────────────
+
+        // Lead Statuses & Sources (settings)
+        Route::get('/lead-statuses',                               [LeadSettingController::class, 'statuses']);
+        Route::post('/lead-statuses',                              [LeadSettingController::class, 'createStatus']);
+        Route::put('/lead-statuses/{status}',                      [LeadSettingController::class, 'updateStatus']);
+        Route::delete('/lead-statuses/{status}',                   [LeadSettingController::class, 'deleteStatus']);
+
+        Route::get('/lead-sources',                                [LeadSettingController::class, 'sources']);
+        Route::post('/lead-sources',                               [LeadSettingController::class, 'createSource']);
+        Route::put('/lead-sources/{source}',                       [LeadSettingController::class, 'updateSource']);
+        Route::delete('/lead-sources/{source}',                    [LeadSettingController::class, 'deleteSource']);
+
+        // Lead Goals / Targets
+        Route::get('/lead-goals',                                  [LeadSettingController::class, 'goals']);
+        Route::post('/lead-goals',                                 [LeadSettingController::class, 'storeGoal']);
+        Route::put('/lead-goals/{goal}',                           [LeadSettingController::class, 'updateGoal']);
+        Route::delete('/lead-goals/{goal}',                        [LeadSettingController::class, 'deleteGoal']);
+
+        // Questionnaires
+        Route::get('/lead-questionnaires',                         [LeadSettingController::class, 'questionnaires']);
+        Route::post('/lead-questionnaires',                        [LeadSettingController::class, 'storeQuestionnaire']);
+        Route::put('/lead-questionnaires/{questionnaire}',         [LeadSettingController::class, 'updateQuestionnaire']);
+        Route::delete('/lead-questionnaires/{questionnaire}',      [LeadSettingController::class, 'deleteQuestionnaire']);
+
+        // Leads CRUD + Actions
+        Route::get('/leads/summary',                               [LeadController::class, 'summary']);
+        Route::get('/leads/kanban',                                [LeadController::class, 'kanban']);
+        Route::post('/leads/bulk',                                 [LeadController::class, 'bulkAction']);
+        Route::get('/leads',                                       [LeadController::class, 'index']);
+        Route::post('/leads',                                      [LeadController::class, 'store']);
+        Route::get('/leads/{lead}',                                [LeadController::class, 'show']);
+        Route::put('/leads/{lead}',                                [LeadController::class, 'update']);
+        Route::delete('/leads/{lead}',                             [LeadController::class, 'destroy']);
+        Route::patch('/leads/{lead}/status',                       [LeadController::class, 'updateStatus']);
+        Route::patch('/leads/{lead}/assign',                       [LeadController::class, 'assign']);
+        Route::patch('/leads/{lead}/lost',                         [LeadController::class, 'markLost']);
+        Route::patch('/leads/{lead}/junk',                         [LeadController::class, 'markJunk']);
+        Route::patch('/leads/{lead}/restore',                      [LeadController::class, 'restore']);
+        Route::post('/leads/{lead}/convert',                       [LeadController::class, 'convert']);
+        Route::post('/leads/{lead}/notes',                         [LeadController::class, 'addNote']);
+        Route::post('/leads/{lead}/questionnaire-response',        [LeadController::class, 'submitQuestionnaireResponse']);
     });
 });
 

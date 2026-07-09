@@ -42,6 +42,7 @@ const SalesItems       = lazy(() => import('@/modules/sales/pages/Items'))
 const ProposalDetail   = lazy(() => import('@/modules/sales/pages/ProposalDetail'))
 const InvoiceDetail    = lazy(() => import('@/modules/sales/pages/InvoiceDetail'))
 const EstimateDetail   = lazy(() => import('@/modules/sales/pages/EstimateDetail'))
+const Leads            = lazy(() => import('@/modules/sales/pages/Leads'))
 
 function ComingSoon({ name }) {
   return (
@@ -133,6 +134,7 @@ export default function App() {
                 <Route path="proposals/:id"    element={<S><ProposalDetail /></S>} />
                 <Route path="invoices/:id"     element={<S><InvoiceDetail /></S>} />
                 <Route path="estimates/:id"    element={<S><EstimateDetail /></S>} />
+                <Route path="leads"            element={<S><Leads /></S>} />
               </Route>
 
               {/* Core CRM */}
