@@ -83,4 +83,41 @@ class InvoiceController extends Controller
 
         return response()->json($result, 201);
     }
+
+    /**
+     * POST /api/sales/invoices/{invoice}/public-link
+     */
+    public function generatePublicLink(Request $request, SalesInvoice $invoice)
+    {
+        $invoice = $this->invoiceService->generatePublicLink(
+            $invoice,
+            $request->user()->tenant_id,
+            $request->input('expiry_days', 30)
+        );
+
+        return response()->json([
+            'token'      => $invoice->public_link_token,
+            'expires_at' => $invoice->public_link_expiry,
+        ]);
+    }
+
+    /**
+     * POST /api/sales/invoices/{invoice}/send-reminder
+     */
+    public function sendPaymentReminder(Request $request, SalesInvoice $invoice)
+    {
+        $reminder = $this->invoiceService->sendPaymentReminder($invoice, $request->user()->tenant_id);
+
+        return response()->json($reminder, 201);
+    }
+
+    /**
+     * POST /api/sales/invoices/{invoice}/send-feedback-request
+     */
+    public function sendFeedbackRequest(Request $request, SalesInvoice $invoice)
+    {
+        $invoice = $this->invoiceService->sendFeedbackRequest($invoice, $request->user()->tenant_id);
+
+        return response()->json($invoice);
+    }
 }

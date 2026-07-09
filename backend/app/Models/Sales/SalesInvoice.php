@@ -22,6 +22,10 @@ class SalesInvoice extends Model
         'allowed_payment_modes', 'cancel_overdue_reminders',
         'status', 'adminnote', 'clientnote', 'terms', 'tags',
         'sent_at', 'created_by',
+        'invoice_type', 'gst_paid', 'gst_amount', 'after_discount_amount',
+        'public_link_token', 'public_link_expiry', 'msme_udyam_number',
+        'eway_bill_number', 'eway_bill_date', 'payment_reminder_enabled',
+        'reminder_schedule', 'feedback_email_sent',
     ];
 
     protected $casts = [
@@ -37,6 +41,14 @@ class SalesInvoice extends Model
         'total'      => 'decimal:2',
         'paid'       => 'decimal:2',
         'balance'    => 'decimal:2',
+        'gst_paid'   => 'boolean',
+        'gst_amount' => 'decimal:2',
+        'after_discount_amount'    => 'decimal:2',
+        'public_link_expiry'       => 'datetime',
+        'eway_bill_date'           => 'date',
+        'payment_reminder_enabled' => 'boolean',
+        'reminder_schedule'        => 'array',
+        'feedback_email_sent'      => 'boolean',
     ];
 
     /* ── Number auto-generation ─────────────────────── */
@@ -50,7 +62,7 @@ class SalesInvoice extends Model
                                ->count() + 1;
                 $inv->number = 'INV-' . $year . '-' . str_pad($count, 3, '0', STR_PAD_LEFT);
             }
-            $inv->balance = $inv->total;
+            $inv->balance = $inv->total ?? 0;
         });
     }
 
@@ -87,10 +99,12 @@ class SalesInvoice extends Model
             $discountTotal+= $li->discount;
             $taxTotal     += $taxAmount;
         }
-        $this->subtotal       = round($subtotal, 2);
-        $this->tax_total      = round($taxTotal, 2);
-        $this->discount_total = round($discountTotal, 2);
-        $this->total          = round($subtotal - $discountTotal + $taxTotal, 2);
+        $this->subtotal              = round($subtotal, 2);
+        $this->tax_total             = round($taxTotal, 2);
+        $this->discount_total        = round($discountTotal, 2);
+        $this->after_discount_amount = round($subtotal - $discountTotal, 2);
+        $this->gst_amount            = round($taxTotal, 2);
+        $this->total                 = round($subtotal - $discountTotal + $taxTotal, 2);
         $this->saveQuietly();
     }
 

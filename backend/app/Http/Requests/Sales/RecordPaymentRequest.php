@@ -30,6 +30,10 @@ class RecordPaymentRequest extends FormRequest
             'mode'           => 'required|string',
             'transaction_id' => 'nullable|string|max:255',
             'note'           => 'nullable|string',
+            'tds_amount'     => 'nullable|numeric|min:0',
+            'tds_section'    => 'nullable|string|max:20',
+            'tds_percentage' => 'nullable|numeric|min:0|max:100',
+            'payment_type'   => 'nullable|in:received,paid',
         ];
     }
 }
