@@ -45,6 +45,13 @@ const InvoiceDetail = lazy(() => import('@/modules/sales/pages/InvoiceDetail'))
 const EstimateDetail = lazy(() => import('@/modules/sales/pages/EstimateDetail'))
 const Leads = lazy(() => import('@/modules/sales/pages/Leads'))
 
+// Helpdesk Module (lazy)
+const HelpdeskLayout = lazy(() => import('@/modules/helpdesk/HelpdeskLayout'))
+const HelpdeskAnalytics = lazy(() => import('@/modules/helpdesk/pages/HelpdeskAnalytics'))
+const TicketGrid = lazy(() => import('@/modules/helpdesk/pages/TicketGrid'))
+const KnowledgeBaseHome = lazy(() => import('@/modules/helpdesk/pages/KnowledgeBaseHome'))
+const TicketThread = lazy(() => import('@/modules/helpdesk/components/TicketThread'))
+
 function ComingSoon({ name }) {
   return (
     <div className="flex flex-col items-center justify-center min-h-[55vh] gap-4 animate-fade-in">
@@ -138,6 +145,15 @@ export default function AppRoutes() {
           <Route path="invoices/:id" element={<S><InvoiceDetail /></S>} />
           <Route path="estimates/:id" element={<S><EstimateDetail /></S>} />
           <Route path="leads" element={<S><Leads /></S>} />
+        </Route>
+
+        {/* HELPDESK MODULE */}
+        <Route path="helpdesk" element={<S><HelpdeskLayout /></S>}>
+          <Route index element={<Navigate to="analytics" replace />} />
+          <Route path="analytics" element={<S><HelpdeskAnalytics /></S>} />
+          <Route path="tickets" element={<S><TicketGrid /></S>} />
+          <Route path="tickets/:id" element={<S><TicketThread /></S>} />
+          <Route path="knowledge-base" element={<S><KnowledgeBaseHome /></S>} />
         </Route>
 
         {/* Core CRM */}
