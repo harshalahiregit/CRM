@@ -14,6 +14,7 @@ import { useTheme } from '@/context/ThemeContext'
 import { isModuleInstalled } from '@/modules/registry'
 import { useState, useEffect } from 'react'
 import clsx from 'clsx'
+import { leadApi } from '@/services/leadApi'
 
 const NAV_ITEMS = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/app/dashboard' },
@@ -58,6 +59,11 @@ export default function Sidebar({ collapsed, onToggle }) {
   const [hrExpanded, setHrExpanded] = useState(true)
   const [salesExpanded, setSalesExpanded] = useState(true)
   const hrInstalled = isModuleInstalled('hr')
+  const [activeLeadsCount, setActiveLeadsCount] = useState(null)
+
+  useEffect(() => {
+    leadApi.summary().then(s => setActiveLeadsCount(s.active)).catch(() => {})
+  }, [])
 
   const handleLogout = async () => { await logout(); navigate('/auth/login') }
 
@@ -245,7 +251,12 @@ export default function Sidebar({ collapsed, onToggle }) {
                     <Icon size={12} />
                   </div>
                   {!collapsed && <span className="truncate text-xs">{label}</span>}
-                  {isActive && !collapsed && <div className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: '#c4b5fd' }} />}
+                  {!collapsed && label === 'Leads' && activeLeadsCount > 0 && (
+                    <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: isActive ? 'rgba(255,255,255,0.2)' : 'rgba(124,58,237,0.15)', color: isActive ? '#fff' : '#a78bfa' }}>
+                      {activeLeadsCount}
+                    </span>
+                  )}
+                  {isActive && !collapsed && label !== 'Leads' && <div className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: '#c4b5fd' }} />}
                 </div>
               )}
             </NavLink>
