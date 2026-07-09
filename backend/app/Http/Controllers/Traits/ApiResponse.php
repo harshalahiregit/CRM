@@ -3,25 +3,24 @@
 namespace App\Http\Controllers\Traits;
 
 use Illuminate\Http\JsonResponse;
-use Illuminate\Pagination\AbstractPaginator;
 
 trait ApiResponse
 {
-    protected function success($data = null, int $status = 200): JsonResponse
+    protected function success($data = null, string $message = 'Success', int $code = 200): JsonResponse
     {
-        return response()->json($data, $status);
+        return response()->json([
+            'status'  => 'success',
+            'message' => $message,
+            'data'    => $data,
+        ], $code);
     }
 
-    protected function error(string $message, int $status = 400): JsonResponse
+    protected function error(string $message, int $code = 400, $errors = null): JsonResponse
     {
         return response()->json([
             'status'  => 'error',
             'message' => $message,
-        ], $status);
-    }
-
-    protected function paginated(AbstractPaginator $paginator): JsonResponse
-    {
-        return response()->json($paginator);
+            'errors'  => $errors,
+        ], $code);
     }
 }

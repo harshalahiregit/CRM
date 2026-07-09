@@ -6,6 +6,7 @@ use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -40,6 +41,16 @@ return Application::configure(basePath: dirname(__DIR__))
         // JSON error responses for API routes
         $exceptions->render(function (\Throwable $e, Request $request) {
             if ($request->is('api/*') || $request->wantsJson()) {
+                // Preserve the existing {status, message, errors} shape the frontend
+                // was already built against for form-validation failures.
+                if ($e instanceof ValidationException) {
+                    return response()->json([
+                        'status'  => 'error',
+                        'message' => 'Validation failed',
+                        'errors'  => $e->errors(),
+                    ], $e->status);
+                }
+
                 $status = $e instanceof BusinessException
                     ? $e->getStatusCode()
                     : (method_exists($e, 'getStatusCode') ? $e->getStatusCode() : 500);

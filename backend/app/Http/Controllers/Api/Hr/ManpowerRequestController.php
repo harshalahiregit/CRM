@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Hr;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Traits\ApiResponse;
 use App\Models\HrManpowerRequest;
 use App\Models\HrApprovalHistory;
 use App\Models\User;
@@ -11,6 +12,9 @@ use Illuminate\Support\Facades\DB;
 
 class ManpowerRequestController extends Controller
 {
+    use ApiResponse;
+
+
     /* ─────────────────────────────────────────────
      | GET /api/hr/manpower
      ───────────────────────────────────────────── */
@@ -385,16 +389,5 @@ class ManpowerRequestController extends Controller
         $manager = User::findOrFail($request->manager_id);
         $manpowerRequest->update(['assigned_manager_id' => $manager->id]);
         return $this->success($manpowerRequest->fresh()->load('assignedManager'), 'Manager assigned');
-    }
-
-    /* helper */
-    private function success($data, string $msg = 'Success', int $code = 200)
-    {
-        return response()->json(['status' => 'success', 'message' => $msg, 'data' => $data], $code);
-    }
-
-    private function error(string $msg, int $code = 400)
-    {
-        return response()->json(['status' => 'error', 'message' => $msg], $code);
     }
 }
