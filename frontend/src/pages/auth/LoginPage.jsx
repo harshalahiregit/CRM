@@ -8,6 +8,7 @@ import { useAuth } from '@/context/AuthContext'
 
 const ROLES = [
   { value: 'admin',               label: 'Admin',                icon: '🛡️' },
+  { value: 'staff',               label: 'Staff / Employee',     icon: '👔' },
   { value: 'vendor',              label: 'Vendor',               icon: '🏭' },
   { value: 'third_party_vendor',  label: 'Third-Party Vendor',   icon: '🤝' },
   { value: 'client',              label: 'Client / Customer',    icon: '👤' },

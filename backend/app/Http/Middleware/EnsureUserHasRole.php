@@ -23,16 +23,31 @@ class EnsureUserHasRole
             ], 401);
         }
 
-        $userRole = $request->user()->role;
+        $user = $request->user();
+        $userRole = $user->role;
+        $internalRole = $user->internal_role;
 
-        if (!in_array($userRole, $roles)) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Unauthorized. Required role: ' . implode(' or ', $roles),
-                'user_role' => $userRole,
-            ], 403);
+        // Check if user's primary role matches
+        if (in_array($userRole, $roles)) {
+            return $next($request);
         }
 
-        return $next($request);
+        // For staff members, also check their internal_role
+        // This allows routes like ->middleware('role:hr_executive') to work for staff with internal_role=hr_executive
+        if ($userRole === 'staff' && $internalRole && in_array($internalRole, $roles)) {
+            return $next($request);
+        }
+
+        // Allow 'staff' role to match when any internal role is specified in route
+        if (in_array('staff', $roles) && $userRole === 'staff') {
+            return $next($request);
+        }
+
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Unauthorized. Required role: ' . implode(' or ', $roles),
+            'user_role' => $userRole,
+            'internal_role' => $internalRole,
+        ], 403);
     }
 }

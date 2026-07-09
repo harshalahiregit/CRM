@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\DashboardController;
+use App\Http\Controllers\Api\Admin\StaffManagementController;
 use App\Http\Controllers\Api\Hr\HRDashboardController;
 use App\Http\Controllers\Api\Hr\ManpowerRequestController;
 use App\Http\Controllers\Api\Hr\JobPostingController;
@@ -50,22 +51,43 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/auth/me',      [AuthController::class, 'me']);
     Route::get('/dashboard',    [DashboardController::class, 'index']);
 
+    // ── Admin Only Routes ───────────────────────────────────────────────
+    Route::prefix('admin')->middleware('role:admin')->group(function () {
+        
+        // Staff Management
+        Route::get('/staff/stats',              [StaffManagementController::class, 'stats']);
+        Route::get('/staff',                    [StaffManagementController::class, 'index']);
+        Route::get('/staff/designations',       [StaffManagementController::class, 'designations']);
+        Route::get('/staff/departments',        [StaffManagementController::class, 'departments']);
+        Route::get('/staff/{id}',               [StaffManagementController::class, 'show']);
+        Route::post('/staff',                   [StaffManagementController::class, 'store']);
+        Route::put('/staff/{id}',               [StaffManagementController::class, 'update']);
+        Route::patch('/staff/{id}/toggle-status', [StaffManagementController::class, 'toggleStatus']);
+        Route::delete('/staff/{id}',            [StaffManagementController::class, 'destroy']);
+    });
+
     // ── HR Module Routes ────────────────────────────────────────────────
     Route::prefix('hr')->group(function () {
 
         // Dashboard
         Route::get('/dashboard', [HRDashboardController::class, 'index']);
 
-        // Manpower Requests
-        Route::get('/manpower-requests',                    [ManpowerRequestController::class, 'index']);
-        Route::get('/manpower-requests/pending-count',      [ManpowerRequestController::class, 'pendingCount']);
-        Route::post('/manpower-requests',                   [ManpowerRequestController::class, 'store']);
-        Route::get('/manpower-requests/{manpowerRequest}',  [ManpowerRequestController::class, 'show']);
-        Route::patch('/manpower-requests/{manpowerRequest}/status', [ManpowerRequestController::class, 'updateStatus'])
-            ->middleware('role:hiring_manager,admin'); // Only managers can approve/reject
-        Route::patch('/manpower-requests/{manpowerRequest}/assign-manager', [ManpowerRequestController::class, 'assignManager'])
-            ->middleware('role:admin,hr_executive'); // Only admin/HR can assign
+        // Manpower Requests — L1/L2 Approval Workflow
+        Route::get('/manpower-requests',                            [ManpowerRequestController::class, 'index']);
+        Route::get('/manpower-requests/stats',                      [ManpowerRequestController::class, 'stats']);
+        Route::get('/manpower-requests/pending-count',              [ManpowerRequestController::class, 'pendingCount']);
+        Route::get('/manpower-requests/pending-approvals',          [ManpowerRequestController::class, 'pendingApprovals']);
+        Route::post('/manpower-requests',                           [ManpowerRequestController::class, 'store']);
+        Route::get('/manpower-requests/{manpowerRequest}',          [ManpowerRequestController::class, 'show']);
+        Route::put('/manpower-requests/{manpowerRequest}',          [ManpowerRequestController::class, 'update']);
         Route::delete('/manpower-requests/{manpowerRequest}',       [ManpowerRequestController::class, 'destroy']);
+        // L1/L2 Workflow actions
+        Route::post('/manpower-requests/{manpowerRequest}/submit',      [ManpowerRequestController::class, 'submit']);
+        Route::post('/manpower-requests/{manpowerRequest}/approve-l1',  [ManpowerRequestController::class, 'approveL1']);
+        Route::post('/manpower-requests/{manpowerRequest}/reject-l1',   [ManpowerRequestController::class, 'rejectL1']);
+        Route::post('/manpower-requests/{manpowerRequest}/approve-l2',  [ManpowerRequestController::class, 'approveL2']);
+        Route::post('/manpower-requests/{manpowerRequest}/reject-l2',   [ManpowerRequestController::class, 'rejectL2']);
+        Route::patch('/manpower-requests/{manpowerRequest}/assign-manager', [ManpowerRequestController::class, 'assignManager']);
 
         // Job Postings
         Route::get('/jobs',                         [JobPostingController::class, 'index']);
@@ -73,6 +95,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/jobs/{jobPosting}',            [JobPostingController::class, 'show']);
         Route::put('/jobs/{jobPosting}',            [JobPostingController::class, 'update']);
         Route::patch('/jobs/{jobPosting}/status',   [JobPostingController::class, 'updateStatus']);
+        Route::patch('/jobs/{jobPosting}/external-id', [JobPostingController::class, 'updateExternalId']);
         Route::delete('/jobs/{jobPosting}',         [JobPostingController::class, 'destroy']);
 
         // Candidates

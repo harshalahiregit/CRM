@@ -50,10 +50,15 @@ class InterviewController extends Controller
             ->where('tenant_id', $request->user()->tenant_id)
             ->firstOrFail();
 
-        // Auto-generate Google Meet link if not provided
+        // Auto-generate Google Meet link only for video-based rounds (not telephonic)
         if (empty($validated['meet_link'])) {
-            $code = strtolower(Str::random(3).'-'.Str::random(4).'-'.Str::random(3));
-            $validated['meet_link'] = "https://meet.google.com/{$code}";
+            $telephonic_rounds = ['HR Telephonic', 'Telephonic', 'Phone Screen', 'Telephonic Round'];
+            
+            // Only generate Meet link if it's NOT a telephonic round
+            if (!in_array($validated['round_name'], $telephonic_rounds)) {
+                $code = strtolower(Str::random(3).'-'.Str::random(4).'-'.Str::random(3));
+                $validated['meet_link'] = "https://meet.google.com/{$code}";
+            }
         }
 
         $round = HrInterviewRound::create($validated);

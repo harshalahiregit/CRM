@@ -14,9 +14,9 @@ class User extends Authenticatable
 
     protected $fillable = [
         'tenant_id', 'name', 'email', 'password',
-        'role', 'status', 'vendor_type', 'tpv_type',
-        'access_expires_at', 'phone', 'company',
-        'designation', 'avatar', 'meta',
+        'role', 'internal_role', 'department', 'status', 
+        'vendor_type', 'tpv_type', 'access_expires_at', 
+        'phone', 'company', 'designation', 'avatar', 'meta',
     ];
 
     protected $hidden = ['password', 'remember_token'];
@@ -39,8 +39,9 @@ class User extends Authenticatable
 
     /* ── Role helpers ───────────────────────── */
     public function isAdmin():            bool { return $this->role === 'admin'; }
-    public function isHRExecutive():      bool { return $this->role === 'hr_executive'; }
-    public function isHiringManager():    bool { return $this->role === 'hiring_manager'; }
+    public function isStaff():            bool { return $this->role === 'staff'; }
+    public function isHRExecutive():      bool { return $this->role === 'staff' && $this->internal_role === 'hr_executive'; }
+    public function isHiringManager():    bool { return $this->role === 'staff' && $this->internal_role === 'hiring_manager'; }
     public function isVendor():           bool { return $this->role === 'vendor'; }
     public function isThirdPartyVendor(): bool { return $this->role === 'third_party_vendor'; }
     public function isClient():           bool { return $this->role === 'client'; }

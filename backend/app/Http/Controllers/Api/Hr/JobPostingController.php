@@ -62,4 +62,25 @@ class JobPostingController extends Controller
         $jobPosting->delete();
         return response()->json(['message' => 'Deleted']);
     }
+
+    /**
+     * Update external job ID (after manual posting to external platforms)
+     */
+    public function updateExternalId(Request $request, HrJobPosting $jobPosting)
+    {
+        $request->validate([
+            'platform' => 'required|in:trulytalents,linkedin,naukri,indeed,monster',
+            'external_id' => 'required|string|max:100',
+        ]);
+
+        $externalIds = $jobPosting->external_job_ids ?? [];
+        $externalIds[$request->platform] = $request->external_id;
+        
+        $jobPosting->update(['external_job_ids' => $externalIds]);
+
+        return response()->json([
+            'message' => 'External job ID saved successfully',
+            'external_ids' => $externalIds,
+        ]);
+    }
 }

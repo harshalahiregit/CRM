@@ -51,6 +51,7 @@ export const hrApi = {
     create:       (data)        => api.post('/hr/jobs', data).then(r => r.data),
     update:       (id, data)    => api.put(`/hr/jobs/${id}`, data).then(r => r.data),
     updateStatus: (id, status)  => api.patch(`/hr/jobs/${id}/status`, { status }).then(r => r.data),
+    updateExternalId: (id, platform, external_id) => api.patch(`/hr/jobs/${id}/external-id`, { platform, external_id }).then(r => r.data),
     delete:       (id)          => api.delete(`/hr/jobs/${id}`).then(r => r.data),
   },
 

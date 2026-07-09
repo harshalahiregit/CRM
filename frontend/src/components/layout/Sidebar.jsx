@@ -4,7 +4,7 @@ import {
   BarChart2, Settings, ChevronLeft, ChevronRight,
   LogOut, User, Moon, Sun, Sparkles, Zap, Package,
   UserCheck, CalendarDays, FileText, Rocket, Building2,
-  ClipboardList, ChevronDown
+  ClipboardList, ChevronDown, Shield, UserCog
 } from 'lucide-react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
@@ -174,6 +174,37 @@ export default function Sidebar({ collapsed, onToggle }) {
                 )}
               </NavLink>
             ))}
+          </div>
+        )}
+
+        {/* ── ADMIN SECTION (Admin Only) ── */}
+        {user?.role === 'admin' && (
+          <div className="mt-2">
+            {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#10b981' }}>Admin Tools</p>}
+            <NavLink to="/app/admin/staff">
+              {({ isActive }) => (
+                <div
+                  title={collapsed ? 'Staff Management' : ''}
+                  className={clsx('nav-3d mb-0.5', isActive && 'nav-3d-active')}
+                  style={{ justifyContent: collapsed ? 'center' : undefined }}
+                >
+                  <div
+                    className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center"
+                    style={{
+                      background: isActive
+                        ? 'rgba(16,185,129,0.2)'
+                        : 'rgba(16,185,129,0.1)',
+                    }}
+                  >
+                    <UserCog size={14} style={{ color: '#10b981' }} />
+                  </div>
+                  {!collapsed && <span className="truncate text-sm" style={{ color: isActive ? '#10b981' : undefined }}>Staff Management</span>}
+                  {isActive && !collapsed && (
+                    <div className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: '#10b981' }} />
+                  )}
+                </div>
+              )}
+            </NavLink>
           </div>
         )}
       </nav>

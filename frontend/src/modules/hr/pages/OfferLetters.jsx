@@ -64,6 +64,23 @@ export default function OfferLetters() {
 
   const openOfferReject = (id) => setRejectModal({ open:true, id, reason:'' })
 
+  const handleStartOnboarding = async (offer) => {
+    try {
+      const onboardingData = {
+        candidate_id: offer.candidate_id,
+        candidate_name: offer.candidate?.name || '',
+        position: offer.position,
+        department: offer.department,
+        joining_date: offer.joining_date
+      }
+      
+      await hrApi.onboarding.start(onboardingData)
+      showToast('Onboarding started successfully! Check Onboarding page.')
+    } catch (e) {
+      showToast(e.response?.data?.message || 'Failed to start onboarding', 'error')
+    }
+  }
+
   const stats = { generated:offers.length, sent:offers.filter(o=>['Sent','Accepted'].includes(o.status)).length, accepted:offers.filter(o=>o.status==='Accepted').length, pending:offers.filter(o=>o.status==='Generated').length }
 
   return (
@@ -121,7 +138,14 @@ export default function OfferLetters() {
                     <button onClick={()=>handleStatus(offer.id,'Accepted')} className="flex-1 py-2 rounded-xl text-xs font-bold text-white" style={{ background:'linear-gradient(135deg,#10b981,#059669)' }}>✓ Accept</button>
                     <button onClick={()=>openOfferReject(offer.id)} className="flex-1 py-2 rounded-xl text-xs font-bold" style={{ background:'rgba(239,68,68,0.1)', color:'#f87171' }}>Reject</button>
                   </>}
-                  {offer.status==='Accepted' && <span className="flex-1 text-center text-xs py-2 font-semibold" style={{ color:'#10b981' }}>✓ Accepted</span>}
+                  {offer.status==='Accepted' && (
+                    <div className="flex-1 flex flex-col gap-2">
+                      <span className="text-center text-xs py-1.5 font-semibold rounded-xl" style={{ color:'#10b981', background:'rgba(16,185,129,0.1)' }}>✓ Accepted</span>
+                      <button onClick={()=>handleStartOnboarding(offer)} className="py-2 rounded-xl text-xs font-bold text-white" style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>
+                        Start Onboarding →
+                      </button>
+                    </div>
+                  )}
                   {offer.status==='Rejected' && <span className="flex-1 text-center text-xs py-2 font-semibold" style={{ color:'#f87171' }}>Rejected</span>}
                 </div>
               </div>

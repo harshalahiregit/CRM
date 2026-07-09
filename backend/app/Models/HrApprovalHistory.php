@@ -12,13 +12,8 @@ class HrApprovalHistory extends Model
     protected $table = 'hr_approval_history';
 
     protected $fillable = [
-        'tenant_id',
-        'manpower_request_id',
-        'user_id',
-        'action',
-        'comment',
-        'old_values',
-        'new_values',
+        'request_id', 'level', 'action', 'actor_id',
+        'remarks', 'old_values', 'new_values',
     ];
 
     protected $casts = [
@@ -29,30 +24,34 @@ class HrApprovalHistory extends Model
 
     public function manpowerRequest()
     {
-        return $this->belongsTo(HrManpowerRequest::class, 'manpower_request_id');
+        return $this->belongsTo(HrManpowerRequest::class, 'request_id');
     }
 
+    public function actor()
+    {
+        return $this->belongsTo(User::class, 'actor_id');
+    }
+
+    // Legacy alias
     public function user()
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(User::class, 'actor_id');
     }
 
-    /**
-     * Log an approval action
-     */
+    /** Helper to quickly log an action */
     public static function logAction(
         HrManpowerRequest $request,
         string $action,
-        ?string $comment = null,
+        ?string $remarks = null,
         ?array $oldValues = null,
         ?array $newValues = null
     ): self {
         return self::create([
-            'tenant_id' => $request->tenant_id,
-            'manpower_request_id' => $request->id,
-            'user_id' => auth()->id(),
-            'action' => $action,
-            'comment' => $comment,
+            'request_id' => $request->id,
+            'level'      => 'General',
+            'action'     => $action,
+            'actor_id'   => auth()->id(),
+            'remarks'    => $remarks,
             'old_values' => $oldValues,
             'new_values' => $newValues,
         ]);

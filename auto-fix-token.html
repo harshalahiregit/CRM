@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auto Fix Token - Staff Management</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 700px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 32px;
+            text-align: center;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 16px;
+            text-align: center;
+        }
+        
+        .status {
+            padding: 25px;
+            border-radius: 15px;
+            margin-bottom: 25px;
+            border-left: 5px solid;
+            font-size: 16px;
+            line-height: 1.6;
+        }
+        
+        .status.loading {
+            background: #eff6ff;
+            border-color: #3b82f6;
+            color: #1e40af;
+        }
+        
+        .status.error {
+            background: #fee;
+            border-color: #f44;
+            color: #c33;
+        }
+        
+        .status.success {
+            background: #efe;
+            border-color: #4c4;
+            color: #3a3;
+        }
+        
+        .status.info {
+            background: #fef3c7;
+            border-color: #f59e0b;
+            color: #92400e;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 18px 40px;
+            border-radius: 12px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            width: 100%;
+            margin-bottom: 15px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        button:hover:not(:disabled) {
+            transform: translateY(-3px);
+            box-shadow: 0 15px 30px rgba(102, 126, 234, 0.4);
+        }
+        
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .progress {
+            width: 100%;
+            height: 6px;
+            background: #e0e0e0;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 20px 0;
+            display: none;
+        }
+        
+        .progress.show {
+            display: block;
+        }
+        
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            width: 0%;
+            transition: width 0.3s;
+            animation: progress-animation 2s infinite;
+        }
+        
+        @keyframes progress-animation {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        #log {
+            background: #1e1e1e;
+            color: #0f0;
+            padding: 20px;
+            border-radius: 12px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 25px;
+            display: none;
+        }
+        
+        #log.show {
+            display: block;
+        }
+        
+        .log-line {
+            margin-bottom: 8px;
+            padding: 3px 0;
+        }
+        
+        .log-error { color: #f44; }
+        .log-success { color: #4c4; }
+        .log-info { color: #4af; }
+        .log-warning { color: #fa0; }
+        
+        .steps {
+            background: #f9fafb;
+            border-radius: 12px;
+            padding: 25px;
+            margin: 25px 0;
+        }
+        
+        .steps h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 20px;
+        }
+        
+        .steps ol {
+            margin-left: 25px;
+            color: #555;
+        }
+        
+        .steps li {
+            margin-bottom: 12px;
+            line-height: 1.6;
+        }
+        
+        .token-display {
+            background: #f9fafb;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            word-break: break-all;
+            margin: 15px 0;
+            display: none;
+        }
+        
+        .token-display.show {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 Auto Token Fix</h1>
+        <p class="subtitle">One-click solution for Staff Management authentication</p>
+        
+        <div id="currentStatus" class="status loading">
+            ⏳ <strong>Initializing...</strong><br>
+            Please wait while we prepare to fix the authentication issue.
+        </div>
+        
+        <div class="progress" id="progress">
+            <div class="progress-bar"></div>
+        </div>
+        
+        <div class="token-display" id="tokenDisplay"></div>
+        
+        <button id="autoFixBtn" onclick="autoFix()" disabled>
+            🚀 Auto Fix & Login
+        </button>
+        
+        <button onclick="manualFix()" class="secondary" style="background: #6b7280;">
+            🔧 Manual Fix (Clear & Redirect)
+        </button>
+        
+        <div class="steps">
+            <h3>📋 What This Will Do:</h3>
+            <ol>
+                <li>Clear old/invalid tokens from browser storage</li>
+                <li>Login to backend with admin credentials</li>
+                <li>Get a fresh authentication token</li>
+                <li>Save token with correct key (<code>crm_token</code>)</li>
+                <li>Redirect to Staff Management page</li>
+            </ol>
+        </div>
+        
+        <div id="log"></div>
+    </div>
+
+    <script>
+        const apiUrl = 'http://127.0.0.1:8000/api';
+        const appUrl = 'http://localhost:5173';
+        
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            logDiv.classList.add('show');
+            const line = document.createElement('div');
+            line.className = `log-line log-${type}`;
+            const timestamp = new Date().toLocaleTimeString();
+            line.textContent = `[${timestamp}] ${message}`;
+            logDiv.appendChild(line);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+        
+        function updateStatus(message, type) {
+            const statusDiv = document.getElementById('currentStatus');
+            statusDiv.className = `status ${type}`;
+            statusDiv.innerHTML = message;
+        }
+        
+        function setProgress(percent) {
+            const bar = document.querySelector('.progress-bar');
+            bar.style.width = percent + '%';
+            if (percent > 0) {
+                document.getElementById('progress').classList.add('show');
+            }
+        }
+        
+        async function checkBackend() {
+            log('Checking backend connectivity...', 'info');
+            try {
+                const response = await fetch(`${apiUrl}/test-dashboard`);
+                if (response.ok) {
+                    log('✓ Backend is online', 'success');
+                    return true;
+                } else {
+                    log('✗ Backend returned non-200 status', 'error');
+                    return false;
+                }
+            } catch (error) {
+                log(`✗ Backend not reachable: ${error.message}`, 'error');
+                return false;
+            }
+        }
+        
+        async function autoFix() {
+            log('═══════════════════════════════════', 'info');
+            log('STARTING AUTO FIX PROCESS', 'info');
+            log('═══════════════════════════════════', 'info');
+            
+            updateStatus('⏳ <strong>Step 1/5:</strong> Clearing old storage...', 'loading');
+            setProgress(20);
+            
+            // Step 1: Clear storage
+            log('Clearing localStorage...', 'info');
+            localStorage.clear();
+            log('✓ localStorage cleared', 'success');
+            
+            log('Clearing sessionStorage...', 'info');
+            sessionStorage.clear();
+            log('✓ sessionStorage cleared', 'success');
+            
+            await sleep(500);
+            
+            // Step 2: Check backend
+            updateStatus('⏳ <strong>Step 2/5:</strong> Checking backend connection...', 'loading');
+            setProgress(40);
+            
+            const backendOnline = await checkBackend();
+            if (!backendOnline) {
+                updateStatus('❌ <strong>Backend Not Running!</strong><br>Please start Laravel backend: <code>php artisan serve</code>', 'error');
+                log('✗ Fix aborted - backend not available', 'error');
+                return;
+            }
+            
+            // Step 3: Login
+            updateStatus('⏳ <strong>Step 3/5:</strong> Logging in to backend...', 'loading');
+            setProgress(60);
+            
+            try {
+                log('Sending login request...', 'info');
+                const response = await fetch(`${apiUrl}/auth/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email: 'admin@demo.com',
+                        password: 'password123',
+                        role: 'admin'
+                    })
+                });
+                
+                log(`Response status: ${response.status}`, 'info');
+                
+                if (!response.ok) {
+                    const errorData = await response.text();
+                    log(`✗ Login failed: ${errorData}`, 'error');
+                    updateStatus('❌ <strong>Login Failed!</strong><br>Please check backend credentials.', 'error');
+                    return;
+                }
+                
+                const data = await response.json();
+                log('✓ Login successful!', 'success');
+                
+                // Step 4: Save token
+                updateStatus('⏳ <strong>Step 4/5:</strong> Saving authentication token...', 'loading');
+                setProgress(80);
+                
+                if (data.data && data.data.access_token) {
+                    const token = data.data.access_token;
+                    const user = data.data.user;
+                    const tenant = data.data.tenant;
+                    
+                    log('✓ Token received from backend', 'success');
+                    log(`Token ID: ${token.split('|')[0]}`, 'info');
+                    
+                    // Display token
+                    const tokenDisplay = document.getElementById('tokenDisplay');
+                    tokenDisplay.textContent = `Token: ${token}`;
+                    tokenDisplay.classList.add('show');
+                    
+                    // Save with CORRECT keys
+                    localStorage.setItem('crm_token', token);
+                    localStorage.setItem('crm_user', JSON.stringify(user));
+                    localStorage.setItem('crm_tenant', JSON.stringify(tenant));
+                    
+                    log('✓ Saved as: crm_token', 'success');
+                    log('✓ Saved as: crm_user', 'success');
+                    log('✓ Saved as: crm_tenant', 'success');
+                    
+                    // Step 5: Redirect
+                    updateStatus('✅ <strong>Step 5/5:</strong> Success! Redirecting...', 'success');
+                    setProgress(100);
+                    
+                    log('═══════════════════════════════════', 'success');
+                    log('✓ FIX COMPLETE! Redirecting...', 'success');
+                    log('═══════════════════════════════════', 'success');
+                    
+                    await sleep(2000);
+                    log('Redirecting to Staff Management...', 'info');
+                    window.location.href = appUrl + '/app/admin/staff';
+                } else {
+                    log('✗ No token in response', 'error');
+                    updateStatus('❌ <strong>Unexpected Response!</strong><br>Backend returned success but no token.', 'error');
+                }
+            } catch (error) {
+                log(`✗ Network error: ${error.message}`, 'error');
+                updateStatus('❌ <strong>Connection Error!</strong><br>Cannot reach backend. Is Laravel running on port 8000?', 'error');
+            }
+        }
+        
+        function manualFix() {
+            log('═══════════════════════════════════', 'info');
+            log('MANUAL FIX SELECTED', 'info');
+            log('═══════════════════════════════════', 'info');
+            
+            log('Clearing storage...', 'info');
+            localStorage.clear();
+            sessionStorage.clear();
+            log('✓ Storage cleared', 'success');
+            
+            updateStatus('✅ <strong>Storage Cleared!</strong><br>Redirecting to login page...', 'success');
+            
+            setTimeout(() => {
+                log('Redirecting to app...', 'info');
+                window.location.href = appUrl;
+            }, 1500);
+        }
+        
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+        
+        // Initialize
+        window.onload = async function() {
+            log('Page loaded successfully', 'info');
+            log('Checking backend status...', 'info');
+            
+            const backendOnline = await checkBackend();
+            
+            if (backendOnline) {
+                updateStatus('✅ <strong>Ready to Fix!</strong><br>Backend is online. Click the button below to auto-fix authentication.', 'success');
+                document.getElementById('autoFixBtn').disabled = false;
+                log('✓ System ready', 'success');
+            } else {
+                updateStatus('⚠️ <strong>Backend Offline!</strong><br>Please start Laravel: <code>cd backend && php artisan serve</code><br>Then refresh this page.', 'info');
+                log('⚠ Backend not responding', 'warning');
+                log('Run: cd backend && php artisan serve', 'warning');
+            }
+        };
+    </script>
+</body>
+</html>

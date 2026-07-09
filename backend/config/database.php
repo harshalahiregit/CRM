@@ -33,15 +33,15 @@ return [
     'connections' => [
 
         'sqlite' => [
-            'driver' => 'sqlite',
-            'url' => env('DB_URL'),
-            'database' => env('DB_DATABASE', database_path('database.sqlite')),
-            'prefix' => '',
+            'driver'                  => 'sqlite',
+            'url'                     => env('DB_URL'),
+            'database'                => env('DB_DATABASE', database_path('database.sqlite')),
+            'prefix'                  => '',
             'foreign_key_constraints' => env('DB_FOREIGN_KEYS', true),
-            'busy_timeout' => null,
-            'journal_mode' => null,
-            'synchronous' => null,
-            'transaction_mode' => 'DEFERRED',
+            'busy_timeout'            => 5000,   // wait up to 5s instead of failing instantly
+            'journal_mode'            => 'WAL',  // WAL allows concurrent reads without locking
+            'synchronous'             => 'NORMAL',
+            'transaction_mode'        => 'DEFERRED',
         ],
 
         'mysql' => [

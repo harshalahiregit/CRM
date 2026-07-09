@@ -22,17 +22,28 @@ class AuthController extends Controller
         $validator = Validator::make($request->all(), [
             'email'    => 'required|email',
             'password' => 'required|string',
-            'role'     => 'required|in:admin,vendor,third_party_vendor,client',
+            'role'     => 'required|in:admin,staff,vendor,third_party_vendor,client',
         ]);
 
         if ($validator->fails()) {
             return $this->error('Validation failed', 422, $validator->errors());
         }
 
-        $user = User::with('tenant')
-            ->where('email', $request->email)
-            ->where('role', $request->role)
-            ->first();
+        // For staff login, match against staff role or legacy internal roles
+        if ($request->role === 'staff') {
+            $user = User::with('tenant')
+                ->where('email', $request->email)
+                ->where(function($query) {
+                    $query->where('role', 'staff')
+                          ->orWhereIn('role', ['hr_executive', 'hiring_manager']); // Backward compatibility
+                })
+                ->first();
+        } else {
+            $user = User::with('tenant')
+                ->where('email', $request->email)
+                ->where('role', $request->role)
+                ->first();
+        }
 
         if (! $user || ! Hash::check($request->password, $user->password)) {
             return $this->error('Invalid credentials. Please check your email and password.', 401);
@@ -294,19 +305,21 @@ class AuthController extends Controller
     private function formatUser(User $user): array
     {
         return [
-            'id'          => $user->id,
-            'name'        => $user->name,
-            'email'       => $user->email,
-            'role'        => $user->role,
-            'status'      => $user->status,
-            'vendor_type' => $user->vendor_type,
-            'tpv_type'    => $user->tpv_type,
-            'phone'       => $user->phone,
-            'company'     => $user->company,
-            'designation' => $user->designation,
-            'avatar'      => $user->avatar,
-            'tenant_id'   => $user->tenant_id,
-            'created_at'  => $user->created_at,
+            'id'            => $user->id,
+            'name'          => $user->name,
+            'email'         => $user->email,
+            'role'          => $user->role,
+            'internal_role' => $user->internal_role,
+            'department'    => $user->department,
+            'status'        => $user->status,
+            'vendor_type'   => $user->vendor_type,
+            'tpv_type'      => $user->tpv_type,
+            'phone'         => $user->phone,
+            'company'       => $user->company,
+            'designation'   => $user->designation,
+            'avatar'        => $user->avatar,
+            'tenant_id'     => $user->tenant_id,
+            'created_at'    => $user->created_at,
         ];
     }
 

@@ -29,6 +29,9 @@ const OfferLetters     = lazy(() => import('@/modules/hr/pages/OfferLetters'))
 const Onboarding       = lazy(() => import('@/modules/hr/pages/Onboarding'))
 const Employees        = lazy(() => import('@/modules/hr/pages/Employees'))
 
+// Admin Module (lazy)
+const StaffManagement  = lazy(() => import('@/pages/admin/StaffManagementPage'))
+
 function ComingSoon({ name }) {
   return (
     <div className="flex flex-col items-center justify-center min-h-[55vh] gap-4 animate-fade-in">
@@ -90,6 +93,11 @@ export default function App() {
               <Route index element={<Navigate to="dashboard" replace />} />
               <Route path="dashboard" element={<S><DashboardPage /></S>} />
               <Route path="modules"   element={<S><ModulesPage /></S>} />
+
+              {/* ADMIN MODULE (Admin Only) */}
+              <Route path="admin">
+                <Route path="staff" element={<S><StaffManagement /></S>} />
+              </Route>
 
               {/* HR MODULE */}
               <Route path="hr" element={<S><HRLayout /></S>}>
