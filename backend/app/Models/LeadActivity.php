@@ -4,10 +4,11 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use App\Models\Traits\BelongsToTenant;
 
 class LeadActivity extends Model
 {
-    use HasFactory;
+    use HasFactory, BelongsToTenant;
 
     protected $table = 'lead_activities';
 
@@ -28,11 +29,6 @@ class LeadActivity extends Model
     }
 
     /* ── Scopes ────────────────────────────── */
-    public function scopeForTenant($query, $tenantId)
-    {
-        return $query->where('tenant_id', $tenantId);
-    }
-
     public function scopeOfType($query, string $type)
     {
         return $query->where('type', $type);

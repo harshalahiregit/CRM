@@ -5,10 +5,11 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use App\Models\Traits\BelongsToTenant;
 
 class DeliveryNote extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, BelongsToTenant;
 
     protected $table = 'delivery_notes';
 
@@ -39,10 +40,5 @@ class DeliveryNote extends Model
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');
-    }
-
-    public function scopeForTenant($query, $tenantId)
-    {
-        return $query->where('tenant_id', $tenantId);
     }
 }

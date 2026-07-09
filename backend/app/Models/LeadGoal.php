@@ -4,10 +4,11 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use App\Models\Traits\BelongsToTenant;
 
 class LeadGoal extends Model
 {
-    use HasFactory;
+    use HasFactory, BelongsToTenant;
 
     protected $fillable = [
         'tenant_id', 'user_id', 'type', 'period_start', 'period_end',
@@ -30,11 +31,6 @@ class LeadGoal extends Model
     }
 
     /* ── Scopes ────────────────────────────── */
-    public function scopeForTenant($query, $tenantId)
-    {
-        return $query->where('tenant_id', $tenantId);
-    }
-
     public function scopeActive($query)
     {
         return $query->where('period_start', '<=', now())

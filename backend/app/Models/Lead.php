@@ -6,10 +6,11 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Support\Str;
+use App\Models\Traits\BelongsToTenant;
 
 class Lead extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, BelongsToTenant;
 
     protected $fillable = [
         'tenant_id', 'hash', 'name', 'title', 'company', 'email', 'phone',
@@ -98,11 +99,6 @@ class Lead extends Model
     }
 
     /* ── Scopes ────────────────────────────── */
-    public function scopeForTenant($query, $tenantId)
-    {
-        return $query->where('tenant_id', $tenantId);
-    }
-
     public function scopeActive($query)
     {
         return $query->where('lost', false)->where('junk', false);

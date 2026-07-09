@@ -4,10 +4,11 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use App\Models\Traits\BelongsToTenant;
 
 class LeadStatus extends Model
 {
-    use HasFactory;
+    use HasFactory, BelongsToTenant;
 
     protected $fillable = [
         'tenant_id', 'name', 'color', 'sort_order', 'is_default', 'is_won_status',
@@ -25,11 +26,6 @@ class LeadStatus extends Model
     }
 
     /* ── Scopes ────────────────────────────── */
-    public function scopeForTenant($query, $tenantId)
-    {
-        return $query->where('tenant_id', $tenantId);
-    }
-
     public function scopeOrdered($query)
     {
         return $query->orderBy('sort_order');

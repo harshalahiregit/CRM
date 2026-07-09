@@ -6,10 +6,11 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Support\Str;
+use App\Models\Traits\BelongsToTenant;
 
 class Proposal extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, BelongsToTenant;
 
     protected $fillable = [
         'tenant_id', 'subject', 'rel_type', 'rel_id', 'project_id',
@@ -58,11 +59,6 @@ class Proposal extends Model
     }
 
     /* ── Scopes ─────────────────────────────── */
-    public function scopeForTenant($query, $tenantId)
-    {
-        return $query->where('tenant_id', $tenantId);
-    }
-
     public function scopeOfStatus($query, $status)
     {
         return $query->where('status', $status);

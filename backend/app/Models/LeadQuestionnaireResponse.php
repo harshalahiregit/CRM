@@ -4,10 +4,11 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use App\Models\Traits\BelongsToTenant;
 
 class LeadQuestionnaireResponse extends Model
 {
-    use HasFactory;
+    use HasFactory, BelongsToTenant;
 
     protected $fillable = [
         'tenant_id', 'questionnaire_id', 'lead_id', 'answers', 'submitted_at',
@@ -29,9 +30,4 @@ class LeadQuestionnaireResponse extends Model
         return $this->belongsTo(Lead::class);
     }
 
-    /* ── Scopes ────────────────────────────── */
-    public function scopeForTenant($query, $tenantId)
-    {
-        return $query->where('tenant_id', $tenantId);
-    }
 }
