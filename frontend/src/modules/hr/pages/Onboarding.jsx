@@ -254,6 +254,7 @@ export default function Onboarding() {
                               {s.label}
                             </p>
                           </div>
+                        </div>
                         )
                       })}
                     </div>
