@@ -23,9 +23,12 @@ export default function InvoiceDetail() {
     amount: '',
     date: new Date().toISOString().split('T')[0],
     mode: 'Bank Transfer',
-    reference: '',
+    transaction_id: '',
     note: '',
+    tds_amount: '',
+    tds_section: '',
   })
+  const [showTds, setShowTds] = useState(false)
 
   const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000) }
 
@@ -46,9 +49,6 @@ export default function InvoiceDetail() {
     </div>
   )
 
-  const subtotal = invoice.items?.reduce((s, r) => s + r.amount, 0) || 0
-  const taxTotal = invoice.items?.reduce((s, r) => s + (r.amount * r.tax / 100), 0) || 0
-
   const events = [
     { type: 'created', label: 'Invoice created', date: invoice.issue_date },
     invoice.status !== 'Draft' && { type: 'sent', label: 'Invoice sent to client', date: invoice.issue_date },
@@ -59,9 +59,34 @@ export default function InvoiceDetail() {
   const handlePay = async () => {
     if (!payForm.amount) return showToast('Amount required', 'error')
     await salesApi.invoices.recordPayment(invoice.id, payForm)
+    const fresh = await salesApi.invoices.get(id)
+    setInvoice(fresh)
     showToast('Payment recorded!')
     setShowPayModal(false)
-    setPayForm({ amount: '', date: new Date().toISOString().split('T')[0], mode: 'Bank Transfer', reference: '', note: '' })
+    setShowTds(false)
+    setPayForm({ amount: '', date: new Date().toISOString().split('T')[0], mode: 'Bank Transfer', transaction_id: '', note: '', tds_amount: '', tds_section: '' })
+  }
+
+  const handleGenerateLink = async () => {
+    try {
+      const { token } = await salesApi.invoices.generatePublicLink(invoice.id)
+      const url = `${window.location.origin}/portal/invoices/${invoice.id}?token=${token}`
+      await navigator.clipboard.writeText(url)
+      const fresh = await salesApi.invoices.get(id)
+      setInvoice(fresh)
+      showToast('Public link copied to clipboard!')
+    } catch (e) {
+      showToast(e.message || 'Failed to generate link', 'error')
+    }
+  }
+
+  const handleSendReminder = async () => {
+    try {
+      await salesApi.invoices.sendPaymentReminder(invoice.id)
+      showToast('Payment reminder sent!')
+    } catch (e) {
+      showToast(e.message || 'Failed to send reminder', 'error')
+    }
   }
 
   const openCreditDrawer = async () => {
@@ -116,10 +141,19 @@ export default function InvoiceDetail() {
               <Banknote size={13} /> Apply Credit
             </button>
           )}
+          {invoice.balance > 0 && (
+            <button onClick={handleSendReminder} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all hover:scale-[1.02]"
+              style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+              <AlertCircle size={13} /> Send Reminder
+            </button>
+          )}
+          <button onClick={handleGenerateLink} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all hover:scale-[1.02]"
+            style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+            <Copy size={13} /> {invoice.public_link_token ? 'Copy Public Link' : 'Public Link'}
+          </button>
           {[
             { icon: Send, label: 'Send', action: () => showToast('Invoice sent!') },
             { icon: Download, label: 'PDF', action: () => showToast('PDF ready!') },
-            { icon: Copy, label: 'Duplicate', action: () => showToast('Duplicated!') },
           ].map(a => (
             <button key={a.label} onClick={a.action} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all hover:scale-[1.02]"
               style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
@@ -140,7 +174,7 @@ export default function InvoiceDetail() {
             <p className="text-2xl font-black" style={{ color: 'var(--text-h)' }}>{fmt(invoice.balance)}</p>
           </div>
           <div className="text-right">
-            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Total: {fmt(invoice.amount)}</p>
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Total: {fmt(invoice.total)}</p>
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Paid: {fmt(invoice.paid)}</p>
           </div>
         </div>
@@ -180,32 +214,41 @@ export default function InvoiceDetail() {
             </div>
 
             {/* Line Items */}
-            {invoice.items && invoice.items.length > 0 ? (
+            {invoice.line_items && invoice.line_items.length > 0 ? (
               <div className="mb-6">
                 <p className="label-caps mb-3">Line Items</p>
                 <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
                   <table className="w-full text-xs">
                     <thead><tr style={{ background: 'var(--bg-input)', borderBottom: '1px solid var(--border)' }}>
-                      {['Item', 'Description', 'Qty', 'Rate', 'Tax', 'Amount'].map(h => <th key={h} className="px-4 py-2.5 text-left label-caps">{h}</th>)}
+                      {['Item', 'HSN/SAC', 'Qty', 'Rate', 'Tax', 'Amount'].map(h => <th key={h} className="px-4 py-2.5 text-left label-caps">{h}</th>)}
                     </tr></thead>
                     <tbody>
-                      {invoice.items.map((item, i) => (
-                        <tr key={i} style={{ borderBottom: i < invoice.items.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                      {invoice.line_items.map((item, i) => (
+                        <tr key={i} style={{ borderBottom: i < invoice.line_items.length - 1 ? '1px solid var(--border)' : 'none' }}>
                           <td className="px-4 py-2.5 font-semibold" style={{ color: 'var(--text-h)' }}>{item.item_name}</td>
-                          <td className="px-4 py-2.5" style={{ color: 'var(--text-muted)' }}>{item.description}</td>
+                          <td className="px-4 py-2.5" style={{ color: 'var(--text-muted)' }}>{item.hsn_sac_code || '—'}</td>
                           <td className="px-4 py-2.5" style={{ color: 'var(--text-muted)' }}>{item.qty}</td>
                           <td className="px-4 py-2.5" style={{ color: 'var(--text-muted)' }}>{fmt(item.rate)}</td>
                           <td className="px-4 py-2.5" style={{ color: 'var(--text-muted)' }}>{item.tax}%</td>
-                          <td className="px-4 py-2.5 font-bold" style={{ color: '#a78bfa' }}>{fmt(item.amount)}</td>
+                          <td className="px-4 py-2.5 font-bold" style={{ color: '#a78bfa' }}>{fmt(item.total)}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
                 <div className="mt-4 ml-auto w-64 space-y-1.5 text-xs">
-                  <div className="flex justify-between" style={{ color: 'var(--text-muted)' }}><span>Subtotal</span><span className="font-semibold" style={{ color: 'var(--text-h)' }}>{fmt(subtotal)}</span></div>
-                  <div className="flex justify-between" style={{ color: 'var(--text-muted)' }}><span>GST</span><span className="font-semibold" style={{ color: 'var(--text-h)' }}>{fmt(taxTotal)}</span></div>
-                  <div className="flex justify-between pt-2 font-black text-sm" style={{ borderTop: '1px solid var(--border)', color: 'var(--text-h)' }}><span>Total</span><span style={{ color: '#a78bfa' }}>{fmt(invoice.amount)}</span></div>
+                  <div className="flex justify-between" style={{ color: 'var(--text-muted)' }}><span>Subtotal</span><span className="font-semibold" style={{ color: 'var(--text-h)' }}>{fmt(invoice.subtotal)}</span></div>
+                  <div className="flex justify-between" style={{ color: 'var(--text-muted)' }}><span>After Discount</span><span className="font-semibold" style={{ color: 'var(--text-h)' }}>{fmt(invoice.after_discount_amount)}</span></div>
+                  <div className="flex justify-between" style={{ color: 'var(--text-muted)' }}>
+                    <span className="flex items-center gap-1.5">
+                      GST
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ background: invoice.gst_paid ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)', color: invoice.gst_paid ? '#10b981' : '#fbbf24' }}>
+                        {invoice.gst_paid ? 'GST Paid' : 'GST Not Paid'}
+                      </span>
+                    </span>
+                    <span className="font-semibold" style={{ color: 'var(--text-h)' }}>{fmt(invoice.gst_amount)}</span>
+                  </div>
+                  <div className="flex justify-between pt-2 font-black text-sm" style={{ borderTop: '1px solid var(--border)', color: 'var(--text-h)' }}><span>Total</span><span style={{ color: '#a78bfa' }}>{fmt(invoice.total)}</span></div>
                 </div>
               </div>
             ) : (
@@ -240,7 +283,7 @@ export default function InvoiceDetail() {
               {[
                 { label: 'Client', value: invoice.client },
                 { label: 'Status', value: <StatusBadge status={invoice.status} /> },
-                { label: 'Total', value: fmt(invoice.amount) },
+                { label: 'Total', value: fmt(invoice.total) },
                 { label: 'Paid', value: fmt(invoice.paid) },
                 { label: 'Balance', value: fmt(invoice.balance) },
                 { label: 'Issue Date', value: fmtDate(invoice.issue_date) },
@@ -332,8 +375,8 @@ export default function InvoiceDetail() {
                 <div>
                   <label className="label">Transaction / Reference ID</label>
                   <input className="input-3d text-sm" placeholder="Bank ref, UTR, Stripe charge ID…"
-                    value={payForm.reference}
-                    onChange={e => setPayForm({ ...payForm, reference: e.target.value })} />
+                    value={payForm.transaction_id}
+                    onChange={e => setPayForm({ ...payForm, transaction_id: e.target.value })} />
                 </div>
 
                 <div>
@@ -342,6 +385,28 @@ export default function InvoiceDetail() {
                     value={payForm.note}
                     onChange={e => setPayForm({ ...payForm, note: e.target.value })} />
                 </div>
+
+                <button onClick={() => setShowTds(s => !s)}
+                  className="text-xs font-bold flex items-center gap-1.5" style={{ color: '#a78bfa' }}>
+                  {showTds ? '− Hide' : '+ Add'} TDS deduction
+                </button>
+
+                {showTds && (
+                  <div className="grid grid-cols-2 gap-4 p-3 rounded-2xl" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+                    <div>
+                      <label className="label">TDS Amount</label>
+                      <input type="number" className="input-3d text-sm" placeholder="0.00"
+                        value={payForm.tds_amount}
+                        onChange={e => setPayForm({ ...payForm, tds_amount: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className="label">TDS Section</label>
+                      <input className="input-3d text-sm" placeholder="e.g. 194C, 194J"
+                        value={payForm.tds_section}
+                        onChange={e => setPayForm({ ...payForm, tds_section: e.target.value })} />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
             <div className="drawer-footer">
