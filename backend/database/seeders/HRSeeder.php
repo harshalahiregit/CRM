@@ -3,13 +3,13 @@
 namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
-use App\Models\HrManpowerRequest;
-use App\Models\HrJobPosting;
-use App\Models\HrCandidate;
-use App\Models\HrInterviewRound;
-use App\Models\HrOffer;
-use App\Models\HrOnboarding;
-use App\Models\HrEmployee;
+use App\Models\Hr\HrManpowerRequest;
+use App\Models\Hr\HrJobPosting;
+use App\Models\Hr\HrCandidate;
+use App\Models\Hr\HrInterviewRound;
+use App\Models\Hr\HrOffer;
+use App\Models\Hr\HrOnboarding;
+use App\Models\Hr\HrEmployee;
 
 class HRSeeder extends Seeder
 {

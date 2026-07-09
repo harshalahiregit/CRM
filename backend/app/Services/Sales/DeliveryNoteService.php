@@ -3,7 +3,7 @@
 namespace App\Services\Sales;
 
 use App\Exceptions\UnauthorizedTenantException;
-use App\Models\DeliveryNote;
+use App\Models\Sales\DeliveryNote;
 use Illuminate\Support\Facades\Log;
 
 class DeliveryNoteService

@@ -3,23 +3,22 @@
 namespace App\Services\Sales;
 
 use App\Exceptions\UnauthorizedTenantException;
-use App\Models\Estimate;
-use App\Models\SalesInvoice;
-use App\Models\SalesLineItem;
+use App\Models\Sales\Estimate;
+use App\Models\Sales\SalesInvoice;
+use App\Models\Sales\SalesLineItem;
+use App\Repositories\Sales\EstimateRepository;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class EstimateService
 {
+    public function __construct(private EstimateRepository $estimateRepository)
+    {
+    }
+
     public function list(int $tenantId, ?string $status)
     {
-        $query = Estimate::forTenant($tenantId)->with('lineItems');
-
-        if ($status && $status !== 'All') {
-            $query->where('status', $status);
-        }
-
-        return $query->latest()->get();
+        return $this->estimateRepository->filtered($tenantId, $status);
     }
 
     public function create(array $data, array $lineItems, int $tenantId, int $userId): Estimate

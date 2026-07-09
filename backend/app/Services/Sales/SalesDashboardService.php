@@ -2,11 +2,11 @@
 
 namespace App\Services\Sales;
 
-use App\Models\CreditNote;
-use App\Models\Estimate;
-use App\Models\Proposal;
-use App\Models\SalesInvoice;
-use App\Models\SalesPayment;
+use App\Models\Sales\CreditNote;
+use App\Models\Sales\Estimate;
+use App\Models\Sales\Proposal;
+use App\Models\Sales\SalesInvoice;
+use App\Models\Sales\SalesPayment;
 
 class SalesDashboardService
 {

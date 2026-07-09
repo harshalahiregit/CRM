@@ -3,10 +3,11 @@
 namespace App\Services\Hr;
 
 use App\Exceptions\BusinessException;
-use App\Models\HrCandidate;
-use App\Models\HrJobPosting;
+use App\Models\Hr\HrCandidate;
+use App\Models\Hr\HrJobPosting;
 use App\Notifications\WhatsApp\ApplicationReceivedNotification;
 use App\Notifications\WhatsApp\StatusUpdateNotification;
+use App\Repositories\Hr\CandidateRepository;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -14,28 +15,13 @@ use Illuminate\Support\Facades\Mail;
 
 class CandidateService
 {
+    public function __construct(private CandidateRepository $candidateRepository)
+    {
+    }
+
     public function list(int $tenantId, array $filters): Collection
     {
-        $query = HrCandidate::with('jobPosting')->where('tenant_id', $tenantId);
-
-        if (! empty($filters['stage']) && $filters['stage'] !== 'All') {
-            $query->where('stage', $filters['stage']);
-        }
-        if (! empty($filters['job_posting_id'])) {
-            $query->where('job_posting_id', $filters['job_posting_id']);
-        }
-        if (! empty($filters['source']) && $filters['source'] !== 'All') {
-            $query->where('source', $filters['source']);
-        }
-        if (! empty($filters['search'])) {
-            $search = $filters['search'];
-            $query->where(function ($q) use ($search) {
-                $q->where('name', 'like', '%'.$search.'%')
-                  ->orWhere('email', 'like', '%'.$search.'%');
-            });
-        }
-
-        return $query->latest()->get();
+        return $this->candidateRepository->filtered($tenantId, $filters);
     }
 
     public function create(array $data, int $tenantId): HrCandidate
@@ -43,10 +29,7 @@ class CandidateService
         $data['tenant_id'] = $tenantId;
 
         if (! empty($data['email']) && ! empty($data['job_posting_id'])) {
-            $exists = HrCandidate::where('email', $data['email'])
-                ->where('job_posting_id', $data['job_posting_id'])
-                ->where('tenant_id', $tenantId)
-                ->exists();
+            $exists = $this->candidateRepository->emailExistsForJobPosting($data['email'], $data['job_posting_id'], $tenantId);
             if ($exists) {
                 throw new BusinessException('A candidate with this email already applied for this job.', 422);
             }

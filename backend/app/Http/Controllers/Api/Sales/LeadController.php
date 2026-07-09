@@ -11,7 +11,7 @@ use App\Http\Requests\Sales\StoreLeadRequest;
 use App\Http\Requests\Sales\SubmitQuestionnaireResponseRequest;
 use App\Http\Requests\Sales\UpdateLeadRequest;
 use App\Http\Requests\Sales\UpdateLeadStatusRequest;
-use App\Models\Lead;
+use App\Models\Sales\Lead;
 use App\Services\Sales\LeadService;
 use Illuminate\Http\Request;
 

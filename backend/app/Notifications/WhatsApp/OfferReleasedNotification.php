@@ -2,7 +2,7 @@
 
 namespace App\Notifications\WhatsApp;
 
-use App\Models\HrOffer;
+use App\Models\Hr\HrOffer;
 use App\Services\WhatsAppService;
 use Illuminate\Support\Facades\Log;
 
@@ -52,7 +52,7 @@ class OfferReleasedNotification
      * Build the WhatsApp message.
      *
      * @param HrOffer $offer
-     * @param \App\Models\HrCandidate $candidate
+     * @param \App\Models\Hr\HrCandidate $candidate
      * @return string
      */
     protected static function buildMessage(HrOffer $offer, $candidate): string

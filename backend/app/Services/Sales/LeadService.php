@@ -4,86 +4,30 @@ namespace App\Services\Sales;
 
 use App\Exceptions\BusinessException;
 use App\Exceptions\UnauthorizedTenantException;
-use App\Models\Lead;
-use App\Models\LeadGoal;
-use App\Models\LeadNote;
-use App\Models\LeadQuestionnaireResponse;
-use App\Models\LeadStatus;
+use App\Models\Sales\Lead;
+use App\Models\Sales\LeadGoal;
+use App\Models\Sales\LeadNote;
+use App\Models\Sales\LeadQuestionnaireResponse;
+use App\Models\Sales\LeadStatus;
+use App\Repositories\Sales\LeadRepository;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class LeadService
 {
+    public function __construct(private LeadRepository $leadRepository)
+    {
+    }
+
     public function list(int $tenantId, array $filters)
     {
-        $query = Lead::forTenant($tenantId)->with(['status', 'source', 'assignedUser:id,name']);
-
-        if (!empty($filters['status_id'])) {
-            $query->where('status_id', $filters['status_id']);
-        }
-        if (!empty($filters['source_id'])) {
-            $query->where('source_id', $filters['source_id']);
-        }
-        if (!empty($filters['assigned_to'])) {
-            $query->where('assigned_to', $filters['assigned_to']);
-        }
-        if (!empty($filters['temperature'])) {
-            $query->where('lead_temperature', $filters['temperature']);
-        }
-        if (!empty($filters['search'])) {
-            $s = '%'.$filters['search'].'%';
-            $query->where(function ($q) use ($s) {
-                $q->where('name', 'like', $s)
-                  ->orWhere('email', 'like', $s)
-                  ->orWhere('phone', 'like', $s)
-                  ->orWhere('company', 'like', $s);
-            });
-        }
-        if (isset($filters['min_value']) && $filters['min_value'] !== null) {
-            $query->where('lead_value', '>=', $filters['min_value']);
-        }
-        if (isset($filters['max_value']) && $filters['max_value'] !== null) {
-            $query->where('lead_value', '<=', $filters['max_value']);
-        }
-
-        if (!empty($filters['lost'])) {
-            $query->lost();
-        } elseif (!empty($filters['junk'])) {
-            $query->junk();
-        } else {
-            $query->active();
-        }
-
-        $sort  = $filters['sort'] ?? 'created_at';
-        $order = $filters['order'] ?? 'desc';
-        $query->orderBy($sort, $order);
-
-        return $query->get();
+        return $this->leadRepository->filtered($tenantId, $filters);
     }
 
     public function kanban(int $tenantId)
     {
-        $statuses = LeadStatus::forTenant($tenantId)->ordered()->get();
-
-        $leads = Lead::forTenant($tenantId)
-                     ->active()
-                     ->with(['source', 'assignedUser:id,name'])
-                     ->orderBy('lead_order')
-                     ->get();
-
-        return $statuses->map(function ($status) use ($leads) {
-            $statusLeads = $leads->where('status_id', $status->id)->values();
-            return [
-                'id'          => $status->id,
-                'name'        => $status->name,
-                'color'       => $status->color,
-                'is_won'      => $status->is_won_status,
-                'leads'       => $statusLeads,
-                'count'       => $statusLeads->count(),
-                'total_value' => $statusLeads->sum('lead_value'),
-            ];
-        });
+        return $this->leadRepository->kanbanColumns($tenantId);
     }
 
     public function summary(int $tenantId): array

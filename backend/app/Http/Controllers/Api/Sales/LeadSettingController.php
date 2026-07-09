@@ -11,10 +11,10 @@ use App\Http\Requests\Sales\UpdateLeadGoalRequest;
 use App\Http\Requests\Sales\UpdateLeadQuestionnaireRequest;
 use App\Http\Requests\Sales\UpdateLeadSourceRequest;
 use App\Http\Requests\Sales\UpdateLeadStatusSettingRequest;
-use App\Models\LeadGoal;
-use App\Models\LeadQuestionnaire;
-use App\Models\LeadSource;
-use App\Models\LeadStatus;
+use App\Models\Sales\LeadGoal;
+use App\Models\Sales\LeadQuestionnaire;
+use App\Models\Sales\LeadSource;
+use App\Models\Sales\LeadStatus;
 use App\Services\Sales\LeadSettingService;
 use Illuminate\Http\Request;
 

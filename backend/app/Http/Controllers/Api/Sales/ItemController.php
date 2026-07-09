@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Api\Sales;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Sales\StoreItemRequest;
 use App\Http\Requests\Sales\UpdateItemRequest;
-use App\Models\SalesItem;
+use App\Models\Sales\SalesItem;
 use App\Services\Sales\ItemService;
 use Illuminate\Http\Request;
 

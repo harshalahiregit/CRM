@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Sales\RecordPaymentRequest;
 use App\Http\Requests\Sales\StoreInvoiceRequest;
 use App\Http\Requests\Sales\UpdateInvoiceRequest;
-use App\Models\SalesInvoice;
+use App\Models\Sales\SalesInvoice;
 use App\Services\Sales\InvoiceService;
 use Illuminate\Http\Request;
 

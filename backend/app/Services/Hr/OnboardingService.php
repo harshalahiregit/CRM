@@ -2,9 +2,9 @@
 
 namespace App\Services\Hr;
 
-use App\Models\HrCandidate;
-use App\Models\HrEmployee;
-use App\Models\HrOnboarding;
+use App\Models\Hr\HrCandidate;
+use App\Models\Hr\HrEmployee;
+use App\Models\Hr\HrOnboarding;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;

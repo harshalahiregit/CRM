@@ -2,8 +2,8 @@
 
 namespace App\Mail;
 
-use App\Models\HrOffer;
-use App\Models\HrCandidate;
+use App\Models\Hr\HrOffer;
+use App\Models\Hr\HrCandidate;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;

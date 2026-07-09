@@ -3,28 +3,21 @@
 namespace App\Services\Sales;
 
 use App\Exceptions\UnauthorizedTenantException;
-use App\Models\Proposal;
-use App\Models\SalesLineItem;
+use App\Models\Sales\Proposal;
+use App\Models\Sales\SalesLineItem;
+use App\Repositories\Sales\ProposalRepository;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class ProposalService
 {
+    public function __construct(private ProposalRepository $proposalRepository)
+    {
+    }
+
     public function list(int $tenantId, ?string $status, ?string $search)
     {
-        $query = Proposal::forTenant($tenantId)->with(['lineItems', 'assignedUser']);
-
-        if ($status && $status !== 'All') {
-            $query->ofStatus($status);
-        }
-        if ($search) {
-            $query->where(function ($q) use ($search) {
-                $q->where('subject', 'like', '%'.$search.'%')
-                  ->orWhere('proposal_to', 'like', '%'.$search.'%');
-            });
-        }
-
-        return $query->latest()->get();
+        return $this->proposalRepository->filtered($tenantId, $status, $search);
     }
 
     public function create(array $data, array $lineItems, int $tenantId, int $userId): Proposal

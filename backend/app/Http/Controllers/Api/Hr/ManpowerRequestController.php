@@ -9,7 +9,7 @@ use App\Http\Requests\Hr\AssignManpowerManagerRequest;
 use App\Http\Requests\Hr\RejectManpowerRequest;
 use App\Http\Requests\Hr\StoreManpowerRequest;
 use App\Http\Requests\Hr\UpdateManpowerRequest;
-use App\Models\HrManpowerRequest;
+use App\Models\Hr\HrManpowerRequest;
 use App\Services\Hr\ManpowerRequestService;
 use Illuminate\Http\Request;
 

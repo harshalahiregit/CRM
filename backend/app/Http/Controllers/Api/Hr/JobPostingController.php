@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Hr\StoreJobPostingRequest;
 use App\Http\Requests\Hr\UpdateJobPostingExternalIdRequest;
 use App\Http\Requests\Hr\UpdateJobPostingStatusRequest;
-use App\Models\HrJobPosting;
+use App\Models\Hr\HrJobPosting;
 use App\Services\Hr\JobPostingService;
 use Illuminate\Http\Request;
 

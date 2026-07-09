@@ -3,7 +3,7 @@
 namespace App\Services\Sales;
 
 use App\Exceptions\UnauthorizedTenantException;
-use App\Models\SalesItem;
+use App\Models\Sales\SalesItem;
 use Illuminate\Support\Facades\Log;
 
 class ItemService

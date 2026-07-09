@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Api\Sales;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Sales\StoreEstimateRequest;
 use App\Http\Requests\Sales\UpdateEstimateRequest;
-use App\Models\Estimate;
+use App\Models\Sales\Estimate;
 use App\Services\Sales\EstimateService;
 use Illuminate\Http\Request;
 

@@ -4,11 +4,11 @@ namespace App\Services\Sales;
 
 use App\Exceptions\BusinessException;
 use App\Exceptions\UnauthorizedTenantException;
-use App\Models\LeadGoal;
-use App\Models\LeadQuestionnaire;
-use App\Models\LeadQuestionnaireField;
-use App\Models\LeadSource;
-use App\Models\LeadStatus;
+use App\Models\Sales\LeadGoal;
+use App\Models\Sales\LeadQuestionnaire;
+use App\Models\Sales\LeadQuestionnaireField;
+use App\Models\Sales\LeadSource;
+use App\Models\Sales\LeadStatus;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 

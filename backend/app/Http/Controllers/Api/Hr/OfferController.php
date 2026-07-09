@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Api\Hr;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Hr\StoreOfferRequest;
 use App\Http\Requests\Hr\UpdateOfferStatusRequest;
-use App\Models\HrOffer;
+use App\Models\Hr\HrOffer;
 use App\Services\Hr\OfferService;
 use Illuminate\Http\Request;
 

@@ -4,7 +4,7 @@ namespace App\Http\Controllers\Api\Sales;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Sales\StoreDeliveryNoteRequest;
-use App\Models\DeliveryNote;
+use App\Models\Sales\DeliveryNote;
 use App\Services\Sales\DeliveryNoteService;
 use Illuminate\Http\Request;
 

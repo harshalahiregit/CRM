@@ -4,7 +4,7 @@ namespace App\Http\Controllers\Api\Hr;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Hr\StoreOnboardingRequest;
-use App\Models\HrOnboarding;
+use App\Models\Hr\HrOnboarding;
 use App\Services\Hr\OnboardingService;
 use Illuminate\Http\Request;
 

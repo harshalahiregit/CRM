@@ -2,32 +2,20 @@
 
 namespace App\Services\Hr;
 
-use App\Models\HrEmployee;
+use App\Models\Hr\HrEmployee;
+use App\Repositories\Hr\EmployeeRepository;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Log;
 
 class EmployeeService
 {
+    public function __construct(private EmployeeRepository $employeeRepository)
+    {
+    }
+
     public function list(int $tenantId, array $filters): Collection
     {
-        $query = HrEmployee::where('tenant_id', $tenantId);
-
-        if (! empty($filters['status']) && $filters['status'] !== 'All') {
-            $query->where('status', $filters['status']);
-        }
-        if (! empty($filters['department']) && $filters['department'] !== 'All') {
-            $query->where('department', $filters['department']);
-        }
-        if (! empty($filters['search'])) {
-            $search = $filters['search'];
-            $query->where(function ($q) use ($search) {
-                $q->where('name', 'like', '%'.$search.'%')
-                  ->orWhere('employee_code', 'like', '%'.$search.'%')
-                  ->orWhere('designation', 'like', '%'.$search.'%');
-            });
-        }
-
-        return $query->latest()->get();
+        return $this->employeeRepository->filtered($tenantId, $filters);
     }
 
     public function create(array $data, int $tenantId): HrEmployee

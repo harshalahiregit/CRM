@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Sales\ApplyCreditNoteRequest;
 use App\Http\Requests\Sales\RefundCreditNoteRequest;
 use App\Http\Requests\Sales\StoreCreditNoteRequest;
-use App\Models\CreditNote;
+use App\Models\Sales\CreditNote;
 use App\Services\Sales\CreditNoteService;
 use Illuminate\Http\Request;
 

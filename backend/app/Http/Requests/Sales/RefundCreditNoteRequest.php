@@ -2,7 +2,7 @@
 
 namespace App\Http\Requests\Sales;
 
-use App\Models\CreditNote;
+use App\Models\Sales\CreditNote;
 use Illuminate\Foundation\Http\FormRequest;
 
 class RefundCreditNoteRequest extends FormRequest

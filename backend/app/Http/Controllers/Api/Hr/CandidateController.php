@@ -7,7 +7,7 @@ use App\Http\Requests\Hr\LinkedinParseRequest;
 use App\Http\Requests\Hr\StoreCandidateRequest;
 use App\Http\Requests\Hr\UpdateCandidateDecisionRequest;
 use App\Http\Requests\Hr\UpdateCandidateStageRequest;
-use App\Models\HrCandidate;
+use App\Models\Hr\HrCandidate;
 use App\Services\Hr\CandidateService;
 use Illuminate\Http\Request;
 

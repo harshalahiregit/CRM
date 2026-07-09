@@ -3,8 +3,8 @@
 namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
-use App\Models\LeadStatus;
-use App\Models\LeadSource;
+use App\Models\Sales\LeadStatus;
+use App\Models\Sales\LeadSource;
 use App\Models\Tenant;
 
 class LeadDefaultsSeeder extends Seeder

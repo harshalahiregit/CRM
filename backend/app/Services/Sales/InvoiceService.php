@@ -4,27 +4,24 @@ namespace App\Services\Sales;
 
 use App\Exceptions\BusinessException;
 use App\Exceptions\UnauthorizedTenantException;
-use App\Models\SalesInvoice;
-use App\Models\SalesLineItem;
-use App\Models\SalesPayment;
+use App\Models\Sales\SalesInvoice;
+use App\Models\Sales\SalesLineItem;
+use App\Models\Sales\SalesPayment;
+use App\Repositories\Sales\InvoiceRepository;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class InvoiceService
 {
+    public function __construct(private InvoiceRepository $invoiceRepository)
+    {
+    }
+
     public function list(int $tenantId, array $filters)
     {
-        $query = SalesInvoice::forTenant($tenantId)->with(['lineItems', 'payments']);
-
-        if (! empty($filters['status']) && $filters['status'] !== 'All') {
-            $query->where('status', $filters['status']);
-        }
-        if (! empty($filters['client_id'])) {
-            $query->where('client_id', $filters['client_id']);
-        }
+        $invoices = $this->invoiceRepository->filtered($tenantId, $filters);
 
         // Auto-mark overdue before returning
-        $invoices = $query->latest()->get();
         $invoices->each(fn ($inv) => $inv->updateOverdueStatus());
 
         return $invoices;

@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Sales\StoreProposalRequest;
 use App\Http\Requests\Sales\UpdateProposalRequest;
 use App\Http\Requests\Sales\UpdateProposalStatusRequest;
-use App\Models\Proposal;
+use App\Models\Sales\Proposal;
 use App\Services\Sales\ProposalService;
 use Illuminate\Http\Request;
 

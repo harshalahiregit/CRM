@@ -4,11 +4,11 @@ namespace App\Services\Sales;
 
 use App\Exceptions\BusinessException;
 use App\Exceptions\UnauthorizedTenantException;
-use App\Models\CreditNote;
-use App\Models\CreditNoteApplication;
-use App\Models\CreditNoteRefund;
-use App\Models\SalesInvoice;
-use App\Models\SalesLineItem;
+use App\Models\Sales\CreditNote;
+use App\Models\Sales\CreditNoteApplication;
+use App\Models\Sales\CreditNoteRefund;
+use App\Models\Sales\SalesInvoice;
+use App\Models\Sales\SalesLineItem;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 

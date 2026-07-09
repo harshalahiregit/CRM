@@ -4,7 +4,7 @@ namespace App\Services\Hr;
 
 use App\Exceptions\BusinessException;
 use App\Exceptions\UnauthorizedTenantException;
-use App\Models\HrCandidate;
+use App\Models\Hr\HrCandidate;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;

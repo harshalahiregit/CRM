@@ -2,7 +2,7 @@
 
 namespace App\Notifications\WhatsApp;
 
-use App\Models\HrOnboarding;
+use App\Models\Hr\HrOnboarding;
 use App\Services\WhatsAppService;
 use Illuminate\Support\Facades\Log;
 
@@ -52,7 +52,7 @@ class OnboardingWelcomeNotification
      * Build the WhatsApp message.
      *
      * @param HrOnboarding $onboarding
-     * @param \App\Models\HrCandidate $candidate
+     * @param \App\Models\Hr\HrCandidate $candidate
      * @return string
      */
     protected static function buildMessage(HrOnboarding $onboarding, $candidate): string

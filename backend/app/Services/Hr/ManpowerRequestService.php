@@ -4,32 +4,23 @@ namespace App\Services\Hr;
 
 use App\Exceptions\BusinessException;
 use App\Exceptions\UnauthorizedTenantException;
-use App\Models\HrApprovalHistory;
-use App\Models\HrManpowerRequest;
+use App\Models\Hr\HrApprovalHistory;
+use App\Models\Hr\HrManpowerRequest;
 use App\Models\User;
+use App\Repositories\Hr\ManpowerRequestRepository;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class ManpowerRequestService
 {
+    public function __construct(private ManpowerRequestRepository $manpowerRequestRepository)
+    {
+    }
+
     public function list(User $user, array $filters): Collection
     {
-        $query = HrManpowerRequest::where('tenant_id', $user->tenant_id)
-            ->with(['requester', 'assignedManager', 'l1Approver', 'l2Approver', 'approvalHistory.actor']);
-
-        if ($user->isHiringManager()) {
-            $query->where('assigned_manager_id', $user->id);
-        }
-
-        if (! empty($filters['status']) && $filters['status'] !== 'All') {
-            $query->where('status', $filters['status']);
-        }
-        if (! empty($filters['department']) && $filters['department'] !== 'All') {
-            $query->where('department', $filters['department']);
-        }
-
-        return $query->latest()->get();
+        return $this->manpowerRequestRepository->filtered($user, $filters);
     }
 
     public function pendingApprovals(User $user): array

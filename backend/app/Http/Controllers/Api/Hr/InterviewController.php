@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Hr\RecordInterviewFeedbackRequest;
 use App\Http\Requests\Hr\SendInterviewNotificationRequest;
 use App\Http\Requests\Hr\StoreInterviewRequest;
-use App\Models\HrInterviewRound;
+use App\Models\Hr\HrInterviewRound;
 use App\Services\Hr\InterviewService;
 use Illuminate\Http\Request;
 

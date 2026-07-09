@@ -2,7 +2,7 @@
 
 namespace App\Notifications\WhatsApp;
 
-use App\Models\HrInterviewRound;
+use App\Models\Hr\HrInterviewRound;
 use App\Services\WhatsAppService;
 use Illuminate\Support\Facades\Log;
 
@@ -54,7 +54,7 @@ class InterviewScheduledNotification
      * Build the WhatsApp message.
      *
      * @param HrInterviewRound $interview
-     * @param \App\Models\HrCandidate $candidate
+     * @param \App\Models\Hr\HrCandidate $candidate
      * @return string
      */
     protected static function buildMessage($interview, $candidate): string

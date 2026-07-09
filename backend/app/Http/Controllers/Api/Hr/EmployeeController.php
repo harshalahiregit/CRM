@@ -4,7 +4,7 @@ namespace App\Http\Controllers\Api\Hr;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Hr\StoreEmployeeRequest;
-use App\Models\HrEmployee;
+use App\Models\Hr\HrEmployee;
 use App\Services\Hr\EmployeeService;
 use Illuminate\Http\Request;
 

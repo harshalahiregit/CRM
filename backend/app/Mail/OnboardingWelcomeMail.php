@@ -2,7 +2,7 @@
 
 namespace App\Mail;
 
-use App\Models\HrOnboarding;
+use App\Models\Hr\HrOnboarding;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;

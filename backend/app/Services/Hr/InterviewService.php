@@ -2,8 +2,8 @@
 
 namespace App\Services\Hr;
 
-use App\Models\HrCandidate;
-use App\Models\HrInterviewRound;
+use App\Models\Hr\HrCandidate;
+use App\Models\Hr\HrInterviewRound;
 use App\Notifications\WhatsApp\InterviewScheduledNotification;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Collection;

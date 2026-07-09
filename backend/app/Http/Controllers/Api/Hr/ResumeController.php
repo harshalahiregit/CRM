@@ -4,7 +4,7 @@ namespace App\Http\Controllers\Api\Hr;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Hr\UploadResumeRequest;
-use App\Models\HrCandidate;
+use App\Models\Hr\HrCandidate;
 use App\Services\Hr\ResumeService;
 use Illuminate\Http\Request;
 
