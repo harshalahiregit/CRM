@@ -48,6 +48,32 @@ class User extends Authenticatable
     public function isActive():           bool { return $this->status === 'active'; }
     public function isPending():          bool { return $this->status === 'pending'; }
 
+    /* ── Recruitment approval authority ─────────────────────────────────────
+     | L1 = Department Head level, L2 = Management level. Admin can do both.
+     | Roles are matched against internal_role (staff) so the same helpers work
+     | regardless of how the tenant labels its managers. Adjust the role sets
+     | here to change who may approve — every check funnels through these two.
+     */
+    public function canApproveL1(): bool
+    {
+        return $this->isAdmin()
+            || in_array($this->internal_role, ['department_head', 'hiring_manager'], true);
+    }
+
+    public function canApproveL2(): bool
+    {
+        return $this->isAdmin()
+            || in_array($this->internal_role, ['project_manager', 'senior_executive'], true);
+    }
+
+    /** May act on the HR queue (convert to JD, publish, close). */
+    public function canManageHrQueue(): bool
+    {
+        return $this->isAdmin()
+            || $this->isHRExecutive()
+            || in_array($this->internal_role, ['hr_recruiter', 'hr_executive'], true);
+    }
+
     /* ── Scopes ─────────────────────────────── */
     public function scopeActive($query)        { return $query->where('status', 'active'); }
     public function scopePending($query)       { return $query->where('status', 'pending'); }

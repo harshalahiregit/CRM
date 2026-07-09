@@ -35,13 +35,28 @@ export const hrApi = {
     get: () => api.get('/hr/dashboard').then(r => r.data),
   },
 
-  // ── Manpower Requests ───────────────────────────────────────────────
+  // ── Manpower Requests (L1/L2 approval → HR queue → JD → job posting) ──
   manpower: {
-    list:         (params = {}) => api.get('/hr/manpower-requests', { params }).then(r => r.data), // Backend returns array directly
-    get:          (id)          => api.get(`/hr/manpower-requests/${id}`).then(r => r.data),
-    create:       (data)        => api.post('/hr/manpower-requests', data).then(r => r.data),
-    updateStatus: (id, payload) => api.patch(`/hr/manpower-requests/${id}/status`, typeof payload === 'string' ? { status: payload } : payload).then(r => r.data),
-    delete:       (id)          => api.delete(`/hr/manpower-requests/${id}`).then(r => r.data),
+    list:            (params = {}) => api.get('/hr/manpower-requests', { params }).then(r => r.data),
+    queue:           (params = {}) => api.get('/hr/manpower-requests/queue', { params }).then(r => r.data),
+    stats:           ()            => api.get('/hr/manpower-requests/stats').then(r => r.data),
+    pendingApprovals:()            => api.get('/hr/manpower-requests/pending-approvals').then(r => r.data),
+    get:             (id)          => api.get(`/hr/manpower-requests/${id}`).then(r => r.data),
+    create:          (data)        => api.post('/hr/manpower-requests', data).then(r => r.data),
+    update:          (id, data)    => api.put(`/hr/manpower-requests/${id}`, data).then(r => r.data),
+    delete:          (id)          => api.delete(`/hr/manpower-requests/${id}`).then(r => r.data),
+    // Approval workflow
+    submit:          (id)              => api.post(`/hr/manpower-requests/${id}/submit`).then(r => r.data),
+    approveL1:       (id, remarks = '') => api.post(`/hr/manpower-requests/${id}/approve-l1`, { remarks }).then(r => r.data),
+    rejectL1:        (id, remarks)      => api.post(`/hr/manpower-requests/${id}/reject-l1`, { remarks }).then(r => r.data),
+    approveL2:       (id, remarks = '') => api.post(`/hr/manpower-requests/${id}/approve-l2`, { remarks }).then(r => r.data),
+    rejectL2:        (id, remarks)      => api.post(`/hr/manpower-requests/${id}/reject-l2`, { remarks }).then(r => r.data),
+    // HR queue actions
+    convertToJd:     (id, data = {})    => api.post(`/hr/manpower-requests/${id}/convert-to-jd`, data).then(r => r.data),
+    publish:         (id)               => api.post(`/hr/manpower-requests/${id}/publish`).then(r => r.data),
+    startHiring:     (id)               => api.post(`/hr/manpower-requests/${id}/start-hiring`).then(r => r.data),
+    close:           (id, remarks = '') => api.post(`/hr/manpower-requests/${id}/close`, { remarks }).then(r => r.data),
+    assignManager:   (id, manager_id)   => api.patch(`/hr/manpower-requests/${id}/assign-manager`, { manager_id }).then(r => r.data),
   },
 
   // ── Job Postings ────────────────────────────────────────────────────

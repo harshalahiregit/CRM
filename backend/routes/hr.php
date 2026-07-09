@@ -17,21 +17,27 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     // Dashboard
     Route::get('/dashboard', [HRDashboardController::class, 'index']);
 
-    // Manpower Requests — L1/L2 Approval Workflow
+    // Manpower Requests — L1/L2 Approval Workflow → HR Queue → JD → Job Posting
     Route::get('/manpower-requests',                            [ManpowerRequestController::class, 'index']);
     Route::get('/manpower-requests/stats',                      [ManpowerRequestController::class, 'stats']);
+    Route::get('/manpower-requests/queue',                      [ManpowerRequestController::class, 'queue']);
     Route::get('/manpower-requests/pending-count',              [ManpowerRequestController::class, 'pendingCount']);
     Route::get('/manpower-requests/pending-approvals',          [ManpowerRequestController::class, 'pendingApprovals']);
     Route::post('/manpower-requests',                           [ManpowerRequestController::class, 'store']);
     Route::get('/manpower-requests/{manpowerRequest}',          [ManpowerRequestController::class, 'show']);
     Route::put('/manpower-requests/{manpowerRequest}',          [ManpowerRequestController::class, 'update']);
     Route::delete('/manpower-requests/{manpowerRequest}',       [ManpowerRequestController::class, 'destroy']);
-    // L1/L2 Workflow actions
+    // L1/L2 Approval actions
     Route::post('/manpower-requests/{manpowerRequest}/submit',      [ManpowerRequestController::class, 'submit']);
     Route::post('/manpower-requests/{manpowerRequest}/approve-l1',  [ManpowerRequestController::class, 'approveL1']);
     Route::post('/manpower-requests/{manpowerRequest}/reject-l1',   [ManpowerRequestController::class, 'rejectL1']);
     Route::post('/manpower-requests/{manpowerRequest}/approve-l2',  [ManpowerRequestController::class, 'approveL2']);
     Route::post('/manpower-requests/{manpowerRequest}/reject-l2',   [ManpowerRequestController::class, 'rejectL2']);
+    // HR Queue actions (post-approval): convert → publish → hiring → close
+    Route::post('/manpower-requests/{manpowerRequest}/convert-to-jd', [ManpowerRequestController::class, 'convertToJd']);
+    Route::post('/manpower-requests/{manpowerRequest}/publish',       [ManpowerRequestController::class, 'publish']);
+    Route::post('/manpower-requests/{manpowerRequest}/start-hiring',  [ManpowerRequestController::class, 'startHiring']);
+    Route::post('/manpower-requests/{manpowerRequest}/close',         [ManpowerRequestController::class, 'close']);
     Route::patch('/manpower-requests/{manpowerRequest}/assign-manager', [ManpowerRequestController::class, 'assignManager']);
 
     // Job Postings

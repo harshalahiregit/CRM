@@ -12,20 +12,27 @@ class HrJobPosting extends Model
     protected $table = 'hr_job_postings';
 
     protected $fillable = [
-        'tenant_id','title','department','location','job_type','posting_type',
+        'tenant_id','manpower_request_id','title','department','location','job_type','posting_type',
         'description','requirements','salary_from','salary_to',
-        'number_of_openings','closing_date','status','sources','applicant_count',
+        'number_of_openings','closing_date','status','sources','applicant_count','external_job_ids',
     ];
 
     protected $casts = [
-        'closing_date' => 'date',
-        'sources'      => 'array',
-        'salary_from'  => 'decimal:2',
-        'salary_to'    => 'decimal:2',
+        'closing_date'     => 'date',
+        'sources'          => 'array',
+        'external_job_ids' => 'array',
+        'salary_from'      => 'decimal:2',
+        'salary_to'        => 'decimal:2',
     ];
 
     public function candidates()
     {
         return $this->hasMany(HrCandidate::class, 'job_posting_id');
+    }
+
+    /** The approved Manpower Request this posting was converted from. */
+    public function manpowerRequest()
+    {
+        return $this->belongsTo(HrManpowerRequest::class, 'manpower_request_id');
     }
 }

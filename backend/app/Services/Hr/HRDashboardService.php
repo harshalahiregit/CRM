@@ -9,6 +9,7 @@ use App\Models\Hr\HrJobPosting;
 use App\Models\Hr\HrManpowerRequest;
 use App\Models\Hr\HrOffer;
 use App\Models\User;
+use App\Support\Hr\ManpowerRequestStatus as Status;
 use Carbon\Carbon;
 
 class HRDashboardService
@@ -81,15 +82,28 @@ class HRDashboardService
                 'interviewer' => $iv->interviewer_name,
             ]);
 
-        // Pending approvals (for hiring managers)
+        // ── Recruitment workflow metrics (Manpower Request pipeline) ─────────
+        $mrBase = fn () => HrManpowerRequest::where('tenant_id', $tenantId);
+        $manpower = [
+            'total_requests'   => $mrBase()->count(),
+            'l1_pending'       => $mrBase()->where('status', Status::L1_PENDING)->count(),
+            'l2_pending'       => $mrBase()->where('status', Status::L2_PENDING)->count(),
+            'ready_for_hr'     => $mrBase()->where('status', Status::READY_FOR_HR)->count(),
+            'converted_to_jd'  => $mrBase()->where('status', Status::CONVERTED_TO_JD)->count(),
+            'posted_jobs'      => $mrBase()->where('status', Status::JOB_POSTED)->count(),
+            'active_hiring'    => $mrBase()->where('status', Status::HIRING_IN_PROGRESS)->count(),
+            'closed_positions' => $mrBase()->where('status', Status::CLOSED)->count(),
+        ];
+
+        // Pending approvals awaiting the current user's action (L1 and/or L2)
         $pendingApprovals = 0;
-        if ($user->isHiringManager() || $user->isAdmin()) {
-            $pendingApprovals = HrManpowerRequest::where('tenant_id', $tenantId)
-                ->where('status', 'Pending')
-                ->when($user->isHiringManager(), function ($q) use ($user) {
-                    $q->where('assigned_manager_id', $user->id);
-                })
+        if ($user->canApproveL1()) {
+            $pendingApprovals += $mrBase()->where('status', Status::L1_PENDING)
+                ->when($user->isHiringManager(), fn ($q) => $q->where('assigned_manager_id', $user->id))
                 ->count();
+        }
+        if ($user->canApproveL2()) {
+            $pendingApprovals += $mrBase()->where('status', Status::L2_PENDING)->count();
         }
 
         return [
@@ -105,6 +119,7 @@ class HRDashboardService
                 'time_to_hire_days' => $timeToHire,
                 'pending_approvals' => $pendingApprovals,
             ],
+            'manpower'         => $manpower,
             'pipeline'         => $pipeline,
             'source_breakdown' => $sourceBreakdown,
             'recent_requests'  => $recentRequests,

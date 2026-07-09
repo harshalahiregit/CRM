@@ -1,1 +1,4 @@
 powershell.cmd
+
+# graphify generated knowledge-graph output
+graphify-out/
