@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\Sales\LeadSettingController;
 use App\Http\Controllers\Api\Sales\PaymentLinkController;
 use App\Http\Controllers\Api\Sales\RetainerInvoiceController;
 use App\Http\Controllers\Api\Sales\HsnSacController;
+use App\Http\Controllers\Api\Sales\ProposalTemplateController;
 use Illuminate\Support\Facades\Route;
 
 // ── Sales & Revenue Module (Sanctum) ────────────────────────────────────
@@ -35,6 +36,15 @@ Route::middleware('auth:sanctum')->prefix('sales')->group(function () {
     Route::delete('/proposals/{proposal}',                [ProposalController::class, 'destroy']);
     Route::patch('/proposals/{proposal}/send',            [ProposalController::class, 'send']);
     Route::patch('/proposals/{proposal}/status',          [ProposalController::class, 'updateStatus']);
+    Route::post('/proposals/{proposal}/generate-qr',      [ProposalController::class, 'generateQR']);
+    Route::get('/proposals/{proposal}/pdf',               [ProposalController::class, 'exportPDF']);
+
+    // Proposal Templates
+    Route::get('/proposal-templates',                          [ProposalTemplateController::class, 'index']);
+    Route::post('/proposal-templates',                         [ProposalTemplateController::class, 'store']);
+    Route::put('/proposal-templates/{proposalTemplate}',       [ProposalTemplateController::class, 'update']);
+    Route::delete('/proposal-templates/{proposalTemplate}',    [ProposalTemplateController::class, 'destroy']);
+    Route::post('/proposal-templates/{proposalTemplate}/clone',[ProposalTemplateController::class, 'clone']);
 
     // Estimates
     Route::get('/estimates',                                   [EstimateController::class, 'index']);

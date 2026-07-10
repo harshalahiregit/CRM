@@ -92,6 +92,61 @@ class ProposalService
         return $proposal->fresh();
     }
 
+    /**
+     * Store the public-view URL as the QR payload. The frontend renders
+     * the actual QR code image client-side (qrcode.react) from this
+     * string — no server-side image generation needed.
+     */
+    public function generateQR(Proposal $proposal, string $baseUrl, int $tenantId): Proposal
+    {
+        $this->assertTenant($proposal, $tenantId);
+
+        $proposal->update([
+            'qr_code_data' => rtrim($baseUrl, '/') . '/portal/proposals/' . $proposal->portal_token,
+        ]);
+
+        Log::channel('sales')->info('Proposal QR generated', ['proposal_id' => $proposal->id, 'tenant_id' => $tenantId]);
+
+        return $proposal->fresh();
+    }
+
+    /**
+     * Public, unauthenticated lookup by portal_token — used by the
+     * client-facing proposal view and by trackEmailOpen(). OTP
+     * verification (public_view_otp_enabled) is stored but not enforced
+     * here: there is no OTP delivery mechanism in this codebase yet
+     * (Master Plan V2 explicitly defers "Proposal email OTP
+     * verification" to a future phase), so enforcing it now would just
+     * lock every OTP-enabled proposal out with no way to complete the
+     * flow.
+     */
+    public function findByPortalToken(string $token): Proposal
+    {
+        $proposal = Proposal::where('portal_token', $token)->first();
+
+        if (! $proposal) {
+            throw new \App\Exceptions\ResourceNotFoundException('Proposal');
+        }
+
+        return $proposal->load('lineItems');
+    }
+
+    public function trackEmailOpen(string $token, ?string $device): void
+    {
+        $proposal = Proposal::where('portal_token', $token)->first();
+        if (! $proposal) return;
+
+        $proposal->increment('email_opened_count');
+        $proposal->update([
+            'email_opened_at'     => $proposal->email_opened_at ?? now(),
+            'email_opened_device' => $device ?? $proposal->email_opened_device,
+        ]);
+
+        Log::channel('sales')->info('Proposal email opened', [
+            'proposal_id' => $proposal->id, 'tenant_id' => $proposal->tenant_id, 'count' => $proposal->email_opened_count,
+        ]);
+    }
+
     private function assertTenant(Proposal $proposal, int $tenantId): void
     {
         if ($proposal->tenant_id !== $tenantId) {

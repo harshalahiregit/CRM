@@ -20,6 +20,9 @@ class Proposal extends Model
         'proposal_to', 'address', 'city', 'state', 'country', 'zip',
         'email', 'phone', 'allow_comments', 'tags', 'notes', 'portal_token',
         'sent_at', 'accepted_at', 'declined_at', 'created_by',
+        'template_id', 'qr_code_data', 'public_view_otp_enabled',
+        'email_opened_at', 'email_opened_device', 'email_opened_count',
+        'pdf_header', 'pdf_footer', 'company_logo_url', 'company_stamp_url',
     ];
 
     protected $casts = [
@@ -32,6 +35,9 @@ class Proposal extends Model
         'subtotal'     => 'decimal:2',
         'tax_total'    => 'decimal:2',
         'total'        => 'decimal:2',
+        'public_view_otp_enabled' => 'boolean',
+        'email_opened_at'         => 'datetime',
+        'email_opened_count'      => 'integer',
     ];
 
     protected static function booted(): void
@@ -57,6 +63,11 @@ class Proposal extends Model
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function template()
+    {
+        return $this->belongsTo(ProposalTemplate::class, 'template_id');
     }
 
     /* ── Scopes ─────────────────────────────── */
