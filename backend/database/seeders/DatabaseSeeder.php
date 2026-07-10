@@ -66,6 +66,9 @@ class DatabaseSeeder extends Seeder
             'company'   => 'Acme Corp',
         ]);
 
+        // Helpdesk module demo data (owner: Shivam)
+        $this->call(HelpdeskSeeder::class);
+
         $this->command->info('✅ Demo data seeded successfully!');
         $this->command->info('');
         $this->command->info('Demo credentials:');

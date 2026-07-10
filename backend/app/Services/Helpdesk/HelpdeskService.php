@@ -223,6 +223,7 @@ class HelpdeskService
                 ['status' => 'closed',      'count' => $closed],
             ],
             'by_priority' => [
+                ['priority' => 'urgent', 'count' => $base()->where('priority', 'urgent')->count()],
                 ['priority' => 'high',   'count' => $base()->where('priority', 'high')->count()],
                 ['priority' => 'medium', 'count' => $base()->where('priority', 'medium')->count()],
                 ['priority' => 'low',    'count' => $base()->where('priority', 'low')->count()],

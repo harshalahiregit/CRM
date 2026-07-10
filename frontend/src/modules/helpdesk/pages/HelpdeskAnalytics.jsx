@@ -20,7 +20,7 @@ const KPI = ({ label, value, sub, icon: Icon, gradient, shadow }) => (
 )
 
 const STATUS_COLOR = { open: '#3b82f6', 'in-progress': '#fbbf24', closed: '#10b981' }
-const PRIORITY_COLOR = { high: '#f87171', medium: '#fbbf24', low: '#10b981' }
+const PRIORITY_COLOR = { urgent: '#ef4444', high: '#f87171', medium: '#fbbf24', low: '#10b981' }
 
 export default function HelpdeskAnalytics() {
   const { data, isLoading, isError, error } = useQuery({
