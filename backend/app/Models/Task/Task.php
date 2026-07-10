@@ -43,7 +43,31 @@ class Task extends Model
         return $this->belongsTo(ProjectMilestone::class, 'milestone_id');
     }
 
-    // assignees/followers/checklist/comments/timers added in Step 4.
+    public function assignees()
+    {
+        return $this->hasMany(TaskAssignee::class);
+    }
+
+    public function followers()
+    {
+        return $this->hasMany(TaskFollower::class);
+    }
+
+    public function checklistItems()
+    {
+        return $this->hasMany(TaskChecklistItem::class)->orderBy('order');
+    }
+
+    public function comments()
+    {
+        return $this->hasMany(TaskComment::class)->latest();
+    }
+
+    public function timers()
+    {
+        return $this->hasMany(TaskTimer::class);
+    }
+
     // rel_id is polymorphic (project|ticket|customer) — resolved by the service,
     // never a hard Eloquent relation, so unbuilt modules don't break this model.
 }

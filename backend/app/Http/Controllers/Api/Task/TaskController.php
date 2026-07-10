@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Task;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Traits\ApiResponse;
 use App\Http\Requests\Task\StoreTaskRequest;
+use App\Http\Requests\Task\SyncTaskUsersRequest;
 use App\Http\Requests\Task\UpdateTaskRequest;
 use App\Http\Requests\Task\UpdateTaskStatusRequest;
 use App\Services\Task\TaskService;
@@ -49,5 +50,21 @@ class TaskController extends Controller
     public function updateStatus(UpdateTaskStatusRequest $request, int $task)
     {
         return $this->success($this->tasks->changeStatus($task, $request->validated('status'), $request->user()->tenant_id), 'Status updated');
+    }
+
+    public function assignees(SyncTaskUsersRequest $request, int $task)
+    {
+        return $this->success($this->tasks->syncAssignees($task, $request->validated('user_ids'), $request->user()->tenant_id), 'Assignees updated');
+    }
+
+    public function followers(SyncTaskUsersRequest $request, int $task)
+    {
+        return $this->success($this->tasks->syncFollowers($task, $request->validated('user_ids'), $request->user()->tenant_id), 'Followers updated');
+    }
+
+    /** Billable, unbilled tasks — optionally filtered by rel_id / customer_id. */
+    public function billable(Request $request)
+    {
+        return $this->success($this->tasks->billable($request->user()->tenant_id, $request->only(['rel_id', 'customer_id'])), 'Billable tasks retrieved');
     }
 }
