@@ -1,20 +1,19 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  ArrowLeft, Send, Copy, Receipt, Trash2, FileText,
+  ArrowLeft, Send, Trash2, FileText,
   CheckCircle, XCircle, Download, Link2, MessageSquare,
-  Lock, Globe, ChevronDown, ChevronUp, User, X
+  Lock, Globe, X, Eye, QrCode
 } from 'lucide-react'
+import { QRCodeSVG } from 'qrcode.react'
 import { salesApi } from '@/services/salesApi'
 import StatusBadge from '../components/StatusBadge'
 import ActivityTimeline from '../components/ActivityTimeline'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 
 const fmt     = v => '₹' + Number(v || 0).toLocaleString('en-IN')
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 const fmtTime = d => d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''
-
-// Simulated portal URL
-const portalUrl = (id) => `${window.location.origin}/portal/proposals/${id}?token=prop_${String(id).padStart(6, '0')}`
 
 // Mock comments seeded per proposal
 const MOCK_COMMENTS = [
@@ -34,11 +33,14 @@ export default function ProposalDetail() {
   const [newComment, setNewComment]   = useState('')
   const [isInternal, setIsInternal]   = useState(false)
   const [posting, setPosting]         = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type })
     setTimeout(() => setToast(null), 3500)
   }
+
+  const reload = () => salesApi.proposals.get(id).then(setProposal)
 
   useEffect(() => {
     salesApi.proposals.get(id).then(p => { setProposal(p); setLoading(false) })
@@ -57,9 +59,9 @@ export default function ProposalDetail() {
     </div>
   )
 
-  const subtotal = proposal.items?.reduce((s, r) => s + r.amount, 0) || 0
-  const taxTotal = proposal.items?.reduce((s, r) => s + (r.amount * r.tax / 100), 0) || 0
-  const grand    = subtotal + taxTotal
+  const subtotal = Number(proposal.subtotal || 0)
+  const taxTotal  = Number(proposal.tax_total || 0)
+  const grand     = Number(proposal.total || 0)
 
   const events = [
     { type: 'created',  label: 'Proposal created',       date: proposal.created_at },
@@ -68,12 +70,60 @@ export default function ProposalDetail() {
     proposal.declined_at && { type: 'declined', label: 'Declined by client',   date: proposal.declined_at },
   ].filter(Boolean)
 
-  const url = portalUrl(proposal.id)
+  const url = `${window.location.origin}/portal/proposals/${proposal.portal_token}`
 
   const copyLink = () => {
     navigator.clipboard.writeText(url).then(() => {
       setCopied(true); setTimeout(() => setCopied(false), 2000)
     })
+  }
+
+  const handleSend = async () => {
+    try {
+      await salesApi.proposals.send(proposal.id)
+      showToast('Proposal sent to client!')
+      reload()
+    } catch (e) {
+      showToast(e.message || 'Failed to send', 'error')
+    }
+  }
+
+  const handleStatusChange = async (status) => {
+    try {
+      await salesApi.proposals.updateStatus(proposal.id, status)
+      showToast(`Status updated to ${status}!`)
+      reload()
+    } catch (e) {
+      showToast(e.message || 'Failed to update status', 'error')
+    }
+  }
+
+  const handleGenerateQR = async () => {
+    try {
+      await salesApi.proposals.generateQR(proposal.id)
+      showToast('QR code generated!')
+      reload()
+    } catch (e) {
+      showToast(e.message || 'Failed to generate QR', 'error')
+    }
+  }
+
+  const handleDownloadPdf = async () => {
+    try {
+      await salesApi.proposals.downloadPdf(proposal.id, `PROP-${String(proposal.id).padStart(3, '0')}.pdf`)
+    } catch (e) {
+      showToast(e.message || 'Failed to download PDF', 'error')
+    }
+  }
+
+  const handleDelete = async () => {
+    try {
+      await salesApi.proposals.delete(proposal.id)
+      showToast('Proposal deleted')
+      setTimeout(() => navigate('/app/sales/proposals'), 800)
+    } catch (e) {
+      showToast(e.message || 'Failed to delete', 'error')
+    }
   }
 
   const postComment = async () => {
@@ -126,11 +176,9 @@ export default function ProposalDetail() {
               <Link2 size={13} /> Portal Link
             </button>
             {[
-              { icon: Send,     label: 'Send',        action: () => showToast('Proposal sent to client!') },
-              { icon: Copy,     label: 'Duplicate',   action: () => showToast('Duplicated!') },
-              { icon: FileText, label: 'To Estimate', action: () => showToast('Converted to Estimate!') },
-              { icon: Receipt,  label: 'To Invoice',  action: () => showToast('Converted to Invoice!') },
-              { icon: Download, label: 'PDF',         action: () => showToast('PDF ready!') },
+              { icon: Send,     label: 'Send',        action: handleSend },
+              { icon: QrCode,   label: 'Generate QR', action: handleGenerateQR },
+              { icon: Download, label: 'PDF',         action: handleDownloadPdf },
             ].map(a => (
               <button key={a.label} onClick={a.action}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all hover:scale-[1.02]"
@@ -138,7 +186,7 @@ export default function ProposalDetail() {
                 <a.icon size={13} /> {a.label}
               </button>
             ))}
-            <button onClick={() => navigate('/app/sales/proposals')}
+            <button onClick={() => setConfirmDelete(true)}
               className="p-2 rounded-xl transition-colors hover:bg-[rgba(239,68,68,0.08)]"
               style={{ border: '1px solid rgba(239,68,68,0.2)' }}>
               <Trash2 size={14} style={{ color: '#f87171' }} />
@@ -238,7 +286,7 @@ export default function ProposalDetail() {
               </div>
 
               {/* Line items */}
-              {proposal.items && proposal.items.length > 0 && (
+              {proposal.line_items && proposal.line_items.length > 0 && (
                 <div className="mb-6">
                   <p className="label-caps mb-3">Line Items</p>
                   <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
@@ -247,14 +295,14 @@ export default function ProposalDetail() {
                         {['Item', 'Description', 'Qty', 'Rate', 'Tax', 'Amount'].map(h => <th key={h} className="px-4 py-2.5 text-left label-caps">{h}</th>)}
                       </tr></thead>
                       <tbody>
-                        {proposal.items.map((item, i) => (
-                          <tr key={i} style={{ borderBottom: i < proposal.items.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                            <td className="px-4 py-2.5 font-semibold" style={{ color: 'var(--text-h)' }}>{item.item_name || item.name}</td>
+                        {proposal.line_items.map((item, i) => (
+                          <tr key={i} style={{ borderBottom: i < proposal.line_items.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                            <td className="px-4 py-2.5 font-semibold" style={{ color: 'var(--text-h)' }}>{item.item_name}</td>
                             <td className="px-4 py-2.5" style={{ color: 'var(--text-muted)' }}>{item.description || '—'}</td>
                             <td className="px-4 py-2.5" style={{ color: 'var(--text-muted)' }}>{item.qty}</td>
                             <td className="px-4 py-2.5" style={{ color: 'var(--text-muted)' }}>{fmt(item.rate)}</td>
                             <td className="px-4 py-2.5" style={{ color: 'var(--text-muted)' }}>{item.tax}%</td>
-                            <td className="px-4 py-2.5 font-bold" style={{ color: '#a78bfa' }}>{fmt(item.amount)}</td>
+                            <td className="px-4 py-2.5 font-bold" style={{ color: '#a78bfa' }}>{fmt(item.total)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -271,10 +319,10 @@ export default function ProposalDetail() {
               {/* Client actions */}
               {(proposal.status === 'Sent' || proposal.status === 'Open') && (
                 <div className="mt-6 pt-5 flex gap-3" style={{ borderTop: '1px solid var(--border)' }}>
-                  <button onClick={() => showToast('Status updated to Accepted!')} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background: 'linear-gradient(135deg,#10b981,#059669)' }}>
+                  <button onClick={() => handleStatusChange('Accepted')} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background: 'linear-gradient(135deg,#10b981,#059669)' }}>
                     <CheckCircle size={14} /> Mark Accepted
                   </button>
-                  <button onClick={() => showToast('Status updated to Declined!')} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold" style={{ background: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' }}>
+                  <button onClick={() => handleStatusChange('Declined')} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold" style={{ background: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' }}>
                     <XCircle size={14} /> Mark Declined
                   </button>
                 </div>
@@ -361,10 +409,10 @@ export default function ProposalDetail() {
               <div className="space-y-3 text-xs">
                 {[
                   { label: 'Client',   value: proposal.client },
-                  { label: 'Amount',   value: fmt(grand || proposal.amount) },
+                  { label: 'Amount',   value: fmt(grand) },
                   { label: 'Status',   value: <StatusBadge status={proposal.status} /> },
                   { label: 'Created',  value: fmtDate(proposal.created_at) },
-                  { label: 'Expires',  value: fmtDate(proposal.expiry_date) },
+                  { label: 'Expires',  value: fmtDate(proposal.open_till) },
                 ].map(row => (
                   <div key={row.label} className="flex justify-between items-center py-1" style={{ borderBottom: '1px solid var(--border)' }}>
                     <span style={{ color: 'var(--text-muted)' }}>{row.label}</span>
@@ -388,6 +436,29 @@ export default function ProposalDetail() {
                 style={{ background: copied ? 'rgba(16,185,129,0.1)' : 'rgba(99,91,255,0.1)', color: copied ? '#10b981' : '#818cf8', border: `1px solid ${copied ? 'rgba(16,185,129,0.25)' : 'rgba(99,91,255,0.25)'}` }}>
                 {copied ? '✓ Link Copied!' : 'Copy Portal Link'}
               </button>
+              {proposal.qr_code_data && (
+                <div className="flex flex-col items-center mt-4 pt-4" style={{ borderTop: '1px solid var(--border)' }}>
+                  <QRCodeSVG value={proposal.qr_code_data} size={120} />
+                  <p className="text-[10px] mt-2" style={{ color: 'var(--text-muted)' }}>Scan to view proposal</p>
+                </div>
+              )}
+            </div>
+
+            {/* Email tracking */}
+            <div className="card-3d" style={{ padding: '20px' }}>
+              <div className="flex items-center gap-2 mb-3">
+                <Eye size={14} style={{ color: '#a78bfa' }} />
+                <h3 className="font-bold text-sm" style={{ color: 'var(--text-h)' }}>Email Tracking</h3>
+              </div>
+              {proposal.email_opened_count > 0 ? (
+                <div className="space-y-2 text-xs">
+                  <div className="flex justify-between"><span style={{ color: 'var(--text-muted)' }}>First opened</span><span className="font-semibold" style={{ color: 'var(--text-h)' }}>{fmtDate(proposal.email_opened_at)}</span></div>
+                  <div className="flex justify-between"><span style={{ color: 'var(--text-muted)' }}>Times opened</span><span className="font-semibold" style={{ color: 'var(--text-h)' }}>{proposal.email_opened_count}</span></div>
+                  {proposal.email_opened_device && <div className="flex justify-between"><span style={{ color: 'var(--text-muted)' }}>Device</span><span className="font-semibold truncate max-w-[140px]" style={{ color: 'var(--text-h)' }}>{proposal.email_opened_device}</span></div>}
+                </div>
+              ) : (
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Not opened yet. Tracking activates once the client opens the proposal email.</p>
+              )}
             </div>
 
             {/* Activity */}
@@ -398,6 +469,17 @@ export default function ProposalDetail() {
           </div>
         </div>
       </div>
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Delete this proposal?"
+          message={`This will permanently delete PROP-${String(proposal.id).padStart(3, '0')}. This cannot be undone.`}
+          confirmLabel="Delete"
+          tone="danger"
+          onConfirm={handleDelete}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      )}
     </>
   )
 }

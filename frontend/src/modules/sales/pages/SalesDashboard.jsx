@@ -3,9 +3,11 @@ import { useNavigate } from 'react-router-dom'
 import {
   IndianRupee, FileText, Receipt, AlertTriangle, TrendingUp,
   CheckCircle, CreditCard, Percent, ArrowRight, Plus,
-  FileSignature, ClipboardList, Truck
+  FileSignature, ClipboardList, Truck, UserPlus, Flame, Target,
 } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
+import { leadApi } from '@/services/leadApi'
+import { useLeadGoals } from '@/hooks/useLeadGoals'
 
 const fmt = (v) => '₹' + Number(v).toLocaleString('en-IN')
 
@@ -29,9 +31,12 @@ export default function SalesDashboard() {
   const navigate = useNavigate()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [leadSummary, setLeadSummary] = useState(null)
+  const { data: goals } = useLeadGoals({ active_only: true })
 
   useEffect(() => {
     salesApi.dashboard.get().then(d => { setData(d); setLoading(false) })
+    leadApi.summary().then(setLeadSummary).catch(() => {})
   }, [])
 
   if (loading) {
@@ -73,6 +78,15 @@ export default function SalesDashboard() {
         <KPI label="Conversion Rate" value={`${k.conversion_rate}%`} icon={Percent} gradient="linear-gradient(145deg,#a78bfa,#8b5cf6)" shadow="#8b5cf6" sub="Proposal to Paid" />
         <KPI label="Monthly Target" value={fmt(k.monthly_target)} icon={TrendingUp} gradient="linear-gradient(145deg,#38bdf8,#0ea5e9)" shadow="#0ea5e9" sub={`${Math.round((k.total_revenue / k.monthly_target) * 100)}% achieved`} />
       </div>
+
+      {leadSummary && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <KPI label="Total Leads" value={leadSummary.total} icon={UserPlus} gradient="linear-gradient(145deg,#9f67ff,#7C3AED)" shadow="#7C3AED" onClick={() => navigate('/app/sales/leads')} />
+          <KPI label="Hot Leads" value={leadSummary.hot} icon={Flame} gradient="linear-gradient(145deg,#f87171,#EF4444)" shadow="#ef4444" onClick={() => navigate('/app/sales/leads')} />
+          <KPI label="Pipeline Value" value={fmt(leadSummary.pipeline_value)} icon={IndianRupee} gradient="linear-gradient(145deg,#34d399,#10B981)" shadow="#10b981" sub="Active leads" />
+          <KPI label="Conversion Rate" value={`${leadSummary.conversion_rate}%`} icon={Percent} gradient="linear-gradient(145deg,#a78bfa,#8b5cf6)" shadow="#8b5cf6" sub="Leads to won" />
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <div className="card-3d lg:col-span-2" style={{ padding: '24px' }}>
@@ -152,6 +166,37 @@ export default function SalesDashboard() {
         </div>
 
         <div className="space-y-4">
+          {goals && goals.length > 0 && (
+            <div className="card-3d" style={{ padding: '20px' }}>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="font-bold text-sm" style={{ color: 'var(--text-h)' }}>Goal Progress</h2>
+                <button onClick={() => navigate('/app/sales/lead-goals')} className="text-xs font-semibold flex items-center gap-1" style={{ color: '#a78bfa' }}>
+                  <Target size={11} />
+                </button>
+              </div>
+              <div className="space-y-3">
+                {goals.slice(0, 3).map(goal => {
+                  const pct = goal.target_count
+                    ? Math.min(100, Math.round((goal.achieved_count / goal.target_count) * 100))
+                    : goal.target_value
+                      ? Math.min(100, Math.round((goal.achieved_value / goal.target_value) * 100))
+                      : 0
+                  return (
+                    <div key={goal.id}>
+                      <div className="flex justify-between text-[11px] mb-1">
+                        <span style={{ color: 'var(--text-muted)' }}>{goal.user?.name || 'Team'} · {goal.type}</span>
+                        <span className="font-bold" style={{ color: 'var(--text-h)' }}>{pct}%</span>
+                      </div>
+                      <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--border)' }}>
+                        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: 'linear-gradient(90deg,#a78bfa,#7C3AED)' }} />
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="card-3d" style={{ padding: '20px' }}>
             <h2 className="font-bold text-sm mb-3" style={{ color: 'var(--text-h)' }}>Top Clients</h2>
             <div className="space-y-2.5">

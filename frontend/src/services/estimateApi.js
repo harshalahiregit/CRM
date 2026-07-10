@@ -27,6 +27,9 @@ export const estimateApi = {
 
   convertToInvoice: (id, data = {}) =>
     api.post(`/sales/estimates/${id}/convert-to-invoice`, data).then(r => r.data).catch(handleErr),
+
+  recordPayment: (id, data) =>
+    api.post(`/sales/estimates/${id}/payments`, data).then(r => r.data).catch(handleErr),
 }
 
 export default estimateApi

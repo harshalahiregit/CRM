@@ -16,11 +16,14 @@ class SalesPayment extends Model
     protected $fillable = [
         'tenant_id', 'invoice_id', 'date', 'amount',
         'mode', 'transaction_id', 'gateway', 'note', 'created_by',
+        'tds_amount', 'tds_section', 'tds_percentage', 'payment_type',
     ];
 
     protected $casts = [
-        'date'   => 'date',
-        'amount' => 'decimal:2',
+        'date'           => 'date',
+        'amount'         => 'decimal:2',
+        'tds_amount'     => 'decimal:2',
+        'tds_percentage' => 'decimal:2',
     ];
 
     public function invoice()

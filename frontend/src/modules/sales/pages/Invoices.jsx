@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Send, CreditCard, Trash2, X, MoreVertical, Copy, Bell, RefreshCw, Tag, User } from 'lucide-react'
+import { Plus, Send, CreditCard, Trash2, X, MoreVertical, Bell, RefreshCw, Tag, User } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
 import StatusBadge from '../components/StatusBadge'
 import LineItemsTable from '../components/LineItemsTable'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 
 const fmt = v => '₹' + Number(v||0).toLocaleString('en-IN')
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) : '—'
@@ -21,7 +22,7 @@ const EMPTY = {
   line_items: [],
 }
 
-const EMPTY_PAY = { amount:'', mode:'Bank Transfer', reference:'' }
+const EMPTY_PAY = { amount:'', mode:'Bank Transfer', transaction_id:'', tds_amount:'', tds_section:'' }
 
 export default function Invoices() {
   const navigate = useNavigate()
@@ -35,6 +36,8 @@ export default function Invoices() {
   const [openMenu, setOpenMenu] = useState(null)
   const [form, setForm]         = useState(EMPTY)
   const [payForm, setPayForm]   = useState(EMPTY_PAY)
+  const [confirmDelete, setConfirmDelete] = useState(null)
+  const [showTds, setShowTds]   = useState(false)
 
   const showToast = (msg,type='success') => { setToast({msg,type}); setTimeout(()=>setToast(null),3000) }
   const sf = (k,v) => setForm(p=>({...p,[k]:v}))
@@ -54,7 +57,34 @@ export default function Invoices() {
   const handlePay = async () => {
     if(!payForm.amount) return showToast('Amount required','error')
     await salesApi.invoices.recordPayment(selectedInv.id, payForm)
-    showToast('Payment recorded!'); setShowPayModal(false); setPayForm(EMPTY_PAY)
+    showToast('Payment recorded!'); setShowPayModal(false); setPayForm(EMPTY_PAY); setShowTds(false); load()
+  }
+  const handleSendReminder = async (inv) => {
+    try {
+      await salesApi.invoices.sendPaymentReminder(inv.id)
+      showToast('Payment reminder sent!')
+    } catch (e) {
+      showToast(e.message || 'Failed to send reminder', 'error')
+    }
+  }
+  const handleToggleGst = async (inv) => {
+    try {
+      await salesApi.invoices.update(inv.id, { gst_paid: !inv.gst_paid })
+      showToast(inv.gst_paid ? 'Marked GST not paid' : 'Marked GST paid')
+      load()
+    } catch (e) {
+      showToast(e.message || 'Failed to update', 'error')
+    }
+  }
+  const handleDelete = async () => {
+    try {
+      await salesApi.invoices.delete(confirmDelete.id)
+      showToast('Invoice deleted')
+      setConfirmDelete(null)
+      load()
+    } catch (e) {
+      showToast(e.message || 'Failed to delete', 'error')
+    }
   }
 
   const stats = {
@@ -62,8 +92,8 @@ export default function Invoices() {
     unpaid: data.filter(i=>i.status==='Unpaid').length,
     overdue: data.filter(i=>i.status==='Overdue').length,
     paid: data.filter(i=>i.status==='Paid').length,
-    totalAmt: data.reduce((s,i)=>s+i.amount,0),
-    outstanding: data.reduce((s,i)=>s+i.balance,0),
+    totalAmt: data.reduce((s,i)=>s+Number(i.total||0),0),
+    outstanding: data.reduce((s,i)=>s+Number(i.balance||0),0),
   }
 
   return (
@@ -117,7 +147,7 @@ export default function Invoices() {
             <table className="w-full text-xs">
               <thead>
                 <tr style={{background:'rgba(124,58,237,0.04)',borderBottom:'1px solid var(--border)'}}>
-                  {['Invoice','Client','Issue Date','Due Date','Amount','Balance','Status',''].map(h=>(
+                  {['Invoice','Client','Date','Due Date','GST','Amount','Balance','Status',''].map(h=>(
                     <th key={h} className="py-3.5 px-4 text-left label-caps whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -130,9 +160,14 @@ export default function Invoices() {
                     onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
                     <td className="py-3.5 px-4 font-bold" style={{color:'#a78bfa'}}>{inv.number}{inv.recurring&&<span className="ml-1 text-[10px]">🔄</span>}</td>
                     <td className="py-3.5 px-4 font-semibold" style={{color:'var(--text-h)'}}>{inv.client}</td>
-                    <td className="py-3.5 px-4 whitespace-nowrap" style={{color:'var(--text-muted)'}}>{fmtDate(inv.issue_date)}</td>
+                    <td className="py-3.5 px-4 whitespace-nowrap" style={{color:'var(--text-muted)'}}>{fmtDate(inv.date)}</td>
                     <td className="py-3.5 px-4 whitespace-nowrap" style={{color:inv.status==='Overdue'?'#f87171':'var(--text-muted)'}}>{fmtDate(inv.due_date)}</td>
-                    <td className="py-3.5 px-4 font-bold whitespace-nowrap" style={{color:'var(--text-h)'}}>{fmt(inv.amount)}</td>
+                    <td className="py-3.5 px-4" onClick={e=>{e.stopPropagation();handleToggleGst(inv)}}>
+                      <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold cursor-pointer" style={{background:inv.gst_paid?'rgba(16,185,129,0.12)':'rgba(245,158,11,0.12)',color:inv.gst_paid?'#10b981':'#fbbf24'}}>
+                        {inv.gst_paid?'GST Paid':'GST Due'}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4 font-bold whitespace-nowrap" style={{color:'var(--text-h)'}}>{fmt(inv.total)}</td>
                     <td className="py-3.5 px-4 font-bold whitespace-nowrap" style={{color:inv.balance>0?'#f87171':'#10b981'}}>{fmt(inv.balance)}</td>
                     <td className="py-3.5 px-4"><StatusBadge status={inv.status}/></td>
                     <td className="py-3.5 px-4 relative" onClick={e=>e.stopPropagation()}>
@@ -145,9 +180,8 @@ export default function Invoices() {
                           {[
                             {icon:CreditCard, label:'Record Payment', action:()=>{setSelectedInv(inv);setShowPayModal(true)}},
                             {icon:Send, label:'Send Invoice', action:()=>showToast('Invoice sent!')},
-                            {icon:Bell, label:'Send Reminder', action:()=>showToast('Reminder sent!')},
-                            {icon:Copy, label:'Duplicate', action:()=>showToast('Duplicated!')},
-                            {icon:Trash2, label:'Delete', action:()=>showToast('Deleted!','error'), danger:true},
+                            {icon:Bell, label:'Send Reminder', action:()=>handleSendReminder(inv)},
+                            {icon:Trash2, label:'Delete', action:()=>setConfirmDelete(inv), danger:true},
                           ].map(a=>(
                             <button key={a.label} onClick={()=>{a.action();setOpenMenu(null)}}
                               className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-medium transition-colors"
@@ -435,13 +469,32 @@ export default function Invoices() {
                 <div>
                   <label className="label">Transaction / Reference ID</label>
                   <input className="input-3d text-sm" placeholder="Bank ref, UTR, Stripe charge ID…"
-                    value={payForm.reference} onChange={e => setPayForm(p => ({...p, reference: e.target.value}))} />
+                    value={payForm.transaction_id} onChange={e => setPayForm(p => ({...p, transaction_id: e.target.value}))} />
                 </div>
                 <div>
                   <label className="label">Note</label>
                   <textarea className="input-3d text-sm resize-none" rows={3} placeholder="Optional payment note…"
                     value={payForm.note || ''} onChange={e => setPayForm(p => ({...p, note: e.target.value}))} />
                 </div>
+
+                <button onClick={() => setShowTds(s => !s)}
+                  className="text-xs font-bold flex items-center gap-1.5" style={{ color: '#a78bfa' }}>
+                  {showTds ? '− Hide' : '+ Add'} TDS deduction
+                </button>
+                {showTds && (
+                  <div className="grid grid-cols-2 gap-4 p-3 rounded-2xl" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+                    <div>
+                      <label className="label">TDS Amount</label>
+                      <input type="number" className="input-3d text-sm" placeholder="0.00"
+                        value={payForm.tds_amount} onChange={e => setPayForm(p => ({...p, tds_amount: e.target.value}))} />
+                    </div>
+                    <div>
+                      <label className="label">TDS Section</label>
+                      <input className="input-3d text-sm" placeholder="e.g. 194C, 194J"
+                        value={payForm.tds_section} onChange={e => setPayForm(p => ({...p, tds_section: e.target.value}))} />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
             <div className="drawer-footer">
@@ -458,6 +511,17 @@ export default function Invoices() {
             </div>
           </div>
         </>
+      )}
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Delete this invoice?"
+          message={`This will permanently delete invoice ${confirmDelete.number}. This cannot be undone.`}
+          confirmLabel="Delete"
+          tone="danger"
+          onConfirm={handleDelete}
+          onCancel={() => setConfirmDelete(null)}
+        />
       )}
     </>
   )

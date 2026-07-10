@@ -8,6 +8,7 @@ use App\Http\Requests\Sales\UpdateProposalRequest;
 use App\Http\Requests\Sales\UpdateProposalStatusRequest;
 use App\Models\Sales\Proposal;
 use App\Services\Sales\ProposalService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 
 class ProposalController extends Controller
@@ -72,5 +73,26 @@ class ProposalController extends Controller
         return response()->json(
             $this->proposalService->updateStatus($proposal, $request->validated('status'), $request->user()->tenant_id)
         );
+    }
+
+    /**
+     * POST /api/sales/proposals/{proposal}/generate-qr
+     */
+    public function generateQR(Request $request, Proposal $proposal)
+    {
+        $updated = $this->proposalService->generateQR($proposal, $request->getSchemeAndHttpHost(), $request->user()->tenant_id);
+
+        return response()->json(['qr_code_data' => $updated->qr_code_data]);
+    }
+
+    /**
+     * GET /api/sales/proposals/{proposal}/pdf
+     */
+    public function exportPDF(Request $request, Proposal $proposal)
+    {
+        $proposal = $this->proposalService->show($proposal, $request->user()->tenant_id);
+        $pdf = Pdf::loadView('pdf.proposal', ['proposal' => $proposal]);
+
+        return $pdf->download("proposal-{$proposal->id}.pdf");
     }
 }

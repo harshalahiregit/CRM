@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Plus, Search, Send, Copy, FileText, Trash2, X, MoreVertical,
-  Receipt, ChevronDown, Tag, MessageSquare, User, MapPin
+  Plus, Search, Send, FileText, Trash2, X, MoreVertical,
+  ChevronDown, Tag, MessageSquare, User, MapPin,
+  Eye, EyeOff, LayoutTemplate
 } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
 import StatusBadge from '../components/StatusBadge'
 import LineItemsTable from '../components/LineItemsTable'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
+import { useToast } from '@/hooks/useToast'
 
 const fmt = v => '₹' + Number(v || 0).toLocaleString('en-IN')
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
@@ -21,12 +24,14 @@ const EMPTY_FORM = {
   assigned: '', proposal_to: '',
   address: '', city: '', state: '', country: 'India', zip: '',
   email: '', phone: '', allow_comments: false, tags: '', notes: '',
-  line_items: [],
+  line_items: [], template_id: '',
 }
 
 export default function Proposals() {
   const navigate = useNavigate()
+  const toast_ = useToast()
   const [data, setData]       = useState([])
+  const [templates, setTemplates] = useState([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter]   = useState('All')
   const [search, setSearch]   = useState('')
@@ -35,6 +40,7 @@ export default function Proposals() {
   const [openMenu, setOpenMenu] = useState(null)
   const [form, setForm]       = useState(EMPTY_FORM)
   const [showAddr, setShowAddr] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(null)
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type })
@@ -50,14 +56,42 @@ export default function Proposals() {
   }
 
   useEffect(() => { load() }, [filter, search])
+  useEffect(() => { salesApi.proposalTemplates.list().then(setTemplates).catch(() => {}) }, [])
+
+  const applyTemplate = (templateId) => {
+    sf('template_id', templateId)
+    const t = templates.find(t => String(t.id) === String(templateId))
+    if (t) sf('notes', t.content || '')
+  }
 
   const handleCreate = async () => {
     if (!form.subject || !form.rel_id) return showToast('Subject & client required', 'error')
-    await salesApi.proposals.create({ ...form, amount: 0, client: form.rel_id })
+    await salesApi.proposals.create({ ...form, client: form.rel_id })
     showToast('Proposal created!')
     setShowDrawer(false)
     setForm(EMPTY_FORM)
     load()
+  }
+
+  const handleSend = async (p) => {
+    try {
+      await salesApi.proposals.send(p.id)
+      toast_.success('Proposal sent!')
+      load()
+    } catch (e) {
+      toast_.error(e.message)
+    }
+  }
+
+  const handleDelete = async () => {
+    try {
+      await salesApi.proposals.delete(confirmDelete.id)
+      toast_.success('Proposal deleted')
+      setConfirmDelete(null)
+      load()
+    } catch (e) {
+      toast_.error(e.message)
+    }
   }
 
   const sf = (k, v) => setForm(p => ({ ...p, [k]: v }))
@@ -67,7 +101,7 @@ export default function Proposals() {
     open: data.filter(p => p.status === 'Open').length,
     sent: data.filter(p => p.status === 'Sent').length,
     accepted: data.filter(p => p.status === 'Accepted').length,
-    totalVal: data.reduce((s, p) => s + (p.amount || 0), 0),
+    totalVal: data.reduce((s, p) => s + Number(p.total || 0), 0),
   }
 
   return (
@@ -149,13 +183,13 @@ export default function Proposals() {
             <table className="w-full text-xs">
               <thead>
                 <tr style={{ background: 'rgba(124,58,237,0.04)', borderBottom: '1px solid var(--border)' }}>
-                  {['#', 'Subject', 'Client', 'Type', 'Amount', 'Created', 'Expires', 'Assigned', 'Status', ''].map(h => (
+                  {['#', 'Subject', 'Client', 'Type', 'Amount', 'Tracking', 'Expires', 'Assigned', 'Status', ''].map(h => (
                     <th key={h} className="py-3.5 px-4 text-left label-caps whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {data.map((p, idx) => (
+                {data.map((p) => (
                   <tr key={p.id}
                     className="cursor-pointer transition-colors"
                     style={{ borderBottom: '1px solid var(--border)' }}
@@ -174,9 +208,19 @@ export default function Proposals() {
                         {p.rel_type || 'Customer'}
                       </span>
                     </td>
-                    <td className="py-3.5 px-4 font-bold whitespace-nowrap" style={{ color: 'var(--text-h)' }}>{fmt(p.amount)}</td>
-                    <td className="py-3.5 px-4 whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>{fmtDate(p.created_at)}</td>
-                    <td className="py-3.5 px-4 whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>{fmtDate(p.expiry_date)}</td>
+                    <td className="py-3.5 px-4 font-bold whitespace-nowrap" style={{ color: 'var(--text-h)' }}>{fmt(p.total)}</td>
+                    <td className="py-3.5 px-4 whitespace-nowrap">
+                      {p.email_opened_count > 0 ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold" style={{ color: '#10b981' }}>
+                          <Eye size={11} /> Seen · {fmtDate(p.email_opened_at)}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                          <EyeOff size={11} /> Not opened
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3.5 px-4 whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>{fmtDate(p.open_till)}</td>
                     <td className="py-3.5 px-4" style={{ color: 'var(--text-muted)' }}>{p.assigned || '—'}</td>
                     <td className="py-3.5 px-4"><StatusBadge status={p.status} /></td>
                     <td className="py-3.5 px-4 relative" onClick={e => e.stopPropagation()}>
@@ -189,11 +233,8 @@ export default function Proposals() {
                         <div className="absolute right-2 top-10 z-50 rounded-2xl shadow-2xl py-1.5 min-w-[180px] overflow-hidden"
                           style={{ background: 'var(--bg-card)', border: '1px solid var(--border-purple)', boxShadow: '0 20px 60px rgba(0,0,0,0.3), 0 0 30px rgba(124,58,237,0.1)' }}>
                           {[
-                            { icon: Send, label: 'Send to Client', action: () => showToast('Proposal sent!') },
-                            { icon: FileText, label: 'To Estimate', action: () => showToast('Converted to Estimate!') },
-                            { icon: Receipt, label: 'To Invoice', action: () => showToast('Converted to Invoice!') },
-                            { icon: Copy, label: 'Duplicate', action: () => showToast('Duplicated!') },
-                            { icon: Trash2, label: 'Delete', action: () => showToast('Deleted!', 'error'), danger: true },
+                            { icon: Send, label: 'Send to Client', action: () => handleSend(p) },
+                            { icon: Trash2, label: 'Delete', action: () => setConfirmDelete(p), danger: true },
                           ].map(a => (
                             <button key={a.label}
                               onClick={() => { a.action(); setOpenMenu(null) }}
@@ -253,6 +294,26 @@ export default function Proposals() {
 
             {/* Drawer Body — scrollable */}
             <div className="drawer-body">
+
+              {/* Section: Template */}
+              {templates.length > 0 && (
+                <div>
+                  <p className="label-caps mb-4" style={{ color: '#a78bfa' }}><LayoutTemplate size={11} className="inline mr-1" />Start from a Template (optional)</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {templates.map(t => (
+                      <button key={t.id} onClick={() => applyTemplate(t.id)}
+                        className="p-3 rounded-xl text-left text-xs font-semibold transition-all"
+                        style={{
+                          background: String(form.template_id) === String(t.id) ? 'rgba(124,58,237,0.1)' : 'var(--bg-input)',
+                          border: `1px solid ${String(form.template_id) === String(t.id) ? 'rgba(124,58,237,0.4)' : 'var(--border)'}`,
+                          color: String(form.template_id) === String(t.id) ? '#a78bfa' : 'var(--text-h)',
+                        }}>
+                        {t.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Section: Basic Info */}
               <div>
@@ -438,6 +499,17 @@ export default function Proposals() {
             </div>
           </div>
         </>
+      )}
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Delete this proposal?"
+          message={`This will permanently delete PRO-${String(confirmDelete.id).padStart(3, '0')}. This cannot be undone.`}
+          confirmLabel="Delete"
+          tone="danger"
+          onConfirm={handleDelete}
+          onCancel={() => setConfirmDelete(null)}
+        />
       )}
     </>
   )

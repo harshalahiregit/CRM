@@ -27,6 +27,15 @@ export const invoiceApi = {
 
   recordPayment: (id, paymentData) =>
     api.post(`/sales/invoices/${id}/payments`, paymentData).then(r => r.data).catch(handleErr),
+
+  generatePublicLink: (id, expiryDays = 30) =>
+    api.post(`/sales/invoices/${id}/public-link`, { expiry_days: expiryDays }).then(r => r.data).catch(handleErr),
+
+  sendPaymentReminder: (id) =>
+    api.post(`/sales/invoices/${id}/send-reminder`).then(r => r.data).catch(handleErr),
+
+  sendFeedbackRequest: (id) =>
+    api.post(`/sales/invoices/${id}/send-feedback-request`).then(r => r.data).catch(handleErr),
 }
 
 // Payments are derived from invoices — no dedicated backend resource yet.

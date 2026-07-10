@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Sales;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Sales\RecordEstimatePaymentRequest;
 use App\Http\Requests\Sales\StoreEstimateRequest;
 use App\Http\Requests\Sales\UpdateEstimateRequest;
 use App\Models\Sales\Estimate;
@@ -72,5 +73,12 @@ class EstimateController extends Controller
         );
 
         return response()->json(['invoice_id' => $invoice->id, 'invoice_number' => $invoice->number], 201);
+    }
+
+    public function recordPayment(RecordEstimatePaymentRequest $request, Estimate $estimate)
+    {
+        $updated = $this->estimateService->recordPayment($estimate, $request->validated(), $request->user()->tenant_id);
+
+        return response()->json($updated);
     }
 }

@@ -16,6 +16,7 @@ class SalesLineItem extends Model
         'lineable_type', 'lineable_id', 'item_id',
         'item_name', 'description', 'qty', 'unit',
         'rate', 'tax', 'discount', 'total', 'sort_order',
+        'hsn_sac_code',
     ];
 
     protected $casts = [

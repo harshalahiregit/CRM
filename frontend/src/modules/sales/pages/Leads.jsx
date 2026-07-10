@@ -108,9 +108,14 @@ export default function Leads() {
             <h1 className="text-2xl font-black" style={{color:'var(--text-h)',letterSpacing:'-0.03em'}}>Leads</h1>
             <p className="text-xs mt-0.5" style={{color:'var(--text-muted)'}}>Manage your sales pipeline leads</p>
           </div>
-          <button onClick={()=>setShowDrawer(true)} className="flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold text-white transition-all hover:scale-[1.03]" style={{background:'linear-gradient(135deg,#9f67ff,#7C3AED)',boxShadow:'0 6px 20px rgba(124,58,237,0.4)'}}>
-            <Plus size={15}/> New Lead
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={()=>navigate('/app/sales/lead-goals')} className="flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-bold transition-all hover:scale-[1.03]" style={{background:'var(--bg-input)',border:'1px solid var(--border)',color:'var(--text-muted)'}}>
+              <Target size={15}/> Goals
+            </button>
+            <button onClick={()=>setShowDrawer(true)} className="flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold text-white transition-all hover:scale-[1.03]" style={{background:'linear-gradient(135deg,#9f67ff,#7C3AED)',boxShadow:'0 6px 20px rgba(124,58,237,0.4)'}}>
+              <Plus size={15}/> New Lead
+            </button>
+          </div>
         </div>
 
         {/* KPI Cards */}

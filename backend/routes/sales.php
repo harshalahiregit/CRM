@@ -9,6 +9,10 @@ use App\Http\Controllers\Api\Sales\CreditNoteController;
 use App\Http\Controllers\Api\Sales\DeliveryNoteController;
 use App\Http\Controllers\Api\Sales\LeadController;
 use App\Http\Controllers\Api\Sales\LeadSettingController;
+use App\Http\Controllers\Api\Sales\PaymentLinkController;
+use App\Http\Controllers\Api\Sales\RetainerInvoiceController;
+use App\Http\Controllers\Api\Sales\HsnSacController;
+use App\Http\Controllers\Api\Sales\ProposalTemplateController;
 use Illuminate\Support\Facades\Route;
 
 // ── Sales & Revenue Module (Sanctum) ────────────────────────────────────
@@ -32,6 +36,15 @@ Route::middleware('auth:sanctum')->prefix('sales')->group(function () {
     Route::delete('/proposals/{proposal}',                [ProposalController::class, 'destroy']);
     Route::patch('/proposals/{proposal}/send',            [ProposalController::class, 'send']);
     Route::patch('/proposals/{proposal}/status',          [ProposalController::class, 'updateStatus']);
+    Route::post('/proposals/{proposal}/generate-qr',      [ProposalController::class, 'generateQR']);
+    Route::get('/proposals/{proposal}/pdf',               [ProposalController::class, 'exportPDF']);
+
+    // Proposal Templates
+    Route::get('/proposal-templates',                          [ProposalTemplateController::class, 'index']);
+    Route::post('/proposal-templates',                         [ProposalTemplateController::class, 'store']);
+    Route::put('/proposal-templates/{proposalTemplate}',       [ProposalTemplateController::class, 'update']);
+    Route::delete('/proposal-templates/{proposalTemplate}',    [ProposalTemplateController::class, 'destroy']);
+    Route::post('/proposal-templates/{proposalTemplate}/clone',[ProposalTemplateController::class, 'clone']);
 
     // Estimates
     Route::get('/estimates',                                   [EstimateController::class, 'index']);
@@ -41,6 +54,7 @@ Route::middleware('auth:sanctum')->prefix('sales')->group(function () {
     Route::delete('/estimates/{estimate}',                     [EstimateController::class, 'destroy']);
     Route::patch('/estimates/{estimate}/send',                 [EstimateController::class, 'send']);
     Route::post('/estimates/{estimate}/convert-to-invoice',    [EstimateController::class, 'convertToInvoice']);
+    Route::post('/estimates/{estimate}/payments',              [EstimateController::class, 'recordPayment']);
 
     // Invoices
     Route::get('/invoices',                                    [InvoiceController::class, 'index']);
@@ -50,6 +64,26 @@ Route::middleware('auth:sanctum')->prefix('sales')->group(function () {
     Route::delete('/invoices/{invoice}',                       [InvoiceController::class, 'destroy']);
     Route::patch('/invoices/{invoice}/send',                   [InvoiceController::class, 'send']);
     Route::post('/invoices/{invoice}/payments',                [InvoiceController::class, 'recordPayment']);
+    Route::post('/invoices/{invoice}/public-link',              [InvoiceController::class, 'generatePublicLink']);
+    Route::post('/invoices/{invoice}/send-reminder',            [InvoiceController::class, 'sendPaymentReminder']);
+    Route::post('/invoices/{invoice}/send-feedback-request',    [InvoiceController::class, 'sendFeedbackRequest']);
+
+    // Payment Links
+    Route::get('/payment-links',                               [PaymentLinkController::class, 'index']);
+    Route::post('/payment-links',                               [PaymentLinkController::class, 'store']);
+    Route::patch('/payment-links/{paymentLink}/mark-paid',      [PaymentLinkController::class, 'markPaid']);
+    Route::patch('/payment-links/{paymentLink}/cancel',         [PaymentLinkController::class, 'cancel']);
+    Route::delete('/payment-links/{paymentLink}',               [PaymentLinkController::class, 'destroy']);
+
+    // Retainer Invoices
+    Route::get('/retainer-invoices',                            [RetainerInvoiceController::class, 'index']);
+    Route::post('/retainer-invoices',                           [RetainerInvoiceController::class, 'store']);
+    Route::get('/retainer-invoices/{retainerInvoice}',          [RetainerInvoiceController::class, 'show']);
+    Route::put('/retainer-invoices/{retainerInvoice}',          [RetainerInvoiceController::class, 'update']);
+    Route::delete('/retainer-invoices/{retainerInvoice}',       [RetainerInvoiceController::class, 'destroy']);
+
+    // HSN/SAC lookup
+    Route::get('/hsn-sac',                                      [HsnSacController::class, 'search']);
 
     // Credit Notes
     Route::get('/credit-notes',                                [CreditNoteController::class, 'index']);

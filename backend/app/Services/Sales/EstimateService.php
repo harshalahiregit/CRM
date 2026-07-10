@@ -2,10 +2,12 @@
 
 namespace App\Services\Sales;
 
+use App\Exceptions\BusinessException;
 use App\Exceptions\UnauthorizedTenantException;
 use App\Models\Sales\Estimate;
 use App\Models\Sales\SalesInvoice;
 use App\Models\Sales\SalesLineItem;
+use App\Models\Sales\SalesPayment;
 use App\Repositories\Sales\EstimateRepository;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -119,14 +121,61 @@ class EstimateService
             }
 
             $invoice->recalcTotals();
-            $estimate->update(['status' => 'Accepted']);
+
+            // Carry over any payment already recorded against the proforma
+            // invoice (Master Plan V2 §B4: "Convert to Tax Invoice action
+            // with payment data carried over").
+            if ($estimate->payment_received && $estimate->payment_amount > 0) {
+                SalesPayment::create([
+                    'tenant_id'      => $tenantId,
+                    'invoice_id'     => $invoice->id,
+                    'date'           => $estimate->payment_date ?? now()->toDateString(),
+                    'amount'         => min($estimate->payment_amount, $invoice->total),
+                    'mode'           => 'Carried over from Proforma Invoice',
+                    'note'           => "Payment carried over from {$estimate->reference}",
+                    'created_by'     => $userId,
+                ]);
+                $invoice->recalcBalance();
+            }
+
+            $estimate->update([
+                'status' => 'Accepted',
+                'converted_invoice_id' => $invoice->id,
+            ]);
 
             Log::channel('sales')->info('Estimate converted to invoice', [
                 'estimate_id' => $estimate->id, 'invoice_id' => $invoice->id, 'tenant_id' => $tenantId,
             ]);
 
-            return $invoice;
+            return $invoice->fresh();
         });
+    }
+
+    /**
+     * Record a payment against a proforma invoice (estimate) directly —
+     * distinct from SalesPayment, which tracks payments against a Tax
+     * Invoice. Master Plan V2 §B4: "Add payment recording against
+     * proforma invoice" + "PAID badge".
+     */
+    public function recordPayment(Estimate $estimate, array $data, int $tenantId): Estimate
+    {
+        $this->assertTenant($estimate, $tenantId);
+
+        if ((float) $data['amount'] > (float) $estimate->total) {
+            throw new BusinessException('Payment amount exceeds the proforma invoice total.', 422);
+        }
+
+        $estimate->update([
+            'payment_received' => true,
+            'payment_amount'   => $data['amount'],
+            'payment_date'     => $data['date'] ?? now()->toDateString(),
+        ]);
+
+        Log::channel('sales')->info('Proforma invoice payment recorded', [
+            'estimate_id' => $estimate->id, 'tenant_id' => $tenantId, 'amount' => $data['amount'],
+        ]);
+
+        return $estimate->fresh();
     }
 
     private function assertTenant(Estimate $estimate, int $tenantId): void

@@ -20,6 +20,8 @@ class Estimate extends Model
         'address', 'city', 'state', 'country', 'zip',
         'adminnote', 'clientnote', 'terms', 'tags',
         'sent_at', 'created_by',
+        'estimate_type', 'payment_received', 'payment_amount',
+        'payment_date', 'converted_invoice_id',
     ];
 
     protected $casts = [
@@ -30,6 +32,9 @@ class Estimate extends Model
         'tax_total'  => 'decimal:2',
         'discount_total' => 'decimal:2',
         'total'      => 'decimal:2',
+        'payment_received' => 'boolean',
+        'payment_amount'   => 'decimal:2',
+        'payment_date'     => 'date',
     ];
 
     /* ── Number auto-generation ─────────────────────── */
@@ -41,7 +46,9 @@ class Estimate extends Model
                 $count = static::where('tenant_id', $est->tenant_id)
                                ->whereYear('created_at', $year)
                                ->count() + 1;
-                $est->reference = 'EST-' . $year . '-' . str_pad($count, 3, '0', STR_PAD_LEFT);
+                // "PI-" (Proforma Invoice) per the Sales Master Plan V2 terminology
+                // rename — pre-existing records keep their original "EST-" reference.
+                $est->reference = 'PI-' . $year . '-' . str_pad($count, 3, '0', STR_PAD_LEFT);
             }
         });
     }
@@ -60,6 +67,11 @@ class Estimate extends Model
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function convertedInvoice()
+    {
+        return $this->belongsTo(SalesInvoice::class, 'converted_invoice_id');
     }
 
     /* ── Helpers ─────────────────────────────── */
