@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api\Helpdesk;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Traits\ApiResponse;
+use App\Http\Requests\Helpdesk\StoreKbArticleRequest;
+use App\Http\Requests\Helpdesk\UpdateKbArticleRequest;
 use App\Services\Helpdesk\KnowledgeBaseService;
 use Illuminate\Http\Request;
 
@@ -15,68 +17,56 @@ class KbArticleController extends Controller
     {
     }
 
-    /* ── List (optionally by category) ─────────────────────────── */
     public function index(Request $request)
     {
-        $categoryId = $request->integer('category_id') ?: null;
-        $articles = $this->kb->listArticles($request->user()->tenant_id, $categoryId);
-
-        return $this->success($articles, 'Articles retrieved');
+        $subcategoryId = $request->integer('subcategory_id') ?: null;
+        return $this->success($this->kb->listArticles($request->user()->tenant_id, $subcategoryId), 'Articles retrieved');
     }
 
-    /* ── Show ──────────────────────────────────────────────────── */
     public function show(Request $request, int $article)
     {
-        $result = $this->kb->showArticle($article, $request->user()->tenant_id);
-
-        return $this->success($result, 'Article retrieved');
+        return $this->success($this->kb->showArticle($article, $request->user()->tenant_id), 'Article retrieved');
     }
 
-    /* ── Create ────────────────────────────────────────────────── */
-    public function store(Request $request)
+    public function store(StoreKbArticleRequest $request)
     {
-        $data = $request->validate([
-            'category_id' => ['required', 'integer', 'min:1'],
-            'title'       => ['required', 'string', 'max:255'],
-            'content'     => ['required', 'string'],
-        ]);
-
-        $article = $this->kb->createArticle($data, $request->user()->tenant_id);
-
+        $article = $this->kb->createArticle($request->validated(), $request->user()->tenant_id);
         return $this->success($article, 'Article created', 201);
     }
 
-    /* ── Update ────────────────────────────────────────────────── */
-    public function update(Request $request, int $article)
+    public function update(UpdateKbArticleRequest $request, int $article)
     {
-        $data = $request->validate([
-            'category_id' => ['sometimes', 'integer', 'min:1'],
-            'title'       => ['sometimes', 'required', 'string', 'max:255'],
-            'content'     => ['sometimes', 'required', 'string'],
-        ]);
-
-        $result = $this->kb->updateArticle($article, $data, $request->user()->tenant_id);
-
+        $result = $this->kb->updateArticle($article, $request->validated(), $request->user()->tenant_id);
         return $this->success($result, 'Article updated');
     }
 
-    /* ── Delete ────────────────────────────────────────────────── */
     public function destroy(Request $request, int $article)
     {
         $this->kb->deleteArticle($article, $request->user()->tenant_id);
-
         return $this->success(null, 'Article deleted');
     }
 
-    /* ── Helpful / not-helpful vote ────────────────────────────── */
+    /* ── Publish → mint a public shareable link ────────────────── */
+    public function publish(Request $request, int $article)
+    {
+        $result = $this->kb->publish($article, $request->user()->tenant_id);
+
+        return $this->success([
+            'article'     => $result,
+            'public_slug' => $result->public_slug,
+            'public_url'  => url("/api/helpdesk/public/kb/articles/{$result->public_slug}"),
+        ], 'Article published');
+    }
+
+    public function unpublish(Request $request, int $article)
+    {
+        return $this->success($this->kb->unpublish($article, $request->user()->tenant_id), 'Article unpublished');
+    }
+
+    /* ── Helpful / not-helpful vote (admin/internal) ───────────── */
     public function vote(Request $request, int $article)
     {
-        $data = $request->validate([
-            'direction' => ['required', 'in:up,down'],
-        ]);
-
-        $result = $this->kb->vote($article, $data['direction'], $request->user()->tenant_id);
-
-        return $this->success($result, 'Vote recorded');
+        $data = $request->validate(['direction' => ['required', 'in:up,down']]);
+        return $this->success($this->kb->vote($article, $data['direction'], $request->user()->tenant_id), 'Vote recorded');
     }
 }

@@ -6,24 +6,24 @@ use App\Models\Traits\BelongsToTenant;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class KbCategory extends Model
+class KbSubcategory extends Model
 {
     use HasFactory, BelongsToTenant;
 
-    protected $table = 'kb_categories';
+    protected $table = 'kb_subcategories';
 
     protected $fillable = [
-        'tenant_id', 'name', 'slug',
+        'tenant_id', 'category_id', 'name', 'slug',
     ];
 
     /* ── Relationships ──────────────────────────────────────────── */
-    public function subcategories()
+    public function category()
     {
-        return $this->hasMany(KbSubcategory::class, 'category_id');
+        return $this->belongsTo(KbCategory::class, 'category_id');
     }
 
     public function articles()
     {
-        return $this->hasMany(KbArticle::class, 'category_id');
+        return $this->hasMany(KbArticle::class, 'subcategory_id');
     }
 }

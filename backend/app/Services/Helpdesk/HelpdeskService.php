@@ -8,6 +8,7 @@ use App\Models\Helpdesk\Ticket;
 use App\Models\Helpdesk\TicketAttachment;
 use App\Models\Helpdesk\TicketFeedback;
 use App\Models\Helpdesk\TicketReply;
+use App\Repositories\Helpdesk\TicketRepository;
 use App\Services\Helpdesk\Contracts\CustomerServiceContract;
 use App\Services\Helpdesk\Mocks\MockCustomerService;
 use Illuminate\Database\Eloquent\Collection;
@@ -21,9 +22,12 @@ class HelpdeskService
      * The customer dependency is a service contract (rule 2). Laravel injects the
      * bound implementation if one exists; until Zafar binds his real service we
      * fall back to the mock, so this class works with zero global wiring.
+     * TicketRepository is auto-resolved (no dependencies of its own).
      */
-    public function __construct(?CustomerServiceContract $customers = null)
-    {
+    public function __construct(
+        private TicketRepository $tickets,
+        ?CustomerServiceContract $customers = null,
+    ) {
         $this->customers = $customers ?? new MockCustomerService();
     }
 
@@ -31,27 +35,7 @@ class HelpdeskService
 
     public function listTickets(int $tenantId, array $filters = []): Collection
     {
-        return Ticket::forTenant($tenantId)
-            ->status($filters['status'] ?? null)
-            ->priority($filters['priority'] ?? null)
-            ->when(
-                ! empty($filters['assigned_to']),
-                fn ($q) => $q->where('assigned_to', $filters['assigned_to'])
-            )
-            ->when(
-                ! empty($filters['customer_id']),
-                fn ($q) => $q->where('customer_id', $filters['customer_id'])
-            )
-            ->when(
-                ! empty($filters['search']),
-                fn ($q) => $q->where(function ($sub) use ($filters) {
-                    $sub->where('subject', 'like', '%'.$filters['search'].'%')
-                        ->orWhere('description', 'like', '%'.$filters['search'].'%');
-                })
-            )
-            ->with('assignee:id,name,email')
-            ->latest()
-            ->get()
+        return $this->tickets->filtered($tenantId, $filters)
             ->map(fn (Ticket $t) => $this->decorateWithCustomer($t, $tenantId));
     }
 
@@ -72,15 +56,18 @@ class HelpdeskService
             throw new BusinessException('The selected customer does not exist.', 422);
         }
 
-        $ticket = Ticket::create([
-            'tenant_id'   => $tenantId,
-            'subject'     => $data['subject'],
-            'description' => $data['description'] ?? null,
-            'status'      => $data['status'] ?? 'open',
-            'priority'    => $data['priority'] ?? 'medium',
-            'assigned_to' => $data['assigned_to'] ?? null,
-            'customer_id' => $data['customer_id'] ?? null,
-            'deadline'    => $data['deadline'] ?? null,
+        $ticket = $this->tickets->create([
+            'tenant_id'       => $tenantId,
+            'subject'         => $data['subject'],
+            'description'     => $data['description'] ?? null,
+            'status'          => $data['status'] ?? 'open',
+            'priority'        => $data['priority'] ?? 'medium',
+            'assigned_to'     => $data['assigned_to'] ?? null,
+            'customer_id'     => $data['customer_id'] ?? null,
+            'due_date'        => $data['due_date'] ?? null,
+            'source'          => $data['source'] ?? 'internal',
+            'requester_name'  => $data['requester_name'] ?? null,
+            'requester_email' => $data['requester_email'] ?? null,
         ]);
 
         return $this->decorateWithCustomer($ticket->fresh('assignee'), $tenantId);
@@ -97,7 +84,7 @@ class HelpdeskService
 
         $ticket->fill(array_intersect_key($data, array_flip([
             'subject', 'description', 'status', 'priority',
-            'assigned_to', 'customer_id', 'deadline',
+            'assigned_to', 'customer_id', 'due_date',
         ])));
         $ticket->save();
 
@@ -115,14 +102,6 @@ class HelpdeskService
         if ($status === 'closed' && $was !== 'closed') {
             TicketClosed::dispatch($ticket->fresh());
         }
-
-        return $ticket->fresh('assignee');
-    }
-
-    public function assign(int $ticketId, ?int $userId, int $tenantId): Ticket
-    {
-        $ticket = $this->findTicket($ticketId, $tenantId);
-        $ticket->update(['assigned_to' => $userId]);
 
         return $ticket->fresh('assignee');
     }
@@ -209,18 +188,25 @@ class HelpdeskService
             ? round($closedTickets->avg(fn (Ticket $t) => $t->created_at->diffInMinutes($t->updated_at)) / 60, 1)
             : 0.0;
 
-        // Tickets resolved (closed) per assignee.
-        $byAssignee = $base()->where('status', 'closed')
-            ->selectRaw('assigned_to, count(*) as resolved')
+        // Per-assignee workload: total tickets, how many closed, and the average
+        // close time (hours) for that assignee's closed tickets.
+        $assigneeRows = $base()->with('assignee:id,name')->get()
             ->groupBy('assigned_to')
-            ->with('assignee:id,name')
-            ->get()
-            ->map(fn (Ticket $t) => [
-                'assignee_id' => $t->assigned_to,
-                'name'        => $t->assignee->name ?? 'Unassigned',
-                'resolved'    => (int) $t->resolved,
-            ])
-            ->sortByDesc('resolved')
+            ->map(function ($group) {
+                $closed = $group->where('status', 'closed');
+                $avgHours = $closed->count() > 0
+                    ? round($closed->avg(fn (Ticket $t) => $t->created_at->diffInMinutes($t->updated_at)) / 60, 1)
+                    : 0.0;
+
+                return [
+                    'assignee_id'     => $group->first()->assigned_to,
+                    'name'            => $group->first()->assignee->name ?? 'Unassigned',
+                    'total'           => $group->count(),
+                    'resolved'        => $closed->count(),
+                    'avg_close_hours' => $avgHours,
+                ];
+            })
+            ->sortByDesc('total')
             ->values();
 
         return [
@@ -241,7 +227,13 @@ class HelpdeskService
                 ['priority' => 'medium', 'count' => $base()->where('priority', 'medium')->count()],
                 ['priority' => 'low',    'count' => $base()->where('priority', 'low')->count()],
             ],
-            'resolved_by_assignee' => $byAssignee,
+            'by_assignee'          => $assigneeRows,
+            // Kept for backward-compat with the existing dashboard card.
+            'resolved_by_assignee' => $assigneeRows->map(fn ($r) => [
+                'assignee_id' => $r['assignee_id'],
+                'name'        => $r['name'],
+                'resolved'    => $r['resolved'],
+            ])->values(),
         ];
     }
 

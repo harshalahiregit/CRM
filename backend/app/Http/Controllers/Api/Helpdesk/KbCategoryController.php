@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Helpdesk;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Traits\ApiResponse;
+use App\Http\Requests\Helpdesk\StoreKbCategoryRequest;
 use App\Services\Helpdesk\KnowledgeBaseService;
 use Illuminate\Http\Request;
 
@@ -15,7 +16,7 @@ class KbCategoryController extends Controller
     {
     }
 
-    /* ── List (categories + nested articles) ───────────────────── */
+    /* ── List (categories + nested sub-categories) ─────────────── */
     public function index(Request $request)
     {
         $categories = $this->kb->listCategories($request->user()->tenant_id);
@@ -24,14 +25,9 @@ class KbCategoryController extends Controller
     }
 
     /* ── Create ────────────────────────────────────────────────── */
-    public function store(Request $request)
+    public function store(StoreKbCategoryRequest $request)
     {
-        $data = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'slug' => ['nullable', 'string', 'max:255'],
-        ]);
-
-        $category = $this->kb->createCategory($data, $request->user()->tenant_id);
+        $category = $this->kb->createCategory($request->validated(), $request->user()->tenant_id);
 
         return $this->success($category, 'Category created', 201);
     }

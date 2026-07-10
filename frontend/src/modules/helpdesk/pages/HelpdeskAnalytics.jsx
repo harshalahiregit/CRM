@@ -50,10 +50,10 @@ export default function HelpdeskAnalytics() {
   }
 
   const a = data || {}
-  const byAssignee = a.resolved_by_assignee || []
+  const byAssignee = a.by_assignee || a.resolved_by_assignee || []
   const byStatus = a.by_status || []
   const byPriority = a.by_priority || []
-  const maxResolved = Math.max(...byAssignee.map(r => r.resolved), 1)
+  const maxTotal = Math.max(...byAssignee.map(r => r.total ?? r.resolved ?? 0), 1)
   const maxStatus = Math.max(...byStatus.map(s => s.count), 1)
 
   return (
@@ -83,23 +83,30 @@ export default function HelpdeskAnalytics() {
         <section className="rounded-2xl border p-5" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
           <div className="flex items-center gap-2 mb-4">
             <Trophy size={16} style={{ color: '#22d3ee' }} />
-            <h2 className="font-bold" style={{ color: 'var(--text-h)' }}>Resolved by Assignee</h2>
+            <h2 className="font-bold" style={{ color: 'var(--text-h)' }}>Tickets by Assignee</h2>
           </div>
           {byAssignee.length === 0 ? (
-            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No tickets resolved yet.</p>
+            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No assigned tickets yet.</p>
           ) : (
             <div className="space-y-3">
               {byAssignee.map(row => (
                 <div key={row.assignee_id ?? 'unassigned'}>
                   <div className="flex justify-between text-xs mb-1" style={{ color: 'var(--text-muted)' }}>
                     <span className="font-medium" style={{ color: 'var(--text-h)' }}>{row.name}</span>
-                    <span>{row.resolved}</span>
+                    <span>
+                      {row.total ?? row.resolved} tickets
+                      {row.avg_close_hours != null && <span className="ml-2 opacity-70">· avg {row.avg_close_hours}h close</span>}
+                    </span>
                   </div>
-                  <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--border)' }}>
-                    <div className="h-full rounded-full" style={{ width: `${(row.resolved / maxResolved) * 100}%`, background: 'linear-gradient(90deg,#22d3ee,#0891b2)' }} />
+                  <div className="h-2.5 rounded-full overflow-hidden flex" style={{ background: 'var(--border)' }}>
+                    {/* full bar = total, filled segment = resolved */}
+                    <div className="h-full" style={{ width: `${((row.total ?? row.resolved) / maxTotal) * 100}%`, background: 'rgba(34,211,238,0.25)' }}>
+                      <div className="h-full rounded-l-full" style={{ width: `${row.total ? (row.resolved / row.total) * 100 : 0}%`, background: 'linear-gradient(90deg,#22d3ee,#0891b2)' }} />
+                    </div>
                   </div>
                 </div>
               ))}
+              <p className="text-[10px] pt-1" style={{ color: 'var(--text-muted)' }}>Solid = resolved · translucent = still open</p>
             </div>
           )}
         </section>

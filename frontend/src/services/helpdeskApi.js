@@ -16,6 +16,31 @@ export const helpdeskApi = {
   analytics: () =>
     api.get('/helpdesk/analytics').then(unwrap).catch(handleErr),
 
+  // Tickets assigned to the current user (their task list)
+  myTasks: () =>
+    api.get('/helpdesk/my-tasks').then(unwrap).catch(handleErr),
+
+  // Embeddable widget settings (admin)
+  widget: {
+    get: () => api.get('/helpdesk/widget').then(unwrap).catch(handleErr),
+    update: (data) => api.put('/helpdesk/widget', data).then(unwrap).catch(handleErr),
+    rotate: () => api.post('/helpdesk/widget/rotate').then(unwrap).catch(handleErr),
+  },
+
+  // Public (no-auth) surfaces — widget submit + public KB
+  public: {
+    submitTicket: (key, data) =>
+      api.post(`/helpdesk/public/widget/${key}/tickets`, data).then(unwrap).catch(handleErr),
+    kbTree: (key) =>
+      api.get(`/helpdesk/public/widget/${key}/kb`).then(unwrap).catch(handleErr),
+    kbSearch: (key, q) =>
+      api.get(`/helpdesk/public/widget/${key}/kb/search`, { params: { q } }).then(unwrap).catch(handleErr),
+    article: (slug) =>
+      api.get(`/helpdesk/public/kb/articles/${slug}`).then(unwrap).catch(handleErr),
+    vote: (slug, direction) =>
+      api.patch(`/helpdesk/public/kb/articles/${slug}/vote`, { direction }).then(unwrap).catch(handleErr),
+  },
+
   tickets: {
     list: (params = {}) =>
       api.get('/helpdesk/tickets', { params }).then(unwrap).catch(handleErr),
@@ -82,6 +107,15 @@ export const helpdeskApi = {
     deleteCategory: (id) =>
       api.delete(`/helpdesk/kb/categories/${id}`).then(unwrap).catch(handleErr),
 
+    subcategories: (params = {}) =>
+      api.get('/helpdesk/kb/subcategories', { params }).then(unwrap).catch(handleErr),
+    createSubcategory: (data) =>
+      api.post('/helpdesk/kb/subcategories', data).then(unwrap).catch(handleErr),
+    updateSubcategory: (id, data) =>
+      api.put(`/helpdesk/kb/subcategories/${id}`, data).then(unwrap).catch(handleErr),
+    deleteSubcategory: (id) =>
+      api.delete(`/helpdesk/kb/subcategories/${id}`).then(unwrap).catch(handleErr),
+
     articles: (params = {}) =>
       api.get('/helpdesk/kb/articles', { params }).then(unwrap).catch(handleErr),
 
@@ -99,6 +133,10 @@ export const helpdeskApi = {
 
     vote: (id, direction) =>
       api.patch(`/helpdesk/kb/articles/${id}/vote`, { direction }).then(unwrap).catch(handleErr),
+    publish: (id) =>
+      api.patch(`/helpdesk/kb/articles/${id}/publish`).then(unwrap).catch(handleErr),
+    unpublish: (id) =>
+      api.patch(`/helpdesk/kb/articles/${id}/unpublish`).then(unwrap).catch(handleErr),
   },
 }
 
