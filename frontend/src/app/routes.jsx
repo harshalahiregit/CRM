@@ -62,6 +62,10 @@ const PublicKb = lazy(() => import('@/modules/helpdesk/public/PublicKb'))
 const ProjectList = lazy(() => import('@/modules/projects/pages/ProjectList'))
 const ProjectDetail = lazy(() => import('@/modules/projects/pages/ProjectDetail'))
 
+// Task Module (lazy)
+const TaskBoard = lazy(() => import('@/modules/tasks/pages/TaskBoard'))
+const TaskDetail = lazy(() => import('@/modules/tasks/pages/TaskDetail'))
+
 function ComingSoon({ name }) {
   return (
     <div className="flex flex-col items-center justify-center min-h-[55vh] gap-4 animate-fade-in">
@@ -176,10 +180,10 @@ export default function AppRoutes() {
         <Route path="deals" element={<ComingSoon name="Deals" />} />
         <Route path="deals/new" element={<ComingSoon name="New Deal" />} />
         <Route path="deals/:id" element={<ComingSoon name="Deal Detail" />} />
-        <Route path="tasks" element={<ComingSoon name="Tasks" />} />
+        <Route path="tasks" element={<S><TaskBoard /></S>} />
+        <Route path="tasks/:id" element={<S><TaskDetail /></S>} />
         <Route path="projects" element={<S><ProjectList /></S>} />
         <Route path="projects/:id" element={<S><ProjectDetail /></S>} />
-        <Route path="projects/:projectId/tasks" element={<ComingSoon name="Project Tasks" />} />
         <Route path="invoices" element={<ComingSoon name="Invoices" />} />
         <Route path="vendors" element={<ComingSoon name="Vendors" />} />
         <Route path="tickets" element={<ComingSoon name="Tickets" />} />

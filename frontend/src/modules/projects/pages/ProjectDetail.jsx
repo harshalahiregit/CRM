@@ -46,7 +46,7 @@ export default function ProjectDetail() {
           <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{project.customer?.name || 'No customer'} · created by {project.creator?.name || '—'}</p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => navigate(`/app/projects/${id}/tasks`)} className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl" style={{ background: 'rgba(236,72,153,0.15)', color: '#ec4899' }}><ListTodo size={13} /> Tasks</button>
+          <button onClick={() => navigate(`/app/tasks?rel_type=project&rel_id=${id}`)} className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl" style={{ background: 'rgba(236,72,153,0.15)', color: '#ec4899' }}><ListTodo size={13} /> Tasks</button>
           <select value={project.status} onChange={e => setStatus.mutate(e.target.value)} className="text-xs font-bold px-3 py-2 rounded-xl border bg-transparent" style={{ borderColor: s.color, color: s.color }}>
             {Object.entries(PROJECT_STATUS).map(([k, v]) => <option key={k} value={k} style={{ color: '#000' }}>{v.label}</option>)}
           </select>
