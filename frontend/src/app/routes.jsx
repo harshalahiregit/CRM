@@ -15,11 +15,16 @@ import PendingApprovalPage from '@/pages/auth/PendingApprovalPage'
 const DashboardPage = lazy(() => import('@/pages/dashboard/DashboardPage'))
 const ModulesPage = lazy(() => import('@/pages/modules/ModulesPage'))
 
+// Public Career Portal (lazy, no auth)
+const CareerPortal = lazy(() => import('@/pages/careers/CareerPortal'))
+const CareerJobDetails = lazy(() => import('@/pages/careers/CareerJobDetails'))
+
 // HR Module (lazy)
 const HRLayout = lazy(() => import('@/modules/hr/HRLayout'))
 const HRDashboard = lazy(() => import('@/modules/hr/pages/HRDashboard'))
 const ManpowerRequests = lazy(() => import('@/modules/hr/pages/ManpowerRequests'))
 const JobPostings = lazy(() => import('@/modules/hr/pages/JobPostings'))
+const JobWorkspace = lazy(() => import('@/modules/hr/pages/JobWorkspace'))
 const Candidates = lazy(() => import('@/modules/hr/pages/Candidates'))
 const CandidateProfile = lazy(() => import('@/modules/hr/pages/CandidateProfile'))
 const Interviews = lazy(() => import('@/modules/hr/pages/Interviews'))
@@ -98,6 +103,10 @@ export default function AppRoutes() {
         <Route path="verify-email" element={<ComingSoon name="Email Verification" />} />
       </Route>
 
+      {/* Public Career Portal (no auth — tenant from :slug) */}
+      <Route path="/careers/:slug" element={<S><CareerPortal /></S>} />
+      <Route path="/careers/:slug/jobs/:id" element={<S><CareerJobDetails /></S>} />
+
       {/* Protected app routes */}
       <Route path="/app" element={<ProtectedRoute><AppShell /></ProtectedRoute>}>
         <Route index element={<Navigate to="dashboard" replace />} />
@@ -115,6 +124,7 @@ export default function AppRoutes() {
           <Route path="dashboard" element={<S><HRDashboard /></S>} />
           <Route path="manpower-requests" element={<S><ManpowerRequests /></S>} />
           <Route path="jobs" element={<S><JobPostings /></S>} />
+          <Route path="jobs/:id" element={<S><JobWorkspace /></S>} />
           <Route path="candidates" element={<S><Candidates /></S>} />
           <Route path="candidates/:id" element={<S><CandidateProfile /></S>} />
           <Route path="interviews" element={<S><Interviews /></S>} />

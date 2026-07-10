@@ -51,6 +51,7 @@ export const hrApi = {
     rejectL1:        (id, remarks)      => api.post(`/hr/manpower-requests/${id}/reject-l1`, { remarks }).then(r => r.data),
     approveL2:       (id, remarks = '') => api.post(`/hr/manpower-requests/${id}/approve-l2`, { remarks }).then(r => r.data),
     rejectL2:        (id, remarks)      => api.post(`/hr/manpower-requests/${id}/reject-l2`, { remarks }).then(r => r.data),
+    sendBack:        (id, remarks)      => api.post(`/hr/manpower-requests/${id}/send-back`, { remarks }).then(r => r.data),
     // HR queue actions
     convertToJd:     (id, data = {})    => api.post(`/hr/manpower-requests/${id}/convert-to-jd`, data).then(r => r.data),
     publish:         (id)               => api.post(`/hr/manpower-requests/${id}/publish`).then(r => r.data),
@@ -59,15 +60,29 @@ export const hrApi = {
     assignManager:   (id, manager_id)   => api.patch(`/hr/manpower-requests/${id}/assign-manager`, { manager_id }).then(r => r.data),
   },
 
-  // ── Job Postings ────────────────────────────────────────────────────
+  // ── Job Postings — Recruitment Workspace ────────────────────────────
   jobs: {
     list:         (params = {}) => api.get('/hr/jobs', { params }).then(r => r.data),
+    stats:        ()            => api.get('/hr/jobs/stats').then(r => r.data),
+    bulk:         (action, ids) => api.post('/hr/jobs/bulk', { action, ids }).then(r => r.data),
     get:          (id)          => api.get(`/hr/jobs/${id}`).then(r => r.data),
     create:       (data)        => api.post('/hr/jobs', data).then(r => r.data),
     update:       (id, data)    => api.put(`/hr/jobs/${id}`, data).then(r => r.data),
     updateStatus: (id, status)  => api.patch(`/hr/jobs/${id}/status`, { status }).then(r => r.data),
     updateExternalId: (id, platform, external_id) => api.patch(`/hr/jobs/${id}/external-id`, { platform, external_id }).then(r => r.data),
     delete:       (id)          => api.delete(`/hr/jobs/${id}`).then(r => r.data),
+    // Lifecycle actions
+    publish:      (id)          => api.post(`/hr/jobs/${id}/publish`).then(r => r.data),
+    unpublish:    (id)          => api.post(`/hr/jobs/${id}/unpublish`).then(r => r.data),
+    pause:        (id)          => api.post(`/hr/jobs/${id}/pause`).then(r => r.data),
+    close:        (id, remarks) => api.post(`/hr/jobs/${id}/close`, { remarks }).then(r => r.data),
+    cancel:       (id, remarks) => api.post(`/hr/jobs/${id}/cancel`, { remarks }).then(r => r.data),
+    duplicate:    (id)          => api.post(`/hr/jobs/${id}/duplicate`).then(r => r.data),
+    // Distribution channels (Career Portal + future LinkedIn/Naukri/Indeed/TrulyTalents)
+    channels:        ()             => api.get('/hr/jobs/channels').then(r => r.data),
+    publishTo:       (id, channel)  => api.post(`/hr/jobs/${id}/publish-to`, { channel }).then(r => r.data),
+    publishChannels: (id, channels) => api.post(`/hr/jobs/${id}/publish-channels`, { channels }).then(r => r.data),
+    unpublishFrom:   (id, channel)  => api.delete(`/hr/jobs/${id}/publish-to/${channel}`).then(r => r.data),
   },
 
   // ── Candidates ──────────────────────────────────────────────────────

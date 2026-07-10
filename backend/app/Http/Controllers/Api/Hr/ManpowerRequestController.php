@@ -61,7 +61,7 @@ class ManpowerRequestController extends Controller
         $this->assertTenant($request, $manpowerRequest);
 
         return $this->success(
-            $manpowerRequest->load(['requester', 'assignedManager', 'l1Approver', 'l2Approver', 'jobPosting', 'approvalHistory.actor'])
+            $manpowerRequest->load(['requester', 'assignedManager', 'l1Approver', 'l2Approver', 'jobPosting', 'auditLogs.actor'])
         );
     }
 
@@ -103,6 +103,14 @@ class ManpowerRequestController extends Controller
         $result = $this->manpowerRequestService->rejectL2($manpowerRequest, $request->user(), $request->validated('remarks'));
 
         return $this->success($result, 'Request rejected at L2');
+    }
+
+    /* POST /api/hr/manpower-requests/{id}/send-back */
+    public function sendBack(RejectManpowerRequest $request, HrManpowerRequest $manpowerRequest)
+    {
+        $result = $this->manpowerRequestService->sendBack($manpowerRequest, $request->user(), $request->validated('remarks'));
+
+        return $this->success($result, 'Sent back to the requester for revision');
     }
 
     /* POST /api/hr/manpower-requests/{id}/convert-to-jd */

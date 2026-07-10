@@ -36,7 +36,45 @@ export const STATUS_CONFIG = {
 export const statusLabel = (s) => STATUS_CONFIG[s]?.label || s || '—'
 export const statusColor = (s) => STATUS_CONFIG[s] || STATUS_CONFIG.Draft
 
-export const PRIORITY_COLORS = { High: '#ef4444', Medium: '#f59e0b', Low: '#10b981' }
+export const PRIORITY_COLORS = { Critical: '#b91c1c', High: '#ef4444', Medium: '#f59e0b', Low: '#10b981' }
+
+// ── Job Posting lifecycle (mirrors backend App\Support\Hr\JobPostingStatus) ──
+export const JOB_STATUS = {
+  DRAFT:            'Draft',
+  READY_FOR_HR:     'Ready_for_HR',
+  PUBLISHED:        'Published',
+  HIRING:           'Hiring',
+  PARTIALLY_FILLED: 'Partially_Filled',
+  COMPLETED:        'Completed',
+  CLOSED:           'Closed',
+  CANCELLED:        'Cancelled',
+  ON_HOLD:          'On_Hold',
+}
+
+export const JOB_STATUS_CONFIG = {
+  Draft:            { label: 'Draft',            color: '#6b7280', bg: 'rgba(107,114,128,0.15)' },
+  Ready_for_HR:     { label: 'Ready for HR',     color: '#0ea5e9', bg: 'rgba(14,165,233,0.15)' },
+  Published:        { label: 'Published',        color: '#10b981', bg: 'rgba(16,185,129,0.15)' },
+  Hiring:           { label: 'Hiring',           color: '#14b8a6', bg: 'rgba(20,184,166,0.15)' },
+  Partially_Filled: { label: 'Partially Filled', color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
+  Completed:        { label: 'Completed',        color: '#22c55e', bg: 'rgba(34,197,94,0.15)' },
+  Closed:           { label: 'Closed',           color: '#64748b', bg: 'rgba(100,116,139,0.15)' },
+  Cancelled:        { label: 'Cancelled',        color: '#ef4444', bg: 'rgba(239,68,68,0.15)' },
+  On_Hold:          { label: 'On Hold',          color: '#a855f7', bg: 'rgba(168,85,247,0.15)' },
+  Active:           { label: 'Published',        color: '#10b981', bg: 'rgba(16,185,129,0.15)' }, // legacy alias
+}
+
+// ── Candidate & interview vocab (shared with Candidates/Interviews pages) ────
+export const CANDIDATE_STAGES = ['Applied', 'Screening', 'Assessment', 'Interview', 'Offer', 'Hired', 'Rejected']
+export const STAGE_COLORS = { Applied: '#3b82f6', Screening: '#f59e0b', Assessment: '#a855f7', Interview: '#6366f1', Offer: '#10b981', Hired: '#059669', Rejected: '#ef4444' }
+export const DECISION_COLORS = { Selected: '#10b981', Hold: '#f59e0b', Rejected: '#ef4444', Pending: '#6b7280' }
+export const INTERVIEW_STATUS_COLORS = { Scheduled: '#f59e0b', Completed: '#10b981', Cancelled: '#ef4444', Rescheduled: '#8b5cf6' }
+export const INTERVIEW_RESULT_COLORS = { Passed: '#10b981', Failed: '#ef4444', Pending: '#f59e0b' }
+
+export const JOB_STATUSES = Object.values(JOB_STATUS)
+export const jobStatusLabel = (s) => JOB_STATUS_CONFIG[s]?.label || s || '—'
+export const jobStatusColor = (s) => JOB_STATUS_CONFIG[s] || JOB_STATUS_CONFIG.Draft
+export const JOB_TYPE_COLORS = { 'Full-time': '#7C3AED', 'Part-time': '#3b82f6', Contract: '#f59e0b', Remote: '#10b981', Internship: '#ec4899' }
 
 // Statuses that belong to the HR queue (both approvals complete)
 export const HR_QUEUE_STATUSES = [
@@ -59,7 +97,7 @@ export const WORKFLOW_STEPS = [
 // Dropdown option lists for the enhanced request form
 export const EMPLOYEE_LEVELS = ['Intern', 'Junior', 'Mid-level', 'Senior', 'Lead', 'Manager', 'Director']
 export const EMPLOYMENT_TYPES = ['Full-time', 'Part-time', 'Contract', 'Internship']
-export const PRIORITIES = ['Low', 'Medium', 'High']
+export const PRIORITIES = ['Low', 'Medium', 'High', 'Critical']
 
 // Frontend role gating — mirrors User::canApproveL1/L2/canManageHrQueue on the
 // backend (the backend is the source of truth; this only hides buttons).

@@ -2,6 +2,7 @@
 
 namespace App\Models\Hr;
 
+use App\Models\Traits\Auditable;
 use App\Models\User;
 use App\Support\Hr\ManpowerRequestStatus as Status;
 use Illuminate\Database\Eloquent\Model;
@@ -9,7 +10,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 
 class HrManpowerRequest extends Model
 {
-    use HasFactory;
+    use Auditable, HasFactory;
 
     protected $table = 'hr_manpower_requests';
 

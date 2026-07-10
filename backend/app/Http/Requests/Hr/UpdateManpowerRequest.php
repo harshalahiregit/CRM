@@ -17,7 +17,7 @@ class UpdateManpowerRequest extends FormRequest
             'department'          => 'sometimes|string|max:100',
             'position_title'      => 'sometimes|string|max:200',
             'number_of_posts'     => 'sometimes|integer|min:1|max:1000',
-            'priority'            => 'sometimes|in:Low,Medium,High',
+            'priority'            => 'sometimes|in:Low,Medium,High,Critical',
             'job_type'            => 'sometimes|in:Full-time,Part-time,Contract,Internship',
             'business_unit'       => 'nullable|string|max:150',
             'project'             => 'nullable|string|max:150',

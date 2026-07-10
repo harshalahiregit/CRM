@@ -18,7 +18,7 @@ class StoreManpowerRequest extends FormRequest
             'department'          => 'required|string|max:100',
             'position_title'      => 'required|string|max:200',
             'number_of_posts'     => 'required|integer|min:1|max:1000',
-            'priority'            => 'required|in:Low,Medium,High',
+            'priority'            => 'required|in:Low,Medium,High,Critical',
             'job_type'            => 'required|in:Full-time,Part-time,Contract,Internship',
             // Extended hiring information
             'business_unit'       => 'nullable|string|max:150',

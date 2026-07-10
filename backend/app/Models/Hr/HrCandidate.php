@@ -16,6 +16,7 @@ class HrCandidate extends Model
         'current_company','experience_years','source','stage',
         'linkedin_url','linkedin_data','resume_path','ai_score','ai_breakdown',
         'skills','notes','final_decision','whatsapp_opt_in','whatsapp_number',
+        'current_ctc','expected_ctc','notice_period','applied_at',
     ];
 
     protected $casts = [
@@ -23,6 +24,9 @@ class HrCandidate extends Model
         'ai_breakdown'     => 'array',
         'skills'           => 'array',
         'experience_years' => 'decimal:1',
+        'current_ctc'      => 'decimal:2',
+        'expected_ctc'     => 'decimal:2',
+        'applied_at'       => 'datetime',
         'whatsapp_opt_in'  => 'boolean',
     ];
 

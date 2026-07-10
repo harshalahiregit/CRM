@@ -33,6 +33,7 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::post('/manpower-requests/{manpowerRequest}/reject-l1',   [ManpowerRequestController::class, 'rejectL1']);
     Route::post('/manpower-requests/{manpowerRequest}/approve-l2',  [ManpowerRequestController::class, 'approveL2']);
     Route::post('/manpower-requests/{manpowerRequest}/reject-l2',   [ManpowerRequestController::class, 'rejectL2']);
+    Route::post('/manpower-requests/{manpowerRequest}/send-back',   [ManpowerRequestController::class, 'sendBack']);
     // HR Queue actions (post-approval): convert → publish → hiring → close
     Route::post('/manpower-requests/{manpowerRequest}/convert-to-jd', [ManpowerRequestController::class, 'convertToJd']);
     Route::post('/manpower-requests/{manpowerRequest}/publish',       [ManpowerRequestController::class, 'publish']);
@@ -40,14 +41,28 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::post('/manpower-requests/{manpowerRequest}/close',         [ManpowerRequestController::class, 'close']);
     Route::patch('/manpower-requests/{manpowerRequest}/assign-manager', [ManpowerRequestController::class, 'assignManager']);
 
-    // Job Postings
-    Route::get('/jobs',                         [JobPostingController::class, 'index']);
-    Route::post('/jobs',                        [JobPostingController::class, 'store']);
-    Route::get('/jobs/{jobPosting}',            [JobPostingController::class, 'show']);
-    Route::put('/jobs/{jobPosting}',            [JobPostingController::class, 'update']);
-    Route::patch('/jobs/{jobPosting}/status',   [JobPostingController::class, 'updateStatus']);
+    // Job Postings — Recruitment Workspace
+    Route::get('/jobs',                            [JobPostingController::class, 'index']);
+    Route::get('/jobs/stats',                      [JobPostingController::class, 'stats']);
+    Route::get('/jobs/channels',                   [JobPostingController::class, 'channels']);
+    Route::post('/jobs/bulk',                      [JobPostingController::class, 'bulk']);
+    Route::post('/jobs',                           [JobPostingController::class, 'store']);
+    Route::get('/jobs/{jobPosting}',               [JobPostingController::class, 'show']);
+    Route::put('/jobs/{jobPosting}',               [JobPostingController::class, 'update']);
+    Route::patch('/jobs/{jobPosting}/status',      [JobPostingController::class, 'updateStatus']);
     Route::patch('/jobs/{jobPosting}/external-id', [JobPostingController::class, 'updateExternalId']);
-    Route::delete('/jobs/{jobPosting}',         [JobPostingController::class, 'destroy']);
+    Route::delete('/jobs/{jobPosting}',            [JobPostingController::class, 'destroy']);
+    // Lifecycle actions
+    Route::post('/jobs/{jobPosting}/publish',      [JobPostingController::class, 'publish']);
+    Route::post('/jobs/{jobPosting}/unpublish',    [JobPostingController::class, 'unpublish']);
+    Route::post('/jobs/{jobPosting}/pause',        [JobPostingController::class, 'pause']);
+    Route::post('/jobs/{jobPosting}/close',        [JobPostingController::class, 'close']);
+    Route::post('/jobs/{jobPosting}/cancel',       [JobPostingController::class, 'cancel']);
+    Route::post('/jobs/{jobPosting}/duplicate',    [JobPostingController::class, 'duplicate']);
+    // Distribution channels (Career Portal, and future LinkedIn/Naukri/Indeed/TrulyTalents)
+    Route::post('/jobs/{jobPosting}/publish-to',            [JobPostingController::class, 'publishTo']);
+    Route::post('/jobs/{jobPosting}/publish-channels',      [JobPostingController::class, 'publishChannels']);
+    Route::delete('/jobs/{jobPosting}/publish-to/{channel}',[JobPostingController::class, 'unpublishFrom']);
 
     // Candidates
     Route::get('/candidates',                           [CandidateController::class, 'index']);

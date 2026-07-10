@@ -3,10 +3,11 @@ import { useSearchParams } from 'react-router-dom'
 import {
   Plus, CheckCircle, XCircle, Clock, Send, RefreshCw, FileText, Eye, Trash2,
   ThumbsUp, ThumbsDown, Search, Briefcase, Rocket, PlayCircle, Lock, Pencil,
-  UserPlus, ShieldCheck, Inbox,
+  UserPlus, ShieldCheck, Inbox, CornerUpLeft,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 import { useAuth } from '@/context/AuthContext'
+import AuditTimeline from '@/components/ui/AuditTimeline'
 import {
   MR_STATUS, STATUS_CONFIG, statusColor, statusLabel, PRIORITY_COLORS,
   WORKFLOW_STEPS, EMPLOYEE_LEVELS, EMPLOYMENT_TYPES, PRIORITIES,
@@ -223,6 +224,7 @@ export default function ManpowerRequests() {
       else if (action === 'reject-l1')  await hrApi.manpower.rejectL1(id, remarks)
       else if (action === 'approve-l2') await hrApi.manpower.approveL2(id, remarks)
       else if (action === 'reject-l2')  await hrApi.manpower.rejectL2(id, remarks)
+      else if (action === 'send-back')  await hrApi.manpower.sendBack(id, remarks)
       else if (action === 'publish')    await hrApi.manpower.publish(id)
       else if (action === 'start-hiring') await hrApi.manpower.startHiring(id)
       else if (action === 'close')      await hrApi.manpower.close(id, remarks)
@@ -233,6 +235,17 @@ export default function ManpowerRequests() {
   }
 
   const openAction = (request, action) => { setActionModal({ request, action }); setRemarks('') }
+
+  // Open the details modal — show the list row immediately, then enrich it with
+  // the full record (which includes the audit_logs timeline) from the API.
+  const openDetail = async (req) => {
+    setDetail(req)
+    try {
+      const res = await hrApi.manpower.get(req.id)
+      const full = res?.data ?? res
+      if (full?.id) setDetail(full)
+    } catch (e) { /* keep the list-row data if the fetch fails */ }
+  }
 
   // ── Convert to JD ──────────────────────────────────────────────────────────
   const openConvert = (r) => setConvertModal({
@@ -378,16 +391,22 @@ export default function ManpowerRequests() {
                     <ActBtn onClick={() => openAction(req, 'submit')} icon={Send} color="#a78bfa" bg="rgba(124,58,237,0.15)">Submit for L1</ActBtn>
                   )}
                   {req.status === MR_STATUS.L1_PENDING && approveL1 && (
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <ActBtn onClick={() => openAction(req, 'approve-l1')} icon={ThumbsUp} color="#10b981" bg="rgba(16,185,129,0.15)">L1 Approve</ActBtn>
-                      <ActBtn onClick={() => openAction(req, 'reject-l1')} icon={ThumbsDown} color="#f87171" bg="rgba(239,68,68,0.1)">Reject</ActBtn>
-                    </div>
+                    <>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <ActBtn onClick={() => openAction(req, 'approve-l1')} icon={ThumbsUp} color="#10b981" bg="rgba(16,185,129,0.15)">L1 Approve</ActBtn>
+                        <ActBtn onClick={() => openAction(req, 'reject-l1')} icon={ThumbsDown} color="#f87171" bg="rgba(239,68,68,0.1)">Reject</ActBtn>
+                      </div>
+                      <ActBtn onClick={() => openAction(req, 'send-back')} icon={CornerUpLeft} color="#f59e0b" bg="rgba(245,158,11,0.12)">Send Back</ActBtn>
+                    </>
                   )}
                   {req.status === MR_STATUS.L2_PENDING && approveL2 && (
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <ActBtn onClick={() => openAction(req, 'approve-l2')} icon={ThumbsUp} color="#10b981" bg="rgba(16,185,129,0.15)">L2 Approve</ActBtn>
-                      <ActBtn onClick={() => openAction(req, 'reject-l2')} icon={ThumbsDown} color="#f87171" bg="rgba(239,68,68,0.1)">Reject</ActBtn>
-                    </div>
+                    <>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <ActBtn onClick={() => openAction(req, 'approve-l2')} icon={ThumbsUp} color="#10b981" bg="rgba(16,185,129,0.15)">L2 Approve</ActBtn>
+                        <ActBtn onClick={() => openAction(req, 'reject-l2')} icon={ThumbsDown} color="#f87171" bg="rgba(239,68,68,0.1)">Reject</ActBtn>
+                      </div>
+                      <ActBtn onClick={() => openAction(req, 'send-back')} icon={CornerUpLeft} color="#f59e0b" bg="rgba(245,158,11,0.12)">Send Back</ActBtn>
+                    </>
                   )}
                   {req.status === MR_STATUS.READY_FOR_HR && manageHr && (
                     <ActBtn onClick={() => openConvert(req)} icon={Briefcase} color="#6366f1" bg="rgba(99,102,241,0.15)">Convert to JD</ActBtn>
@@ -404,7 +423,7 @@ export default function ManpowerRequests() {
                   {[MR_STATUS.DRAFT, MR_STATUS.REJECTED].includes(req.status) && isOwner(req) && (
                     <ActBtn onClick={() => openEdit(req)} icon={Pencil} color="var(--text-muted)" bg="var(--bg-card)" border>Edit</ActBtn>
                   )}
-                  <ActBtn onClick={() => setDetail(req)} icon={Eye} color="var(--text-muted)" bg="var(--bg-card)" border>View</ActBtn>
+                  <ActBtn onClick={() => openDetail(req)} icon={Eye} color="var(--text-muted)" bg="var(--bg-card)" border>View</ActBtn>
                   {[MR_STATUS.DRAFT, MR_STATUS.REJECTED].includes(req.status) && isOwner(req) && (
                     <ActBtn onClick={() => openAction(req, 'delete')} icon={Trash2} color="#f87171" bg="var(--bg-card)" border>Delete</ActBtn>
                   )}
@@ -477,14 +496,16 @@ function RequestFormModal({ form, setForm, editingId, saving, onClose, onSave })
 function ActionModal({ actionModal, remarks, setRemarks, actionLoading, onClose, onConfirm }) {
   const { action, request } = actionModal
   const isReject = action.startsWith('reject')
+  const isSendBack = action === 'send-back'
   const isDelete = action === 'delete'
-  const needsReason = isReject
+  const needsReason = isReject || isSendBack
   const meta = {
     submit: { title: 'Submit for L1 Approval', color: '#7C3AED' },
     'approve-l1': { title: 'Approve L1 (Department Head)', color: '#10b981' },
     'reject-l1': { title: 'Reject at L1', color: '#ef4444' },
     'approve-l2': { title: 'Approve L2 (Management)', color: '#10b981' },
     'reject-l2': { title: 'Reject at L2', color: '#ef4444' },
+    'send-back': { title: 'Send Back for Revision', color: '#f59e0b' },
     publish: { title: 'Publish Job', color: '#10b981' },
     'start-hiring': { title: 'Start Hiring', color: '#14b8a6' },
     close: { title: 'Close Position', color: '#94a3b8' },
@@ -494,7 +515,9 @@ function ActionModal({ actionModal, remarks, setRemarks, actionLoading, onClose,
   return (
     <Overlay onClose={() => !actionLoading && onClose()} width={460}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-        {isReject || isDelete ? <XCircle size={22} color={meta.color} /> : <CheckCircle size={22} color={meta.color} />}
+        {isSendBack ? <CornerUpLeft size={22} color={meta.color} />
+          : isReject || isDelete ? <XCircle size={22} color={meta.color} />
+          : <CheckCircle size={22} color={meta.color} />}
         <h3 style={{ color: 'var(--text-h)', margin: 0, fontSize: 16, fontWeight: 800 }}>{meta.title}</h3>
       </div>
       <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 14 }}>
@@ -504,8 +527,8 @@ function ActionModal({ actionModal, remarks, setRemarks, actionLoading, onClose,
       {action === 'delete' && <InfoBox tone="danger">This permanently deletes the request. This cannot be undone.</InfoBox>}
       {showRemarks && (
         <>
-          <label style={labelStyle}>{needsReason ? 'Reason for Rejection *' : 'Remarks (optional)'}</label>
-          <textarea value={remarks} onChange={e => setRemarks(e.target.value)} rows={3} placeholder={needsReason ? 'Enter reason...' : 'Add remarks...'}
+          <label style={labelStyle}>{isSendBack ? 'Reason to send back *' : needsReason ? 'Reason for Rejection *' : 'Remarks (optional)'}</label>
+          <textarea value={remarks} onChange={e => setRemarks(e.target.value)} rows={3} placeholder={isSendBack ? 'What needs to be revised?' : needsReason ? 'Enter reason...' : 'Add remarks...'}
             style={{ ...inputStyle, resize: 'vertical', borderColor: needsReason && !remarks ? '#ef444480' : 'var(--border)' }} />
         </>
       )}
@@ -563,22 +586,12 @@ function DetailModal({ request, onClose }) {
       </div>
       {request.job_description && <DetailBlock title="Job Description" text={request.job_description} />}
       {request.justification && <DetailBlock title="Hiring Justification" text={request.justification} />}
-      {request.approvalHistory?.length > 0 && (
-        <div style={{ marginTop: 8 }}>
-          <label style={labelStyle}>Approval History</label>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {request.approvalHistory.map(h => (
-              <div key={h.id} style={{ display: 'flex', gap: 8, fontSize: 12, color: 'var(--text-muted)', padding: '6px 10px', background: 'var(--bg-input)', borderRadius: 8 }}>
-                <span style={{ fontWeight: 700, color: 'var(--text-h)' }}>{h.action}</span>
-                {h.level && h.level !== 'General' && <span style={{ color: '#a78bfa' }}>[{h.level}]</span>}
-                {h.actor?.name && <span>· {h.actor.name}</span>}
-                {h.remarks && <span style={{ fontStyle: 'italic' }}>— {h.remarks}</span>}
-                <span style={{ marginLeft: 'auto' }}>{h.created_at && new Date(h.created_at).toLocaleString('en-IN')}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <div style={{ marginTop: 8 }}>
+        <label style={labelStyle}>Approval Timeline &amp; Audit Trail</label>
+        {request.audit_logs === undefined
+          ? <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: 0 }}>Loading timeline…</p>
+          : <AuditTimeline entries={request.audit_logs} />}
+      </div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}>
         <button onClick={onClose} style={{ padding: '9px 20px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13 }}>Close</button>
       </div>

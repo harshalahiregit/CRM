@@ -4,11 +4,11 @@ namespace App\Services\Hr;
 
 use App\Exceptions\BusinessException;
 use App\Exceptions\UnauthorizedTenantException;
-use App\Models\Hr\HrApprovalHistory;
 use App\Models\Hr\HrJobPosting;
 use App\Models\Hr\HrManpowerRequest;
 use App\Models\User;
 use App\Repositories\Hr\ManpowerRequestRepository;
+use App\Support\Hr\JobPostingStatus;
 use App\Support\Hr\ManpowerRequestStatus as Status;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
@@ -90,7 +90,7 @@ class ManpowerRequestService
 
             Log::channel('hr')->info('Manpower request submitted for L1', ['request_id' => $manpowerRequest->id, 'tenant_id' => $manpowerRequest->tenant_id]);
 
-            return $manpowerRequest->fresh()->load(['requester', 'approvalHistory.actor']);
+            return $manpowerRequest->fresh()->load(['requester', 'auditLogs.actor']);
         });
     }
 
@@ -118,7 +118,7 @@ class ManpowerRequestService
 
             Log::channel('hr')->info('Manpower request L1 approved', ['request_id' => $manpowerRequest->id, 'tenant_id' => $manpowerRequest->tenant_id, 'approver_id' => $user->id]);
 
-            return $manpowerRequest->fresh()->load(['requester', 'l1Approver', 'approvalHistory.actor']);
+            return $manpowerRequest->fresh()->load(['requester', 'l1Approver', 'auditLogs.actor']);
         });
     }
 
@@ -146,7 +146,7 @@ class ManpowerRequestService
 
             Log::channel('hr')->info('Manpower request rejected at L1', ['request_id' => $manpowerRequest->id, 'tenant_id' => $manpowerRequest->tenant_id, 'approver_id' => $user->id]);
 
-            return $manpowerRequest->fresh()->load(['requester', 'approvalHistory.actor']);
+            return $manpowerRequest->fresh()->load(['requester', 'auditLogs.actor']);
         });
     }
 
@@ -176,7 +176,7 @@ class ManpowerRequestService
 
             Log::channel('hr')->info('Manpower request L2 approved (ready for HR)', ['request_id' => $manpowerRequest->id, 'tenant_id' => $manpowerRequest->tenant_id, 'approver_id' => $user->id]);
 
-            return $manpowerRequest->fresh()->load(['requester', 'l1Approver', 'l2Approver', 'approvalHistory.actor']);
+            return $manpowerRequest->fresh()->load(['requester', 'l1Approver', 'l2Approver', 'auditLogs.actor']);
         });
     }
 
@@ -204,7 +204,49 @@ class ManpowerRequestService
 
             Log::channel('hr')->info('Manpower request rejected at L2', ['request_id' => $manpowerRequest->id, 'tenant_id' => $manpowerRequest->tenant_id, 'approver_id' => $user->id]);
 
-            return $manpowerRequest->fresh()->load(['requester', 'approvalHistory.actor']);
+            return $manpowerRequest->fresh()->load(['requester', 'auditLogs.actor']);
+        });
+    }
+
+    /**
+     * Send a pending request back to the requester for revision (returns it to
+     * Draft) instead of rejecting it outright. The approver must supply a reason.
+     */
+    public function sendBack(HrManpowerRequest $manpowerRequest, User $user, string $remarks): HrManpowerRequest
+    {
+        $this->assertTenant($manpowerRequest, $user);
+
+        $level = match ($manpowerRequest->status) {
+            Status::L1_PENDING => 'L1',
+            Status::L2_PENDING => 'L2',
+            default            => null,
+        };
+        if ($level === null) {
+            throw new BusinessException('Only requests pending approval can be sent back', 422);
+        }
+        $this->authorize(
+            $level === 'L1' ? $user->canApproveL1() : $user->canApproveL2(),
+            'You are not authorised to send back this request'
+        );
+
+        return DB::transaction(function () use ($manpowerRequest, $user, $remarks, $level) {
+            $from = $manpowerRequest->status;
+            $manpowerRequest->update([
+                'status'           => Status::DRAFT,
+                'l1_status'        => 'pending',
+                'l2_status'        => 'pending',
+                'l1_approver_id'   => null, 'l1_approved_at' => null, 'l1_remarks' => null,
+                'l2_approver_id'   => null, 'l2_approved_at' => null, 'l2_remarks' => null,
+                'rejection_reason' => null,
+                'submitted_at'     => null,
+            ]);
+
+            $this->logHistory($manpowerRequest, $level, 'Sent Back', $user, $remarks,
+                ['status' => $from], ['status' => Status::DRAFT]);
+
+            Log::channel('hr')->info('Manpower request sent back for revision', ['request_id' => $manpowerRequest->id, 'tenant_id' => $manpowerRequest->tenant_id, 'from' => $from]);
+
+            return $manpowerRequest->fresh()->load(['requester', 'auditLogs.actor']);
         });
     }
 
@@ -235,7 +277,7 @@ class ManpowerRequestService
                 'manpower_request_id' => $manpowerRequest->id,
                 'title'               => $overrides['title']        ?? $manpowerRequest->position_title,
                 'department'          => $manpowerRequest->department,
-                'location'            => $overrides['location']     ?? $manpowerRequest->location,
+                'location'            => $overrides['location'] ?? $manpowerRequest->location ?? 'To be specified',
                 'job_type'            => $manpowerRequest->job_type,
                 'posting_type'        => $overrides['posting_type'] ?? 'Both',
                 'description'         => $overrides['description']  ?? ($manpowerRequest->job_description ?: $manpowerRequest->justification),
@@ -244,8 +286,10 @@ class ManpowerRequestService
                 'salary_to'           => $manpowerRequest->salary_max,
                 'number_of_openings'  => $manpowerRequest->number_of_posts,
                 'closing_date'        => $overrides['closing_date'] ?? $manpowerRequest->target_joining_date,
-                'status'              => 'Draft', // JD stays a draft until HR publishes it
+                'status'              => JobPostingStatus::READY_FOR_HR, // converted, awaiting publish
             ]);
+
+            $jd->recordAudit('Created from Manpower Request', $user, 'Auto-created from MR-'.$manpowerRequest->id, ['to' => JobPostingStatus::READY_FOR_HR]);
 
             $manpowerRequest->update([
                 'status'         => Status::CONVERTED_TO_JD,
@@ -259,7 +303,7 @@ class ManpowerRequestService
 
             Log::channel('hr')->info('Manpower request converted to JD', ['request_id' => $manpowerRequest->id, 'tenant_id' => $manpowerRequest->tenant_id, 'job_posting_id' => $jd->id]);
 
-            return $manpowerRequest->fresh()->load(['requester', 'jobPosting', 'approvalHistory.actor']);
+            return $manpowerRequest->fresh()->load(['requester', 'jobPosting', 'auditLogs.actor']);
         });
     }
 
@@ -277,9 +321,12 @@ class ManpowerRequestService
         }
 
         return DB::transaction(function () use ($manpowerRequest, $user) {
-            HrJobPosting::where('id', $manpowerRequest->job_posting_id)
-                ->where('tenant_id', $manpowerRequest->tenant_id)
-                ->update(['status' => 'Active']);
+            $job = HrJobPosting::where('id', $manpowerRequest->job_posting_id)
+                ->where('tenant_id', $manpowerRequest->tenant_id)->first();
+            if ($job) {
+                $job->update(['status' => JobPostingStatus::PUBLISHED, 'published_at' => $job->published_at ?? now()]);
+                $job->recordAudit('Published', $user, 'Published via manpower request', ['to' => JobPostingStatus::PUBLISHED]);
+            }
 
             $manpowerRequest->update([
                 'status'    => Status::JOB_POSTED,
@@ -291,7 +338,7 @@ class ManpowerRequestService
 
             Log::channel('hr')->info('Manpower request job posted', ['request_id' => $manpowerRequest->id, 'tenant_id' => $manpowerRequest->tenant_id]);
 
-            return $manpowerRequest->fresh()->load(['requester', 'jobPosting', 'approvalHistory.actor']);
+            return $manpowerRequest->fresh()->load(['requester', 'jobPosting', 'auditLogs.actor']);
         });
     }
 
@@ -305,11 +352,22 @@ class ManpowerRequestService
             throw new BusinessException('Only posted jobs can move into hiring', 422);
         }
 
-        $manpowerRequest->update(['status' => Status::HIRING_IN_PROGRESS]);
-        $this->logHistory($manpowerRequest, 'HR', 'Hiring in Progress', $user, 'Hiring started',
-            ['status' => Status::JOB_POSTED], ['status' => Status::HIRING_IN_PROGRESS]);
+        return DB::transaction(function () use ($manpowerRequest, $user) {
+            $manpowerRequest->update(['status' => Status::HIRING_IN_PROGRESS]);
+            $this->logHistory($manpowerRequest, 'HR', 'Hiring in Progress', $user, 'Hiring started',
+                ['status' => Status::JOB_POSTED], ['status' => Status::HIRING_IN_PROGRESS]);
 
-        return $manpowerRequest->fresh()->load(['requester', 'jobPosting']);
+            if ($manpowerRequest->job_posting_id) {
+                $job = HrJobPosting::where('id', $manpowerRequest->job_posting_id)
+                    ->where('tenant_id', $manpowerRequest->tenant_id)->first();
+                if ($job) {
+                    $job->update(['status' => JobPostingStatus::HIRING]);
+                    $job->recordAudit('Hiring started', $user, null, ['to' => JobPostingStatus::HIRING]);
+                }
+            }
+
+            return $manpowerRequest->fresh()->load(['requester', 'jobPosting']);
+        });
     }
 
     /** Close the position (and its linked posting). */
@@ -324,9 +382,12 @@ class ManpowerRequestService
 
         return DB::transaction(function () use ($manpowerRequest, $user, $remarks) {
             if ($manpowerRequest->job_posting_id) {
-                HrJobPosting::where('id', $manpowerRequest->job_posting_id)
-                    ->where('tenant_id', $manpowerRequest->tenant_id)
-                    ->update(['status' => 'Closed']);
+                $job = HrJobPosting::where('id', $manpowerRequest->job_posting_id)
+                    ->where('tenant_id', $manpowerRequest->tenant_id)->first();
+                if ($job) {
+                    $job->update(['status' => JobPostingStatus::CLOSED]);
+                    $job->recordAudit('Closed', $user, $remarks ?? 'Closed via manpower request', ['to' => JobPostingStatus::CLOSED]);
+                }
             }
 
             $manpowerRequest->update(['status' => Status::CLOSED, 'closed_at' => now()]);
@@ -435,17 +496,16 @@ class ManpowerRequestService
         }
     }
 
+    /**
+     * Record a workflow action on the reusable audit trail. Actor name/role,
+     * tenant and timestamp are snapshotted by AuditLogService.
+     */
     private function logHistory(HrManpowerRequest $mr, string $level, string $action, User $user, ?string $remarks, ?array $oldValues, ?array $newValues): void
     {
-        HrApprovalHistory::create([
-            'tenant_id'  => $mr->tenant_id,
-            'request_id' => $mr->id,
-            'level'      => $level,
-            'action'     => $action,
-            'actor_id'   => $user->id,
-            'remarks'    => $remarks,
-            'old_values' => $oldValues, // array-cast handles JSON encoding (no double-encode)
-            'new_values' => $newValues,
+        $mr->recordAudit($action, $user, $remarks, [
+            'level' => $level !== 'General' ? $level : null,
+            'from'  => $oldValues['status'] ?? null,
+            'to'    => $newValues['status'] ?? null,
         ]);
     }
 }
