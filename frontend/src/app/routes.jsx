@@ -48,6 +48,7 @@ const LeadDetail = lazy(() => import('@/modules/sales/pages/LeadDetail'))
 const LeadGoals = lazy(() => import('@/modules/sales/pages/LeadGoals'))
 const PaymentLinks = lazy(() => import('@/modules/sales/pages/PaymentLinks'))
 const RetainerInvoices = lazy(() => import('@/modules/sales/pages/RetainerInvoices'))
+const ProposalTemplates = lazy(() => import('@/modules/sales/pages/ProposalTemplates'))
 
 function ComingSoon({ name }) {
   return (
@@ -146,6 +147,7 @@ export default function AppRoutes() {
           <Route path="lead-goals" element={<S><LeadGoals /></S>} />
           <Route path="payment-links" element={<S><PaymentLinks /></S>} />
           <Route path="retainer-invoices" element={<S><RetainerInvoices /></S>} />
+          <Route path="proposal-templates" element={<S><ProposalTemplates /></S>} />
         </Route>
 
         {/* Core CRM */}

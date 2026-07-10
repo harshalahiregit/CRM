@@ -15,6 +15,7 @@ import { itemApi } from '@/services/itemApi'
 import { dashboardApi } from '@/services/dashboardApi'
 import { paymentLinkApi } from '@/services/paymentLinkApi'
 import { retainerInvoiceApi } from '@/services/retainerInvoiceApi'
+import { proposalTemplateApi } from '@/services/proposalTemplateApi'
 
 export const salesApi = {
   dashboard: dashboardApi.sales,
@@ -32,6 +33,7 @@ export const salesApi = {
   leadQuestionnaires: leadSettingsApi.questionnaires,
   paymentLinks: paymentLinkApi,
   retainerInvoices: retainerInvoiceApi,
+  proposalTemplates: proposalTemplateApi,
 
   // Kept for dropdowns that need a flat client list
   // Replace with a real /contacts endpoint when that module is built

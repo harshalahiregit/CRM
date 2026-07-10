@@ -6,7 +6,7 @@ import {
   UserCheck, CalendarDays, FileText, Rocket, Building2,
   ClipboardList, ChevronDown, Shield, UserCog,
   IndianRupee, FileSignature, CreditCard, FileX,
-  ShoppingBag, UserPlus, Link2, RefreshCw
+  ShoppingBag, UserPlus, Link2, RefreshCw, LayoutTemplate
 } from 'lucide-react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
@@ -44,6 +44,7 @@ const SALES_SUB_ITEMS = [
   { label: 'Sales Dashboard', path: '/app/sales/dashboard', icon: LayoutDashboard },
   { label: 'Leads', path: '/app/sales/leads', icon: UserPlus },
   { label: 'Proposals', path: '/app/sales/proposals', icon: FileSignature },
+  { label: 'Proposal Templates', path: '/app/sales/proposal-templates', icon: LayoutTemplate },
   { label: 'Proforma Invoices', path: '/app/sales/estimates', icon: ClipboardList },
   { label: 'Tax Invoices', path: '/app/sales/invoices', icon: Receipt },
   { label: 'Payment Links', path: '/app/sales/payment-links', icon: Link2 },
