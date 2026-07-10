@@ -9,6 +9,7 @@ use App\Http\Requests\Helpdesk\StoreTicketRequest;
 use App\Http\Requests\Helpdesk\UpdateTicketRequest;
 use App\Services\Helpdesk\HelpdeskService;
 use App\Services\Helpdesk\TicketAssignmentService;
+use App\Services\Task\TaskService;
 use Illuminate\Http\Request;
 
 class TicketController extends Controller
@@ -18,6 +19,7 @@ class TicketController extends Controller
     public function __construct(
         private HelpdeskService $helpdesk,
         private TicketAssignmentService $assignment,
+        private TaskService $tasks,
     ) {
     }
 
@@ -83,6 +85,45 @@ class TicketController extends Controller
         $result = $this->assignment->assign($ticket, $request->validated('assigned_to'), $request->user()->tenant_id);
 
         return $this->success($result, 'Ticket assigned');
+    }
+
+    /* ── Integration 3a: link ticket to a Project ──────────────── */
+    public function linkProject(Request $request, int $ticket)
+    {
+        $data = $request->validate(['project_id' => 'present|nullable|integer']);
+        $result = $this->helpdesk->linkProject($ticket, $data['project_id'], $request->user()->tenant_id);
+
+        return $this->success($result, 'Ticket linked to project');
+    }
+
+    /* ── Integration 3b: create a Task from this ticket ────────── */
+    public function createTask(Request $request, int $ticket)
+    {
+        $data = $request->validate([
+            'name'        => 'required|string|max:255',
+            'assigned_to' => 'nullable|integer|exists:users,id',
+            'priority'    => 'nullable|in:low,medium,high,urgent',
+            'due_date'    => 'nullable|date',
+        ]);
+
+        $tenantId = $request->user()->tenant_id;
+        // Ensure the ticket exists in this tenant before linking a task to it.
+        $this->helpdesk->showTicket($ticket, $tenantId);
+
+        $task = $this->tasks->create([
+            'name'       => $data['name'],
+            'priority'   => $data['priority'] ?? 'medium',
+            'due_date'   => $data['due_date'] ?? null,
+            'start_date' => now()->toDateString(),
+            'rel_type'   => 'ticket',
+            'rel_id'     => $ticket,
+        ], $tenantId, $request->user()->id);
+
+        if (! empty($data['assigned_to'])) {
+            $this->tasks->syncAssignees($task->id, [$data['assigned_to']], $tenantId);
+        }
+
+        return $this->success($task, 'Task created from ticket', 201);
     }
 
     /* ── Submit CSAT feedback ──────────────────────────────────── */

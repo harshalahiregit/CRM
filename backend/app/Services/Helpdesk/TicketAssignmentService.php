@@ -48,11 +48,47 @@ class TicketAssignmentService
     }
 
     /**
-     * The open/in-progress tickets assigned to a user — shown as tasks on their
-     * dashboard, ordered by priority then due date.
+     * Integration 3e — the unified assignee dashboard. Pulls BOTH the tickets
+     * assigned to the user (tickets.assigned_to) AND the tasks assigned to them
+     * (task_assignees), normalized and tagged by `source` (ticket | task).
+     * The Task side is guarded so this still works before the Task module ships.
      */
-    public function myTasks(int $userId, int $tenantId): Collection
+    public function myTasks(int $userId, int $tenantId): array
     {
-        return $this->tickets->assignedTo($userId, $tenantId);
+        $items = $this->tickets->assignedTo($userId, $tenantId)->map(fn ($t) => [
+            'source'    => 'ticket',
+            'id'        => $t->id,
+            'title'     => $t->subject,
+            'priority'  => $t->priority,
+            'status'    => $t->status,
+            'due_date'  => $t->due_date,
+            'link'      => "/app/helpdesk/tickets/{$t->id}",
+        ])->all();
+
+        if (\Illuminate\Support\Facades\Schema::hasTable('tasks')) {
+            $tasks = \App\Models\Task\Task::forTenant($tenantId)
+                ->whereIn('status', ['not_started', 'in_progress', 'awaiting_feedback', 'testing'])
+                ->whereHas('assignees', fn ($q) => $q->where('user_id', $userId))
+                ->get();
+
+            foreach ($tasks as $t) {
+                $items[] = [
+                    'source'   => 'task',
+                    'id'       => $t->id,
+                    'title'    => $t->name,
+                    'priority' => $t->priority,
+                    'status'   => $t->status,
+                    'due_date' => $t->due_date,
+                    'link'     => "/app/tasks/{$t->id}",
+                ];
+            }
+        }
+
+        // Urgent-first, then by soonest due date.
+        $rank = ['urgent' => 0, 'high' => 1, 'medium' => 2, 'low' => 3];
+        usort($items, fn ($a, $b) => ($rank[$a['priority']] ?? 9) <=> ($rank[$b['priority']] ?? 9)
+            ?: strcmp((string) $a['due_date'], (string) $b['due_date']));
+
+        return $items;
     }
 }

@@ -53,6 +53,10 @@ Route::middleware('auth:sanctum')->prefix('helpdesk')->group(function () {
     Route::patch('/tickets/{ticket}/assign',  [TicketController::class, 'assign']);
     Route::post('/tickets/{ticket}/feedback', [TicketController::class, 'feedback']);
 
+    // Integration with Projects/Tasks (owner: Shivam — both are his modules)
+    Route::patch('/tickets/{ticket}/link-project', [TicketController::class, 'linkProject']);
+    Route::post('/tickets/{ticket}/create-task',   [TicketController::class, 'createTask']);
+
     // ── Ticket Replies (conversation thread) ────────────────────
     Route::get('/tickets/{ticket}/replies',   [TicketReplyController::class, 'index']);
     Route::post('/tickets/{ticket}/replies',  [TicketReplyController::class, 'store']);

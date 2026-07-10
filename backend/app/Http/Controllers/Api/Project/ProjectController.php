@@ -62,4 +62,17 @@ class ProjectController extends Controller
         $members = $this->projects->syncMembers($project, $request->validated('user_ids'), $request->user()->tenant_id);
         return $this->success($members, 'Members updated');
     }
+
+    /* ── Integration 3a: tickets linked to this project ────────── */
+    public function tickets(Request $request, int $project)
+    {
+        $tenantId = $request->user()->tenant_id;
+        $tickets = \App\Models\Helpdesk\Ticket::forTenant($tenantId)
+            ->where('project_id', $project)
+            ->with('assignee:id,name')
+            ->latest()
+            ->get();
+
+        return $this->success($tickets, 'Project tickets retrieved');
+    }
 }

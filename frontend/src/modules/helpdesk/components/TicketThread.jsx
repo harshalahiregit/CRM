@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useParams } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
-import { Paperclip, Send, X } from 'lucide-react'
+import { Paperclip, Send, X, ListTodo, FolderKanban } from 'lucide-react'
 import { helpdeskApi } from '@/services/helpdeskApi'
 import { useAuth } from '@/context/AuthContext'
 
@@ -11,11 +11,21 @@ const fmtTime = ts =>
 
 export default function TicketThread() {
   const { id } = useParams()
+  const navigate = useNavigate()
   const { user } = useAuth()
   const queryClient = useQueryClient()
 
   const [message, setMessage] = useState('')
   const [files, setFiles] = useState([])
+
+  const createTask = useMutation({
+    mutationFn: (name) => helpdeskApi.tickets.createTask(id, { name }),
+    onSuccess: (task) => navigate(`/app/tasks/${task.id}`),
+  })
+  const linkProject = useMutation({
+    mutationFn: (pid) => helpdeskApi.tickets.linkProject(id, pid),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['helpdesk-ticket', id] }),
+  })
 
   const { data: ticket } = useQuery({
     queryKey: ['helpdesk-ticket', id],
@@ -55,11 +65,27 @@ export default function TicketThread() {
 
   return (
     <div className="text-slate-200">
-      <header className="mb-5">
-        <h1 className="text-lg font-bold" style={{ color: 'var(--text-h)' }}>
-          {ticket ? ticket.subject : 'Ticket Conversation'}
-        </h1>
-        {ticket && <p className="text-xs mt-0.5 capitalize" style={{ color: 'var(--text-muted)' }}>Ticket #{ticket.id} · {ticket.status}</p>}
+      <header className="mb-5 flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-bold" style={{ color: 'var(--text-h)' }}>
+            {ticket ? ticket.subject : 'Ticket Conversation'}
+          </h1>
+          {ticket && <p className="text-xs mt-0.5 capitalize" style={{ color: 'var(--text-muted)' }}>
+            Ticket #{ticket.id} · {ticket.status}{ticket.project_id ? ` · project #${ticket.project_id}` : ''}
+          </p>}
+        </div>
+        {ticket && (
+          <div className="flex items-center gap-2 shrink-0">
+            <button onClick={() => { const n = window.prompt('Task name:'); if (n?.trim()) createTask.mutate(n.trim()) }}
+              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg" style={{ background: 'rgba(236,72,153,0.15)', color: '#ec4899' }}>
+              <ListTodo size={13} /> Create task
+            </button>
+            <button onClick={() => { const p = window.prompt('Link to project id (blank to unlink):'); if (p !== null) linkProject.mutate(p.trim() ? Number(p.trim()) : null) }}
+              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg" style={{ background: 'rgba(59,130,246,0.15)', color: '#3b82f6' }}>
+              <FolderKanban size={13} /> Link project
+            </button>
+          </div>
+        )}
       </header>
 
       {isError && (

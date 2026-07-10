@@ -91,6 +91,21 @@ class HelpdeskService
         return $this->decorateWithCustomer($ticket->fresh('assignee'), $tenantId);
     }
 
+    /** Integration 3a: link (or unlink) a ticket to a Project in the same tenant. */
+    public function linkProject(int $ticketId, ?int $projectId, int $tenantId): Ticket
+    {
+        $ticket = $this->findTicket($ticketId, $tenantId);
+
+        if ($projectId !== null
+            && ! \App\Models\Project\Project::forTenant($tenantId)->whereKey($projectId)->exists()) {
+            throw new BusinessException('Project not found.', 404);
+        }
+
+        $ticket->update(['project_id' => $projectId]);
+
+        return $ticket->fresh();
+    }
+
     public function changeStatus(int $ticketId, string $status, int $tenantId): Ticket
     {
         $ticket = $this->findTicket($ticketId, $tenantId);

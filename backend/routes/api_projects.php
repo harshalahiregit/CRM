@@ -25,6 +25,9 @@ Route::middleware('auth:sanctum')->prefix('projects')->group(function () {
     // Members
     Route::post('/{project}/members',  [ProjectController::class, 'members']);
 
+    // Integration 3a: tickets linked to this project
+    Route::get('/{project}/tickets',   [ProjectController::class, 'tickets']);
+
     // Milestones (nested list/create)
     Route::get('/{project}/milestones',  [ProjectMilestoneController::class, 'index']);
     Route::post('/{project}/milestones', [ProjectMilestoneController::class, 'store']);

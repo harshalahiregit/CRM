@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, RefreshCw, Plus, Users, Flag, Paperclip, Trash2, ListTodo } from 'lucide-react'
+import { ArrowLeft, RefreshCw, Plus, Users, Flag, Paperclip, Trash2, ListTodo, LifeBuoy } from 'lucide-react'
 import { projectApi } from '@/services/projectApi'
 import { PROJECT_STATUS } from './ProjectList'
 
@@ -17,6 +17,7 @@ export default function ProjectDetail() {
   const { data: project, isLoading, isError, error } = useQuery({ queryKey: ['project', id], queryFn: () => projectApi.get(id) })
   const { data: prog, refetch: refetchProg } = useQuery({ queryKey: ['project-progress', id], queryFn: () => projectApi.progress(id) })
   const { data: files = [] } = useQuery({ queryKey: ['project-files', id], queryFn: () => projectApi.files(id) })
+  const { data: linkedTickets = [] } = useQuery({ queryKey: ['project-tickets', id], queryFn: () => projectApi.tickets(id) })
 
   const setStatus = useMutation({ mutationFn: (s) => projectApi.setStatus(id, s), onSuccess: invalidate })
   const addMember = useMutation({ mutationFn: (ids) => projectApi.members(id, ids), onSuccess: invalidate })
@@ -93,6 +94,23 @@ export default function ProjectDetail() {
           </label>
         </Card>
       </div>
+
+      {/* Linked tickets (integration 3a) */}
+      {linkedTickets.length > 0 && (
+        <Card title="Linked Tickets" icon={LifeBuoy} className="mt-4">
+          <ul className="space-y-1">
+            {linkedTickets.map(t => (
+              <li key={t.id}>
+                <button onClick={() => navigate(`/app/helpdesk/tickets/${t.id}`)} className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left text-sm hover:bg-white/[0.03]" style={{ color: 'var(--text-h)' }}>
+                  <span className="font-mono text-xs" style={{ color: '#22d3ee' }}>#{t.id}</span>
+                  <span className="flex-1 truncate">{t.subject}</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-lg capitalize" style={{ background: 'rgba(59,130,246,0.1)', color: '#3b82f6' }}>{t.status}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       {/* Milestones */}
       <Card title="Milestones" icon={Flag} className="mt-4">

@@ -66,6 +66,12 @@ export const helpdeskApi = {
     feedback: (id, data) =>
       api.post(`/helpdesk/tickets/${id}/feedback`, data).then(unwrap).catch(handleErr),
 
+    // Integration with Projects / Tasks
+    linkProject: (id, project_id) =>
+      api.patch(`/helpdesk/tickets/${id}/link-project`, { project_id }).then(unwrap).catch(handleErr),
+    createTask: (id, data) =>
+      api.post(`/helpdesk/tickets/${id}/create-task`, data).then(unwrap).catch(handleErr),
+
     // Conversation thread
     replies: (id) =>
       api.get(`/helpdesk/tickets/${id}/replies`).then(unwrap).catch(handleErr),
