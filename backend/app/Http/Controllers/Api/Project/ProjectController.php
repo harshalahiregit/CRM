@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Project;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Traits\ApiResponse;
 use App\Http\Requests\Project\StoreProjectRequest;
+use App\Http\Requests\Project\SyncMembersRequest;
 use App\Http\Requests\Project\UpdateProjectRequest;
 use App\Http\Requests\Project\UpdateProjectStatusRequest;
 use App\Services\Project\ProjectService;
@@ -54,5 +55,11 @@ class ProjectController extends Controller
     public function progress(Request $request, int $project)
     {
         return $this->success($this->projects->progress($project, $request->user()->tenant_id), 'Progress computed');
+    }
+
+    public function members(SyncMembersRequest $request, int $project)
+    {
+        $members = $this->projects->syncMembers($project, $request->validated('user_ids'), $request->user()->tenant_id);
+        return $this->success($members, 'Members updated');
     }
 }

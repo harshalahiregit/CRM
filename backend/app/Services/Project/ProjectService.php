@@ -4,6 +4,9 @@ namespace App\Services\Project;
 
 use App\Exceptions\BusinessException;
 use App\Models\Project\Project;
+use App\Models\Project\ProjectFile;
+use App\Models\Project\ProjectMilestone;
+use App\Models\User;
 use App\Repositories\Project\ProjectRepository;
 use App\Services\Helpdesk\Contracts\CustomerServiceContract;
 use App\Services\Helpdesk\Mocks\MockCustomerService;
@@ -35,7 +38,7 @@ class ProjectService
     public function show(int $id, int $tenantId): Project
     {
         $project = $this->find($id, $tenantId);
-        $project->load('creator:id,name');   // members/milestones loaded once Step 2 adds them
+        $project->load(['creator:id,name', 'members.user:id,name,email', 'milestones']);
 
         return $this->decorateWithCustomer($project, $tenantId);
     }
@@ -112,6 +115,105 @@ class ProjectService
         }
 
         return ['progress' => $project->progress, 'source' => 'manual'];
+    }
+
+    /* ── Members ────────────────────────────────────────────────── */
+
+    /** Replace the project's member set (sync). Users must be in the tenant. */
+    public function syncMembers(int $projectId, array $userIds, int $tenantId): Collection
+    {
+        $project = $this->find($projectId, $tenantId);
+        $userIds = array_values(array_unique(array_map('intval', $userIds)));
+
+        $valid = User::where('tenant_id', $tenantId)->whereIn('id', $userIds)->pluck('id')->all();
+        if (count($valid) !== count($userIds)) {
+            throw new BusinessException('One or more users are not in this workspace.', 422);
+        }
+
+        DB::transaction(function () use ($project, $valid, $tenantId) {
+            $project->members()->whereNotIn('user_id', $valid ?: [0])->delete();
+            $existing = $project->members()->pluck('user_id')->all();
+            foreach (array_diff($valid, $existing) as $uid) {
+                $project->members()->create(['tenant_id' => $tenantId, 'user_id' => $uid]);
+            }
+        });
+
+        return $project->members()->with('user:id,name,email')->get();
+    }
+
+    /* ── Milestones ─────────────────────────────────────────────── */
+
+    public function listMilestones(int $projectId, int $tenantId): Collection
+    {
+        return $this->find($projectId, $tenantId)->milestones()->get();
+    }
+
+    public function createMilestone(int $projectId, array $data, int $tenantId): ProjectMilestone
+    {
+        $project = $this->find($projectId, $tenantId);
+
+        return $project->milestones()->create([...$data, 'tenant_id' => $tenantId]);
+    }
+
+    public function updateMilestone(int $milestoneId, array $data, int $tenantId): ProjectMilestone
+    {
+        $milestone = ProjectMilestone::forTenant($tenantId)->find($milestoneId);
+        if (! $milestone) {
+            throw new BusinessException('Milestone not found.', 404);
+        }
+        $milestone->update($data);
+
+        return $milestone->fresh();
+    }
+
+    public function deleteMilestone(int $milestoneId, int $tenantId): void
+    {
+        $milestone = ProjectMilestone::forTenant($tenantId)->find($milestoneId);
+        if (! $milestone) {
+            throw new BusinessException('Milestone not found.', 404);
+        }
+        $milestone->delete();
+    }
+
+    /* ── Files ──────────────────────────────────────────────────── */
+
+    public function listFiles(int $projectId, int $tenantId): Collection
+    {
+        $this->find($projectId, $tenantId);
+
+        return ProjectFile::forTenant($tenantId)->where('project_id', $projectId)
+            ->with('uploader:id,name')->latest()->get();
+    }
+
+    /** Persist an already-stored file's metadata (controller handles the upload). */
+    public function storeFile(int $projectId, array $data, int $tenantId, int $userId): ProjectFile
+    {
+        $this->find($projectId, $tenantId);
+
+        return ProjectFile::create([
+            'tenant_id'           => $tenantId,
+            'project_id'          => $projectId,
+            'file_name'           => $data['file_name'],
+            'original_name'       => $data['original_name'],
+            'file_path'           => $data['file_path'],
+            'visible_to_customer' => $data['visible_to_customer'] ?? false,
+            'uploaded_by'         => $userId,
+        ]);
+    }
+
+    public function findFile(int $fileId, int $projectId, int $tenantId): ProjectFile
+    {
+        $file = ProjectFile::forTenant($tenantId)->where('project_id', $projectId)->find($fileId);
+        if (! $file) {
+            throw new BusinessException('File not found.', 404);
+        }
+
+        return $file;
+    }
+
+    public function deleteFile(int $fileId, int $projectId, int $tenantId): void
+    {
+        $this->findFile($fileId, $projectId, $tenantId)->delete();
     }
 
     /* ── Internals ──────────────────────────────────────────────── */
