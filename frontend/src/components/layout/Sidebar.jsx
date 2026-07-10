@@ -6,7 +6,7 @@ import {
   UserCheck, CalendarDays, FileText, Rocket, Building2,
   ClipboardList, ChevronDown, Shield, UserCog,
   IndianRupee, FileSignature, CreditCard, FileX,
-  ShoppingBag, UserPlus
+  ShoppingBag, UserPlus, Link2, RefreshCw
 } from 'lucide-react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
@@ -44,8 +44,10 @@ const SALES_SUB_ITEMS = [
   { label: 'Sales Dashboard', path: '/app/sales/dashboard', icon: LayoutDashboard },
   { label: 'Leads', path: '/app/sales/leads', icon: UserPlus },
   { label: 'Proposals', path: '/app/sales/proposals', icon: FileSignature },
-  { label: 'Estimates', path: '/app/sales/estimates', icon: ClipboardList },
-  { label: 'Invoices', path: '/app/sales/invoices', icon: Receipt },
+  { label: 'Proforma Invoices', path: '/app/sales/estimates', icon: ClipboardList },
+  { label: 'Tax Invoices', path: '/app/sales/invoices', icon: Receipt },
+  { label: 'Payment Links', path: '/app/sales/payment-links', icon: Link2 },
+  { label: 'Retainer Invoices', path: '/app/sales/retainer-invoices', icon: RefreshCw },
   { label: 'Delivery Notes', path: '/app/sales/delivery-notes', icon: Truck },
   { label: 'Payments', path: '/app/sales/payments', icon: CreditCard },
   { label: 'Credit Notes', path: '/app/sales/credit-notes', icon: FileX },
