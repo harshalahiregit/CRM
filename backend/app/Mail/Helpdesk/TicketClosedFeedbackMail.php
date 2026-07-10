@@ -1,0 +1,50 @@
+<?php
+
+namespace App\Mail\Helpdesk;
+
+use App\Models\Helpdesk\Ticket;
+use Illuminate\Bus\Queueable;
+use Illuminate\Mail\Mailable;
+use Illuminate\Mail\Mailables\Content;
+use Illuminate\Mail\Mailables\Envelope;
+use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\URL;
+
+class TicketClosedFeedbackMail extends Mailable
+{
+    use Queueable, SerializesModels;
+
+    public function __construct(public Ticket $ticket, public array $customer)
+    {
+    }
+
+    public function envelope(): Envelope
+    {
+        return new Envelope(
+            subject: "How did we do? · Ticket #{$this->ticket->id} resolved",
+        );
+    }
+
+    public function content(): Content
+    {
+        // One signed, expiring URL per star. The signature is the authorization
+        // for the otherwise-public one-click endpoint, so links can't be forged.
+        $stars = collect(range(1, 5))->map(fn ($n) => [
+            'value' => $n,
+            'url'   => URL::temporarySignedRoute(
+                'helpdesk.feedback.oneclick',
+                now()->addDays(30),
+                ['ticket' => $this->ticket->id, 'rating' => $n],
+            ),
+        ])->all();
+
+        return new Content(
+            view: 'emails.helpdesk.ticket-closed-feedback',
+            with: [
+                'ticket'       => $this->ticket,
+                'customerName' => $this->customer['name'] ?? 'there',
+                'stars'        => $stars,
+            ],
+        );
+    }
+}

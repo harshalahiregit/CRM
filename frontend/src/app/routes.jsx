@@ -50,6 +50,19 @@ const PaymentLinks = lazy(() => import('@/modules/sales/pages/PaymentLinks'))
 const RetainerInvoices = lazy(() => import('@/modules/sales/pages/RetainerInvoices'))
 const ProposalTemplates = lazy(() => import('@/modules/sales/pages/ProposalTemplates'))
 
+// Helpdesk Module (lazy)
+const HelpdeskLayout = lazy(() => import('@/modules/helpdesk/HelpdeskLayout'))
+const HelpdeskAnalytics = lazy(() => import('@/modules/helpdesk/pages/HelpdeskAnalytics'))
+const TicketGrid = lazy(() => import('@/modules/helpdesk/pages/TicketGrid'))
+const KnowledgeBaseHome = lazy(() => import('@/modules/helpdesk/pages/KnowledgeBaseHome'))
+const KbAdmin = lazy(() => import('@/modules/helpdesk/pages/KbAdmin'))
+const MyTasks = lazy(() => import('@/modules/helpdesk/pages/MyTasks'))
+const WidgetSettings = lazy(() => import('@/modules/helpdesk/pages/WidgetSettings'))
+const TicketThread = lazy(() => import('@/modules/helpdesk/components/TicketThread'))
+// Public (no-auth) Helpdesk pages
+const PublicArticle = lazy(() => import('@/modules/helpdesk/public/PublicArticle'))
+const PublicKb = lazy(() => import('@/modules/helpdesk/public/PublicKb'))
+
 function ComingSoon({ name }) {
   return (
     <div className="flex flex-col items-center justify-center min-h-[55vh] gap-4 animate-fade-in">
@@ -150,6 +163,18 @@ export default function AppRoutes() {
           <Route path="proposal-templates" element={<S><ProposalTemplates /></S>} />
         </Route>
 
+        {/* HELPDESK MODULE */}
+        <Route path="helpdesk" element={<S><HelpdeskLayout /></S>}>
+          <Route index element={<Navigate to="analytics" replace />} />
+          <Route path="analytics" element={<S><HelpdeskAnalytics /></S>} />
+          <Route path="my-tasks" element={<S><MyTasks /></S>} />
+          <Route path="tickets" element={<S><TicketGrid /></S>} />
+          <Route path="tickets/:id" element={<S><TicketThread /></S>} />
+          <Route path="knowledge-base" element={<S><KnowledgeBaseHome /></S>} />
+          <Route path="kb-admin" element={<S><KbAdmin /></S>} />
+          <Route path="widget" element={<S><WidgetSettings /></S>} />
+        </Route>
+
         {/* Core CRM */}
         <Route path="contacts" element={<ComingSoon name="Contacts" />} />
         <Route path="contacts/new" element={<ComingSoon name="New Contact" />} />
@@ -165,6 +190,10 @@ export default function AppRoutes() {
         <Route path="reports/*" element={<ComingSoon name="Reports" />} />
         <Route path="settings/*" element={<ComingSoon name="Settings" />} />
       </Route>
+
+      {/* Public Helpdesk (no auth): shareable KB article + tenant help center */}
+      <Route path="/kb/a/:slug" element={<S><PublicArticle /></S>} />
+      <Route path="/kb/:key" element={<S><PublicKb /></S>} />
 
       <Route path="/vendor-portal/*" element={<ComingSoon name="Vendor Portal" />} />
 

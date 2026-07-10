@@ -51,6 +51,15 @@ return Application::configure(basePath: dirname(__DIR__))
                     ], $e->status);
                 }
 
+                // Auth failures must return 401 (not the generic 500) so the
+                // frontend's axios interceptor can catch it and redirect to login.
+                if ($e instanceof \Illuminate\Auth\AuthenticationException) {
+                    return response()->json([
+                        'status'  => 'error',
+                        'message' => 'Unauthenticated.',
+                    ], 401);
+                }
+
                 $status = $e instanceof BusinessException
                     ? $e->getStatusCode()
                     : (method_exists($e, 'getStatusCode') ? $e->getStatusCode() : 500);

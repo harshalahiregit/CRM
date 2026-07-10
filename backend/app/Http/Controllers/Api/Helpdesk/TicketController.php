@@ -1,0 +1,99 @@
+<?php
+
+namespace App\Http\Controllers\Api\Helpdesk;
+
+use App\Http\Controllers\Controller;
+use App\Http\Controllers\Traits\ApiResponse;
+use App\Http\Requests\Helpdesk\AssignTicketRequest;
+use App\Http\Requests\Helpdesk\StoreTicketRequest;
+use App\Http\Requests\Helpdesk\UpdateTicketRequest;
+use App\Services\Helpdesk\HelpdeskService;
+use App\Services\Helpdesk\TicketAssignmentService;
+use Illuminate\Http\Request;
+
+class TicketController extends Controller
+{
+    use ApiResponse;
+
+    public function __construct(
+        private HelpdeskService $helpdesk,
+        private TicketAssignmentService $assignment,
+    ) {
+    }
+
+    /* ── List ──────────────────────────────────────────────────── */
+    public function index(Request $request)
+    {
+        $filters = $request->only(['status', 'priority', 'assigned_to', 'customer_id', 'source', 'search']);
+        $tickets = $this->helpdesk->listTickets($request->user()->tenant_id, $filters);
+
+        return $this->success($tickets, 'Tickets retrieved');
+    }
+
+    /* ── My assigned tasks (assignee dashboard) ────────────────── */
+    public function myTasks(Request $request)
+    {
+        $tasks = $this->assignment->myTasks($request->user()->id, $request->user()->tenant_id);
+
+        return $this->success($tasks, 'My tasks retrieved');
+    }
+
+    /* ── Create ────────────────────────────────────────────────── */
+    public function store(StoreTicketRequest $request)
+    {
+        $ticket = $this->helpdesk->createTicket($request->validated(), $request->user()->tenant_id);
+
+        return $this->success($ticket, 'Ticket created', 201);
+    }
+
+    /* ── Show ──────────────────────────────────────────────────── */
+    public function show(Request $request, int $ticket)
+    {
+        return $this->success($this->helpdesk->showTicket($ticket, $request->user()->tenant_id), 'Ticket retrieved');
+    }
+
+    /* ── Update ────────────────────────────────────────────────── */
+    public function update(UpdateTicketRequest $request, int $ticket)
+    {
+        $result = $this->helpdesk->updateTicket($ticket, $request->validated(), $request->user()->tenant_id);
+
+        return $this->success($result, 'Ticket updated');
+    }
+
+    /* ── Delete ────────────────────────────────────────────────── */
+    public function destroy(Request $request, int $ticket)
+    {
+        $this->helpdesk->deleteTicket($ticket, $request->user()->tenant_id);
+
+        return $this->success(null, 'Ticket deleted');
+    }
+
+    /* ── Change status ─────────────────────────────────────────── */
+    public function updateStatus(Request $request, int $ticket)
+    {
+        $data = $request->validate(['status' => ['required', 'in:open,in-progress,closed']]);
+        $result = $this->helpdesk->changeStatus($ticket, $data['status'], $request->user()->tenant_id);
+
+        return $this->success($result, 'Status updated');
+    }
+
+    /* ── Assign agent (TicketAssignmentService) ────────────────── */
+    public function assign(AssignTicketRequest $request, int $ticket)
+    {
+        $result = $this->assignment->assign($ticket, $request->validated('assigned_to'), $request->user()->tenant_id);
+
+        return $this->success($result, 'Ticket assigned');
+    }
+
+    /* ── Submit CSAT feedback ──────────────────────────────────── */
+    public function feedback(Request $request, int $ticket)
+    {
+        $data = $request->validate([
+            'rating'   => ['required', 'integer', 'between:1,5'],
+            'comments' => ['nullable', 'string'],
+        ]);
+        $result = $this->helpdesk->submitFeedback($ticket, $data, $request->user()->tenant_id);
+
+        return $this->success($result, 'Feedback recorded', 201);
+    }
+}
