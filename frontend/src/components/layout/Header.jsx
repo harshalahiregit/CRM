@@ -20,14 +20,9 @@ export default function Header({ sidebarCollapsed, mobileMenuOpen, onMobileMenuT
     return () => document.removeEventListener('mousedown', h)
   }, [])
 
-  useEffect(() => {
-    const h = (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); setSearchOpen(true) }
-      if (e.key === 'Escape') setSearchOpen(false)
-    }
-    window.addEventListener('keydown', h)
-    return () => window.removeEventListener('keydown', h)
-  }, [])
+  // ⌘K is owned by the global CommandPalette (Phase 7d). The header search box
+  // just opens it via a custom event, so there is a single working palette.
+  const openPalette = () => window.dispatchEvent(new CustomEvent('open-command-palette'))
 
   const handleLogout = async () => { await logout(); navigate('/auth/login') }
   const initials = user?.name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || 'U'
@@ -61,7 +56,7 @@ export default function Header({ sidebarCollapsed, mobileMenuOpen, onMobileMenuT
 
         {/* Search bar (desktop) — 3D inset look */}
         <button
-          onClick={() => setSearchOpen(true)}
+          onClick={openPalette}
           className="hidden md:flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm min-w-[220px] transition-all duration-200"
           style={{
             background: 'var(--bg-input)',
@@ -87,7 +82,7 @@ export default function Header({ sidebarCollapsed, mobileMenuOpen, onMobileMenuT
         </button>
 
         {/* Mobile search */}
-        <button onClick={() => setSearchOpen(true)} className="btn-icon md:hidden" aria-label="Search">
+        <button onClick={openPalette} className="btn-icon md:hidden" aria-label="Search">
           <Search size={20} />
         </button>
 

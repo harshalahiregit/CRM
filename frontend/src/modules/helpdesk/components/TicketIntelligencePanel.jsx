@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { StickyNote, Bell, Link2, Tag, ChevronDown, Plus, Check, X } from 'lucide-react'
+import { StickyNote, Bell, Link2, Tag, SlidersHorizontal, ChevronDown, Plus, Check, X } from 'lucide-react'
 import { helpdeskApi } from '@/services/helpdeskApi'
+import SLABadge from './ui/SLABadge'
 
 const fmtWhen = ts => ts ? new Date(ts).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''
 
@@ -14,11 +15,58 @@ const fmtWhen = ts => ts ? new Date(ts).toLocaleString('en-IN', { day: '2-digit'
 export default function TicketIntelligencePanel({ ticketId }) {
   return (
     <aside className="space-y-3 w-full">
+      <PropertiesSection ticketId={ticketId} />
       <TagsSection ticketId={ticketId} />
       <NotesSection ticketId={ticketId} />
       <RemindersSection ticketId={ticketId} />
       <RelatedSection ticketId={ticketId} />
     </aside>
+  )
+}
+
+function PropertiesSection({ ticketId }) {
+  const qc = useQueryClient()
+  const tkey = ['helpdesk-ticket', String(ticketId)]
+  const { data: ticket } = useQuery({ queryKey: tkey, queryFn: () => helpdeskApi.tickets.get(ticketId) })
+  const { data: settings } = useQuery({ queryKey: ['helpdesk-settings'], queryFn: helpdeskApi.settings.all })
+  const invalidate = () => qc.invalidateQueries({ queryKey: tkey })
+  const setStatus = useMutation({ mutationFn: (s) => helpdeskApi.tickets.setStatus(ticketId, s), onSuccess: invalidate })
+  const update = useMutation({ mutationFn: (data) => helpdeskApi.tickets.update(ticketId, data), onSuccess: invalidate })
+
+  if (!ticket) return null
+  const sel = 'w-full text-xs bg-transparent border rounded-lg px-2 py-1.5 outline-none'
+  const brd = { borderColor: 'var(--border)', color: 'var(--text-h)' }
+
+  return (
+    <Section icon={SlidersHorizontal} title="Properties" accent="#22d3ee">
+      <div className="space-y-2">
+        <Field label="Status">
+          <select value={ticket.status} onChange={e => setStatus.mutate(e.target.value)} className={sel} style={brd}>
+            {(settings?.statuses || []).map(s => <option key={s.id} value={s.name} style={{ color: '#000' }}>{s.name}</option>)}
+          </select>
+        </Field>
+        <Field label={<span className="flex items-center gap-1.5">Priority <SLABadge priority={ticket.priority} dueDate={ticket.due_date} /></span>}>
+          <select value={ticket.priority} onChange={e => update.mutate({ priority: e.target.value })} className={sel} style={brd}>
+            {(settings?.priorities || []).map(p => <option key={p.id} value={p.name} style={{ color: '#000' }}>{p.name}</option>)}
+          </select>
+        </Field>
+        <Field label="Department">
+          <select value={ticket.department_id || ''} onChange={e => update.mutate({ department_id: e.target.value ? Number(e.target.value) : null })} className={sel} style={brd}>
+            <option value="" style={{ color: '#000' }}>— none —</option>
+            {(settings?.departments || []).map(d => <option key={d.id} value={d.id} style={{ color: '#000' }}>{d.name}</option>)}
+          </select>
+        </Field>
+      </div>
+    </Section>
+  )
+}
+
+function Field({ label, children }) {
+  return (
+    <label className="block">
+      <span className="text-[10px] uppercase tracking-wide block mb-1" style={{ color: 'var(--text-muted)' }}>{label}</span>
+      {children}
+    </label>
   )
 }
 

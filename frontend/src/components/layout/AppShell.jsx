@@ -3,6 +3,7 @@ import { Outlet } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import Header from './Header'
 import MobileBottomNav from './MobileBottomNav'
+import CommandPalette from '@/components/CommandPalette'
 import clsx from 'clsx'
 import { useTheme } from '@/context/ThemeContext'
 
@@ -64,6 +65,9 @@ export default function AppShell() {
 
       {/* Mobile bottom nav */}
       <MobileBottomNav />
+
+      {/* Global Ctrl/Cmd+K command palette (Phase 7d) */}
+      <CommandPalette />
     </div>
   )
 }
