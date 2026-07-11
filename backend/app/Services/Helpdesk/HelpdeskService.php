@@ -192,7 +192,13 @@ class HelpdeskService
         $open        = $base()->where('status', 'open')->count();
         $inProgress  = $base()->where('status', 'in-progress')->count();
         $closed      = $base()->where('status', 'closed')->count();
-        $unresolved  = $open + $inProgress;
+
+        // Unresolved = everything NOT in a closed-flagged status (closed, merged, or
+        // any admin-created closed status). Computed from the configured is_closed_status
+        // flag rather than a hardcoded list, so custom statuses don't skew the open rate.
+        $closedStatusNames = \App\Models\Helpdesk\TicketStatus::forTenant($tenantId)
+            ->where('is_closed_status', true)->pluck('name');
+        $unresolved = $total - $base()->whereIn('status', $closedStatusNames)->count();
 
         // Open rate = share of tickets not yet closed.
         $openRate = $total > 0 ? round(($unresolved / $total) * 100, 1) : 0.0;
@@ -224,6 +230,8 @@ class HelpdeskService
             ->sortByDesc('total')
             ->values();
 
+        $settings = app(\App\Services\Helpdesk\HelpdeskSettingsService::class);
+
         return [
             'total'             => $total,
             'open'              => $open,
@@ -232,17 +240,11 @@ class HelpdeskService
             'unresolved'        => $unresolved,
             'open_rate'         => $openRate,
             'avg_closing_hours' => $avgClosingHours,
-            'by_status'         => [
-                ['status' => 'open',        'count' => $open],
-                ['status' => 'in-progress', 'count' => $inProgress],
-                ['status' => 'closed',      'count' => $closed],
-            ],
-            'by_priority' => [
-                ['priority' => 'urgent', 'count' => $base()->where('priority', 'urgent')->count()],
-                ['priority' => 'high',   'count' => $base()->where('priority', 'high')->count()],
-                ['priority' => 'medium', 'count' => $base()->where('priority', 'medium')->count()],
-                ['priority' => 'low',    'count' => $base()->where('priority', 'low')->count()],
-            ],
+            // Data-driven so EVERY status/priority present is counted — incl. the
+            // 'merged' status and any admin-created value. A hardcoded list here is
+            // the same bug that once dropped 'urgent' from by_priority.
+            'by_status'   => $this->countBreakdown($base(), 'status', $settings->statusNames($tenantId)),
+            'by_priority' => $this->countBreakdown($base(), 'priority', $settings->priorityNames($tenantId)),
             'by_assignee'          => $assigneeRows,
             // Kept for backward-compat with the existing dashboard card.
             'resolved_by_assignee' => $assigneeRows->map(fn ($r) => [
@@ -251,6 +253,25 @@ class HelpdeskService
                 'resolved'    => $r['resolved'],
             ])->values(),
         ];
+    }
+
+    /**
+     * Count tickets grouped by a column, ordered by the tenant's configured list
+     * so zero-count configured values still appear, and ANY value present in the
+     * data but not (yet) configured is appended rather than silently dropped.
+     */
+    private function countBreakdown($query, string $column, array $orderedNames): array
+    {
+        $counts = $query->selectRaw("{$column} as k, count(*) as c")->groupBy($column)->pluck('c', 'k');
+
+        $rows = collect($orderedNames)
+            ->map(fn ($name) => [$column => $name, 'count' => (int) ($counts[$name] ?? 0)]);
+
+        // Append any value seen in the data that isn't in the configured list.
+        $extra = $counts->keys()->diff($orderedNames)
+            ->map(fn ($name) => [$column => $name, 'count' => (int) $counts[$name]]);
+
+        return $rows->concat($extra)->values()->all();
     }
 
     /* ── Feedback (CSAT) ────────────────────────────────────────── */
