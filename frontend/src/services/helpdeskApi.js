@@ -82,6 +82,16 @@ export const helpdeskApi = {
     createTask: (id, data) =>
       api.post(`/helpdesk/tickets/${id}/create-task`, data).then(unwrap).catch(handleErr),
 
+    // Collaboration — private notes, reminders, related tickets (Phase 2)
+    notes: (id) => api.get(`/helpdesk/tickets/${id}/notes`).then(unwrap).catch(handleErr),
+    addNote: (id, content) => api.post(`/helpdesk/tickets/${id}/notes`, { content }).then(unwrap).catch(handleErr),
+    reminders: (id) => api.get(`/helpdesk/tickets/${id}/reminders`).then(unwrap).catch(handleErr),
+    addReminder: (id, data) => api.post(`/helpdesk/tickets/${id}/reminders`, data).then(unwrap).catch(handleErr),
+    reminderDone: (reminderId) => api.patch(`/helpdesk/reminders/${reminderId}/done`).then(unwrap).catch(handleErr),
+    related: (id) => api.get(`/helpdesk/tickets/${id}/related`).then(unwrap).catch(handleErr),
+    addRelated: (id, related_ticket_id) => api.post(`/helpdesk/tickets/${id}/related`, { related_ticket_id }).then(unwrap).catch(handleErr),
+    removeRelated: (id, relatedId) => api.delete(`/helpdesk/tickets/${id}/related/${relatedId}`).then(unwrap).catch(handleErr),
+
     // Conversation thread
     replies: (id) =>
       api.get(`/helpdesk/tickets/${id}/replies`).then(unwrap).catch(handleErr),

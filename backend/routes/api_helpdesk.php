@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\Helpdesk\HelpdeskFeedbackController;
 use App\Http\Controllers\Api\Helpdesk\HelpdeskSettingsController;
 use App\Http\Controllers\Api\Helpdesk\HelpdeskWidgetController;
 use App\Http\Controllers\Api\Helpdesk\PublicHelpdeskController;
+use App\Http\Controllers\Api\Helpdesk\TicketCollaborationController;
 use App\Http\Controllers\Api\Helpdesk\TicketController;
 use App\Http\Controllers\Api\Helpdesk\TicketReplyController;
 use App\Http\Controllers\Api\Helpdesk\KbCategoryController;
@@ -68,6 +69,16 @@ Route::middleware('auth:sanctum')->prefix('helpdesk')->group(function () {
     // Integration with Projects/Tasks (owner: Shivam — both are his modules)
     Route::patch('/tickets/{ticket}/link-project', [TicketController::class, 'linkProject']);
     Route::post('/tickets/{ticket}/create-task',   [TicketController::class, 'createTask']);
+
+    // ── Collaboration: private notes, reminders, related tickets (Phase 2) ──
+    Route::get('/tickets/{ticket}/notes',      [TicketCollaborationController::class, 'notes']);
+    Route::post('/tickets/{ticket}/notes',     [TicketCollaborationController::class, 'storeNote']);
+    Route::get('/tickets/{ticket}/reminders',  [TicketCollaborationController::class, 'reminders']);
+    Route::post('/tickets/{ticket}/reminders', [TicketCollaborationController::class, 'storeReminder']);
+    Route::patch('/reminders/{reminder}/done', [TicketCollaborationController::class, 'reminderDone']);
+    Route::get('/tickets/{ticket}/related',    [TicketCollaborationController::class, 'related']);
+    Route::post('/tickets/{ticket}/related',   [TicketCollaborationController::class, 'storeRelated']);
+    Route::delete('/tickets/{ticket}/related/{relatedId}', [TicketCollaborationController::class, 'destroyRelated']);
 
     // ── Ticket Replies (conversation thread) ────────────────────
     Route::get('/tickets/{ticket}/replies',   [TicketReplyController::class, 'index']);

@@ -5,6 +5,7 @@ import clsx from 'clsx'
 import { Paperclip, Send, X, ListTodo, FolderKanban } from 'lucide-react'
 import { helpdeskApi } from '@/services/helpdeskApi'
 import { useAuth } from '@/context/AuthContext'
+import TicketIntelligencePanel from './TicketIntelligencePanel'
 
 const fmtTime = ts =>
   ts ? new Date(ts).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''
@@ -87,6 +88,9 @@ export default function TicketThread() {
           </div>
         )}
       </header>
+
+      <div className="flex flex-col lg:flex-row gap-5 items-start">
+      <div className="flex-1 min-w-0 w-full">
 
       {isError && (
         <div className="p-6 rounded-2xl border" style={{ borderColor: 'rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.06)' }}>
@@ -201,6 +205,14 @@ export default function TicketThread() {
           </form>
         </div>
       )}
+      </div>
+
+      {ticket && (
+        <div className="w-full lg:w-80 shrink-0">
+          <TicketIntelligencePanel ticketId={id} />
+        </div>
+      )}
+      </div>
     </div>
   )
 }
