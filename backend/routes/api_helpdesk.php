@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\Helpdesk\HelpdeskDashboardController;
 use App\Http\Controllers\Api\Helpdesk\HelpdeskFeedbackController;
+use App\Http\Controllers\Api\Helpdesk\HelpdeskSettingsController;
 use App\Http\Controllers\Api\Helpdesk\HelpdeskWidgetController;
 use App\Http\Controllers\Api\Helpdesk\PublicHelpdeskController;
 use App\Http\Controllers\Api\Helpdesk\TicketController;
@@ -37,6 +38,17 @@ Route::middleware('auth:sanctum')->prefix('helpdesk')->group(function () {
 
     // ── My assigned tasks (assignee dashboard) ──────────────────
     Route::get('/my-tasks', [TicketController::class, 'myTasks']);
+
+    // ── Support settings: priorities / statuses / departments (Phase 1) ──
+    // GET is readable by any authed user (ticket form needs the lists); writes
+    // are admin-only (enforced in the FormRequests). Static segments declared
+    // before /{id} so they aren't captured as ids.
+    Route::get('/settings',                     [HelpdeskSettingsController::class, 'index']);
+    Route::put('/settings/general',             [HelpdeskSettingsController::class, 'updateSettings']);
+    Route::post('/settings/{type}',             [HelpdeskSettingsController::class, 'storeItem'])->where('type', 'priorities|statuses|departments');
+    Route::patch('/settings/{type}/reorder',    [HelpdeskSettingsController::class, 'reorder'])->where('type', 'priorities|statuses|departments');
+    Route::put('/settings/{type}/{id}',         [HelpdeskSettingsController::class, 'updateItem'])->where(['type' => 'priorities|statuses|departments', 'id' => '[0-9]+']);
+    Route::delete('/settings/{type}/{id}',      [HelpdeskSettingsController::class, 'destroyItem'])->where(['type' => 'priorities|statuses|departments', 'id' => '[0-9]+']);
 
     // ── Embeddable widget settings (admin) ──────────────────────
     Route::get('/widget',         [HelpdeskWidgetController::class, 'show']);

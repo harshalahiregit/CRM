@@ -73,8 +73,10 @@ class TicketController extends Controller
     /* ── Change status ─────────────────────────────────────────── */
     public function updateStatus(Request $request, int $ticket)
     {
-        $data = $request->validate(['status' => ['required', 'in:open,in-progress,closed']]);
-        $result = $this->helpdesk->changeStatus($ticket, $data['status'], $request->user()->tenant_id);
+        $tenantId = $request->user()->tenant_id;
+        $allowed = app(\App\Services\Helpdesk\HelpdeskSettingsService::class)->statusNames($tenantId);
+        $data = $request->validate(['status' => ['required', \Illuminate\Validation\Rule::in($allowed)]]);
+        $result = $this->helpdesk->changeStatus($ticket, $data['status'], $tenantId);
 
         return $this->success($result, 'Status updated');
     }

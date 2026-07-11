@@ -16,6 +16,16 @@ export const helpdeskApi = {
   analytics: () =>
     api.get('/helpdesk/analytics').then(unwrap).catch(handleErr),
 
+  // Support settings — priorities / statuses / departments + public-form settings (Phase 1)
+  settings: {
+    all: () => api.get('/helpdesk/settings').then(unwrap).catch(handleErr),
+    createItem: (type, data) => api.post(`/helpdesk/settings/${type}`, data).then(unwrap).catch(handleErr),
+    updateItem: (type, id, data) => api.put(`/helpdesk/settings/${type}/${id}`, data).then(unwrap).catch(handleErr),
+    deleteItem: (type, id) => api.delete(`/helpdesk/settings/${type}/${id}`).then(unwrap).catch(handleErr),
+    reorder: (type, ids) => api.patch(`/helpdesk/settings/${type}/reorder`, { ids }).then(unwrap).catch(handleErr),
+    updateGeneral: (data) => api.put('/helpdesk/settings/general', data).then(unwrap).catch(handleErr),
+  },
+
   // Tickets assigned to the current user (their task list)
   myTasks: () =>
     api.get('/helpdesk/my-tasks').then(unwrap).catch(handleErr),

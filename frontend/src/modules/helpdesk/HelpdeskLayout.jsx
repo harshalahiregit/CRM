@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useTheme } from '@/context/ThemeContext'
-import { LifeBuoy, BookOpen, BarChart3, CheckSquare, PenSquare, Code2, ChevronRight, ArrowLeft } from 'lucide-react'
+import { LifeBuoy, BookOpen, BarChart3, CheckSquare, PenSquare, Code2, Settings, ChevronRight, ArrowLeft } from 'lucide-react'
 
 const HELPDESK_NAV = [
   { label: 'Analytics',      path: '/app/helpdesk/analytics',      icon: BarChart3 },
@@ -9,6 +9,7 @@ const HELPDESK_NAV = [
   { label: 'Knowledge Base', path: '/app/helpdesk/knowledge-base', icon: BookOpen },
   { label: 'KB Admin',       path: '/app/helpdesk/kb-admin',       icon: PenSquare },
   { label: 'Widget',         path: '/app/helpdesk/widget',         icon: Code2 },
+  { label: 'Settings',       path: '/app/helpdesk/settings',       icon: Settings },
 ]
 
 export default function HelpdeskLayout() {

@@ -53,6 +53,7 @@ const KnowledgeBaseHome = lazy(() => import('@/modules/helpdesk/pages/KnowledgeB
 const KbAdmin = lazy(() => import('@/modules/helpdesk/pages/KbAdmin'))
 const MyTasks = lazy(() => import('@/modules/helpdesk/pages/MyTasks'))
 const WidgetSettings = lazy(() => import('@/modules/helpdesk/pages/WidgetSettings'))
+const SupportSettings = lazy(() => import('@/modules/helpdesk/pages/SupportSettings'))
 const TicketThread = lazy(() => import('@/modules/helpdesk/components/TicketThread'))
 // Public (no-auth) Helpdesk pages
 const PublicArticle = lazy(() => import('@/modules/helpdesk/public/PublicArticle'))
@@ -171,6 +172,7 @@ export default function AppRoutes() {
           <Route path="knowledge-base" element={<S><KnowledgeBaseHome /></S>} />
           <Route path="kb-admin" element={<S><KbAdmin /></S>} />
           <Route path="widget" element={<S><WidgetSettings /></S>} />
+          <Route path="settings" element={<S><SupportSettings /></S>} />
         </Route>
 
         {/* Core CRM */}
