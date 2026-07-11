@@ -34,18 +34,20 @@ class PublicHelpdeskController extends Controller
     }
 
     /* ── Public KB browse (by widget key) ──────────────────────── */
-    public function kbTree(string $key)
+    public function kbTree(Request $request, string $key)
     {
         $tenantId = $this->widget->resolveTenantId($key);
+        $departmentId = $request->query('department_id') ? (int) $request->query('department_id') : null;
 
-        return $this->success($this->kb->publicTree($tenantId), 'Knowledge base retrieved');
+        return $this->success($this->kb->publicTree($tenantId, $departmentId), 'Knowledge base retrieved');
     }
 
     public function kbSearch(Request $request, string $key)
     {
         $tenantId = $this->widget->resolveTenantId($key);
+        $departmentId = $request->query('department_id') ? (int) $request->query('department_id') : null;
 
-        return $this->success($this->kb->publicSearch($tenantId, $request->query('q')), 'Search results');
+        return $this->success($this->kb->publicSearch($tenantId, $request->query('q'), $departmentId), 'Search results');
     }
 
     /* ── Public article by share slug (no key needed) ──────────── */

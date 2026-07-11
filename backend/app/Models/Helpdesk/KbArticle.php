@@ -13,7 +13,7 @@ class KbArticle extends Model
     protected $table = 'kb_articles';
 
     protected $fillable = [
-        'tenant_id', 'category_id', 'subcategory_id', 'title', 'excerpt',
+        'tenant_id', 'category_id', 'subcategory_id', 'department_id', 'title', 'excerpt',
         'content', 'is_published', 'public_slug', 'published_at',
         'thumbs_up', 'thumbs_down',
     ];
@@ -40,5 +40,10 @@ class KbArticle extends Model
     public function subcategory()
     {
         return $this->belongsTo(KbSubcategory::class, 'subcategory_id');
+    }
+
+    public function department()
+    {
+        return $this->belongsTo(TicketDepartment::class, 'department_id');
     }
 }

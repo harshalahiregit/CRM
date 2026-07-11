@@ -134,6 +134,7 @@ class KnowledgeBaseService
             'tenant_id'      => $tenantId,
             'category_id'    => $sub->category_id,
             'subcategory_id' => $sub->id,
+            'department_id'  => $data['department_id'] ?? null,
             'title'          => $data['title'],
             'excerpt'        => $data['excerpt'] ?? Str::limit(strip_tags($data['content']), 200),
             'content'        => $this->sanitizeHtml($data['content']),   // WYSIWYG HTML
@@ -159,6 +160,9 @@ class KnowledgeBaseService
         }
         if (array_key_exists('content', $data)) {
             $article->content = $this->sanitizeHtml($data['content']);
+        }
+        if (array_key_exists('department_id', $data)) {
+            $article->department_id = $data['department_id'];
         }
         $article->save();
 
@@ -206,21 +210,30 @@ class KnowledgeBaseService
 
     /* ── Public (no-auth) reads ─────────────────────────────────── */
 
-    /** Category → sub-category → published-article tree for the public KB page. */
-    public function publicTree(int $tenantId): Collection
+    /**
+     * Category → sub-category → published-article tree for the public KB page.
+     * Optionally scoped to a department (Phase 5) so KB content can be browsed the
+     * same way tickets are organised.
+     */
+    public function publicTree(int $tenantId, ?int $departmentId = null): Collection
     {
         return KbCategory::forTenant($tenantId)
             ->with(['subcategories' => fn ($q) => $q->orderBy('name')
                 ->with(['articles' => fn ($a) => $a->published()
+                    ->when($departmentId, fn ($x) => $x->where('department_id', $departmentId))
                     ->orderBy('title')
-                    ->get(['id', 'subcategory_id', 'title', 'excerpt', 'public_slug'])])])
+                    ->get(['id', 'subcategory_id', 'department_id', 'title', 'excerpt', 'public_slug'])])])
             ->orderBy('name')
             ->get();
     }
 
-    public function publicSearch(int $tenantId, ?string $term): Collection
+    public function publicSearch(int $tenantId, ?string $term, ?int $departmentId = null): Collection
     {
-        return $this->articles->searchPublished($tenantId, $term);
+        $results = $this->articles->searchPublished($tenantId, $term);
+
+        return $departmentId
+            ? $results->where('department_id', $departmentId)->values()
+            : $results;
     }
 
     public function publicArticleBySlug(string $slug): KbArticle

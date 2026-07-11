@@ -5,7 +5,7 @@ import 'react-quill/dist/quill.snow.css'
 import { FolderPlus, Plus, Trash2, Globe, Link as LinkIcon, Check } from 'lucide-react'
 import { helpdeskApi } from '@/services/helpdeskApi'
 
-const EMPTY_ARTICLE = { id: null, title: '', excerpt: '', content: '', subcategory_id: null }
+const EMPTY_ARTICLE = { id: null, title: '', excerpt: '', content: '', subcategory_id: null, department_id: null }
 
 export default function KbAdmin() {
   const qc = useQueryClient()
@@ -14,6 +14,8 @@ export default function KbAdmin() {
   const [copied, setCopied] = useState(false)
 
   const { data: categories = [] } = useQuery({ queryKey: ['kb-admin-cats'], queryFn: helpdeskApi.kb.categories })
+  const { data: settings } = useQuery({ queryKey: ['helpdesk-settings'], queryFn: helpdeskApi.settings.all })
+  const departments = settings?.departments || []
   const { data: articles = [] } = useQuery({
     queryKey: ['kb-admin-articles', selSub],
     queryFn: () => helpdeskApi.kb.articles({ subcategory_id: selSub }),
@@ -30,8 +32,8 @@ export default function KbAdmin() {
 
   const saveArticle = useMutation({
     mutationFn: (a) => a.id
-      ? helpdeskApi.kb.updateArticle(a.id, { title: a.title, excerpt: a.excerpt, content: a.content, subcategory_id: a.subcategory_id })
-      : helpdeskApi.kb.createArticle({ title: a.title, excerpt: a.excerpt, content: a.content, subcategory_id: a.subcategory_id }),
+      ? helpdeskApi.kb.updateArticle(a.id, { title: a.title, excerpt: a.excerpt, content: a.content, subcategory_id: a.subcategory_id, department_id: a.department_id || null })
+      : helpdeskApi.kb.createArticle({ title: a.title, excerpt: a.excerpt, content: a.content, subcategory_id: a.subcategory_id, department_id: a.department_id || null }),
     onSuccess: (saved) => { setArticle(saved); refetchArticles() },
   })
   const publish = useMutation({
@@ -118,6 +120,16 @@ export default function KbAdmin() {
                 className="w-full bg-transparent text-lg font-bold outline-none border-b pb-2" style={{ color: 'var(--text-h)', borderColor: 'var(--border)' }} />
               <input value={article.excerpt || ''} onChange={e => setArticle({ ...article, excerpt: e.target.value })} placeholder="Short excerpt (optional)"
                 className="w-full bg-transparent text-sm outline-none" style={{ color: 'var(--text-muted)' }} />
+
+              {/* Optional department scoping (Phase 5) */}
+              <label className="flex items-center gap-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+                Department
+                <select value={article.department_id || ''} onChange={e => setArticle({ ...article, department_id: e.target.value ? Number(e.target.value) : null })}
+                  className="bg-transparent border rounded-lg px-2 py-1 outline-none" style={{ borderColor: 'var(--border)', color: 'var(--text-h)' }}>
+                  <option value="" style={{ color: '#000' }}>— none —</option>
+                  {departments.map(d => <option key={d.id} value={d.id} style={{ color: '#000' }}>{d.name}</option>)}
+                </select>
+              </label>
 
               <div className="bg-white rounded-lg overflow-hidden text-black">
                 <ReactQuill theme="snow" value={article.content} onChange={v => setArticle({ ...article, content: v })} />
