@@ -134,7 +134,7 @@ export default function TicketThread() {
   const statusCfg = STATUS_COLOR[ticket?.status] || { color: '#64748b', bg: 'rgba(100,116,139,0.12)', border: 'rgba(100,116,139,0.2)' }
 
   return (
-    <div className="animate-[tiltIn_0.35s_ease_forwards]">
+    <div>
 
       {/* ── Back link */}
       <button
@@ -504,7 +504,7 @@ export default function TicketThread() {
                     <button
                       type="submit"
                       disabled={!message.trim() || postReply.isPending}
-                      className="flex items-center gap-1.5 text-xs font-bold px-4 py-2 rounded-xl transition-all duration-200 disabled:opacity-40 hover:-translate-y-0.5"
+                      className="flex items-center gap-1.5 text-xs font-bold px-4 py-2 rounded-xl transition-all duration-200 disabled:opacity-40"
                       style={{
                         background: 'linear-gradient(135deg,#22d3ee,#0891b2)',
                         color: '#fff',
@@ -532,7 +532,7 @@ export default function TicketThread() {
       {/* Convert-to-tasks modal */}
       {tasksOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
           onClick={() => setTasksOpen(false)}
         >
           <div
@@ -633,7 +633,7 @@ export default function TicketThread() {
               <button
                 disabled={!taskRows.some(r => r.name.trim()) || createTasks.isPending}
                 onClick={() => createTasks.mutate()}
-                className="text-xs font-bold px-5 py-2 rounded-xl disabled:opacity-40 hover:-translate-y-0.5 transition-all duration-200"
+                className="text-xs font-bold px-5 py-2 rounded-xl disabled:opacity-40 transition-all duration-200"
                 style={{ background: 'linear-gradient(135deg,#db2777,#9d174d)', color: '#fff', boxShadow: '0 4px 12px rgba(219,39,119,0.3)' }}
               >
                 {createTasks.isPending ? 'Creating…' : `Create ${taskRows.filter(r => r.name.trim()).length || ''} task(s)`}
@@ -651,7 +651,7 @@ function ActionBtn({ icon: Icon, label, color, bg, border, onClick }) {
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl transition-all duration-150 hover:-translate-y-0.5"
+      className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl transition-all duration-150"
       style={{
         background: bg,
         color,
