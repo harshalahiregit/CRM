@@ -15,11 +15,12 @@ class Ticket extends Model
     protected $fillable = [
         'tenant_id', 'subject', 'description', 'status', 'priority',
         'assigned_to', 'customer_id', 'department_id', 'project_id', 'due_date', 'source',
-        'merged_into_id',
+        'merged_into_id', 'ai_summary', 'ai_summary_at',
     ];
 
     protected $casts = [
-        'due_date' => 'datetime',
+        'due_date'      => 'datetime',
+        'ai_summary_at' => 'datetime',
     ];
 
     /* ── Scopes ─────────────────────────────────────────────────── */

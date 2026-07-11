@@ -9,6 +9,7 @@ use App\Http\Requests\Helpdesk\StoreTicketRequest;
 use App\Http\Requests\Helpdesk\UpdateTicketRequest;
 use App\Services\Helpdesk\HelpdeskService;
 use App\Services\Helpdesk\TicketAssignmentService;
+use App\Services\Helpdesk\TicketSummaryService;
 use App\Services\Task\TaskService;
 use Illuminate\Http\Request;
 
@@ -20,7 +21,21 @@ class TicketController extends Controller
         private HelpdeskService $helpdesk,
         private TicketAssignmentService $assignment,
         private TaskService $tasks,
+        private TicketSummaryService $summaries,
     ) {
+    }
+
+    /* ── AI summary (Phase 6, cached; ?refresh=1 regenerates) ──── */
+    public function summarize(Request $request, int $ticket)
+    {
+        $force = $request->boolean('refresh');
+        $t = $this->summaries->summarize($ticket, $request->user()->tenant_id, $force);
+
+        return $this->success([
+            'ai_summary'    => $t->ai_summary,
+            'ai_summary_at' => $t->ai_summary_at,
+            'has_provider'  => $this->summaries->hasProvider(),
+        ], 'Summary generated');
     }
 
     /* ── List ──────────────────────────────────────────────────── */

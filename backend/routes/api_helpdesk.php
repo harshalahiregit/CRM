@@ -64,6 +64,7 @@ Route::middleware('auth:sanctum')->prefix('helpdesk')->group(function () {
     Route::put('/tickets/{ticket}',           [TicketController::class, 'update']);
     Route::delete('/tickets/{ticket}',        [TicketController::class, 'destroy']);
     Route::patch('/tickets/{ticket}/status',  [TicketController::class, 'updateStatus']);
+    Route::post('/tickets/{ticket}/summarize', [TicketController::class, 'summarize']); // AI summary (Phase 6)
     Route::patch('/tickets/{ticket}/assign',  [TicketController::class, 'assign']);
     Route::post('/tickets/{ticket}/feedback', [TicketController::class, 'feedback']);
 

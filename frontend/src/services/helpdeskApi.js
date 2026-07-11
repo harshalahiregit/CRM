@@ -84,6 +84,10 @@ export const helpdeskApi = {
     createTasks: (id, tasks) =>
       api.post(`/helpdesk/tickets/${id}/create-tasks`, { tasks }).then(unwrap).catch(handleErr),
 
+    // AI summary (Phase 6) — cached server-side; pass refresh to regenerate
+    summarize: (id, refresh = false) =>
+      api.post(`/helpdesk/tickets/${id}/summarize`, { refresh }).then(unwrap).catch(handleErr),
+
     // Tags + merge (Phase 3)
     tags: (id) => api.get(`/helpdesk/tickets/${id}/tags`).then(unwrap).catch(handleErr),
     addTag: (id, data) => api.post(`/helpdesk/tickets/${id}/tags`, data).then(unwrap).catch(handleErr),

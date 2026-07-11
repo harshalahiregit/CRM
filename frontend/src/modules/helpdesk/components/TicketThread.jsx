@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
-import { Paperclip, Send, X, ListTodo, FolderKanban, GitMerge, Plus, Trash2 } from 'lucide-react'
+import { Paperclip, Send, X, ListTodo, FolderKanban, GitMerge, Plus, Trash2, Sparkles, RefreshCw } from 'lucide-react'
 import { helpdeskApi } from '@/services/helpdeskApi'
 import { useAuth } from '@/context/AuthContext'
 import TicketIntelligencePanel from './TicketIntelligencePanel'
@@ -63,6 +63,17 @@ export default function TicketThread() {
     enabled: !!id,
   })
 
+  // AI summary (Phase 6): generated once + cached server-side; Refresh regenerates.
+  const { data: summary } = useQuery({
+    queryKey: ['helpdesk-ticket-summary', id],
+    queryFn: () => helpdeskApi.tickets.summarize(id),
+    enabled: !!id,
+  })
+  const refreshSummary = useMutation({
+    mutationFn: () => helpdeskApi.tickets.summarize(id, true),
+    onSuccess: (d) => queryClient.setQueryData(['helpdesk-ticket-summary', id], d),
+  })
+
   const postReply = useMutation({
     mutationFn: () => {
       const fd = new FormData()
@@ -120,6 +131,24 @@ export default function TicketThread() {
 
       <div className="flex flex-col lg:flex-row gap-5 items-start">
       <div className="flex-1 min-w-0 w-full">
+
+      {/* AI summary (Phase 6) — shown above the thread */}
+      {ticket && summary && (
+        <div className="mb-4 rounded-2xl border p-3.5" style={{ borderColor: 'rgba(168,85,247,0.3)', background: 'rgba(168,85,247,0.06)' }}>
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <Sparkles size={14} style={{ color: '#a855f7' }} />
+            <span className="text-xs font-bold" style={{ color: '#c084fc' }}>AI Summary</span>
+            {summary.has_provider === false && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded" style={{ background: 'rgba(245,158,11,0.15)', color: '#fbbf24' }}>placeholder · no LLM key</span>
+            )}
+            <button onClick={() => refreshSummary.mutate()} disabled={refreshSummary.isPending} title="Refresh summary"
+              className="ml-auto flex items-center gap-1 text-[10px] font-semibold disabled:opacity-40" style={{ color: '#a855f7' }}>
+              <RefreshCw size={11} className={refreshSummary.isPending ? 'animate-spin' : ''} /> Refresh
+            </button>
+          </div>
+          <p className="text-xs leading-relaxed" style={{ color: 'var(--text-h)' }}>{summary.ai_summary}</p>
+        </div>
+      )}
 
       {isError && (
         <div className="p-6 rounded-2xl border" style={{ borderColor: 'rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.06)' }}>
