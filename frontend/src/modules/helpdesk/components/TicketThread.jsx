@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
 import {
   Paperclip, Send, X, ListTodo, FolderKanban, GitMerge,
   Plus, Trash2, Sparkles, RefreshCw, ArrowLeft, AlertCircle,
-  MessageSquare, Activity
+  MessageSquare, Activity, StickyNote, CheckCircle2,
 } from 'lucide-react'
 import { helpdeskApi } from '@/services/helpdeskApi'
 import { useAuth } from '@/context/AuthContext'
@@ -46,7 +46,13 @@ export default function TicketThread() {
   const [cc, setCc] = useState('')
   const [tasksOpen, setTasksOpen] = useState(false)
   const [tab, setTab] = useState('conversation') // 'conversation' | 'activity'
+  const [composerMode, setComposerMode] = useState('reply') // 'reply' | 'note'
+  const textareaRef = useRef(null)
   const emptyRow = { name: '', priority: 'medium', assigned_to: '', due_date: '' }
+
+  // Resolve status name (prefer a configured "resolved"/"closed" status).
+  const { data: settings } = useQuery({ queryKey: ['helpdesk-settings'], queryFn: helpdeskApi.settings.all })
+  const resolveStatus = (settings?.statuses || []).find(s => /resolved|closed/i.test(s.name))?.name || 'closed'
   const [taskRows, setTaskRows] = useState([{ ...emptyRow }])
 
   const createTasks = useMutation({
@@ -107,30 +113,96 @@ export default function TicketThread() {
     onSuccess: (d) => queryClient.setQueryData(['helpdesk-ticket-summary', id], d),
   })
 
+  const repliesKey = ['helpdesk-ticket-replies', id]
+  const notesKey = ['ticket-notes', id]
+  const ticketKey = ['helpdesk-ticket', id]
+
+  // Optimistic status change — reflected instantly in the header + panel.
+  const setStatusMut = useMutation({
+    mutationFn: (status) => helpdeskApi.tickets.setStatus(id, status),
+    onMutate: async (status) => {
+      await queryClient.cancelQueries({ queryKey: ticketKey })
+      const prev = queryClient.getQueryData(ticketKey)
+      queryClient.setQueryData(ticketKey, (o) => (o ? { ...o, status } : o))
+      return { prev }
+    },
+    onError: (_e, _v, ctx) => ctx?.prev && queryClient.setQueryData(ticketKey, ctx.prev),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ticketKey }),
+  })
+
+  // Optimistic reply — the bubble appears immediately; composer clears at once.
   const postReply = useMutation({
-    mutationFn: () => {
+    mutationFn: async ({ resolve } = {}) => {
       const fd = new FormData()
       fd.append('message', message)
       fd.append('sender_type', 'admin')
       if (user?.id) fd.append('sender_id', user.id)
       cc.split(',').map(e => e.trim()).filter(Boolean).forEach(email => fd.append('cc[]', email))
       files.forEach(f => fd.append('attachments[]', f))
-      return helpdeskApi.tickets.reply(id, fd)
+      const res = await helpdeskApi.tickets.reply(id, fd)
+      if (resolve) await helpdeskApi.tickets.setStatus(id, resolveStatus)
+      return res
     },
-    onSuccess: () => {
-      setMessage('')
-      setFiles([])
-      setCc('')
-      queryClient.invalidateQueries({ queryKey: ['helpdesk-ticket-replies', id] })
-      queryClient.invalidateQueries({ queryKey: ['helpdesk-ticket', id] })
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: repliesKey })
+      const prev = queryClient.getQueryData(repliesKey)
+      const optimistic = { id: `tmp-${Date.now()}`, message, sender_type: 'admin', sender: { name: user?.name }, created_at: new Date().toISOString(), _optimistic: true }
+      queryClient.setQueryData(repliesKey, (old = []) => [...(Array.isArray(old) ? old : []), optimistic])
+      const sent = message
+      setMessage(''); setFiles([]); setCc('')
+      return { prev, sent }
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(repliesKey, ctx.prev)
+      if (ctx?.sent) setMessage(ctx.sent) // don't lose the agent's text
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: repliesKey })
+      queryClient.invalidateQueries({ queryKey: ticketKey })
     },
   })
 
-  const submit = (e) => {
-    e.preventDefault()
-    if (!message.trim() || postReply.isPending) return
-    postReply.mutate()
+  // Optimistic private note — appears instantly in the panel + activity timeline.
+  const addNote = useMutation({
+    mutationFn: () => helpdeskApi.tickets.addNote(id, message),
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: notesKey })
+      const prev = queryClient.getQueryData(notesKey)
+      const optimistic = { id: `tmp-${Date.now()}`, content: message, user: { name: user?.name }, created_at: new Date().toISOString(), _optimistic: true }
+      queryClient.setQueryData(notesKey, (old = []) => [...(Array.isArray(old) ? old : []), optimistic])
+      const sent = message
+      setMessage('')
+      return { prev, sent }
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(notesKey, ctx.prev)
+      if (ctx?.sent) setMessage(ctx.sent)
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: notesKey }),
+  })
+
+  const busy = postReply.isPending || addNote.isPending
+  const submit = (e, resolve = false) => {
+    e?.preventDefault?.()
+    if (!message.trim() || busy) return
+    if (composerMode === 'note') addNote.mutate()
+    else postReply.mutate({ resolve })
   }
+
+  // Keyboard shortcuts: r = reply, n = note, e = resolve (ignored while typing).
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      const el = document.activeElement
+      const typing = el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)
+      if (typing) return
+      if (e.key === 'r') { e.preventDefault(); setTab('conversation'); setComposerMode('reply'); setTimeout(() => textareaRef.current?.focus(), 0) }
+      else if (e.key === 'n') { e.preventDefault(); setTab('conversation'); setComposerMode('note'); setTimeout(() => textareaRef.current?.focus(), 0) }
+      else if (e.key === 'e' && ticket) { e.preventDefault(); setStatusMut.mutate(resolveStatus) }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [ticket, resolveStatus]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const statusCfg = STATUS_COLOR[ticket?.status] || { color: '#64748b', bg: 'rgba(100,116,139,0.12)', border: 'rgba(100,116,139,0.2)' }
 
@@ -347,6 +419,7 @@ export default function TicketThread() {
                     <div
                       key={msg.id}
                       className={clsx('flex flex-col max-w-[78%]', isStaff ? 'self-end items-end' : 'self-start items-start')}
+                      style={{ opacity: msg._optimistic ? 0.55 : 1 }}
                     >
                       {/* Sender info */}
                       <div className="flex items-center gap-1.5 mb-1 px-1">
@@ -421,106 +494,102 @@ export default function TicketThread() {
               {/* Knowledge suggestions (UX Book-4: suggest → insert into reply) */}
               <KnowledgeSuggestions ticket={ticket} onInsert={(txt) => { setTab('conversation'); setMessage(m => m + txt) }} />
 
-              {/* Reply composer */}
+              {/* Reply / Note composer */}
               <form
                 onSubmit={submit}
                 className="rounded-2xl overflow-hidden"
                 style={{
-                  background: 'var(--bg-card)',
-                  border: '1px solid var(--border)',
+                  background: composerMode === 'note' ? 'color-mix(in srgb, var(--color-warning-500) 7%, var(--bg-card))' : 'var(--bg-card)',
+                  border: `1px solid ${composerMode === 'note' ? 'color-mix(in srgb, var(--color-warning-500) 32%, var(--border))' : 'var(--border)'}`,
                   boxShadow: 'var(--shadow-card)',
                 }}
               >
+                {/* Mode toggle */}
+                <div className="flex items-center gap-1 px-3 pt-3">
+                  {[['reply', 'Reply', Send, 'var(--color-support-500)'], ['note', 'Note', StickyNote, 'var(--color-warning-500)']].map(([k, label, Icon, c]) => (
+                    <button key={k} type="button" onClick={() => setComposerMode(k)}
+                      className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors"
+                      style={{ background: composerMode === k ? `color-mix(in srgb, ${c} 14%, transparent)` : 'transparent', color: composerMode === k ? c : 'var(--text-muted)' }}>
+                      <Icon size={13} /> {label}
+                    </button>
+                  ))}
+                  <span className="ml-auto text-[11px] pr-1" style={{ color: 'var(--text-muted)', opacity: 0.7 }}>
+                    {composerMode === 'note' ? 'Visible to your team only' : 'Sent to the customer'}
+                  </span>
+                </div>
+
                 <textarea
+                  ref={textareaRef}
                   value={message}
                   onChange={e => setMessage(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submit(e) }}
                   rows={4}
-                  placeholder="Write a reply…"
-                  className="w-full bg-transparent resize-none outline-none text-sm px-4 py-3.5"
+                  placeholder={composerMode === 'note' ? 'Add an internal note…' : 'Write a reply…'}
+                  className="w-full bg-transparent resize-none outline-none text-sm px-4 py-3"
                   style={{ color: 'var(--text-h)' }}
                 />
 
-                {/* CC field */}
-                <div style={{ borderTop: '1px solid var(--border)' }}>
-                  <input
-                    value={cc}
-                    onChange={e => setCc(e.target.value)}
-                    placeholder="Cc: comma-separated emails (optional)"
-                    className="w-full bg-transparent outline-none text-xs px-4 py-2.5"
-                    style={{ color: 'var(--text-muted)' }}
-                  />
-                </div>
-
-                {/* File chips */}
-                {files.length > 0 && (
-                  <div
-                    className="flex flex-wrap gap-2 px-4 py-2"
-                    style={{ borderTop: '1px solid var(--border)' }}
-                  >
-                    {files.map((f, i) => (
-                      <span
-                        key={i}
-                        className="flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-lg font-semibold"
-                        style={{ background: 'rgba(34,211,238,0.1)', color: '#22d3ee' }}
-                      >
-                        <Paperclip size={10} />
-                        {f.name}
-                        <button
-                          type="button"
-                          onClick={() => setFiles(files.filter((_, j) => j !== i))}
-                          className="hover:opacity-60"
-                        >
-                          <X size={10} />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
+                {/* CC + attachments — reply mode only */}
+                {composerMode === 'reply' && (
+                  <>
+                    <div style={{ borderTop: '1px solid var(--border)' }}>
+                      <input value={cc} onChange={e => setCc(e.target.value)} placeholder="Cc: comma-separated emails (optional)"
+                        className="w-full bg-transparent outline-none text-xs px-4 py-2.5" style={{ color: 'var(--text-muted)' }} />
+                    </div>
+                    {files.length > 0 && (
+                      <div className="flex flex-wrap gap-2 px-4 py-2" style={{ borderTop: '1px solid var(--border)' }}>
+                        {files.map((f, i) => (
+                          <span key={i} className="flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-lg font-semibold" style={{ background: 'rgba(34,211,238,0.1)', color: '#22d3ee' }}>
+                            <Paperclip size={10} />{f.name}
+                            <button type="button" onClick={() => setFiles(files.filter((_, j) => j !== i))} className="hover:opacity-60"><X size={10} /></button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </>
                 )}
 
                 {/* Toolbar */}
-                <div
-                  className="flex items-center justify-between px-4 py-3"
-                  style={{ borderTop: '1px solid var(--border)', background: 'var(--bg-input)' }}
-                >
+                <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: '1px solid var(--border)', background: composerMode === 'note' ? 'transparent' : 'var(--bg-input)' }}>
                   <div className="flex items-center gap-4">
-                    <label
-                      className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer hover:opacity-70 transition-opacity"
-                      style={{ color: 'var(--text-muted)' }}
-                    >
-                      <Paperclip size={14} />
-                      Attach
-                      <input
-                        type="file"
-                        multiple
-                        className="hidden"
-                        onChange={e => setFiles(prev => [...prev, ...Array.from(e.target.files)])}
-                      />
-                    </label>
-                    <CannedResponsePicker onInsert={txt => setMessage(m => m ? `${m}\n\n${txt}` : txt)} />
+                    {composerMode === 'reply' ? (
+                      <>
+                        <label className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer hover:opacity-70 transition-opacity" style={{ color: 'var(--text-muted)' }}>
+                          <Paperclip size={14} /> Attach
+                          <input type="file" multiple className="hidden" onChange={e => setFiles(prev => [...prev, ...Array.from(e.target.files)])} />
+                        </label>
+                        <CannedResponsePicker onInsert={txt => setMessage(m => m ? `${m}\n\n${txt}` : txt)} />
+                      </>
+                    ) : (
+                      <span className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: 'var(--color-warning-500)' }}><StickyNote size={13} /> Internal note</span>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {postReply.isError && (
-                      <span className="text-xs" style={{ color: '#ef4444' }}>
-                        {postReply.error?.message}
-                      </span>
+                    {(postReply.isError || addNote.isError) && <span className="text-xs" style={{ color: '#ef4444' }}>{(postReply.error || addNote.error)?.message}</span>}
+                    {composerMode === 'note' ? (
+                      <button type="submit" disabled={!message.trim() || busy} className="flex items-center gap-1.5 text-xs font-bold px-4 py-2 rounded-xl disabled:opacity-40" style={{ background: 'var(--color-warning-500)', color: '#fff' }}>
+                        <StickyNote size={12} /> {addNote.isPending ? 'Adding…' : 'Add note'}
+                      </button>
+                    ) : (
+                      <>
+                        <button type="button" onClick={e => submit(e, true)} disabled={!message.trim() || busy}
+                          className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl disabled:opacity-40" style={{ border: '1px solid var(--border)', color: 'var(--color-success-500)' }}>
+                          <CheckCircle2 size={13} /> Send &amp; Resolve
+                        </button>
+                        <button type="submit" disabled={!message.trim() || busy} className="flex items-center gap-1.5 text-xs font-bold px-4 py-2 rounded-xl disabled:opacity-40" style={{ background: 'linear-gradient(135deg,#22d3ee,#0891b2)', color: '#fff', boxShadow: '0 3px 10px rgba(6,182,212,0.35)' }}>
+                          <Send size={12} /> {postReply.isPending ? 'Sending…' : 'Send Reply'}
+                        </button>
+                      </>
                     )}
-                    <button
-                      type="submit"
-                      disabled={!message.trim() || postReply.isPending}
-                      className="flex items-center gap-1.5 text-xs font-bold px-4 py-2 rounded-xl transition-all duration-200 disabled:opacity-40"
-                      style={{
-                        background: 'linear-gradient(135deg,#22d3ee,#0891b2)',
-                        color: '#fff',
-                        boxShadow: '0 3px 10px rgba(6,182,212,0.35)',
-                      }}
-                    >
-                      <Send size={12} />
-                      {postReply.isPending ? 'Sending…' : 'Send Reply'}
-                    </button>
                   </div>
                 </div>
               </form>
+
+              {/* Keyboard hints */}
+              <p className="mt-2 text-[11px] flex items-center gap-3 px-1" style={{ color: 'var(--text-muted)', opacity: 0.7 }}>
+                <span><Kbd>R</Kbd> reply</span><span><Kbd>N</Kbd> note</span><span><Kbd>E</Kbd> resolve</span><span><Kbd>⌘/Ctrl</Kbd>+<Kbd>↵</Kbd> send</span>
+              </p>
             </div>
           )}
         </div>
@@ -648,6 +717,11 @@ export default function TicketThread() {
       )}
     </div>
   )
+}
+
+/* ── Keyboard hint chip ────────────────────────────────────── */
+function Kbd({ children }) {
+  return <kbd className="px-1.5 py-0.5 rounded font-mono text-[10px] font-bold" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>{children}</kbd>
 }
 
 /* ── Small helper: action button in header ─────────────────── */
