@@ -12,6 +12,7 @@ import { useAuth } from '@/context/AuthContext'
 import TicketIntelligencePanel from './TicketIntelligencePanel'
 import TicketTimeline from './TicketTimeline'
 import KnowledgeSuggestions from './KnowledgeSuggestions'
+import CannedResponsePicker from './CannedResponsePicker'
 
 const fmtTime = ts =>
   ts
@@ -481,19 +482,22 @@ export default function TicketThread() {
                   className="flex items-center justify-between px-4 py-3"
                   style={{ borderTop: '1px solid var(--border)', background: 'var(--bg-input)' }}
                 >
-                  <label
-                    className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer hover:opacity-70 transition-opacity"
-                    style={{ color: 'var(--text-muted)' }}
-                  >
-                    <Paperclip size={14} />
-                    Attach
-                    <input
-                      type="file"
-                      multiple
-                      className="hidden"
-                      onChange={e => setFiles(prev => [...prev, ...Array.from(e.target.files)])}
-                    />
-                  </label>
+                  <div className="flex items-center gap-4">
+                    <label
+                      className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer hover:opacity-70 transition-opacity"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      <Paperclip size={14} />
+                      Attach
+                      <input
+                        type="file"
+                        multiple
+                        className="hidden"
+                        onChange={e => setFiles(prev => [...prev, ...Array.from(e.target.files)])}
+                      />
+                    </label>
+                    <CannedResponsePicker onInsert={txt => setMessage(m => m ? `${m}\n\n${txt}` : txt)} />
+                  </div>
 
                   <div className="flex items-center gap-2">
                     {postReply.isError && (
