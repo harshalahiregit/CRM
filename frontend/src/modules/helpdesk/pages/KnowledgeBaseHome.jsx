@@ -1,21 +1,24 @@
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Search, ChevronRight, FileText, ThumbsUp, BookOpen, CreditCard, Wrench, Rocket, LifeBuoy, Settings2, Users, Zap } from 'lucide-react'
+import {
+  Search, ChevronRight, FileText, ThumbsUp, ArrowRight,
+  BookOpen, CreditCard, Wrench, Rocket, LifeBuoy, Settings2, Users, Zap,
+} from 'lucide-react'
 import { helpdeskApi } from '@/services/helpdeskApi'
 
-/* A clean, light, Freshdesk-style Help Center rendered on the existing KB engine.
-   Self-contained light theme (help centers are light) so it reads as a real
-   support portal regardless of the app's dark chrome. */
+/* Professional, theme-aware Knowledge Base home built on the existing KB engine.
+   Reading typography via .font-display headings + generous sizes. */
 
 const CAT_ICONS = [BookOpen, CreditCard, Wrench, Rocket, LifeBuoy, Settings2, Users, Zap]
 const CAT_TINTS = [
-  { bg: '#eef4ff', fg: '#3b6fed' }, { bg: '#eafff4', fg: '#16a34a' },
-  { bg: '#fff1ec', fg: '#ea6b3a' }, { bg: '#f3eefe', fg: '#7c3aed' },
-  { bg: '#eafcff', fg: '#0891b2' }, { bg: '#fef6e7', fg: '#d97706' },
+  { fg: 'var(--color-support-500)' }, { fg: 'var(--color-success-500)' },
+  { fg: 'var(--color-warning-500)' }, { fg: 'var(--color-primary-500)' },
+  { fg: 'var(--color-info-500)' }, { fg: 'var(--color-knowledge-500)' },
 ]
-
+const tint = i => CAT_TINTS[i % CAT_TINTS.length]
 const normalize = (raw) => (Array.isArray(raw) ? raw : raw?.data || [])
+const readTime = (html) => Math.max(1, Math.round((html || '').replace(/<[^>]*>/g, ' ').split(/\s+/).length / 200))
 
 export default function KnowledgeBaseHome() {
   const navigate = useNavigate()
@@ -27,147 +30,152 @@ export default function KnowledgeBaseHome() {
   const published = useMemo(() => normalize(artsRaw).filter(a => a.is_published), [artsRaw])
   const categories = normalize(catsRaw)
 
-  // Group published articles under their category.
-  const grouped = useMemo(() => {
-    return categories.map(cat => ({
-      ...cat,
-      articles: published.filter(a => a.category_id === cat.id),
-    })).filter(c => c.articles.length > 0)
-  }, [categories, published])
+  const grouped = useMemo(() => categories.map(cat => ({
+    ...cat, articles: published.filter(a => a.category_id === cat.id),
+  })).filter(c => c.articles.length > 0), [categories, published])
 
   const popular = useMemo(() => [...published].sort((a, b) => (b.thumbs_up || 0) - (a.thumbs_up || 0)).slice(0, 5), [published])
 
   const q = query.trim().toLowerCase()
-  const searchResults = q
-    ? published.filter(a => a.title.toLowerCase().includes(q) || (a.excerpt || '').toLowerCase().includes(q))
+  const results = q
+    ? published.filter(a => a.title.toLowerCase().includes(q) || (a.excerpt || '').toLowerCase().includes(q)).slice(0, 6)
     : null
 
+  const open = (a) => navigate(`/app/helpdesk/knowledge-base/${a.id}`)
+
   return (
-    <div className="-m-4 md:-m-6" style={{ background: '#f4f6fb', minHeight: 'calc(100vh - 120px)', color: '#1a2b4a' }}>
-      {/* Hero */}
-      <div style={{ background: 'linear-gradient(135deg,#3b6fed 0%,#5b4bd6 100%)', padding: '48px 24px 64px' }}>
-        <div className="max-w-3xl mx-auto text-center">
-          <h1 style={{ color: '#fff', fontSize: 'clamp(1.6rem,3.4vw,2.4rem)', fontWeight: 800, letterSpacing: '-0.02em' }}>
-            How can we help you?
+    <div className="pb-10">
+      {/* ── Hero ── */}
+      <div className="relative overflow-hidden rounded-3xl px-6 py-12 md:py-16"
+        style={{ background: 'linear-gradient(135deg, var(--color-support-600) 0%, var(--color-primary-600) 100%)' }}>
+        <div className="absolute rounded-full" style={{ width: 360, height: 360, top: -120, right: -80, background: 'rgba(255,255,255,0.07)' }} />
+        <div className="absolute rounded-full" style={{ width: 220, height: 220, bottom: -100, left: '15%', background: 'rgba(255,255,255,0.05)' }} />
+
+        <div className="relative max-w-2xl mx-auto text-center">
+          <h1 className="font-display font-extrabold text-white" style={{ fontSize: 'clamp(1.9rem,4vw,3rem)', letterSpacing: '-0.03em', lineHeight: 1.1 }}>
+            How can we help?
           </h1>
-          <p style={{ color: 'rgba(255,255,255,0.85)', marginTop: 8, fontSize: 15 }}>
-            Search for answers or browse the topics below.
+          <p className="mt-3 text-white/80" style={{ fontSize: 17 }}>
+            Search our knowledge base or browse topics below.
           </p>
-          <div className="relative mt-6 max-w-2xl mx-auto">
-            <Search size={20} style={{ position: 'absolute', left: 18, top: '50%', transform: 'translateY(-50%)', color: '#8a93a8' }} />
-            <input
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              placeholder="Search the knowledge base…"
-              autoFocus
-              style={{ width: '100%', padding: '16px 18px 16px 48px', borderRadius: 14, border: 'none', fontSize: 15, outline: 'none', color: '#1a2b4a', boxShadow: '0 12px 30px rgba(20,30,60,0.18)' }}
-            />
+
+          {/* Search + live dropdown */}
+          <div className="relative mt-7 max-w-xl mx-auto text-left">
+            <Search size={20} style={{ position: 'absolute', left: 18, top: 19, color: '#8a93a8' }} />
+            <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search for answers…" autoFocus
+              style={{ width: '100%', padding: '17px 18px 17px 50px', borderRadius: 16, border: 'none', fontSize: 16, outline: 'none', color: '#16233d', background: '#fff', boxShadow: '0 18px 44px rgba(15,23,42,0.22)' }} />
+            {results && (
+              <div className="absolute left-0 right-0 mt-2 rounded-2xl overflow-hidden z-20"
+                style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card-3d)' }}>
+                {results.length === 0 && <p className="px-4 py-4 text-sm" style={{ color: 'var(--text-muted)' }}>No articles match “{query}”.</p>}
+                {results.map(a => (
+                  <button key={a.id} onClick={() => open(a)} className="w-full flex items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-[var(--bg-input)]">
+                    <FileText size={16} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-h)' }}>{a.title}</p>
+                      {a.excerpt && <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{a.excerpt}</p>}
+                    </div>
+                    <ChevronRight size={15} style={{ color: 'var(--text-muted)', marginLeft: 'auto' }} />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Stats */}
+          <div className="mt-6 flex items-center justify-center gap-6 text-white/85 text-sm font-semibold">
+            <span>{published.length} articles</span>
+            <span style={{ opacity: 0.4 }}>•</span>
+            <span>{grouped.length} categories</span>
           </div>
         </div>
       </div>
 
-      <div className="max-w-5xl mx-auto px-4 md:px-6" style={{ marginTop: -32, paddingBottom: 48 }}>
-        {/* SEARCH RESULTS */}
-        {searchResults && (
-          <Panel>
-            <SectionTitle>{searchResults.length} result{searchResults.length !== 1 ? 's' : ''} for “{query}”</SectionTitle>
-            {searchResults.length === 0 && <Empty>Nothing matched. Try different keywords.</Empty>}
-            <ul>
-              {searchResults.map(a => <ArticleRow key={a.id} article={a} onClick={() => navigate(`/app/helpdesk/knowledge-base/${a.id}`)} showCat />)}
-            </ul>
-          </Panel>
+      {/* ── Category grid ── */}
+      <div className="max-w-5xl mx-auto px-1 mt-8">
+        {isLoading && (
+          <div className="grid gap-5 md:grid-cols-2">
+            {[1, 2, 3, 4].map(i => <div key={i} style={{ height: 210, borderRadius: 20, background: 'var(--bg-card)', border: '1px solid var(--border)' }} className="animate-pulse" />)}
+          </div>
         )}
 
-        {/* BROWSE (hidden while searching) */}
-        {!searchResults && (
+        {!isLoading && grouped.length === 0 && (
+          <div className="text-center py-16" style={{ color: 'var(--text-muted)' }}>
+            No published articles yet. Publish articles from KB Admin and they’ll appear here.
+          </div>
+        )}
+
+        {!isLoading && grouped.length > 0 && (
           <>
-            {isLoading && <div className="grid gap-5 md:grid-cols-2">{[1, 2, 3, 4].map(i => <div key={i} style={{ height: 190, borderRadius: 16, background: '#e9edf5' }} className="animate-pulse" />)}</div>}
-
-            {!isLoading && grouped.length === 0 && (
-              <Panel><Empty>No published articles yet. Publish articles from KB Admin and they’ll appear here.</Empty></Panel>
-            )}
-
-            {!isLoading && grouped.length > 0 && (
-              <>
-                <div className="grid gap-5 md:grid-cols-2">
-                  {grouped.map((cat, i) => {
-                    const Icon = CAT_ICONS[i % CAT_ICONS.length]
-                    const tint = CAT_TINTS[i % CAT_TINTS.length]
-                    return (
-                      <section key={cat.id} style={cardStyle}>
-                        <div className="flex items-center gap-3 mb-3">
-                          <span style={{ width: 44, height: 44, borderRadius: 12, background: tint.bg, color: tint.fg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <Icon size={22} />
-                          </span>
-                          <div>
-                            <h2 style={{ fontWeight: 700, fontSize: 16, color: '#16233d' }}>{cat.name}</h2>
-                            <p style={{ fontSize: 12.5, color: '#7a879e' }}>{cat.articles.length} article{cat.articles.length !== 1 ? 's' : ''}</p>
-                          </div>
-                        </div>
-                        <ul>
-                          {cat.articles.slice(0, 4).map(a => (
-                            <ArticleRow key={a.id} article={a} onClick={() => navigate(`/app/helpdesk/knowledge-base/${a.id}`)} compact />
-                          ))}
-                        </ul>
-                        {cat.articles.length > 4 && (
-                          <button onClick={() => setQuery(cat.name)} style={{ marginTop: 8, fontSize: 13, fontWeight: 600, color: '#3b6fed' }}>
-                            See all {cat.articles.length} →
+            <h2 className="font-display font-bold mb-5" style={{ fontSize: 22, color: 'var(--text-h)' }}>Browse by topic</h2>
+            <div className="grid gap-5 md:grid-cols-2">
+              {grouped.map((cat, i) => {
+                const Icon = CAT_ICONS[i % CAT_ICONS.length]
+                const t = tint(i)
+                return (
+                  <section key={cat.id} className="rounded-2xl p-6 transition-transform"
+                    style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card)' }}>
+                    <div className="flex items-center gap-3 mb-4">
+                      <span className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0"
+                        style={{ background: `color-mix(in srgb, ${t.fg} 15%, transparent)`, color: t.fg }}>
+                        <Icon size={24} />
+                      </span>
+                      <div className="min-w-0">
+                        <h3 className="font-display font-bold truncate" style={{ fontSize: 18, color: 'var(--text-h)' }}>{cat.name}</h3>
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{cat.articles.length} article{cat.articles.length !== 1 ? 's' : ''}</p>
+                      </div>
+                    </div>
+                    <ul className="space-y-0.5">
+                      {cat.articles.slice(0, 4).map(a => (
+                        <li key={a.id}>
+                          <button onClick={() => open(a)} className="w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-xl text-left transition-colors group"
+                            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-input)'}
+                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                            <FileText size={15} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                            <span className="flex-1 truncate" style={{ fontSize: 15, color: 'var(--text-body)' }}>{a.title}</span>
+                            <ChevronRight size={15} style={{ color: 'var(--text-muted)', opacity: 0.5 }} className="group-hover:translate-x-0.5 transition-transform" />
                           </button>
-                        )}
-                      </section>
-                    )
-                  })}
-                </div>
-
-                {/* Popular */}
-                {popular.length > 0 && (
-                  <Panel className="mt-6">
-                    <SectionTitle>Popular articles</SectionTitle>
-                    <ul>
-                      {popular.map(a => <ArticleRow key={a.id} article={a} onClick={() => navigate(`/app/helpdesk/knowledge-base/${a.id}`)} showThumbs showCat />)}
+                        </li>
+                      ))}
                     </ul>
-                  </Panel>
-                )}
-              </>
+                    {cat.articles.length > 4 && (
+                      <button onClick={() => open(cat.articles[0])} className="mt-3 inline-flex items-center gap-1 text-sm font-bold" style={{ color: t.fg }}>
+                        View all {cat.articles.length} <ArrowRight size={14} />
+                      </button>
+                    )}
+                  </section>
+                )
+              })}
+            </div>
+
+            {/* ── Popular ── */}
+            {popular.length > 0 && (
+              <div className="mt-8 rounded-2xl p-6" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card)' }}>
+                <h2 className="font-display font-bold mb-4" style={{ fontSize: 18, color: 'var(--text-h)' }}>Most helpful articles</h2>
+                <ul className="grid md:grid-cols-2 gap-1">
+                  {popular.map((a, idx) => (
+                    <li key={a.id}>
+                      <button onClick={() => open(a)} className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-colors"
+                        onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-input)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                        <span className="font-display font-extrabold shrink-0" style={{ fontSize: 18, color: 'var(--text-muted)', opacity: 0.5, width: 22 }}>{idx + 1}</span>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold truncate" style={{ fontSize: 15, color: 'var(--text-h)' }}>{a.title}</p>
+                          <p className="text-xs flex items-center gap-2.5 mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                            <span className="inline-flex items-center gap-1" style={{ color: 'var(--color-success-500)' }}><ThumbsUp size={11} />{a.thumbs_up || 0}</span>
+                            <span>{readTime(a.content)} min read</span>
+                          </p>
+                        </div>
+                        <ChevronRight size={15} style={{ color: 'var(--text-muted)', opacity: 0.5 }} />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
           </>
         )}
       </div>
     </div>
-  )
-}
-
-/* ── Small building blocks ─────────────────────────────────── */
-const cardStyle = { background: '#fff', border: '1px solid #e7eaf2', borderRadius: 16, padding: 20, boxShadow: '0 1px 2px rgba(20,30,60,0.04)' }
-
-function Panel({ children, className = '' }) {
-  return <div className={className} style={cardStyle}>{children}</div>
-}
-function SectionTitle({ children }) {
-  return <h2 style={{ fontWeight: 700, fontSize: 15, marginBottom: 12, color: '#1a2b4a' }}>{children}</h2>
-}
-function Empty({ children }) {
-  return <p style={{ fontSize: 14, color: '#7a879e', padding: '16px 0' }}>{children}</p>
-}
-
-function ArticleRow({ article, onClick, compact, showThumbs, showCat }) {
-  return (
-    <li>
-      <button onClick={onClick}
-        className="group"
-        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: compact ? '7px 8px' : '11px 8px', borderRadius: 10, textAlign: 'left', color: '#38455f' }}
-        onMouseEnter={e => e.currentTarget.style.background = '#f2f5fb'}
-        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-        <FileText size={15} style={{ color: '#9aa4ba', flexShrink: 0 }} />
-        <span style={{ flex: 1, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {article.title}
-          {showCat && article.category?.name && <span style={{ color: '#9aa4ba', fontSize: 12 }}> · {article.category.name}</span>}
-        </span>
-        {showThumbs && (article.thumbs_up > 0) && (
-          <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 12, color: '#16a34a' }}><ThumbsUp size={12} />{article.thumbs_up}</span>
-        )}
-        <ChevronRight size={15} style={{ color: '#c2cbdc' }} />
-      </button>
-    </li>
   )
 }
