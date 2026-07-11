@@ -3,6 +3,7 @@ import { useTheme } from '@/context/ThemeContext'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, CheckCircle, XCircle, Clock, Mail, Phone, MessageCircle, Brain, Upload, Download, Trash2, FileText, Eye } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+import { getToken } from '@/lib/authStorage'
 
 const resultColor = r => r==='Passed'?{c:'#10b981',bg:'rgba(16,185,129,0.12)'}:r==='Pending'?{c:'#f59e0b',bg:'rgba(245,158,11,0.12)'}:{c:'#f87171',bg:'rgba(239,68,68,0.1)'}
 
@@ -181,7 +182,7 @@ export default function CandidateProfile() {
               {c.resume_path && (
                 <div className="flex items-center gap-2">
                   <a
-                    href={`${hrApi.candidates.resumeUrl(c.id)}?token=${localStorage.getItem('crm_token')}`}
+                    href={`${hrApi.candidates.resumeUrl(c.id)}?token=${getToken()}`}
                     target="_blank" rel="noreferrer"
                     className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl"
                     style={{ background:'rgba(124,58,237,0.1)', color:'#a78bfa', border:'1px solid rgba(124,58,237,0.2)' }}
