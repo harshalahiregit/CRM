@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Plus, Send, CreditCard, Trash2, X, MoreVertical, Bell, RefreshCw, Tag, User } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
+import { useClientOptions } from '@/hooks/useClientOptions'
 import StatusBadge from '../components/StatusBadge'
 import LineItemsTable from '../components/LineItemsTable'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
@@ -13,7 +14,7 @@ const PAY_MODES = ['Bank Transfer','Cash','Cheque','Stripe','Razorpay','PayPal',
 const STATUSES = ['Draft','Unpaid','Partially Paid','Paid','Overdue','Cancelled']
 
 const EMPTY = {
-  client:'', project_id:'', date: new Date().toISOString().split('T')[0],
+  client_id:'', project_id:'', date: new Date().toISOString().split('T')[0],
   due_date:'', currency:'INR', sale_agent:'', discount_type:'none',
   recurring: false, recur_interval:'1', recur_type:'month', cycles:'0',
   allowed_modes: ['Bank Transfer','UPI','Razorpay'],
@@ -26,6 +27,7 @@ const EMPTY_PAY = { amount:'', mode:'Bank Transfer', transaction_id:'', tds_amou
 
 export default function Invoices() {
   const navigate = useNavigate()
+  const clientOptions = useClientOptions()
   const [data, setData]         = useState([])
   const [loading, setLoading]   = useState(true)
   const [filter, setFilter]     = useState('All')
@@ -50,8 +52,8 @@ export default function Invoices() {
   useEffect(()=>{ load() },[filter])
 
   const handleCreate = async () => {
-    if(!form.client) return showToast('Client required','error')
-    await salesApi.invoices.create({...form, amount:0})
+    if(!form.client_id) return showToast('Customer required','error')
+    await salesApi.invoices.create({...form, client_id: Number(form.client_id)})
     showToast('Invoice created!'); setShowDrawer(false); setForm(EMPTY); load()
   }
   const handlePay = async () => {
@@ -241,9 +243,9 @@ export default function Invoices() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="label">Customer *</label>
-                      <select className="input-3d text-sm" value={form.client} onChange={e => sf('client', e.target.value)}>
+                      <select className="input-3d text-sm" value={form.client_id} onChange={e => sf('client_id', e.target.value)}>
                         <option value="">Select customer…</option>
-                        {salesApi.clients.map(c => <option key={c} value={c}>{c}</option>)}
+                        {clientOptions.map(c => <option key={c.id} value={c.id}>{c.company}</option>)}
                       </select>
                     </div>
                     <div>

@@ -34,10 +34,10 @@ export const salesApi = {
   paymentLinks: paymentLinkApi,
   retainerInvoices: retainerInvoiceApi,
   proposalTemplates: proposalTemplateApi,
-
-  // Kept for dropdowns that need a flat client list
-  // Replace with a real /contacts endpoint when that module is built
-  clients: [],
 }
+
+// NOTE: client dropdowns now use the real Customer module via
+// `useClientOptions()` / `fetchClientOptions()` from '@/services/customerApi'.
+// The old hardcoded `salesApi.clients: []` stub has been removed.
 
 export default salesApi

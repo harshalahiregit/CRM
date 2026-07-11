@@ -242,6 +242,22 @@ export default function Sidebar({ collapsed, onToggle }) {
           </div>
         )}
 
+        {/* ── Customers (standalone) ── */}
+        <div className="mt-2">
+          {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>Customers</p>}
+          <NavLink to="/app/customers">
+            {({ isActive }) => (
+              <div title={collapsed ? 'Customers' : ''} className={clsx('nav-3d mb-0.5', isActive && 'nav-3d-active')} style={{ justifyContent: collapsed ? 'center' : undefined }}>
+                <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: isActive ? 'rgba(255,255,255,0.15)' : 'rgba(124,58,237,0.15)' }}>
+                  <Building2 size={13} style={{ color: isActive ? '#fff' : '#a78bfa' }} />
+                </div>
+                {!collapsed && <span className="truncate text-sm font-semibold flex-1 text-left">Customer Directory</span>}
+                {isActive && !collapsed && <div className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: '#c4b5fd' }} />}
+              </div>
+            )}
+          </NavLink>
+        </div>
+
         {/* ── Sales Module sub-nav ── */}
         <div className="mt-2">
           {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>Sales & Revenue</p>}

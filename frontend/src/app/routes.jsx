@@ -50,6 +50,11 @@ const PaymentLinks = lazy(() => import('@/modules/sales/pages/PaymentLinks'))
 const RetainerInvoices = lazy(() => import('@/modules/sales/pages/RetainerInvoices'))
 const ProposalTemplates = lazy(() => import('@/modules/sales/pages/ProposalTemplates'))
 
+// Customer Module (lazy)
+const CustomerLayout = lazy(() => import('@/modules/customer/CustomerLayout'))
+const Customers = lazy(() => import('@/modules/customer/pages/Customers'))
+const CustomerDetail = lazy(() => import('@/modules/customer/pages/CustomerDetail'))
+
 // Helpdesk Module (lazy)
 const HelpdeskLayout = lazy(() => import('@/modules/helpdesk/HelpdeskLayout'))
 const HelpdeskAnalytics = lazy(() => import('@/modules/helpdesk/pages/HelpdeskAnalytics'))
@@ -161,6 +166,12 @@ export default function AppRoutes() {
           <Route path="payment-links" element={<S><PaymentLinks /></S>} />
           <Route path="retainer-invoices" element={<S><RetainerInvoices /></S>} />
           <Route path="proposal-templates" element={<S><ProposalTemplates /></S>} />
+        </Route>
+
+        {/* CUSTOMER MODULE */}
+        <Route path="customers" element={<S><CustomerLayout /></S>}>
+          <Route index element={<S><Customers /></S>} />
+          <Route path=":id" element={<S><CustomerDetail /></S>} />
         </Route>
 
         {/* HELPDESK MODULE */}

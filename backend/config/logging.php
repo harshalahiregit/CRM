@@ -97,6 +97,14 @@ return [
             'replace_placeholders' => true,
         ],
 
+        'customer' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/customer.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'days' => env('LOG_DAILY_DAYS', 14),
+            'replace_placeholders' => true,
+        ],
+
         'errors' => [
             'driver' => 'daily',
             'path' => storage_path('logs/errors.log'),

@@ -5,6 +5,7 @@ import {
   LayoutGrid, List, FileText, User, Tag, MapPin, ChevronDown
 } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
+import { useClientOptions } from '@/hooks/useClientOptions'
 import StatusBadge from '../components/StatusBadge'
 import LineItemsTable from '../components/LineItemsTable'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
@@ -16,7 +17,7 @@ const STATUSES = ['Draft', 'Sent', 'Accepted', 'Declined', 'Expired']
 const STAFF = ['Zafar Farooque', 'Priya Sharma', 'Rohit Verma', 'Anjali Singh', 'Karan Mehta']
 
 const EMPTY_FORM = {
-  subject: '', client: '', project_id: '',
+  subject: '', client_id: '', project_id: '',
   date: new Date().toISOString().split('T')[0],
   valid_until: '', currency: 'INR',
   discount_type: 'none', sale_agent: '', status: 'Draft',
@@ -35,6 +36,7 @@ const PIPE_COLS = [
 
 export default function Estimates() {
   const navigate = useNavigate()
+  const clientOptions = useClientOptions()
   const [data, setData]         = useState([])
   const [loading, setLoading]   = useState(true)
   const [filter, setFilter]     = useState('All')
@@ -57,8 +59,8 @@ export default function Estimates() {
   const sf = (k, v) => setForm(p => ({ ...p, [k]: v }))
 
   const handleCreate = async () => {
-    if (!form.subject || !form.client) return showToast('Subject & client required', 'error')
-    await salesApi.estimates.create({ ...form, amount: 0 })
+    if (!form.subject || !form.client_id) return showToast('Subject & customer required', 'error')
+    await salesApi.estimates.create({ ...form, client_id: Number(form.client_id) })
     showToast('Proforma Invoice created!')
     setShowDrawer(false)
     setForm(EMPTY_FORM)
@@ -352,9 +354,9 @@ export default function Estimates() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="label">Customer *</label>
-                      <select className="input-3d text-sm" value={form.client} onChange={e => sf('client', e.target.value)}>
+                      <select className="input-3d text-sm" value={form.client_id} onChange={e => sf('client_id', e.target.value)}>
                         <option value="">Select customer…</option>
-                        {salesApi.clients.map(c => <option key={c} value={c}>{c}</option>)}
+                        {clientOptions.map(c => <option key={c.id} value={c.id}>{c.company}</option>)}
                       </select>
                     </div>
                     <div>
