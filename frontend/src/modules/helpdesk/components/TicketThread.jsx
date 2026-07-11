@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
-import { Paperclip, Send, X, ListTodo, FolderKanban, GitMerge } from 'lucide-react'
+import { Paperclip, Send, X, ListTodo, FolderKanban, GitMerge, Plus, Trash2 } from 'lucide-react'
 import { helpdeskApi } from '@/services/helpdeskApi'
 import { useAuth } from '@/context/AuthContext'
 import TicketIntelligencePanel from './TicketIntelligencePanel'
@@ -19,10 +19,18 @@ export default function TicketThread() {
   const [message, setMessage] = useState('')
   const [files, setFiles] = useState([])
   const [cc, setCc] = useState('')
+  const [tasksOpen, setTasksOpen] = useState(false)
+  const emptyRow = { name: '', priority: 'medium', assigned_to: '', due_date: '' }
+  const [taskRows, setTaskRows] = useState([{ ...emptyRow }])
 
-  const createTask = useMutation({
-    mutationFn: (name) => helpdeskApi.tickets.createTask(id, { name }),
-    onSuccess: (task) => navigate(`/app/tasks/${task.id}`),
+  const createTasks = useMutation({
+    mutationFn: () => {
+      const clean = taskRows
+        .filter(r => r.name.trim())
+        .map(r => ({ name: r.name.trim(), priority: r.priority, assigned_to: r.assigned_to ? Number(r.assigned_to) : null, due_date: r.due_date || null }))
+      return helpdeskApi.tickets.createTasks(id, clean)
+    },
+    onSuccess: () => { setTasksOpen(false); setTaskRows([{ ...emptyRow }]); navigate(`/app/tasks?rel_type=ticket&rel_id=${id}`) },
   })
   const linkProject = useMutation({
     mutationFn: (pid) => helpdeskApi.tickets.linkProject(id, pid),
@@ -94,9 +102,9 @@ export default function TicketThread() {
         </div>
         {ticket && (
           <div className="flex items-center gap-2 shrink-0">
-            <button onClick={() => { const n = window.prompt('Task name:'); if (n?.trim()) createTask.mutate(n.trim()) }}
+            <button onClick={() => setTasksOpen(true)}
               className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg" style={{ background: 'rgba(236,72,153,0.15)', color: '#ec4899' }}>
-              <ListTodo size={13} /> Create task
+              <ListTodo size={13} /> Convert to tasks
             </button>
             <button onClick={() => { const p = window.prompt('Link to project id (blank to unlink):'); if (p !== null) linkProject.mutate(p.trim() ? Number(p.trim()) : null) }}
               className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg" style={{ background: 'rgba(59,130,246,0.15)', color: '#3b82f6' }}>
@@ -243,6 +251,50 @@ export default function TicketThread() {
         </div>
       )}
       </div>
+
+      {/* Convert-to-tasks modal (Phase 4): one ticket → many tasks */}
+      {tasksOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }} onClick={() => setTasksOpen(false)}>
+          <div className="w-full max-w-2xl rounded-2xl border p-5 max-h-[85vh] overflow-y-auto" style={{ borderColor: 'var(--border)', background: 'var(--bg-global)' }} onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-1">
+              <h2 className="font-bold flex items-center gap-2" style={{ color: 'var(--text-h)' }}><ListTodo size={16} style={{ color: '#ec4899' }} /> Convert ticket #{id} to tasks</h2>
+              <button onClick={() => setTasksOpen(false)}><X size={18} style={{ color: 'var(--text-muted)' }} /></button>
+            </div>
+            <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>Break this ticket into separate pieces of work. Each becomes a task linked back to the ticket.</p>
+
+            <div className="space-y-2 mb-3">
+              {taskRows.map((row, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input value={row.name} onChange={e => setTaskRows(rows => rows.map((r, j) => j === i ? { ...r, name: e.target.value } : r))} placeholder={`Task ${i + 1} name`}
+                    className="flex-1 text-sm bg-transparent border rounded-lg px-2.5 py-2 outline-none" style={{ borderColor: 'var(--border)', color: 'var(--text-h)' }} />
+                  <select value={row.priority} onChange={e => setTaskRows(rows => rows.map((r, j) => j === i ? { ...r, priority: e.target.value } : r))}
+                    className="text-xs bg-transparent border rounded-lg px-2 py-2 outline-none" style={{ borderColor: 'var(--border)', color: 'var(--text-h)' }}>
+                    {['low', 'medium', 'high', 'urgent'].map(p => <option key={p} value={p} style={{ color: '#000' }}>{p}</option>)}
+                  </select>
+                  <input value={row.assigned_to} onChange={e => setTaskRows(rows => rows.map((r, j) => j === i ? { ...r, assigned_to: e.target.value.replace(/\D/g, '') } : r))} placeholder="user id"
+                    className="w-20 text-xs bg-transparent border rounded-lg px-2 py-2 outline-none" style={{ borderColor: 'var(--border)', color: 'var(--text-h)' }} />
+                  <input type="date" value={row.due_date} onChange={e => setTaskRows(rows => rows.map((r, j) => j === i ? { ...r, due_date: e.target.value } : r))}
+                    className="text-xs bg-transparent border rounded-lg px-2 py-2 outline-none" style={{ borderColor: 'var(--border)', color: 'var(--text-h)' }} />
+                  <button onClick={() => setTaskRows(rows => rows.length > 1 ? rows.filter((_, j) => j !== i) : rows)} disabled={taskRows.length === 1}
+                    className="disabled:opacity-20 hover:text-red-400" style={{ color: 'var(--text-muted)' }}><Trash2 size={15} /></button>
+                </div>
+              ))}
+            </div>
+
+            <button onClick={() => setTaskRows(rows => [...rows, { ...emptyRow }])}
+              className="flex items-center gap-1 text-xs font-semibold mb-4" style={{ color: '#ec4899' }}><Plus size={13} /> Add another task</button>
+
+            {createTasks.isError && <p className="text-xs text-red-400 mb-2">{createTasks.error?.message}</p>}
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setTasksOpen(false)} className="text-xs font-semibold px-4 py-2 rounded-xl" style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Cancel</button>
+              <button disabled={!taskRows.some(r => r.name.trim()) || createTasks.isPending} onClick={() => createTasks.mutate()}
+                className="text-xs font-semibold px-4 py-2 rounded-xl disabled:opacity-40" style={{ background: 'linear-gradient(135deg,#ec4899,#be185d)', color: '#fff' }}>
+                {createTasks.isPending ? 'Creating…' : `Create ${taskRows.filter(r => r.name.trim()).length || ''} task(s)`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

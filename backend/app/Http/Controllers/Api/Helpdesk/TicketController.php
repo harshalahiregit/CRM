@@ -137,6 +137,40 @@ class TicketController extends Controller
         return $this->success($task, 'Task created from ticket', 201);
     }
 
+    /* ── Phase 4: convert ONE ticket into MULTIPLE tasks ───────── */
+    public function createTasks(Request $request, int $ticket)
+    {
+        $data = $request->validate([
+            'tasks'               => 'required|array|min:1|max:20',
+            'tasks.*.name'        => 'required|string|max:255',
+            'tasks.*.assigned_to' => 'nullable|integer|exists:users,id',
+            'tasks.*.priority'    => 'nullable|in:low,medium,high,urgent',
+            'tasks.*.due_date'    => 'nullable|date',
+        ]);
+
+        $tenantId = $request->user()->tenant_id;
+        $this->helpdesk->showTicket($ticket, $tenantId); // tenant guard
+
+        $created = [];
+        foreach ($data['tasks'] as $row) {
+            $task = $this->tasks->create([
+                'name'       => $row['name'],
+                'priority'   => $row['priority'] ?? 'medium',
+                'due_date'   => $row['due_date'] ?? null,
+                'start_date' => now()->toDateString(),
+                'rel_type'   => 'ticket',
+                'rel_id'     => $ticket,
+            ], $tenantId, $request->user()->id);
+
+            if (! empty($row['assigned_to'])) {
+                $this->tasks->syncAssignees($task->id, [$row['assigned_to']], $tenantId);
+            }
+            $created[] = $task;
+        }
+
+        return $this->success($created, count($created).' tasks created from ticket', 201);
+    }
+
     /* ── Submit CSAT feedback ──────────────────────────────────── */
     public function feedback(Request $request, int $ticket)
     {

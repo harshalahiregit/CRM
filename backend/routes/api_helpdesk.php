@@ -70,6 +70,7 @@ Route::middleware('auth:sanctum')->prefix('helpdesk')->group(function () {
     // Integration with Projects/Tasks (owner: Shivam — both are his modules)
     Route::patch('/tickets/{ticket}/link-project', [TicketController::class, 'linkProject']);
     Route::post('/tickets/{ticket}/create-task',   [TicketController::class, 'createTask']);
+    Route::post('/tickets/{ticket}/create-tasks',  [TicketController::class, 'createTasks']); // plural (Phase 4)
 
     // ── Collaboration: private notes, reminders, related tickets (Phase 2) ──
     Route::get('/tickets/{ticket}/notes',      [TicketCollaborationController::class, 'notes']);

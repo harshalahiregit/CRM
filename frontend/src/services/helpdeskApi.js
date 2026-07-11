@@ -81,6 +81,8 @@ export const helpdeskApi = {
       api.patch(`/helpdesk/tickets/${id}/link-project`, { project_id }).then(unwrap).catch(handleErr),
     createTask: (id, data) =>
       api.post(`/helpdesk/tickets/${id}/create-task`, data).then(unwrap).catch(handleErr),
+    createTasks: (id, tasks) =>
+      api.post(`/helpdesk/tickets/${id}/create-tasks`, { tasks }).then(unwrap).catch(handleErr),
 
     // Tags + merge (Phase 3)
     tags: (id) => api.get(`/helpdesk/tickets/${id}/tags`).then(unwrap).catch(handleErr),
