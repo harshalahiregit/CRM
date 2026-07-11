@@ -82,6 +82,12 @@ export const helpdeskApi = {
     createTask: (id, data) =>
       api.post(`/helpdesk/tickets/${id}/create-task`, data).then(unwrap).catch(handleErr),
 
+    // Tags + merge (Phase 3)
+    tags: (id) => api.get(`/helpdesk/tickets/${id}/tags`).then(unwrap).catch(handleErr),
+    addTag: (id, data) => api.post(`/helpdesk/tickets/${id}/tags`, data).then(unwrap).catch(handleErr),
+    removeTag: (id, tagId) => api.delete(`/helpdesk/tickets/${id}/tags/${tagId}`).then(unwrap).catch(handleErr),
+    merge: (id, merge_ticket_id) => api.post(`/helpdesk/tickets/${id}/merge`, { merge_ticket_id }).then(unwrap).catch(handleErr),
+
     // Collaboration — private notes, reminders, related tickets (Phase 2)
     notes: (id) => api.get(`/helpdesk/tickets/${id}/notes`).then(unwrap).catch(handleErr),
     addNote: (id, content) => api.post(`/helpdesk/tickets/${id}/notes`, { content }).then(unwrap).catch(handleErr),

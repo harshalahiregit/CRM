@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
-import { Paperclip, Send, X, ListTodo, FolderKanban } from 'lucide-react'
+import { Paperclip, Send, X, ListTodo, FolderKanban, GitMerge } from 'lucide-react'
 import { helpdeskApi } from '@/services/helpdeskApi'
 import { useAuth } from '@/context/AuthContext'
 import TicketIntelligencePanel from './TicketIntelligencePanel'
@@ -18,6 +18,7 @@ export default function TicketThread() {
 
   const [message, setMessage] = useState('')
   const [files, setFiles] = useState([])
+  const [cc, setCc] = useState('')
 
   const createTask = useMutation({
     mutationFn: (name) => helpdeskApi.tickets.createTask(id, { name }),
@@ -27,12 +28,26 @@ export default function TicketThread() {
     mutationFn: (pid) => helpdeskApi.tickets.linkProject(id, pid),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['helpdesk-ticket', id] }),
   })
+  const merge = useMutation({
+    mutationFn: (mergeId) => helpdeskApi.tickets.merge(id, mergeId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['helpdesk-ticket-replies', id] })
+      queryClient.invalidateQueries({ queryKey: ['helpdesk-ticket', id] })
+    },
+  })
 
   const { data: ticket } = useQuery({
     queryKey: ['helpdesk-ticket', id],
     queryFn: () => helpdeskApi.tickets.get(id),
     enabled: !!id,
   })
+
+  // A merged ticket redirects to the surviving one if opened directly (Phase 3).
+  useEffect(() => {
+    if (ticket?.merged_into_id && String(ticket.merged_into_id) !== String(id)) {
+      navigate(`/app/helpdesk/tickets/${ticket.merged_into_id}`, { replace: true })
+    }
+  }, [ticket?.merged_into_id, id, navigate])
 
   const { data: replies = [], isLoading, isError, error } = useQuery({
     queryKey: ['helpdesk-ticket-replies', id],
@@ -46,12 +61,14 @@ export default function TicketThread() {
       fd.append('message', message)
       fd.append('sender_type', 'admin')          // staff view posts as admin
       if (user?.id) fd.append('sender_id', user.id)
+      cc.split(',').map(e => e.trim()).filter(Boolean).forEach(email => fd.append('cc[]', email))
       files.forEach(f => fd.append('attachments[]', f))
       return helpdeskApi.tickets.reply(id, fd)
     },
     onSuccess: () => {
       setMessage('')
       setFiles([])
+      setCc('')
       // Refresh both the thread and the ticket (status may have auto-changed).
       queryClient.invalidateQueries({ queryKey: ['helpdesk-ticket-replies', id] })
       queryClient.invalidateQueries({ queryKey: ['helpdesk-ticket', id] })
@@ -84,6 +101,10 @@ export default function TicketThread() {
             <button onClick={() => { const p = window.prompt('Link to project id (blank to unlink):'); if (p !== null) linkProject.mutate(p.trim() ? Number(p.trim()) : null) }}
               className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg" style={{ background: 'rgba(59,130,246,0.15)', color: '#3b82f6' }}>
               <FolderKanban size={13} /> Link project
+            </button>
+            <button onClick={() => { const m = window.prompt('Merge which ticket id INTO this one? (that ticket becomes "merged")'); if (m?.trim()) merge.mutate(Number(m.trim())) }}
+              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg" style={{ background: 'rgba(107,114,128,0.18)', color: '#9ca3af' }}>
+              <GitMerge size={13} /> Merge
             </button>
           </div>
         )}
@@ -162,6 +183,15 @@ export default function TicketThread() {
               placeholder="Write a reply…"
               className="w-full bg-transparent resize-none outline-none text-sm px-2 py-1"
               style={{ color: 'var(--text-h)' }}
+            />
+
+            {/* CC field (comma-separated emails) */}
+            <input
+              value={cc}
+              onChange={e => setCc(e.target.value)}
+              placeholder="Cc: comma-separated emails (optional)"
+              className="w-full bg-transparent outline-none text-xs px-2 py-1.5 border-t"
+              style={{ color: 'var(--text-h)', borderColor: 'var(--border)' }}
             />
 
             {/* Selected files chips */}

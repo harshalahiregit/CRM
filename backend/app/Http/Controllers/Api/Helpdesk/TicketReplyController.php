@@ -31,6 +31,8 @@ class TicketReplyController extends Controller
             'sender_type'   => ['required', 'in:client,admin,agent'],
             'sender_id'     => ['nullable', 'integer', 'min:1'],
             'message'       => ['required', 'string'],
+            'cc'            => ['nullable', 'array', 'max:20'],
+            'cc.*'          => ['email'],
             'attachments'   => ['nullable', 'array', 'max:10'],
             'attachments.*' => ['file', 'max:10240'],   // 10 MB each
         ]);
@@ -54,6 +56,7 @@ class TicketReplyController extends Controller
             'sender_type' => $request->input('sender_type'),
             'sender_id'   => $request->input('sender_id'),
             'message'     => $request->input('message'),
+            'cc'          => $request->input('cc', []),
             'attachments' => $stored,
         ], $tenantId);
 

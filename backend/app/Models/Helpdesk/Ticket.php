@@ -15,6 +15,7 @@ class Ticket extends Model
     protected $fillable = [
         'tenant_id', 'subject', 'description', 'status', 'priority',
         'assigned_to', 'customer_id', 'department_id', 'project_id', 'due_date', 'source',
+        'merged_into_id',
     ];
 
     protected $casts = [
@@ -47,6 +48,11 @@ class Ticket extends Model
     public function assignee()
     {
         return $this->belongsTo(User::class, 'assigned_to');
+    }
+
+    public function tags()
+    {
+        return $this->belongsToMany(TicketTag::class, 'ticket_tag_pivot', 'ticket_id', 'tag_id')->withTimestamps();
     }
 
     // NOTE: no customer() relation — customers belong to Zafar's module. Resolve

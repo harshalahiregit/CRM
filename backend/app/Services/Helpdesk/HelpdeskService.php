@@ -145,6 +145,7 @@ class HelpdeskService
                 'sender_type'     => $data['sender_type'],
                 'sender_id'       => $data['sender_id'] ?? null,
                 'message'         => $data['message'],
+                'cc'              => ! empty($data['cc']) ? $data['cc'] : null,
                 'has_attachments' => count($attachments) > 0,
             ]);
 
@@ -272,6 +273,42 @@ class HelpdeskService
             ->map(fn ($name) => [$column => $name, 'count' => (int) $counts[$name]]);
 
         return $rows->concat($extra)->values()->all();
+    }
+
+    /* ── Merge (Phase 3) ────────────────────────────────────────── */
+
+    /**
+     * Merge $mergeTicketId INTO $survivorId: move its replies (and their
+     * attachments), and its private notes, onto the survivor; then mark the merged
+     * ticket status='merged' and point merged_into_id at the survivor so visiting
+     * it can redirect. Idempotent-ish: a ticket already merged can't be re-merged.
+     */
+    public function mergeTicket(int $survivorId, int $mergeTicketId, int $tenantId): Ticket
+    {
+        if ($survivorId === $mergeTicketId) {
+            throw new BusinessException('A ticket cannot be merged into itself.', 422);
+        }
+
+        $survivor = $this->findTicket($survivorId, $tenantId);
+        $merged   = $this->findTicket($mergeTicketId, $tenantId);
+
+        if ($merged->status === 'merged') {
+            throw new BusinessException('That ticket has already been merged.', 422);
+        }
+
+        \Illuminate\Support\Facades\DB::transaction(function () use ($survivor, $merged, $tenantId) {
+            // Replies carry their attachments (attachments.reply_id), so moving the
+            // reply rows moves the files with them.
+            \App\Models\Helpdesk\TicketReply::forTenant($tenantId)
+                ->where('ticket_id', $merged->id)->update(['ticket_id' => $survivor->id]);
+
+            \App\Models\Helpdesk\TicketNote::forTenant($tenantId)
+                ->where('ticket_id', $merged->id)->update(['ticket_id' => $survivor->id]);
+
+            $merged->update(['status' => 'merged', 'merged_into_id' => $survivor->id]);
+        });
+
+        return $survivor->fresh();
     }
 
     /* ── Feedback (CSAT) ────────────────────────────────────────── */

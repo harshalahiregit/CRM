@@ -12,11 +12,12 @@ class TicketReply extends Model
 
     protected $fillable = [
         'tenant_id', 'ticket_id', 'sender_type', 'sender_id',
-        'message', 'has_attachments',
+        'message', 'cc', 'has_attachments',
     ];
 
     protected $casts = [
         'has_attachments' => 'boolean',
+        'cc'              => 'array',
     ];
 
     /* ── Relationships ──────────────────────────────────────────── */

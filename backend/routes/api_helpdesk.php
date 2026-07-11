@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\Helpdesk\PublicHelpdeskController;
 use App\Http\Controllers\Api\Helpdesk\TicketCollaborationController;
 use App\Http\Controllers\Api\Helpdesk\TicketController;
 use App\Http\Controllers\Api\Helpdesk\TicketReplyController;
+use App\Http\Controllers\Api\Helpdesk\TicketTagController;
 use App\Http\Controllers\Api\Helpdesk\KbCategoryController;
 use App\Http\Controllers\Api\Helpdesk\KbSubcategoryController;
 use App\Http\Controllers\Api\Helpdesk\KbArticleController;
@@ -79,6 +80,15 @@ Route::middleware('auth:sanctum')->prefix('helpdesk')->group(function () {
     Route::get('/tickets/{ticket}/related',    [TicketCollaborationController::class, 'related']);
     Route::post('/tickets/{ticket}/related',   [TicketCollaborationController::class, 'storeRelated']);
     Route::delete('/tickets/{ticket}/related/{relatedId}', [TicketCollaborationController::class, 'destroyRelated']);
+
+    // ── Merge + Tags (Phase 3) ──────────────────────────────────
+    Route::post('/tickets/{ticket}/merge',     [TicketController::class, 'merge']);
+
+    Route::get('/tags',                        [TicketTagController::class, 'index']);
+    Route::post('/tags',                       [TicketTagController::class, 'store']);
+    Route::get('/tickets/{ticket}/tags',       [TicketTagController::class, 'ticketTags']);
+    Route::post('/tickets/{ticket}/tags',      [TicketTagController::class, 'attach']);
+    Route::delete('/tickets/{ticket}/tags/{tagId}', [TicketTagController::class, 'detach']);
 
     // ── Ticket Replies (conversation thread) ────────────────────
     Route::get('/tickets/{ticket}/replies',   [TicketReplyController::class, 'index']);

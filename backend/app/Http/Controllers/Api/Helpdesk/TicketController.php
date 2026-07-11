@@ -81,6 +81,15 @@ class TicketController extends Controller
         return $this->success($result, 'Status updated');
     }
 
+    /* ── Merge a duplicate ticket into this one (Phase 3) ──────── */
+    public function merge(Request $request, int $ticket)
+    {
+        $data = $request->validate(['merge_ticket_id' => 'required|integer']);
+        $survivor = $this->helpdesk->mergeTicket($ticket, $data['merge_ticket_id'], $request->user()->tenant_id);
+
+        return $this->success($survivor, 'Ticket merged');
+    }
+
     /* ── Assign agent (TicketAssignmentService) ────────────────── */
     public function assign(AssignTicketRequest $request, int $ticket)
     {

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { StickyNote, Bell, Link2, ChevronDown, Plus, Check, X } from 'lucide-react'
+import { StickyNote, Bell, Link2, Tag, ChevronDown, Plus, Check, X } from 'lucide-react'
 import { helpdeskApi } from '@/services/helpdeskApi'
 
 const fmtWhen = ts => ts ? new Date(ts).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''
@@ -14,10 +14,43 @@ const fmtWhen = ts => ts ? new Date(ts).toLocaleString('en-IN', { day: '2-digit'
 export default function TicketIntelligencePanel({ ticketId }) {
   return (
     <aside className="space-y-3 w-full">
+      <TagsSection ticketId={ticketId} />
       <NotesSection ticketId={ticketId} />
       <RemindersSection ticketId={ticketId} />
       <RelatedSection ticketId={ticketId} />
     </aside>
+  )
+}
+
+function TagsSection({ ticketId }) {
+  const qc = useQueryClient()
+  const key = ['ticket-tags', ticketId]
+  const { data: tags = [] } = useQuery({ queryKey: key, queryFn: () => helpdeskApi.tickets.tags(ticketId) })
+  const [name, setName] = useState('')
+  const invalidate = () => qc.invalidateQueries({ queryKey: key })
+  const add = useMutation({ mutationFn: () => helpdeskApi.tickets.addTag(ticketId, { name }), onSuccess: () => { setName(''); invalidate() } })
+  const remove = useMutation({ mutationFn: (id) => helpdeskApi.tickets.removeTag(ticketId, id), onSuccess: invalidate })
+
+  return (
+    <Section icon={Tag} title="Tags" count={tags.length} accent="#a855f7">
+      <div className="flex flex-wrap gap-1.5 mb-2">
+        {tags.map(t => (
+          <span key={t.id} className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg" style={{ background: `${t.color}22`, color: t.color, border: `1px solid ${t.color}55` }}>
+            {t.name}
+            <button onClick={() => remove.mutate(t.id)} className="opacity-60 hover:opacity-100"><X size={10} /></button>
+          </span>
+        ))}
+        {tags.length === 0 && <span className="text-xs" style={{ color: 'var(--text-muted)' }}>No tags.</span>}
+      </div>
+      <div className="flex gap-1.5">
+        <input value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === 'Enter' && name.trim() && add.mutate()} placeholder="add a tag…"
+          className="flex-1 text-xs bg-transparent border rounded-lg px-2 py-1.5 outline-none" style={{ borderColor: 'var(--border)', color: 'var(--text-h)' }} />
+        <button disabled={!name.trim() || add.isPending} onClick={() => add.mutate()}
+          className="flex items-center gap-1 text-xs font-semibold px-3 rounded-lg disabled:opacity-40" style={{ background: 'rgba(168,85,247,0.15)', color: '#a855f7' }}>
+          <Plus size={12} />
+        </button>
+      </div>
+    </Section>
   )
 }
 
