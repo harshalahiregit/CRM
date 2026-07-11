@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\Helpdesk\TicketCollaborationController;
 use App\Http\Controllers\Api\Helpdesk\TicketController;
 use App\Http\Controllers\Api\Helpdesk\TicketReplyController;
 use App\Http\Controllers\Api\Helpdesk\TicketTagController;
+use App\Http\Controllers\Api\Helpdesk\CannedResponseController;
 use App\Http\Controllers\Api\Helpdesk\KbCategoryController;
 use App\Http\Controllers\Api\Helpdesk\KbSubcategoryController;
 use App\Http\Controllers\Api\Helpdesk\KbArticleController;
@@ -98,6 +99,13 @@ Route::middleware('auth:sanctum')->prefix('helpdesk')->group(function () {
 
     // Secure attachment download (auth + tenant scoped)
     Route::get('/tickets/{ticket}/attachments/{attachment}/download', [TicketReplyController::class, 'download']);
+
+    // ── Canned Responses (saved replies) ────────────────────────
+    Route::get('/canned-responses',            [CannedResponseController::class, 'index']);
+    Route::post('/canned-responses',           [CannedResponseController::class, 'store']);
+    Route::put('/canned-responses/{id}',       [CannedResponseController::class, 'update']);
+    Route::delete('/canned-responses/{id}',    [CannedResponseController::class, 'destroy']);
+    Route::post('/canned-responses/{id}/used', [CannedResponseController::class, 'used']);
 
     // ── Knowledge Base — Categories ─────────────────────────────
     Route::get('/kb/categories',              [KbCategoryController::class, 'index']);

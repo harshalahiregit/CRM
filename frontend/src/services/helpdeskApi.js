@@ -132,6 +132,15 @@ export const helpdeskApi = {
         .catch(handleErr),
   },
 
+  // Canned responses (saved replies)
+  cannedResponses: {
+    list: () => api.get('/helpdesk/canned-responses').then(unwrap).catch(handleErr),
+    create: (data) => api.post('/helpdesk/canned-responses', data).then(unwrap).catch(handleErr),
+    update: (id, data) => api.put(`/helpdesk/canned-responses/${id}`, data).then(unwrap).catch(handleErr),
+    remove: (id) => api.delete(`/helpdesk/canned-responses/${id}`).then(unwrap).catch(handleErr),
+    used: (id) => api.post(`/helpdesk/canned-responses/${id}/used`).then(unwrap).catch(handleErr),
+  },
+
   kb: {
     categories: () =>
       api.get('/helpdesk/kb/categories').then(unwrap).catch(handleErr),
