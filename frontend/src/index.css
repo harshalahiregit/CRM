@@ -1,4 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -129,10 +130,25 @@ body {
 }
 
 /* ── Typography ─────────────────────────────────────────────── */
-h1,h2,h3,h4,h5,h6 { color: var(--text-h); }
-.heading-hero    { font-size: clamp(2.4rem,4.8vw,4rem); font-weight:950; letter-spacing:-0.03em; line-height:1.1; }
+h1,h2,h3,h4,h5,h6 { color: var(--text-h); font-family: 'Plus Jakarta Sans','Inter',-apple-system,sans-serif; letter-spacing:-0.015em; }
+.font-display    { font-family:'Plus Jakarta Sans','Inter',sans-serif; }
+.heading-hero    { font-size: clamp(2.4rem,4.8vw,4rem); font-weight:800; letter-spacing:-0.03em; line-height:1.1; }
 .heading-display { font-size: clamp(1.8rem,3.5vw,2.8rem); font-weight:800; letter-spacing:-0.02em; line-height:1.15; }
 .label-caps      { font-weight:800; letter-spacing:0.06em; text-transform:uppercase; font-size:0.7rem; color: var(--text-muted); }
+
+/* ── KB reading typography (generous, professional) ─────────── */
+.kb-read { font-size:16.5px; line-height:1.75; color:var(--text-body); }
+.kb-read h2 { font-size:1.5rem; font-weight:800; margin:2rem 0 .75rem; line-height:1.3; }
+.kb-read h3 { font-size:1.2rem; font-weight:700; margin:1.5rem 0 .5rem; }
+.kb-read p { margin:0 0 1.1rem; }
+.kb-read ul,.kb-read ol { margin:0 0 1.1rem 1.5rem; }
+.kb-read li { margin:.4rem 0; }
+.kb-read a { color:var(--color-support-500); text-decoration:underline; text-underline-offset:2px; }
+.kb-read img { max-width:100%; border-radius:12px; margin:1rem 0; }
+.kb-read blockquote { border-left:3px solid var(--color-support-500); padding:.25rem 0 .25rem 1rem; margin:1.25rem 0; color:var(--text-muted); }
+.kb-read pre { background:var(--bg-input); padding:1rem; border-radius:12px; overflow:auto; border:1px solid var(--border); margin:1.25rem 0; }
+.kb-read code { background:var(--bg-input); padding:.15rem .4rem; border-radius:6px; font-size:.9em; border:1px solid var(--border); }
+.kb-read pre code { background:none; border:none; padding:0; }
 
 /* ── Scrollbar ──────────────────────────────────────────────── */
 ::-webkit-scrollbar { width:5px; height:5px; }
