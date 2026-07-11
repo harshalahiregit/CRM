@@ -1,35 +1,71 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Search, Plus, X, Inbox, ChevronRight } from 'lucide-react'
+import {
+  Search, Plus, X, Inbox, Clock, CheckCircle2, Circle, User, Zap,
+  Download, Columns3, Rows3, AlignJustify, ArrowUp, ArrowDown, ChevronsUpDown,
+  Trash2, UserCheck, AlertCircle, Check,
+} from 'lucide-react'
 import { helpdeskApi } from '@/services/helpdeskApi'
+import { useAuth } from '@/context/AuthContext'
+import SLABadge from '../components/ui/SLABadge'
 
-/* Clean, light, Freshdesk-style ticket inbox on the existing engine. */
+/* ───────────────────────────────────────────────────────────────
+   Universal Data Grid — Ticket inbox (SDS "Nova" flagship component).
+   Sticky sortable header · density switch · column show/hide (persisted)
+   · saved views · bulk actions · inline status edit · CSV export.
+   Backend untouched: uses tickets.list / setStatus / assign / remove.
+─────────────────────────────────────────────────────────────── */
 
 const normalize = (raw) => (Array.isArray(raw) ? raw : raw?.data || [])
-const PRI_DOT = { urgent: '#dc2626', high: '#ef4444', medium: '#f59e0b', low: '#10b981' }
+const PRI_RANK = { urgent: 0, high: 1, medium: 2, low: 3 }
+const initials = (name) => name ? name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : '–'
 const fmtAgo = (d) => {
   if (!d) return ''
   const s = Math.floor((Date.now() - new Date(d)) / 1000)
-  if (s < 3600) return `${Math.max(1, Math.floor(s / 60))}m ago`
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`
-  return `${Math.floor(s / 86400)}d ago`
+  if (s < 3600) return `${Math.max(1, Math.floor(s / 60))}m`
+  if (s < 86400) return `${Math.floor(s / 3600)}h`
+  return `${Math.floor(s / 86400)}d`
 }
+
+const ALL_COLS = [
+  { key: 'priority',   label: 'Priority',  always: true,  sort: t => PRI_RANK[t.priority] ?? 9 },
+  { key: 'subject',    label: 'Subject',   always: true,  sort: t => (t.subject || '').toLowerCase() },
+  { key: 'requester',  label: 'Requester', sort: t => (t.requester_name || '').toLowerCase() },
+  { key: 'department', label: 'Dept',      sort: t => t.department_id ?? 999 },
+  { key: 'status',     label: 'Status',    always: true,  sort: t => (t.status || '').toLowerCase() },
+  { key: 'assignee',   label: 'Assignee',  sort: t => (t.assignee?.name || '~').toLowerCase() },
+  { key: 'updated',    label: 'Updated',   sort: t => new Date(t.updated_at || t.created_at || 0).getTime() },
+]
+
+const loadPref = (k, fb) => { try { const v = JSON.parse(localStorage.getItem(k)); return v ?? fb } catch { return fb } }
 
 export default function TicketGrid() {
   const navigate = useNavigate()
   const qc = useQueryClient()
-  const [filter, setFilter] = useState('all')
+  const { user } = useAuth()
+
+  const [view, setView] = useState('all')
   const [q, setQ] = useState('')
   const [showNew, setShowNew] = useState(false)
+  const [sort, setSort] = useState({ key: 'updated', dir: 'desc' })
+  const [selected, setSelected] = useState(() => new Set())
+  const [density, setDensity] = useState(() => loadPref('hd-grid-density', 'comfortable'))
+  const [hidden, setHidden] = useState(() => new Set(loadPref('hd-grid-hidden', [])))
+  const [colMenu, setColMenu] = useState(false)
+
+  useEffect(() => { localStorage.setItem('hd-grid-density', JSON.stringify(density)) }, [density])
+  useEffect(() => { localStorage.setItem('hd-grid-hidden', JSON.stringify([...hidden])) }, [hidden])
 
   const { data: raw = [], isLoading } = useQuery({ queryKey: ['helpdesk-tickets'], queryFn: () => helpdeskApi.tickets.list() })
   const { data: settings } = useQuery({ queryKey: ['helpdesk-settings'], queryFn: helpdeskApi.settings.all })
   const tickets = normalize(raw)
 
   const statusColor = useMemo(() => {
-    const m = {}; (settings?.statuses || []).forEach(s => { m[s.name] = s.color })
-    return (name) => m[name] || '#64748b'
+    const m = {}; (settings?.statuses || []).forEach(s => { m[s.name] = s.color }); return (n) => m[n] || '#64748b'
+  }, [settings])
+  const deptName = useMemo(() => {
+    const m = {}; (settings?.departments || []).forEach(d => { m[d.id] = d.name }); return (id) => m[id] || '—'
   }, [settings])
 
   const counts = useMemo(() => ({
@@ -40,145 +76,325 @@ export default function TicketGrid() {
     unassigned: tickets.filter(t => !t.assigned_to).length,
   }), [tickets])
 
-  const filtered = useMemo(() => {
+  const rows = useMemo(() => {
     const term = q.trim().toLowerCase()
-    return tickets.filter(t => {
-      if (filter === 'unassigned' && t.assigned_to) return false
-      if (filter !== 'all' && filter !== 'unassigned' && t.status !== filter) return false
-      if (term && !t.subject.toLowerCase().includes(term)) return false
+    const col = ALL_COLS.find(c => c.key === sort.key)
+    const out = tickets.filter(t => {
+      if (view === 'unassigned' && t.assigned_to) return false
+      if (view !== 'all' && view !== 'unassigned' && t.status !== view) return false
+      if (term && !(`${t.subject} ${t.requester_name || ''} #${t.id}`.toLowerCase().includes(term))) return false
       return true
     })
-  }, [tickets, filter, q])
+    if (col) out.sort((a, b) => {
+      const av = col.sort(a), bv = col.sort(b)
+      const r = av < bv ? -1 : av > bv ? 1 : 0
+      return sort.dir === 'asc' ? r : -r
+    })
+    return out
+  }, [tickets, view, q, sort])
+
+  // Selection is scoped to what's currently visible.
+  const allSelected = rows.length > 0 && rows.every(t => selected.has(t.id))
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(rows.map(t => t.id)))
+  const toggleOne = (id) => setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+
+  const rowStatus = useMutation({
+    mutationFn: ({ id, status }) => helpdeskApi.tickets.setStatus(id, status),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['helpdesk-tickets'] }),
+  })
+  const bulk = useMutation({
+    mutationFn: async ({ action, value }) => {
+      const ids = [...selected]
+      if (action === 'status') await Promise.all(ids.map(id => helpdeskApi.tickets.setStatus(id, value)))
+      if (action === 'assign') await Promise.all(ids.map(id => helpdeskApi.tickets.assign(id, value)))
+      if (action === 'delete') await Promise.all(ids.map(id => helpdeskApi.tickets.remove(id)))
+    },
+    onSuccess: () => { setSelected(new Set()); qc.invalidateQueries({ queryKey: ['helpdesk-tickets'] }) },
+  })
+
+  const exportCsv = () => {
+    const cols = ['id', 'subject', 'requester_name', 'priority', 'status', 'created_at']
+    const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`
+    const csv = [cols.join(','), ...rows.map(t => cols.map(c => esc(t[c])).join(','))].join('\n')
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
+    const a = document.createElement('a'); a.href = url; a.download = `tickets-${view}.csv`; a.click(); URL.revokeObjectURL(url)
+  }
 
   const TABS = [
-    ['all', 'All'], ['open', 'Open'], ['in-progress', 'In Progress'], ['closed', 'Closed'], ['unassigned', 'Unassigned'],
+    { key: 'all', label: 'All', icon: Inbox },
+    { key: 'open', label: 'Open', icon: Circle },
+    { key: 'in-progress', label: 'In Progress', icon: Clock },
+    { key: 'closed', label: 'Closed', icon: CheckCircle2 },
+    { key: 'unassigned', label: 'Unassigned', icon: User },
   ]
+  const cols = ALL_COLS.filter(c => !hidden.has(c.key))
+  const rowPad = density === 'dense' ? '6px 12px' : '11px 12px'
+  const ACCENT = 'var(--color-support-500)'
+
+  const setSortKey = (key) => setSort(s => s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' })
 
   return (
-    <div className="-m-4 md:-m-6" style={{ background: '#f4f6fb', minHeight: 'calc(100vh - 120px)', color: '#16233d' }}>
-      <div className="max-w-5xl mx-auto px-4 md:px-6 py-6">
-        {/* Header */}
-        <div className="flex items-center justify-between gap-3 mb-4">
-          <div className="flex items-center gap-2.5">
-            <span style={{ width: 38, height: 38, borderRadius: 11, background: '#e8eeff', color: '#3b6fed', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Inbox size={20} /></span>
-            <div>
-              <h1 style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-0.02em', color: '#16233d' }}>Tickets</h1>
-              <p style={{ fontSize: 12.5, color: '#7a879e' }}>{filtered.length} of {tickets.length}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#9aa4ba' }} />
-              <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search tickets…"
-                style={{ padding: '9px 12px 9px 34px', borderRadius: 10, border: '1px solid #e1e6f0', background: '#fff', fontSize: 13.5, outline: 'none', width: 220, color: '#16233d' }} />
-            </div>
-            <button onClick={() => setShowNew(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 10, background: '#3b6fed', color: '#fff', fontSize: 13.5, fontWeight: 600, boxShadow: '0 4px 12px rgba(59,111,237,0.3)' }}>
-              <Plus size={16} /> New ticket
-            </button>
-          </div>
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <p className="label-caps mb-0.5">Helpdesk</p>
+          <h1 className="font-black" style={{ fontSize: 'clamp(1.3rem,2.2vw,1.7rem)', color: 'var(--text-h)', letterSpacing: '-0.02em' }}>Tickets</h1>
+          <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{rows.length} of {tickets.length} tickets</p>
         </div>
+        <button onClick={() => setShowNew(true)}
+          className="flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-xl transition-opacity hover:opacity-90"
+          style={{ background: `linear-gradient(135deg,var(--color-support-400),var(--color-support-600))`, color: '#fff' }}>
+          <Plus size={15} /> New Ticket
+        </button>
+      </div>
 
-        {/* Filter tabs */}
-        <div className="flex items-center gap-1.5 mb-3 flex-wrap">
-          {TABS.map(([key, label]) => (
-            <button key={key} onClick={() => setFilter(key)}
-              style={{ padding: '6px 13px', borderRadius: 999, fontSize: 13, fontWeight: 600,
-                background: filter === key ? '#3b6fed' : '#fff', color: filter === key ? '#fff' : '#5a6b8c',
-                border: `1px solid ${filter === key ? '#3b6fed' : '#e1e6f0'}` }}>
-              {label} <span style={{ opacity: 0.7 }}>{counts[key] ?? 0}</span>
+      {/* Views (saved) */}
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {TABS.map(({ key, label, icon: Icon }) => {
+          const active = view === key
+          return (
+            <button key={key} onClick={() => setView(key)} className="flex items-center gap-1.5 transition-colors"
+              style={{
+                padding: '6px 13px', borderRadius: 999, fontSize: 13, fontWeight: 600,
+                background: active ? ACCENT : 'var(--bg-card)', color: active ? '#fff' : 'var(--text-muted)',
+                border: `1px solid ${active ? 'transparent' : 'var(--border)'}`,
+              }}>
+              <Icon size={12} /> {label}
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                style={{ background: active ? 'rgba(255,255,255,0.25)' : 'var(--bg-global)', color: active ? '#fff' : 'var(--text-muted)' }}>
+                {counts[key] ?? 0}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Toolbar */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search tickets…"
+            style={{ padding: '8px 12px 8px 32px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-input)', fontSize: 13.5, outline: 'none', width: 240, color: 'var(--text-h)' }} />
+        </div>
+        <div className="flex-1" />
+        {/* Density */}
+        <div className="flex items-center rounded-lg overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+          {[['comfortable', Rows3], ['dense', AlignJustify]].map(([k, Icon]) => (
+            <button key={k} onClick={() => setDensity(k)} title={k}
+              className="p-2 transition-colors"
+              style={{ background: density === k ? 'var(--bg-input)' : 'transparent', color: density === k ? ACCENT : 'var(--text-muted)' }}>
+              <Icon size={15} />
             </button>
           ))}
         </div>
-
-        {/* List */}
-        <div style={{ background: '#fff', border: '1px solid #e7eaf2', borderRadius: 14, overflow: 'hidden', boxShadow: '0 1px 2px rgba(20,30,60,0.04)' }}>
-          {isLoading && [1, 2, 3, 4, 5].map(i => <div key={i} style={{ height: 64, borderBottom: '1px solid #f0f2f7' }} className="animate-pulse" />)}
-          {!isLoading && filtered.length === 0 && <p style={{ padding: '40px', textAlign: 'center', color: '#9aa4ba', fontSize: 14 }}>No tickets match.</p>}
-          {!isLoading && filtered.map((t, i) => (
-            <button key={t.id} onClick={() => navigate(`/app/helpdesk/tickets/${t.id}`)}
-              style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 14, padding: '13px 18px', textAlign: 'left', borderBottom: i < filtered.length - 1 ? '1px solid #f0f2f7' : 'none', background: '#fff' }}
-              onMouseEnter={e => e.currentTarget.style.background = '#f7f9fd'}
-              onMouseLeave={e => e.currentTarget.style.background = '#fff'}>
-              <span title={t.priority} style={{ width: 9, height: 9, borderRadius: 999, background: PRI_DOT[t.priority] || '#cbd5e1', flexShrink: 0 }} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ fontSize: 14.5, fontWeight: 600, color: '#16233d', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.subject}</p>
-                <p style={{ fontSize: 12.5, color: '#8a93a8', marginTop: 2 }}>
-                  #{t.id}
-                  {t.requester_name ? ` · ${t.requester_name}` : ''}
-                  {t.source === 'widget' ? ' · via widget' : ''}
-                  {` · ${fmtAgo(t.created_at)}`}
-                </p>
+        {/* Columns */}
+        <div className="relative">
+          <ToolBtn icon={Columns3} label="Columns" onClick={() => setColMenu(o => !o)} />
+          {colMenu && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setColMenu(false)} />
+              <div className="absolute right-0 mt-1 z-50 rounded-xl p-1.5 w-44" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card-3d)' }}>
+                {ALL_COLS.map(c => (
+                  <button key={c.key} disabled={c.always}
+                    onClick={() => setHidden(h => { const n = new Set(h); n.has(c.key) ? n.delete(c.key) : n.add(c.key); return n })}
+                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm text-left disabled:opacity-40 transition-colors hover:bg-[var(--bg-input)]"
+                    style={{ color: 'var(--text-body)' }}>
+                    <span className="w-4 h-4 rounded flex items-center justify-center shrink-0" style={{ border: '1px solid var(--border)', background: !hidden.has(c.key) ? ACCENT : 'transparent' }}>
+                      {!hidden.has(c.key) && <Check size={11} className="text-white" />}
+                    </span>
+                    {c.label}
+                  </button>
+                ))}
               </div>
-              <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'capitalize', padding: '4px 10px', borderRadius: 999, color: statusColor(t.status), background: `${statusColor(t.status)}18` }}>
-                {String(t.status).replace('-', ' ')}
-              </span>
-              <span style={{ fontSize: 12.5, color: '#5a6b8c', width: 96, textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {t.assignee?.name || 'Unassigned'}
-              </span>
-              <ChevronRight size={16} style={{ color: '#c2cbdc', flexShrink: 0 }} />
-            </button>
-          ))}
+            </>
+          )}
+        </div>
+        <ToolBtn icon={Download} label="Export" onClick={exportCsv} />
+      </div>
+
+      {/* Grid */}
+      <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card)' }}>
+        {/* Bulk actions bar */}
+        {selected.size > 0 && (
+          <div className="flex items-center gap-2 px-4 py-2.5 flex-wrap" style={{ background: 'var(--bg-input)', borderBottom: '1px solid var(--border)' }}>
+            <span className="text-xs font-bold" style={{ color: ACCENT }}>{selected.size} selected</span>
+            <div className="flex-1" />
+            <select onChange={e => e.target.value && bulk.mutate({ action: 'status', value: e.target.value })} value=""
+              className="text-xs rounded-lg px-2 py-1.5 outline-none" style={{ border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-h)' }}>
+              <option value="">Set status…</option>
+              {(settings?.statuses || []).map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+            </select>
+            {user?.id && <BulkBtn icon={UserCheck} label="Assign to me" onClick={() => bulk.mutate({ action: 'assign', value: user.id })} />}
+            <BulkBtn icon={Trash2} label="Delete" danger onClick={() => bulk.mutate({ action: 'delete' })} />
+            <button onClick={() => setSelected(new Set())} className="text-xs font-semibold px-2" style={{ color: 'var(--text-muted)' }}>Clear</button>
+          </div>
+        )}
+
+        <div className="overflow-x-auto">
+          <table className="w-full" style={{ borderCollapse: 'collapse', minWidth: 720 }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                <th style={{ padding: '10px 12px', width: 36 }}>
+                  <Checkbox checked={allSelected} onChange={toggleAll} accent={ACCENT} />
+                </th>
+                {cols.map(c => (
+                  <th key={c.key} onClick={() => setSortKey(c.key)}
+                    className="cursor-pointer select-none"
+                    style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                    <span className="inline-flex items-center gap-1">
+                      {c.label}
+                      {sort.key === c.key
+                        ? (sort.dir === 'asc' ? <ArrowUp size={11} style={{ color: ACCENT }} /> : <ArrowDown size={11} style={{ color: ACCENT }} />)
+                        : <ChevronsUpDown size={11} style={{ opacity: 0.35 }} />}
+                    </span>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading && [1, 2, 3, 4, 5, 6].map(i => (
+                <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                  <td colSpan={cols.length + 1} style={{ padding: rowPad }}>
+                    <div className="h-4 rounded-lg animate-pulse" style={{ background: 'var(--border)' }} />
+                  </td>
+                </tr>
+              ))}
+
+              {!isLoading && rows.length === 0 && (
+                <tr><td colSpan={cols.length + 1}>
+                  <div className="flex flex-col items-center justify-center py-16 gap-2">
+                    <div className="w-14 h-14 rounded-2xl flex items-center justify-center" style={{ background: 'var(--bg-input)' }}>
+                      <Inbox size={26} style={{ color: ACCENT }} />
+                    </div>
+                    <p className="font-semibold" style={{ color: 'var(--text-h)' }}>{q ? 'No matching tickets' : 'No tickets here'}</p>
+                    <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{q ? 'Try a different search' : 'Create the first ticket to get started'}</p>
+                  </div>
+                </td></tr>
+              )}
+
+              {!isLoading && rows.map(t => {
+                const isSel = selected.has(t.id)
+                const sColor = statusColor(t.status)
+                return (
+                  <tr key={t.id}
+                    onClick={() => navigate(`/app/helpdesk/tickets/${t.id}`)}
+                    className="cursor-pointer transition-colors"
+                    style={{ borderBottom: '1px solid var(--border)', background: isSel ? 'var(--bg-input)' : 'transparent' }}
+                    onMouseEnter={e => { if (!isSel) e.currentTarget.style.background = 'var(--bg-card-hover)' }}
+                    onMouseLeave={e => { if (!isSel) e.currentTarget.style.background = 'transparent' }}>
+                    <td style={{ padding: rowPad }} onClick={e => e.stopPropagation()}>
+                      <Checkbox checked={isSel} onChange={() => toggleOne(t.id)} accent={ACCENT} />
+                    </td>
+                    {cols.map(c => (
+                      <td key={c.key} style={{ padding: rowPad, fontSize: 13, color: 'var(--text-body)', whiteSpace: c.key === 'subject' ? 'normal' : 'nowrap' }}
+                        onClick={c.key === 'status' ? e => e.stopPropagation() : undefined}>
+                        {c.key === 'priority' && <SLABadge priority={t.priority} dueDate={t.due_date} />}
+                        {c.key === 'subject' && (
+                          <div className="min-w-0">
+                            <span className="font-semibold" style={{ color: 'var(--text-h)' }}>{t.subject}</span>
+                            <span className="ml-2 text-xs" style={{ color: 'var(--text-muted)', fontFamily: 'monospace' }}>#{t.id}</span>
+                            {t.source === 'widget' && <span className="ml-1.5 inline-flex items-center gap-0.5 text-[10px]" style={{ color: ACCENT }}><Zap size={9} />widget</span>}
+                          </div>
+                        )}
+                        {c.key === 'requester' && (t.requester_name || <span style={{ color: 'var(--text-muted)' }}>—</span>)}
+                        {c.key === 'department' && deptName(t.department_id)}
+                        {c.key === 'status' && (
+                          <select value={t.status} onChange={e => rowStatus.mutate({ id: t.id, status: e.target.value })}
+                            className="text-xs font-bold capitalize rounded-full px-2.5 py-1 outline-none cursor-pointer"
+                            style={{ color: sColor, background: `${sColor}18`, border: `1px solid ${sColor}30` }}>
+                            {(settings?.statuses || [{ id: 0, name: t.status }]).map(s => <option key={s.id} value={s.name} style={{ color: 'var(--text-h)', background: 'var(--bg-card)' }}>{s.name}</option>)}
+                          </select>
+                        )}
+                        {c.key === 'assignee' && (
+                          <span className="inline-flex items-center gap-1.5">
+                            <span className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0"
+                              style={{ background: t.assignee?.name ? `linear-gradient(135deg,var(--color-support-400),var(--color-support-600))` : 'var(--bg-global)', color: t.assignee?.name ? '#fff' : 'var(--text-muted)', border: '1px solid var(--border)' }}>
+                              {initials(t.assignee?.name)}
+                            </span>
+                            <span className="text-xs" style={{ color: t.assignee?.name ? 'var(--text-body)' : 'var(--text-muted)' }}>{t.assignee?.name || 'Unassigned'}</span>
+                          </span>
+                        )}
+                        {c.key === 'updated' && <span style={{ color: 'var(--text-muted)' }}>{fmtAgo(t.updated_at || t.created_at)}</span>}
+                      </td>
+                    ))}
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
 
-      {showNew && <NewTicketModal settings={settings} onClose={() => setShowNew(false)} onCreated={(id) => { qc.invalidateQueries({ queryKey: ['helpdesk-tickets'] }); setShowNew(false); navigate(`/app/helpdesk/tickets/${id}`) }} />}
+      {showNew && (
+        <NewTicketModal settings={settings} onClose={() => setShowNew(false)}
+          onCreated={(id) => { qc.invalidateQueries({ queryKey: ['helpdesk-tickets'] }); setShowNew(false); navigate(`/app/helpdesk/tickets/${id}`) }} />
+      )}
     </div>
   )
 }
 
+/* ── Small grid controls ─────────────────────────────────────── */
+function ToolBtn({ icon: Icon, label, onClick }) {
+  return (
+    <button onClick={onClick} className="flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-lg transition-colors hover:bg-[var(--bg-input)]"
+      style={{ border: '1px solid var(--border)', color: 'var(--text-body)' }}>
+      <Icon size={14} /> {label}
+    </button>
+  )
+}
+function BulkBtn({ icon: Icon, label, onClick, danger }) {
+  return (
+    <button onClick={onClick} className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-opacity hover:opacity-80"
+      style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: danger ? 'var(--color-danger-500)' : 'var(--text-body)' }}>
+      <Icon size={13} /> {label}
+    </button>
+  )
+}
+function Checkbox({ checked, onChange, accent }) {
+  return (
+    <button onClick={onChange} className="w-4 h-4 rounded flex items-center justify-center transition-colors"
+      style={{ border: `1px solid ${checked ? accent : 'var(--border)'}`, background: checked ? accent : 'transparent' }}>
+      {checked && <Check size={11} className="text-white" />}
+    </button>
+  )
+}
+
+/* ── New Ticket Modal (unchanged behaviour) ──────────────────── */
+const inp = { width: '100%', padding: '10px 13px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, outline: 'none', color: 'var(--text-h)', background: 'var(--bg-input)' }
+
 function NewTicketModal({ settings, onClose, onCreated }) {
   const [form, setForm] = useState({ subject: '', description: '', priority: 'medium', status: 'open', department_id: '', requester_name: '', requester_email: '' })
   const create = useMutation({
-    mutationFn: () => {
-      const payload = { ...form }
-      Object.keys(payload).forEach(k => payload[k] === '' && delete payload[k])
-      return helpdeskApi.tickets.create(payload)
-    },
+    mutationFn: () => { const p = { ...form }; Object.keys(p).forEach(k => p[k] === '' && delete p[k]); return helpdeskApi.tickets.create(p) },
     onSuccess: (t) => onCreated(t.id),
   })
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
-  const inp = { width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid #e1e6f0', fontSize: 14, outline: 'none', color: '#16233d', background: '#fff' }
-  const lbl = { fontSize: 12, fontWeight: 600, color: '#5a6b8c', display: 'block', marginBottom: 5 }
+  const LBL = { display: 'block', fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 5 }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(20,30,60,0.45)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: '8vh' }} onClick={onClose}>
-      <div style={{ width: '100%', maxWidth: 480, background: '#fff', borderRadius: 16, padding: 24, color: '#16233d' }} onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between" style={{ marginBottom: 16 }}>
-          <h2 style={{ fontSize: 17, fontWeight: 800, color: '#16233d' }}>New ticket</h2>
-          <button onClick={onClose}><X size={18} style={{ color: '#9aa4ba' }} /></button>
+    <div className="fixed inset-0 z-[70] flex items-start justify-center bg-black/50" style={{ paddingTop: '8vh' }} onClick={onClose}>
+      <div className="w-full max-w-[500px] rounded-2xl" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card-3d)', padding: 24, maxHeight: '85vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="font-black text-base" style={{ color: 'var(--text-h)' }}>New Ticket</h2>
+          <button onClick={onClose} className="hover:opacity-70"><X size={18} style={{ color: 'var(--text-muted)' }} /></button>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div><label style={lbl}>Subject *</label><input style={inp} value={form.subject} onChange={e => set('subject', e.target.value)} /></div>
-          <div><label style={lbl}>Description</label><textarea style={{ ...inp, minHeight: 72, resize: 'vertical' }} value={form.description} onChange={e => set('description', e.target.value)} /></div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <div><label style={lbl}>Priority</label>
-              <select style={inp} value={form.priority} onChange={e => set('priority', e.target.value)}>
-                {(settings?.priorities || [{ name: 'medium' }]).map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
-              </select>
-            </div>
-            <div><label style={lbl}>Status</label>
-              <select style={inp} value={form.status} onChange={e => set('status', e.target.value)}>
-                {(settings?.statuses || [{ name: 'open' }]).filter(s => s.name !== 'merged').map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
-              </select>
-            </div>
+        <div className="space-y-3.5">
+          <div><label style={LBL}>Subject *</label><input style={inp} value={form.subject} onChange={e => set('subject', e.target.value)} placeholder="What's the issue?" /></div>
+          <div><label style={LBL}>Description</label><textarea style={{ ...inp, minHeight: 80, resize: 'vertical' }} value={form.description} onChange={e => set('description', e.target.value)} placeholder="Describe in detail…" /></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label style={LBL}>Priority</label><select style={inp} value={form.priority} onChange={e => set('priority', e.target.value)}>{(settings?.priorities || [{ name: 'medium' }]).map(p => <option key={p.name} value={p.name}>{p.name}</option>)}</select></div>
+            <div><label style={LBL}>Status</label><select style={inp} value={form.status} onChange={e => set('status', e.target.value)}>{(settings?.statuses || [{ name: 'open' }]).filter(s => s.name !== 'merged').map(s => <option key={s.name} value={s.name}>{s.name}</option>)}</select></div>
           </div>
-          <div><label style={lbl}>Department</label>
-            <select style={inp} value={form.department_id} onChange={e => set('department_id', e.target.value)}>
-              <option value="">— none —</option>
-              {(settings?.departments || []).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-            </select>
+          <div><label style={LBL}>Department</label><select style={inp} value={form.department_id} onChange={e => set('department_id', e.target.value)}><option value="">— none —</option>{(settings?.departments || []).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label style={LBL}>Requester name</label><input style={inp} value={form.requester_name} onChange={e => set('requester_name', e.target.value)} /></div>
+            <div><label style={LBL}>Requester email</label><input style={inp} value={form.requester_email} onChange={e => set('requester_email', e.target.value)} /></div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <div><label style={lbl}>Requester name</label><input style={inp} value={form.requester_name} onChange={e => set('requester_name', e.target.value)} /></div>
-            <div><label style={lbl}>Requester email</label><input style={inp} value={form.requester_email} onChange={e => set('requester_email', e.target.value)} /></div>
-          </div>
-          {create.isError && <p style={{ fontSize: 12.5, color: '#dc2626' }}>{create.error?.message}</p>}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
-            <button onClick={onClose} style={{ padding: '9px 16px', borderRadius: 9, border: '1px solid #e1e6f0', fontSize: 13.5, fontWeight: 600, color: '#5a6b8c', background: '#fff' }}>Cancel</button>
-            <button disabled={!form.subject.trim() || create.isPending} onClick={() => create.mutate()}
-              style={{ padding: '9px 18px', borderRadius: 9, background: '#3b6fed', color: '#fff', fontSize: 13.5, fontWeight: 600, opacity: (!form.subject.trim() || create.isPending) ? 0.5 : 1 }}>
-              {create.isPending ? 'Creating…' : 'Create ticket'}
-            </button>
+          {create.isError && <div className="flex items-center gap-2 p-3 rounded-xl text-sm" style={{ background: 'rgba(239,68,68,0.08)', color: 'var(--color-danger-500)', border: '1px solid rgba(239,68,68,0.2)' }}><AlertCircle size={14} />{create.error?.message}</div>}
+          <div className="flex items-center justify-end gap-2 pt-1">
+            <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-semibold hover:opacity-80" style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}>Cancel</button>
+            <button disabled={!form.subject.trim() || create.isPending} onClick={() => create.mutate()} className="px-5 py-2 rounded-xl text-sm font-bold disabled:opacity-50" style={{ background: `linear-gradient(135deg,var(--color-support-400),var(--color-support-600))`, color: '#fff' }}>{create.isPending ? 'Creating…' : 'Create Ticket'}</button>
           </div>
         </div>
       </div>
