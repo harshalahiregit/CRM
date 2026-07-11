@@ -14,6 +14,10 @@ export const careersApi = {
   apply:  (slug, id, formData) => api.post(`/careers/${slug}/jobs/${id}/apply`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   }).then(r => r.data),
+  // Application tracking (public — matched by the applicant's own email/phone)
+  status:       (slug, id, payload) => api.post(`/careers/${slug}/jobs/${id}/status`, payload).then(r => r.data),
+  respondOffer: (slug, id, payload) => api.post(`/careers/${slug}/jobs/${id}/offer/respond`, payload).then(r => r.data),
+  offerLetterUrl: (slug, id, email) => `${BASE}/careers/${slug}/jobs/${id}/offer/letter?email=${encodeURIComponent(email)}`,
 }
 
 export default careersApi

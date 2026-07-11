@@ -18,6 +18,7 @@ const ModulesPage = lazy(() => import('@/pages/modules/ModulesPage'))
 // Public Career Portal (lazy, no auth)
 const CareerPortal = lazy(() => import('@/pages/careers/CareerPortal'))
 const CareerJobDetails = lazy(() => import('@/pages/careers/CareerJobDetails'))
+const OnboardingPortal = lazy(() => import('@/pages/careers/OnboardingPortal'))
 
 // HR Module (lazy)
 const HRLayout = lazy(() => import('@/modules/hr/HRLayout'))
@@ -106,6 +107,7 @@ export default function AppRoutes() {
       {/* Public Career Portal (no auth — tenant from :slug) */}
       <Route path="/careers/:slug" element={<S><CareerPortal /></S>} />
       <Route path="/careers/:slug/jobs/:id" element={<S><CareerJobDetails /></S>} />
+      <Route path="/onboarding/:token" element={<S><OnboardingPortal /></S>} />
 
       {/* Protected app routes */}
       <Route path="/app" element={<ProtectedRoute><AppShell /></ProtectedRoute>}>

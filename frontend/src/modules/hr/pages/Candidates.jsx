@@ -1,13 +1,16 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTheme } from '@/context/ThemeContext'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Search, X, Linkedin, Loader2, Upload, FileText } from 'lucide-react'
+import { Plus, Search, X, Linkedin, Loader2, Upload, FileText, Briefcase, Clock, CalendarDays, IndianRupee, UserCircle2, Hash } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+import { formatCTC } from '@/modules/hr/constants'
+import CandidateQuickActions from '@/modules/hr/components/CandidateQuickActions'
 
 const STAGES = ['Applied','Screening','Assessment','Interview','Offer','Hired','Rejected']
 const STAGE_COLORS = { Applied:'#3b82f6', Screening:'#f59e0b', Assessment:'#a855f7', Interview:'#6366f1', Offer:'#10b981', Hired:'#059669', Rejected:'#ef4444' }
-const SOURCE_COLORS = { LinkedIn:'#0077b5', Naukri:'#f97316', 'Career Page':'#7C3AED', 'Internal Portal':'#3b82f6', 'Employee Referral':'#10b981', 'Walk-in':'#6b7280' }
+const SOURCE_COLORS = { LinkedIn:'#0077b5', Naukri:'#f97316', 'Career Page':'#7C3AED', 'Internal Portal':'#3b82f6', 'Employee Referral':'#10b981', 'Walk-in':'#6b7280', Direct:'#8b5cf6' }
 const initials = n => (n||'').split(' ').slice(0,2).map(x=>x[0]).join('').toUpperCase()
+const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }) : null
 
 const EMPTY_FORM = { name:'', email:'', phone:'', location:'', current_company:'', experience_years:'', source:'LinkedIn', stage:'Applied', job_posting_id:'', linkedin_url:'', skills:[], notes:'' }
 
@@ -17,6 +20,7 @@ export default function Candidates() {
   const [view, setView]           = useState('kanban')
   const [candidates, setCands]    = useState([])
   const [jobs, setJobs]           = useState([])
+  const [recruiters, setRecruiters] = useState([])
   const [loading, setLoading]     = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [form, setForm]           = useState(EMPTY_FORM)
@@ -46,6 +50,12 @@ export default function Candidates() {
     } catch { showToast('Failed to load candidates','error') }
     finally { setLoading(false) }
   }, [stageF, search])
+
+  // Assignable recruiters — fetched once, shared by every quick-actions menu.
+  useEffect(() => { hrApi.candidates.recruiters().then(setRecruiters).catch(() => {}) }, [])
+
+  // Merge a quick-action result into the candidate in local state.
+  const patchCandidate = (id, partial) => setCands(prev => prev.map(c => c.id === id ? { ...c, ...partial } : c))
 
   useEffect(()=>{ fetchData() },[fetchData])
 
@@ -167,23 +177,41 @@ export default function Candidates() {
                   <span className="text-xs font-black w-6 h-6 rounded-full flex items-center justify-center" style={{ background:`${color}20`, color }}>{stageCands.length}</span>
                 </div>
                 <div className="p-3 space-y-2 max-h-[60vh] overflow-y-auto scrollbar-hide">
-                  {stageCands.map(c => (
-                    <div key={c.id} onClick={()=>navigate(`/app/hr/candidates/${c.id}`)} className="p-3 rounded-xl cursor-pointer transition-all card-3d" style={{ padding:'12px' }}
+                  {stageCands.map(c => {
+                    const ctcC = formatCTC(c.current_ctc), ctcE = formatCTC(c.expected_ctc)
+                    const applied = fmtDate(c.applied_at || c.created_at)
+                    return (
+                    <div key={c.id} onClick={()=>navigate(`/app/hr/candidates/${c.id}`)} className="rounded-xl cursor-pointer transition-all card-3d" style={{ padding:'12px' }}
                       onMouseEnter={e=>e.currentTarget.style.transform='translateY(-2px)'}
                       onMouseLeave={e=>e.currentTarget.style.transform='translateY(0)'}>
-                      <div className="flex items-center gap-2 mb-2">
+                      {/* header */}
+                      <div className="flex items-start gap-2 mb-2">
                         <div className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-black text-white flex-shrink-0" style={{ background:`linear-gradient(135deg,${color}cc,${color})` }}>{initials(c.name)}</div>
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                           <p className="text-xs font-bold truncate" style={{ color:'var(--text-h)' }}>{c.name}</p>
-                          <p className="text-[10px] truncate" style={{ color:'var(--text-muted)' }}>{c.job_posting?.title || 'Applied'}</p>
+                          <p className="text-[9px] font-mono flex items-center gap-0.5" style={{ color:'var(--text-muted)' }}><Hash size={8}/>CAND-{String(c.id).padStart(4,'0')}</p>
                         </div>
+                        {c.ai_score ? <span className="text-[10px] font-black flex-shrink-0" style={{ color:'#a78bfa' }}>AI {c.ai_score}%</span> : null}
+                        <div onClick={e=>e.stopPropagation()}><CandidateQuickActions candidate={c} recruiters={recruiters} onChanged={p=>patchCandidate(c.id,p)} onToast={showToast}/></div>
                       </div>
-                      <div className="flex items-center justify-between mt-1">
+                      {/* applied job */}
+                      <p className="text-[10px] truncate flex items-center gap-1 mb-2" style={{ color:'var(--text-muted)' }}><Briefcase size={9}/>{c.job_posting?.title || 'General Application'}</p>
+                      {/* meta grid */}
+                      <div className="grid grid-cols-2 gap-1.5 mb-2">
+                        {c.experience_years != null && c.experience_years !== '' && <span className="text-[9px] flex items-center gap-1" style={{ color:'var(--text-muted)' }}><Clock size={8}/>{c.experience_years} yrs exp</span>}
+                        {applied && <span className="text-[9px] flex items-center gap-1" style={{ color:'var(--text-muted)' }}><CalendarDays size={8}/>{applied}</span>}
+                        {(ctcC || ctcE) && <span className="text-[9px] flex items-center gap-1" style={{ color:'var(--text-muted)' }}><IndianRupee size={8}/>{ctcC||'—'}{ctcE?` → ${ctcE}`:''}</span>}
+                        {c.notice_period && <span className="text-[9px] flex items-center gap-1" style={{ color:'var(--text-muted)' }}>⏳ {c.notice_period}</span>}
+                      </div>
+                      {/* footer: source + recruiter */}
+                      <div className="flex items-center justify-between gap-1">
                         <span className="text-[9px] font-bold px-2 py-0.5 rounded-lg" style={{ background:`${SOURCE_COLORS[c.source]||'#7C3AED'}20`, color:SOURCE_COLORS[c.source]||'#7C3AED' }}>{c.source}</span>
-                        {c.ai_score && <span className="text-[10px] font-black" style={{ color:'#a78bfa' }}>AI {c.ai_score}%</span>}
+                        {c.assigned_recruiter
+                          ? <span className="text-[9px] flex items-center gap-1 truncate" style={{ color:'#34d399' }} title={`Recruiter: ${c.assigned_recruiter.name}`}><UserCircle2 size={9}/>{c.assigned_recruiter.name.split(' ')[0]}</span>
+                          : <span className="text-[9px] italic" style={{ color:'var(--text-muted)' }}>Unassigned</span>}
                       </div>
                     </div>
-                  ))}
+                  )})}
                   {stageCands.length === 0 && <p className="text-[10px] text-center py-4" style={{ color:'var(--text-muted)' }}>No candidates</p>}
                 </div>
               </div>
@@ -193,34 +221,44 @@ export default function Candidates() {
       ) : (
         // ── List View ──
         <div className="card-3d overflow-x-auto" style={{ padding:0 }}>
-          <table className="w-full text-sm">
+          <table className="w-full text-sm" style={{ minWidth:920 }}>
             <thead>
               <tr style={{ borderBottom:'1px solid var(--border)' }}>
-                {['Name','Applied For','Source','Stage','AI Score','Actions'].map(h=>(
-                  <th key={h} className="label-caps px-4 py-3 text-left">{h}</th>
+                {['ID','Candidate','Applied For','Exp','CTC (Cur → Exp)','Notice','Source','Stage','Applied','Recruiter','AI','Actions'].map(h=>(
+                  <th key={h} className="label-caps px-3 py-3 text-left whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {filtered.map(c=>{
                 const sc = STAGE_COLORS[c.stage]||'#7C3AED'
+                const ctcC = formatCTC(c.current_ctc), ctcE = formatCTC(c.expected_ctc)
                 return(
                   <tr key={c.id} style={{ borderBottom:'1px solid var(--border)' }}>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3 text-[10px] font-mono whitespace-nowrap" style={{ color:'var(--text-muted)' }}>CAND-{String(c.id).padStart(4,'0')}</td>
+                    <td className="px-3 py-3">
                       <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-black text-white" style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>{initials(c.name)}</div>
-                        <div>
-                          <p className="font-semibold" style={{ color:'var(--text-h)' }}>{c.name}</p>
-                          <p className="text-[10px]" style={{ color:'var(--text-muted)' }}>{c.email}</p>
+                        <div className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-black text-white flex-shrink-0" style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>{initials(c.name)}</div>
+                        <div className="min-w-0">
+                          <p className="font-semibold truncate" style={{ color:'var(--text-h)' }}>{c.name}</p>
+                          <p className="text-[10px] truncate" style={{ color:'var(--text-muted)' }}>{c.email||'—'}</p>
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-xs" style={{ color:'var(--text-muted)' }}>{c.job_posting?.title||'—'}</td>
-                    <td className="px-4 py-3"><span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:`${SOURCE_COLORS[c.source]||'#7C3AED'}20`, color:SOURCE_COLORS[c.source]||'#7C3AED' }}>{c.source}</span></td>
-                    <td className="px-4 py-3"><span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:`${sc}15`, color:sc }}>{c.stage}</span></td>
-                    <td className="px-4 py-3 font-black text-sm" style={{ color:'#a78bfa' }}>{c.ai_score ? `${c.ai_score}%` : '—'}</td>
-                    <td className="px-4 py-3">
-                      <button onClick={()=>navigate(`/app/hr/candidates/${c.id}`)} className="px-3 py-1.5 rounded-xl text-[11px] font-bold" style={{ background:'rgba(124,58,237,0.12)', color:'#a78bfa' }}>View Profile</button>
+                    <td className="px-3 py-3 text-xs whitespace-nowrap" style={{ color:'var(--text-muted)' }}>{c.job_posting?.title||'General'}</td>
+                    <td className="px-3 py-3 text-xs whitespace-nowrap" style={{ color:'var(--text-muted)' }}>{c.experience_years!=null&&c.experience_years!==''?`${c.experience_years} yrs`:'—'}</td>
+                    <td className="px-3 py-3 text-xs whitespace-nowrap" style={{ color:'var(--text-muted)' }}>{ctcC||ctcE?`${ctcC||'—'} → ${ctcE||'—'}`:'—'}</td>
+                    <td className="px-3 py-3 text-xs whitespace-nowrap" style={{ color:'var(--text-muted)' }}>{c.notice_period||'—'}</td>
+                    <td className="px-3 py-3"><span className="text-[10px] font-bold px-2 py-0.5 rounded-lg whitespace-nowrap" style={{ background:`${SOURCE_COLORS[c.source]||'#7C3AED'}20`, color:SOURCE_COLORS[c.source]||'#7C3AED' }}>{c.source}</span></td>
+                    <td className="px-3 py-3"><span className="text-[10px] font-bold px-2 py-0.5 rounded-lg whitespace-nowrap" style={{ background:`${sc}15`, color:sc }}>{c.stage}</span></td>
+                    <td className="px-3 py-3 text-[11px] whitespace-nowrap" style={{ color:'var(--text-muted)' }}>{fmtDate(c.applied_at||c.created_at)||'—'}</td>
+                    <td className="px-3 py-3 text-[11px] whitespace-nowrap" style={{ color:c.assigned_recruiter?'#34d399':'var(--text-muted)' }}>{c.assigned_recruiter?.name||'Unassigned'}</td>
+                    <td className="px-3 py-3 font-black text-sm whitespace-nowrap" style={{ color:'#a78bfa' }}>{c.ai_score ? `${c.ai_score}%` : '—'}</td>
+                    <td className="px-3 py-3">
+                      <div className="flex items-center gap-1">
+                        <button onClick={()=>navigate(`/app/hr/candidates/${c.id}`)} className="px-3 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap" style={{ background:'rgba(124,58,237,0.12)', color:'#a78bfa' }}>View</button>
+                        <CandidateQuickActions candidate={c} recruiters={recruiters} onChanged={p=>patchCandidate(c.id,p)} onToast={showToast} hideView/>
+                      </div>
                     </td>
                   </tr>
                 )

@@ -435,9 +435,14 @@ function InterviewsTab({ interviews }) {
         <div key={iv.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: 'var(--bg-input)', borderRadius: 10, border: '1px solid var(--border)', flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 160 }}>
             <div style={{ color: 'var(--text-h)', fontWeight: 700, fontSize: 13.5 }}>{iv._candidate}</div>
-            <div style={{ color: 'var(--text-muted)', fontSize: 11.5 }}>{iv.round_name}{iv.interviewer_name ? ` · ${iv.interviewer_name}` : ''}</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: 11.5 }}>
+              {iv.round_name}
+              <span style={{ opacity: 0.8 }}> · {iv.mode === 'offline' ? '📍 Offline' : '🎥 Online'}</span>
+              {iv.interviewer_name ? ` · ${iv.interviewer_name}` : ''}
+            </div>
           </div>
           <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{fmtDateTime(iv.scheduled_at)}</span>
+          {iv.recommendation && <Badge color="#a78bfa">{iv.recommendation}</Badge>}
           {iv.result && iv.result !== 'Pending' && <Badge color={INTERVIEW_RESULT_COLORS[iv.result]}>{iv.result}</Badge>}
           <Badge color={INTERVIEW_STATUS_COLORS[iv.status] || '#6b7280'}>{iv.status}</Badge>
         </div>

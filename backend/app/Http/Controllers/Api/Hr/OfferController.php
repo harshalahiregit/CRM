@@ -29,13 +29,17 @@ class OfferController extends Controller
         return response()->json($offer, 201);
     }
 
-    public function show(HrOffer $offer)
+    public function show(Request $request, HrOffer $offer)
     {
+        $this->assertTenant($request, $offer);
+
         return response()->json($offer->load('candidate'));
     }
 
-    public function send(HrOffer $offer)
+    public function send(Request $request, HrOffer $offer)
     {
+        $this->assertTenant($request, $offer);
+
         $updated = $this->offerService->send($offer);
 
         return response()->json($updated);
@@ -43,15 +47,25 @@ class OfferController extends Controller
 
     public function updateStatus(UpdateOfferStatusRequest $request, HrOffer $offer)
     {
+        $this->assertTenant($request, $offer);
+
         $updated = $this->offerService->updateStatus($offer, $request->validated('status'), $request->validated('rejection_reason'));
 
         return response()->json($updated);
     }
 
-    public function destroy(HrOffer $offer)
+    public function destroy(Request $request, HrOffer $offer)
     {
+        $this->assertTenant($request, $offer);
+
         $this->offerService->destroy($offer);
 
         return response()->json(['message' => 'Deleted']);
+    }
+
+    /** Tenant guard for route-model-bound offers (row-level isolation). */
+    private function assertTenant(Request $request, HrOffer $offer): void
+    {
+        abort_unless((int) $offer->tenant_id === (int) $request->user()->tenant_id, 404, 'Offer not found');
     }
 }

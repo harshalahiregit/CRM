@@ -5,6 +5,7 @@ namespace App\Services\Hr;
 use App\Exceptions\BusinessException;
 use App\Models\Hr\HrCandidate;
 use App\Models\Hr\HrJobPosting;
+use App\Models\User;
 use App\Notifications\WhatsApp\ApplicationReceivedNotification;
 use App\Notifications\WhatsApp\StatusUpdateNotification;
 use App\Repositories\Hr\CandidateRepository;
@@ -53,6 +54,14 @@ class CandidateService
 
         ApplicationReceivedNotification::send($candidate);
 
+        // Timeline: opens the candidate's audit trail. Actor auto-resolves to the
+        // authenticated HR user, or "System" for public Career-Portal applies.
+        $candidate->recordAudit('Applied', null, null, array_filter([
+            'source' => $candidate->source,
+            'stage'  => $candidate->stage,
+            'job'    => $candidate->jobPosting?->title,
+        ]));
+
         Log::channel('hr')->info('Candidate created', ['candidate_id' => $candidate->id, 'tenant_id' => $tenantId]);
 
         return $candidate;
@@ -80,22 +89,36 @@ class CandidateService
         $oldStage = $candidate->stage;
         $candidate->update(['stage' => $stage]);
 
-        if ($candidate->email && $oldStage !== $stage) {
-            $message = '';
-            if ($stage === 'Rejected') {
-                $message = 'We appreciate your interest and wish you the best in your career endeavors.';
-            } elseif ($stage === 'Hired') {
-                $message = 'Congratulations on successfully completing all rounds!';
-            }
-
-            Mail::to($candidate->email)->send(
-                new \App\Mail\ApplicationStatusMail($candidate->load('jobPosting'), $stage, $message)
-            );
-        }
-
         if ($oldStage !== $stage) {
-            StatusUpdateNotification::send($candidate, $stage);
+            // Audit + log first — the stage change and its timeline entry must
+            // persist regardless of whether any downstream notification fails.
+            $candidate->recordAudit('Moved to '.$stage, null, null, ['from' => $oldStage, 'to' => $stage]);
             Log::channel('hr')->info('Candidate stage changed', ['candidate_id' => $candidate->id, 'tenant_id' => $candidate->tenant_id, 'from' => $oldStage, 'to' => $stage]);
+
+            StatusUpdateNotification::send($candidate, $stage);
+
+            // Email is best-effort: a mail failure must never roll back the stage
+            // change or break the request — log it and carry on.
+            if ($candidate->email) {
+                try {
+                    $statusMessage = match ($stage) {
+                        'Rejected' => 'We appreciate your interest and wish you the best in your career endeavors.',
+                        'Hired'    => 'Congratulations on successfully completing all rounds!',
+                        default    => '',
+                    };
+
+                    Mail::to($candidate->email)->send(
+                        new \App\Mail\ApplicationStatusMail($candidate->load('jobPosting'), $stage, $statusMessage)
+                    );
+                } catch (\Throwable $e) {
+                    Log::channel('hr')->error('Candidate stage email failed', [
+                        'candidate_id' => $candidate->id,
+                        'tenant_id'    => $candidate->tenant_id,
+                        'stage'        => $stage,
+                        'error'        => $e->getMessage(),
+                    ]);
+                }
+            }
         }
 
         return $candidate;
@@ -103,6 +126,7 @@ class CandidateService
 
     public function updateDecision(HrCandidate $candidate, string $decision): HrCandidate
     {
+        $oldStage = $candidate->stage;
         $candidate->update(['final_decision' => $decision]);
 
         if ($decision === 'Selected') {
@@ -110,6 +134,14 @@ class CandidateService
         } elseif ($decision === 'Rejected') {
             $candidate->update(['stage' => 'Rejected']);
         }
+
+        // One audit line captures the decision and any implied stage change, so
+        // the timeline reads cleanly (no duplicate "Moved to …" entry).
+        $candidate->recordAudit('Decision: '.$decision, null, null, array_filter([
+            'decision'   => $decision,
+            'from_stage' => $oldStage !== $candidate->stage ? $oldStage : null,
+            'to_stage'   => $oldStage !== $candidate->stage ? $candidate->stage : null,
+        ]));
 
         Log::channel('hr')->info('Candidate decision updated', ['candidate_id' => $candidate->id, 'tenant_id' => $candidate->tenant_id, 'decision' => $decision]);
 
@@ -121,6 +153,47 @@ class CandidateService
         $candidate->delete();
 
         Log::channel('hr')->info('Candidate deleted', ['candidate_id' => $candidate->id, 'tenant_id' => $candidate->tenant_id]);
+    }
+
+    /**
+     * Assign (or clear, when $recruiterId is null) the owning recruiter. The
+     * recruiter must be an assignable user in the candidate's own tenant.
+     */
+    public function assignRecruiter(HrCandidate $candidate, ?int $recruiterId): HrCandidate
+    {
+        $recruiter = null;
+
+        if ($recruiterId) {
+            $recruiter = $this->assignableRecruiters($candidate->tenant_id)
+                ->firstWhere('id', $recruiterId);
+
+            if (! $recruiter) {
+                throw new BusinessException('Selected recruiter is not available in this workspace.', 422);
+            }
+        }
+
+        $candidate->update(['assigned_recruiter_id' => $recruiter?->id]);
+
+        $candidate->recordAudit(
+            $recruiter ? 'Assigned to '.$recruiter->name : 'Recruiter unassigned',
+            null,
+            null,
+            array_filter(['recruiter_id' => $recruiter?->id, 'recruiter' => $recruiter?->name])
+        );
+
+        Log::channel('hr')->info('Candidate recruiter assigned', ['candidate_id' => $candidate->id, 'tenant_id' => $candidate->tenant_id, 'recruiter_id' => $recruiter?->id]);
+
+        return $candidate->fresh()->load('assignedRecruiter');
+    }
+
+    /** Users in a tenant who can own candidates (internal team, active). */
+    public function assignableRecruiters(int $tenantId)
+    {
+        return User::where('tenant_id', $tenantId)
+            ->where('status', 'active')
+            ->whereIn('role', ['admin', 'staff'])
+            ->orderBy('name')
+            ->get(['id', 'name', 'role', 'internal_role']);
     }
 
     // ── AI Score Calculator ─────────────────────────────────────────────

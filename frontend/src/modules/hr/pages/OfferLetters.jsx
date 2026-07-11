@@ -26,12 +26,22 @@ export default function OfferLetters() {
   const fetchData = async () => {
     setLoading(true)
     try {
-      const [offs, cands] = await Promise.all([hrApi.offers.list(), hrApi.candidates.list({stage:'Interview'})])
-      setOffers(offs); setCands(cands)
+      // Offer-ready = candidates whose onboarding has been verified and APPROVED
+      // (Sprint 2 gate). Offers can only be generated after onboarding approval.
+      const [offs, approvedOnb] = await Promise.all([hrApi.offers.list(), hrApi.onboarding.list({ verification_status: 'Approved' })])
+      setOffers(offs); setCands(approvedOnb)
     } catch { showToast('Failed to load offers','error') }
     finally { setLoading(false) }
   }
   useEffect(()=>{ fetchData() },[])
+
+  // Approved-onboarding candidates without an offer letter yet — one click generates it.
+  const offeredCandidateIds = new Set(offers.map(o => Number(o.candidate_id)))
+  const readyForOffer = candidates.filter(o => o.candidate_id && !offeredCandidateIds.has(Number(o.candidate_id)))
+  const openGenerateFor = (onb) => {
+    setForm({ ...EMPTY_FORM, candidate_id: String(onb.candidate_id), position: onb.position || '', department: onb.department || '' })
+    setShowModal(true)
+  }
 
   const handleCreate = async () => {
     if (!form.candidate_id||!form.offered_ctc||!form.joining_date) return showToast('Candidate, CTC and joining date required','error')
@@ -98,6 +108,27 @@ export default function OfferLetters() {
         ))}
       </div>
 
+      {/* Ready for Offer — candidates the pipeline auto-moved to the Offer stage */}
+      {!loading && readyForOffer.length > 0 && (
+        <div className="rounded-2xl p-4" style={{ background:'rgba(16,185,129,0.08)', border:'1px solid rgba(16,185,129,0.25)' }}>
+          <p className="text-xs font-bold mb-3 flex items-center gap-2" style={{ color:'#10b981' }}>
+            <Mail size={13}/> Ready for Offer · {readyForOffer.length}
+            <span className="font-medium" style={{ color:'var(--text-muted)' }}>— cleared interviews, awaiting an offer letter</span>
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {readyForOffer.map(o => (
+              <div key={o.id} className="flex items-center gap-2 px-3 py-1.5 rounded-xl" style={{ background:'var(--bg-input)', border:'1px solid var(--border)' }}>
+                <span className="text-xs font-semibold" style={{ color:'var(--text-h)' }}>{o.candidate_name}</span>
+                {o.position && <span className="text-[10px]" style={{ color:'var(--text-muted)' }}>· {o.position}</span>}
+                <button onClick={()=>openGenerateFor(o)} className="text-[10px] font-bold px-2 py-1 rounded-lg text-white flex items-center gap-1" style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>
+                  <Plus size={9}/> Generate Offer
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Acceptance progress */}
       {stats.generated > 0 && (
         <div className="card-3d" style={{ padding:'20px' }}>
@@ -161,10 +192,10 @@ export default function OfferLetters() {
           <div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()}>
             <div className="flex items-center justify-between mb-5"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>Generate Offer Letter</h2><button onClick={()=>setShowModal(false)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
             <div className="space-y-3">
-              <div><label className="label">Candidate *</label>
-                <select className="input-3d text-sm" value={form.candidate_id} onChange={e=>{ const c=candidates.find(x=>x.id==e.target.value); setForm({...form,candidate_id:e.target.value,position:c?.job_posting?.title||'',department:c?.job_posting?.department||''})}}>
+              <div><label className="label">Candidate * <span style={{ color:'var(--text-muted)', fontWeight:400 }}>(onboarding approved)</span></label>
+                <select className="input-3d text-sm" value={form.candidate_id} onChange={e=>{ const o=candidates.find(x=>String(x.candidate_id)===e.target.value); setForm({...form,candidate_id:e.target.value,position:o?.position||'',department:o?.department||''})}}>
                   <option value="">Select candidate...</option>
-                  {candidates.map(c=><option key={c.id} value={c.id}>{c.name} — {c.stage}</option>)}
+                  {readyForOffer.map(o=><option key={o.id} value={o.candidate_id}>{o.candidate_name} — {o.position}</option>)}
                 </select>
               </div>
               <div className="grid grid-cols-2 gap-3">

@@ -1,7 +1,105 @@
 import { useState, useEffect } from 'react'
 import { useTheme } from '@/context/ThemeContext'
-import { Plus, X, Check } from 'lucide-react'
+import { Plus, X, Check, Download, FileText, ShieldCheck } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+
+const VERIF_STYLE = (s) => s === 'Approved' ? { c: '#10b981', bg: 'rgba(16,185,129,0.12)' }
+  : s === 'Submitted' ? { c: '#a78bfa', bg: 'rgba(124,58,237,0.12)' }
+  : s === 'Rejected' ? { c: '#f87171', bg: 'rgba(239,68,68,0.1)' }
+  : { c: '#fbbf24', bg: 'rgba(245,158,11,0.12)' }
+const DOC_TYPE_LABEL = { aadhaar: 'Aadhaar', pan: 'PAN', resume: 'Resume', photo: 'Photo', address_proof: 'Address Proof', company_document: 'Company Doc', other: 'Other' }
+
+// HR verification of a candidate's submitted onboarding (documents / background / medical).
+function VerifyPanel({ record, onVerify }) {
+  const [flags, setFlags] = useState({ doc_verified: !!record.doc_verified, background_verified: !!record.background_verified, medical_verified: !!record.medical_verified })
+  const [notes, setNotes] = useState(record.verification_notes || '')
+  const [reason, setReason] = useState('')
+  const vs = record.verification_status
+  const st = VERIF_STYLE(vs)
+  const docs = record.documents || []
+  const sub = record.submission || {}
+
+  const download = async (doc) => {
+    try {
+      const blob = await hrApi.onboarding.documentBlob(record.id, doc.id)
+      const url = URL.createObjectURL(blob)
+      const a = window.document.createElement('a'); a.href = url; a.download = doc.original_name; a.click()
+      setTimeout(() => URL.revokeObjectURL(url), 1500)
+    } catch { /* ignore */ }
+  }
+
+  return (
+    <div className="mt-4 pt-3 rounded-2xl" style={{ borderTop: '1px solid var(--border)' }}>
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-xs font-bold flex items-center gap-1.5" style={{ color: 'var(--text-h)' }}><ShieldCheck size={13} style={{ color: '#a78bfa' }} /> Candidate Onboarding Verification</p>
+        <span className="text-[10px] font-bold px-2.5 py-1 rounded-xl" style={{ background: st.bg, color: st.c }}>{vs}</span>
+      </div>
+
+      {vs === 'Pending' && <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Waiting for the candidate to submit their details via the onboarding link.</p>}
+
+      {vs !== 'Pending' && (
+        <>
+          {/* Submitted details summary */}
+          {(sub.personal_details || sub.bank_details || sub.address) && (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-3">
+              {sub.personal_details?.dob && <Info k="DOB" v={sub.personal_details.dob} />}
+              {sub.address?.city && <Info k="City" v={sub.address.city} />}
+              {sub.emergency_contact?.name && <Info k="Emergency" v={`${sub.emergency_contact.name}${sub.emergency_contact.phone ? ' · ' + sub.emergency_contact.phone : ''}`} />}
+              {sub.bank_details?.account_number && <Info k="Bank A/C" v={sub.bank_details.account_number} />}
+              {sub.bank_details?.ifsc && <Info k="IFSC" v={sub.bank_details.ifsc} />}
+            </div>
+          )}
+
+          {/* Documents */}
+          {docs.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-3">
+              {docs.map(d => (
+                <button key={d.id} onClick={() => download(d)} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }}>
+                  <FileText size={11} style={{ color: '#a78bfa' }} /> {DOC_TYPE_LABEL[d.type] || d.type} <Download size={10} style={{ color: 'var(--text-muted)' }} />
+                </button>
+              ))}
+            </div>
+          )}
+
+          {vs === 'Approved' ? (
+            <p className="text-xs font-semibold" style={{ color: '#10b981' }}>✓ Verified &amp; approved — this candidate is ready for an offer letter.</p>
+          ) : vs === 'Rejected' ? (
+            <p className="text-xs" style={{ color: '#f87171' }}>Sent back to candidate{record.rejection_reason ? `: ${record.rejection_reason}` : ''}. Awaiting re-submission.</p>
+          ) : (
+            <>
+              <div className="flex flex-wrap gap-3 mb-2">
+                {[['doc_verified', 'Documents'], ['background_verified', 'Background'], ['medical_verified', 'Medical (optional)']].map(([k, l]) => (
+                  <label key={k} className="flex items-center gap-1.5 text-xs cursor-pointer" style={{ color: 'var(--text-muted)' }}>
+                    <input type="checkbox" checked={!!flags[k]} onChange={e => setFlags(f => ({ ...f, [k]: e.target.checked }))} /> {l}
+                  </label>
+                ))}
+              </div>
+              <input className="input-3d text-xs mb-2" placeholder="Verification notes (optional)" value={notes} onChange={e => setNotes(e.target.value)} />
+              <div className="flex gap-2">
+                <button onClick={() => onVerify(record.id, { ...flags, verification_notes: notes, decision: 'approve' })}
+                  disabled={!flags.doc_verified || !flags.background_verified}
+                  className="flex-1 py-2 rounded-xl text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg,#10b981,#059669)', opacity: (!flags.doc_verified || !flags.background_verified) ? 0.5 : 1 }}>
+                  ✓ Approve Onboarding
+                </button>
+                <button onClick={() => { const rr = window.prompt('Reason to send back to the candidate:'); if (rr !== null) onVerify(record.id, { ...flags, decision: 'reject', rejection_reason: rr }) }}
+                  className="flex-1 py-2 rounded-xl text-xs font-bold" style={{ background: 'rgba(239,68,68,0.1)', color: '#f87171' }}>
+                  Send Back
+                </button>
+              </div>
+              {(!flags.doc_verified || !flags.background_verified) && <p className="text-[10px] mt-1.5" style={{ color: 'var(--text-muted)' }}>Document &amp; background verification are required to approve.</p>}
+            </>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+const Info = ({ k, v }) => (
+  <div className="px-2.5 py-1.5 rounded-lg" style={{ background: 'var(--bg-input)' }}>
+    <p className="text-[9px]" style={{ color: 'var(--text-muted)' }}>{k}</p>
+    <p className="text-[11px] font-semibold truncate" style={{ color: 'var(--text-h)' }}>{v}</p>
+  </div>
+)
 
 const STEPS = [
   { key: 'doc_verification', label: 'Document Verification', icon: '1' },
@@ -101,6 +199,14 @@ export default function Onboarding() {
     } finally {
       setSaving(false)
     }
+  }
+
+  const handleVerify = async (id, payload) => {
+    try {
+      const updated = await hrApi.onboarding.verify(id, payload)
+      setRecords(prev => prev.map(r => r.id === id ? updated : r))
+      showToast(payload.decision === 'approve' ? 'Onboarding approved — offer can now be generated.' : payload.decision === 'reject' ? 'Onboarding sent back to candidate.' : 'Verification saved')
+    } catch (e) { showToast(e.response?.data?.message || 'Failed to verify', 'error') }
   }
 
   const getStepDone = (r, key) => r[`step_${key}`] || false
@@ -236,6 +342,9 @@ export default function Onboarding() {
                     {done}/{STEPS.length} steps completed
                   </p>
                 </div>
+
+                {/* Candidate onboarding verification (Sprint 2 flow) */}
+                {r.verification_status && <VerifyPanel record={r} onVerify={handleVerify} />}
 
                 {expanded === r.id && (
                   <>

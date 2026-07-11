@@ -105,15 +105,43 @@ export const hrApi = {
     },
     resumeUrl:     (id)          => `${BASE}/hr/candidates/${id}/resume`,
     deleteResume:  (id)          => api.delete(`/hr/candidates/${id}/resume`).then(r => r.data),
+    // Recruiter assignment
+    recruiters:    ()            => api.get('/hr/candidates/recruiters').then(r => r.data),
+    assign:        (id, recruiterId) => api.patch(`/hr/candidates/${id}/assign`, { recruiter_id: recruiterId }).then(r => r.data),
+    // Collaborative notes thread
+    notes: {
+      list:   (id)          => api.get(`/hr/candidates/${id}/notes`).then(r => r.data),
+      add:    (id, body)    => api.post(`/hr/candidates/${id}/notes`, { body }).then(r => r.data),
+      delete: (id, noteId)  => api.delete(`/hr/candidates/${id}/notes/${noteId}`).then(r => r.data),
+    },
+    // Typed documents (beyond the primary resume)
+    documents: {
+      list:   (id)          => api.get(`/hr/candidates/${id}/documents`).then(r => r.data),
+      upload: (id, file, type = 'other') => {
+        const fd = new FormData()
+        fd.append('document', file)
+        fd.append('type', type)
+        return api.post(`/hr/candidates/${id}/documents`, fd, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        }).then(r => r.data)
+      },
+      url:    (id, docId)   => `${BASE}/hr/candidates/${id}/documents/${docId}`,
+      // Authenticated blob fetch (bearer header) — safe for private files.
+      blob:   (id, docId)   => api.get(`/hr/candidates/${id}/documents/${docId}`, { responseType: 'blob' }).then(r => r.data),
+      delete: (id, docId)   => api.delete(`/hr/candidates/${id}/documents/${docId}`).then(r => r.data),
+    },
   },
 
 
   // ── Interviews ──────────────────────────────────────────────────────
   interviews: {
     list:             (params = {}) => api.get('/hr/interviews', { params }).then(r => r.data),
+    stats:            ()            => api.get('/hr/interviews/stats').then(r => r.data),
     schedule:         (data)        => api.post('/hr/interviews', data).then(r => r.data),
     get:              (id)          => api.get(`/hr/interviews/${id}`).then(r => r.data),
+    update:           (id, data)    => api.put(`/hr/interviews/${id}`, data).then(r => r.data),
     recordFeedback:   (id, data)    => api.patch(`/hr/interviews/${id}/feedback`, data).then(r => r.data),
+    cancel:           (id, reason)  => api.patch(`/hr/interviews/${id}/cancel`, { reason }).then(r => r.data),
     generateMeetLink: (id)          => api.post(`/hr/interviews/${id}/meet-link`).then(r => r.data),
     sendNotification: (id, type)    => api.post(`/hr/interviews/${id}/notify`, { type }).then(r => r.data),
     delete:           (id)          => api.delete(`/hr/interviews/${id}`).then(r => r.data),
@@ -136,6 +164,9 @@ export const hrApi = {
     start:          (data)        => api.post('/hr/onboarding', data).then(r => r.data),
     toggleStep:     (id, step)    => api.patch(`/hr/onboarding/${id}/step`, { step }).then(r => r.data),
     updateChecklist:(id, checklist)=> api.patch(`/hr/onboarding/${id}/step`, { checklist }).then(r => r.data),
+    verify:         (id, data)    => api.patch(`/hr/onboarding/${id}/verify`, data).then(r => r.data),
+    documentUrl:    (id, docId)   => `${BASE}/hr/onboarding/${id}/documents/${docId}`,
+    documentBlob:   (id, docId)   => api.get(`/hr/onboarding/${id}/documents/${docId}`, { responseType: 'blob' }).then(r => r.data),
     delete:         (id)          => api.delete(`/hr/onboarding/${id}`).then(r => r.data),
   },
 

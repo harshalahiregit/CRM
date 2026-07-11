@@ -2,12 +2,14 @@
 
 namespace App\Models\Hr;
 
+use App\Models\Traits\Auditable;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 
 class HrCandidate extends Model
 {
-    use HasFactory;
+    use HasFactory, Auditable;
 
     protected $table = 'hr_candidates';
 
@@ -17,6 +19,7 @@ class HrCandidate extends Model
         'linkedin_url','linkedin_data','resume_path','ai_score','ai_breakdown',
         'skills','notes','final_decision','whatsapp_opt_in','whatsapp_number',
         'current_ctc','expected_ctc','notice_period','applied_at',
+        'assigned_recruiter_id',
     ];
 
     protected $casts = [
@@ -53,6 +56,21 @@ class HrCandidate extends Model
     public function whatsappLogs()
     {
         return $this->hasMany(HrWhatsAppLog::class, 'candidate_id')->latest();
+    }
+
+    public function assignedRecruiter()
+    {
+        return $this->belongsTo(User::class, 'assigned_recruiter_id');
+    }
+
+    public function candidateNotes()
+    {
+        return $this->hasMany(HrCandidateNote::class, 'candidate_id')->with('user')->latest();
+    }
+
+    public function documents()
+    {
+        return $this->hasMany(HrCandidateDocument::class, 'candidate_id')->latest();
     }
 
     /**

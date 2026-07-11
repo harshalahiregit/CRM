@@ -14,7 +14,9 @@ class RecordInterviewFeedbackRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'result'                => 'required|in:Pending,Passed,Failed,On Hold',
+            'result'                => 'required|in:Pending,Passed,Failed,On Hold,Next Round',
+            'recommendation'        => 'nullable|in:Strong Hire,Hire,Neutral,No Hire',
+            'rating'                => 'nullable|integer|min:1|max:5',
             'notes'                 => 'nullable|string',
             'status'                => 'in:Scheduled,Completed,Cancelled,Rescheduled',
             'technical_score'       => 'nullable|integer|min:0|max:10',

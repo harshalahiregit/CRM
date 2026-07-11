@@ -69,7 +69,51 @@ export const CANDIDATE_STAGES = ['Applied', 'Screening', 'Assessment', 'Intervie
 export const STAGE_COLORS = { Applied: '#3b82f6', Screening: '#f59e0b', Assessment: '#a855f7', Interview: '#6366f1', Offer: '#10b981', Hired: '#059669', Rejected: '#ef4444' }
 export const DECISION_COLORS = { Selected: '#10b981', Hold: '#f59e0b', Rejected: '#ef4444', Pending: '#6b7280' }
 export const INTERVIEW_STATUS_COLORS = { Scheduled: '#f59e0b', Completed: '#10b981', Cancelled: '#ef4444', Rescheduled: '#8b5cf6' }
-export const INTERVIEW_RESULT_COLORS = { Passed: '#10b981', Failed: '#ef4444', Pending: '#f59e0b' }
+export const INTERVIEW_RESULT_COLORS = { Passed: '#10b981', Failed: '#ef4444', Pending: '#f59e0b', 'On Hold': '#fbbf24', 'Next Round': '#6366f1' }
+
+// Standard interview pipeline rounds (round_name is free-text; these are the presets).
+export const INTERVIEW_ROUNDS = ['HR Screening', 'Technical', 'Technical L2', 'Managerial', 'HR Final']
+export const ROUND_COLORS = { 'HR Screening': '#7C3AED', Technical: '#3b82f6', 'Technical L2': '#0ea5e9', Managerial: '#f59e0b', 'HR Final': '#10b981' }
+export const roundColor = (r) => ROUND_COLORS[r] || '#7C3AED'
+export const INTERVIEW_MODES = ['online', 'offline']
+export const INTERVIEW_RESULTS = ['Pending', 'Passed', 'Failed', 'On Hold', 'Next Round']
+export const RECOMMENDATIONS = ['Strong Hire', 'Hire', 'Neutral', 'No Hire']
+export const RECOMMENDATION_COLORS = { 'Strong Hire': '#059669', Hire: '#10b981', Neutral: '#f59e0b', 'No Hire': '#ef4444' }
+
+// Candidate sources — used for the Add form dropdown and the source badge.
+export const CANDIDATE_SOURCES = ['LinkedIn', 'Naukri', 'Career Page', 'Internal Portal', 'Employee Referral', 'Walk-in', 'Direct']
+export const SOURCE_COLORS = {
+  LinkedIn: '#0077b5', Naukri: '#f97316', 'Career Page': '#7C3AED', 'Internal Portal': '#3b82f6',
+  'Employee Referral': '#10b981', 'Walk-in': '#6b7280', Direct: '#8b5cf6',
+}
+export const sourceColor = (s) => SOURCE_COLORS[s] || '#7C3AED'
+
+// Candidate document categories — mirrors HrCandidateDocument::TYPES on the backend.
+export const DOCUMENT_TYPES = [
+  { key: 'resume',      label: 'Resume' },
+  { key: 'offer',       label: 'Offer Letter' },
+  { key: 'id_proof',    label: 'ID Proof' },
+  { key: 'certificate', label: 'Certificate' },
+  { key: 'other',       label: 'Other' },
+]
+export const documentTypeLabel = (t) => DOCUMENT_TYPES.find(d => d.key === t)?.label || 'Other'
+
+// Common AI-match bands (shared between card and profile).
+export const aiBand = (score = 0) =>
+  score >= 90 ? { label: 'Highly Recommended', color: '#10b981', bg: 'rgba(16,185,129,0.12)' }
+  : score >= 70 ? { label: 'Recommended',       color: '#a78bfa', bg: 'rgba(124,58,237,0.12)' }
+  : score >= 50 ? { label: 'Consider',          color: '#fbbf24', bg: 'rgba(245,158,11,0.12)' }
+  :               { label: 'Not Recommended',   color: '#f87171', bg: 'rgba(239,68,68,0.1)' }
+
+// Compact INR money formatter for CTC display (accepts lakh-style numbers).
+export const formatCTC = (v) => {
+  if (v === null || v === undefined || v === '' || isNaN(Number(v))) return null
+  const n = Number(v)
+  if (n >= 10000000) return `₹${(n / 10000000).toFixed(2).replace(/\.00$/, '')} Cr`
+  if (n >= 100000)   return `₹${(n / 100000).toFixed(2).replace(/\.00$/, '')} L`
+  if (n >= 1000)     return `₹${(n / 1000).toFixed(0)}K`
+  return `₹${n}`
+}
 
 export const JOB_STATUSES = Object.values(JOB_STATUS)
 export const jobStatusLabel = (s) => JOB_STATUS_CONFIG[s]?.label || s || '—'

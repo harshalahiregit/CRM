@@ -55,6 +55,14 @@ return [
             'throw'      => false,
         ],
 
+        // ── HR Candidate Documents — private, served via controller ───────
+        'hr_documents' => [
+            'driver'     => 'local',
+            'root'       => storage_path('app/private/hr/documents'),
+            'visibility' => 'private',
+            'throw'      => false,
+        ],
+
         's3' => [
             'driver' => 's3',
             'key' => env('AWS_ACCESS_KEY_ID'),

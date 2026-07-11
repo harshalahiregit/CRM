@@ -1,23 +1,32 @@
 @extends('emails.layout')
 
 @section('content')
-    <h2>Welcome to {{ config('app.name') }}!</h2>
-    
-    <p>Dear {{ $onboarding->candidate_name }},</p>
-    
-    <p>Congratulations and welcome to {{ config('app.name') }}! We are excited to have you join our team.</p>
-    
+    <h2>🎉 Congratulations, {{ $onboarding->candidate_name }}!</h2>
+
+    <p>We are delighted to inform you that you have been <strong>selected</strong> for the position of
+        <strong>{{ $onboarding->position }}</strong>@if($onboarding->department) in the {{ $onboarding->department }} department@endif at {{ config('app.name') }}.</p>
+
+    @if(!empty($portalLink))
+        <p><strong>Next step — complete your onboarding.</strong> Please use your secure link below to submit your
+            details and documents so our HR team can verify them:</p>
+        <p style="text-align:center;margin:24px 0;">
+            <a href="{{ $portalLink }}" class="button" style="background:#7C3AED;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:700;">Complete Onboarding</a>
+        </p>
+        <p style="font-size:13px;color:#64748b;">Or copy this link: {{ $portalLink }}</p>
+    @endif
+
     <div class="info-box">
         <p><strong>Onboarding Information:</strong></p>
         <p><strong>Position:</strong> {{ $onboarding->position }}</p>
         @if($onboarding->department)
             <p><strong>Department:</strong> {{ $onboarding->department }}</p>
         @endif
-        <p><strong>Joining Date:</strong> {{ \Carbon\Carbon::parse($onboarding->joining_date)->format('F j, Y') }}</p>
+        @if($onboarding->joining_date)
+            <p><strong>Tentative Joining Date:</strong> {{ \Carbon\Carbon::parse($onboarding->joining_date)->format('F j, Y') }}</p>
+        @endif
     </div>
-    
-    <p><strong>What's Next?</strong></p>
-    <p>To ensure a smooth onboarding process, please complete the following steps:</p>
+
+    <p><strong>What you'll need to submit:</strong></p>
     
     <ul>
         <li>Document Verification - Upload required documents</li>

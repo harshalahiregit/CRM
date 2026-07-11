@@ -14,11 +14,17 @@ class StoreInterviewRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'candidate_id'     => 'required|exists:hr_candidates,id',
-            'round_name'       => 'required|string',
-            'interviewer_name' => 'nullable|string',
-            'scheduled_at'     => 'required|date',
-            'meet_link'        => 'nullable|url',
+            'candidate_id'         => 'required|exists:hr_candidates,id',
+            'round_name'           => 'required|string',
+            'mode'                 => 'nullable|in:online,offline',
+            'interviewer_name'     => 'nullable|string',
+            'interviewers'         => 'nullable|array',
+            'interviewers.*.name'  => 'required_with:interviewers|string',
+            'interviewers.*.email' => 'nullable|email',
+            'scheduled_at'         => 'required|date',
+            'meet_link'            => 'nullable|url',
+            'venue'                => 'nullable|string|max:255',
+            'reminder_minutes'     => 'nullable|integer|min:0',
         ];
     }
 }

@@ -4,6 +4,8 @@ use App\Http\Controllers\Api\Hr\HRDashboardController;
 use App\Http\Controllers\Api\Hr\ManpowerRequestController;
 use App\Http\Controllers\Api\Hr\JobPostingController;
 use App\Http\Controllers\Api\Hr\CandidateController;
+use App\Http\Controllers\Api\Hr\CandidateNoteController;
+use App\Http\Controllers\Api\Hr\CandidateDocumentController;
 use App\Http\Controllers\Api\Hr\ResumeController;
 use App\Http\Controllers\Api\Hr\InterviewController;
 use App\Http\Controllers\Api\Hr\OfferController;
@@ -66,23 +68,37 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
 
     // Candidates
     Route::get('/candidates',                           [CandidateController::class, 'index']);
+    Route::get('/candidates/recruiters',                [CandidateController::class, 'recruiters']);
     Route::post('/candidates',                          [CandidateController::class, 'store']);
     Route::post('/candidates/linkedin-parse',           [CandidateController::class, 'linkedinParse']);
     Route::get('/candidates/{candidate}',               [CandidateController::class, 'show']);
     Route::put('/candidates/{candidate}',               [CandidateController::class, 'update']);
     Route::patch('/candidates/{candidate}/stage',       [CandidateController::class, 'updateStage']);
     Route::patch('/candidates/{candidate}/decision',    [CandidateController::class, 'updateDecision']);
+    Route::patch('/candidates/{candidate}/assign',      [CandidateController::class, 'assign']);
     Route::delete('/candidates/{candidate}',            [CandidateController::class, 'destroy']);
     // Resume upload / download / delete
     Route::post('/candidates/{candidate}/resume',       [ResumeController::class, 'upload']);
     Route::get('/candidates/{candidate}/resume',        [ResumeController::class, 'download']);
     Route::delete('/candidates/{candidate}/resume',     [ResumeController::class, 'delete']);
+    // Collaborative notes thread
+    Route::get('/candidates/{candidate}/notes',                 [CandidateNoteController::class, 'index']);
+    Route::post('/candidates/{candidate}/notes',                [CandidateNoteController::class, 'store']);
+    Route::delete('/candidates/{candidate}/notes/{note}',       [CandidateNoteController::class, 'destroy']);
+    // Documents (typed, beyond the primary resume)
+    Route::get('/candidates/{candidate}/documents',             [CandidateDocumentController::class, 'index']);
+    Route::post('/candidates/{candidate}/documents',            [CandidateDocumentController::class, 'store']);
+    Route::get('/candidates/{candidate}/documents/{document}',  [CandidateDocumentController::class, 'download']);
+    Route::delete('/candidates/{candidate}/documents/{document}',[CandidateDocumentController::class, 'destroy']);
 
     // Interviews
     Route::get('/interviews',                               [InterviewController::class, 'index']);
+    Route::get('/interviews/stats',                         [InterviewController::class, 'stats']);
     Route::post('/interviews',                              [InterviewController::class, 'store']);
     Route::get('/interviews/{interviewRound}',              [InterviewController::class, 'show']);
+    Route::put('/interviews/{interviewRound}',              [InterviewController::class, 'update']);
     Route::patch('/interviews/{interviewRound}/feedback',   [InterviewController::class, 'recordFeedback']);
+    Route::patch('/interviews/{interviewRound}/cancel',     [InterviewController::class, 'cancel']);
     Route::post('/interviews/{interviewRound}/meet-link',   [InterviewController::class, 'generateMeetLink']);
     Route::post('/interviews/{interviewRound}/notify',      [InterviewController::class, 'sendNotification']);
     Route::delete('/interviews/{interviewRound}',           [InterviewController::class, 'destroy']);
@@ -99,6 +115,8 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::get('/onboarding',                           [OnboardingController::class, 'index']);
     Route::post('/onboarding',                          [OnboardingController::class, 'store']);
     Route::get('/onboarding/{onboarding}',              [OnboardingController::class, 'show']);
+    Route::patch('/onboarding/{onboarding}/verify',     [OnboardingController::class, 'verify']);
+    Route::get('/onboarding/{onboarding}/documents/{document}', [OnboardingController::class, 'downloadDocument']);
     Route::patch('/onboarding/{onboarding}/step',       [OnboardingController::class, 'toggleStep']);
     Route::delete('/onboarding/{onboarding}',           [OnboardingController::class, 'destroy']);
 

@@ -15,16 +15,25 @@ class ApplicationStatusMail extends Mailable
 
     public $candidate;
     public $newStage;
-    public $message;
+
+    /**
+     * Custom message for the applicant.
+     *
+     * NOTE: this property is intentionally NOT named `message`. Laravel injects
+     * the Illuminate\Mail\Message instance into every mail view as `$message`,
+     * which would override a same-named public property and leak the object into
+     * the Blade template (htmlspecialchars() on a Message → TypeError).
+     */
+    public $statusMessage;
 
     /**
      * Create a new message instance.
      */
-    public function __construct(HrCandidate $candidate, string $newStage, string $message = '')
+    public function __construct(HrCandidate $candidate, string $newStage, string $statusMessage = '')
     {
         $this->candidate = $candidate;
         $this->newStage = $newStage;
-        $this->message = $message;
+        $this->statusMessage = $statusMessage;
     }
 
     /**

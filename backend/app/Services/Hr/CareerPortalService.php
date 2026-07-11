@@ -6,10 +6,12 @@ use App\Exceptions\BusinessException;
 use App\Models\Hr\HrCandidate;
 use App\Models\Hr\HrJobPosting;
 use App\Models\Tenant;
+use App\Repositories\Hr\CandidateRepository;
 use App\Support\Hr\JobPostingStatus;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Public Career Portal — unauthenticated. The tenant is resolved from the URL
@@ -19,8 +21,12 @@ use Illuminate\Support\Facades\Log;
  */
 class CareerPortalService
 {
-    public function __construct(private ResumeService $resumeService)
-    {
+    public function __construct(
+        private ResumeService $resumeService,
+        private CandidateRepository $candidateRepository,
+        private InterviewService $interviewService,
+        private OfferService $offerService,
+    ) {
     }
 
     /**
@@ -79,6 +85,12 @@ class CareerPortalService
             throw new BusinessException('This job is no longer accepting applications', 404);
         }
 
+        // Enterprise ATS: one application per person per job. Match on email OR
+        // phone so the same candidate can't re-apply under either identifier.
+        if ($this->candidateRepository->existsForJobByEmailOrPhone($data['email'] ?? null, $data['phone'] ?? null, $job->id, $tenant->id)) {
+            throw new BusinessException('You have already applied for this position. Track your application status on this page.', 409);
+        }
+
         return DB::transaction(function () use ($tenant, $job, $data, $resume) {
             $candidate = HrCandidate::create([
                 'tenant_id'        => $tenant->id,           // hard-scoped to the portal's tenant
@@ -112,6 +124,125 @@ class CareerPortalService
 
             return $candidate;
         });
+    }
+
+    /**
+     * Public application-tracking status for a candidate (matched by email OR
+     * phone) on a given job. Returns only portal-safe fields; interview/offer
+     * data is derived through the existing InterviewService / candidate relations
+     * so behaviour stays consistent with the HR side. Tenant-scoped throughout.
+     */
+    public function applicationStatus(Tenant $tenant, int $jobId, ?string $email, ?string $phone): array
+    {
+        $candidate = $this->candidateRepository->findApplicationForJob($email, $phone, $jobId, $tenant->id);
+
+        if (! $candidate) {
+            return ['applied' => false];
+        }
+
+        return [
+            'applied'        => true,
+            'reference'      => 'APP-'.$candidate->id,
+            'name'           => $candidate->name,
+            'stage'          => $candidate->stage,
+            'final_decision' => $candidate->final_decision,
+            'applied_at'     => optional($candidate->applied_at ?? $candidate->created_at)->toIso8601String(),
+            'job_title'      => optional($candidate->jobPosting)->title,
+            'interview'      => $this->publicInterview($candidate, $tenant),
+            'offer'          => $this->publicOffer($candidate),
+        ];
+    }
+
+    /** Candidate's next scheduled interview, portal-safe (online link vs venue). */
+    private function publicInterview(HrCandidate $candidate, Tenant $tenant): ?array
+    {
+        $round = $this->interviewService->list($tenant->id, ['candidate_id' => $candidate->id])
+            ->where('status', 'Scheduled')
+            ->sortBy('scheduled_at')
+            ->first();
+
+        if (! $round) {
+            return null;
+        }
+
+        return array_filter([
+            'round_name'   => $round->round_name,
+            'scheduled_at' => optional($round->scheduled_at)->toIso8601String(),
+            'mode'         => $round->mode ?? 'online',
+            'meet_link'    => ($round->mode ?? 'online') === 'online' ? $round->meet_link : null,
+            'venue'        => $round->mode === 'offline' ? $round->venue : null,
+            'status'       => $round->status,
+        ], fn ($v) => $v !== null && $v !== '');
+    }
+
+    /** Candidate's offer, only once it has actually been sent to them. */
+    private function publicOffer(HrCandidate $candidate): ?array
+    {
+        $offer = $candidate->offer;
+
+        if (! $offer || ! in_array($offer->status, ['Sent', 'Accepted', 'Rejected'], true)) {
+            return null;
+        }
+
+        return [
+            'status'       => $offer->status,
+            'position'     => $offer->position,
+            'offered_ctc'  => $offer->offered_ctc,
+            'joining_date' => optional($offer->joining_date)->toDateString(),
+            'can_respond'  => $offer->status === 'Sent',
+            'can_download' => ! empty($offer->letter_path),
+        ];
+    }
+
+    /**
+     * Candidate accepts or declines their offer from the portal. Reuses
+     * OfferService::updateStatus so the candidate stage / decision update
+     * exactly as they would from the HR side.
+     */
+    public function respondToOffer(Tenant $tenant, int $jobId, string $email, string $action, ?string $reason): array
+    {
+        $candidate = $this->candidateRepository->findApplicationForJob($email, null, $jobId, $tenant->id);
+        $offer     = $candidate?->offer;
+
+        if (! $offer) {
+            throw new BusinessException('No offer found for this application.', 404);
+        }
+        if ($offer->status !== 'Sent') {
+            throw new BusinessException('This offer can no longer be updated.', 422);
+        }
+
+        $this->offerService->updateStatus(
+            $offer,
+            $action === 'accept' ? 'Accepted' : 'Rejected',
+            $action === 'decline' ? ($reason ?: 'Declined by candidate') : null
+        );
+
+        Log::channel('hr')->info('Career portal offer response', ['tenant_id' => $tenant->id, 'candidate_id' => $candidate->id, 'action' => $action]);
+
+        return $this->applicationStatus($tenant, $jobId, $email, null);
+    }
+
+    /** Resolve the candidate's offer letter file for download (portal-safe). */
+    public function offerLetter(Tenant $tenant, int $jobId, string $email): array
+    {
+        $candidate = $this->candidateRepository->findApplicationForJob($email, null, $jobId, $tenant->id);
+        $offer     = $candidate?->offer;
+
+        if (! $offer || empty($offer->letter_path) || ! in_array($offer->status, ['Sent', 'Accepted', 'Rejected'], true)) {
+            throw new BusinessException('Offer letter is not available.', 404);
+        }
+
+        $disk = Storage::disk('local')->exists($offer->letter_path) ? 'local'
+            : (Storage::disk('public')->exists($offer->letter_path) ? 'public' : null);
+
+        if (! $disk) {
+            throw new BusinessException('Offer letter is not available.', 404);
+        }
+
+        return [
+            'path'     => Storage::disk($disk)->path($offer->letter_path),
+            'filename' => 'Offer-Letter-'.$candidate->id.'.'.pathinfo($offer->letter_path, PATHINFO_EXTENSION),
+        ];
     }
 
     /** Base query: this tenant's jobs that are live AND on the career portal. */

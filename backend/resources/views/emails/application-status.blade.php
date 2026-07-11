@@ -9,8 +9,8 @@
     
     <div class="info-box">
         <p><strong>New Status:</strong> {{ $newStage }}</p>
-        @if(!empty($message))
-            <p><strong>Message:</strong> {{ $message }}</p>
+        @if(!empty($statusMessage))
+            <p><strong>Message:</strong> {{ $statusMessage }}</p>
         @endif
     </div>
     
