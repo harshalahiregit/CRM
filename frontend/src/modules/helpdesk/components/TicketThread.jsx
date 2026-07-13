@@ -161,26 +161,30 @@ export default function TicketThread() {
   })
 
   // Optimistic reply — the bubble appears immediately; composer clears at once.
+  // The composer text/files/cc are snapshotted at click-time and passed in as
+  // mutation variables. onMutate clears the textarea and, because it is async,
+  // React re-renders during its await — so reading `message` inside mutationFn
+  // would see the already-cleared '' and send an empty message (422). Passing
+  // the snapshot avoids that race entirely.
   const postReply = useMutation({
-    mutationFn: async ({ resolve } = {}) => {
+    mutationFn: async ({ resolve, text, ccVal, fileList } = {}) => {
       const fd = new FormData()
-      fd.append('message', message)
+      fd.append('message', text)
       fd.append('sender_type', 'admin')
       if (user?.id) fd.append('sender_id', user.id)
-      parseCc(cc).valid.forEach(email => fd.append('cc[]', email))
-      files.forEach(f => fd.append('attachments[]', f))
+      parseCc(ccVal).valid.forEach(email => fd.append('cc[]', email))
+      ;(fileList || []).forEach(f => fd.append('attachments[]', f))
       const res = await helpdeskApi.tickets.reply(id, fd)
       if (resolve) await helpdeskApi.tickets.setStatus(id, resolveStatus)
       return res
     },
-    onMutate: async () => {
+    onMutate: async ({ text } = {}) => {
       await queryClient.cancelQueries({ queryKey: repliesKey })
       const prev = queryClient.getQueryData(repliesKey)
-      const optimistic = { id: `tmp-${Date.now()}`, message, sender_type: 'admin', sender: { name: user?.name }, created_at: new Date().toISOString(), _optimistic: true }
+      const optimistic = { id: `tmp-${Date.now()}`, message: text, sender_type: 'admin', sender: { name: user?.name }, created_at: new Date().toISOString(), _optimistic: true }
       queryClient.setQueryData(repliesKey, (old = []) => [...(Array.isArray(old) ? old : []), optimistic])
-      const sent = message
       setMessage(''); setFiles([]); setCc('')
-      return { prev, sent }
+      return { prev, sent: text }
     },
     onError: (_e, _v, ctx) => {
       if (ctx?.prev) queryClient.setQueryData(repliesKey, ctx.prev)
@@ -194,15 +198,14 @@ export default function TicketThread() {
 
   // Optimistic private note — appears instantly in the panel + activity timeline.
   const addNote = useMutation({
-    mutationFn: () => helpdeskApi.tickets.addNote(id, message),
-    onMutate: async () => {
+    mutationFn: ({ text } = {}) => helpdeskApi.tickets.addNote(id, text),
+    onMutate: async ({ text } = {}) => {
       await queryClient.cancelQueries({ queryKey: notesKey })
       const prev = queryClient.getQueryData(notesKey)
-      const optimistic = { id: `tmp-${Date.now()}`, content: message, user: { name: user?.name }, created_at: new Date().toISOString(), _optimistic: true }
+      const optimistic = { id: `tmp-${Date.now()}`, content: text, user: { name: user?.name }, created_at: new Date().toISOString(), _optimistic: true }
       queryClient.setQueryData(notesKey, (old = []) => [...(Array.isArray(old) ? old : []), optimistic])
-      const sent = message
       setMessage('')
-      return { prev, sent }
+      return { prev, sent: text }
     },
     onError: (_e, _v, ctx) => {
       if (ctx?.prev) queryClient.setQueryData(notesKey, ctx.prev)
@@ -214,9 +217,10 @@ export default function TicketThread() {
   const busy = postReply.isPending || addNote.isPending
   const submit = (e, resolve = false) => {
     e?.preventDefault?.()
-    if (!message.trim() || busy) return
-    if (composerMode === 'note') addNote.mutate()
-    else postReply.mutate({ resolve })
+    const text = message.trim()
+    if (!text || busy) return
+    if (composerMode === 'note') addNote.mutate({ text })
+    else postReply.mutate({ resolve, text, ccVal: cc, fileList: files })
   }
 
   // Keyboard shortcuts: r = reply, n = note, e = resolve (ignored while typing).
