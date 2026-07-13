@@ -27,6 +27,18 @@ class TicketReplyController extends Controller
     /* ── Post a reply (multipart, with optional file uploads) ───── */
     public function store(Request $request, int $ticket)
     {
+        // Drop any Cc entry that isn't a valid email BEFORE validation. A stray or
+        // browser-autofilled value (e.g. a name) would otherwise 422 the entire
+        // reply — making it look like "sending a message doesn't work". Cc is a
+        // best-effort convenience field; a bad address should never block the reply.
+        $request->merge([
+            'cc' => collect($request->input('cc', []))
+                ->filter(fn ($e) => is_string($e) && filter_var(trim($e), FILTER_VALIDATE_EMAIL))
+                ->map(fn ($e) => trim($e))
+                ->values()
+                ->all(),
+        ]);
+
         $request->validate([
             'sender_type'   => ['required', 'in:client,admin,agent'],
             'sender_id'     => ['nullable', 'integer', 'min:1'],
