@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Plus, Send, Receipt, Trash2, X, MoreVertical,
   LayoutGrid, List, FileText, User, Tag, MapPin, ChevronDown
@@ -55,6 +55,17 @@ export default function Estimates() {
     salesApi.estimates.list({ status: filter !== 'All' ? filter : undefined }).then(d => { setData(d); setLoading(false) })
   }
   useEffect(() => { load() }, [filter])
+
+  // Arriving from a customer profile's "New Proforma Invoice" button.
+  const [searchParams, setSearchParams] = useSearchParams()
+  useEffect(() => {
+    if (searchParams.get('new') === '1') {
+      const cid = searchParams.get('client_id') || ''
+      setForm(p => ({ ...p, client_id: cid }))
+      setShowDrawer(true)
+      setSearchParams({}, { replace: true })
+    }
+  }, [])
 
   const sf = (k, v) => setForm(p => ({ ...p, [k]: v }))
 

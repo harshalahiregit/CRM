@@ -19,6 +19,9 @@ class StoreClientRequest extends FormRequest
             'phone'            => 'nullable|string|max:30',
             'website'          => 'nullable|string|max:255',
             'parent_company'   => 'nullable|string|max:255',
+            'opening_balance'  => 'nullable|numeric',
+            'opening_balance_date' => 'nullable|date',
+            'show_primary_contact' => 'nullable|boolean',
             'vendor_id'        => 'nullable|integer',
             'lead_id'          => 'nullable|integer',
 

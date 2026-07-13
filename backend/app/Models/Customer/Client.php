@@ -20,7 +20,7 @@ class Client extends Model
 
     protected $fillable = [
         'tenant_id', 'company', 'gst_number', 'phone', 'website', 'parent_company',
-        'vendor_id', 'lead_id',
+        'opening_balance', 'opening_balance_date', 'vendor_id', 'lead_id',
         'address', 'city', 'state', 'zip', 'country',
         'billing_street', 'billing_city', 'billing_state', 'billing_zip', 'billing_country',
         'shipping_street', 'shipping_city', 'shipping_state', 'shipping_zip', 'shipping_country',
@@ -33,6 +33,8 @@ class Client extends Model
         'foundation_date'      => 'date',
         'dob'                  => 'date',
         'anniversary_date'     => 'date',
+        'opening_balance'      => 'decimal:2',
+        'opening_balance_date' => 'date',
         'show_primary_contact' => 'boolean',
         'active'               => 'boolean',
     ];
@@ -55,12 +57,42 @@ class Client extends Model
 
     public function admins(): BelongsToMany
     {
-        return $this->belongsToMany(User::class, 'customer_admins')->withTimestamps();
+        return $this->belongsToMany(User::class, 'customer_admins')->withPivot('tenant_id')->withTimestamps();
     }
 
     public function creator()
     {
         return $this->belongsTo(User::class, 'added_by');
+    }
+
+    public function notes(): HasMany
+    {
+        return $this->hasMany(ClientNote::class)->latest();
+    }
+
+    public function reminders(): HasMany
+    {
+        return $this->hasMany(ClientReminder::class)->orderBy('remind_at');
+    }
+
+    public function vaultEntries(): HasMany
+    {
+        return $this->hasMany(ClientVaultEntry::class)->latest();
+    }
+
+    public function attachments(): HasMany
+    {
+        return $this->hasMany(ClientAttachment::class)->latest();
+    }
+
+    public function addresses(): HasMany
+    {
+        return $this->hasMany(ClientAddress::class)->latest();
+    }
+
+    public function recipients(): HasMany
+    {
+        return $this->hasMany(ClientRecipient::class)->latest();
     }
 
     /* ── Address snapshot ──────────────────────────────────────── */

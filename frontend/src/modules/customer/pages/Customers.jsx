@@ -2,15 +2,19 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Plus, Search, Edit2, Trash2, X, Upload, Download, Building2, Users,
-  UserCheck, TrendingUp, ChevronDown, FileSpreadsheet, FileText, Eye,
+  UserCheck, TrendingUp, ChevronDown, FileSpreadsheet, FileText, Eye, UserCog,
 } from 'lucide-react'
 import { customerApi } from '@/services/customerApi'
 import { useToast } from '@/hooks/useToast'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 
-const TABS = ['Details', 'Billing & Shipping', 'Custom Fields']
+const TABS = ['Details', 'Billing & Shipping', 'Custom Fields', 'Customer Admins']
+const CURRENCIES = ['INR', 'USD', 'EUR', 'GBP', 'AED', 'SGD']
+const LANGUAGES = ['English', 'Hindi', 'Marathi']
 const EMPTY = {
   company: '', gst_number: '', phone: '', website: '', parent_company: '', vendor_id: '',
+  opening_balance: '', opening_balance_date: '', show_primary_contact: false,
+  default_currency: 'INR', default_language: 'English', group_ids: [],
   address: '', city: '', state: '', zip: '', country: '',
   billing_street: '', billing_city: '', billing_state: '', billing_zip: '', billing_country: '',
   shipping_street: '', shipping_city: '', shipping_state: '', shipping_zip: '', shipping_country: '',
@@ -36,11 +40,12 @@ export default function Customers() {
   const [editing, setEditing] = useState(null)
   const [form, setForm] = useState(EMPTY)
   const [customFieldDefs, setCustomFieldDefs] = useState([])
+  const [groupOptions, setGroupOptions] = useState([])
+  const [adminData, setAdminData] = useState({ assigned: [], assignable: [] })
   const [saving, setSaving] = useState(false)
 
   const [confirmDel, setConfirmDel] = useState(null)
   const [exportOpen, setExportOpen] = useState(false)
-  const [importResult, setImportResult] = useState(null)
 
   const sf = (k, v) => setForm(p => ({ ...p, [k]: v }))
   const sfSocial = (k, v) => setForm(p => ({ ...p, social_links: { ...p.social_links, [k]: v } }))
@@ -59,7 +64,9 @@ export default function Customers() {
 
   const openCreate = () => {
     setEditing(null); setForm(EMPTY); setTab('Details')
+    setAdminData({ assigned: [], assignable: [] })
     customerApi.customFields.list().then(setCustomFieldDefs).catch(() => setCustomFieldDefs([]))
+    customerApi.groups.list().then(setGroupOptions).catch(() => setGroupOptions([]))
     setDrawer(true)
   }
 
@@ -67,18 +74,48 @@ export default function Customers() {
     try {
       const full = await customerApi.get(row.id)
       setEditing(full)
-      const defs = await customerApi.customFields.list().catch(() => [])
-      setCustomFieldDefs(defs)
+      const [defs, groups, admins] = await Promise.all([
+        customerApi.customFields.list().catch(() => []),
+        customerApi.groups.list().catch(() => []),
+        customerApi.admins(row.id).catch(() => ({ assigned: [], assignable: [] })),
+      ])
+      setCustomFieldDefs(defs); setGroupOptions(groups); setAdminData(admins)
       const cfMap = {}
       ;(full.custom_fields ?? []).forEach(f => { cfMap[f.id] = f.value ?? '' })
       setForm({
         ...EMPTY, ...full,
         social_links: { ...EMPTY.social_links, ...(full.social_links || {}) },
         contacts: full.contacts?.length ? full.contacts : EMPTY.contacts,
+        group_ids: (full.groups ?? []).map(g => g.id),
         custom_fields: cfMap,
         apply_to_previous_documents: false,
       })
       setTab('Details'); setDrawer(true)
+    } catch (e) { toast.error(e.message) }
+  }
+
+  const toggleGroup = (gid) => setForm(p => ({
+    ...p,
+    group_ids: p.group_ids.includes(gid) ? p.group_ids.filter(x => x !== gid) : [...p.group_ids, gid],
+  }))
+
+  const addGroup = async () => {
+    const name = window.prompt('New group name')
+    if (!name?.trim()) return
+    try {
+      const g = await customerApi.groups.create({ name: name.trim() })
+      setGroupOptions(prev => [...prev, g])
+      toggleGroup(g.id)
+    } catch (e) { toast.error(e.message) }
+  }
+
+  const toggleAdmin = async (userId) => {
+    if (!editing) return
+    const assignedIds = adminData.assigned.map(a => a.id)
+    const next = assignedIds.includes(userId) ? assignedIds.filter(x => x !== userId) : [...assignedIds, userId]
+    try {
+      const updated = await customerApi.syncAdmins(editing.id, next)
+      setAdminData(d => ({ ...d, assigned: updated }))
     } catch (e) { toast.error(e.message) }
   }
 
@@ -93,7 +130,12 @@ export default function Customers() {
     if (!form.company.trim()) { setTab('Details'); return toast.error('Company name is required') }
     setSaving(true)
     try {
-      const payload = { ...form, vendor_id: form.vendor_id || null }
+      const payload = {
+        ...form,
+        vendor_id: form.vendor_id || null,
+        opening_balance: form.opening_balance === '' ? null : form.opening_balance,
+        opening_balance_date: form.opening_balance_date || null,
+      }
       if (editing) { await customerApi.update(editing.id, payload); toast.success('Customer updated') }
       else { await customerApi.create(payload); toast.success('Customer created') }
       setDrawer(false); load(); loadStats()
@@ -112,7 +154,6 @@ export default function Customers() {
       const preview = await customerApi.import(file, true)
       if (!window.confirm(`Preview: ${preview.imported} rows will import, ${preview.skipped} skipped.${preview.errors?.length ? '\n\n' + preview.errors.slice(0, 5).join('\n') : ''}\n\nProceed with import?`)) return
       const res = await customerApi.import(file, false)
-      setImportResult(res)
       toast.success(`Imported ${res.imported} customer(s)${res.skipped ? `, ${res.skipped} skipped` : ''}`)
       load(); loadStats()
     } catch (err) { toast.error(err.message) }
@@ -290,6 +331,10 @@ export default function Customers() {
             <div className="drawer-body">
               {tab === 'Details' && (
                 <div className="space-y-4">
+                  <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer" style={{ color: 'var(--text-muted)' }}>
+                    <input type="checkbox" checked={!!form.show_primary_contact} onChange={e => sf('show_primary_contact', e.target.checked)} />
+                    Show primary contact full name on Invoices, Estimates, Payments, Credit Notes
+                  </label>
                   <div>
                     <label className="label">Company / Client Name *</label>
                     <input className="input-3d text-sm" placeholder="e.g. Acme Pvt Ltd" value={form.company} onChange={e => sf('company', e.target.value)} />
@@ -301,6 +346,46 @@ export default function Customers() {
                   <div className="grid grid-cols-2 gap-4">
                     <div><label className="label">Website</label><input className="input-3d text-sm" value={form.website} onChange={e => sf('website', e.target.value)} /></div>
                     <div><label className="label">Parent Company</label><input className="input-3d text-sm" placeholder="e.g. UBCPL Group" value={form.parent_company} onChange={e => sf('parent_company', e.target.value)} /></div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div><label className="label">Opening Balance</label><input type="number" className="input-3d text-sm" placeholder="0.00" value={form.opening_balance} onChange={e => sf('opening_balance', e.target.value)} /></div>
+                    <div><label className="label">Balance as of</label><input type="date" className="input-3d text-sm" value={form.opening_balance_date || ''} onChange={e => sf('opening_balance_date', e.target.value)} /></div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="label">Currency</label>
+                      <select className="input-3d text-sm" value={form.default_currency} onChange={e => sf('default_currency', e.target.value)}>
+                        {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label">Default Language</label>
+                      <select className="input-3d text-sm" value={form.default_language} onChange={e => sf('default_language', e.target.value)}>
+                        {LANGUAGES.map(l => <option key={l} value={l}>{l}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  {/* Groups */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="label mb-0">Groups</label>
+                      <button type="button" onClick={addGroup} className="text-xs font-bold flex items-center gap-1" style={{ color: '#a78bfa' }}><Plus size={12} /> New group</button>
+                    </div>
+                    {groupOptions.length === 0 ? (
+                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>No groups yet — create one.</p>
+                    ) : (
+                      <div className="flex gap-1.5 flex-wrap">
+                        {groupOptions.map(g => {
+                          const on = form.group_ids.includes(g.id)
+                          return (
+                            <button key={g.id} type="button" onClick={() => toggleGroup(g.id)} className="px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all"
+                              style={{ background: on ? 'linear-gradient(135deg,#7C3AED,#5b21b6)' : 'var(--bg-input)', color: on ? '#fff' : 'var(--text-muted)', border: '1px solid var(--border)' }}>
+                              {g.name}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
                   </div>
 
                   {/* Registered address */}
@@ -415,6 +500,31 @@ export default function Customers() {
                         onChange={v => setForm(p => ({ ...p, custom_fields: { ...(p.custom_fields || {}), [def.id]: v } }))} />
                     </div>
                   ))}
+                </div>
+              )}
+
+              {tab === 'Customer Admins' && (
+                <div className="space-y-3">
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Staff assigned here are the account managers for this customer.</p>
+                  {!editing ? (
+                    <div className="py-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>Save the customer first, then assign account managers here.</div>
+                  ) : adminData.assignable.length === 0 ? (
+                    <div className="py-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No staff users available to assign.</div>
+                  ) : adminData.assignable.map(u => {
+                    const on = adminData.assigned.some(a => a.id === u.id)
+                    return (
+                      <label key={u.id} className="flex items-center gap-3 p-3 rounded-xl cursor-pointer" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+                        <input type="checkbox" checked={on} onChange={() => toggleAdmin(u.id)} />
+                        <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.12)' }}>
+                          <UserCog size={14} style={{ color: '#a78bfa' }} />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold" style={{ color: 'var(--text-h)' }}>{u.name}</p>
+                          <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{u.email}</p>
+                        </div>
+                      </label>
+                    )
+                  })}
                 </div>
               )}
             </div>

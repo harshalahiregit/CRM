@@ -6,6 +6,7 @@ use App\Exceptions\BusinessException;
 use App\Exceptions\UnauthorizedTenantException;
 use App\Models\Customer\Client;
 use App\Models\Customer\ClientContact;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -316,6 +317,135 @@ class ClientService
             ->limit(100)
             ->get()
             ->all();
+    }
+
+    /* ── Sales-document loop-ins (read-only, by client_id) ─────── */
+    public function invoices(Client $client, int $tenantId): array
+    {
+        $this->assertTenant($client, $tenantId);
+
+        return DB::table('sales_invoices')
+            ->where('tenant_id', $tenantId)->where('client_id', $client->id)->whereNull('deleted_at')
+            ->select('id', 'number', 'date', 'due_date', 'total', 'paid', 'balance', 'status')
+            ->orderByDesc('date')->limit(200)->get()->all();
+    }
+
+    public function estimates(Client $client, int $tenantId): array
+    {
+        $this->assertTenant($client, $tenantId);
+
+        return DB::table('estimates')
+            ->where('tenant_id', $tenantId)->where('client_id', $client->id)->whereNull('deleted_at')
+            ->select('id', 'reference', 'subject', 'date', 'valid_until', 'total', 'status')
+            ->orderByDesc('date')->limit(200)->get()->all();
+    }
+
+    public function proposals(Client $client, int $tenantId): array
+    {
+        $this->assertTenant($client, $tenantId);
+
+        return DB::table('proposals')
+            ->where('tenant_id', $tenantId)
+            ->where('rel_type', 'customer')->where('rel_id', $client->id)
+            ->whereNull('deleted_at')
+            ->select('id', 'subject', 'total', 'status', 'created_at')
+            ->orderByDesc('created_at')->limit(200)->get()->all();
+    }
+
+    public function creditNotes(Client $client, int $tenantId): array
+    {
+        $this->assertTenant($client, $tenantId);
+
+        return DB::table('credit_notes')
+            ->where('tenant_id', $tenantId)->where('client_id', $client->id)->whereNull('deleted_at')
+            ->select('id', 'number', 'date', 'total', 'remaining', 'status')
+            ->orderByDesc('date')->limit(200)->get()->all();
+    }
+
+    public function payments(Client $client, int $tenantId): array
+    {
+        $this->assertTenant($client, $tenantId);
+
+        return DB::table('sales_payments')
+            ->join('sales_invoices', 'sales_payments.invoice_id', '=', 'sales_invoices.id')
+            ->where('sales_invoices.tenant_id', $tenantId)
+            ->where('sales_invoices.client_id', $client->id)
+            ->select(
+                'sales_payments.id', 'sales_payments.date', 'sales_payments.amount',
+                'sales_payments.mode', 'sales_payments.tds_amount', 'sales_invoices.number as invoice_number',
+            )
+            ->orderByDesc('sales_payments.date')->limit(200)->get()->all();
+    }
+
+    /**
+     * Chronological account statement: opening balance, then invoices as debits
+     * and payments + credit notes as credits, with a running balance.
+     */
+    public function statement(Client $client, int $tenantId): array
+    {
+        $this->assertTenant($client, $tenantId);
+
+        $lines = [];
+
+        foreach ($this->invoices($client, $tenantId) as $inv) {
+            $lines[] = ['date' => $inv->date, 'type' => 'Invoice', 'ref' => $inv->number, 'debit' => (float) $inv->total, 'credit' => 0.0];
+        }
+        foreach ($this->payments($client, $tenantId) as $pay) {
+            $lines[] = ['date' => (string) $pay->date, 'type' => 'Payment', 'ref' => $pay->invoice_number, 'debit' => 0.0, 'credit' => (float) $pay->amount];
+        }
+        foreach ($this->creditNotes($client, $tenantId) as $cn) {
+            $lines[] = ['date' => $cn->date, 'type' => 'Credit Note', 'ref' => $cn->number, 'debit' => 0.0, 'credit' => (float) $cn->total];
+        }
+
+        usort($lines, fn ($a, $b) => strcmp((string) $a['date'], (string) $b['date']));
+
+        $opening = (float) $client->opening_balance;
+        $running = $opening;
+        foreach ($lines as &$line) {
+            $running += $line['debit'] - $line['credit'];
+            $line['balance'] = round($running, 2);
+        }
+
+        return [
+            'opening_balance'      => $opening,
+            'opening_balance_date' => optional($client->opening_balance_date)->toDateString(),
+            'lines'                => $lines,
+            'closing_balance'      => round($running, 2),
+        ];
+    }
+
+    /* ── Customer admins (account managers) ───────────────────── */
+    public function admins(Client $client, int $tenantId): Collection
+    {
+        $this->assertTenant($client, $tenantId);
+        return $client->admins()->select('users.id', 'users.name', 'users.email')->get();
+    }
+
+    /** Staff users of the tenant who can be assigned as account managers. */
+    public function assignableStaff(int $tenantId): Collection
+    {
+        return User::where('tenant_id', $tenantId)
+            ->whereIn('role', ['admin', 'staff'])
+            ->select('id', 'name', 'email')
+            ->orderBy('name')
+            ->get();
+    }
+
+    public function syncAdmins(Client $client, array $userIds, int $tenantId): Collection
+    {
+        $this->assertTenant($client, $tenantId);
+
+        // The pivot carries a (redundant but NOT NULL) tenant_id, so each synced
+        // row must supply it.
+        $validIds = User::where('tenant_id', $tenantId)->whereIn('id', $userIds)->pluck('id')->all();
+        $syncData = array_fill_keys($validIds, ['tenant_id' => $tenantId]);
+        $client->admins()->sync($syncData);
+
+        Log::channel('customer')->info('Customer admins updated', [
+            'client_id' => $client->id, 'admins' => $validIds,
+        ]);
+
+        return $this->admins($client, $tenantId);
     }
 
     /* ── Import / Export ──────────────────────────────────────── */

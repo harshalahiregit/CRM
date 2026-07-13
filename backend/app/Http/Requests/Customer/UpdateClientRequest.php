@@ -19,6 +19,9 @@ class UpdateClientRequest extends FormRequest
             'phone'            => 'nullable|string|max:30',
             'website'          => 'nullable|string|max:255',
             'parent_company'   => 'nullable|string|max:255',
+            'opening_balance'  => 'nullable|numeric',
+            'opening_balance_date' => 'nullable|date',
+            'show_primary_contact' => 'nullable|boolean',
             'vendor_id'        => 'nullable|integer',
 
             'address'          => 'nullable|string|max:255',

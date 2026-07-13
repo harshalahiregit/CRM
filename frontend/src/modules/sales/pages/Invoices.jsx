@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Plus, Send, CreditCard, Trash2, X, MoreVertical, Bell, RefreshCw, Tag, User } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
 import { useClientOptions } from '@/hooks/useClientOptions'
@@ -50,6 +50,18 @@ export default function Invoices() {
     salesApi.invoices.list({status: filter!=='All'?filter:undefined}).then(d=>{setData(d);setLoading(false)})
   }
   useEffect(()=>{ load() },[filter])
+
+  // Arriving from a customer profile's "New Invoice" button: open the create
+  // drawer with that customer preselected.
+  const [searchParams, setSearchParams] = useSearchParams()
+  useEffect(() => {
+    if (searchParams.get('new') === '1') {
+      const cid = searchParams.get('client_id') || ''
+      setForm(p => ({ ...p, client_id: cid }))
+      setShowDrawer(true)
+      setSearchParams({}, { replace: true })
+    }
+  }, [])
 
   const handleCreate = async () => {
     if(!form.client_id) return showToast('Customer required','error')

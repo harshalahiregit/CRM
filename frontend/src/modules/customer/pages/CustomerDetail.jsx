@@ -1,15 +1,42 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  ArrowLeft, Building2, Phone, Receipt, Wallet, CreditCard, Mail, User,
-  Globe, Linkedin, Facebook, Instagram, Twitter, Calendar, LifeBuoy,
-  Package, Users2, UserPlus, Link2,
+  ArrowLeft, Building2, Phone, Receipt, Wallet, CreditCard,
+  Globe, Linkedin, Facebook, Instagram, Twitter, Calendar,
+  Package, Users2, UserPlus, Link2, Plus, Trash2, Eye, EyeOff, Upload,
+  FileText, KeyRound, Bell, StickyNote, MapPin, Landmark, Edit2, X,
 } from 'lucide-react'
 import { customerApi } from '@/services/customerApi'
 import { useToast } from '@/hooks/useToast'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 
 const fmt = v => '₹' + Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-const TABS = ['Overview', 'Contacts', 'Tax', 'Support', 'Related']
+const d10 = s => (s ? String(s).slice(0, 10) : '—')
+
+// Full legacy tab set, minus the excluded sections (Projects, Tasks, Delivery
+// Notes, Domain Manager, Appointments). Support = read-only Helpdesk loop-in.
+// "Attachments" is the legacy "Files" tab (renamed).
+const TABS = [
+  'Profile', 'Contacts', 'Address Book', 'Recipients', 'Pre-Alert', 'Packages', 'Shipping',
+  'Notes', 'Statement', 'Invoices', 'Payments', 'Proposals', 'Estimates', 'Credit Notes',
+  'Expenses', 'Subscriptions', 'Contracts', 'Tax', 'Support', 'Vault', 'Reminders',
+  'Attachments', 'Map', 'Related',
+]
+const CURRENCIES = ['INR', 'USD', 'EUR', 'GBP', 'AED', 'SGD']
+const LANGUAGES = ['English', 'Hindi', 'Marathi']
+
+// Tabs whose owning module isn't built in Sangoe yet — shown (to match the
+// legacy layout) with an honest placeholder instead of fake data. Value = the
+// module the feature belongs to.
+const PENDING_MODULES = {
+  Expenses: 'Expenses',
+  Subscriptions: 'Subscriptions',
+  Contracts: 'Contracts',
+  'Pre-Alert': 'Logistics',
+  Packages: 'Logistics',
+  Shipping: 'Logistics',
+}
 
 export default function CustomerDetail() {
   const { id } = useParams()
@@ -18,21 +45,57 @@ export default function CustomerDetail() {
 
   const [client, setClient] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState('Overview')
-  const [tax, setTax] = useState(null)
-  const [tickets, setTickets] = useState(null)
+  const [tab, setTab] = useState('Profile')
+  const [tabData, setTabData] = useState({})   // { [tab]: data }
+  const [tabLoading, setTabLoading] = useState(false)
+
+  const loadClient = () => customerApi.get(id).then(setClient)
 
   useEffect(() => {
-    customerApi.get(id)
-      .then(setClient)
+    loadClient()
       .catch(e => { toast.error(e.message); nav('/app/customers') })
       .finally(() => setLoading(false))
   }, [id])
 
+  // Lazy-load each tab's data the first time it's opened.
+  const TAB_FETCHERS = {
+    Contacts: customerApi.contacts.list,
+    Tax: customerApi.taxSummary,
+    Support: customerApi.tickets,
+    Invoices: customerApi.invoices,
+    Payments: customerApi.payments,
+    Proposals: customerApi.proposals,
+    Estimates: customerApi.estimates,
+    'Credit Notes': customerApi.creditNotes,
+    Statement: customerApi.statement,
+    Notes: customerApi.notes.list,
+    Reminders: customerApi.reminders.list,
+    Vault: customerApi.vault.list,
+    Attachments: customerApi.attachments.list,
+    'Address Book': customerApi.addresses.list,
+    Recipients: customerApi.recipients.list,
+  }
+
+  const refreshTab = async (t) => {
+    const fetcher = TAB_FETCHERS[t]
+    if (!fetcher) return
+    const data = await fetcher(id).catch(() => null)
+    setTabData(prev => ({ ...prev, [t]: data }))
+  }
+
   useEffect(() => {
-    if (tab === 'Tax' && !tax) customerApi.taxSummary(id).then(setTax).catch(() => setTax({}))
-    if (tab === 'Support' && !tickets) customerApi.tickets(id).then(setTickets).catch(() => setTickets([]))
+    if (!TAB_FETCHERS[tab] || tabData[tab] !== undefined) return
+    setTabLoading(true)
+    refreshTab(tab).finally(() => setTabLoading(false))
   }, [tab])
+
+  // "Create new X" button that jumps to the Sales create flow with this
+  // customer preselected.
+  const createBtn = (label, to) => (
+    <button onClick={() => nav(to)} className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>
+      <Plus size={13} /> {label}
+    </button>
+  )
 
   if (loading) return <div className="p-6"><div className="skeleton h-40 rounded-2xl" style={{ background: 'var(--border)' }} /></div>
   if (!client) return null
@@ -47,17 +110,18 @@ export default function CustomerDetail() {
     { k: 'twitter', url: social.twitter, Icon: Twitter },
   ].filter(s => s.url)
 
-  // Basic-info block (top of profile) — per spec: name, balance, pending credit, GST, phone.
   const INFO = [
     { label: 'Outstanding Balance', value: fmt(fin.outstanding), icon: Wallet, color: '#ef4444' },
     { label: 'Available Credit', value: fmt(fin.available_credit), icon: CreditCard, color: '#10b981' },
-    { label: 'GST Number', value: client.gst_number || '—', icon: Receipt, color: '#7C3AED', raw: true },
-    { label: 'Phone', value: client.phone || '—', icon: Phone, color: '#3b82f6', raw: true },
+    { label: 'GST Number', value: client.gst_number || '—', icon: Receipt, color: '#7C3AED' },
+    { label: 'Phone', value: client.phone || '—', icon: Phone, color: '#3b82f6' },
   ]
+
+  const data = tabData[tab]
 
   return (
     <div className="space-y-6 animate-[tiltIn_0.35s_ease_forwards]">
-      {/* Back + header */}
+      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <button onClick={() => nav('/app/customers')} className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-[rgba(124,58,237,0.08)] transition-colors" style={{ border: '1px solid var(--border)' }}>
@@ -103,163 +167,854 @@ export default function CustomerDetail() {
         ))}
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 flex-wrap p-1 rounded-2xl w-fit" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+      {/* Tab bar */}
+      <div className="flex gap-1 flex-wrap p-1 rounded-2xl" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
         {TABS.map(t => (
-          <button key={t} onClick={() => setTab(t)} className="px-4 py-2 rounded-xl text-xs font-bold transition-all"
+          <button key={t} onClick={() => setTab(t)} className="px-3.5 py-2 rounded-xl text-xs font-bold transition-all"
             style={{ background: tab === t ? 'linear-gradient(135deg,#7C3AED,#5b21b6)' : 'transparent', color: tab === t ? '#fff' : 'var(--text-muted)' }}>
             {t}
           </button>
         ))}
       </div>
 
-      {/* ── Overview ── */}
-      {tab === 'Overview' && (
-        <div className="grid md:grid-cols-2 gap-4">
-          <div className="card-3d" style={{ padding: '20px' }}>
-            <p className="label-caps mb-4" style={{ color: '#a78bfa' }}>Company Details</p>
-            <Row label="Company" value={client.company} />
-            <Row label="GST Number" value={client.gst_number || '—'} />
-            <Row label="Phone" value={client.phone || '—'} />
-            <Row label="Website" value={client.website || '—'} />
-            <Row label="Parent Company" value={client.parent_company || '—'} />
-            <Row label="Registered Address" value={[client.address, client.city, client.state, client.zip, client.country].filter(Boolean).join(', ') || '—'} />
-          </div>
-          <div className="card-3d" style={{ padding: '20px' }}>
-            <p className="label-caps mb-4" style={{ color: '#a78bfa' }}>Key Dates & Billing</p>
-            <Row label="Founded" value={client.foundation_date || '—'} icon={Calendar} />
-            <Row label="Date of Birth" value={client.dob || '—'} icon={Calendar} />
-            <Row label="Anniversary" value={client.anniversary_date || '—'} icon={Calendar} />
-            <Row label="Billing Address" value={[client.billing_street, client.billing_city, client.billing_state, client.billing_zip].filter(Boolean).join(', ') || '—'} />
-            <Row label="Shipping Address" value={[client.shipping_street, client.shipping_city, client.shipping_state, client.shipping_zip].filter(Boolean).join(', ') || '—'} />
-            <Row label="Total Billed" value={fmt(fin.total_billed)} />
-            <Row label="Total Paid" value={fmt(fin.total_paid)} />
-          </div>
+      {/* ── Tab content ── */}
+      {tab === 'Profile' && <ProfileTab client={client} reload={loadClient} toast={toast} />}
+      {tab === 'Contacts' && <ContactsTab id={id} contacts={data ?? client.contacts} reload={() => refreshTab('Contacts')} toast={toast} />}
+      {tab === 'Address Book' && <AddressBookTab id={id} addresses={data} reload={() => refreshTab('Address Book')} toast={toast} />}
+      {tab === 'Recipients' && <RecipientsTab id={id} recipients={data} reload={() => refreshTab('Recipients')} toast={toast} />}
 
-          {/* Custom fields */}
-          {(client.custom_fields ?? []).some(f => f.value) && (
-            <div className="card-3d md:col-span-2" style={{ padding: '20px' }}>
-              <p className="label-caps mb-4" style={{ color: '#a78bfa' }}>Custom Fields</p>
-              <div className="grid md:grid-cols-2 gap-x-8">
-                {(client.custom_fields ?? []).filter(f => f.value).map(f => <Row key={f.id} label={f.name} value={f.value} />)}
-              </div>
-            </div>
-          )}
-        </div>
+      {tabLoading && TAB_FETCHERS[tab] && data === undefined && (
+        <div className="skeleton h-24 rounded-2xl" style={{ background: 'var(--border)' }} />
       )}
 
-      {/* ── Contacts ── */}
-      {tab === 'Contacts' && (
-        <div className="grid md:grid-cols-2 gap-4">
-          {(client.contacts ?? []).length === 0 && <div className="card-3d py-10 text-center text-sm md:col-span-2" style={{ color: 'var(--text-muted)', padding: '20px' }}>No contacts. Edit the customer to add one.</div>}
-          {(client.contacts ?? []).map(c => (
-            <div key={c.id} className="card-3d" style={{ padding: '18px' }}>
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(59,130,246,0.12)' }}>
-                    <User size={16} style={{ color: '#3b82f6' }} />
-                  </div>
-                  <div>
-                    <p className="font-bold text-sm" style={{ color: 'var(--text-h)' }}>{c.name || `${c.first_name} ${c.last_name || ''}`}</p>
-                    {c.title && <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{c.title}</p>}
-                  </div>
+      {tab === 'Notes' && <NotesTab id={id} notes={data} reload={() => refreshTab('Notes')} toast={toast} />}
+      {tab === 'Statement' && data && <StatementTab statement={data} />}
+      {tab === 'Invoices' && data && <DocTable columns={INVOICE_COLS} rows={data} empty="No invoices for this customer." action={createBtn('New Invoice', `/app/sales/invoices?client_id=${id}&new=1`)} />}
+      {tab === 'Payments' && data && <DocTable columns={PAYMENT_COLS} rows={data} empty="No payments recorded." />}
+      {tab === 'Proposals' && data && <DocTable columns={PROPOSAL_COLS} rows={data} empty="No proposals for this customer." action={createBtn('New Proposal', `/app/sales/proposals?client_id=${id}`)} />}
+      {tab === 'Estimates' && data && <DocTable columns={ESTIMATE_COLS} rows={data} empty="No proforma invoices / estimates." action={createBtn('New Proforma Invoice', `/app/sales/estimates?client_id=${id}&new=1`)} />}
+      {tab === 'Credit Notes' && data && <DocTable columns={CREDIT_COLS} rows={data} empty="No credit notes." action={createBtn('New Credit Note', `/app/sales/credit-notes?client_id=${id}`)} />}
+      {tab === 'Tax' && data && <TaxTab tax={data} />}
+      {tab === 'Support' && data && <SupportTab tickets={data} />}
+      {tab === 'Vault' && <VaultTab id={id} entries={data} reload={() => refreshTab('Vault')} toast={toast} />}
+      {tab === 'Reminders' && <RemindersTab id={id} reminders={data} reload={() => refreshTab('Reminders')} toast={toast} />}
+      {tab === 'Attachments' && <AttachmentsTab id={id} files={data} reload={() => refreshTab('Attachments')} toast={toast} />}
+      {tab === 'Map' && <MapTab client={client} />}
+      {tab === 'Related' && <RelatedTab client={client} />}
+
+      {PENDING_MODULES[tab] && <PendingModule feature={tab} module={PENDING_MODULES[tab]} />}
+    </div>
+  )
+}
+
+/* ══════════════ Tab components ══════════════ */
+
+const PROFILE_SUBTABS = ['Customer Details', 'Custom Fields', 'Billing & Shipping', 'Customer Admins']
+
+/**
+ * Editable customer profile with the legacy sub-tab layout
+ * (Customer Details / Custom Fields / Billing & Shipping / Customer Admins).
+ * Saves via customerApi.update, then refreshes the parent.
+ */
+function ProfileTab({ client, reload, toast }) {
+  const [sub, setSub] = useState('Customer Details')
+  const [saving, setSaving] = useState(false)
+  const [groupOptions, setGroupOptions] = useState([])
+  const [cfDefs, setCfDefs] = useState([])
+  const [adminData, setAdminData] = useState({ assigned: [], assignable: [] })
+
+  const seed = () => {
+    const cf = {}
+    ;(client.custom_fields ?? []).forEach(f => { cf[f.id] = f.value ?? '' })
+    return {
+      company: client.company || '', gst_number: client.gst_number || '', phone: client.phone || '',
+      website: client.website || '', parent_company: client.parent_company || '',
+      opening_balance: client.opening_balance ?? '', opening_balance_date: client.opening_balance_date ? String(client.opening_balance_date).slice(0, 10) : '',
+      default_currency: client.default_currency || 'INR', default_language: client.default_language || 'English',
+      show_primary_contact: !!client.show_primary_contact,
+      foundation_date: client.foundation_date ? String(client.foundation_date).slice(0, 10) : '',
+      dob: client.dob ? String(client.dob).slice(0, 10) : '', anniversary_date: client.anniversary_date ? String(client.anniversary_date).slice(0, 10) : '',
+      address: client.address || '', city: client.city || '', state: client.state || '', zip: client.zip || '', country: client.country || '',
+      billing_street: client.billing_street || '', billing_city: client.billing_city || '', billing_state: client.billing_state || '', billing_zip: client.billing_zip || '', billing_country: client.billing_country || '',
+      shipping_street: client.shipping_street || '', shipping_city: client.shipping_city || '', shipping_state: client.shipping_state || '', shipping_zip: client.shipping_zip || '', shipping_country: client.shipping_country || '',
+      social_links: client.social_links || {},
+      group_ids: (client.groups ?? []).map(g => g.id),
+      custom_fields: cf,
+      apply_to_previous_documents: false,
+      apply_to_previous_credit_notes: false,
+    }
+  }
+  const [form, setForm] = useState(seed)
+  const sf = (k, v) => setForm(p => ({ ...p, [k]: v }))
+
+  useEffect(() => {
+    customerApi.groups.list().then(setGroupOptions).catch(() => {})
+    customerApi.customFields.list().then(setCfDefs).catch(() => {})
+    customerApi.admins(client.id).then(setAdminData).catch(() => {})
+  }, [client.id])
+
+  const toggleGroup = (gid) => setForm(p => ({ ...p, group_ids: p.group_ids.includes(gid) ? p.group_ids.filter(x => x !== gid) : [...p.group_ids, gid] }))
+  const addGroup = async () => {
+    const name = window.prompt('New group name'); if (!name?.trim()) return
+    try { const g = await customerApi.groups.create({ name: name.trim() }); setGroupOptions(o => [...o, g]); toggleGroup(g.id) } catch (e) { toast.error(e.message) }
+  }
+  const toggleAdmin = async (uid) => {
+    const ids = adminData.assigned.map(a => a.id)
+    const next = ids.includes(uid) ? ids.filter(x => x !== uid) : [...ids, uid]
+    try { const updated = await customerApi.syncAdmins(client.id, next); setAdminData(d => ({ ...d, assigned: updated })) } catch (e) { toast.error(e.message) }
+  }
+
+  const save = async () => {
+    if (!form.company.trim()) { setSub('Customer Details'); return toast.error('Company name is required') }
+    setSaving(true)
+    try {
+      await customerApi.update(client.id, {
+        ...form,
+        opening_balance: form.opening_balance === '' ? null : form.opening_balance,
+        opening_balance_date: form.opening_balance_date || null,
+      })
+      toast.success('Profile saved')
+      reload()
+    } catch (e) { toast.error(e.message) } finally { setSaving(false) }
+  }
+
+  const copyToBilling = () => setForm(p => ({ ...p, billing_street: p.address, billing_city: p.city, billing_state: p.state, billing_zip: p.zip, billing_country: p.country }))
+  const copyBillingToShipping = () => setForm(p => ({ ...p, shipping_street: p.billing_street, shipping_city: p.billing_city, shipping_state: p.billing_state, shipping_zip: p.billing_zip, shipping_country: p.billing_country }))
+
+  return (
+    <div className="card-3d" style={{ padding: 0 }}>
+      {/* Sub-tabs */}
+      <div className="flex gap-1 flex-wrap px-5 pt-4" style={{ borderBottom: '1px solid var(--border)' }}>
+        {PROFILE_SUBTABS.map(t => (
+          <button key={t} onClick={() => setSub(t)} className="px-4 py-2.5 rounded-t-xl text-xs font-bold transition-all" style={{ color: sub === t ? '#a78bfa' : 'var(--text-muted)', borderBottom: sub === t ? '2px solid #7C3AED' : '2px solid transparent' }}>
+            {t}
+          </button>
+        ))}
+      </div>
+
+      <div className="p-6">
+        {sub === 'Customer Details' && (
+          <div className="space-y-4 max-w-3xl">
+            <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer" style={{ color: 'var(--text-muted)' }}>
+              <input type="checkbox" checked={form.show_primary_contact} onChange={e => sf('show_primary_contact', e.target.checked)} />
+              Show primary contact full name on Invoices, Estimates, Payments, Credit Notes
+            </label>
+            <div><label className="label">Company / Client Name *</label><input className="input-3d text-sm" value={form.company} onChange={e => sf('company', e.target.value)} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div><label className="label">GST Number</label><input className="input-3d text-sm" value={form.gst_number} onChange={e => sf('gst_number', e.target.value)} /></div>
+              <div><label className="label">Phone</label><input className="input-3d text-sm" value={form.phone} onChange={e => sf('phone', e.target.value)} /></div>
+              <div><label className="label">Website</label><input className="input-3d text-sm" value={form.website} onChange={e => sf('website', e.target.value)} /></div>
+              <div><label className="label">Parent Company</label><input className="input-3d text-sm" value={form.parent_company} onChange={e => sf('parent_company', e.target.value)} /></div>
+              <div><label className="label">Opening Balance</label><input type="number" className="input-3d text-sm" value={form.opening_balance} onChange={e => sf('opening_balance', e.target.value)} /></div>
+              <div><label className="label">Balance as of</label><input type="date" className="input-3d text-sm" value={form.opening_balance_date} onChange={e => sf('opening_balance_date', e.target.value)} /></div>
+              <div><label className="label">Currency</label><select className="input-3d text-sm" value={form.default_currency} onChange={e => sf('default_currency', e.target.value)}>{CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+              <div><label className="label">Default Language</label><select className="input-3d text-sm" value={form.default_language} onChange={e => sf('default_language', e.target.value)}>{LANGUAGES.map(l => <option key={l} value={l}>{l}</option>)}</select></div>
+            </div>
+            <div>
+              <div className="flex items-center justify-between mb-1"><label className="label mb-0">Groups</label><button type="button" onClick={addGroup} className="text-xs font-bold flex items-center gap-1" style={{ color: '#a78bfa' }}><Plus size={12} /> New group</button></div>
+              <div className="flex gap-1.5 flex-wrap">
+                {groupOptions.length === 0 ? <span className="text-xs" style={{ color: 'var(--text-muted)' }}>No groups yet.</span> : groupOptions.map(g => {
+                  const on = form.group_ids.includes(g.id)
+                  return <button key={g.id} type="button" onClick={() => toggleGroup(g.id)} className="px-2.5 py-1 rounded-lg text-[11px] font-bold" style={{ background: on ? 'linear-gradient(135deg,#7C3AED,#5b21b6)' : 'var(--bg-input)', color: on ? '#fff' : 'var(--text-muted)', border: '1px solid var(--border)' }}>{g.name}</button>
+                })}
+              </div>
+            </div>
+            <p className="label-caps pt-2" style={{ color: '#a78bfa' }}>Registered Address</p>
+            <div><label className="label">Address</label><textarea rows={2} className="input-3d text-sm resize-none" value={form.address} onChange={e => sf('address', e.target.value)} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div><label className="label">City</label><input className="input-3d text-sm" value={form.city} onChange={e => sf('city', e.target.value)} /></div>
+              <div><label className="label">State</label><input className="input-3d text-sm" value={form.state} onChange={e => sf('state', e.target.value)} /></div>
+              <div><label className="label">ZIP / PIN</label><input className="input-3d text-sm" value={form.zip} onChange={e => sf('zip', e.target.value)} /></div>
+              <div><label className="label">Country</label><input className="input-3d text-sm" value={form.country} onChange={e => sf('country', e.target.value)} /></div>
+            </div>
+            <p className="label-caps pt-2" style={{ color: '#a78bfa' }}>Key Dates</p>
+            <div className="grid grid-cols-3 gap-4">
+              <div><label className="label">Founded</label><input type="date" className="input-3d text-sm" value={form.foundation_date} onChange={e => sf('foundation_date', e.target.value)} /></div>
+              <div><label className="label">DOB</label><input type="date" className="input-3d text-sm" value={form.dob} onChange={e => sf('dob', e.target.value)} /></div>
+              <div><label className="label">Anniversary</label><input type="date" className="input-3d text-sm" value={form.anniversary_date} onChange={e => sf('anniversary_date', e.target.value)} /></div>
+            </div>
+          </div>
+        )}
+
+        {sub === 'Custom Fields' && (
+          <div className="space-y-4 max-w-2xl">
+            {cfDefs.length === 0 ? <p className="text-sm py-6 text-center" style={{ color: 'var(--text-muted)' }}>No custom fields defined.</p> : cfDefs.map(def => (
+              <div key={def.id}>
+                <label className="label">{def.name}{def.required ? ' *' : ''}</label>
+                <ProfileCustomField def={def} value={form.custom_fields?.[def.id] ?? def.default_value ?? ''} onChange={v => setForm(p => ({ ...p, custom_fields: { ...(p.custom_fields || {}), [def.id]: v } }))} />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {sub === 'Billing & Shipping' && (
+          <div className="space-y-5">
+            <div className="grid md:grid-cols-2 gap-6">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between"><p className="label-caps" style={{ color: '#a78bfa' }}>Billing Address</p><button type="button" onClick={copyToBilling} className="text-[11px] font-bold" style={{ color: '#a78bfa' }}>Same as Customer Info</button></div>
+                <div><label className="label">Street</label><textarea rows={2} className="input-3d text-sm resize-none" value={form.billing_street} onChange={e => sf('billing_street', e.target.value)} /></div>
+                <div><label className="label">City</label><input className="input-3d text-sm" value={form.billing_city} onChange={e => sf('billing_city', e.target.value)} /></div>
+                <div><label className="label">State</label><input className="input-3d text-sm" value={form.billing_state} onChange={e => sf('billing_state', e.target.value)} /></div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className="label">Zip Code</label><input className="input-3d text-sm" value={form.billing_zip} onChange={e => sf('billing_zip', e.target.value)} /></div>
+                  <div><label className="label">Country</label><input className="input-3d text-sm" value={form.billing_country} onChange={e => sf('billing_country', e.target.value)} /></div>
                 </div>
-                {c.is_primary && <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold" style={{ background: 'rgba(124,58,237,0.1)', color: '#a78bfa' }}>Primary</span>}
               </div>
-              <div className="mt-3 space-y-1.5">
-                {c.email && <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--text-muted)' }}><Mail size={12} /> {c.email}</div>}
-                {c.phone && <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--text-muted)' }}><Phone size={12} /> {c.phone}</div>}
-                {c.user_id && <span className="text-[10px] font-bold" style={{ color: '#10b981' }}>● Portal access enabled</span>}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between"><p className="label-caps" style={{ color: '#a78bfa' }}>Shipping Address</p><button type="button" onClick={copyBillingToShipping} className="text-[11px] font-bold" style={{ color: '#a78bfa' }}>Copy Billing Address</button></div>
+                <div><label className="label">Street</label><textarea rows={2} className="input-3d text-sm resize-none" value={form.shipping_street} onChange={e => sf('shipping_street', e.target.value)} /></div>
+                <div><label className="label">City</label><input className="input-3d text-sm" value={form.shipping_city} onChange={e => sf('shipping_city', e.target.value)} /></div>
+                <div><label className="label">State</label><input className="input-3d text-sm" value={form.shipping_state} onChange={e => sf('shipping_state', e.target.value)} /></div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className="label">Zip Code</label><input className="input-3d text-sm" value={form.shipping_zip} onChange={e => sf('shipping_zip', e.target.value)} /></div>
+                  <div><label className="label">Country</label><input className="input-3d text-sm" value={form.shipping_country} onChange={e => sf('shipping_country', e.target.value)} /></div>
+                </div>
               </div>
+            </div>
+            <div className="p-4 rounded-xl space-y-2" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+              <label className="flex items-start gap-2 text-xs cursor-pointer" style={{ color: 'var(--text-muted)' }}>
+                <input type="checkbox" className="mt-0.5" checked={form.apply_to_previous_documents} onChange={e => sf('apply_to_previous_documents', e.target.checked)} />
+                <span>Update the shipping/billing info on all previous invoices/estimates <span style={{ color: '#f59e0b' }}>(includes paid — product decision)</span></span>
+              </label>
+              <label className="flex items-start gap-2 text-xs cursor-pointer" style={{ color: 'var(--text-muted)' }}>
+                <input type="checkbox" className="mt-0.5" checked={form.apply_to_previous_credit_notes} onChange={e => sf('apply_to_previous_credit_notes', e.target.checked)} />
+                <span>Update the shipping/billing info on all previous credit notes</span>
+              </label>
+            </div>
+          </div>
+        )}
+
+        {sub === 'Customer Admins' && (
+          <div className="space-y-3 max-w-xl">
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Staff assigned here are the account managers for this customer.</p>
+            {adminData.assignable.length === 0 ? <p className="text-sm py-6 text-center" style={{ color: 'var(--text-muted)' }}>No staff users available.</p> : adminData.assignable.map(u => {
+              const on = adminData.assigned.some(a => a.id === u.id)
+              return (
+                <label key={u.id} className="flex items-center gap-3 p-3 rounded-xl cursor-pointer" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+                  <input type="checkbox" checked={on} onChange={() => toggleAdmin(u.id)} />
+                  <div><p className="text-sm font-semibold" style={{ color: 'var(--text-h)' }}>{u.name}</p><p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{u.email}</p></div>
+                </label>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Submit */}
+      <div className="flex justify-end px-6 py-4" style={{ borderTop: '1px solid var(--border)' }}>
+        <button onClick={save} disabled={saving} className="px-6 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-60" style={{ background: 'linear-gradient(135deg,#9f67ff,#7C3AED,#5b21b6)', boxShadow: '0 6px 20px rgba(124,58,237,0.4)' }}>
+          {saving ? 'Saving…' : 'Submit'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function ProfileCustomField({ def, value, onChange }) {
+  const opts = def.options ?? []
+  if (def.type === 'textarea') return <textarea rows={2} className="input-3d text-sm resize-none" value={value} onChange={e => onChange(e.target.value)} />
+  if (def.type === 'number') return <input type="number" className="input-3d text-sm" value={value} onChange={e => onChange(e.target.value)} />
+  if (def.type === 'date_picker') return <input type="date" className="input-3d text-sm" value={value} onChange={e => onChange(e.target.value)} />
+  if (def.type === 'checkbox') return <label className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}><input type="checkbox" checked={value === '1' || value === true} onChange={e => onChange(e.target.checked ? '1' : '')} /> Yes</label>
+  if (def.type === 'select' || def.type === 'multiselect') return <select className="input-3d text-sm" value={value} onChange={e => onChange(e.target.value)}><option value="">— Select —</option>{opts.map(o => <option key={o} value={o}>{o}</option>)}</select>
+  return <input className="input-3d text-sm" value={value} onChange={e => onChange(e.target.value)} />
+}
+
+const NOTIFICATION_TYPES = [
+  { key: 'invoice', label: 'Invoices' },
+  { key: 'estimate', label: 'Estimates' },
+  { key: 'credit_note', label: 'Credit Notes' },
+  { key: 'proposal', label: 'Proposals' },
+  { key: 'project', label: 'Projects' },
+  { key: 'ticket', label: 'Tickets' },
+  { key: 'task', label: 'Tasks' },
+  { key: 'contract', label: 'Contracts' },
+]
+const EMPTY_CONTACT = {
+  first_name: '', last_name: '', title: '', email: '', phone: '',
+  is_primary: false, active: true,
+  email_notifications: { invoice: true, estimate: true, credit_note: true, proposal: true, project: true, ticket: true, task: true, contract: true },
+}
+
+function ContactsTab({ id, contacts, reload, toast }) {
+  const [modal, setModal] = useState(false)
+  const [editing, setEditing] = useState(null)
+  const [form, setForm] = useState(EMPTY_CONTACT)
+  const [confirmDel, setConfirmDel] = useState(null)
+  const rows = contacts ?? []
+
+  const sf = (k, v) => setForm(p => ({ ...p, [k]: v }))
+  const sfNotif = (k, v) => setForm(p => ({ ...p, email_notifications: { ...p.email_notifications, [k]: v } }))
+
+  const openCreate = () => { setEditing(null); setForm(EMPTY_CONTACT); setModal(true) }
+  const openEdit = (c) => {
+    setEditing(c)
+    setForm({
+      first_name: c.first_name || '', last_name: c.last_name || '', title: c.title || '',
+      email: c.email || '', phone: c.phone || '', is_primary: !!c.is_primary, active: c.active !== false,
+      email_notifications: { ...EMPTY_CONTACT.email_notifications, ...(c.email_notifications || {}) },
+    })
+    setModal(true)
+  }
+
+  const save = async () => {
+    if (!form.first_name.trim()) return toast.error('First name required')
+    try {
+      if (editing) { await customerApi.contacts.update(id, editing.id, form); toast.success('Contact updated') }
+      else { await customerApi.contacts.create(id, form); toast.success('Contact added') }
+      setModal(false); reload()
+    } catch (e) { toast.error(e.message) }
+  }
+  const toggleActive = async (c) => { try { await customerApi.contacts.toggleActive(id, c.id); reload() } catch (e) { toast.error(e.message) } }
+  const doDelete = async () => { try { await customerApi.contacts.remove(id, confirmDel.id); toast.success('Contact deleted'); reload() } catch (e) { toast.error(e.message) } finally { setConfirmDel(null) } }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>
+          <Plus size={14} /> New Contact
+        </button>
+      </div>
+
+      <div className="card-3d overflow-hidden" style={{ padding: 0 }}>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead><tr style={{ background: 'rgba(124,58,237,0.04)', borderBottom: '1px solid var(--border)' }}>
+              {['Full Name', 'Email', 'Position', 'Phone', 'Primary', 'Active', ''].map(h => <th key={h} className="py-3 px-4 text-left label-caps whitespace-nowrap">{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {!rows.length ? (
+                <tr><td colSpan="7" className="py-10 text-center" style={{ color: 'var(--text-muted)' }}>No contacts yet. Click “New Contact”.</td></tr>
+              ) : rows.map(c => (
+                <tr key={c.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                  <td className="py-3 px-4 font-bold" style={{ color: 'var(--text-h)' }}>{c.name || `${c.first_name} ${c.last_name || ''}`}</td>
+                  <td className="py-3 px-4" style={{ color: 'var(--text-muted)' }}>{c.email ? <a href={`mailto:${c.email}`} style={{ color: '#a78bfa' }}>{c.email}</a> : '—'}</td>
+                  <td className="py-3 px-4" style={{ color: 'var(--text-muted)' }}>{c.title || '—'}</td>
+                  <td className="py-3 px-4" style={{ color: 'var(--text-muted)' }}>{c.phone || '—'}</td>
+                  <td className="py-3 px-4">{c.is_primary ? <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold" style={{ background: 'rgba(124,58,237,0.1)', color: '#a78bfa' }}>Primary</span> : '—'}</td>
+                  <td className="py-3 px-4">
+                    <button onClick={() => toggleActive(c)} className="px-2 py-0.5 rounded-lg text-[10px] font-bold" style={{ background: c.active !== false ? 'rgba(16,185,129,0.1)' : 'rgba(148,163,184,0.12)', color: c.active !== false ? '#10b981' : '#94a3b8' }}>
+                      {c.active !== false ? 'Active' : 'Inactive'}
+                    </button>
+                  </td>
+                  <td className="py-3 px-4">
+                    <div className="flex gap-1">
+                      <button onClick={() => openEdit(c)} className="p-1.5 rounded-lg hover:bg-[rgba(124,58,237,0.08)]" title="Edit"><Edit2 size={12} style={{ color: 'var(--text-muted)' }} /></button>
+                      <button onClick={() => setConfirmDel(c)} className="p-1.5 rounded-lg hover:bg-[rgba(239,68,68,0.08)]" title="Delete"><Trash2 size={12} style={{ color: '#f87171' }} /></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {modal && createPortal(
+        <>
+          <div className="drawer-backdrop" onClick={() => setModal(false)} />
+          <div className="drawer-panel" style={{ width: 'min(560px, 96vw)' }}>
+            <div className="drawer-header">
+              <div>
+                <h2 className="font-black text-lg" style={{ color: 'var(--text-h)', letterSpacing: '-0.02em' }}>{editing ? 'Edit Contact' : 'New Contact'}</h2>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{editing ? 'Update this contact’s details' : 'Add a person under this customer'}</p>
+              </div>
+              <button onClick={() => setModal(false)} className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-[rgba(239,68,68,0.08)] transition-colors" style={{ border: '1px solid var(--border)' }}>
+                <X size={16} style={{ color: 'var(--text-muted)' }} />
+              </button>
+            </div>
+
+            <div className="drawer-body space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="label">First Name *</label><input className="input-3d text-sm" value={form.first_name} onChange={e => sf('first_name', e.target.value)} /></div>
+                <div><label className="label">Last Name</label><input className="input-3d text-sm" value={form.last_name} onChange={e => sf('last_name', e.target.value)} /></div>
+              </div>
+              <div><label className="label">Position / Title</label><input className="input-3d text-sm" value={form.title} onChange={e => sf('title', e.target.value)} /></div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="label">Email</label><input className="input-3d text-sm" value={form.email} onChange={e => sf('email', e.target.value)} /></div>
+                <div><label className="label">Phone</label><input className="input-3d text-sm" value={form.phone} onChange={e => sf('phone', e.target.value)} /></div>
+              </div>
+              <div className="flex items-center gap-5">
+                <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer" style={{ color: 'var(--text-muted)' }}>
+                  <input type="checkbox" checked={form.is_primary} onChange={e => sf('is_primary', e.target.checked)} /> Primary contact
+                </label>
+                <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer" style={{ color: 'var(--text-muted)' }}>
+                  <input type="checkbox" checked={form.active} onChange={e => sf('active', e.target.checked)} /> Active
+                </label>
+              </div>
+              <div>
+                <p className="label-caps mb-2" style={{ color: '#a78bfa' }}>Email Notifications</p>
+                <div className="grid grid-cols-2 gap-2 p-3 rounded-xl" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+                  {NOTIFICATION_TYPES.map(n => (
+                    <label key={n.key} className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: 'var(--text-h)' }}>
+                      <input type="checkbox" checked={!!form.email_notifications[n.key]} onChange={e => sfNotif(n.key, e.target.checked)} /> {n.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="drawer-footer">
+              <button onClick={() => setModal(false)} className="flex-1 py-3 rounded-2xl text-sm font-semibold" style={{ background: 'var(--bg-input)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Cancel</button>
+              <button onClick={save} className="flex-[2] py-3 rounded-2xl text-sm font-bold text-white hover:scale-[1.01] transition-all" style={{ background: 'linear-gradient(135deg,#9f67ff,#7C3AED,#5b21b6)', boxShadow: '0 6px 20px rgba(124,58,237,0.4)' }}>{editing ? 'Save Changes' : 'Add Contact'}</button>
+            </div>
+          </div>
+        </>,
+        document.body,
+      )}
+
+      {confirmDel && createPortal(
+        <ConfirmDialog title="Delete contact?" message={`Remove ${confirmDel.name || confirmDel.first_name} from this customer?`} confirmLabel="Delete" onConfirm={doDelete} onCancel={() => setConfirmDel(null)} />,
+        document.body,
+      )}
+    </div>
+  )
+}
+
+function NotesTab({ id, notes, reload, toast }) {
+  const [text, setText] = useState('')
+  const [busy, setBusy] = useState(false)
+  const add = async () => {
+    if (!text.trim()) return
+    setBusy(true)
+    try { await customerApi.notes.create(id, { content: text }); setText(''); reload() }
+    catch (e) { toast.error(e.message) } finally { setBusy(false) }
+  }
+  const del = async (nid) => { try { await customerApi.notes.remove(id, nid); reload() } catch (e) { toast.error(e.message) } }
+  return (
+    <div className="space-y-4">
+      <div className="card-3d" style={{ padding: '16px' }}>
+        <textarea rows={2} className="input-3d text-sm resize-none" placeholder="Add a note about this customer…" value={text} onChange={e => setText(e.target.value)} />
+        <div className="flex justify-end mt-2">
+          <button onClick={add} disabled={busy} className="px-4 py-2 rounded-xl text-xs font-bold text-white disabled:opacity-60" style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>Add Note</button>
+        </div>
+      </div>
+      {!notes?.length ? <Empty text="No notes yet." icon={StickyNote} /> : notes.map(n => (
+        <div key={n.id} className="card-3d flex items-start justify-between gap-3" style={{ padding: '16px' }}>
+          <div>
+            <p className="text-sm" style={{ color: 'var(--text-h)' }}>{n.content}</p>
+            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>{n.author?.name || 'Staff'} · {d10(n.created_at)}</p>
+          </div>
+          <button onClick={() => del(n.id)} className="p-1.5 rounded-lg hover:bg-[rgba(239,68,68,0.08)]"><Trash2 size={13} style={{ color: '#f87171' }} /></button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function StatementTab({ statement }) {
+  return (
+    <div className="card-3d overflow-hidden" style={{ padding: 0 }}>
+      <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
+        <p className="label-caps" style={{ color: '#a78bfa' }}>Account Statement</p>
+        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Opening: <b style={{ color: 'var(--text-h)' }}>{fmt(statement.opening_balance)}</b> · Closing: <b style={{ color: 'var(--text-h)' }}>{fmt(statement.closing_balance)}</b></p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead><tr style={{ background: 'rgba(124,58,237,0.04)', borderBottom: '1px solid var(--border)' }}>
+            {['Date', 'Type', 'Reference', 'Debit', 'Credit', 'Balance'].map(h => <th key={h} className="py-3 px-4 text-left label-caps">{h}</th>)}
+          </tr></thead>
+          <tbody>
+            {!statement.lines?.length ? (
+              <tr><td colSpan="6" className="py-10 text-center" style={{ color: 'var(--text-muted)' }}>No transactions.</td></tr>
+            ) : statement.lines.map((l, i) => (
+              <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                <td className="py-3 px-4" style={{ color: 'var(--text-muted)' }}>{d10(l.date)}</td>
+                <td className="py-3 px-4" style={{ color: 'var(--text-h)' }}>{l.type}</td>
+                <td className="py-3 px-4" style={{ color: 'var(--text-muted)' }}>{l.ref}</td>
+                <td className="py-3 px-4" style={{ color: '#ef4444' }}>{l.debit ? fmt(l.debit) : '—'}</td>
+                <td className="py-3 px-4" style={{ color: '#10b981' }}>{l.credit ? fmt(l.credit) : '—'}</td>
+                <td className="py-3 px-4 font-bold" style={{ color: 'var(--text-h)' }}>{fmt(l.balance)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function TaxTab({ tax }) {
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <TaxTile label="GST Total" value={fmt(tax.gst_total)} color="#7C3AED" />
+        <TaxTile label="GST Paid" value={fmt(tax.gst_paid)} color="#10b981" />
+        <TaxTile label="GST Unpaid" value={fmt(tax.gst_unpaid)} color="#ef4444" />
+        <TaxTile label="TDS Deducted" value={fmt(tax.tds_deducted)} color="#f59e0b" />
+      </div>
+      <DocTable
+        columns={[
+          { key: 'number', label: 'Invoice', bold: true },
+          { key: 'date', label: 'Date', fmt: d10 },
+          { key: 'total', label: 'Total', fmt },
+          { key: 'gst_amount', label: 'GST Amount', fmt },
+          { key: 'gst_paid', label: 'GST Status', render: v => v ? 'Paid' : 'Unpaid' },
+          { key: 'status', label: 'Doc Status' },
+        ]}
+        rows={tax.invoices ?? []}
+        empty="No invoices for this customer yet."
+        title="Invoice GST Breakdown"
+      />
+    </div>
+  )
+}
+
+function SupportTab({ tickets }) {
+  return (
+    <DocTable
+      columns={[
+        { key: 'subject', label: 'Subject', bold: true },
+        { key: 'status', label: 'Status' },
+        { key: 'priority', label: 'Priority' },
+        { key: 'created_at', label: 'Opened', fmt: d10 },
+      ]}
+      rows={tickets ?? []}
+      empty="No support tickets linked to this customer."
+      title="Support Tickets"
+    />
+  )
+}
+
+function VaultTab({ id, entries, reload, toast }) {
+  const [form, setForm] = useState({ title: '', username: '', password: '', url: '', notes: '' })
+  const [adding, setAdding] = useState(false)
+  const [revealed, setRevealed] = useState({})
+  const add = async () => {
+    if (!form.title.trim()) return toast.error('Title required')
+    try { await customerApi.vault.create(id, form); setForm({ title: '', username: '', password: '', url: '', notes: '' }); setAdding(false); reload() }
+    catch (e) { toast.error(e.message) }
+  }
+  const reveal = async (eid) => {
+    try { const r = await customerApi.vault.reveal(id, eid); setRevealed(p => ({ ...p, [eid]: r.password })) }
+    catch (e) { toast.error(e.message) }
+  }
+  const del = async (eid) => { try { await customerApi.vault.remove(id, eid); reload() } catch (e) { toast.error(e.message) } }
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <button onClick={() => setAdding(a => !a)} className="px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1" style={{ background: 'var(--bg-input)', color: '#a78bfa', border: '1px solid var(--border)' }}><Plus size={13} /> New credential</button>
+      </div>
+      {adding && (
+        <div className="card-3d space-y-3" style={{ padding: '16px' }}>
+          <div className="grid grid-cols-2 gap-3">
+            <input className="input-3d text-sm" placeholder="Title *" value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} />
+            <input className="input-3d text-sm" placeholder="URL" value={form.url} onChange={e => setForm(p => ({ ...p, url: e.target.value }))} />
+            <input className="input-3d text-sm" placeholder="Username" value={form.username} onChange={e => setForm(p => ({ ...p, username: e.target.value }))} />
+            <input className="input-3d text-sm" placeholder="Password" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} />
+          </div>
+          <div className="flex justify-end gap-2">
+            <button onClick={() => setAdding(false)} className="px-3 py-1.5 rounded-lg text-xs" style={{ color: 'var(--text-muted)' }}>Cancel</button>
+            <button onClick={add} className="px-4 py-1.5 rounded-lg text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>Save</button>
+          </div>
+        </div>
+      )}
+      {!entries?.length ? <Empty text="No stored credentials." icon={KeyRound} /> : entries.map(v => (
+        <div key={v.id} className="card-3d flex items-center justify-between gap-3" style={{ padding: '16px' }}>
+          <div className="min-w-0">
+            <p className="font-bold text-sm" style={{ color: 'var(--text-h)' }}>{v.title}</p>
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              {v.username || '—'} · {revealed[v.id] ? <b style={{ color: 'var(--text-h)' }}>{revealed[v.id]}</b> : '••••••••'}
+            </p>
+          </div>
+          <div className="flex gap-1">
+            <button onClick={() => revealed[v.id] ? setRevealed(p => ({ ...p, [v.id]: null })) : reveal(v.id)} className="p-1.5 rounded-lg hover:bg-[rgba(124,58,237,0.08)]">
+              {revealed[v.id] ? <EyeOff size={13} style={{ color: 'var(--text-muted)' }} /> : <Eye size={13} style={{ color: 'var(--text-muted)' }} />}
+            </button>
+            <button onClick={() => del(v.id)} className="p-1.5 rounded-lg hover:bg-[rgba(239,68,68,0.08)]"><Trash2 size={13} style={{ color: '#f87171' }} /></button>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function RemindersTab({ id, reminders, reload, toast }) {
+  const [form, setForm] = useState({ description: '', remind_at: '' })
+  const add = async () => {
+    if (!form.description.trim() || !form.remind_at) return toast.error('Description & date required')
+    try { await customerApi.reminders.create(id, form); setForm({ description: '', remind_at: '' }); reload() }
+    catch (e) { toast.error(e.message) }
+  }
+  const del = async (rid) => { try { await customerApi.reminders.remove(id, rid); reload() } catch (e) { toast.error(e.message) } }
+  return (
+    <div className="space-y-4">
+      <div className="card-3d flex gap-3 items-end" style={{ padding: '16px' }}>
+        <div className="flex-1"><label className="label">Reminder</label><input className="input-3d text-sm" placeholder="e.g. Follow up on renewal" value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} /></div>
+        <div><label className="label">Date</label><input type="date" className="input-3d text-sm" value={form.remind_at} onChange={e => setForm(p => ({ ...p, remind_at: e.target.value }))} /></div>
+        <button onClick={add} className="px-4 py-2.5 rounded-xl text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>Add</button>
+      </div>
+      {!reminders?.length ? <Empty text="No reminders set." icon={Bell} /> : reminders.map(r => (
+        <div key={r.id} className="card-3d flex items-center justify-between" style={{ padding: '16px' }}>
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: 'rgba(245,158,11,0.12)' }}><Bell size={14} style={{ color: '#f59e0b' }} /></div>
+            <div>
+              <p className="text-sm font-semibold" style={{ color: 'var(--text-h)' }}>{r.description}</p>
+              <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Due {d10(r.remind_at)}{r.assignee ? ` · ${r.assignee.name}` : ''}</p>
+            </div>
+          </div>
+          <button onClick={() => del(r.id)} className="p-1.5 rounded-lg hover:bg-[rgba(239,68,68,0.08)]"><Trash2 size={13} style={{ color: '#f87171' }} /></button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function AttachmentsTab({ id, files, reload, toast }) {
+  const ref = useRef(null)
+  const upload = async (e) => {
+    const file = e.target.files?.[0]; e.target.value = ''
+    if (!file) return
+    try { await customerApi.attachments.upload(id, file); toast.success('Uploaded'); reload() }
+    catch (err) { toast.error(err.message) }
+  }
+  const del = async (aid) => { try { await customerApi.attachments.remove(id, aid); reload() } catch (e) { toast.error(e.message) } }
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <input ref={ref} type="file" className="hidden" onChange={upload} />
+        <button onClick={() => ref.current?.click()} className="px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1" style={{ background: 'var(--bg-input)', color: '#a78bfa', border: '1px solid var(--border)' }}><Upload size={13} /> Upload file</button>
+      </div>
+      {!files?.length ? <Empty text="No attachments." icon={FileText} /> : (
+        <div className="grid md:grid-cols-2 gap-3">
+          {files.map(f => (
+            <div key={f.id} className="card-3d flex items-center justify-between" style={{ padding: '14px' }}>
+              <a href={f.url} target="_blank" rel="noreferrer" className="flex items-center gap-3 min-w-0">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.12)' }}><FileText size={14} style={{ color: '#a78bfa' }} /></div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-h)' }}>{f.file_name}</p>
+                  <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{(f.file_size / 1024).toFixed(0)} KB · {d10(f.created_at)}</p>
+                </div>
+              </a>
+              <button onClick={() => del(f.id)} className="p-1.5 rounded-lg hover:bg-[rgba(239,68,68,0.08)]"><Trash2 size={13} style={{ color: '#f87171' }} /></button>
             </div>
           ))}
         </div>
       )}
+    </div>
+  )
+}
 
-      {/* ── Tax (GST / TDS) ── */}
-      {tab === 'Tax' && (
-        <div className="space-y-4">
-          {!tax ? <div className="skeleton h-24 rounded-2xl" style={{ background: 'var(--border)' }} /> : (
-            <>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <TaxTile label="GST Total" value={fmt(tax.gst_total)} color="#7C3AED" />
-                <TaxTile label="GST Paid" value={fmt(tax.gst_paid)} color="#10b981" />
-                <TaxTile label="GST Unpaid" value={fmt(tax.gst_unpaid)} color="#ef4444" />
-                <TaxTile label="TDS Deducted" value={fmt(tax.tds_deducted)} color="#f59e0b" />
-              </div>
-              <div className="card-3d overflow-hidden" style={{ padding: 0 }}>
-                <div className="px-4 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
-                  <p className="label-caps" style={{ color: '#a78bfa' }}>Invoice GST Breakdown</p>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead><tr style={{ background: 'rgba(124,58,237,0.04)', borderBottom: '1px solid var(--border)' }}>
-                      {['Invoice', 'Date', 'Total', 'GST Amount', 'GST Status', 'Doc Status'].map(h => <th key={h} className="py-3 px-4 text-left label-caps">{h}</th>)}
-                    </tr></thead>
-                    <tbody>
-                      {(tax.invoices ?? []).length === 0 ? (
-                        <tr><td colSpan="6" className="py-10 text-center" style={{ color: 'var(--text-muted)' }}>No invoices for this customer yet.</td></tr>
-                      ) : tax.invoices.map(inv => (
-                        <tr key={inv.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                          <td className="py-3 px-4 font-bold" style={{ color: 'var(--text-h)' }}>{inv.number}</td>
-                          <td className="py-3 px-4" style={{ color: 'var(--text-muted)' }}>{inv.date}</td>
-                          <td className="py-3 px-4" style={{ color: 'var(--text-muted)' }}>{fmt(inv.total)}</td>
-                          <td className="py-3 px-4" style={{ color: 'var(--text-muted)' }}>{fmt(inv.gst_amount)}</td>
-                          <td className="py-3 px-4">
-                            <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold" style={{ background: inv.gst_paid ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', color: inv.gst_paid ? '#10b981' : '#ef4444' }}>
-                              {inv.gst_paid ? 'Paid' : 'Unpaid'}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4" style={{ color: 'var(--text-muted)' }}>{inv.status}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      )}
+function MapTab({ client }) {
+  const addr = [client.address, client.city, client.state, client.zip, client.country].filter(Boolean).join(', ')
+  if (!addr) return <Empty text="No address on file to map." icon={MapPin} />
+  const q = encodeURIComponent(addr)
+  return (
+    <div className="card-3d overflow-hidden" style={{ padding: 0 }}>
+      <iframe title="map" width="100%" height="420" style={{ border: 0 }} loading="lazy"
+        src={`https://maps.google.com/maps?q=${q}&output=embed`} />
+      <div className="px-4 py-3 flex items-center gap-2" style={{ borderTop: '1px solid var(--border)' }}>
+        <MapPin size={13} style={{ color: '#a78bfa' }} />
+        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{addr}</span>
+      </div>
+    </div>
+  )
+}
 
-      {/* ── Support (Helpdesk loop-in) ── */}
-      {tab === 'Support' && (
-        <div className="card-3d overflow-hidden" style={{ padding: 0 }}>
-          <div className="px-4 py-3 flex items-center gap-2" style={{ borderBottom: '1px solid var(--border)' }}>
-            <LifeBuoy size={14} style={{ color: '#a78bfa' }} />
-            <p className="label-caps" style={{ color: '#a78bfa' }}>Support Tickets</p>
+function AddressBookTab({ id, addresses, reload, toast }) {
+  const empty = { label: '', address: '', city: '', state: '', zip: '', country: '' }
+  const [form, setForm] = useState(empty)
+  const [adding, setAdding] = useState(false)
+  const sf = (k, v) => setForm(p => ({ ...p, [k]: v }))
+  const add = async () => {
+    if (!form.address.trim() && !form.city.trim()) return toast.error('Enter an address')
+    try { await customerApi.addresses.create(id, form); setForm(empty); setAdding(false); reload() }
+    catch (e) { toast.error(e.message) }
+  }
+  const del = async (aid) => { try { await customerApi.addresses.remove(id, aid); reload() } catch (e) { toast.error(e.message) } }
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <button onClick={() => setAdding(a => !a)} className="px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1" style={{ background: 'var(--bg-input)', color: '#a78bfa', border: '1px solid var(--border)' }}><Plus size={13} /> New address</button>
+      </div>
+      {adding && (
+        <div className="card-3d space-y-3" style={{ padding: '16px' }}>
+          <div className="grid grid-cols-2 gap-3">
+            <input className="input-3d text-sm" placeholder="Label (e.g. Warehouse)" value={form.label} onChange={e => sf('label', e.target.value)} />
+            <input className="input-3d text-sm" placeholder="Country" value={form.country} onChange={e => sf('country', e.target.value)} />
           </div>
-          {!tickets ? <div className="p-4"><div className="skeleton h-16 rounded-xl" style={{ background: 'var(--border)' }} /></div> : tickets.length === 0 ? (
-            <div className="py-10 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No support tickets linked to this customer.</div>
-          ) : (
-            <table className="w-full text-xs">
-              <thead><tr style={{ background: 'rgba(124,58,237,0.04)', borderBottom: '1px solid var(--border)' }}>
-                {['Subject', 'Status', 'Priority', 'Opened'].map(h => <th key={h} className="py-3 px-4 text-left label-caps">{h}</th>)}
-              </tr></thead>
-              <tbody>
-                {tickets.map(t => (
-                  <tr key={t.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                    <td className="py-3 px-4 font-bold" style={{ color: 'var(--text-h)' }}>{t.subject}</td>
-                    <td className="py-3 px-4" style={{ color: 'var(--text-muted)' }}>{t.status}</td>
-                    <td className="py-3 px-4" style={{ color: 'var(--text-muted)' }}>{t.priority}</td>
-                    <td className="py-3 px-4" style={{ color: 'var(--text-muted)' }}>{(t.created_at || '').slice(0, 10)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+          <textarea rows={2} className="input-3d text-sm resize-none" placeholder="Street address" value={form.address} onChange={e => sf('address', e.target.value)} />
+          <div className="grid grid-cols-3 gap-3">
+            <input className="input-3d text-sm" placeholder="City" value={form.city} onChange={e => sf('city', e.target.value)} />
+            <input className="input-3d text-sm" placeholder="State" value={form.state} onChange={e => sf('state', e.target.value)} />
+            <input className="input-3d text-sm" placeholder="ZIP" value={form.zip} onChange={e => sf('zip', e.target.value)} />
+          </div>
+          <div className="flex justify-end gap-2">
+            <button onClick={() => setAdding(false)} className="px-3 py-1.5 rounded-lg text-xs" style={{ color: 'var(--text-muted)' }}>Cancel</button>
+            <button onClick={add} className="px-4 py-1.5 rounded-lg text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>Save</button>
+          </div>
         </div>
       )}
+      {!addresses?.length ? <Empty text="No saved addresses." icon={MapPin} /> : (
+        <div className="grid md:grid-cols-2 gap-3">
+          {addresses.map(a => (
+            <div key={a.id} className="card-3d flex items-start justify-between gap-3" style={{ padding: '16px' }}>
+              <div>
+                {a.label && <p className="font-bold text-sm mb-0.5" style={{ color: 'var(--text-h)' }}>{a.label}</p>}
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{[a.address, a.city, a.state, a.zip, a.country].filter(Boolean).join(', ')}</p>
+              </div>
+              <button onClick={() => del(a.id)} className="p-1.5 rounded-lg hover:bg-[rgba(239,68,68,0.08)]"><Trash2 size={13} style={{ color: '#f87171' }} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
-      {/* ── Related: Vendors / TPV / Leads loop-ins ── */}
-      {tab === 'Related' && (
-        <div className="grid md:grid-cols-3 gap-4">
-          <RelatedCard icon={Package} title="Vendors" hint="Purchase vendors linked to this customer will appear here once the Purchase module ships." />
-          <RelatedCard icon={Users2} title="Third-Party Vendors"
-            hint={client.vendor_id ? `Linked TPV #${client.vendor_id}. Details load once the TPV module ships.` : 'No third-party vendor linked. Available once the TPV module ships.'} />
-          <RelatedCard icon={UserPlus} title="Leads" hint={client.lead_id ? `Converted from lead #${client.lead_id}.` : 'This customer was not converted from a lead.'} />
+function RecipientsTab({ id, recipients, reload, toast }) {
+  const empty = { name: '', company: '', email: '', phone: '', address: '', city: '', country: '' }
+  const [form, setForm] = useState(empty)
+  const [adding, setAdding] = useState(false)
+  const sf = (k, v) => setForm(p => ({ ...p, [k]: v }))
+  const add = async () => {
+    if (!form.name.trim()) return toast.error('Name required')
+    try { await customerApi.recipients.create(id, form); setForm(empty); setAdding(false); reload() }
+    catch (e) { toast.error(e.message) }
+  }
+  const del = async (rid) => { try { await customerApi.recipients.remove(id, rid); reload() } catch (e) { toast.error(e.message) } }
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <button onClick={() => setAdding(a => !a)} className="px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1" style={{ background: 'var(--bg-input)', color: '#a78bfa', border: '1px solid var(--border)' }}><Plus size={13} /> New recipient</button>
+      </div>
+      {adding && (
+        <div className="card-3d space-y-3" style={{ padding: '16px' }}>
+          <div className="grid grid-cols-2 gap-3">
+            <input className="input-3d text-sm" placeholder="Name *" value={form.name} onChange={e => sf('name', e.target.value)} />
+            <input className="input-3d text-sm" placeholder="Company" value={form.company} onChange={e => sf('company', e.target.value)} />
+            <input className="input-3d text-sm" placeholder="Email" value={form.email} onChange={e => sf('email', e.target.value)} />
+            <input className="input-3d text-sm" placeholder="Phone" value={form.phone} onChange={e => sf('phone', e.target.value)} />
+            <input className="input-3d text-sm" placeholder="City" value={form.city} onChange={e => sf('city', e.target.value)} />
+            <input className="input-3d text-sm" placeholder="Country" value={form.country} onChange={e => sf('country', e.target.value)} />
+          </div>
+          <input className="input-3d text-sm" placeholder="Address" value={form.address} onChange={e => sf('address', e.target.value)} />
+          <div className="flex justify-end gap-2">
+            <button onClick={() => setAdding(false)} className="px-3 py-1.5 rounded-lg text-xs" style={{ color: 'var(--text-muted)' }}>Cancel</button>
+            <button onClick={add} className="px-4 py-1.5 rounded-lg text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>Save</button>
+          </div>
         </div>
       )}
+      {!recipients?.length ? <Empty text="No recipients saved." icon={Users2} /> : (
+        <div className="grid md:grid-cols-2 gap-3">
+          {recipients.map(r => (
+            <div key={r.id} className="card-3d flex items-start justify-between gap-3" style={{ padding: '16px' }}>
+              <div>
+                <p className="font-bold text-sm" style={{ color: 'var(--text-h)' }}>{r.name}{r.company ? ` · ${r.company}` : ''}</p>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{[r.email, r.phone].filter(Boolean).join(' · ') || '—'}</p>
+                {(r.address || r.city || r.country) && <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>{[r.address, r.city, r.country].filter(Boolean).join(', ')}</p>}
+              </div>
+              <button onClick={() => del(r.id)} className="p-1.5 rounded-lg hover:bg-[rgba(239,68,68,0.08)]"><Trash2 size={13} style={{ color: '#f87171' }} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function RelatedTab({ client }) {
+  return (
+    <div className="grid md:grid-cols-3 gap-4">
+      <RelatedCard icon={Package} title="Vendors" hint="Purchase vendors linked to this customer appear here once the Purchase module ships." />
+      <RelatedCard icon={Users2} title="Third-Party Vendors"
+        hint={client.vendor_id ? `Linked TPV #${client.vendor_id}. Details load once the TPV module ships.` : 'No third-party vendor linked. Available once the TPV module ships.'} />
+      <RelatedCard icon={UserPlus} title="Leads" hint={client.lead_id ? `Converted from lead #${client.lead_id}.` : 'This customer was not converted from a lead.'} />
+    </div>
+  )
+}
+
+/* ══════════════ Shared helpers ══════════════ */
+
+const INVOICE_COLS = [
+  { key: 'number', label: 'Number', bold: true },
+  { key: 'date', label: 'Date', fmt: d10 },
+  { key: 'due_date', label: 'Due', fmt: d10 },
+  { key: 'total', label: 'Total', fmt },
+  { key: 'balance', label: 'Balance', fmt },
+  { key: 'status', label: 'Status' },
+]
+const PAYMENT_COLS = [
+  { key: 'date', label: 'Date', fmt: d10 },
+  { key: 'invoice_number', label: 'Invoice', bold: true },
+  { key: 'amount', label: 'Amount', fmt },
+  { key: 'mode', label: 'Mode' },
+  { key: 'tds_amount', label: 'TDS', fmt },
+]
+const PROPOSAL_COLS = [
+  { key: 'subject', label: 'Subject', bold: true },
+  { key: 'total', label: 'Total', fmt },
+  { key: 'status', label: 'Status' },
+  { key: 'created_at', label: 'Created', fmt: d10 },
+]
+const ESTIMATE_COLS = [
+  { key: 'reference', label: 'Reference', bold: true },
+  { key: 'subject', label: 'Subject' },
+  { key: 'date', label: 'Date', fmt: d10 },
+  { key: 'total', label: 'Total', fmt },
+  { key: 'status', label: 'Status' },
+]
+const CREDIT_COLS = [
+  { key: 'number', label: 'Number', bold: true },
+  { key: 'date', label: 'Date', fmt: d10 },
+  { key: 'total', label: 'Total', fmt },
+  { key: 'remaining', label: 'Remaining', fmt },
+  { key: 'status', label: 'Status' },
+]
+
+function DocTable({ columns, rows, empty, title, action }) {
+  return (
+    <div className="space-y-3">
+      {action && <div className="flex justify-end">{action}</div>}
+      <div className="card-3d overflow-hidden" style={{ padding: 0 }}>
+      {title && <div className="px-4 py-3" style={{ borderBottom: '1px solid var(--border)' }}><p className="label-caps" style={{ color: '#a78bfa' }}>{title}</p></div>}
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead><tr style={{ background: 'rgba(124,58,237,0.04)', borderBottom: '1px solid var(--border)' }}>
+            {columns.map(c => <th key={c.key} className="py-3 px-4 text-left label-caps whitespace-nowrap">{c.label}</th>)}
+          </tr></thead>
+          <tbody>
+            {!rows?.length ? (
+              <tr><td colSpan={columns.length} className="py-10 text-center" style={{ color: 'var(--text-muted)' }}>{empty}</td></tr>
+            ) : rows.map((r, i) => (
+              <tr key={r.id ?? i} style={{ borderBottom: '1px solid var(--border)' }}>
+                {columns.map(c => {
+                  const raw = r[c.key]
+                  const val = c.render ? c.render(raw) : c.fmt ? c.fmt(raw) : (raw ?? '—')
+                  return <td key={c.key} className="py-3 px-4" style={{ color: c.bold ? 'var(--text-h)' : 'var(--text-muted)', fontWeight: c.bold ? 700 : 400 }}>{val}</td>
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      </div>
+    </div>
+  )
+}
+
+function PendingModule({ feature, module }) {
+  const sameName = feature === module
+  return (
+    <div className="card-3d text-center" style={{ padding: '48px 20px' }}>
+      <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-3" style={{ background: 'rgba(124,58,237,0.1)' }}>
+        <Landmark size={20} style={{ color: '#a78bfa' }} />
+      </div>
+      <p className="font-bold text-sm" style={{ color: 'var(--text-h)' }}>{module} module coming soon</p>
+      <p className="text-xs mt-1 max-w-md mx-auto" style={{ color: 'var(--text-muted)' }}>
+        {sameName
+          ? `The ${module} module isn’t built in Sangoe yet. This tab will surface the customer’s ${module.toLowerCase()} automatically once it ships.`
+          : `“${feature}” is part of the ${module} module, which isn’t built in Sangoe yet. This tab will populate automatically once the ${module} module ships.`}
+      </p>
+    </div>
+  )
+}
+
+function Empty({ text, icon: Icon = FileText }) {
+  return (
+    <div className="card-3d text-center" style={{ padding: '40px 20px' }}>
+      <Icon size={22} style={{ color: 'var(--text-muted)', margin: '0 auto 8px' }} />
+      <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{text}</p>
     </div>
   )
 }

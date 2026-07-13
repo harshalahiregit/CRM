@@ -76,6 +76,54 @@ class ClientController extends Controller
         return response()->json($this->clients->relatedTickets($client, $request->user()->tenant_id));
     }
 
+    /* ── Sales-document loop-ins ──────────────────────────────── */
+    public function invoices(Client $client, Request $request)
+    {
+        return response()->json($this->clients->invoices($client, $request->user()->tenant_id));
+    }
+
+    public function estimates(Client $client, Request $request)
+    {
+        return response()->json($this->clients->estimates($client, $request->user()->tenant_id));
+    }
+
+    public function proposals(Client $client, Request $request)
+    {
+        return response()->json($this->clients->proposals($client, $request->user()->tenant_id));
+    }
+
+    public function creditNotes(Client $client, Request $request)
+    {
+        return response()->json($this->clients->creditNotes($client, $request->user()->tenant_id));
+    }
+
+    public function payments(Client $client, Request $request)
+    {
+        return response()->json($this->clients->payments($client, $request->user()->tenant_id));
+    }
+
+    public function statement(Client $client, Request $request)
+    {
+        return response()->json($this->clients->statement($client, $request->user()->tenant_id));
+    }
+
+    /* ── Customer admins (account managers) ───────────────────── */
+    public function admins(Client $client, Request $request)
+    {
+        return response()->json([
+            'assigned'   => $this->clients->admins($client, $request->user()->tenant_id),
+            'assignable' => $this->clients->assignableStaff($request->user()->tenant_id),
+        ]);
+    }
+
+    public function syncAdmins(Client $client, Request $request)
+    {
+        $data = $request->validate(['user_ids' => 'array', 'user_ids.*' => 'integer']);
+        return response()->json(
+            $this->clients->syncAdmins($client, $data['user_ids'] ?? [], $request->user()->tenant_id)
+        );
+    }
+
     /* ── Import (CSV) ─────────────────────────────────────────── */
     public function import(Request $request)
     {
