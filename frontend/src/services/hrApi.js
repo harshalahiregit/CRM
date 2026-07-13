@@ -111,7 +111,7 @@ export const hrApi = {
     // Collaborative notes thread
     notes: {
       list:   (id)          => api.get(`/hr/candidates/${id}/notes`).then(r => r.data),
-      add:    (id, body)    => api.post(`/hr/candidates/${id}/notes`, { body }).then(r => r.data),
+      add:    (id, body, visibleToCandidate = false) => api.post(`/hr/candidates/${id}/notes`, { body, visible_to_candidate: visibleToCandidate }).then(r => r.data),
       delete: (id, noteId)  => api.delete(`/hr/candidates/${id}/notes/${noteId}`).then(r => r.data),
     },
     // Typed documents (beyond the primary resume)
@@ -149,12 +149,17 @@ export const hrApi = {
 
   // ── Offers ──────────────────────────────────────────────────────────
   offers: {
-    list:         (params = {}) => api.get('/hr/offers', { params }).then(r => r.data),
-    get:          (id)          => api.get(`/hr/offers/${id}`).then(r => r.data),
-    create:       (data)        => api.post('/hr/offers', data).then(r => r.data),
-    send:         (id)          => api.patch(`/hr/offers/${id}/send`).then(r => r.data),
-    updateStatus: (id, payload)  => api.patch(`/hr/offers/${id}/status`, typeof payload === 'string' ? { status: payload } : payload).then(r => r.data),
-    delete:       (id)          => api.delete(`/hr/offers/${id}`).then(r => r.data),
+    list:          (params = {}) => api.get('/hr/offers', { params }).then(r => r.data),
+    joiningBuckets:()           => api.get('/hr/offers/joining-buckets').then(r => r.data),
+    get:           (id)          => api.get(`/hr/offers/${id}`).then(r => r.data),
+    create:        (data)        => api.post('/hr/offers', data).then(r => r.data),
+    send:          (id)          => api.patch(`/hr/offers/${id}/send`).then(r => r.data),
+    updateStatus:  (id, payload) => api.patch(`/hr/offers/${id}/status`, typeof payload === 'string' ? { status: payload } : payload).then(r => r.data),
+    confirmJoining:(id)          => api.patch(`/hr/offers/${id}/confirm-joining`).then(r => r.data),
+    regenerate:    (id, validity) => api.patch(`/hr/offers/${id}/regenerate`, { validity_date: validity }).then(r => r.data),
+    delete:        (id)          => api.delete(`/hr/offers/${id}`).then(r => r.data),
+    // Public candidate offer-portal link built from the stored token.
+    portalUrl:     (token)       => `${window.location.origin}/offer/${token}`,
   },
 
   // ── Onboarding ──────────────────────────────────────────────────────
@@ -167,6 +172,7 @@ export const hrApi = {
     verify:         (id, data)    => api.patch(`/hr/onboarding/${id}/verify`, data).then(r => r.data),
     documentUrl:    (id, docId)   => `${BASE}/hr/onboarding/${id}/documents/${docId}`,
     documentBlob:   (id, docId)   => api.get(`/hr/onboarding/${id}/documents/${docId}`, { responseType: 'blob' }).then(r => r.data),
+    verifyDocument: (id, docId, data) => api.patch(`/hr/onboarding/${id}/documents/${docId}/verify`, data).then(r => r.data),
     delete:         (id)          => api.delete(`/hr/onboarding/${id}`).then(r => r.data),
   },
 
@@ -175,6 +181,7 @@ export const hrApi = {
     list:   (params = {}) => api.get('/hr/employees', { params }).then(r => r.data),
     stats:  ()            => api.get('/hr/employees/stats').then(r => r.data),
     get:    (id)          => api.get(`/hr/employees/${id}`).then(r => r.data),
+    profile:(id)          => api.get(`/hr/employees/${id}/profile`).then(r => r.data),
     create: (data)        => api.post('/hr/employees', data).then(r => r.data),
     update: (id, data)    => api.put(`/hr/employees/${id}`, data).then(r => r.data),
     delete: (id)          => api.delete(`/hr/employees/${id}`).then(r => r.data),

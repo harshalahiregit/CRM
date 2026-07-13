@@ -4,6 +4,7 @@ namespace App\Services\Hr;
 
 use App\Exceptions\BusinessException;
 use App\Models\Hr\HrCandidate;
+use App\Models\Hr\HrCandidateNote;
 use App\Models\Hr\HrEmployee;
 use App\Models\Hr\HrOnboarding;
 use App\Models\Hr\HrOnboardingDocument;
@@ -29,7 +30,7 @@ class OnboardingService
 
     public function list(int $tenantId, array $filters): Collection
     {
-        $query = HrOnboarding::where('tenant_id', $tenantId)->with(['candidate', 'documents']);
+        $query = HrOnboarding::where('tenant_id', $tenantId)->with(['candidate.offer', 'documents']);
 
         if (! empty($filters['status']) && $filters['status'] !== 'All') {
             $query->where('status', $filters['status']);
@@ -131,6 +132,225 @@ class OnboardingService
         ];
     }
 
+    /**
+     * Full self-service portal payload (Sprint 2): dashboard, live progress
+     * tracker, profile, documents+verification, tasks, notifications, timeline
+     * and HR communication. Token-scoped and portal-safe — never leaks internal
+     * HR identity or another candidate's data.
+     */
+    public function portalDashboard(HrOnboarding $onboarding): array
+    {
+        $onboarding->loadMissing(['documents', 'candidate.jobPosting', 'candidate.assignedRecruiter', 'candidate.offer', 'candidate.auditLogs']);
+        $candidate = $onboarding->candidate;
+
+        return [
+            'candidate' => [
+                'reference'          => $candidate ? 'CAND-'.str_pad((string) $candidate->id, 4, '0', STR_PAD_LEFT) : null,
+                'name'               => $onboarding->candidate_name,
+                'email'              => $candidate?->email,
+                'applied_job'        => optional($candidate?->jobPosting)->title ?? $onboarding->position,
+                'department'         => $onboarding->department,
+                'experience_years'   => $candidate?->experience_years,
+                'current_status'     => $this->currentStatusLabel($candidate, $onboarding),
+                'assigned_recruiter' => optional($candidate?->assignedRecruiter)->name,
+            ],
+            'progress'            => $this->progressSteps($candidate, $onboarding),
+            'verification_status' => $onboarding->verification_status,
+            'rejection_reason'    => $onboarding->verification_status === 'Rejected' ? $onboarding->rejection_reason : null,
+            'profile'             => [
+                'submission'   => $onboarding->submission,
+                'editable'     => in_array($onboarding->verification_status, ['Pending', 'Submitted', 'Rejected'], true),
+                'submitted_at' => optional($onboarding->submitted_at)->toIso8601String(),
+            ],
+            'document_types'      => HrOnboarding::DOCUMENT_TYPES,
+            'documents'           => $onboarding->documents->map(fn ($d) => [
+                'id' => $d->id, 'type' => $d->type, 'original_name' => $d->original_name, 'size_kb' => $d->size_kb,
+                'status' => $d->status ?? 'Pending', 'remarks' => $d->remarks,
+            ])->all(),
+            'tasks'               => $this->onboardingTasks($onboarding),
+            'notifications'       => $this->candidateNotifications($candidate),
+            'timeline'            => $this->candidateTimeline($candidate),
+            'communication'       => $this->candidateMessages($candidate),
+        ];
+    }
+
+    /** Recruitment progress tracker: Applied → … → Employee (auto-derived). */
+    private function progressSteps(?HrCandidate $candidate, HrOnboarding $onboarding): array
+    {
+        $order = ['Applied', 'Screening', 'Assessment', 'Interview', 'Selected', 'Onboarding', 'Offer', 'Joining', 'Employee'];
+
+        $hasInterview  = $candidate ? $candidate->interviewRounds()->exists() : false;
+        $selected      = $candidate && ($candidate->final_decision === 'Selected' || $onboarding->exists);
+        $offer         = $candidate?->offer;
+        $offerAccepted = $offer && $offer->status === 'Accepted';
+        $employee      = $candidate ? HrEmployee::where('candidate_id', $candidate->id)->exists() : false;
+        $stageIdx      = array_search($candidate?->stage, ['Applied', 'Screening', 'Assessment', 'Interview', 'Offer', 'Hired', 'Rejected'], true);
+        $stageIdx      = $stageIdx === false ? 0 : $stageIdx;
+
+        $reached = [
+            'Applied'    => true,
+            'Screening'  => $stageIdx >= 1 || $hasInterview || $selected,
+            'Assessment' => $stageIdx >= 2 || $hasInterview || $selected,
+            'Interview'  => $hasInterview || $selected,
+            'Selected'   => (bool) $selected,
+            'Onboarding' => true, // an active portal means onboarding has begun
+            'Offer'      => (bool) $offer,
+            'Joining'    => (bool) ($offerAccepted || $onboarding->joining_confirmed_at),
+            'Employee'   => $employee,
+        ];
+
+        $furthest = 0;
+        foreach ($order as $i => $key) {
+            if ($reached[$key]) {
+                $furthest = $i;
+            }
+        }
+
+        return array_map(function ($key, $i) use ($reached, $furthest) {
+            $status = ! $reached[$key] ? 'pending' : ($i < $furthest ? 'done' : 'current');
+
+            return ['key' => $key, 'label' => $key, 'status' => $status];
+        }, $order, array_keys($order));
+    }
+
+    /** Candidate-facing status label for the dashboard. */
+    private function currentStatusLabel(?HrCandidate $candidate, HrOnboarding $onboarding): string
+    {
+        if (! $candidate) {
+            return 'In Progress';
+        }
+        if (HrEmployee::where('candidate_id', $candidate->id)->exists()) {
+            return 'Hired · Employee Onboarded';
+        }
+        if ($offer = $candidate->offer) {
+            return match ($offer->status) {
+                'Accepted' => 'Offer Accepted',
+                'Sent'     => 'Offer Received',
+                'Rejected' => 'Offer Declined',
+                default    => 'Offer '.$offer->status,
+            };
+        }
+        if ($onboarding->isApproved()) {
+            return 'Onboarding Approved · Awaiting Offer';
+        }
+        if ($onboarding->verification_status === 'Submitted') {
+            return 'Onboarding Under Review';
+        }
+        if ($onboarding->verification_status === 'Rejected') {
+            return 'Onboarding Needs Changes';
+        }
+        if ($candidate->final_decision === 'Selected') {
+            return 'Selected · Onboarding In Progress';
+        }
+
+        return $candidate->stage;
+    }
+
+    /** My Tasks: onboarding checklist + completion percentage. */
+    private function onboardingTasks(HrOnboarding $onboarding): array
+    {
+        $required = ['aadhaar', 'pan', 'resume', 'photo', 'address_proof'];
+        $items    = [];
+        $items[]  = ['key' => 'profile', 'label' => 'Complete personal, address & bank details', 'done' => ! empty($onboarding->submission)];
+
+        foreach ($required as $type) {
+            $doc = $onboarding->documents->firstWhere('type', $type);
+            $items[] = [
+                'key'   => $type,
+                'label' => 'Upload '.ucwords(str_replace('_', ' ', $type)),
+                'done'  => (bool) ($doc && $doc->status !== 'Rejected'),
+            ];
+        }
+
+        $done = count(array_filter($items, fn ($t) => $t['done']));
+
+        return [
+            'items'     => $items,
+            'completed' => $done,
+            'total'     => count($items),
+            'percent'   => (int) round($done / max(count($items), 1) * 100),
+        ];
+    }
+
+    /** Candidate-facing notifications derived from their audit timeline. */
+    private function candidateNotifications(?HrCandidate $candidate): array
+    {
+        if (! $candidate) {
+            return [];
+        }
+
+        $map = [
+            'Selected — Onboarding Started'     => ['success', 'Congratulations! You have been selected'],
+            'Onboarding Submitted'              => ['info', 'Your onboarding details were submitted'],
+            'Onboarding Approved — Offer Ready' => ['success', 'Onboarding verified & approved'],
+            'Onboarding Rejected'               => ['warning', 'Your onboarding needs changes'],
+            'Document Rejected'                 => ['warning', 'A document needs to be re-uploaded'],
+            'Document Verified'                 => ['success', 'A document was verified'],
+            'Offer Generated'                   => ['info', 'Your offer is being prepared'],
+            'Offer Sent'                        => ['success', 'Your offer letter is ready'],
+            'Offer Viewed'                      => ['info', 'You viewed your offer letter'],
+            'Offer Accepted'                    => ['success', 'Offer accepted'],
+            'Offer Declined'                    => ['warning', 'Offer declined'],
+            'Offer Expired'                     => ['warning', 'Your offer has expired'],
+            'Offer Regenerated'                 => ['info', 'A fresh offer has been issued'],
+            'Joining Confirmed'                 => ['success', 'Your joining has been confirmed'],
+            'Employee Created'                  => ['success', 'Welcome aboard — your employee record is ready'],
+        ];
+
+        $out = [];
+        foreach ($candidate->auditLogs as $log) { // newest first (Auditable orders by latest id)
+            foreach ($map as $needle => [$type, $title]) {
+                if (str_starts_with($log->action, $needle)) {
+                    $out[] = ['type' => $type, 'title' => $title, 'detail' => $log->comment, 'at' => optional($log->created_at)->toIso8601String()];
+                    break;
+                }
+            }
+        }
+
+        return array_slice($out, 0, 25);
+    }
+
+    /** Portal-safe activity timeline (no internal HR identity leaked). */
+    private function candidateTimeline(?HrCandidate $candidate): array
+    {
+        if (! $candidate) {
+            return [];
+        }
+
+        return $candidate->auditLogs->map(fn ($l) => [
+            'action'     => $l->action,
+            'comment'    => $l->comment,
+            'created_at' => optional($l->created_at)->toIso8601String(),
+        ])->all();
+    }
+
+    /** HR → candidate communication (notes explicitly marked visible). */
+    private function candidateMessages(?HrCandidate $candidate): array
+    {
+        if (! $candidate) {
+            return [];
+        }
+
+        return HrCandidateNote::where('candidate_id', $candidate->id)
+            ->where('visible_to_candidate', true)
+            ->latest()->get()
+            ->map(fn ($n) => ['from' => 'HR Team', 'body' => $n->body, 'at' => optional($n->created_at)->toIso8601String()])
+            ->all();
+    }
+
+    /** HR verifies a single uploaded document (Verified / Rejected + remarks). */
+    public function verifyDocument(HrOnboardingDocument $document, string $status, ?string $remarks): HrOnboardingDocument
+    {
+        $document->update(['status' => $status, 'remarks' => $remarks, 'verified' => $status === 'Verified']);
+
+        $candidate = optional($document->onboarding)->candidate;
+        optional($candidate)->recordAudit('Document '.$status.': '.ucwords(str_replace('_', ' ', $document->type)), null, $remarks);
+
+        Log::channel('hr')->info('Onboarding document verified', ['document_id' => $document->id, 'tenant_id' => $document->tenant_id, 'status' => $status]);
+
+        return $document;
+    }
+
     /** Candidate submits their onboarding details (public, token-scoped). */
     public function submit(HrOnboarding $onboarding, array $submission): HrOnboarding
     {
@@ -153,10 +373,21 @@ class OnboardingService
         return $onboarding->fresh(['documents']);
     }
 
-    /** Store a candidate-uploaded onboarding document. */
+    /**
+     * Store a candidate-uploaded onboarding document. One document per type —
+     * re-uploading (e.g. after HR rejects it) replaces the previous file and
+     * resets the document's verification status to Pending.
+     */
     public function storeDocument(HrOnboarding $onboarding, UploadedFile $file, string $type): HrOnboardingDocument
     {
         $type = in_array($type, HrOnboarding::DOCUMENT_TYPES, true) ? $type : 'other';
+
+        foreach ($onboarding->documents()->where('type', $type)->get() as $old) {
+            if ($old->path && Storage::disk(self::DOC_DISK)->exists($old->path)) {
+                Storage::disk(self::DOC_DISK)->delete($old->path);
+            }
+            $old->delete();
+        }
 
         $ext      = strtolower($file->getClientOriginalExtension());
         $safeName = Str::slug($onboarding->candidate_name).'_'.$type.'_'.$onboarding->id.'_'.time().'.'.$ext;
@@ -164,14 +395,19 @@ class OnboardingService
 
         $path = $file->storeAs($dir, $safeName, self::DOC_DISK);
 
-        return $onboarding->documents()->create([
+        $doc = $onboarding->documents()->create([
             'tenant_id'     => $onboarding->tenant_id,
             'type'          => $type,
             'original_name' => $file->getClientOriginalName(),
             'path'          => $path,
             'size_kb'       => (int) round($file->getSize() / 1024),
             'mime'          => $file->getClientMimeType(),
+            'status'        => 'Pending',
         ]);
+
+        optional($onboarding->candidate)->recordAudit('Document uploaded: '.ucwords(str_replace('_', ' ', $type)));
+
+        return $doc;
     }
 
     /**
@@ -225,6 +461,8 @@ class OnboardingService
 
         $employee = HrEmployee::where('candidate_id', $onboarding->candidate_id)->first();
 
+        $manager = $onboarding->reporting_manager_name ?? optional(optional($candidate)->assignedRecruiter)->name;
+
         if (! $employee) {
             $employee = $this->employeeService->create([
                 'candidate_id'           => $onboarding->candidate_id,
@@ -234,20 +472,24 @@ class OnboardingService
                 'phone'                  => $candidate?->phone,
                 'department'             => $onboarding->department ?? optional($offer)->department,
                 'designation'            => $onboarding->position ?? optional($offer)->position,
-                'reporting_manager_name' => $onboarding->reporting_manager_name,
+                'reporting_manager_name' => $manager,
                 'joining_date'           => $onboarding->joining_date ?? optional($offer)->joining_date,
                 'status'                 => 'Active',
             ], $onboarding->tenant_id);
         }
 
+        // Auto-complete every remaining onboarding step — no manual ticking.
         $onboarding->update([
-            'status'                => 'Completed',
-            'employee_code'         => $employee->employee_code,
-            'joining_confirmed_at'  => now(),
-            'step_doc_verification' => true,
-            'step_joining_confirmed'=> true,
-            'step_emp_id_generated' => true,
-            'step_record_created'   => true,
+            'status'                  => 'Completed',
+            'employee_code'           => $employee->employee_code,
+            'reporting_manager_name'  => $onboarding->reporting_manager_name ?? $manager,
+            'joining_confirmed_at'    => now(),
+            'step_doc_verification'   => true,
+            'step_joining_confirmed'  => true,
+            'step_emp_id_generated'   => true,
+            'step_dept_assigned'      => true,
+            'step_manager_assigned'   => true,
+            'step_record_created'     => true,
         ]);
 
         // Candidate → Hired + Selected (+ audit) via the existing decision flow.

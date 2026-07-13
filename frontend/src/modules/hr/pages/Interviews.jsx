@@ -424,8 +424,11 @@ export default function Interviews() {
                 </div>
               )}
               <div><label className="label">Comments</label><textarea rows={2} className="input-3d text-sm resize-none" value={fb.notes} onChange={e => setFb(f => ({ ...f, notes: e.target.value }))} /></div>
-              {['Passed', 'Next Round'].includes(fb.result) && (
-                <p className="text-[10px]" style={{ color: '#34d399' }}>✓ Candidate will auto-advance{fb.result === 'Passed' && /final/i.test(current.round_name) ? ' to the Offer stage' : ' in the pipeline'}.</p>
+              {fb.result === 'Passed' && (
+                <p className="text-[10px]" style={{ color: '#34d399' }}>✓ Marking <b>Passed</b> selects the candidate — congratulations are sent and <b>Onboarding starts automatically</b>. Use <b>Next Round</b> if more interviews are needed.</p>
+              )}
+              {fb.result === 'Next Round' && (
+                <p className="text-[10px]" style={{ color: '#60a5fa' }}>Candidate stays in the Interview stage — schedule the next round.</p>
               )}
               <div className="flex gap-3 pt-1">
                 <button onClick={() => setModal(null)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold" style={{ background: 'var(--bg-input)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Cancel</button>

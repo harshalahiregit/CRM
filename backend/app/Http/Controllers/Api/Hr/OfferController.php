@@ -18,8 +18,14 @@ class OfferController extends Controller
     public function index(Request $request)
     {
         return response()->json(
-            $this->offerService->list($request->user()->tenant_id, $request->only('status'))
+            $this->offerService->list($request->user()->tenant_id, $request->only(['status', 'view']))
         );
+    }
+
+    /** HR pre-joining dashboard: accepted offers bucketed by days-to-joining. */
+    public function joiningBuckets(Request $request)
+    {
+        return response()->json($this->offerService->joiningBuckets($request->user()->tenant_id));
     }
 
     public function store(StoreOfferRequest $request)
@@ -54,6 +60,26 @@ class OfferController extends Controller
         return response()->json($updated);
     }
 
+    /** HR confirms joining (joining day) → creates the Employee + moves to Hired. */
+    public function confirmJoining(Request $request, HrOffer $offer)
+    {
+        $this->assertTenant($request, $offer);
+        $this->assertCanManage($request);
+
+        return response()->json($this->offerService->confirmJoining($offer)->load('candidate'));
+    }
+
+    /** HR regenerates an expired/declined offer with a fresh validity + token. */
+    public function regenerate(Request $request, HrOffer $offer)
+    {
+        $this->assertTenant($request, $offer);
+        $this->assertCanManage($request);
+
+        $data = $request->validate(['validity_date' => 'nullable|date']);
+
+        return response()->json($this->offerService->regenerate($offer, $data['validity_date'] ?? null)->load('candidate'));
+    }
+
     public function destroy(Request $request, HrOffer $offer)
     {
         $this->assertTenant($request, $offer);
@@ -61,6 +87,12 @@ class OfferController extends Controller
         $this->offerService->destroy($offer);
 
         return response()->json(['message' => 'Deleted']);
+    }
+
+    /** Only HR-queue managers may act on offers. */
+    private function assertCanManage(Request $request): void
+    {
+        abort_unless($request->user()->canManageHrQueue(), 403, 'You are not authorised to manage offers');
     }
 
     /** Tenant guard for route-model-bound offers (row-level isolation). */

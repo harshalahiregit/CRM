@@ -105,10 +105,13 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
 
     // Offers
     Route::get('/offers',                           [OfferController::class, 'index']);
+    Route::get('/offers/joining-buckets',           [OfferController::class, 'joiningBuckets']);
     Route::post('/offers',                          [OfferController::class, 'store']);
     Route::get('/offers/{offer}',                   [OfferController::class, 'show']);
     Route::patch('/offers/{offer}/send',            [OfferController::class, 'send']);
     Route::patch('/offers/{offer}/status',          [OfferController::class, 'updateStatus']);
+    Route::patch('/offers/{offer}/confirm-joining', [OfferController::class, 'confirmJoining']);
+    Route::patch('/offers/{offer}/regenerate',      [OfferController::class, 'regenerate']);
     Route::delete('/offers/{offer}',                [OfferController::class, 'destroy']);
 
     // Onboarding
@@ -117,6 +120,7 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::get('/onboarding/{onboarding}',              [OnboardingController::class, 'show']);
     Route::patch('/onboarding/{onboarding}/verify',     [OnboardingController::class, 'verify']);
     Route::get('/onboarding/{onboarding}/documents/{document}', [OnboardingController::class, 'downloadDocument']);
+    Route::patch('/onboarding/{onboarding}/documents/{document}/verify', [OnboardingController::class, 'verifyDocument']);
     Route::patch('/onboarding/{onboarding}/step',       [OnboardingController::class, 'toggleStep']);
     Route::delete('/onboarding/{onboarding}',           [OnboardingController::class, 'destroy']);
 
@@ -124,6 +128,7 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::get('/employees/stats',          [EmployeeController::class, 'stats']);
     Route::get('/employees',                [EmployeeController::class, 'index']);
     Route::post('/employees',               [EmployeeController::class, 'store']);
+    Route::get('/employees/{employee}/profile', [EmployeeController::class, 'profile']);
     Route::get('/employees/{employee}',     [EmployeeController::class, 'show']);
     Route::put('/employees/{employee}',     [EmployeeController::class, 'update']);
     Route::delete('/employees/{employee}',  [EmployeeController::class, 'destroy']);

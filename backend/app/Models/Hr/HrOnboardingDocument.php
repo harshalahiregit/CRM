@@ -13,7 +13,8 @@ class HrOnboardingDocument extends Model
     protected $table = 'hr_onboarding_documents';
 
     protected $fillable = [
-        'tenant_id', 'onboarding_id', 'type', 'original_name', 'path', 'size_kb', 'mime', 'verified',
+        'tenant_id', 'onboarding_id', 'type', 'original_name', 'path', 'size_kb', 'mime',
+        'verified', 'status', 'remarks',
     ];
 
     protected $casts = [

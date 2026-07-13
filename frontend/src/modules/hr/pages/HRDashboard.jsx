@@ -64,6 +64,7 @@ export default function HRDashboard() {
   }
 
   const kpis = dashboardData?.kpis || {}
+  const rec = dashboardData?.recruitment_kpis || {}
   const manpower = dashboardData?.manpower || {}
   const pipeline = dashboardData?.pipeline || []
   const sourceBreakdown = dashboardData?.source_breakdown || []
@@ -73,6 +74,17 @@ export default function HRDashboard() {
 
   const maxS = Math.max(...sourceBreakdown.map(s => s.count), 1)
   const isManager = canApproveL1(user) || canApproveL2(user)
+
+  // Recruitment onboarding → offer → joining KPIs (auto-derived, tenant-scoped)
+  const recruitmentStats = [
+    { label: 'Waiting for Candidate',   value: rec.waiting_for_candidate,     icon: Clock,       color: '#f59e0b', to: '/app/hr/onboarding' },
+    { label: 'Waiting for HR Verify',   value: rec.waiting_for_hr,            icon: ClipboardList, color: '#0ea5e9', to: '/app/hr/onboarding' },
+    { label: 'Ready for Approval',      value: rec.ready_for_approval,        icon: CheckCircle, color: '#10b981', to: '/app/hr/onboarding' },
+    { label: 'Offer Pending',           value: rec.offer_pending,             icon: Send,        color: '#a78bfa', to: '/app/hr/offers' },
+    { label: 'Offer Accepted',          value: rec.offer_accepted,            icon: FileText,    color: '#8b5cf6', to: '/app/hr/offers' },
+    { label: 'Joining This Week',       value: rec.joining_this_week,         icon: Calendar,    color: '#14b8a6', to: '/app/hr/offers' },
+    { label: 'Employee Creation Pending', value: rec.employee_creation_pending, icon: Rocket,    color: '#f97316', to: '/app/hr/offers' },
+  ]
 
   // 8 recruitment-workflow metrics required by the HR module spec
   const workflowStats = [
@@ -175,6 +187,19 @@ export default function HRDashboard() {
           gradient="linear-gradient(145deg,#f87171,#dc2626)" 
           shadow="#dc2626" 
         />
+      </div>
+
+      {/* ── Recruitment Pipeline KPIs — onboarding → offer → joining ── */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-bold text-base" style={{ color:'var(--text-h)' }}>Onboarding &amp; Offer Pipeline</h2>
+          <button onClick={()=>navigate('/app/hr/onboarding')} className="text-xs font-semibold flex items-center gap-1" style={{ color:'#a78bfa' }}>Onboarding tracker <ArrowRight size={11}/></button>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+          {recruitmentStats.map(s => (
+            <MiniStat key={s.label} label={s.label} value={s.value} icon={s.icon} color={s.color} onClick={()=>navigate(s.to)} />
+          ))}
+        </div>
       </div>
 
       {/* ── Recruitment Workflow — Manpower Request pipeline (8 metrics) ── */}

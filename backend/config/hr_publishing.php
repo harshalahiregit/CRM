@@ -16,6 +16,12 @@ return [
     'onboarding_portal_url' => env('ONBOARDING_PORTAL_URL', 'http://localhost:5173/onboarding'),
 
     /*
+     | Base URL of the public candidate Offer Letter portal SPA. The token is
+     | appended: {offer_portal_url}/{access_token}.
+     */
+    'offer_portal_url' => env('OFFER_PORTAL_URL', 'http://localhost:5173/offer'),
+
+    /*
      | Job distribution channels. `class` implements App\Services\Hr\Publishing\JobChannel.
      | Channels with a null class are recognised but "not yet integrated" — adding a
      | real integration (LinkedIn, Naukri, Indeed, TrulyTalents) is just: write the

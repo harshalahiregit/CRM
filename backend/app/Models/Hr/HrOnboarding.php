@@ -12,7 +12,7 @@ class HrOnboarding extends Model
     protected $table = 'hr_onboarding';
 
     /** Document types the candidate uploads during onboarding. */
-    public const DOCUMENT_TYPES = ['aadhaar', 'pan', 'resume', 'photo', 'address_proof', 'company_document', 'other'];
+    public const DOCUMENT_TYPES = ['aadhaar', 'pan', 'resume', 'photo', 'address_proof', 'educational_certificate', 'experience_document', 'medical', 'vaccination', 'cancelled_cheque', 'company_document', 'other'];
 
     protected $fillable = [
         'candidate_id','tenant_id','candidate_name','position','joining_date',

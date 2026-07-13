@@ -1,9 +1,13 @@
 import { useState, useEffect } from 'react'
 import { useTheme } from '@/context/ThemeContext'
-import { Plus, Send, Eye, X, Mail, AlertCircle } from 'lucide-react'
+import { Plus, Send, X, Mail, AlertCircle, ExternalLink, Copy, RefreshCw, UserCheck } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 
-const STATUS_S = s => s==='Accepted'?{c:'#10b981',bg:'rgba(16,185,129,0.12)'}:s==='Sent'?{c:'#a78bfa',bg:'rgba(124,58,237,0.12)'}:s==='Rejected'?{c:'#f87171',bg:'rgba(239,68,68,0.1)'}:{c:'#fbbf24',bg:'rgba(245,158,11,0.12)'}
+const STATUS_COLORS = {
+  Generated: '#94a3b8', Sent: '#a78bfa', Viewed: '#8b5cf6', Accepted: '#10b981',
+  Declined: '#f87171', Rejected: '#f87171', Expired: '#f59e0b', Completed: '#0d9488',
+}
+const STATUS_S = s => { const c = STATUS_COLORS[s] || '#fbbf24'; return { c, bg: `${c}1f` } }
 const fmtCTC = v => v ? '₹'+Number(v).toLocaleString('en-IN') : '—'
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) : '—'
 const initials = n => (n||'').split(' ').slice(0,2).map(x=>x[0]).join('').toUpperCase()
@@ -13,6 +17,8 @@ const EMPTY_FORM = { candidate_id:'', position:'', department:'', offered_ctc:''
 export default function OfferLetters() {
   const { isDark } = useTheme()
   const [offers, setOffers]       = useState([])
+  const [completed, setCompleted] = useState([])
+  const [view, setView]           = useState('active')   // 'active' | 'completed'
   const [candidates, setCands]    = useState([])
   const [loading, setLoading]     = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -20,6 +26,7 @@ export default function OfferLetters() {
   const [saving, setSaving]       = useState(false)
   const [toast, setToast]         = useState(null)
   const [rejectModal, setRejectModal] = useState({ open:false, id:null, reason:'' })
+  const [buckets, setBuckets]     = useState(null)
 
   const showToast = (msg, type='success') => { setToast({msg,type}); setTimeout(()=>setToast(null),3000) }
 
@@ -28,16 +35,37 @@ export default function OfferLetters() {
     try {
       // Offer-ready = candidates whose onboarding has been verified and APPROVED
       // (Sprint 2 gate). Offers can only be generated after onboarding approval.
-      const [offs, approvedOnb] = await Promise.all([hrApi.offers.list(), hrApi.onboarding.list({ verification_status: 'Approved' })])
-      setOffers(offs); setCands(approvedOnb)
+      const [offs, done, approvedOnb, jb] = await Promise.all([
+        hrApi.offers.list(),                       // active offers (exclude Completed)
+        hrApi.offers.list({ view: 'history' }),    // Completed / joined offers
+        hrApi.onboarding.list({ verification_status: 'Approved' }),
+        hrApi.offers.joiningBuckets().catch(() => null),
+      ])
+      setOffers(offs); setCompleted(done); setCands(approvedOnb); setBuckets(jb)
     } catch { showToast('Failed to load offers','error') }
     finally { setLoading(false) }
   }
   useEffect(()=>{ fetchData() },[])
 
+  const patchOffer = (id, updated) => setOffers(prev => prev.map(o => o.id === id ? updated : o))
+  const openPortal = (token) => window.open(hrApi.offers.portalUrl(token), '_blank', 'noopener,noreferrer')
+  const copyLink = async (token) => { try { await navigator.clipboard.writeText(hrApi.offers.portalUrl(token)) } catch { /* */ } showToast('Offer portal link copied!') }
+  const handleConfirmJoining = async (id) => {
+    // Offer becomes Completed → it leaves the active list, so refetch both lists.
+    try { await hrApi.offers.confirmJoining(id); showToast('Joining confirmed — employee created!'); fetchData() }
+    catch (e) { showToast(e.response?.data?.message || 'Failed', 'error') }
+  }
+  const handleRegenerate = async (id) => {
+    const v = window.prompt('New validity date (YYYY-MM-DD), or leave blank for +7 days:')
+    if (v === null) return
+    try { patchOffer(id, await hrApi.offers.regenerate(id, v || undefined)); showToast('Offer regenerated — send the new link') }
+    catch (e) { showToast(e.response?.data?.message || 'Failed', 'error') }
+  }
+
   // Approved-onboarding candidates without an offer letter yet — one click generates it.
-  const offeredCandidateIds = new Set(offers.map(o => Number(o.candidate_id)))
-  const readyForOffer = candidates.filter(o => o.candidate_id && !offeredCandidateIds.has(Number(o.candidate_id)))
+  // Count offers from BOTH lists (incl. Completed) so a joined candidate never reappears.
+  const offeredCandidateIds = new Set([...offers, ...completed].map(o => Number(o.candidate_id)))
+  const readyForOffer = candidates.filter(o => o.candidate_id && o.status !== 'Completed' && !offeredCandidateIds.has(Number(o.candidate_id)))
   const openGenerateFor = (onb) => {
     setForm({ ...EMPTY_FORM, candidate_id: String(onb.candidate_id), position: onb.position || '', department: onb.department || '' })
     setShowModal(true)
@@ -91,7 +119,9 @@ export default function OfferLetters() {
     }
   }
 
-  const stats = { generated:offers.length, sent:offers.filter(o=>['Sent','Accepted'].includes(o.status)).length, accepted:offers.filter(o=>o.status==='Accepted').length, pending:offers.filter(o=>o.status==='Generated').length }
+  // Counters reflect ACTIVE offers only; Completed (joined) are counted separately.
+  const stats = { active:offers.length, sent:offers.filter(o=>['Sent','Viewed','Accepted'].includes(o.status)).length, accepted:offers.filter(o=>o.status==='Accepted').length, completed:completed.length }
+  const shown = view === 'completed' ? completed : offers
 
   return (
     <div className="space-y-6 animate-[tiltIn_0.35s_ease_forwards]">
@@ -103,13 +133,44 @@ export default function OfferLetters() {
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[{l:'Generated',v:stats.generated,c:'#7C3AED'},{l:'Sent',v:stats.sent,c:'#a78bfa'},{l:'Accepted',v:stats.accepted,c:'#10b981'},{l:'Pending',v:stats.pending,c:'#fbbf24'}].map(k=>(
+        {[{l:'Active Offers',v:stats.active,c:'#7C3AED'},{l:'Sent / Awaiting',v:stats.sent,c:'#a78bfa'},{l:'Accepted · to join',v:stats.accepted,c:'#10b981'},{l:'Completed (Joined)',v:stats.completed,c:'#0d9488'}].map(k=>(
           <div key={k.l} className="kpi-3d"><p className="text-3xl font-black" style={{ color:k.c }}>{k.v}</p><p className="text-sm font-medium mt-1" style={{ color:'var(--text-muted)' }}>{k.l}</p></div>
         ))}
       </div>
 
+      {/* Active / Completed view toggle */}
+      <div className="flex gap-2">
+        {[{k:'active',l:`Active · ${offers.length}`},{k:'completed',l:`Completed Offers · ${completed.length}`}].map(t=>(
+          <button key={t.k} onClick={()=>setView(t.k)} className="px-3 py-1.5 rounded-xl text-xs font-bold transition-all"
+            style={{ background: view===t.k ? 'linear-gradient(135deg,#7C3AED,#5b21b6)' : 'var(--bg-input)', color: view===t.k ? '#fff' : 'var(--text-muted)', border:`1px solid ${view===t.k ? 'transparent' : 'var(--border)'}` }}>
+            {t.l}
+          </button>
+        ))}
+      </div>
+
+      {/* HR Pre-Joining — accepted offers bucketed by days-to-joining */}
+      {view === 'active' && buckets && (buckets.in_15_days + buckets.in_7_days + buckets.tomorrow + buckets.today + buckets.late) > 0 && (
+        <div className="card-3d" style={{ padding:'16px' }}>
+          <p className="text-xs font-bold mb-3 flex items-center gap-2" style={{ color:'var(--text-h)' }}>🗓️ Pre-Joining — awaiting Confirm Joining</p>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            {[
+              {l:'Within 15 days',v:buckets.in_15_days,c:'#7C3AED'},
+              {l:'Within 7 days',v:buckets.in_7_days,c:'#a78bfa'},
+              {l:'Tomorrow',v:buckets.tomorrow,c:'#f59e0b'},
+              {l:'Today',v:buckets.today,c:'#10b981'},
+              {l:'Late joining',v:buckets.late,c:'#f87171'},
+            ].map(b=>(
+              <div key={b.l} className="px-3 py-2.5 rounded-xl text-center" style={{ background:`${b.c}12`, border:`1px solid ${b.c}30` }}>
+                <p className="text-2xl font-black" style={{ color:b.c }}>{b.v}</p>
+                <p className="text-[10px] font-semibold mt-0.5" style={{ color:'var(--text-muted)' }}>{b.l}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Ready for Offer — candidates the pipeline auto-moved to the Offer stage */}
-      {!loading && readyForOffer.length > 0 && (
+      {view === 'active' && !loading && readyForOffer.length > 0 && (
         <div className="rounded-2xl p-4" style={{ background:'rgba(16,185,129,0.08)', border:'1px solid rgba(16,185,129,0.25)' }}>
           <p className="text-xs font-bold mb-3 flex items-center gap-2" style={{ color:'#10b981' }}>
             <Mail size={13}/> Ready for Offer · {readyForOffer.length}
@@ -129,22 +190,27 @@ export default function OfferLetters() {
         </div>
       )}
 
-      {/* Acceptance progress */}
-      {stats.generated > 0 && (
-        <div className="card-3d" style={{ padding:'20px' }}>
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-bold" style={{ color:'var(--text-h)' }}>Offer Acceptance Rate</span>
-            <span className="text-sm font-black" style={{ color:'#10b981' }}>{Math.round((stats.accepted/stats.generated)*100)}%</span>
+      {/* Acceptance progress — accepted-or-joined across all offers */}
+      {view === 'active' && (offers.length + completed.length) > 0 && (() => {
+        const totalAll = offers.length + completed.length
+        const acceptedOrJoined = offers.filter(o=>o.status==='Accepted').length + completed.length
+        const rate = Math.round((acceptedOrJoined/totalAll)*100)
+        return (
+          <div className="card-3d" style={{ padding:'20px' }}>
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm font-bold" style={{ color:'var(--text-h)' }}>Offer Acceptance Rate</span>
+              <span className="text-sm font-black" style={{ color:'#10b981' }}>{rate}%</span>
+            </div>
+            <div className="h-3 rounded-full" style={{ background:'var(--bg-input)' }}>
+              <div className="h-full rounded-full" style={{ width:`${rate}%`, background:'linear-gradient(90deg,#34d399,#10b981)' }}/>
+            </div>
           </div>
-          <div className="h-3 rounded-full" style={{ background:'var(--bg-input)' }}>
-            <div className="h-full rounded-full" style={{ width:`${(stats.accepted/stats.generated)*100}%`, background:'linear-gradient(90deg,#34d399,#10b981)' }}/>
-          </div>
-        </div>
-      )}
+        )
+      })()}
 
       {loading ? <div className="text-center py-12" style={{ color:'var(--text-muted)' }}>Loading…</div> : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-          {offers.map(offer=>{
+          {shown.map(offer=>{
             const ss = STATUS_S(offer.status)
             const cname = offer.candidate?.name || '—'
             return(
@@ -164,25 +230,34 @@ export default function OfferLetters() {
                   <div className="px-3 py-2 rounded-xl" style={{ background:'var(--bg-input)' }}><p className="text-[10px]" style={{ color:'var(--text-muted)' }}>Joining Date</p><p className="text-xs font-bold mt-0.5" style={{ color:'var(--text-h)' }}>{fmtDate(offer.joining_date)}</p></div>
                 </div>
                 <div className="flex gap-2 mt-auto">
-                  {offer.status==='Generated' && <button onClick={()=>handleSend(offer.id)} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold text-white" style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)' }}><Send size={11}/> Send</button>}
-                  {offer.status==='Sent' && <>
-                    <button onClick={()=>handleStatus(offer.id,'Accepted')} className="flex-1 py-2 rounded-xl text-xs font-bold text-white" style={{ background:'linear-gradient(135deg,#10b981,#059669)' }}>✓ Accept</button>
-                    <button onClick={()=>openOfferReject(offer.id)} className="flex-1 py-2 rounded-xl text-xs font-bold" style={{ background:'rgba(239,68,68,0.1)', color:'#f87171' }}>Reject</button>
-                  </>}
-                  {offer.status==='Accepted' && (
-                    <div className="flex-1 flex flex-col gap-2">
-                      <span className="text-center text-xs py-1.5 font-semibold rounded-xl" style={{ color:'#10b981', background:'rgba(16,185,129,0.1)' }}>✓ Accepted</span>
-                      <button onClick={()=>handleStartOnboarding(offer)} className="py-2 rounded-xl text-xs font-bold text-white" style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>
-                        Start Onboarding →
-                      </button>
+                  {offer.status==='Generated' && <button onClick={()=>handleSend(offer.id)} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold text-white" style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)' }}><Send size={11}/> Send Offer</button>}
+
+                  {/* Sent / Viewed / Accepted → the candidate acts on the secure portal */}
+                  {offer.access_token && ['Sent','Viewed','Accepted'].includes(offer.status) && (
+                    <div className="flex-1 flex gap-1.5">
+                      <button onClick={()=>openPortal(offer.access_token)} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[11px] font-bold text-white" style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)' }}><ExternalLink size={11}/> Offer Portal</button>
+                      <button onClick={()=>copyLink(offer.access_token)} title="Copy link" className="px-2.5 py-2 rounded-xl text-[11px] font-semibold" style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}><Copy size={12}/></button>
                     </div>
                   )}
-                  {offer.status==='Rejected' && <span className="flex-1 text-center text-xs py-2 font-semibold" style={{ color:'#f87171' }}>Rejected</span>}
+
+                  {offer.status==='Accepted' && (
+                    <button onClick={()=>handleConfirmJoining(offer.id)} className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-[11px] font-bold text-white" style={{ background:'linear-gradient(135deg,#10b981,#059669)' }}><UserCheck size={12}/> Confirm Joining</button>
+                  )}
+
+                  {['Declined','Rejected','Expired'].includes(offer.status) && (
+                    <button onClick={()=>handleRegenerate(offer.id)} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[11px] font-bold" style={{ background:'rgba(124,58,237,0.1)', color:'#a78bfa', border:'1px solid rgba(124,58,237,0.2)' }}><RefreshCw size={11}/> Regenerate Offer</button>
+                  )}
+
+                  {offer.status==='Completed' && (
+                    <div className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[11px] font-bold" style={{ background:'rgba(13,148,136,0.1)', color:'#0d9488', border:'1px solid rgba(13,148,136,0.2)' }}>
+                      <UserCheck size={12}/> Joined{offer.joining_confirmed_at ? ` · ${fmtDate(offer.joining_confirmed_at)}` : ''}
+                    </div>
+                  )}
                 </div>
               </div>
             )
           })}
-          {offers.length===0 && <div className="col-span-3 text-center py-12" style={{ color:'var(--text-muted)' }}>No offers generated yet.</div>}
+          {shown.length===0 && <div className="col-span-3 text-center py-12" style={{ color:'var(--text-muted)' }}>{view==='completed' ? 'No completed offers yet.' : 'No active offers.'}</div>}
         </div>
       )}
 

@@ -6,3 +6,4 @@ require __DIR__.'/hr.php';
 require __DIR__.'/sales.php';
 require __DIR__.'/careers.php';
 require __DIR__.'/onboarding.php';
+require __DIR__.'/offer.php';

@@ -8,6 +8,7 @@ use App\Models\Hr\HrInterviewRound;
 use App\Models\Hr\HrJobPosting;
 use App\Models\Hr\HrManpowerRequest;
 use App\Models\Hr\HrOffer;
+use App\Models\Hr\HrOnboarding;
 use App\Models\User;
 use App\Support\Hr\ManpowerRequestStatus as Status;
 use Carbon\Carbon;
@@ -95,6 +96,9 @@ class HRDashboardService
             'closed_positions' => $mrBase()->where('status', Status::CLOSED)->count(),
         ];
 
+        // ── Recruitment onboarding → offer → joining KPIs (auto-derived) ─────
+        $recruitmentKpis = $this->recruitmentKpis($tenantId, $today);
+
         // Pending approvals awaiting the current user's action (L1 and/or L2)
         $pendingApprovals = 0;
         if ($user->canApproveL1()) {
@@ -119,12 +123,74 @@ class HRDashboardService
                 'time_to_hire_days' => $timeToHire,
                 'pending_approvals' => $pendingApprovals,
             ],
+            'recruitment_kpis' => $recruitmentKpis,
             'manpower'         => $manpower,
             'pipeline'         => $pipeline,
             'source_breakdown' => $sourceBreakdown,
             'recent_requests'  => $recentRequests,
             'today_interviews' => $todayIV,
             'hiring_trend'     => $hiringTrend,
+        ];
+    }
+
+    /**
+     * Recruitment workflow KPIs, all derived from the live onboarding / offer /
+     * employee state (no stored counters). Tenant-scoped throughout.
+     */
+    private function recruitmentKpis(int $tenantId, Carbon $today): array
+    {
+        // Onboarding-stage counts (waiting on candidate vs waiting on HR, and
+        // how many are actually ready for approval — mandatory docs verified).
+        $onboardings = HrOnboarding::where('tenant_id', $tenantId)
+            ->whereIn('verification_status', ['Pending', 'Submitted'])
+            ->with(['candidate:id,experience_years', 'documents:id,onboarding_id,type,status'])
+            ->get();
+
+        $baseMandatory = ['aadhaar', 'pan', 'resume', 'photo', 'address_proof', 'educational_certificate'];
+        $waitingForCandidate = 0;
+        $waitingForHr = 0;
+        $readyForApproval = 0;
+
+        foreach ($onboardings as $onb) {
+            if ($onb->verification_status === 'Pending') {
+                $waitingForCandidate++;
+
+                continue;
+            }
+            $waitingForHr++;                                 // Submitted → HR must verify
+            $required = $baseMandatory;
+            if ((float) ($onb->candidate?->experience_years ?? 0) > 0) {
+                $required[] = 'experience_document';
+            }
+            $verified = $onb->documents->where('status', 'Verified')->pluck('type')->all();
+            if (! array_diff($required, $verified) && $onb->background_verified) {
+                $readyForApproval++;
+            }
+        }
+
+        // Offer-stage counts. Employee creation is decoupled: an accepted offer
+        // is "waiting to join" until HR confirms joining (joining_confirmed_at).
+        $offerBase = fn () => HrOffer::where('tenant_id', $tenantId);
+        $offerPending  = $offerBase()->whereIn('status', ['Generated', 'Sent', 'Viewed'])->count();
+        $offerAccepted = $offerBase()->where('status', 'Accepted')->whereNull('joining_confirmed_at')->count();
+        $joiningThisWeek = $offerBase()->where('status', 'Accepted')->whereNull('joining_confirmed_at')
+            ->whereNotNull('joining_date')
+            ->whereBetween('joining_date', [$today->toDateString(), $today->copy()->addDays(7)->toDateString()])
+            ->count();
+        // Joining day has arrived/passed but the employee record isn't created yet.
+        $employeeCreationPending = $offerBase()->where('status', 'Accepted')->whereNull('joining_confirmed_at')
+            ->whereNotNull('joining_date')
+            ->whereDate('joining_date', '<=', $today->toDateString())
+            ->count();
+
+        return [
+            'waiting_for_candidate'     => $waitingForCandidate,
+            'waiting_for_hr'            => $waitingForHr,
+            'ready_for_approval'        => $readyForApproval,
+            'offer_pending'             => $offerPending,
+            'offer_accepted'            => $offerAccepted,
+            'joining_this_week'         => $joiningThisWeek,
+            'employee_creation_pending' => $employeeCreationPending,
         ];
     }
 }

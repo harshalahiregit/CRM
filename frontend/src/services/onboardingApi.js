@@ -16,6 +16,14 @@ export const onboardingApi = {
       headers: { 'Content-Type': 'multipart/form-data' },
     }).then(r => r.data)
   },
+  uploadDocument: (token, type, file) => {
+    const fd = new FormData()
+    fd.append('type', type)
+    fd.append('document', file)
+    return api.post(`/onboarding/${token}/documents`, fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then(r => r.data)
+  },
 }
 
 export default onboardingApi

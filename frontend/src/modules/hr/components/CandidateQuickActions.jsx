@@ -98,7 +98,11 @@ export default function CandidateQuickActions({ candidate, recruiters = [], onCh
     </button>
   )
 
-  const forwardStages = CANDIDATE_STAGES.filter(s => s !== 'Rejected' && STAGE_ORDER[s] > (STAGE_ORDER[candidate.stage] ?? 0))
+  // Manual "Move Stage" is only allowed between the pre-selection stages. Offer
+  // and Hired are system-controlled (onboarding approval → Offer, offer
+  // acceptance → Hired) and are intentionally not offered here.
+  const MANUAL_STAGES = ['Applied', 'Screening', 'Assessment', 'Interview']
+  const forwardStages = MANUAL_STAGES.filter(s => STAGE_ORDER[s] > (STAGE_ORDER[candidate.stage] ?? 0))
 
   return (
     <div className="relative" ref={menuRef}>
@@ -150,16 +154,23 @@ export default function CandidateQuickActions({ candidate, recruiters = [], onCh
             )}
 
             {modal === 'stage' && (
-              forwardStages.length ? (
-                <div className="space-y-2">
-                  {forwardStages.map(s => (
-                    <button key={s} onClick={() => setStage(s)} className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all"
-                      style={{ border: `1px solid ${stage === s ? STAGE_COLORS[s] : 'var(--border)'}`, background: stage === s ? `${STAGE_COLORS[s]}18` : 'var(--bg-input)', color: stage === s ? STAGE_COLORS[s] : 'var(--text-h)' }}>
-                      <span className="w-2 h-2 rounded-full" style={{ background: STAGE_COLORS[s] }} /> {s}
-                    </button>
-                  ))}
-                </div>
-              ) : <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Candidate is already at the final stage. Use Reject to decline.</p>
+              <>
+                {forwardStages.length ? (
+                  <div className="space-y-2">
+                    {forwardStages.map(s => (
+                      <button key={s} onClick={() => setStage(s)} className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all"
+                        style={{ border: `1px solid ${stage === s ? STAGE_COLORS[s] : 'var(--border)'}`, background: stage === s ? `${STAGE_COLORS[s]}18` : 'var(--bg-input)', color: stage === s ? STAGE_COLORS[s] : 'var(--text-h)' }}>
+                        <span className="w-2 h-2 rounded-full" style={{ background: STAGE_COLORS[s] }} /> {s}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>No manual stage changes available — the candidate has reached the interview stage. Use <b>Reject</b> to decline.</p>
+                )}
+                <p className="text-[10px] mt-3 px-2.5 py-2 rounded-lg" style={{ color: 'var(--text-muted)', background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+                  ℹ️ Offer and Hired stages are managed automatically by the recruitment workflow.
+                </p>
+              </>
             )}
 
             {modal === 'interview' && (

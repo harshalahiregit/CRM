@@ -20,15 +20,16 @@ class CandidateNoteService
         return $candidate->candidateNotes()->get();
     }
 
-    public function add(HrCandidate $candidate, string $body, ?User $actor): HrCandidateNote
+    public function add(HrCandidate $candidate, string $body, ?User $actor, bool $visibleToCandidate = false): HrCandidateNote
     {
         $note = $candidate->candidateNotes()->create([
-            'tenant_id' => $candidate->tenant_id,
-            'user_id'   => $actor?->id,
-            'body'      => $body,
+            'tenant_id'            => $candidate->tenant_id,
+            'user_id'              => $actor?->id,
+            'body'                 => $body,
+            'visible_to_candidate' => $visibleToCandidate,
         ]);
 
-        $candidate->recordAudit('Note added', $actor);
+        $candidate->recordAudit($visibleToCandidate ? 'Message sent to candidate' : 'Note added', $actor);
 
         Log::channel('hr')->info('Candidate note added', ['candidate_id' => $candidate->id, 'tenant_id' => $candidate->tenant_id, 'note_id' => $note->id]);
 

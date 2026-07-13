@@ -14,7 +14,11 @@ class HrCandidateNote extends Model
     protected $table = 'hr_candidate_notes';
 
     protected $fillable = [
-        'tenant_id', 'candidate_id', 'user_id', 'body',
+        'tenant_id', 'candidate_id', 'user_id', 'body', 'visible_to_candidate',
+    ];
+
+    protected $casts = [
+        'visible_to_candidate' => 'boolean',
     ];
 
     public function candidate()

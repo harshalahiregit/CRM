@@ -19,11 +19,19 @@ class EmployeeRepository extends BaseRepository
         if (! empty($filters['department']) && $filters['department'] !== 'All') {
             $query->where('department', $filters['department']);
         }
+        if (! empty($filters['designation']) && $filters['designation'] !== 'All') {
+            $query->where('designation', $filters['designation']);
+        }
+        if (! empty($filters['joined_from'])) {
+            $query->whereDate('joining_date', '>=', $filters['joined_from']);
+        }
         if (! empty($filters['search'])) {
             $search = $filters['search'];
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', '%'.$search.'%')
                   ->orWhere('employee_code', 'like', '%'.$search.'%')
+                  ->orWhere('email', 'like', '%'.$search.'%')
+                  ->orWhere('department', 'like', '%'.$search.'%')
                   ->orWhere('designation', 'like', '%'.$search.'%');
             });
         }

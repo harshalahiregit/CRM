@@ -19,6 +19,7 @@ const ModulesPage = lazy(() => import('@/pages/modules/ModulesPage'))
 const CareerPortal = lazy(() => import('@/pages/careers/CareerPortal'))
 const CareerJobDetails = lazy(() => import('@/pages/careers/CareerJobDetails'))
 const OnboardingPortal = lazy(() => import('@/pages/careers/OnboardingPortal'))
+const OfferPortal = lazy(() => import('@/pages/careers/OfferPortal'))
 
 // HR Module (lazy)
 const HRLayout = lazy(() => import('@/modules/hr/HRLayout'))
@@ -32,6 +33,7 @@ const Interviews = lazy(() => import('@/modules/hr/pages/Interviews'))
 const OfferLetters = lazy(() => import('@/modules/hr/pages/OfferLetters'))
 const Onboarding = lazy(() => import('@/modules/hr/pages/Onboarding'))
 const Employees = lazy(() => import('@/modules/hr/pages/Employees'))
+const EmployeeProfile = lazy(() => import('@/modules/hr/pages/EmployeeProfile'))
 
 // Admin Module (lazy)
 const StaffManagement = lazy(() => import('@/pages/admin/StaffManagementPage'))
@@ -108,6 +110,7 @@ export default function AppRoutes() {
       <Route path="/careers/:slug" element={<S><CareerPortal /></S>} />
       <Route path="/careers/:slug/jobs/:id" element={<S><CareerJobDetails /></S>} />
       <Route path="/onboarding/:token" element={<S><OnboardingPortal /></S>} />
+      <Route path="/offer/:token" element={<S><OfferPortal /></S>} />
 
       {/* Protected app routes */}
       <Route path="/app" element={<ProtectedRoute><AppShell /></ProtectedRoute>}>
@@ -133,6 +136,7 @@ export default function AppRoutes() {
           <Route path="offers" element={<S><OfferLetters /></S>} />
           <Route path="onboarding" element={<S><Onboarding /></S>} />
           <Route path="employees" element={<S><Employees /></S>} />
+          <Route path="employees/:id" element={<S><EmployeeProfile /></S>} />
         </Route>
 
         {/* SALES MODULE */}

@@ -16,6 +16,9 @@ use Illuminate\Support\Facades\Mail;
 
 class CandidateService
 {
+    /** Stages driven by the recruitment workflow — never set by a manual move. */
+    public const SYSTEM_CONTROLLED_STAGES = ['Offer', 'Hired'];
+
     public function __construct(private CandidateRepository $candidateRepository)
     {
     }
@@ -69,6 +72,11 @@ class CandidateService
 
     public function update(HrCandidate $candidate, array $data): HrCandidate
     {
+        // Guard the general update endpoint too: Offer/Hired can't be set manually.
+        if (isset($data['stage']) && in_array($data['stage'], self::SYSTEM_CONTROLLED_STAGES, true) && $data['stage'] !== $candidate->stage) {
+            throw new BusinessException('Offer and Hired stages are managed automatically by the recruitment workflow.', 422);
+        }
+
         $candidate->update($data);
 
         Log::channel('hr')->info('Candidate updated', ['candidate_id' => $candidate->id, 'tenant_id' => $candidate->tenant_id]);
@@ -78,6 +86,13 @@ class CandidateService
 
     public function updateStage(HrCandidate $candidate, string $stage): HrCandidate
     {
+        // Offer & Hired are system-controlled: onboarding approval moves a
+        // candidate to Offer, and offer acceptance moves them to Hired (creating
+        // the Employee). A manual move to either is never allowed.
+        if (in_array($stage, self::SYSTEM_CONTROLLED_STAGES, true)) {
+            throw new BusinessException('Offer and Hired stages are managed automatically by the recruitment workflow.', 422);
+        }
+
         $order = ['Applied' => 0, 'Screening' => 1, 'Assessment' => 2, 'Interview' => 3, 'Offer' => 4, 'Hired' => 5, 'Rejected' => 6];
         $currentIdx = $order[$candidate->stage] ?? 0;
         $newIdx     = $order[$stage] ?? 0;

@@ -1,17 +1,14 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams } from 'react-router-dom'
-import { CheckCircle2, Upload, Clock, XCircle, Plus, Trash2, ShieldCheck } from 'lucide-react'
+import {
+  ShieldCheck, LayoutDashboard, ListChecks, User, FileText, CheckSquare, Bell, History,
+  MessageSquare, Upload, CheckCircle2, XCircle, Clock, Plus, Trash2, Download, RefreshCw,
+} from 'lucide-react'
 import { onboardingApi } from '@/services/onboardingApi'
+import AuditTimeline from '@/components/ui/AuditTimeline'
+import { ONBOARDING_DOCS, isDocMandatory } from '@/config/onboardingDocs'
 
-const DOC_FIELDS = [
-  { key: 'aadhaar', label: 'Aadhaar Card' },
-  { key: 'pan', label: 'PAN Card' },
-  { key: 'resume', label: 'Resume' },
-  { key: 'photo', label: 'Passport Photo' },
-  { key: 'address_proof', label: 'Address Proof' },
-  { key: 'company_document', label: 'Company Documents' },
-]
-
+const accent = '#7C3AED'
 const EMPTY = {
   personal_details: { dob: '', gender: '', father_name: '', marital_status: '', blood_group: '' },
   address: { current: '', permanent: '', city: '', state: '', pincode: '' },
@@ -20,203 +17,317 @@ const EMPTY = {
   experience: [{ company: '', role: '', years: '' }],
   bank_details: { account_name: '', account_number: '', ifsc: '', bank_name: '' },
 }
-
-const accent = '#7C3AED'
+const fmt = (d) => d ? new Date(d).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : ''
+const DOC_STATUS = (s) => s === 'Verified' ? { c: '#059669', bg: '#ecfdf5', I: CheckCircle2 } : s === 'Rejected' ? { c: '#dc2626', bg: '#fef2f2', I: XCircle } : { c: '#d97706', bg: '#fffbeb', I: Clock }
 
 export default function OnboardingPortal() {
   const { token } = useParams()
-  const [info, setInfo] = useState(null)
+  const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
-  const [form, setForm] = useState(EMPTY)
-  const [files, setFiles] = useState({})
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const [done, setDone] = useState(false)
+  const [tab, setTab] = useState('dashboard')
 
   const load = useCallback(async () => {
-    setLoading(true)
-    try {
-      const data = await onboardingApi.get(token)
-      setInfo(data)
-      if (data.submission) setForm({ ...EMPTY, ...data.submission })
-    } catch { setNotFound(true) }
-    finally { setLoading(false) }
+    try { setData(await onboardingApi.get(token)) } catch { setNotFound(true) } finally { setLoading(false) }
   }, [token])
   useEffect(() => { load() }, [load])
 
-  const setSection = (sec, k, v) => setForm(f => ({ ...f, [sec]: { ...f[sec], [k]: v } }))
-  const setRow = (sec, i, k, v) => setForm(f => ({ ...f, [sec]: f[sec].map((r, idx) => idx === i ? { ...r, [k]: v } : r) }))
-  const addRow = (sec, tmpl) => setForm(f => ({ ...f, [sec]: [...f[sec], tmpl] }))
-  const rmRow = (sec, i) => setForm(f => ({ ...f, [sec]: f[sec].filter((_, idx) => idx !== i) }))
+  if (loading) return <Center>Loading your portal…</Center>
+  if (notFound || !data) return <Center><h1 style={{ fontSize: 22, fontWeight: 800, color: '#0f172a' }}>This onboarding link is invalid or has expired.</h1></Center>
 
-  const submit = async () => {
-    setError('')
-    if (!form.personal_details.dob) { setError('Please fill your date of birth.'); return }
-    if (!form.bank_details.account_number) { setError('Please provide your bank account details.'); return }
-    setBusy(true)
-    try {
-      await onboardingApi.submit(token, form, files)
-      setDone(true)
-      window.scrollTo({ top: 0, behavior: 'smooth' })
-      load()
-    } catch (e) {
-      const errs = e?.response?.data?.errors
-      setError(errs ? Object.values(errs)[0][0] : (e?.response?.data?.message || 'Something went wrong. Please try again.'))
-    } finally { setBusy(false) }
-  }
-
-  if (loading) return <Center>Loading…</Center>
-  if (notFound || !info) return <Center><h1 style={{ fontSize: 22, fontWeight: 800, color: '#0f172a' }}>This onboarding link is invalid or has expired.</h1></Center>
-
-  const status = info.verification_status
-  const editable = info.editable && !done
+  const c = data.candidate
+  const TABS = [
+    { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { key: 'progress', label: 'Progress', icon: ListChecks },
+    { key: 'profile', label: 'My Profile', icon: User },
+    { key: 'documents', label: 'Documents', icon: FileText, badge: data.documents.filter(d => d.status === 'Rejected').length || null },
+    { key: 'tasks', label: 'Tasks', icon: CheckSquare },
+    { key: 'notifications', label: 'Notifications', icon: Bell, badge: data.notifications.length || null },
+    { key: 'timeline', label: 'Timeline', icon: History },
+    { key: 'messages', label: 'Messages', icon: MessageSquare, badge: data.communication.length || null },
+  ]
 
   return (
     <div style={{ minHeight: '100vh', background: '#f8fafc', color: '#0f172a', fontFamily: 'system-ui,-apple-system,sans-serif' }}>
       <header style={{ background: '#fff', borderBottom: '1px solid #e2e8f0' }}>
-        <div style={{ maxWidth: 780, margin: '0 auto', padding: '16px 24px', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <ShieldCheck size={20} style={{ color: accent }} />
-          <strong style={{ fontSize: 15 }}>Candidate Onboarding</strong>
+        <div style={{ maxWidth: 920, margin: '0 auto', padding: '14px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><ShieldCheck size={20} style={{ color: accent }} /><strong style={{ fontSize: 15 }}>Candidate Portal</strong></div>
+          <div style={{ fontSize: 13, color: '#475569' }}>{c.name} · <span style={{ fontFamily: 'monospace' }}>{c.reference}</span></div>
         </div>
       </header>
 
-      <div style={{ maxWidth: 780, margin: '0 auto', padding: '28px 24px 60px' }}>
-        {/* Welcome */}
-        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 16, padding: 24, marginBottom: 16 }}>
-          <h1 style={{ fontSize: 24, fontWeight: 900, margin: 0 }}>🎉 Congratulations, {info.candidate_name}!</h1>
-          <p style={{ color: '#475569', marginTop: 8, fontSize: 14.5 }}>
-            You've been selected for <strong>{info.position}</strong>{info.department ? ` · ${info.department}` : ''}. Please complete your onboarding below so our HR team can verify your details.
-          </p>
-          <StatusBanner status={status} reason={info.rejection_reason} done={done} />
+      <div style={{ maxWidth: 920, margin: '0 auto', padding: '20px 24px 60px' }}>
+        {/* Tab bar */}
+        <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4, marginBottom: 18 }}>
+          {TABS.map(t => {
+            const on = tab === t.key
+            return (
+              <button key={t.key} onClick={() => setTab(t.key)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 14px', borderRadius: 10, border: 'none', cursor: 'pointer', whiteSpace: 'nowrap', fontSize: 13, fontWeight: 700, background: on ? accent : '#fff', color: on ? '#fff' : '#475569', boxShadow: on ? 'none' : 'inset 0 0 0 1px #e2e8f0' }}>
+                <t.icon size={14} /> {t.label}
+                {t.badge ? <span style={{ fontSize: 10, fontWeight: 800, padding: '1px 6px', borderRadius: 999, background: on ? 'rgba(255,255,255,0.25)' : '#f1f5f9', color: on ? '#fff' : accent }}>{t.badge}</span> : null}
+              </button>
+            )
+          })}
         </div>
 
-        {editable ? (
-          <>
-            <Section title="1. Personal Details">
-              <Grid>
-                <Field label="Date of Birth *"><Input type="date" value={form.personal_details.dob} onChange={e => setSection('personal_details', 'dob', e.target.value)} /></Field>
-                <Field label="Gender"><Select value={form.personal_details.gender} onChange={e => setSection('personal_details', 'gender', e.target.value)} opts={['', 'Male', 'Female', 'Other']} /></Field>
-                <Field label="Father's / Guardian's Name"><Input value={form.personal_details.father_name} onChange={e => setSection('personal_details', 'father_name', e.target.value)} /></Field>
-                <Field label="Marital Status"><Select value={form.personal_details.marital_status} onChange={e => setSection('personal_details', 'marital_status', e.target.value)} opts={['', 'Single', 'Married', 'Other']} /></Field>
-                <Field label="Blood Group"><Input value={form.personal_details.blood_group} onChange={e => setSection('personal_details', 'blood_group', e.target.value)} /></Field>
-              </Grid>
-            </Section>
-
-            <Section title="2. Address">
-              <Grid>
-                <Field label="Current Address" full><Input value={form.address.current} onChange={e => setSection('address', 'current', e.target.value)} /></Field>
-                <Field label="Permanent Address" full><Input value={form.address.permanent} onChange={e => setSection('address', 'permanent', e.target.value)} /></Field>
-                <Field label="City"><Input value={form.address.city} onChange={e => setSection('address', 'city', e.target.value)} /></Field>
-                <Field label="State"><Input value={form.address.state} onChange={e => setSection('address', 'state', e.target.value)} /></Field>
-                <Field label="Pincode"><Input value={form.address.pincode} onChange={e => setSection('address', 'pincode', e.target.value)} /></Field>
-              </Grid>
-            </Section>
-
-            <Section title="3. Emergency Contact">
-              <Grid>
-                <Field label="Name"><Input value={form.emergency_contact.name} onChange={e => setSection('emergency_contact', 'name', e.target.value)} /></Field>
-                <Field label="Relationship"><Input value={form.emergency_contact.relation} onChange={e => setSection('emergency_contact', 'relation', e.target.value)} /></Field>
-                <Field label="Phone"><Input value={form.emergency_contact.phone} onChange={e => setSection('emergency_contact', 'phone', e.target.value)} /></Field>
-              </Grid>
-            </Section>
-
-            <Section title="4. Education" action={<AddBtn onClick={() => addRow('education', { degree: '', institution: '', year: '' })} />}>
-              {form.education.map((row, i) => (
-                <RowGrid key={i} onRemove={form.education.length > 1 ? () => rmRow('education', i) : null}>
-                  <Input placeholder="Degree" value={row.degree} onChange={e => setRow('education', i, 'degree', e.target.value)} />
-                  <Input placeholder="Institution" value={row.institution} onChange={e => setRow('education', i, 'institution', e.target.value)} />
-                  <Input placeholder="Year" value={row.year} onChange={e => setRow('education', i, 'year', e.target.value)} />
-                </RowGrid>
-              ))}
-            </Section>
-
-            <Section title="5. Experience" action={<AddBtn onClick={() => addRow('experience', { company: '', role: '', years: '' })} />}>
-              {form.experience.map((row, i) => (
-                <RowGrid key={i} onRemove={form.experience.length > 1 ? () => rmRow('experience', i) : null}>
-                  <Input placeholder="Company" value={row.company} onChange={e => setRow('experience', i, 'company', e.target.value)} />
-                  <Input placeholder="Role" value={row.role} onChange={e => setRow('experience', i, 'role', e.target.value)} />
-                  <Input placeholder="Years" value={row.years} onChange={e => setRow('experience', i, 'years', e.target.value)} />
-                </RowGrid>
-              ))}
-            </Section>
-
-            <Section title="6. Bank Details">
-              <Grid>
-                <Field label="Account Holder Name"><Input value={form.bank_details.account_name} onChange={e => setSection('bank_details', 'account_name', e.target.value)} /></Field>
-                <Field label="Account Number *"><Input value={form.bank_details.account_number} onChange={e => setSection('bank_details', 'account_number', e.target.value)} /></Field>
-                <Field label="IFSC Code"><Input value={form.bank_details.ifsc} onChange={e => setSection('bank_details', 'ifsc', e.target.value)} /></Field>
-                <Field label="Bank Name"><Input value={form.bank_details.bank_name} onChange={e => setSection('bank_details', 'bank_name', e.target.value)} /></Field>
-              </Grid>
-            </Section>
-
-            <Section title="7. Documents">
-              <Grid>
-                {DOC_FIELDS.map(d => (
-                  <Field key={d.key} label={d.label}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', border: `1px dashed ${files[d.key] ? accent : '#cbd5e1'}`, borderRadius: 9, cursor: 'pointer', background: files[d.key] ? `${accent}0d` : '#f8fafc' }}>
-                      <Upload size={15} style={{ color: accent }} />
-                      <span style={{ fontSize: 12.5, color: files[d.key] ? '#0f172a' : '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{files[d.key]?.name || 'Upload (PDF/JPG/PNG)'}</span>
-                      <input type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" onChange={e => setFiles(f => ({ ...f, [d.key]: e.target.files?.[0] || null }))} style={{ display: 'none' }} />
-                    </label>
-                  </Field>
-                ))}
-              </Grid>
-              <p style={{ fontSize: 12, color: '#94a3b8', marginTop: 10 }}>Existing uploaded: {info.documents?.length || 0} document(s). Re-uploading replaces on the next submit.</p>
-            </Section>
-
-            {error && <div style={{ background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: 10, padding: '11px 14px', fontSize: 13, margin: '4px 0 14px' }}>{error}</div>}
-
-            <button onClick={submit} disabled={busy} style={{ width: '100%', padding: '13px', borderRadius: 10, background: busy ? '#94a3b8' : accent, color: '#fff', border: 'none', cursor: busy ? 'not-allowed' : 'pointer', fontWeight: 700, fontSize: 15 }}>
-              {busy ? 'Submitting…' : status === 'Rejected' ? 'Re-submit Onboarding' : 'Submit Onboarding'}
-            </button>
-          </>
-        ) : (
-          <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 16, padding: 28, textAlign: 'center' }}>
-            <CheckCircle2 size={48} style={{ color: '#10b981', marginBottom: 12 }} />
-            <h2 style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>{status === 'Approved' ? 'Onboarding Approved' : 'Onboarding Submitted'}</h2>
-            <p style={{ color: '#475569', marginTop: 8, fontSize: 14 }}>
-              {status === 'Approved' ? 'Your details have been verified. Your offer letter will follow shortly.' : 'Thank you! Our HR team is reviewing your submission and will get back to you.'}
-            </p>
-          </div>
-        )}
+        {tab === 'dashboard' && <Dashboard data={data} onGo={setTab} />}
+        {tab === 'progress' && <Card title="Recruitment Progress"><ProgressTracker steps={data.progress} /></Card>}
+        {tab === 'profile' && <ProfileTab token={token} data={data} onSaved={load} />}
+        {tab === 'documents' && <DocumentsTab token={token} data={data} onChanged={load} />}
+        {tab === 'tasks' && <TasksTab tasks={data.tasks} />}
+        {tab === 'notifications' && <NotificationsTab items={data.notifications} />}
+        {tab === 'timeline' && <Card title="Activity Timeline"><AuditTimeline entries={data.timeline} /></Card>}
+        {tab === 'messages' && <MessagesTab items={data.communication} />}
       </div>
     </div>
   )
 }
 
-const StatusBanner = ({ status, reason, done }) => {
-  if (done || status === 'Submitted') return <Banner icon={<Clock size={15} />} color="#d97706" bg="#fffbeb">Submitted — under HR review.</Banner>
-  if (status === 'Approved') return <Banner icon={<CheckCircle2 size={15} />} color="#047857" bg="#ecfdf5">Verified & approved. Your offer will follow.</Banner>
-  if (status === 'Rejected') return <Banner icon={<XCircle size={15} />} color="#b91c1c" bg="#fef2f2">Needs changes{reason ? `: ${reason}` : ''}. Please review and re-submit.</Banner>
-  return null
-}
-const Banner = ({ icon, color, bg, children }) => (
-  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 7, marginTop: 14, padding: '8px 14px', borderRadius: 999, background: bg, color, fontWeight: 700, fontSize: 13 }}>{icon}{children}</div>
-)
-const Center = ({ children }) => <div style={{ minHeight: '100vh', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 24, color: '#64748b', fontFamily: 'system-ui,sans-serif' }}>{children}</div>
-const Section = ({ title, action, children }) => (
-  <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 16, padding: 22, marginBottom: 16 }}>
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-      <h2 style={{ fontSize: 16, fontWeight: 800, margin: 0 }}>{title}</h2>{action}
+// ── Dashboard ────────────────────────────────────────────────────────────────
+function Dashboard({ data, onGo }) {
+  const c = data.candidate
+  return (
+    <div style={{ display: 'grid', gap: 16 }}>
+      <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 16, padding: 24 }}>
+        <h1 style={{ fontSize: 24, fontWeight: 900, margin: 0 }}>Welcome, {c.name} 👋</h1>
+        <p style={{ color: '#475569', marginTop: 6, fontSize: 14.5 }}>Track your recruitment and onboarding here.</p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 12, marginTop: 18 }}>
+          <Stat k="Candidate ID" v={c.reference} />
+          <Stat k="Applied Job" v={c.applied_job} />
+          <Stat k="Current Status" v={c.current_status} highlight />
+          <Stat k="Assigned Recruiter" v={c.assigned_recruiter || 'To be assigned'} />
+        </div>
+      </div>
+
+      <Card title="Progress" action={<Link onClick={() => onGo('progress')}>View all</Link>}><ProgressTracker steps={data.progress} compact /></Card>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        <Card title="Onboarding Tasks" action={<Link onClick={() => onGo('tasks')}>Open</Link>}>
+          <ProgressBar percent={data.tasks.percent} />
+          <p style={{ fontSize: 12.5, color: '#64748b', marginTop: 8 }}>{data.tasks.completed} of {data.tasks.total} completed</p>
+        </Card>
+        <Card title="Recent Notifications" action={<Link onClick={() => onGo('notifications')}>All</Link>}>
+          {data.notifications.slice(0, 3).map((n, i) => <NotifRow key={i} n={n} />)}
+          {!data.notifications.length && <Empty>No notifications yet.</Empty>}
+        </Card>
+      </div>
     </div>
+  )
+}
+
+// ── Progress Tracker ─────────────────────────────────────────────────────────
+function ProgressTracker({ steps, compact }) {
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: compact ? 6 : 10 }}>
+      {steps.map((s, i) => {
+        const col = s.status === 'done' ? '#059669' : s.status === 'current' ? accent : '#cbd5e1'
+        const bg = s.status === 'done' ? '#ecfdf5' : s.status === 'current' ? `${accent}12` : '#f8fafc'
+        return (
+          <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: compact ? '5px 10px' : '8px 14px', borderRadius: 999, background: bg, border: `1px solid ${col}40` }}>
+            <span style={{ width: 16, height: 16, borderRadius: '50%', background: col, color: '#fff', fontSize: 10, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{s.status === 'done' ? '✓' : i + 1}</span>
+            <span style={{ fontSize: compact ? 11.5 : 13, fontWeight: 700, color: s.status === 'pending' ? '#94a3b8' : col }}>{s.label}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Profile ──────────────────────────────────────────────────────────────────
+function ProfileTab({ token, data, onSaved }) {
+  const [form, setForm] = useState({ ...EMPTY, ...(data.profile.submission || {}) })
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+  const editable = data.profile.editable
+  const set = (sec, k, v) => setForm(f => ({ ...f, [sec]: { ...f[sec], [k]: v } }))
+  const setRow = (sec, i, k, v) => setForm(f => ({ ...f, [sec]: f[sec].map((r, idx) => idx === i ? { ...r, [k]: v } : r) }))
+  const addRow = (sec, tmpl) => setForm(f => ({ ...f, [sec]: [...f[sec], tmpl] }))
+  const rmRow = (sec, i) => setForm(f => ({ ...f, [sec]: f[sec].filter((_, idx) => idx !== i) }))
+
+  const save = async () => {
+    setBusy(true); setMsg('')
+    try { await onboardingApi.submit(token, form, {}); setMsg('Saved. HR will review your details.'); onSaved() }
+    catch (e) { setMsg(e?.response?.data?.message || 'Could not save. Try again.') }
+    finally { setBusy(false) }
+  }
+
+  if (!editable) return <Card title="My Profile"><Empty>Your profile has been approved and is now locked. Contact HR for changes.</Empty></Card>
+
+  return (
+    <div style={{ display: 'grid', gap: 16 }}>
+      <Card title="Personal Details"><Grid>
+        <Field label="Date of Birth"><Input type="date" value={form.personal_details.dob} onChange={e => set('personal_details', 'dob', e.target.value)} /></Field>
+        <Field label="Gender"><Sel value={form.personal_details.gender} onChange={e => set('personal_details', 'gender', e.target.value)} opts={['', 'Male', 'Female', 'Other']} /></Field>
+        <Field label="Father's / Guardian's Name"><Input value={form.personal_details.father_name} onChange={e => set('personal_details', 'father_name', e.target.value)} /></Field>
+        <Field label="Marital Status"><Sel value={form.personal_details.marital_status} onChange={e => set('personal_details', 'marital_status', e.target.value)} opts={['', 'Single', 'Married', 'Other']} /></Field>
+        <Field label="Blood Group"><Input value={form.personal_details.blood_group} onChange={e => set('personal_details', 'blood_group', e.target.value)} /></Field>
+      </Grid></Card>
+      <Card title="Address"><Grid>
+        <Field label="Current Address" full><Input value={form.address.current} onChange={e => set('address', 'current', e.target.value)} /></Field>
+        <Field label="Permanent Address" full><Input value={form.address.permanent} onChange={e => set('address', 'permanent', e.target.value)} /></Field>
+        <Field label="City"><Input value={form.address.city} onChange={e => set('address', 'city', e.target.value)} /></Field>
+        <Field label="State"><Input value={form.address.state} onChange={e => set('address', 'state', e.target.value)} /></Field>
+        <Field label="Pincode"><Input value={form.address.pincode} onChange={e => set('address', 'pincode', e.target.value)} /></Field>
+      </Grid></Card>
+      <Card title="Emergency Contact"><Grid>
+        <Field label="Name"><Input value={form.emergency_contact.name} onChange={e => set('emergency_contact', 'name', e.target.value)} /></Field>
+        <Field label="Relationship"><Input value={form.emergency_contact.relation} onChange={e => set('emergency_contact', 'relation', e.target.value)} /></Field>
+        <Field label="Phone"><Input value={form.emergency_contact.phone} onChange={e => set('emergency_contact', 'phone', e.target.value)} /></Field>
+      </Grid></Card>
+      <Card title="Education" action={<Link onClick={() => addRow('education', { degree: '', institution: '', year: '' })}>+ Add</Link>}>
+        {form.education.map((r, i) => <RowGrid key={i} onRemove={form.education.length > 1 ? () => rmRow('education', i) : null}>
+          <Input placeholder="Degree" value={r.degree} onChange={e => setRow('education', i, 'degree', e.target.value)} />
+          <Input placeholder="Institution" value={r.institution} onChange={e => setRow('education', i, 'institution', e.target.value)} />
+          <Input placeholder="Year" value={r.year} onChange={e => setRow('education', i, 'year', e.target.value)} />
+        </RowGrid>)}
+      </Card>
+      <Card title="Experience" action={<Link onClick={() => addRow('experience', { company: '', role: '', years: '' })}>+ Add</Link>}>
+        {form.experience.map((r, i) => <RowGrid key={i} onRemove={form.experience.length > 1 ? () => rmRow('experience', i) : null}>
+          <Input placeholder="Company" value={r.company} onChange={e => setRow('experience', i, 'company', e.target.value)} />
+          <Input placeholder="Role" value={r.role} onChange={e => setRow('experience', i, 'role', e.target.value)} />
+          <Input placeholder="Years" value={r.years} onChange={e => setRow('experience', i, 'years', e.target.value)} />
+        </RowGrid>)}
+      </Card>
+      <Card title="Bank Details"><Grid>
+        <Field label="Account Holder Name"><Input value={form.bank_details.account_name} onChange={e => set('bank_details', 'account_name', e.target.value)} /></Field>
+        <Field label="Account Number"><Input value={form.bank_details.account_number} onChange={e => set('bank_details', 'account_number', e.target.value)} /></Field>
+        <Field label="IFSC Code"><Input value={form.bank_details.ifsc} onChange={e => set('bank_details', 'ifsc', e.target.value)} /></Field>
+        <Field label="Bank Name"><Input value={form.bank_details.bank_name} onChange={e => set('bank_details', 'bank_name', e.target.value)} /></Field>
+      </Grid></Card>
+      {msg && <div style={{ fontSize: 13, color: '#475569' }}>{msg}</div>}
+      <button onClick={save} disabled={busy} style={{ padding: '12px', borderRadius: 10, background: busy ? '#94a3b8' : accent, color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 15 }}>{busy ? 'Saving…' : 'Save Profile'}</button>
+    </div>
+  )
+}
+
+// ── Documents ────────────────────────────────────────────────────────────────
+function ReqBadge({ mandatory }) {
+  return mandatory
+    ? <span style={{ fontSize: 10.5, fontWeight: 800, padding: '1px 7px', borderRadius: 999, background: '#fef2f2', color: '#dc2626' }}>🔴 Mandatory</span>
+    : <span style={{ fontSize: 10.5, fontWeight: 800, padding: '1px 7px', borderRadius: 999, background: '#ecfdf5', color: '#059669' }}>🟢 Optional</span>
+}
+
+function DocumentsTab({ token, data, onChanged }) {
+  const byType = Object.fromEntries(data.documents.map(d => [d.type, d]))
+  const [busyType, setBusyType] = useState(null)
+  const refs = useRef({})
+  const locked = data.verification_status === 'Approved'
+  const experienceYears = data.candidate?.experience_years
+
+  const upload = async (type, file) => {
+    if (!file) return
+    setBusyType(type)
+    try { await onboardingApi.uploadDocument(token, type, file); onChanged() }
+    catch { /* ignore */ } finally { setBusyType(null) }
+  }
+
+  return (
+    <div style={{ display: 'grid', gap: 12 }}>
+      <div style={{ fontSize: 12.5, color: '#64748b' }}>
+        <span style={{ color: '#dc2626', fontWeight: 700 }}>🔴 Mandatory</span> documents are required to complete onboarding · <span style={{ color: '#059669', fontWeight: 700 }}>🟢 Optional</span> are welcome but not required.
+      </div>
+      {ONBOARDING_DOCS.map(f => {
+        const doc = byType[f.key]
+        const st = doc ? DOC_STATUS(doc.status) : null
+        const mandatory = isDocMandatory(f.key, experienceYears)
+        return (
+          <div key={f.key} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, padding: 16, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: 180 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>{f.label} <ReqBadge mandatory={mandatory} /></div>
+              {doc ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 12, color: '#64748b' }}>{doc.original_name}</span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: st.bg, color: st.c }}><st.I size={11} /> {doc.status}</span>
+                  {doc.status === 'Rejected' && doc.remarks && <span style={{ fontSize: 12, color: '#dc2626' }}>· {doc.remarks}</span>}
+                </div>
+              ) : <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>Not uploaded yet</div>}
+            </div>
+            {!locked && (
+              <>
+                <button onClick={() => refs.current[f.key]?.click()} disabled={busyType === f.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 9, border: 'none', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, color: '#fff', background: doc?.status === 'Rejected' ? '#dc2626' : accent }}>
+                  {busyType === f.key ? <RefreshCw size={13} className="spin" /> : doc ? <RefreshCw size={13} /> : <Upload size={13} />}
+                  {doc ? (doc.status === 'Rejected' ? 'Re-upload' : 'Replace') : 'Upload'}
+                </button>
+                <input ref={el => refs.current[f.key] = el} type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" style={{ display: 'none' }} onChange={e => upload(f.key, e.target.files?.[0])} />
+              </>
+            )}
+          </div>
+        )
+      })}
+      {locked && <Empty>Your documents are approved and locked.</Empty>}
+    </div>
+  )
+}
+
+// ── Tasks ────────────────────────────────────────────────────────────────────
+function TasksTab({ tasks }) {
+  return (
+    <Card title="My Onboarding Tasks">
+      <ProgressBar percent={tasks.percent} />
+      <p style={{ fontSize: 12.5, color: '#64748b', margin: '8px 0 14px' }}>{tasks.completed} of {tasks.total} completed</p>
+      <div style={{ display: 'grid', gap: 8 }}>
+        {tasks.items.map(t => (
+          <div key={t.key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, background: t.done ? '#ecfdf5' : '#f8fafc', border: '1px solid #e2e8f0' }}>
+            {t.done ? <CheckCircle2 size={17} style={{ color: '#059669' }} /> : <Clock size={17} style={{ color: '#d97706' }} />}
+            <span style={{ fontSize: 13.5, color: t.done ? '#065f46' : '#334155', textDecoration: t.done ? 'none' : 'none' }}>{t.label}</span>
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
+// ── Notifications / Messages ─────────────────────────────────────────────────
+function NotificationsTab({ items }) {
+  return <Card title="Notifications">{items.length ? items.map((n, i) => <NotifRow key={i} n={n} />) : <Empty>No notifications yet.</Empty>}</Card>
+}
+function NotifRow({ n }) {
+  const col = n.type === 'success' ? '#059669' : n.type === 'warning' ? '#d97706' : '#2563eb'
+  return (
+    <div style={{ display: 'flex', gap: 10, padding: '10px 0', borderBottom: '1px solid #f1f5f9' }}>
+      <span style={{ width: 8, height: 8, borderRadius: '50%', background: col, marginTop: 6, flexShrink: 0 }} />
+      <div><div style={{ fontSize: 13.5, fontWeight: 600 }}>{n.title}</div>{n.detail && <div style={{ fontSize: 12.5, color: '#64748b' }}>{n.detail}</div>}<div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{fmt(n.at)}</div></div>
+    </div>
+  )
+}
+function MessagesTab({ items }) {
+  return (
+    <Card title="Messages from HR">
+      {items.length ? items.map((m, i) => (
+        <div key={i} style={{ padding: '12px 14px', borderRadius: 10, background: '#f8fafc', border: '1px solid #e2e8f0', marginBottom: 10 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: accent }}>{m.from}</div>
+          <div style={{ fontSize: 13.5, color: '#334155', marginTop: 3, whiteSpace: 'pre-wrap' }}>{m.body}</div>
+          <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>{fmt(m.at)}</div>
+        </div>
+      )) : <Empty>No messages from HR yet.</Empty>}
+    </Card>
+  )
+}
+
+// ── Primitives ───────────────────────────────────────────────────────────────
+const Center = ({ children }) => <div style={{ minHeight: '100vh', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 24, color: '#64748b', fontFamily: 'system-ui,sans-serif' }}>{children}</div>
+const Card = ({ title, action, children }) => (
+  <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 16, padding: 22 }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}><h2 style={{ fontSize: 15.5, fontWeight: 800, margin: 0 }}>{title}</h2>{action}</div>
     {children}
   </div>
 )
+const Stat = ({ k, v, highlight }) => (
+  <div style={{ background: highlight ? `${accent}0d` : '#f8fafc', border: `1px solid ${highlight ? accent + '30' : '#e2e8f0'}`, borderRadius: 12, padding: '12px 14px' }}>
+    <div style={{ fontSize: 10.5, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{k}</div>
+    <div style={{ fontSize: 14, fontWeight: 700, marginTop: 3, color: highlight ? accent : '#0f172a' }}>{v || '—'}</div>
+  </div>
+)
+const ProgressBar = ({ percent }) => (
+  <div style={{ height: 10, borderRadius: 999, background: '#f1f5f9', overflow: 'hidden' }}>
+    <div style={{ width: `${percent}%`, height: '100%', background: `linear-gradient(90deg,#a78bfa,${accent})`, transition: 'width .3s' }} />
+  </div>
+)
+const Empty = ({ children }) => <p style={{ fontSize: 13, color: '#94a3b8', margin: 0 }}>{children}</p>
+const Link = ({ onClick, children }) => <button onClick={onClick} style={{ background: 'none', border: 'none', color: accent, cursor: 'pointer', fontSize: 12.5, fontWeight: 700 }}>{children}</button>
 const Grid = ({ children }) => <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>{children}</div>
-const RowGrid = ({ children, onRemove }) => (
-  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 10, marginBottom: 10, alignItems: 'center' }}>
-    {children}
-    {onRemove ? <button onClick={onRemove} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#f87171' }}><Trash2 size={16} /></button> : <span />}
-  </div>
-)
-const AddBtn = ({ onClick }) => <button onClick={onClick} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', color: accent, cursor: 'pointer', fontSize: 13, fontWeight: 700 }}><Plus size={14} /> Add</button>
+const RowGrid = ({ children, onRemove }) => <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 10, marginBottom: 10, alignItems: 'center' }}>{children}{onRemove ? <button onClick={onRemove} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#f87171' }}><Trash2 size={16} /></button> : <span />}</div>
 const inputStyle = { width: '100%', padding: '10px 12px', border: '1px solid #e2e8f0', borderRadius: 9, fontSize: 13.5, outline: 'none', boxSizing: 'border-box', color: '#0f172a', background: '#fff' }
-const Input = (props) => <input {...props} style={inputStyle} />
-const Select = ({ opts, ...props }) => <select {...props} style={inputStyle}>{opts.map(o => <option key={o} value={o}>{o || 'Select…'}</option>)}</select>
-const Field = ({ label, children, full }) => (
-  <div style={full ? { gridColumn: '1/-1' } : undefined}>
-    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 6 }}>{label}</label>
-    {children}
-  </div>
-)
+const Input = (p) => <input {...p} style={inputStyle} />
+const Sel = ({ opts, ...p }) => <select {...p} style={inputStyle}>{opts.map(o => <option key={o} value={o}>{o || 'Select…'}</option>)}</select>
+const Field = ({ label, children, full }) => <div style={full ? { gridColumn: '1/-1' } : undefined}><label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 6 }}>{label}</label>{children}</div>

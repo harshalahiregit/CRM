@@ -27,7 +27,12 @@ class CandidateNoteController extends Controller
         $this->assertTenant($request, $candidate);
         $this->assertCanManage($request);
 
-        $note = $this->noteService->add($candidate, $request->validated('body'), $request->user());
+        $note = $this->noteService->add(
+            $candidate,
+            $request->validated('body'),
+            $request->user(),
+            $request->boolean('visible_to_candidate')
+        );
 
         return response()->json($note, 201);
     }

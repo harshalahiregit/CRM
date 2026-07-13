@@ -13,9 +13,6 @@ use Illuminate\Support\Str;
 
 class InterviewService
 {
-    /** Round names that conclude the interview loop → candidate advances to Offer. */
-    private const FINAL_ROUND_KEYWORDS = ['final'];
-
     /** Rounds that don't need a video link even when online. */
     private const TELEPHONIC_ROUNDS = ['HR Telephonic', 'Telephonic', 'Phone Screen', 'Telephonic Round'];
 
@@ -226,39 +223,28 @@ class InterviewService
             'recommendation' => $round->recommendation,
         ]));
 
-        // Enterprise ATS auto-transition. All stage moves reuse CandidateService
-        // (forward-only clamp, candidate audit, notifications) and never break
-        // feedback if they can't apply.
-        //   Failed                      → Rejected (auto)
-        //   Passed + Final round        → Selected + start Onboarding (before Offer)
-        //   Passed (non-final) / Next Round → stays in Interview (schedule next round)
-        //   On Hold                     → stays in Interview (candidate active)
+        // Enterprise ATS auto-transition. "Passed" is the selection outcome (no
+        // reliance on round naming); "Next Round" keeps the candidate in the
+        // interview loop for another round.
+        //   Passed     → Selected + start Onboarding (before Offer)
+        //   Next Round → stays in Interview (schedule the next round)
+        //   On Hold    → stays in Interview (candidate active)
+        //   Failed     → Rejected (auto)
+        // startForCandidate() is idempotent, so re-recording feedback is safe.
         try {
             if ($result === 'Failed') {
                 $this->candidateService->updateStage($candidate, 'Rejected');
-            } elseif ($result === 'Passed' && $this->isFinalRound($round->round_name)) {
+            } elseif ($result === 'Passed') {
                 // Selected: congratulations + candidate onboarding starts BEFORE the offer.
                 $this->onboardingService->startForCandidate($candidate);
-            } elseif (in_array($result, ['Passed', 'Next Round'], true)
+            } elseif ($result === 'Next Round'
                 && in_array($candidate->stage, ['Applied', 'Screening', 'Assessment'], true)) {
                 $this->candidateService->updateStage($candidate, 'Interview');
             }
         } catch (\Throwable $e) {
-            // Backward move / already advanced — safe to ignore; feedback still stands.
-            Log::channel('hr')->info('Interview auto-advance skipped', ['interview_round_id' => $round->id, 'reason' => $e->getMessage()]);
+            // Never break feedback if a downstream transition can't apply.
+            Log::channel('hr')->warning('Interview outcome transition failed', ['interview_round_id' => $round->id, 'result' => $result, 'error' => $e->getMessage()]);
         }
-    }
-
-    private function isFinalRound(string $roundName): bool
-    {
-        $name = strtolower($roundName);
-        foreach (self::FINAL_ROUND_KEYWORDS as $keyword) {
-            if (str_contains($name, $keyword)) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     public function generateMeetLink(HrInterviewRound $interviewRound): string
