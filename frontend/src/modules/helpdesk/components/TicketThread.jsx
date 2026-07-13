@@ -29,6 +29,18 @@ const initials = (name) => {
   return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
 }
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+// Split a comma-separated Cc string into { valid, invalid } email lists. Keeps a
+// stray/autofilled value from 422-ing the whole reply — only valid addresses are
+// sent, and invalid ones are surfaced instead of silently swallowing the send.
+const parseCc = (raw) => {
+  const parts = (raw || '').split(',').map(e => e.trim()).filter(Boolean)
+  return {
+    valid: parts.filter(e => EMAIL_RE.test(e)),
+    invalid: parts.filter(e => !EMAIL_RE.test(e)),
+  }
+}
+
 const STATUS_COLOR = {
   open:          { color: '#3b82f6', bg: 'rgba(59,130,246,0.12)', border: 'rgba(59,130,246,0.25)' },
   'in-progress': { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.25)' },
@@ -155,7 +167,7 @@ export default function TicketThread() {
       fd.append('message', message)
       fd.append('sender_type', 'admin')
       if (user?.id) fd.append('sender_id', user.id)
-      cc.split(',').map(e => e.trim()).filter(Boolean).forEach(email => fd.append('cc[]', email))
+      parseCc(cc).valid.forEach(email => fd.append('cc[]', email))
       files.forEach(f => fd.append('attachments[]', f))
       const res = await helpdeskApi.tickets.reply(id, fd)
       if (resolve) await helpdeskApi.tickets.setStatus(id, resolveStatus)
@@ -558,7 +570,13 @@ export default function TicketThread() {
                   <>
                     <div style={{ borderTop: '1px solid var(--border)' }}>
                       <input value={cc} onChange={e => setCc(e.target.value)} placeholder="Cc: comma-separated emails (optional)"
+                        type="text" name="ticket-cc" autoComplete="off" autoCorrect="off" spellCheck={false}
                         className="w-full bg-transparent outline-none text-xs px-4 py-2.5" style={{ color: 'var(--text-muted)' }} />
+                      {parseCc(cc).invalid.length > 0 && (
+                        <p className="text-[11px] px-4 pb-2 -mt-1" style={{ color: 'var(--color-warning-500)' }}>
+                          Ignored invalid Cc: {parseCc(cc).invalid.join(', ')}
+                        </p>
+                      )}
                     </div>
                     {files.length > 0 && (
                       <div className="flex flex-wrap gap-2 px-4 py-2" style={{ borderTop: '1px solid var(--border)' }}>
