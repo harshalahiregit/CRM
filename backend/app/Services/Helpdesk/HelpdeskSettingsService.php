@@ -23,18 +23,20 @@ class HelpdeskSettingsService
 {
     /** Default lists seeded on first access so a fresh tenant is never empty. */
     private const DEFAULT_PRIORITIES = [
-        ['name' => 'low',    'color' => '#10b981', 'order' => 0, 'is_default' => false],
-        ['name' => 'medium', 'color' => '#f59e0b', 'order' => 1, 'is_default' => true],
-        ['name' => 'high',   'color' => '#ef4444', 'order' => 2, 'is_default' => false],
-        ['name' => 'urgent', 'color' => '#dc2626', 'order' => 3, 'is_default' => false],
+        ['name' => 'low',    'color' => '#10b981', 'order' => 0, 'is_default' => false, 'first_response_hours' => 8, 'resolution_hours' => 48],
+        ['name' => 'medium', 'color' => '#f59e0b', 'order' => 1, 'is_default' => true,  'first_response_hours' => 4, 'resolution_hours' => 24],
+        ['name' => 'high',   'color' => '#ef4444', 'order' => 2, 'is_default' => false, 'first_response_hours' => 2, 'resolution_hours' => 8],
+        ['name' => 'urgent', 'color' => '#dc2626', 'order' => 3, 'is_default' => false, 'first_response_hours' => 1, 'resolution_hours' => 4],
     ];
 
     private const DEFAULT_STATUSES = [
-        ['name' => 'open',        'color' => '#3b82f6', 'order' => 0, 'is_closed_status' => false],
-        ['name' => 'in-progress', 'color' => '#8b5cf6', 'order' => 1, 'is_closed_status' => false],
-        ['name' => 'closed',      'color' => '#10b981', 'order' => 2, 'is_closed_status' => true],
+        ['name' => 'open',        'color' => '#3b82f6', 'order' => 0, 'is_closed_status' => false, 'sla_paused' => false],
+        ['name' => 'in-progress', 'color' => '#8b5cf6', 'order' => 1, 'is_closed_status' => false, 'sla_paused' => false],
+        // Waiting on the customer — the SLA clock pauses here.
+        ['name' => 'pending',     'color' => '#f59e0b', 'order' => 2, 'is_closed_status' => false, 'sla_paused' => true],
+        ['name' => 'closed',      'color' => '#10b981', 'order' => 3, 'is_closed_status' => true,  'sla_paused' => false],
         // Special status used by the Phase 3 ticket-merge flow.
-        ['name' => 'merged',      'color' => '#6b7280', 'order' => 3, 'is_closed_status' => true],
+        ['name' => 'merged',      'color' => '#6b7280', 'order' => 4, 'is_closed_status' => true,  'sla_paused' => false],
     ];
 
     private const DEFAULT_DEPARTMENTS = [

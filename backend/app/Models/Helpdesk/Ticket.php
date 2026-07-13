@@ -16,12 +16,25 @@ class Ticket extends Model
         'tenant_id', 'subject', 'description', 'status', 'priority',
         'assigned_to', 'customer_id', 'department_id', 'project_id', 'due_date', 'source',
         'merged_into_id', 'ai_summary', 'ai_summary_at',
+        'first_responded_at', 'resolved_at', 'sla_paused_at', 'sla_paused_seconds',
     ];
 
     protected $casts = [
-        'due_date'      => 'datetime',
-        'ai_summary_at' => 'datetime',
+        'due_date'           => 'datetime',
+        'ai_summary_at'      => 'datetime',
+        'first_responded_at' => 'datetime',
+        'resolved_at'        => 'datetime',
+        'sla_paused_at'      => 'datetime',
+        'sla_paused_seconds' => 'integer',
     ];
+
+    // Computed SLA snapshot attached to every serialized ticket.
+    protected $appends = ['sla'];
+
+    public function getSlaAttribute(): array
+    {
+        return app(\App\Services\Helpdesk\SlaService::class)->compute($this);
+    }
 
     /* ── Scopes ─────────────────────────────────────────────────── */
     public function scopeStatus($query, ?string $status)

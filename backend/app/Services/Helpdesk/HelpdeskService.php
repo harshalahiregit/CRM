@@ -26,6 +26,7 @@ class HelpdeskService
      */
     public function __construct(
         private TicketRepository $tickets,
+        private SlaService $sla,
         ?CustomerServiceContract $customers = null,
     ) {
         $this->customers = $customers ?? new MockCustomerService();
@@ -82,11 +83,16 @@ class HelpdeskService
             throw new BusinessException('The selected customer does not exist.', 422);
         }
 
+        $oldStatus = $ticket->status;
         $ticket->fill(array_intersect_key($data, array_flip([
             'subject', 'description', 'status', 'priority',
             'assigned_to', 'customer_id', 'due_date',
         ])));
         $ticket->save();
+
+        if (array_key_exists('status', $data) && $data['status'] !== $oldStatus) {
+            $this->sla->onStatusChange($ticket, $oldStatus, $ticket->status);
+        }
 
         return $this->decorateWithCustomer($ticket->fresh('assignee'), $tenantId);
     }
@@ -111,6 +117,7 @@ class HelpdeskService
         $ticket = $this->findTicket($ticketId, $tenantId);
         $was = $ticket->status;
         $ticket->update(['status' => $status]);
+        $this->sla->onStatusChange($ticket, $was, $status);
 
         // Fire the closure event exactly once, on the open→closed transition.
         // The listener emails the customer a one-click feedback request.
@@ -157,13 +164,20 @@ class HelpdeskService
                 ]);
             }
 
+            // First staff reply stops the first-response SLA clock.
+            if ($data['sender_type'] !== 'client') {
+                $this->sla->onStaffReply($ticket);
+            }
+
             // Thread automations:
             //  • a customer reply to a CLOSED ticket auto-reopens it;
             //  • a staff reply to an OPEN ticket moves it into progress.
             if ($data['sender_type'] === 'client' && $ticket->status === 'closed') {
                 $ticket->update(['status' => 'open']);
+                $this->sla->onStatusChange($ticket, 'closed', 'open');
             } elseif ($data['sender_type'] !== 'client' && $ticket->status === 'open') {
                 $ticket->update(['status' => 'in-progress']);
+                $this->sla->onStatusChange($ticket, 'open', 'in-progress');
             }
 
             return $reply->load('attachments');
