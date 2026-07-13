@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
@@ -102,6 +102,24 @@ export default function TicketThread() {
     queryFn: () => helpdeskApi.tickets.replies(id),
     enabled: !!id,
   })
+
+  // The ticket's own description is the customer's opening message — every real
+  // helpdesk shows it as the first bubble. Replies alone made new tickets look
+  // empty ("No replies yet") even though the customer had written in.
+  const thread = useMemo(() => {
+    const items = []
+    if (ticket?.description?.trim()) {
+      items.push({
+        id: `ticket-${id}-original`,
+        message: ticket.description,
+        sender_type: 'client',
+        sender: { name: ticket.customer?.name || ticket.requester_name || 'Customer' },
+        created_at: ticket.created_at,
+        _original: true,
+      })
+    }
+    return [...items, ...(Array.isArray(replies) ? replies : [])]
+  }, [ticket, replies, id])
 
   const { data: summary } = useQuery({
     queryKey: ['helpdesk-ticket-summary', id],
@@ -394,7 +412,7 @@ export default function TicketThread() {
               )}
 
               {tab === 'conversation' && (<>
-              {replies.length === 0 && (
+              {thread.length === 0 && (
                 <div
                   className="flex flex-col items-center justify-center py-12 gap-3 rounded-2xl mb-4"
                   style={{ border: '1px dashed var(--border)', background: 'var(--bg-card)' }}
@@ -413,8 +431,9 @@ export default function TicketThread() {
 
               {/* Message bubbles */}
               <div className="flex flex-col gap-3 mb-5">
-                {replies.map(msg => {
+                {thread.map(msg => {
                   const isStaff = msg.sender_type !== 'client'
+                  const senderName = msg.sender?.name || (isStaff ? 'Agent' : 'Customer')
                   return (
                     <div
                       key={msg.id}
@@ -428,18 +447,23 @@ export default function TicketThread() {
                             className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold"
                             style={{ background: 'rgba(34,211,238,0.15)', color: '#22d3ee' }}
                           >
-                            {initials(msg.sender?.name || 'C')}
+                            {initials(senderName)}
                           </div>
                         )}
-                        <span className="text-[11px] capitalize" style={{ color: 'var(--text-muted)' }}>
-                          {msg.sender_type} · {fmtTime(msg.created_at)}
+                        <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                          <span className="font-semibold" style={{ color: 'var(--text-body)' }}>{senderName}</span> · {fmtTime(msg.created_at)}
                         </span>
+                        {msg._original && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: 'rgba(34,211,238,0.12)', color: '#22d3ee' }}>
+                            Original request
+                          </span>
+                        )}
                         {isStaff && (
                           <div
                             className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold"
                             style={{ background: 'linear-gradient(135deg,#22d3ee,#0891b2)', color: '#fff' }}
                           >
-                            {initials(msg.sender?.name || 'A')}
+                            {initials(senderName)}
                           </div>
                         )}
                       </div>

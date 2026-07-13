@@ -188,7 +188,24 @@ class HelpdeskService
     {
         $ticket = $this->findTicket($ticketId, $tenantId);
 
-        return $ticket->replies()->with('attachments')->get();
+        $replies = $ticket->replies()->with('attachments')->get();
+
+        // Resolve staff (admin/agent) sender names for display. sender_id is
+        // polymorphic — for staff it points at the shared users table; for
+        // clients it's a cross-module id we don't join. One lookup, no N+1.
+        $staffIds = $replies->whereIn('sender_type', ['admin', 'agent'])
+            ->pluck('sender_id')->filter()->unique();
+
+        if ($staffIds->isNotEmpty()) {
+            $names = \App\Models\User::whereIn('id', $staffIds)->pluck('name', 'id');
+            $replies->each(function (TicketReply $r) use ($names) {
+                if (in_array($r->sender_type, ['admin', 'agent'], true) && isset($names[$r->sender_id])) {
+                    $r->setAttribute('sender', ['name' => $names[$r->sender_id]]);
+                }
+            });
+        }
+
+        return $replies;
     }
 
     /* ── Analytics (manager dashboard) ──────────────────────────── */

@@ -80,11 +80,13 @@ class TicketSummaryService
 
     private function placeholder(Ticket $ticket, string $transcript): string
     {
-        $replyCount = $ticket->replies->count();
+        // The customer's opening description counts as the first message, plus
+        // every reply since — so a brand-new ticket reads "1 message", not "0".
+        $messageCount = ($ticket->description ? 1 : 0) + $ticket->replies->count();
         $extract = Str::limit(preg_replace('/\s+/', ' ', $transcript), 220);
 
         return '⚠️ AI summary placeholder — no LLM API key is configured yet, so this '
             ."is an automatic extract, not a real AI summary. Ticket \"{$ticket->subject}\" "
-            ."has {$replyCount} message(s). Opening details: {$extract}";
+            ."has {$messageCount} message(s). Opening details: {$extract}";
     }
 }
