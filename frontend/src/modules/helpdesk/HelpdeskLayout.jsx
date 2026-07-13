@@ -1,6 +1,9 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useTheme } from '@/context/ThemeContext'
-import { LifeBuoy, BookOpen, BarChart3, CheckSquare, PenSquare, Code2, Settings, ChevronRight, ArrowLeft } from 'lucide-react'
+import {
+  LifeBuoy, BookOpen, BarChart3, CheckSquare,
+  PenSquare, Code2, Settings, ChevronRight, ArrowLeft, Headphones
+} from 'lucide-react'
 
 const HELPDESK_NAV = [
   { label: 'Analytics',      path: '/app/helpdesk/analytics',      icon: BarChart3 },
@@ -17,71 +20,99 @@ export default function HelpdeskLayout() {
   const navigate = useNavigate()
 
   return (
-    <div className="space-y-0 -m-4 md:-m-6">
+    <div style={{ margin: '-1rem -1.5rem', minHeight: '100vh' }}>
 
-      {/* ── Helpdesk Module Header ──────────────────────── */}
+      {/* ── Module Header ─────────────────────────────────────── */}
       <div
-        className="relative overflow-hidden px-4 md:px-6 pt-5 pb-0"
+        className="relative overflow-hidden"
         style={{
           background: isDark
-            ? 'linear-gradient(135deg,rgba(6,182,212,0.2),rgba(14,116,144,0.1),transparent)'
-            : 'linear-gradient(135deg,rgba(6,182,212,0.1),rgba(34,211,238,0.06),transparent)',
+            ? 'linear-gradient(135deg, rgba(6,182,212,0.18) 0%, rgba(14,116,144,0.08) 50%, transparent 100%)'
+            : 'linear-gradient(135deg, rgba(6,182,212,0.12) 0%, rgba(34,211,238,0.05) 50%, transparent 100%)',
           borderBottom: '1px solid var(--border)',
         }}
       >
-        {/* Module badge */}
-        <div className="flex items-center gap-3 mb-4">
-          <button
-            onClick={() => navigate('/app/modules')}
-            className="flex items-center gap-1.5 text-xs font-semibold transition-all duration-150"
-            style={{ color: 'var(--text-muted)' }}
-            onMouseEnter={e => e.currentTarget.style.color = 'var(--text-h)'}
-            onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
-          >
-            <ArrowLeft size={12} /> Modules
-          </button>
-          <ChevronRight size={12} style={{ color: 'var(--text-muted)' }} />
-          <div className="flex items-center gap-2">
-            <div
-              className="w-6 h-6 rounded-lg flex items-center justify-center text-xs"
-              style={{ background: 'linear-gradient(135deg,#06b6d4,#0e7490)', boxShadow: '0 3px 8px rgba(6,182,212,0.4)' }}
-            >
-              🎧
-            </div>
-            <span className="text-xs font-bold" style={{ color: '#22d3ee' }}>Helpdesk & Support</span>
-          </div>
-        </div>
+        {/* Decorative orb */}
+        <div
+          className="absolute pointer-events-none"
+          style={{
+            top: -60, right: -60,
+            width: 200, height: 200,
+            borderRadius: '50%',
+            background: isDark
+              ? 'radial-gradient(circle, rgba(6,182,212,0.15) 0%, transparent 70%)'
+              : 'radial-gradient(circle, rgba(6,182,212,0.10) 0%, transparent 70%)',
+          }}
+        />
 
-        {/* Sub-navigation tabs */}
-        <nav className="flex gap-0.5 overflow-x-auto scrollbar-hide pb-0">
-          {HELPDESK_NAV.map(({ label, path, icon: Icon }) => (
-            <NavLink key={path} to={path}>
-              {({ isActive }) => (
-                <div
-                  className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-t-xl text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer"
-                  style={{
-                    background: isActive
-                      ? isDark ? 'var(--bg-card)' : '#ffffff'
-                      : 'transparent',
-                    color: isActive ? '#22d3ee' : 'var(--text-muted)',
-                    borderTop: isActive ? '1px solid rgba(6,182,212,0.4)' : '1px solid transparent',
-                    borderLeft: isActive ? '1px solid rgba(6,182,212,0.4)' : '1px solid transparent',
-                    borderRight: isActive ? '1px solid rgba(6,182,212,0.4)' : '1px solid transparent',
-                    borderBottom: isActive ? `2px solid ${isDark ? 'var(--bg-card)' : '#ffffff'}` : '1px solid transparent',
-                    marginBottom: isActive ? '-1px' : '0',
-                  }}
-                >
-                  <Icon size={13} />
-                  {label}
-                </div>
-              )}
-            </NavLink>
-          ))}
-        </nav>
+        <div className="px-4 md:px-6 pt-4 pb-0 relative z-10">
+          {/* Breadcrumb row */}
+          <div className="flex items-center gap-2 mb-3">
+            <button
+              onClick={() => navigate('/app/modules')}
+              className="flex items-center gap-1.5 text-xs font-semibold transition-all duration-200 hover:opacity-80"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              <ArrowLeft size={12} />
+              Modules
+            </button>
+            <ChevronRight size={11} style={{ color: 'var(--text-muted)', opacity: 0.5 }} />
+
+            {/* Module badge */}
+            <div className="flex items-center gap-2">
+              <div
+                className="w-6 h-6 rounded-lg flex items-center justify-center"
+                style={{
+                  background: 'linear-gradient(135deg, #06b6d4, #0e7490)',
+                  boxShadow: '0 3px 10px rgba(6,182,212,0.45)',
+                }}
+              >
+                <Headphones size={13} className="text-white" />
+              </div>
+              <span className="text-xs font-black tracking-tight" style={{ color: '#22d3ee' }}>
+                Helpdesk &amp; Support
+              </span>
+            </div>
+          </div>
+
+          {/* Sub-navigation tabs */}
+          <nav className="flex gap-0.5 overflow-x-auto scrollbar-hide">
+            {HELPDESK_NAV.map(({ label, path, icon: Icon }) => (
+              <NavLink key={path} to={path} end={path === '/app/helpdesk/analytics'}>
+                {({ isActive }) => (
+                  <div
+                    className="group flex items-center gap-1.5 px-3.5 py-2.5 whitespace-nowrap text-xs font-semibold transition-all duration-200 cursor-pointer select-none"
+                    style={{
+                      borderRadius: '10px 10px 0 0',
+                      background: isActive
+                        ? isDark ? 'rgba(6,182,212,0.12)' : 'rgba(6,182,212,0.08)'
+                        : 'transparent',
+                      color: isActive ? '#22d3ee' : 'var(--text-muted)',
+                      borderTop: isActive ? '1px solid rgba(6,182,212,0.35)' : '1px solid transparent',
+                      borderLeft: isActive ? '1px solid rgba(6,182,212,0.2)' : '1px solid transparent',
+                      borderRight: isActive ? '1px solid rgba(6,182,212,0.2)' : '1px solid transparent',
+                      borderBottom: isActive ? `2px solid #22d3ee` : '2px solid transparent',
+                      boxShadow: isActive ? '0 -2px 12px rgba(6,182,212,0.1)' : 'none',
+                    }}
+                  >
+                    <Icon size={13} style={{ opacity: isActive ? 1 : 0.7 }} />
+                    <span>{label}</span>
+                    {isActive && (
+                      <span
+                        className="ml-0.5 w-1.5 h-1.5 rounded-full"
+                        style={{ background: '#22d3ee', boxShadow: '0 0 6px #22d3ee' }}
+                      />
+                    )}
+                  </div>
+                )}
+              </NavLink>
+            ))}
+          </nav>
+        </div>
       </div>
 
-      {/* ── Helpdesk Page Content ───────────────────────── */}
-      <div className="p-4 md:p-6">
+      {/* ── Page Content ─────────────────────────────────────── */}
+      <div className="p-4 md:p-6 animate-fade-in">
         <Outlet />
       </div>
     </div>

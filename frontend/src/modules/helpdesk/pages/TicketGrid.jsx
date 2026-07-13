@@ -9,6 +9,7 @@ import {
 import { helpdeskApi } from '@/services/helpdeskApi'
 import { useAuth } from '@/context/AuthContext'
 import SLABadge from '../components/ui/SLABadge'
+import SlaTimer from '../components/ui/SlaTimer'
 
 /* ───────────────────────────────────────────────────────────────
    Universal Data Grid — Ticket inbox (SDS "Nova" flagship component).
@@ -28,8 +29,17 @@ const fmtAgo = (d) => {
   return `${Math.floor(s / 86400)}d`
 }
 
+const SLA_RANK = { breached: 0, at_risk: 1, paused: 2, ok: 3, met: 4 }
+const slaSort = (t) => {
+  const s = t.sla
+  if (!s?.tracked) return 9
+  const states = [s.response?.state, s.resolution?.state].filter(Boolean)
+  return states.length ? Math.min(...states.map(x => SLA_RANK[x] ?? 9)) : 9
+}
+
 const ALL_COLS = [
   { key: 'priority',   label: 'Priority',  always: true,  sort: t => PRI_RANK[t.priority] ?? 9 },
+  { key: 'sla',        label: 'SLA',       sort: slaSort },
   { key: 'subject',    label: 'Subject',   always: true,  sort: t => (t.subject || '').toLowerCase() },
   { key: 'requester',  label: 'Requester', sort: t => (t.requester_name || '').toLowerCase() },
   { key: 'department', label: 'Dept',      sort: t => t.department_id ?? 999 },
@@ -289,7 +299,8 @@ export default function TicketGrid() {
                     {cols.map(c => (
                       <td key={c.key} style={{ padding: rowPad, fontSize: 13, color: 'var(--text-body)', whiteSpace: c.key === 'subject' ? 'normal' : 'nowrap' }}
                         onClick={c.key === 'status' ? e => e.stopPropagation() : undefined}>
-                        {c.key === 'priority' && <SLABadge priority={t.priority} dueDate={t.due_date} />}
+                        {c.key === 'priority' && <SLABadge priority={t.priority} showSla={false} />}
+                        {c.key === 'sla' && <SlaTimer sla={t.sla} compact />}
                         {c.key === 'subject' && (
                           <div className="min-w-0">
                             <span className="font-semibold" style={{ color: 'var(--text-h)' }}>{t.subject}</span>

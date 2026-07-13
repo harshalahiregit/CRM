@@ -1,12 +1,11 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useParams, Link } from 'react-router-dom'
-import { Search, BookOpen, FileText, ChevronRight } from 'lucide-react'
+import { Search, BookOpen, FileText, ChevronRight, Headphones } from 'lucide-react'
 import { helpdeskApi } from '@/services/helpdeskApi'
 
 /**
- * Public, no-auth knowledge base browse page, scoped by the tenant's widget key.
- * Category tiles → sub-sections → published articles, with a search bar.
+ * Public, no-auth knowledge base browse page, scoped by tenant's widget key.
  */
 export default function PublicKb() {
   const { key } = useParams()
@@ -26,33 +25,109 @@ export default function PublicKb() {
   const searching = query.trim().length > 1
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f8fafc' }}>
-      <div className="max-w-4xl mx-auto px-5 py-12">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-3xl mb-3" style={{ background: 'linear-gradient(135deg,#06b6d4,#0891b2)' }}>
-            <BookOpen size={26} className="text-white" />
+    <div style={{ minHeight: '100vh', background: '#f0f4ff', fontFamily: 'Inter, system-ui, sans-serif' }}>
+      {/* Hero */}
+      <div
+        style={{
+          background: 'linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 50%, #2563eb 100%)',
+          padding: '56px 24px 80px',
+          position: 'relative',
+          overflow: 'hidden',
+        }}
+      >
+        {/* Decorative circles */}
+        <div style={{
+          position: 'absolute', top: -80, right: -80, width: 320, height: 320,
+          borderRadius: '50%', background: 'rgba(255,255,255,0.05)', pointerEvents: 'none',
+        }} />
+        <div style={{
+          position: 'absolute', bottom: -60, left: '20%', width: 200, height: 200,
+          borderRadius: '50%', background: 'rgba(255,255,255,0.04)', pointerEvents: 'none',
+        }} />
+
+        <div style={{ maxWidth: 640, margin: '0 auto', textAlign: 'center', position: 'relative', zIndex: 1 }}>
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            width: 64, height: 64, borderRadius: 20, marginBottom: 18,
+            background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(10px)',
+            border: '1px solid rgba(255,255,255,0.2)',
+          }}>
+            <Headphones size={30} style={{ color: '#fff' }} />
           </div>
-          <h1 className="text-3xl font-black text-slate-900">Help Center</h1>
-          <p className="text-slate-500 mt-1">Search articles or browse by topic.</p>
-          <div className="relative mt-5 max-w-xl mx-auto">
-            <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search articles…"
-              className="w-full pl-11 pr-4 py-3.5 rounded-2xl text-sm outline-none border border-slate-200 bg-white focus:border-cyan-400" />
+          <h1 style={{
+            color: '#fff', fontSize: 'clamp(1.8rem, 4vw, 2.8rem)',
+            fontWeight: 900, letterSpacing: '-0.025em', lineHeight: 1.15,
+          }}>
+            Help Center
+          </h1>
+          <p style={{ color: 'rgba(255,255,255,0.75)', marginTop: 10, fontSize: 15.5 }}>
+            Search articles or browse by topic
+          </p>
+
+          {/* Search */}
+          <div style={{ position: 'relative', marginTop: 24, maxWidth: 520, margin: '24px auto 0' }}>
+            <Search size={18} style={{
+              position: 'absolute', left: 18, top: '50%',
+              transform: 'translateY(-50%)', color: '#94a3b8',
+            }} />
+            <input
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Search articles…"
+              style={{
+                width: '100%', padding: '16px 18px 16px 50px',
+                borderRadius: 16, border: 'none', fontSize: 15, outline: 'none',
+                color: '#1e293b', boxShadow: '0 16px 40px rgba(0,0,0,0.2)',
+                background: '#fff',
+              }}
+            />
           </div>
         </div>
+      </div>
 
-        {isError && <p className="text-center text-slate-500">This help center is not available.</p>}
-        {isLoading && <div className="grid gap-5 md:grid-cols-2">{[1, 2, 3, 4].map(i => <div key={i} className="h-40 rounded-2xl bg-slate-100 animate-pulse" />)}</div>}
+      <div style={{ maxWidth: 900, margin: '0 auto', padding: '0 24px 56px', marginTop: -40 }}>
+
+        {isError && (
+          <div style={{
+            textAlign: 'center', padding: '40px 20px', background: '#fff',
+            borderRadius: 16, border: '1px solid #e2e8f0', color: '#64748b',
+          }}>
+            This help center is not available.
+          </div>
+        )}
+
+        {isLoading && (
+          <div style={{ display: 'grid', gap: 20, gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} style={{ height: 180, borderRadius: 16, background: '#e2e8f0', animation: 'pulse 1.5s infinite' }} />
+            ))}
+          </div>
+        )}
 
         {/* Search results */}
         {searching && (
-          <div className="bg-white rounded-2xl border border-slate-200 divide-y divide-slate-100">
-            {results.length === 0 && <p className="p-5 text-sm text-slate-500">No articles match “{query}”.</p>}
+          <div style={{ background: '#fff', borderRadius: 16, border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.06)' }}>
+            {results.length === 0 && (
+              <p style={{ padding: '24px 20px', color: '#94a3b8', textAlign: 'center', fontSize: 14 }}>
+                No articles match &ldquo;{query}&rdquo;
+              </p>
+            )}
             {results.map(a => (
-              <Link key={a.id} to={`/kb/a/${a.public_slug}`} className="flex items-center gap-2 px-5 py-3 hover:bg-slate-50 text-slate-700">
-                <FileText size={15} className="text-slate-400" />
-                <span className="flex-1 truncate text-sm">{a.title}</span>
-                <ChevronRight size={15} className="text-slate-300" />
+              <Link
+                key={a.id}
+                to={`/kb/a/${a.public_slug}`}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 12,
+                  padding: '14px 20px', color: '#334155', textDecoration: 'none',
+                  borderBottom: '1px solid #f1f5f9',
+                  transition: 'background 0.15s',
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = '#f8faff'}
+                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+              >
+                <FileText size={16} style={{ color: '#94a3b8', flexShrink: 0 }} />
+                <span style={{ flex: 1, fontSize: 14, fontWeight: 500 }}>{a.title}</span>
+                <ChevronRight size={15} style={{ color: '#cbd5e1' }} />
               </Link>
             ))}
           </div>
@@ -60,30 +135,77 @@ export default function PublicKb() {
 
         {/* Category tiles */}
         {!searching && !isLoading && !isError && (
-          <div className="grid gap-5 md:grid-cols-2">
-            {tree.map(cat => (
-              <section key={cat.id} className="bg-white rounded-2xl border border-slate-200 p-5">
-                <h2 className="font-bold text-slate-900 mb-3">{cat.name}</h2>
-                {(cat.subcategories || []).map(sub => (
-                  <div key={sub.id} className="mb-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-1">{sub.name}</p>
-                    <ul className="space-y-0.5">
-                      {(sub.articles || []).map(a => (
-                        <li key={a.id}>
-                          <Link to={`/kb/a/${a.public_slug}`} className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm text-slate-600 hover:bg-slate-50 hover:text-cyan-700">
-                            <FileText size={14} className="text-slate-400" />
-                            <span className="flex-1 truncate">{a.title}</span>
-                          </Link>
-                        </li>
-                      ))}
-                      {(sub.articles || []).length === 0 && <li className="text-xs text-slate-400 px-2">No published articles.</li>}
-                    </ul>
+          <div style={{ display: 'grid', gap: 20, gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
+            {tree.map((cat, i) => {
+              const COLORS = [
+                { bg: '#eef4ff', fg: '#2563eb' },
+                { bg: '#f0fdf4', fg: '#16a34a' },
+                { bg: '#fff7ed', fg: '#ea580c' },
+                { bg: '#faf5ff', fg: '#7c3aed' },
+                { bg: '#ecfeff', fg: '#0891b2' },
+              ]
+              const c = COLORS[i % COLORS.length]
+              return (
+                <section key={cat.id} style={{
+                  background: '#fff', borderRadius: 16,
+                  border: '1px solid #e2e8f0', padding: 20,
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                    <div style={{
+                      width: 42, height: 42, borderRadius: 12, display: 'flex',
+                      alignItems: 'center', justifyContent: 'center',
+                      background: c.bg, flexShrink: 0,
+                    }}>
+                      <BookOpen size={20} style={{ color: c.fg }} />
+                    </div>
+                    <div>
+                      <h2 style={{ fontWeight: 700, fontSize: 16, color: '#0f172a', margin: 0 }}>{cat.name}</h2>
+                    </div>
                   </div>
-                ))}
-                {(cat.subcategories || []).length === 0 && <p className="text-xs text-slate-400">Coming soon.</p>}
-              </section>
-            ))}
-            {tree.length === 0 && <p className="text-slate-500">No help topics yet.</p>}
+
+                  {(cat.subcategories || []).map(sub => (
+                    <div key={sub.id} style={{ marginBottom: 12 }}>
+                      <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#94a3b8', marginBottom: 6 }}>
+                        {sub.name}
+                      </p>
+                      <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                        {(sub.articles || []).map(a => (
+                          <li key={a.id}>
+                            <Link
+                              to={`/kb/a/${a.public_slug}`}
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: 8,
+                                padding: '7px 8px', borderRadius: 10, fontSize: 14,
+                                color: '#334155', textDecoration: 'none',
+                                transition: 'background 0.15s',
+                              }}
+                              onMouseEnter={e => { e.currentTarget.style.background = '#f8faff'; e.currentTarget.style.color = c.fg }}
+                              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#334155' }}
+                            >
+                              <FileText size={14} style={{ color: '#94a3b8', flexShrink: 0 }} />
+                              <span style={{ flex: 1 }}>{a.title}</span>
+                            </Link>
+                          </li>
+                        ))}
+                        {(sub.articles || []).length === 0 && (
+                          <li style={{ fontSize: 12, color: '#94a3b8', paddingLeft: 8 }}>No published articles.</li>
+                        )}
+                      </ul>
+                    </div>
+                  ))}
+
+                  {(cat.subcategories || []).length === 0 && (
+                    <p style={{ fontSize: 13, color: '#94a3b8' }}>Coming soon.</p>
+                  )}
+                </section>
+              )
+            })}
+            {tree.length === 0 && (
+              <p style={{ gridColumn: '1/-1', textAlign: 'center', color: '#94a3b8', padding: '40px 0' }}>
+                No help topics available yet.
+              </p>
+            )}
           </div>
         )}
       </div>

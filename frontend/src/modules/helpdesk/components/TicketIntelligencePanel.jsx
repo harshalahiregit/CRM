@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { helpdeskApi } from '@/services/helpdeskApi'
 import SLABadge from './ui/SLABadge'
+import SlaTimer from './ui/SlaTimer'
 
 const fmtWhen = ts =>
   ts
@@ -138,14 +139,7 @@ function PropertiesSection({ ticketId }) {
           </select>
         </Field>
 
-        <Field
-          label={
-            <span className="flex items-center gap-2">
-              Priority
-              <SLABadge priority={ticket.priority} dueDate={ticket.due_date} />
-            </span>
-          }
-        >
+        <Field label="Priority">
           <select
             value={ticket.priority}
             onChange={e => update.mutate({ priority: e.target.value })}
@@ -157,6 +151,12 @@ function PropertiesSection({ ticketId }) {
             ))}
           </select>
         </Field>
+
+        {ticket.sla?.tracked && (
+          <Field label="SLA">
+            <SlaTimer sla={ticket.sla} />
+          </Field>
+        )}
 
         <Field label="Department">
           <select
