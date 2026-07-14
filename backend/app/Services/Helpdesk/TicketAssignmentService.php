@@ -15,8 +15,10 @@ use Illuminate\Support\Facades\Log;
  */
 class TicketAssignmentService
 {
-    public function __construct(private TicketRepository $tickets)
-    {
+    public function __construct(
+        private TicketRepository $tickets,
+        private HelpdeskMailService $mail,
+    ) {
     }
 
     /**
@@ -38,11 +40,17 @@ class TicketAssignmentService
             }
         }
 
+        $previous = $ticket->assigned_to;
         $ticket->update(['assigned_to' => $userId]);
 
         Log::info('Helpdesk ticket assignment', [
             'ticket' => $ticket->id, 'assigned_to' => $userId, 'tenant' => $tenantId,
         ]);
+
+        // Notify the newly-assigned agent by email (skip re-assign to the same user).
+        if ($userId !== null && $userId !== $previous) {
+            $this->mail->sendAssignment($ticket->fresh(), $userId);
+        }
 
         return $ticket->fresh('assignee');
     }

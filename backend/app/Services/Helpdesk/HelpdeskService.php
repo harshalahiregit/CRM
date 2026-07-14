@@ -27,6 +27,7 @@ class HelpdeskService
     public function __construct(
         private TicketRepository $tickets,
         private SlaService $sla,
+        private HelpdeskMailService $mail,
         ?CustomerServiceContract $customers = null,
     ) {
         $this->customers = $customers ?? new MockCustomerService();
@@ -70,6 +71,9 @@ class HelpdeskService
             'requester_name'  => $data['requester_name'] ?? null,
             'requester_email' => $data['requester_email'] ?? null,
         ]);
+
+        // Acknowledge the requester with their ticket number (email threading on).
+        $this->mail->sendAcknowledgement($ticket);
 
         return $this->decorateWithCustomer($ticket->fresh('assignee'), $tenantId);
     }
@@ -145,7 +149,7 @@ class HelpdeskService
         $ticket = $this->findTicket($ticketId, $tenantId);
         $attachments = $data['attachments'] ?? [];
 
-        return DB::transaction(function () use ($ticket, $data, $attachments, $tenantId) {
+        $reply = DB::transaction(function () use ($ticket, $data, $attachments, $tenantId) {
             $reply = TicketReply::create([
                 'tenant_id'       => $tenantId,
                 'ticket_id'       => $ticket->id,
@@ -182,6 +186,17 @@ class HelpdeskService
 
             return $reply->load('attachments');
         });
+
+        // A staff reply is delivered to the customer as email (after the write
+        // commits). Client-origin replies (portal/inbound) are not echoed back.
+        if ($data['sender_type'] !== 'client') {
+            $agentName = ! empty($data['sender_id'])
+                ? (\App\Models\User::find($data['sender_id'])?->name ?? 'Support')
+                : 'Support';
+            $this->mail->sendStaffReply($ticket->fresh(), $reply, $agentName);
+        }
+
+        return $reply;
     }
 
     public function listReplies(int $ticketId, int $tenantId): Collection

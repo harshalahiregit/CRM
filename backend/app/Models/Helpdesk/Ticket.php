@@ -15,9 +15,27 @@ class Ticket extends Model
     protected $fillable = [
         'tenant_id', 'subject', 'description', 'status', 'priority',
         'assigned_to', 'customer_id', 'department_id', 'project_id', 'due_date', 'source',
-        'merged_into_id', 'ai_summary', 'ai_summary_at',
+        'requester_name', 'requester_email',
+        'merged_into_id', 'ai_summary', 'ai_summary_at', 'email_token',
         'first_responded_at', 'resolved_at', 'sla_paused_at', 'sla_paused_seconds',
     ];
+
+    protected static function booted(): void
+    {
+        // Every ticket gets an unforgeable email-threading token so inbound
+        // replies can be mapped back to it. See the add_email_token migration.
+        static::creating(function (Ticket $ticket) {
+            if (empty($ticket->email_token)) {
+                $ticket->email_token = \Illuminate\Support\Str::random(32);
+            }
+        });
+    }
+
+    /** Reply-To local part that ties an inbound email back to this ticket. */
+    public function emailThreadRef(): string
+    {
+        return "{$this->id}-{$this->email_token}";
+    }
 
     protected $casts = [
         'due_date'           => 'datetime',

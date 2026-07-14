@@ -26,6 +26,10 @@ Route::get('/helpdesk/feedback/{ticket}/{rating}', [HelpdeskFeedbackController::
 // Tenant resolved from the widget public key; submission is throttled + honeypot.
 Route::post('/helpdesk/public/widget/{key}/tickets', [PublicHelpdeskController::class, 'submitTicket'])
     ->middleware('throttle:15,1');
+// Inbound email → ticket reply (provider route/webhook or IMAP poller). Auth is a
+// shared secret + the per-ticket token in the threaded recipient, not a session.
+Route::post('/helpdesk/public/inbound-email', [PublicHelpdeskController::class, 'inboundEmail'])
+    ->middleware('throttle:60,1');
 Route::get('/helpdesk/public/widget/{key}/kb', [PublicHelpdeskController::class, 'kbTree']);
 Route::get('/helpdesk/public/widget/{key}/kb/search', [PublicHelpdeskController::class, 'kbSearch']);
 Route::get('/helpdesk/public/kb/articles/{slug}', [PublicHelpdeskController::class, 'article']);

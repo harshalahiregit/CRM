@@ -16,6 +16,23 @@ import { helpdeskApi } from '@/services/helpdeskApi'
 
 const ACCENT = 'var(--color-support-500)'
 
+// Rich-text toolbar for KB articles — headings, formatting, lists, and crucially
+// image + video embeds so guides can include screenshots and how-to videos
+// (the "Step 1..5 with images and guide videos" the KB is meant to hold).
+const QUILL_MODULES = {
+  toolbar: [
+    [{ header: [2, 3, 4, false] }],
+    ['bold', 'italic', 'underline', 'strike', 'blockquote', 'code-block'],
+    [{ list: 'ordered' }, { list: 'bullet' }],
+    ['link', 'image', 'video'],
+    ['clean'],
+  ],
+}
+const QUILL_FORMATS = [
+  'header', 'bold', 'italic', 'underline', 'strike', 'blockquote', 'code-block',
+  'list', 'bullet', 'link', 'image', 'video',
+]
+
 export default function KbAdmin() {
   const [tab, setTab] = useState('kb')
   return (
@@ -178,7 +195,7 @@ function KbManager() {
             </div>
 
             <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
-              <div className="bg-white text-black"><ReactQuill theme="snow" value={article.content} onChange={v => setArticle({ ...article, content: v })} style={{ minHeight: 300 }} /></div>
+              <div className="bg-white text-black"><ReactQuill theme="snow" modules={QUILL_MODULES} formats={QUILL_FORMATS} value={article.content} onChange={v => setArticle({ ...article, content: v })} style={{ minHeight: 300 }} /></div>
             </div>
 
             {/* Publish / status section */}

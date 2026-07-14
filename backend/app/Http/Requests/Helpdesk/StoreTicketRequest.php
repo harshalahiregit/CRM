@@ -28,6 +28,10 @@ class StoreTicketRequest extends FormRequest
             'customer_id'   => 'nullable|integer|min:1',
             'department_id' => 'nullable|integer|exists:ticket_departments,id',
             'due_date'      => 'nullable|date',
+            // Requester identity — used for the acknowledgment email + threaded
+            // replies when the ticket is raised on someone's behalf.
+            'requester_name'  => 'nullable|string|max:255',
+            'requester_email' => 'nullable|email|max:255',
         ];
     }
 }
