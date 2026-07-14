@@ -33,7 +33,7 @@ export default function PublicKb() {
       <div
         style={{
           background: 'linear-gradient(135deg, #0e7490 0%, #0891b2 50%, #06b6d4 100%)',
-          padding: '56px 24px 80px',
+          padding: '56px 24px 56px',
           position: 'relative',
           overflow: 'hidden',
         }}
@@ -88,7 +88,7 @@ export default function PublicKb() {
         </div>
       </div>
 
-      <div style={{ maxWidth: 900, margin: '0 auto', padding: '0 24px 56px', marginTop: -40 }}>
+      <div style={{ maxWidth: 900, margin: '0 auto', padding: '36px 24px 56px', position: 'relative', zIndex: 1 }}>
 
         {isError && (
           <div style={{

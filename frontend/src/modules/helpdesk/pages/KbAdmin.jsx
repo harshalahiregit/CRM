@@ -102,12 +102,16 @@ function KbManager() {
     },
     onSuccess: (saved) => { setArticle(saved); refetchArticles() },
   })
-  const publish = useMutation({ mutationFn: (id) => helpdeskApi.kb.publish(id), onSuccess: (res) => { setArticle(a => ({ ...a, ...(res.article || res), public_slug: res.public_slug || res.public_slug, public_url: res.public_url })); refetchArticles() } })
+  const publish = useMutation({ mutationFn: (id) => helpdeskApi.kb.publish(id), onSuccess: (res) => { setArticle(a => ({ ...a, ...(res.article || res), public_slug: res.public_slug || (res.article || res)?.public_slug })); refetchArticles() } })
   const unpublish = useMutation({ mutationFn: (id) => helpdeskApi.kb.unpublish(id), onSuccess: (res) => { setArticle(a => ({ ...a, ...(res.article || res), is_published: false })); refetchArticles() } })
   const delArticle = useMutation({ mutationFn: (id) => helpdeskApi.kb.deleteArticle(id), onSuccess: () => { setArticle(null); refetchArticles() } })
 
   const promptAdd = (label, cb) => { const v = window.prompt(label); if (v && v.trim()) cb(v.trim()) }
-  const publicUrl = article?.public_url || (article?.public_slug ? `${location.origin}/kb/a/${article.public_slug}` : null)
+  // Always build the public link from the slug against the frontend origin — the
+  // public article is a frontend route (/kb/a/:slug). The API's public_url points
+  // at the JSON endpoint, so trusting it opened raw JSON for freshly-published
+  // articles ("black screen"); the slug form is correct for new and old alike.
+  const publicUrl = article?.public_slug ? `${location.origin}/kb/a/${article.public_slug}` : null
 
   const startNew = (tpl) => { setArticle({ ...EMPTY_ARTICLE, subcategory_id: selSub, content: tpl.content }); setTplOpen(false) }
 

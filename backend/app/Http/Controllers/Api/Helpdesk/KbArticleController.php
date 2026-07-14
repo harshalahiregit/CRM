@@ -51,10 +51,14 @@ class KbArticleController extends Controller
     {
         $result = $this->kb->publish($article, $request->user()->tenant_id);
 
+        // Public article page is a FRONTEND route (/kb/a/:slug), not this API
+        // endpoint — point the shareable link there.
+        $frontend = rtrim(config('app.frontend_url') ?: config('app.url'), '/');
+
         return $this->success([
             'article'     => $result,
             'public_slug' => $result->public_slug,
-            'public_url'  => url("/api/helpdesk/public/kb/articles/{$result->public_slug}"),
+            'public_url'  => "{$frontend}/kb/a/{$result->public_slug}",
         ], 'Article published');
     }
 
