@@ -244,6 +244,25 @@ class KnowledgeBaseService
             throw new BusinessException('Article not found.', 404);
         }
 
+        // Attach the tenant's Help Center key so the public article can link back
+        // to the browse/search home (PublicKb at /kb/{key}) — otherwise the page
+        // is a dead-end island. Plus a few sibling articles for the related rail.
+        $article->setAttribute(
+            'kb_key',
+            \App\Models\Helpdesk\HelpdeskWidgetSetting::where('tenant_id', $article->tenant_id)->value('public_key')
+        );
+
+        $article->setAttribute(
+            'related',
+            KbArticle::where('tenant_id', $article->tenant_id)
+                ->where('is_published', true)
+                ->where('category_id', $article->category_id)
+                ->where('id', '!=', $article->id)
+                ->latest('published_at')
+                ->limit(4)
+                ->get(['id', 'title', 'public_slug'])
+        );
+
         return $article;
     }
 

@@ -1,15 +1,18 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useSearchParams } from 'react-router-dom'
 import { Search, BookOpen, FileText, ChevronRight, Headphones } from 'lucide-react'
 import { helpdeskApi } from '@/services/helpdeskApi'
 
 /**
  * Public, no-auth knowledge base browse page, scoped by tenant's widget key.
+ * Accepts ?q= so a search started from an article page (PublicArticle) carries
+ * over to the home.
  */
 export default function PublicKb() {
   const { key } = useParams()
-  const [query, setQuery] = useState('')
+  const [searchParams] = useSearchParams()
+  const [query, setQuery] = useState(searchParams.get('q') || '')
 
   const { data: tree = [], isLoading, isError } = useQuery({
     queryKey: ['public-kb', key],
@@ -29,7 +32,7 @@ export default function PublicKb() {
       {/* Hero */}
       <div
         style={{
-          background: 'linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 50%, #2563eb 100%)',
+          background: 'linear-gradient(135deg, #0e7490 0%, #0891b2 50%, #06b6d4 100%)',
           padding: '56px 24px 80px',
           position: 'relative',
           overflow: 'hidden',
@@ -138,11 +141,11 @@ export default function PublicKb() {
           <div style={{ display: 'grid', gap: 20, gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
             {tree.map((cat, i) => {
               const COLORS = [
-                { bg: '#eef4ff', fg: '#2563eb' },
+                { bg: '#ecfeff', fg: '#0891b2' },
                 { bg: '#f0fdf4', fg: '#16a34a' },
                 { bg: '#fff7ed', fg: '#ea580c' },
                 { bg: '#faf5ff', fg: '#7c3aed' },
-                { bg: '#ecfeff', fg: '#0891b2' },
+                { bg: '#eef4ff', fg: '#2563eb' },
               ]
               const c = COLORS[i % COLORS.length]
               return (
