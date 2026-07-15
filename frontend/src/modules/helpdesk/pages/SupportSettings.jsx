@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Flag, CircleDot, Building2, Plus, Trash2,
-  ChevronUp, ChevronDown, Check, X, Settings, Globe
+  ChevronUp, ChevronDown, Check, X, Settings, Globe, BellRing
 } from 'lucide-react'
 import { helpdeskApi } from '@/services/helpdeskApi'
 import Select from '../components/ui/Select'
@@ -79,6 +79,8 @@ export default function SupportSettings() {
         withDescription
         onChange={invalidate}
       />
+
+      <TicketRoutingCard settings={settings} departments={departments} onChange={invalidate} />
 
       <PublicFormCard settings={settings} departments={departments} onChange={invalidate} />
     </div>
@@ -311,6 +313,140 @@ function SlaHrs({ value, label, onSave }) {
       />
       <span>{label}</span>
     </label>
+  )
+}
+
+/* ── Ticket routing — who is told when a ticket is raised ─────── */
+
+/**
+ * One place for both halves of routing: the tenant-wide ticket managers (every
+ * new ticket) and each department's own managers (tickets for that department).
+ * Recipients are the union of the two; if nothing is set, admins are notified so
+ * a ticket is never raised into silence.
+ */
+function TicketRoutingCard({ settings, departments, onChange }) {
+  const qc = useQueryClient()
+  const { data: agents = [] } = useQuery({ queryKey: ['helpdesk-agents'], queryFn: helpdeskApi.agents })
+
+  const saveGeneral = useMutation({
+    mutationFn: (data) => helpdeskApi.settings.updateGeneral(data),
+    onSuccess: onChange,
+  })
+  const saveDept = useMutation({
+    mutationFn: ({ id, manager_ids }) => helpdeskApi.settings.updateItem('departments', id, { manager_ids }),
+    onSuccess: onChange,
+  })
+
+  const globalIds = (settings.ticket_manager_ids || []).map(Number)
+  const nothingSet = globalIds.length === 0 && departments.every(d => (d.manager_ids || []).length === 0)
+
+  return (
+    <section
+      className="rounded-2xl overflow-hidden"
+      style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card)' }}
+    >
+      <header className="flex items-center gap-3 px-5 py-4" style={{ borderBottom: '1px solid var(--border)' }}>
+        <span className="w-9 h-9 rounded-xl flex items-center justify-center"
+          style={{ background: 'color-mix(in srgb, var(--color-primary-500) 13%, transparent)' }}>
+          <BellRing size={16} style={{ color: 'var(--color-primary-500)' }} />
+        </span>
+        <div className="flex-1">
+          <h2 className="font-bold" style={{ fontSize: 15, color: 'var(--text-h)' }}>Ticket routing</h2>
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Who gets notified the moment a ticket is raised</p>
+        </div>
+      </header>
+
+      <div className="px-5 py-4 space-y-5">
+        {/* Global */}
+        <div>
+          <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text-h)' }}>Ticket managers</p>
+          <p className="text-xs mb-2.5" style={{ color: 'var(--text-muted)' }}>
+            Notified for <strong>every</strong> new ticket, whatever the department — they allocate it to the right person.
+          </p>
+          <PeoplePicker
+            agents={agents}
+            selected={globalIds}
+            onChange={(ids) => saveGeneral.mutate({ ticket_manager_ids: ids })}
+            saving={saveGeneral.isPending}
+          />
+        </div>
+
+        {/* Per-department */}
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 18 }}>
+          <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text-h)' }}>Department managers</p>
+          <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
+            Also notified when a ticket is raised against their department.
+          </p>
+
+          {departments.length === 0 && (
+            <p className="text-xs py-3" style={{ color: 'var(--text-muted)' }}>Add a department above first.</p>
+          )}
+
+          <div className="space-y-3">
+            {departments.map(d => (
+              <div key={d.id} className="rounded-xl p-3" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+                <div className="flex items-center gap-2 mb-2">
+                  <Building2 size={12} style={{ color: '#a78bfa' }} />
+                  <span className="text-xs font-bold" style={{ color: 'var(--text-h)' }}>{d.name}</span>
+                </div>
+                <PeoplePicker
+                  agents={agents}
+                  selected={(d.manager_ids || []).map(Number)}
+                  onChange={(ids) => saveDept.mutate({ id: d.id, manager_ids: ids })}
+                  saving={saveDept.isPending && saveDept.variables?.id === d.id}
+                  compact
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {nothingSet && (
+          <div className="flex items-start gap-2 p-3 rounded-xl text-xs"
+            style={{ background: 'color-mix(in srgb, var(--color-warning-500) 8%, transparent)', border: '1px solid color-mix(in srgb, var(--color-warning-500) 25%, transparent)', color: 'var(--text-body)' }}>
+            <Settings size={13} style={{ color: 'var(--color-warning-500)', flexShrink: 0, marginTop: 1 }} />
+            <span>Nothing configured yet — new tickets currently notify <strong>admins</strong>. Pick people above to route them deliberately.</span>
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
+/** Chips for the chosen people + a dropdown to add another. */
+function PeoplePicker({ agents, selected, onChange, saving, compact }) {
+  const chosen = agents.filter(a => selected.includes(Number(a.id)))
+  const available = agents.filter(a => !selected.includes(Number(a.id)))
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {chosen.map(a => (
+        <span key={a.id} className="inline-flex items-center gap-1.5 rounded-lg font-semibold"
+          style={{ padding: compact ? '3px 7px' : '5px 9px', fontSize: compact ? 11 : 12, background: 'color-mix(in srgb, var(--color-primary-500) 13%, transparent)', color: 'var(--color-primary-500)' }}>
+          {a.name}
+          <button onClick={() => onChange(selected.filter(id => id !== Number(a.id)))} className="hover:opacity-60" aria-label={`Remove ${a.name}`}>
+            <X size={10} />
+          </button>
+        </span>
+      ))}
+
+      {chosen.length === 0 && (
+        <span className="text-xs mr-1" style={{ color: 'var(--text-muted)', opacity: 0.7 }}>— none —</span>
+      )}
+
+      {available.length > 0 && (
+        <Select
+          value=""
+          onChange={(v) => v && onChange([...selected, Number(v)])}
+          options={available.map(a => ({ value: a.id, label: a.name }))}
+          placeholder={saving ? 'Saving…' : '+ Add'}
+          size="sm"
+          disabled={saving}
+          className="w-32"
+          ariaLabel="Add a manager"
+        />
+      )}
+    </div>
   )
 }
 

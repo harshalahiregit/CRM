@@ -11,10 +11,12 @@ class HelpdeskSetting extends Model
 
     protected $fillable = [
         'tenant_id', 'public_form_enabled', 'public_form_logo_variant', 'default_department_id',
+        'ticket_manager_ids',
     ];
 
     protected $casts = [
         'public_form_enabled' => 'boolean',
+        'ticket_manager_ids'  => 'array',
     ];
 
     public function defaultDepartment()

@@ -67,6 +67,10 @@ class HelpdeskService
             'priority'        => $data['priority'] ?? 'medium',
             'assigned_to'     => $data['assigned_to'] ?? null,
             'customer_id'     => $data['customer_id'] ?? null,
+            // The chosen department was being dropped here entirely, so every
+            // ticket landed with no department — breaking department routing and
+            // the Dept column. Fall back to the configured default when unset.
+            'department_id'   => $data['department_id'] ?? $this->defaultDepartmentId($tenantId),
             'due_date'        => $data['due_date'] ?? null,
             'source'          => $data['source'] ?? 'internal',
             'requester_name'  => $data['requester_name'] ?? null,
@@ -99,19 +103,18 @@ class HelpdeskService
     }
 
     /**
-     * Notify everyone who triages incoming tickets. Admins are the ticket
-     * managers here — there is no dedicated ticket-manager role in the system,
-     * and admins are the only non-external role with an allocation remit.
+     * Notify everyone who triages incoming tickets. Recipients are resolved in
+     * one pass, configured from Support Settings:
+     *
+     *   1. the tenant's ticket managers  — every new ticket, any department;
+     *   2. the department's managers     — tickets raised against that dept;
+     *   3. admins, only if neither is configured, so a fresh tenant still routes.
+     *
      * Skips the raiser (notify() drops self-notification).
      */
     private function notifyTicketManagers(Ticket $ticket): void
     {
-        $managerIds = \App\Models\User::where('tenant_id', $ticket->tenant_id)
-            ->where('status', 'active')
-            ->where('role', 'admin')
-            ->pluck('id');
-
-        foreach ($managerIds as $uid) {
+        foreach ($this->ticketManagerIds($ticket) as $uid) {
             $this->notifications->notify(
                 userId: (int) $uid,
                 tenantId: $ticket->tenant_id,
@@ -122,6 +125,48 @@ class HelpdeskService
                 actorId: auth()->id(),
             );
         }
+    }
+
+    /** The tenant's configured fallback department, used when none is chosen. */
+    private function defaultDepartmentId(int $tenantId): ?int
+    {
+        $id = \App\Models\Helpdesk\HelpdeskSetting::where('tenant_id', $tenantId)->value('default_department_id');
+
+        return $id ? (int) $id : null;
+    }
+
+    /** @return array<int> de-duplicated recipient ids for a newly raised ticket */
+    public function ticketManagerIds(Ticket $ticket): array
+    {
+        $tenantId = $ticket->tenant_id;
+
+        $global = collect(
+            \App\Models\Helpdesk\HelpdeskSetting::where('tenant_id', $tenantId)->value('ticket_manager_ids') ?? []
+        );
+
+        $perDept = collect();
+        if ($ticket->department_id) {
+            $perDept = collect(
+                \App\Models\Helpdesk\TicketDepartment::where('tenant_id', $tenantId)
+                    ->whereKey($ticket->department_id)->value('manager_ids') ?? []
+            );
+        }
+
+        $ids = $global->merge($perDept)->map(fn ($i) => (int) $i)->unique();
+
+        // Nothing configured anywhere → fall back to admins so tickets are never
+        // raised into silence.
+        if ($ids->isEmpty()) {
+            $ids = \App\Models\User::where('tenant_id', $tenantId)
+                ->where('status', 'active')->where('role', 'admin')->pluck('id');
+        }
+
+        // Only ever notify real, active, internal people.
+        return \App\Models\User::where('tenant_id', $tenantId)
+            ->whereIn('id', $ids->all())
+            ->where('status', 'active')
+            ->whereNotIn('role', ['client', 'vendor', 'third_party_vendor'])
+            ->pluck('id')->map(fn ($i) => (int) $i)->all();
     }
 
     public function updateTicket(int $ticketId, array $data, int $tenantId): Ticket

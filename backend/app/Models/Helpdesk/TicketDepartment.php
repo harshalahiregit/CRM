@@ -9,7 +9,7 @@ class TicketDepartment extends Model
 {
     use BelongsToTenant;
 
-    protected $fillable = ['tenant_id', 'name', 'description', 'order'];
+    protected $fillable = ['tenant_id', 'name', 'description', 'order', 'manager_ids'];
 
-    protected $casts = ['order' => 'integer'];
+    protected $casts = ['order' => 'integer', 'manager_ids' => 'array'];
 }

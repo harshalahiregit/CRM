@@ -28,6 +28,9 @@ class HelpdeskSettingItemRequest extends FormRequest
             'is_closed_status'     => 'boolean',        // statuses
             'sla_paused'           => 'boolean',        // statuses (SLA)
             'description'          => 'nullable|string|max:255', // departments
+            // departments: who is notified for tickets raised against this dept
+            'manager_ids'          => 'nullable|array|max:20',
+            'manager_ids.*'        => 'integer|exists:users,id',
         ];
     }
 }

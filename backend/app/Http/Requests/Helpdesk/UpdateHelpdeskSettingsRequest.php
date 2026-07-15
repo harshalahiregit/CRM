@@ -6,7 +6,7 @@ use Illuminate\Foundation\Http\FormRequest;
 
 /**
  * Update the per-tenant helpdesk settings row (public form toggle + logo variant
- * + default department). Admin-only.
+ * + default department + ticket managers). Admin-only.
  */
 class UpdateHelpdeskSettingsRequest extends FormRequest
 {
@@ -21,6 +21,9 @@ class UpdateHelpdeskSettingsRequest extends FormRequest
             'public_form_enabled'      => 'boolean',
             'public_form_logo_variant' => 'nullable|in:with_logo,without_logo',
             'default_department_id'    => 'nullable|integer|exists:ticket_departments,id',
+            // Ticket managers — notified for every new ticket, any department.
+            'ticket_manager_ids'       => 'nullable|array|max:20',
+            'ticket_manager_ids.*'     => 'integer|exists:users,id',
         ];
     }
 }
