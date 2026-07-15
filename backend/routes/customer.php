@@ -3,11 +3,17 @@
 use App\Http\Controllers\Api\Customer\ClientAddressController;
 use App\Http\Controllers\Api\Customer\ClientAttachmentController;
 use App\Http\Controllers\Api\Customer\ClientContactController;
+use App\Http\Controllers\Api\Customer\ClientContractController;
 use App\Http\Controllers\Api\Customer\ClientController;
+use App\Http\Controllers\Api\Customer\ClientExpenseController;
 use App\Http\Controllers\Api\Customer\ClientGroupController;
 use App\Http\Controllers\Api\Customer\ClientNoteController;
+use App\Http\Controllers\Api\Customer\ClientPackageController;
+use App\Http\Controllers\Api\Customer\ClientPreAlertController;
 use App\Http\Controllers\Api\Customer\ClientRecipientController;
 use App\Http\Controllers\Api\Customer\ClientReminderController;
+use App\Http\Controllers\Api\Customer\ClientShipmentController;
+use App\Http\Controllers\Api\Customer\ClientSubscriptionController;
 use App\Http\Controllers\Api\Customer\ClientVaultController;
 use App\Http\Controllers\Api\Customer\CustomFieldController;
 use Illuminate\Support\Facades\Route;
@@ -18,9 +24,10 @@ use Illuminate\Support\Facades\Route;
 Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('customers')->group(function () {
 
     // Summary + import/export (static paths BEFORE the {client} wildcard)
-    Route::get('/summary',  [ClientController::class, 'summary']);
-    Route::post('/import',  [ClientController::class, 'import']);
-    Route::get('/export',   [ClientController::class, 'export']);
+    Route::get('/summary',        [ClientController::class, 'summary']);
+    Route::post('/import',        [ClientController::class, 'import']);
+    Route::get('/import/sample',  [ClientController::class, 'sample']);
+    Route::get('/export',         [ClientController::class, 'export']);
 
     // Groups
     Route::get('/groups',            [ClientGroupController::class, 'index']);
@@ -39,6 +46,7 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('customers')->gr
     Route::post('/',           [ClientController::class, 'store']);
     Route::get('/{client}',    [ClientController::class, 'show']);
     Route::put('/{client}',    [ClientController::class, 'update']);
+    Route::patch('/{client}/active', [ClientController::class, 'toggleActive']);
     Route::delete('/{client}', [ClientController::class, 'destroy']);
 
     // Profile read tabs (loop-ins + rollups)
@@ -76,7 +84,7 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('customers')->gr
     Route::get('/{client}/vault',                          [ClientVaultController::class, 'index']);
     Route::post('/{client}/vault',                         [ClientVaultController::class, 'store']);
     Route::put('/{client}/vault/{vaultEntry}',             [ClientVaultController::class, 'update']);
-    Route::get('/{client}/vault/{vaultEntry}/reveal',      [ClientVaultController::class, 'reveal']);
+    Route::post('/{client}/vault/{vaultEntry}/reveal',     [ClientVaultController::class, 'reveal']);
     Route::delete('/{client}/vault/{vaultEntry}',          [ClientVaultController::class, 'destroy']);
 
     // Attachments
@@ -95,4 +103,20 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('customers')->gr
     Route::post('/{client}/recipients',               [ClientRecipientController::class, 'store']);
     Route::put('/{client}/recipients/{recipient}',    [ClientRecipientController::class, 'update']);
     Route::delete('/{client}/recipients/{recipient}', [ClientRecipientController::class, 'destroy']);
+
+    // Simple per-customer record tabs (contracts / expenses / subscriptions /
+    // pre-alerts / packages / shipments) — all share AbstractClientRecordController.
+    foreach ([
+        'contracts'     => ClientContractController::class,
+        'expenses'      => ClientExpenseController::class,
+        'subscriptions' => ClientSubscriptionController::class,
+        'pre-alerts'    => ClientPreAlertController::class,
+        'packages'      => ClientPackageController::class,
+        'shipments'     => ClientShipmentController::class,
+    ] as $slug => $controller) {
+        Route::get("/{client}/{$slug}",              [$controller, 'index']);
+        Route::post("/{client}/{$slug}",             [$controller, 'store']);
+        Route::put("/{client}/{$slug}/{record}",     [$controller, 'update']);
+        Route::delete("/{client}/{$slug}/{record}",  [$controller, 'destroy']);
+    }
 });

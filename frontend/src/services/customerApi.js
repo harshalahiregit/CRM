@@ -6,7 +6,24 @@ const handleErr = (err) => {
   throw new Error(msg)
 }
 
+// CRUD factory for simple per-customer record resources (/customers/{id}/{resource}).
+const crud = (resource) => ({
+  list:   (id) => api.get(`/customers/${id}/${resource}`).then(r => r.data).catch(handleErr),
+  create: (id, data) => api.post(`/customers/${id}/${resource}`, data).then(r => r.data).catch(handleErr),
+  update: (id, recId, data) => api.put(`/customers/${id}/${resource}/${recId}`, data).then(r => r.data).catch(handleErr),
+  remove: (id, recId) => api.delete(`/customers/${id}/${resource}/${recId}`).then(r => r.data).catch(handleErr),
+})
+
 export const customerApi = {
+  // Simple per-customer record tabs
+  contracts:     crud('contracts'),
+  expenses:      crud('expenses'),
+  subscriptions: crud('subscriptions'),
+  preAlerts:     crud('pre-alerts'),
+  packages:      crud('packages'),
+  shipments:     crud('shipments'),
+
+  // Clients
   // Clients
   list: (params = {}) =>
     api.get('/customers', { params }).then(r => r.data).catch(handleErr),
@@ -18,6 +35,8 @@ export const customerApi = {
     api.put(`/customers/${id}`, data).then(r => r.data).catch(handleErr),
   remove: (id) =>
     api.delete(`/customers/${id}`).then(r => r.data).catch(handleErr),
+  toggleActive: (id) =>
+    api.patch(`/customers/${id}/active`).then(r => r.data).catch(handleErr),
 
   summary: () =>
     api.get('/customers/summary').then(r => r.data).catch(handleErr),
@@ -64,7 +83,7 @@ export const customerApi = {
     list:   (id) => api.get(`/customers/${id}/vault`).then(r => r.data).catch(handleErr),
     create: (id, data) => api.post(`/customers/${id}/vault`, data).then(r => r.data).catch(handleErr),
     update: (id, entryId, data) => api.put(`/customers/${id}/vault/${entryId}`, data).then(r => r.data).catch(handleErr),
-    reveal: (id, entryId) => api.get(`/customers/${id}/vault/${entryId}/reveal`).then(r => r.data).catch(handleErr),
+    reveal: (id, entryId) => api.post(`/customers/${id}/vault/${entryId}/reveal`).then(r => r.data).catch(handleErr),
     remove: (id, entryId) => api.delete(`/customers/${id}/vault/${entryId}`).then(r => r.data).catch(handleErr),
   },
 
@@ -106,6 +125,8 @@ export const customerApi = {
   },
   exportUrl: (format = 'csv', search = '') =>
     `${api.defaults.baseURL}/customers/export?format=${format}${search ? `&search=${encodeURIComponent(search)}` : ''}`,
+  sampleUrl: (format = 'csv') =>
+    `${api.defaults.baseURL}/customers/import/sample?format=${format}`,
 
   // Groups
   groups: {

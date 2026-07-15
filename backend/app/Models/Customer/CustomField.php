@@ -21,6 +21,9 @@ class CustomField extends Model
         'checkbox', 'date_picker', 'datetime_picker', 'colorpicker', 'link',
     ];
 
+    /** Entity types custom fields may attach to (the `field_to` allow-list). */
+    public const FIELD_TARGETS = ['customers', 'contacts'];
+
     protected $fillable = [
         'tenant_id', 'field_to', 'name', 'slug', 'type', 'options',
         'required', 'field_order', 'active', 'show_on_table', 'default_value',

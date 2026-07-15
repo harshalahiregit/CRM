@@ -27,6 +27,8 @@ return new class extends Migration
             $table->string('phone', 30)->nullable();
             $table->string('website')->nullable();
             $table->string('parent_company')->nullable();
+            $table->decimal('opening_balance', 15, 2)->default(0);  // manual opening balance
+            $table->date('opening_balance_date')->nullable();       // "balance as of"
             $table->unsignedBigInteger('vendor_id')->nullable();   // TPV link — no FK, module not built yet
             $table->unsignedBigInteger('lead_id')->nullable();     // source lead if converted
 
@@ -63,9 +65,10 @@ return new class extends Migration
             $table->timestamps();
             $table->softDeletes();
 
-            $table->index('tenant_id');
-            $table->index('company');
-            $table->index('active');
+            // Composite indexes matching the list query (filter tenant[+active], sort company/created_at).
+            $table->index(['tenant_id', 'active']);
+            $table->index(['tenant_id', 'company']);
+            $table->index(['tenant_id', 'created_at']);
         });
 
         Schema::create('client_contacts', function (Blueprint $table) {
@@ -105,9 +108,10 @@ return new class extends Migration
             $table->unique(['client_id', 'client_group_id']);
         });
 
+        // Account-manager pivot. No tenant_id — it's derivable via client_id and
+        // a pivot can't use the BelongsToTenant auto-fill; scope through the client.
         Schema::create('customer_admins', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('tenant_id')->constrained('tenants')->cascadeOnDelete();
             $table->foreignId('client_id')->constrained('clients')->cascadeOnDelete();
             $table->foreignId('user_id')->constrained('users')->cascadeOnDelete(); // internal staff account manager
             $table->timestamps();

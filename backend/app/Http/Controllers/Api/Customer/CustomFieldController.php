@@ -49,7 +49,7 @@ class CustomFieldController extends Controller
     private function validateField(Request $request, ?CustomField $existing = null): array
     {
         return $request->validate([
-            'field_to'      => ['sometimes', 'string', 'max:30'],
+            'field_to'      => ['sometimes', Rule::in(CustomField::FIELD_TARGETS)],
             'name'          => ['required', 'string', 'max:150'],
             'type'          => ['required', Rule::in(CustomField::TYPES)],
             'options'       => ['nullable', 'string'],

@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Customer\Client;
 use App\Models\Customer\ClientReminder;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class ClientReminderController extends Controller
 {
@@ -24,7 +25,8 @@ class ClientReminderController extends Controller
         $data = $request->validate([
             'description'    => 'required|string|max:255',
             'remind_at'      => 'required|date',
-            'remind_user_id' => 'nullable|integer|exists:users,id',
+            // Scope the assignee to the acting tenant — no cross-tenant users.
+            'remind_user_id' => ['nullable', 'integer', Rule::exists('users', 'id')->where('tenant_id', $client->tenant_id)],
         ]);
 
         $reminder = $client->reminders()->create([

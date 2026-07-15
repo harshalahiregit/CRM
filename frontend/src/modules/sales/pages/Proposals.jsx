@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Plus, Search, Send, FileText, Trash2, X, MoreVertical,
   ChevronDown, Tag, MessageSquare, User, MapPin,
   Eye, EyeOff, LayoutTemplate
 } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
+import { leadApi } from '@/services/leadApi'
+import { useClientOptions } from '@/hooks/useClientOptions'
 import StatusBadge from '../components/StatusBadge'
 import LineItemsTable from '../components/LineItemsTable'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
@@ -18,7 +20,7 @@ const STATUSES = ['Open', 'Sent', 'Revised', 'Declined', 'Accepted', 'Expired']
 const STAFF = ['Zafar Farooque', 'Priya Sharma', 'Rohit Verma', 'Anjali Singh', 'Karan Mehta']
 
 const EMPTY_FORM = {
-  subject: '', rel_type: 'Customer', rel_id: '', project_id: '',
+  subject: '', rel_type: 'customer', rel_id: '', project_id: '',
   date: new Date().toISOString().split('T')[0], open_till: '',
   currency: 'INR', discount_type: 'none', status: 'Open',
   assigned: '', proposal_to: '',
@@ -30,6 +32,9 @@ const EMPTY_FORM = {
 export default function Proposals() {
   const navigate = useNavigate()
   const toast_ = useToast()
+  const clientOptions = useClientOptions()
+  const [leadOptions, setLeadOptions] = useState([])
+  const [searchParams] = useSearchParams()
   const [data, setData]       = useState([])
   const [templates, setTemplates] = useState([])
   const [loading, setLoading] = useState(true)
@@ -57,6 +62,19 @@ export default function Proposals() {
 
   useEffect(() => { load() }, [filter, search])
   useEffect(() => { salesApi.proposalTemplates.list().then(setTemplates).catch(() => {}) }, [])
+  useEffect(() => {
+    leadApi.list().then(r => setLeadOptions((r?.data ?? r ?? []).map(l => ({ id: l.id, name: l.name || l.company })))).catch(() => {})
+  }, [])
+
+  // Preselect the customer + open the create drawer when arriving from the
+  // customer profile (?client_id=…&new=1).
+  useEffect(() => {
+    if (searchParams.get('new') === '1') {
+      const cid = searchParams.get('client_id') || ''
+      setForm(p => ({ ...p, rel_type: 'customer', rel_id: cid }))
+      setShowDrawer(true)
+    }
+  }, [searchParams])
 
   const applyTemplate = (templateId) => {
     sf('template_id', templateId)
@@ -65,8 +83,8 @@ export default function Proposals() {
   }
 
   const handleCreate = async () => {
-    if (!form.subject || !form.rel_id) return showToast('Subject & client required', 'error')
-    await salesApi.proposals.create({ ...form, client: form.rel_id })
+    if (!form.subject || !form.rel_id) return showToast('Subject & recipient required', 'error')
+    await salesApi.proposals.create({ ...form, rel_id: Number(form.rel_id) })
     showToast('Proposal created!')
     setShowDrawer(false)
     setForm(EMPTY_FORM)
@@ -326,16 +344,16 @@ export default function Proposals() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="label">For (Relation Type)</label>
-                      <select className="input-3d text-sm" value={form.rel_type} onChange={e => sf('rel_type', e.target.value)}>
-                        <option value="Customer">Customer</option>
-                        <option value="Lead">Lead</option>
+                      <select className="input-3d text-sm" value={form.rel_type} onChange={e => { sf('rel_type', e.target.value); sf('rel_id', '') }}>
+                        <option value="customer">Customer</option>
+                        <option value="lead">Lead</option>
                       </select>
                     </div>
                     <div>
-                      <label className="label">{form.rel_type} Name *</label>
+                      <label className="label">{form.rel_type === 'lead' ? 'Lead' : 'Customer'} Name *</label>
                       <select className="input-3d text-sm" value={form.rel_id} onChange={e => sf('rel_id', e.target.value)}>
-                        <option value="">Select {form.rel_type.toLowerCase()}…</option>
-                        {salesApi.clients.map(c => <option key={c} value={c}>{c}</option>)}
+                        <option value="">Select {form.rel_type}…</option>
+                        {(form.rel_type === 'lead' ? leadOptions : clientOptions).map(o => <option key={o.id} value={o.id}>{o.name || o.company}</option>)}
                       </select>
                     </div>
                   </div>

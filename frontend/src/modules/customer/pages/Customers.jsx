@@ -2,15 +2,20 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Plus, Search, Edit2, Trash2, X, Upload, Download, Building2, Users,
-  UserCheck, TrendingUp, ChevronDown, FileSpreadsheet, FileText, Eye, UserCog,
+  UserCheck, TrendingUp, ChevronDown, FileSpreadsheet, FileText, Eye, UserCog, Sliders,
 } from 'lucide-react'
 import { customerApi } from '@/services/customerApi'
 import { useToast } from '@/hooks/useToast'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
+import CustomFieldInput from '../components/CustomFieldInput'
+import CustomFieldsManager from '../components/CustomFieldsManager'
+import ToggleSwitch from '../components/ToggleSwitch'
+import { CURRENCIES, LANGUAGES } from '../components/customerFormConstants'
 
-const TABS = ['Details', 'Billing & Shipping', 'Custom Fields', 'Customer Admins']
-const CURRENCIES = ['INR', 'USD', 'EUR', 'GBP', 'AED', 'SGD']
-const LANGUAGES = ['English', 'Hindi', 'Marathi']
+// Old-CRM order. Customer Admins is edit-only (you must save the customer first),
+// so it's appended only when editing.
+const CREATE_TABS = ['Details', 'Custom Fields', 'Billing & Shipping']
+const EDIT_TABS = [...CREATE_TABS, 'Customer Admins']
 const EMPTY = {
   company: '', gst_number: '', phone: '', website: '', parent_company: '', vendor_id: '',
   opening_balance: '', opening_balance_date: '', show_primary_contact: false,
@@ -43,9 +48,11 @@ export default function Customers() {
   const [groupOptions, setGroupOptions] = useState([])
   const [adminData, setAdminData] = useState({ assigned: [], assignable: [] })
   const [saving, setSaving] = useState(false)
+  const [fieldsMgr, setFieldsMgr] = useState(false)
 
   const [confirmDel, setConfirmDel] = useState(null)
   const [exportOpen, setExportOpen] = useState(false)
+  const [sampleOpen, setSampleOpen] = useState(false)
 
   const sf = (k, v) => setForm(p => ({ ...p, [k]: v }))
   const sfSocial = (k, v) => setForm(p => ({ ...p, social_links: { ...p.social_links, [k]: v } }))
@@ -147,6 +154,16 @@ export default function Customers() {
     catch (e) { toast.error(e.message) } finally { setConfirmDel(null) }
   }
 
+  // One-click active/inactive toggle (same as the old CRM's customer switch).
+  const toggleActive = async (c) => {
+    try {
+      const res = await customerApi.toggleActive(c.id)
+      setRows(rows => rows.map(r => r.id === c.id ? { ...r, active: res.active } : r))
+      loadStats()
+      toast.success(res.active ? 'Customer activated' : 'Customer deactivated')
+    } catch (e) { toast.error(e.message) }
+  }
+
   const onImportFile = async (e) => {
     const file = e.target.files?.[0]; e.target.value = ''
     if (!file) return
@@ -159,19 +176,28 @@ export default function Customers() {
     } catch (err) { toast.error(err.message) }
   }
 
-  const doExport = (format) => {
-    setExportOpen(false)
+  // Authenticated file download (GET needs the Bearer header → fetch as blob).
+  const downloadFile = (url, filename) => {
     const token = localStorage.getItem('crm_token')
-    // Export is an authenticated GET → fetch as blob so the Bearer header is sent.
-    fetch(customerApi.exportUrl(format, search), { headers: { Authorization: `Bearer ${token}` } })
+    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.blob())
       .then(blob => {
-        const url = URL.createObjectURL(blob)
+        const objUrl = URL.createObjectURL(blob)
         const a = document.createElement('a')
-        a.href = url; a.download = `customers_${new Date().toISOString().slice(0, 10)}.${format}`
-        a.click(); URL.revokeObjectURL(url)
+        a.href = objUrl; a.download = filename
+        a.click(); URL.revokeObjectURL(objUrl)
       })
-      .catch(() => toast.error('Export failed'))
+      .catch(() => toast.error('Download failed'))
+  }
+
+  const doExport = (format) => {
+    setExportOpen(false)
+    downloadFile(customerApi.exportUrl(format, search), `customers_${new Date().toISOString().slice(0, 10)}.${format}`)
+  }
+
+  const doSample = (format) => {
+    setSampleOpen(false)
+    downloadFile(customerApi.sampleUrl(format), `customers_import_template.${format}`)
   }
 
   const STAT_CARDS = stats ? [
@@ -194,12 +220,31 @@ export default function Customers() {
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Companies, contacts, and their linked records across the CRM</p>
           </div>
           <div className="flex items-center gap-2">
-            <input ref={fileRef} type="file" accept=".csv,.txt" className="hidden" onChange={onImportFile} />
-            <button onClick={() => fileRef.current?.click()}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-semibold transition-all hover:scale-[1.02]"
-              style={{ background: 'var(--bg-input)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
-              <Upload size={14} /> Import
-            </button>
+            <input ref={fileRef} type="file" accept=".csv,.txt,.xlsx,.xls" className="hidden" onChange={onImportFile} />
+            {/* Import (with a sample-template split) */}
+            <div className="relative flex">
+              <button onClick={() => fileRef.current?.click()}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-l-2xl text-sm font-semibold transition-all hover:scale-[1.02]"
+                style={{ background: 'var(--bg-input)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+                <Upload size={14} /> Import
+              </button>
+              <button onClick={() => setSampleOpen(o => !o)} title="Download sample template"
+                className="px-2 py-2.5 rounded-r-2xl transition-all hover:scale-[1.02]"
+                style={{ background: 'var(--bg-input)', color: 'var(--text-muted)', borderTop: '1px solid var(--border)', borderRight: '1px solid var(--border)', borderBottom: '1px solid var(--border)' }}>
+                <ChevronDown size={13} />
+              </button>
+              {sampleOpen && (
+                <div className="absolute left-0 top-full mt-2 w-56 rounded-2xl overflow-hidden z-20 shadow-2xl" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+                  <p className="px-4 pt-3 pb-1 text-[10px] font-bold" style={{ color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Sample template</p>
+                  <button onClick={() => doSample('csv')} className="w-full flex items-center gap-2 px-4 py-2.5 text-sm hover:bg-[rgba(124,58,237,0.08)] transition-colors" style={{ color: 'var(--text-h)' }}>
+                    <FileText size={14} /> CSV template
+                  </button>
+                  <button onClick={() => doSample('xlsx')} className="w-full flex items-center gap-2 px-4 py-2.5 text-sm hover:bg-[rgba(124,58,237,0.08)] transition-colors" style={{ color: 'var(--text-h)', borderTop: '1px solid var(--border)' }}>
+                    <FileSpreadsheet size={14} /> Excel template
+                  </button>
+                </div>
+              )}
+            </div>
             <div className="relative">
               <button onClick={() => setExportOpen(o => !o)}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-semibold transition-all hover:scale-[1.02]"
@@ -211,12 +256,17 @@ export default function Customers() {
                   <button onClick={() => doExport('csv')} className="w-full flex items-center gap-2 px-4 py-3 text-sm hover:bg-[rgba(124,58,237,0.08)] transition-colors" style={{ color: 'var(--text-h)' }}>
                     <FileText size={14} /> CSV (.csv)
                   </button>
-                  <button onClick={() => doExport('xls')} className="w-full flex items-center gap-2 px-4 py-3 text-sm hover:bg-[rgba(124,58,237,0.08)] transition-colors" style={{ color: 'var(--text-h)', borderTop: '1px solid var(--border)' }}>
-                    <FileSpreadsheet size={14} /> Excel (.xls)
+                  <button onClick={() => doExport('xlsx')} className="w-full flex items-center gap-2 px-4 py-3 text-sm hover:bg-[rgba(124,58,237,0.08)] transition-colors" style={{ color: 'var(--text-h)', borderTop: '1px solid var(--border)' }}>
+                    <FileSpreadsheet size={14} /> Excel (.xlsx)
                   </button>
                 </div>
               )}
             </div>
+            <button onClick={() => setFieldsMgr(true)} title="Manage custom fields"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-semibold transition-all hover:scale-[1.02]"
+              style={{ background: 'var(--bg-input)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+              <Sliders size={14} /> Custom Fields
+            </button>
             <button onClick={openCreate} className="flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold text-white hover:scale-[1.03] transition-all"
               style={{ background: 'linear-gradient(135deg,#9f67ff,#7C3AED,#5b21b6)', boxShadow: '0 6px 20px rgba(124,58,237,0.45)' }}>
               <Plus size={15} /> New Customer
@@ -274,14 +324,15 @@ export default function Customers() {
                     <td className="py-3.5 px-4" style={{ color: 'var(--text-muted)' }}>{c.contacts_count ?? 0}</td>
                     <td className="py-3.5 px-4">
                       <div className="flex gap-1 flex-wrap">
-                        {(c.groups ?? []).map(g => <span key={g.id} className="px-2 py-0.5 rounded-lg text-[10px] font-bold" style={{ background: 'rgba(124,58,237,0.1)', color: '#a78bfa' }}>{g.name}</span>)}
+                        {(c.groups ?? []).map(g => <span key={g.id} className="px-2 py-0.5 rounded-lg text-[10px] font-bold" style={{ background: 'rgba(124,58,237,0.1)', color: 'var(--accent)' }}>{g.name}</span>)}
                         {!(c.groups ?? []).length && <span style={{ color: 'var(--text-muted)' }}>—</span>}
                       </div>
                     </td>
-                    <td className="py-3.5 px-4">
-                      <span className="px-2.5 py-1 rounded-xl text-[10px] font-bold" style={{ background: c.active ? 'rgba(16,185,129,0.1)' : 'rgba(148,163,184,0.12)', color: c.active ? '#10b981' : '#94a3b8' }}>
-                        {c.active ? 'Active' : 'Inactive'}
-                      </span>
+                    <td className="py-3.5 px-4" onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center gap-2">
+                        <ToggleSwitch checked={c.active} onChange={() => toggleActive(c)} title="Toggle active/inactive" />
+                        <span className="text-[10px] font-bold" style={{ color: c.active ? '#10b981' : '#94a3b8' }}>{c.active ? 'Active' : 'Inactive'}</span>
+                      </div>
                     </td>
                     <td className="py-3.5 px-4" onClick={e => e.stopPropagation()}>
                       <div className="flex gap-1">
@@ -320,7 +371,7 @@ export default function Customers() {
 
             {/* Tabs */}
             <div className="flex gap-1 px-5 pt-4">
-              {TABS.map(t => (
+              {(editing ? EDIT_TABS : CREATE_TABS).map(t => (
                 <button key={t} onClick={() => setTab(t)} className="px-3.5 py-2 rounded-xl text-xs font-bold transition-all"
                   style={{ background: tab === t ? 'linear-gradient(135deg,#7C3AED,#5b21b6)' : 'transparent', color: tab === t ? '#fff' : 'var(--text-muted)' }}>
                   {t}
@@ -369,7 +420,7 @@ export default function Customers() {
                   <div>
                     <div className="flex items-center justify-between mb-1">
                       <label className="label mb-0">Groups</label>
-                      <button type="button" onClick={addGroup} className="text-xs font-bold flex items-center gap-1" style={{ color: '#a78bfa' }}><Plus size={12} /> New group</button>
+                      <button type="button" onClick={addGroup} className="text-xs font-bold flex items-center gap-1" style={{ color: 'var(--accent)' }}><Plus size={12} /> New group</button>
                     </div>
                     {groupOptions.length === 0 ? (
                       <p className="text-xs" style={{ color: 'var(--text-muted)' }}>No groups yet — create one.</p>
@@ -389,7 +440,7 @@ export default function Customers() {
                   </div>
 
                   {/* Registered address */}
-                  <div className="pt-2"><p className="label-caps mb-3" style={{ color: '#a78bfa' }}>Registered Address</p></div>
+                  <div className="pt-2"><p className="label-caps mb-3" style={{ color: 'var(--accent)' }}>Registered Address</p></div>
                   <div><label className="label">Address</label><textarea rows={2} className="input-3d text-sm resize-none" value={form.address} onChange={e => sf('address', e.target.value)} /></div>
                   <div className="grid grid-cols-2 gap-4">
                     <div><label className="label">City</label><input className="input-3d text-sm" value={form.city} onChange={e => sf('city', e.target.value)} /></div>
@@ -401,7 +452,7 @@ export default function Customers() {
                   </div>
 
                   {/* Key dates + social */}
-                  <div className="pt-2"><p className="label-caps mb-3" style={{ color: '#a78bfa' }}>Profile & Social</p></div>
+                  <div className="pt-2"><p className="label-caps mb-3" style={{ color: 'var(--accent)' }}>Profile & Social</p></div>
                   <div className="grid grid-cols-3 gap-3">
                     <div><label className="label">Founded</label><input type="date" className="input-3d text-sm" value={form.foundation_date || ''} onChange={e => sf('foundation_date', e.target.value)} /></div>
                     <div><label className="label">DOB</label><input type="date" className="input-3d text-sm" value={form.dob || ''} onChange={e => sf('dob', e.target.value)} /></div>
@@ -418,8 +469,8 @@ export default function Customers() {
 
                   {/* Contacts */}
                   <div className="pt-2 flex items-center justify-between">
-                    <p className="label-caps" style={{ color: '#a78bfa' }}>Contacts</p>
-                    <button onClick={addContact} className="text-xs font-bold flex items-center gap-1" style={{ color: '#a78bfa' }}><Plus size={12} /> Add contact</button>
+                    <p className="label-caps" style={{ color: 'var(--accent)' }}>Contacts</p>
+                    <button onClick={addContact} className="text-xs font-bold flex items-center gap-1" style={{ color: 'var(--accent)' }}><Plus size={12} /> Add contact</button>
                   </div>
                   {form.contacts.map((c, i) => (
                     <div key={i} className="p-3 rounded-xl space-y-3" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
@@ -448,9 +499,9 @@ export default function Customers() {
                 <div className="grid md:grid-cols-2 gap-6">
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <p className="label-caps" style={{ color: '#a78bfa' }}>Billing</p>
+                      <p className="label-caps" style={{ color: 'var(--accent)' }}>Billing</p>
                       <button onClick={() => setForm(p => ({ ...p, billing_street: p.address, billing_city: p.city, billing_state: p.state, billing_zip: p.zip, billing_country: p.country }))}
-                        className="text-[11px] font-bold" style={{ color: '#a78bfa' }}>Same as registered</button>
+                        className="text-[11px] font-bold" style={{ color: 'var(--accent)' }}>Same as registered</button>
                     </div>
                     <textarea rows={2} className="input-3d text-sm resize-none" placeholder="Street" value={form.billing_street} onChange={e => sf('billing_street', e.target.value)} />
                     <input className="input-3d text-sm" placeholder="City" value={form.billing_city} onChange={e => sf('billing_city', e.target.value)} />
@@ -462,9 +513,9 @@ export default function Customers() {
                   </div>
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <p className="label-caps" style={{ color: '#a78bfa' }}>Shipping</p>
+                      <p className="label-caps" style={{ color: 'var(--accent)' }}>Shipping</p>
                       <button onClick={() => setForm(p => ({ ...p, shipping_street: p.billing_street, shipping_city: p.billing_city, shipping_state: p.billing_state, shipping_zip: p.billing_zip, shipping_country: p.billing_country }))}
-                        className="text-[11px] font-bold" style={{ color: '#a78bfa' }}>Copy billing</button>
+                        className="text-[11px] font-bold" style={{ color: 'var(--accent)' }}>Copy billing</button>
                     </div>
                     <textarea rows={2} className="input-3d text-sm resize-none" placeholder="Street" value={form.shipping_street} onChange={e => sf('shipping_street', e.target.value)} />
                     <input className="input-3d text-sm" placeholder="City" value={form.shipping_city} onChange={e => sf('shipping_city', e.target.value)} />
@@ -506,9 +557,7 @@ export default function Customers() {
               {tab === 'Customer Admins' && (
                 <div className="space-y-3">
                   <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Staff assigned here are the account managers for this customer.</p>
-                  {!editing ? (
-                    <div className="py-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>Save the customer first, then assign account managers here.</div>
-                  ) : adminData.assignable.length === 0 ? (
+                  {adminData.assignable.length === 0 ? (
                     <div className="py-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No staff users available to assign.</div>
                   ) : adminData.assignable.map(u => {
                     const on = adminData.assigned.some(a => a.id === u.id)
@@ -516,7 +565,7 @@ export default function Customers() {
                       <label key={u.id} className="flex items-center gap-3 p-3 rounded-xl cursor-pointer" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
                         <input type="checkbox" checked={on} onChange={() => toggleAdmin(u.id)} />
                         <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.12)' }}>
-                          <UserCog size={14} style={{ color: '#a78bfa' }} />
+                          <UserCog size={14} style={{ color: 'var(--accent)' }} />
                         </div>
                         <div>
                           <p className="text-sm font-semibold" style={{ color: 'var(--text-h)' }}>{u.name}</p>
@@ -549,26 +598,8 @@ export default function Customers() {
           onCancel={() => setConfirmDel(null)}
         />
       )}
+
+      {fieldsMgr && <CustomFieldsManager onClose={() => setFieldsMgr(false)} />}
     </>
   )
-}
-
-/* Renders the right input for a custom-field definition type. */
-function CustomFieldInput({ def, value, onChange }) {
-  const opts = def.options ?? []
-  if (def.type === 'textarea') return <textarea rows={2} className="input-3d text-sm resize-none" value={value} onChange={e => onChange(e.target.value)} />
-  if (def.type === 'number') return <input type="number" className="input-3d text-sm" value={value} onChange={e => onChange(e.target.value)} />
-  if (def.type === 'date_picker') return <input type="date" className="input-3d text-sm" value={value} onChange={e => onChange(e.target.value)} />
-  if (def.type === 'checkbox') return (
-    <label className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}>
-      <input type="checkbox" checked={value === '1' || value === true} onChange={e => onChange(e.target.checked ? '1' : '')} /> Yes
-    </label>
-  )
-  if (def.type === 'select' || def.type === 'multiselect') return (
-    <select className="input-3d text-sm" value={value} onChange={e => onChange(e.target.value)}>
-      <option value="">— Select —</option>
-      {opts.map(o => <option key={o} value={o}>{o}</option>)}
-    </select>
-  )
-  return <input className="input-3d text-sm" value={value} onChange={e => onChange(e.target.value)} />
 }

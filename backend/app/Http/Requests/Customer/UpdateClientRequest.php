@@ -63,9 +63,10 @@ class UpdateClientRequest extends FormRequest
             'contacts.*.title'        => 'nullable|string|max:100',
             'contacts.*.is_primary'   => 'nullable|boolean',
 
-            // When true, push the new billing/shipping address onto all existing
-            // invoices and estimates for this client (including paid).
-            'apply_to_previous_documents' => 'nullable|boolean',
+            // Push the new billing/shipping address onto existing documents
+            // (including paid). Invoices+estimates vs credit notes are separate.
+            'apply_to_previous_documents'    => 'nullable|boolean',
+            'apply_to_previous_credit_notes' => 'nullable|boolean',
         ];
     }
 }

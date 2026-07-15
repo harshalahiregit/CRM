@@ -24,6 +24,7 @@ html.dark {
   --text-body:      #c4bde0;
   --text-muted:     #8b85a8;
   --text-faint:     rgba(237,234,248,0.35);
+  --accent:         #a78bfa;   /* readable purple accent (dark theme) */
 
   --shadow-card:    0 4px 24px rgba(0,0,0,0.4), 0 1px 4px rgba(0,0,0,0.3);
   --shadow-card-3d: 0 8px 32px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.4),
@@ -51,16 +52,18 @@ html.light {
   --bg-card-hover:  #faf9ff;
   --bg-sidebar:     #ffffff;
   --bg-header:      rgba(255,255,255,0.94);
-  --bg-input:       rgba(124,58,237,0.04);
+  --bg-input:       rgba(124,58,237,0.05);
 
-  --border:         rgba(124,58,237,0.10);
-  --border-purple:  rgba(124,58,237,0.20);
-  --border-input:   rgba(124,58,237,0.15);
+  /* Stronger borders so cards, inputs & tables are clearly defined on white. */
+  --border:         rgba(80,60,130,0.20);
+  --border-purple:  rgba(124,58,237,0.30);
+  --border-input:   rgba(80,60,130,0.28);
 
   --text-h:         #1a1535;
   --text-body:      #2d2559;
-  --text-muted:     #6b63a0;
-  --text-faint:     rgba(26,21,53,0.35);
+  --text-muted:     #453d6b;   /* darkened for strong contrast on white (was #6b63a0) */
+  --text-faint:     rgba(26,21,53,0.5);
+  --accent:         #7c3aed;   /* darker purple accent — readable on white (light theme) */
 
   --shadow-card:    0 2px 12px rgba(124,58,237,0.08), 0 1px 4px rgba(0,0,0,0.04);
   --shadow-card-3d: 0 8px 32px rgba(124,58,237,0.12), 0 2px 8px rgba(0,0,0,0.06),
@@ -132,6 +135,7 @@ h1,h2,h3,h4,h5,h6 { color: var(--text-h); }
   content: '';
   position: absolute;
   inset: 0;
+  z-index: -1;
   border-radius: 20px;
   background: linear-gradient(135deg, var(--card-shine) 0%, transparent 50%);
   pointer-events: none;
@@ -140,6 +144,7 @@ h1,h2,h3,h4,h5,h6 { color: var(--text-h); }
 .card-3d::after {
   content: '';
   position: absolute;
+  z-index: -1;
   bottom: -2px; left: 10%; right: 10%;
   height: 8px;
   border-radius: 50%;
@@ -148,13 +153,7 @@ h1,h2,h3,h4,h5,h6 { color: var(--text-h); }
   transition: all 0.3s ease;
 }
 .card-3d:hover {
-  transform: translateY(-6px) rotateX(2deg) scale(1.01);
   box-shadow: var(--shadow-hover-3d);
-}
-.card-3d:hover::after {
-  opacity: 0.7;
-  filter: blur(12px);
-  bottom: -8px;
 }
 
 /* 3D KPI Card — extra prominent */
@@ -174,6 +173,7 @@ h1,h2,h3,h4,h5,h6 { color: var(--text-h); }
 .kpi-3d::before {
   content: '';
   position: absolute;
+  z-index: -1;
   top: 0; left: 0; right: 0;
   height: 50%;
   background: linear-gradient(180deg, var(--card-shine) 0%, transparent 100%);
@@ -184,6 +184,7 @@ h1,h2,h3,h4,h5,h6 { color: var(--text-h); }
 .kpi-3d::after {
   content: '';
   position: absolute;
+  z-index: -1;
   bottom: -4px; left: 15%; right: 15%;
   height: 10px;
   border-radius: 50%;
@@ -192,13 +193,7 @@ h1,h2,h3,h4,h5,h6 { color: var(--text-h); }
   transition: all 0.35s ease;
 }
 .kpi-3d:hover {
-  transform: translateY(-8px) rotateX(3deg) rotateY(-1deg) scale(1.02);
   box-shadow: var(--shadow-hover-3d);
-}
-.kpi-3d:hover::after {
-  bottom: -12px;
-  filter: blur(16px);
-  opacity: 0.8;
 }
 
 /* 3D Sidebar */

@@ -64,8 +64,18 @@ class CustomFieldService
             'type'     => $f->type,
             'required' => $f->required,
             'options'  => $f->optionList(),
-            'value'    => $stored[$f->id] ?? $f->default_value,
+            'value'    => $this->decodeValue($f->type, $stored[$f->id] ?? $f->default_value),
         ])->all();
+    }
+
+    /** Multiselect values are stored JSON-encoded — decode them back to an array. */
+    private function decodeValue(string $type, $value)
+    {
+        if ($type === 'multiselect' && is_string($value) && $value !== '') {
+            $decoded = json_decode($value, true);
+            return is_array($decoded) ? $decoded : $value;
+        }
+        return $value;
     }
 
     /**

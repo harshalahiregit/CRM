@@ -1,16 +1,20 @@
 import { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Plus, Trash2, X, MoreVertical, Ban, ArrowRightLeft, Receipt, Tag } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
+import { useClientOptions } from '@/hooks/useClientOptions'
 import StatusBadge from '../components/StatusBadge'
 
 const fmt = v => '₹' + Number(v||0).toLocaleString('en-IN')
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) : '—'
 const STATUSES = ['Open','Closed','Void']
-const EMPTY = { client:'', invoice_number:'', amount:'', discount_type:'none', adminnote:'', clientnote:'', terms:'', reason:'', tags:'' }
+const EMPTY = { client_id:'', invoice_number:'', amount:'', discount_type:'none', adminnote:'', clientnote:'', terms:'', reason:'', tags:'' }
 const EMPTY_REFUND = { amount:'', mode:'Bank Transfer', reference:'', note:'' }
 const PAY_MODES = ['Bank Transfer','Cash','Cheque','Stripe','Razorpay','PayPal','UPI']
 
 export default function CreditNotes() {
+  const clientOptions = useClientOptions()
+  const [searchParams] = useSearchParams()
   const [data, setData]         = useState([])
   const [loading, setLoading]   = useState(true)
   const [filter, setFilter]     = useState('All')
@@ -31,9 +35,24 @@ export default function CreditNotes() {
   }
   useEffect(()=>{ load() },[filter])
 
+  // Preselect the customer + open the create drawer when arriving from the
+  // customer profile (?client_id=…&new=1).
+  useEffect(() => {
+    if (searchParams.get('new') === '1') {
+      setForm(p => ({ ...p, client_id: searchParams.get('client_id') || '' }))
+      setShowDrawer(true)
+    }
+  }, [searchParams])
+
   const handleCreate = async () => {
-    if(!form.client||!form.amount) return showToast('Client & amount required','error')
-    await salesApi.creditNotes.create(form)
+    if(!form.client_id||!form.amount) return showToast('Customer & amount required','error')
+    // The credit-note total is derived from line items — map the entered amount
+    // to a single line so it persists.
+    await salesApi.creditNotes.create({
+      ...form,
+      client_id: Number(form.client_id),
+      line_items: [{ item_name: form.reason || 'Credit', qty: 1, rate: Number(form.amount), tax: 0, discount: 0 }],
+    })
     showToast('Credit note created!'); setShowDrawer(false); setForm(EMPTY); load()
   }
   const handleRefund = async () => {
@@ -166,9 +185,9 @@ export default function CreditNotes() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="label">Customer *</label>
-                      <select className="input-3d text-sm" value={form.client} onChange={e => sf('client', e.target.value)}>
+                      <select className="input-3d text-sm" value={form.client_id} onChange={e => sf('client_id', e.target.value)}>
                         <option value="">Select customer…</option>
-                        {salesApi.clients.map(c => <option key={c} value={c}>{c}</option>)}
+                        {clientOptions.map(c => <option key={c.id} value={c.id}>{c.company}</option>)}
                       </select>
                     </div>
                     <div>

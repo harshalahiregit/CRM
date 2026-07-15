@@ -3,13 +3,19 @@ import { createPortal } from 'react-dom'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Building2, Phone, Receipt, Wallet, CreditCard,
-  Globe, Linkedin, Facebook, Instagram, Twitter, Calendar,
+  Globe, Linkedin, Facebook, Instagram, Twitter,
   Package, Users2, UserPlus, Link2, Plus, Trash2, Eye, EyeOff, Upload,
-  FileText, KeyRound, Bell, StickyNote, MapPin, Landmark, Edit2, X,
+  FileText, KeyRound, Bell, StickyNote, MapPin, Edit2, X,
 } from 'lucide-react'
 import { customerApi } from '@/services/customerApi'
 import { useToast } from '@/hooks/useToast'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
+import CustomFieldInput from '../components/CustomFieldInput'
+import ConfirmIconButton from '../components/ConfirmIconButton'
+import ToggleSwitch from '../components/ToggleSwitch'
+import RecordTab from '../components/RecordTab'
+import { CONTRACTS, EXPENSES, SUBSCRIPTIONS, PRE_ALERTS, PACKAGES, SHIPMENTS } from '../components/recordSchemas'
+import { CURRENCIES, LANGUAGES } from '../components/customerFormConstants'
 
 const fmt = v => '₹' + Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const d10 = s => (s ? String(s).slice(0, 10) : '—')
@@ -23,19 +29,18 @@ const TABS = [
   'Expenses', 'Subscriptions', 'Contracts', 'Tax', 'Support', 'Vault', 'Reminders',
   'Attachments', 'Map', 'Related',
 ]
-const CURRENCIES = ['INR', 'USD', 'EUR', 'GBP', 'AED', 'SGD']
-const LANGUAGES = ['English', 'Hindi', 'Marathi']
 
 // Tabs whose owning module isn't built in Sangoe yet — shown (to match the
 // legacy layout) with an honest placeholder instead of fake data. Value = the
 // module the feature belongs to.
-const PENDING_MODULES = {
-  Expenses: 'Expenses',
-  Subscriptions: 'Subscriptions',
-  Contracts: 'Contracts',
-  'Pre-Alert': 'Logistics',
-  Packages: 'Logistics',
-  Shipping: 'Logistics',
+// Tabs backed by the generic per-customer RecordTab (schema-driven CRUD).
+const RECORD_TABS = {
+  Contracts: CONTRACTS,
+  Expenses: EXPENSES,
+  Subscriptions: SUBSCRIPTIONS,
+  'Pre-Alert': PRE_ALERTS,
+  Packages: PACKAGES,
+  Shipping: SHIPMENTS,
 }
 
 export default function CustomerDetail() {
@@ -56,6 +61,15 @@ export default function CustomerDetail() {
       .catch(e => { toast.error(e.message); nav('/app/customers') })
       .finally(() => setLoading(false))
   }, [id])
+
+  // One-click active/inactive toggle (same as the old CRM's customer switch).
+  const toggleActive = async () => {
+    try {
+      const res = await customerApi.toggleActive(id)
+      setClient(c => ({ ...c, active: res.active }))
+      toast.success(res.active ? 'Customer activated' : 'Customer deactivated')
+    } catch (e) { toast.error(e.message) }
+  }
 
   // Lazy-load each tab's data the first time it's opened.
   const TAB_FETCHERS = {
@@ -79,8 +93,15 @@ export default function CustomerDetail() {
   const refreshTab = async (t) => {
     const fetcher = TAB_FETCHERS[t]
     if (!fetcher) return
-    const data = await fetcher(id).catch(() => null)
-    setTabData(prev => ({ ...prev, [t]: data }))
+    try {
+      const data = await fetcher(id)
+      setTabData(prev => ({ ...prev, [t]: data }))
+    } catch (e) {
+      // Surface the error and leave the tab uncached so re-entry retries it,
+      // rather than silently showing a blank pane forever.
+      toast.error(e.message || `Failed to load ${t}`)
+      setTabData(prev => { const next = { ...prev }; delete next[t]; return next })
+    }
   }
 
   useEffect(() => {
@@ -128,15 +149,14 @@ export default function CustomerDetail() {
             <ArrowLeft size={16} style={{ color: 'var(--text-muted)' }} />
           </button>
           <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.12)' }}>
-            <Building2 size={22} style={{ color: '#a78bfa' }} />
+            <Building2 size={22} style={{ color: 'var(--accent)' }} />
           </div>
           <div>
             <h1 className="font-black" style={{ fontSize: 'clamp(1.2rem,2vw,1.6rem)', color: 'var(--text-h)', letterSpacing: '-0.02em' }}>{client.company}</h1>
             <div className="flex items-center gap-2 mt-0.5">
-              <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold" style={{ background: client.active ? 'rgba(16,185,129,0.1)' : 'rgba(148,163,184,0.12)', color: client.active ? '#10b981' : '#94a3b8' }}>
-                {client.active ? 'Active' : 'Inactive'}
-              </span>
-              {client.parent_company && <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Parent: <b style={{ color: 'var(--text-h)' }}>{client.parent_company}</b></span>}
+              <ToggleSwitch checked={client.active} onChange={toggleActive} title="Toggle active/inactive" size="sm" />
+              <span className="text-[10px] font-bold" style={{ color: client.active ? '#10b981' : '#94a3b8' }}>{client.active ? 'Active' : 'Inactive'}</span>
+              {client.parent_company && <span className="text-xs ml-1" style={{ color: 'var(--text-muted)' }}>Parent: <b style={{ color: 'var(--text-h)' }}>{client.parent_company}</b></span>}
             </div>
           </div>
         </div>
@@ -168,10 +188,10 @@ export default function CustomerDetail() {
       </div>
 
       {/* Tab bar */}
-      <div className="flex gap-1 flex-wrap p-1 rounded-2xl" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+      <div className="flex gap-1.5 flex-wrap p-2 rounded-2xl" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
         {TABS.map(t => (
-          <button key={t} onClick={() => setTab(t)} className="px-3.5 py-2 rounded-xl text-xs font-bold transition-all"
-            style={{ background: tab === t ? 'linear-gradient(135deg,#7C3AED,#5b21b6)' : 'transparent', color: tab === t ? '#fff' : 'var(--text-muted)' }}>
+          <button key={t} onClick={() => setTab(t)} className="px-4 py-2 rounded-xl text-xs font-bold transition-all"
+            style={{ background: tab === t ? 'linear-gradient(135deg,#7C3AED,#5b21b6)' : 'transparent', color: tab === t ? '#fff' : 'var(--text-body)' }}>
             {t}
           </button>
         ))}
@@ -191,9 +211,9 @@ export default function CustomerDetail() {
       {tab === 'Statement' && data && <StatementTab statement={data} />}
       {tab === 'Invoices' && data && <DocTable columns={INVOICE_COLS} rows={data} empty="No invoices for this customer." action={createBtn('New Invoice', `/app/sales/invoices?client_id=${id}&new=1`)} />}
       {tab === 'Payments' && data && <DocTable columns={PAYMENT_COLS} rows={data} empty="No payments recorded." />}
-      {tab === 'Proposals' && data && <DocTable columns={PROPOSAL_COLS} rows={data} empty="No proposals for this customer." action={createBtn('New Proposal', `/app/sales/proposals?client_id=${id}`)} />}
+      {tab === 'Proposals' && data && <DocTable columns={PROPOSAL_COLS} rows={data} empty="No proposals for this customer." action={createBtn('New Proposal', `/app/sales/proposals?client_id=${id}&new=1`)} />}
       {tab === 'Estimates' && data && <DocTable columns={ESTIMATE_COLS} rows={data} empty="No proforma invoices / estimates." action={createBtn('New Proforma Invoice', `/app/sales/estimates?client_id=${id}&new=1`)} />}
-      {tab === 'Credit Notes' && data && <DocTable columns={CREDIT_COLS} rows={data} empty="No credit notes." action={createBtn('New Credit Note', `/app/sales/credit-notes?client_id=${id}`)} />}
+      {tab === 'Credit Notes' && data && <DocTable columns={CREDIT_COLS} rows={data} empty="No credit notes." action={createBtn('New Credit Note', `/app/sales/credit-notes?client_id=${id}&new=1`)} />}
       {tab === 'Tax' && data && <TaxTab tax={data} />}
       {tab === 'Support' && data && <SupportTab tickets={data} />}
       {tab === 'Vault' && <VaultTab id={id} entries={data} reload={() => refreshTab('Vault')} toast={toast} />}
@@ -202,7 +222,7 @@ export default function CustomerDetail() {
       {tab === 'Map' && <MapTab client={client} />}
       {tab === 'Related' && <RelatedTab client={client} />}
 
-      {PENDING_MODULES[tab] && <PendingModule feature={tab} module={PENDING_MODULES[tab]} />}
+      {RECORD_TABS[tab] && <RecordTab clientId={id} schema={RECORD_TABS[tab]} />}
     </div>
   )
 }
@@ -284,9 +304,9 @@ function ProfileTab({ client, reload, toast }) {
   return (
     <div className="card-3d" style={{ padding: 0 }}>
       {/* Sub-tabs */}
-      <div className="flex gap-1 flex-wrap px-5 pt-4" style={{ borderBottom: '1px solid var(--border)' }}>
+      <div className="flex gap-2 flex-wrap px-6 pt-4" style={{ borderBottom: '1px solid var(--border)' }}>
         {PROFILE_SUBTABS.map(t => (
-          <button key={t} onClick={() => setSub(t)} className="px-4 py-2.5 rounded-t-xl text-xs font-bold transition-all" style={{ color: sub === t ? '#a78bfa' : 'var(--text-muted)', borderBottom: sub === t ? '2px solid #7C3AED' : '2px solid transparent' }}>
+          <button key={t} onClick={() => setSub(t)} className="px-4 py-2.5 rounded-t-xl text-xs font-bold transition-all" style={{ color: sub === t ? 'var(--accent)' : 'var(--text-body)', borderBottom: sub === t ? '2px solid var(--accent)' : '2px solid transparent' }}>
             {t}
           </button>
         ))}
@@ -294,13 +314,13 @@ function ProfileTab({ client, reload, toast }) {
 
       <div className="p-6">
         {sub === 'Customer Details' && (
-          <div className="space-y-4 max-w-3xl">
+          <div className="space-y-4">
             <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer" style={{ color: 'var(--text-muted)' }}>
               <input type="checkbox" checked={form.show_primary_contact} onChange={e => sf('show_primary_contact', e.target.checked)} />
               Show primary contact full name on Invoices, Estimates, Payments, Credit Notes
             </label>
-            <div><label className="label">Company / Client Name *</label><input className="input-3d text-sm" value={form.company} onChange={e => sf('company', e.target.value)} /></div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="max-w-2xl"><label className="label">Company / Client Name *</label><input className="input-3d text-sm" value={form.company} onChange={e => sf('company', e.target.value)} /></div>
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
               <div><label className="label">GST Number</label><input className="input-3d text-sm" value={form.gst_number} onChange={e => sf('gst_number', e.target.value)} /></div>
               <div><label className="label">Phone</label><input className="input-3d text-sm" value={form.phone} onChange={e => sf('phone', e.target.value)} /></div>
               <div><label className="label">Website</label><input className="input-3d text-sm" value={form.website} onChange={e => sf('website', e.target.value)} /></div>
@@ -311,7 +331,7 @@ function ProfileTab({ client, reload, toast }) {
               <div><label className="label">Default Language</label><select className="input-3d text-sm" value={form.default_language} onChange={e => sf('default_language', e.target.value)}>{LANGUAGES.map(l => <option key={l} value={l}>{l}</option>)}</select></div>
             </div>
             <div>
-              <div className="flex items-center justify-between mb-1"><label className="label mb-0">Groups</label><button type="button" onClick={addGroup} className="text-xs font-bold flex items-center gap-1" style={{ color: '#a78bfa' }}><Plus size={12} /> New group</button></div>
+              <div className="flex items-center justify-between mb-1"><label className="label mb-0">Groups</label><button type="button" onClick={addGroup} className="text-xs font-bold flex items-center gap-1" style={{ color: 'var(--accent)' }}><Plus size={12} /> New group</button></div>
               <div className="flex gap-1.5 flex-wrap">
                 {groupOptions.length === 0 ? <span className="text-xs" style={{ color: 'var(--text-muted)' }}>No groups yet.</span> : groupOptions.map(g => {
                   const on = form.group_ids.includes(g.id)
@@ -319,7 +339,7 @@ function ProfileTab({ client, reload, toast }) {
                 })}
               </div>
             </div>
-            <p className="label-caps pt-2" style={{ color: '#a78bfa' }}>Registered Address</p>
+            <p className="label-caps pt-4 mt-1" style={{ color: 'var(--accent)' }}>Registered Address</p>
             <div><label className="label">Address</label><textarea rows={2} className="input-3d text-sm resize-none" value={form.address} onChange={e => sf('address', e.target.value)} /></div>
             <div className="grid grid-cols-2 gap-4">
               <div><label className="label">City</label><input className="input-3d text-sm" value={form.city} onChange={e => sf('city', e.target.value)} /></div>
@@ -327,11 +347,21 @@ function ProfileTab({ client, reload, toast }) {
               <div><label className="label">ZIP / PIN</label><input className="input-3d text-sm" value={form.zip} onChange={e => sf('zip', e.target.value)} /></div>
               <div><label className="label">Country</label><input className="input-3d text-sm" value={form.country} onChange={e => sf('country', e.target.value)} /></div>
             </div>
-            <p className="label-caps pt-2" style={{ color: '#a78bfa' }}>Key Dates</p>
+            <p className="label-caps pt-4 mt-1" style={{ color: 'var(--accent)' }}>Key Dates</p>
             <div className="grid grid-cols-3 gap-4">
               <div><label className="label">Founded</label><input type="date" className="input-3d text-sm" value={form.foundation_date} onChange={e => sf('foundation_date', e.target.value)} /></div>
               <div><label className="label">DOB</label><input type="date" className="input-3d text-sm" value={form.dob} onChange={e => sf('dob', e.target.value)} /></div>
               <div><label className="label">Anniversary</label><input type="date" className="input-3d text-sm" value={form.anniversary_date} onChange={e => sf('anniversary_date', e.target.value)} /></div>
+            </div>
+            <p className="label-caps pt-4 mt-1" style={{ color: 'var(--accent)' }}>Social Links</p>
+            <div className="grid grid-cols-2 gap-4">
+              {[['linkedin', 'LinkedIn'], ['facebook', 'Facebook'], ['instagram', 'Instagram'], ['twitter', 'Twitter / X']].map(([k, label]) => (
+                <div key={k}>
+                  <label className="label">{label}</label>
+                  <input className="input-3d text-sm" value={form.social_links?.[k] || ''}
+                    onChange={e => setForm(p => ({ ...p, social_links: { ...(p.social_links || {}), [k]: e.target.value } }))} />
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -341,7 +371,7 @@ function ProfileTab({ client, reload, toast }) {
             {cfDefs.length === 0 ? <p className="text-sm py-6 text-center" style={{ color: 'var(--text-muted)' }}>No custom fields defined.</p> : cfDefs.map(def => (
               <div key={def.id}>
                 <label className="label">{def.name}{def.required ? ' *' : ''}</label>
-                <ProfileCustomField def={def} value={form.custom_fields?.[def.id] ?? def.default_value ?? ''} onChange={v => setForm(p => ({ ...p, custom_fields: { ...(p.custom_fields || {}), [def.id]: v } }))} />
+                <CustomFieldInput def={def} value={form.custom_fields?.[def.id] ?? def.default_value ?? ''} onChange={v => setForm(p => ({ ...p, custom_fields: { ...(p.custom_fields || {}), [def.id]: v } }))} />
               </div>
             ))}
           </div>
@@ -351,7 +381,7 @@ function ProfileTab({ client, reload, toast }) {
           <div className="space-y-5">
             <div className="grid md:grid-cols-2 gap-6">
               <div className="space-y-3">
-                <div className="flex items-center justify-between"><p className="label-caps" style={{ color: '#a78bfa' }}>Billing Address</p><button type="button" onClick={copyToBilling} className="text-[11px] font-bold" style={{ color: '#a78bfa' }}>Same as Customer Info</button></div>
+                <div className="flex items-center justify-between"><p className="label-caps" style={{ color: 'var(--accent)' }}>Billing Address</p><button type="button" onClick={copyToBilling} className="text-[11px] font-bold" style={{ color: 'var(--accent)' }}>Same as Customer Info</button></div>
                 <div><label className="label">Street</label><textarea rows={2} className="input-3d text-sm resize-none" value={form.billing_street} onChange={e => sf('billing_street', e.target.value)} /></div>
                 <div><label className="label">City</label><input className="input-3d text-sm" value={form.billing_city} onChange={e => sf('billing_city', e.target.value)} /></div>
                 <div><label className="label">State</label><input className="input-3d text-sm" value={form.billing_state} onChange={e => sf('billing_state', e.target.value)} /></div>
@@ -361,7 +391,7 @@ function ProfileTab({ client, reload, toast }) {
                 </div>
               </div>
               <div className="space-y-3">
-                <div className="flex items-center justify-between"><p className="label-caps" style={{ color: '#a78bfa' }}>Shipping Address</p><button type="button" onClick={copyBillingToShipping} className="text-[11px] font-bold" style={{ color: '#a78bfa' }}>Copy Billing Address</button></div>
+                <div className="flex items-center justify-between"><p className="label-caps" style={{ color: 'var(--accent)' }}>Shipping Address</p><button type="button" onClick={copyBillingToShipping} className="text-[11px] font-bold" style={{ color: 'var(--accent)' }}>Copy Billing Address</button></div>
                 <div><label className="label">Street</label><textarea rows={2} className="input-3d text-sm resize-none" value={form.shipping_street} onChange={e => sf('shipping_street', e.target.value)} /></div>
                 <div><label className="label">City</label><input className="input-3d text-sm" value={form.shipping_city} onChange={e => sf('shipping_city', e.target.value)} /></div>
                 <div><label className="label">State</label><input className="input-3d text-sm" value={form.shipping_state} onChange={e => sf('shipping_state', e.target.value)} /></div>
@@ -408,16 +438,6 @@ function ProfileTab({ client, reload, toast }) {
       </div>
     </div>
   )
-}
-
-function ProfileCustomField({ def, value, onChange }) {
-  const opts = def.options ?? []
-  if (def.type === 'textarea') return <textarea rows={2} className="input-3d text-sm resize-none" value={value} onChange={e => onChange(e.target.value)} />
-  if (def.type === 'number') return <input type="number" className="input-3d text-sm" value={value} onChange={e => onChange(e.target.value)} />
-  if (def.type === 'date_picker') return <input type="date" className="input-3d text-sm" value={value} onChange={e => onChange(e.target.value)} />
-  if (def.type === 'checkbox') return <label className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}><input type="checkbox" checked={value === '1' || value === true} onChange={e => onChange(e.target.checked ? '1' : '')} /> Yes</label>
-  if (def.type === 'select' || def.type === 'multiselect') return <select className="input-3d text-sm" value={value} onChange={e => onChange(e.target.value)}><option value="">— Select —</option>{opts.map(o => <option key={o} value={o}>{o}</option>)}</select>
-  return <input className="input-3d text-sm" value={value} onChange={e => onChange(e.target.value)} />
 }
 
 const NOTIFICATION_TYPES = [
@@ -488,14 +508,12 @@ function ContactsTab({ id, contacts, reload, toast }) {
               ) : rows.map(c => (
                 <tr key={c.id} style={{ borderBottom: '1px solid var(--border)' }}>
                   <td className="py-3 px-4 font-bold" style={{ color: 'var(--text-h)' }}>{c.name || `${c.first_name} ${c.last_name || ''}`}</td>
-                  <td className="py-3 px-4" style={{ color: 'var(--text-muted)' }}>{c.email ? <a href={`mailto:${c.email}`} style={{ color: '#a78bfa' }}>{c.email}</a> : '—'}</td>
+                  <td className="py-3 px-4" style={{ color: 'var(--text-muted)' }}>{c.email ? <a href={`mailto:${c.email}`} style={{ color: 'var(--accent)' }}>{c.email}</a> : '—'}</td>
                   <td className="py-3 px-4" style={{ color: 'var(--text-muted)' }}>{c.title || '—'}</td>
                   <td className="py-3 px-4" style={{ color: 'var(--text-muted)' }}>{c.phone || '—'}</td>
-                  <td className="py-3 px-4">{c.is_primary ? <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold" style={{ background: 'rgba(124,58,237,0.1)', color: '#a78bfa' }}>Primary</span> : '—'}</td>
+                  <td className="py-3 px-4">{c.is_primary ? <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold" style={{ background: 'rgba(124,58,237,0.1)', color: 'var(--accent)' }}>Primary</span> : '—'}</td>
                   <td className="py-3 px-4">
-                    <button onClick={() => toggleActive(c)} className="px-2 py-0.5 rounded-lg text-[10px] font-bold" style={{ background: c.active !== false ? 'rgba(16,185,129,0.1)' : 'rgba(148,163,184,0.12)', color: c.active !== false ? '#10b981' : '#94a3b8' }}>
-                      {c.active !== false ? 'Active' : 'Inactive'}
-                    </button>
+                    <ToggleSwitch checked={c.active !== false} onChange={() => toggleActive(c)} title="Toggle contact active/inactive" size="sm" />
                   </td>
                   <td className="py-3 px-4">
                     <div className="flex gap-1">
@@ -543,7 +561,7 @@ function ContactsTab({ id, contacts, reload, toast }) {
                 </label>
               </div>
               <div>
-                <p className="label-caps mb-2" style={{ color: '#a78bfa' }}>Email Notifications</p>
+                <p className="label-caps mb-2" style={{ color: 'var(--accent)' }}>Email Notifications</p>
                 <div className="grid grid-cols-2 gap-2 p-3 rounded-xl" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
                   {NOTIFICATION_TYPES.map(n => (
                     <label key={n.key} className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: 'var(--text-h)' }}>
@@ -595,7 +613,7 @@ function NotesTab({ id, notes, reload, toast }) {
             <p className="text-sm" style={{ color: 'var(--text-h)' }}>{n.content}</p>
             <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>{n.author?.name || 'Staff'} · {d10(n.created_at)}</p>
           </div>
-          <button onClick={() => del(n.id)} className="p-1.5 rounded-lg hover:bg-[rgba(239,68,68,0.08)]"><Trash2 size={13} style={{ color: '#f87171' }} /></button>
+          <ConfirmIconButton onConfirm={() => del(n.id)} title="Delete note?" message="This note will be permanently removed." />
         </div>
       ))}
     </div>
@@ -606,7 +624,7 @@ function StatementTab({ statement }) {
   return (
     <div className="card-3d overflow-hidden" style={{ padding: 0 }}>
       <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
-        <p className="label-caps" style={{ color: '#a78bfa' }}>Account Statement</p>
+        <p className="label-caps" style={{ color: 'var(--accent)' }}>Account Statement</p>
         <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Opening: <b style={{ color: 'var(--text-h)' }}>{fmt(statement.opening_balance)}</b> · Closing: <b style={{ color: 'var(--text-h)' }}>{fmt(statement.closing_balance)}</b></p>
       </div>
       <div className="overflow-x-auto">
@@ -693,7 +711,7 @@ function VaultTab({ id, entries, reload, toast }) {
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <button onClick={() => setAdding(a => !a)} className="px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1" style={{ background: 'var(--bg-input)', color: '#a78bfa', border: '1px solid var(--border)' }}><Plus size={13} /> New credential</button>
+        <button onClick={() => setAdding(a => !a)} className="px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1" style={{ background: 'var(--bg-input)', color: 'var(--accent)', border: '1px solid var(--border)' }}><Plus size={13} /> New credential</button>
       </div>
       {adding && (
         <div className="card-3d space-y-3" style={{ padding: '16px' }}>
@@ -721,7 +739,7 @@ function VaultTab({ id, entries, reload, toast }) {
             <button onClick={() => revealed[v.id] ? setRevealed(p => ({ ...p, [v.id]: null })) : reveal(v.id)} className="p-1.5 rounded-lg hover:bg-[rgba(124,58,237,0.08)]">
               {revealed[v.id] ? <EyeOff size={13} style={{ color: 'var(--text-muted)' }} /> : <Eye size={13} style={{ color: 'var(--text-muted)' }} />}
             </button>
-            <button onClick={() => del(v.id)} className="p-1.5 rounded-lg hover:bg-[rgba(239,68,68,0.08)]"><Trash2 size={13} style={{ color: '#f87171' }} /></button>
+            <ConfirmIconButton onConfirm={() => del(v.id)} title="Delete credential?" message="This vault entry will be permanently removed." />
           </div>
         </div>
       ))}
@@ -753,7 +771,7 @@ function RemindersTab({ id, reminders, reload, toast }) {
               <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Due {d10(r.remind_at)}{r.assignee ? ` · ${r.assignee.name}` : ''}</p>
             </div>
           </div>
-          <button onClick={() => del(r.id)} className="p-1.5 rounded-lg hover:bg-[rgba(239,68,68,0.08)]"><Trash2 size={13} style={{ color: '#f87171' }} /></button>
+          <ConfirmIconButton onConfirm={() => del(r.id)} title="Delete reminder?" message="This reminder will be permanently removed." />
         </div>
       ))}
     </div>
@@ -773,20 +791,20 @@ function AttachmentsTab({ id, files, reload, toast }) {
     <div className="space-y-4">
       <div className="flex justify-end">
         <input ref={ref} type="file" className="hidden" onChange={upload} />
-        <button onClick={() => ref.current?.click()} className="px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1" style={{ background: 'var(--bg-input)', color: '#a78bfa', border: '1px solid var(--border)' }}><Upload size={13} /> Upload file</button>
+        <button onClick={() => ref.current?.click()} className="px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1" style={{ background: 'var(--bg-input)', color: 'var(--accent)', border: '1px solid var(--border)' }}><Upload size={13} /> Upload file</button>
       </div>
       {!files?.length ? <Empty text="No attachments." icon={FileText} /> : (
         <div className="grid md:grid-cols-2 gap-3">
           {files.map(f => (
             <div key={f.id} className="card-3d flex items-center justify-between" style={{ padding: '14px' }}>
               <a href={f.url} target="_blank" rel="noreferrer" className="flex items-center gap-3 min-w-0">
-                <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.12)' }}><FileText size={14} style={{ color: '#a78bfa' }} /></div>
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.12)' }}><FileText size={14} style={{ color: 'var(--accent)' }} /></div>
                 <div className="min-w-0">
                   <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-h)' }}>{f.file_name}</p>
                   <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{(f.file_size / 1024).toFixed(0)} KB · {d10(f.created_at)}</p>
                 </div>
               </a>
-              <button onClick={() => del(f.id)} className="p-1.5 rounded-lg hover:bg-[rgba(239,68,68,0.08)]"><Trash2 size={13} style={{ color: '#f87171' }} /></button>
+              <ConfirmIconButton onConfirm={() => del(f.id)} title="Delete file?" message="This attachment will be permanently removed." />
             </div>
           ))}
         </div>
@@ -804,7 +822,7 @@ function MapTab({ client }) {
       <iframe title="map" width="100%" height="420" style={{ border: 0 }} loading="lazy"
         src={`https://maps.google.com/maps?q=${q}&output=embed`} />
       <div className="px-4 py-3 flex items-center gap-2" style={{ borderTop: '1px solid var(--border)' }}>
-        <MapPin size={13} style={{ color: '#a78bfa' }} />
+        <MapPin size={13} style={{ color: 'var(--accent)' }} />
         <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{addr}</span>
       </div>
     </div>
@@ -825,7 +843,7 @@ function AddressBookTab({ id, addresses, reload, toast }) {
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <button onClick={() => setAdding(a => !a)} className="px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1" style={{ background: 'var(--bg-input)', color: '#a78bfa', border: '1px solid var(--border)' }}><Plus size={13} /> New address</button>
+        <button onClick={() => setAdding(a => !a)} className="px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1" style={{ background: 'var(--bg-input)', color: 'var(--accent)', border: '1px solid var(--border)' }}><Plus size={13} /> New address</button>
       </div>
       {adding && (
         <div className="card-3d space-y-3" style={{ padding: '16px' }}>
@@ -853,7 +871,7 @@ function AddressBookTab({ id, addresses, reload, toast }) {
                 {a.label && <p className="font-bold text-sm mb-0.5" style={{ color: 'var(--text-h)' }}>{a.label}</p>}
                 <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{[a.address, a.city, a.state, a.zip, a.country].filter(Boolean).join(', ')}</p>
               </div>
-              <button onClick={() => del(a.id)} className="p-1.5 rounded-lg hover:bg-[rgba(239,68,68,0.08)]"><Trash2 size={13} style={{ color: '#f87171' }} /></button>
+              <ConfirmIconButton onConfirm={() => del(a.id)} title="Delete address?" message="This address will be permanently removed." />
             </div>
           ))}
         </div>
@@ -876,7 +894,7 @@ function RecipientsTab({ id, recipients, reload, toast }) {
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <button onClick={() => setAdding(a => !a)} className="px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1" style={{ background: 'var(--bg-input)', color: '#a78bfa', border: '1px solid var(--border)' }}><Plus size={13} /> New recipient</button>
+        <button onClick={() => setAdding(a => !a)} className="px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1" style={{ background: 'var(--bg-input)', color: 'var(--accent)', border: '1px solid var(--border)' }}><Plus size={13} /> New recipient</button>
       </div>
       {adding && (
         <div className="card-3d space-y-3" style={{ padding: '16px' }}>
@@ -904,7 +922,7 @@ function RecipientsTab({ id, recipients, reload, toast }) {
                 <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{[r.email, r.phone].filter(Boolean).join(' · ') || '—'}</p>
                 {(r.address || r.city || r.country) && <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>{[r.address, r.city, r.country].filter(Boolean).join(', ')}</p>}
               </div>
-              <button onClick={() => del(r.id)} className="p-1.5 rounded-lg hover:bg-[rgba(239,68,68,0.08)]"><Trash2 size={13} style={{ color: '#f87171' }} /></button>
+              <ConfirmIconButton onConfirm={() => del(r.id)} title="Delete recipient?" message="This recipient will be permanently removed." />
             </div>
           ))}
         </div>
@@ -967,7 +985,7 @@ function DocTable({ columns, rows, empty, title, action }) {
     <div className="space-y-3">
       {action && <div className="flex justify-end">{action}</div>}
       <div className="card-3d overflow-hidden" style={{ padding: 0 }}>
-      {title && <div className="px-4 py-3" style={{ borderBottom: '1px solid var(--border)' }}><p className="label-caps" style={{ color: '#a78bfa' }}>{title}</p></div>}
+      {title && <div className="px-4 py-3" style={{ borderBottom: '1px solid var(--border)' }}><p className="label-caps" style={{ color: 'var(--accent)' }}>{title}</p></div>}
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead><tr style={{ background: 'rgba(124,58,237,0.04)', borderBottom: '1px solid var(--border)' }}>
@@ -993,37 +1011,11 @@ function DocTable({ columns, rows, empty, title, action }) {
   )
 }
 
-function PendingModule({ feature, module }) {
-  const sameName = feature === module
-  return (
-    <div className="card-3d text-center" style={{ padding: '48px 20px' }}>
-      <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-3" style={{ background: 'rgba(124,58,237,0.1)' }}>
-        <Landmark size={20} style={{ color: '#a78bfa' }} />
-      </div>
-      <p className="font-bold text-sm" style={{ color: 'var(--text-h)' }}>{module} module coming soon</p>
-      <p className="text-xs mt-1 max-w-md mx-auto" style={{ color: 'var(--text-muted)' }}>
-        {sameName
-          ? `The ${module} module isn’t built in Sangoe yet. This tab will surface the customer’s ${module.toLowerCase()} automatically once it ships.`
-          : `“${feature}” is part of the ${module} module, which isn’t built in Sangoe yet. This tab will populate automatically once the ${module} module ships.`}
-      </p>
-    </div>
-  )
-}
-
 function Empty({ text, icon: Icon = FileText }) {
   return (
     <div className="card-3d text-center" style={{ padding: '40px 20px' }}>
       <Icon size={22} style={{ color: 'var(--text-muted)', margin: '0 auto 8px' }} />
       <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{text}</p>
-    </div>
-  )
-}
-
-function Row({ label, value, icon: Icon }) {
-  return (
-    <div className="flex items-start justify-between py-2" style={{ borderBottom: '1px solid var(--border)' }}>
-      <span className="text-xs flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>{Icon && <Icon size={12} />}{label}</span>
-      <span className="text-xs font-semibold text-right max-w-[60%]" style={{ color: 'var(--text-h)' }}>{value}</span>
     </div>
   )
 }
@@ -1042,7 +1034,7 @@ function RelatedCard({ icon: Icon, title, hint }) {
     <div className="card-3d" style={{ padding: '20px' }}>
       <div className="flex items-center gap-2 mb-3">
         <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.1)' }}>
-          <Icon size={15} style={{ color: '#a78bfa' }} />
+          <Icon size={15} style={{ color: 'var(--accent)' }} />
         </div>
         <p className="font-bold text-sm" style={{ color: 'var(--text-h)' }}>{title}</p>
       </div>

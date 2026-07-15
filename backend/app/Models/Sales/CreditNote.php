@@ -35,6 +35,9 @@ class CreditNote extends Model
                 $count = static::where('tenant_id', $cn->tenant_id)->count() + 1;
                 $cn->number = 'CN-' . str_pad($count, 3, '0', STR_PAD_LEFT);
             }
+            // Coalesce to 0 so a credit note without line items still inserts
+            // (remaining is NOT NULL and total may be unset at creating time).
+            $cn->total ??= 0;
             $cn->remaining = $cn->total;
         });
     }

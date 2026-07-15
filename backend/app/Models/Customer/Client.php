@@ -57,7 +57,7 @@ class Client extends Model
 
     public function admins(): BelongsToMany
     {
-        return $this->belongsToMany(User::class, 'customer_admins')->withPivot('tenant_id')->withTimestamps();
+        return $this->belongsToMany(User::class, 'customer_admins')->withTimestamps();
     }
 
     public function creator()
@@ -93,6 +93,36 @@ class Client extends Model
     public function recipients(): HasMany
     {
         return $this->hasMany(ClientRecipient::class)->latest();
+    }
+
+    public function contracts(): HasMany
+    {
+        return $this->hasMany(ClientContract::class)->latest();
+    }
+
+    public function expenses(): HasMany
+    {
+        return $this->hasMany(ClientExpense::class)->latest();
+    }
+
+    public function subscriptions(): HasMany
+    {
+        return $this->hasMany(ClientSubscription::class)->latest();
+    }
+
+    public function preAlerts(): HasMany
+    {
+        return $this->hasMany(ClientPreAlert::class)->latest();
+    }
+
+    public function packages(): HasMany
+    {
+        return $this->hasMany(ClientPackage::class)->latest();
+    }
+
+    public function shipments(): HasMany
+    {
+        return $this->hasMany(ClientShipment::class)->latest();
     }
 
     /* ── Address snapshot ──────────────────────────────────────── */
