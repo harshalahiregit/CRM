@@ -1,10 +1,21 @@
-import { useState } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ListTodo, Plus, X, LayoutGrid, List } from 'lucide-react'
-import { taskApi, TASK_STATUS, TASK_PRIORITY } from '@/services/taskApi'
+import { ListTodo, Plus, LayoutGrid, List, Search, X, SlidersHorizontal } from 'lucide-react'
+import { taskApi, TASK_STATUS, TASK_PRIORITY, TASK_ACCENT, relLabel } from '@/services/taskApi'
+import Select from '@/components/ui/Select'
+import TaskFormDrawer from '../components/TaskFormDrawer'
 
-const EMPTY = { name: '', description: '', priority: 'medium', start_date: new Date().toISOString().split('T')[0], due_date: '', rel_type: 'standalone', rel_id: '' }
+/**
+ * Task board — kanban + list.
+ *
+ * The kanban is a real board: cards are dragged between columns with the HTML5
+ * drag API (no DnD dependency) and the resulting order is persisted to
+ * kanban_order via POST /tasks/reorder. Dropping into another column is also the
+ * status change, which is why the old per-card status <select> is gone.
+ */
+
+const STATUS_KEYS = Object.keys(TASK_STATUS)
 
 export default function TaskBoard() {
   const navigate = useNavigate()
@@ -15,118 +26,342 @@ export default function TaskBoard() {
 
   const [view, setView] = useState('kanban')
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ ...EMPTY, rel_type: relType || 'standalone', rel_id: relId || '' })
+  const [showFilters, setShowFilters] = useState(false)
 
-  const filters = relType ? { rel_type: relType, rel_id: relId } : {}
-  const { data: tasks = [], isLoading } = useQuery({ queryKey: ['tasks', relType, relId], queryFn: () => taskApi.list(filters) })
+  // Filters — the backend already supported all of these; none had a UI.
+  const [search, setSearch] = useState('')
+  const [debounced, setDebounced] = useState('')
+  const [status, setStatus] = useState('')
+  const [priority, setPriority] = useState('')
+  const [assignee, setAssignee] = useState('')
 
-  const create = useMutation({
-    mutationFn: () => { const p = { ...form }; Object.keys(p).forEach(k => p[k] === '' && delete p[k]); return taskApi.create(p) },
-    onSuccess: () => { setShowForm(false); setForm({ ...EMPTY, rel_type: relType || 'standalone', rel_id: relId || '' }); qc.invalidateQueries({ queryKey: ['tasks'] }) },
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(search.trim()), 300)
+    return () => clearTimeout(t)
+  }, [search])
+
+  const filters = useMemo(() => {
+    const f = {}
+    if (relType) { f.rel_type = relType; if (relId) f.rel_id = relId }
+    if (debounced) f.search = debounced
+    if (status) f.status = status
+    if (priority) f.priority = priority
+    if (assignee) f.assignee = assignee
+    return f
+  }, [relType, relId, debounced, status, priority, assignee])
+
+  const { data: tasks = [], isLoading } = useQuery({
+    queryKey: ['tasks', filters],
+    queryFn: () => taskApi.list(filters),
   })
-  const move = useMutation({ mutationFn: ({ id, status }) => taskApi.setStatus(id, status), onSuccess: () => qc.invalidateQueries({ queryKey: ['tasks'] }) })
-  const sf = (k, v) => setForm(p => ({ ...p, [k]: v }))
+  const { data: staff = [] } = useQuery({ queryKey: ['task-staff'], queryFn: taskApi.staff })
+
+  const activeFilters = [status, priority, assignee, debounced].filter(Boolean).length
+  const clearFilters = () => { setSearch(''); setStatus(''); setPriority(''); setAssignee('') }
 
   return (
-    <div className="text-slate-200">
-      <div className="flex items-center justify-between mb-5">
-        <div className="flex items-center gap-2">
-          <ListTodo size={20} style={{ color: '#ec4899' }} />
-          <h1 className="text-lg font-bold" style={{ color: 'var(--text-h)' }}>Tasks</h1>
-          {relType && <span className="text-xs px-2 py-0.5 rounded-lg" style={{ background: 'rgba(236,72,153,0.12)', color: '#f9a8d4' }}>{relType} #{relId}</span>}
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="flex rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
-            <button onClick={() => setView('kanban')} className="px-2.5 py-2" style={{ background: view === 'kanban' ? 'rgba(236,72,153,0.15)' : 'transparent', color: view === 'kanban' ? '#ec4899' : 'var(--text-muted)' }}><LayoutGrid size={14} /></button>
-            <button onClick={() => setView('list')} className="px-2.5 py-2" style={{ background: view === 'list' ? 'rgba(236,72,153,0.15)' : 'transparent', color: view === 'list' ? '#ec4899' : 'var(--text-muted)' }}><List size={14} /></button>
+    <div>
+      <header className="flex flex-wrap items-center gap-2 mb-4">
+        <span className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
+          style={{ background: `color-mix(in srgb, ${TASK_ACCENT} 14%, transparent)` }}>
+          <ListTodo size={17} style={{ color: TASK_ACCENT }} />
+        </span>
+        <h1 className="text-lg font-bold" style={{ color: 'var(--text-h)' }}>Tasks</h1>
+        <span className="text-xs px-2 py-0.5 rounded-lg" style={{ background: 'var(--bg-input)', color: 'var(--text-muted)' }}>
+          {tasks.length}
+        </span>
+        {relType && (
+          <button onClick={() => navigate('/app/tasks')}
+            className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-lg"
+            style={{ background: `color-mix(in srgb, ${TASK_ACCENT} 12%, transparent)`, color: TASK_ACCENT }}>
+            {relType} #{relId} <X size={11} />
+          </button>
+        )}
+
+        <div className="flex items-center gap-2 ml-auto">
+          <button onClick={() => setShowFilters(s => !s)}
+            className="relative flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl"
+            style={{
+              background: showFilters || activeFilters ? `color-mix(in srgb, ${TASK_ACCENT} 12%, transparent)` : 'var(--bg-input)',
+              border: '1px solid var(--border)',
+              color: showFilters || activeFilters ? TASK_ACCENT : 'var(--text-muted)',
+            }}>
+            <SlidersHorizontal size={13} /> Filters
+            {activeFilters > 0 && (
+              <span className="w-4 h-4 rounded-full text-[9px] font-black flex items-center justify-center"
+                style={{ background: TASK_ACCENT, color: '#fff' }}>{activeFilters}</span>
+            )}
+          </button>
+
+          <div className="flex rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+            {[['kanban', LayoutGrid], ['list', List]].map(([k, Icon]) => (
+              <button key={k} onClick={() => setView(k)} className="px-2.5 py-2" aria-label={`${k} view`}
+                style={{
+                  background: view === k ? `color-mix(in srgb, ${TASK_ACCENT} 15%, transparent)` : 'transparent',
+                  color: view === k ? TASK_ACCENT : 'var(--text-muted)',
+                }}>
+                <Icon size={14} />
+              </button>
+            ))}
           </div>
-          <button onClick={() => setShowForm(true)} className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl" style={{ background: 'linear-gradient(135deg,#ec4899,#be185d)', color: '#fff' }}><Plus size={14} /> New Task</button>
+
+          <button onClick={() => setShowForm(true)}
+            className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl"
+            style={{ background: TASK_ACCENT, color: '#fff' }}>
+            <Plus size={14} /> New Task
+          </button>
         </div>
+      </header>
+
+      {showFilters && (
+        <FilterBar
+          {...{ search, setSearch, status, setStatus, priority, setPriority, assignee, setAssignee, staff }}
+          onClear={clearFilters} activeFilters={activeFilters}
+        />
+      )}
+
+      {isLoading && <div className="rounded-2xl animate-pulse" style={{ height: 240, background: 'var(--bg-card)' }} />}
+
+      {!isLoading && view === 'kanban' && <Kanban tasks={tasks} qc={qc} navigate={navigate} filters={filters} />}
+      {!isLoading && view === 'list' && <TaskTable tasks={tasks} navigate={navigate} />}
+
+      <TaskFormDrawer
+        open={showForm}
+        onClose={() => setShowForm(false)}
+        defaults={{ rel_type: relType || 'standalone', rel_id: relId || '' }}
+        onSaved={() => qc.invalidateQueries({ queryKey: ['tasks'] })}
+      />
+    </div>
+  )
+}
+
+/* ── Filters ──────────────────────────────────────────────────── */
+
+function FilterBar({ search, setSearch, status, setStatus, priority, setPriority, assignee, setAssignee, staff, onClear, activeFilters }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 mb-4 p-2.5 rounded-2xl"
+      style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+      <div className="relative flex-1" style={{ minWidth: 180 }}>
+        <Search size={14} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search tasks…"
+          className="w-full rounded-xl outline-none"
+          style={{ padding: '8px 12px 8px 33px', fontSize: 13, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }} />
       </div>
 
-      {isLoading && <div className="skeleton h-40 rounded-2xl" style={{ background: 'var(--border)' }} />}
+      <FilterSelect value={status} onChange={setStatus} placeholder="Any status"
+        options={Object.entries(TASK_STATUS).map(([v, m]) => ({ value: v, label: m.label, dot: m.color }))} />
+      <FilterSelect value={priority} onChange={setPriority} placeholder="Any priority"
+        options={Object.entries(TASK_PRIORITY).map(([v, c]) => ({ value: v, label: v[0].toUpperCase() + v.slice(1), dot: c }))} />
+      <FilterSelect value={assignee} onChange={setAssignee} placeholder="Anyone"
+        options={staff.map(s => ({ value: String(s.id), label: s.name }))} />
 
-      {/* Kanban */}
-      {!isLoading && view === 'kanban' && (
-        <div className="grid gap-3 md:grid-cols-5 items-start">
-          {Object.entries(TASK_STATUS).map(([key, meta]) => {
-            const col = tasks.filter(t => t.status === key)
-            return (
-              <div key={key} className="rounded-2xl border p-2.5" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
-                <div className="flex items-center gap-1.5 mb-2 px-1">
-                  <span className="w-2 h-2 rounded-full" style={{ background: meta.color }} />
-                  <span className="text-xs font-semibold" style={{ color: 'var(--text-h)' }}>{meta.label}</span>
-                  <span className="ml-auto text-[10px]" style={{ color: 'var(--text-muted)' }}>{col.length}</span>
-                </div>
-                <div className="space-y-2">
-                  {col.map(t => (
-                    <div key={t.id} className="rounded-xl p-2.5 border cursor-pointer hover:bg-white/[0.03]" style={{ borderColor: 'var(--border)', background: 'var(--bg-global)' }} onClick={() => navigate(`/app/tasks/${t.id}`)}>
-                      <div className="flex items-start gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ background: TASK_PRIORITY[t.priority] }} />
-                        <p className="text-xs flex-1" style={{ color: 'var(--text-h)' }}>{t.name}</p>
-                      </div>
-                      <select value={t.status} onClick={e => e.stopPropagation()} onChange={e => move.mutate({ id: t.id, status: e.target.value })} className="mt-2 w-full text-[10px] bg-transparent border rounded px-1 py-0.5" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
-                        {Object.entries(TASK_STATUS).map(([k, v]) => <option key={k} value={k} style={{ color: '#000' }}>{v.label}</option>)}
-                      </select>
-                    </div>
-                  ))}
-                  {col.length === 0 && <p className="text-[10px] px-1 py-2" style={{ color: 'var(--text-muted)' }}>—</p>}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {/* List */}
-      {!isLoading && view === 'list' && (
-        <div className="overflow-x-auto rounded-2xl border" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
-          <table className="w-full text-sm">
-            <thead><tr className="text-left text-[11px] uppercase tracking-wide border-b" style={{ color: 'var(--text-muted)', borderColor: 'var(--border)' }}><th className="px-4 py-3">Task</th><th className="px-4 py-3">Priority</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Linked</th><th className="px-4 py-3">Due</th></tr></thead>
-            <tbody>
-              {tasks.length === 0 && <tr><td colSpan={5} className="px-4 py-10 text-center" style={{ color: 'var(--text-muted)' }}>No tasks.</td></tr>}
-              {tasks.map(t => (
-                <tr key={t.id} onClick={() => navigate(`/app/tasks/${t.id}`)} className="border-b last:border-0 hover:bg-white/[0.03] cursor-pointer" style={{ borderColor: 'var(--border)' }}>
-                  <td className="px-4 py-3" style={{ color: 'var(--text-h)' }}>{t.name}</td>
-                  <td className="px-4 py-3"><span className="text-[10px] font-bold capitalize px-2 py-0.5 rounded-lg" style={{ background: `${TASK_PRIORITY[t.priority]}1a`, color: TASK_PRIORITY[t.priority] }}>{t.priority}</span></td>
-                  <td className="px-4 py-3"><span className="text-[10px] px-2 py-0.5 rounded-lg" style={{ background: `${TASK_STATUS[t.status].color}1a`, color: TASK_STATUS[t.status].color }}>{TASK_STATUS[t.status].label}</span></td>
-                  <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>{t.rel_type === 'standalone' ? '—' : `${t.rel_type} #${t.rel_id}`}</td>
-                  <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>{t.due_date ? new Date(t.due_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Create drawer */}
-      {showForm && (
-        <div className="fixed inset-0 z-50 flex justify-end" style={{ background: 'rgba(0,0,0,0.5)' }} onClick={() => setShowForm(false)}>
-          <div className="w-full max-w-md h-full overflow-y-auto p-5" style={{ background: 'var(--bg-global)' }} onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4"><h2 className="font-bold" style={{ color: 'var(--text-h)' }}>New Task</h2><button onClick={() => setShowForm(false)}><X size={18} style={{ color: 'var(--text-muted)' }} /></button></div>
-            <div className="space-y-3">
-              <F label="Name *"><input value={form.name} onChange={e => sf('name', e.target.value)} className={inp} /></F>
-              <F label="Description"><textarea value={form.description} onChange={e => sf('description', e.target.value)} rows={2} className={inp} /></F>
-              <div className="grid grid-cols-2 gap-3">
-                <F label="Priority"><select value={form.priority} onChange={e => sf('priority', e.target.value)} className={inp}>{Object.keys(TASK_PRIORITY).map(p => <option key={p} value={p}>{p}</option>)}</select></F>
-                <F label="Due date"><input type="date" value={form.due_date} onChange={e => sf('due_date', e.target.value)} className={inp} /></F>
-              </div>
-              <F label="Start date *"><input type="date" value={form.start_date} onChange={e => sf('start_date', e.target.value)} className={inp} /></F>
-              <div className="grid grid-cols-2 gap-3">
-                <F label="Linked to"><select value={form.rel_type} onChange={e => sf('rel_type', e.target.value)} className={inp}><option value="standalone">Standalone</option><option value="project">Project</option><option value="ticket">Ticket</option><option value="customer">Customer</option></select></F>
-                {form.rel_type !== 'standalone' && <F label={`${form.rel_type} id`}><input value={form.rel_id} onChange={e => sf('rel_id', e.target.value)} className={inp} /></F>}
-              </div>
-              {create.isError && <p className="text-xs text-red-400">{create.error?.message}</p>}
-              <button disabled={!form.name || create.isPending} onClick={() => create.mutate()} className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40" style={{ background: 'linear-gradient(135deg,#ec4899,#be185d)', color: '#fff' }}>{create.isPending ? 'Creating…' : 'Create Task'}</button>
-            </div>
-          </div>
-        </div>
+      {activeFilters > 0 && (
+        <button onClick={onClear} className="text-xs font-semibold px-3 py-2 rounded-xl"
+          style={{ color: 'var(--color-danger-500)', border: '1px solid var(--border)' }}>Clear</button>
       )}
     </div>
   )
 }
 
-const inp = 'w-full text-sm bg-transparent border rounded-lg px-3 py-2 outline-none'
-function F({ label, children }) {
-  return <label className="block"><span className="text-[11px] font-semibold uppercase tracking-wide block mb-1" style={{ color: 'var(--text-muted)' }}>{label}</span><span className="[&_input]:border-[color:var(--border)] [&_select]:border-[color:var(--border)] [&_textarea]:border-[color:var(--border)] [&_*]:text-[color:var(--text-h)]">{children}</span></label>
+function FilterSelect({ value, onChange, options, placeholder }) {
+  return (
+    <div style={{ minWidth: 132 }}>
+      <Select size="sm" value={value} onChange={onChange} placeholder={placeholder}
+        options={[{ value: '', label: placeholder }, ...options]} />
+    </div>
+  )
+}
+
+/* ── Kanban with drag & drop ──────────────────────────────────── */
+
+function Kanban({ tasks, qc, navigate, filters }) {
+  // Local mirror so a drag repaints instantly; re-synced whenever the server list changes.
+  const [board, setBoard] = useState({})
+  const [dragId, setDragId] = useState(null)
+  const [over, setOver] = useState(null)   // { status, index }
+
+  useEffect(() => {
+    const next = {}
+    STATUS_KEYS.forEach(k => {
+      next[k] = tasks.filter(t => t.status === k).sort((a, b) => (a.kanban_order ?? 0) - (b.kanban_order ?? 0))
+    })
+    setBoard(next)
+  }, [tasks])
+
+  const reorder = useMutation({
+    mutationFn: ({ status, ids }) => taskApi.reorder(status, ids),
+    onSettled: () => qc.invalidateQueries({ queryKey: ['tasks'] }),
+  })
+
+  const drop = (toStatus, toIndex) => {
+    const id = dragId
+    setDragId(null); setOver(null)
+    if (!id) return
+
+    const from = STATUS_KEYS.find(k => (board[k] || []).some(t => t.id === id))
+    if (!from) return
+    const card = board[from].find(t => t.id === id)
+    const sameCol = from === toStatus
+    const curIndex = board[from].findIndex(t => t.id === id)
+    if (sameCol && (toIndex === curIndex || toIndex === curIndex + 1)) return
+
+    const source = board[from].filter(t => t.id !== id)
+    const target = sameCol ? source : [...(board[toStatus] || [])]
+    // Removing from earlier in the same column shifts the insert point left by one.
+    const at = sameCol && curIndex < toIndex ? toIndex - 1 : toIndex
+    target.splice(Math.max(0, Math.min(at, target.length)), 0, { ...card, status: toStatus })
+
+    const next = { ...board, [toStatus]: target }
+    if (!sameCol) next[from] = source
+    setBoard(next)
+
+    reorder.mutate({ status: toStatus, ids: target.map(t => t.id) })
+    if (!sameCol && source.length) reorder.mutate({ status: from, ids: source.map(t => t.id) })
+  }
+
+  return (
+    <div className="grid gap-3 items-start" style={{ gridTemplateColumns: `repeat(${STATUS_KEYS.length}, minmax(150px, 1fr))` }}>
+      {STATUS_KEYS.map(key => {
+        const meta = TASK_STATUS[key]
+        const col = board[key] || []
+        const isOverCol = over?.status === key
+        return (
+          <section key={key} className="rounded-2xl p-2.5 transition-colors"
+            style={{
+              border: `1px solid ${isOverCol ? meta.color : 'var(--border)'}`,
+              background: isOverCol ? `color-mix(in srgb, ${meta.color} 6%, var(--bg-card))` : 'var(--bg-card)',
+              minHeight: 120,
+            }}
+            onDragOver={e => { e.preventDefault(); if (!over || over.status !== key) setOver({ status: key, index: col.length }) }}
+            onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setOver(o => (o?.status === key ? null : o)) }}
+            onDrop={e => { e.preventDefault(); drop(key, over?.status === key ? over.index : col.length) }}
+          >
+            <div className="flex items-center gap-1.5 mb-2 px-1">
+              <span className="w-2 h-2 rounded-full" style={{ background: meta.color }} />
+              <span className="text-xs font-bold" style={{ color: 'var(--text-h)' }}>{meta.label}</span>
+              <span className="ml-auto text-[10px] font-bold px-1.5 rounded-md"
+                style={{ background: 'var(--bg-input)', color: 'var(--text-muted)' }}>{col.length}</span>
+            </div>
+
+            <div className="space-y-2">
+              {col.map((t, i) => (
+                <div key={t.id}>
+                  {isOverCol && over.index === i && <DropLine color={meta.color} />}
+                  <TaskCard task={t} dragging={dragId === t.id}
+                    onDragStart={() => setDragId(t.id)}
+                    onDragEnd={() => { setDragId(null); setOver(null) }}
+                    onDragOver={e => {
+                      e.preventDefault(); e.stopPropagation()
+                      const r = e.currentTarget.getBoundingClientRect()
+                      setOver({ status: key, index: e.clientY < r.top + r.height / 2 ? i : i + 1 })
+                    }}
+                    onClick={() => navigate(`/app/tasks/${t.id}`)} />
+                </div>
+              ))}
+              {isOverCol && over.index >= col.length && <DropLine color={meta.color} />}
+              {col.length === 0 && !isOverCol && (
+                <p className="text-[10px] text-center py-4" style={{ color: 'var(--text-muted)', opacity: 0.6 }}>Drop here</p>
+              )}
+            </div>
+          </section>
+        )
+      })}
+    </div>
+  )
+}
+
+const DropLine = ({ color }) => (
+  <div className="rounded-full mb-2" style={{ height: 2, background: color, boxShadow: `0 0 6px ${color}` }} />
+)
+
+function TaskCard({ task, dragging, onClick, ...dnd }) {
+  const link = relLabel(task)
+  const overdue = task.due_date && task.status !== 'complete' && new Date(task.due_date) < new Date().setHours(0, 0, 0, 0)
+  return (
+    <article draggable onClick={onClick} {...dnd}
+      className="rounded-xl p-2.5 cursor-grab active:cursor-grabbing transition-opacity"
+      style={{
+        border: '1px solid var(--border)',
+        background: 'var(--bg-global)',
+        opacity: dragging ? 0.4 : 1,
+      }}>
+      <div className="flex items-start gap-1.5">
+        <span className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ background: TASK_PRIORITY[task.priority] || 'var(--text-muted)' }} />
+        <p className="text-xs leading-snug flex-1" style={{ color: 'var(--text-h)' }}>{task.name}</p>
+      </div>
+      {(link || task.due_date) && (
+        <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+          {link && (
+            <span className="text-[9px] px-1.5 py-0.5 rounded-md truncate" style={{ maxWidth: 110, background: 'var(--bg-input)', color: 'var(--text-muted)' }}>
+              {link}
+            </span>
+          )}
+          {task.due_date && (
+            <span className="text-[9px] px-1.5 py-0.5 rounded-md"
+              style={{
+                background: overdue ? 'color-mix(in srgb, var(--color-danger-500) 15%, transparent)' : 'var(--bg-input)',
+                color: overdue ? 'var(--color-danger-500)' : 'var(--text-muted)',
+              }}>
+              {new Date(task.due_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+            </span>
+          )}
+        </div>
+      )}
+    </article>
+  )
+}
+
+/* ── List view ────────────────────────────────────────────────── */
+
+function TaskTable({ tasks, navigate }) {
+  if (!tasks.length) {
+    return (
+      <div className="rounded-2xl py-16 text-center" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No tasks match these filters.</p>
+      </div>
+    )
+  }
+  return (
+    <div className="overflow-x-auto rounded-2xl" style={{ border: '1px solid var(--border)', background: 'var(--bg-card)' }}>
+      <table className="w-full text-sm" style={{ minWidth: 640 }}>
+        <thead>
+          <tr className="text-left text-[11px] uppercase tracking-wide" style={{ color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>
+            <th className="px-4 py-3 font-bold">Task</th>
+            <th className="px-4 py-3 font-bold">Priority</th>
+            <th className="px-4 py-3 font-bold">Status</th>
+            <th className="px-4 py-3 font-bold">Linked</th>
+            <th className="px-4 py-3 font-bold">Due</th>
+          </tr>
+        </thead>
+        <tbody>
+          {tasks.map(t => {
+            // Guarded: an unrecognised status/priority from the server used to
+            // throw on .color and white-screen the page.
+            const st = TASK_STATUS[t.status] || { label: t.status, color: 'var(--text-muted)' }
+            const pr = TASK_PRIORITY[t.priority] || 'var(--text-muted)'
+            return (
+              <tr key={t.id} onClick={() => navigate(`/app/tasks/${t.id}`)} className="cursor-pointer"
+                style={{ borderBottom: '1px solid var(--border)' }}
+                onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-input)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                <td className="px-4 py-3" style={{ color: 'var(--text-h)' }}>{t.name}</td>
+                <td className="px-4 py-3">
+                  <span className="text-[10px] font-bold capitalize px-2 py-0.5 rounded-lg"
+                    style={{ background: `color-mix(in srgb, ${pr} 15%, transparent)`, color: pr }}>{t.priority}</span>
+                </td>
+                <td className="px-4 py-3">
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg"
+                    style={{ background: `color-mix(in srgb, ${st.color} 15%, transparent)`, color: st.color }}>{st.label}</span>
+                </td>
+                <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>{relLabel(t) || '—'}</td>
+                <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>
+                  {t.due_date ? new Date(t.due_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—'}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
 }

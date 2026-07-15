@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Task;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class UpdateTaskRequest extends FormRequest
 {
@@ -13,6 +14,8 @@ class UpdateTaskRequest extends FormRequest
 
     public function rules(): array
     {
+        $tenantId = $this->user()->tenant_id;
+
         return [
             'name'              => 'sometimes|required|string|max:255',
             'description'       => 'nullable|string',
@@ -20,13 +23,20 @@ class UpdateTaskRequest extends FormRequest
             'status'            => 'sometimes|in:not_started,in_progress,awaiting_feedback,testing,complete',
             'start_date'        => 'sometimes|required|date',
             'due_date'          => 'nullable|date',
-            'milestone_id'      => 'nullable|integer|exists:project_milestones,id',
+            'rel_type'          => 'sometimes|in:project,ticket,customer,standalone',
+            'rel_id'            => 'nullable|integer|min:1|required_if:rel_type,project,ticket,customer',
+            // Tenant-scoped: a bare exists: lets one workspace attach to another's milestone.
+            'milestone_id'      => ['nullable', 'integer', Rule::exists('project_milestones', 'id')->where('tenant_id', $tenantId)],
             'billable'          => 'nullable|boolean',
             'billed'            => 'nullable|boolean',
             'hourly_rate'       => 'nullable|numeric|min:0',
             'is_public'         => 'nullable|boolean',
             'visible_to_client' => 'nullable|boolean',
             'kanban_order'      => 'nullable|integer|min:0',
+            'recurring'         => 'nullable|boolean',
+            'recurring_type'    => 'nullable|required_if:recurring,true|in:day,week,month,year',
+            'repeat_every'      => 'nullable|required_if:recurring,true|integer|min:1|max:365',
+            'cycles'            => 'nullable|integer|min:0|max:1000',
         ];
     }
 }

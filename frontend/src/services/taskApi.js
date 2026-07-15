@@ -14,6 +14,9 @@ export const taskApi = {
   update: (id, data) => api.put(`/tasks/${id}`, data).then(unwrap).catch(handleErr),
   remove: (id) => api.delete(`/tasks/${id}`).then(unwrap).catch(handleErr),
   setStatus: (id, status) => api.patch(`/tasks/${id}/status`, { status }).then(unwrap).catch(handleErr),
+  // Persists a kanban column order after a drag; also applies cross-column moves.
+  reorder: (status, ordered_ids) => api.post('/tasks/reorder', { status, ordered_ids }).then(unwrap).catch(handleErr),
+  staff: () => api.get('/tasks/staff').then(unwrap).catch(handleErr),
 
   // Step 4 sub-features
   assignees: (id, user_ids) => api.post(`/tasks/${id}/assignees`, { user_ids }).then(unwrap).catch(handleErr),
@@ -27,18 +30,87 @@ export const taskApi = {
   stopTimer: (id) => api.post(`/tasks/${id}/timer/stop`).then(unwrap).catch(handleErr),
   totalTime: (id) => api.get(`/tasks/${id}/total-time`).then(unwrap).catch(handleErr),
   billable: (params = {}) => api.get('/tasks/billable', { params }).then(unwrap).catch(handleErr),
+
+  copy: (id, opts = {}) => api.post(`/tasks/${id}/copy`, opts).then(unwrap).catch(handleErr),
+
+  // Attachments — files live on a private disk; downloads are authenticated,
+  // so they're fetched as a blob rather than linked to directly.
+  files: (id) => api.get(`/tasks/${id}/files`).then(unwrap).catch(handleErr),
+  uploadFiles: (id, fileList) => {
+    const fd = new FormData()
+    Array.from(fileList).forEach(f => fd.append('files[]', f))
+    return api.post(`/tasks/${id}/files`, fd).then(unwrap).catch(handleErr)
+  },
+  deleteFile: (id, fileId) => api.delete(`/tasks/${id}/files/${fileId}`).then(unwrap).catch(handleErr),
+  downloadFile: async (id, fileId, filename) => {
+    const res = await api.get(`/tasks/${id}/files/${fileId}/download`, { responseType: 'blob' }).catch(handleErr)
+    const url = URL.createObjectURL(res.data)
+    const a = document.createElement('a')
+    a.href = url; a.download = filename || 'download'
+    document.body.appendChild(a); a.click(); a.remove()
+    URL.revokeObjectURL(url)
+  },
+
+  // Reminders
+  reminders: (id) => api.get(`/tasks/${id}/reminders`).then(unwrap).catch(handleErr),
+  addReminder: (id, data) => api.post(`/tasks/${id}/reminders`, data).then(unwrap).catch(handleErr),
+  deleteReminder: (id, rid) => api.delete(`/tasks/${id}/reminders/${rid}`).then(unwrap).catch(handleErr),
+
+  // Reusable checklist templates
+  templates: () => api.get('/tasks/templates').then(unwrap).catch(handleErr),
+  createTemplate: (data) => api.post('/tasks/templates', data).then(unwrap).catch(handleErr),
+  deleteTemplate: (tid) => api.delete(`/tasks/templates/${tid}`).then(unwrap).catch(handleErr),
+  applyTemplate: (id, template_id) => api.post(`/tasks/${id}/checklist/apply-template`, { template_id }).then(unwrap).catch(handleErr),
+  saveChecklistAsTemplate: (id, name) => api.post(`/tasks/${id}/checklist/save-template`, { name }).then(unwrap).catch(handleErr),
 }
 
-// Shared status metadata (list + kanban).
+export const RECURRING_TYPES = [
+  { value: 'day', label: 'Day' }, { value: 'week', label: 'Week' },
+  { value: 'month', label: 'Month' }, { value: 'year', label: 'Year' },
+]
+
+export const fmtBytes = (b = 0) => {
+  if (b < 1024) return `${b} B`
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(0)} KB`
+  return `${(b / 1024 / 1024).toFixed(1)} MB`
+}
+
+// Shared status metadata (list + kanban). Token-driven so both themes work.
 export const TASK_STATUS = {
-  not_started:       { label: 'Not Started',  color: '#94a3b8' },
-  in_progress:       { label: 'In Progress',  color: '#3b82f6' },
-  awaiting_feedback: { label: 'Awaiting Feedback', color: '#a78bfa' },
-  testing:           { label: 'Testing',      color: '#fbbf24' },
-  complete:          { label: 'Complete',     color: '#10b981' },
+  not_started:       { label: 'Not Started',       color: 'var(--text-muted)' },
+  in_progress:       { label: 'In Progress',       color: 'var(--color-info-500)' },
+  awaiting_feedback: { label: 'Awaiting Feedback', color: 'var(--color-primary-400)' },
+  testing:           { label: 'Testing',           color: 'var(--color-warning-500)' },
+  complete:          { label: 'Complete',          color: 'var(--color-success-500)' },
 }
 export const TASK_PRIORITY = {
-  urgent: '#ef4444', high: '#f87171', medium: '#fbbf24', low: '#10b981',
+  urgent: 'var(--color-danger-500)',
+  high:   'var(--color-warning-600)',
+  medium: 'var(--color-warning-500)',
+  low:    'var(--color-success-500)',
+}
+
+/** Module accent — Tasks rides the app's primary purple (was a hardcoded pink). */
+export const TASK_ACCENT = 'var(--color-primary-500)'
+
+export const REL_TYPES = [
+  { value: 'standalone', label: 'Standalone' },
+  { value: 'project',    label: 'Project' },
+  { value: 'ticket',     label: 'Ticket' },
+  { value: 'customer',   label: 'Customer' },
+]
+
+/** Human label for a task's link, using the server-resolved rel_label. */
+export const relLabel = (t) =>
+  !t || t.rel_type === 'standalone' || !t.rel_id
+    ? null
+    : t.rel_label || `${t.rel_type} #${t.rel_id}`
+
+export const fmtDuration = (secs = 0) => {
+  const s = Math.max(0, Math.floor(secs))
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  return h ? `${h}h ${m}m` : `${m}m`
 }
 
 export default taskApi

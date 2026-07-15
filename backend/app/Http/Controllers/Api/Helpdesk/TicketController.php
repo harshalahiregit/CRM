@@ -136,18 +136,17 @@ class TicketController extends Controller
         // Ensure the ticket exists in this tenant before linking a task to it.
         $this->helpdesk->showTicket($ticket, $tenantId);
 
+        // assignee_ids is handled inside TaskService::create, which notifies the
+        // assignee — converting a ticket to a task must not assign work silently.
         $task = $this->tasks->create([
-            'name'       => $data['name'],
-            'priority'   => $data['priority'] ?? 'medium',
-            'due_date'   => $data['due_date'] ?? null,
-            'start_date' => now()->toDateString(),
-            'rel_type'   => 'ticket',
-            'rel_id'     => $ticket,
+            'name'         => $data['name'],
+            'priority'     => $data['priority'] ?? 'medium',
+            'due_date'     => $data['due_date'] ?? null,
+            'start_date'   => now()->toDateString(),
+            'rel_type'     => 'ticket',
+            'rel_id'       => $ticket,
+            'assignee_ids' => array_filter([$data['assigned_to'] ?? null]),
         ], $tenantId, $request->user()->id);
-
-        if (! empty($data['assigned_to'])) {
-            $this->tasks->syncAssignees($task->id, [$data['assigned_to']], $tenantId);
-        }
 
         return $this->success($task, 'Task created from ticket', 201);
     }
@@ -168,19 +167,15 @@ class TicketController extends Controller
 
         $created = [];
         foreach ($data['tasks'] as $row) {
-            $task = $this->tasks->create([
-                'name'       => $row['name'],
-                'priority'   => $row['priority'] ?? 'medium',
-                'due_date'   => $row['due_date'] ?? null,
-                'start_date' => now()->toDateString(),
-                'rel_type'   => 'ticket',
-                'rel_id'     => $ticket,
+            $created[] = $this->tasks->create([
+                'name'         => $row['name'],
+                'priority'     => $row['priority'] ?? 'medium',
+                'due_date'     => $row['due_date'] ?? null,
+                'start_date'   => now()->toDateString(),
+                'rel_type'     => 'ticket',
+                'rel_id'       => $ticket,
+                'assignee_ids' => array_filter([$row['assigned_to'] ?? null]),
             ], $tenantId, $request->user()->id);
-
-            if (! empty($row['assigned_to'])) {
-                $this->tasks->syncAssignees($task->id, [$row['assigned_to']], $tenantId);
-            }
-            $created[] = $task;
         }
 
         return $this->success($created, count($created).' tasks created from ticket', 201);

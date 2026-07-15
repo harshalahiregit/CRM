@@ -18,18 +18,26 @@ class Task extends Model
         'start_date', 'due_date', 'date_finished', 'rel_type', 'rel_id',
         'milestone_id', 'billable', 'billed', 'hourly_rate',
         'is_public', 'visible_to_client', 'kanban_order', 'created_by',
+        'recurring', 'recurring_type', 'repeat_every', 'cycles', 'total_cycles',
+        'last_recurring_date', 'is_recurring_from', 'deadline_notified',
     ];
 
     protected $casts = [
-        'start_date'        => 'date',
-        'due_date'          => 'date',
-        'date_finished'     => 'datetime',
-        'billable'          => 'boolean',
-        'billed'            => 'boolean',
-        'is_public'         => 'boolean',
-        'visible_to_client' => 'boolean',
-        'kanban_order'      => 'integer',
-        'hourly_rate'       => 'decimal:2',
+        'start_date'          => 'date',
+        'due_date'            => 'date',
+        'date_finished'       => 'datetime',
+        'billable'            => 'boolean',
+        'billed'              => 'boolean',
+        'is_public'           => 'boolean',
+        'visible_to_client'   => 'boolean',
+        'kanban_order'        => 'integer',
+        'hourly_rate'         => 'decimal:2',
+        'recurring'           => 'boolean',
+        'repeat_every'        => 'integer',
+        'cycles'              => 'integer',
+        'total_cycles'        => 'integer',
+        'last_recurring_date' => 'date',
+        'deadline_notified'   => 'boolean',
     ];
 
     /* ── Relationships ──────────────────────────────────────────── */
@@ -66,6 +74,22 @@ class Task extends Model
     public function timers()
     {
         return $this->hasMany(TaskTimer::class);
+    }
+
+    public function files()
+    {
+        return $this->hasMany(TaskFile::class)->latest();
+    }
+
+    public function reminders()
+    {
+        return $this->hasMany(TaskReminder::class)->orderBy('remind_at');
+    }
+
+    /** The recurring template this task was auto-created from, if any. */
+    public function recurringParent()
+    {
+        return $this->belongsTo(self::class, 'is_recurring_from');
     }
 
     // rel_id is polymorphic (project|ticket|customer) — resolved by the service,

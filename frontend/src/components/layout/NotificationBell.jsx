@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Bell, CheckCheck, Ticket, RefreshCw, MessageSquare, Inbox, TicketPlus } from 'lucide-react'
+import { Bell, CheckCheck, Ticket, RefreshCw, MessageSquare, Inbox, TicketPlus, CheckSquare, AtSign, Eye, Activity, AlarmClock } from 'lucide-react'
 import { notificationApi } from '@/services/notificationApi'
 
 /**
@@ -17,6 +17,14 @@ const ICONS = {
   'ticket.assigned':         { icon: Ticket,         color: 'var(--color-primary-500)' },
   'ticket.reopened':         { icon: RefreshCw,      color: 'var(--color-warning-500)' },
   'ticket.customer_replied': { icon: MessageSquare,  color: 'var(--color-support-500)' },
+  'task.assigned':           { icon: CheckSquare,    color: 'var(--color-primary-500)' },
+  'task.follower_added':     { icon: Eye,            color: 'var(--text-muted)' },
+  'task.commented':          { icon: MessageSquare,  color: 'var(--color-support-500)' },
+  'task.mentioned':          { icon: AtSign,         color: 'var(--color-warning-500)' },
+  'task.status_changed':     { icon: Activity,       color: 'var(--color-info-500)' },
+  'task.due_soon':           { icon: AlarmClock,     color: 'var(--color-warning-500)' },
+  'task.overdue':            { icon: AlarmClock,     color: 'var(--color-danger-500)' },
+  'task.reminder':           { icon: AlarmClock,     color: 'var(--color-primary-500)' },
 }
 
 const timeAgo = (ts) => {

@@ -49,17 +49,49 @@ class TaskController extends Controller
 
     public function updateStatus(UpdateTaskStatusRequest $request, int $task)
     {
-        return $this->success($this->tasks->changeStatus($task, $request->validated('status'), $request->user()->tenant_id), 'Status updated');
+        return $this->success($this->tasks->changeStatus($task, $request->validated('status'), $request->user()->tenant_id, $request->user()->id), 'Status updated');
     }
 
     public function assignees(SyncTaskUsersRequest $request, int $task)
     {
-        return $this->success($this->tasks->syncAssignees($task, $request->validated('user_ids'), $request->user()->tenant_id), 'Assignees updated');
+        return $this->success($this->tasks->syncAssignees($task, $request->validated('user_ids'), $request->user()->tenant_id, $request->user()->id), 'Assignees updated');
     }
 
     public function followers(SyncTaskUsersRequest $request, int $task)
     {
-        return $this->success($this->tasks->syncFollowers($task, $request->validated('user_ids'), $request->user()->tenant_id), 'Followers updated');
+        return $this->success($this->tasks->syncFollowers($task, $request->validated('user_ids'), $request->user()->tenant_id, $request->user()->id), 'Followers updated');
+    }
+
+    /** Clone a task. Assignees/followers/checklist are opt-in; history never copies. */
+    public function copy(Request $request, int $task)
+    {
+        $opts = $request->validate([
+            'name'           => 'nullable|string|max:255',
+            'status'         => 'nullable|in:not_started,in_progress,awaiting_feedback,testing,complete',
+            'start_date'     => 'nullable|date',
+            'due_date'       => 'nullable|date',
+            'copy_checklist' => 'nullable|boolean',
+            'copy_assignees' => 'nullable|boolean',
+            'copy_followers' => 'nullable|boolean',
+        ]);
+
+        $copy = $this->tasks->copy($task, $opts, $request->user()->tenant_id, $request->user()->id);
+
+        return $this->success($copy, 'Task copied', 201);
+    }
+
+    /** Persist a kanban column order after a drag (also applies cross-column moves). */
+    public function reorder(Request $request)
+    {
+        $data = $request->validate([
+            'status'        => 'required|in:not_started,in_progress,awaiting_feedback,testing,complete',
+            'ordered_ids'   => 'present|array|max:500',
+            'ordered_ids.*' => 'integer|min:1',
+        ]);
+
+        $count = $this->tasks->reorder($data['ordered_ids'], $data['status'], $request->user()->tenant_id, $request->user()->id);
+
+        return $this->success(['reordered' => $count], 'Board updated');
     }
 
     /** Billable, unbilled tasks — optionally filtered by rel_id / customer_id. */
