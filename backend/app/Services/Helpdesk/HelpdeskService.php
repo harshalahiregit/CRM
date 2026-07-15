@@ -28,6 +28,7 @@ class HelpdeskService
         private TicketRepository $tickets,
         private SlaService $sla,
         private HelpdeskMailService $mail,
+        private \App\Services\NotificationService $notifications,
         ?CustomerServiceContract $customers = null,
     ) {
         $this->customers = $customers ?? new MockCustomerService();
@@ -148,6 +149,8 @@ class HelpdeskService
     {
         $ticket = $this->findTicket($ticketId, $tenantId);
         $attachments = $data['attachments'] ?? [];
+        // Captured before the write — the transaction may auto-reopen the ticket.
+        $wasClosed = $ticket->status === 'closed';
 
         $reply = DB::transaction(function () use ($ticket, $data, $attachments, $tenantId) {
             $reply = TicketReply::create([
@@ -187,13 +190,30 @@ class HelpdeskService
             return $reply->load('attachments');
         });
 
-        // A staff reply is delivered to the customer as email (after the write
-        // commits). Client-origin replies (portal/inbound) are not echoed back.
+        $fresh = $ticket->fresh();
+
         if ($data['sender_type'] !== 'client') {
+            // A staff reply is delivered to the customer as email (after the write
+            // commits). Client-origin replies (portal/inbound) are not echoed back.
             $agentName = ! empty($data['sender_id'])
                 ? (\App\Models\User::find($data['sender_id'])?->name ?? 'Support')
                 : 'Support';
-            $this->mail->sendStaffReply($ticket->fresh(), $reply, $agentName);
+            $this->mail->sendStaffReply($fresh, $reply, $agentName);
+        } else {
+            // A customer wrote in — tell whoever owns the ticket. If the reply
+            // reopened a closed ticket, say so: that's the part an agent must not
+            // miss (it moved back onto their queue).
+            $reopened = $wasClosed && $fresh->status !== 'closed';
+            $this->notifications->notify(
+                userId: $fresh->assigned_to,
+                tenantId: $tenantId,
+                type: $reopened ? 'ticket.reopened' : 'ticket.customer_replied',
+                title: $reopened
+                    ? "Ticket #{$fresh->id} reopened by the customer"
+                    : "New customer reply on ticket #{$fresh->id}",
+                message: $data['message'] ?? $fresh->subject,
+                link: "/app/helpdesk/tickets/{$fresh->id}",
+            );
         }
 
         return $reply;

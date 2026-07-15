@@ -18,6 +18,7 @@ class TicketAssignmentService
     public function __construct(
         private TicketRepository $tickets,
         private HelpdeskMailService $mail,
+        private \App\Services\NotificationService $notifications,
     ) {
     }
 
@@ -47,9 +48,19 @@ class TicketAssignmentService
             'ticket' => $ticket->id, 'assigned_to' => $userId, 'tenant' => $tenantId,
         ]);
 
-        // Notify the newly-assigned agent by email (skip re-assign to the same user).
+        // Notify the newly-assigned agent (skip re-assign to the same user).
         if ($userId !== null && $userId !== $previous) {
-            $this->mail->sendAssignment($ticket->fresh(), $userId);
+            $fresh = $ticket->fresh();
+            $this->mail->sendAssignment($fresh, $userId);
+            $this->notifications->notify(
+                userId: $userId,
+                tenantId: $tenantId,
+                type: 'ticket.assigned',
+                title: "Ticket #{$fresh->id} assigned to you",
+                message: $fresh->subject,
+                link: "/app/helpdesk/tickets/{$fresh->id}",
+                actorId: auth()->id(),
+            );
         }
 
         return $ticket->fresh('assignee');
