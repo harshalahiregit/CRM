@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Bell, CheckCheck, Ticket, RefreshCw, MessageSquare, Inbox } from 'lucide-react'
+import { Bell, CheckCheck, Ticket, RefreshCw, MessageSquare, Inbox, TicketPlus } from 'lucide-react'
 import { notificationApi } from '@/services/notificationApi'
 
 /**
@@ -13,6 +13,7 @@ import { notificationApi } from '@/services/notificationApi'
  */
 
 const ICONS = {
+  'ticket.created':          { icon: TicketPlus,     color: 'var(--color-success-500)' },
   'ticket.assigned':         { icon: Ticket,         color: 'var(--color-primary-500)' },
   'ticket.reopened':         { icon: RefreshCw,      color: 'var(--color-warning-500)' },
   'ticket.customer_replied': { icon: MessageSquare,  color: 'var(--color-support-500)' },

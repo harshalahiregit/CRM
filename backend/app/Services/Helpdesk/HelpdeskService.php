@@ -76,7 +76,52 @@ class HelpdeskService
         // Acknowledge the requester with their ticket number (email threading on).
         $this->mail->sendAcknowledgement($ticket);
 
+        // ...and put it in front of the people who allocate work. A raised ticket
+        // that notifies nobody just sits there until someone happens to look at
+        // the list — the whole point of the ticket-manager step is that the team
+        // is told, with the number, the moment it arrives.
+        $this->notifyTicketManagers($ticket);
+
+        // Raised with an assignee already set? That person owns it now.
+        if ($ticket->assigned_to) {
+            $this->notifications->notify(
+                userId: $ticket->assigned_to,
+                tenantId: $tenantId,
+                type: 'ticket.assigned',
+                title: "Ticket #{$ticket->id} assigned to you",
+                message: $ticket->subject,
+                link: "/app/helpdesk/tickets/{$ticket->id}",
+                actorId: auth()->id(),
+            );
+        }
+
         return $this->decorateWithCustomer($ticket->fresh('assignee'), $tenantId);
+    }
+
+    /**
+     * Notify everyone who triages incoming tickets. Admins are the ticket
+     * managers here — there is no dedicated ticket-manager role in the system,
+     * and admins are the only non-external role with an allocation remit.
+     * Skips the raiser (notify() drops self-notification).
+     */
+    private function notifyTicketManagers(Ticket $ticket): void
+    {
+        $managerIds = \App\Models\User::where('tenant_id', $ticket->tenant_id)
+            ->where('status', 'active')
+            ->where('role', 'admin')
+            ->pluck('id');
+
+        foreach ($managerIds as $uid) {
+            $this->notifications->notify(
+                userId: (int) $uid,
+                tenantId: $ticket->tenant_id,
+                type: 'ticket.created',
+                title: "New ticket #{$ticket->id} — needs assignment",
+                message: $ticket->subject,
+                link: "/app/helpdesk/tickets/{$ticket->id}",
+                actorId: auth()->id(),
+            );
+        }
     }
 
     public function updateTicket(int $ticketId, array $data, int $tenantId): Ticket
