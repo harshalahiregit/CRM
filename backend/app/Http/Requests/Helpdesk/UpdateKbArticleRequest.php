@@ -19,6 +19,8 @@ class UpdateKbArticleRequest extends FormRequest
             'title'          => 'sometimes|required|string|max:255',
             'excerpt'        => 'nullable|string|max:500',
             'content'        => 'sometimes|required|string',
+            'tags'           => 'nullable|array|max:12',
+            'tags.*'         => 'string|max:40',
         ];
     }
 }

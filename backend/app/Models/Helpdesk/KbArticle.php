@@ -14,7 +14,7 @@ class KbArticle extends Model
 
     protected $fillable = [
         'tenant_id', 'category_id', 'subcategory_id', 'department_id', 'title', 'excerpt',
-        'content', 'is_published', 'public_slug', 'published_at',
+        'content', 'is_published', 'public_slug', 'published_at', 'tags',
         'thumbs_up', 'thumbs_down',
     ];
 
@@ -23,6 +23,7 @@ class KbArticle extends Model
         'published_at' => 'datetime',
         'thumbs_up'    => 'integer',
         'thumbs_down'  => 'integer',
+        'tags'         => 'array',
     ];
 
     /* ── Scopes ─────────────────────────────────────────────────── */

@@ -10,6 +10,7 @@ import { helpdeskApi } from '@/services/helpdeskApi'
 import { useAuth } from '@/context/AuthContext'
 import SLABadge from '../components/ui/SLABadge'
 import SlaTimer from '../components/ui/SlaTimer'
+import Select from '../components/ui/Select'
 
 /* ───────────────────────────────────────────────────────────────
    Universal Data Grid — Ticket inbox (SDS "Nova" flagship component).
@@ -230,11 +231,15 @@ export default function TicketGrid() {
           <div className="flex items-center gap-2 px-4 py-2.5 flex-wrap" style={{ background: 'var(--bg-input)', borderBottom: '1px solid var(--border)' }}>
             <span className="text-xs font-bold" style={{ color: ACCENT }}>{selected.size} selected</span>
             <div className="flex-1" />
-            <select onChange={e => e.target.value && bulk.mutate({ action: 'status', value: e.target.value })} value=""
-              className="text-xs rounded-lg px-2 py-1.5 outline-none" style={{ border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-h)' }}>
-              <option value="">Set status…</option>
-              {(settings?.statuses || []).map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-            </select>
+            <Select
+              value=""
+              onChange={v => v && bulk.mutate({ action: 'status', value: v })}
+              options={(settings?.statuses || []).map(s => ({ value: s.name, label: s.name, dot: s.color }))}
+              placeholder="Set status…"
+              size="sm"
+              className="w-36"
+              ariaLabel="Set status for selected tickets"
+            />
             {user?.id && <BulkBtn icon={UserCheck} label="Assign to me" onClick={() => bulk.mutate({ action: 'assign', value: user.id })} />}
             <BulkBtn icon={Trash2} label="Delete" danger onClick={() => bulk.mutate({ action: 'delete' })} />
             <button onClick={() => setSelected(new Set())} className="text-xs font-semibold px-2" style={{ color: 'var(--text-muted)' }}>Clear</button>
@@ -311,11 +316,23 @@ export default function TicketGrid() {
                         {c.key === 'requester' && (t.requester_name || <span style={{ color: 'var(--text-muted)' }}>—</span>)}
                         {c.key === 'department' && deptName(t.department_id)}
                         {c.key === 'status' && (
-                          <select value={t.status} onChange={e => rowStatus.mutate({ id: t.id, status: e.target.value })}
-                            className="text-xs font-bold capitalize rounded-full px-2.5 py-1 outline-none cursor-pointer"
-                            style={{ color: sColor, background: `${sColor}18`, border: `1px solid ${sColor}30` }}>
-                            {(settings?.statuses || [{ id: 0, name: t.status }]).map(s => <option key={s.id} value={s.name} style={{ color: 'var(--text-h)', background: 'var(--bg-card)' }}>{s.name}</option>)}
-                          </select>
+                          <Select
+                            value={t.status}
+                            onChange={v => rowStatus.mutate({ id: t.id, status: v })}
+                            options={(settings?.statuses || [{ id: 0, name: t.status }]).map(s => ({ value: s.name, label: s.name, dot: s.color }))}
+                            size="sm"
+                            ariaLabel={`Status for ticket ${t.id}`}
+                            buttonStyle={{
+                              color: sColor,
+                              background: `${sColor}18`,
+                              border: `1px solid ${sColor}30`,
+                              borderRadius: 999,
+                              padding: '4px 10px',
+                              fontSize: 11.5,
+                              fontWeight: 700,
+                              textTransform: 'capitalize',
+                            }}
+                          />
                         )}
                         {c.key === 'assignee' && (
                           <span className="inline-flex items-center gap-1.5">
@@ -394,10 +411,22 @@ function NewTicketModal({ settings, onClose, onCreated }) {
           <div><label style={LBL}>Subject *</label><input style={inp} value={form.subject} onChange={e => set('subject', e.target.value)} placeholder="What's the issue?" /></div>
           <div><label style={LBL}>Description</label><textarea style={{ ...inp, minHeight: 80, resize: 'vertical' }} value={form.description} onChange={e => set('description', e.target.value)} placeholder="Describe in detail…" /></div>
           <div className="grid grid-cols-2 gap-3">
-            <div><label style={LBL}>Priority</label><select style={inp} value={form.priority} onChange={e => set('priority', e.target.value)}>{(settings?.priorities || [{ name: 'medium' }]).map(p => <option key={p.name} value={p.name}>{p.name}</option>)}</select></div>
-            <div><label style={LBL}>Status</label><select style={inp} value={form.status} onChange={e => set('status', e.target.value)}>{(settings?.statuses || [{ name: 'open' }]).filter(s => s.name !== 'merged').map(s => <option key={s.name} value={s.name}>{s.name}</option>)}</select></div>
+            <div>
+              <label style={LBL}>Priority</label>
+              <Select value={form.priority} onChange={v => set('priority', v)} ariaLabel="Priority"
+                options={(settings?.priorities || [{ name: 'medium' }]).map(p => ({ value: p.name, label: p.name, dot: p.color }))} />
+            </div>
+            <div>
+              <label style={LBL}>Status</label>
+              <Select value={form.status} onChange={v => set('status', v)} ariaLabel="Status"
+                options={(settings?.statuses || [{ name: 'open' }]).filter(s => s.name !== 'merged').map(s => ({ value: s.name, label: s.name, dot: s.color }))} />
+            </div>
           </div>
-          <div><label style={LBL}>Department</label><select style={inp} value={form.department_id} onChange={e => set('department_id', e.target.value)}><option value="">— none —</option>{(settings?.departments || []).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></div>
+          <div>
+            <label style={LBL}>Department</label>
+            <Select value={form.department_id ?? ''} onChange={v => set('department_id', v)} placeholder="— none —" ariaLabel="Department"
+              options={[{ value: '', label: '— none —' }, ...(settings?.departments || []).map(d => ({ value: d.id, label: d.name }))]} />
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div><label style={LBL}>Requester name</label><input style={inp} value={form.requester_name} onChange={e => set('requester_name', e.target.value)} /></div>
             <div><label style={LBL}>Requester email</label><input style={inp} value={form.requester_email} onChange={e => set('requester_email', e.target.value)} /></div>

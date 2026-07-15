@@ -138,6 +138,7 @@ class KnowledgeBaseService
             'title'          => $data['title'],
             'excerpt'        => $data['excerpt'] ?? Str::limit(strip_tags($data['content']), 200),
             'content'        => $this->sanitizeHtml($data['content']),   // WYSIWYG HTML
+            'tags'           => $this->cleanTags($data['tags'] ?? null),
             'thumbs_up'      => 0,
             'thumbs_down'    => 0,
         ]);
@@ -164,9 +165,28 @@ class KnowledgeBaseService
         if (array_key_exists('department_id', $data)) {
             $article->department_id = $data['department_id'];
         }
+        if (array_key_exists('tags', $data)) {
+            $article->tags = $this->cleanTags($data['tags']);
+        }
         $article->save();
 
         return $article;
+    }
+
+    /** Normalise article tags: trim, drop blanks, de-duplicate (case-insensitive), cap at 12. */
+    private function cleanTags(?array $tags): ?array
+    {
+        if ($tags === null) {
+            return null;
+        }
+
+        return collect($tags)
+            ->map(fn ($t) => trim((string) $t))
+            ->filter()
+            ->unique(fn ($t) => mb_strtolower($t))
+            ->take(12)
+            ->values()
+            ->all();
     }
 
     public function deleteArticle(int $articleId, int $tenantId): void

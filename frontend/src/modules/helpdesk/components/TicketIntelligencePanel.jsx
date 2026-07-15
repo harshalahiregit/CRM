@@ -8,6 +8,7 @@ import {
 import { helpdeskApi } from '@/services/helpdeskApi'
 import SLABadge from './ui/SLABadge'
 import SlaTimer from './ui/SlaTimer'
+import Select from './ui/Select'
 
 const fmtWhen = ts =>
   ts
@@ -127,29 +128,23 @@ function PropertiesSection({ ticketId }) {
     <Section icon={SlidersHorizontal} title="Properties" accent="#22d3ee">
       <div className="space-y-3">
         <Field label="Status">
-          <select
+          <Select
             value={ticket.status}
-            onChange={e => setStatus.mutate(e.target.value)}
-            className={SEL}
-            style={INP}
-          >
-            {(settings?.statuses || []).map(s => (
-              <option key={s.id} value={s.name}>{s.name}</option>
-            ))}
-          </select>
+            onChange={v => setStatus.mutate(v)}
+            options={(settings?.statuses || []).map(s => ({ value: s.name, label: s.name, dot: s.color }))}
+            size="sm"
+            ariaLabel="Status"
+          />
         </Field>
 
         <Field label="Priority">
-          <select
+          <Select
             value={ticket.priority}
-            onChange={e => update.mutate({ priority: e.target.value })}
-            className={SEL}
-            style={INP}
-          >
-            {(settings?.priorities || []).map(p => (
-              <option key={p.id} value={p.name}>{p.name}</option>
-            ))}
-          </select>
+            onChange={v => update.mutate({ priority: v })}
+            options={(settings?.priorities || []).map(p => ({ value: p.name, label: p.name, dot: p.color }))}
+            size="sm"
+            ariaLabel="Priority"
+          />
         </Field>
 
         {ticket.sla?.tracked && (
@@ -159,17 +154,14 @@ function PropertiesSection({ ticketId }) {
         )}
 
         <Field label="Department">
-          <select
-            value={ticket.department_id || ''}
-            onChange={e => update.mutate({ department_id: e.target.value ? Number(e.target.value) : null })}
-            className={SEL}
-            style={INP}
-          >
-            <option value="">— none —</option>
-            {(settings?.departments || []).map(d => (
-              <option key={d.id} value={d.id}>{d.name}</option>
-            ))}
-          </select>
+          <Select
+            value={ticket.department_id ?? ''}
+            onChange={v => update.mutate({ department_id: v ? Number(v) : null })}
+            options={[{ value: '', label: '— none —' }, ...(settings?.departments || []).map(d => ({ value: d.id, label: d.name }))]}
+            placeholder="— none —"
+            size="sm"
+            ariaLabel="Department"
+          />
         </Field>
       </div>
     </Section>

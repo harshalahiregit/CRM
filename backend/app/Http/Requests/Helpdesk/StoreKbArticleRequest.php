@@ -19,6 +19,8 @@ class StoreKbArticleRequest extends FormRequest
             'title'          => 'required|string|max:255',
             'excerpt'        => 'nullable|string|max:500',
             'content'        => 'required|string',   // WYSIWYG HTML (sanitized in service)
+            'tags'           => 'nullable|array|max:12',
+            'tags.*'         => 'string|max:40',
         ];
     }
 }

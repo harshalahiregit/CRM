@@ -5,6 +5,7 @@ import {
   ChevronUp, ChevronDown, Check, X, Settings, Globe
 } from 'lucide-react'
 import { helpdeskApi } from '@/services/helpdeskApi'
+import Select from '../components/ui/Select'
 
 const KEY = ['helpdesk-settings']
 
@@ -395,15 +396,14 @@ function PublicFormCard({ settings, departments, onChange }) {
         {/* Default department */}
         <div className="py-2">
           <p className="text-sm font-semibold mb-2" style={{ color: 'var(--text-h)' }}>Default department</p>
-          <select
-            value={settings.default_department_id || ''}
-            onChange={e => save.mutate({ default_department_id: e.target.value ? Number(e.target.value) : null })}
-            className="text-sm rounded-xl px-3 py-2 outline-none"
-            style={{ border: '1px solid var(--border)', color: 'var(--text-h)', background: 'var(--bg-input)', minWidth: 220 }}
-          >
-            <option value="">— none —</option>
-            {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-          </select>
+          <Select
+            value={settings.default_department_id ?? ''}
+            onChange={v => save.mutate({ default_department_id: v ? Number(v) : null })}
+            options={[{ value: '', label: '— none —' }, ...departments.map(d => ({ value: d.id, label: d.name }))]}
+            placeholder="— none —"
+            ariaLabel="Default department"
+            style={{ maxWidth: 260 }}
+          />
         </div>
       </div>
     </div>

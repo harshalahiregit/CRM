@@ -13,6 +13,16 @@ import TicketIntelligencePanel from './TicketIntelligencePanel'
 import TicketTimeline from './TicketTimeline'
 import KnowledgeSuggestions from './KnowledgeSuggestions'
 import CannedResponsePicker from './CannedResponsePicker'
+import Select from './ui/Select'
+import SearchPicker from './ui/SearchPicker'
+import { projectApi } from '@/services/projectApi'
+
+const PRIORITY_OPTS = [
+  { value: 'low', label: 'Low', dot: 'var(--color-info-500)' },
+  { value: 'medium', label: 'Medium', dot: 'var(--color-warning-500)' },
+  { value: 'high', label: 'High', dot: '#f97316' },
+  { value: 'urgent', label: 'Urgent', dot: 'var(--color-danger-500)' },
+]
 
 const fmtTime = ts =>
   ts
@@ -59,11 +69,26 @@ export default function TicketThread() {
   const [tasksOpen, setTasksOpen] = useState(false)
   const [tab, setTab] = useState('conversation') // 'conversation' | 'activity'
   const [composerMode, setComposerMode] = useState('reply') // 'reply' | 'note'
+  // Searchable pop-ups — these replace window.prompt('…enter an id').
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false)
+  const [mergePickerOpen, setMergePickerOpen] = useState(false)
   const textareaRef = useRef(null)
   const emptyRow = { name: '', priority: 'medium', assigned_to: '', due_date: '' }
 
   // Resolve status name (prefer a configured "resolved"/"closed" status).
   const { data: settings } = useQuery({ queryKey: ['helpdesk-settings'], queryFn: helpdeskApi.settings.all })
+
+  // Data behind the name pickers. Fetched lazily — only when a picker is opened
+  // (or the convert-to-tasks modal needs the assignee list).
+  const { data: agents = [] } = useQuery({
+    queryKey: ['helpdesk-agents'], queryFn: helpdeskApi.agents, enabled: tasksOpen,
+  })
+  const { data: projectList = [], isLoading: projectsLoading } = useQuery({
+    queryKey: ['projects-picker'], queryFn: () => projectApi.list(), enabled: projectPickerOpen,
+  })
+  const { data: allTickets = [], isLoading: ticketsLoading } = useQuery({
+    queryKey: ['tickets-picker'], queryFn: () => helpdeskApi.tickets.list(), enabled: mergePickerOpen,
+  })
   const resolveStatus = (settings?.statuses || []).find(s => /resolved|closed/i.test(s.name))?.name || 'closed'
   const [taskRows, setTaskRows] = useState([{ ...emptyRow }])
 
@@ -314,10 +339,7 @@ export default function TicketThread() {
               color="#22d3ee"
               bg="rgba(34,211,238,0.1)"
               border="rgba(34,211,238,0.2)"
-              onClick={() => {
-                const p = window.prompt('Link to project id (blank to unlink):')
-                if (p !== null) linkProject.mutate(p.trim() ? Number(p.trim()) : null)
-              }}
+              onClick={() => setProjectPickerOpen(true)}
             />
             <ActionBtn
               icon={GitMerge}
@@ -325,10 +347,7 @@ export default function TicketThread() {
               color="var(--text-muted)"
               bg="var(--bg-input)"
               border="var(--border)"
-              onClick={() => {
-                const m = window.prompt('Merge which ticket id INTO this one?')
-                if (m?.trim()) merge.mutate(Number(m.trim()))
-              }}
+              onClick={() => setMergePickerOpen(true)}
             />
           </div>
         )}
@@ -648,6 +667,39 @@ export default function TicketThread() {
         )}
       </div>
 
+      {/* Link project — pick by name instead of typing an id */}
+      <SearchPicker
+        open={projectPickerOpen}
+        onClose={() => setProjectPickerOpen(false)}
+        onPick={(p) => linkProject.mutate(p ? p.id : null)}
+        items={(Array.isArray(projectList) ? projectList : []).map(p => ({
+          id: p.id, label: p.name, sublabel: p.status ? String(p.status).replace('_', ' ') : undefined,
+        }))}
+        loading={projectsLoading}
+        title="Link a project"
+        subtitle={ticket?.project_id ? `Currently linked to project #${ticket.project_id}` : 'Attach this ticket to a project'}
+        placeholder="Search projects by name…"
+        emptyText="No projects found."
+        allowClear={!!ticket?.project_id}
+        clearLabel="Unlink project"
+      />
+
+      {/* Merge ticket — pick by subject instead of typing an id */}
+      <SearchPicker
+        open={mergePickerOpen}
+        onClose={() => setMergePickerOpen(false)}
+        onPick={(t) => t && merge.mutate(t.id)}
+        items={(Array.isArray(allTickets) ? allTickets : [])
+          .filter(t => String(t.id) !== String(id) && t.status !== 'merged')
+          .map(t => ({ id: t.id, label: t.subject, sublabel: `${t.status} · ${t.priority}` }))}
+        loading={ticketsLoading}
+        title="Merge a ticket into this one"
+        subtitle={`Its replies and notes move onto ticket #${id}`}
+        placeholder="Search tickets by subject or #id…"
+        emptyText="No other tickets to merge."
+        accent="var(--color-warning-500)"
+      />
+
       {/* Convert-to-tasks modal */}
       {tasksOpen && (
         <div
@@ -695,20 +747,24 @@ export default function TicketThread() {
                     className="flex-1 text-sm rounded-xl px-3 py-2 outline-none"
                     style={{ border: '1px solid var(--border)', color: 'var(--text-h)', background: 'var(--bg-input)' }}
                   />
-                  <select
+                  <Select
                     value={row.priority}
-                    onChange={e => setTaskRows(rows => rows.map((r, j) => j === i ? { ...r, priority: e.target.value } : r))}
-                    className="text-xs rounded-xl px-2 py-2 outline-none"
-                    style={{ border: '1px solid var(--border)', color: 'var(--text-h)', background: 'var(--bg-input)' }}
-                  >
-                    {['low', 'medium', 'high', 'urgent'].map(p => <option key={p} value={p}>{p}</option>)}
-                  </select>
-                  <input
-                    value={row.assigned_to}
-                    onChange={e => setTaskRows(rows => rows.map((r, j) => j === i ? { ...r, assigned_to: e.target.value.replace(/\D/g, '') } : r))}
-                    placeholder="user id"
-                    className="w-20 text-xs rounded-xl px-2 py-2 outline-none"
-                    style={{ border: '1px solid var(--border)', color: 'var(--text-h)', background: 'var(--bg-input)' }}
+                    onChange={v => setTaskRows(rows => rows.map((r, j) => j === i ? { ...r, priority: v } : r))}
+                    options={PRIORITY_OPTS}
+                    size="sm"
+                    className="w-28 shrink-0"
+                    ariaLabel={`Priority for task ${i + 1}`}
+                  />
+                  {/* Assignee by NAME — this used to be a bare "user id" box that
+                      made agents go look the number up somewhere else. */}
+                  <Select
+                    value={row.assigned_to ?? ''}
+                    onChange={v => setTaskRows(rows => rows.map((r, j) => j === i ? { ...r, assigned_to: v } : r))}
+                    options={[{ value: '', label: 'Unassigned' }, ...agents.map(a => ({ value: a.id, label: a.name }))]}
+                    placeholder="Unassigned"
+                    size="sm"
+                    className="w-36 shrink-0"
+                    ariaLabel={`Assignee for task ${i + 1}`}
                   />
                   <input
                     type="date"

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\Helpdesk\HelpdeskAgentController;
 use App\Http\Controllers\Api\Helpdesk\HelpdeskDashboardController;
 use App\Http\Controllers\Api\Helpdesk\HelpdeskFeedbackController;
 use App\Http\Controllers\Api\Helpdesk\HelpdeskSettingsController;
@@ -45,6 +46,9 @@ Route::middleware('auth:sanctum')->prefix('helpdesk')->group(function () {
 
     // ── My assigned tasks (assignee dashboard) ──────────────────
     Route::get('/my-tasks', [TicketController::class, 'myTasks']);
+
+    // ── Assignable people in this tenant (assignee / task pickers) ──
+    Route::get('/agents', [HelpdeskAgentController::class, 'index']);
 
     // ── Support settings: priorities / statuses / departments (Phase 1) ──
     // GET is readable by any authed user (ticket form needs the lists); writes

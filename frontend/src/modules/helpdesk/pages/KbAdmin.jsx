@@ -5,8 +5,11 @@ import 'react-quill/dist/quill.snow.css'
 import {
   FolderPlus, Plus, Trash2, Globe, Link as LinkIcon, Check, FileText, ChevronRight,
   BookOpen, HelpCircle, Wrench, Megaphone, MessageSquareText, ExternalLink, X, Pencil, Zap, EyeOff,
+  Tag, Save, LayoutTemplate, FolderTree, Eye,
 } from 'lucide-react'
 import { helpdeskApi } from '@/services/helpdeskApi'
+import Select from '../components/ui/Select'
+import { InputModal, ConfirmModal } from '../components/ui/SearchPicker'
 
 /* ───────────────────────────────────────────────────────────────
    KB / Content admin — two modes: Knowledge Base + Canned Responses.
@@ -32,6 +35,42 @@ const QUILL_FORMATS = [
   'header', 'bold', 'italic', 'underline', 'strike', 'blockquote', 'code-block',
   'list', 'bullet', 'link', 'image', 'video',
 ]
+
+/**
+ * Quill ships a hard-coded light skin — the editor used to be forced to
+ * `bg-white text-black`, which punched a white hole through the dark theme.
+ * These overrides repaint the toolbar, canvas and icons from design tokens, so
+ * the editor follows light/dark like everything else.
+ */
+const QUILL_THEME_CSS = `
+  .kb-editor .ql-toolbar.ql-snow{border:0;border-bottom:1px solid var(--border);background:var(--bg-input);padding:10px 12px}
+  .kb-editor .ql-container.ql-snow{border:0;background:transparent;font-family:inherit}
+  .kb-editor .ql-editor{min-height:340px;color:var(--text-body);font-size:15px;line-height:1.75}
+  .kb-editor .ql-editor.ql-blank::before{color:var(--text-muted);opacity:.6;font-style:normal}
+  .kb-editor .ql-editor h2{color:var(--text-h);font-size:1.35rem;font-weight:800;margin:1.4rem 0 .6rem}
+  .kb-editor .ql-editor h3{color:var(--text-h);font-size:1.1rem;font-weight:700;margin:1.1rem 0 .4rem}
+  .kb-editor .ql-editor strong{color:var(--text-h)}
+  .kb-editor .ql-editor a{color:var(--color-support-500)}
+  .kb-editor .ql-editor blockquote{border-left:3px solid var(--color-support-500);background:color-mix(in srgb,var(--color-support-500) 7%,transparent);padding:.5rem .9rem;border-radius:0 8px 8px 0;color:var(--text-body)}
+  .kb-editor .ql-editor pre.ql-syntax{background:var(--bg-global);color:var(--text-body);border:1px solid var(--border);border-radius:10px}
+  .kb-editor .ql-editor img{max-width:100%;border-radius:10px;border:1px solid var(--border)}
+  .kb-editor .ql-editor iframe.ql-video{width:100%;aspect-ratio:16/9;height:auto;border:0;border-radius:10px}
+  /* toolbar icons + labels */
+  .kb-editor .ql-snow .ql-stroke{stroke:var(--text-muted)}
+  .kb-editor .ql-snow .ql-fill{fill:var(--text-muted)}
+  .kb-editor .ql-snow .ql-picker-label{color:var(--text-muted)}
+  .kb-editor .ql-snow button:hover .ql-stroke,.kb-editor .ql-snow button.ql-active .ql-stroke,
+  .kb-editor .ql-snow .ql-picker-label:hover,.kb-editor .ql-snow .ql-picker-label.ql-active{stroke:var(--color-support-500);color:var(--color-support-500)}
+  .kb-editor .ql-snow button:hover .ql-fill,.kb-editor .ql-snow button.ql-active .ql-fill{fill:var(--color-support-500)}
+  /* dropdown menus inside the toolbar */
+  .kb-editor .ql-snow .ql-picker-options{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow-card-3d)}
+  .kb-editor .ql-snow .ql-picker-item{color:var(--text-body)}
+  .kb-editor .ql-snow .ql-picker-item:hover{color:var(--color-support-500)}
+  /* link/video tooltip */
+  .kb-editor .ql-snow .ql-tooltip{background:var(--bg-card);border:1px solid var(--border);box-shadow:var(--shadow-card-3d);color:var(--text-body);border-radius:10px}
+  .kb-editor .ql-snow .ql-tooltip input[type=text]{background:var(--bg-input);border:1px solid var(--border);color:var(--text-h);border-radius:6px}
+  .kb-editor .ql-snow .ql-tooltip a.ql-action,.kb-editor .ql-snow .ql-tooltip a.ql-remove{color:var(--color-support-500)}
+`
 
 export default function KbAdmin() {
   const [tab, setTab] = useState('kb')
@@ -61,7 +100,7 @@ export default function KbAdmin() {
 
 /* ═══════════════════════ Knowledge Base ═══════════════════════ */
 
-const EMPTY_ARTICLE = { id: null, title: '', excerpt: '', content: '', subcategory_id: null, department_id: null }
+const EMPTY_ARTICLE = { id: null, title: '', excerpt: '', content: '', subcategory_id: null, department_id: null, tags: [] }
 
 const TEMPLATES = [
   { key: 'howto', name: 'How-to Guide', icon: BookOpen, desc: 'Step-by-step instructions',
@@ -81,6 +120,10 @@ function KbManager() {
   const [article, setArticle] = useState(null)
   const [copied, setCopied] = useState(false)
   const [tplOpen, setTplOpen] = useState(false)
+  const [tagDraft, setTagDraft] = useState('')
+  // Replaces window.prompt() — { kind: 'category' | 'sub', categoryId? }
+  const [addModal, setAddModal] = useState(null)
+  const [tplConfirm, setTplConfirm] = useState(null)   // template pending confirmation
 
   const { data: categories = [] } = useQuery({ queryKey: ['kb-admin-cats'], queryFn: helpdeskApi.kb.categories })
   const { data: settings } = useQuery({ queryKey: ['helpdesk-settings'], queryFn: helpdeskApi.settings.all })
@@ -97,7 +140,7 @@ function KbManager() {
 
   const saveArticle = useMutation({
     mutationFn: (a) => {
-      const body = { title: a.title, excerpt: a.excerpt, content: a.content, subcategory_id: a.subcategory_id, department_id: a.department_id || null }
+      const body = { title: a.title, excerpt: a.excerpt, content: a.content, subcategory_id: a.subcategory_id, department_id: a.department_id || null, tags: a.tags || [] }
       return a.id ? helpdeskApi.kb.updateArticle(a.id, body) : helpdeskApi.kb.createArticle(body)
     },
     onSuccess: (saved) => { setArticle(saved); refetchArticles() },
@@ -106,7 +149,16 @@ function KbManager() {
   const unpublish = useMutation({ mutationFn: (id) => helpdeskApi.kb.unpublish(id), onSuccess: (res) => { setArticle(a => ({ ...a, ...(res.article || res), is_published: false })); refetchArticles() } })
   const delArticle = useMutation({ mutationFn: (id) => helpdeskApi.kb.deleteArticle(id), onSuccess: () => { setArticle(null); refetchArticles() } })
 
-  const promptAdd = (label, cb) => { const v = window.prompt(label); if (v && v.trim()) cb(v.trim()) }
+  // Tag helpers — free-text keywords stored on the article.
+  const addTag = (raw) => {
+    const t = (raw ?? tagDraft).trim()
+    if (!t) return
+    const existing = article?.tags || []
+    if (existing.some(x => x.toLowerCase() === t.toLowerCase()) || existing.length >= 12) { setTagDraft(''); return }
+    setArticle(a => ({ ...a, tags: [...(a.tags || []), t] }))
+    setTagDraft('')
+  }
+  const removeTag = (t) => setArticle(a => ({ ...a, tags: (a.tags || []).filter(x => x !== t) }))
   // Always build the public link from the slug against the frontend origin — the
   // public article is a frontend route (/kb/a/:slug). The API's public_url points
   // at the JSON endpoint, so trusting it opened raw JSON for freshly-published
@@ -115,20 +167,26 @@ function KbManager() {
 
   const startNew = (tpl) => { setArticle({ ...EMPTY_ARTICLE, subcategory_id: selSub, content: tpl.content }); setTplOpen(false) }
 
+  // Every sub-category across all categories, labelled "Category › Sub" so the
+  // editor's picker is unambiguous when names repeat.
+  const subOptions = categories.flatMap(c =>
+    (c.subcategories || []).map(s => ({ value: s.id, label: `${c.name} › ${s.name}` }))
+  )
+
   return (
     <div className="grid gap-5 lg:grid-cols-[280px_1fr]">
       {/* Category tree */}
       <div className="rounded-2xl p-3 space-y-1.5 h-fit" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card)' }}>
         <div className="flex items-center justify-between px-2 py-2 mb-1" style={{ borderBottom: '1px solid var(--border)' }}>
           <span className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Categories</span>
-          <button title="New category" onClick={() => promptAdd('New category name', v => addCategory.mutate(v))} className="hover:opacity-70" style={{ color: ACCENT }}><FolderPlus size={15} /></button>
+          <button title="New category" onClick={() => setAddModal({ kind: 'category' })} className="hover:opacity-70" style={{ color: ACCENT }}><FolderPlus size={15} /></button>
         </div>
         {categories.length === 0 && <p className="text-xs px-2 py-3 text-center" style={{ color: 'var(--text-muted)' }}>No categories yet.</p>}
         {categories.map(cat => (
           <div key={cat.id}>
             <div className="flex items-center gap-1.5 group rounded-xl px-2 py-1.5" style={{ background: 'var(--bg-input)' }}>
               <span className="font-bold text-sm flex-1 truncate" style={{ color: 'var(--text-h)' }}>{cat.name}</span>
-              <button title="Add sub-category" onClick={() => promptAdd(`Sub-category under "${cat.name}"`, v => addSub.mutate({ category_id: cat.id, name: v }))} className="opacity-0 group-hover:opacity-60 hover:!opacity-100" style={{ color: 'var(--text-muted)' }}><Plus size={13} /></button>
+              <button title="Add sub-category" onClick={() => setAddModal({ kind: 'sub', categoryId: cat.id, categoryName: cat.name })} className="opacity-0 group-hover:opacity-60 hover:!opacity-100" style={{ color: 'var(--text-muted)' }}><Plus size={13} /></button>
               <button title="Delete category" onClick={() => delCategory.mutate(cat.id)} className="opacity-0 group-hover:opacity-40 hover:!opacity-100 hover:text-red-400" style={{ color: 'var(--text-muted)' }}><Trash2 size={11} /></button>
             </div>
             <ul className="mt-0.5 ml-3 space-y-0.5 mb-1">
@@ -181,62 +239,183 @@ function KbManager() {
           </div>
         )}
 
-        {/* Editor */}
+        {/* Editor — main canvas + metadata sidebar */}
         {article && (
-          <div className="p-6 space-y-4">
-            <input value={article.title} onChange={e => setArticle({ ...article, title: e.target.value })} placeholder="Article title…"
-              className="w-full bg-transparent font-display font-black outline-none pb-3" style={{ fontSize: 24, color: 'var(--text-h)', borderBottom: '2px solid var(--border)', letterSpacing: '-0.02em' }} />
-            <input value={article.excerpt || ''} onChange={e => setArticle({ ...article, excerpt: e.target.value })} placeholder="Short excerpt shown in listings (optional)…"
-              className="w-full bg-transparent text-sm outline-none" style={{ color: 'var(--text-muted)', fontSize: 14.5 }} />
+          <div>
+            <style>{QUILL_THEME_CSS}</style>
 
-            <div className="flex items-center gap-3">
-              <label className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Department</label>
-              <select value={article.department_id || ''} onChange={e => setArticle({ ...article, department_id: e.target.value ? Number(e.target.value) : null })}
-                className="text-sm rounded-xl px-3 py-1.5 outline-none" style={{ border: '1px solid var(--border)', color: 'var(--text-h)', background: 'var(--bg-input)' }}>
-                <option value="">— none —</option>
-                {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-              </select>
-            </div>
-
-            <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
-              <div className="bg-white text-black"><ReactQuill theme="snow" modules={QUILL_MODULES} formats={QUILL_FORMATS} value={article.content} onChange={v => setArticle({ ...article, content: v })} style={{ minHeight: 300 }} /></div>
-            </div>
-
-            {/* Publish / status section */}
-            {article.id && (
-              <div className="rounded-2xl p-4" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: article.is_published ? 'rgba(16,185,129,0.15)' : 'rgba(100,116,139,0.15)' }}>
-                    <Globe size={14} style={{ color: article.is_published ? 'var(--color-success-500)' : 'var(--text-muted)' }} />
-                  </span>
-                  <div className="flex-1">
-                    <p className="text-sm font-bold" style={{ color: 'var(--text-h)' }}>{article.is_published ? 'Published & live' : 'Draft — not visible to customers'}</p>
-                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{article.is_published ? 'Anyone with the link can read this article.' : 'Publish to generate a shareable public link.'}</p>
-                  </div>
-                  {!article.is_published
-                    ? <button disabled={publish.isPending} onClick={() => publish.mutate(article.id)} className="flex items-center gap-1.5 text-sm font-bold px-4 py-2 rounded-xl disabled:opacity-40" style={{ background: 'var(--color-success-500)', color: '#fff' }}><Globe size={14} />{publish.isPending ? 'Publishing…' : 'Publish'}</button>
-                    : <button disabled={unpublish.isPending} onClick={() => unpublish.mutate(article.id)} className="flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl disabled:opacity-40" style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}><EyeOff size={14} /> Unpublish</button>}
-                </div>
-                {article.is_published && publicUrl && (
-                  <div className="flex items-center gap-2 p-2.5 rounded-xl" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-                    <LinkIcon size={13} style={{ color: 'var(--color-success-500)', flexShrink: 0 }} />
-                    <span className="flex-1 text-xs truncate font-mono" style={{ color: 'var(--text-body)' }}>{publicUrl}</span>
-                    <button onClick={() => { navigator.clipboard?.writeText(publicUrl); setCopied(true); setTimeout(() => setCopied(false), 1500) }} className="flex items-center gap-1 text-xs font-bold" style={{ color: 'var(--color-success-500)' }}>{copied ? <Check size={12} /> : <LinkIcon size={12} />}{copied ? 'Copied' : 'Copy'}</button>
-                    <a href={publicUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs font-bold" style={{ color: ACCENT }}><ExternalLink size={12} /> Open</a>
-                  </div>
+            {/* Editor toolbar row */}
+            <div className="flex items-center gap-2 px-5 py-3 flex-wrap" style={{ borderBottom: '1px solid var(--border)' }}>
+              <button onClick={() => setArticle(null)} className="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1.5 rounded-lg hover:opacity-70" style={{ color: 'var(--text-muted)' }}>
+                <ChevronRight size={13} style={{ transform: 'rotate(180deg)' }} /> Articles
+              </button>
+              <StatusPill published={!!article.is_published} />
+              <div className="ml-auto flex items-center gap-2">
+                {article.id && article.is_published && publicUrl && (
+                  <a href={publicUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg" style={{ border: '1px solid var(--border)', color: ACCENT }}>
+                    <Eye size={13} /> Preview
+                  </a>
                 )}
+                {article.id && (
+                  <button onClick={() => delArticle.mutate(article.id)} title="Delete article" className="p-1.5 rounded-lg hover:opacity-100 opacity-60" style={{ color: 'var(--color-danger-500)' }}><Trash2 size={14} /></button>
+                )}
+                <button disabled={!article.title.trim() || saveArticle.isPending} onClick={() => saveArticle.mutate(article)}
+                  className="flex items-center gap-1.5 text-xs font-bold px-4 py-2 rounded-xl disabled:opacity-40" style={{ background: ACCENT, color: '#fff' }}>
+                  <Save size={13} /> {saveArticle.isPending ? 'Saving…' : 'Save'}
+                </button>
               </div>
-            )}
-
-            <div className="flex items-center gap-2 pt-1">
-              <button disabled={!article.title.trim() || saveArticle.isPending} onClick={() => saveArticle.mutate(article)} className="text-sm font-bold px-5 py-2 rounded-xl disabled:opacity-40" style={{ background: ACCENT, color: '#fff' }}>{saveArticle.isPending ? 'Saving…' : 'Save'}</button>
-              {article.id && <button onClick={() => delArticle.mutate(article.id)} className="text-sm px-3 py-2 rounded-xl hover:text-red-400" style={{ color: 'var(--text-muted)' }}>Delete</button>}
-              <button onClick={() => setArticle(null)} className="ml-auto text-sm px-3 py-2 rounded-xl hover:opacity-70" style={{ color: 'var(--text-muted)' }}>Close</button>
             </div>
-            {saveArticle.isError && <p className="text-xs" style={{ color: 'var(--color-danger-500)' }}>{saveArticle.error?.message}</p>}
+
+            <div className="flex flex-col lg:flex-row items-start">
+              {/* ── Main canvas */}
+              <div className="flex-1 min-w-0 w-full p-5">
+                <input value={article.title} onChange={e => setArticle({ ...article, title: e.target.value })} placeholder="Article title…"
+                  className="w-full bg-transparent font-display font-black outline-none pb-2 mb-2" style={{ fontSize: 26, color: 'var(--text-h)', letterSpacing: '-0.02em' }} />
+                <input value={article.excerpt || ''} onChange={e => setArticle({ ...article, excerpt: e.target.value })} placeholder="Short excerpt shown in listings and search results (optional)…"
+                  className="w-full bg-transparent outline-none pb-4 mb-4" style={{ color: 'var(--text-muted)', fontSize: 14.5, borderBottom: '1px solid var(--border)' }} />
+
+                <div className="kb-editor rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)', background: 'var(--bg-input)' }}>
+                  <ReactQuill theme="snow" modules={QUILL_MODULES} formats={QUILL_FORMATS} value={article.content} onChange={v => setArticle({ ...article, content: v })} />
+                </div>
+                {saveArticle.isError && <p className="text-xs mt-2" style={{ color: 'var(--color-danger-500)' }}>{saveArticle.error?.message}</p>}
+              </div>
+
+              {/* ── Metadata sidebar */}
+              <aside className="w-full lg:w-[290px] shrink-0 p-5 lg:pl-0 space-y-4">
+
+                {/* Publish */}
+                <SideCard icon={Globe} title="Publish" accent={article.is_published ? 'var(--color-success-500)' : 'var(--text-muted)'}>
+                  {!article.id ? (
+                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Save the article first, then you can publish it.</p>
+                  ) : (
+                    <>
+                      <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
+                        {article.is_published ? 'Live — anyone with the link can read this.' : 'Draft — not visible to customers yet.'}
+                      </p>
+                      {!article.is_published ? (
+                        <button disabled={publish.isPending} onClick={() => publish.mutate(article.id)} className="w-full flex items-center justify-center gap-1.5 text-xs font-bold py-2 rounded-xl disabled:opacity-40" style={{ background: 'var(--color-success-500)', color: '#fff' }}>
+                          <Globe size={13} /> {publish.isPending ? 'Publishing…' : 'Publish article'}
+                        </button>
+                      ) : (
+                        <button disabled={unpublish.isPending} onClick={() => unpublish.mutate(article.id)} className="w-full flex items-center justify-center gap-1.5 text-xs font-semibold py-2 rounded-xl disabled:opacity-40" style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+                          <EyeOff size={13} /> Unpublish
+                        </button>
+                      )}
+                      {article.is_published && publicUrl && (
+                        <div className="mt-3 p-2 rounded-lg" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+                          <p className="text-[10px] font-mono truncate mb-1.5" style={{ color: 'var(--text-muted)' }}>{publicUrl}</p>
+                          <div className="flex items-center gap-2">
+                            <button onClick={() => { navigator.clipboard?.writeText(publicUrl); setCopied(true); setTimeout(() => setCopied(false), 1500) }} className="flex items-center gap-1 text-[11px] font-bold" style={{ color: 'var(--color-success-500)' }}>
+                              {copied ? <Check size={11} /> : <LinkIcon size={11} />}{copied ? 'Copied' : 'Copy link'}
+                            </button>
+                            <a href={publicUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[11px] font-bold ml-auto" style={{ color: ACCENT }}><ExternalLink size={11} /> Open</a>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </SideCard>
+
+                {/* Organize */}
+                <SideCard icon={FolderTree} title="Organize">
+                  <Field label="Sub-category">
+                    <Select
+                      value={article.subcategory_id ?? ''}
+                      onChange={v => setArticle({ ...article, subcategory_id: v ? Number(v) : null })}
+                      options={subOptions}
+                      placeholder="Choose a sub-category"
+                      size="sm"
+                      ariaLabel="Sub-category"
+                    />
+                  </Field>
+                  <Field label="Department">
+                    <Select
+                      value={article.department_id ?? ''}
+                      onChange={v => setArticle({ ...article, department_id: v ? Number(v) : null })}
+                      options={[{ value: '', label: '— none —' }, ...departments.map(d => ({ value: d.id, label: d.name }))]}
+                      placeholder="— none —"
+                      size="sm"
+                      ariaLabel="Department"
+                    />
+                  </Field>
+                </SideCard>
+
+                {/* Tags */}
+                <SideCard icon={Tag} title="Tags" count={(article.tags || []).length}>
+                  {(article.tags || []).length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {(article.tags || []).map(t => (
+                        <span key={t} className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg"
+                          style={{ background: `color-mix(in srgb, ${ACCENT} 13%, transparent)`, color: ACCENT }}>
+                          {t}
+                          <button onClick={() => removeTag(t)} className="hover:opacity-60" aria-label={`Remove ${t}`}><X size={10} /></button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      value={tagDraft}
+                      onChange={e => setTagDraft(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addTag() } }}
+                      placeholder={(article.tags || []).length >= 12 ? 'Tag limit reached' : 'add a tag…'}
+                      disabled={(article.tags || []).length >= 12}
+                      className="flex-1 rounded-lg outline-none"
+                      style={{ padding: '6px 10px', fontSize: 12, background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-h)' }}
+                    />
+                    <button onClick={() => addTag()} disabled={!tagDraft.trim()} className="p-1.5 rounded-lg disabled:opacity-30" style={{ background: `color-mix(in srgb, ${ACCENT} 13%, transparent)`, color: ACCENT }}><Plus size={13} /></button>
+                  </div>
+                  <p className="text-[10px] mt-1.5" style={{ color: 'var(--text-muted)', opacity: 0.7 }}>Keywords that help readers find this article.</p>
+                </SideCard>
+
+                {/* Templates */}
+                <SideCard icon={LayoutTemplate} title="Template">
+                  <p className="text-[11px] mb-2" style={{ color: 'var(--text-muted)' }}>Replace the body with a starter structure.</p>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {TEMPLATES.filter(t => t.key !== 'blank').map(t => (
+                      <button key={t.key}
+                        onClick={() => setTplConfirm(t)}
+                        className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-left transition-colors"
+                        style={{ border: '1px solid var(--border)', color: 'var(--text-body)' }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-card)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                        <t.icon size={12} style={{ color: ACCENT, flexShrink: 0 }} />
+                        <span className="text-[11px] font-semibold truncate">{t.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </SideCard>
+              </aside>
+            </div>
           </div>
         )}
       </div>
+
+      {/* Applying a template overwrites the body — confirm first */}
+      <ConfirmModal
+        open={!!tplConfirm}
+        onClose={() => setTplConfirm(null)}
+        onConfirm={() => setArticle(a => ({ ...a, content: tplConfirm.content }))}
+        title={`Use the “${tplConfirm?.name}” template?`}
+        message="This replaces the current article body. Anything you've written will be lost."
+        confirmLabel="Replace body"
+        danger
+      />
+
+      {/* Add category / sub-category — replaces window.prompt */}
+      <InputModal
+        open={!!addModal}
+        onClose={() => setAddModal(null)}
+        title={addModal?.kind === 'sub' ? 'New sub-category' : 'New category'}
+        subtitle={addModal?.kind === 'sub' ? `Inside “${addModal?.categoryName}”` : 'A top-level group in your knowledge base'}
+        placeholder={addModal?.kind === 'sub' ? 'e.g. Payments' : 'e.g. Billing & Plans'}
+        submitLabel="Create"
+        accent={ACCENT}
+        onSubmit={(name) => {
+          if (addModal?.kind === 'sub') addSub.mutate({ category_id: addModal.categoryId, name })
+          else addCategory.mutate(name)
+        }}
+      />
 
       {/* Template picker modal */}
       {tplOpen && (
@@ -348,4 +527,20 @@ function CannedManager() {
 
 function Field({ label, children }) {
   return <label className="block"><span className="text-[10px] uppercase tracking-widest block mb-1 font-bold" style={{ color: 'var(--text-muted)' }}>{label}</span>{children}</label>
+}
+
+/** A metadata card in the article editor's right rail. */
+function SideCard({ icon: Icon, title, count, accent = 'var(--color-support-500)', children }) {
+  return (
+    <section className="rounded-2xl overflow-hidden" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+      <header className="flex items-center gap-2 px-3.5 py-2.5" style={{ borderBottom: '1px solid var(--border)' }}>
+        <Icon size={13} style={{ color: accent }} />
+        <h3 className="text-[11px] font-black uppercase tracking-wider flex-1" style={{ color: 'var(--text-h)' }}>{title}</h3>
+        {count !== undefined && (
+          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md" style={{ background: 'var(--bg-card)', color: 'var(--text-muted)' }}>{count}</span>
+        )}
+      </header>
+      <div className="p-3.5 space-y-3">{children}</div>
+    </section>
+  )
 }

@@ -30,6 +30,11 @@ export const helpdeskApi = {
   myTasks: () =>
     api.get('/helpdesk/my-tasks').then(unwrap).catch(handleErr),
 
+  // Assignable people in this tenant — powers the name pickers so agents never
+  // have to type a raw user id.
+  agents: () =>
+    api.get('/helpdesk/agents').then(unwrap).catch(handleErr),
+
   // Embeddable widget settings (admin)
   widget: {
     get: () => api.get('/helpdesk/widget').then(unwrap).catch(handleErr),
