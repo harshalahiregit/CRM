@@ -21,7 +21,7 @@ class TaskController extends Controller
 
     public function index(Request $request)
     {
-        $filters = $request->only(['rel_type', 'rel_id', 'status', 'priority', 'assignee', 'search']);
+        $filters = $request->only(['rel_type', 'rel_id', 'status', 'priority', 'assignee', 'search', 'tag']);
         return $this->success($this->tasks->list($request->user()->tenant_id, $filters), 'Tasks retrieved');
     }
 

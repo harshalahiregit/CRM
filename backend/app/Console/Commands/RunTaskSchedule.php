@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Services\Project\ProjectService;
 use App\Services\Task\TaskService;
 use Illuminate\Console\Command;
 
@@ -20,7 +21,7 @@ class RunTaskSchedule extends Command
 
     protected $description = 'Spawn due recurring tasks and send task reminders/deadline notices';
 
-    public function handle(TaskService $tasks): int
+    public function handle(TaskService $tasks, ProjectService $projects): int
     {
         if ($this->option('dry')) {
             $this->warn('Dry run is not supported yet — this command writes. Aborting.');
@@ -29,10 +30,11 @@ class RunTaskSchedule extends Command
         }
 
         $r = $tasks->runScheduled();
+        $projectDeadlines = $projects->fireDueDeadlines();
 
         $this->info(sprintf(
-            'Tasks schedule: %d recurring created, %d reminders sent, %d deadline notices.',
-            $r['recurring'], $r['reminders'], $r['deadlines'],
+            'Tasks: %d recurring created, %d reminders sent, %d deadline notices. Projects: %d deadline notices.',
+            $r['recurring'], $r['reminders'], $r['deadlines'], $projectDeadlines,
         ));
 
         return self::SUCCESS;

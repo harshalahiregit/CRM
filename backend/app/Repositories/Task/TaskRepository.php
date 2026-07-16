@@ -32,6 +32,17 @@ class TaskRepository extends BaseRepository
         if (! empty($filters['assignee']) && Schema::hasTable('task_assignees')) {
             $query->whereHas('assignees', fn ($q) => $q->where('user_id', $filters['assignee']));
         }
+        // Tags live in the shared taggables table — filter without joining it into
+        // the model, so Task stays unaware of how tagging is stored.
+        if (! empty($filters['tag']) && Schema::hasTable('taggables')) {
+            $query->whereIn('id', function ($q) use ($filters, $tenantId) {
+                $q->select('taggable_id')->from('taggables')
+                    ->join('tags', 'tags.id', '=', 'taggables.tag_id')
+                    ->where('taggables.tenant_id', $tenantId)
+                    ->where('taggables.taggable_type', 'task')
+                    ->where('tags.name', $filters['tag']);
+            });
+        }
 
         return $query->orderBy('kanban_order')->latest()->get();
     }

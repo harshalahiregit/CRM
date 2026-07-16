@@ -37,6 +37,8 @@ class UpdateTaskRequest extends FormRequest
             'recurring_type'    => 'nullable|required_if:recurring,true|in:day,week,month,year',
             'repeat_every'      => 'nullable|required_if:recurring,true|integer|min:1|max:365',
             'cycles'            => 'nullable|integer|min:0|max:1000',
+            'tags'              => 'nullable|array|max:15',
+            'tags.*'            => 'string|max:60',
         ];
     }
 }

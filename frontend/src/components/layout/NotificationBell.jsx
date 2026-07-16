@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Bell, CheckCheck, Ticket, RefreshCw, MessageSquare, Inbox, TicketPlus, CheckSquare, AtSign, Eye, Activity, AlarmClock } from 'lucide-react'
+import { Bell, CheckCheck, Ticket, RefreshCw, MessageSquare, Inbox, TicketPlus, CheckSquare, AtSign, Eye, Activity, AlarmClock, FolderKanban, UserPlus } from 'lucide-react'
 import { notificationApi } from '@/services/notificationApi'
 
 /**
@@ -25,6 +25,10 @@ const ICONS = {
   'task.due_soon':           { icon: AlarmClock,     color: 'var(--color-warning-500)' },
   'task.overdue':            { icon: AlarmClock,     color: 'var(--color-danger-500)' },
   'task.reminder':           { icon: AlarmClock,     color: 'var(--color-primary-500)' },
+  'project.member_added':    { icon: UserPlus,       color: 'var(--color-primary-500)' },
+  'project.status_changed':  { icon: FolderKanban,   color: 'var(--color-info-500)' },
+  'project.due_soon':        { icon: AlarmClock,     color: 'var(--color-warning-500)' },
+  'project.overdue':         { icon: AlarmClock,     color: 'var(--color-danger-500)' },
 }
 
 const timeAgo = (ts) => {

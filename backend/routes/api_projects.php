@@ -11,6 +11,10 @@ Route::middleware('auth:sanctum')->prefix('projects')->group(function () {
     Route::get('/',                    [ProjectController::class, 'index']);
     Route::post('/',                   [ProjectController::class, 'store']);
 
+    // Static segments BEFORE /{project} so they aren't captured as a project id.
+    Route::get('/staff',               [ProjectController::class, 'staff']);
+    Route::get('/customers',           [ProjectController::class, 'customers']);
+
     // Milestone update/delete are keyed by milestone id (not nested) — declare
     // BEFORE /{project} so "milestones" isn't captured as a project id.
     Route::put('/milestones/{milestone}',    [ProjectMilestoneController::class, 'update']);
@@ -21,6 +25,8 @@ Route::middleware('auth:sanctum')->prefix('projects')->group(function () {
     Route::delete('/{project}',        [ProjectController::class, 'destroy']);
     Route::patch('/{project}/status',  [ProjectController::class, 'updateStatus']);
     Route::get('/{project}/progress',  [ProjectController::class, 'progress']);
+    Route::post('/{project}/copy',     [ProjectController::class, 'copy']);
+    Route::post('/{project}/pin',      [ProjectController::class, 'pin']);
 
     // Members
     Route::post('/{project}/members',  [ProjectController::class, 'members']);

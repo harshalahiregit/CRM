@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ListTodo, Plus, LayoutGrid, List, Search, X, SlidersHorizontal } from 'lucide-react'
 import { taskApi, TASK_STATUS, TASK_PRIORITY, TASK_ACCENT, relLabel } from '@/services/taskApi'
 import Select from '@/components/ui/Select'
+import { TagChips } from '@/components/ui/TagInput'
 import TaskFormDrawer from '../components/TaskFormDrawer'
 
 /**
@@ -289,6 +290,7 @@ function TaskCard({ task, dragging, onClick, ...dnd }) {
         <span className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ background: TASK_PRIORITY[task.priority] || 'var(--text-muted)' }} />
         <p className="text-xs leading-snug flex-1" style={{ color: 'var(--text-h)' }}>{task.name}</p>
       </div>
+      {task.tags?.length > 0 && <div className="mt-1.5 ml-3"><TagChips tags={task.tags} max={2} /></div>}
       {(link || task.due_date) && (
         <div className="flex items-center gap-1.5 mt-2 flex-wrap">
           {link && (
@@ -344,7 +346,10 @@ function TaskTable({ tasks, navigate }) {
                 style={{ borderBottom: '1px solid var(--border)' }}
                 onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-input)'}
                 onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                <td className="px-4 py-3" style={{ color: 'var(--text-h)' }}>{t.name}</td>
+                <td className="px-4 py-3">
+                  <span style={{ color: 'var(--text-h)' }}>{t.name}</span>
+                  {t.tags?.length > 0 && <div className="mt-1"><TagChips tags={t.tags} /></div>}
+                </td>
                 <td className="px-4 py-3">
                   <span className="text-[10px] font-bold capitalize px-2 py-0.5 rounded-lg"
                     style={{ background: `color-mix(in srgb, ${pr} 15%, transparent)`, color: pr }}>{t.priority}</span>

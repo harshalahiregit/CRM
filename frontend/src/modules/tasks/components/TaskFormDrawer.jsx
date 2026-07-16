@@ -4,8 +4,10 @@ import { X, Check, Link2, IndianRupee } from 'lucide-react'
 import { taskApi, TASK_STATUS, TASK_PRIORITY, TASK_ACCENT, REL_TYPES, RECURRING_TYPES } from '@/services/taskApi'
 import Select from '@/components/ui/Select'
 import SearchPicker from '@/components/ui/SearchPicker'
+import TagInput from '@/components/ui/TagInput'
 import { projectApi } from '@/services/projectApi'
 import { helpdeskApi } from '@/services/helpdeskApi'
+import { tagApi } from '@/services/tagApi'
 
 /**
  * Create/edit a task. One drawer serves both — before this, taskApi.update had no
@@ -20,7 +22,7 @@ const EMPTY = {
   name: '', description: '', priority: 'medium', status: '',
   start_date: today(), due_date: '', rel_type: 'standalone', rel_id: '',
   billable: false, hourly_rate: '', is_public: false, visible_to_client: false,
-  assignee_ids: [],
+  assignee_ids: [], tags: [],
   recurring: false, recurring_type: 'month', repeat_every: 1, cycles: 0,
 }
 
@@ -42,6 +44,7 @@ export default function TaskFormDrawer({ open, onClose, task = null, defaults = 
           hourly_rate: task.hourly_rate ?? '',
           rel_id: task.rel_id ?? '',
           assignee_ids: (task.assignees || []).map(a => a.user_id),
+          tags: (task.tags || []).map(t => t.name),
         }
       : { ...EMPTY, ...defaults })
   }, [open, task, editing]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -49,6 +52,7 @@ export default function TaskFormDrawer({ open, onClose, task = null, defaults = 
   const sf = (k, v) => setForm(p => ({ ...p, [k]: v }))
 
   const { data: staff = [] } = useQuery({ queryKey: ['task-staff'], queryFn: taskApi.staff, enabled: open })
+  const { data: tagSuggestions = [] } = useQuery({ queryKey: ['tags', 'task'], queryFn: () => tagApi.list('task'), enabled: open })
   const { data: projects = [], isLoading: pLoading } = useQuery({
     queryKey: ['projects-picker'], queryFn: () => projectApi.list(), enabled: picker === 'rel' && form.rel_type === 'project',
   })
@@ -83,6 +87,7 @@ export default function TaskFormDrawer({ open, onClose, task = null, defaults = 
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tasks'] })
+      qc.invalidateQueries({ queryKey: ['tags', 'task'] })
       if (editing) qc.invalidateQueries({ queryKey: ['task', String(task.id)] })
       onSaved?.()
       onClose?.()
@@ -171,6 +176,10 @@ export default function TaskFormDrawer({ open, onClose, task = null, defaults = 
             <PeopleChips ids={form.assignee_ids} staff={staff}
               onRemove={id => sf('assignee_ids', form.assignee_ids.filter(i => i !== id))}
               onAdd={() => setPicker('assignee')} />
+          </Field>
+
+          <Field label="Tags">
+            <TagInput value={form.tags} onChange={v => sf('tags', v)} suggestions={tagSuggestions} accent={TASK_ACCENT} />
           </Field>
 
           <div className="rounded-xl p-3 space-y-2.5" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>

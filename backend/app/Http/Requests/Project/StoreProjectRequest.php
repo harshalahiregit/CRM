@@ -26,6 +26,14 @@ class StoreProjectRequest extends FormRequest
             'progress'            => 'nullable|integer|min:0|max:100',
             'progress_from_tasks' => 'nullable|boolean',
             'estimated_hours'     => 'nullable|numeric|min:0',
+            // Members and tags are child rows, not columns — the service splits them out.
+            'member_ids'          => 'nullable|array|max:50',
+            'member_ids.*'        => 'integer|exists:users,id',
+            'tags'                => 'nullable|array|max:15',
+            'tags.*'              => 'string|max:60',
+            // Bags of booleans, read and written whole (see the migration).
+            'visible_tabs'          => 'nullable|array',
+            'customer_permissions'  => 'nullable|array',
         ];
     }
 }

@@ -26,6 +26,12 @@ class UpdateProjectRequest extends FormRequest
             'progress'            => 'nullable|integer|min:0|max:100',
             'progress_from_tasks' => 'nullable|boolean',
             'estimated_hours'     => 'nullable|numeric|min:0',
+            'member_ids'          => 'nullable|array|max:50',
+            'member_ids.*'        => 'integer|exists:users,id',
+            'tags'                => 'nullable|array|max:15',
+            'tags.*'              => 'string|max:60',
+            'visible_tabs'          => 'nullable|array',
+            'customer_permissions'  => 'nullable|array',
         ];
     }
 }

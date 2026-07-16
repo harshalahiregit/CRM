@@ -17,6 +17,7 @@ use App\Repositories\Task\TaskRepository;
 use App\Services\Helpdesk\Contracts\CustomerServiceContract;
 use App\Services\Helpdesk\Mocks\MockCustomerService;
 use App\Services\NotificationService;
+use App\Services\TagService;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection as SupportCollection;
@@ -45,6 +46,7 @@ class TaskService
     public function __construct(
         private TaskRepository $tasks,
         private NotificationService $notifications,
+        private TagService $tags,
         ?CustomerServiceContract $customers = null,
     ) {
         $this->customers = $customers ?? new MockCustomerService();
@@ -52,7 +54,12 @@ class TaskService
 
     public function list(int $tenantId, array $filters = []): Collection
     {
-        return $this->decorateMany($this->tasks->filtered($tenantId, $filters), $tenantId);
+        $tasks = $this->decorateMany($this->tasks->filtered($tenantId, $filters), $tenantId);
+
+        // Batched — one tag query for the whole page, not one per row.
+        $tagMap = $this->tags->tagsForMany('task', $tasks->pluck('id')->all(), $tenantId);
+
+        return $tasks->each(fn (Task $t) => $t->setAttribute('tags', $tagMap[$t->id] ?? []));
     }
 
     public function show(int $id, int $tenantId): Task
@@ -63,6 +70,7 @@ class TaskService
             'assignees.user:id,name,email', 'followers.user:id,name',
             'checklistItems', 'comments.user:id,name', 'timers.user:id,name',
         ]);
+        $task->setAttribute('tags', $this->tags->tagsFor('task', $task->id, $tenantId));
 
         return $this->decorateRelation($task, $tenantId);
     }
@@ -86,10 +94,11 @@ class TaskService
             $data['status'] = now()->startOfDay()->gte($start) ? 'in_progress' : 'not_started';
         }
 
-        // People are pivot rows, not columns — pull them out before the insert.
+        // People and tags are child rows, not columns — pull them out before the insert.
         $assignees = $data['assignee_ids'] ?? [];
         $followers = $data['follower_ids'] ?? [];
-        unset($data['assignee_ids'], $data['follower_ids']);
+        $tags = $data['tags'] ?? null;
+        unset($data['assignee_ids'], $data['follower_ids'], $data['tags']);
 
         $task = $this->tasks->create([...$data, 'tenant_id' => $tenantId, 'created_by' => $userId]);
 
@@ -100,13 +109,23 @@ class TaskService
         if ($followers) {
             $this->syncFollowers($task->id, $followers, $tenantId, $userId);
         }
+        if ($tags !== null) {
+            $this->tags->sync('task', $task->id, $tags, $tenantId);
+        }
 
-        return $this->decorateRelation($task->fresh('creator'), $tenantId);
+        $task = $this->decorateRelation($task->fresh('creator'), $tenantId);
+        $task->setAttribute('tags', $this->tags->tagsFor('task', $task->id, $tenantId));
+
+        return $task;
     }
 
     public function update(int $id, array $data, int $tenantId): Task
     {
         $task = $this->find($id, $tenantId);
+
+        $tags = $data['tags'] ?? null;
+        unset($data['tags']);
+
         $task->fill($data);
 
         // Moving the deadline re-arms the "due soon" nudge — otherwise a task
@@ -117,7 +136,14 @@ class TaskService
 
         $task->save();
 
-        return $this->decorateRelation($task->fresh('creator'), $tenantId);
+        if ($tags !== null) {
+            $this->tags->sync('task', $task->id, $tags, $tenantId);
+        }
+
+        $fresh = $this->decorateRelation($task->fresh('creator'), $tenantId);
+        $fresh->setAttribute('tags', $this->tags->tagsFor('task', $task->id, $tenantId));
+
+        return $fresh;
     }
 
     /** Change status; stamp date_finished on the transition into "complete". */
@@ -615,6 +641,9 @@ class TaskService
         if (! empty($opts['copy_followers'])) {
             $this->syncFollowers($copy->id, $src->followers->pluck('user_id')->all(), $tenantId, $userId);
         }
+
+        // Tags always copy — they describe what the task IS, not its history.
+        $this->tags->sync('task', $copy->id, $this->tags->tagsFor('task', $src->id, $tenantId)->pluck('name')->all(), $tenantId);
 
         return $this->decorateRelation($copy->fresh('creator'), $tenantId);
     }

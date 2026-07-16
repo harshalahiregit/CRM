@@ -16,18 +16,26 @@ class Project extends Model
         'tenant_id', 'name', 'description', 'status', 'customer_id',
         'billing_type', 'project_cost', 'rate_per_hour', 'start_date', 'deadline',
         'progress', 'progress_from_tasks', 'estimated_hours', 'created_by', 'date_finished',
+        'pinned_by', 'visible_tabs', 'customer_permissions', 'deadline_notified',
     ];
 
     protected $casts = [
-        'start_date'          => 'date',
-        'deadline'            => 'date',
-        'date_finished'       => 'datetime',
-        'progress'            => 'integer',
-        'progress_from_tasks' => 'boolean',
-        'project_cost'        => 'decimal:2',
-        'rate_per_hour'       => 'decimal:2',
-        'estimated_hours'     => 'decimal:2',
+        'start_date'           => 'date',
+        'deadline'             => 'date',
+        'date_finished'        => 'datetime',
+        'progress'             => 'integer',
+        'progress_from_tasks'  => 'boolean',
+        'project_cost'         => 'decimal:2',
+        'rate_per_hour'        => 'decimal:2',
+        'estimated_hours'      => 'decimal:2',
+        'pinned_by'            => 'array',
+        'visible_tabs'         => 'array',
+        'customer_permissions' => 'array',
+        'deadline_notified'    => 'boolean',
     ];
+
+    /** Who pinned this is an implementation detail — the UI only needs is_pinned. */
+    protected $hidden = ['pinned_by'];
 
     /* ── Scopes ─────────────────────────────────────────────────── */
     public function scopeStatus($query, ?string $status)
