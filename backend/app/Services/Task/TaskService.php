@@ -47,9 +47,22 @@ class TaskService
         private TaskRepository $tasks,
         private NotificationService $notifications,
         private TagService $tags,
+        private \App\Services\StatusService $statuses,
         ?CustomerServiceContract $customers = null,
     ) {
         $this->customers = $customers ?? new MockCustomerService();
+    }
+
+    /** key => label for this tenant's task statuses; falls back to the const. */
+    private function statusLabels(int $tenantId): array
+    {
+        return $this->statuses->labels('task', $tenantId) ?: self::STATUS_LABELS;
+    }
+
+    /** The status key that closes a task ('complete' unless reconfigured). */
+    private function closedKey(int $tenantId): string
+    {
+        return $this->statuses->closedKey('task', $tenantId) ?? 'complete';
     }
 
     public function list(int $tenantId, array $filters = []): Collection
@@ -146,22 +159,28 @@ class TaskService
         return $fresh;
     }
 
-    /** Change status; stamp date_finished on the transition into "complete". */
+    /** Change status; stamp date_finished on the transition into the closing status. */
     public function changeStatus(int $id, string $status, int $tenantId, ?int $actorId = null): Task
     {
         $task = $this->find($id, $tenantId);
         $from = $task->status;
+
+        // Honour a configured workflow (can_be_changed_to); a no-op until one exists.
+        $this->statuses->assertTransition('task', $from, $status, $tenantId);
+
+        $closed = $this->closedKey($tenantId);
         $task->status = $status;
-        $task->date_finished = $status === 'complete' ? now() : null;
+        $task->date_finished = $status === $closed ? now() : null;
         $task->save();
 
         if ($from !== $status) {
-            $label = self::STATUS_LABELS[$status] ?? $status;
+            $labels = $this->statusLabels($tenantId);
+            $label = $labels[$status] ?? $status;
             foreach ($this->watcherIds($task, $actorId) as $uid) {
                 $this->notifications->notify(
                     $uid, $tenantId, 'task.status_changed',
                     "Task {$label}: {$task->name}",
-                    (self::STATUS_LABELS[$from] ?? $from)." → {$label}",
+                    ($labels[$from] ?? $from)." → {$label}",
                     "/app/tasks/{$task->id}",
                     $actorId,
                 );
@@ -207,8 +226,9 @@ class TaskService
 
         $tasks = Task::forTenant($tenantId)->whereIn('id', $ids)->get()->keyBy('id');
         $moved = [];
+        $closed = $this->closedKey($tenantId);
 
-        DB::transaction(function () use ($ids, $status, $tasks, &$moved) {
+        DB::transaction(function () use ($ids, $status, $tasks, $closed, &$moved) {
             foreach ($ids as $i => $id) {
                 $task = $tasks->get($id);
                 if (! $task) {
@@ -217,7 +237,7 @@ class TaskService
                 if ($task->status !== $status) {
                     $moved[] = $task->id;
                     $task->status = $status;
-                    $task->date_finished = $status === 'complete' ? now() : null;
+                    $task->date_finished = $status === $closed ? now() : null;
                 }
                 $task->kanban_order = $i;
                 $task->save();
@@ -225,9 +245,10 @@ class TaskService
         });
 
         // A drag across columns is a status change — notify like one.
+        $labels = $this->statusLabels($tenantId);
         foreach ($moved as $id) {
             $task = $tasks->get($id);
-            $label = self::STATUS_LABELS[$status] ?? $status;
+            $label = $labels[$status] ?? $status;
             foreach ($this->watcherIds($task, $actorId) as $uid) {
                 $this->notifications->notify(
                     $uid, $tenantId, 'task.status_changed',
@@ -859,7 +880,7 @@ class TaskService
 
         // Validate the value ONCE up front rather than per row, so a bad value
         // fails the whole request instead of half-applying.
-        if ($action === 'status' && ! array_key_exists($value, self::STATUS_LABELS)) {
+        if ($action === 'status' && ! in_array($value, $this->statuses->keys('task', $tenantId), true)) {
             throw new BusinessException('Unknown status.', 422);
         }
         if ($action === 'priority' && ! in_array($value, ['low', 'medium', 'high', 'urgent'], true)) {

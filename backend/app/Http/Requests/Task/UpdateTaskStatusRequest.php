@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests\Task;
 
+use App\Services\StatusService;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class UpdateTaskStatusRequest extends FormRequest
 {
@@ -13,8 +15,12 @@ class UpdateTaskStatusRequest extends FormRequest
 
     public function rules(): array
     {
+        // Statuses are tenant-configurable (Advanced Status Manager), so the
+        // allowed values come from the lookup table, not a literal list.
+        $keys = app(StatusService::class)->keys('task', $this->user()->tenant_id);
+
         return [
-            'status' => 'required|in:not_started,in_progress,awaiting_feedback,testing,complete',
+            'status' => ['required', Rule::in($keys)],
         ];
     }
 }

@@ -9,6 +9,7 @@ import { taskApi, TASK_STATUS, TASK_PRIORITY, TASK_ACCENT, relLabel, fmtDuration
 import Select from '@/components/ui/Select'
 import SearchPicker, { ConfirmModal, InputModal } from '@/components/ui/SearchPicker'
 import { useAuth } from '@/context/AuthContext'
+import { useStatuses, statusOptions } from '@/hooks/useStatuses'
 import TaskFormDrawer, { PeopleChips } from '../components/TaskFormDrawer'
 import { FilesCard, RemindersCard } from '../components/TaskExtras'
 
@@ -29,6 +30,7 @@ export default function TaskDetail() {
   const { data: task, isLoading, isError, error } = useQuery({ queryKey: ['task', id], queryFn: () => taskApi.get(id) })
   const { data: time } = useQuery({ queryKey: ['task-time', id], queryFn: () => taskApi.totalTime(id) })
   const { data: staff = [] } = useQuery({ queryKey: ['task-staff'], queryFn: taskApi.staff })
+  const { map: statusMap, list: statusList } = useStatuses('task')
 
   const [editing, setEditing] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -79,7 +81,7 @@ export default function TaskDetail() {
   }
 
   // Guarded: an unrecognised status/priority used to throw on .color here.
-  const st = TASK_STATUS[task.status] || { label: task.status, color: 'var(--text-muted)' }
+  const st = statusMap[task.status] || { label: task.status, color: 'var(--text-muted)' }
   const pr = TASK_PRIORITY[task.priority] || 'var(--text-muted)'
   const assignees = task.assignees || []
   const followers = task.followers || []
@@ -138,7 +140,7 @@ export default function TaskDetail() {
         <div className="flex items-center gap-2">
           <div style={{ minWidth: 150 }}>
             <Select value={task.status} onChange={v => setStatus.mutate(v)} ariaLabel="Task status"
-              options={Object.entries(TASK_STATUS).map(([k, m]) => ({ value: k, label: m.label, dot: m.color }))}
+              options={statusOptions(statusList, user?.role)}
               buttonStyle={{ borderColor: st.color, color: st.color, fontWeight: 700 }} />
           </div>
           <IconBtn onClick={() => setEditing(true)} label="Edit task"><Pencil size={14} /></IconBtn>

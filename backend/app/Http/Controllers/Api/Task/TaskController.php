@@ -9,15 +9,23 @@ use App\Http\Requests\Task\StoreTaskRequest;
 use App\Http\Requests\Task\SyncTaskUsersRequest;
 use App\Http\Requests\Task\UpdateTaskRequest;
 use App\Http\Requests\Task\UpdateTaskStatusRequest;
+use App\Services\StatusService;
 use App\Services\Task\TaskService;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class TaskController extends Controller
 {
     use ApiResponse;
 
-    public function __construct(private TaskService $tasks)
+    public function __construct(private TaskService $tasks, private StatusService $statuses)
     {
+    }
+
+    /** Configured task-status keys for this tenant — used by inline validators. */
+    private function statusKeys(Request $request): array
+    {
+        return $this->statuses->keys('task', $request->user()->tenant_id);
     }
 
     public function index(Request $request)
@@ -82,7 +90,7 @@ class TaskController extends Controller
     {
         $opts = $request->validate([
             'name'           => 'nullable|string|max:255',
-            'status'         => 'nullable|in:not_started,in_progress,awaiting_feedback,testing,complete',
+            'status'         => ['nullable', Rule::in($this->statusKeys($request))],
             'start_date'     => 'nullable|date',
             'due_date'       => 'nullable|date',
             'copy_checklist' => 'nullable|boolean',
@@ -99,7 +107,7 @@ class TaskController extends Controller
     public function reorder(Request $request)
     {
         $data = $request->validate([
-            'status'        => 'required|in:not_started,in_progress,awaiting_feedback,testing,complete',
+            'status'        => ['required', Rule::in($this->statusKeys($request))],
             'ordered_ids'   => 'present|array|max:500',
             'ordered_ids.*' => 'integer|min:1',
         ]);

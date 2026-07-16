@@ -55,6 +55,7 @@ const KbAdmin = lazy(() => import('@/modules/helpdesk/pages/KbAdmin'))
 const MyTasks = lazy(() => import('@/modules/helpdesk/pages/MyTasks'))
 const WidgetSettings = lazy(() => import('@/modules/helpdesk/pages/WidgetSettings'))
 const SupportSettings = lazy(() => import('@/modules/helpdesk/pages/SupportSettings'))
+const StatusManager = lazy(() => import('@/modules/settings/pages/StatusManager'))
 const TicketThread = lazy(() => import('@/modules/helpdesk/components/TicketThread'))
 // Public (no-auth) Helpdesk pages
 const PublicArticle = lazy(() => import('@/modules/helpdesk/public/PublicArticle'))
@@ -195,6 +196,7 @@ export default function AppRoutes() {
         <Route path="vendors" element={<ComingSoon name="Vendors" />} />
         <Route path="tickets" element={<ComingSoon name="Tickets" />} />
         <Route path="reports/*" element={<ComingSoon name="Reports" />} />
+        <Route path="settings/statuses" element={<S><StatusManager /></S>} />
         <Route path="settings/*" element={<ComingSoon name="Settings" />} />
       </Route>
 

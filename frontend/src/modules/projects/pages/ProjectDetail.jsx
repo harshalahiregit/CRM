@@ -6,6 +6,8 @@ import {
   Pencil, Copy, Pin, PinOff, MoreHorizontal, Download, Upload, ExternalLink, Check,
 } from 'lucide-react'
 import { projectApi, PROJECT_STATUS, PROJECT_ACCENT } from '@/services/projectApi'
+import { useAuth } from '@/context/AuthContext'
+import { useStatuses, statusOptions } from '@/hooks/useStatuses'
 import { taskApi } from '@/services/taskApi'
 import Select from '@/components/ui/Select'
 import SearchPicker, { ConfirmModal } from '@/components/ui/SearchPicker'
@@ -36,6 +38,8 @@ export default function ProjectDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const { user } = useAuth()
+  const { map: statusMap, list: statusList } = useStatuses('project')
 
   const [tab, setTab] = useState('overview')
   const [editing, setEditing] = useState(false)
@@ -84,7 +88,7 @@ export default function ProjectDetail() {
     )
   }
 
-  const s = PROJECT_STATUS[project.status] || { label: project.status, color: 'var(--text-muted)' }
+  const s = statusMap[project.status] || { label: project.status, color: 'var(--text-muted)' }
 
   return (
     <div className="max-w-5xl">
@@ -113,7 +117,7 @@ export default function ProjectDetail() {
           </button>
           <div style={{ minWidth: 150 }}>
             <Select value={project.status} onChange={v => setStatus.mutate(v)} ariaLabel="Project status"
-              options={Object.entries(PROJECT_STATUS).map(([k, m]) => ({ value: k, label: m.label, dot: m.color }))}
+              options={statusOptions(statusList, user?.role)}
               buttonStyle={{ borderColor: s.color, color: s.color, fontWeight: 700 }} />
           </div>
 

@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests\Project;
 
+use App\Services\StatusService;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreProjectRequest extends FormRequest
 {
@@ -13,10 +15,13 @@ class StoreProjectRequest extends FormRequest
 
     public function rules(): array
     {
+        // Statuses are tenant-configurable (Advanced Status Manager).
+        $statusKeys = app(StatusService::class)->keys('project', $this->user()->tenant_id);
+
         return [
             'name'                => 'required|string|max:255',
             'description'         => 'nullable|string',
-            'status'              => 'nullable|in:not_started,in_progress,on_hold,finished,cancelled',
+            'status'              => ['nullable', Rule::in($statusKeys)],
             'customer_id'         => 'nullable|integer|min:1',
             'billing_type'        => 'nullable|in:fixed,project_hours,task_hours',
             'project_cost'        => 'nullable|numeric|min:0',

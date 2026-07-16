@@ -42,9 +42,21 @@ class ProjectService
         private ProjectRepository $projects,
         private NotificationService $notifications,
         private TagService $tags,
+        private StatusService $statuses,
         ?CustomerServiceContract $customers = null,
     ) {
         $this->customers = $customers ?? new MockCustomerService();
+    }
+
+    private function statusLabels(int $tenantId): array
+    {
+        return $this->statuses->labels('project', $tenantId) ?: self::STATUS_LABELS;
+    }
+
+    /** The status key that closes a project ('finished' unless reconfigured). */
+    private function closedKey(int $tenantId): string
+    {
+        return $this->statuses->closedKey('project', $tenantId) ?? 'finished';
     }
 
     public function list(int $tenantId, array $filters = [], ?int $userId = null): Collection
@@ -142,26 +154,31 @@ class ProjectService
     {
         $project = $this->find($id, $tenantId);
         $from = $project->status;
+
+        $this->statuses->assertTransition('project', $from, $status, $tenantId);
+
+        $closed = $this->closedKey($tenantId);
         $project->status = $status;
 
-        // Only stamp on the way IN to finished, and only clear on the way OUT of
-        // it. Assigning null for every other status wiped the completion date of
-        // an already-finished project on any unrelated status change.
-        if ($status === 'finished') {
+        // Only stamp on the way IN to the closing status, and only clear on the
+        // way OUT of it. Assigning null for every other status wiped the
+        // completion date of an already-finished project on any unrelated change.
+        if ($status === $closed) {
             $project->date_finished = $project->date_finished ?? now();
-        } elseif ($from === 'finished') {
+        } elseif ($from === $closed) {
             $project->date_finished = null;
         }
 
         $project->save();
 
         if ($from !== $status) {
-            $label = self::STATUS_LABELS[$status] ?? $status;
+            $labels = $this->statusLabels($tenantId);
+            $label = $labels[$status] ?? $status;
             foreach ($this->watcherIds($project, $actorId) as $uid) {
                 $this->notifications->notify(
                     $uid, $tenantId, 'project.status_changed',
                     "Project {$label}: {$project->name}",
-                    (self::STATUS_LABELS[$from] ?? $from)." → {$label}",
+                    ($labels[$from] ?? $from)." → {$label}",
                     "/app/projects/{$project->id}", $actorId,
                 );
             }
@@ -272,7 +289,8 @@ class ProjectService
                 ->whereNull('deleted_at');
 
             $total = (clone $tasks)->count();
-            $done  = (clone $tasks)->where('status', 'complete')->count();
+            // Counting TASK completions, so this uses the task closed-key.
+            $done  = (clone $tasks)->where('status', $this->statuses->closedKey('task', $tenantId) ?? 'complete')->count();
             $pct   = $total > 0 ? (int) round($done / $total * 100) : 0;
 
             $project->update(['progress' => $pct]);
