@@ -31,6 +31,13 @@ Route::middleware('auth:sanctum')->prefix('projects')->group(function () {
     // Members
     Route::post('/{project}/members',  [ProjectController::class, 'members']);
 
+    // Notes / Activity / Timesheets tabs
+    Route::get('/{project}/notes',          [ProjectController::class, 'notes']);
+    Route::post('/{project}/notes',         [ProjectController::class, 'storeNote']);
+    Route::delete('/{project}/notes/{note}', [ProjectController::class, 'destroyNote']);
+    Route::get('/{project}/activity',       [ProjectController::class, 'activity']);
+    Route::get('/{project}/timesheets',     [ProjectController::class, 'timesheets']);
+
     // Integration 3a: tickets linked to this project
     Route::get('/{project}/tickets',   [ProjectController::class, 'tickets']);
 

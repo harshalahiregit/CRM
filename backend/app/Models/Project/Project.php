@@ -64,6 +64,16 @@ class Project extends Model
         return $this->hasMany(ProjectFile::class);
     }
 
+    public function notes()
+    {
+        return $this->hasMany(ProjectNote::class)->latest();
+    }
+
+    public function activities()
+    {
+        return $this->hasMany(ProjectActivity::class)->latest();
+    }
+
     // NOTE: no customer() relation — Customer belongs to Zafar's module. Resolve
     // customer data through CustomerServiceContract, never an Eloquent join here.
     // NOTE: tasks are polymorphic (rel_type='project', rel_id=id); queried in the

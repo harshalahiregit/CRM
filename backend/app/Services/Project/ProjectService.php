@@ -11,12 +11,14 @@ use App\Repositories\Project\ProjectRepository;
 use App\Services\Helpdesk\Contracts\CustomerServiceContract;
 use App\Services\Helpdesk\Mocks\MockCustomerService;
 use App\Services\NotificationService;
+use App\Services\StatusService;
 use App\Services\TagService;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class ProjectService
 {
@@ -107,6 +109,8 @@ class ProjectService
             'created_by' => $userId,
         ]);
 
+        $this->logActivity($project, 'project_created', 'Project created', $userId, true);
+
         if ($members) {
             $this->syncMembers($project->id, $members, $tenantId, $userId);
         }
@@ -174,6 +178,7 @@ class ProjectService
         if ($from !== $status) {
             $labels = $this->statusLabels($tenantId);
             $label = $labels[$status] ?? $status;
+            $this->logActivity($project, 'status_changed', "Status changed to {$label}", $actorId, true);
             foreach ($this->watcherIds($project, $actorId) as $uid) {
                 $this->notifications->notify(
                     $uid, $tenantId, 'project.status_changed',
@@ -365,6 +370,8 @@ class ProjectService
         });
 
         foreach ($added as $uid) {
+            $name = User::whereKey($uid)->value('name') ?? "user #{$uid}";
+            $this->logActivity($project, 'member_added', "{$name} added to the project", $actorId, true);
             $this->notifications->notify(
                 $uid, $tenantId, 'project.member_added',
                 "Added to project: {$project->name}",
@@ -465,6 +472,104 @@ class ProjectService
     public function listCustomers(int $tenantId): array
     {
         return array_values(array_filter($this->customers->listCustomers($tenantId)));
+    }
+
+    /* ── Notes ──────────────────────────────────────────────────── */
+
+    public function listNotes(int $projectId, int $tenantId): Collection
+    {
+        return $this->find($projectId, $tenantId)->notes()->with('author:id,name')->get();
+    }
+
+    public function addNote(int $projectId, array $data, int $tenantId, int $userId): \App\Models\Project\ProjectNote
+    {
+        $project = $this->find($projectId, $tenantId);
+        $note = $project->notes()->create([
+            'tenant_id' => $tenantId, 'title' => $data['title'],
+            'content' => $data['content'] ?? null, 'created_by' => $userId,
+        ]);
+        $this->logActivity($project, 'note_added', "Note added: {$data['title']}", $userId);
+
+        return $note->load('author:id,name');
+    }
+
+    public function deleteNote(int $noteId, int $projectId, int $tenantId): void
+    {
+        $note = \App\Models\Project\ProjectNote::forTenant($tenantId)->where('project_id', $projectId)->find($noteId);
+        if (! $note) {
+            throw new BusinessException('Note not found.', 404);
+        }
+        $note->delete();
+    }
+
+    /* ── Activity ───────────────────────────────────────────────── */
+
+    public function listActivity(int $projectId, int $tenantId): Collection
+    {
+        return $this->find($projectId, $tenantId)->activities()->with('actor:id,name')->limit(100)->get();
+    }
+
+    /** Append one audit row. Swallow-logged so it can never break the write it records. */
+    private function logActivity(Project $project, string $type, string $description, ?int $actorId, bool $visibleToCustomer = false): void
+    {
+        try {
+            $project->activities()->create([
+                'tenant_id'           => $project->tenant_id,
+                'type'                => $type,
+                'description'         => Str::limit($description, 500, ''),
+                'actor_id'            => $actorId,
+                'visible_to_customer' => $visibleToCustomer,
+                'created_at'          => now(),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning("Project activity log failed ({$type}): {$e->getMessage()}");
+        }
+    }
+
+    /* ── Timesheets ─────────────────────────────────────────────── */
+
+    /**
+     * Time logged across this project's tasks. Reads task_timers directly (an
+     * internal module, like progress() reads tasks) rather than duplicating the
+     * data. Guarded so it works before the Task module ships.
+     */
+    public function timesheets(int $projectId, int $tenantId): array
+    {
+        $this->find($projectId, $tenantId);
+
+        if (! Schema::hasTable('task_timers') || ! Schema::hasTable('tasks')) {
+            return ['rows' => [], 'total_seconds' => 0];
+        }
+
+        $rows = DB::table('task_timers')
+            ->join('tasks', 'tasks.id', '=', 'task_timers.task_id')
+            ->leftJoin('users', 'users.id', '=', 'task_timers.user_id')
+            ->where('tasks.tenant_id', $tenantId)
+            ->where('tasks.rel_type', 'project')
+            ->where('tasks.rel_id', $projectId)
+            ->whereNull('tasks.deleted_at')
+            ->whereNotNull('task_timers.end_time')
+            ->orderByDesc('task_timers.start_time')
+            ->get([
+                'task_timers.id', 'task_timers.start_time', 'task_timers.end_time',
+                'task_timers.note', 'task_timers.hourly_rate',
+                'tasks.name as task_name', 'users.name as member_name',
+            ]);
+
+        $total = 0;
+        $out = $rows->map(function ($r) use (&$total) {
+            $seconds = max(0, strtotime($r->end_time) - strtotime($r->start_time));
+            $total += $seconds;
+
+            return [
+                'id' => $r->id, 'task_name' => $r->task_name, 'member_name' => $r->member_name,
+                'start_time' => $r->start_time, 'end_time' => $r->end_time, 'note' => $r->note,
+                'seconds' => $seconds, 'hours' => round($seconds / 3600, 2),
+                'cost' => round(($seconds / 3600) * (float) $r->hourly_rate, 2),
+            ];
+        })->all();
+
+        return ['rows' => $out, 'total_seconds' => $total, 'total_hours' => round($total / 3600, 2)];
     }
 
     /* ── Internals ──────────────────────────────────────────────── */

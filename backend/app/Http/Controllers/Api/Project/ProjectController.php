@@ -108,6 +108,38 @@ class ProjectController extends Controller
         return $this->success($staff, 'Staff retrieved');
     }
 
+    /* ── Notes / Activity / Timesheets tabs ────────────────────── */
+
+    public function notes(Request $request, int $project)
+    {
+        return $this->success($this->projects->listNotes($project, $request->user()->tenant_id), 'Notes retrieved');
+    }
+
+    public function storeNote(Request $request, int $project)
+    {
+        $data = $request->validate(['title' => 'required|string|max:255', 'content' => 'nullable|string|max:20000']);
+        $note = $this->projects->addNote($project, $data, $request->user()->tenant_id, $request->user()->id);
+
+        return $this->success($note, 'Note added', 201);
+    }
+
+    public function destroyNote(Request $request, int $project, int $note)
+    {
+        $this->projects->deleteNote($note, $project, $request->user()->tenant_id);
+
+        return $this->success(null, 'Note deleted');
+    }
+
+    public function activity(Request $request, int $project)
+    {
+        return $this->success($this->projects->listActivity($project, $request->user()->tenant_id), 'Activity retrieved');
+    }
+
+    public function timesheets(Request $request, int $project)
+    {
+        return $this->success($this->projects->timesheets($project, $request->user()->tenant_id), 'Timesheets retrieved');
+    }
+
     /* ── Integration 3a: tickets linked to this project ────────── */
     public function tickets(Request $request, int $project)
     {

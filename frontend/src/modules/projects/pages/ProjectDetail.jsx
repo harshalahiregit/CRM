@@ -13,6 +13,8 @@ import Select from '@/components/ui/Select'
 import SearchPicker, { ConfirmModal } from '@/components/ui/SearchPicker'
 import { TagChips } from '@/components/ui/TagInput'
 import ProjectFormDrawer from '../components/ProjectFormDrawer'
+import { TimesheetsTab, NotesTab, ActivityTab } from '../components/ProjectTabs'
+import ProjectGantt from '../components/ProjectGantt'
 
 /**
  * Project detail — Overview / Tasks / Milestones / Files / Tickets.
@@ -30,7 +32,11 @@ const TABS = [
   { key: 'overview',   label: 'Overview' },
   { key: 'tasks',      label: 'Tasks' },
   { key: 'milestones', label: 'Milestones' },
+  { key: 'gantt',      label: 'Gantt' },
+  { key: 'timesheets', label: 'Timesheets' },
   { key: 'files',      label: 'Files' },
+  { key: 'notes',      label: 'Notes' },
+  { key: 'activity',   label: 'Activity' },
   { key: 'tickets',    label: 'Tickets' },
 ]
 
@@ -164,7 +170,11 @@ export default function ProjectDetail() {
       {tab === 'overview' && <Overview project={project} prog={prog} onRecalc={() => refetchProg()} busy={progBusy} />}
       {tab === 'tasks' && <TasksTab projectId={id} navigate={navigate} />}
       {tab === 'milestones' && <MilestonesTab project={project} onChange={invalidate} onErr={onErr} />}
+      {tab === 'gantt' && <ProjectGantt projectId={id} milestones={project.milestones || []} />}
+      {tab === 'timesheets' && <TimesheetsTab projectId={id} />}
       {tab === 'files' && <FilesTab projectId={id} />}
+      {tab === 'notes' && <NotesTab projectId={id} />}
+      {tab === 'activity' && <ActivityTab projectId={id} />}
       {tab === 'tickets' && <TicketsTab projectId={id} navigate={navigate} />}
 
       <ProjectFormDrawer open={editing} onClose={() => setEditing(false)} project={project} onSaved={invalidate} />

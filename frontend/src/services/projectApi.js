@@ -44,6 +44,13 @@ export const projectApi = {
 
   // Step 5 integration — tickets linked to a project
   tickets: (id) => api.get(`/projects/${id}/tickets`).then(unwrap).catch(handleErr),
+
+  // Notes / Activity / Timesheets tabs
+  notes: (id) => api.get(`/projects/${id}/notes`).then(unwrap).catch(handleErr),
+  addNote: (id, data) => api.post(`/projects/${id}/notes`, data).then(unwrap).catch(handleErr),
+  deleteNote: (id, noteId) => api.delete(`/projects/${id}/notes/${noteId}`).then(unwrap).catch(handleErr),
+  activity: (id) => api.get(`/projects/${id}/activity`).then(unwrap).catch(handleErr),
+  timesheets: (id) => api.get(`/projects/${id}/timesheets`).then(unwrap).catch(handleErr),
 }
 
 /** Shared status metadata — token-driven so both themes work. */
