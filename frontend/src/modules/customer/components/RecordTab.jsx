@@ -16,13 +16,18 @@ const cell = (row, col) => {
 const blankForm = (fields) => Object.fromEntries(fields.map(f => [f.key, f.type === 'checkbox' ? false : '']))
 
 /**
- * Generic per-customer record tab: a list + inline add/edit form + delete,
+ * Generic per-parent record tab: a list + inline add/edit form + delete,
  * driven by a field schema (see recordSchemas.js). Powers Contracts, Expenses,
  * Subscriptions, Pre-Alerts, Packages and Shipments.
+ *
+ * By default it resolves the API from `customerApi[schema.apiKey]` (parent =
+ * clientId). Pass an explicit `api` (with list/create/update/remove taking the
+ * same parent-id-first signature) to reuse it for other parents — e.g. a
+ * follow-ups adapter closed over a (subjectType, subjectId) pair.
  */
-export default function RecordTab({ clientId, schema }) {
+export default function RecordTab({ clientId, schema, api: apiProp }) {
   const toast = useToast()
-  const api = customerApi[schema.apiKey]
+  const api = apiProp || customerApi[schema.apiKey]
   const [rows, setRows] = useState(null)
   const [editing, setEditing] = useState(null)     // null | {id?} while form open
   const [form, setForm] = useState(blankForm(schema.fields))

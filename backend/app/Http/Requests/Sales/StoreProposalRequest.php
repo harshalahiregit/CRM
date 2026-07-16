@@ -15,6 +15,8 @@ class StoreProposalRequest extends FormRequest
     {
         return [
             'subject'       => 'required|string|max:255',
+            'reference_no'  => 'nullable|string|max:255',
+            'terms'         => 'nullable|string',
             'rel_type'      => 'nullable|in:lead,customer',
             'rel_id'        => 'nullable|integer',
             'project_id'    => 'nullable|integer',

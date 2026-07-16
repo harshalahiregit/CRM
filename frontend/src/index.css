@@ -221,8 +221,11 @@ h1,h2,h3,h4,h5,h6 { color: var(--text-h); }
   padding: 0 20px;
   height: 64px;
   background: var(--bg-header);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  /* No backdrop-filter here: an element with its own backdrop-filter is
+     excluded from other elements' backdrop sampling, so a modal/drawer overlay
+     could not blur the header (it stayed crisp while the rest blurred). The
+     header background is ~92% opaque, so dropping the blur is visually
+     negligible in normal use but lets overlays blur the header consistently. */
   border-bottom: 1px solid var(--border);
   box-shadow: var(--shadow-header);
   transition: all 0.3s ease;
@@ -304,6 +307,11 @@ html.light .nav-3d-active {
 }
 
 /* 3D Input */
+/* In @layer components so Tailwind utilities (pl-*, text-*, w-*) override the
+   base — e.g. `pl-10` on a search input makes room for its icon. Unlayered,
+   this padding shorthand would beat those utilities and the icon would overlap
+   the text. */
+@layer components {
 .input-3d {
   width: 100%;
   padding: 12px 16px;
@@ -337,6 +345,7 @@ html.light .input-3d:focus {
     inset 0 2px 6px rgba(124,58,237,0.08),
     0 0 0 3px rgba(124,58,237,0.12),
     0 1px 0 rgba(255,255,255,1);
+}
 }
 
 /* ══════════════════════════════════════════════════════════════

@@ -2,8 +2,11 @@
 
 namespace App\Services\Sales;
 
+use App\Exceptions\BusinessException;
 use App\Exceptions\UnauthorizedTenantException;
+use App\Models\Sales\Estimate;
 use App\Models\Sales\Proposal;
+use App\Models\Sales\SalesInvoice;
 use App\Models\Sales\SalesLineItem;
 use App\Repositories\Sales\ProposalRepository;
 use Illuminate\Support\Facades\DB;
@@ -145,6 +148,119 @@ class ProposalService
         Log::channel('sales')->info('Proposal email opened', [
             'proposal_id' => $proposal->id, 'tenant_id' => $proposal->tenant_id, 'count' => $proposal->email_opened_count,
         ]);
+    }
+
+    /**
+     * Convert a proposal into a Proforma Invoice (estimate). Only valid for a
+     * customer-linked proposal — a lead-linked proposal must be converted to a
+     * customer first (mirrors the old CRM: leads have no client_id to bill).
+     */
+    public function convertToEstimate(Proposal $proposal, int $tenantId, int $userId): Estimate
+    {
+        $this->assertTenant($proposal, $tenantId);
+        $clientId = $this->requireCustomer($proposal);
+
+        return DB::transaction(function () use ($proposal, $clientId, $tenantId, $userId) {
+            $estimate = Estimate::create([
+                'tenant_id'     => $tenantId,
+                'subject'       => $proposal->subject,
+                'client_id'     => $clientId,
+                'project_id'    => $proposal->project_id,
+                'date'          => now()->toDateString(),
+                'currency'      => $proposal->currency,
+                'discount_type' => $proposal->discount_type,
+                'status'        => 'Draft',
+                'terms'         => $proposal->terms,
+                'created_by'    => $userId,
+            ]);
+
+            $this->copyLineItems($proposal, $estimate, Estimate::class);
+            $estimate->recalcTotals();
+
+            $proposal->update([
+                'status'                => 'Accepted',
+                'converted_estimate_id' => $estimate->id,
+                'accepted_at'           => $proposal->accepted_at ?? now(),
+            ]);
+
+            Log::channel('sales')->info('Proposal converted to estimate', [
+                'proposal_id' => $proposal->id, 'estimate_id' => $estimate->id, 'tenant_id' => $tenantId,
+            ]);
+
+            return $estimate->fresh()->load('lineItems');
+        });
+    }
+
+    /**
+     * Convert a proposal directly into a Tax Invoice. Customer-linked only.
+     */
+    public function convertToInvoice(Proposal $proposal, ?string $dueDate, int $tenantId, int $userId): SalesInvoice
+    {
+        $this->assertTenant($proposal, $tenantId);
+        $clientId = $this->requireCustomer($proposal);
+
+        return DB::transaction(function () use ($proposal, $clientId, $dueDate, $tenantId, $userId) {
+            $invoice = SalesInvoice::create([
+                'tenant_id'     => $tenantId,
+                'client_id'     => $clientId,
+                'project_id'    => $proposal->project_id,
+                'date'          => now()->toDateString(),
+                'due_date'      => $dueDate ?? now()->addDays(30)->toDateString(),
+                'currency'      => $proposal->currency,
+                'discount_type' => $proposal->discount_type,
+                'status'        => 'Draft',
+                'terms'         => $proposal->terms,
+                // Carry the proposal owner as sale agent so commission has an
+                // attributee when the invoice is later paid.
+                'sale_agent'    => $proposal->assigned_to,
+                'created_by'    => $userId,
+            ]);
+
+            $this->copyLineItems($proposal, $invoice, SalesInvoice::class);
+            $invoice->recalcTotals();
+            $invoice->update(['balance' => $invoice->total]);
+
+            $proposal->update([
+                'status'               => 'Accepted',
+                'converted_invoice_id' => $invoice->id,
+                'accepted_at'          => $proposal->accepted_at ?? now(),
+            ]);
+
+            Log::channel('sales')->info('Proposal converted to invoice', [
+                'proposal_id' => $proposal->id, 'invoice_id' => $invoice->id, 'tenant_id' => $tenantId,
+            ]);
+
+            return $invoice->fresh();
+        });
+    }
+
+    private function requireCustomer(Proposal $proposal): int
+    {
+        if ($proposal->rel_type !== 'customer' || empty($proposal->rel_id)) {
+            throw new BusinessException('Convert the lead to a customer before converting this proposal.', 422);
+        }
+
+        return (int) $proposal->rel_id;
+    }
+
+    private function copyLineItems(Proposal $proposal, $target, string $targetClass): void
+    {
+        foreach ($proposal->lineItems as $idx => $li) {
+            SalesLineItem::create([
+                'lineable_type' => $targetClass,
+                'lineable_id'   => $target->id,
+                'item_id'       => $li->item_id,
+                'item_name'     => $li->item_name,
+                'description'   => $li->description,
+                'qty'           => $li->qty,
+                'unit'          => $li->unit,
+                'rate'          => $li->rate,
+                'tax'           => $li->tax,
+                'discount'      => $li->discount,
+                'total'         => $li->total,
+                'sort_order'    => $idx,
+            ]);
+        }
     }
 
     private function assertTenant(Proposal $proposal, int $tenantId): void

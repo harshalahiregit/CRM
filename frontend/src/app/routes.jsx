@@ -49,6 +49,12 @@ const LeadGoals = lazy(() => import('@/modules/sales/pages/LeadGoals'))
 const PaymentLinks = lazy(() => import('@/modules/sales/pages/PaymentLinks'))
 const RetainerInvoices = lazy(() => import('@/modules/sales/pages/RetainerInvoices'))
 const ProposalTemplates = lazy(() => import('@/modules/sales/pages/ProposalTemplates'))
+const Tasks = lazy(() => import('@/modules/sales/pages/Tasks'))
+const Contracts = lazy(() => import('@/modules/sales/pages/Contracts'))
+const WebToLeadForms = lazy(() => import('@/modules/sales/pages/WebToLeadForms'))
+const Forecast = lazy(() => import('@/modules/sales/pages/Forecast'))
+const Commission = lazy(() => import('@/modules/sales/pages/Commission'))
+const PublicLeadForm = lazy(() => import('@/modules/sales/public/PublicLeadForm'))
 
 // Customer Module (lazy)
 const CustomerLayout = lazy(() => import('@/modules/customer/CustomerLayout'))
@@ -166,6 +172,11 @@ export default function AppRoutes() {
           <Route path="payment-links" element={<S><PaymentLinks /></S>} />
           <Route path="retainer-invoices" element={<S><RetainerInvoices /></S>} />
           <Route path="proposal-templates" element={<S><ProposalTemplates /></S>} />
+          <Route path="tasks" element={<S><Tasks /></S>} />
+          <Route path="contracts" element={<S><Contracts /></S>} />
+          <Route path="web-to-lead" element={<S><WebToLeadForms /></S>} />
+          <Route path="forecast" element={<S><Forecast /></S>} />
+          <Route path="commission" element={<S><Commission /></S>} />
         </Route>
 
         {/* CUSTOMER MODULE */}
@@ -193,7 +204,7 @@ export default function AppRoutes() {
         <Route path="deals" element={<ComingSoon name="Deals" />} />
         <Route path="deals/new" element={<ComingSoon name="New Deal" />} />
         <Route path="deals/:id" element={<ComingSoon name="Deal Detail" />} />
-        <Route path="tasks" element={<ComingSoon name="Tasks" />} />
+        <Route path="tasks" element={<S><Tasks /></S>} />
         <Route path="projects" element={<ComingSoon name="Projects" />} />
         <Route path="invoices" element={<ComingSoon name="Invoices" />} />
         <Route path="vendors" element={<ComingSoon name="Vendors" />} />
@@ -205,6 +216,9 @@ export default function AppRoutes() {
       {/* Public Helpdesk (no auth): shareable KB article + tenant help center */}
       <Route path="/kb/a/:slug" element={<S><PublicArticle /></S>} />
       <Route path="/kb/:key" element={<S><PublicKb /></S>} />
+
+      {/* Public Web-to-Lead form (no auth) */}
+      <Route path="/f/:token" element={<S><PublicLeadForm /></S>} />
 
       <Route path="/vendor-portal/*" element={<ComingSoon name="Vendor Portal" />} />
 

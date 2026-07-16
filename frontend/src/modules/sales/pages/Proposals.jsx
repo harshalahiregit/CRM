@@ -25,7 +25,7 @@ const EMPTY_FORM = {
   currency: 'INR', discount_type: 'none', status: 'Open',
   assigned: '', proposal_to: '',
   address: '', city: '', state: '', country: 'India', zip: '',
-  email: '', phone: '', allow_comments: false, tags: '', notes: '',
+  email: '', phone: '', allow_comments: false, tags: '', notes: '', terms: '',
   line_items: [], template_id: '',
 }
 
@@ -496,6 +496,8 @@ export default function Proposals() {
                   <div>
                     <label className="label">Notes</label>
                     <textarea className="input-3d text-sm resize-none" rows={4} placeholder="Additional notes visible on the proposal…" value={form.notes} onChange={e => sf('notes', e.target.value)} />
+                    <label className="label mt-3">Terms &amp; Conditions</label>
+                    <textarea className="input-3d text-sm resize-none" rows={3} placeholder="Payment terms, validity, conditions…" value={form.terms} onChange={e => sf('terms', e.target.value)} />
                   </div>
                 </div>
               </div>

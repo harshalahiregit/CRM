@@ -9,14 +9,17 @@ use App\Models\Sales\SalesInvoice;
 use App\Models\Sales\SalesLineItem;
 use App\Models\Sales\SalesPayment;
 use App\Repositories\Sales\InvoiceRepository;
+use App\Services\Sales\CommissionService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class InvoiceService
 {
-    public function __construct(private InvoiceRepository $invoiceRepository)
-    {
+    public function __construct(
+        private InvoiceRepository $invoiceRepository,
+        private CommissionService $commissionService,
+    ) {
     }
 
     public function list(int $tenantId, array $filters)
@@ -148,6 +151,10 @@ class InvoiceService
             ]);
 
             $invoice->recalcBalance();
+
+            // Generate commission entries when the invoice becomes fully paid.
+            // Idempotent (unique rule+source), so repeated partial payments are safe.
+            $this->commissionService->computeForInvoice($invoice->fresh());
 
             Log::channel('sales')->info('Payment recorded', [
                 'invoice_id' => $invoice->id,

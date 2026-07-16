@@ -43,7 +43,11 @@ class Estimate extends Model
         static::creating(function (Estimate $est) {
             if (empty($est->reference)) {
                 $year  = date('Y');
-                $count = static::where('tenant_id', $est->tenant_id)
+                // withTrashed(): soft-deleted rows still occupy the UNIQUE
+                // index on `reference`, so they must be counted or the next
+                // create reuses a number and the insert fails.
+                $count = static::withTrashed()
+                               ->where('tenant_id', $est->tenant_id)
                                ->whereYear('created_at', $year)
                                ->count() + 1;
                 // "PI-" (Proforma Invoice) per the Sales Master Plan V2 terminology

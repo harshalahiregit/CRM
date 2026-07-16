@@ -76,6 +76,29 @@ class ProposalController extends Controller
     }
 
     /**
+     * POST /api/sales/proposals/{proposal}/convert-to-estimate
+     */
+    public function convertToEstimate(Request $request, Proposal $proposal)
+    {
+        $estimate = $this->proposalService->convertToEstimate($proposal, $request->user()->tenant_id, $request->user()->id);
+        return response()->json($estimate, 201);
+    }
+
+    /**
+     * POST /api/sales/proposals/{proposal}/convert-to-invoice
+     */
+    public function convertToInvoice(Request $request, Proposal $proposal)
+    {
+        $invoice = $this->proposalService->convertToInvoice(
+            $proposal,
+            $request->input('due_date'),
+            $request->user()->tenant_id,
+            $request->user()->id,
+        );
+        return response()->json($invoice, 201);
+    }
+
+    /**
      * POST /api/sales/proposals/{proposal}/generate-qr
      */
     public function generateQR(Request $request, Proposal $proposal)

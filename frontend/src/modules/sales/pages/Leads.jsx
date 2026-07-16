@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { salesApi } from '@/services/salesApi'
+import WinProbabilityBadge from '../components/WinProbabilityBadge'
 import {
   Plus, Search, MoreVertical, X, UserPlus, Flame, Thermometer, Snowflake,
   Eye, Trash2, XCircle, RotateCcw, TrendingUp, Users, Target, DollarSign,
@@ -25,7 +26,7 @@ export default function Leads() {
   const [showDrawer, setShowDrawer] = useState(false)
   const [openMenu, setOpenMenu] = useState(null)
   const [selected, setSelected] = useState([])
-  const [form, setForm] = useState({ name:'', email:'', phone:'', company:'', title:'', website:'', description:'', lead_value:'', source_id:'', status_id:'', assigned_to:'', tags:'', address:'', city:'', state:'', country:'', zip:'', referral_type:'none', referral_value:'', referral_contact:'' })
+  const [form, setForm] = useState({ name:'', email:'', phone:'', company:'', title:'', website:'', pan:'', gst:'', industry:'', campaign:'', priority:'medium', expected_close_date:'', description:'', lead_value:'', source_id:'', status_id:'', assigned_to:'', tags:'', address:'', city:'', state:'', country:'', zip:'', referral_type:'none', referral_value:'', referral_contact:'' })
 
   const showToast = (msg, type='success') => { setToast({msg,type}); setTimeout(()=>setToast(null),3000) }
   const sf = (k,v) => setForm(p=>({...p,[k]:v}))
@@ -52,7 +53,7 @@ export default function Leads() {
       await salesApi.leads.create(form)
       showToast('Lead created')
       setShowDrawer(false)
-      setForm({ name:'', email:'', phone:'', company:'', title:'', website:'', description:'', lead_value:'', source_id:'', status_id:'', assigned_to:'', tags:'', address:'', city:'', state:'', country:'', zip:'', referral_type:'none', referral_value:'', referral_contact:'' })
+      setForm({ name:'', email:'', phone:'', company:'', title:'', website:'', pan:'', gst:'', industry:'', campaign:'', priority:'medium', expected_close_date:'', description:'', lead_value:'', source_id:'', status_id:'', assigned_to:'', tags:'', address:'', city:'', state:'', country:'', zip:'', referral_type:'none', referral_value:'', referral_contact:'' })
       load()
     } catch(e) { showToast(e.message,'error') }
   }
@@ -241,7 +242,7 @@ export default function Leads() {
                           <span className="inline-flex items-center gap-0.5 text-[10px] font-bold" style={{color:TEMP_COLOR[l.lead_temperature]}}><TI size={10}/>{l.lead_score}</span>
                         </div>
                         <div className="flex items-center justify-between mt-2">
-                          <span className="text-[10px]" style={{color:'var(--text-muted)'}}>{l.source?.name||''}</span>
+                          <WinProbabilityBadge lead={l} />
                           {l.assigned_user && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md" style={{background:'rgba(124,58,237,0.1)',color:'#a78bfa'}}>{l.assigned_user.name.split(' ')[0]}</span>}
                         </div>
                       </div>
@@ -296,6 +297,23 @@ export default function Leads() {
                   </div>
                   <div><label className="label">Tags</label><input className="input-3d text-sm" placeholder="Comma-separated tags" value={form.tags} onChange={e=>sf('tags',e.target.value)}/></div>
                   <div><label className="label">Description</label><textarea className="input-3d text-sm" rows={3} placeholder="Notes about this lead…" value={form.description} onChange={e=>sf('description',e.target.value)}/></div>
+                </div>
+              </div>
+              {/* Business / Qualification */}
+              <div className="mt-6"><p className="label-caps mb-4" style={{color:'#a78bfa'}}>Business / Qualification</p>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><label className="label">GST Number</label><input className="input-3d text-sm" placeholder="27AAECM1234K1Z5" value={form.gst} onChange={e=>sf('gst',e.target.value)}/></div>
+                    <div><label className="label">PAN</label><input className="input-3d text-sm" placeholder="AAECM1234K" value={form.pan} onChange={e=>sf('pan',e.target.value)}/></div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><label className="label">Industry</label><input className="input-3d text-sm" placeholder="e.g. Textiles" value={form.industry} onChange={e=>sf('industry',e.target.value)}/></div>
+                    <div><label className="label">Campaign</label><input className="input-3d text-sm" placeholder="e.g. Q3 Outreach" value={form.campaign} onChange={e=>sf('campaign',e.target.value)}/></div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><label className="label">Priority</label><select className="input-3d text-sm" value={form.priority} onChange={e=>sf('priority',e.target.value)}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></div>
+                    <div><label className="label">Expected Close Date</label><input type="date" className="input-3d text-sm" value={form.expected_close_date} onChange={e=>sf('expected_close_date',e.target.value)}/></div>
+                  </div>
                 </div>
               </div>
               {/* Referral */}

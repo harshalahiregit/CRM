@@ -15,6 +15,8 @@ class UpdateProposalRequest extends FormRequest
     {
         return [
             'subject'       => 'sometimes|string|max:255',
+            'reference_no'  => 'nullable|string|max:255',
+            'terms'         => 'nullable|string',
             'date'          => 'sometimes|date',
             'open_till'     => 'nullable|date',
             'status'        => 'sometimes|in:Draft,Open,Sent,Accepted,Declined,Expired',

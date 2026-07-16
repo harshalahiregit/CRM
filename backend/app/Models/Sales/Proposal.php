@@ -14,15 +14,16 @@ class Proposal extends Model
     use HasFactory, SoftDeletes, BelongsToTenant;
 
     protected $fillable = [
-        'tenant_id', 'subject', 'rel_type', 'rel_id', 'project_id',
+        'tenant_id', 'subject', 'reference_no', 'rel_type', 'rel_id', 'project_id',
         'date', 'open_till', 'currency', 'discount_type', 'discount_amount',
         'subtotal', 'tax_total', 'total', 'status', 'assigned_to',
         'proposal_to', 'address', 'city', 'state', 'country', 'zip',
-        'email', 'phone', 'allow_comments', 'tags', 'notes', 'portal_token',
+        'email', 'phone', 'allow_comments', 'tags', 'notes', 'terms', 'portal_token',
         'sent_at', 'accepted_at', 'declined_at', 'created_by',
         'template_id', 'qr_code_data', 'public_view_otp_enabled',
         'email_opened_at', 'email_opened_device', 'email_opened_count',
         'pdf_header', 'pdf_footer', 'company_logo_url', 'company_stamp_url',
+        'converted_estimate_id', 'converted_invoice_id',
     ];
 
     protected $casts = [
@@ -45,6 +46,14 @@ class Proposal extends Model
         static::creating(function (Proposal $proposal) {
             if (empty($proposal->portal_token)) {
                 $proposal->portal_token = Str::random(40);
+            }
+            if (empty($proposal->reference_no) && $proposal->tenant_id) {
+                $year  = now()->format('Y');
+                $count = static::withTrashed()
+                    ->where('tenant_id', $proposal->tenant_id)
+                    ->whereYear('created_at', $year)
+                    ->count() + 1;
+                $proposal->reference_no = 'PROP-' . $year . '-' . str_pad($count, 3, '0', STR_PAD_LEFT);
             }
         });
     }

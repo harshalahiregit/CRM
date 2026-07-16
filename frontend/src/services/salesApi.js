@@ -16,9 +16,11 @@ import { dashboardApi } from '@/services/dashboardApi'
 import { paymentLinkApi } from '@/services/paymentLinkApi'
 import { retainerInvoiceApi } from '@/services/retainerInvoiceApi'
 import { proposalTemplateApi } from '@/services/proposalTemplateApi'
+import { activityApi } from '@/services/activityApi'
 
 export const salesApi = {
   dashboard: dashboardApi.sales,
+  activities: activityApi,
   proposals: proposalApi,
   estimates: estimateApi,
   invoices: invoiceApi,

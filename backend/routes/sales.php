@@ -13,6 +13,15 @@ use App\Http\Controllers\Api\Sales\PaymentLinkController;
 use App\Http\Controllers\Api\Sales\RetainerInvoiceController;
 use App\Http\Controllers\Api\Sales\HsnSacController;
 use App\Http\Controllers\Api\Sales\ProposalTemplateController;
+use App\Http\Controllers\Api\Sales\SalesActivityController;
+use App\Http\Controllers\Api\Sales\SalesInsightController;
+use App\Http\Controllers\Api\Sales\TaskController;
+use App\Http\Controllers\Api\Sales\TaskStatusController;
+use App\Http\Controllers\Api\Sales\ReminderController;
+use App\Http\Controllers\Api\Sales\ContractController;
+use App\Http\Controllers\Api\Sales\WebToLeadFormController;
+use App\Http\Controllers\Api\Sales\ForecastController;
+use App\Http\Controllers\Api\Sales\CommissionController;
 use Illuminate\Support\Facades\Route;
 
 // ── Sales & Revenue Module (Sanctum) ────────────────────────────────────
@@ -20,6 +29,77 @@ Route::middleware('auth:sanctum')->prefix('sales')->group(function () {
 
     // Dashboard
     Route::get('/dashboard', [SalesDashboardController::class, 'index']);
+
+    // Unified activity timeline (polymorphic subject)
+    Route::get('/activities', [SalesActivityController::class, 'index']);
+
+    // ── Tasks ───────────────────────────────────────────────────
+    Route::get('/task-statuses',                 [TaskStatusController::class, 'index']);
+    Route::post('/task-statuses',                [TaskStatusController::class, 'store']);
+    Route::put('/task-statuses/{taskStatus}',    [TaskStatusController::class, 'update']);
+    Route::delete('/task-statuses/{taskStatus}', [TaskStatusController::class, 'destroy']);
+
+    Route::get('/tasks/kanban',                  [TaskController::class, 'kanban']);
+    Route::post('/tasks/reorder',                [TaskController::class, 'reorder']);
+    Route::get('/tasks',                         [TaskController::class, 'index']);
+    Route::post('/tasks',                        [TaskController::class, 'store']);
+    Route::get('/tasks/{task}',                  [TaskController::class, 'show']);
+    Route::put('/tasks/{task}',                  [TaskController::class, 'update']);
+    Route::delete('/tasks/{task}',               [TaskController::class, 'destroy']);
+    Route::patch('/tasks/{task}/status',         [TaskController::class, 'updateStatus']);
+    Route::patch('/tasks/{task}/assign',         [TaskController::class, 'assign']);
+    Route::patch('/tasks/{task}/progress',       [TaskController::class, 'updateProgress']);
+    Route::post('/tasks/{task}/checklist',       [TaskController::class, 'addChecklistItem']);
+    Route::patch('/task-checklist/{item}',       [TaskController::class, 'toggleChecklistItem']);
+    Route::delete('/task-checklist/{item}',      [TaskController::class, 'deleteChecklistItem']);
+    Route::post('/tasks/{task}/comments',        [TaskController::class, 'addComment']);
+    Route::delete('/task-comments/{comment}',    [TaskController::class, 'deleteComment']);
+
+    // ── Follow-ups / Reminders ──────────────────────────────────
+    Route::get('/reminders/upcoming',            [ReminderController::class, 'upcoming']);
+    Route::get('/reminders',                     [ReminderController::class, 'index']);
+    Route::post('/reminders',                    [ReminderController::class, 'store']);
+    Route::put('/reminders/{reminder}',          [ReminderController::class, 'update']);
+    Route::delete('/reminders/{reminder}',       [ReminderController::class, 'destroy']);
+    Route::patch('/reminders/{reminder}/complete', [ReminderController::class, 'complete']);
+
+    // ── Contracts ───────────────────────────────────────────────
+    Route::get('/contract-types',                   [ContractController::class, 'types']);
+    Route::post('/contract-types',                  [ContractController::class, 'storeType']);
+    Route::delete('/contract-types/{contractType}', [ContractController::class, 'destroyType']);
+
+    Route::get('/contracts/expiring',               [ContractController::class, 'expiring']);
+    Route::get('/contracts',                        [ContractController::class, 'index']);
+    Route::post('/contracts',                       [ContractController::class, 'store']);
+    Route::get('/contracts/{contract}',             [ContractController::class, 'show']);
+    Route::put('/contracts/{contract}',             [ContractController::class, 'update']);
+    Route::delete('/contracts/{contract}',          [ContractController::class, 'destroy']);
+    Route::patch('/contracts/{contract}/status',    [ContractController::class, 'updateStatus']);
+    Route::post('/contracts/{contract}/renew',      [ContractController::class, 'renew']);
+    Route::post('/contracts/{contract}/sign',       [ContractController::class, 'sign']);
+
+    // ── Web-to-Lead forms (admin) ───────────────────────────────
+    Route::get('/web-to-lead-forms',                    [WebToLeadFormController::class, 'index']);
+    Route::post('/web-to-lead-forms',                   [WebToLeadFormController::class, 'store']);
+    Route::get('/web-to-lead-forms/{webToLeadForm}',    [WebToLeadFormController::class, 'show']);
+    Route::put('/web-to-lead-forms/{webToLeadForm}',    [WebToLeadFormController::class, 'update']);
+    Route::delete('/web-to-lead-forms/{webToLeadForm}', [WebToLeadFormController::class, 'destroy']);
+
+    // ── Forecasting (computed) ──────────────────────────────────
+    Route::get('/forecast/revenue',  [ForecastController::class, 'revenue']);
+    Route::get('/forecast/pipeline', [ForecastController::class, 'pipeline']);
+    Route::get('/forecast/funnel',   [ForecastController::class, 'funnel']);
+
+    // ── Commission ──────────────────────────────────────────────
+    Route::get('/commission-rules',                    [CommissionController::class, 'rules']);
+    Route::post('/commission-rules',                   [CommissionController::class, 'storeRule']);
+    Route::put('/commission-rules/{commissionRule}',   [CommissionController::class, 'updateRule']);
+    Route::delete('/commission-rules/{commissionRule}',[CommissionController::class, 'deleteRule']);
+    Route::get('/commissions',                         [CommissionController::class, 'entries']);
+    Route::get('/commissions/summary',                 [CommissionController::class, 'summary']);
+    Route::patch('/commissions/{commission}/approve',  [CommissionController::class, 'approve']);
+    Route::patch('/commissions/{commission}/reject',   [CommissionController::class, 'reject']);
+    Route::patch('/commissions/{commission}/mark-paid',[CommissionController::class, 'markPaid']);
 
     // Items catalog
     Route::get('/items',              [ItemController::class, 'index']);
@@ -37,6 +117,8 @@ Route::middleware('auth:sanctum')->prefix('sales')->group(function () {
     Route::patch('/proposals/{proposal}/send',            [ProposalController::class, 'send']);
     Route::patch('/proposals/{proposal}/status',          [ProposalController::class, 'updateStatus']);
     Route::post('/proposals/{proposal}/generate-qr',      [ProposalController::class, 'generateQR']);
+    Route::post('/proposals/{proposal}/convert-to-estimate', [ProposalController::class, 'convertToEstimate']);
+    Route::post('/proposals/{proposal}/convert-to-invoice',  [ProposalController::class, 'convertToInvoice']);
     Route::get('/proposals/{proposal}/pdf',               [ProposalController::class, 'exportPDF']);
 
     // Proposal Templates
@@ -143,4 +225,9 @@ Route::middleware('auth:sanctum')->prefix('sales')->group(function () {
     Route::post('/leads/{lead}/convert',                       [LeadController::class, 'convert']);
     Route::post('/leads/{lead}/notes',                         [LeadController::class, 'addNote']);
     Route::post('/leads/{lead}/questionnaire-response',        [LeadController::class, 'submitQuestionnaireResponse']);
+
+    // ── Rule-based Sales Insights (no LLM/ML) ───────────────────
+    Route::get('/leads/{lead}/win-probability',                [SalesInsightController::class, 'winProbability']);
+    Route::get('/leads/{lead}/next-best-action',               [SalesInsightController::class, 'nextBestAction']);
+    Route::get('/insights/task-priorities',                    [SalesInsightController::class, 'taskPriorities']);
 });

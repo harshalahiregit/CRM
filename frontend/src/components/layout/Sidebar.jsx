@@ -6,7 +6,7 @@ import {
   UserCheck, CalendarDays, FileText, Rocket, Building2,
   ClipboardList, ChevronDown, Shield, UserCog,
   IndianRupee, FileSignature, CreditCard, FileX,
-  ShoppingBag, UserPlus, Link2, RefreshCw, LayoutTemplate
+  ShoppingBag, UserPlus, Link2, RefreshCw, LayoutTemplate, Globe, TrendingUp
 } from 'lucide-react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
@@ -16,10 +16,11 @@ import { useState, useEffect } from 'react'
 import clsx from 'clsx'
 import { leadApi } from '@/services/leadApi'
 
+// NOTE: 'Contacts' and 'Deals' were removed — both were dead "Coming Soon"
+// links. Contacts are the existing Customer module's contacts, and there is no
+// separate Deal entity by design (leads are the pipeline, same as the old CRM).
 const NAV_ITEMS = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/app/dashboard' },
-  { label: 'Contacts', icon: Users, path: '/app/contacts' },
-  { label: 'Deals', icon: Briefcase, path: '/app/deals' },
   { label: 'Tasks', icon: CheckSquare, path: '/app/tasks' },
   { label: 'Projects', icon: FolderOpen, path: '/app/projects' },
   { label: 'Invoices', icon: Receipt, path: '/app/invoices' },
@@ -40,19 +41,30 @@ const HR_SUB_ITEMS = [
   { label: 'Employees', path: '/app/hr/employees', icon: Building2 },
 ]
 
+// Grouped so the ~17 sales micro-modules stay scannable instead of rendering
+// as one long flat list. A muted mini-header is emitted whenever `group`
+// changes (see the Sales render loop below).
 const SALES_SUB_ITEMS = [
-  { label: 'Sales Dashboard', path: '/app/sales/dashboard', icon: LayoutDashboard },
-  { label: 'Leads', path: '/app/sales/leads', icon: UserPlus },
-  { label: 'Proposals', path: '/app/sales/proposals', icon: FileSignature },
-  { label: 'Proposal Templates', path: '/app/sales/proposal-templates', icon: LayoutTemplate },
-  { label: 'Proforma Invoices', path: '/app/sales/estimates', icon: ClipboardList },
-  { label: 'Tax Invoices', path: '/app/sales/invoices', icon: Receipt },
-  { label: 'Payment Links', path: '/app/sales/payment-links', icon: Link2 },
-  { label: 'Retainer Invoices', path: '/app/sales/retainer-invoices', icon: RefreshCw },
-  { label: 'Delivery Notes', path: '/app/sales/delivery-notes', icon: Truck },
-  { label: 'Payments', path: '/app/sales/payments', icon: CreditCard },
-  { label: 'Credit Notes', path: '/app/sales/credit-notes', icon: FileX },
-  { label: 'Items', path: '/app/sales/items', icon: ShoppingBag },
+  { group: 'Pipeline',        label: 'Sales Dashboard', path: '/app/sales/dashboard', icon: LayoutDashboard },
+  { group: 'Pipeline',        label: 'Leads', path: '/app/sales/leads', icon: UserPlus },
+  { group: 'Pipeline',        label: 'Tasks', path: '/app/sales/tasks', icon: CheckSquare },
+  { group: 'Pipeline',        label: 'Forecast', path: '/app/sales/forecast', icon: TrendingUp },
+
+  { group: 'Documents',       label: 'Proposals', path: '/app/sales/proposals', icon: FileSignature },
+  { group: 'Documents',       label: 'Proposal Templates', path: '/app/sales/proposal-templates', icon: LayoutTemplate },
+  { group: 'Documents',       label: 'Proforma Invoices', path: '/app/sales/estimates', icon: ClipboardList },
+  { group: 'Documents',       label: 'Tax Invoices', path: '/app/sales/invoices', icon: Receipt },
+  { group: 'Documents',       label: 'Delivery Notes', path: '/app/sales/delivery-notes', icon: Truck },
+  { group: 'Documents',       label: 'Credit Notes', path: '/app/sales/credit-notes', icon: FileX },
+
+  { group: 'Billing',         label: 'Payments', path: '/app/sales/payments', icon: CreditCard },
+  { group: 'Billing',         label: 'Payment Links', path: '/app/sales/payment-links', icon: Link2 },
+  { group: 'Billing',         label: 'Retainer Invoices', path: '/app/sales/retainer-invoices', icon: RefreshCw },
+  { group: 'Billing',         label: 'Commission', path: '/app/sales/commission', icon: IndianRupee },
+
+  { group: 'Catalog & Setup', label: 'Items', path: '/app/sales/items', icon: ShoppingBag },
+  { group: 'Catalog & Setup', label: 'Contracts', path: '/app/sales/contracts', icon: FileSignature },
+  { group: 'Catalog & Setup', label: 'Web-to-Lead', path: '/app/sales/web-to-lead', icon: Globe },
 ]
 
 const HELPDESK_SUB_ITEMS = [
@@ -272,8 +284,13 @@ export default function Sidebar({ collapsed, onToggle }) {
             </div>
             {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Sales & Revenue</span><ChevronDown size={13} className={clsx('transition-transform duration-200', salesExpanded && 'rotate-180')} /></>}
           </button>
-          {(salesExpanded || collapsed) && SALES_SUB_ITEMS.map(({ label, path, icon: Icon }) => (
-            <NavLink key={path} to={path}>
+          {(salesExpanded || collapsed) && SALES_SUB_ITEMS.map(({ group, label, path, icon: Icon }, i) => (
+            <div key={path}>
+            {/* Mini group header — only when the group changes, and never in the collapsed icon rail */}
+            {!collapsed && group && group !== SALES_SUB_ITEMS[i - 1]?.group && (
+              <p className="label-caps px-5 mt-2 mb-1" style={{ paddingLeft: '28px', fontSize: '9px', opacity: 0.75 }}>{group}</p>
+            )}
+            <NavLink to={path}>
               {({ isActive }) => (
                 <div title={collapsed ? label : ''} className={clsx('nav-3d mb-0.5', isActive && 'nav-3d-active')} style={{ justifyContent: collapsed ? 'center' : undefined, paddingLeft: collapsed ? undefined : '28px' }}>
                   <div className="flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: isActive ? 'rgba(255,255,255,0.15)' : 'rgba(124,58,237,0.06)' }}>
@@ -289,6 +306,7 @@ export default function Sidebar({ collapsed, onToggle }) {
                 </div>
               )}
             </NavLink>
+            </div>
           ))}
         </div>
 

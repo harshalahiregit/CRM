@@ -15,25 +15,27 @@ class Lead extends Model
 
     protected $fillable = [
         'tenant_id', 'hash', 'name', 'title', 'company', 'email', 'phone',
-        'website', 'description', 'lead_value', 'lead_score', 'lead_temperature',
-        'conversion_chance', 'country', 'state', 'city', 'zip', 'address',
-        'status_id', 'source_id', 'assigned_to', 'created_by', 'is_public',
-        'last_contact_date', 'date_assigned', 'lost', 'junk', 'last_lead_status_id',
-        'date_converted', 'client_id', 'lead_order', 'referral_type',
-        'referral_value', 'referral_contact', 'tags',
+        'website', 'pan', 'gst', 'industry', 'campaign', 'priority',
+        'expected_close_date', 'description', 'lead_value', 'lead_score',
+        'lead_temperature', 'conversion_chance', 'country', 'state', 'city',
+        'zip', 'address', 'status_id', 'source_id', 'assigned_to', 'created_by',
+        'is_public', 'last_contact_date', 'date_assigned', 'lost', 'junk',
+        'last_lead_status_id', 'date_converted', 'client_id', 'lead_order',
+        'referral_type', 'referral_value', 'referral_contact', 'tags',
     ];
 
     protected $casts = [
-        'lead_value'        => 'decimal:2',
-        'lead_score'        => 'integer',
-        'conversion_chance' => 'integer',
-        'is_public'         => 'boolean',
-        'lost'              => 'boolean',
-        'junk'              => 'boolean',
-        'last_contact_date' => 'date',
-        'date_assigned'     => 'datetime',
-        'date_converted'    => 'datetime',
-        'referral_value'    => 'decimal:2',
+        'lead_value'          => 'decimal:2',
+        'lead_score'          => 'integer',
+        'conversion_chance'   => 'integer',
+        'is_public'           => 'boolean',
+        'lost'                => 'boolean',
+        'junk'                => 'boolean',
+        'last_contact_date'   => 'date',
+        'expected_close_date' => 'date',
+        'date_assigned'       => 'datetime',
+        'date_converted'      => 'datetime',
+        'referral_value'      => 'decimal:2',
     ];
 
     /* ── Auto-generate hash on creation ──────────────────────── */

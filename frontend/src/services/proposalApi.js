@@ -31,6 +31,12 @@ export const proposalApi = {
   generateQR: (id) =>
     api.post(`/sales/proposals/${id}/generate-qr`).then(r => r.data).catch(handleErr),
 
+  convertToEstimate: (id) =>
+    api.post(`/sales/proposals/${id}/convert-to-estimate`).then(r => r.data).catch(handleErr),
+
+  convertToInvoice: (id) =>
+    api.post(`/sales/proposals/${id}/convert-to-invoice`).then(r => r.data).catch(handleErr),
+
   // PDF endpoint requires the auth token, so a plain <a href> won't work —
   // fetch as a blob and trigger the download via a temporary object URL.
   downloadPdf: async (id, filename) => {

@@ -126,6 +126,26 @@ export default function ProposalDetail() {
     }
   }
 
+  const handleConvertToEstimate = async () => {
+    try {
+      const est = await salesApi.proposals.convertToEstimate(proposal.id)
+      showToast('Converted to Proforma Invoice')
+      setTimeout(() => navigate(`/app/sales/estimates/${est.id}`), 700)
+    } catch (e) {
+      showToast(e.message || 'Failed to convert', 'error')
+    }
+  }
+
+  const handleConvertToInvoice = async () => {
+    try {
+      const inv = await salesApi.proposals.convertToInvoice(proposal.id)
+      showToast('Converted to Tax Invoice')
+      setTimeout(() => navigate(`/app/sales/invoices/${inv.id}`), 700)
+    } catch (e) {
+      showToast(e.message || 'Failed to convert', 'error')
+    }
+  }
+
   const postComment = async () => {
     if (!newComment.trim()) return
     setPosting(true)
@@ -325,6 +345,30 @@ export default function ProposalDetail() {
                   <button onClick={() => handleStatusChange('Declined')} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold" style={{ background: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' }}>
                     <XCircle size={14} /> Mark Declined
                   </button>
+                </div>
+              )}
+
+              {/* Convert actions — customer proposals only */}
+              {proposal.rel_type === 'customer' && (
+                <div className="mt-4 pt-5 flex flex-wrap gap-3" style={{ borderTop: '1px solid var(--border)' }}>
+                  {proposal.converted_estimate_id ? (
+                    <button onClick={() => navigate(`/app/sales/estimates/${proposal.converted_estimate_id}`)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold" style={{ background: 'rgba(124,58,237,0.1)', color: '#a78bfa', border: '1px solid rgba(124,58,237,0.2)' }}>
+                      <FileText size={14} /> View Proforma Invoice
+                    </button>
+                  ) : (
+                    <button onClick={handleConvertToEstimate} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold" style={{ background: 'rgba(124,58,237,0.1)', color: '#a78bfa', border: '1px solid rgba(124,58,237,0.2)' }}>
+                      <FileText size={14} /> Convert to Proforma Invoice
+                    </button>
+                  )}
+                  {proposal.converted_invoice_id ? (
+                    <button onClick={() => navigate(`/app/sales/invoices/${proposal.converted_invoice_id}`)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>
+                      <FileText size={14} /> View Tax Invoice
+                    </button>
+                  ) : (
+                    <button onClick={handleConvertToInvoice} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>
+                      <FileText size={14} /> Convert to Tax Invoice
+                    </button>
+                  )}
                 </div>
               )}
             </div>

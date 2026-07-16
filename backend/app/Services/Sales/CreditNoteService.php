@@ -14,6 +14,10 @@ use Illuminate\Support\Facades\Log;
 
 class CreditNoteService
 {
+    public function __construct(private CommissionService $commissionService)
+    {
+    }
+
     public function list(int $tenantId, array $filters): mixed
     {
         $query = CreditNote::forTenant($tenantId)->with('lineItems');
@@ -111,6 +115,10 @@ class CreditNoteService
 
             $creditNote->recalcRemaining();
             $invoice->recalcBalance();
+
+            // An invoice can reach 'Paid' via credit application too — same
+            // idempotent commission hook as the payment path.
+            $this->commissionService->computeForInvoice($invoice->fresh());
 
             Log::channel('sales')->info('Credit note applied to invoice', [
                 'credit_note_id' => $creditNote->id,

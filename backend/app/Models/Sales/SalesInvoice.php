@@ -57,7 +57,11 @@ class SalesInvoice extends Model
         static::creating(function (SalesInvoice $inv) {
             if (empty($inv->number)) {
                 $year  = date('Y');
-                $count = static::where('tenant_id', $inv->tenant_id)
+                // withTrashed(): soft-deleted rows still occupy the UNIQUE
+                // index on `number`, so they must be counted or the next
+                // create reuses a number and the insert fails.
+                $count = static::withTrashed()
+                               ->where('tenant_id', $inv->tenant_id)
                                ->whereYear('created_at', $year)
                                ->count() + 1;
                 $inv->number = 'INV-' . $year . '-' . str_pad($count, 3, '0', STR_PAD_LEFT);
@@ -128,9 +132,11 @@ class SalesInvoice extends Model
     {
         if (
             $this->balance > 0
-            && $this->due_date->isPast()
-            && !in_array($this->status, ['Paid', 'Cancelled'])
+            && $this->due_date && $this->due_date->isPast()
+            && !in_array($this->status, ['Paid', 'Cancelled', 'Overdue'])
         ) {
+            // Exclude 'Overdue' above so an already-overdue invoice isn't
+            // re-written on every list() call (write-on-read).
             $this->status = 'Overdue';
             $this->saveQuietly();
         }

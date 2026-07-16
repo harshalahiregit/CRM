@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Plus, Send, Check, Trash2, X, MoreVertical, Truck, MapPin, ChevronDown, Tag } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
+import { useClientOptions } from '@/hooks/useClientOptions'
 import StatusBadge from '../components/StatusBadge'
 
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
@@ -21,6 +22,7 @@ const EMPTY_FORM = {
 }
 
 export default function DeliveryNotes() {
+  const clientOptions = useClientOptions()
   const [data, setData]           = useState([])
   const [loading, setLoading]     = useState(true)
   const [filter, setFilter]       = useState('All')
@@ -42,11 +44,23 @@ export default function DeliveryNotes() {
 
   const handleCreate = async () => {
     if (!form.clientid) return showToast('Customer is required', 'error')
-    await salesApi.deliveryNotes.create(form)
-    showToast('Delivery note created!')
-    setShowDrawer(false)
-    setForm(EMPTY_FORM)
-    load()
+    try {
+      // Map form → backend field names (client_id / delivery_date / note).
+      await salesApi.deliveryNotes.create({
+        client_id:        Number(form.clientid),
+        delivery_date:    form.date,
+        shipping_address: form.shipping_address || null,
+        shipping_city:    form.shipping_city || null,
+        shipping_state:   form.shipping_state || null,
+        shipping_country: form.shipping_country || null,
+        shipping_zip:     form.shipping_zip || null,
+        note:             form.notes || null,
+      })
+      showToast('Delivery note created!')
+      setShowDrawer(false)
+      setForm(EMPTY_FORM)
+      load()
+    } catch (e) { showToast(e.message || 'Failed to create delivery note', 'error') }
   }
 
   const stats = {
@@ -217,7 +231,7 @@ export default function DeliveryNotes() {
                       <label className="label">Customer *</label>
                       <select className="input-3d text-sm" value={form.clientid} onChange={e => sf('clientid', e.target.value)}>
                         <option value="">Select customer…</option>
-                        {salesApi.clients.map(c => <option key={c} value={c}>{c}</option>)}
+                        {clientOptions.map(c => <option key={c.id} value={c.id}>{c.company || c.name}</option>)}
                       </select>
                     </div>
                     <div>

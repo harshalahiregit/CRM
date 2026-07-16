@@ -27,7 +27,10 @@ class DeliveryNote extends Model
     {
         static::creating(function (DeliveryNote $dn) {
             if (empty($dn->number)) {
-                $count = static::where('tenant_id', $dn->tenant_id)->count() + 1;
+                // withTrashed(): soft-deleted rows still occupy the UNIQUE
+                // index on `number`, so they must be counted or the next
+                // create reuses a number and the insert fails.
+                $count = static::withTrashed()->where('tenant_id', $dn->tenant_id)->count() + 1;
                 $dn->number = 'DN-' . str_pad($count, 3, '0', STR_PAD_LEFT);
             }
         });
