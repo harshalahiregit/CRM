@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 class TaskReminderController extends Controller
 {
     use ApiResponse;
+    use GuardsTaskAccess;
 
     public function __construct(private TaskService $tasks)
     {
@@ -17,11 +18,13 @@ class TaskReminderController extends Controller
 
     public function index(Request $request, int $task)
     {
+        $this->guardTask($request, $task);
         return $this->success($this->tasks->listReminders($task, $request->user()->tenant_id), 'Reminders retrieved');
     }
 
     public function store(Request $request, int $task)
     {
+        $this->guardTask($request, $task);
         $data = $request->validate([
             'user_id'     => 'nullable|integer|exists:users,id',   // defaults to self
             'description' => 'nullable|string|max:255',
@@ -35,6 +38,7 @@ class TaskReminderController extends Controller
 
     public function destroy(Request $request, int $task, int $reminder)
     {
+        $this->guardTask($request, $task);
         $this->tasks->deleteReminder($reminder, $task, $request->user()->tenant_id);
 
         return $this->success(null, 'Reminder removed');

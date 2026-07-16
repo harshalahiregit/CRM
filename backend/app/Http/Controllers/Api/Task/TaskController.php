@@ -28,10 +28,24 @@ class TaskController extends Controller
         return $this->statuses->keys('task', $request->user()->tenant_id);
     }
 
+    private function isAdmin(Request $request): bool
+    {
+        return $request->user()?->role === 'admin';
+    }
+
+    /** 403s a staff member who tries to reach a task they can't see. */
+    private function guard(Request $request, int $task): void
+    {
+        $this->tasks->assertTaskVisible($task, $request->user()->tenant_id, $request->user()->id, $this->isAdmin($request));
+    }
+
     public function index(Request $request)
     {
         $filters = $request->only(['rel_type', 'rel_id', 'status', 'priority', 'assignee', 'search', 'tag']);
-        return $this->success($this->tasks->list($request->user()->tenant_id, $filters), 'Tasks retrieved');
+        return $this->success(
+            $this->tasks->list($request->user()->tenant_id, $filters, $request->user()->id, $this->isAdmin($request)),
+            'Tasks retrieved'
+        );
     }
 
     public function store(StoreTaskRequest $request)
@@ -42,45 +56,51 @@ class TaskController extends Controller
 
     public function show(Request $request, int $task)
     {
+        $this->guard($request, $task);
         return $this->success($this->tasks->show($task, $request->user()->tenant_id), 'Task retrieved');
     }
 
     public function update(UpdateTaskRequest $request, int $task)
     {
+        $this->guard($request, $task);
         return $this->success($this->tasks->update($task, $request->validated(), $request->user()->tenant_id), 'Task updated');
     }
 
     public function destroy(Request $request, int $task)
     {
+        $this->guard($request, $task);
         $this->tasks->delete($task, $request->user()->tenant_id);
         return $this->success(null, 'Task deleted');
     }
 
     public function updateStatus(UpdateTaskStatusRequest $request, int $task)
     {
+        $this->guard($request, $task);
         return $this->success($this->tasks->changeStatus($task, $request->validated('status'), $request->user()->tenant_id, $request->user()->id), 'Status updated');
     }
 
     public function assignees(SyncTaskUsersRequest $request, int $task)
     {
+        $this->guard($request, $task);
         return $this->success($this->tasks->syncAssignees($task, $request->validated('user_ids'), $request->user()->tenant_id, $request->user()->id), 'Assignees updated');
     }
 
     public function followers(SyncTaskUsersRequest $request, int $task)
     {
+        $this->guard($request, $task);
         return $this->success($this->tasks->syncFollowers($task, $request->validated('user_ids'), $request->user()->tenant_id, $request->user()->id), 'Followers updated');
     }
 
     /** Counts for the list KPI cards. */
     public function stats(Request $request)
     {
-        return $this->success($this->tasks->stats($request->user()->tenant_id, $request->user()->id), 'Stats retrieved');
+        return $this->success($this->tasks->stats($request->user()->tenant_id, $request->user()->id, $this->isAdmin($request)), 'Stats retrieved');
     }
 
     /** Apply one action (delete/status/priority/assign) to many tasks at once. */
     public function bulk(BulkTaskActionRequest $request)
     {
-        $count = $this->tasks->bulkAction($request->validated(), $request->user()->tenant_id, $request->user()->id);
+        $count = $this->tasks->bulkAction($request->validated(), $request->user()->tenant_id, $request->user()->id, $this->isAdmin($request));
 
         return $this->success(['affected' => $count], "Applied to {$count} ".($count === 1 ? 'task' : 'tasks'));
     }
@@ -98,6 +118,7 @@ class TaskController extends Controller
             'copy_followers' => 'nullable|boolean',
         ]);
 
+        $this->guard($request, $task);
         $copy = $this->tasks->copy($task, $opts, $request->user()->tenant_id, $request->user()->id);
 
         return $this->success($copy, 'Task copied', 201);
@@ -112,7 +133,7 @@ class TaskController extends Controller
             'ordered_ids.*' => 'integer|min:1',
         ]);
 
-        $count = $this->tasks->reorder($data['ordered_ids'], $data['status'], $request->user()->tenant_id, $request->user()->id);
+        $count = $this->tasks->reorder($data['ordered_ids'], $data['status'], $request->user()->tenant_id, $request->user()->id, $this->isAdmin($request));
 
         return $this->success(['reordered' => $count], 'Board updated');
     }

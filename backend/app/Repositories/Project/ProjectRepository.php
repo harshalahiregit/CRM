@@ -12,9 +12,17 @@ class ProjectRepository extends BaseRepository
     protected string $modelClass = Project::class;
 
     /** Filtered, tenant-scoped project list. */
-    public function filtered(int $tenantId, array $filters): Collection
+    public function filtered(int $tenantId, array $filters, ?array $visibility = null): Collection
     {
         $query = Project::forTenant($tenantId)->with('creator:id,name');
+
+        // Access barrier: a non-admin only sees projects they created or belong
+        // to. TaskService passes null for admins, which skips this entirely.
+        if ($visibility) {
+            $uid = (int) $visibility['user_id'];
+            $query->where(fn ($q) => $q->where('created_by', $uid)
+                ->orWhereHas('members', fn ($m) => $m->where('user_id', $uid)));
+        }
 
         if (! empty($filters['status'])) {
             $query->where('status', $filters['status']);

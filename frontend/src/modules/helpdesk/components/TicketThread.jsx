@@ -5,7 +5,7 @@ import clsx from 'clsx'
 import {
   Paperclip, Send, X, ListTodo, FolderKanban, GitMerge,
   Plus, Trash2, Sparkles, RefreshCw, ArrowLeft, AlertCircle,
-  MessageSquare, Activity, StickyNote, CheckCircle2,
+  MessageSquare, Activity, StickyNote, CheckCircle2, User,
 } from 'lucide-react'
 import { helpdeskApi } from '@/services/helpdeskApi'
 import { useAuth } from '@/context/AuthContext'
@@ -78,10 +78,10 @@ export default function TicketThread() {
   // Resolve status name (prefer a configured "resolved"/"closed" status).
   const { data: settings } = useQuery({ queryKey: ['helpdesk-settings'], queryFn: helpdeskApi.settings.all })
 
-  // Data behind the name pickers. Fetched lazily — only when a picker is opened
-  // (or the convert-to-tasks modal needs the assignee list).
+  // Agents power both the convert-to-tasks modal and the header Assignee picker,
+  // so fetch them up front rather than only when a modal opens.
   const { data: agents = [] } = useQuery({
-    queryKey: ['helpdesk-agents'], queryFn: helpdeskApi.agents, enabled: tasksOpen,
+    queryKey: ['helpdesk-agents'], queryFn: helpdeskApi.agents,
   })
   const { data: projectList = [], isLoading: projectsLoading } = useQuery({
     queryKey: ['projects-picker'], queryFn: () => projectApi.list(), enabled: projectPickerOpen,
@@ -183,6 +183,24 @@ export default function TicketThread() {
     },
     onError: (_e, _v, ctx) => ctx?.prev && queryClient.setQueryData(ticketKey, ctx.prev),
     onSettled: () => queryClient.invalidateQueries({ queryKey: ticketKey }),
+  })
+
+  // Assign / reassign / unassign the ticket to an agent. Optimistic so the header
+  // reflects the choice instantly; the ticket list is refreshed too.
+  const assignMut = useMutation({
+    mutationFn: (agentId) => helpdeskApi.tickets.assign(id, agentId),
+    onMutate: async (agentId) => {
+      await queryClient.cancelQueries({ queryKey: ticketKey })
+      const prev = queryClient.getQueryData(ticketKey)
+      const agent = agents.find(a => String(a.id) === String(agentId))
+      queryClient.setQueryData(ticketKey, (o) => (o ? { ...o, assigned_to: agentId, assignee: agent || null } : o))
+      return { prev }
+    },
+    onError: (_e, _v, ctx) => ctx?.prev && queryClient.setQueryData(ticketKey, ctx.prev),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ticketKey })
+      queryClient.invalidateQueries({ queryKey: ['helpdesk-tickets'] })
+    },
   })
 
   // Optimistic reply — the bubble appears immediately; composer clears at once.
@@ -325,6 +343,29 @@ export default function TicketThread() {
         {/* Action buttons */}
         {ticket && (
           <div className="flex items-center gap-2 shrink-0 flex-wrap">
+            {/* Assignee — pick any agent, or Unassigned. */}
+            <div className="flex items-center gap-1.5 pr-1 rounded-xl" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', paddingLeft: 8 }}>
+              <User size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+              <Select
+                value={ticket.assigned_to ?? ''}
+                onChange={v => assignMut.mutate(v === '' ? null : Number(v))}
+                options={[{ value: '', label: 'Unassigned' }, ...agents.map(a => ({ value: a.id, label: a.name }))]}
+                placeholder="Assign…"
+                size="sm"
+                className="w-36"
+                ariaLabel="Assign ticket to an agent"
+              />
+              {user?.id && ticket.assigned_to !== user.id && (
+                <button
+                  onClick={() => assignMut.mutate(user.id)}
+                  className="text-[10px] font-bold px-2 py-1 rounded-lg whitespace-nowrap hover:opacity-80"
+                  style={{ color: '#22d3ee' }}
+                  title="Assign this ticket to me"
+                >
+                  to me
+                </button>
+              )}
+            </div>
             <ActionBtn
               icon={ListTodo}
               label="Convert to tasks"

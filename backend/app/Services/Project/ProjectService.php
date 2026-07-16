@@ -61,9 +61,53 @@ class ProjectService
         return $this->statuses->closedKey('project', $tenantId) ?? 'finished';
     }
 
-    public function list(int $tenantId, array $filters = [], ?int $userId = null): Collection
+    /* ── Access control ─────────────────────────────────────────────
+     * Admins see every project in the tenant. A non-admin staff member
+     * only sees a project they created or are a member of. Editing/deleting
+     * a project (and its members/status) is admin-or-creator only.
+     */
+
+    private function canSeeProject(Project $project, int $userId): bool
     {
-        $projects = $this->projects->filtered($tenantId, $filters);
+        return (int) $project->created_by === $userId
+            || $project->members()->where('user_id', $userId)->exists();
+    }
+
+    /** View access: admin, creator, or member. Throws 403 otherwise. */
+    public function assertProjectVisible(int $projectId, int $tenantId, ?int $userId, bool $isAdmin): Project
+    {
+        $project = $this->find($projectId, $tenantId);
+
+        if (! $isAdmin && $userId !== null && ! $this->canSeeProject($project, $userId)) {
+            throw new BusinessException('You do not have access to this project.', 403);
+        }
+
+        return $project;
+    }
+
+    /** Manage access (edit / delete / status / members): admin or the creator only. */
+    public function assertProjectManage(int $projectId, int $tenantId, ?int $userId, bool $isAdmin): Project
+    {
+        $project = $this->find($projectId, $tenantId);
+
+        if (! $isAdmin && $userId !== null && (int) $project->created_by !== $userId) {
+            throw new BusinessException('Only the project’s creator or an admin can change this project.', 403);
+        }
+
+        return $project;
+    }
+
+    /** Manage a milestone (by its id) → resolve its project, then manage-check that. */
+    public function assertMilestoneManage(int $milestoneId, int $tenantId, ?int $userId, bool $isAdmin): void
+    {
+        $milestone = ProjectMilestone::where('tenant_id', $tenantId)->findOrFail($milestoneId);
+        $this->assertProjectManage((int) $milestone->project_id, $tenantId, $userId, $isAdmin);
+    }
+
+    public function list(int $tenantId, array $filters = [], ?int $userId = null, bool $isAdmin = true): Collection
+    {
+        $visibility = (! $isAdmin && $userId !== null) ? ['user_id' => $userId] : null;
+        $projects = $this->projects->filtered($tenantId, $filters, $visibility);
 
         // Batch the tag lookup — one query for the whole page, not one per row.
         $tagMap = $this->tags->tagsForMany('project', $projects->pluck('id')->all(), $tenantId);

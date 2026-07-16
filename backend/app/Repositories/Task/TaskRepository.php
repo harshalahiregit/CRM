@@ -12,7 +12,7 @@ class TaskRepository extends BaseRepository
     protected string $modelClass = Task::class;
 
     /** Filtered, tenant-scoped task list. */
-    public function filtered(int $tenantId, array $filters): Collection
+    public function filtered(int $tenantId, array $filters, ?array $visibility = null): Collection
     {
         $query = Task::forTenant($tenantId)->with('creator:id,name');
 
@@ -59,6 +59,26 @@ class TaskRepository extends BaseRepository
                     ->where('taggables.tenant_id', $tenantId)
                     ->where('taggables.taggable_type', 'task')
                     ->where('tags.name', $filters['tag']);
+            });
+        }
+
+        // Access barrier: a non-admin only sees tasks they own, are assigned to,
+        // follow, that are Public, or that belong to a project they're in. The
+        // caller (TaskService) passes null for admins, which skips this entirely.
+        if ($visibility) {
+            $uid = (int) $visibility['user_id'];
+            $pids = $visibility['project_ids'] ?? [];
+            $query->where(function ($q) use ($uid, $pids) {
+                $q->where('created_by', $uid)->orWhere('is_public', true);
+                if (Schema::hasTable('task_assignees')) {
+                    $q->orWhereHas('assignees', fn ($a) => $a->where('user_id', $uid));
+                }
+                if (Schema::hasTable('task_followers')) {
+                    $q->orWhereHas('followers', fn ($f) => $f->where('user_id', $uid));
+                }
+                if (! empty($pids)) {
+                    $q->orWhere(fn ($x) => $x->where('rel_type', 'project')->whereIn('rel_id', $pids));
+                }
             });
         }
 

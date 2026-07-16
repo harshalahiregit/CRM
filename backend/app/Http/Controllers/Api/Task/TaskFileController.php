@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Storage;
 class TaskFileController extends Controller
 {
     use ApiResponse;
+    use GuardsTaskAccess;
 
     public function __construct(private TaskService $tasks)
     {
@@ -23,11 +24,13 @@ class TaskFileController extends Controller
 
     public function index(Request $request, int $task)
     {
+        $this->guardTask($request, $task);
         return $this->success($this->tasks->listFiles($task, $request->user()->tenant_id), 'Files retrieved');
     }
 
     public function store(Request $request, int $task)
     {
+        $this->guardTask($request, $task);
         $request->validate([
             'files'   => ['required', 'array', 'max:10'],
             'files.*' => ['file', 'max:10240'],   // 10 MB each, same ceiling as helpdesk
@@ -52,6 +55,7 @@ class TaskFileController extends Controller
 
     public function download(Request $request, int $task, int $file)
     {
+        $this->guardTask($request, $task);
         $row = $this->tasks->findFile($file, $task, $request->user()->tenant_id);
 
         abort_unless(Storage::disk('local')->exists($row->file_path), 404, 'File missing from storage.');
@@ -61,6 +65,7 @@ class TaskFileController extends Controller
 
     public function destroy(Request $request, int $task, int $file)
     {
+        $this->guardTask($request, $task);
         $this->tasks->deleteFile($file, $task, $request->user()->tenant_id);
 
         return $this->success(null, 'File deleted');

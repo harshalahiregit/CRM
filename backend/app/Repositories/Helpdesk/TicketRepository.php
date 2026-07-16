@@ -11,9 +11,23 @@ class TicketRepository extends BaseRepository
     protected string $modelClass = Ticket::class;
 
     /** Filtered, tenant-scoped ticket list for the grid. */
-    public function filtered(int $tenantId, array $filters): Collection
+    public function filtered(int $tenantId, array $filters, ?array $visibility = null): Collection
     {
         $query = Ticket::forTenant($tenantId)->with('assignee:id,name,email');
+
+        // Access barrier: a non-manager agent only sees tickets assigned to them,
+        // unassigned tickets (claimable), or tickets in a department they manage.
+        // HelpdeskService passes null for admins / global managers → no scoping.
+        if ($visibility) {
+            $uid = (int) $visibility['user_id'];
+            $depts = $visibility['dept_ids'] ?? [];
+            $query->where(function ($q) use ($uid, $depts) {
+                $q->where('assigned_to', $uid)->orWhereNull('assigned_to');
+                if (! empty($depts)) {
+                    $q->orWhereIn('department_id', $depts);
+                }
+            });
+        }
 
         if (! empty($filters['status'])) {
             $query->where('status', $filters['status']);

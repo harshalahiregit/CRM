@@ -16,9 +16,15 @@ class TicketReplyController extends Controller
     {
     }
 
+    private function guardView(Request $request, int $ticket): void
+    {
+        $this->helpdesk->assertTicketVisible($ticket, $request->user()->tenant_id, $request->user()->id, $request->user()->role);
+    }
+
     /* ── Thread for a ticket ───────────────────────────────────── */
     public function index(Request $request, int $ticket)
     {
+        $this->guardView($request, $ticket);
         $replies = $this->helpdesk->listReplies($ticket, $request->user()->tenant_id);
 
         return $this->success($replies, 'Replies retrieved');
@@ -27,6 +33,7 @@ class TicketReplyController extends Controller
     /* ── Post a reply (multipart, with optional file uploads) ───── */
     public function store(Request $request, int $ticket)
     {
+        $this->guardView($request, $ticket);
         // Drop any Cc entry that isn't a valid email BEFORE validation. A stray or
         // browser-autofilled value (e.g. a name) would otherwise 422 the entire
         // reply — making it look like "sending a message doesn't work". Cc is a
@@ -78,6 +85,7 @@ class TicketReplyController extends Controller
     /* ── Secure attachment download (auth + tenant scoped) ─────── */
     public function download(Request $request, int $ticket, int $attachment)
     {
+        $this->guardView($request, $ticket);
         $file = $this->helpdesk->findAttachment($attachment, $ticket, $request->user()->tenant_id);
 
         abort_unless(Storage::disk('local')->exists($file->file_path), 404, 'File missing from storage.');

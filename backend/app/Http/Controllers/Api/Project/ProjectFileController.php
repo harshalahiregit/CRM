@@ -16,13 +16,20 @@ class ProjectFileController extends Controller
     {
     }
 
+    private function guardView(Request $request, int $project): void
+    {
+        $this->projects->assertProjectVisible($project, $request->user()->tenant_id, $request->user()->id, $request->user()?->role === 'admin');
+    }
+
     public function index(Request $request, int $project)
     {
+        $this->guardView($request, $project);
         return $this->success($this->projects->listFiles($project, $request->user()->tenant_id), 'Files retrieved');
     }
 
     public function store(Request $request, int $project)
     {
+        $this->guardView($request, $project);
         $request->validate([
             'file'                => 'required|file|max:20480',   // 20 MB
             'visible_to_customer' => 'nullable|boolean',
@@ -44,6 +51,7 @@ class ProjectFileController extends Controller
 
     public function download(Request $request, int $project, int $file)
     {
+        $this->guardView($request, $project);
         $record = $this->projects->findFile($file, $project, $request->user()->tenant_id);
         abort_unless(Storage::disk('local')->exists($record->file_path), 404, 'File missing from storage.');
 
@@ -52,6 +60,7 @@ class ProjectFileController extends Controller
 
     public function destroy(Request $request, int $project, int $file)
     {
+        $this->guardView($request, $project);
         $this->projects->deleteFile($file, $project, $request->user()->tenant_id);
         return $this->success(null, 'File deleted');
     }

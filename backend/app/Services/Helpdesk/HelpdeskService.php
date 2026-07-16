@@ -36,16 +36,124 @@ class HelpdeskService
 
     /* ── Tickets: read ──────────────────────────────────────────── */
 
-    public function listTickets(int $tenantId, array $filters = []): Collection
+    /* ── Access control ─────────────────────────────────────────────
+     * A helpdesk is a shared queue, but not a free-for-all. Admins and ticket
+     * managers (tenant-wide managers + a department's managers) see everything.
+     * A plain agent sees tickets assigned to them, unassigned tickets (so the
+     * open queue stays claimable), and tickets in a department they manage.
+     * Deleting a ticket is manager-only (admin or a manager of its department).
+     */
+
+    private function jsonIds($val): \Illuminate\Support\Collection
     {
-        return $this->tickets->filtered($tenantId, $filters)
-            ->map(fn (Ticket $t) => $this->decorateWithCustomer($t, $tenantId));
+        if (is_array($val)) {
+            return collect($val)->map(fn ($i) => (int) $i);
+        }
+        if (is_string($val) && $val !== '') {
+            return collect(json_decode($val, true) ?: [])->map(fn ($i) => (int) $i);
+        }
+
+        return collect();
     }
 
-    public function showTicket(int $ticketId, int $tenantId): Ticket
+    /** Tenant-wide ticket managers see (and can delete) every ticket. */
+    private function isGlobalTicketManager(int $tenantId, int $userId, string $role): bool
+    {
+        if ($role === 'admin') {
+            return true;
+        }
+
+        return $this->jsonIds(
+            \App\Models\Helpdesk\HelpdeskSetting::where('tenant_id', $tenantId)->value('ticket_manager_ids')
+        )->contains($userId);
+    }
+
+    /** Department ids this user manages (they're in the department's manager_ids). */
+    private function managedDepartmentIds(int $tenantId, int $userId): array
+    {
+        return \App\Models\Helpdesk\TicketDepartment::where('tenant_id', $tenantId)
+            ->get(['id', 'manager_ids'])
+            ->filter(fn ($d) => $this->jsonIds($d->manager_ids)->contains($userId))
+            ->pluck('id')->map(fn ($i) => (int) $i)->all();
+    }
+
+    /** Manager of THIS ticket → admin, a global manager, or a manager of its department. */
+    public function isTicketManager(Ticket $ticket, int $userId, string $role): bool
+    {
+        if ($this->isGlobalTicketManager($ticket->tenant_id, $userId, $role)) {
+            return true;
+        }
+
+        return $ticket->department_id
+            && in_array((int) $ticket->department_id, $this->managedDepartmentIds($ticket->tenant_id, $userId), true);
+    }
+
+    public function canSeeTicket(Ticket $ticket, int $userId, string $role): bool
+    {
+        if ($this->isGlobalTicketManager($ticket->tenant_id, $userId, $role)) {
+            return true;
+        }
+        // Assigned to me, or still unassigned (claimable from the open queue).
+        if ((int) $ticket->assigned_to === $userId || $ticket->assigned_to === null) {
+            return true;
+        }
+
+        return $ticket->department_id
+            && in_array((int) $ticket->department_id, $this->managedDepartmentIds($ticket->tenant_id, $userId), true);
+    }
+
+    /** View/work access — throws 403 otherwise. Returns the ticket for reuse. */
+    public function assertTicketVisible(int $ticketId, int $tenantId, int $userId, string $role): Ticket
+    {
+        $ticket = $this->findTicket($ticketId, $tenantId);
+
+        if (! $this->canSeeTicket($ticket, $userId, $role)) {
+            throw new BusinessException('You do not have access to this ticket.', 403);
+        }
+
+        return $ticket;
+    }
+
+    /** Delete access — admin or a manager of the ticket's department only. */
+    public function assertTicketManage(int $ticketId, int $tenantId, int $userId, string $role): Ticket
+    {
+        $ticket = $this->findTicket($ticketId, $tenantId);
+
+        if (! $this->isTicketManager($ticket, $userId, $role)) {
+            throw new BusinessException('Only an admin or a department manager can delete this ticket.', 403);
+        }
+
+        return $ticket;
+    }
+
+    public function listTickets(int $tenantId, array $filters = [], ?int $userId = null, ?string $role = null): Collection
+    {
+        $scoped = $userId !== null && $role !== null && ! $this->isGlobalTicketManager($tenantId, $userId, $role);
+        $managedDepts = $scoped ? $this->managedDepartmentIds($tenantId, $userId) : [];
+        $visibility = $scoped ? ['user_id' => $userId, 'dept_ids' => $managedDepts] : null;
+
+        // Precompute delete rights once so each row can carry a can_delete flag
+        // (the frontend hides the delete button on tickets you can't remove).
+        $canDeleteAll = $userId === null || $role === null || ! $scoped;   // admin / global manager
+
+        return $this->tickets->filtered($tenantId, $filters, $visibility)
+            ->map(function (Ticket $t) use ($tenantId, $canDeleteAll, $managedDepts) {
+                $t = $this->decorateWithCustomer($t, $tenantId);
+                $t->setAttribute('can_delete', $canDeleteAll
+                    || ($t->department_id && in_array((int) $t->department_id, $managedDepts, true)));
+
+                return $t;
+            });
+    }
+
+    public function showTicket(int $ticketId, int $tenantId, ?int $userId = null, ?string $role = null): Ticket
     {
         $ticket = $this->findTicket($ticketId, $tenantId);
         $ticket->load(['assignee:id,name,email', 'replies.attachments', 'feedback']);
+
+        if ($userId !== null && $role !== null) {
+            $ticket->setAttribute('can_delete', $this->isTicketManager($ticket, $userId, $role));
+        }
 
         return $this->decorateWithCustomer($ticket, $tenantId);
     }

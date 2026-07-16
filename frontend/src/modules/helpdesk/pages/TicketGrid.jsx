@@ -70,7 +70,13 @@ export default function TicketGrid() {
 
   const { data: raw = [], isLoading } = useQuery({ queryKey: ['helpdesk-tickets'], queryFn: () => helpdeskApi.tickets.list() })
   const { data: settings } = useQuery({ queryKey: ['helpdesk-settings'], queryFn: helpdeskApi.settings.all })
+  const { data: agents = [] } = useQuery({ queryKey: ['helpdesk-agents'], queryFn: helpdeskApi.agents })
   const tickets = normalize(raw)
+
+  // Only offer bulk-delete when every selected ticket is one the user may delete
+  // (admin or a manager of its department — carried on each row as can_delete).
+  const canDeleteSelected = user?.role === 'admin'
+    || (selected.size > 0 && [...selected].every(id => tickets.find(t => t.id === id)?.can_delete))
 
   const statusColor = useMemo(() => {
     const m = {}; (settings?.statuses || []).forEach(s => { m[s.name] = s.color }); return (n) => m[n] || '#64748b'
@@ -240,8 +246,17 @@ export default function TicketGrid() {
               className="w-36"
               ariaLabel="Set status for selected tickets"
             />
+            <Select
+              value=""
+              onChange={v => v && bulk.mutate({ action: 'assign', value: Number(v) })}
+              options={agents.map(a => ({ value: a.id, label: a.name }))}
+              placeholder="Assign to…"
+              size="sm"
+              className="w-40"
+              ariaLabel="Assign selected tickets to an agent"
+            />
             {user?.id && <BulkBtn icon={UserCheck} label="Assign to me" onClick={() => bulk.mutate({ action: 'assign', value: user.id })} />}
-            <BulkBtn icon={Trash2} label="Delete" danger onClick={() => bulk.mutate({ action: 'delete' })} />
+            {canDeleteSelected && <BulkBtn icon={Trash2} label="Delete" danger onClick={() => bulk.mutate({ action: 'delete' })} />}
             <button onClick={() => setSelected(new Set())} className="text-xs font-semibold px-2" style={{ color: 'var(--text-muted)' }}>Clear</button>
           </div>
         )}

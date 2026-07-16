@@ -25,9 +25,22 @@ class TicketController extends Controller
     ) {
     }
 
+    /** 403s an agent who tries to reach a ticket outside their queue. */
+    private function guardView(Request $request, int $ticket): void
+    {
+        $this->helpdesk->assertTicketVisible($ticket, $request->user()->tenant_id, $request->user()->id, $request->user()->role);
+    }
+
+    /** 403s anyone but an admin / department manager (used for delete). */
+    private function guardManage(Request $request, int $ticket): void
+    {
+        $this->helpdesk->assertTicketManage($ticket, $request->user()->tenant_id, $request->user()->id, $request->user()->role);
+    }
+
     /* ── AI summary (Phase 6, cached; ?refresh=1 regenerates) ──── */
     public function summarize(Request $request, int $ticket)
     {
+        $this->guardView($request, $ticket);
         $force = $request->boolean('refresh');
         $t = $this->summaries->summarize($ticket, $request->user()->tenant_id, $force);
 
@@ -42,7 +55,7 @@ class TicketController extends Controller
     public function index(Request $request)
     {
         $filters = $request->only(['status', 'priority', 'assigned_to', 'customer_id', 'source', 'search']);
-        $tickets = $this->helpdesk->listTickets($request->user()->tenant_id, $filters);
+        $tickets = $this->helpdesk->listTickets($request->user()->tenant_id, $filters, $request->user()->id, $request->user()->role);
 
         return $this->success($tickets, 'Tickets retrieved');
     }
@@ -66,20 +79,23 @@ class TicketController extends Controller
     /* ── Show ──────────────────────────────────────────────────── */
     public function show(Request $request, int $ticket)
     {
-        return $this->success($this->helpdesk->showTicket($ticket, $request->user()->tenant_id), 'Ticket retrieved');
+        $this->guardView($request, $ticket);
+        return $this->success($this->helpdesk->showTicket($ticket, $request->user()->tenant_id, $request->user()->id, $request->user()->role), 'Ticket retrieved');
     }
 
     /* ── Update ────────────────────────────────────────────────── */
     public function update(UpdateTicketRequest $request, int $ticket)
     {
+        $this->guardView($request, $ticket);
         $result = $this->helpdesk->updateTicket($ticket, $request->validated(), $request->user()->tenant_id);
 
         return $this->success($result, 'Ticket updated');
     }
 
-    /* ── Delete ────────────────────────────────────────────────── */
+    /* ── Delete (admin / department manager only) ──────────────── */
     public function destroy(Request $request, int $ticket)
     {
+        $this->guardManage($request, $ticket);
         $this->helpdesk->deleteTicket($ticket, $request->user()->tenant_id);
 
         return $this->success(null, 'Ticket deleted');
@@ -88,6 +104,7 @@ class TicketController extends Controller
     /* ── Change status ─────────────────────────────────────────── */
     public function updateStatus(Request $request, int $ticket)
     {
+        $this->guardView($request, $ticket);
         $tenantId = $request->user()->tenant_id;
         $allowed = app(\App\Services\Helpdesk\HelpdeskSettingsService::class)->statusNames($tenantId);
         $data = $request->validate(['status' => ['required', \Illuminate\Validation\Rule::in($allowed)]]);
@@ -99,6 +116,7 @@ class TicketController extends Controller
     /* ── Merge a duplicate ticket into this one (Phase 3) ──────── */
     public function merge(Request $request, int $ticket)
     {
+        $this->guardView($request, $ticket);
         $data = $request->validate(['merge_ticket_id' => 'required|integer']);
         $survivor = $this->helpdesk->mergeTicket($ticket, $data['merge_ticket_id'], $request->user()->tenant_id);
 
@@ -108,6 +126,7 @@ class TicketController extends Controller
     /* ── Assign agent (TicketAssignmentService) ────────────────── */
     public function assign(AssignTicketRequest $request, int $ticket)
     {
+        $this->guardView($request, $ticket);
         $result = $this->assignment->assign($ticket, $request->validated('assigned_to'), $request->user()->tenant_id);
 
         return $this->success($result, 'Ticket assigned');
@@ -116,6 +135,7 @@ class TicketController extends Controller
     /* ── Integration 3a: link ticket to a Project ──────────────── */
     public function linkProject(Request $request, int $ticket)
     {
+        $this->guardView($request, $ticket);
         $data = $request->validate(['project_id' => 'present|nullable|integer']);
         $result = $this->helpdesk->linkProject($ticket, $data['project_id'], $request->user()->tenant_id);
 
@@ -132,9 +152,8 @@ class TicketController extends Controller
             'due_date'    => 'nullable|date',
         ]);
 
+        $this->guardView($request, $ticket);
         $tenantId = $request->user()->tenant_id;
-        // Ensure the ticket exists in this tenant before linking a task to it.
-        $this->helpdesk->showTicket($ticket, $tenantId);
 
         // assignee_ids is handled inside TaskService::create, which notifies the
         // assignee — converting a ticket to a task must not assign work silently.
@@ -162,8 +181,8 @@ class TicketController extends Controller
             'tasks.*.due_date'    => 'nullable|date',
         ]);
 
+        $this->guardView($request, $ticket);
         $tenantId = $request->user()->tenant_id;
-        $this->helpdesk->showTicket($ticket, $tenantId); // tenant guard
 
         $created = [];
         foreach ($data['tasks'] as $row) {
@@ -184,6 +203,7 @@ class TicketController extends Controller
     /* ── Submit CSAT feedback ──────────────────────────────────── */
     public function feedback(Request $request, int $ticket)
     {
+        $this->guardView($request, $ticket);
         $data = $request->validate([
             'rating'   => ['required', 'integer', 'between:1,5'],
             'comments' => ['nullable', 'string'],

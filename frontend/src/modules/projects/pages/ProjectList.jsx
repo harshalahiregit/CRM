@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { projectApi, PROJECT_STATUS, PROJECT_ACCENT } from '@/services/projectApi'
 import { tagApi } from '@/services/tagApi'
+import { useAuth } from '@/context/AuthContext'
 import Select from '@/components/ui/Select'
 import { ConfirmModal } from '@/components/ui/SearchPicker'
 import { TagChips } from '@/components/ui/TagInput'
@@ -25,6 +26,10 @@ const money = v => v != null && v !== '' ? '₹' + Number(v).toLocaleString('en-
 export default function ProjectList() {
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const { user } = useAuth()
+  // Only an admin or the project's own creator can edit/delete it (backend enforces
+  // this too; hiding the buttons keeps the rule visible instead of 403-ing on click).
+  const canManage = (p) => user?.role === 'admin' || p.created_by === user?.id
 
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState(null)
@@ -227,9 +232,9 @@ export default function ProjectList() {
                         <RowBtn onClick={() => pin.mutate(p.id)} label={p.is_pinned ? 'Unpin' : 'Pin'}>
                           {p.is_pinned ? <PinOff size={12} /> : <Pin size={12} />}
                         </RowBtn>
-                        <RowBtn onClick={() => { setEditing(p); setShowForm(true) }} label="Edit"><Pencil size={12} /></RowBtn>
                         <RowBtn onClick={() => copy.mutate(p.id)} label="Copy project"><Copy size={12} /></RowBtn>
-                        <RowBtn onClick={() => setConfirmDelete(p)} label="Delete" danger><Trash2 size={12} /></RowBtn>
+                        {canManage(p) && <RowBtn onClick={() => { setEditing(p); setShowForm(true) }} label="Edit"><Pencil size={12} /></RowBtn>}
+                        {canManage(p) && <RowBtn onClick={() => setConfirmDelete(p)} label="Delete" danger><Trash2 size={12} /></RowBtn>}
                       </div>
                     </td>
                   </tr>

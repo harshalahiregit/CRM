@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 class TaskCommentController extends Controller
 {
     use ApiResponse;
+    use GuardsTaskAccess;
 
     public function __construct(private TaskService $tasks)
     {
@@ -18,11 +19,13 @@ class TaskCommentController extends Controller
 
     public function index(Request $request, int $task)
     {
+        $this->guardTask($request, $task);
         return $this->success($this->tasks->listComments($task, $request->user()->tenant_id), 'Comments retrieved');
     }
 
     public function store(StoreCommentRequest $request, int $task)
     {
+        $this->guardTask($request, $task);
         return $this->success($this->tasks->addComment($task, $request->validated('content'), $request->user()->tenant_id, $request->user()->id), 'Comment added', 201);
     }
 }

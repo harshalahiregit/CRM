@@ -65,9 +65,89 @@ class TaskService
         return $this->statuses->closedKey('task', $tenantId) ?? 'complete';
     }
 
-    public function list(int $tenantId, array $filters = []): Collection
+    /* ── Access control ─────────────────────────────────────────────
+     * Admins see every task in the tenant. A non-admin staff member only
+     * sees a task they created, are assigned to, follow, that's marked
+     * Public, or that lives in a project they belong to. Same predicate
+     * decides whether they can open / edit / delete it.
+     */
+
+    private array $visibleProjectCache = [];
+
+    /** Project ids this staff user can see (member of, or created). */
+    private function visibleProjectIds(int $tenantId, int $userId): array
     {
-        $tasks = $this->decorateMany($this->tasks->filtered($tenantId, $filters), $tenantId);
+        $key = "$tenantId:$userId";
+        if (isset($this->visibleProjectCache[$key])) {
+            return $this->visibleProjectCache[$key];
+        }
+
+        $ids = Project::forTenant($tenantId)
+            ->where(fn ($q) => $q->where('created_by', $userId)
+                ->orWhereHas('members', fn ($m) => $m->where('user_id', $userId)))
+            ->pluck('id')->map(fn ($i) => (int) $i)->all();
+
+        return $this->visibleProjectCache[$key] = $ids;
+    }
+
+    /** Narrow a Task query to what this staff user is allowed to see. */
+    private function scopeVisible($query, int $tenantId, int $userId)
+    {
+        $pids = $this->visibleProjectIds($tenantId, $userId);
+
+        return $query->where(function ($q) use ($userId, $pids) {
+            $q->where('created_by', $userId)->orWhere('is_public', true);
+            if (Schema::hasTable('task_assignees')) {
+                $q->orWhereHas('assignees', fn ($a) => $a->where('user_id', $userId));
+            }
+            if (Schema::hasTable('task_followers')) {
+                $q->orWhereHas('followers', fn ($f) => $f->where('user_id', $userId));
+            }
+            if (! empty($pids)) {
+                $q->orWhere(fn ($x) => $x->where('rel_type', 'project')->whereIn('rel_id', $pids));
+            }
+        });
+    }
+
+    private function canSeeTask(Task $task, int $tenantId, int $userId): bool
+    {
+        if ((int) $task->created_by === $userId || $task->is_public) {
+            return true;
+        }
+        if (Schema::hasTable('task_assignees') && $task->assignees()->where('user_id', $userId)->exists()) {
+            return true;
+        }
+        if (Schema::hasTable('task_followers') && $task->followers()->where('user_id', $userId)->exists()) {
+            return true;
+        }
+
+        return $task->rel_type === 'project' && $task->rel_id
+            && in_array((int) $task->rel_id, $this->visibleProjectIds($tenantId, $userId), true);
+    }
+
+    /**
+     * Load a task and confirm the actor may reach it. Admins always may;
+     * a staff member must pass canSeeTask(). Used by every single-task and
+     * sub-resource endpoint so ids can't be walked.
+     */
+    public function assertTaskVisible(int $taskId, int $tenantId, ?int $userId, bool $isAdmin): Task
+    {
+        $task = $this->find($taskId, $tenantId);
+
+        if (! $isAdmin && $userId !== null && ! $this->canSeeTask($task, $tenantId, $userId)) {
+            throw new BusinessException('You do not have access to this task.', 403);
+        }
+
+        return $task;
+    }
+
+    public function list(int $tenantId, array $filters = [], ?int $userId = null, bool $isAdmin = true): Collection
+    {
+        $visibility = (! $isAdmin && $userId !== null)
+            ? ['user_id' => $userId, 'project_ids' => $this->visibleProjectIds($tenantId, $userId)]
+            : null;
+
+        $tasks = $this->decorateMany($this->tasks->filtered($tenantId, $filters, $visibility), $tenantId);
 
         // Batched — one tag query for the whole page, not one per row.
         $tagMap = $this->tags->tagsForMany('task', $tasks->pluck('id')->all(), $tenantId);
@@ -217,11 +297,22 @@ class TaskService
      * Ids not in this tenant are ignored rather than throwing — a stale board
      * shouldn't 500 the drop.
      */
-    public function reorder(array $orderedIds, string $status, int $tenantId, ?int $actorId = null): int
+    public function reorder(array $orderedIds, string $status, int $tenantId, ?int $actorId = null, bool $isAdmin = true): int
     {
         $ids = array_values(array_unique(array_map('intval', $orderedIds)));
         if (! $ids) {
             return 0;
+        }
+
+        // A drag can move a card to another status — only let a staff member
+        // reorder tasks they're allowed to touch.
+        if (! $isAdmin && $actorId !== null) {
+            $visible = $this->scopeVisible(Task::forTenant($tenantId)->whereIn('id', $ids), $tenantId, $actorId)
+                ->pluck('id')->map(fn ($i) => (int) $i)->all();
+            $ids = array_values(array_intersect($ids, $visible));
+            if (! $ids) {
+                return 0;
+            }
         }
 
         $tasks = Task::forTenant($tenantId)->whereIn('id', $ids)->get()->keyBy('id');
@@ -840,9 +931,12 @@ class TaskService
      * Counts for the list KPI cards. One aggregate query per card rather than
      * pulling every task down and counting in PHP — this runs on every list view.
      */
-    public function stats(int $tenantId, int $userId): array
+    public function stats(int $tenantId, int $userId, bool $isAdmin = true): array
     {
-        $base = fn () => Task::forTenant($tenantId);
+        // A staff member's cards only count tasks they're allowed to see.
+        $base = fn () => $isAdmin
+            ? Task::forTenant($tenantId)
+            : $this->scopeVisible(Task::forTenant($tenantId), $tenantId, $userId);
         $today = now()->toDateString();
 
         $mine = Schema::hasTable('task_assignees')
@@ -871,10 +965,16 @@ class TaskService
      * Notifications still fire per task — a bulk reassign that silently moved
      * work onto someone would be the same bug this module started with.
      */
-    public function bulkAction(array $data, int $tenantId, int $userId): int
+    public function bulkAction(array $data, int $tenantId, int $userId, bool $isAdmin = true): int
     {
         $ids = array_values(array_unique(array_map('intval', $data['task_ids'])));
-        $tasks = Task::forTenant($tenantId)->whereIn('id', $ids)->get();
+        // A non-admin can only bulk-act on tasks they can actually see —
+        // silently drop the rest rather than touching another team's work.
+        $q = Task::forTenant($tenantId)->whereIn('id', $ids);
+        if (! $isAdmin) {
+            $q = $this->scopeVisible($q, $tenantId, $userId);
+        }
+        $tasks = $q->get();
         $action = $data['action'];
         $value = $data['value'] ?? null;
 

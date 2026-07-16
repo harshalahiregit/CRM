@@ -95,6 +95,8 @@ export default function ProjectDetail() {
   }
 
   const s = statusMap[project.status] || { label: project.status, color: 'var(--text-muted)' }
+  // Admin or the creator may change the project; members are view-only (backend enforces).
+  const canManage = user?.role === 'admin' || project.created_by === user?.id
 
   return (
     <div className="max-w-5xl">
@@ -122,9 +124,14 @@ export default function ProjectDetail() {
             <ListTodo size={13} /> New Task
           </button>
           <div style={{ minWidth: 150 }}>
-            <Select value={project.status} onChange={v => setStatus.mutate(v)} ariaLabel="Project status"
-              options={statusOptions(statusList, user?.role)}
-              buttonStyle={{ borderColor: s.color, color: s.color, fontWeight: 700 }} />
+            {canManage ? (
+              <Select value={project.status} onChange={v => setStatus.mutate(v)} ariaLabel="Project status"
+                options={statusOptions(statusList, user?.role)}
+                buttonStyle={{ borderColor: s.color, color: s.color, fontWeight: 700 }} />
+            ) : (
+              <span className="inline-flex items-center text-xs font-bold px-3 py-2 rounded-xl"
+                style={{ border: `1px solid ${s.color}`, color: s.color }}>{s.label}</span>
+            )}
           </div>
 
           <div className="relative" ref={menuRef}>
@@ -135,12 +142,12 @@ export default function ProjectDetail() {
             </button>
             {menuOpen && (
               <div className="absolute right-0 mt-2 rounded-xl overflow-hidden z-40" style={{ width: 190, background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card-3d)' }}>
-                <MenuItem icon={Pencil} onClick={() => { setMenuOpen(false); setEditing(true) }}>Edit Project</MenuItem>
+                {canManage && <MenuItem icon={Pencil} onClick={() => { setMenuOpen(false); setEditing(true) }}>Edit Project</MenuItem>}
                 <MenuItem icon={project.is_pinned ? PinOff : Pin} onClick={() => { setMenuOpen(false); pin.mutate() }}>
                   {project.is_pinned ? 'Unpin Project' : 'Pin Project'}
                 </MenuItem>
                 <MenuItem icon={Copy} onClick={() => { setMenuOpen(false); copy.mutate() }}>Copy Project</MenuItem>
-                <MenuItem icon={Trash2} danger onClick={() => { setMenuOpen(false); setConfirmDelete(true) }}>Delete Project</MenuItem>
+                {canManage && <MenuItem icon={Trash2} danger onClick={() => { setMenuOpen(false); setConfirmDelete(true) }}>Delete Project</MenuItem>}
               </div>
             )}
           </div>
@@ -169,7 +176,7 @@ export default function ProjectDetail() {
 
       {tab === 'overview' && <Overview project={project} prog={prog} onRecalc={() => refetchProg()} busy={progBusy} />}
       {tab === 'tasks' && <TasksTab projectId={id} navigate={navigate} />}
-      {tab === 'milestones' && <MilestonesTab project={project} onChange={invalidate} onErr={onErr} />}
+      {tab === 'milestones' && <MilestonesTab project={project} onChange={invalidate} onErr={onErr} canManage={canManage} />}
       {tab === 'gantt' && <ProjectGantt projectId={id} milestones={project.milestones || []} />}
       {tab === 'timesheets' && <TimesheetsTab projectId={id} />}
       {tab === 'files' && <FilesTab projectId={id} />}
@@ -318,7 +325,7 @@ function TasksTab({ projectId, navigate }) {
 
 /* ── Milestones tab ───────────────────────────────────────────── */
 
-function MilestonesTab({ project, onChange, onErr }) {
+function MilestonesTab({ project, onChange, onErr, canManage = true }) {
   const [ms, setMs] = useState({ name: '', due_date: '' })
   const add = useMutation({
     mutationFn: (data) => projectApi.createMilestone(project.id, data),
@@ -339,13 +346,16 @@ function MilestonesTab({ project, onChange, onErr }) {
             <span className="w-2 h-2 rounded-full shrink-0" style={{ background: m.color || PROJECT_ACCENT }} />
             <span className="flex-1 text-xs truncate" style={{ color: 'var(--text-h)' }}>{m.name}</span>
             <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{fmtDate(m.due_date)}</span>
-            <button onClick={() => del.mutate(m.id)} className="hover:opacity-60" aria-label={`Delete ${m.name}`}>
-              <Trash2 size={11} style={{ color: 'var(--color-danger-500)' }} />
-            </button>
+            {canManage && (
+              <button onClick={() => del.mutate(m.id)} className="hover:opacity-60" aria-label={`Delete ${m.name}`}>
+                <Trash2 size={11} style={{ color: 'var(--color-danger-500)' }} />
+              </button>
+            )}
           </li>
         ))}
         {milestones.length === 0 && <li className="text-xs" style={{ color: 'var(--text-muted)' }}>No milestones yet.</li>}
       </ul>
+      {canManage && (
       <form onSubmit={e => { e.preventDefault(); if (ms.name && ms.due_date) add.mutate(ms) }} className="flex gap-2">
         <input value={ms.name} onChange={e => setMs({ ...ms, name: e.target.value })} placeholder="Milestone name"
           className="flex-1 rounded-lg outline-none"
@@ -358,6 +368,7 @@ function MilestonesTab({ project, onChange, onErr }) {
           <Plus size={13} />
         </button>
       </form>
+      )}
     </section>
   )
 }

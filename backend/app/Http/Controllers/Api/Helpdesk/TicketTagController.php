@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Helpdesk;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Traits\ApiResponse;
+use App\Services\Helpdesk\HelpdeskService;
 use App\Services\Helpdesk\TicketTagService;
 use Illuminate\Http\Request;
 
@@ -14,8 +15,13 @@ class TicketTagController extends Controller
 {
     use ApiResponse;
 
-    public function __construct(private TicketTagService $tags)
+    public function __construct(private TicketTagService $tags, private HelpdeskService $helpdesk)
     {
+    }
+
+    private function guardView(Request $request, int $ticket): void
+    {
+        $this->helpdesk->assertTicketVisible($ticket, $request->user()->tenant_id, $request->user()->id, $request->user()->role);
     }
 
     public function index(Request $request)
@@ -32,11 +38,13 @@ class TicketTagController extends Controller
 
     public function ticketTags(Request $request, int $ticket)
     {
+        $this->guardView($request, $ticket);
         return $this->success($this->tags->ticketTags($ticket, $request->user()->tenant_id), 'Ticket tags retrieved');
     }
 
     public function attach(Request $request, int $ticket)
     {
+        $this->guardView($request, $ticket);
         $data = $request->validate([
             'tag_id' => 'nullable|integer',
             'name'   => 'nullable|string|max:50',
@@ -51,6 +59,7 @@ class TicketTagController extends Controller
 
     public function detach(Request $request, int $ticket, int $tagId)
     {
+        $this->guardView($request, $ticket);
         return $this->success($this->tags->detach($ticket, $tagId, $request->user()->tenant_id), 'Tag removed');
     }
 }

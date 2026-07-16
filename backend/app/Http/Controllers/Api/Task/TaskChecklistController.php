@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 class TaskChecklistController extends Controller
 {
     use ApiResponse;
+    use GuardsTaskAccess;
 
     public function __construct(private TaskService $tasks)
     {
@@ -18,11 +19,13 @@ class TaskChecklistController extends Controller
 
     public function index(Request $request, int $task)
     {
+        $this->guardTask($request, $task);
         return $this->success($this->tasks->listChecklist($task, $request->user()->tenant_id), 'Checklist retrieved');
     }
 
     public function store(StoreChecklistItemRequest $request, int $task)
     {
+        $this->guardTask($request, $task);
         return $this->success($this->tasks->addChecklistItem($task, $request->validated('description'), $request->user()->tenant_id), 'Item added', 201);
     }
 

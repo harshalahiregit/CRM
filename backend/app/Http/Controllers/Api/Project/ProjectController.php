@@ -19,46 +19,75 @@ class ProjectController extends Controller
     {
     }
 
+    private function isAdmin(Request $request): bool
+    {
+        return $request->user()?->role === 'admin';
+    }
+
+    /** View access (admin, creator, or member). */
+    private function guardView(Request $request, int $project): void
+    {
+        $this->projects->assertProjectVisible($project, $request->user()->tenant_id, $request->user()->id, $this->isAdmin($request));
+    }
+
+    /** Manage access (admin or the project's creator). */
+    private function guardManage(Request $request, int $project): void
+    {
+        $this->projects->assertProjectManage($project, $request->user()->tenant_id, $request->user()->id, $this->isAdmin($request));
+    }
+
     public function index(Request $request)
     {
         $filters = $request->only(['status', 'customer_id', 'search', 'member', 'tag']);
-        return $this->success($this->projects->list($request->user()->tenant_id, $filters, $request->user()->id), 'Projects retrieved');
+        return $this->success(
+            $this->projects->list($request->user()->tenant_id, $filters, $request->user()->id, $this->isAdmin($request)),
+            'Projects retrieved'
+        );
     }
 
     public function store(StoreProjectRequest $request)
     {
+        // Portal roles (client/vendor) never create projects — only internal staff.
+        abort_if(in_array($request->user()->role, ['client', 'vendor', 'third_party_vendor'], true), 403, 'You cannot create projects.');
+
         $project = $this->projects->create($request->validated(), $request->user()->tenant_id, $request->user()->id);
         return $this->success($project, 'Project created', 201);
     }
 
     public function show(Request $request, int $project)
     {
+        $this->guardView($request, $project);
         return $this->success($this->projects->show($project, $request->user()->tenant_id, $request->user()->id), 'Project retrieved');
     }
 
     public function update(UpdateProjectRequest $request, int $project)
     {
+        $this->guardManage($request, $project);
         return $this->success($this->projects->update($project, $request->validated(), $request->user()->tenant_id, $request->user()->id), 'Project updated');
     }
 
     public function destroy(Request $request, int $project)
     {
+        $this->guardManage($request, $project);
         $this->projects->delete($project, $request->user()->tenant_id);
         return $this->success(null, 'Project deleted');
     }
 
     public function updateStatus(UpdateProjectStatusRequest $request, int $project)
     {
+        $this->guardManage($request, $project);
         return $this->success($this->projects->changeStatus($project, $request->validated('status'), $request->user()->tenant_id, $request->user()->id), 'Status updated');
     }
 
     public function progress(Request $request, int $project)
     {
+        $this->guardView($request, $project);
         return $this->success($this->projects->progress($project, $request->user()->tenant_id), 'Progress computed');
     }
 
     public function members(SyncMembersRequest $request, int $project)
     {
+        $this->guardManage($request, $project);
         $members = $this->projects->syncMembers($project, $request->validated('user_ids'), $request->user()->tenant_id, $request->user()->id);
         return $this->success($members, 'Members updated');
     }
@@ -74,6 +103,7 @@ class ProjectController extends Controller
             'copy_milestones' => 'nullable|boolean',
         ]);
 
+        $this->guardView($request, $project);
         $copy = $this->projects->copy($project, $opts, $request->user()->tenant_id, $request->user()->id);
 
         return $this->success($copy, 'Project copied', 201);
@@ -82,6 +112,7 @@ class ProjectController extends Controller
     /** Pin/unpin for the current user only. */
     public function pin(Request $request, int $project)
     {
+        $this->guardView($request, $project);
         $p = $this->projects->togglePin($project, $request->user()->tenant_id, $request->user()->id);
 
         return $this->success(['is_pinned' => in_array($request->user()->id, array_map('intval', $p->pinned_by ?? []), true)], 'Pin updated');
@@ -112,11 +143,13 @@ class ProjectController extends Controller
 
     public function notes(Request $request, int $project)
     {
+        $this->guardView($request, $project);
         return $this->success($this->projects->listNotes($project, $request->user()->tenant_id), 'Notes retrieved');
     }
 
     public function storeNote(Request $request, int $project)
     {
+        $this->guardView($request, $project);
         $data = $request->validate(['title' => 'required|string|max:255', 'content' => 'nullable|string|max:20000']);
         $note = $this->projects->addNote($project, $data, $request->user()->tenant_id, $request->user()->id);
 
@@ -125,6 +158,7 @@ class ProjectController extends Controller
 
     public function destroyNote(Request $request, int $project, int $note)
     {
+        $this->guardView($request, $project);
         $this->projects->deleteNote($note, $project, $request->user()->tenant_id);
 
         return $this->success(null, 'Note deleted');
@@ -132,17 +166,20 @@ class ProjectController extends Controller
 
     public function activity(Request $request, int $project)
     {
+        $this->guardView($request, $project);
         return $this->success($this->projects->listActivity($project, $request->user()->tenant_id), 'Activity retrieved');
     }
 
     public function timesheets(Request $request, int $project)
     {
+        $this->guardView($request, $project);
         return $this->success($this->projects->timesheets($project, $request->user()->tenant_id), 'Timesheets retrieved');
     }
 
     /* ── Integration 3a: tickets linked to this project ────────── */
     public function tickets(Request $request, int $project)
     {
+        $this->guardView($request, $project);
         $tenantId = $request->user()->tenant_id;
         $tickets = \App\Models\Helpdesk\Ticket::forTenant($tenantId)
             ->where('project_id', $project)
