@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Task;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Traits\ApiResponse;
+use App\Http\Requests\Task\BulkTaskActionRequest;
 use App\Http\Requests\Task\StoreTaskRequest;
 use App\Http\Requests\Task\SyncTaskUsersRequest;
 use App\Http\Requests\Task\UpdateTaskRequest;
@@ -60,6 +61,20 @@ class TaskController extends Controller
     public function followers(SyncTaskUsersRequest $request, int $task)
     {
         return $this->success($this->tasks->syncFollowers($task, $request->validated('user_ids'), $request->user()->tenant_id, $request->user()->id), 'Followers updated');
+    }
+
+    /** Counts for the list KPI cards. */
+    public function stats(Request $request)
+    {
+        return $this->success($this->tasks->stats($request->user()->tenant_id, $request->user()->id), 'Stats retrieved');
+    }
+
+    /** Apply one action (delete/status/priority/assign) to many tasks at once. */
+    public function bulk(BulkTaskActionRequest $request)
+    {
+        $count = $this->tasks->bulkAction($request->validated(), $request->user()->tenant_id, $request->user()->id);
+
+        return $this->success(['affected' => $count], "Applied to {$count} ".($count === 1 ? 'task' : 'tasks'));
     }
 
     /** Clone a task. Assignees/followers/checklist are opt-in; history never copies. */

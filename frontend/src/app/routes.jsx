@@ -67,6 +67,7 @@ const ProjectDetail = lazy(() => import('@/modules/projects/pages/ProjectDetail'
 // Task Module (lazy)
 const TaskBoard = lazy(() => import('@/modules/tasks/pages/TaskBoard'))
 const TaskDetail = lazy(() => import('@/modules/tasks/pages/TaskDetail'))
+const TaskOverview = lazy(() => import('@/modules/tasks/pages/TaskOverview'))
 
 function ComingSoon({ name }) {
   return (
@@ -185,6 +186,8 @@ export default function AppRoutes() {
         <Route path="deals/new" element={<ComingSoon name="New Deal" />} />
         <Route path="deals/:id" element={<ComingSoon name="Deal Detail" />} />
         <Route path="tasks" element={<S><TaskBoard /></S>} />
+        {/* Static segment before :id so "overview" isn't parsed as a task id. */}
+        <Route path="tasks/overview" element={<S><TaskOverview /></S>} />
         <Route path="tasks/:id" element={<S><TaskDetail /></S>} />
         <Route path="projects" element={<S><ProjectList /></S>} />
         <Route path="projects/:id" element={<S><ProjectDetail /></S>} />

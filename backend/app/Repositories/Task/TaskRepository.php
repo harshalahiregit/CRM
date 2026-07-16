@@ -16,6 +16,24 @@ class TaskRepository extends BaseRepository
     {
         $query = Task::forTenant($tenantId)->with('creator:id,name');
 
+        // Counts the list view needs: checklist progress, and the comment/file
+        // badges on kanban cards. withCount is one extra query total, versus
+        // eager-loading every child row just to call ->count() on it.
+        $query->withCount([
+            'checklistItems',
+            'checklistItems as checklist_done_count' => fn ($q) => $q->where('finished', true),
+        ]);
+        if (Schema::hasTable('task_comments')) {
+            $query->withCount('comments');
+        }
+        if (Schema::hasTable('task_files')) {
+            $query->withCount('files');
+        }
+        // Avatars on cards / the ASSIGNED TO column — without this the list N+1s.
+        if (Schema::hasTable('task_assignees')) {
+            $query->with('assignees.user:id,name');
+        }
+
         foreach (['status', 'priority', 'rel_type'] as $col) {
             if (! empty($filters[$col])) {
                 $query->where($col, $filters[$col]);

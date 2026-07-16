@@ -813,6 +813,87 @@ class TaskService
         return $sent;
     }
 
+    /* ── Stats (KPI cards) ──────────────────────────────────────── */
+
+    /**
+     * Counts for the list KPI cards. One aggregate query per card rather than
+     * pulling every task down and counting in PHP — this runs on every list view.
+     */
+    public function stats(int $tenantId, int $userId): array
+    {
+        $base = fn () => Task::forTenant($tenantId);
+        $today = now()->toDateString();
+
+        $mine = Schema::hasTable('task_assignees')
+            ? (clone $base())->whereHas('assignees', fn ($q) => $q->where('user_id', $userId))
+                ->where('status', '!=', 'complete')->count()
+            : 0;
+
+        return [
+            'active'    => (clone $base())->where('status', '!=', 'complete')->count(),
+            'completed' => (clone $base())->where('status', 'complete')->count(),
+            // Overdue excludes complete — a task finished late isn't still overdue.
+            'overdue'   => (clone $base())->where('status', '!=', 'complete')
+                ->whereNotNull('due_date')->whereDate('due_date', '<', $today)->count(),
+            'today'     => (clone $base())->where('status', '!=', 'complete')
+                ->whereDate('due_date', $today)->count(),
+            'mine'      => $mine,
+        ];
+    }
+
+    /* ── Bulk actions ───────────────────────────────────────────── */
+
+    /**
+     * Apply one action to many tasks. A real endpoint rather than the frontend
+     * firing N parallel single-item requests (which is what Helpdesk's grid does).
+     *
+     * Notifications still fire per task — a bulk reassign that silently moved
+     * work onto someone would be the same bug this module started with.
+     */
+    public function bulkAction(array $data, int $tenantId, int $userId): int
+    {
+        $ids = array_values(array_unique(array_map('intval', $data['task_ids'])));
+        $tasks = Task::forTenant($tenantId)->whereIn('id', $ids)->get();
+        $action = $data['action'];
+        $value = $data['value'] ?? null;
+
+        // Validate the value ONCE up front rather than per row, so a bad value
+        // fails the whole request instead of half-applying.
+        if ($action === 'status' && ! array_key_exists($value, self::STATUS_LABELS)) {
+            throw new BusinessException('Unknown status.', 422);
+        }
+        if ($action === 'priority' && ! in_array($value, ['low', 'medium', 'high', 'urgent'], true)) {
+            throw new BusinessException('Unknown priority.', 422);
+        }
+        if ($action === 'assign') {
+            $ok = User::where('tenant_id', $tenantId)->whereKey((int) $value)
+                ->whereNotIn('role', self::EXTERNAL_ROLES)->exists();
+            if (! $ok) {
+                throw new BusinessException('That person is not staff in this workspace.', 422);
+            }
+        }
+
+        $count = 0;
+        foreach ($tasks as $task) {
+            match ($action) {
+                'delete'   => $task->delete(),
+                'status'   => $this->changeStatus($task->id, $value, $tenantId, $userId),
+                'priority' => $task->update(['priority' => $value]),
+                // Adds to the existing set rather than replacing it — "assign these
+                // 10 tasks to Priya" should not unassign everyone else.
+                'assign'   => $this->syncAssignees(
+                    $task->id,
+                    $task->assignees()->pluck('user_id')->push((int) $value)->unique()->all(),
+                    $tenantId, $userId,
+                ),
+                default    => null,
+            };
+            $count++;
+        }
+
+        return $count;
+    }
+
     /* ── Billable report ────────────────────────────────────────── */
 
     public function billable(int $tenantId, array $filters = []): Collection

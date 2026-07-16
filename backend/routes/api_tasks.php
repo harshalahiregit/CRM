@@ -15,8 +15,10 @@ use Illuminate\Support\Facades\Route;
 Route::middleware('auth:sanctum')->prefix('tasks')->group(function () {
     // Static segments BEFORE /{task} so they aren't captured as a task id.
     Route::get('/billable',                 [TaskController::class, 'billable']);
+    Route::get('/stats',                    [TaskController::class, 'stats']);
     Route::get('/staff',                    [TaskStaffController::class, 'index']);
     Route::post('/reorder',                 [TaskController::class, 'reorder']);
+    Route::post('/bulk',                    [TaskController::class, 'bulk']);
     Route::patch('/checklist/{item}/toggle', [TaskChecklistController::class, 'toggle']);
 
     // Reusable checklist templates (not task-scoped).

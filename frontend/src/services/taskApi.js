@@ -17,6 +17,9 @@ export const taskApi = {
   // Persists a kanban column order after a drag; also applies cross-column moves.
   reorder: (status, ordered_ids) => api.post('/tasks/reorder', { status, ordered_ids }).then(unwrap).catch(handleErr),
   staff: () => api.get('/tasks/staff').then(unwrap).catch(handleErr),
+  stats: () => api.get('/tasks/stats').then(unwrap).catch(handleErr),
+  // One request for N tasks — not N parallel single-item calls.
+  bulk: (action, task_ids, value = null) => api.post('/tasks/bulk', { action, task_ids, value }).then(unwrap).catch(handleErr),
 
   // Step 4 sub-features
   assignees: (id, user_ids) => api.post(`/tasks/${id}/assignees`, { user_ids }).then(unwrap).catch(handleErr),
@@ -68,6 +71,13 @@ export const RECURRING_TYPES = [
   { value: 'day', label: 'Day' }, { value: 'week', label: 'Week' },
   { value: 'month', label: 'Month' }, { value: 'year', label: 'Year' },
 ]
+
+/** Checklist completion for the TASK PROGRESS column. Null when there's no checklist. */
+export const taskProgress = (t) => {
+  const total = t?.checklist_items_count ?? 0
+  if (!total) return null
+  return { done: t.checklist_done_count ?? 0, total, pct: Math.round(((t.checklist_done_count ?? 0) / total) * 100) }
+}
 
 export const fmtBytes = (b = 0) => {
   if (b < 1024) return `${b} B`
