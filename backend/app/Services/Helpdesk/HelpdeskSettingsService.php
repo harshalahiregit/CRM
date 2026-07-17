@@ -7,6 +7,7 @@ use App\Models\Helpdesk\HelpdeskSetting;
 use App\Models\Helpdesk\TicketDepartment;
 use App\Models\Helpdesk\TicketPriority;
 use App\Models\Helpdesk\TicketStatus;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -58,25 +59,47 @@ class HelpdeskSettingsService
         ];
     }
 
-    /** Idempotently create default lists + settings row for a tenant. */
+    /**
+     * Idempotently create default lists + settings row for a tenant.
+     *
+     * This was a plain check-then-act: two requests hitting a fresh tenant at the
+     * same time (two tabs opening the ticket form) both passed `! exists()` before
+     * either inserted, so the tenant ended up with doubled priorities/statuses —
+     * which then broke the Rule::in() validation that assumes unique names.
+     *
+     * An atomic lock makes the whole seed run once; the second caller waits, then
+     * sees the rows already there and does nothing. firstOrCreate on each row is a
+     * second line of defence if the cache driver ever can't lock.
+     */
     public function ensureSeeded(int $tenantId): void
     {
-        if (! TicketPriority::forTenant($tenantId)->exists()) {
-            foreach (self::DEFAULT_PRIORITIES as $row) {
-                TicketPriority::create([...$row, 'tenant_id' => $tenantId]);
+        Cache::lock("helpdesk:seed:{$tenantId}", 10)->block(10, function () use ($tenantId) {
+            if (! TicketPriority::forTenant($tenantId)->exists()) {
+                foreach (self::DEFAULT_PRIORITIES as $row) {
+                    TicketPriority::firstOrCreate(
+                        ['tenant_id' => $tenantId, 'name' => $row['name']],
+                        [...$row, 'tenant_id' => $tenantId]
+                    );
+                }
             }
-        }
-        if (! TicketStatus::forTenant($tenantId)->exists()) {
-            foreach (self::DEFAULT_STATUSES as $row) {
-                TicketStatus::create([...$row, 'tenant_id' => $tenantId]);
+            if (! TicketStatus::forTenant($tenantId)->exists()) {
+                foreach (self::DEFAULT_STATUSES as $row) {
+                    TicketStatus::firstOrCreate(
+                        ['tenant_id' => $tenantId, 'name' => $row['name']],
+                        [...$row, 'tenant_id' => $tenantId]
+                    );
+                }
             }
-        }
-        if (! TicketDepartment::forTenant($tenantId)->exists()) {
-            foreach (self::DEFAULT_DEPARTMENTS as $row) {
-                TicketDepartment::create([...$row, 'tenant_id' => $tenantId]);
+            if (! TicketDepartment::forTenant($tenantId)->exists()) {
+                foreach (self::DEFAULT_DEPARTMENTS as $row) {
+                    TicketDepartment::firstOrCreate(
+                        ['tenant_id' => $tenantId, 'name' => $row['name']],
+                        [...$row, 'tenant_id' => $tenantId]
+                    );
+                }
             }
-        }
-        $this->settings($tenantId); // creates the settings row if missing
+            $this->settings($tenantId); // creates the settings row if missing
+        });
     }
 
     public function settings(int $tenantId): HelpdeskSetting

@@ -504,6 +504,25 @@ class HelpdeskService
      * to its last update (we treat the final update on a closed ticket as its
      * resolution time, since there is no dedicated resolved_at column yet).
      */
+    /**
+     * Hours between a ticket's creation and its last update, as a SQL expression.
+     *
+     * Date arithmetic is the one thing that is never portable, so it is resolved
+     * from the live driver rather than hardcoded to SQLite. Semantics are kept
+     * exactly as before (created_at → updated_at); resolved_at would be the truer
+     * source but it is only populated for tickets closed since the SLA engine
+     * landed, so switching to it now would silently mix two definitions.
+     */
+    private function elapsedHoursExpr(): string
+    {
+        return match (DB::connection()->getDriverName()) {
+            'sqlite' => '(julianday(updated_at) - julianday(created_at)) * 24.0',
+            'mysql', 'mariadb' => 'TIMESTAMPDIFF(SECOND, created_at, updated_at) / 3600.0',
+            'pgsql'  => 'EXTRACT(EPOCH FROM (updated_at - created_at)) / 3600.0',
+            default  => '(julianday(updated_at) - julianday(created_at)) * 24.0',
+        };
+    }
+
     public function analytics(int $tenantId): array
     {
         $base = fn () => Ticket::forTenant($tenantId);
@@ -524,31 +543,40 @@ class HelpdeskService
         $openRate = $total > 0 ? round(($unresolved / $total) * 100, 1) : 0.0;
 
         // Average closing time (hours) across closed tickets.
-        $closedTickets = $base()->where('status', 'closed')->get(['created_at', 'updated_at']);
-        $avgClosingHours = $closedTickets->count() > 0
-            ? round($closedTickets->avg(fn (Ticket $t) => $t->created_at->diffInMinutes($t->updated_at)) / 60, 1)
-            : 0.0;
+        //
+        // This whole section used to pull every ticket in the tenant into PHP with
+        // ->get() and group in memory — twice. At a few hundred tickets nobody
+        // notices; at 10k it is 10k hydrated models per dashboard load. The
+        // arithmetic is a database's job, so it now happens there and only the
+        // aggregated rows come back.
+        $avgClosingHours = round((float) $base()->where('status', 'closed')
+            ->avg(DB::raw($this->elapsedHoursExpr())) ?: 0.0, 1);
 
         // Per-assignee workload: total tickets, how many closed, and the average
-        // close time (hours) for that assignee's closed tickets.
-        $assigneeRows = $base()->with('assignee:id,name')->get()
+        // close time (hours) for that assignee's closed tickets — one grouped
+        // query instead of a full table scan through PHP.
+        $elapsed = $this->elapsedHoursExpr();
+        $rows = $base()
+            ->selectRaw('assigned_to')
+            ->selectRaw('COUNT(*) as total')
+            ->selectRaw("SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END) as resolved")
+            ->selectRaw("AVG(CASE WHEN status = 'closed' THEN ({$elapsed}) END) as avg_close_hours")
             ->groupBy('assigned_to')
-            ->map(function ($group) {
-                $closed = $group->where('status', 'closed');
-                $avgHours = $closed->count() > 0
-                    ? round($closed->avg(fn (Ticket $t) => $t->created_at->diffInMinutes($t->updated_at)) / 60, 1)
-                    : 0.0;
+            ->orderByDesc('total')
+            ->get();
 
-                return [
-                    'assignee_id'     => $group->first()->assigned_to,
-                    'name'            => $group->first()->assignee->name ?? 'Unassigned',
-                    'total'           => $group->count(),
-                    'resolved'        => $closed->count(),
-                    'avg_close_hours' => $avgHours,
-                ];
-            })
-            ->sortByDesc('total')
-            ->values();
+        // One extra query resolves every assignee name; the previous code got
+        // these via an eager-load on the full ticket set.
+        $names = \App\Models\User::whereIn('id', $rows->pluck('assigned_to')->filter()->all())
+            ->pluck('name', 'id');
+
+        $assigneeRows = $rows->map(fn ($r) => [
+            'assignee_id'     => $r->assigned_to,
+            'name'            => $r->assigned_to ? ($names[$r->assigned_to] ?? 'Unknown') : 'Unassigned',
+            'total'           => (int) $r->total,
+            'resolved'        => (int) $r->resolved,
+            'avg_close_hours' => round((float) $r->avg_close_hours, 1),
+        ])->values();
 
         $settings = app(\App\Services\Helpdesk\HelpdeskSettingsService::class);
 

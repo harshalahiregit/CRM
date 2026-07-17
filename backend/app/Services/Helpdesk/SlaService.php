@@ -21,22 +21,35 @@ use Carbon\Carbon;
  */
 class SlaService
 {
-    /** Per-request, per-tenant config cache (targets + paused/closed status sets). */
-    private static array $cache = [];
+    /**
+     * Per-request, per-tenant config cache (targets + paused/closed status sets).
+     *
+     * This is deliberately an INSTANCE property bound as `scoped` in
+     * AppServiceProvider, not a static. It was static, which under PHP-FPM is
+     * harmless (the process dies with the request) but under Octane/Swoole would
+     * outlive it — a worker would keep serving one tenant's SLA targets after an
+     * admin changed them, until the worker recycled.
+     *
+     * The cache itself is load-bearing and must not simply be deleted: it is the
+     * only reason compute() doesn't hit the DB once per ticket. `scoped` keeps
+     * one instance per request (so a 31-ticket list costs 2 config queries, not
+     * 62) and drops it at the request boundary.
+     */
+    private array $cache = [];
 
     private function config(int $tenantId): array
     {
-        if (! isset(self::$cache[$tenantId])) {
+        if (! isset($this->cache[$tenantId])) {
             $prios = TicketPriority::forTenant($tenantId)->get(['name', 'first_response_hours', 'resolution_hours']);
             $stats = TicketStatus::forTenant($tenantId)->get(['name', 'is_closed_status', 'sla_paused']);
-            self::$cache[$tenantId] = [
+            $this->cache[$tenantId] = [
                 'targets' => $prios->mapWithKeys(fn ($p) => [$p->name => [$p->first_response_hours, $p->resolution_hours]])->all(),
                 'paused'  => $stats->where('sla_paused', true)->pluck('name')->all(),
                 'closed'  => $stats->where('is_closed_status', true)->pluck('name')->all(),
             ];
         }
 
-        return self::$cache[$tenantId];
+        return $this->cache[$tenantId];
     }
 
     /** Compute the SLA snapshot attached to every serialized ticket. */
