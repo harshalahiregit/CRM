@@ -23,9 +23,9 @@ class UpdateTicketRequest extends FormRequest
             'description'   => 'nullable|string',
             'status'        => ['sometimes', Rule::in($settings->statusNames($tenantId))],
             'priority'      => ['sometimes', Rule::in($settings->priorityNames($tenantId))],
-            'assigned_to'   => 'nullable|integer|exists:users,id',
+            'assigned_to'   => ['nullable', 'integer', TenantRules::assignableUser($tenantId)],
             'customer_id'   => 'nullable|integer|min:1',
-            'department_id' => 'nullable|integer|exists:ticket_departments,id',
+            'department_id' => ['nullable', 'integer', TenantRules::department($tenantId)],
             'due_date'      => 'nullable|date',
         ];
     }

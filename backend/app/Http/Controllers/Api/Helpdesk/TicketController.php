@@ -31,10 +31,10 @@ class TicketController extends Controller
         $this->helpdesk->assertTicketVisible($ticket, $request->user()->tenant_id, $request->user()->id, $request->user()->role);
     }
 
-    /** 403s anyone but an admin / department manager (used for delete). */
-    private function guardManage(Request $request, int $ticket): void
+    /** 403s anyone but an admin / department manager. */
+    private function guardManage(Request $request, int $ticket, string $action = 'delete this ticket'): void
     {
-        $this->helpdesk->assertTicketManage($ticket, $request->user()->tenant_id, $request->user()->id, $request->user()->role);
+        $this->helpdesk->assertTicketManage($ticket, $request->user()->tenant_id, $request->user()->id, $request->user()->role, $action);
     }
 
     /* ── AI summary (Phase 6, cached; ?refresh=1 regenerates) ──── */
@@ -83,11 +83,27 @@ class TicketController extends Controller
         return $this->success($this->helpdesk->showTicket($ticket, $request->user()->tenant_id, $request->user()->id, $request->user()->role), 'Ticket retrieved');
     }
 
+    /**
+     * Fields that decide who owns the work, how fast it must be done, and who
+     * gets to see it. Routing the ticket to another department also rewrites who
+     * counts as its manager — so these are manager decisions, not edits.
+     */
+    private const MANAGEMENT_FIELDS = ['priority', 'assigned_to', 'department_id', 'customer_id', 'due_date'];
+
     /* ── Update ────────────────────────────────────────────────── */
     public function update(UpdateTicketRequest $request, int $ticket)
     {
         $this->guardView($request, $ticket);
-        $result = $this->helpdesk->updateTicket($ticket, $request->validated(), $request->user()->tenant_id);
+
+        // Any agent who can see a ticket may correct its subject or description.
+        // Re-prioritising, reassigning or re-routing it is a different act, and
+        // it used to ride in on the same view-level guard.
+        $data = $request->validated();
+        if ($touched = array_intersect_key($data, array_flip(self::MANAGEMENT_FIELDS))) {
+            $this->guardManage($request, $ticket, 'change '.implode(', ', array_keys($touched)));
+        }
+
+        $result = $this->helpdesk->updateTicket($ticket, $data, $request->user()->tenant_id);
 
         return $this->success($result, 'Ticket updated');
     }
@@ -116,8 +132,17 @@ class TicketController extends Controller
     /* ── Merge a duplicate ticket into this one (Phase 3) ──────── */
     public function merge(Request $request, int $ticket)
     {
-        $this->guardView($request, $ticket);
         $data = $request->validate(['merge_ticket_id' => 'required|integer']);
+
+        // Merging is delete's twin: the absorbed ticket is closed for good and
+        // its replies move away. It was gated at view level while delete was
+        // gated at manager level, so the weaker route reached the same end.
+        // Both tickets are guarded — the one that dies matters more than the one
+        // that survives, and guarding only the survivor would still let an agent
+        // destroy a ticket they have no say over.
+        $this->guardManage($request, $ticket, 'merge tickets');
+        $this->guardManage($request, (int) $data['merge_ticket_id'], 'merge tickets');
+
         $survivor = $this->helpdesk->mergeTicket($ticket, $data['merge_ticket_id'], $request->user()->tenant_id);
 
         return $this->success($survivor, 'Ticket merged');

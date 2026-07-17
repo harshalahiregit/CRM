@@ -213,8 +213,9 @@ export default function TicketThread() {
     mutationFn: async ({ resolve, text, ccVal, fileList } = {}) => {
       const fd = new FormData()
       fd.append('message', text)
-      fd.append('sender_type', 'admin')
-      if (user?.id) fd.append('sender_id', user.id)
+      // sender_type/sender_id are derived from the auth token server-side — the
+      // server ignores them if sent, so sending them would only be a lie we tell
+      // ourselves. The optimistic bubble below mirrors the same rule locally.
       parseCc(ccVal).valid.forEach(email => fd.append('cc[]', email))
       ;(fileList || []).forEach(f => fd.append('attachments[]', f))
       const res = await helpdeskApi.tickets.reply(id, fd)
@@ -224,7 +225,7 @@ export default function TicketThread() {
     onMutate: async ({ text } = {}) => {
       await queryClient.cancelQueries({ queryKey: repliesKey })
       const prev = queryClient.getQueryData(repliesKey)
-      const optimistic = { id: `tmp-${Date.now()}`, message: text, sender_type: 'admin', sender: { name: user?.name }, created_at: new Date().toISOString(), _optimistic: true }
+      const optimistic = { id: `tmp-${Date.now()}`, message: text, sender_type: user?.role === 'admin' ? 'admin' : 'agent', sender: { name: user?.name }, created_at: new Date().toISOString(), _optimistic: true }
       queryClient.setQueryData(repliesKey, (old = []) => [...(Array.isArray(old) ? old : []), optimistic])
       setMessage(''); setFiles([]); setCc('')
       return { prev, sent: text }

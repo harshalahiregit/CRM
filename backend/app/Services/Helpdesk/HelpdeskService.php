@@ -44,6 +44,9 @@ class HelpdeskService
      * Deleting a ticket is manager-only (admin or a manager of its department).
      */
 
+    /** Portal roles. They live outside the staff queue and never see it. */
+    private const EXTERNAL_ROLES = ['client', 'vendor', 'third_party_vendor'];
+
     private function jsonIds($val): \Illuminate\Support\Collection
     {
         if (is_array($val)) {
@@ -56,9 +59,20 @@ class HelpdeskService
         return collect();
     }
 
+    /** Portal roles have no seat in the staff queue — 403 before anything else. */
+    private function assertInternal(?string $role): void
+    {
+        if (in_array($role, self::EXTERNAL_ROLES, true)) {
+            throw new BusinessException('You do not have access to the helpdesk queue.', 403);
+        }
+    }
+
     /** Tenant-wide ticket managers see (and can delete) every ticket. */
     private function isGlobalTicketManager(int $tenantId, int $userId, string $role): bool
     {
+        if (in_array($role, self::EXTERNAL_ROLES, true)) {
+            return false;
+        }
         if ($role === 'admin') {
             return true;
         }
@@ -90,6 +104,14 @@ class HelpdeskService
 
     public function canSeeTicket(Ticket $ticket, int $userId, string $role): bool
     {
+        // Portal users are not part of the internal queue at all. This has to be
+        // the FIRST check: the unassigned-ticket rule below is deliberately
+        // permissive for staff, and without this it handed every client and
+        // vendor in the tenant a free window onto the open queue.
+        if (in_array($role, self::EXTERNAL_ROLES, true)) {
+            return false;
+        }
+
         if ($this->isGlobalTicketManager($ticket->tenant_id, $userId, $role)) {
             return true;
         }
@@ -114,13 +136,13 @@ class HelpdeskService
         return $ticket;
     }
 
-    /** Delete access — admin or a manager of the ticket's department only. */
-    public function assertTicketManage(int $ticketId, int $tenantId, int $userId, string $role): Ticket
+    /** Manage access — admin or a manager of the ticket's department only. */
+    public function assertTicketManage(int $ticketId, int $tenantId, int $userId, string $role, string $action = 'delete this ticket'): Ticket
     {
         $ticket = $this->findTicket($ticketId, $tenantId);
 
         if (! $this->isTicketManager($ticket, $userId, $role)) {
-            throw new BusinessException('Only an admin or a department manager can delete this ticket.', 403);
+            throw new BusinessException("Only an admin or a department manager can {$action}.", 403);
         }
 
         return $ticket;
@@ -128,6 +150,11 @@ class HelpdeskService
 
     public function listTickets(int $tenantId, array $filters = [], ?int $userId = null, ?string $role = null): Collection
     {
+        // The repository's visibility filter ORs in `assigned_to IS NULL` so staff
+        // can claim from the open queue. That rule is only safe once portal roles
+        // are out of the room — otherwise it hands them the whole unassigned queue.
+        $this->assertInternal($role);
+
         $scoped = $userId !== null && $role !== null && ! $this->isGlobalTicketManager($tenantId, $userId, $role);
         $managedDepts = $scoped ? $this->managedDepartmentIds($tenantId, $userId) : [];
         $visibility = $scoped ? ['user_id' => $userId, 'dept_ids' => $managedDepts] : null;
@@ -286,15 +313,43 @@ class HelpdeskService
             throw new BusinessException('The selected customer does not exist.', 422);
         }
 
-        $oldStatus = $ticket->status;
+        $oldStatus   = $ticket->status;
+        $oldAssignee = $ticket->assigned_to === null ? null : (int) $ticket->assigned_to;
+
+        // department_id was missing from this whitelist, so a department change
+        // sent through PUT validated cleanly and was then silently thrown away —
+        // the caller got a 200 and the old department back.
         $ticket->fill(array_intersect_key($data, array_flip([
             'subject', 'description', 'status', 'priority',
-            'assigned_to', 'customer_id', 'due_date',
+            'assigned_to', 'customer_id', 'department_id', 'due_date',
         ])));
         $ticket->save();
 
         if (array_key_exists('status', $data) && $data['status'] !== $oldStatus) {
             $this->sla->onStatusChange($ticket, $oldStatus, $ticket->status);
+
+            // This edit path used to skip the closure event that changeStatus()
+            // fires, so closing a ticket via PUT resolved it in the UI but never
+            // asked the customer for feedback. Same transition, same event.
+            if ($ticket->status === 'closed' && $oldStatus !== 'closed') {
+                TicketClosed::dispatch($ticket->fresh());
+            }
+        }
+
+        // Likewise, being handed a ticket through the edit form told the new
+        // owner nothing — the notification only existed on create and on the
+        // dedicated assign route.
+        $newAssignee = $ticket->assigned_to === null ? null : (int) $ticket->assigned_to;
+        if ($newAssignee !== null && $newAssignee !== $oldAssignee) {
+            $this->notifications->notify(
+                userId: $newAssignee,
+                tenantId: $tenantId,
+                type: 'ticket.assigned',
+                title: "Ticket #{$ticket->id} assigned to you",
+                message: $ticket->subject,
+                link: "/app/helpdesk/tickets/{$ticket->id}",
+                actorId: auth()->id(),
+            );
         }
 
         return $this->decorateWithCustomer($ticket->fresh('assignee'), $tenantId);

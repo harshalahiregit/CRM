@@ -64,9 +64,15 @@ class TicketCollaborationService
         ])->load('user:id,name');
     }
 
-    public function markReminderDone(int $reminderId, int $tenantId): TicketReminder
+    /**
+     * A reminder is personal — it belongs to the agent who set it. This was
+     * scoped by tenant alone, so any colleague could toggle anyone's reminder by
+     * guessing an id, and because the write is a negation rather than a set, a
+     * second call flipped it back and left no trace.
+     */
+    public function markReminderDone(int $reminderId, int $tenantId, int $userId): TicketReminder
     {
-        $reminder = TicketReminder::forTenant($tenantId)->find($reminderId);
+        $reminder = TicketReminder::forTenant($tenantId)->where('user_id', $userId)->find($reminderId);
         if (! $reminder) {
             throw new BusinessException('Reminder not found.', 404);
         }

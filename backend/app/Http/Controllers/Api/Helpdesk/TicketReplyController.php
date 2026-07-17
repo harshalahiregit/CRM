@@ -46,9 +46,11 @@ class TicketReplyController extends Controller
                 ->all(),
         ]);
 
+        // sender_type / sender_id are NOT accepted from the request. They used to
+        // be, which let any caller stamp a reply as another role or another user
+        // — and the composer sent 'admin' for everyone, so every agent's replies
+        // were already mislabelled. Identity comes from the token, full stop.
         $request->validate([
-            'sender_type'   => ['required', 'in:client,admin,agent'],
-            'sender_id'     => ['nullable', 'integer', 'min:1'],
             'message'       => ['required', 'string'],
             'cc'            => ['nullable', 'array', 'max:20'],
             'cc.*'          => ['email'],
@@ -71,9 +73,13 @@ class TicketReplyController extends Controller
             ];
         }
 
+        // guardView() has already rejected portal roles, so a reply arriving here
+        // is always staff. 'admin' stays admin; every other internal role posts as
+        // an agent. Only the inbound-email path may author a 'client' reply, and
+        // it calls the service directly rather than coming through here.
         $reply = $this->helpdesk->addReply($ticket, [
-            'sender_type' => $request->input('sender_type'),
-            'sender_id'   => $request->input('sender_id'),
+            'sender_type' => $request->user()->role === 'admin' ? 'admin' : 'agent',
+            'sender_id'   => $request->user()->id,
             'message'     => $request->input('message'),
             'cc'          => $request->input('cc', []),
             'attachments' => $stored,

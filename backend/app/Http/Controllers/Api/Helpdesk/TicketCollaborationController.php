@@ -61,7 +61,7 @@ class TicketCollaborationController extends Controller
 
     public function reminderDone(Request $request, int $reminder)
     {
-        return $this->success($this->collab->markReminderDone($reminder, $request->user()->tenant_id), 'Reminder updated');
+        return $this->success($this->collab->markReminderDone($reminder, $request->user()->tenant_id, $request->user()->id), 'Reminder updated');
     }
 
     /* ── Related tickets ───────────────────────────────────────── */
