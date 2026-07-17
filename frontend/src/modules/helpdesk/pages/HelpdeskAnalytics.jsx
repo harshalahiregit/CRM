@@ -146,8 +146,10 @@ export default function HelpdeskAnalytics() {
   const byAssignee = a.by_assignee || a.resolved_by_assignee || []
   const byStatus = a.by_status || []
   const byPriority = a.by_priority || []
+  const byDepartment = a.by_department || []
   const maxTotal = Math.max(...byAssignee.map(r => r.total ?? r.resolved ?? 0), 1)
   const maxStatus = Math.max(...byStatus.map(s => s.count), 1)
+  const maxDept = Math.max(...byDepartment.map(d => d.count), 1)
 
   return (
     <div className="space-y-6 animate-[tiltIn_0.35s_ease_forwards]">
@@ -352,6 +354,32 @@ export default function HelpdeskAnalytics() {
                   style={{ color: 'var(--text-muted)' }}
                 >
                   No tickets yet.
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* By Department — which queue is carrying the load */}
+          <div className="pt-4 mt-4" style={{ borderTop: '1px solid var(--border)' }}>
+            <h3
+              className="text-xs font-bold uppercase tracking-widest mb-3"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              By Department
+            </h3>
+            <div className="space-y-3">
+              {byDepartment.map(d => (
+                <Bar
+                  key={d.department_id ?? 'none'}
+                  label={d.department}
+                  value={`${d.count} tickets`}
+                  pct={(d.count / maxDept) * 100}
+                  color="#0ea5e9"
+                />
+              ))}
+              {byDepartment.length === 0 && (
+                <p className="text-sm text-center py-4" style={{ color: 'var(--text-muted)' }}>
+                  No departments configured.
                 </p>
               )}
             </div>

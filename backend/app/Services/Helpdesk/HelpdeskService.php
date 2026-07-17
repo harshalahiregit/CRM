@@ -593,6 +593,10 @@ class HelpdeskService
             // the same bug that once dropped 'urgent' from by_priority.
             'by_status'   => $this->countBreakdown($base(), 'status', $settings->statusNames($tenantId)),
             'by_priority' => $this->countBreakdown($base(), 'priority', $settings->priorityNames($tenantId)),
+            // Per-department load so the admin can track which queue is busy.
+            // department_id stores an id (not a name), so this resolves names from
+            // the tenant's configured departments rather than reusing countBreakdown.
+            'by_department'        => $this->departmentBreakdown($tenantId),
             'by_assignee'          => $assigneeRows,
             // Kept for backward-compat with the existing dashboard card.
             'resolved_by_assignee' => $assigneeRows->map(fn ($r) => [
@@ -601,6 +605,34 @@ class HelpdeskService
                 'resolved'    => $r['resolved'],
             ])->values(),
         ];
+    }
+
+    /**
+     * Ticket count per department, resolving department_id → name from the
+     * tenant's configured departments so every department shows (even at zero),
+     * with a "No department" bucket for tickets that were never routed.
+     */
+    private function departmentBreakdown(int $tenantId): array
+    {
+        $names = \App\Models\Helpdesk\TicketDepartment::forTenant($tenantId)
+            ->orderBy('order')->pluck('name', 'id');
+
+        $counts = Ticket::forTenant($tenantId)
+            ->selectRaw('department_id, count(*) as c')
+            ->groupBy('department_id')->pluck('c', 'department_id');
+
+        $rows = $names->map(fn ($name, $id) => [
+            'department_id' => $id,
+            'department'    => $name,
+            'count'         => (int) ($counts[$id] ?? 0),
+        ])->values();
+
+        $noDept = Ticket::forTenant($tenantId)->whereNull('department_id')->count();
+        if ($noDept > 0) {
+            $rows->push(['department_id' => null, 'department' => 'No department', 'count' => $noDept]);
+        }
+
+        return $rows->all();
     }
 
     /**
