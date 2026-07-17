@@ -23,6 +23,12 @@ Route::get('/helpdesk/feedback/{ticket}/{rating}', [HelpdeskFeedbackController::
     ->name('helpdesk.feedback.oneclick')
     ->where(['ticket' => '[0-9]+', 'rating' => '[1-5]']);
 
+// ── Public: one-click reopen from the closure email (signed, no auth) ────
+Route::get('/helpdesk/reopen/{ticket}', [HelpdeskFeedbackController::class, 'reopen'])
+    ->middleware('signed')
+    ->name('helpdesk.reopen.oneclick')
+    ->where(['ticket' => '[0-9]+']);
+
 // ── Public: embeddable support widget + public knowledge base (no auth) ──
 // Tenant resolved from the widget public key; submission is throttled + honeypot.
 Route::post('/helpdesk/public/widget/{key}/tickets', [PublicHelpdeskController::class, 'submitTicket'])

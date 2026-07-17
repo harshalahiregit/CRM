@@ -2,6 +2,15 @@
 
 return [
     /*
+     * Base URL of the front-end SPA, used to build the "Open ticket" deep links
+     * in outbound email. This is NOT app.url: the Laravel API and the React SPA
+     * run on different origins in dev (API on :8000, SPA on :5173), and email
+     * links must point at the SPA. Defaults to app.url so production single-origin
+     * setups keep working without extra config.
+     */
+    'app_url' => rtrim(env('FRONTEND_URL', env('APP_URL', 'http://localhost')), '/'),
+
+    /*
      * Address that receives customer email replies. Outbound helpdesk mail sets
      * its Reply-To to the plus-addressed form:
      *     support+{ticketId}-{token}@your-domain

@@ -31,7 +31,7 @@ class TicketAssignedMail extends Mailable
 
     public function content(): Content
     {
-        $appUrl = rtrim((string) config('app.url'), '/');
+        $appUrl = rtrim((string) config('helpdesk.app_url'), '/');
 
         return new Content(
             view: 'emails.helpdesk.ticket-assigned',

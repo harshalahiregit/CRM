@@ -38,12 +38,22 @@ class TicketClosedFeedbackMail extends Mailable
             ),
         ])->all();
 
+        // Signed, expiring one-click reopen — same trust model as the star links.
+        // Lets a customer who isn't happy reopen the ticket straight from the
+        // email without logging in.
+        $reopenUrl = URL::temporarySignedRoute(
+            'helpdesk.reopen.oneclick',
+            now()->addDays(30),
+            ['ticket' => $this->ticket->id],
+        );
+
         return new Content(
             view: 'emails.helpdesk.ticket-closed-feedback',
             with: [
                 'ticket'       => $this->ticket,
                 'customerName' => $this->customer['name'] ?? 'there',
                 'stars'        => $stars,
+                'reopenUrl'    => $reopenUrl,
             ],
         );
     }

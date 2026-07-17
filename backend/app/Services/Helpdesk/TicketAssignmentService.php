@@ -50,7 +50,7 @@ class TicketAssignmentService
 
         // Notify the newly-assigned agent (skip re-assign to the same user).
         if ($userId !== null && $userId !== $previous) {
-            $fresh = $ticket->fresh();
+            $fresh = $ticket->fresh('assignee');
             $this->mail->sendAssignment($fresh, $userId);
             $this->notifications->notify(
                 userId: $userId,
@@ -61,6 +61,26 @@ class TicketAssignmentService
                 link: "/app/helpdesk/tickets/{$fresh->id}",
                 actorId: auth()->id(),
             );
+
+            // Managers (incl. admins) also see assignment activity — so the admin's
+            // feed reflects who work is going to, not just new tickets. The actor is
+            // self-suppressed; the assignee was already told above. Resolved lazily
+            // to avoid a constructor dependency cycle with HelpdeskService.
+            $agentName = $fresh->assignee->name ?? 'an agent';
+            foreach (app(\App\Services\Helpdesk\HelpdeskService::class)->ticketManagerIds($fresh) as $mgrId) {
+                if ((int) $mgrId === (int) $userId) {
+                    continue; // already notified as the assignee
+                }
+                $this->notifications->notify(
+                    userId: (int) $mgrId,
+                    tenantId: $tenantId,
+                    type: 'ticket.assigned',
+                    title: "Ticket #{$fresh->id} assigned to {$agentName}",
+                    message: $fresh->subject,
+                    link: "/app/helpdesk/tickets/{$fresh->id}",
+                    actorId: auth()->id(),
+                );
+            }
         }
 
         return $ticket->fresh('assignee');

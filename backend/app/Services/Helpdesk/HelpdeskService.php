@@ -287,14 +287,16 @@ class HelpdeskService
             );
         }
 
-        $ids = $global->merge($perDept)->map(fn ($i) => (int) $i)->unique();
+        // Admins are global ticket managers BY DEFINITION (isGlobalTicketManager
+        // returns true for any admin), so they are ALWAYS in the loop — not merely
+        // a fallback for when no department manager is configured. Previously the
+        // admin fallback only fired if the list was otherwise empty, so the moment
+        // a department got its own manager the admin stopped seeing that
+        // department's activity entirely. An admin should track everything.
+        $admins = \App\Models\User::where('tenant_id', $tenantId)
+            ->where('status', 'active')->where('role', 'admin')->pluck('id');
 
-        // Nothing configured anywhere → fall back to admins so tickets are never
-        // raised into silence.
-        if ($ids->isEmpty()) {
-            $ids = \App\Models\User::where('tenant_id', $tenantId)
-                ->where('status', 'active')->where('role', 'admin')->pluck('id');
-        }
+        $ids = $global->merge($perDept)->merge($admins)->map(fn ($i) => (int) $i)->unique();
 
         // Only ever notify real, active, internal people.
         return \App\Models\User::where('tenant_id', $tenantId)
@@ -726,6 +728,62 @@ class HelpdeskService
             ['tenant_id' => $ticket->tenant_id, 'ticket_id' => $ticket->id],
             ['rating' => $rating],
         );
+    }
+
+    /**
+     * Reopen a resolved ticket from the one-click link in the closure email.
+     *
+     * Public / no login — the signed URL is the authorization, same as the CSAT
+     * one-click. Idempotent: clicking it on an already-open ticket is a no-op.
+     * Reopening puts the work back on someone's queue, so the assigned agent (or,
+     * if unassigned, the ticket's managers) is told.
+     */
+    public function reopenOneClick(int $ticketId): Ticket
+    {
+        $ticket = Ticket::find($ticketId);
+        if (! $ticket) {
+            throw new BusinessException('Ticket not found.', 404);
+        }
+
+        $closedNames = \App\Models\Helpdesk\TicketStatus::forTenant($ticket->tenant_id)
+            ->where('is_closed_status', true)->pluck('name')->all();
+
+        // Already open → nothing to do (a double-click, or a stale link).
+        if (! in_array($ticket->status, $closedNames, true)) {
+            return $ticket;
+        }
+
+        $openStatus = \App\Models\Helpdesk\TicketStatus::forTenant($ticket->tenant_id)
+            ->where('is_closed_status', false)->orderBy('order')->value('name') ?? 'open';
+
+        $was = $ticket->status;
+        $ticket->update(['status' => $openStatus]);
+        $this->sla->onStatusChange($ticket, $was, $openStatus);
+
+        if ($ticket->assigned_to) {
+            $this->notifications->notify(
+                userId: $ticket->assigned_to,
+                tenantId: $ticket->tenant_id,
+                type: 'ticket.reopened',
+                title: "Ticket #{$ticket->id} reopened by the customer",
+                message: $ticket->subject,
+                link: "/app/helpdesk/tickets/{$ticket->id}",
+            );
+        } else {
+            // Nobody owns it → put it back in front of the managers.
+            foreach ($this->ticketManagerIds($ticket) as $mgrId) {
+                $this->notifications->notify(
+                    userId: $mgrId,
+                    tenantId: $ticket->tenant_id,
+                    type: 'ticket.reopened',
+                    title: "Ticket #{$ticket->id} reopened by the customer",
+                    message: $ticket->subject,
+                    link: "/app/helpdesk/tickets/{$ticket->id}",
+                );
+            }
+        }
+
+        return $ticket;
     }
 
     /* ── Internals ──────────────────────────────────────────────── */

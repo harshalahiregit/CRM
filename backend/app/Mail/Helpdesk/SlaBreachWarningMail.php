@@ -43,7 +43,7 @@ class SlaBreachWarningMail extends Mailable
 
     public function content(): Content
     {
-        $appUrl = rtrim((string) config('app.url'), '/');
+        $appUrl = rtrim((string) config('helpdesk.app_url'), '/');
         $breached = collect($this->breaches)->contains(fn ($b) => $b['state'] === 'breached');
 
         return new Content(

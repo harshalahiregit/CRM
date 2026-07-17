@@ -47,8 +47,20 @@
                                 </tr>
                             </table>
 
+                            {{-- Not resolved? One-click reopen (signed, no login needed). --}}
+                            <p style="margin:0 0 12px; font-size:13px; color:#334155; line-height:1.6;">
+                                Issue not fully resolved?
+                            </p>
+                            <table role="presentation" align="center" cellpadding="0" cellspacing="0" style="margin:0 auto 16px;">
+                                <tr>
+                                    <td align="center" style="border-radius:10px; background:#0ea5e9;">
+                                        <a href="{{ $reopenUrl }}" style="display:inline-block; padding:12px 24px; font-size:14px; font-weight:bold; color:#ffffff; text-decoration:none;">&#8635; Reopen this ticket</a>
+                                    </td>
+                                </tr>
+                            </table>
+
                             <p style="margin:0; font-size:12px; color:#94a3b8; line-height:1.6;">
-                                If your issue isn’t fully resolved, simply reply to this ticket and it will reopen automatically.
+                                You can also just reply to this email and the ticket will reopen automatically.
                             </p>
                         </td>
                     </tr>
