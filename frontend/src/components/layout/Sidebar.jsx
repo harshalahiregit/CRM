@@ -6,7 +6,8 @@ import {
   UserCheck, CalendarDays, FileText, Rocket, Building2,
   ClipboardList, ChevronDown, Shield, UserCog,
   IndianRupee, FileSignature, CreditCard, FileX,
-  ShoppingBag, UserPlus
+  ShoppingBag, UserPlus,
+  Boxes, PackagePlus, PackageMinus, ArrowLeftRight, Scale, Warehouse
 } from 'lucide-react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
@@ -60,6 +61,18 @@ const HELPDESK_SUB_ITEMS = [
   { label: 'Widget', path: '/app/helpdesk/widget', icon: Package },
 ]
 
+// Inventory OS — mirrors the blueprint's left-nav parent + its sub-pages.
+const INVENTORY_SUB_ITEMS = [
+  { label: 'Inventory Dashboard', path: '/app/inventory', icon: LayoutDashboard, end: true },
+  { label: 'Items', path: '/app/inventory/products', icon: Package },
+  { label: 'Receiving voucher', path: '/app/inventory/vouchers/receipt', icon: PackagePlus },
+  { label: 'Delivery voucher', path: '/app/inventory/vouchers/delivery', icon: PackageMinus },
+  { label: 'Internal delivery note', path: '/app/inventory/vouchers/internal', icon: ArrowLeftRight },
+  { label: 'Loss & adjustment', path: '/app/inventory/vouchers/loss_adjustment', icon: Scale },
+  { label: 'Warehouse', path: '/app/inventory/warehouses', icon: Warehouse },
+  { label: 'Settings', path: '/app/inventory/settings', icon: Settings },
+]
+
 export default function Sidebar({ collapsed, onToggle }) {
   const { user, tenant, logout } = useAuth()
   const { isDark, toggleTheme } = useTheme()
@@ -67,6 +80,7 @@ export default function Sidebar({ collapsed, onToggle }) {
   const [hrExpanded, setHrExpanded] = useState(true)
   const [salesExpanded, setSalesExpanded] = useState(true)
   const [helpdeskExpanded, setHelpdeskExpanded] = useState(true)
+  const [inventoryExpanded, setInventoryExpanded] = useState(true)
   const hrInstalled = isModuleInstalled('hr')
 
   const handleLogout = async () => { await logout(); navigate('/auth/login') }
@@ -285,6 +299,37 @@ export default function Sidebar({ collapsed, onToggle }) {
                   </div>
                   {!collapsed && <span className="truncate text-xs">{label}</span>}
                   {isActive && !collapsed && <div className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: '#67e8f9' }} />}
+                </div>
+              )}
+            </NavLink>
+          ))}
+        </div>
+
+        {/* ── Inventory Module sub-nav ── */}
+        <div className="mt-2">
+          {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#10b981' }}>Inventory</p>}
+          <button
+            onClick={() => setInventoryExpanded(e => !e)}
+            title={collapsed ? 'Inventory' : ''}
+            className="nav-3d mb-0.5 w-full"
+            style={{ justifyContent: collapsed ? 'center' : undefined, color: '#10b981' }}
+          >
+            <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(16,185,129,0.15)' }}>
+              <Boxes size={13} style={{ color: '#10b981' }} />
+            </div>
+            {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Inventory</span><ChevronDown size={13} className={clsx('transition-transform duration-200', inventoryExpanded && 'rotate-180')} /></>}
+          </button>
+          {(inventoryExpanded || collapsed) && INVENTORY_SUB_ITEMS.map(({ label, path, icon: Icon, end }) => (
+            // `end` on the dashboard row — without it /app/inventory stays
+            // highlighted while you're on any of its child pages.
+            <NavLink key={path} to={path} end={end}>
+              {({ isActive }) => (
+                <div title={collapsed ? label : ''} className={clsx('nav-3d mb-0.5', isActive && 'nav-3d-active')} style={{ justifyContent: collapsed ? 'center' : undefined, paddingLeft: collapsed ? undefined : '28px' }}>
+                  <div className="flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: isActive ? 'rgba(255,255,255,0.15)' : 'rgba(16,185,129,0.06)' }}>
+                    <Icon size={12} />
+                  </div>
+                  {!collapsed && <span className="truncate text-xs">{label}</span>}
+                  {isActive && !collapsed && <div className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: '#6ee7b7' }} />}
                 </div>
               )}
             </NavLink>

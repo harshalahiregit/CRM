@@ -70,6 +70,14 @@ const TaskBoard = lazy(() => import('@/modules/tasks/pages/TaskBoard'))
 const TaskDetail = lazy(() => import('@/modules/tasks/pages/TaskDetail'))
 const TaskOverview = lazy(() => import('@/modules/tasks/pages/TaskOverview'))
 
+// Inventory Module (lazy)
+const InventoryDashboard = lazy(() => import('@/modules/inventory/pages/InventoryDashboard'))
+const InventoryProducts = lazy(() => import('@/modules/inventory/pages/ProductList'))
+const InventoryProductDetail = lazy(() => import('@/modules/inventory/pages/ProductDetail'))
+const InventoryWarehouses = lazy(() => import('@/modules/inventory/pages/Warehouses'))
+const InventorySettings = lazy(() => import('@/modules/inventory/pages/InventorySettings'))
+const InventoryVouchers = lazy(() => import('@/modules/inventory/pages/VoucherList'))
+
 function ComingSoon({ name }) {
   return (
     <div className="flex flex-col items-center justify-center min-h-[55vh] gap-4 animate-fade-in">
@@ -192,6 +200,16 @@ export default function AppRoutes() {
         <Route path="tasks/:id" element={<S><TaskDetail /></S>} />
         <Route path="projects" element={<S><ProjectList /></S>} />
         <Route path="projects/:id" element={<S><ProjectDetail /></S>} />
+
+        {/* Inventory OS — Phase 1 foundation */}
+        <Route path="inventory" element={<S><InventoryDashboard /></S>} />
+        <Route path="inventory/products" element={<S><InventoryProducts /></S>} />
+        <Route path="inventory/products/:id" element={<S><InventoryProductDetail /></S>} />
+        <Route path="inventory/warehouses" element={<S><InventoryWarehouses /></S>} />
+        {/* One page serves all four document types — :type selects the config. */}
+        <Route path="inventory/vouchers/:type" element={<S><InventoryVouchers /></S>} />
+        <Route path="inventory/settings" element={<S><InventorySettings /></S>} />
+
         <Route path="invoices" element={<ComingSoon name="Invoices" />} />
         <Route path="vendors" element={<ComingSoon name="Vendors" />} />
         <Route path="tickets" element={<ComingSoon name="Tickets" />} />
