@@ -66,6 +66,165 @@ class TicketAssignmentService
         return $ticket->fresh('assignee');
     }
 
+    /* ── Auto-assignment (REQ-06) ───────────────────────────────────
+     *
+     * Tickets raised by clients and by the public widget arrive with no owner —
+     * there is no human on that side of the form to pick one — so they sat in the
+     * queue until somebody happened to look. autoAssign() picks an owner using the
+     * tenant's configured strategy and then routes through assign(), so the
+     * assignment email and the ticket.assigned notification fire exactly as they
+     * do for a manual assignment.
+     *
+     * Strategy lives in helpdesk_settings.auto_assign_strategy and defaults to
+     * 'none' — existing tenants keep manual assignment until they opt in.
+     */
+
+    /** Portal roles. They are outside the staff queue and are never assignees. */
+    private const EXTERNAL_ROLES = ['client', 'vendor', 'third_party_vendor'];
+
+    /**
+     * Pick and set an owner for a freshly-created ticket. Never overwrites an
+     * assignee that is already set. Returns the ticket (assigned or untouched).
+     */
+    public function autoAssign(Ticket $ticket): Ticket
+    {
+        if ($ticket->assigned_to) {
+            return $ticket;
+        }
+
+        $settings = \App\Models\Helpdesk\HelpdeskSetting::where('tenant_id', $ticket->tenant_id)->first();
+        $strategy = $settings->auto_assign_strategy ?? 'none';
+
+        if ($strategy === 'none') {
+            return $ticket;
+        }
+
+        $userId = match ($strategy) {
+            'department_manager' => $this->pickDepartmentManager($ticket),
+            'least_busy'         => $this->pickLeastBusy($ticket->tenant_id),
+            'round_robin'        => $this->pickRoundRobin($ticket->tenant_id, $settings?->last_auto_assigned_user_id),
+            default              => null,
+        };
+
+        // A strategy can legitimately resolve nobody (a department with no
+        // managers, a tenant with no active internal agents). Fall back to the
+        // configured default assignee — but only if they still qualify, so a
+        // stale id pointing at a deactivated or externalised user can't be used.
+        if (! $userId && $settings?->default_assignee_id) {
+            $userId = $this->candidates($ticket->tenant_id)
+                ->where('id', $settings->default_assignee_id)->value('id');
+        }
+
+        if (! $userId) {
+            Log::info("Auto-assign ({$strategy}) found no eligible assignee for ticket #{$ticket->id}");
+
+            return $ticket;
+        }
+
+        // Advance the round-robin cursor before assigning, so a failure in the
+        // assignment can't park the rotation on one person forever.
+        if ($settings && $strategy === 'round_robin') {
+            $settings->update(['last_auto_assigned_user_id' => $userId]);
+        }
+
+        Log::info("Auto-assigned ticket #{$ticket->id} to user {$userId} via {$strategy}");
+
+        return $this->assign($ticket->id, (int) $userId, $ticket->tenant_id);
+    }
+
+    /**
+     * Every user eligible to receive a ticket: this tenant, active, internal.
+     *
+     * This is the single gate for ALL strategies — external roles (client, vendor,
+     * third_party_vendor) and inactive users are excluded here and nowhere else,
+     * so no strategy can reintroduce the bug where a portal user was handed a
+     * ticket they can't even open.
+     */
+    private function candidates(int $tenantId): \Illuminate\Database\Eloquent\Builder
+    {
+        return User::query()
+            ->where('tenant_id', $tenantId)
+            ->where('status', 'active')
+            ->whereNotIn('role', self::EXTERNAL_ROLES);
+    }
+
+    /** Least-loaded manager of the ticket's own department. */
+    private function pickDepartmentManager(Ticket $ticket): ?int
+    {
+        if (! $ticket->department_id) {
+            return null;
+        }
+
+        $managerIds = collect(
+            \App\Models\Helpdesk\TicketDepartment::where('tenant_id', $ticket->tenant_id)
+                ->whereKey($ticket->department_id)->value('manager_ids') ?? []
+        )->map(fn ($i) => (int) $i)->all();
+
+        if (! $managerIds) {
+            return null;
+        }
+
+        return $this->leastLoadedOf($ticket->tenant_id, $this->candidates($ticket->tenant_id)
+            ->whereIn('id', $managerIds)->pluck('id')->all());
+    }
+
+    /** Active internal agent carrying the fewest open tickets. */
+    private function pickLeastBusy(int $tenantId): ?int
+    {
+        return $this->leastLoadedOf($tenantId, $this->candidates($tenantId)->pluck('id')->all());
+    }
+
+    /**
+     * Next active internal agent after the previous auto-assignee, by id, wrapping
+     * at the end. A stable order over a changing roster: adding or removing an
+     * agent shifts the rotation but never stalls it, and an unknown/removed cursor
+     * simply restarts from the first agent.
+     */
+    private function pickRoundRobin(int $tenantId, ?int $lastUserId): ?int
+    {
+        $ids = $this->candidates($tenantId)->orderBy('id')->pluck('id')
+            ->map(fn ($i) => (int) $i)->all();
+
+        if (! $ids) {
+            return null;
+        }
+
+        $position = $lastUserId ? array_search((int) $lastUserId, $ids, true) : false;
+
+        return $position === false ? $ids[0] : $ids[($position + 1) % count($ids)];
+    }
+
+    /**
+     * Of the given users, whoever has the fewest tickets in a non-closed status.
+     * "Open" is derived from the tenant's is_closed_status flags rather than a
+     * hardcoded list, so custom statuses count correctly. Ties break on the lowest
+     * user id, keeping the choice deterministic.
+     *
+     * @param  array<int>  $userIds
+     */
+    private function leastLoadedOf(int $tenantId, array $userIds): ?int
+    {
+        if (! $userIds) {
+            return null;
+        }
+
+        $closedStatuses = \App\Models\Helpdesk\TicketStatus::where('tenant_id', $tenantId)
+            ->where('is_closed_status', true)->pluck('name')->all();
+
+        $openCounts = Ticket::forTenant($tenantId)
+            ->whereIn('assigned_to', $userIds)
+            ->when($closedStatuses, fn ($q) => $q->whereNotIn('status', $closedStatuses))
+            ->selectRaw('assigned_to, count(*) as c')
+            ->groupBy('assigned_to')
+            ->pluck('c', 'assigned_to');
+
+        sort($userIds);
+
+        return collect($userIds)
+            ->sortBy(fn ($id) => (int) ($openCounts[$id] ?? 0))
+            ->first();
+    }
+
     /**
      * Integration 3e — the unified assignee dashboard. Pulls BOTH the tickets
      * assigned to the user (tickets.assigned_to) AND the tasks assigned to them
