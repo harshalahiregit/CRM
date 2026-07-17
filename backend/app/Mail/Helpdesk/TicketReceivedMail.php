@@ -27,7 +27,7 @@ class TicketReceivedMail extends Mailable
     {
         return new Envelope(
             subject: "[Ticket #{$this->ticket->id}] {$this->ticket->subject} — we've received your request",
-            replyTo: [new Address(threadedReplyTo($this->ticket), 'Support')],
+            replyTo: [new Address($this->ticket->threadedReplyTo(), 'Support')],
         );
     }
 
@@ -40,22 +40,5 @@ class TicketReceivedMail extends Mailable
                 'recipientName' => $this->recipientName,
             ],
         );
-    }
-}
-
-/**
- * Build the plus-addressed Reply-To for a ticket: support+{id}-{token}@domain.
- * Shared by every threaded helpdesk mail; kept as a small free function so the
- * Mailables stay declarative.
- */
-if (! function_exists('App\Mail\Helpdesk\threadedReplyTo')) {
-    function threadedReplyTo(Ticket $ticket): string
-    {
-        $base = config('helpdesk.inbound_address');
-        $ref  = $ticket->emailThreadRef();
-
-        return str_contains($base, '@')
-            ? preg_replace('/@/', "+{$ref}@", $base, 1)
-            : $base;
     }
 }

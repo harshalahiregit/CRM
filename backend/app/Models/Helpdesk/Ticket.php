@@ -37,6 +37,26 @@ class Ticket extends Model
         return "{$this->id}-{$this->email_token}";
     }
 
+    /**
+     * Plus-addressed Reply-To that routes a customer's email reply back to this
+     * ticket: support+{id}-{token}@domain.
+     *
+     * This lives on the model because every threaded helpdesk mail needs it. It
+     * used to be a free function defined at the bottom of TicketReceivedMail.php,
+     * which meant it only existed if that class had been autoloaded in the current
+     * request — so replying to a ticket (a request that never loads the
+     * acknowledgment mail) threw "undefined function threadedReplyTo()" and the
+     * reply email silently never sent.
+     */
+    public function threadedReplyTo(): string
+    {
+        $base = (string) config('helpdesk.inbound_address');
+
+        return str_contains($base, '@')
+            ? preg_replace('/@/', '+'.$this->emailThreadRef().'@', $base, 1)
+            : $base;
+    }
+
     protected $casts = [
         'due_date'           => 'datetime',
         'ai_summary_at'      => 'datetime',

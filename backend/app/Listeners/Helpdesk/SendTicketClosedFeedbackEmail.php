@@ -29,18 +29,30 @@ class SendTicketClosedFeedbackEmail
     {
         $ticket = $event->ticket;
 
-        // No customer on the ticket → nothing to survey.
-        if (empty($ticket->customer_id)) {
+        // Resolve who to survey. A linked customer_id wins (a real customer record
+        // via the contract), but a ticket raised through the widget or by inbound
+        // email carries only a free-text requester_email — and those customers are
+        // exactly the ones worth surveying. This used to bail whenever customer_id
+        // was empty, so widget/email tickets were never asked for feedback. The
+        // preference order mirrors HelpdeskMailService::recipientFor.
+        $recipient = null;
+
+        if (! empty($ticket->customer_id)) {
+            $customer = $this->customers->getCustomer((int) $ticket->customer_id, $ticket->tenant_id);
+            if ($customer && ! empty($customer['email'])) {
+                $recipient = ['email' => $customer['email'], 'name' => $customer['name'] ?? 'there'];
+            }
+        }
+
+        if (! $recipient && ! empty($ticket->requester_email)) {
+            $recipient = ['email' => $ticket->requester_email, 'name' => $ticket->requester_name ?: 'there'];
+        }
+
+        if (! $recipient) {
+            Log::info("Helpdesk: ticket #{$ticket->id} closed, but no customer/requester email — feedback request skipped.");
             return;
         }
 
-        $customer = $this->customers->getCustomer((int) $ticket->customer_id, $ticket->tenant_id);
-
-        if (! $customer || empty($customer['email'])) {
-            Log::info("Helpdesk: ticket #{$ticket->id} closed, but customer has no email — feedback request skipped.");
-            return;
-        }
-
-        Mail::to($customer['email'])->send(new TicketClosedFeedbackMail($ticket, $customer));
+        Mail::to($recipient['email'])->send(new TicketClosedFeedbackMail($ticket, $recipient));
     }
 }

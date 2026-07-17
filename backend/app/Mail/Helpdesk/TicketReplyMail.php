@@ -34,7 +34,7 @@ class TicketReplyMail extends Mailable
 
         return new Envelope(
             subject: "[Ticket #{$this->ticket->id}] {$this->ticket->subject}",
-            replyTo: [new Address(threadedReplyTo($this->ticket), 'Support')],
+            replyTo: [new Address($this->ticket->threadedReplyTo(), 'Support')],
             cc: $cc,
         );
     }
