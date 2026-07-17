@@ -25,7 +25,15 @@ class KbArticleRepository extends BaseRepository
             ->get();
     }
 
-    /** Full-text-ish search across published articles (public KB). */
+    /**
+     * Full-text-ish search across published articles (public KB).
+     *
+     * `tags` is included (BUG-20): it is a JSON array column, so an article tagged
+     * "GST" was previously unfindable by searching GST — the term only ever hit
+     * title/excerpt/content. LIKE against the stored JSON text is the pragmatic
+     * match here; it keeps one portable query across SQLite and MySQL rather than
+     * needing a JSON function per driver.
+     */
     public function searchPublished(int $tenantId, ?string $term = null): Collection
     {
         return KbArticle::forTenant($tenantId)->published()
@@ -33,7 +41,8 @@ class KbArticleRepository extends BaseRepository
                 $s = '%'.$term.'%';
                 $q->where(fn ($sub) => $sub->where('title', 'like', $s)
                     ->orWhere('excerpt', 'like', $s)
-                    ->orWhere('content', 'like', $s));
+                    ->orWhere('content', 'like', $s)
+                    ->orWhere('tags', 'like', $s));
             })
             ->with(['category:id,name,slug', 'subcategory:id,name,slug'])
             ->orderBy('title')
