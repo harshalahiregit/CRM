@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
@@ -23,6 +23,10 @@ const PRIORITY_OPTS = [
   { value: 'high', label: 'High', dot: '#f97316' },
   { value: 'urgent', label: 'Urgent', dot: 'var(--color-danger-500)' },
 ]
+
+// Shape of one convert-to-tasks row. Real defaults are layered on top of this by
+// makeRow() inside the component, which needs the loaded ticket to do its job.
+const BASE_ROW = { name: '', priority: 'medium', assigned_to: '', due_date: '' }
 
 const fmtTime = ts =>
   ts
@@ -51,6 +55,35 @@ const parseCc = (raw) => {
   }
 }
 
+/**
+ * Who raised this ticket. Widget/public tickets carry free-text
+ * requester_name/requester_email; agent-raised ones link a customer, decorated
+ * onto the payload as `customer: { name, email, … }`. Precedence mirrors the
+ * backend's recipient resolution so this shows the address that is really mailed.
+ */
+const requesterOf = (ticket) => ({
+  name: ticket?.requester_name || ticket?.customer?.name || null,
+  email: ticket?.requester_email || ticket?.customer?.email || null,
+})
+
+/**
+ * `due_date` is a Laravel datetime cast, so it arrives as an ISO string
+ * ("2026-07-20T00:00:00.000000Z"). <input type="date"> needs a bare YYYY-MM-DD.
+ * Slice the ISO prefix rather than round-tripping through `new Date(…)`, whose
+ * toISOString() would re-interpret the local-midnight value and can land a day off.
+ */
+const toDateInput = (v) => {
+  if (!v) return ''
+  if (typeof v === 'string') {
+    const m = v.match(/^(\d{4}-\d{2}-\d{2})/)
+    if (m) return m[1]
+  }
+  const d = new Date(v)
+  if (Number.isNaN(d.getTime())) return ''
+  const pad = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
 const STATUS_COLOR = {
   open:          { color: '#3b82f6', bg: 'rgba(59,130,246,0.12)', border: 'rgba(59,130,246,0.25)' },
   'in-progress': { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.25)' },
@@ -73,7 +106,6 @@ export default function TicketThread() {
   const [projectPickerOpen, setProjectPickerOpen] = useState(false)
   const [mergePickerOpen, setMergePickerOpen] = useState(false)
   const textareaRef = useRef(null)
-  const emptyRow = { name: '', priority: 'medium', assigned_to: '', due_date: '' }
 
   // Resolve status name (prefer a configured "resolved"/"closed" status).
   const { data: settings } = useQuery({ queryKey: ['helpdesk-settings'], queryFn: helpdeskApi.settings.all })
@@ -90,7 +122,13 @@ export default function TicketThread() {
     queryKey: ['tickets-picker'], queryFn: () => helpdeskApi.tickets.list(), enabled: mergePickerOpen,
   })
   const resolveStatus = (settings?.statuses || []).find(s => /resolved|closed/i.test(s.name))?.name || 'closed'
-  const [taskRows, setTaskRows] = useState([{ ...emptyRow }])
+  // Is resolveStatus backed by a real configured status yet? Until the settings
+  // query resolves, resolveStatus is the hardcoded 'closed' guess — which may not
+  // be a status this tenant actually has. Firing the `e` shortcut in that window
+  // POSTs a value the API rejects with a 422 that the optimistic mutation swallows
+  // silently. Gate the shortcut on this so it no-ops until a valid target exists.
+  const canResolve = (settings?.statuses || []).some(s => s.name === resolveStatus)
+  const [taskRows, setTaskRows] = useState([{ ...BASE_ROW }])
 
   const createTasks = useMutation({
     mutationFn: () => {
@@ -106,7 +144,7 @@ export default function TicketThread() {
     },
     onSuccess: () => {
       setTasksOpen(false)
-      setTaskRows([{ ...emptyRow }])
+      setTaskRows([makeRow()])
       navigate(`/app/tasks?rel_type=ticket&rel_id=${id}`)
     },
   })
@@ -127,6 +165,31 @@ export default function TicketThread() {
     queryFn: () => helpdeskApi.tickets.get(id),
     enabled: !!id,
   })
+
+  // A converted task inherits the ticket's own deadline, priority and assignee —
+  // an agent breaking a ticket into tasks is scheduling against the ticket's date,
+  // not against nothing. Every field stays overridable per row.
+  //
+  // This has to be a factory rather than a plain `emptyRow` object: rows are seeded
+  // when the modal OPENS, and the ticket is fetched asynchronously below, so an
+  // object built during the first render would capture `ticket === undefined` and
+  // bake blank defaults in forever. Reading it lazily at open/add time is what
+  // makes the defaults actually appear.
+  const makeRow = useCallback(() => ({
+    ...BASE_ROW,
+    // Tenants can define custom priority names, but the task form only accepts
+    // this fixed set — fall back rather than feeding Select an unknown value.
+    priority: PRIORITY_OPTS.some(p => p.value === ticket?.priority) ? ticket.priority : BASE_ROW.priority,
+    assigned_to: ticket?.assigned_to ?? '',
+    due_date: toDateInput(ticket?.due_date),
+  }), [ticket])
+
+  // Seed the rows from the ticket at open time (the button only renders once the
+  // ticket is loaded, so `makeRow` always sees real data here).
+  const openTaskModal = () => {
+    setTaskRows([makeRow()])
+    setTasksOpen(true)
+  }
 
   useEffect(() => {
     if (ticket?.merged_into_id && String(ticket.merged_into_id) !== String(id)) {
@@ -158,10 +221,23 @@ export default function TicketThread() {
     return [...items, ...(Array.isArray(replies) ? replies : [])]
   }, [ticket, replies, id])
 
+  // summarize() is a POST that (re)generates the AI summary server-side, but the
+  // server caches it and returns the cached copy unless refresh=true. Load it
+  // exactly ONCE per ticket: staleTime Infinity stops react-query from refetching
+  // on window focus / remount, so we don't re-POST — and, once a real LLM key is
+  // wired, don't burn quota — every time the tab regains focus. Regeneration is an
+  // explicit user action via the Refresh button (refreshSummary, refresh=true).
+  // retry:false keeps a failed summary from hammering the endpoint.
   const { data: summary } = useQuery({
     queryKey: ['helpdesk-ticket-summary', id],
     queryFn: () => helpdeskApi.tickets.summarize(id),
     enabled: !!id,
+    staleTime: Infinity,
+    gcTime: Infinity,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    retry: false,
   })
   const refreshSummary = useMutation({
     mutationFn: () => helpdeskApi.tickets.summarize(id, true),
@@ -276,11 +352,11 @@ export default function TicketThread() {
       if (typing) return
       if (e.key === 'r') { e.preventDefault(); setTab('conversation'); setComposerMode('reply'); setTimeout(() => textareaRef.current?.focus(), 0) }
       else if (e.key === 'n') { e.preventDefault(); setTab('conversation'); setComposerMode('note'); setTimeout(() => textareaRef.current?.focus(), 0) }
-      else if (e.key === 'e' && ticket) { e.preventDefault(); setStatusMut.mutate(resolveStatus) }
+      else if (e.key === 'e' && ticket && canResolve) { e.preventDefault(); setStatusMut.mutate(resolveStatus) }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [ticket, resolveStatus]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ticket, resolveStatus, canResolve]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const statusCfg = STATUS_COLOR[ticket?.status] || { color: '#64748b', bg: 'rgba(100,116,139,0.12)', border: 'rgba(100,116,139,0.2)' }
 
@@ -339,6 +415,24 @@ export default function TicketThread() {
           >
             {ticket ? ticket.subject : 'Ticket Conversation'}
           </h1>
+          {ticket && (() => {
+            const { name, email } = requesterOf(ticket)
+            if (!name && !email) return null
+            return (
+              <p className="text-xs mt-1 truncate" style={{ color: 'var(--text-muted)' }}>
+                From:{' '}
+                <span className="font-semibold" style={{ color: 'var(--text-body)' }}>{name || 'Unknown'}</span>
+                {email && (
+                  <>
+                    {' '}
+                    <a href={`mailto:${email}`} className="hover:underline" style={{ color: '#22d3ee' }} title={`Email ${email}`}>
+                      &lt;{email}&gt;
+                    </a>
+                  </>
+                )}
+              </p>
+            )
+          })()}
         </div>
 
         {/* Action buttons */}
@@ -373,7 +467,7 @@ export default function TicketThread() {
               color="#db2777"
               bg="rgba(219,39,119,0.1)"
               border="rgba(219,39,119,0.2)"
-              onClick={() => setTasksOpen(true)}
+              onClick={openTaskModal}
             />
             <ActionBtn
               icon={FolderKanban}
@@ -772,6 +866,11 @@ export default function TicketThread() {
                   <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
                     Each row becomes a task linked back to this ticket
                   </p>
+                  <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)', opacity: 0.8 }}>
+                    {ticket?.due_date
+                      ? <>Priority, assignee and due date (<strong style={{ color: 'var(--text-body)' }}>{toDateInput(ticket.due_date)}</strong>) default to the ticket's — override any row below.</>
+                      : <>Priority and assignee default to the ticket's. This ticket has no due date, so rows start blank.</>}
+                  </p>
                 </div>
               </div>
               <button onClick={() => setTasksOpen(false)} className="hover:opacity-60">
@@ -828,7 +927,7 @@ export default function TicketThread() {
             </div>
 
             <button
-              onClick={() => setTaskRows(rows => [...rows, { ...emptyRow }])}
+              onClick={() => setTaskRows(rows => [...rows, makeRow()])}
               className="flex items-center gap-1 text-xs font-bold mb-5 hover:opacity-70 transition-opacity"
               style={{ color: '#db2777' }}
             >

@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
   StickyNote, Bell, Link2, Tag, SlidersHorizontal,
-  ChevronDown, Plus, Check, X
+  ChevronDown, Plus, Check, X, Copy
 } from 'lucide-react'
 import { helpdeskApi } from '@/services/helpdeskApi'
 import SLABadge from './ui/SLABadge'
@@ -26,6 +26,112 @@ const INP = {
   border: '1px solid var(--border)',
   color: 'var(--text-h)',
   background: 'var(--bg-input)',
+}
+
+/**
+ * Who raised this ticket, and where a reply actually lands.
+ *
+ * Tickets carry the requester two different ways and only one of them wins:
+ *   · widget / public-form tickets store a free-text requester_name + requester_email;
+ *   · agent-raised tickets link a customer_id, which the API decorates onto the
+ *     payload as `customer: { id, name, email, company }` (null when unlinked).
+ * Internal tickets have neither. The precedence below mirrors the backend's own
+ * recipient resolution (HelpdeskMailService::recipientFor) — requester_email first,
+ * then the linked customer — so the address shown here is the address that is
+ * actually emailed, rather than a second, prettier source of truth.
+ */
+const requesterOf = (ticket) => ({
+  name: ticket?.requester_name || ticket?.customer?.name || null,
+  email: ticket?.requester_email || ticket?.customer?.email || null,
+})
+
+/** Copy text to the clipboard, falling back for non-secure (http) dev origins. */
+const copyText = async (text) => {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch { /* fall through to the legacy path */ }
+  try {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.select()
+    const ok = document.execCommand('copy')
+    ta.remove()
+    return ok
+  } catch {
+    return false
+  }
+}
+
+/* ── Requester name + email (REQ-14) ─────────────────────── */
+function RequesterField({ ticket }) {
+  const [copied, setCopied] = useState(false)
+  const { name, email } = requesterOf(ticket)
+
+  // Internal tickets legitimately have no external requester — say so plainly
+  // instead of rendering an empty row or a dead mailto:.
+  if (!name && !email) {
+    return (
+      <Field label="Requester">
+        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+          No requester on this ticket.
+        </p>
+      </Field>
+    )
+  }
+
+  const copy = async () => {
+    if (!(await copyText(email))) return
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
+
+  return (
+    <Field label="Requester">
+      <div className="flex items-center gap-2 min-w-0">
+        <div
+          className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0"
+          style={{ background: 'var(--bg-input)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+        >
+          {initials(name || email)}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-semibold truncate" style={{ color: 'var(--text-h)' }} title={name || undefined}>
+            {name || 'Unnamed requester'}
+          </p>
+          {email ? (
+            <a
+              href={`mailto:${email}`}
+              className="text-[11px] truncate block hover:underline"
+              style={{ color: 'var(--color-primary-500)' }}
+              title={`Email ${email}`}
+            >
+              {email}
+            </a>
+          ) : (
+            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>No email on file</p>
+          )}
+        </div>
+        {email && (
+          <button
+            type="button"
+            onClick={copy}
+            className="shrink-0 p-1 rounded-lg hover:opacity-70 transition-opacity"
+            style={{ color: copied ? 'var(--color-success-500)' : 'var(--text-muted)' }}
+            title={copied ? 'Copied!' : 'Copy email address'}
+            aria-label={copied ? 'Email address copied' : 'Copy email address'}
+          >
+            {copied ? <Check size={12} /> : <Copy size={12} />}
+          </button>
+        )}
+      </div>
+    </Field>
+  )
 }
 
 /* ── Collapsible section wrapper ─────────────────────────── */
@@ -127,6 +233,8 @@ function PropertiesSection({ ticketId }) {
   return (
     <Section icon={SlidersHorizontal} title="Properties" accent="#22d3ee">
       <div className="space-y-3">
+        <RequesterField ticket={ticket} />
+
         <Field label="Status">
           <Select
             value={ticket.status}

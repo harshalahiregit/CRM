@@ -51,6 +51,14 @@ const ALL_COLS = [
 
 const loadPref = (k, fb) => { try { const v = JSON.parse(localStorage.getItem(k)); return v ?? fb } catch { return fb } }
 
+// Requester precedence: widget/public tickets store free-text requester_*; agent-
+// raised ones link a customer the API decorates onto the row. Mirrors the backend's
+// mail recipient resolution so the tooltip shows the address that's actually emailed.
+const requesterOf = (t) => ({
+  name: t?.requester_name || t?.customer?.name || null,
+  email: t?.requester_email || t?.customer?.email || null,
+})
+
 export default function TicketGrid() {
   const navigate = useNavigate()
   const qc = useQueryClient()
@@ -328,7 +336,13 @@ export default function TicketGrid() {
                             {t.source === 'widget' && <span className="ml-1.5 inline-flex items-center gap-0.5 text-[10px]" style={{ color: ACCENT }}><Zap size={9} />widget</span>}
                           </div>
                         )}
-                        {c.key === 'requester' && (t.requester_name || <span style={{ color: 'var(--text-muted)' }}>—</span>)}
+                        {c.key === 'requester' && (() => {
+                          const { name, email } = requesterOf(t)
+                          if (!name && !email) return <span style={{ color: 'var(--text-muted)' }}>—</span>
+                          // Tooltip surfaces the email (REQ-14) without widening the column.
+                          const tip = email ? (name ? `${name} <${email}>` : email) : name
+                          return <span title={tip} style={{ cursor: 'default' }}>{name || email}</span>
+                        })()}
                         {c.key === 'department' && deptName(t.department_id)}
                         {c.key === 'status' && (
                           <Select
