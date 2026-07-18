@@ -15,11 +15,23 @@ import PendingApprovalPage from '@/pages/auth/PendingApprovalPage'
 const DashboardPage = lazy(() => import('@/pages/dashboard/DashboardPage'))
 const ModulesPage = lazy(() => import('@/pages/modules/ModulesPage'))
 
+// Company Portal (lazy)
+const CompanyRegisterPage = lazy(() => import('@/pages/auth/CompanyRegisterPage'))
+const CompanyPortalShell = lazy(() => import('@/pages/company-portal/CompanyPortalShell'))
+const CompanyDashboard = lazy(() => import('@/pages/company-portal/CompanyDashboard'))
+const CompanyHiringRequests = lazy(() => import('@/pages/company-portal/CompanyHiringRequests'))
+const CompanyRequestDetail = lazy(() => import('@/pages/company-portal/CompanyRequestDetail'))
+const CompanyProfile = lazy(() => import('@/pages/company-portal/CompanyProfile'))
+const CompanySettings = lazy(() => import('@/pages/company-portal/CompanySettings'))
+const CompanyReports = lazy(() => import('@/pages/company-portal/CompanyReports'))
+
 // Public Career Portal (lazy, no auth)
 const CareerPortal = lazy(() => import('@/pages/careers/CareerPortal'))
 const CareerJobDetails = lazy(() => import('@/pages/careers/CareerJobDetails'))
 const OnboardingPortal = lazy(() => import('@/pages/careers/OnboardingPortal'))
 const OfferPortal = lazy(() => import('@/pages/careers/OfferPortal'))
+const HiringRequestPortal = lazy(() => import('@/pages/careers/HiringRequestPortal'))
+const ClientTrackingPortal = lazy(() => import('@/pages/careers/ClientTrackingPortal'))
 
 // HR Module (lazy)
 const HRLayout = lazy(() => import('@/modules/hr/HRLayout'))
@@ -34,6 +46,9 @@ const OfferLetters = lazy(() => import('@/modules/hr/pages/OfferLetters'))
 const Onboarding = lazy(() => import('@/modules/hr/pages/Onboarding'))
 const Employees = lazy(() => import('@/modules/hr/pages/Employees'))
 const EmployeeProfile = lazy(() => import('@/modules/hr/pages/EmployeeProfile'))
+const RecruitmentServices = lazy(() => import('@/modules/hr/pages/RecruitmentServices'))
+const RecruiterWorkspace = lazy(() => import('@/modules/hr/pages/RecruiterWorkspace'))
+const CompanyApprovals = lazy(() => import('@/modules/hr/pages/CompanyApprovals'))
 
 // Admin Module (lazy)
 const StaffManagement = lazy(() => import('@/pages/admin/StaffManagementPage'))
@@ -101,6 +116,7 @@ export default function AppRoutes() {
         <Route path="register/vendor" element={<VendorRegisterPage />} />
         <Route path="register/tpv" element={<TPVRegisterPage />} />
         <Route path="register/client" element={<ClientRegisterPage />} />
+        <Route path="register/company" element={<S><CompanyRegisterPage /></S>} />
         <Route path="pending-approval" element={<PendingApprovalPage />} />
         <Route path="forgot-password" element={<GuestRoute><ComingSoon name="Forgot Password" /></GuestRoute>} />
         <Route path="verify-email" element={<ComingSoon name="Email Verification" />} />
@@ -111,6 +127,8 @@ export default function AppRoutes() {
       <Route path="/careers/:slug/jobs/:id" element={<S><CareerJobDetails /></S>} />
       <Route path="/onboarding/:token" element={<S><OnboardingPortal /></S>} />
       <Route path="/offer/:token" element={<S><OfferPortal /></S>} />
+      <Route path="/hiring-request/:token" element={<S><HiringRequestPortal /></S>} />
+      <Route path="/client-tracking/:token" element={<S><ClientTrackingPortal /></S>} />
 
       {/* Protected app routes */}
       <Route path="/app" element={<ProtectedRoute><AppShell /></ProtectedRoute>}>
@@ -137,6 +155,9 @@ export default function AppRoutes() {
           <Route path="onboarding" element={<S><Onboarding /></S>} />
           <Route path="employees" element={<S><Employees /></S>} />
           <Route path="employees/:id" element={<S><EmployeeProfile /></S>} />
+          <Route path="recruitment-services" element={<S><RecruitmentServices /></S>} />
+          <Route path="recruiter-workspace" element={<S><RecruiterWorkspace /></S>} />
+          <Route path="company-approvals" element={<S><CompanyApprovals /></S>} />
         </Route>
 
         {/* SALES MODULE */}
@@ -173,6 +194,20 @@ export default function AppRoutes() {
       </Route>
 
       <Route path="/vendor-portal/*" element={<ComingSoon name="Vendor Portal" />} />
+
+      {/* External Company Portal — company accounts only. Sprint 1: Dashboard live;
+          remaining tabs land in later sprints (placeholder for now). */}
+      <Route path="/company-portal" element={
+        <ProtectedRoute roles={['company']}><S><CompanyPortalShell /></S></ProtectedRoute>
+      }>
+        <Route index element={<Navigate to="dashboard" replace />} />
+        <Route path="dashboard" element={<S><CompanyDashboard /></S>} />
+        <Route path="hiring-requests" element={<S><CompanyHiringRequests /></S>} />
+        <Route path="hiring-requests/:id" element={<S><CompanyRequestDetail /></S>} />
+        <Route path="reports" element={<S><CompanyReports /></S>} />
+        <Route path="profile" element={<S><CompanyProfile /></S>} />
+        <Route path="settings" element={<S><CompanySettings /></S>} />
+      </Route>
 
       <Route path="*" element={
         <div className="flex flex-col items-center justify-center min-h-screen gap-4" style={{ background: 'var(--bg-global)' }}>

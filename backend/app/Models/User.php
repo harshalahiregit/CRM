@@ -13,10 +13,11 @@ class User extends Authenticatable
     use HasApiTokens, HasFactory, Notifiable, SoftDeletes;
 
     protected $fillable = [
-        'tenant_id', 'name', 'email', 'password',
-        'role', 'internal_role', 'department', 'status', 
-        'vendor_type', 'tpv_type', 'access_expires_at', 
+        'tenant_id', 'external_company_id', 'name', 'email', 'password',
+        'role', 'internal_role', 'department', 'status',
+        'vendor_type', 'tpv_type', 'access_expires_at',
         'phone', 'company', 'designation', 'avatar', 'meta',
+        'last_login_at', 'last_login_ip',
     ];
 
     protected $hidden = ['password', 'remember_token'];
@@ -26,6 +27,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'access_expires_at' => 'date',
+            'last_login_at'     => 'datetime',
             'password'          => 'hashed',
             'meta'              => 'array',
         ];
@@ -35,6 +37,11 @@ class User extends Authenticatable
     public function tenant()
     {
         return $this->belongsTo(Tenant::class);
+    }
+
+    public function externalCompany()
+    {
+        return $this->belongsTo(\App\Models\Hr\HrExternalCompany::class, 'external_company_id');
     }
 
     /* ── Role helpers ───────────────────────── */
@@ -47,6 +54,23 @@ class User extends Authenticatable
     public function isClient():           bool { return $this->role === 'client'; }
     public function isActive():           bool { return $this->status === 'active'; }
     public function isPending():          bool { return $this->status === 'pending'; }
+
+    /* ── External company portal roles (role='company' + internal_role sub-role) ── */
+    public function isCompany():             bool { return $this->role === 'company'; }
+    public function isCompanyAdmin():        bool { return $this->isCompany() && $this->internal_role === \App\Support\Hr\CompanyRole::ADMIN; }
+    public function isCompanyHr():           bool { return $this->isCompany() && $this->internal_role === \App\Support\Hr\CompanyRole::HR; }
+    public function isCompanyHiringManager(): bool { return $this->isCompany() && $this->internal_role === \App\Support\Hr\CompanyRole::HIRING_MANAGER; }
+    public function isCompanyInterviewer():  bool { return $this->isCompany() && $this->internal_role === \App\Support\Hr\CompanyRole::INTERVIEWER; }
+    public function isCompanyViewer():       bool { return $this->isCompany() && $this->internal_role === \App\Support\Hr\CompanyRole::VIEWER; }
+    /** Managers may act on requests/candidates/offers/documents/messages. */
+    public function canManageCompany():      bool { return $this->isCompanyAdmin() || $this->isCompanyHr() || $this->isCompanyHiringManager(); }
+    /** Interviewers may also act on interviews. */
+    public function canManageCompanyInterviews(): bool { return $this->canManageCompany() || $this->isCompanyInterviewer(); }
+    /** Role-based ability check across areas (dashboard/hiring_requests/…/team/settings). */
+    public function companyCan(string $area, string $ability = 'manage'): bool
+    {
+        return $this->isCompany() && \App\Support\Hr\CompanyRole::can($this->internal_role, $area, $ability);
+    }
 
     /* ── Recruitment approval authority ─────────────────────────────────────
      | L1 = Department Head level, L2 = Management level. Admin can do both.

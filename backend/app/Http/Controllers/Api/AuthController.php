@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Traits\ApiResponse;
 use App\Http\Requests\Auth\ClientRegisterRequest;
+use App\Http\Requests\Auth\CompanyRegisterRequest;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\RegisterRequest;
 use App\Http\Requests\Auth\TPVRegisterRequest;
@@ -94,6 +95,19 @@ class AuthController extends Controller
         return $this->success([
             'user' => (new UserResource($user))->resolve(),
         ], 'Client registration submitted. Awaiting admin approval.', 201);
+    }
+
+    /* ─────────────────────────────────────────────
+     | POST /api/auth/register/company  (External Company self-registration)
+     ───────────────────────────────────────────── */
+    public function registerCompany(CompanyRegisterRequest $request): JsonResponse
+    {
+        $result = $this->authService->registerCompany($request->validated());
+
+        return $this->success([
+            'company_code' => $result['company']->company_code,
+            'user'         => (new UserResource($result['user']))->resolve(),
+        ], 'Company registration submitted. Awaiting HR approval — you will receive an email once activated.', 201);
     }
 
     /* ─────────────────────────────────────────────

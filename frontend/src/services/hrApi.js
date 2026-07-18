@@ -29,6 +29,11 @@ api.interceptors.response.use(
   }
 )
 
+// Tokenless instance for public (no-auth) token portals — must NOT attach the
+// logged-in bearer token or hard-redirect to /auth/login on 401, so the portals
+// can show their own friendly errors and behave as a real anonymous client.
+const publicApi = axios.create({ baseURL: BASE })
+
 // ── Dashboard ─────────────────────────────────────────────────────────
 export const hrApi = {
   dashboard: {
@@ -185,6 +190,56 @@ export const hrApi = {
     create: (data)        => api.post('/hr/employees', data).then(r => r.data),
     update: (id, data)    => api.put(`/hr/employees/${id}`, data).then(r => r.data),
     delete: (id)          => api.delete(`/hr/employees/${id}`).then(r => r.data),
+  },
+
+  // ── Recruitment Services (external-company hiring intake) ────────────
+  recruitmentServices: {
+    dashboard:      ()            => api.get('/recruitment-services/dashboard').then(r => r.data),
+    companies:      (params = {}) => api.get('/recruitment-services/companies', { params }).then(r => r.data),
+    createCompany:  (data)        => api.post('/recruitment-services/companies', data).then(r => r.data),
+    updateCompany:  (id, data)    => api.put(`/recruitment-services/companies/${id}`, data).then(r => r.data),
+    deleteCompany:  (id)          => api.delete(`/recruitment-services/companies/${id}`).then(r => r.data),
+    requests:       (params = {}) => api.get('/recruitment-services/requests', { params }).then(r => r.data),
+    getRequest:     (id)          => api.get(`/recruitment-services/requests/${id}`).then(r => r.data),
+    createRequest:  (data)        => api.post('/recruitment-services/requests', data).then(r => r.data),
+    updateRequest:  (id, data)    => api.put(`/recruitment-services/requests/${id}`, data).then(r => r.data),
+    // Company Portal — HR approval of self-registered companies
+    pendingCompanies: ()            => api.get('/recruitment-services/company-accounts/pending').then(r => r.data),
+    approveCompany:   (id)          => api.post(`/recruitment-services/company-accounts/${id}/approve`).then(r => r.data),
+    rejectCompany:    (id, reason = '') => api.post(`/recruitment-services/company-accounts/${id}/reject`, { reason }).then(r => r.data),
+    review:         (id, decision, notes = '') => api.post(`/recruitment-services/requests/${id}/review`, { decision, notes }).then(r => r.data),
+    assign:         (id, recruiter_id) => api.post(`/recruitment-services/requests/${id}/assign`, { recruiter_id }).then(r => r.data),
+    convert:        (id)          => api.post(`/recruitment-services/requests/${id}/convert`).then(r => r.data),
+    // Phase 2 — client collaboration
+    submittable:    (id)          => api.get(`/recruitment-services/requests/${id}/submittable-candidates`).then(r => r.data),
+    submissions:    (id)          => api.get(`/recruitment-services/requests/${id}/submissions`).then(r => r.data),
+    submitCandidates: (id, candidate_ids, note = '') => api.post(`/recruitment-services/requests/${id}/submit-candidates`, { candidate_ids, note }).then(r => r.data),
+    notifyClient:   (id, event)   => api.post(`/recruitment-services/requests/${id}/notify-client`, { event }).then(r => r.data),
+    // Phase 3 — recruiter operations
+    workspace:          ()             => api.get('/recruitment-services/recruiter/workspace').then(r => r.data),
+    recruiterDashboard: ()             => api.get('/recruitment-services/recruiter/dashboard').then(r => r.data),
+    sla:                (recruiterId)  => api.get('/recruitment-services/recruiter/sla', { params: recruiterId ? { recruiter_id: recruiterId } : {} }).then(r => r.data),
+    performance:        (recruiterId)  => api.get('/recruitment-services/recruiter/performance', { params: recruiterId ? { recruiter_id: recruiterId } : {} }).then(r => r.data),
+    notes:          (id)           => api.get(`/recruitment-services/requests/${id}/notes`).then(r => r.data),
+    addNote:        (id, body)     => api.post(`/recruitment-services/requests/${id}/notes`, { body }).then(r => r.data),
+    deleteNote:     (id, noteId)   => api.delete(`/recruitment-services/requests/${id}/notes/${noteId}`).then(r => r.data),
+    rating:         (id)           => api.get(`/recruitment-services/requests/${id}/rating`).then(r => r.data),
+    resumeShares:   (id)           => api.get(`/recruitment-services/requests/${id}/resume-shares`).then(r => r.data),
+    shareResume:    (id, candidate_id) => api.post(`/recruitment-services/requests/${id}/share-resume`, { candidate_id }).then(r => r.data),
+  },
+
+  // Public hiring-request portal (no auth — company token)
+  hiringPortal: {
+    company: (token)       => publicApi.get(`/hiring-request/${token}`).then(r => r.data),
+    submit:  (token, data) => publicApi.post(`/hiring-request/${token}`, data).then(r => r.data),
+  },
+
+  // Public client-tracking portal (no auth — per-request tracking token)
+  clientTracking: {
+    show:      (token)               => publicApi.get(`/client-tracking/${token}`).then(r => r.data),
+    feedback:  (token, submission_id, decision, comment = '') => publicApi.post(`/client-tracking/${token}/feedback`, { submission_id, decision, comment }).then(r => r.data),
+    rating:    (token, data)         => publicApi.post(`/client-tracking/${token}/rating`, data).then(r => r.data),
+    resumeUrl: (shareToken)          => `${BASE}/client-tracking/resume/${shareToken}`,
   },
 }
 

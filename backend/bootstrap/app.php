@@ -25,6 +25,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // Register custom middleware aliases
         $middleware->alias([
             'role' => \App\Http\Middleware\EnsureUserHasRole::class,
+            'company.portal' => \App\Http\Middleware\EnsureCompanyPortalAccess::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
@@ -49,6 +50,13 @@ return Application::configure(basePath: dirname(__DIR__))
                         'message' => 'Validation failed',
                         'errors'  => $e->errors(),
                     ], $e->status);
+                }
+
+                // An invalid/expired token must return 401 (not 500) so the frontend
+                // interceptor can redirect to login. AuthenticationException has no
+                // getStatusCode(), so it would otherwise fall through to 500.
+                if ($e instanceof \Illuminate\Auth\AuthenticationException) {
+                    return response()->json(['status' => 'error', 'message' => 'Unauthenticated'], 401);
                 }
 
                 $status = $e instanceof BusinessException

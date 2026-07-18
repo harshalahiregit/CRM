@@ -11,6 +11,7 @@ Route::prefix('auth')->group(function () {
     Route::post('/register/vendor', [AuthController::class, 'registerVendor']);
     Route::post('/register/tpv',    [AuthController::class, 'registerTPV']);
     Route::post('/register/client', [AuthController::class, 'registerClient']);
+    Route::post('/register/company', [AuthController::class, 'registerCompany'])->middleware('throttle:10,1');
 });
 
 // ── Protected Auth + Dashboard Routes (Sanctum) ─────────────────────────

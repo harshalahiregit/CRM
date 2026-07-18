@@ -2,7 +2,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useTheme } from '@/context/ThemeContext'
 import {
   LayoutDashboard, ClipboardList, Briefcase, Users,
-  Calendar, FileText, Rocket, Building2, ChevronRight, ArrowLeft
+  Calendar, FileText, Rocket, Building2, ChevronRight, ArrowLeft, Network, Headset, BadgeCheck
 } from 'lucide-react'
 
 const HR_NAV = [
@@ -14,6 +14,9 @@ const HR_NAV = [
   { label: 'Offer Letters',  path: '/app/hr/offers',            icon: FileText        },
   { label: 'Onboarding',     path: '/app/hr/onboarding',        icon: Rocket          },
   { label: 'Employees',      path: '/app/hr/employees',         icon: Building2       },
+  { label: 'Recruitment Svc.', path: '/app/hr/recruitment-services', icon: Network    },
+  { label: 'Recruiter Desk',   path: '/app/hr/recruiter-workspace',  icon: Headset    },
+  { label: 'Company Approvals', path: '/app/hr/company-approvals',   icon: BadgeCheck },
 ]
 
 export default function HRLayout() {
