@@ -69,6 +69,25 @@ const GateScan = lazy(() => import('@/pages/gate/GateScan'))
 const ChecklistFill = lazy(() => import('@/pages/checklist/ChecklistFill'))
 const KickoffAck = lazy(() => import('@/pages/kickoff/KickoffAck'))
 
+// Purchase / procure-to-pay module
+const PurchaseLayout = lazy(() => import('@/modules/purchase/PurchaseLayout'))
+const PurchaseDashboard = lazy(() => import('@/modules/purchase/pages/PurchaseDashboard'))
+const PurchaseRequests = lazy(() => import('@/modules/purchase/pages/PurchaseRequests'))
+const PurchaseRfqs = lazy(() => import('@/modules/purchase/pages/PurchaseRfqs'))
+const PurchaseRfqDetail = lazy(() => import('@/modules/purchase/pages/PurchaseRfqDetail'))
+const PurchaseOrders = lazy(() => import('@/modules/purchase/pages/PurchaseOrders'))
+const PurchaseInvoices = lazy(() => import('@/modules/purchase/pages/PurchaseInvoices'))
+const PurchaseDebitNotes = lazy(() => import('@/modules/purchase/pages/PurchaseDebitNotes'))
+const PurchaseContracts = lazy(() => import('@/modules/purchase/pages/PurchaseContracts'))
+const PurchaseContractDetail = lazy(() => import('@/modules/purchase/pages/PurchaseContractDetail'))
+const PurchaseCatalog = lazy(() => import('@/modules/purchase/pages/PurchaseCatalog'))
+// Vendor self-service portal (vendor / third_party_vendor roles only)
+const VendorPortalShell = lazy(() => import('@/pages/vendor-portal/VendorPortalShell'))
+const PortalDashboard = lazy(() => import('@/pages/vendor-portal/PortalDashboard'))
+const PortalDocuments = lazy(() => import('@/pages/vendor-portal/PortalDocuments'))
+const PortalOrderDetail = lazy(() => import('@/pages/vendor-portal/PortalOrderDetail'))
+const PortalInvoiceDetail = lazy(() => import('@/pages/vendor-portal/PortalInvoiceDetail'))
+
 function ComingSoon({ name }) {
   return (
     <div className="flex flex-col items-center justify-center min-h-[55vh] gap-4 animate-fade-in">
@@ -192,6 +211,22 @@ export default function AppRoutes() {
           <Route path="strikes" element={<S><TpvStrikes /></S>} />
         </Route>
 
+        {/* PURCHASE MODULE (procure-to-pay) */}
+        <Route path="purchase" element={<S><PurchaseLayout /></S>}>
+          <Route index element={<Navigate to="dashboard" replace />} />
+          <Route path="dashboard" element={<S><PurchaseDashboard /></S>} />
+          <Route path="requests" element={<S><PurchaseRequests /></S>} />
+          <Route path="quotations" element={<S><PurchaseRfqs /></S>} />
+          <Route path="quotations/:id" element={<S><PurchaseRfqDetail /></S>} />
+          <Route path="orders" element={<S><PurchaseOrders /></S>} />
+          <Route path="goods-received" element={<ComingSoon name="Goods Received" />} />
+          <Route path="invoices" element={<S><PurchaseInvoices /></S>} />
+          <Route path="debit-notes" element={<S><PurchaseDebitNotes /></S>} />
+          <Route path="contracts" element={<S><PurchaseContracts /></S>} />
+          <Route path="contracts/:id" element={<S><PurchaseContractDetail /></S>} />
+          <Route path="catalog" element={<S><PurchaseCatalog /></S>} />
+        </Route>
+
         {/* Core CRM */}
         <Route path="contacts" element={<ComingSoon name="Contacts" />} />
         <Route path="contacts/new" element={<ComingSoon name="New Contact" />} />
@@ -208,7 +243,16 @@ export default function AppRoutes() {
         <Route path="settings/*" element={<ComingSoon name="Settings" />} />
       </Route>
 
-      <Route path="/vendor-portal/*" element={<ComingSoon name="Vendor Portal" />} />
+      {/* Vendor Self-Service Portal — vendor / third_party_vendor only. */}
+      <Route path="/vendor-portal" element={
+        <ProtectedRoute roles={['vendor', 'third_party_vendor']}><S><VendorPortalShell /></S></ProtectedRoute>
+      }>
+        <Route index element={<Navigate to="dashboard" replace />} />
+        <Route path="dashboard" element={<S><PortalDashboard /></S>} />
+        <Route path="documents" element={<S><PortalDocuments /></S>} />
+        <Route path="orders/:id" element={<S><PortalOrderDetail /></S>} />
+        <Route path="invoices/:id" element={<S><PortalInvoiceDetail /></S>} />
+      </Route>
 
       <Route path="*" element={
         <div className="flex flex-col items-center justify-center min-h-screen gap-4" style={{ background: 'var(--bg-global)' }}>

@@ -121,6 +121,14 @@ return [
             'replace_placeholders' => true,
         ],
 
+        'purchase' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/purchase.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'days' => env('LOG_DAILY_DAYS', 14),
+            'replace_placeholders' => true,
+        ],
+
         'errors' => [
             'driver' => 'daily',
             'path' => storage_path('logs/errors.log'),
