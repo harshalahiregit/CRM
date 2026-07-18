@@ -47,4 +47,15 @@ class KbArticle extends Model
     {
         return $this->belongsTo(TicketDepartment::class, 'department_id');
     }
+
+    /**
+     * Star-rating + comment feedback (REQ-11). Independent of the thumbs vote.
+     * Aggregates (avg_rating / total_ratings) are attached by KnowledgeBaseService
+     * where they are needed, so listing endpoints stay a single grouped query
+     * rather than an accessor per row.
+     */
+    public function kbFeedback()
+    {
+        return $this->hasMany(KbArticleFeedback::class, 'article_id');
+    }
 }

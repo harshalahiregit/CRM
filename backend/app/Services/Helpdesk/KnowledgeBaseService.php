@@ -4,6 +4,7 @@ namespace App\Services\Helpdesk;
 
 use App\Exceptions\BusinessException;
 use App\Models\Helpdesk\KbArticle;
+use App\Models\Helpdesk\KbArticleFeedback;
 use App\Models\Helpdesk\KbArticleVote;
 use App\Models\Helpdesk\KbCategory;
 use App\Models\Helpdesk\KbSubcategory;
@@ -120,12 +121,14 @@ class KnowledgeBaseService
 
     public function listArticles(int $tenantId, ?int $subcategoryId = null): Collection
     {
-        return $this->articles->listing($tenantId, $subcategoryId);
+        return $this->attachRatingStatsMany($this->articles->listing($tenantId, $subcategoryId));
     }
 
     public function showArticle(int $articleId, int $tenantId): KbArticle
     {
-        return $this->findArticle($articleId, $tenantId)->load(['category:id,name,slug', 'subcategory:id,name,slug']);
+        $article = $this->findArticle($articleId, $tenantId)->load(['category:id,name,slug', 'subcategory:id,name,slug']);
+
+        return $this->attachRatingStats($article);
     }
 
     public function createArticle(array $data, int $tenantId): KbArticle
@@ -283,7 +286,7 @@ class KnowledgeBaseService
                 ->get(['id', 'title', 'public_slug'])
         );
 
-        return $article;
+        return $this->attachRatingStats($article);
     }
 
     /** Public thumbs vote by share slug (no auth). */
@@ -296,6 +299,129 @@ class KnowledgeBaseService
         }
 
         return $this->registerVote($article, $direction);
+    }
+
+    /* ── Star-rating feedback (REQ-11) ──────────────────────────── */
+
+    /**
+     * Record a 1-5 star rating (+ optional comment) on a published article.
+     *
+     * De-dup mirrors registerVote(): one row per reader (keyed by fingerprint),
+     * enforced by the unique (article_id, fingerprint) index. A re-submission
+     * updates the existing rating rather than adding another — so the average is
+     * never inflated by a single reader. This is independent of the thumbs vote.
+     *
+     * $fingerprint is derived from the request when omitted (same identity the
+     * thumbs vote uses); it is only passed explicitly from CLI/tests.
+     */
+    public function submitFeedback(string $slug, int $rating, ?string $comment = null, ?string $fingerprint = null): KbArticle
+    {
+        if ($rating < 1 || $rating > 5) {
+            throw new BusinessException('Rating must be a whole number between 1 and 5.', 422);
+        }
+
+        $article = $this->articles->findPublishedBySlug($slug);
+
+        if (! $article) {
+            throw new BusinessException('Article not found.', 404);
+        }
+
+        $fingerprint ??= $this->voterFingerprint();
+        $comment = $this->cleanComment($comment);
+
+        return DB::transaction(function () use ($article, $rating, $comment, $fingerprint) {
+            $existing = KbArticleFeedback::where('article_id', $article->id)
+                ->where('fingerprint', $fingerprint)
+                ->lockForUpdate()
+                ->first();
+
+            if ($existing) {
+                // Reader is revising their rating — update in place (the de-dup).
+                $existing->update([
+                    'rating'      => $rating,
+                    'comment'     => $comment,
+                    'public_slug' => $article->public_slug,
+                ]);
+
+                return $this->attachRatingStats($article->fresh());
+            }
+
+            try {
+                KbArticleFeedback::create([
+                    'tenant_id'   => $article->tenant_id,
+                    'article_id'  => $article->id,
+                    'public_slug' => $article->public_slug,
+                    'rating'      => $rating,
+                    'comment'     => $comment,
+                    'fingerprint' => $fingerprint,
+                ]);
+            } catch (UniqueConstraintViolationException) {
+                // Two simultaneous first ratings from the same reader — the unique
+                // index is the arbiter; fold the loser into an update.
+                KbArticleFeedback::where('article_id', $article->id)
+                    ->where('fingerprint', $fingerprint)
+                    ->update(['rating' => $rating, 'comment' => $comment]);
+            }
+
+            return $this->attachRatingStats($article->fresh());
+        });
+    }
+
+    /** Admin: the raw rating list for an article (tenant-scoped). */
+    public function listFeedback(int $articleId, int $tenantId): Collection
+    {
+        $article = $this->findArticle($articleId, $tenantId);   // enforces tenant ownership
+
+        return KbArticleFeedback::where('article_id', $article->id)
+            ->orderByDesc('created_at')
+            ->get(['id', 'rating', 'comment', 'created_at']);
+    }
+
+    /** Trim + cap a free-text comment; blank becomes null. */
+    private function cleanComment(?string $comment): ?string
+    {
+        if ($comment === null) {
+            return null;
+        }
+
+        $comment = trim($comment);
+
+        return $comment === '' ? null : mb_substr($comment, 0, 2000);
+    }
+
+    /** Attach avg_rating (1-decimal) + total_ratings to a single article. */
+    private function attachRatingStats(KbArticle $article): KbArticle
+    {
+        $row = KbArticleFeedback::where('article_id', $article->id)
+            ->selectRaw('COUNT(*) as total, AVG(rating) as average')
+            ->first();
+
+        $article->setAttribute('total_ratings', (int) ($row->total ?? 0));
+        $article->setAttribute('avg_rating', round((float) ($row->average ?? 0), 1));
+
+        return $article;
+    }
+
+    /** Same, but for a listing — one grouped query for the whole collection. */
+    private function attachRatingStatsMany(Collection $articles): Collection
+    {
+        if ($articles->isEmpty()) {
+            return $articles;
+        }
+
+        $stats = KbArticleFeedback::whereIn('article_id', $articles->pluck('id'))
+            ->selectRaw('article_id, COUNT(*) as total, AVG(rating) as average')
+            ->groupBy('article_id')
+            ->get()
+            ->keyBy('article_id');
+
+        foreach ($articles as $article) {
+            $s = $stats->get($article->id);
+            $article->setAttribute('total_ratings', (int) ($s->total ?? 0));
+            $article->setAttribute('avg_rating', round((float) ($s->average ?? 0), 1));
+        }
+
+        return $articles;
     }
 
     /* ── Internals ──────────────────────────────────────────────── */

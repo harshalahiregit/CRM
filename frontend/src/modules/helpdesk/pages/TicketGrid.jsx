@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   Search, Plus, X, Inbox, Clock, CheckCircle2, Circle, User, Zap,
   Download, Columns3, Rows3, AlignJustify, ArrowUp, ArrowDown, ChevronsUpDown,
-  Trash2, UserCheck, AlertCircle, Check,
+  Trash2, UserCheck, AlertCircle, Check, Sparkles,
 } from 'lucide-react'
 import { helpdeskApi } from '@/services/helpdeskApi'
 import { useAuth } from '@/context/AuthContext'
@@ -99,6 +99,7 @@ export default function TicketGrid() {
     'in-progress': tickets.filter(t => t.status === 'in-progress').length,
     closed: tickets.filter(t => t.status === 'closed').length,
     unassigned: tickets.filter(t => !t.assigned_to).length,
+    unseen: tickets.filter(t => t.is_new).length,
   }), [tickets])
 
   const rows = useMemo(() => {
@@ -106,7 +107,8 @@ export default function TicketGrid() {
     const col = ALL_COLS.find(c => c.key === sort.key)
     const out = tickets.filter(t => {
       if (view === 'unassigned' && t.assigned_to) return false
-      if (view !== 'all' && view !== 'unassigned' && t.status !== view) return false
+      if (view === 'unseen' && !t.is_new) return false
+      if (view !== 'all' && view !== 'unassigned' && view !== 'unseen' && t.status !== view) return false
       if (term && !(`${t.subject} ${t.requester_name || ''} #${t.id}`.toLowerCase().includes(term))) return false
       return true
     })
@@ -127,6 +129,25 @@ export default function TicketGrid() {
     mutationFn: ({ id, status }) => helpdeskApi.tickets.setStatus(id, status),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['helpdesk-tickets'] }),
   })
+  // REQ-05: opening a ticket marks it seen for THIS user. Clear its "new" dot in
+  // the grid cache optimistically (instant feedback), fire the PATCH best-effort,
+  // and refresh the sidebar unseen badge once the server confirms.
+  const markSeen = useMutation({
+    mutationFn: (id) => helpdeskApi.tickets.markSeen(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['helpdesk-unseen-count'] }),
+  })
+  const openTicket = (t) => {
+    if (t.is_new) {
+      qc.setQueryData(['helpdesk-tickets'], (old) => {
+        if (!old) return old
+        const clear = (row) => row.id === t.id ? { ...row, is_new: false } : row
+        return Array.isArray(old) ? old.map(clear) : { ...old, data: (old.data || []).map(clear) }
+      })
+      markSeen.mutate(t.id)
+    }
+    navigate(`/app/helpdesk/tickets/${t.id}`)
+  }
+
   const bulk = useMutation({
     mutationFn: async ({ action, value }) => {
       const ids = [...selected]
@@ -147,6 +168,7 @@ export default function TicketGrid() {
 
   const TABS = [
     { key: 'all', label: 'All', icon: Inbox },
+    { key: 'unseen', label: 'Unseen', icon: Sparkles },
     { key: 'open', label: 'Open', icon: Circle },
     { key: 'in-progress', label: 'In Progress', icon: Clock },
     { key: 'closed', label: 'Closed', icon: CheckCircle2 },
@@ -316,12 +338,26 @@ export default function TicketGrid() {
                 const sColor = statusColor(t.status)
                 return (
                   <tr key={t.id}
-                    onClick={() => navigate(`/app/helpdesk/tickets/${t.id}`)}
+                    onClick={() => openTicket(t)}
                     className="cursor-pointer transition-colors"
-                    style={{ borderBottom: '1px solid var(--border)', background: isSel ? 'var(--bg-input)' : 'transparent' }}
+                    style={{
+                      borderBottom: '1px solid var(--border)',
+                      background: isSel ? 'var(--bg-input)' : 'transparent',
+                      // REQ-05: a brand-new (unseen) ticket gets a primary left-border
+                      // glow so it reads as new at a glance; transparent otherwise so
+                      // rows stay aligned once opened.
+                      borderLeft: t.is_new ? '3px solid var(--color-primary-500)' : '3px solid transparent',
+                      boxShadow: t.is_new ? 'inset 8px 0 12px -8px var(--color-primary-500)' : 'none',
+                    }}
                     onMouseEnter={e => { if (!isSel) e.currentTarget.style.background = 'var(--bg-card-hover)' }}
                     onMouseLeave={e => { if (!isSel) e.currentTarget.style.background = 'transparent' }}>
-                    <td style={{ padding: rowPad }} onClick={e => e.stopPropagation()}>
+                    <td style={{ padding: rowPad, position: 'relative' }} onClick={e => e.stopPropagation()}>
+                      {t.is_new && (
+                        <span className="absolute left-1 top-1/2 -translate-y-1/2 flex h-2 w-2" title="New — not seen yet">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full" style={{ background: 'var(--color-primary-500)', opacity: 0.55 }} />
+                          <span className="relative inline-flex rounded-full h-2 w-2" style={{ background: 'var(--color-primary-500)' }} />
+                        </span>
+                      )}
                       <Checkbox checked={isSel} onChange={() => toggleOne(t.id)} accent={ACCENT} />
                     </td>
                     {cols.map(c => (

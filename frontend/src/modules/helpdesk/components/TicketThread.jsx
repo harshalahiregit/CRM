@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
+import ReactQuill from 'react-quill'
+import 'react-quill/dist/quill.snow.css'
 import {
   Paperclip, Send, X, ListTodo, FolderKanban, GitMerge,
   Plus, Trash2, Sparkles, RefreshCw, ArrowLeft, AlertCircle,
@@ -90,6 +92,61 @@ const STATUS_COLOR = {
   closed:        { color: '#10b981', bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.25)' },
 }
 
+// Rich-text reply composer — mirrors the KB article editor's Quill setup, trimmed
+// to what a support reply needs: bold/italic/underline, ordered + bullet lists,
+// link, code block and inline image embed. The value is HTML (sanitized on the
+// server before it is stored or emailed).
+const REPLY_MODULES = {
+  toolbar: [
+    ['bold', 'italic', 'underline'],
+    [{ list: 'ordered' }, { list: 'bullet' }],
+    ['link', 'code-block', 'image'],
+    ['clean'],
+  ],
+}
+const REPLY_FORMATS = ['bold', 'italic', 'underline', 'list', 'bullet', 'link', 'code-block', 'image']
+
+// Quill never leaves its editor truly empty — an untouched editor still holds
+// `<p><br></p>`. Treat that (and any tag-only/whitespace-only HTML) as blank so a
+// bare reply can't be sent, while keeping image-only replies (which carry no text)
+// sendable.
+const isComposerEmpty = (html) => {
+  if (!html) return true
+  const hasMedia = /<(img|iframe)\b/i.test(html)
+  const text = html.replace(/<[^>]*>/g, '').replace(/&nbsp;/gi, ' ').replace(/​/g, '').trim()
+  return text.length === 0 && !hasMedia
+}
+
+// Repaints Quill's hard-coded light skin from design tokens so the reply composer
+// follows light/dark, plus styles for rendering stored reply HTML in the thread.
+const REPLY_EDITOR_CSS = `
+  .reply-editor .ql-toolbar.ql-snow{border:0;border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--bg-input);padding:8px 12px}
+  .reply-editor .ql-container.ql-snow{border:0;background:transparent;font-family:inherit;font-size:14px}
+  .reply-editor .ql-editor{min-height:140px;max-height:420px;overflow-y:auto;color:var(--text-h);line-height:1.6;padding:12px 16px}
+  .reply-editor .ql-editor.ql-blank::before{color:var(--text-muted);opacity:.6;font-style:normal;left:16px;right:16px}
+  .reply-editor .ql-editor a{color:var(--color-support-500)}
+  .reply-editor .ql-editor pre.ql-syntax{background:var(--bg-global);color:var(--text-body);border:1px solid var(--border);border-radius:8px}
+  .reply-editor .ql-editor img{max-width:100%;border-radius:8px;border:1px solid var(--border)}
+  .reply-editor .ql-snow .ql-stroke{stroke:var(--text-muted)}
+  .reply-editor .ql-snow .ql-fill{fill:var(--text-muted)}
+  .reply-editor .ql-snow button:hover .ql-stroke,.reply-editor .ql-snow button.ql-active .ql-stroke{stroke:var(--color-support-500)}
+  .reply-editor .ql-snow button:hover .ql-fill,.reply-editor .ql-snow button.ql-active .ql-fill{fill:var(--color-support-500)}
+  .reply-editor .ql-snow .ql-tooltip{background:var(--bg-card);border:1px solid var(--border);box-shadow:var(--shadow-card-3d);color:var(--text-body);border-radius:10px;z-index:20}
+  .reply-editor .ql-snow .ql-tooltip input[type=text]{background:var(--bg-input);border:1px solid var(--border);color:var(--text-h);border-radius:6px}
+  .reply-editor .ql-snow .ql-tooltip a.ql-action,.reply-editor .ql-snow .ql-tooltip a.ql-remove{color:var(--color-support-500)}
+  /* Rendered reply bodies (server-sanitized HTML) inside the thread bubbles */
+  .reply-html p{margin:0 0 .5rem}
+  .reply-html p:last-child{margin-bottom:0}
+  .reply-html ul,.reply-html ol{margin:.3rem 0 .5rem;padding-left:1.4rem}
+  .reply-html ul{list-style:disc}
+  .reply-html ol{list-style:decimal}
+  .reply-html a{color:#22d3ee;text-decoration:underline;word-break:break-word}
+  .reply-html code{background:rgba(148,163,184,0.18);padding:.1rem .3rem;border-radius:4px;font-size:.9em}
+  .reply-html pre{background:var(--bg-global);border:1px solid var(--border);border-radius:8px;padding:.6rem .8rem;overflow-x:auto;white-space:pre-wrap}
+  .reply-html img{max-width:100%;border-radius:8px;margin:.3rem 0}
+  .reply-html blockquote{border-left:3px solid #22d3ee;margin:.4rem 0;padding:.2rem .8rem;opacity:.9}
+`
+
 export default function TicketThread() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -106,6 +163,7 @@ export default function TicketThread() {
   const [projectPickerOpen, setProjectPickerOpen] = useState(false)
   const [mergePickerOpen, setMergePickerOpen] = useState(false)
   const textareaRef = useRef(null)
+  const quillRef = useRef(null)
 
   // Resolve status name (prefer a configured "resolved"/"closed" status).
   const { data: settings } = useQuery({ queryKey: ['helpdesk-settings'], queryFn: helpdeskApi.settings.all })
@@ -196,6 +254,19 @@ export default function TicketThread() {
       navigate(`/app/helpdesk/tickets/${ticket.merged_into_id}`, { replace: true })
     }
   }, [ticket?.merged_into_id, id, navigate])
+
+  // REQ-05: opening a ticket directly (deep link / email) clears its "new" state
+  // for this user. Best-effort — a failed mark must never block the thread. On
+  // success, refresh the grid + sidebar badge so the dot and count drop.
+  useEffect(() => {
+    if (!id) return
+    helpdeskApi.tickets.markSeen(id)
+      .then(() => {
+        queryClient.invalidateQueries({ queryKey: ['helpdesk-unseen-count'] })
+        queryClient.invalidateQueries({ queryKey: ['helpdesk-tickets'] })
+      })
+      .catch(() => {})
+  }, [id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const { data: replies = [], isLoading, isError, error } = useQuery({
     queryKey: ['helpdesk-ticket-replies', id],
@@ -335,12 +406,21 @@ export default function TicketThread() {
   })
 
   const busy = postReply.isPending || addNote.isPending
+  // The reply composer's value is Quill HTML; notes stay plain text. Guard each
+  // against its own notion of "empty" so a bare `<p><br></p>` reply can't send.
+  const canSend = composerMode === 'note' ? !!message.trim() : !isComposerEmpty(message)
   const submit = (e, resolve = false) => {
     e?.preventDefault?.()
-    const text = message.trim()
-    if (!text || busy) return
-    if (composerMode === 'note') addNote.mutate({ text })
-    else postReply.mutate({ resolve, text, ccVal: cc, fileList: files })
+    if (busy) return
+    if (composerMode === 'note') {
+      const text = message.trim()
+      if (!text) return
+      addNote.mutate({ text })
+    } else {
+      if (isComposerEmpty(message)) return
+      // Send the Quill HTML verbatim as `message`; the server sanitizes on store.
+      postReply.mutate({ resolve, text: message, ccVal: cc, fileList: files })
+    }
   }
 
   // Keyboard shortcuts: r = reply, n = note, e = resolve (ignored while typing).
@@ -350,7 +430,7 @@ export default function TicketThread() {
       const el = document.activeElement
       const typing = el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)
       if (typing) return
-      if (e.key === 'r') { e.preventDefault(); setTab('conversation'); setComposerMode('reply'); setTimeout(() => textareaRef.current?.focus(), 0) }
+      if (e.key === 'r') { e.preventDefault(); setTab('conversation'); setComposerMode('reply'); setTimeout(() => quillRef.current?.focus(), 0) }
       else if (e.key === 'n') { e.preventDefault(); setTab('conversation'); setComposerMode('note'); setTimeout(() => textareaRef.current?.focus(), 0) }
       else if (e.key === 'e' && ticket && canResolve) { e.preventDefault(); setStatusMut.mutate(resolveStatus) }
     }
@@ -656,7 +736,14 @@ export default function TicketThread() {
                             }
                         }
                       >
-                        <p>{msg.message}</p>
+                        {/* The synthetic "original request" bubble is the ticket
+                            description (plain text) — keep it plain. Real replies
+                            are HTML, sanitized server-side on store (see
+                            HtmlSanitizer + TicketReplyController), so rendering
+                            the stored string as HTML here is safe. */}
+                        {msg._original
+                          ? <p style={{ whiteSpace: 'pre-wrap' }}>{msg.message}</p>
+                          : <div className="reply-html" dangerouslySetInnerHTML={{ __html: msg.message || '' }} />}
 
                         {/* Attachments */}
                         {msg.has_attachments && msg.attachments?.length > 0 && (
@@ -699,6 +786,7 @@ export default function TicketThread() {
                   boxShadow: 'var(--shadow-card)',
                 }}
               >
+                <style>{REPLY_EDITOR_CSS}</style>
                 {/* Mode toggle */}
                 <div className="flex items-center gap-1 px-3 pt-3">
                   {[['reply', 'Reply', Send, 'var(--color-support-500)'], ['note', 'Note', StickyNote, 'var(--color-warning-500)']].map(([k, label, Icon, c]) => (
@@ -713,16 +801,36 @@ export default function TicketThread() {
                   </span>
                 </div>
 
-                <textarea
-                  ref={textareaRef}
-                  value={message}
-                  onChange={e => setMessage(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submit(e) }}
-                  rows={4}
-                  placeholder={composerMode === 'note' ? 'Add an internal note…' : 'Write a reply…'}
-                  className="w-full bg-transparent resize-none outline-none text-sm px-4 py-3"
-                  style={{ color: 'var(--text-h)' }}
-                />
+                {composerMode === 'reply' ? (
+                  // Rich-text reply composer (mirrors the KB article editor). Value
+                  // is HTML. Cmd/Ctrl+Enter still sends — the keydown bubbles up from
+                  // Quill's contenteditable to this wrapper.
+                  <div
+                    className="reply-editor"
+                    onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submit(e) } }}
+                  >
+                    <ReactQuill
+                      ref={quillRef}
+                      theme="snow"
+                      modules={REPLY_MODULES}
+                      formats={REPLY_FORMATS}
+                      value={message}
+                      onChange={setMessage}
+                      placeholder="Write a reply…"
+                    />
+                  </div>
+                ) : (
+                  <textarea
+                    ref={textareaRef}
+                    value={message}
+                    onChange={e => setMessage(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submit(e) }}
+                    rows={4}
+                    placeholder="Add an internal note…"
+                    className="w-full bg-transparent resize-none outline-none text-sm px-4 py-3"
+                    style={{ color: 'var(--text-h)' }}
+                  />
+                )}
 
                 {/* CC + attachments — reply mode only */}
                 {composerMode === 'reply' && (
@@ -769,16 +877,16 @@ export default function TicketThread() {
                   <div className="flex items-center gap-2">
                     {(postReply.isError || addNote.isError) && <span className="text-xs" style={{ color: '#ef4444' }}>{(postReply.error || addNote.error)?.message}</span>}
                     {composerMode === 'note' ? (
-                      <button type="submit" disabled={!message.trim() || busy} className="flex items-center gap-1.5 text-xs font-bold px-4 py-2 rounded-xl disabled:opacity-40" style={{ background: 'var(--color-warning-500)', color: '#fff' }}>
+                      <button type="submit" disabled={!canSend || busy} className="flex items-center gap-1.5 text-xs font-bold px-4 py-2 rounded-xl disabled:opacity-40" style={{ background: 'var(--color-warning-500)', color: '#fff' }}>
                         <StickyNote size={12} /> {addNote.isPending ? 'Adding…' : 'Add note'}
                       </button>
                     ) : (
                       <>
-                        <button type="button" onClick={e => submit(e, true)} disabled={!message.trim() || busy}
+                        <button type="button" onClick={e => submit(e, true)} disabled={!canSend || busy}
                           className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl disabled:opacity-40" style={{ border: '1px solid var(--border)', color: 'var(--color-success-500)' }}>
                           <CheckCircle2 size={13} /> Send &amp; Resolve
                         </button>
-                        <button type="submit" disabled={!message.trim() || busy} className="flex items-center gap-1.5 text-xs font-bold px-4 py-2 rounded-xl disabled:opacity-40" style={{ background: 'linear-gradient(135deg,#22d3ee,#0891b2)', color: '#fff', boxShadow: '0 3px 10px rgba(6,182,212,0.35)' }}>
+                        <button type="submit" disabled={!canSend || busy} className="flex items-center gap-1.5 text-xs font-bold px-4 py-2 rounded-xl disabled:opacity-40" style={{ background: 'linear-gradient(135deg,#22d3ee,#0891b2)', color: '#fff', boxShadow: '0 3px 10px rgba(6,182,212,0.35)' }}>
                           <Send size={12} /> {postReply.isPending ? 'Sending…' : 'Send Reply'}
                         </button>
                       </>

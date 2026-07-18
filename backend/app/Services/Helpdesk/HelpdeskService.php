@@ -164,13 +164,61 @@ class HelpdeskService
         $canDeleteAll = $userId === null || $role === null || ! $scoped;   // admin / global manager
 
         return $this->tickets->filtered($tenantId, $filters, $visibility)
-            ->map(function (Ticket $t) use ($tenantId, $canDeleteAll, $managedDepts) {
+            ->map(function (Ticket $t) use ($tenantId, $canDeleteAll, $managedDepts, $userId) {
                 $t = $this->decorateWithCustomer($t, $tenantId);
                 $t->setAttribute('can_delete', $canDeleteAll
                     || ($t->department_id && in_array((int) $t->department_id, $managedDepts, true)));
 
+                // REQ-05: a ticket is "new" for the requesting user until they've
+                // opened it — i.e. their id is not yet in seen_by. Per-user, so the
+                // flag is computed against this caller only.
+                $t->setAttribute('is_new', $userId !== null
+                    && ! $this->jsonIds($t->seen_by)->contains((int) $userId));
+
                 return $t;
             });
+    }
+
+    /**
+     * REQ-05: record that $userId has now seen this ticket. Idempotent — a user
+     * already in seen_by is left untouched (no write, no dupes). The write goes
+     * through the query builder, NOT the model, so marking a ticket seen does not
+     * bump updated_at and quietly reorder the grid.
+     */
+    public function markSeen(int $ticketId, int $tenantId, int $userId): void
+    {
+        $ticket = $this->findTicket($ticketId, $tenantId);
+
+        $seen = $this->jsonIds($ticket->seen_by);
+        if ($seen->contains($userId)) {
+            return;
+        }
+
+        $next = $seen->push($userId)->unique()->values()->all();
+
+        DB::table('tickets')
+            ->where('id', $ticket->id)
+            ->where('tenant_id', $tenantId)
+            ->update(['seen_by' => json_encode($next)]);
+    }
+
+    /**
+     * REQ-04-lite: how many tickets THIS user can see but hasn't opened yet. It
+     * reuses the exact visibility scoping of listTickets (same repository filter,
+     * same manager/department rules) so the badge never counts a ticket the user
+     * couldn't otherwise reach.
+     */
+    public function countUnseen(int $tenantId, int $userId, string $role): int
+    {
+        $this->assertInternal($role);
+
+        $scoped = ! $this->isGlobalTicketManager($tenantId, $userId, $role);
+        $managedDepts = $scoped ? $this->managedDepartmentIds($tenantId, $userId) : [];
+        $visibility = $scoped ? ['user_id' => $userId, 'dept_ids' => $managedDepts] : null;
+
+        return $this->tickets->filtered($tenantId, [], $visibility)
+            ->filter(fn (Ticket $t) => ! $this->jsonIds($t->seen_by)->contains($userId))
+            ->count();
     }
 
     public function showTicket(int $ticketId, int $tenantId, ?int $userId = null, ?string $role = null): Ticket

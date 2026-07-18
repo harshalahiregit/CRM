@@ -5,7 +5,7 @@ import 'react-quill/dist/quill.snow.css'
 import {
   FolderPlus, Plus, Trash2, Globe, Link as LinkIcon, Check, FileText, ChevronRight,
   BookOpen, HelpCircle, Wrench, Megaphone, MessageSquareText, ExternalLink, X, Pencil, Zap, EyeOff,
-  Tag, Save, LayoutTemplate, FolderTree, Eye,
+  Tag, Save, LayoutTemplate, FolderTree, Eye, Star, MessageSquare,
 } from 'lucide-react'
 import { helpdeskApi } from '@/services/helpdeskApi'
 import Select from '../components/ui/Select'
@@ -229,6 +229,7 @@ function KbManager() {
                     onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-input)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                     <FileText size={15} style={{ color: 'var(--text-muted)' }} />
                     <span className="flex-1 truncate" style={{ fontSize: 15, color: 'var(--text-h)' }}>{a.title}</span>
+                    {a.total_ratings > 0 && <RatingBadge avg={a.avg_rating} total={a.total_ratings} />}
                     <StatusPill published={a.is_published} />
                     <ChevronRight size={14} style={{ color: 'var(--text-muted)', opacity: 0.4 }} />
                   </button>
@@ -315,6 +316,11 @@ function KbManager() {
                     </>
                   )}
                 </SideCard>
+
+                {/* Ratings (REQ-11) — star feedback left by readers */}
+                {article.id && (
+                  <RatingsCard articleId={article.id} avg={article.avg_rating} total={article.total_ratings} />
+                )}
 
                 {/* Organize */}
                 <SideCard icon={FolderTree} title="Organize">
@@ -527,6 +533,77 @@ function CannedManager() {
 
 function Field({ label, children }) {
   return <label className="block"><span className="text-[10px] uppercase tracking-widest block mb-1 font-bold" style={{ color: 'var(--text-muted)' }}>{label}</span>{children}</label>
+}
+
+const fmtFeedbackDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : ''
+
+/** Compact amber star badge for the article list (REQ-11). */
+function RatingBadge({ avg, total }) {
+  return (
+    <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(245,158,11,0.14)', color: '#b45309' }}>
+      <Star size={11} style={{ fill: '#f59e0b', color: '#f59e0b' }} /> {(Number(avg) || 0).toFixed(1)} ({total})
+    </span>
+  )
+}
+
+/** Read-only 5-star display. */
+function Stars({ value = 0, size = 14 }) {
+  return (
+    <span className="inline-flex" style={{ gap: 1 }}>
+      {[1, 2, 3, 4, 5].map(n => (
+        <Star key={n} size={size} style={{ color: n <= value ? '#f59e0b' : 'var(--border)', fill: n <= value ? '#f59e0b' : 'none' }} />
+      ))}
+    </span>
+  )
+}
+
+/**
+ * Editor-sidebar card summarising an article's star ratings, with an expandable
+ * list of each {rating, comment, date}. Feedback is only fetched once expanded.
+ */
+function RatingsCard({ articleId, avg, total }) {
+  const [open, setOpen] = useState(false)
+  const { data: list = [], isLoading } = useQuery({
+    queryKey: ['kb-feedback', articleId],
+    queryFn: () => helpdeskApi.kb.articleFeedback(articleId),
+    enabled: open,
+  })
+  const count = total ?? list.length
+  const average = Number(avg) || 0
+
+  return (
+    <SideCard icon={Star} title="Ratings" accent="#f59e0b">
+      {count > 0 ? (
+        <div className="flex items-center gap-2 mb-2">
+          <Stars value={Math.round(average)} />
+          <span className="text-sm font-bold" style={{ color: 'var(--text-h)' }}>{average.toFixed(1)}</span>
+          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>· {count} rating{count === 1 ? '' : 's'}</span>
+        </div>
+      ) : (
+        <p className="text-xs mb-2" style={{ color: 'var(--text-muted)' }}>No star ratings yet.</p>
+      )}
+
+      <button onClick={() => setOpen(o => !o)} className="flex items-center gap-1 text-[11px] font-bold" style={{ color: 'var(--color-support-500)' }}>
+        <MessageSquare size={11} /> {open ? 'Hide feedback' : 'View feedback'}
+      </button>
+
+      {open && (
+        <div className="mt-2 space-y-2" style={{ maxHeight: 260, overflow: 'auto' }}>
+          {isLoading && <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Loading…</p>}
+          {!isLoading && list.length === 0 && <p className="text-xs" style={{ color: 'var(--text-muted)' }}>No feedback yet.</p>}
+          {list.map(f => (
+            <div key={f.id} className="rounded-lg p-2" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+              <div className="flex items-center justify-between mb-0.5">
+                <Stars value={f.rating} size={12} />
+                <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{fmtFeedbackDate(f.created_at)}</span>
+              </div>
+              {f.comment && <p className="text-xs" style={{ color: 'var(--text-body)' }}>{f.comment}</p>}
+            </div>
+          ))}
+        </div>
+      )}
+    </SideCard>
+  )
 }
 
 /** A metadata card in the article editor's right rail. */

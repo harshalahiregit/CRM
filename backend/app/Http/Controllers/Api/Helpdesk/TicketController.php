@@ -225,6 +225,27 @@ class TicketController extends Controller
         return $this->success($created, count($created).' tasks created from ticket', 201);
     }
 
+    /* ── REQ-05: mark this ticket seen by the current user ─────── */
+    public function seen(Request $request, int $ticket)
+    {
+        $this->guardView($request, $ticket);
+        $this->helpdesk->markSeen($ticket, $request->user()->tenant_id, $request->user()->id);
+
+        return $this->success(null, 'Ticket marked seen');
+    }
+
+    /* ── REQ-04-lite: count of visible tickets not yet seen ────── */
+    public function unseenCount(Request $request)
+    {
+        $count = $this->helpdesk->countUnseen(
+            $request->user()->tenant_id,
+            $request->user()->id,
+            $request->user()->role,
+        );
+
+        return $this->success(['count' => $count], 'Unseen count retrieved');
+    }
+
     /* ── Submit CSAT feedback ──────────────────────────────────── */
     public function feedback(Request $request, int $ticket)
     {

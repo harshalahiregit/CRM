@@ -10,11 +10,16 @@ import {
   Boxes, PackagePlus, PackageMinus, ArrowLeftRight, Scale, Warehouse
 } from 'lucide-react'
 import { NavLink, useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/context/AuthContext'
 import { useTheme } from '@/context/ThemeContext'
 import { isModuleInstalled } from '@/modules/registry'
+import { helpdeskApi } from '@/services/helpdeskApi'
 import { useState, useEffect } from 'react'
 import clsx from 'clsx'
+
+// Portal roles never reach the staff ticket queue, so don't poll the badge for them.
+const EXTERNAL_ROLES = ['client', 'vendor', 'third_party_vendor']
 
 const NAV_ITEMS = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/app/dashboard' },
@@ -82,6 +87,20 @@ export default function Sidebar({ collapsed, onToggle }) {
   const [helpdeskExpanded, setHelpdeskExpanded] = useState(true)
   const [inventoryExpanded, setInventoryExpanded] = useState(true)
   const hrInstalled = isModuleInstalled('hr')
+
+  // REQ-04-lite: unseen-ticket badge. Polls every 30s; staff-only (portal roles
+  // get a 403, so skip the request entirely). Errors leave the badge hidden.
+  const isInternal = !!user && !EXTERNAL_ROLES.includes(user.role)
+  const { data: unseen } = useQuery({
+    queryKey: ['helpdesk-unseen-count'],
+    queryFn: () => helpdeskApi.tickets.unseenCount(),
+    enabled: isInternal,
+    refetchInterval: 30000,
+    refetchIntervalInBackground: false,
+    staleTime: 15000,
+    retry: false,
+  })
+  const unseenCount = unseen?.count ?? 0
 
   const handleLogout = async () => { await logout(); navigate('/auth/login') }
 
@@ -290,19 +309,33 @@ export default function Sidebar({ collapsed, onToggle }) {
             </div>
             {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Helpdesk & Support</span><ChevronDown size={13} className={clsx('transition-transform duration-200', helpdeskExpanded && 'rotate-180')} /></>}
           </button>
-          {(helpdeskExpanded || collapsed) && HELPDESK_SUB_ITEMS.map(({ label, path, icon: Icon }) => (
+          {(helpdeskExpanded || collapsed) && HELPDESK_SUB_ITEMS.map(({ label, path, icon: Icon }) => {
+            // REQ-04-lite: the Tickets row carries the unseen-count badge.
+            const showBadge = label === 'Tickets' && unseenCount > 0
+            return (
             <NavLink key={path} to={path}>
               {({ isActive }) => (
                 <div title={collapsed ? label : ''} className={clsx('nav-3d mb-0.5', isActive && 'nav-3d-active')} style={{ justifyContent: collapsed ? 'center' : undefined, paddingLeft: collapsed ? undefined : '28px' }}>
-                  <div className="flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: isActive ? 'rgba(255,255,255,0.15)' : 'rgba(6,182,212,0.06)' }}>
+                  <div className="relative flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: isActive ? 'rgba(255,255,255,0.15)' : 'rgba(6,182,212,0.06)' }}>
                     <Icon size={12} />
+                    {/* Collapsed rail: a bare dot stands in for the number. */}
+                    {showBadge && collapsed && (
+                      <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full" style={{ background: 'var(--color-danger-500)', border: '1px solid var(--bg-card)' }} />
+                    )}
                   </div>
                   {!collapsed && <span className="truncate text-xs">{label}</span>}
-                  {isActive && !collapsed && <div className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: '#67e8f9' }} />}
+                  {showBadge && !collapsed && (
+                    <span className="ml-auto text-[10px] font-bold rounded-full flex items-center justify-center"
+                      style={{ background: 'var(--color-danger-500)', color: '#fff', minWidth: 18, height: 16, padding: '0 5px' }}>
+                      {unseenCount > 99 ? '99+' : unseenCount}
+                    </span>
+                  )}
+                  {isActive && !collapsed && !showBadge && <div className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: '#67e8f9' }} />}
                 </div>
               )}
             </NavLink>
-          ))}
+            )
+          })}
         </div>
 
         {/* ── Inventory Module sub-nav ── */}

@@ -25,7 +25,10 @@
                                 <tr>
                                     <td style="padding:18px 20px;">
                                         <p style="margin:0 0 10px; font-size:12px; color:#0e7490; font-weight:bold;">{{ $agentName }} replied:</p>
-                                        <p style="margin:0; font-size:14px; color:#334155; line-height:1.7; white-space:pre-wrap;">{{ $reply->message }}</p>
+                                        {{-- The reply body is rich-text HTML, sanitized on store by
+                                             App\Support\HtmlSanitizer before it is persisted, so it is safe
+                                             to render here as HTML rather than escaped text. --}}
+                                        <div style="margin:0; font-size:14px; color:#334155; line-height:1.7;">{!! $reply->message !!}</div>
                                     </td>
                                 </tr>
                             </table>

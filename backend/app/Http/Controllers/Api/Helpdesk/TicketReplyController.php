@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Helpdesk;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Traits\ApiResponse;
 use App\Services\Helpdesk\HelpdeskService;
+use App\Support\HtmlSanitizer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
@@ -77,10 +78,14 @@ class TicketReplyController extends Controller
         // is always staff. 'admin' stays admin; every other internal role posts as
         // an agent. Only the inbound-email path may author a 'client' reply, and
         // it calls the service directly rather than coming through here.
+        // The composer now sends rich-text HTML. It is stored as-is and later
+        // rendered as HTML in the CRM thread AND in outbound email, so it MUST be
+        // sanitized to a strict allowlist here (DOMDocument, not regex) before it
+        // ever reaches the database.
         $reply = $this->helpdesk->addReply($ticket, [
             'sender_type' => $request->user()->role === 'admin' ? 'admin' : 'agent',
             'sender_id'   => $request->user()->id,
-            'message'     => $request->input('message'),
+            'message'     => HtmlSanitizer::clean($request->input('message')),
             'cc'          => $request->input('cc', []),
             'attachments' => $stored,
         ], $tenantId);

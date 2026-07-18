@@ -54,6 +54,9 @@ export const helpdeskApi = {
       api.get(`/helpdesk/public/kb/articles/${slug}`).then(unwrap).catch(handleErr),
     vote: (slug, direction) =>
       api.patch(`/helpdesk/public/kb/articles/${slug}/vote`, { direction }).then(unwrap).catch(handleErr),
+    // REQ-11: 1-5 star rating + optional comment (independent of the thumbs vote)
+    submitFeedback: (slug, { rating, comment } = {}) =>
+      api.post(`/helpdesk/public/kb/articles/${slug}/feedback`, { rating, comment }).then(unwrap).catch(handleErr),
   },
 
   tickets: {
@@ -80,6 +83,13 @@ export const helpdeskApi = {
 
     feedback: (id, data) =>
       api.post(`/helpdesk/tickets/${id}/feedback`, data).then(unwrap).catch(handleErr),
+
+    // REQ-05: mark a ticket seen by the current user (clears its "new" dot).
+    markSeen: (id) =>
+      api.patch(`/helpdesk/tickets/${id}/seen`).then(unwrap).catch(handleErr),
+    // REQ-04-lite: count of visible tickets the current user hasn't opened yet.
+    unseenCount: () =>
+      api.get('/helpdesk/tickets/unseen-count').then(unwrap).catch(handleErr),
 
     // Integration with Projects / Tasks
     linkProject: (id, project_id) =>
@@ -185,6 +195,9 @@ export const helpdeskApi = {
 
     vote: (id, direction) =>
       api.patch(`/helpdesk/kb/articles/${id}/vote`, { direction }).then(unwrap).catch(handleErr),
+    // REQ-11: admin view of the star-rating feedback left on an article
+    articleFeedback: (id) =>
+      api.get(`/helpdesk/kb/articles/${id}/feedback`).then(unwrap).catch(handleErr),
     publish: (id) =>
       api.patch(`/helpdesk/kb/articles/${id}/publish`).then(unwrap).catch(handleErr),
     unpublish: (id) =>

@@ -42,6 +42,9 @@ Route::get('/helpdesk/public/widget/{key}/kb/search', [PublicHelpdeskController:
 Route::get('/helpdesk/public/kb/articles/{slug}', [PublicHelpdeskController::class, 'article']);
 Route::patch('/helpdesk/public/kb/articles/{slug}/vote', [PublicHelpdeskController::class, 'vote'])
     ->middleware('throttle:30,1');
+// Public star rating + optional comment (REQ-11) — same throttle as the vote.
+Route::post('/helpdesk/public/kb/articles/{slug}/feedback', [KbArticleController::class, 'publicFeedback'])
+    ->middleware('throttle:30,1');
 
 // ── Helpdesk & Support Module (owner: Shivam, Sanctum) ──────────────────
 // Isolated route file. Registered once from routes/api.php via a single require.
@@ -74,11 +77,15 @@ Route::middleware('auth:sanctum')->prefix('helpdesk')->group(function () {
 
     // ── Tickets ─────────────────────────────────────────────────
     Route::get('/tickets',                    [TicketController::class, 'index']);
+    // Static segment declared BEFORE /tickets/{ticket} so "unseen-count" is never
+    // captured as a ticket id (belt-and-braces: {ticket} is also numeric-only).
+    Route::get('/tickets/unseen-count',       [TicketController::class, 'unseenCount']);
     Route::post('/tickets',                   [TicketController::class, 'store']);
-    Route::get('/tickets/{ticket}',           [TicketController::class, 'show']);
+    Route::get('/tickets/{ticket}',           [TicketController::class, 'show'])->whereNumber('ticket');
     Route::put('/tickets/{ticket}',           [TicketController::class, 'update']);
     Route::delete('/tickets/{ticket}',        [TicketController::class, 'destroy']);
     Route::patch('/tickets/{ticket}/status',  [TicketController::class, 'updateStatus']);
+    Route::patch('/tickets/{ticket}/seen',    [TicketController::class, 'seen']); // REQ-05: mark seen
     Route::post('/tickets/{ticket}/summarize', [TicketController::class, 'summarize']); // AI summary (Phase 6)
     Route::patch('/tickets/{ticket}/assign',  [TicketController::class, 'assign']);
     Route::post('/tickets/{ticket}/feedback', [TicketController::class, 'feedback']);
@@ -140,6 +147,7 @@ Route::middleware('auth:sanctum')->prefix('helpdesk')->group(function () {
     Route::put('/kb/articles/{article}',      [KbArticleController::class, 'update']);
     Route::delete('/kb/articles/{article}',   [KbArticleController::class, 'destroy']);
     Route::patch('/kb/articles/{article}/vote',      [KbArticleController::class, 'vote']);
+    Route::get('/kb/articles/{article}/feedback',    [KbArticleController::class, 'feedback']); // REQ-11: star-rating list
     Route::patch('/kb/articles/{article}/publish',   [KbArticleController::class, 'publish']);
     Route::patch('/kb/articles/{article}/unpublish', [KbArticleController::class, 'unpublish']);
 });

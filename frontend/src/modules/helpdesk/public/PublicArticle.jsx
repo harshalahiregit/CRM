@@ -3,7 +3,7 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
   ThumbsUp, ThumbsDown, Headphones, ChevronRight, Calendar, Clock,
-  Check, Printer, Link2, List, ArrowLeft, LifeBuoy, Search, FileText, ArrowRight,
+  Check, Printer, Link2, List, ArrowLeft, LifeBuoy, Search, FileText, ArrowRight, Star,
 } from 'lucide-react'
 import { helpdeskApi } from '@/services/helpdeskApi'
 
@@ -20,6 +20,11 @@ export default function PublicArticle() {
   const [voted, setVoted] = useState(null)
   const [copied, setCopied] = useState(false)
   const [q, setQ] = useState('')
+  // Star rating (REQ-11) — independent of the thumbs vote above.
+  const [rating, setRating] = useState(0)
+  const [hoverStar, setHoverStar] = useState(0)
+  const [comment, setComment] = useState('')
+  const [rated, setRated] = useState(false)
 
   const { data: article, isLoading, isError } = useQuery({
     queryKey: ['public-article', slug],
@@ -29,6 +34,11 @@ export default function PublicArticle() {
   const vote = useMutation({
     mutationFn: (direction) => helpdeskApi.public.vote(slug, direction),
     onSuccess: (_r, direction) => setVoted(direction),
+  })
+
+  const rate = useMutation({
+    mutationFn: () => helpdeskApi.public.submitFeedback(slug, { rating, comment: comment.trim() || null }),
+    onSuccess: () => setRated(true),
   })
 
   const homeHref = article?.kb_key ? `/kb/${article.kb_key}` : null
@@ -93,6 +103,7 @@ export default function PublicArticle() {
             <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#64748b' }}><Calendar size={13} /> {fmtDate(article.updated_at)}</span>
             <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#64748b' }}><Clock size={13} /> {minutes} min read</span>
             {helpfulPct !== null && <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#16a34a', fontWeight: 600 }}><ThumbsUp size={12} /> {helpfulPct}% found this helpful</span>}
+            {article.total_ratings > 0 && <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#b45309', fontWeight: 600 }}><Star size={12} style={{ fill: '#f59e0b', color: '#f59e0b' }} /> {article.avg_rating} · {article.total_ratings} rating{article.total_ratings > 1 ? 's' : ''}</span>}
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
               <OptBtn icon={copied ? Check : Link2} label={copied ? 'Copied' : 'Copy link'} onClick={copyLink} active={copied} />
               <OptBtn icon={Printer} label="Print" onClick={() => window.print()} />
@@ -126,6 +137,41 @@ export default function PublicArticle() {
                   <VoteBtn onClick={() => vote.mutate('up')} disabled={vote.isPending} icon={ThumbsUp} label={`Yes (${article.thumbs_up || 0})`} color="#16a34a" hoverBg="#f0fdf4" hoverBorder="#86efac" />
                   <VoteBtn onClick={() => vote.mutate('down')} disabled={vote.isPending} icon={ThumbsDown} label={`No (${article.thumbs_down || 0})`} color="#dc2626" hoverBg="#fef2f2" hoverBorder="#fca5a5" />
                 </div>
+              </>
+            )}
+          </div>
+
+          {/* Star rating + comment (REQ-11) — separate from the thumbs vote above */}
+          <div style={{ marginTop: 24, padding: '24px 20px', borderRadius: 16, background: '#fffbeb', border: '1px solid #fde68a', textAlign: 'center' }}>
+            {rated ? (
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#b45309', fontWeight: 700 }}>
+                <span style={{ width: 30, height: 30, borderRadius: '50%', background: '#fef3c7', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><Star size={16} style={{ fill: '#f59e0b', color: '#f59e0b' }} /></span>
+                Thanks for rating this article!
+              </div>
+            ) : (
+              <>
+                <p style={{ fontSize: 15.5, fontWeight: 700, color: '#334155', marginBottom: 4 }}>Rate this article</p>
+                <p style={{ fontSize: 13, color: '#94a3b8', marginBottom: 14 }}>How helpful was this? Tap a star.</p>
+                <StarInput value={rating} hover={hoverStar} onHover={setHoverStar} onSelect={setRating} />
+                {rating > 0 && (
+                  <div style={{ maxWidth: 460, margin: '16px auto 0' }}>
+                    <textarea
+                      value={comment}
+                      onChange={e => setComment(e.target.value)}
+                      rows={3}
+                      maxLength={2000}
+                      placeholder="Add a comment (optional)…"
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #e2e8f0', fontSize: 14, outline: 'none', color: '#1e293b', background: '#fff', resize: 'vertical', fontFamily: 'inherit' }}
+                    />
+                    <button
+                      onClick={() => rate.mutate()}
+                      disabled={rate.isPending}
+                      style={{ marginTop: 10, background: '#f59e0b', color: '#fff', fontWeight: 700, fontSize: 14, padding: '10px 22px', borderRadius: 10, border: 'none', cursor: 'pointer', opacity: rate.isPending ? 0.6 : 1 }}>
+                      {rate.isPending ? 'Submitting…' : 'Submit rating'}
+                    </button>
+                    {rate.isError && <p style={{ fontSize: 13, color: '#dc2626', marginTop: 8 }}>{rate.error?.message}</p>}
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -204,6 +250,23 @@ function VoteBtn({ onClick, disabled, icon: Icon, label, color, hoverBg, hoverBo
       onMouseLeave={e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.color = '#475569' }}>
       <Icon size={16} /> {label}
     </button>
+  )
+}
+
+function StarInput({ value, hover, onHover, onSelect }) {
+  return (
+    <div style={{ display: 'inline-flex', gap: 6, justifyContent: 'center' }} onMouseLeave={() => onHover(0)}>
+      {[1, 2, 3, 4, 5].map(n => {
+        const active = (hover || value) >= n
+        return (
+          <button key={n} type="button" onClick={() => onSelect(n)} onMouseEnter={() => onHover(n)}
+            aria-label={`${n} star${n > 1 ? 's' : ''}`}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, lineHeight: 0 }}>
+            <Star size={32} style={{ color: active ? '#f59e0b' : '#d1d5db', fill: active ? '#f59e0b' : 'none', transition: 'all 0.12s' }} />
+          </button>
+        )
+      })}
+    </div>
   )
 }
 
