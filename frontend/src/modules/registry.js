@@ -93,6 +93,28 @@ export const ALL_MODULES = [
     basePath: '/app/projects',
     navItems: [],
   },
+  {
+    id: 'tpv',
+    name: 'Third-Party Vendors',
+    description: 'Vendor onboarding, statutory documents, workforce registration, HSSE compliance & site gate access.',
+    version: '1.0.0',
+    author: 'Sangoe Team',
+    icon: '🦺',
+    color: 'linear-gradient(135deg,#7C3AED,#5b21b6)',
+    shadowColor: '#7C3AED',
+    category: 'Operations',
+    features: ['Kickoff Meetings','Vendor Onboarding','Document Verification','Workforce Registration','HSSE Compliance','QR Gate Access'],
+    basePath: '/app/tpv',
+    navItems: [
+      { label: 'TPV Dashboard',     path: '/app/tpv/dashboard',  icon: '📊' },
+      { label: 'Kickoff Meetings',  path: '/app/tpv/kickoff',    icon: '📅' },
+      { label: 'Vendor Onboarding', path: '/app/tpv/onboarding', icon: '🚀' },
+      { label: 'Documents',         path: '/app/tpv/documents',  icon: '📄' },
+      { label: 'Workforce',         path: '/app/tpv/workforce',  icon: '👷' },
+      { label: 'Compliance',        path: '/app/tpv/compliance', icon: '✅' },
+      { label: 'Gate Log',          path: '/app/tpv/gate-log',   icon: '🔳' },
+    ],
+  },
 ]
 
 // Persist installed modules in localStorage

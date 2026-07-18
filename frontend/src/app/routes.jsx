@@ -50,6 +50,25 @@ const PaymentLinks = lazy(() => import('@/modules/sales/pages/PaymentLinks'))
 const RetainerInvoices = lazy(() => import('@/modules/sales/pages/RetainerInvoices'))
 const ProposalTemplates = lazy(() => import('@/modules/sales/pages/ProposalTemplates'))
 
+// TPV (third-party vendor) module + shared Compliance/Kickoff engines
+const TPVLayout = lazy(() => import('@/modules/tpv/TPVLayout'))
+const TpvDashboard = lazy(() => import('@/modules/tpv/pages/TpvDashboard'))
+const TpvOnboardings = lazy(() => import('@/modules/tpv/pages/TpvOnboardings'))
+const TpvOnboardingWizard = lazy(() => import('@/modules/tpv/pages/TpvOnboardingWizard'))
+const TpvWorkers = lazy(() => import('@/modules/tpv/pages/TpvWorkers'))
+const TpvWorkerWizard = lazy(() => import('@/modules/tpv/pages/TpvWorkerWizard'))
+const TpvGateLog = lazy(() => import('@/modules/tpv/pages/TpvGateLog'))
+const TpvStrikes = lazy(() => import('@/modules/tpv/pages/TpvStrikes'))
+const ComplianceWorkspace = lazy(() => import('@/modules/compliance/pages/ComplianceWorkspace'))
+const TemplateBuilder = lazy(() => import('@/modules/compliance/pages/TemplateBuilder'))
+const ChecklistDetail = lazy(() => import('@/modules/compliance/pages/ChecklistDetail'))
+const KickoffMeetings = lazy(() => import('@/modules/shared/pages/KickoffMeetings'))
+const KickoffMeetingDetail = lazy(() => import('@/modules/shared/pages/KickoffMeetingDetail'))
+// Public, token-authed screens (no login — the token is the credential)
+const GateScan = lazy(() => import('@/pages/gate/GateScan'))
+const ChecklistFill = lazy(() => import('@/pages/checklist/ChecklistFill'))
+const KickoffAck = lazy(() => import('@/pages/kickoff/KickoffAck'))
+
 function ComingSoon({ name }) {
   return (
     <div className="flex flex-col items-center justify-center min-h-[55vh] gap-4 animate-fade-in">
@@ -103,6 +122,11 @@ export default function AppRoutes() {
         <Route path="verify-email" element={<ComingSoon name="Email Verification" />} />
       </Route>
 
+      {/* Public token-authed screens (no login — the token IS the credential) */}
+      <Route path="/scan/:token" element={<S><GateScan /></S>} />
+      <Route path="/checklist/:token" element={<S><ChecklistFill /></S>} />
+      <Route path="/kickoff/ack/:token" element={<S><KickoffAck /></S>} />
+
       {/* Protected app routes */}
       <Route path="/app" element={<ProtectedRoute><AppShell /></ProtectedRoute>}>
         <Route index element={<Navigate to="dashboard" replace />} />
@@ -148,6 +172,24 @@ export default function AppRoutes() {
           <Route path="payment-links" element={<S><PaymentLinks /></S>} />
           <Route path="retainer-invoices" element={<S><RetainerInvoices /></S>} />
           <Route path="proposal-templates" element={<S><ProposalTemplates /></S>} />
+        </Route>
+
+        {/* TPV MODULE (third-party vendors) + shared Compliance/Kickoff engines */}
+        <Route path="tpv" element={<S><TPVLayout /></S>}>
+          <Route index element={<Navigate to="dashboard" replace />} />
+          <Route path="dashboard" element={<S><TpvDashboard /></S>} />
+          <Route path="kickoff" element={<S><KickoffMeetings /></S>} />
+          <Route path="kickoff/:id" element={<S><KickoffMeetingDetail /></S>} />
+          <Route path="onboarding" element={<S><TpvOnboardings /></S>} />
+          <Route path="onboarding/:id" element={<S><TpvOnboardingWizard /></S>} />
+          <Route path="documents" element={<ComingSoon name="Vendor Documents" />} />
+          <Route path="workforce" element={<S><TpvWorkers /></S>} />
+          <Route path="workforce/:id" element={<S><TpvWorkerWizard /></S>} />
+          <Route path="compliance" element={<S><ComplianceWorkspace /></S>} />
+          <Route path="compliance/templates/:id" element={<S><TemplateBuilder /></S>} />
+          <Route path="compliance/checklists/:id" element={<S><ChecklistDetail /></S>} />
+          <Route path="gate-log" element={<S><TpvGateLog /></S>} />
+          <Route path="strikes" element={<S><TpvStrikes /></S>} />
         </Route>
 
         {/* Core CRM */}
