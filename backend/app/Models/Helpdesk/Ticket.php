@@ -14,7 +14,7 @@ class Ticket extends Model
 
     protected $fillable = [
         'tenant_id', 'subject', 'description', 'status', 'priority',
-        'assigned_to', 'customer_id', 'department_id', 'project_id', 'due_date', 'source',
+        'assigned_to', 'created_by', 'customer_id', 'department_id', 'project_id', 'due_date', 'source',
         'requester_name', 'requester_email',
         'merged_into_id', 'ai_summary', 'ai_summary_at', 'email_token',
         'first_responded_at', 'resolved_at', 'sla_paused_at', 'sla_paused_seconds',

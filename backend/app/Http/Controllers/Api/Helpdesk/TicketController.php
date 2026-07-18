@@ -28,7 +28,7 @@ class TicketController extends Controller
     /** 403s an agent who tries to reach a ticket outside their queue. */
     private function guardView(Request $request, int $ticket): void
     {
-        $this->helpdesk->assertTicketVisible($ticket, $request->user()->tenant_id, $request->user()->id, $request->user()->role);
+        $this->helpdesk->assertTicketVisible($ticket, $request->user()->tenant_id, $request->user()->id, $request->user()->role, $request->user()->email);
     }
 
     /** 403s anyone but an admin / department manager. */
@@ -55,7 +55,7 @@ class TicketController extends Controller
     public function index(Request $request)
     {
         $filters = $request->only(['status', 'priority', 'assigned_to', 'customer_id', 'source', 'search']);
-        $tickets = $this->helpdesk->listTickets($request->user()->tenant_id, $filters, $request->user()->id, $request->user()->role);
+        $tickets = $this->helpdesk->listTickets($request->user()->tenant_id, $filters, $request->user()->id, $request->user()->role, $request->user()->email);
 
         return $this->success($tickets, 'Tickets retrieved');
     }
@@ -241,6 +241,7 @@ class TicketController extends Controller
             $request->user()->tenant_id,
             $request->user()->id,
             $request->user()->role,
+            $request->user()->email,
         );
 
         return $this->success(['count' => $count], 'Unseen count retrieved');
@@ -253,6 +254,7 @@ class TicketController extends Controller
             $request->user()->tenant_id,
             $request->user()->id,
             $request->user()->role,
+            $request->user()->email,
         );
 
         return $this->success($counts, 'Status counts retrieved');

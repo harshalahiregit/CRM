@@ -102,7 +102,19 @@ class HelpdeskService
             && in_array((int) $ticket->department_id, $this->managedDepartmentIds($ticket->tenant_id, $userId), true);
     }
 
-    public function canSeeTicket(Ticket $ticket, int $userId, string $role): bool
+    /** Did this user raise the ticket — created it, or their email is the requester? */
+    private function isRaiser(Ticket $ticket, int $userId, ?string $userEmail): bool
+    {
+        if ((int) $ticket->created_by === $userId && $userId > 0) {
+            return true;
+        }
+
+        return $userEmail
+            && $ticket->requester_email
+            && strcasecmp(trim($ticket->requester_email), trim($userEmail)) === 0;
+    }
+
+    public function canSeeTicket(Ticket $ticket, int $userId, string $role, ?string $userEmail = null): bool
     {
         // Portal users are not part of the internal queue at all. This has to be
         // the FIRST check: the unassigned-ticket rule below is deliberately
@@ -115,6 +127,13 @@ class HelpdeskService
         if ($this->isGlobalTicketManager($ticket->tenant_id, $userId, $role)) {
             return true;
         }
+
+        // The person who RAISED it always sees it — otherwise a requester gets
+        // emailed and notified about a ticket that never appears in their list.
+        if ($this->isRaiser($ticket, $userId, $userEmail)) {
+            return true;
+        }
+
         // Assigned to me, or still unassigned (claimable from the open queue).
         if ((int) $ticket->assigned_to === $userId || $ticket->assigned_to === null) {
             return true;
@@ -125,11 +144,11 @@ class HelpdeskService
     }
 
     /** View/work access — throws 403 otherwise. Returns the ticket for reuse. */
-    public function assertTicketVisible(int $ticketId, int $tenantId, int $userId, string $role): Ticket
+    public function assertTicketVisible(int $ticketId, int $tenantId, int $userId, string $role, ?string $userEmail = null): Ticket
     {
         $ticket = $this->findTicket($ticketId, $tenantId);
 
-        if (! $this->canSeeTicket($ticket, $userId, $role)) {
+        if (! $this->canSeeTicket($ticket, $userId, $role, $userEmail)) {
             throw new BusinessException('You do not have access to this ticket.', 403);
         }
 
@@ -148,7 +167,7 @@ class HelpdeskService
         return $ticket;
     }
 
-    public function listTickets(int $tenantId, array $filters = [], ?int $userId = null, ?string $role = null): Collection
+    public function listTickets(int $tenantId, array $filters = [], ?int $userId = null, ?string $role = null, ?string $userEmail = null): Collection
     {
         // The repository's visibility filter ORs in `assigned_to IS NULL` so staff
         // can claim from the open queue. That rule is only safe once portal roles
@@ -157,7 +176,9 @@ class HelpdeskService
 
         $scoped = $userId !== null && $role !== null && ! $this->isGlobalTicketManager($tenantId, $userId, $role);
         $managedDepts = $scoped ? $this->managedDepartmentIds($tenantId, $userId) : [];
-        $visibility = $scoped ? ['user_id' => $userId, 'dept_ids' => $managedDepts] : null;
+        // Scoped users also see tickets they RAISED (created, or their email is the
+        // requester) — the list must match canSeeTicket exactly.
+        $visibility = $scoped ? ['user_id' => $userId, 'dept_ids' => $managedDepts, 'email' => $userEmail] : null;
 
         // Precompute delete rights once so each row can carry a can_delete flag
         // (the frontend hides the delete button on tickets you can't remove).
@@ -208,13 +229,13 @@ class HelpdeskService
      * same manager/department rules) so the badge never counts a ticket the user
      * couldn't otherwise reach.
      */
-    public function countUnseen(int $tenantId, int $userId, string $role): int
+    public function countUnseen(int $tenantId, int $userId, string $role, ?string $userEmail = null): int
     {
         $this->assertInternal($role);
 
         $scoped = ! $this->isGlobalTicketManager($tenantId, $userId, $role);
         $managedDepts = $scoped ? $this->managedDepartmentIds($tenantId, $userId) : [];
-        $visibility = $scoped ? ['user_id' => $userId, 'dept_ids' => $managedDepts] : null;
+        $visibility = $scoped ? ['user_id' => $userId, 'dept_ids' => $managedDepts, 'email' => $userEmail] : null;
 
         return $this->tickets->filtered($tenantId, [], $visibility)
             ->filter(fn (Ticket $t) => ! $this->jsonIds($t->seen_by)->contains($userId))
@@ -226,13 +247,13 @@ class HelpdeskService
      * what THIS user can see (same visibility as listTickets). "closed" folds in
      * every status flagged is_closed_status so a renamed close status still counts.
      */
-    public function statusCounts(int $tenantId, int $userId, string $role): array
+    public function statusCounts(int $tenantId, int $userId, string $role, ?string $userEmail = null): array
     {
         $this->assertInternal($role);
 
         $scoped = ! $this->isGlobalTicketManager($tenantId, $userId, $role);
         $managedDepts = $scoped ? $this->managedDepartmentIds($tenantId, $userId) : [];
-        $visibility = $scoped ? ['user_id' => $userId, 'dept_ids' => $managedDepts] : null;
+        $visibility = $scoped ? ['user_id' => $userId, 'dept_ids' => $managedDepts, 'email' => $userEmail] : null;
 
         $closedNames = \App\Models\Helpdesk\TicketStatus::forTenant($tenantId)
             ->where('is_closed_status', true)->pluck('name')->all();
@@ -277,6 +298,9 @@ class HelpdeskService
             'status'          => $data['status'] ?? 'open',
             'priority'        => $data['priority'] ?? 'medium',
             'assigned_to'     => $data['assigned_to'] ?? null,
+            // Who raised it. auth()->id() for staff/portal-created tickets; null for
+            // widget/inbound-email (no session) — those match a person by email.
+            'created_by'      => $data['created_by'] ?? auth()->id(),
             'customer_id'     => $data['customer_id'] ?? null,
             // The chosen department was being dropped here entirely, so every
             // ticket landed with no department — breaking department routing and
@@ -382,6 +406,51 @@ class HelpdeskService
             ->pluck('id')->map(fn ($i) => (int) $i)->all();
     }
 
+    /**
+     * The raiser as a CRM user, if there is one: the creator, else a user whose
+     * email is the requester. Returns null for widget/anonymous requesters who
+     * have no account (they're reached by email, not in-app).
+     */
+    private function raiserUserId(Ticket $ticket): ?int
+    {
+        if ($ticket->created_by) {
+            $creator = \App\Models\User::where('id', $ticket->created_by)
+                ->where('tenant_id', $ticket->tenant_id)
+                ->whereNotIn('role', self::EXTERNAL_ROLES)->value('id');
+            if ($creator) {
+                return (int) $creator;
+            }
+        }
+
+        if ($ticket->requester_email) {
+            $byEmail = \App\Models\User::where('tenant_id', $ticket->tenant_id)
+                ->whereRaw('LOWER(email) = ?', [mb_strtolower(trim($ticket->requester_email))])
+                ->whereNotIn('role', self::EXTERNAL_ROLES)->value('id');
+            if ($byEmail) {
+                return (int) $byEmail;
+            }
+        }
+
+        return null;
+    }
+
+    /** In-app ping to the raiser (if a CRM user). Actor is self-suppressed inside notify(). */
+    private function notifyRaiser(Ticket $ticket, string $type, string $title, ?string $message): void
+    {
+        $uid = $this->raiserUserId($ticket);
+        if ($uid) {
+            $this->notifications->notify(
+                userId: $uid,
+                tenantId: $ticket->tenant_id,
+                type: $type,
+                title: $title,
+                message: $message,
+                link: "/app/helpdesk/tickets/{$ticket->id}",
+                actorId: auth()->id(),
+            );
+        }
+    }
+
     public function updateTicket(int $ticketId, array $data, int $tenantId): Ticket
     {
         $ticket = $this->findTicket($ticketId, $tenantId);
@@ -461,6 +530,11 @@ class HelpdeskService
             TicketClosed::dispatch($ticket->fresh());
         }
 
+        // Keep the raiser in the loop in-app, mirroring the status email they get.
+        if ($status !== $was) {
+            $this->notifyRaiser($ticket, 'ticket.status', "Ticket #{$ticket->id} is now {$status}", $ticket->subject);
+        }
+
         return $ticket->fresh('assignee');
     }
 
@@ -530,6 +604,10 @@ class HelpdeskService
                 ? (\App\Models\User::find($data['sender_id'])?->name ?? 'Support')
                 : 'Support';
             $this->mail->sendStaffReply($fresh, $reply, $agentName);
+
+            // The raiser gets the reply by email; if they're also a CRM user, give
+            // them the in-app bell too so the two surfaces agree.
+            $this->notifyRaiser($fresh, 'ticket.reply', "New reply on your ticket #{$fresh->id}", $data['message'] ?? $fresh->subject);
         } else {
             // A customer wrote in — tell whoever owns the ticket. If the reply
             // reopened a closed ticket, say so: that's the part an agent must not

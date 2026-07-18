@@ -19,7 +19,7 @@ class TicketReplyController extends Controller
 
     private function guardView(Request $request, int $ticket): void
     {
-        $this->helpdesk->assertTicketVisible($ticket, $request->user()->tenant_id, $request->user()->id, $request->user()->role);
+        $this->helpdesk->assertTicketVisible($ticket, $request->user()->tenant_id, $request->user()->id, $request->user()->role, $request->user()->email);
     }
 
     /* ── Thread for a ticket ───────────────────────────────────── */
