@@ -142,6 +142,16 @@ class SlaService
             $patch['resolved_at'] = null; // reopened → resolution clock resumes
         }
 
+        // REQ-09: a closed → non-closed transition IS a reopen. This is the single
+        // chokepoint every status change flows through (changeStatus, updateTicket,
+        // client-reply auto-reopen, one-click reopen), so tracking it here makes the
+        // reopen metric automatic for all of them.
+        $wasClosed = $from !== null && in_array($from, $cfg['closed'], true);
+        if ($wasClosed && ! $isClosed) {
+            $patch['reopened_count'] = (int) $ticket->reopened_count + 1;
+            $patch['reopened_at']    = $now;
+        }
+
         if ($patch) {
             $ticket->forceFill($patch)->save();
         }

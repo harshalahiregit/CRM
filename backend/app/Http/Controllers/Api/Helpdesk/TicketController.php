@@ -151,7 +151,10 @@ class TicketController extends Controller
     /* ── Assign agent (TicketAssignmentService) ────────────────── */
     public function assign(AssignTicketRequest $request, int $ticket)
     {
-        $this->guardView($request, $ticket);
+        // (Re)assignment is a manager act — admin, global/department manager — with
+        // one addition: the CURRENT assignee can hand their own ticket on. Anyone
+        // else who can merely SEE the ticket is 403'd here.
+        $this->helpdesk->assertCanAssign($ticket, $request->user()->tenant_id, $request->user()->id, $request->user()->role);
         $result = $this->assignment->assign($ticket, $request->validated('assigned_to'), $request->user()->tenant_id);
 
         return $this->success($result, 'Ticket assigned');

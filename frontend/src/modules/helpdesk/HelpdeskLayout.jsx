@@ -1,23 +1,38 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { useTheme } from '@/context/ThemeContext'
+import { helpdeskApi } from '@/services/helpdeskApi'
 import {
-  LifeBuoy, BookOpen, BarChart3, CheckSquare,
+  LifeBuoy, BookOpen, BarChart3,
   PenSquare, Code2, Settings, ChevronRight, ArrowLeft, Headphones
 } from 'lucide-react'
 
+// Settings / Widget / KB Admin are admin-surface tools — only admins and
+// department managers see them (managerOnly). Regular agents keep Analytics,
+// Tickets and the public Knowledge Base.
 const HELPDESK_NAV = [
   { label: 'Analytics',      path: '/app/helpdesk/analytics',      icon: BarChart3 },
-  { label: 'My Tasks',       path: '/app/helpdesk/my-tasks',       icon: CheckSquare },
   { label: 'Tickets',        path: '/app/helpdesk/tickets',        icon: LifeBuoy },
   { label: 'Knowledge Base', path: '/app/helpdesk/knowledge-base', icon: BookOpen },
-  { label: 'KB Admin',       path: '/app/helpdesk/kb-admin',       icon: PenSquare },
-  { label: 'Widget',         path: '/app/helpdesk/widget',         icon: Code2 },
-  { label: 'Settings',       path: '/app/helpdesk/settings',       icon: Settings },
+  { label: 'KB Admin',       path: '/app/helpdesk/kb-admin',       icon: PenSquare,  managerOnly: true },
+  { label: 'Widget',         path: '/app/helpdesk/widget',         icon: Code2,      managerOnly: true },
+  { label: 'Settings',       path: '/app/helpdesk/settings',       icon: Settings,   managerOnly: true },
 ]
 
 export default function HelpdeskLayout() {
   const { isDark } = useTheme()
   const navigate = useNavigate()
+
+  // Role flags gate the admin-only tabs. Fail safe: while loading or on error,
+  // isManager stays false so admin surfaces never leak to regular agents.
+  const { data: me } = useQuery({
+    queryKey: ['helpdesk-me'],
+    queryFn: () => helpdeskApi.me(),
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  })
+  const isManager = me?.is_manager === true
+  const navItems = HELPDESK_NAV.filter(item => !item.managerOnly || isManager)
 
   return (
     <div style={{ margin: '-1rem -1.5rem', minHeight: '100vh' }}>
@@ -77,7 +92,7 @@ export default function HelpdeskLayout() {
 
           {/* Sub-navigation tabs */}
           <nav className="flex gap-0.5 overflow-x-auto scrollbar-hide">
-            {HELPDESK_NAV.map(({ label, path, icon: Icon }) => (
+            {navItems.map(({ label, path, icon: Icon }) => (
               <NavLink key={path} to={path} end={path === '/app/helpdesk/analytics'}>
                 {({ isActive }) => (
                   <div

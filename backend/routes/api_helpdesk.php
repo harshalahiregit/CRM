@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\Helpdesk\HelpdeskAgentController;
 use App\Http\Controllers\Api\Helpdesk\HelpdeskDashboardController;
 use App\Http\Controllers\Api\Helpdesk\HelpdeskFeedbackController;
+use App\Http\Controllers\Api\Helpdesk\HelpdeskMeController;
 use App\Http\Controllers\Api\Helpdesk\HelpdeskSettingsController;
 use App\Http\Controllers\Api\Helpdesk\HelpdeskWidgetController;
 use App\Http\Controllers\Api\Helpdesk\PublicHelpdeskController;
@@ -52,6 +53,9 @@ Route::middleware('auth:sanctum')->prefix('helpdesk')->group(function () {
 
     // ── Manager analytics ───────────────────────────────────────
     Route::get('/analytics', [HelpdeskDashboardController::class, 'analytics']);
+
+    // ── Current-user capabilities (drives the frontend nav) ─────
+    Route::get('/me', [HelpdeskMeController::class, 'show']);
 
     // ── My assigned tasks (assignee dashboard) ──────────────────
     Route::get('/my-tasks', [TicketController::class, 'myTasks']);

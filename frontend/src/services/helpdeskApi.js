@@ -12,6 +12,11 @@ const handleErr = (err) => {
 const unwrap = (r) => r.data?.data ?? r.data
 
 export const helpdeskApi = {
+  // Current user's helpdesk role flags — { role, is_admin, is_manager }.
+  // Gates admin-only nav (Settings / Widget / KB Admin) for department managers.
+  me: () =>
+    api.get('/helpdesk/me').then(unwrap).catch(handleErr),
+
   // Manager analytics dashboard
   analytics: () =>
     api.get('/helpdesk/analytics').then(unwrap).catch(handleErr),

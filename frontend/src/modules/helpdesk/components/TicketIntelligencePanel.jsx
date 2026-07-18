@@ -221,10 +221,19 @@ function PropertiesSection({ ticketId }) {
   const { data: ticket } = useQuery({ queryKey: tkey, queryFn: () => helpdeskApi.tickets.get(ticketId) })
   const { data: settings } = useQuery({ queryKey: ['helpdesk-settings'], queryFn: helpdeskApi.settings.all })
   const invalidate = () => qc.invalidateQueries({ queryKey: tkey })
+  // A status change here must also refresh the ticket list and the sidebar
+  // badges (open/closed counts + unseen), otherwise the grid looks stale until
+  // a manual reload.
+  const invalidateStatus = () => {
+    invalidate()
+    qc.invalidateQueries({ queryKey: ['helpdesk-tickets'] })
+    qc.invalidateQueries({ queryKey: ['helpdesk-status-counts'] })
+    qc.invalidateQueries({ queryKey: ['helpdesk-unseen-count'] })
+  }
   // Optimistic patch helper — updates the cached ticket instantly, rolls back on error.
   const patchOpt = async (patch) => { await qc.cancelQueries({ queryKey: tkey }); const prev = qc.getQueryData(tkey); qc.setQueryData(tkey, (o) => (o ? { ...o, ...patch } : o)); return { prev } }
   const rollback = (_e, _v, ctx) => ctx?.prev && qc.setQueryData(tkey, ctx.prev)
-  const setStatus = useMutation({ mutationFn: (s) => helpdeskApi.tickets.setStatus(ticketId, s), onMutate: (s) => patchOpt({ status: s }), onError: rollback, onSettled: invalidate })
+  const setStatus = useMutation({ mutationFn: (s) => helpdeskApi.tickets.setStatus(ticketId, s), onMutate: (s) => patchOpt({ status: s }), onError: rollback, onSettled: invalidateStatus })
   const update = useMutation({ mutationFn: (data) => helpdeskApi.tickets.update(ticketId, data), onMutate: (data) => patchOpt(data), onError: rollback, onSettled: invalidate })
 
   // Changing status (e.g. closing a ticket) is a decision worth confirming, so

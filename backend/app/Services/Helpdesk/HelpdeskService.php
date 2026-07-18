@@ -102,6 +102,36 @@ class HelpdeskService
             && in_array((int) $ticket->department_id, $this->managedDepartmentIds($ticket->tenant_id, $userId), true);
     }
 
+    /**
+     * Manager SOMEWHERE in the helpdesk (not tied to one ticket): an admin, a
+     * tenant-wide ticket manager, or the manager of at least one department. Drives
+     * the /helpdesk/me capability the frontend uses to show Settings/Widget/KB-Admin.
+     */
+    public function isManagerAnywhere(int $tenantId, int $userId, string $role): bool
+    {
+        if ($this->isGlobalTicketManager($tenantId, $userId, $role)) {
+            return true;
+        }
+
+        return ! empty($this->managedDepartmentIds($tenantId, $userId));
+    }
+
+    /**
+     * Reassign gate — admin/global/department manager, OR the ticket's CURRENT
+     * assignee (they can hand their own ticket on). Anyone else is 403'd. Returns
+     * the ticket so the caller can reuse it.
+     */
+    public function assertCanAssign(int $ticketId, int $tenantId, int $userId, string $role): Ticket
+    {
+        $ticket = $this->findTicket($ticketId, $tenantId);
+
+        if ($this->isTicketManager($ticket, $userId, $role) || (int) $ticket->assigned_to === $userId) {
+            return $ticket;
+        }
+
+        throw new BusinessException('Only an admin, a manager, or the current assignee can reassign this ticket.', 403);
+    }
+
     /** Did this user raise the ticket — created it, or their email is the requester? */
     private function isRaiser(Ticket $ticket, int $userId, ?string $userEmail): bool
     {
@@ -195,6 +225,10 @@ class HelpdeskService
                 // flag is computed against this caller only.
                 $t->setAttribute('is_new', $userId !== null
                     && ! $this->jsonIds($t->seen_by)->contains((int) $userId));
+
+                // REQ-09: flag tickets that have been reopened at least once, so the
+                // grid can badge a resolved-then-reopened ticket.
+                $t->setAttribute('is_reopened', (int) $t->reopened_count > 0);
 
                 return $t;
             });
@@ -679,9 +713,41 @@ class HelpdeskService
         };
     }
 
-    public function analytics(int $tenantId): array
+    /**
+     * A tenant-scoped ticket QUERY BUILDER (not a Collection) narrowed to what the
+     * viewer can see — the same WHERE the TicketRepository visibility filter and
+     * canSeeTicket apply. Admins / global ticket managers get the unscoped tenant
+     * query; a plain agent gets: assigned to me OR unassigned OR I created it OR my
+     * email is the requester OR a department I manage. Every analytics aggregate is
+     * built on top of this so the numbers never leak a ticket the viewer can't open.
+     */
+    private function visibleTicketQuery(int $tenantId, ?int $userId, ?string $role, ?string $userEmail)
     {
-        $base = fn () => Ticket::forTenant($tenantId);
+        $query = Ticket::forTenant($tenantId);
+
+        $scoped = $userId !== null && $role !== null && ! $this->isGlobalTicketManager($tenantId, $userId, $role);
+        if (! $scoped) {
+            return $query;
+        }
+
+        $depts = $this->managedDepartmentIds($tenantId, $userId);
+
+        return $query->where(function ($q) use ($userId, $depts, $userEmail) {
+            $q->where('assigned_to', $userId)
+                ->orWhereNull('assigned_to')
+                ->orWhere('created_by', $userId);
+            if ($userEmail) {
+                $q->orWhereRaw('LOWER(requester_email) = ?', [mb_strtolower(trim($userEmail))]);
+            }
+            if (! empty($depts)) {
+                $q->orWhereIn('department_id', $depts);
+            }
+        });
+    }
+
+    public function analytics(int $tenantId, ?int $userId = null, ?string $role = null, ?string $userEmail = null): array
+    {
+        $base = fn () => $this->visibleTicketQuery($tenantId, $userId, $role, $userEmail);
 
         $total       = $base()->count();
         $open        = $base()->where('status', 'open')->count();
@@ -734,6 +800,32 @@ class HelpdeskService
             'avg_close_hours' => round((float) $r->avg_close_hours, 1),
         ])->values();
 
+        // REQ-09: reopen metrics, scoped to what the viewer can see.
+        //  • reopened_count  — visible tickets reopened at least once.
+        //  • reopen_rate     — reopened / ever-closed × 100 (a ticket is "ever
+        //    closed" if it's in a closed status now OR carries a reopen, since a
+        //    reopen proves it was closed at some point). Guarded against /0.
+        //  • recent_reopened — the last 10, newest reopen first.
+        $reopenedCount = (int) $base()->where('reopened_count', '>', 0)->count();
+
+        $everClosed = (int) $base()->where(function ($q) use ($closedStatusNames) {
+            $q->whereIn('status', $closedStatusNames)->orWhere('reopened_count', '>', 0);
+        })->count();
+        $reopenRate = $everClosed > 0 ? round($reopenedCount / $everClosed * 100, 1) : 0.0;
+
+        $recentReopened = $base()->where('reopened_count', '>', 0)
+            ->with('assignee:id,name')
+            ->orderByDesc('reopened_at')
+            ->limit(10)
+            ->get(['id', 'subject', 'status', 'reopened_at', 'assigned_to'])
+            ->map(fn (Ticket $t) => [
+                'id'            => $t->id,
+                'subject'       => $t->subject,
+                'status'        => $t->status,
+                'reopened_at'   => $t->reopened_at,
+                'assignee_name' => $t->assignee->name ?? null,
+            ])->values()->all();
+
         $settings = app(\App\Services\Helpdesk\HelpdeskSettingsService::class);
 
         return [
@@ -744,6 +836,9 @@ class HelpdeskService
             'unresolved'        => $unresolved,
             'open_rate'         => $openRate,
             'avg_closing_hours' => $avgClosingHours,
+            'reopened_count'    => $reopenedCount,
+            'reopen_rate'       => $reopenRate,
+            'recent_reopened'   => $recentReopened,
             // Data-driven so EVERY status/priority present is counted — incl. the
             // 'merged' status and any admin-created value. A hardcoded list here is
             // the same bug that once dropped 'urgent' from by_priority.
@@ -752,7 +847,7 @@ class HelpdeskService
             // Per-department load so the admin can track which queue is busy.
             // department_id stores an id (not a name), so this resolves names from
             // the tenant's configured departments rather than reusing countBreakdown.
-            'by_department'        => $this->departmentBreakdown($tenantId),
+            'by_department'        => $this->departmentBreakdown($tenantId, $base),
             'by_assignee'          => $assigneeRows,
             // Kept for backward-compat with the existing dashboard card.
             'resolved_by_assignee' => $assigneeRows->map(fn ($r) => [
@@ -768,12 +863,12 @@ class HelpdeskService
      * tenant's configured departments so every department shows (even at zero),
      * with a "No department" bucket for tickets that were never routed.
      */
-    private function departmentBreakdown(int $tenantId): array
+    private function departmentBreakdown(int $tenantId, callable $base): array
     {
         $names = \App\Models\Helpdesk\TicketDepartment::forTenant($tenantId)
             ->orderBy('order')->pluck('name', 'id');
 
-        $counts = Ticket::forTenant($tenantId)
+        $counts = $base()
             ->selectRaw('department_id, count(*) as c')
             ->groupBy('department_id')->pluck('c', 'department_id');
 
@@ -783,7 +878,7 @@ class HelpdeskService
             'count'         => (int) ($counts[$id] ?? 0),
         ])->values();
 
-        $noDept = Ticket::forTenant($tenantId)->whereNull('department_id')->count();
+        $noDept = $base()->whereNull('department_id')->count();
         if ($noDept > 0) {
             $rows->push(['department_id' => null, 'department' => 'No department', 'count' => $noDept]);
         }

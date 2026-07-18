@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import {
   LifeBuoy, DoorOpen, Timer, CheckCircle2, Trophy,
-  TrendingUp, AlertTriangle, Users, Clock
+  TrendingUp, AlertTriangle, Users, Clock, RotateCcw, PieChart, ArrowUpRight
 } from 'lucide-react'
 import { helpdeskApi } from '@/services/helpdeskApi'
 
@@ -93,6 +94,142 @@ const PRIORITY_COLOR = {
   medium: '#f59e0b',
   low:    '#10b981',
 }
+/* Warning tone for the "reopened" negative-signal tiles */
+const WARN = '#f59e0b'
+
+/* ── Relative time (e.g. "3h ago") ────────────────────────────── */
+function relTime(input) {
+  if (!input) return ''
+  const then = new Date(input).getTime()
+  if (Number.isNaN(then)) return ''
+  const diff = Math.round((Date.now() - then) / 1000) // seconds
+  if (diff < 45) return 'just now'
+  const mins = Math.round(diff / 60)
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.round(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  const days = Math.round(hrs / 24)
+  if (days < 30) return `${days}d ago`
+  const months = Math.round(days / 30)
+  if (months < 12) return `${months}mo ago`
+  return `${Math.round(months / 12)}y ago`
+}
+
+/* ── Status pill ──────────────────────────────────────────────── */
+function StatusPill({ status }) {
+  const c = STATUS_COLOR[status] || '#94a3b8'
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize whitespace-nowrap"
+      style={{ background: `${c}18`, color: c, border: `1px solid ${c}33` }}
+    >
+      <span className="w-1.5 h-1.5 rounded-full" style={{ background: c }} />
+      {(status || 'unknown').replace(/-/g, ' ')}
+    </span>
+  )
+}
+
+/* ── Donut / ring chart (inline SVG, stacked stroke-dasharray) ──
+ * Math: one <circle> per segment sharing radius r, so circumference
+ * C = 2πr. Each segment draws an arc of length (fraction · C) via
+ * strokeDasharray=`${len} ${C-len}`. Segments are stacked by rotating
+ * the start point: strokeDashoffset = -accumulated, where `accumulated`
+ * grows by each segment's len (a small GAP is subtracted so a 2px surface
+ * gap sits between fills). rotate(-90) starts the ring at 12 o'clock. */
+function Donut({ segments, total, size = 168, thickness = 20 }) {
+  const r = (size - thickness) / 2
+  const C = 2 * Math.PI * r
+  const cx = size / 2
+  const cy = size / 2
+  const GAP = total > 0 && segments.filter(s => s.value > 0).length > 1 ? 3 : 0
+  let accumulated = 0
+  return (
+    <div className="flex items-center justify-center" style={{ width: size, height: size }}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label="Status distribution">
+        {/* track */}
+        <circle
+          cx={cx} cy={cy} r={r} fill="none"
+          stroke="var(--border)" strokeWidth={thickness} opacity={0.5}
+        />
+        {total > 0 && segments.map(seg => {
+          if (!seg.value) return null
+          const frac = seg.value / total
+          const len = Math.max(frac * C - GAP, 0.5)
+          const dashoffset = -accumulated
+          accumulated += frac * C
+          return (
+            <circle
+              key={seg.key}
+              cx={cx} cy={cy} r={r} fill="none"
+              stroke={seg.color} strokeWidth={thickness} strokeLinecap="butt"
+              strokeDasharray={`${len} ${C - len}`}
+              strokeDashoffset={dashoffset}
+              transform={`rotate(-90 ${cx} ${cy})`}
+              style={{ transition: 'stroke-dasharray 0.7s ease' }}
+            />
+          )
+        })}
+        {/* center label */}
+        <text
+          x={cx} y={cy - 4} textAnchor="middle"
+          style={{ fontSize: 30, fontWeight: 800, fill: 'var(--text-h)', letterSpacing: '-0.03em' }}
+        >
+          {total}
+        </text>
+        <text
+          x={cx} y={cy + 16} textAnchor="middle"
+          style={{ fontSize: 11, fontWeight: 600, fill: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}
+        >
+          Tickets
+        </text>
+      </svg>
+    </div>
+  )
+}
+
+/* ── Reopen stat tile (warning tone) ──────────────────────────── */
+function ReopenTile({ label, value, sub, icon: Icon }) {
+  return (
+    <div
+      className="relative overflow-hidden rounded-2xl p-5"
+      style={{
+        background: `linear-gradient(145deg, ${WARN}12, ${WARN}05)`,
+        border: `1px solid ${WARN}40`,
+        boxShadow: 'var(--shadow-card)',
+      }}
+    >
+      <div
+        className="absolute -top-6 -right-6 w-24 h-24 rounded-full opacity-[0.10] pointer-events-none"
+        style={{ background: WARN }}
+      />
+      <div className="relative z-10 flex items-start justify-between mb-3">
+        <div
+          className="w-11 h-11 rounded-2xl flex items-center justify-center"
+          style={{ background: `${WARN}22`, boxShadow: `0 6px 20px ${WARN}33` }}
+        >
+          <Icon size={20} style={{ color: WARN }} />
+        </div>
+        <span
+          className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full"
+          style={{ background: `${WARN}1f`, color: WARN }}
+        >
+          Watch
+        </span>
+      </div>
+      <p className="text-2xl font-black relative z-10" style={{ color: 'var(--text-h)', letterSpacing: '-0.03em' }}>
+        {value}
+      </p>
+      <p className="text-sm font-medium mt-0.5 relative z-10" style={{ color: 'var(--text-muted)' }}>
+        {label}
+      </p>
+      {sub && (
+        <p className="text-xs mt-1 relative z-10 font-medium" style={{ color: 'var(--text-muted)', opacity: 0.75 }}>
+          {sub}
+        </p>
+      )}
+    </div>
+  )
+}
 
 /* ── Main Component ──────────────────────────────────────────── */
 export default function HelpdeskAnalytics() {
@@ -151,6 +288,23 @@ export default function HelpdeskAnalytics() {
   const maxStatus = Math.max(...byStatus.map(s => s.count), 1)
   const maxDept = Math.max(...byDepartment.map(d => d.count), 1)
 
+  /* Reopened-ticket signals */
+  const reopenedCount = a.reopened_count || 0
+  const reopenRate = a.reopen_rate || 0
+  const recentReopened = a.recent_reopened || []
+
+  /* Donut segments from status breakdown (reuse tenant status colours) */
+  const donutTotal = byStatus.reduce((sum, s) => sum + (s.count || 0), 0)
+  const donutSegments = byStatus.map(s => ({
+    key: s.status,
+    label: s.status,
+    value: s.count || 0,
+    color: STATUS_COLOR[s.status] || '#94a3b8',
+  }))
+
+  /* Priority proportion meter (single segmented bar) */
+  const priorityTotal = byPriority.reduce((sum, p) => sum + (p.count || 0), 0)
+
   return (
     <div className="space-y-6 animate-[tiltIn_0.35s_ease_forwards]">
 
@@ -204,6 +358,141 @@ export default function HelpdeskAnalytics() {
           gradient="linear-gradient(145deg,#34d399,#059669)"
           shadow="#10b981"
         />
+      </div>
+
+      {/* Reopen signals + status donut + recently reopened */}
+      <div className="grid gap-4 lg:grid-cols-3">
+
+        {/* Status donut */}
+        <div
+          className="rounded-2xl p-5"
+          style={{
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border)',
+            boxShadow: 'var(--shadow-card)',
+          }}
+        >
+          <div className="flex items-center gap-2 mb-4">
+            <div
+              className="w-8 h-8 rounded-xl flex items-center justify-center"
+              style={{ background: 'rgba(59,130,246,0.12)' }}
+            >
+              <PieChart size={15} style={{ color: '#3b82f6' }} />
+            </div>
+            <h2 className="font-bold text-sm" style={{ color: 'var(--text-h)' }}>Status Distribution</h2>
+          </div>
+
+          {donutTotal === 0 ? (
+            <p className="text-sm py-10 text-center" style={{ color: 'var(--text-muted)' }}>No tickets yet.</p>
+          ) : (
+            <div className="flex flex-col items-center gap-4">
+              <Donut segments={donutSegments} total={donutTotal} />
+              {/* Legend */}
+              <div className="w-full space-y-1.5">
+                {donutSegments.filter(s => s.value > 0).map(s => (
+                  <div key={s.key} className="flex items-center gap-2 text-xs">
+                    <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: s.color }} />
+                    <span className="capitalize flex-1 truncate" style={{ color: 'var(--text-h)' }}>
+                      {(s.label || 'unknown').replace(/-/g, ' ')}
+                    </span>
+                    <span className="font-semibold" style={{ color: 'var(--text-h)' }}>{s.value}</span>
+                    <span style={{ color: 'var(--text-muted)' }}>
+                      {Math.round((s.value / donutTotal) * 100)}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Reopen tiles + recently reopened (spans 2 cols) */}
+        <div className="lg:col-span-2 space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <ReopenTile
+              label="Reopened"
+              value={reopenedCount}
+              sub="tickets bounced back"
+              icon={RotateCcw}
+            />
+            <ReopenTile
+              label="Reopen Rate"
+              value={`${reopenRate}%`}
+              sub="of resolved tickets"
+              icon={AlertTriangle}
+            />
+          </div>
+
+          {/* Recently reopened list */}
+          <div
+            className="rounded-2xl p-5"
+            style={{
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border)',
+              boxShadow: 'var(--shadow-card)',
+            }}
+          >
+            <div className="flex items-center gap-2 mb-4">
+              <div
+                className="w-8 h-8 rounded-xl flex items-center justify-center"
+                style={{ background: `${WARN}1f` }}
+              >
+                <RotateCcw size={15} style={{ color: WARN }} />
+              </div>
+              <h2 className="font-bold text-sm" style={{ color: 'var(--text-h)' }}>Recently Reopened</h2>
+            </div>
+
+            {recentReopened.length === 0 ? (
+              <p className="text-sm py-6 text-center" style={{ color: 'var(--text-muted)' }}>
+                No reopened tickets — nice.
+              </p>
+            ) : (
+              <div className="overflow-x-auto -mx-1 px-1">
+                <table className="w-full text-sm" style={{ borderCollapse: 'collapse' }}>
+                  <tbody>
+                    {recentReopened.map(t => (
+                      <tr
+                        key={t.id}
+                        className="transition-colors"
+                        style={{ borderTop: '1px solid var(--border)' }}
+                      >
+                        <td className="py-2.5 pr-3 align-middle whitespace-nowrap">
+                          <Link
+                            to={`/app/helpdesk/tickets/${t.id}`}
+                            className="inline-flex items-center gap-1 font-semibold hover:underline"
+                            style={{ color: 'var(--color-support-500, #06b6d4)' }}
+                          >
+                            #{t.id}
+                            <ArrowUpRight size={12} style={{ opacity: 0.6 }} />
+                          </Link>
+                        </td>
+                        <td className="py-2.5 pr-3 align-middle" style={{ maxWidth: 240 }}>
+                          <Link
+                            to={`/app/helpdesk/tickets/${t.id}`}
+                            className="block truncate hover:underline"
+                            style={{ color: 'var(--text-h)' }}
+                            title={t.subject}
+                          >
+                            {t.subject || '(no subject)'}
+                          </Link>
+                        </td>
+                        <td className="py-2.5 pr-3 align-middle whitespace-nowrap">
+                          <StatusPill status={t.status} />
+                        </td>
+                        <td className="py-2.5 pr-3 align-middle whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
+                          {t.assignee_name || 'Unassigned'}
+                        </td>
+                        <td className="py-2.5 align-middle whitespace-nowrap text-right" style={{ color: 'var(--text-muted)' }}>
+                          {relTime(t.reopened_at)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Charts row */}
@@ -324,6 +613,29 @@ export default function HelpdeskAnalytics() {
             >
               By Priority
             </h3>
+
+            {/* Segmented proportion meter — share of tickets per priority */}
+            {priorityTotal > 0 && (
+              <div
+                className="flex w-full h-2.5 rounded-full overflow-hidden mb-3"
+                style={{ background: 'var(--border)', gap: 2 }}
+                role="img"
+                aria-label="Priority proportions"
+              >
+                {byPriority.filter(p => p.count > 0).map(p => (
+                  <div
+                    key={p.priority}
+                    className="h-full first:rounded-l-full last:rounded-r-full"
+                    style={{
+                      width: `${(p.count / priorityTotal) * 100}%`,
+                      background: PRIORITY_COLOR[p.priority] || '#94a3b8',
+                    }}
+                    title={`${p.priority}: ${p.count} (${Math.round((p.count / priorityTotal) * 100)}%)`}
+                  />
+                ))}
+              </div>
+            )}
+
             <div className="grid grid-cols-4 gap-2">
               {byPriority.map(p => (
                 <div

@@ -18,7 +18,12 @@ class HelpdeskDashboardController extends Controller
     /* ── Manager analytics ─────────────────────────────────────── */
     public function analytics(Request $request)
     {
-        $data = $this->helpdesk->analytics($request->user()->tenant_id);
+        $data = $this->helpdesk->analytics(
+            $request->user()->tenant_id,
+            $request->user()->id,
+            $request->user()->role,
+            $request->user()->email,
+        );
 
         return $this->success($data, 'Analytics retrieved');
     }

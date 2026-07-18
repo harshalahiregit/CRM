@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   Search, Plus, X, Inbox, Clock, CheckCircle2, Circle, User, Zap,
   Download, Columns3, Rows3, AlignJustify, ArrowUp, ArrowDown, ChevronsUpDown,
-  Trash2, UserCheck, AlertCircle, Check, Sparkles,
+  Trash2, UserCheck, AlertCircle, Check, Sparkles, RotateCcw,
 } from 'lucide-react'
 import { helpdeskApi } from '@/services/helpdeskApi'
 import { useAuth } from '@/context/AuthContext'
@@ -103,6 +103,7 @@ export default function TicketGrid() {
     closed: tickets.filter(t => t.status === 'closed').length,
     unassigned: tickets.filter(t => !t.assigned_to).length,
     unseen: tickets.filter(t => t.is_new).length,
+    reopened: tickets.filter(t => t.is_reopened).length,
   }), [tickets])
 
   // Only the single most-recently-raised ticket that's still unseen gets the
@@ -121,7 +122,8 @@ export default function TicketGrid() {
     const out = tickets.filter(t => {
       if (view === 'unassigned' && t.assigned_to) return false
       if (view === 'unseen' && !t.is_new) return false
-      if (view !== 'all' && view !== 'unassigned' && view !== 'unseen' && t.status !== view) return false
+      if (view === 'reopened' && !t.is_reopened) return false
+      if (view !== 'all' && view !== 'unassigned' && view !== 'unseen' && view !== 'reopened' && t.status !== view) return false
       if (term && !(`${t.subject} ${t.requester_name || ''} #${t.id}`.toLowerCase().includes(term))) return false
       return true
     })
@@ -138,9 +140,27 @@ export default function TicketGrid() {
   const toggleAll = () => setSelected(allSelected ? new Set() : new Set(rows.map(t => t.id)))
   const toggleOne = (id) => setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
 
+  // Row status change — optimistic so the pill flips instantly instead of waiting
+  // on a full list refetch. Patch the row in cache, roll back on error, then
+  // reconcile the list + sidebar badges once settled.
   const rowStatus = useMutation({
     mutationFn: ({ id, status }) => helpdeskApi.tickets.setStatus(id, status),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['helpdesk-tickets'] }),
+    onMutate: async ({ id, status }) => {
+      await qc.cancelQueries({ queryKey: ['helpdesk-tickets'] })
+      const prev = qc.getQueryData(['helpdesk-tickets'])
+      qc.setQueryData(['helpdesk-tickets'], (old) => {
+        if (!old) return old
+        const patch = (row) => row.id === id ? { ...row, status } : row
+        return Array.isArray(old) ? old.map(patch) : { ...old, data: (old.data || []).map(patch) }
+      })
+      return { prev }
+    },
+    onError: (_e, _v, ctx) => { if (ctx?.prev !== undefined) qc.setQueryData(['helpdesk-tickets'], ctx.prev) },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['helpdesk-tickets'] })
+      qc.invalidateQueries({ queryKey: ['helpdesk-status-counts'] })
+      qc.invalidateQueries({ queryKey: ['helpdesk-unseen-count'] })
+    },
   })
   // REQ-05: opening a ticket marks it seen for THIS user. Clear its "new" dot in
   // the grid cache optimistically (instant feedback), fire the PATCH best-effort,
@@ -189,6 +209,7 @@ export default function TicketGrid() {
     { key: 'open', label: 'Open', icon: Circle },
     { key: 'in-progress', label: 'In Progress', icon: Clock },
     { key: 'closed', label: 'Closed', icon: CheckCircle2 },
+    { key: 'reopened', label: 'Reopened', icon: RotateCcw },
     { key: 'unassigned', label: 'Unassigned', icon: User },
   ]
   const cols = ALL_COLS.filter(c => !hidden.has(c.key))
@@ -389,6 +410,12 @@ export default function TicketGrid() {
                             <span className="font-semibold" style={{ color: 'var(--text-h)' }}>{t.subject}</span>
                             <span className="ml-2 text-xs" style={{ color: 'var(--text-muted)', fontFamily: 'monospace' }}>#{t.id}</span>
                             {t.source === 'widget' && <span className="ml-1.5 inline-flex items-center gap-0.5 text-[10px]" style={{ color: ACCENT }}><Zap size={9} />widget</span>}
+                            {t.is_reopened && (
+                              <span className="ml-1.5 inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full align-middle" title="This ticket was reopened"
+                                style={{ background: 'color-mix(in srgb, var(--color-warning-500) 16%, transparent)', color: 'var(--color-warning-500)', border: '1px solid color-mix(in srgb, var(--color-warning-500) 30%, transparent)' }}>
+                                <RotateCcw size={9} />Reopened
+                              </span>
+                            )}
                           </div>
                         )}
                         {c.key === 'requester' && (() => {

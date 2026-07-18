@@ -52,7 +52,6 @@ const TicketGrid = lazy(() => import('@/modules/helpdesk/pages/TicketGrid'))
 const KnowledgeBaseHome = lazy(() => import('@/modules/helpdesk/pages/KnowledgeBaseHome'))
 const KbArticleView = lazy(() => import('@/modules/helpdesk/pages/KbArticleView'))
 const KbAdmin = lazy(() => import('@/modules/helpdesk/pages/KbAdmin'))
-const MyTasks = lazy(() => import('@/modules/helpdesk/pages/MyTasks'))
 const WidgetSettings = lazy(() => import('@/modules/helpdesk/pages/WidgetSettings'))
 const SupportSettings = lazy(() => import('@/modules/helpdesk/pages/SupportSettings'))
 const StatusManager = lazy(() => import('@/modules/settings/pages/StatusManager'))
@@ -177,7 +176,6 @@ export default function AppRoutes() {
         <Route path="helpdesk" element={<S><HelpdeskLayout /></S>}>
           <Route index element={<Navigate to="analytics" replace />} />
           <Route path="analytics" element={<S><HelpdeskAnalytics /></S>} />
-          <Route path="my-tasks" element={<S><MyTasks /></S>} />
           <Route path="tickets" element={<S><TicketGrid /></S>} />
           <Route path="tickets/:id" element={<S><TicketThread /></S>} />
           <Route path="knowledge-base" element={<S><KnowledgeBaseHome /></S>} />

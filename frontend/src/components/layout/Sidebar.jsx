@@ -59,7 +59,6 @@ const SALES_SUB_ITEMS = [
 
 const HELPDESK_SUB_ITEMS = [
   { label: 'Analytics', path: '/app/helpdesk/analytics', icon: BarChart2 },
-  { label: 'My Tasks', path: '/app/helpdesk/my-tasks', icon: CheckSquare },
   { label: 'Tickets', path: '/app/helpdesk/tickets', icon: LifeBuoy },
   { label: 'Knowledge Base', path: '/app/helpdesk/knowledge-base', icon: FileText },
   { label: 'KB Admin', path: '/app/helpdesk/kb-admin', icon: FileText },
