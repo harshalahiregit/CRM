@@ -90,6 +90,9 @@ export const helpdeskApi = {
     // REQ-04-lite: count of visible tickets the current user hasn't opened yet.
     unseenCount: () =>
       api.get('/helpdesk/tickets/unseen-count').then(unwrap).catch(handleErr),
+    // Sidebar badge: open / in-progress / closed counts (visibility-scoped).
+    statusCounts: () =>
+      api.get('/helpdesk/tickets/status-counts').then(unwrap).catch(handleErr),
 
     // Integration with Projects / Tasks
     linkProject: (id, project_id) =>

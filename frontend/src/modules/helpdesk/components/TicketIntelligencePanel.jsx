@@ -9,6 +9,7 @@ import { helpdeskApi } from '@/services/helpdeskApi'
 import SLABadge from './ui/SLABadge'
 import SlaTimer from './ui/SlaTimer'
 import Select from './ui/Select'
+import { ConfirmModal } from '@/components/ui/SearchPicker'
 
 const fmtWhen = ts =>
   ts
@@ -226,6 +227,10 @@ function PropertiesSection({ ticketId }) {
   const setStatus = useMutation({ mutationFn: (s) => helpdeskApi.tickets.setStatus(ticketId, s), onMutate: (s) => patchOpt({ status: s }), onError: rollback, onSettled: invalidate })
   const update = useMutation({ mutationFn: (data) => helpdeskApi.tickets.update(ticketId, data), onMutate: (data) => patchOpt(data), onError: rollback, onSettled: invalidate })
 
+  // Changing status (e.g. closing a ticket) is a decision worth confirming, so
+  // a stray click on the dropdown can't silently resolve a live ticket.
+  const [pendingStatus, setPendingStatus] = useState(null)
+
   if (!ticket) return null
 
   const SEL = 'w-full text-xs rounded-xl px-2.5 py-2 outline-none'
@@ -238,12 +243,21 @@ function PropertiesSection({ ticketId }) {
         <Field label="Status">
           <Select
             value={ticket.status}
-            onChange={v => setStatus.mutate(v)}
+            onChange={v => { if (v && v !== ticket.status) setPendingStatus(v) }}
             options={(settings?.statuses || []).map(s => ({ value: s.name, label: s.name, dot: s.color }))}
             size="sm"
             ariaLabel="Status"
           />
         </Field>
+
+        <ConfirmModal
+          open={Boolean(pendingStatus)}
+          onClose={() => setPendingStatus(null)}
+          onConfirm={() => { setStatus.mutate(pendingStatus); setPendingStatus(null) }}
+          title="Change ticket status?"
+          message={`Set this ticket to "${pendingStatus}"? The requester may be emailed and the SLA clock adjusts accordingly.`}
+          confirmLabel={`Set ${pendingStatus || ''}`.trim()}
+        />
 
         <Field label="Priority">
           <Select
@@ -348,6 +362,11 @@ function TagsSection({ ticketId }) {
           <Plus size={12} />
         </button>
       </div>
+      {(add.isError || remove.isError) && (
+        <p className="text-[11px] font-semibold mt-1.5" style={{ color: 'var(--color-danger-500)' }}>
+          {add.error?.message || remove.error?.message || 'That tag action failed.'}
+        </p>
+      )}
     </Section>
   )
 }
@@ -425,6 +444,9 @@ function RemindersSection({ ticketId }) {
     onSuccess: () => { setForm({ remind_at: '', note: '' }); invalidate() },
   })
   const toggle = useMutation({ mutationFn: (id) => helpdeskApi.tickets.reminderDone(id), onSuccess: invalidate })
+  // Reminders are delivered by the `helpdesk:run-reminders` scheduled command,
+  // which fires in-app + email at remind_at — it only runs when the scheduler
+  // (`php artisan schedule:work`) is up.
 
   return (
     <Section icon={Bell} title="Reminders" count={reminders.length} accent="#0891b2">
@@ -481,8 +503,12 @@ function RemindersSection({ ticketId }) {
           style={{ background: 'rgba(8,145,178,0.12)', color: '#22d3ee' }}
         >
           <Bell size={12} />
-          Set Reminder
+          {add.isPending ? 'Setting…' : 'Set Reminder'}
         </button>
+        {add.isError && (
+          <p className="text-[11px] font-semibold" style={{ color: 'var(--color-danger-500)' }}>{add.error?.message || 'Could not set the reminder.'}</p>
+        )}
+        <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Fires in-app + email at the set time (needs the scheduler running).</p>
       </div>
     </Section>
   )

@@ -120,10 +120,14 @@ const isComposerEmpty = (html) => {
 // Repaints Quill's hard-coded light skin from design tokens so the reply composer
 // follows light/dark, plus styles for rendering stored reply HTML in the thread.
 const REPLY_EDITOR_CSS = `
-  .reply-editor .ql-toolbar.ql-snow{border:0;border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--bg-input);padding:8px 12px}
-  .reply-editor .ql-container.ql-snow{border:0;background:transparent;font-family:inherit;font-size:14px}
-  .reply-editor .ql-editor{min-height:140px;max-height:420px;overflow-y:auto;color:var(--text-h);line-height:1.6;padding:12px 16px}
-  .reply-editor .ql-editor.ql-blank::before{color:var(--text-muted);opacity:.6;font-style:normal;left:16px;right:16px}
+  .reply-editor{border:1px solid var(--border);border-radius:14px;overflow:hidden;background:var(--bg-input)}
+  .reply-editor:focus-within{border-color:var(--color-support-500);box-shadow:0 0 0 3px color-mix(in srgb,var(--color-support-500) 18%,transparent)}
+  .reply-editor .ql-toolbar.ql-snow{border:0;border-bottom:1px solid var(--border);background:var(--bg-card);padding:10px 14px}
+  .reply-editor .ql-toolbar.ql-snow .ql-formats{margin-right:14px}
+  .reply-editor .ql-container.ql-snow{border:0;background:transparent;font-family:inherit;font-size:14.5px}
+  .reply-editor .ql-editor{min-height:200px;max-height:520px;overflow-y:auto;color:var(--text-h);line-height:1.7;padding:16px 18px}
+  .reply-editor .ql-editor p{margin-bottom:8px}
+  .reply-editor .ql-editor.ql-blank::before{color:var(--text-muted);opacity:.6;font-style:normal;left:18px;right:18px}
   .reply-editor .ql-editor a{color:var(--color-support-500)}
   .reply-editor .ql-editor pre.ql-syntax{background:var(--bg-global);color:var(--text-body);border:1px solid var(--border);border-radius:8px}
   .reply-editor .ql-editor img{max-width:100%;border-radius:8px;border:1px solid var(--border)}

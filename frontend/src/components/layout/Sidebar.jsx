@@ -101,6 +101,16 @@ export default function Sidebar({ collapsed, onToggle }) {
     retry: false,
   })
   const unseenCount = unseen?.count ?? 0
+  // Open / closed counts for the Tickets row — "O6 C5" style, colour-coded.
+  const { data: statusCounts } = useQuery({
+    queryKey: ['helpdesk-status-counts'],
+    queryFn: () => helpdeskApi.tickets.statusCounts(),
+    enabled: isInternal,
+    refetchInterval: 30000,
+    refetchIntervalInBackground: false,
+    staleTime: 15000,
+    retry: false,
+  })
 
   const handleLogout = async () => { await logout(); navigate('/auth/login') }
 
@@ -310,27 +320,35 @@ export default function Sidebar({ collapsed, onToggle }) {
             {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Helpdesk & Support</span><ChevronDown size={13} className={clsx('transition-transform duration-200', helpdeskExpanded && 'rotate-180')} /></>}
           </button>
           {(helpdeskExpanded || collapsed) && HELPDESK_SUB_ITEMS.map(({ label, path, icon: Icon }) => {
-            // REQ-04-lite: the Tickets row carries the unseen-count badge.
-            const showBadge = label === 'Tickets' && unseenCount > 0
+            // The Tickets row shows Open / Closed counts (colour-coded) plus a
+            // small "new" dot when there are unseen tickets.
+            const isTickets = label === 'Tickets'
+            const openN = statusCounts?.open ?? 0
+            const closedN = statusCounts?.closed ?? 0
+            const showCounts = isTickets && (openN > 0 || closedN > 0)
+            const showDot = isTickets && unseenCount > 0
             return (
             <NavLink key={path} to={path}>
               {({ isActive }) => (
                 <div title={collapsed ? label : ''} className={clsx('nav-3d mb-0.5', isActive && 'nav-3d-active')} style={{ justifyContent: collapsed ? 'center' : undefined, paddingLeft: collapsed ? undefined : '28px' }}>
                   <div className="relative flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: isActive ? 'rgba(255,255,255,0.15)' : 'rgba(6,182,212,0.06)' }}>
                     <Icon size={12} />
-                    {/* Collapsed rail: a bare dot stands in for the number. */}
-                    {showBadge && collapsed && (
+                    {/* Collapsed rail: a bare dot stands in for the counts. */}
+                    {showDot && collapsed && (
                       <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full" style={{ background: 'var(--color-danger-500)', border: '1px solid var(--bg-card)' }} />
                     )}
                   </div>
                   {!collapsed && <span className="truncate text-xs">{label}</span>}
-                  {showBadge && !collapsed && (
-                    <span className="ml-auto text-[10px] font-bold rounded-full flex items-center justify-center"
-                      style={{ background: 'var(--color-danger-500)', color: '#fff', minWidth: 18, height: 16, padding: '0 5px' }}>
-                      {unseenCount > 99 ? '99+' : unseenCount}
+                  {isTickets && !collapsed && showCounts && (
+                    <span className="ml-auto flex items-center gap-1">
+                      {showDot && <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--color-danger-500)' }} title={`${unseenCount} new`} />}
+                      <span className="text-[10px] font-bold rounded-md px-1.5 py-0.5" title={`${openN} open`}
+                        style={{ background: 'rgba(34,211,238,0.16)', color: '#22d3ee' }}>O{openN}</span>
+                      <span className="text-[10px] font-bold rounded-md px-1.5 py-0.5" title={`${closedN} closed`}
+                        style={{ background: 'rgba(16,185,129,0.16)', color: '#10b981' }}>C{closedN}</span>
                     </span>
                   )}
-                  {isActive && !collapsed && !showBadge && <div className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: '#67e8f9' }} />}
+                  {isActive && !collapsed && !showCounts && <div className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: '#67e8f9' }} />}
                 </div>
               )}
             </NavLink>

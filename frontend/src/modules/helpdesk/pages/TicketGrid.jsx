@@ -11,6 +11,7 @@ import { useAuth } from '@/context/AuthContext'
 import SLABadge from '../components/ui/SLABadge'
 import SlaTimer from '../components/ui/SlaTimer'
 import Select from '../components/ui/Select'
+import { ConfirmModal } from '@/components/ui/SearchPicker'
 
 /* ───────────────────────────────────────────────────────────────
    Universal Data Grid — Ticket inbox (SDS "Nova" flagship component).
@@ -72,6 +73,8 @@ export default function TicketGrid() {
   const [density, setDensity] = useState(() => loadPref('hd-grid-density', 'comfortable'))
   const [hidden, setHidden] = useState(() => new Set(loadPref('hd-grid-hidden', [])))
   const [colMenu, setColMenu] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)   // bulk-delete guard
+  const [bulkErr, setBulkErr] = useState('')
 
   useEffect(() => { localStorage.setItem('hd-grid-density', JSON.stringify(density)) }, [density])
   useEffect(() => { localStorage.setItem('hd-grid-hidden', JSON.stringify([...hidden])) }, [hidden])
@@ -101,6 +104,16 @@ export default function TicketGrid() {
     unassigned: tickets.filter(t => !t.assigned_to).length,
     unseen: tickets.filter(t => t.is_new).length,
   }), [tickets])
+
+  // Only the single most-recently-raised ticket that's still unseen gets the
+  // "new" highlight — a spotlight on the latest arrival, not a wall of glowing
+  // rows. Once it's opened (is_new clears) the next newest unseen takes over.
+  const newestNewId = useMemo(() => {
+    const fresh = tickets.filter(t => t.is_new)
+    if (!fresh.length) return null
+    return fresh.reduce((a, b) =>
+      new Date(b.created_at || 0) > new Date(a.created_at || 0) ? b : a).id
+  }, [tickets])
 
   const rows = useMemo(() => {
     const term = q.trim().toLowerCase()
@@ -155,7 +168,11 @@ export default function TicketGrid() {
       if (action === 'assign') await Promise.all(ids.map(id => helpdeskApi.tickets.assign(id, value)))
       if (action === 'delete') await Promise.all(ids.map(id => helpdeskApi.tickets.remove(id)))
     },
-    onSuccess: () => { setSelected(new Set()); qc.invalidateQueries({ queryKey: ['helpdesk-tickets'] }) },
+    onMutate: () => setBulkErr(''),
+    onSuccess: () => { setSelected(new Set()); setConfirmDelete(false); qc.invalidateQueries({ queryKey: ['helpdesk-tickets'] }); qc.invalidateQueries({ queryKey: ['helpdesk-status-counts'] }) },
+    // Without this, a failed bulk action cleared nothing and showed nothing —
+    // it just looked like the buttons did nothing. Now the reason surfaces.
+    onError: (e) => setBulkErr(e?.message || 'That action failed. Please try again.'),
   })
 
   const exportCsv = () => {
@@ -286,9 +303,12 @@ export default function TicketGrid() {
               ariaLabel="Assign selected tickets to an agent"
             />
             {user?.id && <BulkBtn icon={UserCheck} label="Assign to me" onClick={() => bulk.mutate({ action: 'assign', value: user.id })} />}
-            {canDeleteSelected && <BulkBtn icon={Trash2} label="Delete" danger onClick={() => bulk.mutate({ action: 'delete' })} />}
-            <button onClick={() => setSelected(new Set())} className="text-xs font-semibold px-2" style={{ color: 'var(--text-muted)' }}>Clear</button>
+            {canDeleteSelected && <BulkBtn icon={Trash2} label="Delete" danger onClick={() => setConfirmDelete(true)} />}
+            <button onClick={() => { setSelected(new Set()); setBulkErr('') }} className="text-xs font-semibold px-2" style={{ color: 'var(--text-muted)' }}>Clear</button>
           </div>
+        )}
+        {bulkErr && (
+          <div className="px-4 py-2 text-xs font-semibold" style={{ background: 'color-mix(in srgb, var(--color-danger-500) 12%, transparent)', color: 'var(--color-danger-500)', borderBottom: '1px solid var(--border)' }}>{bulkErr}</div>
         )}
 
         <div className="overflow-x-auto">
@@ -343,17 +363,16 @@ export default function TicketGrid() {
                     style={{
                       borderBottom: '1px solid var(--border)',
                       background: isSel ? 'var(--bg-input)' : 'transparent',
-                      // REQ-05: a brand-new (unseen) ticket gets a primary left-border
-                      // glow so it reads as new at a glance; transparent otherwise so
-                      // rows stay aligned once opened.
-                      borderLeft: t.is_new ? '3px solid var(--color-primary-500)' : '3px solid transparent',
-                      boxShadow: t.is_new ? 'inset 8px 0 12px -8px var(--color-primary-500)' : 'none',
+                      // Only the latest just-raised ticket is spotlighted (primary
+                      // left-border glow), not every unseen row.
+                      borderLeft: t.id === newestNewId ? '3px solid var(--color-primary-500)' : '3px solid transparent',
+                      boxShadow: t.id === newestNewId ? 'inset 8px 0 12px -8px var(--color-primary-500)' : 'none',
                     }}
                     onMouseEnter={e => { if (!isSel) e.currentTarget.style.background = 'var(--bg-card-hover)' }}
                     onMouseLeave={e => { if (!isSel) e.currentTarget.style.background = 'transparent' }}>
                     <td style={{ padding: rowPad, position: 'relative' }} onClick={e => e.stopPropagation()}>
-                      {t.is_new && (
-                        <span className="absolute left-1 top-1/2 -translate-y-1/2 flex h-2 w-2" title="New — not seen yet">
+                      {t.id === newestNewId && (
+                        <span className="absolute left-1 top-1/2 -translate-y-1/2 flex h-2 w-2" title="Newest ticket — just raised">
                           <span className="animate-ping absolute inline-flex h-full w-full rounded-full" style={{ background: 'var(--color-primary-500)', opacity: 0.55 }} />
                           <span className="relative inline-flex rounded-full h-2 w-2" style={{ background: 'var(--color-primary-500)' }} />
                         </span>
@@ -423,6 +442,16 @@ export default function TicketGrid() {
         <NewTicketModal settings={settings} onClose={() => setShowNew(false)}
           onCreated={(id) => { qc.invalidateQueries({ queryKey: ['helpdesk-tickets'] }); setShowNew(false); navigate(`/app/helpdesk/tickets/${id}`) }} />
       )}
+
+      <ConfirmModal
+        open={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={() => bulk.mutate({ action: 'delete' })}
+        title={`Delete ${selected.size} ticket${selected.size === 1 ? '' : 's'}?`}
+        message="This permanently removes the selected tickets and their replies. This can't be undone."
+        confirmLabel="Delete"
+        danger
+      />
     </div>
   )
 }

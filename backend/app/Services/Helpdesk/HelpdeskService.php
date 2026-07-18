@@ -221,6 +221,34 @@ class HelpdeskService
             ->count();
     }
 
+    /**
+     * Ticket counts by open/in-progress/closed for the sidebar badge, scoped to
+     * what THIS user can see (same visibility as listTickets). "closed" folds in
+     * every status flagged is_closed_status so a renamed close status still counts.
+     */
+    public function statusCounts(int $tenantId, int $userId, string $role): array
+    {
+        $this->assertInternal($role);
+
+        $scoped = ! $this->isGlobalTicketManager($tenantId, $userId, $role);
+        $managedDepts = $scoped ? $this->managedDepartmentIds($tenantId, $userId) : [];
+        $visibility = $scoped ? ['user_id' => $userId, 'dept_ids' => $managedDepts] : null;
+
+        $closedNames = \App\Models\Helpdesk\TicketStatus::forTenant($tenantId)
+            ->where('is_closed_status', true)->pluck('name')->all();
+
+        $rows = $this->tickets->filtered($tenantId, [], $visibility);
+
+        $closed = $rows->filter(fn (Ticket $t) => in_array($t->status, $closedNames, true))->count();
+
+        return [
+            'open'        => $rows->where('status', 'open')->count(),
+            'in_progress' => $rows->where('status', 'in-progress')->count(),
+            'closed'      => $closed,
+            'total'       => $rows->count(),
+        ];
+    }
+
     public function showTicket(int $ticketId, int $tenantId, ?int $userId = null, ?string $role = null): Ticket
     {
         $ticket = $this->findTicket($ticketId, $tenantId);

@@ -80,6 +80,7 @@ Route::middleware('auth:sanctum')->prefix('helpdesk')->group(function () {
     // Static segment declared BEFORE /tickets/{ticket} so "unseen-count" is never
     // captured as a ticket id (belt-and-braces: {ticket} is also numeric-only).
     Route::get('/tickets/unseen-count',       [TicketController::class, 'unseenCount']);
+    Route::get('/tickets/status-counts',      [TicketController::class, 'statusCounts']);
     Route::post('/tickets',                   [TicketController::class, 'store']);
     Route::get('/tickets/{ticket}',           [TicketController::class, 'show'])->whereNumber('ticket');
     Route::put('/tickets/{ticket}',           [TicketController::class, 'update']);

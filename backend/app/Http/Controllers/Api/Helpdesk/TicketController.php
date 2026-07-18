@@ -246,6 +246,18 @@ class TicketController extends Controller
         return $this->success(['count' => $count], 'Unseen count retrieved');
     }
 
+    /* ── Sidebar status counts (open / in-progress / closed) ───── */
+    public function statusCounts(Request $request)
+    {
+        $counts = $this->helpdesk->statusCounts(
+            $request->user()->tenant_id,
+            $request->user()->id,
+            $request->user()->role,
+        );
+
+        return $this->success($counts, 'Status counts retrieved');
+    }
+
     /* ── Submit CSAT feedback ──────────────────────────────────── */
     public function feedback(Request $request, int $ticket)
     {
