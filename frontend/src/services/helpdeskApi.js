@@ -86,6 +86,11 @@ export const helpdeskApi = {
     assign: (id, assignedTo) =>
       api.patch(`/helpdesk/tickets/${id}/assign`, { assigned_to: assignedTo }).then(unwrap).catch(handleErr),
 
+    // Bulk status / assign / delete over the current selection in ONE request
+    // (instead of one HTTP call per ticket). Returns { ok: [ids], failed: [{id,reason}] }.
+    bulk: ({ action, ids, value }) =>
+      api.post('/helpdesk/tickets/bulk', { action, ids, value }).then(unwrap).catch(handleErr),
+
     feedback: (id, data) =>
       api.post(`/helpdesk/tickets/${id}/feedback`, data).then(unwrap).catch(handleErr),
 

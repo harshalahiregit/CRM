@@ -325,6 +325,14 @@ class HelpdeskService
             throw new BusinessException('The selected customer does not exist.', 422);
         }
 
+        // "Raise Ticket" from a project/task carries a project_id. Re-check tenant
+        // ownership here (defence in depth) and drop a dangling ref rather than
+        // failing the whole ticket — the link is a convenience, not a requirement.
+        $projectId = ! empty($data['project_id']) ? (int) $data['project_id'] : null;
+        if ($projectId && ! \App\Models\Project\Project::forTenant($tenantId)->whereKey($projectId)->exists()) {
+            $projectId = null;
+        }
+
         $ticket = $this->tickets->create([
             'tenant_id'       => $tenantId,
             'subject'         => $data['subject'],
@@ -344,6 +352,7 @@ class HelpdeskService
             'source'          => $data['source'] ?? 'internal',
             'requester_name'  => $data['requester_name'] ?? null,
             'requester_email' => $data['requester_email'] ?? null,
+            'project_id'      => $projectId,
         ]);
 
         // Acknowledge the requester with their ticket number (email threading on).
@@ -383,13 +392,33 @@ class HelpdeskService
      */
     private function notifyTicketManagers(Ticket $ticket): void
     {
+        $this->notifyManagers($ticket, 'ticket.created', "New ticket #{$ticket->id} — needs assignment", $ticket->subject);
+    }
+
+    /**
+     * Fan a helpdesk event out to everyone who TRACKS the ticket: the tenant's
+     * ticket managers, the ticket's department managers, and every admin (an admin
+     * follows ALL activity, per the product rule — not just new tickets). This is
+     * what keeps the admin's bell in step with every status change, assignment and
+     * reply, instead of only ticket creation.
+     *
+     * The actor is self-suppressed by notify() (actorId === recipient → dropped),
+     * so whoever performed the action is never pinged about their own move. An
+     * optional $excludeUserId skips a recipient already told directly (e.g. the
+     * assignee) so they don't get the same event twice.
+     */
+    private function notifyManagers(Ticket $ticket, string $type, string $title, ?string $message, ?int $excludeUserId = null): void
+    {
         foreach ($this->ticketManagerIds($ticket) as $uid) {
+            if ($excludeUserId !== null && (int) $uid === $excludeUserId) {
+                continue;
+            }
             $this->notifications->notify(
                 userId: (int) $uid,
                 tenantId: $ticket->tenant_id,
-                type: 'ticket.created',
-                title: "New ticket #{$ticket->id} — needs assignment",
-                message: $ticket->subject,
+                type: $type,
+                title: $title,
+                message: $message,
                 link: "/app/helpdesk/tickets/{$ticket->id}",
                 actorId: auth()->id(),
             );
@@ -515,6 +544,12 @@ class HelpdeskService
             if ($ticket->status === 'closed' && $oldStatus !== 'closed') {
                 TicketClosed::dispatch($ticket->fresh());
             }
+
+            // A status change through the edit form is the same event as one made
+            // from the status pill — tell the raiser and the tracking managers/admins
+            // here too, or editing a ticket's status would silently skip both.
+            $this->notifyRaiser($ticket, 'ticket.status', "Ticket #{$ticket->id} is now {$ticket->status}", $ticket->subject);
+            $this->notifyManagers($ticket, 'ticket.status', "Ticket #{$ticket->id} → {$ticket->status}", $ticket->subject, excludeUserId: $this->raiserUserId($ticket));
         }
 
         // Likewise, being handed a ticket through the edit form told the new
@@ -564,9 +599,15 @@ class HelpdeskService
             TicketClosed::dispatch($ticket->fresh());
         }
 
-        // Keep the raiser in the loop in-app, mirroring the status email they get.
+        // Keep the raiser in the loop in-app, mirroring the status email they get,
+        // and put the same activity in front of the managers/admins who track this
+        // ticket — a status move is exactly the kind of activity the admin follows.
         if ($status !== $was) {
             $this->notifyRaiser($ticket, 'ticket.status', "Ticket #{$ticket->id} is now {$status}", $ticket->subject);
+            // Exclude the raiser from the manager fan-out: when the person who raised
+            // the ticket is themselves a manager/admin, notifyRaiser already told them
+            // — without this they'd get the same status change twice.
+            $this->notifyManagers($ticket, 'ticket.status', "Ticket #{$ticket->id} → {$status}", $ticket->subject, excludeUserId: $this->raiserUserId($ticket));
         }
 
         return $ticket->fresh('assignee');
@@ -642,21 +683,33 @@ class HelpdeskService
             // The raiser gets the reply by email; if they're also a CRM user, give
             // them the in-app bell too so the two surfaces agree.
             $this->notifyRaiser($fresh, 'ticket.reply', "New reply on your ticket #{$fresh->id}", $data['message'] ?? $fresh->subject);
+
+            // Managers/admins track replies too. The staff member who wrote it is
+            // self-suppressed (actorId), and the raiser was just told directly above
+            // — exclude them so a raiser who is also a manager isn't told twice.
+            $this->notifyManagers($fresh, 'ticket.reply', "Reply added to ticket #{$fresh->id}", $fresh->subject, excludeUserId: $this->raiserUserId($fresh));
         } else {
             // A customer wrote in — tell whoever owns the ticket. If the reply
             // reopened a closed ticket, say so: that's the part an agent must not
             // miss (it moved back onto their queue).
             $reopened = $wasClosed && $fresh->status !== 'closed';
+            $type  = $reopened ? 'ticket.reopened' : 'ticket.customer_replied';
+            $title = $reopened
+                ? "Ticket #{$fresh->id} reopened by the customer"
+                : "New customer reply on ticket #{$fresh->id}";
             $this->notifications->notify(
                 userId: $fresh->assigned_to,
                 tenantId: $tenantId,
-                type: $reopened ? 'ticket.reopened' : 'ticket.customer_replied',
-                title: $reopened
-                    ? "Ticket #{$fresh->id} reopened by the customer"
-                    : "New customer reply on ticket #{$fresh->id}",
+                type: $type,
+                title: $title,
                 message: $data['message'] ?? $fresh->subject,
                 link: "/app/helpdesk/tickets/{$fresh->id}",
             );
+
+            // ...and the managers/admins who track this ticket, so a customer reply
+            // or a customer-triggered reopen shows on the admin's bell too — not just
+            // the assignee's. Skip the assignee: they were just told directly above.
+            $this->notifyManagers($fresh, $type, $title, $fresh->subject, excludeUserId: $fresh->assigned_to);
         }
 
         return $reply;

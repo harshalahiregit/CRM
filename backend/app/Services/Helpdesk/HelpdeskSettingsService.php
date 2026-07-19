@@ -54,9 +54,43 @@ class HelpdeskSettingsService
         return [
             'priorities'  => TicketPriority::forTenant($tenantId)->orderBy('order')->get(),
             'statuses'    => TicketStatus::forTenant($tenantId)->orderBy('order')->get(),
-            'departments' => TicketDepartment::forTenant($tenantId)->orderBy('order')->get(),
+            'departments' => $this->departmentsWithAgents($tenantId),
             'settings'    => $this->settings($tenantId),
         ];
+    }
+
+    /**
+     * Departments, each decorated with the people the admin assigned to it
+     * (manager_ids) resolved to {id, name}. This is what lets the ticket form show
+     * WHO handles a department the moment it's picked — a ticket raised against a
+     * department is already notified to and visible to exactly these people
+     * (ticketManagerIds + department-manager visibility), so surfacing them here
+     * makes that routing visible instead of implicit. One name lookup for every id
+     * across all departments, never one query per department.
+     */
+    public function departmentsWithAgents(int $tenantId): \Illuminate\Support\Collection
+    {
+        $departments = TicketDepartment::forTenant($tenantId)->orderBy('order')->get();
+
+        $allIds = $departments
+            ->flatMap(fn (TicketDepartment $d) => array_map('intval', $d->manager_ids ?? []))
+            ->unique()->values()->all();
+
+        $names = $allIds
+            ? \App\Models\User::where('tenant_id', $tenantId)
+                ->whereIn('id', $allIds)
+                ->where('status', 'active')
+                ->whereNotIn('role', ['client', 'vendor', 'third_party_vendor'])
+                ->pluck('name', 'id')
+            : collect();
+
+        return $departments->each(function (TicketDepartment $d) use ($names) {
+            $agents = collect(array_map('intval', $d->manager_ids ?? []))
+                ->filter(fn ($id) => isset($names[$id]))
+                ->map(fn ($id) => ['id' => $id, 'name' => $names[$id]])
+                ->values()->all();
+            $d->setAttribute('managers', $agents);
+        });
     }
 
     /**

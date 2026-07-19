@@ -5,6 +5,7 @@ namespace App\Mail\Helpdesk;
 use App\Models\Helpdesk\Ticket;
 use App\Models\Helpdesk\TicketReply;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Address;
 use Illuminate\Mail\Mailables\Content;
@@ -16,7 +17,7 @@ use Illuminate\Queue\SerializesModels;
  * ticket thread (Reply-To is plus-addressed to the inbound address). This is the
  * outbound half of the "works like email, back and forth" flow.
  */
-class TicketReplyMail extends Mailable
+class TicketReplyMail extends Mailable implements ShouldQueue
 {
     use Queueable, SerializesModels;
 

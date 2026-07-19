@@ -4,6 +4,7 @@ namespace App\Mail\Helpdesk;
 
 use App\Models\Helpdesk\Ticket;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
@@ -14,7 +15,7 @@ use Illuminate\Queue\SerializesModels;
  * deep link into the workspace. This is the "it shows on Shivam's dashboard"
  * signal, delivered by email as well as in-app (/my-tasks).
  */
-class TicketAssignedMail extends Mailable
+class TicketAssignedMail extends Mailable implements ShouldQueue
 {
     use Queueable, SerializesModels;
 

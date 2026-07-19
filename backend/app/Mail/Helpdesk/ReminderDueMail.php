@@ -5,6 +5,7 @@ namespace App\Mail\Helpdesk;
 use App\Models\Helpdesk\Ticket;
 use App\Models\Helpdesk\TicketReminder;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
@@ -15,7 +16,7 @@ use Illuminate\Queue\SerializesModels;
  * reminder, sent alongside the in-app bell by helpdesk:run-reminders. Reminders
  * are self-set by an agent, so the recipient is always the reminder's owner.
  */
-class ReminderDueMail extends Mailable
+class ReminderDueMail extends Mailable implements ShouldQueue
 {
     use Queueable, SerializesModels;
 

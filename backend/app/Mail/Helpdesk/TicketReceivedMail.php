@@ -4,6 +4,7 @@ namespace App\Mail\Helpdesk;
 
 use App\Models\Helpdesk\Ticket;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Address;
 use Illuminate\Mail\Mailables\Content;
@@ -15,7 +16,7 @@ use Illuminate\Queue\SerializesModels;
  * the ticket number and the promise that replying to this email continues the
  * thread. Reply-To is the plus-addressed inbound address so a reply routes back.
  */
-class TicketReceivedMail extends Mailable
+class TicketReceivedMail extends Mailable implements ShouldQueue
 {
     use Queueable, SerializesModels;
 

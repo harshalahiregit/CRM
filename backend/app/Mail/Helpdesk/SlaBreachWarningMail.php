@@ -4,6 +4,7 @@ namespace App\Mail\Helpdesk;
 
 use App\Models\Helpdesk\Ticket;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
@@ -18,7 +19,7 @@ use Illuminate\Queue\SerializesModels;
  * the numbers anyway. Shape: [['clock' => 'response'|'resolution',
  * 'state' => 'at_risk'|'breached', 'due' => ISO8601 string], ...]
  */
-class SlaBreachWarningMail extends Mailable
+class SlaBreachWarningMail extends Mailable implements ShouldQueue
 {
     use Queueable, SerializesModels;
 

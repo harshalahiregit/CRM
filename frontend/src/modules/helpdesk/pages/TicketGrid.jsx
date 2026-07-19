@@ -181,15 +181,23 @@ export default function TicketGrid() {
     navigate(`/app/helpdesk/tickets/${t.id}`)
   }
 
+  // One request for the whole selection — the server applies each ticket with the
+  // same guards as the single routes and returns { ok, failed }. The old version
+  // fired one HTTP call PER ticket in parallel, which crawled on the single-threaded
+  // dev server and left the selection half-applied on any mid-way failure.
   const bulk = useMutation({
-    mutationFn: async ({ action, value }) => {
-      const ids = [...selected]
-      if (action === 'status') await Promise.all(ids.map(id => helpdeskApi.tickets.setStatus(id, value)))
-      if (action === 'assign') await Promise.all(ids.map(id => helpdeskApi.tickets.assign(id, value)))
-      if (action === 'delete') await Promise.all(ids.map(id => helpdeskApi.tickets.remove(id)))
-    },
+    mutationFn: ({ action, value }) => helpdeskApi.tickets.bulk({ action, ids: [...selected], value }),
     onMutate: () => setBulkErr(''),
-    onSuccess: () => { setSelected(new Set()); setConfirmDelete(false); qc.invalidateQueries({ queryKey: ['helpdesk-tickets'] }); qc.invalidateQueries({ queryKey: ['helpdesk-status-counts'] }) },
+    onSuccess: (res) => {
+      setSelected(new Set()); setConfirmDelete(false)
+      qc.invalidateQueries({ queryKey: ['helpdesk-tickets'] })
+      qc.invalidateQueries({ queryKey: ['helpdesk-status-counts'] })
+      qc.invalidateQueries({ queryKey: ['helpdesk-unseen-count'] })
+      // If the server skipped some tickets (e.g. no rights on a few), say so
+      // instead of silently pretending the whole batch went through.
+      const failed = res?.failed || []
+      if (failed.length) setBulkErr(`${failed.length} ticket${failed.length === 1 ? '' : 's'} skipped — ${failed[0].reason}`)
+    },
     // Without this, a failed bulk action cleared nothing and showed nothing —
     // it just looked like the buttons did nothing. Now the reason surfaces.
     onError: (e) => setBulkErr(e?.message || 'That action failed. Please try again.'),
@@ -513,13 +521,15 @@ function Checkbox({ checked, onChange, accent }) {
 const inp = { width: '100%', padding: '10px 13px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, outline: 'none', color: 'var(--text-h)', background: 'var(--bg-input)' }
 
 function NewTicketModal({ settings, onClose, onCreated }) {
-  const [form, setForm] = useState({ subject: '', description: '', priority: 'medium', status: 'open', department_id: '', requester_name: '', requester_email: '' })
+  const [form, setForm] = useState({ subject: '', description: '', priority: 'medium', status: 'open', department_id: '', assigned_to: '', requester_name: '', requester_email: '' })
   const create = useMutation({
     mutationFn: () => { const p = { ...form }; Object.keys(p).forEach(k => p[k] === '' && delete p[k]); return helpdeskApi.tickets.create(p) },
     onSuccess: (t) => onCreated(t.id),
   })
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
   const LBL = { display: 'block', fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 5 }
+  // People the admin assigned to the chosen department (the ticket routes to them).
+  const deptAgents = (settings?.departments || []).find(d => String(d.id) === String(form.department_id))?.managers || []
 
   return (
     <div className="fixed inset-0 z-[70] flex items-start justify-center bg-black/50" style={{ paddingTop: '8vh' }} onClick={onClose}>
@@ -545,9 +555,38 @@ function NewTicketModal({ settings, onClose, onCreated }) {
           </div>
           <div>
             <label style={LBL}>Department</label>
-            <Select value={form.department_id ?? ''} onChange={v => set('department_id', v)} placeholder="— none —" ariaLabel="Department"
+            <Select value={form.department_id ?? ''} onChange={v => setForm(f => ({ ...f, department_id: v, assigned_to: '' }))} placeholder="— none —" ariaLabel="Department"
               options={[{ value: '', label: '— none —' }, ...(settings?.departments || []).map(d => ({ value: d.id, label: d.name }))]} />
           </div>
+
+          {/* People the admin assigned to this department — the ticket routes to all
+              of them; tap one to assign it directly. */}
+          {form.department_id && (
+            <div className="rounded-xl p-3" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+              <p style={{ ...LBL, marginBottom: 8 }} className="flex items-center gap-1.5">
+                <UserCheck size={12} style={{ color: 'var(--color-support-500)' }} /> Handled by this department
+              </p>
+              {deptAgents.length === 0 ? (
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>No one assigned yet — it’ll go to the ticket managers.</p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {deptAgents.map(a => {
+                    const on = String(form.assigned_to) === String(a.id)
+                    return (
+                      <button type="button" key={a.id} onClick={() => set('assigned_to', on ? '' : a.id)}
+                        className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg"
+                        style={on
+                          ? { background: 'color-mix(in srgb, var(--color-support-500) 16%, transparent)', color: 'var(--color-support-500)', border: '1px solid var(--color-support-500)' }
+                          : { background: 'var(--bg-card)', color: 'var(--text-body)', border: '1px solid var(--border)' }}>
+                        {on && <Check size={12} />} {a.name}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-3">
             <div><label style={LBL}>Requester name</label><input style={inp} value={form.requester_name} onChange={e => set('requester_name', e.target.value)} /></div>
             <div><label style={LBL}>Requester email</label><input style={inp} value={form.requester_email} onChange={e => set('requester_email', e.target.value)} /></div>

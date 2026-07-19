@@ -32,6 +32,9 @@ class StoreTicketRequest extends FormRequest
             // replies when the ticket is raised on someone's behalf.
             'requester_name'  => 'nullable|string|max:255',
             'requester_email' => 'nullable|email|max:255',
+            // Link back to the project this ticket was raised from ("Raise Ticket"
+            // on a project/task). Tenant ownership is re-checked in the service.
+            'project_id'      => 'nullable|integer|min:1',
         ];
     }
 }

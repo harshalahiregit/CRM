@@ -263,6 +263,73 @@ class TicketController extends Controller
         return $this->success($counts, 'Status counts retrieved');
     }
 
+    /* ── Bulk actions: ONE request for the whole selection ─────────
+     *
+     * The grid used to fire one HTTP call PER selected ticket, in parallel. On the
+     * single-threaded dev server those serialize, and any that closed a ticket
+     * blocked on a synchronous email — so twenty tickets took most of a minute and
+     * a failure half-way left the selection partly applied with no word of why.
+     *
+     * This runs the whole batch in one request, guarding each ticket with the SAME
+     * rules as the single-ticket routes (view for status, assign-rights for assign,
+     * manage for delete), and reports exactly which ids were skipped and why so the
+     * grid can surface it instead of looking like nothing happened.
+     */
+    public function bulk(Request $request)
+    {
+        $data = $request->validate([
+            'action' => ['required', 'in:status,assign,delete'],
+            'ids'    => ['required', 'array', 'min:1', 'max:200'],
+            'ids.*'  => ['integer'],
+            'value'  => ['nullable'],
+        ]);
+
+        $u = $request->user();
+        $tenantId = $u->tenant_id;
+
+        // Validate a status value once, up front, against the tenant's real statuses
+        // — a bad value should fail the whole call, not be retried per ticket.
+        if ($data['action'] === 'status') {
+            $allowed = app(\App\Services\Helpdesk\HelpdeskSettingsService::class)->statusNames($tenantId);
+            if (! in_array($data['value'] ?? null, $allowed, true)) {
+                throw new \App\Exceptions\BusinessException('That status is not valid for this workspace.', 422);
+            }
+        }
+
+        $ok = [];
+        $failed = [];
+
+        foreach (array_values(array_unique($data['ids'])) as $rawId) {
+            $id = (int) $rawId;
+            try {
+                switch ($data['action']) {
+                    case 'status':
+                        $this->guardView($request, $id);
+                        $this->helpdesk->changeStatus($id, $data['value'], $tenantId);
+                        break;
+                    case 'assign':
+                        $this->helpdesk->assertCanAssign($id, $tenantId, $u->id, $u->role);
+                        $assignee = ($data['value'] ?? '') !== '' ? (int) $data['value'] : null;
+                        $this->assignment->assign($id, $assignee, $tenantId);
+                        break;
+                    case 'delete':
+                        $this->guardManage($request, $id);
+                        $this->helpdesk->deleteTicket($id, $tenantId);
+                        break;
+                }
+                $ok[] = $id;
+            } catch (\Throwable $e) {
+                $failed[] = ['id' => $id, 'reason' => $e->getMessage()];
+            }
+        }
+
+        $n = count($ok);
+        $msg = $n.' ticket'.($n === 1 ? '' : 's').' updated'
+            .(count($failed) ? ', '.count($failed).' skipped' : '');
+
+        return $this->success(['ok' => $ok, 'failed' => $failed], $msg);
+    }
+
     /* ── Submit CSAT feedback ──────────────────────────────────── */
     public function feedback(Request $request, int $ticket)
     {
