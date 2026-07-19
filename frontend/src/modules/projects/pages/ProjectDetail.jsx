@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft, RefreshCw, Plus, Users, Flag, Paperclip, Trash2, ListTodo, LifeBuoy,
-  Pencil, Copy, Pin, PinOff, MoreHorizontal, Download, Upload, ExternalLink, Check,
+  Pencil, Copy, Pin, PinOff, MoreHorizontal, Download, Upload, ExternalLink, Check, FileText,
 } from 'lucide-react'
 import { projectApi, PROJECT_STATUS, PROJECT_ACCENT } from '@/services/projectApi'
 import { useAuth } from '@/context/AuthContext'
@@ -14,7 +14,12 @@ import SearchPicker, { ConfirmModal } from '@/components/ui/SearchPicker'
 import { TagChips } from '@/components/ui/TagInput'
 import ProjectFormDrawer from '../components/ProjectFormDrawer'
 import { TimesheetsTab, NotesTab, ActivityTab } from '../components/ProjectTabs'
+import { MeetingsTab } from '../components/ProjectMeetings'
+import { DiscussionsTab } from '../components/ProjectDiscussions'
+import ProjectInvoiceModal from '../components/ProjectInvoiceModal'
 import ProjectGantt from '../components/ProjectGantt'
+import TaskFormDrawer from '../../tasks/components/TaskFormDrawer'
+import RaiseTicketModal from '../../helpdesk/components/RaiseTicketModal'
 
 /**
  * Project detail — Overview / Tasks / Milestones / Files / Tickets.
@@ -33,8 +38,10 @@ const TABS = [
   { key: 'tasks',      label: 'Tasks' },
   { key: 'milestones', label: 'Milestones' },
   { key: 'gantt',      label: 'Gantt' },
+  { key: 'meeting',    label: 'Meeting' },
   { key: 'timesheets', label: 'Timesheets' },
   { key: 'files',      label: 'Files' },
+  { key: 'discussions', label: 'Discussions' },
   { key: 'notes',      label: 'Notes' },
   { key: 'activity',   label: 'Activity' },
   { key: 'tickets',    label: 'Tickets' },
@@ -47,8 +54,11 @@ export default function ProjectDetail() {
   const { user } = useAuth()
   const { map: statusMap, list: statusList } = useStatuses('project')
 
-  const [tab, setTab] = useState('overview')
+  const [searchParams, setSearchParams] = useSearchParams()
   const [editing, setEditing] = useState(false)
+  const [invoicing, setInvoicing] = useState(false)
+  const [creatingTask, setCreatingTask] = useState(false)
+  const [raising, setRaising] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [err, setErr] = useState('')
@@ -98,6 +108,18 @@ export default function ProjectDetail() {
   // Admin or the creator may change the project; members are view-only (backend enforces).
   const canManage = user?.role === 'admin' || project.created_by === user?.id
 
+  // The tab bar is driven by the project's Visible-Tabs setting: only tabs the
+  // project switched on are shown (Overview is always present). Projects created
+  // before the setting existed have no bag → show every built tab (legacy).
+  const shownTabs = TABS.filter(t => t.key === 'overview' || !project.visible_tabs || project.visible_tabs[t.key])
+  // The active tab lives in the URL (?group=) so a tab is linkable/bookmarkable
+  // and survives a refresh. Fall back to Overview for an unknown/hidden group.
+  const requested = searchParams.get('group') || 'overview'
+  const tab = shownTabs.some(t => t.key === requested) ? requested : 'overview'
+  const setTab = (key) => setSearchParams(p => {
+    const n = new URLSearchParams(p); n.set('group', key); return n
+  }, { replace: true })
+
   return (
     <div className="max-w-5xl">
       <button onClick={() => navigate('/app/projects')} className="flex items-center gap-1.5 text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
@@ -118,10 +140,20 @@ export default function ProjectDetail() {
         </div>
 
         <div className="flex items-center gap-2">
-          <button onClick={() => navigate(`/app/tasks?rel_type=project&rel_id=${id}`)}
+          <button onClick={() => setCreatingTask(true)}
             className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl"
             style={{ background: `color-mix(in srgb, ${PROJECT_ACCENT} 14%, transparent)`, color: PROJECT_ACCENT }}>
             <ListTodo size={13} /> New Task
+          </button>
+          <button onClick={() => setRaising(true)}
+            className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl"
+            style={{ border: '1px solid var(--border)', color: 'var(--text-body)' }}>
+            <LifeBuoy size={13} /> Raise Ticket
+          </button>
+          <button onClick={() => setInvoicing(true)}
+            className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl"
+            style={{ border: '1px solid var(--border)', color: 'var(--text-body)' }}>
+            <FileText size={13} /> Invoice Project
           </button>
           <div style={{ minWidth: 150 }}>
             {canManage ? (
@@ -161,7 +193,7 @@ export default function ProjectDetail() {
 
       {/* Tabs */}
       <div className="flex items-center gap-1 mb-4 overflow-x-auto" style={{ borderBottom: '1px solid var(--border)' }}>
-        {TABS.map(t => (
+        {shownTabs.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className="px-3 py-2 text-xs font-bold whitespace-nowrap transition-colors"
             style={{
@@ -178,13 +210,27 @@ export default function ProjectDetail() {
       {tab === 'tasks' && <TasksTab projectId={id} navigate={navigate} />}
       {tab === 'milestones' && <MilestonesTab project={project} onChange={invalidate} onErr={onErr} canManage={canManage} />}
       {tab === 'gantt' && <ProjectGantt projectId={id} milestones={project.milestones || []} />}
+      {tab === 'meeting' && <MeetingsTab projectId={id} canManage={canManage} />}
       {tab === 'timesheets' && <TimesheetsTab projectId={id} />}
       {tab === 'files' && <FilesTab projectId={id} />}
+      {tab === 'discussions' && <DiscussionsTab projectId={id} />}
       {tab === 'notes' && <NotesTab projectId={id} />}
       {tab === 'activity' && <ActivityTab projectId={id} />}
       {tab === 'tickets' && <TicketsTab projectId={id} navigate={navigate} />}
 
       <ProjectFormDrawer open={editing} onClose={() => setEditing(false)} project={project} onSaved={invalidate} />
+
+      <ProjectInvoiceModal open={invoicing} onClose={() => setInvoicing(false)} projectId={id} canManage={canManage} />
+
+      {/* Create a task already linked to this project (Related To → Project preset). */}
+      <TaskFormDrawer open={creatingTask} onClose={() => setCreatingTask(false)}
+        defaults={{ rel_type: 'project', rel_id: Number(id) }}
+        onSaved={() => { invalidate(); refetchProg(); qc.invalidateQueries({ queryKey: ['tasks'] }) }} />
+
+      {/* Raise a helpdesk ticket linked to this project (normal ticket flow). */}
+      <RaiseTicketModal open={raising} onClose={() => setRaising(false)} projectId={id}
+        defaultSubject={`[${project.name}] `}
+        onCreated={() => qc.invalidateQueries({ queryKey: ['project-tickets', id] })} />
 
       <ConfirmModal open={confirmDelete} onClose={() => setConfirmDelete(false)} onConfirm={() => remove.mutate()}
         title="Delete this project?"

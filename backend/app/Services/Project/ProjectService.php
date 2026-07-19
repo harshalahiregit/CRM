@@ -61,6 +61,52 @@ class ProjectService
         return $this->statuses->closedKey('project', $tenantId) ?? 'finished';
     }
 
+    /* ── Project Settings catalog (config/projects.php) ─────────────
+     * The Visible-Tabs and customer-permission bags are validated and
+     * defaulted against one canonical list so junk keys never get stored and
+     * the frontend renders the same options the backend accepts.
+     */
+
+    /** @return array<int,string> every allowed tab key */
+    public static function tabKeys(): array
+    {
+        return array_column(config('projects.tabs', []), 'key');
+    }
+
+    /** @return array<int,string> every allowed customer-permission key */
+    public static function permissionKeys(): array
+    {
+        return array_column(config('projects.customer_permissions', []), 'key');
+    }
+
+    /** A new project's default tab set: every tab that has a working screen, on. */
+    public static function defaultVisibleTabs(): array
+    {
+        $out = [];
+        foreach (config('projects.tabs', []) as $t) {
+            if (! empty($t['implemented'])) {
+                $out[$t['key']] = true;
+            }
+        }
+
+        return $out;
+    }
+
+    /** Drop any key not in the catalog and cast the rest to real booleans. */
+    private function sanitizeSettings(array $data): array
+    {
+        if (array_key_exists('visible_tabs', $data) && is_array($data['visible_tabs'])) {
+            $data['visible_tabs'] = collect($data['visible_tabs'])
+                ->only(self::tabKeys())->map(fn ($v) => (bool) $v)->all();
+        }
+        if (array_key_exists('customer_permissions', $data) && is_array($data['customer_permissions'])) {
+            $data['customer_permissions'] = collect($data['customer_permissions'])
+                ->only(self::permissionKeys())->map(fn ($v) => (bool) $v)->all();
+        }
+
+        return $data;
+    }
+
     /* ── Access control ─────────────────────────────────────────────
      * Admins see every project in the tenant. A non-admin staff member
      * only sees a project they created or are a member of. Editing/deleting
@@ -147,6 +193,13 @@ class ProjectService
         $tags = $data['tags'] ?? null;
         unset($data['member_ids'], $data['tags']);
 
+        // Keep only catalogued settings keys; a brand-new project with no explicit
+        // tab choice gets every working tab switched on by default.
+        $data = $this->sanitizeSettings($data);
+        if (empty($data['visible_tabs'])) {
+            $data['visible_tabs'] = self::defaultVisibleTabs();
+        }
+
         $project = $this->projects->create([
             ...$data,
             'tenant_id'  => $tenantId,
@@ -178,6 +231,7 @@ class ProjectService
         $tags = $data['tags'] ?? null;
         unset($data['member_ids'], $data['tags']);
 
+        $data = $this->sanitizeSettings($data);
         $project->fill($data);
 
         // Moving the deadline re-arms the "due soon" nudge.

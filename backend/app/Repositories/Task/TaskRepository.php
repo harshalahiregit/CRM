@@ -42,6 +42,22 @@ class TaskRepository extends BaseRepository
         if (! empty($filters['rel_id'])) {
             $query->where('rel_id', $filters['rel_id']);
         }
+
+        // "Hide project tasks on main tasks table" (Project Settings): when the
+        // list is NOT scoped to one project, drop tasks belonging to projects that
+        // opted out of the global admin list. Inside a project (rel_id set) the
+        // setting doesn't apply — you always see that project's own tasks there.
+        if (empty($filters['rel_id']) && Schema::hasTable('projects')) {
+            $hidden = \App\Models\Project\Project::where('tenant_id', $tenantId)
+                ->where('hide_tasks_on_main', true)->pluck('id')->all();
+            if ($hidden) {
+                $query->where(function ($q) use ($hidden) {
+                    $q->where('rel_type', '!=', 'project')
+                        ->orWhereNull('rel_id')
+                        ->orWhereNotIn('rel_id', $hidden);
+                });
+            }
+        }
         if (! empty($filters['search'])) {
             $s = '%'.$filters['search'].'%';
             $query->where(fn ($q) => $q->where('name', 'like', $s)->orWhere('description', 'like', $s));

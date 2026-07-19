@@ -4,7 +4,9 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Users, Eye, CheckSquare, Square, MessageSquare, Play, StopCircle,
   Clock, Pencil, Trash2, ExternalLink, Send, Plus, Copy, RefreshCw, BookmarkPlus, ListPlus,
+  Lock, Globe, LifeBuoy,
 } from 'lucide-react'
+import RaiseTicketModal from '../../helpdesk/components/RaiseTicketModal'
 import { taskApi, TASK_STATUS, TASK_PRIORITY, TASK_ACCENT, relLabel, fmtDuration } from '@/services/taskApi'
 import Select from '@/components/ui/Select'
 import SearchPicker, { ConfirmModal, InputModal } from '@/components/ui/SearchPicker'
@@ -33,6 +35,7 @@ export default function TaskDetail() {
   const { map: statusMap, list: statusList } = useStatuses('task')
 
   const [editing, setEditing] = useState(false)
+  const [raising, setRaising] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [picker, setPicker] = useState(null)      // 'assignee' | 'follower' | 'template'
   const [savingTpl, setSavingTpl] = useState(false)
@@ -44,6 +47,7 @@ export default function TaskDetail() {
   const mut = (fn, after = invalidate) => ({ mutationFn: fn, onSuccess: () => { setActionErr(''); after() }, onError: onErr })
 
   const setStatus   = useMutation(mut((s) => taskApi.setStatus(id, s)))
+  const togglePublic = useMutation(mut((next) => taskApi.update(id, { is_public: next })))
   const syncAssign  = useMutation(mut((ids) => taskApi.assignees(id, ids)))
   const syncFollow  = useMutation(mut((ids) => taskApi.followers(id, ids)))
   const addItem     = useMutation(mut((desc) => taskApi.addChecklist(id, desc)))
@@ -138,11 +142,32 @@ export default function TaskDetail() {
         </div>
 
         <div className="flex items-center gap-2">
+          {(() => {
+            const isPublic = Boolean(task.is_public)
+            const color = isPublic ? 'var(--color-primary-500)' : 'var(--text-muted)'
+            return (
+              <button onClick={() => togglePublic.mutate(!isPublic)} disabled={togglePublic.isPending}
+                title={isPublic ? 'Make private' : 'Make public'}
+                className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-2 rounded-xl disabled:opacity-40"
+                style={{
+                  background: isPublic ? `color-mix(in srgb, ${color} 12%, transparent)` : 'var(--bg-input)',
+                  border: '1px solid var(--border)', color,
+                }}>
+                {isPublic ? <Globe size={13} /> : <Lock size={13} />}
+                {isPublic ? 'Public' : 'Private'}
+              </button>
+            )
+          })()}
           <div style={{ minWidth: 150 }}>
             <Select value={task.status} onChange={v => setStatus.mutate(v)} ariaLabel="Task status"
               options={statusOptions(statusList, user?.role)}
               buttonStyle={{ borderColor: st.color, color: st.color, fontWeight: 700 }} />
           </div>
+          <button onClick={() => setRaising(true)} title="Raise a support ticket for this task"
+            className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-2 rounded-xl"
+            style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--color-support-500)' }}>
+            <LifeBuoy size={13} /> Raise Ticket
+          </button>
           <IconBtn onClick={() => setEditing(true)} label="Edit task"><Pencil size={14} /></IconBtn>
           <IconBtn onClick={() => copy.mutate()} label="Duplicate task"><Copy size={14} /></IconBtn>
           <IconBtn onClick={() => setConfirmDelete(true)} label="Delete task" danger><Trash2 size={14} /></IconBtn>
@@ -253,6 +278,12 @@ export default function TaskDetail() {
       )}
 
       <TaskFormDrawer open={editing} onClose={() => setEditing(false)} task={task} onSaved={invalidate} />
+
+      {/* Raise a helpdesk ticket for this task — linked to its project when it has one. */}
+      <RaiseTicketModal open={raising} onClose={() => setRaising(false)}
+        projectId={task.rel_type === 'project' ? task.rel_id : null}
+        defaultSubject={`[Task] ${task.name}`}
+        defaultDescription={link ? `Raised from ${link}.` : ''} />
 
       <ConfirmModal open={confirmDelete} onClose={() => setConfirmDelete(false)} onConfirm={() => remove.mutate()}
         title="Delete this task?" message={`“${task.name}” will be removed from the board. This can't be undone from the UI.`}

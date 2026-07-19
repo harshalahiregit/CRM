@@ -36,9 +36,14 @@ class StoreProjectRequest extends FormRequest
             'member_ids.*'        => 'integer|exists:users,id',
             'tags'                => 'nullable|array|max:15',
             'tags.*'              => 'string|max:60',
-            // Bags of booleans, read and written whole (see the migration).
+            // Bags of booleans, read and written whole (see the migration). Unknown
+            // keys are dropped by the service against config/projects.php.
             'visible_tabs'          => 'nullable|array',
             'customer_permissions'  => 'nullable|array',
+            // Project Settings (Tab 2) + the Tab-1 "send created email" checkbox.
+            'hide_tasks_on_main'    => 'nullable|boolean',
+            'send_created_email'    => 'nullable|boolean',
+            'contacts_notification' => 'nullable|in:all,specific,none',
         ];
     }
 }

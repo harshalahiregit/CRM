@@ -2,10 +2,11 @@ import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
-  FolderKanban, Plus, Search, X, Pin, PinOff, Pencil, Copy, Trash2, Users,
+  FolderKanban, Plus, Search, X, Pin, PinOff, Pencil, Copy, Trash2, Users, Eye, Download,
 } from 'lucide-react'
 import { projectApi, PROJECT_STATUS, PROJECT_ACCENT } from '@/services/projectApi'
 import { tagApi } from '@/services/tagApi'
+import { exportCsv, stampedName } from '@/lib/exportCsv'
 import { useAuth } from '@/context/AuthContext'
 import Select from '@/components/ui/Select'
 import { ConfirmModal } from '@/components/ui/SearchPicker'
@@ -23,6 +24,8 @@ import ProjectFormDrawer from '../components/ProjectFormDrawer'
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 const money = v => v != null && v !== '' ? '₹' + Number(v).toLocaleString('en-IN') : '—'
 
+const PAGE_SIZES = [10, 25, 50, 100, 0]   // 0 = All
+
 export default function ProjectList() {
   const navigate = useNavigate()
   const qc = useQueryClient()
@@ -39,6 +42,7 @@ export default function ProjectList() {
   const [status, setStatus] = useState('')
   const [member, setMember] = useState('')
   const [tag, setTag] = useState('')
+  const [pageSize, setPageSize] = useState(25)
   const [err, setErr] = useState('')
 
   useEffect(() => {
@@ -88,6 +92,23 @@ export default function ProjectList() {
 
   const activeFilters = [status, member, tag, debounced].filter(Boolean).length
   const clearFilters = () => { setSearch(''); setStatus(''); setMember(''); setTag('') }
+
+  // Page-size limits the rows shown client-side; 0 = All. The header count and
+  // the CSV export both work off the full filtered set, not this slice.
+  const visible = useMemo(
+    () => pageSize === 0 ? projects : projects.slice(0, pageSize),
+    [projects, pageSize],
+  )
+
+  const doExport = () => exportCsv(stampedName('projects'), projects, [
+    { key: 'id', label: 'ID' },
+    { key: 'name', label: 'Name' },
+    { key: 'customer', label: 'Customer', value: p => p.customer?.name || '' },
+    { key: 'status', label: 'Status', value: p => PROJECT_STATUS[p.status]?.label || p.status },
+    { key: 'start_date', label: 'Start Date', value: p => p.start_date ? String(p.start_date).split('T')[0] : '' },
+    { key: 'deadline', label: 'Deadline', value: p => p.deadline ? String(p.deadline).split('T')[0] : '' },
+    { key: 'progress', label: 'Progress', value: p => `${p.progress || 0}%` },
+  ])
 
   return (
     <div>
@@ -149,6 +170,18 @@ export default function ProjectList() {
           <button onClick={clearFilters} className="text-xs font-semibold px-3 py-2 rounded-xl"
             style={{ color: 'var(--color-danger-500)', border: '1px solid var(--border)' }}>Clear</button>
         )}
+
+        <div className="flex items-center gap-2 ml-auto">
+          <div style={{ width: 96 }}>
+            <Select size="sm" value={String(pageSize)} onChange={v => setPageSize(Number(v))}
+              options={PAGE_SIZES.map(n => ({ value: String(n), label: n === 0 ? 'All' : String(n) }))} />
+          </div>
+          <button onClick={doExport} disabled={!projects.length}
+            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl disabled:opacity-40"
+            style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+            <Download size={13} /> Export
+          </button>
+        </div>
       </div>
 
       {err && (
@@ -190,7 +223,7 @@ export default function ProjectList() {
                   {activeFilters ? 'No projects match these filters.' : 'No projects yet.'}
                 </td></tr>
               )}
-              {!isLoading && projects.map(p => {
+              {!isLoading && visible.map(p => {
                 const s = PROJECT_STATUS[p.status] || { label: p.status, color: 'var(--text-muted)' }
                 const overdue = p.deadline && !['finished', 'cancelled'].includes(p.status)
                   && new Date(p.deadline) < new Date().setHours(0, 0, 0, 0)
@@ -229,6 +262,7 @@ export default function ProjectList() {
                     </td>
                     <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1">
+                        <RowBtn onClick={() => navigate(`/app/projects/${p.id}`)} label="View project"><Eye size={12} /></RowBtn>
                         <RowBtn onClick={() => pin.mutate(p.id)} label={p.is_pinned ? 'Unpin' : 'Pin'}>
                           {p.is_pinned ? <PinOff size={12} /> : <Pin size={12} />}
                         </RowBtn>

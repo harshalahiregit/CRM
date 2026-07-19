@@ -89,8 +89,8 @@ export const fmtBytes = (b = 0) => {
 export const TASK_STATUS = {
   not_started:       { label: 'Not Started',       color: 'var(--text-muted)' },
   in_progress:       { label: 'In Progress',       color: 'var(--color-info-500)' },
-  awaiting_feedback: { label: 'Awaiting Feedback', color: 'var(--color-primary-400)' },
   testing:           { label: 'Testing',           color: 'var(--color-warning-500)' },
+  awaiting_feedback: { label: 'Awaiting Feedback', color: 'var(--color-primary-400)' },
   complete:          { label: 'Complete',          color: 'var(--color-success-500)' },
 }
 export const TASK_PRIORITY = {

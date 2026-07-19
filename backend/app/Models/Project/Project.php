@@ -17,6 +17,7 @@ class Project extends Model
         'billing_type', 'project_cost', 'rate_per_hour', 'start_date', 'deadline',
         'progress', 'progress_from_tasks', 'estimated_hours', 'created_by', 'date_finished',
         'pinned_by', 'visible_tabs', 'customer_permissions', 'deadline_notified',
+        'hide_tasks_on_main', 'send_created_email', 'contacts_notification',
     ];
 
     protected $casts = [
@@ -32,6 +33,8 @@ class Project extends Model
         'visible_tabs'         => 'array',
         'customer_permissions' => 'array',
         'deadline_notified'    => 'boolean',
+        'hide_tasks_on_main'   => 'boolean',
+        'send_created_email'   => 'boolean',
     ];
 
     /** Who pinned this is an implementation detail — the UI only needs is_pinned. */

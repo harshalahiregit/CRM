@@ -1,7 +1,10 @@
 <?php
 
 use App\Http\Controllers\Api\Project\ProjectController;
+use App\Http\Controllers\Api\Project\ProjectDiscussionController;
 use App\Http\Controllers\Api\Project\ProjectFileController;
+use App\Http\Controllers\Api\Project\ProjectInvoiceController;
+use App\Http\Controllers\Api\Project\ProjectMeetingController;
 use App\Http\Controllers\Api\Project\ProjectMilestoneController;
 use Illuminate\Support\Facades\Route;
 
@@ -12,6 +15,7 @@ Route::middleware('auth:sanctum')->prefix('projects')->group(function () {
     Route::post('/',                   [ProjectController::class, 'store']);
 
     // Static segments BEFORE /{project} so they aren't captured as a project id.
+    Route::get('/meta',                [ProjectController::class, 'meta']);
     Route::get('/staff',               [ProjectController::class, 'staff']);
     Route::get('/customers',           [ProjectController::class, 'customers']);
 
@@ -37,6 +41,23 @@ Route::middleware('auth:sanctum')->prefix('projects')->group(function () {
     Route::delete('/{project}/notes/{note}', [ProjectController::class, 'destroyNote']);
     Route::get('/{project}/activity',       [ProjectController::class, 'activity']);
     Route::get('/{project}/timesheets',     [ProjectController::class, 'timesheets']);
+
+    // Meeting tab (Kickoff meetings)
+    Route::get('/{project}/meetings',              [ProjectMeetingController::class, 'index']);
+    Route::post('/{project}/meetings',             [ProjectMeetingController::class, 'store']);
+    Route::put('/{project}/meetings/{meeting}',    [ProjectMeetingController::class, 'update']);
+    Route::delete('/{project}/meetings/{meeting}', [ProjectMeetingController::class, 'destroy']);
+
+    // Discussions tab (threads + comments)
+    Route::get('/{project}/discussions',                          [ProjectDiscussionController::class, 'index']);
+    Route::post('/{project}/discussions',                         [ProjectDiscussionController::class, 'store']);
+    Route::delete('/{project}/discussions/{discussion}',          [ProjectDiscussionController::class, 'destroy']);
+    Route::get('/{project}/discussions/{discussion}/comments',    [ProjectDiscussionController::class, 'listComments']);
+    Route::post('/{project}/discussions/{discussion}/comments',   [ProjectDiscussionController::class, 'addComment']);
+
+    // Invoice Project — generate/list project invoice drafts by billing type
+    Route::get('/{project}/invoices',  [ProjectInvoiceController::class, 'index']);
+    Route::post('/{project}/invoices', [ProjectInvoiceController::class, 'generate']);
 
     // Integration 3a: tickets linked to this project
     Route::get('/{project}/tickets',   [ProjectController::class, 'tickets']);

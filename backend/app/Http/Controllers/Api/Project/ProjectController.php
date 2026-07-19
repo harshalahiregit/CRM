@@ -36,6 +36,28 @@ class ProjectController extends Controller
         $this->projects->assertProjectManage($project, $request->user()->tenant_id, $request->user()->id, $this->isAdmin($request));
     }
 
+    /**
+     * The Project Settings catalog: the full tab list (with which are actually
+     * implemented), the customer-permission toggles, and the contact-notification
+     * modes — plus the default tab set. The two-tab create form and the workspace
+     * tab bar both render from this, so frontend options never drift from what the
+     * backend validates. Static config, so any authed staff member may read it.
+     */
+    public function meta()
+    {
+        return $this->success([
+            'tabs'                    => config('projects.tabs', []),
+            'default_tabs'           => \App\Services\Project\ProjectService::defaultVisibleTabs(),
+            'customer_permissions'   => config('projects.customer_permissions', []),
+            'contacts_notification'  => config('projects.contacts_notification', []),
+            'billing_types'          => [
+                ['key' => 'fixed',         'label' => 'Fixed Rate'],
+                ['key' => 'project_hours', 'label' => 'Project Hours'],
+                ['key' => 'task_hours',    'label' => 'Task Hours'],
+            ],
+        ], 'Project settings catalog');
+    }
+
     public function index(Request $request)
     {
         $filters = $request->only(['status', 'customer_id', 'search', 'member', 'tag']);
