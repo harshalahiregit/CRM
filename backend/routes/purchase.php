@@ -28,6 +28,7 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::get('/requests',                          [PurchaseRequestController::class, 'index']);
     Route::post('/requests',                         [PurchaseRequestController::class, 'store']);
     Route::get('/requests/{purchaseRequest}',        [PurchaseRequestController::class, 'show']);
+    Route::get('/requests/{purchaseRequest}/download-pdf', [PurchaseRequestController::class, 'downloadPdf']);
     Route::put('/requests/{purchaseRequest}',        [PurchaseRequestController::class, 'update']);
     Route::delete('/requests/{purchaseRequest}',     [PurchaseRequestController::class, 'destroy']);
     // Lifecycle actions
@@ -40,6 +41,7 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     // Convert an approved PR into a draft PO (creates a draft only — issuing is admin).
     Route::post('/orders/from-request/{purchaseRequest}',  [PurchaseOrderController::class, 'fromRequest']);
     Route::get('/orders/{purchaseOrder}',                  [PurchaseOrderController::class, 'show']);
+    Route::get('/orders/{purchaseOrder}/download-pdf',     [PurchaseOrderController::class, 'downloadPdf']);
     Route::put('/orders/{purchaseOrder}',                  [PurchaseOrderController::class, 'update']);
     Route::delete('/orders/{purchaseOrder}',               [PurchaseOrderController::class, 'destroy']); // Draft only (service-enforced)
 
@@ -79,6 +81,7 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::get('/rfqs',                           [PurchaseRfqController::class, 'index']);
     Route::post('/rfqs',                          [PurchaseRfqController::class, 'store']);
     Route::get('/rfqs/{rfq}',                     [PurchaseRfqController::class, 'show']);
+    Route::get('/rfqs/{rfq}/download-pdf',        [PurchaseRfqController::class, 'downloadPdf']);
     Route::get('/rfqs/{rfq}/comparison',          [PurchaseRfqController::class, 'comparison']);
     Route::put('/rfqs/{rfq}',                     [PurchaseRfqController::class, 'update']);
     Route::delete('/rfqs/{rfq}',                  [PurchaseRfqController::class, 'destroy']); // Draft only

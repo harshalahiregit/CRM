@@ -3,9 +3,9 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Plus, RefreshCw, Search, Send, Eye, Pencil, Trash2, PackageCheck, Ban, Lock,
   FileText, ShoppingBag, Truck, CheckCircle, XCircle, LayoutGrid, List, Trash,
-  ChevronLeft, ChevronRight, PackagePlus, Package, ShieldCheck,
+  ChevronLeft, ChevronRight, PackagePlus, Package, ShieldCheck, FileDown, Printer,
 } from 'lucide-react'
-import { purchaseApi } from '@/services/purchaseApi'
+import { purchaseApi, downloadPurchasePdf } from '@/services/purchaseApi'
 import { useAuth } from '@/context/AuthContext'
 import AuditTimeline from '@/components/ui/AuditTimeline'
 import {
@@ -26,6 +26,9 @@ const EMPTY_FORM = {
 }
 
 const StatusBadge = ({ status }) => <StatusPill cfg={poStatusCfg(status)} />
+
+const PDF_BTN = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 9, border: 'none', background: 'linear-gradient(135deg,#7C3AED,#5b21b6)', color: '#fff', fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }
+const PDF_BTN_GHOST = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-h)', fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }
 
 // ── PO pipeline — 3D extruded stage knobs with live counts ───────────────────
 function Pipeline({ stats = {}, active, onStage }) {
@@ -686,7 +689,11 @@ function DetailModal({ order, manage, admin, onClose, onReceive, onAction }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
         <h3 style={{ color: 'var(--text-h)', margin: 0, fontSize: 17, fontWeight: 800 }}>{order.po_number || `PO-${order.id}`} · {order.title}</h3>
         <StatusBadge status={order.status} />
-        {canReceive && <button onClick={() => onReceive(order)} style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 9, border: 'none', background: 'linear-gradient(135deg,#f59e0b,#d97706)', color: '#fff', fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}><PackagePlus size={14} /> Receive Goods</button>}
+        <div style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6 }}>
+          <button onClick={() => downloadPurchasePdf('orders', order.id, { filename: `${order.po_number || 'PO-' + order.id}.pdf` })} style={PDF_BTN}><FileDown size={13} /> PDF</button>
+          <button onClick={() => downloadPurchasePdf('orders', order.id, { inline: true })} style={PDF_BTN_GHOST}><Printer size={13} /> Print</button>
+          {canReceive && <button onClick={() => onReceive(order)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 9, border: 'none', background: 'linear-gradient(135deg,#f59e0b,#d97706)', color: '#fff', fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}><PackagePlus size={14} /> Receive Goods</button>}
+        </div>
       </div>
       {[PO_STATUS.ISSUED, PO_STATUS.PARTIALLY_RECEIVED, PO_STATUS.RECEIVED].includes(order.status) && (
         <div style={{ margin: '10px 0 16px', maxWidth: 360 }}><ReceiptBar percent={order.received_percent} /></div>

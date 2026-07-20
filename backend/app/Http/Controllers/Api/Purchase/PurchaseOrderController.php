@@ -7,12 +7,13 @@ use App\Http\Requests\Purchase\StorePurchaseOrderRequest;
 use App\Http\Requests\Purchase\UpdatePurchaseOrderRequest;
 use App\Models\Purchase\PurchaseOrder;
 use App\Models\Purchase\PurchaseRequest;
+use App\Services\Purchase\PurchaseDocumentPdfService;
 use App\Services\Purchase\PurchaseOrderService;
 use Illuminate\Http\Request;
 
 class PurchaseOrderController extends Controller
 {
-    public function __construct(private PurchaseOrderService $purchaseOrderService)
+    public function __construct(private PurchaseOrderService $purchaseOrderService, private PurchaseDocumentPdfService $pdfService)
     {
     }
 
@@ -109,6 +110,18 @@ class PurchaseOrderController extends Controller
     public function stats(Request $request)
     {
         return response()->json($this->purchaseOrderService->stats($request->user()->tenant_id));
+    }
+
+    /** Branded PO PDF — ?inline=1 streams for print, otherwise downloads. */
+    public function downloadPdf(Request $request, PurchaseOrder $purchaseOrder)
+    {
+        $this->assertTenant($request, $purchaseOrder);
+        $pdf = $this->pdfService->renderOrder($purchaseOrder);
+        $file = "{$purchaseOrder->po_number}.pdf";
+
+        return $request->boolean('inline')
+            ? $pdf->stream($file)
+            : $pdf->download($file);
     }
 
     private function assertTenant(Request $request, PurchaseOrder $purchaseOrder): void

@@ -2,9 +2,9 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Send, Ban, Plus, Users, Package, Trophy, Award, CheckCircle2,
-  Clock, AlertTriangle, Loader2, X, Star,
+  Clock, AlertTriangle, Loader2, X, Star, FileDown, Printer,
 } from 'lucide-react'
-import { purchaseApi } from '@/services/purchaseApi'
+import { purchaseApi, downloadPurchasePdf } from '@/services/purchaseApi'
 import { useAuth } from '@/context/AuthContext'
 import {
   RFQ_STATUS, rfqStatusCfg, quoteStatusCfg, fmtMoney, fmtDate, canManagePR, canApprovePR,
@@ -77,6 +77,8 @@ export default function PurchaseRfqDetail() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+          <button onClick={() => downloadPurchasePdf('rfqs', rfq.id, { filename: `${rfq.rfq_number}.pdf` })} style={actBtn('#7C3AED', true)}><FileDown size={14} /> PDF</button>
+          <button onClick={() => downloadPurchasePdf('rfqs', rfq.id, { inline: true })} style={actBtn('#64748b')}><Printer size={14} /> Print</button>
           {manage && rfq.status === RFQ_STATUS.DRAFT && <button onClick={doSend} disabled={busy} style={actBtn('#0ea5e9', true)}>{busy ? <Loader2 size={14} className="rfq-spin" /> : <Send size={14} />} Send to Vendors</button>}
           {canRecord && <button onClick={() => setRecording(true)} style={actBtn('#7C3AED', true)}><Plus size={14} /> Record Quote</button>}
           {manage && ![RFQ_STATUS.AWARDED, RFQ_STATUS.CANCELLED].includes(rfq.status) && <button onClick={doCancel} disabled={busy} style={actBtn('#ef4444')}><Ban size={14} /> Cancel</button>}

@@ -6,12 +6,13 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Purchase\StorePurchaseRfqRequest;
 use App\Http\Requests\Purchase\UpdatePurchaseRfqRequest;
 use App\Models\Purchase\PurchaseRfq;
+use App\Services\Purchase\PurchaseDocumentPdfService;
 use App\Services\Purchase\PurchaseRfqService;
 use Illuminate\Http\Request;
 
 class PurchaseRfqController extends Controller
 {
-    public function __construct(private PurchaseRfqService $rfqService)
+    public function __construct(private PurchaseRfqService $rfqService, private PurchaseDocumentPdfService $pdfService)
     {
     }
 
@@ -78,6 +79,18 @@ class PurchaseRfqController extends Controller
         $this->rfqService->destroy($rfq);
 
         return response()->json(['message' => 'Deleted']);
+    }
+
+    /** Vendor-facing RFQ PDF — ?inline=1 streams, otherwise downloads. */
+    public function downloadPdf(Request $request, PurchaseRfq $rfq)
+    {
+        $this->assertTenant($request, $rfq);
+        $pdf = $this->pdfService->renderRfq($rfq);
+        $file = "{$rfq->rfq_number}.pdf";
+
+        return $request->boolean('inline')
+            ? $pdf->stream($file)
+            : $pdf->download($file);
     }
 
     private function assertTenant(Request $request, PurchaseRfq $rfq): void
