@@ -124,7 +124,7 @@ class TicketController extends Controller
         $tenantId = $request->user()->tenant_id;
         $allowed = app(\App\Services\Helpdesk\HelpdeskSettingsService::class)->statusNames($tenantId);
         $data = $request->validate(['status' => ['required', \Illuminate\Validation\Rule::in($allowed)]]);
-        $result = $this->helpdesk->changeStatus($ticket, $data['status'], $tenantId);
+        $result = $this->helpdesk->changeStatus($ticket, $data['status'], $tenantId, $request->user()->id);
 
         return $this->success($result, 'Status updated');
     }
@@ -305,7 +305,7 @@ class TicketController extends Controller
                 switch ($data['action']) {
                     case 'status':
                         $this->guardView($request, $id);
-                        $this->helpdesk->changeStatus($id, $data['value'], $tenantId);
+                        $this->helpdesk->changeStatus($id, $data['value'], $tenantId, $u->id);
                         break;
                     case 'assign':
                         $this->helpdesk->assertCanAssign($id, $tenantId, $u->id, $u->role);

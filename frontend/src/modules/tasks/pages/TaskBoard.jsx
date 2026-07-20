@@ -14,6 +14,7 @@ import { ConfirmModal } from '@/components/ui/SearchPicker'
 import TaskFormDrawer from '../components/TaskFormDrawer'
 import TaskKpiCards from '../components/TaskKpiCards'
 import TaskBulkBar from '../components/TaskBulkBar'
+import TaskDetailModal from '../components/TaskDetailModal'
 
 /**
  * Task board — kanban + list.
@@ -44,6 +45,7 @@ export default function TaskBoard() {
   const [page, setPage] = useState(1)
   const [kpi, setKpi] = useState(null)     // 'active' | 'overdue' | 'today' | 'mine' | 'completed'
   const [confirmDelete, setConfirmDelete] = useState(null)
+  const [openTaskId, setOpenTaskId] = useState(null)
 
   // Filters — the backend already supported all of these; none had a UI.
   const [search, setSearch] = useState('')
@@ -204,11 +206,11 @@ export default function TaskBoard() {
 
       {isLoading && <div className="rounded-2xl animate-pulse" style={{ height: 240, background: 'var(--bg-card)' }} />}
 
-      {!isLoading && view === 'kanban' && <Kanban tasks={tasks} qc={qc} navigate={navigate} />}
+      {!isLoading && view === 'kanban' && <Kanban tasks={tasks} qc={qc} onOpen={setOpenTaskId} />}
       {!isLoading && view === 'list' && (
         <>
           <TaskTable
-            tasks={paged} navigate={navigate} staff={staff}
+            tasks={paged} onOpen={setOpenTaskId} staff={staff}
             selected={selected} setSelected={setSelected}
             onEdit={t => { setEditing(t); setShowForm(true) }}
             onDelete={t => setConfirmDelete(t)}
@@ -229,6 +231,9 @@ export default function TaskBoard() {
         onConfirm={() => remove.mutate(confirmDelete.id)}
         title="Delete this task?" message={`“${confirmDelete?.name}” will be removed from the board.`}
         confirmLabel="Delete" danger />
+
+      <TaskDetailModal taskId={openTaskId} open={!!openTaskId}
+        onClose={() => { setOpenTaskId(null); qc.invalidateQueries({ queryKey: ['tasks'] }) }} />
     </div>
   )
 }
@@ -302,7 +307,7 @@ function FilterSelect({ value, onChange, options, placeholder }) {
 
 /* ── Kanban with drag & drop ──────────────────────────────────── */
 
-function Kanban({ tasks, qc, navigate }) {
+function Kanban({ tasks, qc, onOpen }) {
   // Local mirror so a drag repaints instantly; re-synced whenever the server list changes.
   const [board, setBoard] = useState({})
   const [dragId, setDragId] = useState(null)
@@ -383,7 +388,7 @@ function Kanban({ tasks, qc, navigate }) {
                       const r = e.currentTarget.getBoundingClientRect()
                       setOver({ status: key, index: e.clientY < r.top + r.height / 2 ? i : i + 1 })
                     }}
-                    onClick={() => navigate(`/app/tasks/${t.id}`)} />
+                    onClick={() => onOpen(t.id)} />
                 </div>
               ))}
               {isOverCol && over.index >= col.length && <DropLine color={meta.color} />}
@@ -467,7 +472,7 @@ function TaskCard({ task, dragging, onClick, ...dnd }) {
 
 /* ── List view ────────────────────────────────────────────────── */
 
-function TaskTable({ tasks, navigate, staff, selected, setSelected, onEdit, onDelete }) {
+function TaskTable({ tasks, onOpen, staff, selected, setSelected, onEdit, onDelete }) {
   if (!tasks.length) {
     return (
       <div className="rounded-2xl py-16 text-center" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
@@ -519,7 +524,7 @@ function TaskTable({ tasks, navigate, staff, selected, setSelected, onEdit, onDe
             const overdue = t.due_date && t.status !== 'complete' && new Date(t.due_date) < new Date().setHours(0, 0, 0, 0)
             const checked = selected.has(t.id)
             return (
-              <tr key={t.id} onClick={() => navigate(`/app/tasks/${t.id}`)} className="cursor-pointer"
+              <tr key={t.id} onClick={() => onOpen(t.id)} className="cursor-pointer"
                 style={{ borderBottom: '1px solid var(--border)', background: checked ? `color-mix(in srgb, ${TASK_ACCENT} 6%, transparent)` : 'transparent' }}
                 onMouseEnter={e => { if (!checked) e.currentTarget.style.background = 'var(--bg-input)' }}
                 onMouseLeave={e => { if (!checked) e.currentTarget.style.background = 'transparent' }}>

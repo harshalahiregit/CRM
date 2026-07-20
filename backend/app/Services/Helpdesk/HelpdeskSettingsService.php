@@ -46,6 +46,72 @@ class HelpdeskSettingsService
         ['name' => 'Technical', 'description' => 'Product and technical issues', 'order' => 2],
     ];
 
+    public function __construct(private \App\Services\NotificationService $notifications)
+    {
+    }
+
+    /**
+     * Diff a ticket-manager roster and tell the people who changed. A newly
+     * appointed manager gets an in-app notification AND an email; a removed one is
+     * told they lost the access. Only real, active, internal users are contacted;
+     * the admin who made the change is self-suppressed in-app. Mail is queued (the
+     * mailable is ShouldQueue), so appointing managers never blocks the save.
+     *
+     * @param  array<int>  $oldIds
+     * @param  array<int>  $newIds
+     */
+    private function syncManagerRoster(array $oldIds, array $newIds, int $tenantId, string $scopeLabel): void
+    {
+        $old = collect($oldIds)->map(fn ($i) => (int) $i)->unique();
+        $new = collect($newIds)->map(fn ($i) => (int) $i)->unique();
+
+        $added   = $new->diff($old)->values()->all();
+        $removed = $old->diff($new)->values()->all();
+        if (! $added && ! $removed) {
+            return;
+        }
+
+        $users = \App\Models\User::where('tenant_id', $tenantId)
+            ->whereIn('id', array_merge($added, $removed))
+            ->where('status', 'active')
+            ->whereNotIn('role', ['client', 'vendor', 'third_party_vendor'])
+            ->get(['id', 'name', 'email'])->keyBy('id');
+
+        $actorId = auth()->id();
+
+        $tell = function (int $uid, bool $appointed) use ($users, $tenantId, $scopeLabel, $actorId) {
+            $user = $users->get($uid);
+            if (! $user) {
+                return;
+            }
+            $this->notifications->notify(
+                userId: $uid,
+                tenantId: $tenantId,
+                type: $appointed ? 'helpdesk.manager_appointed' : 'helpdesk.manager_removed',
+                title: $appointed
+                    ? "You're now a ticket manager for {$scopeLabel}"
+                    : "You're no longer a ticket manager for {$scopeLabel}",
+                message: $appointed
+                    ? 'You can now see, assign and manage tickets here.'
+                    : 'Your ticket-manager access here has been removed.',
+                link: '/app/helpdesk/tickets',
+                actorId: $actorId,
+            );
+            if ($user->email) {
+                \Illuminate\Support\Facades\Mail::to($user->email)->send(
+                    new \App\Mail\Helpdesk\TicketManagerAppointmentMail($user->name ?: 'there', $scopeLabel, $appointed)
+                );
+            }
+        };
+
+        foreach ($added as $uid) {
+            $tell($uid, true);
+        }
+        foreach ($removed as $uid) {
+            $tell($uid, false);
+        }
+    }
+
     /** Everything the ticket form + settings screen need, in one call. */
     public function bundle(int $tenantId): array
     {
@@ -144,7 +210,16 @@ class HelpdeskSettingsService
     public function updateSettings(int $tenantId, array $data): HelpdeskSetting
     {
         $settings = $this->settings($tenantId);
+
+        // Appointing/removing tenant-wide ticket managers → tell whoever changed.
+        $rosterChanged = array_key_exists('ticket_manager_ids', $data);
+        $oldIds = $rosterChanged ? array_map('intval', $settings->ticket_manager_ids ?? []) : [];
+
         $settings->fill($data)->save();
+
+        if ($rosterChanged) {
+            $this->syncManagerRoster($oldIds, array_map('intval', $data['ticket_manager_ids'] ?? []), $tenantId, 'the whole helpdesk');
+        }
 
         return $settings->fresh('defaultDepartment');
     }
@@ -192,7 +267,16 @@ class HelpdeskSettingsService
     public function updateItem(string $type, int $id, array $data, int $tenantId)
     {
         $item = $this->findItem($type, $id, $tenantId);
+
+        // Appointing/removing a department's ticket managers → tell whoever changed.
+        $rosterChanged = $type === 'departments' && array_key_exists('manager_ids', $data);
+        $oldIds = $rosterChanged ? array_map('intval', $item->manager_ids ?? []) : [];
+
         $item->fill($data)->save();
+
+        if ($rosterChanged) {
+            $this->syncManagerRoster($oldIds, array_map('intval', $data['manager_ids'] ?? []), $tenantId, "the {$item->name} department");
+        }
 
         return $item->fresh();
     }

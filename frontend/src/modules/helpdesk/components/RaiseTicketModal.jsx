@@ -17,7 +17,7 @@ const SUPPORT = 'var(--color-support-500)'
 const INP = { width: '100%', padding: '10px 13px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, outline: 'none', color: 'var(--text-h)', background: 'var(--bg-input)' }
 const LBL = { display: 'block', fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 5 }
 
-export default function RaiseTicketModal({ open, onClose, projectId = null, defaultSubject = '', defaultDescription = '', onCreated }) {
+export default function RaiseTicketModal({ open, onClose, projectId = null, source = null, defaultSubject = '', defaultDescription = '', onCreated }) {
   const qc = useQueryClient()
   const navigate = useNavigate()
   const [form, setForm] = useState({ subject: '', description: '', priority: 'medium', department_id: '', assigned_to: '', requester_name: '', requester_email: '' })
@@ -48,6 +48,8 @@ export default function RaiseTicketModal({ open, onClose, projectId = null, defa
       const p = { ...form }
       Object.keys(p).forEach(k => p[k] === '' && delete p[k])
       if (projectId) p.project_id = Number(projectId)
+      // Stamp the origin module so the ticket grid can badge where it came from.
+      if (source) p.source = source
       return helpdeskApi.tickets.create(p)
     },
     onSuccess: (t) => {

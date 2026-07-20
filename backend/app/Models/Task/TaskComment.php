@@ -13,4 +13,10 @@ class TaskComment extends Model
     {
         return $this->belongsTo(User::class);
     }
+
+    /** Files attached to THIS comment (task files carrying this comment_id). */
+    public function attachments()
+    {
+        return $this->hasMany(TaskFile::class, 'comment_id');
+    }
 }

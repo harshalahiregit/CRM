@@ -5,7 +5,17 @@ import {
   Search, Plus, X, Inbox, Clock, CheckCircle2, Circle, User, Zap,
   Download, Columns3, Rows3, AlignJustify, ArrowUp, ArrowDown, ChevronsUpDown,
   Trash2, UserCheck, AlertCircle, Check, Sparkles, RotateCcw,
+  FolderKanban, ListChecks, Boxes,
 } from 'lucide-react'
+
+// Where a ticket was raised from → a small origin badge in the Subject cell, so
+// the queue shows at a glance that a ticket came in from another module. 'widget'
+// keeps its existing inline badge; 'internal' shows nothing.
+const SOURCE_BADGE = {
+  project:   { icon: FolderKanban, label: 'project' },
+  task:      { icon: ListChecks,   label: 'task' },
+  inventory: { icon: Boxes,        label: 'inventory' },
+}
 import { helpdeskApi } from '@/services/helpdeskApi'
 import { useAuth } from '@/context/AuthContext'
 import SLABadge from '../components/ui/SLABadge'
@@ -106,14 +116,17 @@ export default function TicketGrid() {
     reopened: tickets.filter(t => t.is_reopened).length,
   }), [tickets])
 
-  // Only the single most-recently-raised ticket that's still unseen gets the
-  // "new" highlight — a spotlight on the latest arrival, not a wall of glowing
-  // rows. Once it's opened (is_new clears) the next newest unseen takes over.
+  // The single ticket with the most-recent UNSEEN change gets the "new" spotlight
+  // — a moving highlight that follows the latest activity, not a wall of glowing
+  // rows. The server re-flags a ticket unseen on any change (new reply, status
+  // move, reassignment) and bumps updated_at, so keying off updated_at makes the
+  // dot land on whatever changed last. Once opened (is_new clears) the next
+  // most-recently-changed unseen ticket takes over.
   const newestNewId = useMemo(() => {
     const fresh = tickets.filter(t => t.is_new)
     if (!fresh.length) return null
-    return fresh.reduce((a, b) =>
-      new Date(b.created_at || 0) > new Date(a.created_at || 0) ? b : a).id
+    const activity = t => new Date(t.updated_at || t.created_at || 0).getTime()
+    return fresh.reduce((a, b) => (activity(b) > activity(a) ? b : a)).id
   }, [tickets])
 
   const rows = useMemo(() => {
@@ -392,8 +405,8 @@ export default function TicketGrid() {
                     style={{
                       borderBottom: '1px solid var(--border)',
                       background: isSel ? 'var(--bg-input)' : 'transparent',
-                      // Only the latest just-raised ticket is spotlighted (primary
-                      // left-border glow), not every unseen row.
+                      // The ticket with the latest unseen change is spotlighted
+                      // (primary left-border glow), not every unseen row.
                       borderLeft: t.id === newestNewId ? '3px solid var(--color-primary-500)' : '3px solid transparent',
                       boxShadow: t.id === newestNewId ? 'inset 8px 0 12px -8px var(--color-primary-500)' : 'none',
                     }}
@@ -401,7 +414,7 @@ export default function TicketGrid() {
                     onMouseLeave={e => { if (!isSel) e.currentTarget.style.background = 'transparent' }}>
                     <td style={{ padding: rowPad, position: 'relative' }} onClick={e => e.stopPropagation()}>
                       {t.id === newestNewId && (
-                        <span className="absolute left-1 top-1/2 -translate-y-1/2 flex h-2 w-2" title="Newest ticket — just raised">
+                        <span className="absolute left-1 top-1/2 -translate-y-1/2 flex h-2 w-2" title="Recently updated — not opened yet">
                           <span className="animate-ping absolute inline-flex h-full w-full rounded-full" style={{ background: 'var(--color-primary-500)', opacity: 0.55 }} />
                           <span className="relative inline-flex rounded-full h-2 w-2" style={{ background: 'var(--color-primary-500)' }} />
                         </span>
@@ -418,6 +431,15 @@ export default function TicketGrid() {
                             <span className="font-semibold" style={{ color: 'var(--text-h)' }}>{t.subject}</span>
                             <span className="ml-2 text-xs" style={{ color: 'var(--text-muted)', fontFamily: 'monospace' }}>#{t.id}</span>
                             {t.source === 'widget' && <span className="ml-1.5 inline-flex items-center gap-0.5 text-[10px]" style={{ color: ACCENT }}><Zap size={9} />widget</span>}
+                            {SOURCE_BADGE[t.source] && (() => {
+                              const S = SOURCE_BADGE[t.source]
+                              return (
+                                <span className="ml-1.5 inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full align-middle" title={`Raised from the ${S.label} module`}
+                                  style={{ background: `color-mix(in srgb, ${ACCENT} 14%, transparent)`, color: ACCENT, border: `1px solid color-mix(in srgb, ${ACCENT} 30%, transparent)` }}>
+                                  <S.icon size={9} />from {S.label}
+                                </span>
+                              )
+                            })()}
                             {t.is_reopened && (
                               <span className="ml-1.5 inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full align-middle" title="This ticket was reopened"
                                 style={{ background: 'color-mix(in srgb, var(--color-warning-500) 16%, transparent)', color: 'var(--color-warning-500)', border: '1px solid color-mix(in srgb, var(--color-warning-500) 30%, transparent)' }}>

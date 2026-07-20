@@ -2,7 +2,11 @@
 import api from '@/lib/api'
 
 const handleErr = (err) => {
-  const msg = err?.response?.data?.message || err?.response?.data?.error || 'Something went wrong'
+  const data = err?.response?.data
+  // Surface the specific field error (e.g. "File too large") instead of the
+  // generic "Validation failed", so the real reason reaches the user.
+  const fieldErr = data?.errors && Object.values(data.errors)?.[0]?.[0]
+  const msg = fieldErr || data?.message || data?.error || 'Something went wrong'
   throw new Error(msg)
 }
 const unwrap = (r) => r.data?.data ?? r.data
@@ -28,7 +32,18 @@ export const taskApi = {
   addChecklist: (id, description) => api.post(`/tasks/${id}/checklist`, { description }).then(unwrap).catch(handleErr),
   toggleChecklist: (itemId) => api.patch(`/tasks/checklist/${itemId}/toggle`).then(unwrap).catch(handleErr),
   comments: (id) => api.get(`/tasks/${id}/comments`).then(unwrap).catch(handleErr),
-  addComment: (id, content) => api.post(`/tasks/${id}/comments`, { content }).then(unwrap).catch(handleErr),
+  // Post a comment; when files are supplied, send multipart so they attach to it.
+  // Overriding Content-Type lets axios set the multipart boundary itself — the
+  // instance default (application/json) would otherwise break the file upload.
+  addComment: (id, content, files = []) => {
+    if (!files || files.length === 0) {
+      return api.post(`/tasks/${id}/comments`, { content }).then(unwrap).catch(handleErr)
+    }
+    const fd = new FormData()
+    fd.append('content', content ?? '')
+    Array.from(files).forEach(f => fd.append('files[]', f))
+    return api.post(`/tasks/${id}/comments`, fd, { headers: { 'Content-Type': 'multipart/form-data' } }).then(unwrap).catch(handleErr)
+  },
   startTimer: (id, note) => api.post(`/tasks/${id}/timer/start`, { note }).then(unwrap).catch(handleErr),
   stopTimer: (id) => api.post(`/tasks/${id}/timer/stop`).then(unwrap).catch(handleErr),
   totalTime: (id) => api.get(`/tasks/${id}/total-time`).then(unwrap).catch(handleErr),
@@ -42,7 +57,9 @@ export const taskApi = {
   uploadFiles: (id, fileList) => {
     const fd = new FormData()
     Array.from(fileList).forEach(f => fd.append('files[]', f))
-    return api.post(`/tasks/${id}/files`, fd).then(unwrap).catch(handleErr)
+    // Override Content-Type so axios sets the multipart boundary (the instance
+    // default application/json would make the backend see zero files).
+    return api.post(`/tasks/${id}/files`, fd, { headers: { 'Content-Type': 'multipart/form-data' } }).then(unwrap).catch(handleErr)
   },
   deleteFile: (id, fileId) => api.delete(`/tasks/${id}/files/${fileId}`).then(unwrap).catch(handleErr),
   downloadFile: async (id, fileId, filename) => {

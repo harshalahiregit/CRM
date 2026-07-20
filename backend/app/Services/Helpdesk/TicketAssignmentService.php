@@ -44,6 +44,16 @@ class TicketAssignmentService
         $previous = $ticket->assigned_to;
         $ticket->update(['assigned_to' => $userId]);
 
+        // Reassignment is activity: re-flag the ticket "new" for everyone but the
+        // person who moved it, so it resurfaces with the grid's dot (the update
+        // above already bumped updated_at, floating it to the top of the list).
+        if ($userId !== $previous) {
+            $actor = auth()->id();
+            \Illuminate\Support\Facades\DB::table('tickets')
+                ->where('id', $ticket->id)->where('tenant_id', $tenantId)
+                ->update(['seen_by' => json_encode($actor ? [$actor] : [])]);
+        }
+
         Log::info('Helpdesk ticket assignment', [
             'ticket' => $ticket->id, 'assigned_to' => $userId, 'tenant' => $tenantId,
         ]);

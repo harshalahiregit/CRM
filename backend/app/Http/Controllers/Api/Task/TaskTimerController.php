@@ -32,6 +32,6 @@ class TaskTimerController extends Controller
     public function total(Request $request, int $task)
     {
         $this->guardTask($request, $task);
-        return $this->success($this->tasks->totalTime($task, $request->user()->tenant_id), 'Total time computed');
+        return $this->success($this->tasks->totalTime($task, $request->user()->tenant_id, $request->user()->id), 'Total time computed');
     }
 }

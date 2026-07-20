@@ -4,11 +4,12 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft, RefreshCw, Plus, Users, Flag, Paperclip, Trash2, ListTodo, LifeBuoy,
   Pencil, Copy, Pin, PinOff, MoreHorizontal, Download, Upload, ExternalLink, Check, FileText,
+  Play, Search, Clock,
 } from 'lucide-react'
 import { projectApi, PROJECT_STATUS, PROJECT_ACCENT } from '@/services/projectApi'
 import { useAuth } from '@/context/AuthContext'
 import { useStatuses, statusOptions } from '@/hooks/useStatuses'
-import { taskApi } from '@/services/taskApi'
+import { taskApi, TASK_PRIORITY } from '@/services/taskApi'
 import Select from '@/components/ui/Select'
 import SearchPicker, { ConfirmModal } from '@/components/ui/SearchPicker'
 import { TagChips } from '@/components/ui/TagInput'
@@ -19,6 +20,7 @@ import { DiscussionsTab } from '../components/ProjectDiscussions'
 import ProjectInvoiceModal from '../components/ProjectInvoiceModal'
 import ProjectGantt from '../components/ProjectGantt'
 import TaskFormDrawer from '../../tasks/components/TaskFormDrawer'
+import TaskDetailModal from '../../tasks/components/TaskDetailModal'
 import RaiseTicketModal from '../../helpdesk/components/RaiseTicketModal'
 
 /**
@@ -207,7 +209,7 @@ export default function ProjectDetail() {
       </div>
 
       {tab === 'overview' && <Overview project={project} prog={prog} onRecalc={() => refetchProg()} busy={progBusy} />}
-      {tab === 'tasks' && <TasksTab projectId={id} navigate={navigate} />}
+      {tab === 'tasks' && <TasksTab projectId={id} navigate={navigate} onNewTask={() => setCreatingTask(true)} />}
       {tab === 'milestones' && <MilestonesTab project={project} onChange={invalidate} onErr={onErr} canManage={canManage} />}
       {tab === 'gantt' && <ProjectGantt projectId={id} milestones={project.milestones || []} />}
       {tab === 'meeting' && <MeetingsTab projectId={id} canManage={canManage} />}
@@ -228,7 +230,7 @@ export default function ProjectDetail() {
         onSaved={() => { invalidate(); refetchProg(); qc.invalidateQueries({ queryKey: ['tasks'] }) }} />
 
       {/* Raise a helpdesk ticket linked to this project (normal ticket flow). */}
-      <RaiseTicketModal open={raising} onClose={() => setRaising(false)} projectId={id}
+      <RaiseTicketModal open={raising} onClose={() => setRaising(false)} projectId={id} source="project"
         defaultSubject={`[${project.name}] `}
         onCreated={() => qc.invalidateQueries({ queryKey: ['project-tickets', id] })} />
 
@@ -316,55 +318,160 @@ const Row = ({ label, value }) => (
 
 /* ── Tasks tab ────────────────────────────────────────────────── */
 
-function TasksTab({ projectId, navigate }) {
-  const { data: tasks = [], isLoading } = useQuery({
-    queryKey: ['tasks', { rel_type: 'project', rel_id: projectId }],
-    queryFn: () => taskApi.list({ rel_type: 'project', rel_id: projectId }),
+const TASK_PAGE_SIZES = [{ value: 10, label: '10' }, { value: 25, label: '25' }, { value: 50, label: '50' }, { value: 100, label: '100' }, { value: 0, label: 'All' }]
+const taskInitials = (n) => n ? n.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2) : '–'
+
+/* ── Tasks tab: "Tasks Summary" status cards + a functional task table ──
+ * One card per tenant-configured task status (total + assigned-to-me), then a
+ * table with inline status change and a per-row Start Timer. Clicking a task
+ * opens the full task workspace (checklist, attachments, comments, reminders…).
+ */
+function TasksTab({ projectId, navigate, onNewTask }) {
+  const qc = useQueryClient()
+  const { user } = useAuth()
+  const { list: taskStatusList, map: taskStatusMap } = useStatuses('task')
+  const [q, setQ] = useState('')
+  const [pageSize, setPageSize] = useState(25)
+  const [openTaskId, setOpenTaskId] = useState(null)
+
+  const taskKey = ['tasks', { rel_type: 'project', rel_id: projectId }]
+  const { data: tasks = [], isLoading } = useQuery({ queryKey: taskKey, queryFn: () => taskApi.list({ rel_type: 'project', rel_id: projectId }) })
+
+  const refetch = () => qc.invalidateQueries({ queryKey: ['tasks'] })
+  const setStatus = useMutation({ mutationFn: ({ id, status }) => taskApi.setStatus(id, status), onSuccess: refetch })
+  const startTimer = useMutation({ mutationFn: (id) => taskApi.startTimer(id), onSuccess: refetch })
+
+  const uid = user?.id
+  const mineOf = (t) => (t.assignees || []).some(a => a.user_id === uid || a.user?.id === uid)
+
+  // Summary: one card per configured status (falls back to the built-in five).
+  const summary = (taskStatusList || []).map(s => {
+    const inS = tasks.filter(t => t.status === s.key)
+    return { key: s.key, name: s.name ?? s.label, color: s.color, total: inS.length, mine: inS.filter(mineOf).length }
   })
 
-  const byStatus = ['not_started', 'in_progress', 'awaiting_feedback', 'testing', 'complete']
-  const counts = Object.fromEntries(byStatus.map(k => [k, tasks.filter(t => t.status === k).length]))
-  const done = counts.complete || 0
+  const rows = tasks
+    .filter(t => { const term = q.trim().toLowerCase(); return !term || `${t.name} #${t.id}`.toLowerCase().includes(term) })
+    .slice(0, pageSize === 0 ? undefined : pageSize)
 
-  if (isLoading) return <div className="rounded-2xl animate-pulse" style={{ height: 140, background: 'var(--bg-card)' }} />
+  const priorityColor = (p) => TASK_PRIORITY[p] || 'var(--text-muted)'
+  const statusMeta = (k) => taskStatusMap[k] || { label: k, color: 'var(--text-muted)' }
+  const statusOpts = statusOptions(taskStatusList || [], user?.role)
+
+  if (isLoading) return <div className="rounded-2xl animate-pulse" style={{ height: 160, background: 'var(--bg-card)' }} />
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))' }}>
-        {byStatus.map(k => (
-          <div key={k} className="rounded-xl p-2.5" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-            <p className="text-[9px] font-bold uppercase tracking-wide truncate" style={{ color: 'var(--text-muted)' }}>{k.replace(/_/g, ' ')}</p>
-            <p className="text-lg font-black" style={{ color: 'var(--text-h)' }}>{counts[k]}</p>
+      {/* Header */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <h2 className="font-bold text-sm" style={{ color: 'var(--text-h)' }}>Tasks Summary</h2>
+        <button onClick={onNewTask} className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl"
+          style={{ background: PROJECT_ACCENT, color: '#fff' }}>
+          <Plus size={13} /> New Task
+        </button>
+      </div>
+
+      {/* Status summary cards — count + "assigned to me" per configured status */}
+      <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' }}>
+        {summary.map(s => (
+          <div key={s.key} className="rounded-xl p-3" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderLeft: `3px solid ${s.color}` }}>
+            <p className="text-3xl font-black leading-none" style={{ color: 'var(--text-h)' }}>{s.total}</p>
+            <p className="text-[11px] font-bold mt-1.5" style={{ color: s.color }}>{s.name}</p>
+            <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>Tasks assigned to me: {s.mine}</p>
           </div>
         ))}
       </div>
 
-      <div className="flex items-center gap-2">
-        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-          <strong style={{ color: 'var(--text-h)' }}>{done}/{tasks.length}</strong> complete
-        </p>
-        <button onClick={() => navigate(`/app/tasks?rel_type=project&rel_id=${projectId}`)}
-          className="ml-auto flex items-center gap-1 text-xs font-bold" style={{ color: PROJECT_ACCENT }}>
-          Open in Tasks <ExternalLink size={11} />
-        </button>
+      {/* Toolbar */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div style={{ width: 90 }}>
+          <Select value={pageSize} onChange={v => setPageSize(Number(v))} options={TASK_PAGE_SIZES} size="sm" ariaLabel="Rows per page" />
+        </div>
+        <div className="relative flex-1" style={{ maxWidth: 260 }}>
+          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search…"
+            style={{ width: '100%', padding: '7px 10px 7px 30px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--bg-input)', fontSize: 13, outline: 'none', color: 'var(--text-h)' }} />
+        </div>
+        <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Showing {rows.length} of {tasks.length}</span>
       </div>
 
-      <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-        {tasks.length === 0 && <p className="text-xs text-center py-10" style={{ color: 'var(--text-muted)' }}>No tasks linked to this project yet.</p>}
-        {tasks.map(t => (
-          <button key={t.id} onClick={() => navigate(`/app/tasks/${t.id}`)}
-            className="w-full flex items-center gap-2 px-4 py-2.5 text-left"
-            style={{ borderBottom: '1px solid var(--border)' }}
-            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-input)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-            {t.status === 'complete'
-              ? <Check size={12} style={{ color: 'var(--color-success-500)', flexShrink: 0 }} />
-              : <span className="w-2 h-2 rounded-full shrink-0" style={{ background: 'var(--text-muted)' }} />}
-            <span className="flex-1 text-xs truncate" style={{ color: 'var(--text-h)' }}>{t.name}</span>
-            <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{t.due_date ? fmtDate(t.due_date) : ''}</span>
-          </button>
-        ))}
+      {/* Task table */}
+      <div className="rounded-2xl overflow-x-auto" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+        <table className="w-full" style={{ borderCollapse: 'collapse', minWidth: 720 }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid var(--border)' }}>
+              {['#', 'Name', 'Status', 'Start Date', 'Due Date', 'Assigned to', 'Tags', 'Priority'].map(h => (
+                <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontSize: 10.5, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 && (
+              <tr><td colSpan={8}><p className="text-xs text-center py-10" style={{ color: 'var(--text-muted)' }}>{q ? 'No matching tasks.' : 'No tasks linked to this project yet — click New Task.'}</p></td></tr>
+            )}
+            {rows.map(t => {
+              const sm = statusMeta(t.status)
+              const assignees = t.assignees || []
+              const tags = (t.tags || []).map(tg => (typeof tg === 'string' ? tg : tg.name))
+              return (
+                <tr key={t.id} style={{ borderBottom: '1px solid var(--border)' }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-input)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                  <td style={{ padding: '9px 12px', fontSize: 12, fontFamily: 'monospace', color: 'var(--text-muted)' }}>{t.id}</td>
+                  <td style={{ padding: '9px 12px' }}>
+                    <button onClick={() => setOpenTaskId(t.id)} className="text-left font-semibold text-xs hover:underline" style={{ color: 'var(--text-h)' }}>{t.name}</button>
+                    <div className="mt-1">
+                      <button onClick={() => startTimer.mutate(t.id)} disabled={startTimer.isPending}
+                        className="inline-flex items-center gap-1 text-[10px] font-bold disabled:opacity-40" style={{ color: PROJECT_ACCENT }}>
+                        <Play size={9} /> Start Timer
+                      </button>
+                    </div>
+                  </td>
+                  <td style={{ padding: '9px 12px' }} onClick={e => e.stopPropagation()}>
+                    <div style={{ minWidth: 130 }}>
+                      <Select value={t.status} onChange={v => setStatus.mutate({ id: t.id, status: v })} ariaLabel={`Status for task ${t.id}`}
+                        options={statusOpts.length ? statusOpts : [{ value: t.status, label: sm.label, dot: sm.color }]}
+                        size="sm" buttonStyle={{ color: sm.color, background: `${sm.color}18`, border: `1px solid ${sm.color}30`, borderRadius: 999, fontWeight: 700, fontSize: 11 }} />
+                    </div>
+                  </td>
+                  <td style={{ padding: '9px 12px', fontSize: 12, color: 'var(--text-body)', whiteSpace: 'nowrap' }}>{fmtDate(t.start_date)}</td>
+                  <td style={{ padding: '9px 12px', fontSize: 12, color: 'var(--text-body)', whiteSpace: 'nowrap' }}>{t.due_date ? fmtDate(t.due_date) : '—'}</td>
+                  <td style={{ padding: '9px 12px' }}>
+                    {assignees.length === 0 ? <span className="text-xs" style={{ color: 'var(--text-muted)' }}>—</span> : (
+                      <div className="flex items-center gap-1">
+                        {assignees.slice(0, 3).map(a => (
+                          <span key={a.user_id || a.user?.id} title={a.user?.name} className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold"
+                            style={{ background: `linear-gradient(135deg,var(--color-primary-400),var(--color-primary-600))`, color: '#fff', border: '1px solid var(--border)' }}>
+                            {taskInitials(a.user?.name)}
+                          </span>
+                        ))}
+                        {assignees.length > 3 && <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>+{assignees.length - 3}</span>}
+                      </div>
+                    )}
+                  </td>
+                  <td style={{ padding: '9px 12px' }}>
+                    <div className="flex flex-wrap gap-1">
+                      {tags.slice(0, 3).map(tg => (
+                        <span key={tg} className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md" style={{ background: `color-mix(in srgb, ${PROJECT_ACCENT} 12%, transparent)`, color: PROJECT_ACCENT }}>{tg}</span>
+                      ))}
+                      {tags.length === 0 && <span className="text-xs" style={{ color: 'var(--text-muted)' }}>—</span>}
+                    </div>
+                  </td>
+                  <td style={{ padding: '9px 12px' }}>
+                    <span className="inline-flex items-center gap-1 text-[11px] font-bold capitalize">
+                      <span className="w-2 h-2 rounded-full" style={{ background: priorityColor(t.priority) }} />
+                      <span style={{ color: priorityColor(t.priority) }}>{t.priority}</span>
+                    </span>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
       </div>
+
+      <TaskDetailModal taskId={openTaskId} open={!!openTaskId}
+        onClose={() => { setOpenTaskId(null); qc.invalidateQueries({ queryKey: taskKey }) }} />
     </div>
   )
 }

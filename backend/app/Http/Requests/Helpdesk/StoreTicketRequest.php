@@ -35,6 +35,10 @@ class StoreTicketRequest extends FormRequest
             // Link back to the project this ticket was raised from ("Raise Ticket"
             // on a project/task). Tenant ownership is re-checked in the service.
             'project_id'      => 'nullable|integer|min:1',
+            // Where the ticket was raised from, so the grid can badge its origin
+            // module. Agent-composed tickets omit it (default 'internal'); the
+            // "Raise Ticket" button in each module stamps its own value.
+            'source'          => ['nullable', 'string', Rule::in(['internal', 'project', 'task', 'inventory'])],
         ];
     }
 }

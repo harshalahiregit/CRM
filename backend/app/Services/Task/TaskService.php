@@ -161,7 +161,7 @@ class TaskService
         $task->load([
             'creator:id,name', 'milestone:id,name',
             'assignees.user:id,name,email', 'followers.user:id,name',
-            'checklistItems', 'comments.user:id,name', 'timers.user:id,name',
+            'checklistItems', 'comments.user:id,name', 'comments.attachments', 'timers.user:id,name',
         ]);
         $task->setAttribute('tags', $this->tags->tagsFor('task', $task->id, $tenantId));
 
@@ -218,6 +218,12 @@ class TaskService
 
         $tags = $data['tags'] ?? null;
         unset($data['tags']);
+
+        // The description is now edited inline with a rich-text editor, so it arrives
+        // as HTML — sanitize it with the same allowlist as comments before saving.
+        if (array_key_exists('description', $data) && $data['description'] !== null) {
+            $data['description'] = \App\Support\HtmlSanitizer::clean($data['description']);
+        }
 
         $task->fill($data);
 
@@ -448,18 +454,41 @@ class TaskService
 
     public function listComments(int $taskId, int $tenantId): Collection
     {
-        return $this->find($taskId, $tenantId)->comments()->with('user:id,name')->get();
+        return $this->find($taskId, $tenantId)->comments()->with('user:id,name', 'attachments')->get();
     }
 
-    public function addComment(int $taskId, string $content, int $tenantId, int $userId): TaskComment
+    public function addComment(int $taskId, string $content, int $tenantId, int $userId, array $files = []): TaskComment
     {
         $task = $this->find($taskId, $tenantId);
+
+        // Comments are now authored in a rich-text editor, so the content arrives as
+        // HTML. Run it through the same strict allowlist sanitizer the helpdesk reply
+        // path uses before persisting — safe tags/attributes survive, script/style and
+        // event handlers are dropped — which removes the XSS risk that previously kept
+        // comments plain-text. strip_tags() below still derives a plain excerpt/mentions.
+        $content = \App\Support\HtmlSanitizer::clean($content);
+
         $comment = $task->comments()->create([
             'tenant_id' => $tenantId, 'user_id' => $userId, 'content' => $content,
         ]);
 
+        // Attachments dropped on the comment are stored as task files carrying this
+        // comment_id — same storage/download as any task file, just scoped to the
+        // comment so the task-level Files card doesn't also list them.
+        foreach ($files as $file) {
+            $comment->attachments()->create([
+                'tenant_id'   => $tenantId,
+                'task_id'     => $task->id,
+                'file_path'   => $file->store("tasks/attachments/{$tenantId}/{$task->id}", 'local'),
+                'file_name'   => $file->getClientOriginalName(),
+                'file_size'   => $file->getSize(),
+                'mime_type'   => $file->getClientMimeType(),
+                'uploaded_by' => $userId,
+            ]);
+        }
+
         $author = User::find($userId)?->name ?? 'Someone';
-        $excerpt = Str::limit(trim(strip_tags($content)), 120);
+        $excerpt = Str::limit(trim(strip_tags($content)), 120) ?: 'shared a file';
 
         // @mentioned people are told they were named; everyone else watching gets
         // the quieter "new comment". Nobody gets both.
@@ -480,7 +509,7 @@ class TaskService
             );
         }
 
-        return $comment->load('user:id,name');
+        return $comment->load('user:id,name', 'attachments');
     }
 
     /**
@@ -542,19 +571,33 @@ class TaskService
         return $timer->fresh();
     }
 
-    public function totalTime(int $taskId, int $tenantId): array
+    public function totalTime(int $taskId, int $tenantId, ?int $userId = null): array
     {
         $task = $this->find($taskId, $tenantId);
-        $seconds = $task->timers()->get()->sum(fn (TaskTimer $t) => $t->durationSeconds());
+        $timers = $task->timers()->get();
+        $seconds = $timers->sum(fn (TaskTimer $t) => $t->durationSeconds());
+        // The caller's own logged time — so the Task Info panel can show "your"
+        // vs "total" logged time, like the reference task view.
+        $mySeconds = $userId
+            ? $timers->where('user_id', $userId)->sum(fn (TaskTimer $t) => $t->durationSeconds())
+            : 0;
 
-        return ['task_id' => $task->id, 'total_seconds' => $seconds, 'total_hours' => round($seconds / 3600, 2)];
+        return [
+            'task_id'       => $task->id,
+            'total_seconds' => $seconds,
+            'total_hours'   => round($seconds / 3600, 2),
+            'my_seconds'    => $mySeconds,
+            'my_hours'      => round($mySeconds / 3600, 2),
+        ];
     }
 
     /* ── Attachments ────────────────────────────────────────────── */
 
     public function listFiles(int $taskId, int $tenantId): Collection
     {
-        return $this->find($taskId, $tenantId)->files()->with('uploader:id,name')->get();
+        // Only task-level files here — a comment's attachments render under the
+        // comment, not in the Files card.
+        return $this->find($taskId, $tenantId)->files()->whereNull('comment_id')->with('uploader:id,name')->get();
     }
 
     /** $files: [['file_path','file_name','file_size','mime_type'], ...] already on disk. */

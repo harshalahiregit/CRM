@@ -1,9 +1,11 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
-  Package, Warehouse, IndianRupee, AlertTriangle, XCircle, ArrowLeftRight, Boxes, ArrowRight,
+  Package, Warehouse, IndianRupee, AlertTriangle, XCircle, ArrowLeftRight, Boxes, ArrowRight, LifeBuoy,
 } from 'lucide-react'
 import { inventoryApi, INV_ACCENT, fmtQty, money } from '@/services/inventoryApi'
+import RaiseTicketModal from '../../helpdesk/components/RaiseTicketModal'
 
 /**
  * Inventory command centre — the KPI tiles from the blueprint's Dashboard, built
@@ -12,6 +14,7 @@ import { inventoryApi, INV_ACCENT, fmtQty, money } from '@/services/inventoryApi
  */
 export default function InventoryDashboard() {
   const navigate = useNavigate()
+  const [raising, setRaising] = useState(false)
   const { data: s, isLoading } = useQuery({ queryKey: ['inv-summary'], queryFn: inventoryApi.summary })
   const { data: low = [] } = useQuery({ queryKey: ['inv-low-stock'], queryFn: inventoryApi.lowStock })
 
@@ -44,6 +47,13 @@ export default function InventoryDashboard() {
           <Boxes size={17} style={{ color: INV_ACCENT }} />
         </span>
         <h1 className="text-lg font-bold" style={{ color: 'var(--text-h)' }}>Inventory</h1>
+        {/* Raise a helpdesk ticket from Inventory — same flow as the Helpdesk module,
+            tagged so the ticket queue shows it came from here. */}
+        <button onClick={() => setRaising(true)}
+          className="ml-auto flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold transition-opacity hover:opacity-90"
+          style={{ background: 'var(--color-support-500)', color: '#fff' }}>
+          <LifeBuoy size={15} /> Raise Ticket
+        </button>
       </header>
 
       {/* KPI tiles */}
@@ -112,6 +122,9 @@ export default function InventoryDashboard() {
           </ul>
         )}
       </section>
+
+      <RaiseTicketModal open={raising} onClose={() => setRaising(false)} source="inventory"
+        defaultSubject="[Inventory] " />
     </div>
   )
 }

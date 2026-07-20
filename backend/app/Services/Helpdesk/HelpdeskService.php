@@ -258,6 +258,26 @@ class HelpdeskService
     }
 
     /**
+     * A meaningful change to a ticket — a new reply, a status move, a reassignment
+     * — makes it "new" again for everyone who had already opened it. The seen list
+     * is reset to just the actor who made the change (so they don't get a dot for
+     * their own action; pass null for a customer reply, which has no staff actor),
+     * and updated_at is bumped so the ticket floats to the top of the grid's
+     * recently-updated sort. This is what makes the "new" indicator track recent
+     * activity instead of only ever firing once, on creation.
+     */
+    private function resetSeen(Ticket $ticket, ?int $actorUserId = null): void
+    {
+        DB::table('tickets')
+            ->where('id', $ticket->id)
+            ->where('tenant_id', $ticket->tenant_id)
+            ->update([
+                'seen_by'    => json_encode($actorUserId ? [$actorUserId] : []),
+                'updated_at' => now(),
+            ]);
+    }
+
+    /**
      * REQ-04-lite: how many tickets THIS user can see but hasn't opened yet. It
      * reuses the exact visibility scoping of listTickets (same repository filter,
      * same manager/department rules) so the badge never counts a ticket the user
@@ -586,7 +606,7 @@ class HelpdeskService
         return $ticket->fresh();
     }
 
-    public function changeStatus(int $ticketId, string $status, int $tenantId): Ticket
+    public function changeStatus(int $ticketId, string $status, int $tenantId, ?int $actorUserId = null): Ticket
     {
         $ticket = $this->findTicket($ticketId, $tenantId);
         $was = $ticket->status;
@@ -603,6 +623,8 @@ class HelpdeskService
         // and put the same activity in front of the managers/admins who track this
         // ticket — a status move is exactly the kind of activity the admin follows.
         if ($status !== $was) {
+            // A status move is activity — re-flag "new" for everyone but whoever moved it.
+            $this->resetSeen($ticket, $actorUserId);
             $this->notifyRaiser($ticket, 'ticket.status', "Ticket #{$ticket->id} is now {$status}", $ticket->subject);
             // Exclude the raiser from the manager fan-out: when the person who raised
             // the ticket is themselves a manager/admin, notifyRaiser already told them
@@ -671,6 +693,12 @@ class HelpdeskService
         });
 
         $fresh = $ticket->fresh();
+
+        // A reply is activity: re-flag the ticket "new" for everyone but the person
+        // who wrote it. A client reply has no staff actor, so it lights up for all
+        // staff (null actor); a staff reply excludes its author.
+        $this->resetSeen($fresh, $data['sender_type'] !== 'client' && ! empty($data['sender_id'])
+            ? (int) $data['sender_id'] : null);
 
         if ($data['sender_type'] !== 'client') {
             // A staff reply is delivered to the customer as email (after the write

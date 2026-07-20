@@ -12,7 +12,7 @@ class TaskFile extends Model
     use HasFactory, BelongsToTenant;
 
     protected $fillable = [
-        'tenant_id', 'task_id', 'file_path', 'file_name', 'file_size', 'mime_type', 'uploaded_by',
+        'tenant_id', 'task_id', 'comment_id', 'file_path', 'file_name', 'file_size', 'mime_type', 'uploaded_by',
     ];
 
     protected $casts = ['file_size' => 'integer'];

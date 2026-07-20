@@ -26,6 +26,14 @@ class TaskCommentController extends Controller
     public function store(StoreCommentRequest $request, int $task)
     {
         $this->guardTask($request, $task);
-        return $this->success($this->tasks->addComment($task, $request->validated('content'), $request->user()->tenant_id, $request->user()->id), 'Comment added', 201);
+        $comment = $this->tasks->addComment(
+            $task,
+            (string) $request->input('content', ''),
+            $request->user()->tenant_id,
+            $request->user()->id,
+            $request->file('files', []),
+        );
+
+        return $this->success($comment, 'Comment added', 201);
     }
 }
