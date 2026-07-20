@@ -41,6 +41,27 @@ class EnsureVendorPortalAccess
             ], 403);
         }
 
+        // Approval gate, re-checked on every request (not just at login). A Vendor/
+        // TPV account only reaches the portal once an admin has activated it; if it
+        // is still pending, or gets suspended/rejected mid-session, entry is denied
+        // even though the token is technically still valid.
+        if (! $user->isActive()) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => $user->isPending()
+                    ? 'Your account is currently awaiting administrator approval.'
+                    : 'Your account is not active. Please contact the administrator.',
+            ], 403);
+        }
+
+        // Temporary-access accounts lose portal entry the moment their window lapses.
+        if ($user->access_expires_at && $user->access_expires_at->isPast()) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Your temporary access has expired. Contact your administrator.',
+            ], 403);
+        }
+
         // Resolve within the caller's tenant — a vendor login is bound to one
         // tenant, and the record must belong to it.
         $vendor = Vendor::forTenant($user->tenant_id)
