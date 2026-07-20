@@ -52,7 +52,8 @@ const ProposalTemplates = lazy(() => import('@/modules/sales/pages/ProposalTempl
 
 // TPV (third-party vendor) module + shared Compliance/Kickoff engines
 const TPVLayout = lazy(() => import('@/modules/tpv/TPVLayout'))
-const TpvDashboard = lazy(() => import('@/modules/tpv/pages/TpvDashboard'))
+const TpvVendors = lazy(() => import('@/modules/tpv/pages/TpvVendors'))
+const TpvVendorDetail = lazy(() => import('@/modules/tpv/pages/TpvVendorDetail'))
 const TpvOnboardings = lazy(() => import('@/modules/tpv/pages/TpvOnboardings'))
 const TpvOnboardingWizard = lazy(() => import('@/modules/tpv/pages/TpvOnboardingWizard'))
 const TpvWorkers = lazy(() => import('@/modules/tpv/pages/TpvWorkers'))
@@ -177,7 +178,8 @@ export default function AppRoutes() {
         {/* TPV MODULE (third-party vendors) + shared Compliance/Kickoff engines */}
         <Route path="tpv" element={<S><TPVLayout /></S>}>
           <Route index element={<Navigate to="dashboard" replace />} />
-          <Route path="dashboard" element={<S><TpvDashboard /></S>} />
+          <Route path="dashboard" element={<S><TpvVendors /></S>} />
+          <Route path="view/:id" element={<S><TpvVendorDetail /></S>} />
           <Route path="kickoff" element={<S><KickoffMeetings /></S>} />
           <Route path="kickoff/:id" element={<S><KickoffMeetingDetail /></S>} />
           <Route path="onboarding" element={<S><TpvOnboardings /></S>} />

@@ -17,6 +17,16 @@ export const tpvApi = {
     get: () => api.get('/tpv/dashboard').then(r => r.data),
   },
 
+  // ── Third-party vendors (master + portal login), scoped to tpv engagement ──
+  vendors: {
+    list:      (params = {}) => api.get('/vendors', { params: { engagement: 'tpv', ...params } }).then(r => r.data),
+    get:       (id)          => api.get(`/vendors/${id}`).then(r => r.data),
+    create:    (data)        => api.post('/vendors', data).then(r => r.data),
+    update:    (id, data)    => api.put(`/vendors/${id}`, data).then(r => r.data),
+    setStatus: (id, status)  => api.patch(`/vendors/${id}/status`, { status }).then(r => r.data),
+    delete:    (id)          => api.delete(`/vendors/${id}`).then(r => r.data),
+  },
+
   // ── Onboarding — the 6-step wizard ──────────────────────────────────
   onboarding: {
     list:     (params = {}) => api.get('/tpv/onboarding', { params }).then(r => r.data),

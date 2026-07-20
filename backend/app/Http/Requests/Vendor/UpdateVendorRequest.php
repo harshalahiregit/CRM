@@ -37,6 +37,10 @@ class UpdateVendorRequest extends FormRequest
             'status'              => ['nullable', Rule::in(VendorStatus::ALL)],
             'notes'               => 'nullable|string',
 
+            // Linked login sync — blank password keeps the existing one.
+            'name'                => 'nullable|string|max:150',
+            'password'            => 'nullable|string|min:6|confirmed',
+
             'contacts'              => 'nullable|array',
             'contacts.*.name'       => 'required|string',
             'contacts.*.designation'=> 'nullable|string',

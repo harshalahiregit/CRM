@@ -16,13 +16,14 @@ final class VendorStatus
     public const DRAFT            = 'Draft';
     public const PENDING_APPROVAL = 'Pending_Approval';
     public const ACTIVE           = 'Active';
+    public const INACTIVE         = 'Inactive';
     public const ON_HOLD          = 'On_Hold';
     public const REJECTED         = 'Rejected';
     public const BLACKLISTED      = 'Blacklisted';
 
     /** All persisted statuses. */
     public const ALL = [
-        self::DRAFT, self::PENDING_APPROVAL, self::ACTIVE,
+        self::DRAFT, self::PENDING_APPROVAL, self::ACTIVE, self::INACTIVE,
         self::ON_HOLD, self::REJECTED, self::BLACKLISTED,
     ];
 
@@ -36,6 +37,7 @@ final class VendorStatus
         self::DRAFT            => 'Draft',
         self::PENDING_APPROVAL => 'Pending Approval',
         self::ACTIVE           => 'Active',
+        self::INACTIVE         => 'Inactive',
         self::ON_HOLD          => 'On Hold',
         self::REJECTED         => 'Rejected',
         self::BLACKLISTED      => 'Blacklisted',

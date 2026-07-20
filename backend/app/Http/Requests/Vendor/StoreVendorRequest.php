@@ -21,6 +21,11 @@ class StoreVendorRequest extends FormRequest
             'vendor_type'         => 'required|in:standard,temporary',
             'engagements'         => 'required|array|min:1',
             'engagements.*'       => 'in:purchase,tpv',
+
+            // Optional portal login (the "Add Third-party Vendor" flow). When a
+            // password is present, a third_party_vendor User is created & linked.
+            'name'                => 'nullable|string|max:150',
+            'password'            => 'nullable|string|min:6|confirmed',
             'email'               => 'nullable|email',
             'phone'               => 'nullable|string',
             'website'             => 'nullable|url',

@@ -11,7 +11,7 @@ class VendorRepository extends BaseRepository
 
     public function filtered(int $tenantId, array $filters)
     {
-        $query = Vendor::forTenant($tenantId)->with(['primaryContact', 'accountManager:id,name']);
+        $query = Vendor::forTenant($tenantId)->with(['primaryContact', 'accountManager:id,name', 'user:id,name,email,status']);
 
         if (! empty($filters['status']) && $filters['status'] !== 'All') {
             $query->where('status', $filters['status']);

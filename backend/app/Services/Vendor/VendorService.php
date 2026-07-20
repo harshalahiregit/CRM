@@ -9,6 +9,7 @@ use App\Repositories\Vendor\VendorRepository;
 use App\Support\Vendor\VendorStatus as Status;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 
 class VendorService
@@ -27,7 +28,12 @@ class VendorService
         $contacts = $data['contacts'] ?? [];
         unset($data['contacts']);
 
-        $vendor = DB::transaction(function () use ($data, $contacts, $tenantId) {
+        // Login-credential fields belong to the portal User, not the Vendor row.
+        $loginName = $data['name'] ?? null;
+        $password  = $data['password'] ?? null;
+        unset($data['name'], $data['password'], $data['password_confirmation']);
+
+        $vendor = DB::transaction(function () use ($data, $contacts, $tenantId, $loginName, $password) {
             // Set status explicitly rather than leaning on the column default —
             // the default applies in the DB but never reaches the in-memory model,
             // so the create response would carry a null status.
@@ -36,6 +42,15 @@ class VendorService
                 ...$data,
                 'tenant_id' => $tenantId,
             ]);
+
+            // Provision a self-service portal login when a password is supplied
+            // (the "Add Third-party Vendor" flow). Purchase-side vendor creation
+            // omits it and simply gets a profile with no login.
+            if (! empty($password)) {
+                $user = $this->provisionLoginUser($vendor, $loginName, $password, $tenantId);
+                $vendor->update(['user_id' => $user->id]);
+            }
+
             $this->syncContacts($vendor, $contacts);
 
             return $vendor;
@@ -56,12 +71,17 @@ class VendorService
         $contacts = $data['contacts'] ?? null;
         unset($data['contacts']);
 
-        DB::transaction(function () use ($vendor, $data, $contacts) {
+        $loginName = $data['name'] ?? null;
+        $password  = $data['password'] ?? null;
+        unset($data['name'], $data['password'], $data['password_confirmation']);
+
+        DB::transaction(function () use ($vendor, $data, $contacts, $loginName, $password) {
             $vendor->update($data);
             if ($contacts !== null) {
                 $vendor->contacts()->delete();
                 $this->syncContacts($vendor, $contacts);
             }
+            $this->syncLoginUser($vendor->fresh(), $loginName, $password, $data);
         });
 
         $vendor->recordAudit('Vendor Updated', $actor);
@@ -110,6 +130,12 @@ class VendorService
         $from = $vendor->status;
         $vendor->update(['status' => $status]);
 
+        // Mirror the toggle onto the portal login so an Inactive vendor is locked
+        // out immediately (login gate + portal middleware both key off user status).
+        if ($vendor->user_id && $vendor->user) {
+            $vendor->user->update(['status' => $this->loginStatusFor($status)]);
+        }
+
         $vendor->recordAudit('Vendor Status Changed', $actor, $remarks, ['from' => $from, 'to' => $status]);
 
         Log::channel('vendor')->info('Vendor status changed', [
@@ -134,6 +160,8 @@ class VendorService
         return [
             'total'       => Vendor::forTenant($tenantId)->count(),
             'active'      => Vendor::forTenant($tenantId)->where('status', Status::ACTIVE)->count(),
+            // "Inactive" is the binary complement of Active (anything not active).
+            'inactive'    => Vendor::forTenant($tenantId)->where('status', '!=', Status::ACTIVE)->count(),
             'pending'     => Vendor::forTenant($tenantId)->where('status', Status::PENDING_APPROVAL)->count(),
             'on_hold'     => Vendor::forTenant($tenantId)->where('status', Status::ON_HOLD)->count(),
             'blacklisted' => Vendor::forTenant($tenantId)->where('status', Status::BLACKLISTED)->count(),
@@ -141,6 +169,78 @@ class VendorService
                 ->selectRaw('count(*) as count')
                 ->groupBy('vendor_type')->get(),
         ];
+    }
+
+    /**
+     * Create the vendor's portal login. The vendor's own email is the login
+     * identity, so it must be present. Login status mirrors the vendor: an
+     * Active vendor gets an active login; anything else is blocked until activated
+     * (the login gate + EnsureVendorPortalAccess both enforce this).
+     */
+    private function provisionLoginUser(Vendor $vendor, ?string $name, string $password, int $tenantId): User
+    {
+        if (empty($vendor->email)) {
+            throw new BusinessException('An email is required to create login credentials for the vendor.');
+        }
+        if (User::where('email', $vendor->email)->exists()) {
+            throw new BusinessException("A login already exists for {$vendor->email}.");
+        }
+
+        return User::create([
+            'name'      => $name ?: $vendor->company_name,
+            'email'     => $vendor->email,
+            'password'  => Hash::make($password),
+            'role'      => 'third_party_vendor',
+            'tenant_id' => $tenantId,
+            'status'    => $this->loginStatusFor($vendor->status),
+        ]);
+    }
+
+    /**
+     * Keep the linked login in step with an edited vendor: rename, re-email,
+     * mirror active/inactive, and reset the password only when a new one is given
+     * (blank = keep existing). Provisions a login on the fly if the vendor never
+     * had one but a password is now supplied.
+     */
+    private function syncLoginUser(Vendor $vendor, ?string $name, ?string $password, array $data): void
+    {
+        if (! $vendor->user_id) {
+            if (! empty($password)) {
+                $user = $this->provisionLoginUser($vendor, $name, $password, $vendor->tenant_id);
+                $vendor->update(['user_id' => $user->id]);
+            }
+
+            return;
+        }
+
+        $user = $vendor->user;
+        if (! $user) {
+            return;
+        }
+
+        $update = [];
+        if ($name) {
+            $update['name'] = $name;
+        }
+        if (array_key_exists('email', $data) && ! empty($data['email'])) {
+            $update['email'] = $data['email'];
+        }
+        if (array_key_exists('status', $data)) {
+            $update['status'] = $this->loginStatusFor($vendor->status);
+        }
+        if (! empty($password)) {
+            $update['password'] = Hash::make($password);
+        }
+
+        if ($update) {
+            $user->update($update);
+        }
+    }
+
+    /** Map a vendor lifecycle status to the login account's status. */
+    private function loginStatusFor(?string $vendorStatus): string
+    {
+        return $vendorStatus === Status::ACTIVE ? 'active' : 'inactive';
     }
 
     /** Replace the vendor's contact list, enforcing a single primary. */
