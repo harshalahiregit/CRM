@@ -6,7 +6,7 @@ import {
   UserCheck, CalendarDays, FileText, Rocket, Building2,
   ClipboardList, ChevronDown, Shield, UserCog,
   IndianRupee, FileSignature, CreditCard, FileX,
-  ShoppingBag, UserPlus, Link2, RefreshCw, LayoutTemplate
+  ShoppingBag, UserPlus, Link2, RefreshCw, LayoutTemplate, Boxes, Undo2
 } from 'lucide-react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
@@ -56,25 +56,23 @@ const SALES_SUB_ITEMS = [
 ]
 
 const PURCHASE_SUB_ITEMS = [
-  { label: 'Purchase Dashboard', path: '/app/purchase/dashboard', icon: LayoutDashboard },
-  { label: 'Purchase Requests', path: '/app/purchase/requests', icon: ClipboardList },
-  { label: 'Quotations', path: '/app/purchase/quotations', icon: FileSignature },
-  { label: 'Purchase Orders', path: '/app/purchase/orders', icon: ShoppingBag },
-  { label: 'Goods Received', path: '/app/purchase/goods-received', icon: Truck },
-  { label: 'Purchase Invoices', path: '/app/purchase/invoices', icon: Receipt },
-  { label: 'Debit Notes', path: '/app/purchase/debit-notes', icon: FileX },
-  { label: 'Contracts', path: '/app/purchase/contracts', icon: FileText },
-  { label: 'Catalog', path: '/app/purchase/catalog', icon: Package },
+  { label: 'Items',            path: '/app/purchase/catalog',       icon: Package },
+  { label: 'Vendors',          path: '/app/purchase/vendors',       icon: Truck },
+  { label: 'Vendor-Items',     path: '/app/purchase/vendor-items',  icon: Boxes },
+  { label: 'Purchase request', path: '/app/purchase/requests',      icon: ClipboardList },
+  { label: 'Quotations',       path: '/app/purchase/quotations',    icon: FileSignature },
+  { label: 'Purchase order',   path: '/app/purchase/orders',        icon: ShoppingBag },
+  { label: 'Order Returns',    path: '/app/purchase/order-returns', icon: Undo2 },
+  { label: 'Contracts',        path: '/app/purchase/contracts',     icon: FileText },
+  { label: 'Debit Notes',      path: '/app/purchase/debit-notes',   icon: FileX },
+  { label: 'Invoices',         path: '/app/purchase/invoices',      icon: Receipt },
+  { label: 'Reports',          path: '/app/purchase/reports',       icon: BarChart2 },
+  { label: 'Setting',          path: '/app/purchase/settings',      icon: Settings },
 ]
 
 const TPV_SUB_ITEMS = [
-  { label: 'TPV Dashboard', path: '/app/tpv/dashboard', icon: LayoutDashboard },
-  { label: 'Kickoff Meetings', path: '/app/tpv/kickoff', icon: CalendarDays },
-  { label: 'Vendor Onboarding', path: '/app/tpv/onboarding', icon: Rocket },
-  { label: 'Documents', path: '/app/tpv/documents', icon: FileText },
-  { label: 'Workforce', path: '/app/tpv/workforce', icon: UserCheck },
-  { label: 'Compliance', path: '/app/tpv/compliance', icon: CheckSquare },
-  { label: 'Gate Log', path: '/app/tpv/gate-log', icon: Shield },
+  { label: 'Dashboard',       path: '/app/tpv/dashboard', icon: LayoutDashboard },
+  { label: 'Kickoff Meeting', path: '/app/tpv/kickoff',   icon: CalendarDays },
 ]
 
 export default function Sidebar({ collapsed, onToggle }) {
@@ -292,17 +290,17 @@ export default function Sidebar({ collapsed, onToggle }) {
 
         {/* ── Purchase Module sub-nav ── */}
         <div className="mt-2">
-          {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>Procurement</p>}
+          {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>Purchase</p>}
           <button
             onClick={() => setPurchaseExpanded(e => !e)}
-            title={collapsed ? 'Purchase & Procurement' : ''}
+            title={collapsed ? 'Purchase' : ''}
             className="nav-3d mb-0.5 w-full"
             style={{ justifyContent: collapsed ? 'center' : undefined, color: '#a78bfa' }}
           >
             <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.15)' }}>
               <ShoppingBag size={13} style={{ color: '#a78bfa' }} />
             </div>
-            {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Purchase & Procurement</span><ChevronDown size={13} className={clsx('transition-transform duration-200', purchaseExpanded && 'rotate-180')} /></>}
+            {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Purchase</span><ChevronDown size={13} className={clsx('transition-transform duration-200', purchaseExpanded && 'rotate-180')} /></>}
           </button>
           {(purchaseExpanded || collapsed) && PURCHASE_SUB_ITEMS.map(({ label, path, icon: Icon }) => (
             <NavLink key={path} to={path}>
@@ -321,17 +319,17 @@ export default function Sidebar({ collapsed, onToggle }) {
 
         {/* ── TPV Module sub-nav ── */}
         <div className="mt-2">
-          {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>Third-Party Vendors</p>}
+          {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>Thirdparty Vendor</p>}
           <button
             onClick={() => setTpvExpanded(e => !e)}
-            title={collapsed ? 'Third-Party Vendors' : ''}
+            title={collapsed ? 'Thirdparty Vendor' : ''}
             className="nav-3d mb-0.5 w-full"
             style={{ justifyContent: collapsed ? 'center' : undefined, color: '#a78bfa' }}
           >
             <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.15)' }}>
               <Shield size={13} style={{ color: '#a78bfa' }} />
             </div>
-            {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Third-Party Vendors</span><ChevronDown size={13} className={clsx('transition-transform duration-200', tpvExpanded && 'rotate-180')} /></>}
+            {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Thirdparty Vendor</span><ChevronDown size={13} className={clsx('transition-transform duration-200', tpvExpanded && 'rotate-180')} /></>}
           </button>
           {(tpvExpanded || collapsed) && TPV_SUB_ITEMS.map(({ label, path, icon: Icon }) => (
             <NavLink key={path} to={path}>

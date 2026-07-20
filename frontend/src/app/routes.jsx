@@ -225,6 +225,12 @@ export default function AppRoutes() {
           <Route path="contracts" element={<S><PurchaseContracts /></S>} />
           <Route path="contracts/:id" element={<S><PurchaseContractDetail /></S>} />
           <Route path="catalog" element={<S><PurchaseCatalog /></S>} />
+          {/* Sidebar tabs pending dedicated pages — placeholders keep nav intact */}
+          <Route path="vendors" element={<ComingSoon name="Purchase Vendors" />} />
+          <Route path="vendor-items" element={<ComingSoon name="Vendor Items" />} />
+          <Route path="order-returns" element={<ComingSoon name="Order Returns" />} />
+          <Route path="reports" element={<ComingSoon name="Purchase Reports" />} />
+          <Route path="settings" element={<ComingSoon name="Purchase Settings" />} />
         </Route>
 
         {/* Core CRM */}
