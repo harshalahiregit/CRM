@@ -26,6 +26,7 @@ class CareerPortalService
         private CandidateRepository $candidateRepository,
         private InterviewService $interviewService,
         private OfferService $offerService,
+        private CandidateService $candidateService,
     ) {
     }
 
@@ -91,7 +92,19 @@ class CareerPortalService
             throw new BusinessException('You have already applied for this position. Track your application status on this page.', 409);
         }
 
-        return DB::transaction(function () use ($tenant, $job, $data, $resume) {
+        // Screening gate: every mandatory question must be answered.
+        $answers = $this->normalizeAnswers($data['screening_answers'] ?? []);
+        foreach ($job->screening_questions ?? [] as $q) {
+            if (! empty($q['mandatory'])) {
+                $a = collect($answers)->firstWhere('question_id', $q['id'] ?? null);
+                $val = $a['value'] ?? null;
+                if ($val === null || $val === '' || $val === []) {
+                    throw new BusinessException('Please answer the required screening question: '.($q['label'] ?? ''), 422);
+                }
+            }
+        }
+
+        return DB::transaction(function () use ($tenant, $job, $data, $resume, $answers) {
             $candidate = HrCandidate::create([
                 'tenant_id'        => $tenant->id,           // hard-scoped to the portal's tenant
                 'job_posting_id'   => $job->id,
@@ -115,6 +128,14 @@ class CareerPortalService
 
             if ($resume) {
                 $this->resumeService->upload($candidate, $tenant->id, $resume);
+            }
+
+            // SPK-1: run the AI application evaluation (resume/JD/question/skill
+            // match + explained recommendation). Best-effort — never blocks apply.
+            try {
+                $this->candidateService->evaluateApplication($candidate->fresh('jobPosting'), $answers);
+            } catch (\Throwable $e) {
+                Log::channel('hr')->warning('Application AI evaluation failed', ['candidate_id' => $candidate->id, 'error' => $e->getMessage()]);
             }
 
             // Surface the application on the job's activity timeline (system actor).
@@ -270,6 +291,7 @@ class CareerPortalService
             'closing_date'       => $job->closing_date,
             'description'        => $full ? $job->description : null,
             'requirements'       => $full ? $job->requirements : null,
+            'screening_questions' => $full ? ($job->screening_questions ?: null) : null,
         ], fn ($v) => $v !== null);
     }
 
@@ -283,5 +305,22 @@ class CareerPortalService
         }
 
         return null;
+    }
+
+    /** Normalise screening answers (accepts a JSON string from multipart form). */
+    private function normalizeAnswers($raw): array
+    {
+        if (is_string($raw)) {
+            $raw = json_decode($raw, true) ?: [];
+        }
+        if (! is_array($raw)) {
+            return [];
+        }
+
+        return collect($raw)->map(fn ($a) => [
+            'question_id' => $a['question_id'] ?? $a['id'] ?? null,
+            'label'       => $a['label'] ?? null,
+            'value'       => $a['value'] ?? null,
+        ])->filter(fn ($a) => $a['question_id'] !== null)->values()->all();
     }
 }

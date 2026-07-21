@@ -19,7 +19,7 @@ class AuditLogService
     /**
      * Record an action against an auditable model.
      */
-    public function record(Model $auditable, string $action, ?User $actor = null, ?string $comment = null, array $metadata = []): AuditLog
+    public function record(Model $auditable, string $action, ?User $actor = null, ?string $comment = null, array $metadata = [], ?string $actorLabel = null): AuditLog
     {
         $actor = $actor ?: (auth()->check() ? auth()->user() : null);
 
@@ -33,8 +33,10 @@ class AuditLogService
             'auditable_id'   => $auditable->getKey(),
             'action'         => $action,
             'actor_id'       => $actor?->id,
-            'actor_name'     => $actor?->name,
-            'actor_role'     => $actor ? ($actor->internal_role ?: $actor->role) : null,
+            // Unauthenticated actors (e.g. the public candidate portal) carry a label
+            // so the trail is never anonymous.
+            'actor_name'     => $actor?->name ?? $actorLabel,
+            'actor_role'     => $actor ? ($actor->internal_role ?: $actor->role) : ($actorLabel ? 'portal' : null),
             'comment'        => $comment ?: null,
             'metadata'       => $metadata ? array_filter($metadata, fn ($v) => $v !== null && $v !== '') : null,
         ]);

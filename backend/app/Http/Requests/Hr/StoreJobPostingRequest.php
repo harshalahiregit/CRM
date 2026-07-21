@@ -19,6 +19,9 @@ class StoreJobPostingRequest extends FormRequest
             'location'           => 'required|string|max:100',
             'job_type'           => 'required|in:Full-time,Part-time,Contract,Internship,Remote',
             'posting_type'       => 'required|in:Internal,External,Both',
+            'work_mode'          => 'nullable|in:Onsite,Remote,Hybrid',
+            'campaign_number'    => 'nullable|string|max:100',
+            'manpower_request_id' => 'nullable|integer',
             'description'        => 'nullable|string',
             'requirements'       => 'nullable|string',
             'salary_from'        => 'nullable|numeric',
@@ -27,6 +30,13 @@ class StoreJobPostingRequest extends FormRequest
             'closing_date'       => 'nullable|date',
             'status'             => 'in:Active,Draft,Closed',
             'sources'            => 'nullable|array',
+            'screening_questions'          => 'nullable|array',
+            'screening_questions.*.id'     => 'nullable|string',
+            'screening_questions.*.label'  => 'required_with:screening_questions|string|max:500',
+            'screening_questions.*.type'   => 'required_with:screening_questions|in:short_text,long_text,yes_no,dropdown,radio,checkbox',
+            'screening_questions.*.mandatory' => 'nullable|boolean',
+            'screening_questions.*.order'  => 'nullable|integer',
+            'screening_questions.*.options' => 'nullable|array',
         ];
     }
 }

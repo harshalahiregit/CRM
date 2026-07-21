@@ -28,6 +28,8 @@ class CareerApplicationRequest extends FormRequest
             'notice_period'    => 'nullable|string|max:60',
             'linkedin_url'     => 'nullable|url|max:255',
             'cover_note'       => 'nullable|string|max:2000',
+            // SPK-1 screening answers — JSON string (multipart) or array.
+            'screening_answers' => 'nullable',
         ];
     }
 }

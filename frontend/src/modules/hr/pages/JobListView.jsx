@@ -3,7 +3,7 @@ import {
   Eye, Pencil, Rocket, Pause, Lock, Trash2, ChevronUp, ChevronDown, ChevronsUpDown,
   ChevronLeft, ChevronRight, X,
 } from 'lucide-react'
-import { jobStatusColor, jobStatusLabel, PRIORITY_COLORS } from '../constants'
+import { jobStatusColor, jobStatusLabel, PRIORITY_COLORS, jobCode } from '../constants'
 
 const PAGE_SIZE = 12
 const PRIORITY_ORDER = { Critical: 4, High: 3, Medium: 2, Low: 1 }
@@ -11,7 +11,7 @@ const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-dig
 
 // column definitions — each: key, label, sortable, get(job) accessor for sorting
 const COLS = [
-  { key: 'id',         label: 'ID',            sortable: true,  get: j => j.id },
+  { key: 'id',         label: 'Job ID',        sortable: true,  get: j => j.id },
   { key: 'title',      label: 'Job Title',     sortable: true,  get: j => j.title?.toLowerCase() },
   { key: 'department', label: 'Department',    sortable: true,  get: j => j.department?.toLowerCase() },
   { key: 'bu',         label: 'Business Unit', sortable: false, get: j => j.manpower_request?.business_unit },
@@ -25,14 +25,20 @@ const COLS = [
   { key: 'apps',       label: 'Apps',          sortable: true,  get: j => j.progress?.applications ?? 0 },
   { key: 'published',  label: 'Published',     sortable: true,  get: j => j.published_at ? new Date(j.published_at).getTime() : 0 },
   { key: 'closing',    label: 'Closing',       sortable: true,  get: j => j.closing_date ? new Date(j.closing_date).getTime() : 0 },
-  { key: 'requester',  label: 'Requested By',  sortable: false, get: j => j.manpower_request?.requester?.name },
+  { key: 'requester',  label: 'Created By',    sortable: false, get: j => j.manpower_request?.requester?.name },
   { key: 'recruiter',  label: 'Recruiter',     sortable: false, get: j => j.manpower_request?.assigned_manager?.name },
+  // SPK-1 additions
+  { key: 'campaign',   label: 'Campaign',      sortable: true,  get: j => j.campaign_number },
+  { key: 'work_mode',  label: 'Work Mode',     sortable: true,  get: j => j.work_mode },
+  { key: 'created',    label: 'Created Date',  sortable: true,  get: j => j.created_at ? new Date(j.created_at).getTime() : 0 },
+  { key: 'public',     label: 'Public Link',   sortable: false, get: () => null },
 ]
 
 const th = { padding: '9px 10px', fontSize: 10.5, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap', borderBottom: '1px solid var(--border)', textAlign: 'left', background: 'var(--bg-card)', position: 'sticky', top: 0 }
 const td = { padding: '9px 10px', fontSize: 12, color: 'var(--text-h)', whiteSpace: 'nowrap', borderBottom: '1px solid var(--border)' }
 
-export default function JobListView({ jobs, manageHr, busy, navigate, onEdit, onAction, onClose, onBulk }) {
+export default function JobListView({ jobs, manageHr, busy, navigate, careerSlug, onEdit, onAction, onClose, onBulk }) {
+  const publicUrl = (id) => (careerSlug && id) ? `${window.location.origin}/careers/${careerSlug}/jobs/${id}` : null
   const [sortKey, setSortKey] = useState('id')
   const [sortDir, setSortDir] = useState('desc')
   const [page, setPage] = useState(1)
@@ -111,7 +117,7 @@ export default function JobListView({ jobs, manageHr, busy, navigate, onEdit, on
               return (
                 <tr key={job.id} style={{ background: sel ? 'rgba(124,58,237,0.06)' : 'transparent' }}>
                   {manageHr && <td style={td}><input type="checkbox" checked={sel} onChange={() => toggleOne(job.id)} style={{ cursor: 'pointer' }} /></td>}
-                  <td style={{ ...td, color: '#a78bfa', fontWeight: 700 }}>#{job.id}</td>
+                  <td style={{ ...td, color: '#a78bfa', fontWeight: 700 }}>{jobCode(job.id)}</td>
                   <td style={{ ...td, fontWeight: 700, cursor: 'pointer' }} onClick={() => navigate(`/app/hr/jobs/${job.id}`)}>{job.title}</td>
                   <td style={td}>{job.department}</td>
                   <td style={{ ...td, color: 'var(--text-muted)' }}>{mr.business_unit || '—'}</td>
@@ -127,6 +133,10 @@ export default function JobListView({ jobs, manageHr, busy, navigate, onEdit, on
                   <td style={{ ...td, color: 'var(--text-muted)' }}>{fmtDate(job.closing_date)}</td>
                   <td style={{ ...td, color: 'var(--text-muted)' }}>{mr.requester?.name || '—'}</td>
                   <td style={{ ...td, color: 'var(--text-muted)' }}>{mr.assigned_manager?.name || '—'}</td>
+                  <td style={{ ...td, color: 'var(--text-muted)' }}>{job.campaign_number || '—'}</td>
+                  <td style={{ ...td, color: 'var(--text-muted)' }}>{job.work_mode || '—'}</td>
+                  <td style={{ ...td, color: 'var(--text-muted)' }}>{fmtDate(job.created_at)}</td>
+                  <td style={td}>{publicUrl(job.id) ? <a href={publicUrl(job.id)} target="_blank" rel="noopener noreferrer" style={{ color: '#a78bfa', textDecoration: 'none' }} onClick={e => e.stopPropagation()}>Apply ↗</a> : '—'}</td>
                   <td style={{ ...td, textAlign: 'right' }}>
                     <div style={{ display: 'inline-flex', gap: 4 }}>
                       <IcoBtn icon={Eye} title="View" onClick={() => navigate(`/app/hr/jobs/${job.id}`)} />

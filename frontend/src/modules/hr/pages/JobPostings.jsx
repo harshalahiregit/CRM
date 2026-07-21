@@ -1,28 +1,43 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import {
   Plus, RefreshCw, Search, Eye, Pencil, Users, Rocket, Pause, Play, Copy, Lock,
+  Megaphone, Check,
   Briefcase, MapPin, Building2, FolderKanban, Calendar, CheckCircle2, Send, Clock,
-  ClipboardList, Layers, XCircle, User, ShieldCheck, Activity, LayoutGrid, List, Globe,
+  ClipboardList, Layers, XCircle, User, ShieldCheck, Activity, LayoutGrid, List, Globe, Trash2,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 import { useAuth } from '@/context/AuthContext'
 import JobListView from './JobListView'
+import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 import {
   JOB_STATUS, JOB_STATUS_CONFIG, JOB_STATUSES, jobStatusColor, jobStatusLabel,
-  JOB_TYPE_COLORS, PRIORITY_COLORS, canManageHrQueue,
+  JOB_TYPE_COLORS, PRIORITY_COLORS, canManageHrQueue, jobCode, publicApplyUrl, internalApplyUrl,
 } from '../constants'
+export { jobCode, publicApplyUrl, internalApplyUrl }
 
 const DEPARTMENTS = ['Engineering', 'Sales', 'HR', 'Operations', 'Finance', 'Product', 'Marketing']
 const SOURCES = ['LinkedIn', 'Naukri', 'Career Page', 'Internal Portal', 'Employee Referral']
 const EMPLOYMENT_TYPES = ['Full-time', 'Part-time', 'Contract', 'Internship', 'Remote']
+const WORK_MODES = ['Onsite', 'Remote', 'Hybrid']
 const EMPTY = {
-  title: '', department: '', location: '', job_type: 'Full-time', posting_type: 'Both',
-  description: '', requirements: '', salary_from: '', salary_to: '',
-  number_of_openings: 1, closing_date: '', status: 'Draft', sources: [],
+  title: '', department: '', location: '', job_type: 'Full-time', posting_type: 'Both', work_mode: 'Onsite',
+  description: '', requirements: '', salary_from: '', salary_to: '', campaign_number: '',
+  number_of_openings: 1, closing_date: '', status: 'Draft', sources: [], manpower_request_id: null,
+  screening_questions: [],
 }
+// SPK-1 vocabulary. Stored keys are unchanged so existing saved questions and the
+// backend validation rule keep working — only the label HR sees is aligned.
+const SCREENING_TYPES = [
+  { key: 'short_text', label: 'Text' }, { key: 'long_text', label: 'Paragraph' },
+  { key: 'yes_no', label: 'Yes / No' }, { key: 'dropdown', label: 'Single Select' },
+  { key: 'radio', label: 'Single Select (Radio)' }, { key: 'checkbox', label: 'Multi Select' },
+]
+const hasOptions = (t) => ['dropdown', 'radio', 'checkbox'].includes(t)
+const qid = () => 'q_' + Math.random().toString(36).slice(2, 9)
 const labelStyle = { display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }
 const inputStyle = { width: '100%', padding: '9px 12px', background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-h)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }
+const miniBtn = { display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 8, background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 11.5, fontWeight: 700 }
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 const fmtSalary = (f, t) => (!f && !t) ? null : `₹${f ? (f / 100000).toFixed(1) : '0'}–${t ? (t / 100000).toFixed(1) : '0'}L`
 const timeAgo = (iso) => {
@@ -56,8 +71,10 @@ function StatusBadge({ status }) {
 // ── Main page ────────────────────────────────────────────────────────────────
 export default function JobPostings() {
   const navigate = useNavigate()
-  const { user } = useAuth()
+  const location = useLocation()
+  const { user, tenant } = useAuth()
   const manageHr = canManageHrQueue(user)
+  const careerSlug = tenant?.slug || null
 
   const [jobs, setJobs]       = useState([])
   const [stats, setStats]     = useState({})
@@ -84,6 +101,18 @@ export default function JobPostings() {
     finally { setLoading(false) }
   }, [])
   useEffect(() => { fetchAll() }, [fetchAll])
+
+  // SPK-1: "Post Job" from an approved Manpower Request lands here with a prefill
+  // payload — open the existing form auto-filled (never a blank form).
+  useEffect(() => {
+    const prefill = location.state?.prefill
+    if (prefill) {
+      setEditingId(null)
+      setForm({ ...EMPTY, ...prefill })
+      setShowForm(true)
+      navigate(location.pathname, { replace: true, state: null })  // consume state
+    }
+  }, [location.state]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtered = jobs.filter(j => {
     const q = search.toLowerCase()
@@ -207,18 +236,18 @@ export default function JobPostings() {
 
       {/* Card view / List view (shared filtered data → always in sync) */}
       {loading ? (
-        <div style={{ textAlign: 'center', padding: 60, color: 'var(--text-muted)' }}>Loading...</div>
+        <HrLoading label="Loading jobs…" />
       ) : view === 'list' ? (
-        <JobListView jobs={filtered} manageHr={manageHr} busy={busy} navigate={navigate}
+        <JobListView jobs={filtered} manageHr={manageHr} busy={busy} navigate={navigate} careerSlug={careerSlug}
           onEdit={openEdit} onAction={runAction}
           onClose={(job, action) => { setCloseModal({ job, action }); setRemarks('') }}
           onBulk={runBulk} />
       ) : filtered.length === 0 ? (
-        <div className="card-3d" style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}><Briefcase size={40} style={{ marginBottom: 12, opacity: 0.4 }} /><p>No job postings found</p></div>
+        <HrEmpty icon={Briefcase} title="No job postings found" hint="Post a job directly, or convert an approved manpower request into a job posting." />
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(360px,1fr))', gap: 16 }}>
           {filtered.map(job => (
-            <JobCard key={job.id} job={job} manageHr={manageHr} busy={busy}
+            <JobCard key={job.id} job={job} manageHr={manageHr} busy={busy} careerSlug={careerSlug}
               onView={() => navigate(`/app/hr/jobs/${job.id}`)} onEdit={() => openEdit(job)}
               onCandidates={() => navigate('/app/hr/candidates')}
               onAction={(a) => runAction(job, a)}
@@ -227,14 +256,36 @@ export default function JobPostings() {
         </div>
       )}
 
-      {showForm && <JobFormModal {...{ form, setForm, editingId, busy, onClose: () => setShowForm(false), onSave: saveJob }} />}
+      {showForm && <JobFormModal {...{ form, setForm, editingId, careerSlug, busy, onClose: () => setShowForm(false), onSave: saveJob }} />}
       {closeModal && <CloseModal {...{ closeModal, remarks, setRemarks, busy, onClose: () => setCloseModal(null), onConfirm: runClose }} />}
     </div>
   )
 }
 
 // ── Job card ─────────────────────────────────────────────────────────────────
-function JobCard({ job, manageHr, busy, onView, onEdit, onCandidates, onAction, onClose }) {
+// Identifier chip (Job ID / Campaign Number) — SPK-1.
+const idChip = {
+  display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 7px', borderRadius: 8,
+  fontSize: 10, fontWeight: 700, fontFamily: 'ui-monospace, monospace',
+  background: 'rgba(124,58,237,0.1)', color: '#a78bfa', border: '1px solid rgba(124,58,237,0.25)',
+}
+
+// One-click copy for the Public Apply / Internal link (SPK-1).
+function CopyLinkBtn({ url, label, icon: Icon }) {
+  const [done, setDone] = useState(false)
+  if (!url) return null
+  const copy = () => { navigator.clipboard?.writeText(url).catch(() => {}); setDone(true); setTimeout(() => setDone(false), 1500) }
+  return (
+    <button type="button" onClick={copy} title={url}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 8, fontSize: 10, fontWeight: 700, cursor: 'pointer',
+        background: done ? 'rgba(16,185,129,0.12)' : 'var(--bg-input)', color: done ? '#10b981' : 'var(--text-muted)',
+        border: `1px solid ${done ? 'rgba(16,185,129,0.3)' : 'var(--border)'}` }}>
+      {done ? <Check size={9} /> : <Icon size={9} />} {done ? 'Copied!' : label}
+    </button>
+  )
+}
+
+function JobCard({ job, manageHr, busy, onView, onEdit, onCandidates, onAction, onClose, careerSlug }) {
   const mr = job.manpower_request || {}
   const p = job.progress || {}
   const live = ['Published', 'Hiring', 'Partially_Filled'].includes(job.status)
@@ -250,12 +301,23 @@ function JobCard({ job, manageHr, busy, onView, onEdit, onCandidates, onAction, 
             <span style={{ color: 'var(--text-h)', fontWeight: 700, fontSize: 15 }}>{job.title}</span>
             {mr.priority && <span style={{ padding: '1px 7px', borderRadius: 8, fontSize: 10, fontWeight: 700, background: `${PRIORITY_COLORS[mr.priority]}20`, color: PRIORITY_COLORS[mr.priority] }}>{mr.priority}</span>}
           </div>
+          {/* Job ID + Campaign Number (SPK-1) — identifiers visible without opening the job */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', marginTop: 4 }}>
+            <span title="Job ID" style={idChip}>{jobCode(job.id)}</span>
+            {job.campaign_number && <span title="Campaign Number" style={{ ...idChip, background: 'rgba(14,165,233,0.1)', color: '#0ea5e9', borderColor: 'rgba(14,165,233,0.25)' }}><Megaphone size={9} /> {job.campaign_number}</span>}
+          </div>
           <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{job.department}</div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5, alignItems: 'flex-end' }}>
           <StatusBadge status={job.status} />
           {job.on_career_portal && <span title="Live on the public Career Portal" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 7px', borderRadius: 8, fontSize: 10, fontWeight: 700, background: 'rgba(14,165,233,0.12)', color: '#0ea5e9', border: '1px solid rgba(14,165,233,0.3)' }}><Globe size={10} /> Portal</span>}
         </div>
+      </div>
+
+      {/* Public Apply + Internal links (SPK-1) — copy straight from the card */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+        <CopyLinkBtn url={job.on_career_portal ? publicApplyUrl(careerSlug, job.id) : null} label="Public Apply Link" icon={Globe} />
+        <CopyLinkBtn url={internalApplyUrl(job.id)} label="Internal Link" icon={Lock} />
       </div>
 
       {/* request source: requested by + approval status (job originated from an approved request) */}
@@ -337,18 +399,67 @@ function IconBtn({ icon: Icon, label, color, onClick, disabled }) {
 
 
 // ── Job form modal ───────────────────────────────────────────────────────────
-function JobFormModal({ form, setForm, editingId, busy, onClose, onSave }) {
+function JobFormModal({ form, setForm, editingId, careerSlug, busy, onClose, onSave }) {
   const set = (k) => (e) => setForm(p => ({ ...p, [k]: e.target.value }))
   const toggleSource = (s) => setForm(p => ({ ...p, sources: (p.sources || []).includes(s) ? p.sources.filter(x => x !== s) : [...(p.sources || []), s] }))
+  const pubUrl = publicApplyUrl(careerSlug, editingId)
+  const intUrl = internalApplyUrl(editingId)
+
+  // ── AI JD Score (reuses the heuristic JD analyzer) ──
+  const [jd, setJd] = useState(null)
+  const [jdBusy, setJdBusy] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const analyzeJd = async (improve = false) => {
+    setJdBusy(true)
+    try {
+      const r = await hrApi.jobs.analyzeJd({ title: form.title, department: form.department, description: form.description, requirements: form.requirements, improve })
+      setJd(r)
+      if (improve && r.improved_description) setForm(p => ({ ...p, description: r.improved_description }))
+    } catch { /* non-blocking */ } finally { setJdBusy(false) }
+  }
+  const copyLink = () => { if (pubUrl) { navigator.clipboard?.writeText(pubUrl).catch(()=>{}); setCopied(true); setTimeout(()=>setCopied(false), 1500) } }
+
+  // ── Screening Question Builder ──
+  const questions = form.screening_questions || []
+  const setQuestions = (fn) => setForm(p => ({ ...p, screening_questions: fn(p.screening_questions || []) }))
+  const addQuestion = () => setQuestions(qs => [...qs, { id: qid(), label: '', type: 'short_text', mandatory: false, order: qs.length, options: [] }])
+  const updQuestion = (i, patch) => setQuestions(qs => qs.map((q, idx) => idx === i ? { ...q, ...patch } : q))
+  const rmQuestion = (i) => setQuestions(qs => qs.filter((_, idx) => idx !== i).map((q, idx) => ({ ...q, order: idx })))
+  const moveQuestion = (i, dir) => setQuestions(qs => { const j = i + dir; if (j < 0 || j >= qs.length) return qs; const c = [...qs]; [c[i], c[j]] = [c[j], c[i]]; return c.map((q, idx) => ({ ...q, order: idx })) })
+
+  const jdColor = (v) => v >= 75 ? '#10b981' : v >= 50 ? '#f59e0b' : '#ef4444'
+
   return (
-    <Overlay onClose={onClose} width={640}>
+    <Overlay onClose={onClose} width={900}>
       <h2 style={{ color: 'var(--text-h)', margin: '0 0 18px', fontSize: 18, fontWeight: 800 }}>{editingId ? 'Edit' : 'New'} Job Posting</h2>
+
+      {/* SPK-1: Job identity — Job ID / Status / apply links (reuse existing id, status, slug) */}
+      {editingId && (
+        <div style={{ padding: 12, marginBottom: 16, background: 'var(--bg-input)', borderRadius: 10, border: '1px solid var(--border)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <ReadOnly label="Job ID" value={jobCode(editingId)} />
+            <ReadOnly label="Job Status" value={jobStatusLabel(form.status)} />
+            <ReadOnly label="Public Apply Link" value={pubUrl} link />
+            <ReadOnly label="Internal Portal Link" value={intUrl} link />
+          </div>
+          {pubUrl && (
+            <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
+              <button type="button" onClick={copyLink} style={miniBtn}><Copy size={11} /> {copied ? 'Copied!' : 'Copy Link'}</button>
+              <a href={pubUrl} target="_blank" rel="noopener noreferrer" style={{ ...miniBtn, textDecoration: 'none' }}><Eye size={11} /> Preview</a>
+              <a href={pubUrl} target="_blank" rel="noopener noreferrer" style={{ ...miniBtn, textDecoration: 'none', color: '#10b981', borderColor: 'rgba(16,185,129,0.3)', background: 'rgba(16,185,129,0.1)' }}><Send size={11} /> Open Application</a>
+            </div>
+          )}
+        </div>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
         <Field label="Job Title *"><input value={form.title} onChange={set('title')} placeholder="e.g. Senior Developer" style={inputStyle} /></Field>
         <Field label="Department *"><select value={form.department} onChange={set('department')} style={{ ...inputStyle, cursor: 'pointer' }}><option value="">Select…</option>{DEPARTMENTS.map(d => <option key={d}>{d}</option>)}</select></Field>
         <Field label="Location *"><input value={form.location} onChange={set('location')} placeholder="e.g. Pune" style={inputStyle} /></Field>
         <Field label="Employment Type"><select value={form.job_type} onChange={set('job_type')} style={{ ...inputStyle, cursor: 'pointer' }}>{EMPLOYMENT_TYPES.map(t => <option key={t}>{t}</option>)}</select></Field>
+        <Field label="Work Mode"><select value={form.work_mode || 'Onsite'} onChange={set('work_mode')} style={{ ...inputStyle, cursor: 'pointer' }}>{WORK_MODES.map(t => <option key={t}>{t}</option>)}</select></Field>
         <Field label="Posting Type"><select value={form.posting_type} onChange={set('posting_type')} style={{ ...inputStyle, cursor: 'pointer' }}>{['Internal', 'External', 'Both'].map(t => <option key={t}>{t}</option>)}</select></Field>
+        <Field label="Campaign Number"><input value={form.campaign_number || ''} onChange={set('campaign_number')} placeholder="e.g. CAMP-2026-014" style={inputStyle} /></Field>
         <Field label="No. of Openings"><input type="number" min="1" value={form.number_of_openings} onChange={set('number_of_openings')} style={inputStyle} /></Field>
         <Field label="Salary From"><input type="number" min="0" value={form.salary_from} onChange={set('salary_from')} placeholder="e.g. 1200000" style={inputStyle} /></Field>
         <Field label="Salary To"><input type="number" min="0" value={form.salary_to} onChange={set('salary_to')} placeholder="e.g. 1800000" style={inputStyle} /></Field>
@@ -356,6 +467,79 @@ function JobFormModal({ form, setForm, editingId, busy, onClose, onSave }) {
         {!editingId && <Field label="Initial Status"><select value={form.status} onChange={set('status')} style={{ ...inputStyle, cursor: 'pointer' }}>{[JOB_STATUS.DRAFT, JOB_STATUS.PUBLISHED].map(s => <option key={s} value={s}>{jobStatusLabel(s)}</option>)}</select></Field>}
         <Field label="Description" full><textarea value={form.description} onChange={set('description')} rows={3} placeholder="Role summary" style={{ ...inputStyle, resize: 'vertical' }} /></Field>
         <Field label="Requirements" full><textarea value={form.requirements} onChange={set('requirements')} rows={2} placeholder="Skills, experience…" style={{ ...inputStyle, resize: 'vertical' }} /></Field>
+
+        {/* ── AI JD Score (SPK-1) — does not replace the editor above ── */}
+        <div style={{ gridColumn: '1/-1' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+            <label style={{ ...labelStyle, margin: 0 }}>AI JD Score</label>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <button type="button" onClick={() => analyzeJd(false)} disabled={jdBusy || !form.description} style={{ ...miniBtn, color: '#a78bfa', borderColor: 'rgba(124,58,237,0.3)', background: 'rgba(124,58,237,0.1)' }}>{jdBusy ? '…' : 'Analyze'}</button>
+              <button type="button" onClick={() => analyzeJd(true)} disabled={jdBusy} style={miniBtn}>Improve with AI</button>
+              <button type="button" onClick={() => analyzeJd(true)} disabled={jdBusy} style={miniBtn}>Regenerate</button>
+            </div>
+          </div>
+          {jd && (
+            <div style={{ marginTop: 8, padding: 12, borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(90px,1fr))', gap: 8, marginBottom: 10 }}>
+                {[['JD Quality', jd.quality_score], ['Completeness', jd.completeness], ['Readability', jd.readability]].map(([k, v]) => (
+                  <div key={k} style={{ textAlign: 'center', padding: '6px 4px', borderRadius: 8, background: 'var(--bg-card)' }}>
+                    <div style={{ fontSize: 18, fontWeight: 900, color: jdColor(v) }}>{v}%</div>
+                    <div style={{ fontSize: 9.5, color: 'var(--text-muted)', fontWeight: 700 }}>{k}</div>
+                  </div>
+                ))}
+              </div>
+              {jd.recommendation && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 8, marginBottom: 8, background: jd.ready_to_publish ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)', border: `1px solid ${jd.ready_to_publish ? 'rgba(16,185,129,0.3)' : 'rgba(245,158,11,0.3)'}` }}>
+                  <span style={{ fontSize: 13 }}>{jd.ready_to_publish ? '✅' : '⚠️'}</span>
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Recommendation</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: jd.ready_to_publish ? '#10b981' : '#f59e0b' }}>{jd.recommendation}</div>
+                  </div>
+                </div>
+              )}
+              {jd.missing_skills?.length > 0 && <p style={{ fontSize: 11.5, color: 'var(--text-muted)', margin: '4px 0' }}><b style={{ color: '#f59e0b' }}>Missing Skills:</b> {jd.missing_skills.join(', ')}</p>}
+              {jd.missing_keywords?.length > 0 && <p style={{ fontSize: 11.5, color: 'var(--text-muted)', margin: '4px 0' }}><b style={{ color: '#f59e0b' }}>Missing Keywords:</b> {jd.missing_keywords.join(', ')}</p>}
+              {jd.suggestions?.length > 0 && (
+                <div style={{ marginTop: 6 }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-h)', margin: '0 0 3px' }}>AI Suggestions</p>
+                  <ul style={{ margin: 0, paddingLeft: 16 }}>{jd.suggestions.map((s, i) => <li key={i} style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 2 }}>{s}</li>)}</ul>
+                  {jd.improved_description && <button type="button" onClick={() => setForm(p => ({ ...p, description: jd.improved_description }))} style={{ ...miniBtn, marginTop: 8, color: '#10b981', borderColor: 'rgba(16,185,129,0.3)', background: 'rgba(16,185,129,0.1)' }}>Accept AI Suggestions</button>}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ── Screening Question Builder (SPK-1) ── */}
+        <div style={{ gridColumn: '1/-1' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+            <label style={{ ...labelStyle, margin: 0 }}>Screening Questions ({questions.length})</label>
+            <button type="button" onClick={addQuestion} style={{ ...miniBtn, color: '#a78bfa', borderColor: 'rgba(124,58,237,0.3)', background: 'rgba(124,58,237,0.1)' }}><Plus size={11} /> Add Question</button>
+          </div>
+          {questions.length === 0 && <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0 }}>Optional — questions candidates answer while applying. Mandatory ones must be answered before submitting.</p>}
+          <div style={{ display: 'grid', gap: 8 }}>
+            {questions.map((q, i) => (
+              <div key={q.id || i} style={{ padding: 10, borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                  <input value={q.label} onChange={e => updQuestion(i, { label: e.target.value })} placeholder="Question text" style={{ ...inputStyle, flex: 1 }} />
+                  <select value={q.type} onChange={e => updQuestion(i, { type: e.target.value, options: hasOptions(e.target.value) ? (q.options?.length ? q.options : ['Option 1']) : [] })} style={{ ...inputStyle, width: 130, cursor: 'pointer' }}>
+                    {SCREENING_TYPES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+                  </select>
+                  <button type="button" onClick={() => moveQuestion(i, -1)} disabled={i === 0} style={{ ...miniBtn, padding: '7px 8px', opacity: i === 0 ? 0.4 : 1 }}>↑</button>
+                  <button type="button" onClick={() => moveQuestion(i, 1)} disabled={i === questions.length - 1} style={{ ...miniBtn, padding: '7px 8px', opacity: i === questions.length - 1 ? 0.4 : 1 }}>↓</button>
+                  <button type="button" onClick={() => rmQuestion(i)} style={{ ...miniBtn, padding: '7px 8px', color: '#f87171', borderColor: 'rgba(239,68,68,0.3)' }}><Trash2 size={12} /></button>
+                </div>
+                {hasOptions(q.type) && (
+                  <input value={(q.options || []).join(', ')} onChange={e => updQuestion(i, { options: e.target.value.split(',').map(o => o.trim()).filter(Boolean) })} placeholder="Options, comma separated" style={{ ...inputStyle, marginTop: 6, fontSize: 12 }} />
+                )}
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 11.5, color: 'var(--text-muted)', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={!!q.mandatory} onChange={e => updQuestion(i, { mandatory: e.target.checked })} /> Mandatory
+                </label>
+              </div>
+            ))}
+          </div>
+        </div>
+
         <Field label="Sources" full>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {SOURCES.map(s => <button key={s} type="button" onClick={() => toggleSource(s)} style={{ padding: '5px 10px', borderRadius: 8, fontSize: 11, cursor: 'pointer', border: `1px solid ${(form.sources || []).includes(s) ? '#7C3AED' : 'var(--border)'}`, background: (form.sources || []).includes(s) ? 'rgba(124,58,237,0.15)' : 'var(--bg-input)', color: (form.sources || []).includes(s) ? '#a78bfa' : 'var(--text-muted)' }}>{s}</button>)}
@@ -387,6 +571,14 @@ function CloseModal({ closeModal, remarks, setRemarks, busy, onClose, onConfirm 
 
 // ── Reusable primitives (local; Phase 3 will extract to components/ui) ───────
 const Field = ({ label, children, full }) => (<div style={full ? { gridColumn: '1/-1' } : undefined}><label style={labelStyle}>{label}</label>{children}</div>)
+const ReadOnly = ({ label, value, link }) => (
+  <div>
+    <label style={labelStyle}>{label}</label>
+    {link && value
+      ? <a href={value} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: '#a78bfa', wordBreak: 'break-all', textDecoration: 'none' }}>{value}</a>
+      : <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-h)' }}>{value || '—'}</div>}
+  </div>
+)
 function Overlay({ onClose, width = 480, children }) {
   return (<div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={e => e.target === e.currentTarget && onClose()}><div className="card-3d" style={{ width: '100%', maxWidth: width, maxHeight: '90vh', overflowY: 'auto', padding: 28 }}>{children}</div></div>)
 }

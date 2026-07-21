@@ -11,6 +11,8 @@ use App\Http\Controllers\Api\Hr\InterviewController;
 use App\Http\Controllers\Api\Hr\OfferController;
 use App\Http\Controllers\Api\Hr\OnboardingController;
 use App\Http\Controllers\Api\Hr\EmployeeController;
+use App\Http\Controllers\Api\Hr\AttendanceController;
+use App\Http\Controllers\Api\Hr\ExitInterviewController;
 use Illuminate\Support\Facades\Route;
 
 // ── HR Module Routes (Sanctum) ──────────────────────────────────────────
@@ -24,7 +26,10 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::get('/manpower-requests/stats',                      [ManpowerRequestController::class, 'stats']);
     Route::get('/manpower-requests/queue',                      [ManpowerRequestController::class, 'queue']);
     Route::get('/manpower-requests/pending-count',              [ManpowerRequestController::class, 'pendingCount']);
+    Route::get('/manpower-requests/projects',                   [ManpowerRequestController::class, 'projects']);
+    Route::get('/manpower-requests/form-options',               [ManpowerRequestController::class, 'formOptions']);
     Route::get('/manpower-requests/pending-approvals',          [ManpowerRequestController::class, 'pendingApprovals']);
+    Route::get('/manpower-requests/jd-templates',               [ManpowerRequestController::class, 'jdTemplates']);
     Route::post('/manpower-requests',                           [ManpowerRequestController::class, 'store']);
     Route::get('/manpower-requests/{manpowerRequest}',          [ManpowerRequestController::class, 'show']);
     Route::put('/manpower-requests/{manpowerRequest}',          [ManpowerRequestController::class, 'update']);
@@ -37,9 +42,12 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::post('/manpower-requests/{manpowerRequest}/reject-l2',   [ManpowerRequestController::class, 'rejectL2']);
     Route::post('/manpower-requests/{manpowerRequest}/send-back',   [ManpowerRequestController::class, 'sendBack']);
     // HR Queue actions (post-approval): convert → publish → hiring → close
+    Route::post('/manpower-requests/{manpowerRequest}/generate-jd',   [ManpowerRequestController::class, 'generateJd']);
+    Route::post('/manpower-requests/{manpowerRequest}/template-jd',   [ManpowerRequestController::class, 'templateJd']);
+    Route::post('/manpower-requests/{manpowerRequest}/analyze-jd',    [ManpowerRequestController::class, 'analyzeJd']);
+    Route::post('/manpower-requests/{manpowerRequest}/jd-improvement-decision', [ManpowerRequestController::class, 'jdImprovementDecision']);
     Route::post('/manpower-requests/{manpowerRequest}/convert-to-jd', [ManpowerRequestController::class, 'convertToJd']);
     Route::post('/manpower-requests/{manpowerRequest}/publish',       [ManpowerRequestController::class, 'publish']);
-    Route::post('/manpower-requests/{manpowerRequest}/start-hiring',  [ManpowerRequestController::class, 'startHiring']);
     Route::post('/manpower-requests/{manpowerRequest}/close',         [ManpowerRequestController::class, 'close']);
     Route::patch('/manpower-requests/{manpowerRequest}/assign-manager', [ManpowerRequestController::class, 'assignManager']);
 
@@ -48,6 +56,7 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::get('/jobs/stats',                      [JobPostingController::class, 'stats']);
     Route::get('/jobs/channels',                   [JobPostingController::class, 'channels']);
     Route::post('/jobs/bulk',                      [JobPostingController::class, 'bulk']);
+    Route::post('/jobs/analyze-jd',                [JobPostingController::class, 'analyzeJd']);
     Route::post('/jobs',                           [JobPostingController::class, 'store']);
     Route::get('/jobs/{jobPosting}',               [JobPostingController::class, 'show']);
     Route::put('/jobs/{jobPosting}',               [JobPostingController::class, 'update']);
@@ -71,6 +80,11 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::get('/candidates/recruiters',                [CandidateController::class, 'recruiters']);
     Route::post('/candidates',                          [CandidateController::class, 'store']);
     Route::post('/candidates/linkedin-parse',           [CandidateController::class, 'linkedinParse']);
+    Route::get('/candidates/{candidate}/journey',       [CandidateController::class, 'journey']);
+    Route::get('/candidates/{candidate}/communications', [CandidateController::class, 'communications']);
+    Route::get('/candidates/{candidate}/communication-preview', [CandidateController::class, 'communicationPreview']);
+    Route::post('/candidates/{candidate}/communicate',  [CandidateController::class, 'communicate']);
+    Route::post('/candidates/{candidate}/reminder',     [CandidateController::class, 'scheduleReminder']);
     Route::get('/candidates/{candidate}',               [CandidateController::class, 'show']);
     Route::put('/candidates/{candidate}',               [CandidateController::class, 'update']);
     Route::patch('/candidates/{candidate}/stage',       [CandidateController::class, 'updateStage']);
@@ -94,6 +108,9 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     // Interviews
     Route::get('/interviews',                               [InterviewController::class, 'index']);
     Route::get('/interviews/stats',                         [InterviewController::class, 'stats']);
+    Route::get('/interview-panel/users',                    [InterviewController::class, 'panelUsers']);
+    Route::get('/interview-panel/organizations',            [InterviewController::class, 'panelOrganizations']);
+    Route::get('/interviews/{interviewRound}/email-preview', [InterviewController::class, 'emailPreview']);
     Route::post('/interviews',                              [InterviewController::class, 'store']);
     Route::get('/interviews/{interviewRound}',              [InterviewController::class, 'show']);
     Route::put('/interviews/{interviewRound}',              [InterviewController::class, 'update']);
@@ -129,7 +146,24 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::get('/employees',                [EmployeeController::class, 'index']);
     Route::post('/employees',               [EmployeeController::class, 'store']);
     Route::get('/employees/{employee}/profile', [EmployeeController::class, 'profile']);
+
+    // Exit Interview (SPK-1) — internal form, reuses the employee record for prefill.
+    Route::get('/exit-interviews',                        [ExitInterviewController::class, 'index']);
+    Route::get('/employees/{employee}/exit-interview',    [ExitInterviewController::class, 'show']);
+    Route::post('/employees/{employee}/exit-interview',   [ExitInterviewController::class, 'store']);
+    Route::get('/employees/{employee}/attendance', [AttendanceController::class, 'employeeAttendance']);
     Route::get('/employees/{employee}',     [EmployeeController::class, 'show']);
     Route::put('/employees/{employee}',     [EmployeeController::class, 'update']);
     Route::delete('/employees/{employee}',  [EmployeeController::class, 'destroy']);
+
+    // Attendance
+    Route::get('/attendance/stats',          [AttendanceController::class, 'stats']);
+    Route::get('/attendance/export',         [AttendanceController::class, 'export']);
+    Route::get('/attendance',                [AttendanceController::class, 'index']);
+    Route::post('/attendance',               [AttendanceController::class, 'storeManual']);
+    Route::post('/attendance/check-in',      [AttendanceController::class, 'checkIn']);
+    Route::post('/attendance/check-out',     [AttendanceController::class, 'checkOut']);
+    Route::post('/attendance/break-start',   [AttendanceController::class, 'breakStart']);
+    Route::post('/attendance/break-end',     [AttendanceController::class, 'breakEnd']);
+    Route::patch('/attendance/{attendance}', [AttendanceController::class, 'correct']);
 });

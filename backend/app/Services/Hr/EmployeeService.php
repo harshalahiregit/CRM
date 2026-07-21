@@ -7,6 +7,7 @@ use App\Models\Hr\HrOnboarding;
 use App\Models\User;
 use App\Repositories\Hr\EmployeeRepository;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Log;
 
 class EmployeeService
@@ -15,7 +16,7 @@ class EmployeeService
     {
     }
 
-    public function list(int $tenantId, array $filters): Collection
+    public function list(int $tenantId, array $filters): LengthAwarePaginator
     {
         return $this->employeeRepository->filtered($tenantId, $filters);
     }

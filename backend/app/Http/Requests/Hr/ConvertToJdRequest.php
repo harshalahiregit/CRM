@@ -24,6 +24,8 @@ class ConvertToJdRequest extends FormRequest
             'description'  => 'sometimes|nullable|string',
             'requirements' => 'sometimes|nullable|string',
             'closing_date' => 'sometimes|nullable|date',
+            // Provenance of the JD body — drives the audit action + jd_source column.
+            'jd_source'    => 'sometimes|nullable|in:manual,ai,template',
         ];
     }
 }

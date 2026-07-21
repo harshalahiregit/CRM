@@ -292,7 +292,7 @@ export default function RecruitmentServices() {
 
       {/* ── Company modal ── */}
       {companyModal && (
-        <Overlay onClose={() => setCompanyModal(null)} width={560}>
+        <Overlay onClose={() => setCompanyModal(null)} width={780}>
           <h2 style={{ color: 'var(--text-h)', margin: '0 0 16px', fontSize: 17, fontWeight: 800 }}>{companyModal.editingId ? 'Edit' : 'Add'} External Company</h2>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 14 }}>
             <Field l="Company Name *" full><input value={companyModal.form.name || ''} onChange={e => setCompanyModal(m => ({ ...m, form: { ...m.form, name: e.target.value } }))} style={inputStyle} placeholder="e.g. Acme Corp" /></Field>
@@ -313,7 +313,7 @@ export default function RecruitmentServices() {
 
       {/* ── Hiring request modal ── */}
       {requestModal && (
-        <Overlay onClose={() => setRequestModal(null)} width={700}>
+        <Overlay onClose={() => setRequestModal(null)} width={960}>
           <h2 style={{ color: 'var(--text-h)', margin: '0 0 16px', fontSize: 17, fontWeight: 800 }}>New Hiring Request</h2>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))', gap: 14 }}>
             <Field l="External Company *" full><select value={requestModal.form.external_company_id || ''} onChange={e => setRequestModal(m => ({ ...m, form: { ...m.form, external_company_id: e.target.value } }))} style={{ ...inputStyle, cursor: 'pointer' }}><option value="">Select company…</option>{companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
@@ -438,7 +438,7 @@ function ClientCollaboration({ request, showToast, onClose, onChanged }) {
   ]
 
   return (
-    <Overlay onClose={onClose} width={760}>
+    <Overlay onClose={onClose} width={1120}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
         <div>
           <p style={{ ...label, marginBottom: 2 }}>Client Collaboration · HR-{request.id}</p>

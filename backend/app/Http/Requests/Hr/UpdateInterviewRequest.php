@@ -24,10 +24,20 @@ class UpdateInterviewRequest extends FormRequest
             'interviewers'         => 'nullable|array',
             'interviewers.*.name'  => 'required_with:interviewers|string',
             'interviewers.*.email' => 'nullable|email',
-            'scheduled_at'         => 'sometimes|date',
+            'interviewers.*.type'    => 'nullable|string',
+            'interviewers.*.user_id' => 'nullable|integer',
+            // Reschedule must also stay today-or-future (SPK-1).
+            'scheduled_at'         => 'sometimes|date|after_or_equal:today',
             'meet_link'            => 'nullable|url',
             'venue'                => 'nullable|string|max:255',
             'reminder_minutes'     => 'nullable|integer|min:0',
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'scheduled_at.after_or_equal' => 'Interview cannot be scheduled in the past.',
         ];
     }
 }

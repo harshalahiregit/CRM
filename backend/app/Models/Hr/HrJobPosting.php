@@ -14,10 +14,10 @@ class HrJobPosting extends Model
     protected $table = 'hr_job_postings';
 
     protected $fillable = [
-        'tenant_id','manpower_request_id','title','department','location','job_type','posting_type',
-        'description','requirements','salary_from','salary_to',
+        'tenant_id','manpower_request_id','campaign_number','title','department','location','job_type','posting_type','work_mode',
+        'description','requirements','jd_source','ai_jd_meta','salary_from','salary_to',
         'number_of_openings','closing_date','published_at','status','sources','applicant_count','external_job_ids',
-        'on_career_portal','career_published_at',
+        'on_career_portal','career_published_at','screening_questions',
     ];
 
     protected $casts = [
@@ -27,6 +27,8 @@ class HrJobPosting extends Model
         'on_career_portal'    => 'boolean',
         'sources'             => 'array',
         'external_job_ids'    => 'array',
+        'screening_questions' => 'array',
+        'ai_jd_meta'          => 'array',
         'salary_from'         => 'decimal:2',
         'salary_to'           => 'decimal:2',
     ];

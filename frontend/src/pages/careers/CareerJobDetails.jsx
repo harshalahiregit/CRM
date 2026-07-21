@@ -150,7 +150,7 @@ export default function CareerJobDetails() {
         </div>
       </div>
 
-      {showApply && <ApplyModal slug={slug} jobId={id} jobTitle={job.title} accent={accent} onApplied={onApplied} onClose={() => setShowApply(false)} />}
+      {showApply && <ApplyModal slug={slug} jobId={id} jobTitle={job.title} accent={accent} questions={job.screening_questions || []} onApplied={onApplied} onClose={() => setShowApply(false)} />}
       {showTrack && <TrackModal accent={accent} onClose={() => setShowTrack(false)} onTrack={async (email) => {
         const s = await careersApi.status(slug, id, { email })
         if (s?.applied) { saveIdentity(slug, id, email); setApplication(s); setAppEmail(email); setShowTrack(false); return true }
@@ -288,24 +288,40 @@ function TrackModal({ accent, onClose, onTrack }) {
 }
 
 // ── Application form modal ───────────────────────────────────────────────────
-function ApplyModal({ slug, jobId, jobTitle, accent, onApplied, onClose }) {
+function ApplyModal({ slug, jobId, jobTitle, accent, questions = [], onApplied, onClose }) {
   const [form, setForm] = useState(EMPTY)
   const [resume, setResume] = useState(null)
+  const [answers, setAnswers] = useState({})   // question_id -> value
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [duplicate, setDuplicate] = useState(false)
 
   const set = (k) => (e) => setForm(p => ({ ...p, [k]: e.target.value }))
+  const setAnswer = (id, value) => setAnswers(a => ({ ...a, [id]: value }))
+  const toggleCheckbox = (id, opt) => setAnswers(a => {
+    const cur = Array.isArray(a[id]) ? a[id] : []
+    return { ...a, [id]: cur.includes(opt) ? cur.filter(x => x !== opt) : [...cur, opt] }
+  })
 
   const submit = async () => {
     setError(''); setDuplicate(false)
     if (!form.name || !form.email || !form.phone) { setError('Name, email and phone are required.'); return }
     if (!resume) { setError('Please attach your resume (PDF/DOC/DOCX).'); return }
+    // Mandatory screening questions must be answered.
+    for (const q of questions) {
+      const v = answers[q.id]
+      const empty = v == null || v === '' || (Array.isArray(v) && v.length === 0)
+      if (q.mandatory && empty) { setError(`Please answer: ${q.label}`); return }
+    }
     setBusy(true)
     try {
       const fd = new FormData()
       Object.entries(form).forEach(([k, v]) => { if (v !== '' && v != null) fd.append(k, v) })
       fd.append('resume', resume)
+      if (questions.length) {
+        const payload = questions.map(q => ({ question_id: q.id, label: q.label, value: answers[q.id] ?? null }))
+        fd.append('screening_answers', JSON.stringify(payload))
+      }
       await careersApi.apply(slug, jobId, fd)
       await onApplied(form.email) // saves identity + loads the tracking card
     } catch (e) {
@@ -352,6 +368,53 @@ function ApplyModal({ slug, jobId, jobTitle, accent, onApplied, onClose }) {
           </Field>
           <Field label="Cover Note (optional)" full><textarea value={form.cover_note} onChange={set('cover_note')} rows={3} placeholder="Why are you a great fit?" style={{ ...inputStyle, resize: 'vertical' }} /></Field>
         </div>
+
+        {/* ── Screening Questions (SPK-1) ── */}
+        {questions.length > 0 && (
+          <div style={{ marginTop: 20, paddingTop: 18, borderTop: '1px solid #e2e8f0' }}>
+            <h3 style={{ fontSize: 15, fontWeight: 800, margin: '0 0 12px', color: '#0f172a' }}>Screening Questions</h3>
+            <div style={{ display: 'grid', gap: 14 }}>
+              {questions.map(q => (
+                <div key={q.id}>
+                  <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: '#334155', marginBottom: 6 }}>{q.label}{q.mandatory && <span style={{ color: '#dc2626' }}> *</span>}</label>
+                  {q.type === 'short_text' && <Input value={answers[q.id] || ''} onChange={e => setAnswer(q.id, e.target.value)} placeholder="Your answer" />}
+                  {q.type === 'long_text' && <textarea value={answers[q.id] || ''} onChange={e => setAnswer(q.id, e.target.value)} rows={3} placeholder="Your answer" style={{ ...inputStyle, resize: 'vertical' }} />}
+                  {q.type === 'yes_no' && (
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      {['Yes', 'No'].map(o => (
+                        <button key={o} type="button" onClick={() => setAnswer(q.id, o)} style={{ padding: '8px 20px', borderRadius: 9, cursor: 'pointer', fontWeight: 700, fontSize: 13, border: `1px solid ${answers[q.id] === o ? accent : '#cbd5e1'}`, background: answers[q.id] === o ? `${accent}12` : '#fff', color: answers[q.id] === o ? accent : '#475569' }}>{o}</button>
+                      ))}
+                    </div>
+                  )}
+                  {q.type === 'dropdown' && (
+                    <select value={answers[q.id] || ''} onChange={e => setAnswer(q.id, e.target.value)} style={inputStyle}>
+                      <option value="">Select…</option>
+                      {(q.options || []).map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  )}
+                  {q.type === 'radio' && (
+                    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                      {(q.options || []).map(o => (
+                        <label key={o} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13.5, color: '#334155', cursor: 'pointer' }}>
+                          <input type="radio" name={q.id} checked={answers[q.id] === o} onChange={() => setAnswer(q.id, o)} /> {o}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  {q.type === 'checkbox' && (
+                    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                      {(q.options || []).map(o => (
+                        <label key={o} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13.5, color: '#334155', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={Array.isArray(answers[q.id]) && answers[q.id].includes(o)} onChange={() => toggleCheckbox(q.id, o)} /> {o}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22 }}>
           <button onClick={() => !busy && onClose()} style={{ padding: '11px 22px', borderRadius: 10, background: '#fff', border: '1px solid #e2e8f0', color: '#475569', cursor: 'pointer', fontSize: 14 }}>Cancel</button>

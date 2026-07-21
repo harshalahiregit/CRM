@@ -8,6 +8,7 @@ use App\Models\Hr\HrCandidateNote;
 use App\Models\Hr\HrEmployee;
 use App\Models\Hr\HrOnboarding;
 use App\Models\Hr\HrOnboardingDocument;
+use App\Models\User;
 use App\Notifications\WhatsApp\OnboardingWelcomeNotification;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\UploadedFile;
@@ -66,7 +67,10 @@ class OnboardingService
             'tenant_id'           => $candidate->tenant_id,
             'candidate_id'        => $candidate->id,
             'candidate_name'      => $candidate->name,
-            'position'            => optional($candidate->jobPosting)->title,
+            // A candidate may have no linked job posting (direct/walk-in sourcing).
+            // position is NOT NULL, so fall back instead of crashing the whole
+            // post-interview transition. HR sets the real title on the offer.
+            'position'            => optional($candidate->jobPosting)->title ?? 'To Be Assigned',
             'department'          => optional($candidate->jobPosting)->department,
             'access_token'        => Str::random(48),
             'status'              => 'Pending',
@@ -142,6 +146,8 @@ class OnboardingService
     {
         $onboarding->loadMissing(['documents', 'candidate.jobPosting', 'candidate.assignedRecruiter', 'candidate.offer', 'candidate.auditLogs']);
         $candidate = $onboarding->candidate;
+        // Already eager-loaded above via 'candidate.offer' — no extra query.
+        $offer = $candidate?->offer;
 
         return [
             'candidate' => [
@@ -156,6 +162,24 @@ class OnboardingService
             ],
             'progress'            => $this->progressSteps($candidate, $onboarding),
             'verification_status' => $onboarding->verification_status,
+            // Existing offer surfaced read-only so the candidate never has to leave the
+            // portal. Every value already lives on hr_offers — nothing new is stored and
+            // no new endpoint is introduced; the Offer tab reuses /offer/{token}.
+            'offer' => $offer ? [
+                'exists'               => true,
+                'id'                   => $offer->id,
+                'token'                => $offer->access_token,
+                'status'               => $offer->status,
+                'letter_url'           => $offer->access_token ? url('/api/offer/'.$offer->access_token.'/letter') : null,
+                'generated_at'         => optional($offer->generated_at)->toIso8601String(),
+                'sent_at'              => optional($offer->sent_at)->toIso8601String(),
+                'viewed_at'            => optional($offer->viewed_at)->toIso8601String(),
+                'accepted_at'          => optional($offer->accepted_at)->toIso8601String(),
+                'declined_at'          => optional($offer->declined_at)->toIso8601String(),
+                'joining_confirmed_at' => optional($offer->joining_confirmed_at)->toIso8601String(),
+                'clarification'        => $offer->clarification,
+                'pre_joining'          => $offer->pre_joining,
+            ] : ['exists' => false],
             'rejection_reason'    => $onboarding->verification_status === 'Rejected' ? $onboarding->rejection_reason : null,
             'profile'             => [
                 'submission'   => $onboarding->submission,
@@ -338,13 +362,24 @@ class OnboardingService
             ->all();
     }
 
-    /** HR verifies a single uploaded document (Verified / Rejected + remarks). */
-    public function verifyDocument(HrOnboardingDocument $document, string $status, ?string $remarks): HrOnboardingDocument
+    /**
+     * HR verifies a single uploaded document (Verified / Rejected + remarks).
+     *
+     * $actor is recorded on the audit entry — it is the only place "verified by"
+     * is captured, so the Documents Timeline can attribute the check without a
+     * new column. document_id in the metadata is what links the entry back here.
+     */
+    public function verifyDocument(HrOnboardingDocument $document, string $status, ?string $remarks, ?User $actor = null): HrOnboardingDocument
     {
         $document->update(['status' => $status, 'remarks' => $remarks, 'verified' => $status === 'Verified']);
 
         $candidate = optional($document->onboarding)->candidate;
-        optional($candidate)->recordAudit('Document '.$status.': '.ucwords(str_replace('_', ' ', $document->type)), null, $remarks);
+        optional($candidate)->recordAudit(
+            'Document '.$status.': '.ucwords(str_replace('_', ' ', $document->type)),
+            $actor,
+            $remarks,
+            ['document_id' => $document->id, 'doc_type' => $document->type, 'doc_status' => $status]
+        );
 
         Log::channel('hr')->info('Onboarding document verified', ['document_id' => $document->id, 'tenant_id' => $document->tenant_id, 'status' => $status]);
 

@@ -108,7 +108,7 @@ class OnboardingController extends Controller
             'remarks' => 'nullable|string|max:1000',
         ]);
 
-        $this->onboardingService->verifyDocument($document, $data['status'], $data['remarks'] ?? null);
+        $this->onboardingService->verifyDocument($document, $data['status'], $data['remarks'] ?? null, $request->user());
 
         return response()->json($onboarding->fresh(['candidate', 'documents']));
     }

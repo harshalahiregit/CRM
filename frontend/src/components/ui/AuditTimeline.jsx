@@ -1,11 +1,18 @@
 import {
   CheckCircle, XCircle, Send, CornerUpLeft, FilePlus, Briefcase,
-  Rocket, PlayCircle, Lock, Circle,
+  Rocket, PlayCircle, Lock, Circle, Mail, MessageCircle, Bell, CalendarClock, FileText,
 } from 'lucide-react'
 
 // ── Action → visual mapping (keyword based, reusable across entities) ─────────
 function styleFor(action = '') {
   const a = action.toLowerCase()
+  // Communication events (SPK-1) — surfaced when comm history merges into the timeline.
+  if (a.includes('email'))             return { color: '#a78bfa', icon: Mail }
+  if (a.includes('whatsapp'))          return { color: '#25D366', icon: MessageCircle }
+  if (a.includes('reminder'))          return { color: '#f59e0b', icon: Bell }
+  if (a.includes('interview'))         return { color: '#f59e0b', icon: CalendarClock }
+  if (a.includes('offer'))             return { color: '#10b981', icon: FileText }
+  if (a.includes('onboard'))           return { color: '#7C3AED', icon: Rocket }
   if (a.includes('reject'))            return { color: '#ef4444', icon: XCircle }
   if (a.includes('sent back') || a.includes('send back')) return { color: '#f59e0b', icon: CornerUpLeft }
   if (a.includes('approv'))            return { color: '#10b981', icon: CheckCircle }

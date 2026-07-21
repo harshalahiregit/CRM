@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Briefcase, Users, CalendarDays, FileText, Activity, TrendingUp,
   ShieldCheck, User, Building2, FolderKanban, MapPin, ChevronRight, RefreshCw,
   Globe, ExternalLink, Copy, Check, Linkedin, Share2, UploadCloud,
+  GitBranch, FileSignature, History, Search, Eye, X,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 import { useAuth } from '@/context/AuthContext'
@@ -11,19 +12,23 @@ import AuditTimeline from '@/components/ui/AuditTimeline'
 import {
   jobStatusColor, jobStatusLabel, PRIORITY_COLORS, STAGE_COLORS, DECISION_COLORS,
   INTERVIEW_STATUS_COLORS, INTERVIEW_RESULT_COLORS, canManageHrQueue,
+  CANDIDATE_STAGES, aiBand,
 } from '../constants'
 
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 const fmtDateTime = (d) => d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'
 const fmtSalary = (f, t) => (!f && !t) ? '—' : `₹${f ? (f / 100000).toFixed(1) : '0'}–${t ? (t / 100000).toFixed(1) : '0'}L`
 
+// SPK-1 Recruitment Workspace tabs — everything about one job on one screen.
 const TABS = [
-  { key: 'overview',   label: 'Overview',         icon: Briefcase },
-  { key: 'jd',         label: 'Job Description',   icon: FileText },
-  { key: 'progress',   label: 'Hiring Progress',   icon: TrendingUp },
-  { key: 'candidates', label: 'Candidates',        icon: Users },
-  { key: 'interviews', label: 'Interviews',        icon: CalendarDays },
-  { key: 'timeline',   label: 'Activity Timeline', icon: Activity },
+  { key: 'overview',     label: 'Overview',          icon: Briefcase },
+  { key: 'jd',           label: 'JD',                icon: FileText },
+  { key: 'applications', label: 'Applications',      icon: Users },
+  { key: 'pipeline',     label: 'Candidate Pipeline', icon: GitBranch },
+  { key: 'interviews',   label: 'Interviews',        icon: CalendarDays },
+  { key: 'offers',       label: 'Offers',            icon: FileSignature },
+  { key: 'timeline',     label: 'Timeline',          icon: Activity },
+  { key: 'activity',     label: 'Activity',          icon: History },
 ]
 
 export default function JobWorkspace() {
@@ -113,7 +118,11 @@ export default function JobWorkspace() {
       <div style={{ display: 'flex', gap: 6, marginBottom: 18, flexWrap: 'wrap' }}>
         {TABS.map(t => {
           const active = tab === t.key
-          const badge = t.key === 'candidates' ? candidates.length : t.key === 'interviews' ? interviews.length : null
+          const badge = t.key === 'applications' ? candidates.length
+            : t.key === 'pipeline' ? candidates.filter(c => c.stage !== 'Rejected').length
+            : t.key === 'interviews' ? interviews.length
+            : t.key === 'offers' ? candidates.filter(c => c.offer).length
+            : null
           return (
             <button key={t.key} onClick={() => setTab(t.key)}
               style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: 'pointer',
@@ -127,12 +136,14 @@ export default function JobWorkspace() {
 
       {/* Tab content */}
       <div className="card-3d" style={{ padding: 22 }}>
-        {tab === 'overview'   && <Overview job={job} mr={mr} fullyApproved={fullyApproved} manageHr={manageHr} channels={channels} onPublish={publishSelected} onUnpublish={unpublishChannel} />}
-        {tab === 'jd'         && <JobDescription job={job} />}
-        {tab === 'progress'   && <HiringProgress p={p} />}
-        {tab === 'candidates' && <CandidatesTab candidates={candidates} navigate={navigate} />}
-        {tab === 'interviews' && <InterviewsTab interviews={interviews} />}
-        {tab === 'timeline'   && <AuditTimeline entries={job.audit_logs} />}
+        {tab === 'overview'     && <Overview job={job} mr={mr} fullyApproved={fullyApproved} manageHr={manageHr} channels={channels} onPublish={publishSelected} onUnpublish={unpublishChannel} p={p} />}
+        {tab === 'jd'           && <JobDescription job={job} />}
+        {tab === 'applications' && <ApplicationsTab candidates={candidates} navigate={navigate} />}
+        {tab === 'pipeline'     && <PipelineTab candidates={candidates} navigate={navigate} />}
+        {tab === 'interviews'   && <InterviewsTab interviews={interviews} />}
+        {tab === 'offers'       && <OffersTab candidates={candidates} navigate={navigate} />}
+        {tab === 'timeline'     && <AuditTimeline entries={job.audit_logs} />}
+        {tab === 'activity'     && <ActivityTab job={job} candidates={candidates} />}
       </div>
     </div>
   )
@@ -151,9 +162,13 @@ const KV = ({ rows }) => (
 )
 
 // ── Overview ─────────────────────────────────────────────────────────────────
-function Overview({ job, mr, fullyApproved, manageHr, channels, onPublish, onUnpublish }) {
+function Overview({ job, mr, fullyApproved, manageHr, channels, onPublish, onUnpublish, p }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+      {/* Recruitment analytics + the existing hiring funnel, both on Overview so
+          the workspace answers "how is this job doing?" without a tab change. */}
+      <Analytics p={p || {}} />
+      <HiringProgress p={p || {}} />
       <PublishChannels job={job} channels={channels} manageHr={manageHr} onPublish={onPublish} onUnpublish={onUnpublish} />
       {/* Request source */}
       <div>
@@ -402,30 +417,6 @@ function HiringProgress({ p }) {
 }
 
 // ── Candidates ───────────────────────────────────────────────────────────────
-function CandidatesTab({ candidates, navigate }) {
-  if (!candidates.length) return <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: 0 }}>No candidates for this job yet.</p>
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {candidates.map(c => (
-        <div key={c.id} onClick={() => navigate(`/app/hr/candidates/${c.id}`)}
-          style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: 'var(--bg-input)', borderRadius: 10, border: '1px solid var(--border)', cursor: 'pointer' }}>
-          <span style={{ width: 34, height: 34, borderRadius: '50%', background: 'linear-gradient(135deg,#7C3AED,#5b21b6)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 12, flexShrink: 0 }}>
-            {(c.name || '?').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-          </span>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ color: 'var(--text-h)', fontWeight: 700, fontSize: 13.5 }}>{c.name}</div>
-            <div style={{ color: 'var(--text-muted)', fontSize: 11.5 }}>{c.source || '—'}{c.email ? ` · ${c.email}` : ''}</div>
-          </div>
-          {c.ai_score != null && <span style={{ fontSize: 11, fontWeight: 700, color: '#a78bfa', padding: '2px 8px', borderRadius: 8, background: 'rgba(124,58,237,0.1)' }}>AI {c.ai_score}</span>}
-          {c.final_decision && c.final_decision !== 'Pending' && <Badge color={DECISION_COLORS[c.final_decision]}>{c.final_decision}</Badge>}
-          <Badge color={STAGE_COLORS[c.stage] || '#6b7280'}>{c.stage}</Badge>
-          <ChevronRight size={16} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-        </div>
-      ))}
-    </div>
-  )
-}
-
 // ── Interviews ───────────────────────────────────────────────────────────────
 function InterviewsTab({ interviews }) {
   if (!interviews.length) return <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: 0 }}>No interviews scheduled for this job's candidates yet.</p>
@@ -454,3 +445,326 @@ function InterviewsTab({ interviews }) {
 const Badge = ({ color, children }) => (
   <span style={{ padding: '2px 9px', borderRadius: 8, fontSize: 11, fontWeight: 700, background: `${color}1f`, color, border: `1px solid ${color}40`, flexShrink: 0 }}>{children}</span>
 )
+
+// ── Recruitment Analytics (SPK-1) — reuses the existing progress() payload ────
+function Analytics({ p }) {
+  const cells = [
+    ['Applications', p.applications, '#60a5fa'], ['Shortlisted', p.shortlisted, '#a78bfa'],
+    ['Interviewed', p.interviewed, '#818cf8'],   ['Selected', p.selected, '#34d399'],
+    ['Offers Sent', p.offers_sent, '#fbbf24'],   ['Offers Accepted', p.offers_accepted, '#10b981'],
+    ['Joined', p.joined, '#059669'],             ['Rejected', p.rejected, '#f87171'],
+  ]
+  const rates = [
+    ['Conversion %', p.conversion_pct != null ? `${p.conversion_pct}%` : '—', 'Applications → Joined'],
+    ['Hiring %', p.hiring_pct != null ? `${p.hiring_pct}%` : '—', 'Positions filled'],
+    ['Avg Hiring Time', p.avg_hiring_days != null ? `${p.avg_hiring_days} days` : '—', 'Applied → Joined'],
+    ['Open Positions', p.open_positions ?? 0, `${p.filled_positions ?? 0} filled of ${p.required ?? 0}`],
+  ]
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div>
+        <Label>Recruitment Funnel</Label>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(112px,1fr))', gap: 8 }}>
+          {cells.map(([l, v, c]) => (
+            <div key={l} style={{ padding: '12px 10px', background: 'var(--bg-input)', borderRadius: 10, border: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 20, fontWeight: 900, color: c }}>{v ?? 0}</div>
+              <div style={{ fontSize: 10.5, color: 'var(--text-muted)', fontWeight: 600, marginTop: 2 }}>{l}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div>
+        <Label>Efficiency</Label>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 8 }}>
+          {rates.map(([l, v, sub]) => (
+            <div key={l} style={{ padding: '12px 12px', background: 'var(--bg-input)', borderRadius: 10, border: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 18, fontWeight: 900, color: 'var(--text-h)' }}>{v}</div>
+              <div style={{ fontSize: 10.5, color: 'var(--text-muted)', fontWeight: 700, marginTop: 2 }}>{l}</div>
+              <div style={{ fontSize: 9.5, color: 'var(--text-muted)', opacity: 0.75 }}>{sub}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Applications (SPK-1) — search / filter / sort / bulk / quick view ─────────
+const APP_COLS = [
+  { key: 'name',      label: 'Candidate',  get: c => (c.name || '').toLowerCase() },
+  { key: 'applied',   label: 'Applied',    get: c => c.applied_at || c.created_at || '' },
+  { key: 'source',    label: 'Source',     get: c => (c.source || '').toLowerCase() },
+  { key: 'ai',        label: 'AI Score',   get: c => Number(c.ai_score ?? -1) },
+  { key: 'stage',     label: 'Stage',      get: c => (c.stage || '').toLowerCase() },
+  { key: 'status',    label: 'Status',     get: c => (c.final_decision || '').toLowerCase() },
+  { key: 'recruiter', label: 'Recruiter',  get: c => (c.assigned_recruiter?.name || '').toLowerCase() },
+]
+
+function ApplicationsTab({ candidates, navigate }) {
+  const [q, setQ] = useState('')
+  const [stage, setStage] = useState('All')
+  const [sortKey, setSortKey] = useState('applied')
+  const [asc, setAsc] = useState(false)
+  const [sel, setSel] = useState(new Set())
+  const [quick, setQuick] = useState(null)
+
+  const stages = ['All', ...CANDIDATE_STAGES.filter(s => candidates.some(c => c.stage === s))]
+
+  const rows = useMemo(() => {
+    const needle = q.trim().toLowerCase()
+    const out = candidates.filter(c => {
+      const mq = !needle || [c.name, c.email, c.source, c.assigned_recruiter?.name]
+        .some(v => (v || '').toLowerCase().includes(needle))
+      return mq && (stage === 'All' || c.stage === stage)
+    })
+    const col = APP_COLS.find(c => c.key === sortKey)
+    if (col) out.sort((a, b) => {
+      const x = col.get(a), y = col.get(b)
+      return (x < y ? -1 : x > y ? 1 : 0) * (asc ? 1 : -1)
+    })
+    return out
+  }, [candidates, q, stage, sortKey, asc])
+
+  const toggleSort = (k) => { if (sortKey === k) setAsc(a => !a); else { setSortKey(k); setAsc(true) } }
+  const allSel = rows.length > 0 && rows.every(r => sel.has(r.id))
+  const toggleAll = () => setSel(allSel ? new Set() : new Set(rows.map(r => r.id)))
+  const toggleOne = (id) => setSel(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+
+  if (!candidates.length) return <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: 0 }}>No candidates have applied to this job yet.</p>
+
+  return (
+    <div>
+      {/* Controls */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ position: 'relative', flex: 1, minWidth: 180 }}>
+          <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search name, email, source or recruiter…"
+            style={{ width: '100%', padding: '8px 10px 8px 30px', background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-h)', fontSize: 12.5, outline: 'none', boxSizing: 'border-box' }} />
+        </div>
+        <select value={stage} onChange={e => setStage(e.target.value)}
+          style={{ padding: '8px 10px', background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-h)', fontSize: 12.5, cursor: 'pointer' }}>
+          {stages.map(s => <option key={s} value={s}>{s === 'All' ? 'All stages' : s}</option>)}
+        </select>
+        <span style={{ fontSize: 11.5, color: 'var(--text-muted)', fontWeight: 600 }}>{rows.length} of {candidates.length}</span>
+      </div>
+
+      {/* Bulk actions — act on the existing candidate routes, no new API */}
+      {sel.size > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', marginBottom: 10, borderRadius: 9, background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.3)', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa' }}>{sel.size} selected</span>
+          <button onClick={() => { navigate('/app/hr/interviews'); }} style={bulkBtn}>Schedule Interviews</button>
+          <button onClick={() => { const f = rows.find(r => sel.has(r.id)); if (f) navigate(`/app/hr/candidates/${f.id}`) }} style={bulkBtn}>Open First</button>
+          <button onClick={() => setSel(new Set())} style={{ ...bulkBtn, marginLeft: 'auto' }}>Clear</button>
+        </div>
+      )}
+
+      {/* Table */}
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+          <thead>
+            <tr>
+              <th style={{ ...wTh, width: 30 }}><input type="checkbox" checked={allSel} onChange={toggleAll} style={{ cursor: 'pointer' }} /></th>
+              {APP_COLS.map(c => (
+                <th key={c.key} onClick={() => toggleSort(c.key)} style={{ ...wTh, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                  {c.label}{sortKey === c.key ? (asc ? ' ▲' : ' ▼') : ''}
+                </th>
+              ))}
+              <th style={{ ...wTh, textAlign: 'right' }}>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 && <tr><td colSpan={APP_COLS.length + 2} style={{ ...wTd, textAlign: 'center', padding: 28, color: 'var(--text-muted)' }}>No candidates match these filters.</td></tr>}
+            {rows.map(c => (
+              <tr key={c.id} style={{ background: sel.has(c.id) ? 'rgba(124,58,237,0.06)' : 'transparent' }}>
+                <td style={wTd}><input type="checkbox" checked={sel.has(c.id)} onChange={() => toggleOne(c.id)} style={{ cursor: 'pointer' }} /></td>
+                <td style={{ ...wTd, fontWeight: 700, color: 'var(--text-h)' }}>{c.name}</td>
+                <td style={{ ...wTd, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{fmtDate(c.applied_at || c.created_at)}</td>
+                <td style={{ ...wTd, color: 'var(--text-muted)' }}>{c.source || '—'}</td>
+                <td style={wTd}>{c.ai_score != null
+                  ? <span style={{ fontWeight: 800, color: aiBand(c.ai_score).color }}>{c.ai_score}%</span>
+                  : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
+                <td style={wTd}><Badge color={STAGE_COLORS[c.stage] || '#6b7280'}>{c.stage}</Badge></td>
+                <td style={wTd}>{c.final_decision && c.final_decision !== 'Pending'
+                  ? <Badge color={DECISION_COLORS[c.final_decision] || '#6b7280'}>{c.final_decision}</Badge>
+                  : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
+                <td style={{ ...wTd, color: 'var(--text-muted)' }}>{c.assigned_recruiter?.name || '—'}</td>
+                <td style={{ ...wTd, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                  <button onClick={() => setQuick(c)} title="Quick view" style={iconBtnW}><Eye size={13} /></button>
+                  <button onClick={() => navigate(`/app/hr/candidates/${c.id}`)} title="Open profile" style={iconBtnW}><ExternalLink size={13} /></button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Quick View — reuses the loaded candidate, no extra fetch */}
+      {quick && (
+        <div onClick={() => setQuick(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: 20 }}>
+          <div onClick={e => e.stopPropagation()} className="card-3d" style={{ padding: 20, width: '100%', maxWidth: 440, maxHeight: '85vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 14 }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--text-h)' }}>{quick.name}</h3>
+                <p style={{ margin: '3px 0 0', fontSize: 12, color: 'var(--text-muted)' }}>{quick.email || '—'}{quick.phone ? ` · ${quick.phone}` : ''}</p>
+              </div>
+              <button onClick={() => setQuick(null)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}><X size={17} /></button>
+            </div>
+            <KV rows={[
+              ['Applied', fmtDate(quick.applied_at || quick.created_at)],
+              ['Source', quick.source || '—'],
+              ['Stage', quick.stage || '—'],
+              ['Status', quick.final_decision || 'Pending'],
+              ['AI Score', quick.ai_score != null ? `${quick.ai_score}%` : '—'],
+              ['Experience', quick.experience_years != null ? `${quick.experience_years} yrs` : '—'],
+              ['Recruiter', quick.assigned_recruiter?.name || '—'],
+              ['Rounds', String((quick.interview_rounds || []).length)],
+            ]} />
+            <button onClick={() => navigate(`/app/hr/candidates/${quick.id}`)}
+              style={{ width: '100%', marginTop: 14, padding: '9px 0', borderRadius: 9, border: 'none', cursor: 'pointer', background: 'linear-gradient(135deg,#7C3AED,#5b21b6)', color: '#fff', fontWeight: 700, fontSize: 12.5 }}>
+              Open Full Profile
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Candidate Pipeline (SPK-1) — one column per stage, existing candidates only ──
+const PIPELINE = [
+  { key: 'Applied',      label: 'Applied',      owner: 'HR',              action: 'Review the application' },
+  { key: 'AI Screening', label: 'AI Screening', owner: 'System',          action: 'Awaiting AI evaluation' },
+  { key: 'Screening',    label: 'HR Screening', owner: 'HR',              action: 'Screen and shortlist' },
+  { key: 'Interview',    label: 'Interview',    owner: 'Interview Panel', action: 'Complete the rounds' },
+  { key: 'Selected',     label: 'Selected',     owner: 'HR',              action: 'Start onboarding' },
+  { key: 'Offer',        label: 'Offer',        owner: 'HR',              action: 'Generate / send the offer' },
+  { key: 'Onboarding',   label: 'Onboarding',   owner: 'Candidate',       action: 'Submit documents' },
+  { key: 'Joined',       label: 'Joined',       owner: '—',               action: null },
+]
+
+// Bucket a candidate into exactly one pipeline column, using existing fields only.
+const pipelineBucket = (c) => {
+  if (c.stage === 'Hired') return 'Joined'
+  if (c.stage === 'Rejected') return null                     // rejected leaves the pipeline
+  if (c.offer) return c.offer.status === 'Accepted' ? 'Onboarding' : 'Offer'
+  if (c.final_decision === 'Selected') return 'Selected'
+  if ((c.interview_rounds || []).length) return 'Interview'
+  if (c.stage === 'Screening' || c.stage === 'Assessment') return 'Screening'
+  if (!(Number(c.ai_score) > 0)) return 'AI Screening'        // applied but not yet scored
+  return 'Applied'
+}
+
+function PipelineTab({ candidates, navigate }) {
+  const buckets = useMemo(() => {
+    const m = Object.fromEntries(PIPELINE.map(s => [s.key, []]))
+    candidates.forEach(c => { const b = pipelineBucket(c); if (b && m[b]) m[b].push(c) })
+    return m
+  }, [candidates])
+
+  const rejected = candidates.filter(c => c.stage === 'Rejected')
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 6 }}>
+        {PIPELINE.map(s => {
+          const list = buckets[s.key] || []
+          return (
+            <div key={s.key} style={{ minWidth: 178, flex: '1 0 178px', background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: 12, padding: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, marginBottom: 8 }}>
+                <span style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--text-h)' }}>{s.label}</span>
+                <span style={{ minWidth: 20, height: 20, padding: '0 6px', borderRadius: 10, background: list.length ? 'rgba(124,58,237,0.18)' : 'var(--bg-card)', color: list.length ? '#a78bfa' : 'var(--text-muted)', fontSize: 10.5, fontWeight: 900, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{list.length}</span>
+              </div>
+              <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginBottom: 8, lineHeight: 1.35 }}>
+                <div><b style={{ color: 'var(--text-muted)' }}>Owner:</b> {s.owner}</div>
+                {s.action && list.length > 0 && <div style={{ color: '#a78bfa', fontWeight: 600 }}>→ {s.action}</div>}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {list.length === 0 && <p style={{ fontSize: 10.5, color: 'var(--text-muted)', margin: 0, opacity: 0.7 }}>No candidates</p>}
+                {list.map(c => (
+                  <div key={c.id} onClick={() => navigate(`/app/hr/candidates/${c.id}`)} title={c.name}
+                    style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 9, padding: '7px 8px', cursor: 'pointer' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ width: 22, height: 22, borderRadius: '50%', background: 'linear-gradient(135deg,#7C3AED,#5b21b6)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 9, flexShrink: 0 }}>
+                        {(c.name || '?').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                      </span>
+                      <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-h)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
+                    </div>
+                    {c.ai_score != null && (
+                      <div style={{ fontSize: 9.5, fontWeight: 700, marginTop: 4, color: aiBand(c.ai_score).color }}>AI {c.ai_score}%</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      {rejected.length > 0 && (
+        <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 12 }}>
+          {rejected.length} rejected candidate{rejected.length > 1 ? 's are' : ' is'} not shown in the pipeline.
+        </p>
+      )}
+    </div>
+  )
+}
+
+// ── Offers (SPK-1) — reuses candidates.offer already loaded with the job ──────
+function OffersTab({ candidates, navigate }) {
+  const offers = candidates.filter(c => c.offer).map(c => ({ ...c.offer, _candidate: c.name, _cid: c.id }))
+  if (!offers.length) return <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: 0 }}>No offers have been generated for this job yet.</p>
+  const col = (s) => s === 'Accepted' ? '#10b981' : s === 'Completed' ? '#059669' : s === 'Declined' ? '#f87171' : s === 'Sent' || s === 'Viewed' ? '#f59e0b' : '#6b7280'
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {offers.map(o => (
+        <div key={o.id} onClick={() => navigate('/app/hr/offers')}
+          style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: 'var(--bg-input)', borderRadius: 10, border: '1px solid var(--border)', flexWrap: 'wrap', cursor: 'pointer' }}>
+          <div style={{ flex: 1, minWidth: 150 }}>
+            <div style={{ color: 'var(--text-h)', fontWeight: 700, fontSize: 13.5 }}>{o._candidate}</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: 11.5 }}>
+              {o.designation || '—'}{o.joining_date ? ` · joins ${fmtDate(o.joining_date)}` : ''}
+            </div>
+          </div>
+          {o.sent_at && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Sent {fmtDate(o.sent_at)}</span>}
+          {o.accepted_at && <span style={{ fontSize: 11, color: '#10b981' }}>Accepted {fmtDate(o.accepted_at)}</span>}
+          <Badge color={col(o.status)}>{o.status}</Badge>
+          <ChevronRight size={15} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Activity feed (SPK-1) — recent job + candidate audit entries, newest first ──
+function ActivityTab({ job, candidates }) {
+  const feed = useMemo(() => {
+    const items = (job.audit_logs || []).map(a => ({ ...a, _who: job.title, _scope: 'Job' }))
+    candidates.forEach(c => (c.audit_logs || []).forEach(a => items.push({ ...a, _who: c.name, _scope: 'Candidate' })))
+    return items
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+      .slice(0, 40)
+  }, [job, candidates])
+
+  if (!feed.length) return <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: 0 }}>No activity recorded for this job yet.</p>
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+      {feed.map((a, i) => (
+        <div key={`${a.id}-${i}`} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '9px 12px', background: 'var(--bg-input)', borderRadius: 9, border: '1px solid var(--border)' }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#a78bfa', marginTop: 6, flexShrink: 0 }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-h)' }}>{a.action}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
+              {a._who} · {fmtDateTime(a.created_at)}{a.actor_name || a.actor?.name ? ` · by ${a.actor_name || a.actor?.name}` : ''}
+            </div>
+            {a.description && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, opacity: 0.85 }}>{a.description}</div>}
+          </div>
+          <span style={{ fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 6, background: a._scope === 'Job' ? 'rgba(124,58,237,0.12)' : 'rgba(14,165,233,0.12)', color: a._scope === 'Job' ? '#a78bfa' : '#0ea5e9', flexShrink: 0 }}>{a._scope}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+const bulkBtn = { padding: '5px 10px', borderRadius: 7, border: '1px solid rgba(124,58,237,0.35)', background: 'var(--bg-card)', color: '#a78bfa', cursor: 'pointer', fontSize: 11.5, fontWeight: 700 }
+const iconBtnW = { padding: 5, marginLeft: 3, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-muted)', cursor: 'pointer' }
+const wTh = { textAlign: 'left', padding: '8px 8px', fontSize: 10.5, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid var(--border)' }
+const wTd = { padding: '9px 8px', borderBottom: '1px solid var(--border)', verticalAlign: 'middle' }

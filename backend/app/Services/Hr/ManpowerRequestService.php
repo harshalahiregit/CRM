@@ -8,6 +8,7 @@ use App\Models\Hr\HrJobPosting;
 use App\Models\Hr\HrManpowerRequest;
 use App\Models\User;
 use App\Repositories\Hr\ManpowerRequestRepository;
+use App\Support\Hr\JdTemplate;
 use App\Support\Hr\JobPostingStatus;
 use App\Support\Hr\ManpowerRequestStatus as Status;
 use Illuminate\Database\Eloquent\Collection;
@@ -16,8 +17,10 @@ use Illuminate\Support\Facades\Log;
 
 class ManpowerRequestService
 {
-    public function __construct(private ManpowerRequestRepository $manpowerRequestRepository)
-    {
+    public function __construct(
+        private ManpowerRequestRepository $manpowerRequestRepository,
+        private \App\Services\Notifications\NotificationService $notifications,
+    ) {
     }
 
     public function list(User $user, array $filters): Collection
@@ -78,6 +81,7 @@ class ManpowerRequestService
         }
 
         return DB::transaction(function () use ($manpowerRequest, $user) {
+            // Record the submission (Draft → L1 Pending) exactly as before …
             $manpowerRequest->update([
                 'status'       => Status::L1_PENDING,
                 'l1_status'    => 'pending',
@@ -85,12 +89,18 @@ class ManpowerRequestService
             ]);
 
             $this->logHistory($manpowerRequest, 'L1', 'Submitted', $user,
-                'Submitted for Department Head (L1) approval',
+                'Submitted for approval',
                 ['status' => Status::DRAFT], ['status' => Status::L1_PENDING]);
 
-            Log::channel('hr')->info('Manpower request submitted for L1', ['request_id' => $manpowerRequest->id, 'tenant_id' => $manpowerRequest->tenant_id]);
+            // … then auto-approve L1 (SPK-1): the creator no longer approves L1
+            // manually. Reuses the same approval transition, so the L1-Approved
+            // history entry is written identically to a manual approval. The
+            // request lands on L2 (Management) Pending.
+            $this->applyL1Approval($manpowerRequest, $user, null, true);
 
-            return $manpowerRequest->fresh()->load(['requester', 'auditLogs.actor']);
+            Log::channel('hr')->info('Manpower request submitted + L1 auto-approved', ['request_id' => $manpowerRequest->id, 'tenant_id' => $manpowerRequest->tenant_id]);
+
+            return $manpowerRequest->fresh()->load(['requester', 'l1Approver', 'auditLogs.actor']);
         });
     }
 
@@ -104,19 +114,7 @@ class ManpowerRequestService
         }
 
         return DB::transaction(function () use ($manpowerRequest, $user, $remarks) {
-            $manpowerRequest->update([
-                'status'         => Status::L2_PENDING,
-                'l1_status'      => 'approved',
-                'l1_approver_id' => $user->id,
-                'l1_approved_at' => now(),
-                'l1_remarks'     => $remarks,
-            ]);
-
-            $this->logHistory($manpowerRequest, 'L1', 'Approved', $user,
-                $remarks ?? 'L1 Approved by Department Head',
-                ['status' => Status::L1_PENDING], ['status' => Status::L2_PENDING, 'l1_status' => 'approved']);
-
-            Log::channel('hr')->info('Manpower request L1 approved', ['request_id' => $manpowerRequest->id, 'tenant_id' => $manpowerRequest->tenant_id, 'approver_id' => $user->id]);
+            $this->applyL1Approval($manpowerRequest, $user, $remarks);
 
             return $manpowerRequest->fresh()->load(['requester', 'l1Approver', 'auditLogs.actor']);
         });
@@ -272,15 +270,33 @@ class ManpowerRequestService
                 $requirements = trim(($requirements ? $requirements."\n" : '').'Experience: '.$manpowerRequest->experience_required);
             }
 
+            // JD provenance: explicit jd_source wins; else 'manual' if HR supplied a
+            // body, otherwise the deterministic template. AI metadata comes from the
+            // temporarily-cached AI draft.
+            $jdSource = $overrides['jd_source']
+                ?? ((array_key_exists('description', $overrides) && $overrides['description'] !== null) ? 'manual' : 'template');
+            $aiMeta = null;
+            if ($jdSource === 'ai') {
+                $cached = app(\App\Services\Hr\JobDescriptionAIService::class)->cachedDrafts($manpowerRequest)['current'] ?? null;
+                $aiMeta = $cached ? [
+                    'provider' => $cached['provider'] ?? null,
+                    'model'    => $cached['model'] ?? null,
+                    'generated_at' => $cached['generated_at'] ?? null,
+                ] : null;
+            }
+
             $jd = HrJobPosting::create([
                 'tenant_id'           => $manpowerRequest->tenant_id,
                 'manpower_request_id' => $manpowerRequest->id,
+                'jd_source'           => $jdSource,
+                'ai_jd_meta'          => $aiMeta,
                 'title'               => $overrides['title']        ?? $manpowerRequest->position_title,
                 'department'          => $manpowerRequest->department,
                 'location'            => $overrides['location'] ?? $manpowerRequest->location ?? 'To be specified',
                 'job_type'            => $manpowerRequest->job_type,
                 'posting_type'        => $overrides['posting_type'] ?? 'Both',
-                'description'         => $overrides['description']  ?? ($manpowerRequest->job_description ?: $manpowerRequest->justification),
+                // Standard JD format (SPK-1), auto-filled from this requisition.
+                'description'         => $overrides['description']  ?? JdTemplate::build($manpowerRequest, $user->tenant?->name),
                 'requirements'        => $overrides['requirements'] ?? $requirements,
                 'salary_from'         => $manpowerRequest->salary_min,
                 'salary_to'           => $manpowerRequest->salary_max,
@@ -300,6 +316,16 @@ class ManpowerRequestService
             $this->logHistory($manpowerRequest, 'HR', 'Converted to JD', $user,
                 'Converted to Job Description (draft) #'.$jd->id,
                 ['status' => Status::READY_FOR_HR], ['status' => Status::CONVERTED_TO_JD, 'job_posting_id' => $jd->id]);
+
+            // Provenance audit — distinguishes an accepted AI JD from a manual edit.
+            if ($jdSource === 'ai') {
+                $manpowerRequest->recordAudit('AI JD Accepted', $user, 'AI-generated Job Description accepted into JD #'.$jd->id, array_filter([
+                    'provider' => $aiMeta['provider'] ?? null, 'model' => $aiMeta['model'] ?? null,
+                ]));
+                app(\App\Services\Hr\JobDescriptionAIService::class)->clearCache($manpowerRequest);
+            } elseif ($jdSource === 'manual' && ! empty($overrides['description'])) {
+                $manpowerRequest->recordAudit('Manual JD Edited', $user, 'Job Description entered/edited manually during conversion');
+            }
 
             Log::channel('hr')->info('Manpower request converted to JD', ['request_id' => $manpowerRequest->id, 'tenant_id' => $manpowerRequest->tenant_id, 'job_posting_id' => $jd->id]);
 
@@ -324,51 +350,55 @@ class ManpowerRequestService
             $job = HrJobPosting::where('id', $manpowerRequest->job_posting_id)
                 ->where('tenant_id', $manpowerRequest->tenant_id)->first();
             if ($job) {
-                $job->update(['status' => JobPostingStatus::PUBLISHED, 'published_at' => $job->published_at ?? now()]);
-                $job->recordAudit('Published', $user, 'Published via manpower request', ['to' => JobPostingStatus::PUBLISHED]);
+                // Publishing activates recruitment immediately: the JD moves straight
+                // to the live "Hiring" state (in JobPostingStatus::LIVE), so the career
+                // portal, company portal and recruiter workspace pick it up at once.
+                $job->update(['status' => JobPostingStatus::HIRING, 'published_at' => $job->published_at ?? now()]);
+                $job->recordAudit('Published', $user, 'Published via manpower request', ['to' => JobPostingStatus::HIRING]);
             }
 
-            $manpowerRequest->update([
-                'status'    => Status::JOB_POSTED,
-                'posted_at' => now(),
+            // Single transition — publish auto-starts hiring (no manual "Start Hiring").
+            $updates = ['status' => Status::HIRING_IN_PROGRESS, 'posted_at' => now()];
+            // Populate hiring_started_at only if that column exists (future-proof; it
+            // doesn't today — recruitment-active state is carried by the JD status).
+            if (\Illuminate\Support\Facades\Schema::hasColumn('hr_manpower_requests', 'hiring_started_at')) {
+                $updates['hiring_started_at'] = now();
+            }
+            $manpowerRequest->update($updates);
+
+            // Keep the "Job Published" milestone, then log the automatic hiring start
+            // as a System action (no actor) — both land on the audit timeline.
+            $this->logHistory($manpowerRequest, 'HR', 'Job Published', $user, 'Job published and open to candidates',
+                ['status' => Status::CONVERTED_TO_JD], ['status' => Status::JOB_POSTED]);
+            $manpowerRequest->recordAudit('Hiring Started (System)', null, 'Recruitment started automatically on publish', [
+                'from' => Status::JOB_POSTED, 'to' => Status::HIRING_IN_PROGRESS, 'system' => true,
             ]);
 
-            $this->logHistory($manpowerRequest, 'HR', 'Job Posted', $user, 'Job published and open to candidates',
-                ['status' => Status::CONVERTED_TO_JD], ['status' => Status::JOB_POSTED]);
+            $this->notifyPublished($manpowerRequest, $job);
 
-            Log::channel('hr')->info('Manpower request job posted', ['request_id' => $manpowerRequest->id, 'tenant_id' => $manpowerRequest->tenant_id]);
+            Log::channel('hr')->info('Manpower request published — hiring started automatically', ['request_id' => $manpowerRequest->id, 'tenant_id' => $manpowerRequest->tenant_id]);
 
             return $manpowerRequest->fresh()->load(['requester', 'jobPosting', 'auditLogs.actor']);
         });
     }
 
-    /** Move a posted job into active hiring. */
-    public function startHiring(HrManpowerRequest $manpowerRequest, User $user): HrManpowerRequest
+    /**
+     * Job Published + Hiring Started notification (combined) — reuses the shared
+     * NotificationService. Never throws (delivery failure won't break publish).
+     */
+    private function notifyPublished(HrManpowerRequest $mr, ?HrJobPosting $job): void
     {
-        $this->assertTenant($manpowerRequest, $user);
-        $this->authorize($user->canManageHrQueue(), 'Only HR can update the hiring stage');
+        $requester = $mr->requester;
+        $title = $job?->title ?: $mr->position_title;
+        $name = $requester?->name ?: 'there';
+        $body = "Hi {$name},\n\nThe Job Description for \"{$title}\" (MR-{$mr->id}) has been published and recruitment has automatically started — the position is now Hiring in Progress.\n\nThe opening is live on the career portal, visible in the company portal, and recruiters are now tracking applicants.\n\nRegards,\nHR Team";
 
-        if ($manpowerRequest->status !== Status::JOB_POSTED) {
-            throw new BusinessException('Only posted jobs can move into hiring', 422);
-        }
-
-        return DB::transaction(function () use ($manpowerRequest, $user) {
-            $manpowerRequest->update(['status' => Status::HIRING_IN_PROGRESS]);
-            $this->logHistory($manpowerRequest, 'HR', 'Hiring in Progress', $user, 'Hiring started',
-                ['status' => Status::JOB_POSTED], ['status' => Status::HIRING_IN_PROGRESS]);
-
-            if ($manpowerRequest->job_posting_id) {
-                $job = HrJobPosting::where('id', $manpowerRequest->job_posting_id)
-                    ->where('tenant_id', $manpowerRequest->tenant_id)->first();
-                if ($job) {
-                    $job->update(['status' => JobPostingStatus::HIRING]);
-                    $job->recordAudit('Hiring started', $user, null, ['to' => JobPostingStatus::HIRING]);
-                }
-            }
-
-            return $manpowerRequest->fresh()->load(['requester', 'jobPosting']);
-        });
+        $this->notifications->email($requester?->email, "Job Published & Hiring Started — {$title}", $body, [
+            'event' => 'job_published_hiring_started', 'request_id' => $mr->id,
+        ]);
     }
+
+    /** Move a posted job into active hiring. */
 
     /** Close the position (and its linked posting). */
     public function close(HrManpowerRequest $manpowerRequest, User $user, ?string $remarks = null): HrManpowerRequest
@@ -500,6 +530,34 @@ class ManpowerRequestService
      * Record a workflow action on the reusable audit trail. Actor name/role,
      * tenant and timestamp are snapshotted by AuditLogService.
      */
+    /**
+     * The L1 (Department Head) approval state transition and its history entry.
+     *
+     * Single source of truth shared by manual approval (approveL1) and the
+     * automatic L1 approval performed on submission (SPK-1). Callers own the
+     * permission/status checks and the surrounding transaction; this only writes
+     * the L1 → L2 transition exactly the same way for both paths, so no approval
+     * logic is duplicated and the audit history is identical.
+     */
+    private function applyL1Approval(HrManpowerRequest $mr, User $actor, ?string $remarks, bool $auto = false): void
+    {
+        $mr->update([
+            'status'         => Status::L2_PENDING,
+            'l1_status'      => 'approved',
+            'l1_approver_id' => $actor->id,
+            'l1_approved_at' => now(),
+            'l1_remarks'     => $remarks,
+        ]);
+
+        $this->logHistory($mr, 'L1', 'Approved', $actor,
+            $remarks ?? ($auto ? 'L1 auto-approved on submission' : 'L1 Approved by Department Head'),
+            ['status' => Status::L1_PENDING], ['status' => Status::L2_PENDING, 'l1_status' => 'approved']);
+
+        Log::channel('hr')->info('Manpower request L1 approved', [
+            'request_id' => $mr->id, 'tenant_id' => $mr->tenant_id, 'approver_id' => $actor->id, 'auto' => $auto,
+        ]);
+    }
+
     private function logHistory(HrManpowerRequest $mr, string $level, string $action, User $user, ?string $remarks, ?array $oldValues, ?array $newValues): void
     {
         $mr->recordAudit($action, $user, $remarks, [

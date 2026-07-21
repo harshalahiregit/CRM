@@ -3,6 +3,7 @@ import { useTheme } from '@/context/ThemeContext'
 import { useNavigate } from 'react-router-dom'
 import { Plus, Search, X, Linkedin, Loader2, Upload, FileText, Briefcase, Clock, CalendarDays, IndianRupee, UserCircle2, Hash } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+import { HrLoading } from '@/components/ui/HrState'
 import { formatCTC } from '@/modules/hr/constants'
 import CandidateQuickActions from '@/modules/hr/components/CandidateQuickActions'
 
@@ -12,7 +13,7 @@ const SOURCE_COLORS = { LinkedIn:'#0077b5', Naukri:'#f97316', 'Career Page':'#7C
 const initials = n => (n||'').split(' ').slice(0,2).map(x=>x[0]).join('').toUpperCase()
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }) : null
 
-const EMPTY_FORM = { name:'', email:'', phone:'', location:'', current_company:'', experience_years:'', source:'LinkedIn', stage:'Applied', job_posting_id:'', linkedin_url:'', skills:[], notes:'' }
+const EMPTY_FORM = { name:'', email:'', phone:'', dob:'', location:'', address:'', current_company:'', experience_years:'', source:'LinkedIn', stage:'Applied', job_posting_id:'', linkedin_url:'', skills:[], certifications:[], languages:[], notes:'' }
 
 export default function Candidates() {
   const { isDark } = useTheme()
@@ -36,6 +37,11 @@ export default function Candidates() {
   const [resumeFile, setResumeFile] = useState(null)
   const [resumeDrag, setResumeDrag] = useState(false)
   const resumeInputRef = useRef(null)
+  // Kanban drag & drop (SPK-1)
+  const [dragging, setDragging]         = useState(null)  // candidate being dragged
+  const [dragOverStage, setDragOverStage] = useState(null)
+  const [moving, setMoving]             = useState(null)  // candidate id mid-save
+  const dragRef = useRef(null)                            // synchronous drag source
 
   const showToast = (msg, type='success') => { setToast({msg,type}); setTimeout(()=>setToast(null),3000) }
 
@@ -110,7 +116,95 @@ export default function Candidates() {
     c.email?.toLowerCase().includes(search.toLowerCase())
   )
 
-  const kanbanStages = STAGES.filter(s => s !== 'Rejected')
+  // Rejected is the last column and must stay reachable — it is a real drop
+  // target (rejection is allowed from any stage), so it can't be filtered out.
+  const kanbanStages = STAGES
+
+  // ── Drag & drop validation (SPK-1) ─────────────────────────────────────────
+  // dropCheck is a complete client mirror of the backend gate
+  // (CandidateService::updateStage + assertTransitionAllowed) so a move can be
+  // validated BEFORE the drop — no card is moved and no request is sent for a
+  // transition the backend would reject. The backend is still the authority and
+  // re-validates every real move; this only spares the user a round-trip and an
+  // after-the-fact revert. Messages match the server's so both read identically.
+  //   • Offer / Hired   — system-controlled, never a manual drop target.
+  //   • Rejected        — allowed from any stage.
+  //   • backward / skip — blocked (forward, one step at a time).
+  //   • Assessment      — requires a completed AI screening (ai_score > 0).
+  const STAGE_ORDER = { Applied: 0, Screening: 1, Assessment: 2, Interview: 3, Offer: 4, Hired: 5, Rejected: 6 }
+  const dropCheck = (c, toStage) => {
+    if (!c || c.stage === toStage) return { ok: false, reason: null }
+    if (toStage === 'Offer' || toStage === 'Hired') {
+      return { ok: false, reason: `${toStage} is managed automatically by the recruitment workflow.` }
+    }
+    if (toStage === 'Rejected') return { ok: true, reason: null }
+
+    const from = STAGE_ORDER[c.stage] ?? -1
+    const to   = STAGE_ORDER[toStage] ?? -1
+    if (to < from) return { ok: false, reason: 'Stage can only move forward in the pipeline.' }
+    if (to > from + 1) {
+      const next = Object.keys(STAGE_ORDER).find(k => STAGE_ORDER[k] === from + 1)
+      return { ok: false, reason: `Move to ${next} first — stages cannot be skipped.` }
+    }
+    if (toStage === 'Assessment' && !(Number(c.ai_score) > 0)) {
+      return { ok: false, reason: 'AI screening has not completed for this candidate yet — no AI score on record.' }
+    }
+    return { ok: true, reason: null }
+  }
+
+  const onDragStart = (e, c) => {
+    // dragRef is the source of truth for the handlers: setDragging() is async, and
+    // the first dragover fires before React re-renders — reading state there would
+    // skip preventDefault() and the drop would silently never happen.
+    dragRef.current = c
+    setDragging(c)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', String(c.id))
+  }
+  const onDragEnd = () => { dragRef.current = null; setDragging(null); setDragOverStage(null) }
+
+  const onDragOver = (e, stage) => {
+    const d = dragRef.current
+    if (!d || d.stage === stage) return
+    // preventDefault lets the drop fire so onDropStage can validate and, when the
+    // move is not allowed, show the reason. The column's own styling conveys
+    // whether the drop will be accepted, so the cursor staying "move" is fine.
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    if (dragOverStage !== stage) setDragOverStage(stage)
+  }
+
+  // Transactional drop (SPK-1): validate → (invalid: stop, no move, no request) →
+  // (valid: API first, await success, THEN move the card + refresh every count).
+  // The card is never moved optimistically, so UI and DB can never disagree:
+  //   invalid  → card stays, reason shown, zero server calls.
+  //   API ok   → merge the server's authoritative row (recounts columns + stats).
+  //   API fail → card never moved (nothing to roll back), backend error shown.
+  const onDropStage = async (e, stage) => {
+    e.preventDefault()
+    const c = dragRef.current
+    dragRef.current = null
+    setDragging(null); setDragOverStage(null)
+    if (!c || c.stage === stage) return
+
+    // 1) VALIDATE BEFORE THE DROP — no move, no API for a rejected transition.
+    const { ok, reason } = dropCheck(c, stage)
+    if (!ok) {
+      if (reason) showToast(reason, 'error')
+      return
+    }
+
+    // 2) BACKEND FIRST — the card only moves once the server confirms.
+    setMoving(c.id)
+    try {
+      const updated = await hrApi.candidates.updateStage(c.id, stage)
+      patchCandidate(c.id, updated)          // 3) authoritative row → card + all counts update together
+      showToast(`${c.name} moved to ${stage}`)
+    } catch (err) {
+      // 4) Card never moved, so there is nothing to roll back — surface the reason.
+      showToast(err.response?.data?.message || `Could not move ${c.name} to ${stage}`, 'error')
+    } finally { setMoving(null) }
+  }
 
   return (
     <div className="space-y-5 animate-[tiltIn_0.35s_ease_forwards]">
@@ -163,15 +257,37 @@ export default function Candidates() {
       </div>
 
       {loading ? (
-        <div className="text-center py-16" style={{ color:'var(--text-muted)' }}>Loading candidates…</div>
+        <HrLoading label="Loading candidates…" />
       ) : view === 'kanban' ? (
         // ── Kanban View ──
-        <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide">
+        // scrollbar-hide removed: the board is wider than the viewport, so the
+        // horizontal scrollbar is the only affordance telling HR the later
+        // columns (through Rejected) exist. Column width stays fixed at w-64.
+        <div className="flex gap-4 overflow-x-auto overflow-y-visible pb-3 hr-kanban-scroll"
+          style={{ scrollBehavior:'smooth', overscrollBehaviorX:'contain' }}>
           {kanbanStages.map(stage => {
             const stageCands = filtered.filter(c => c.stage === stage)
             const color = STAGE_COLORS[stage]
+            const isTarget  = dragOverStage === stage
+            // Reflect the SAME validation the drop uses: columns this card cannot
+            // move into (backward, skipped, system-controlled, or Assessment with
+            // no AI score) are dimmed during the drag.
+            const droppable = !!dragging && dropCheck(dragging, stage).ok
             return (
-              <div key={stage} className="flex-shrink-0 w-64 rounded-2xl" style={{ background:'var(--bg-input)', border:'1px solid var(--border)' }}>
+              <div key={stage}
+                onDragOver={e => onDragOver(e, stage)}
+                onDragLeave={() => dragOverStage === stage && setDragOverStage(null)}
+                onDrop={e => onDropStage(e, stage)}
+                className="flex-shrink-0 w-64 rounded-2xl transition-all"
+                style={{
+                  background:'var(--bg-input)',
+                  // Green highlight only when hovering a VALID target; invalid
+                  // columns never light up. No layout shift, resting state intact.
+                  border:`1px solid ${isTarget && droppable ? color : 'var(--border)'}`,
+                  boxShadow: isTarget && droppable ? `0 0 0 2px ${color}55` : 'none',
+                  // Dim the columns this card cannot move into during a drag.
+                  opacity: dragging && dragging.stage !== stage && !droppable ? 0.5 : 1,
+                }}>
                 <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom:'1px solid var(--border)' }}>
                   <span className="text-xs font-bold" style={{ color }}>{stage}</span>
                   <span className="text-xs font-black w-6 h-6 rounded-full flex items-center justify-center" style={{ background:`${color}20`, color }}>{stageCands.length}</span>
@@ -181,7 +297,18 @@ export default function Candidates() {
                     const ctcC = formatCTC(c.current_ctc), ctcE = formatCTC(c.expected_ctc)
                     const applied = fmtDate(c.applied_at || c.created_at)
                     return (
-                    <div key={c.id} onClick={()=>navigate(`/app/hr/candidates/${c.id}`)} className="rounded-xl cursor-pointer transition-all card-3d" style={{ padding:'12px' }}
+                    <div key={c.id}
+                      draggable
+                      onDragStart={e=>onDragStart(e,c)}
+                      onDragEnd={onDragEnd}
+                      onClick={()=>navigate(`/app/hr/candidates/${c.id}`)}
+                      className="rounded-xl cursor-pointer transition-all card-3d" style={{
+                        padding:'12px',
+                        opacity: dragging?.id === c.id ? 0.4 : moving === c.id ? 0.6 : 1,
+                        cursor: dragging?.id === c.id ? 'grabbing' : 'pointer',
+                        // Lock the card while its stage change is saving (SPK-1 #13).
+                        pointerEvents: moving === c.id ? 'none' : 'auto',
+                      }}
                       onMouseEnter={e=>e.currentTarget.style.transform='translateY(-2px)'}
                       onMouseLeave={e=>e.currentTarget.style.transform='translateY(0)'}>
                       {/* header */}
@@ -299,6 +426,11 @@ export default function Candidates() {
                 <div><label className="label">Phone</label><input className="input-3d text-sm" placeholder="+91 98765 43210" value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})}/></div>
               </div>
               <div className="grid grid-cols-2 gap-3">
+                <div><label className="label">Date of Birth</label><input type="date" className="input-3d text-sm" value={form.dob} onChange={e=>setForm({...form,dob:e.target.value})}/></div>
+                <div><label className="label">Location</label><input className="input-3d text-sm" placeholder="City" value={form.location} onChange={e=>setForm({...form,location:e.target.value})}/></div>
+              </div>
+              <div><label className="label">Address</label><textarea rows={2} className="input-3d text-sm resize-none" placeholder="Full postal address" value={form.address} onChange={e=>setForm({...form,address:e.target.value})}/></div>
+              <div className="grid grid-cols-2 gap-3">
                 <div><label className="label">Current Company</label><input className="input-3d text-sm" value={form.current_company} onChange={e=>setForm({...form,current_company:e.target.value})}/></div>
                 <div><label className="label">Experience (yrs)</label><input type="number" step="0.5" className="input-3d text-sm" value={form.experience_years} onChange={e=>setForm({...form,experience_years:e.target.value})}/></div>
               </div>
@@ -320,6 +452,16 @@ export default function Candidates() {
               <div>
                 <label className="label">Skills (comma separated)</label>
                 <input className="input-3d text-sm" placeholder="React.js, Node.js, AWS" value={(form.skills||[]).join(', ')} onChange={e=>setForm({...form,skills:e.target.value.split(',').map(s=>s.trim()).filter(Boolean)})}/>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">Certifications (comma separated)</label>
+                  <input className="input-3d text-sm" placeholder="AWS SA, PMP" value={(form.certifications||[]).join(', ')} onChange={e=>setForm({...form,certifications:e.target.value.split(',').map(s=>s.trim()).filter(Boolean)})}/>
+                </div>
+                <div>
+                  <label className="label">Languages (comma separated)</label>
+                  <input className="input-3d text-sm" placeholder="English, Hindi" value={(form.languages||[]).join(', ')} onChange={e=>setForm({...form,languages:e.target.value.split(',').map(s=>s.trim()).filter(Boolean)})}/>
+                </div>
               </div>
               {/* Resume Upload */}
               <div>

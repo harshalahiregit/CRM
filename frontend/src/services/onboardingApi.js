@@ -16,6 +16,16 @@ export const onboardingApi = {
       headers: { 'Content-Type': 'multipart/form-data' },
     }).then(r => r.data)
   },
+  // ── Employee Onboarding Form (token-scoped, no auth) ──
+  // Delegates to the existing EmployeeOnboardingService: section status, progress
+  // and audit are all handled server-side. Nothing is computed client-side.
+  saveSection: (token, section, payload) =>
+    api.patch(`/onboarding/${token}/form/section/${section}`, payload).then(r => r.data),
+  saveChild: (token, collection, payload) =>
+    api.post(`/onboarding/${token}/form/${collection}`, payload).then(r => r.data),
+  deleteChild: (token, collection, id) =>
+    api.delete(`/onboarding/${token}/form/${collection}/${id}`).then(r => r.data),
+
   uploadDocument: (token, type, file) => {
     const fd = new FormData()
     fd.append('type', type)

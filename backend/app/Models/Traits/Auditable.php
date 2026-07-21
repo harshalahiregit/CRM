@@ -28,8 +28,8 @@ trait Auditable
      * @param  string|null  $comment
      * @param  array  $metadata    e.g. ['level' => 'L1', 'from' => 'Draft', 'to' => 'L1_Pending']
      */
-    public function recordAudit(string $action, ?User $actor = null, ?string $comment = null, array $metadata = []): AuditLog
+    public function recordAudit(string $action, ?User $actor = null, ?string $comment = null, array $metadata = [], ?string $actorLabel = null): AuditLog
     {
-        return app(AuditLogService::class)->record($this, $action, $actor, $comment, $metadata);
+        return app(AuditLogService::class)->record($this, $action, $actor, $comment, $metadata, $actorLabel);
     }
 }

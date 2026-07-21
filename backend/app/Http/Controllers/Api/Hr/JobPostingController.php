@@ -65,6 +65,28 @@ class JobPostingController extends Controller
         return response()->json($this->jobPostingService->stats($request->user()->tenant_id));
     }
 
+    /* POST /api/hr/jobs/analyze-jd — AI JD quality score + suggestions (heuristic) */
+    public function analyzeJd(Request $request)
+    {
+        abort_unless($request->user()->canManageHrQueue(), 403, 'You are not authorised');
+        $data = $request->validate([
+            'title'        => 'nullable|string|max:200',
+            'department'   => 'nullable|string|max:100',
+            'description'  => 'nullable|string',
+            'requirements' => 'nullable|string',
+            'improve'      => 'nullable|boolean',
+        ]);
+
+        $analyzer = new \App\Support\Hr\JdAnalyzer;
+        $analysis = $analyzer->analyze($data['title'] ?? '', $data['description'] ?? '', $data['requirements'] ?? '', $data['department'] ?? null);
+
+        if (! empty($data['improve'])) {
+            $analysis['improved_description'] = $analyzer->improve($data['title'] ?? 'this role', $data['description'] ?? '', $data['requirements'] ?? '', $data['department'] ?? null, $analysis);
+        }
+
+        return response()->json($analysis);
+    }
+
     /* POST /api/hr/jobs/bulk — apply a lifecycle action to many postings */
     public function bulk(Request $request)
     {

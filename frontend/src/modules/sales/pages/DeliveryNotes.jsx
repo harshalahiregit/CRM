@@ -184,7 +184,7 @@ export default function DeliveryNotes() {
       {showDrawer && (
         <>
           <div className="drawer-backdrop" onClick={() => setShowDrawer(false)} />
-          <div className="drawer-panel" style={{ width: 'min(580px, 95vw)' }}>
+          <div className="drawer-panel" style={{ width: 'min(820px, 95vw)' }}>
 
             {/* Header */}
             <div className="drawer-header">

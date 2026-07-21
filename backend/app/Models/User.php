@@ -98,6 +98,28 @@ class User extends Authenticatable
             || in_array($this->internal_role, ['hr_recruiter', 'hr_executive'], true);
     }
 
+    /**
+     * May manage the Employee Onboarding module (HR-driven in Sprint 1).
+     * Future ESS will add an 'employee' scope resolved via HrEmployee.user_id;
+     * this helper stays the HR gate.
+     */
+    public function canManageOnboarding(): bool
+    {
+        return $this->isAdmin()
+            || $this->isHRExecutive()
+            || in_array($this->internal_role, ['hr_recruiter', 'hr_executive', 'hr_manager'], true);
+    }
+
+    /**
+     * May use the AI Job Description generator. Restricted to HR Recruiter,
+     * HR Manager and Super Admin (per the AI JD sprint spec).
+     */
+    public function canGenerateAiJd(): bool
+    {
+        return $this->isAdmin()
+            || in_array($this->internal_role, ['hr_recruiter', 'hr_manager'], true);
+    }
+
     /* ── Scopes ─────────────────────────────── */
     public function scopeActive($query)        { return $query->where('status', 'active'); }
     public function scopePending($query)       { return $query->where('status', 'pending'); }

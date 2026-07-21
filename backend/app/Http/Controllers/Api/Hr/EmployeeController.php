@@ -17,7 +17,7 @@ class EmployeeController extends Controller
     public function index(Request $request)
     {
         return response()->json(
-            $this->employeeService->list($request->user()->tenant_id, $request->only(['status', 'department', 'designation', 'joined_from', 'search']))
+            $this->employeeService->list($request->user()->tenant_id, $request->only(['status', 'department', 'designation', 'joined_from', 'search', 'per_page']))
         );
     }
 

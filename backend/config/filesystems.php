@@ -63,6 +63,39 @@ return [
             'throw'      => false,
         ],
 
+        // ── Vendor / TPV statutory documents — private, served via controller ─
+        'vendor_docs' => [
+            'driver'     => 'local',
+            'root'       => storage_path('app/private/vendor/documents'),
+            'visibility' => 'private',
+            'throw'      => false,
+        ],
+
+        // Submission selfies and approval signatures. Private: these are images
+        // of people, captured in the field, and must never be web-reachable.
+        'compliance_media' => [
+            'driver'     => 'local',
+            'root'       => storage_path('app/private/compliance/media'),
+            'visibility' => 'private',
+            'throw'      => false,
+        ],
+
+        // Uploaded Minutes-of-Meeting documents for kickoff meetings.
+        'kickoff_docs' => [
+            'driver'     => 'local',
+            'root'       => storage_path('app/private/kickoff/documents'),
+            'visibility' => 'private',
+            'throw'      => false,
+        ],
+
+        // Signed contract / MSA documents. Private — commercial agreements.
+        'contract_docs' => [
+            'driver'     => 'local',
+            'root'       => storage_path('app/private/contracts'),
+            'visibility' => 'private',
+            'throw'      => false,
+        ],
+
         's3' => [
             'driver' => 's3',
             'key' => env('AWS_ACCESS_KEY_ID'),

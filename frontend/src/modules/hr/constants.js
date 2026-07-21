@@ -72,9 +72,29 @@ export const INTERVIEW_STATUS_COLORS = { Scheduled: '#f59e0b', Completed: '#10b9
 export const INTERVIEW_RESULT_COLORS = { Passed: '#10b981', Failed: '#ef4444', Pending: '#f59e0b', 'On Hold': '#fbbf24', 'Next Round': '#6366f1' }
 
 // Standard interview pipeline rounds (round_name is free-text; these are the presets).
-export const INTERVIEW_ROUNDS = ['HR Screening', 'Technical', 'Technical L2', 'Managerial', 'HR Final']
-export const ROUND_COLORS = { 'HR Screening': '#7C3AED', Technical: '#3b82f6', 'Technical L2': '#0ea5e9', Managerial: '#f59e0b', 'HR Final': '#10b981' }
+// SPK-1 interview sequence: HR → Technical → Manager → Client → Final.
+export const INTERVIEW_ROUNDS = ['HR Round', 'Technical Round', 'Manager Round', 'Client Round', 'Final Round']
+export const ROUND_COLORS = {
+  'HR Round': '#7C3AED', 'Technical Round': '#3b82f6', 'Manager Round': '#f59e0b',
+  'Client Round': '#06b6d4', 'Final Round': '#10b981',
+  // Legacy round names — already-scheduled interviews keep their colour/label.
+  'HR Screening': '#7C3AED', Technical: '#3b82f6', 'Technical L2': '#0ea5e9', Managerial: '#f59e0b', 'HR Final': '#10b981',
+}
 export const roundColor = (r) => ROUND_COLORS[r] || '#7C3AED'
+// Map a free-text round_name onto the SPK-1 sequence so historic rounds
+// ("Technical L1", "Manager L2", "HR Screening", …) still line up on the tracker.
+// Pattern-based rather than an exact list — round_name has always been free text.
+export const canonicalRound = (r) => {
+  if (!r) return r
+  if (INTERVIEW_ROUNDS.includes(r)) return r
+  const s = String(r).toLowerCase()
+  if (s.includes('final')) return 'Final Round'          // before HR/manager: "HR Final"
+  if (s.includes('client')) return 'Client Round'
+  if (s.includes('manager') || s.includes('managerial')) return 'Manager Round'
+  if (s.includes('technical') || s.includes('tech')) return 'Technical Round'
+  if (s.includes('hr') || s.includes('screening')) return 'HR Round'
+  return r                                                // unknown → stays off the tracker
+}
 export const INTERVIEW_MODES = ['online', 'offline']
 export const INTERVIEW_RESULTS = ['Pending', 'Passed', 'Failed', 'On Hold', 'Next Round']
 export const RECOMMENDATIONS = ['Strong Hire', 'Hire', 'Neutral', 'No Hire']
@@ -97,6 +117,34 @@ export const DOCUMENT_TYPES = [
   { key: 'other',       label: 'Other' },
 ]
 export const documentTypeLabel = (t) => DOCUMENT_TYPES.find(d => d.key === t)?.label || 'Other'
+
+// Onboarding document checklist. Shared by the Onboarding page and the
+// Candidate 360° onboarding stage so both read the same items and labels.
+export const ONBOARDING_DOC_ITEMS = ['offer_signed', 'id_proof', 'educational_certs', 'prev_employment_docs', 'bank_details', 'passport_photos']
+export const ONBOARDING_DOC_LABELS = {
+  offer_signed: 'Offer Letter (Signed)',
+  id_proof: 'ID Proof (Aadhaar/PAN)',
+  educational_certs: 'Educational Certificates',
+  prev_employment_docs: 'Previous Employment Docs',
+  bank_details: 'Bank Account Details',
+  passport_photos: 'Passport Size Photos',
+}
+
+// The checklist auto-completes from the verification workflow — it is DERIVED from
+// verified documents + offer status, never read from hr_onboarding.document_checklist
+// (that column lags reality and can read 0% on a fully approved onboarding).
+const _docVerified = (r, type) => (r?.documents || []).some(d => d.type === type && d.status === 'Verified')
+export const computeOnboardingChecklist = (r, offer = null) => {
+  const approved = r?.verification_status === 'Approved'
+  return {
+    offer_signed:         (offer ?? r?.candidate?.offer)?.status === 'Accepted' || (offer ?? r?.candidate?.offer)?.status === 'Completed',
+    id_proof:             _docVerified(r, 'aadhaar') || _docVerified(r, 'pan'),
+    educational_certs:    _docVerified(r, 'educational_certificate'),
+    prev_employment_docs: _docVerified(r, 'experience_document'),
+    bank_details:         !!(r?.submission?.bank_details?.account_number) && approved,
+    passport_photos:      _docVerified(r, 'photo'),
+  }
+}
 
 // Common AI-match bands (shared between card and profile).
 export const aiBand = (score = 0) =>
@@ -148,3 +196,9 @@ export const PRIORITIES = ['Low', 'Medium', 'High', 'Critical']
 export const canApproveL1 = (u) => u?.role === 'admin' || ['department_head', 'hiring_manager'].includes(u?.internal_role)
 export const canApproveL2 = (u) => u?.role === 'admin' || ['project_manager', 'senior_executive'].includes(u?.internal_role)
 export const canManageHrQueue = (u) => u?.role === 'admin' || u?.internal_role === 'hr_executive' || ['hr_recruiter', 'hr_executive'].includes(u?.internal_role)
+
+// Job identifier + apply links (SPK-1) — shared by the card and table views
+// so the same job always reads identically in both.
+export const jobCode = (id) => id ? `JOB-${String(id).padStart(4, '0')}` : '—'
+export const publicApplyUrl = (slug, id) => (slug && id) ? `${window.location.origin}/careers/${slug}/jobs/${id}` : null
+export const internalApplyUrl = (id) => id ? `${window.location.origin}/app/hr/jobs/${id}` : null

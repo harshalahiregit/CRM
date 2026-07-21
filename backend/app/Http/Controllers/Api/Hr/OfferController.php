@@ -66,7 +66,7 @@ class OfferController extends Controller
         $this->assertTenant($request, $offer);
         $this->assertCanManage($request);
 
-        return response()->json($this->offerService->confirmJoining($offer)->load('candidate'));
+        return response()->json($this->offerService->confirmJoining($offer, $request->user())->load('candidate'));
     }
 
     /** HR regenerates an expired/declined offer with a fresh validity + token. */

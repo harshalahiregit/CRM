@@ -4,6 +4,8 @@ import { useTheme } from '@/context/ThemeContext'
 import { Plus, X, Check, Download, FileText, ShieldCheck, ExternalLink, Copy, Eye, Send } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 import { DOC_LABEL, mandatoryDocKeys, isDocMandatory } from '@/config/onboardingDocs'
+import { HrLoading, HrEmpty } from '@/components/ui/HrState'
+import { ONBOARDING_DOC_ITEMS, ONBOARDING_DOC_LABELS, computeOnboardingChecklist } from '@/modules/hr/constants'
 
 // Build the public candidate-portal URL from the token already stored in
 // hr_onboarding — never generates a new token.
@@ -19,19 +21,9 @@ const DOC_TYPE_LABEL = DOC_LABEL
 const DOC_ST = (s) => s === 'Verified' ? { c: '#10b981', bg: 'rgba(16,185,129,0.12)' } : s === 'Rejected' ? { c: '#f87171', bg: 'rgba(239,68,68,0.1)' } : { c: '#fbbf24', bg: 'rgba(245,158,11,0.12)' }
 
 // The Document Checklist auto-completes from the verification workflow — no manual
-// ticking. Each item is derived from the corresponding verified document / event.
-const _docVerified = (r, type) => (r.documents || []).some(d => d.type === type && d.status === 'Verified')
-const computeChecklist = (r) => {
-  const approved = r.verification_status === 'Approved'
-  return {
-    id_proof:             _docVerified(r, 'aadhaar') || _docVerified(r, 'pan'),
-    passport_photos:      _docVerified(r, 'photo'),
-    bank_details:         !!(r.submission?.bank_details?.account_number) && approved,
-    educational_certs:    _docVerified(r, 'educational_certificate'),
-    prev_employment_docs: _docVerified(r, 'experience_document'),
-    offer_signed:         r.candidate?.offer?.status === 'Accepted',
-  }
-}
+// ticking. Now shared with the Candidate 360° onboarding stage so both screens
+// derive the checklist identically and can never disagree.
+const computeChecklist = (r) => computeOnboardingChecklist(r)
 
 function VerifyPanel({ record, onVerify, onUpdated, showToast }) {
   const [flags, setFlags] = useState({ doc_verified: !!record.doc_verified, background_verified: !!record.background_verified, medical_verified: !!record.medical_verified })
@@ -365,15 +357,9 @@ export default function Onboarding() {
     showToast('Candidate portal link copied!')
   }
 
-  const DOC_ITEMS = ['offer_signed', 'id_proof', 'educational_certs', 'prev_employment_docs', 'bank_details', 'passport_photos']
-  const DOC_LABELS = {
-    offer_signed: 'Offer Letter (Signed)',
-    id_proof: 'ID Proof (Aadhaar/PAN)',
-    educational_certs: 'Educational Certificates',
-    prev_employment_docs: 'Previous Employment Docs',
-    bank_details: 'Bank Account Details',
-    passport_photos: 'Passport Size Photos'
-  }
+  // Shared with the Candidate 360° onboarding stage — one definition, one source.
+  const DOC_ITEMS = ONBOARDING_DOC_ITEMS
+  const DOC_LABELS = ONBOARDING_DOC_LABELS
 
   const handleToggle = async (id, step) => {
     try {
@@ -555,7 +541,7 @@ export default function Onboarding() {
       </div>
 
       {loading ? (
-        <div className="text-center py-12" style={{ color: 'var(--text-muted)' }}>Loading...</div>
+        <HrLoading label="Loading onboarding…" />
       ) : (
         <div className="space-y-4">
           {records.map(r => {
@@ -679,7 +665,7 @@ export default function Onboarding() {
                 )
           })}
                 {records.length === 0 && (
-                  <p className="text-center py-10" style={{ color: 'var(--text-muted)' }}>No onboarding records found.</p>
+                  <HrEmpty icon={ShieldCheck} title="No onboarding records" hint="Onboarding starts automatically when a candidate is selected — records will appear here." />
                 )}
               </div>
             )

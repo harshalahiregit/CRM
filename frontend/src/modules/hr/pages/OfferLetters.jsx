@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useTheme } from '@/context/ThemeContext'
 import { Plus, Send, X, Mail, AlertCircle, ExternalLink, Copy, RefreshCw, UserCheck } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+import { HrLoading, HrEmpty } from '@/components/ui/HrState'
+import GenerateOfferDrawer from '@/modules/hr/components/GenerateOfferDrawer'
 
 const STATUS_COLORS = {
   Generated: '#94a3b8', Sent: '#a78bfa', Viewed: '#8b5cf6', Accepted: '#10b981',
@@ -12,17 +15,17 @@ const fmtCTC = v => v ? '₹'+Number(v).toLocaleString('en-IN') : '—'
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) : '—'
 const initials = n => (n||'').split(' ').slice(0,2).map(x=>x[0]).join('').toUpperCase()
 
-const EMPTY_FORM = { candidate_id:'', position:'', department:'', offered_ctc:'', joining_date:'', probation_period:'3 months', notice_period:'1 month', validity_date:'' }
-
 export default function OfferLetters() {
   const { isDark } = useTheme()
+  const location = useLocation()
+  const navigate = useNavigate()
   const [offers, setOffers]       = useState([])
   const [completed, setCompleted] = useState([])
   const [view, setView]           = useState('active')   // 'active' | 'completed'
   const [candidates, setCands]    = useState([])
   const [loading, setLoading]     = useState(true)
+  const [genFor, setGenFor]       = useState(null)  // { candidateId, candidateName } when fixed
   const [showModal, setShowModal] = useState(false)
-  const [form, setForm]           = useState(EMPTY_FORM)
   const [saving, setSaving]       = useState(false)
   const [toast, setToast]         = useState(null)
   const [rejectModal, setRejectModal] = useState({ open:false, id:null, reason:'' })
@@ -66,21 +69,24 @@ export default function OfferLetters() {
   // Count offers from BOTH lists (incl. Completed) so a joined candidate never reappears.
   const offeredCandidateIds = new Set([...offers, ...completed].map(o => Number(o.candidate_id)))
   const readyForOffer = candidates.filter(o => o.candidate_id && o.status !== 'Completed' && !offeredCandidateIds.has(Number(o.candidate_id)))
-  const openGenerateFor = (onb) => {
-    setForm({ ...EMPTY_FORM, candidate_id: String(onb.candidate_id), position: onb.position || '', department: onb.department || '' })
-    setShowModal(true)
-  }
+  // Arriving from the candidate workspace's "Generate Offer" CTA: open the existing
+  // form prefilled for that candidate. If the candidate is not offer-eligible yet the
+  // recruiter is told why instead of being dropped on an empty screen.
+  useEffect(() => {
+    const st = location.state
+    if (!st || loading) return
+    if (st.generateForCandidate) {
+      const onb = candidates.find(o => Number(o.candidate_id) === Number(st.generateForCandidate))
+      const existing = [...offers, ...completed].find(o => Number(o.candidate_id) === Number(st.generateForCandidate))
+      if (existing) showToast('An offer already exists for this candidate.')
+      else { setGenFor({ candidateId: Number(st.generateForCandidate), candidateName: st.candidateName || onb?.candidate_name || '' }); setShowModal(true) }
+    }
+    navigate(location.pathname, { replace: true, state: null })   // consume the intent
+  }, [location.state, loading]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleCreate = async () => {
-    if (!form.candidate_id||!form.offered_ctc||!form.joining_date) return showToast('Candidate, CTC and joining date required','error')
-    setSaving(true)
-    try {
-      const offer = await hrApi.offers.create(form)
-      setOffers(prev=>[offer,...prev])
-      setShowModal(false); setForm(EMPTY_FORM)
-      showToast('Offer letter generated!')
-    } catch (e) { showToast(e.response?.data?.message||'Failed','error') }
-    finally { setSaving(false) }
+  const openGenerateFor = (onb) => {
+    setGenFor({ candidateId: Number(onb.candidate_id), candidateName: onb.candidate_name || '' })
+    setShowModal(true)
   }
 
   const handleSend = async (id) => {
@@ -208,7 +214,7 @@ export default function OfferLetters() {
         )
       })()}
 
-      {loading ? <div className="text-center py-12" style={{ color:'var(--text-muted)' }}>Loading…</div> : (
+      {loading ? <HrLoading label="Loading offers…" /> : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
           {shown.map(offer=>{
             const ss = STATUS_S(offer.status)
@@ -257,43 +263,20 @@ export default function OfferLetters() {
               </div>
             )
           })}
-          {shown.length===0 && <div className="col-span-3 text-center py-12" style={{ color:'var(--text-muted)' }}>{view==='completed' ? 'No completed offers yet.' : 'No active offers.'}</div>}
+          {shown.length===0 && <div className="col-span-1 md:col-span-2 xl:col-span-3"><HrEmpty icon={Send} title={view==='completed' ? 'No completed offers yet' : 'No active offers'} hint={view==='completed' ? 'Offers move here once the candidate joins.' : 'Generate an offer for an approved candidate to see it here.'} /></div>}
         </div>
       )}
 
-      {/* Generate Offer Modal */}
-      {showModal && (
-        <div className="modal-backdrop" onClick={()=>setShowModal(false)}>
-          <div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-5"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>Generate Offer Letter</h2><button onClick={()=>setShowModal(false)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
-            <div className="space-y-3">
-              <div><label className="label">Candidate * <span style={{ color:'var(--text-muted)', fontWeight:400 }}>(onboarding approved)</span></label>
-                <select className="input-3d text-sm" value={form.candidate_id} onChange={e=>{ const o=candidates.find(x=>String(x.candidate_id)===e.target.value); setForm({...form,candidate_id:e.target.value,position:o?.position||'',department:o?.department||''})}}>
-                  <option value="">Select candidate...</option>
-                  {readyForOffer.map(o=><option key={o.id} value={o.candidate_id}>{o.candidate_name} — {o.position}</option>)}
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div><label className="label">Position</label><input className="input-3d text-sm" value={form.position} onChange={e=>setForm({...form,position:e.target.value})}/></div>
-                <div><label className="label">Department</label><input className="input-3d text-sm" value={form.department} onChange={e=>setForm({...form,department:e.target.value})}/></div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div><label className="label">Offered CTC (₹) *</label><input type="number" className="input-3d text-sm" placeholder="800000" value={form.offered_ctc} onChange={e=>setForm({...form,offered_ctc:e.target.value})}/></div>
-                <div><label className="label">Joining Date *</label><input type="date" className="input-3d text-sm" value={form.joining_date} onChange={e=>setForm({...form,joining_date:e.target.value})}/></div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div><label className="label">Probation Period</label><select className="input-3d text-sm" value={form.probation_period} onChange={e=>setForm({...form,probation_period:e.target.value})}><option>3 months</option><option>6 months</option><option>None</option></select></div>
-                <div><label className="label">Notice Period</label><select className="input-3d text-sm" value={form.notice_period} onChange={e=>setForm({...form,notice_period:e.target.value})}><option>1 month</option><option>2 months</option><option>3 months</option></select></div>
-              </div>
-              <div><label className="label">Offer Validity Date</label><input type="date" className="input-3d text-sm" value={form.validity_date} onChange={e=>setForm({...form,validity_date:e.target.value})}/></div>
-              <div className="flex gap-3 pt-1">
-                <button onClick={()=>setShowModal(false)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold" style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}>Cancel</button>
-                <button onClick={handleCreate} disabled={saving} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)', opacity:saving?0.7:1 }}>{saving?'Generating…':'Generate'}</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* The ONE offer form — also mounted by the candidate workspace */}
+      <GenerateOfferDrawer
+        open={showModal}
+        eligible={readyForOffer}
+        candidateId={genFor?.candidateId ?? null}
+        candidateName={genFor?.candidateName || ''}
+        onClose={() => { setShowModal(false); setGenFor(null) }}
+        onCreated={(offer) => { setOffers(prev => [offer, ...prev]); setGenFor(null) }}
+        showToast={showToast}
+      />
       {/* Offer Reject Reason Modal */}
       {rejectModal.open && (
         <div className="modal-backdrop" onClick={()=>setRejectModal({open:false,id:null,reason:''})}>

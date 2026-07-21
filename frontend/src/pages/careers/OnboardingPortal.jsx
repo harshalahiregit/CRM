@@ -7,8 +7,12 @@ import {
 import { onboardingApi } from '@/services/onboardingApi'
 import AuditTimeline from '@/components/ui/AuditTimeline'
 import { ONBOARDING_DOCS, isDocMandatory } from '@/config/onboardingDocs'
+import {
+  accent, inputStyle, Card, ProgressBar, Empty, Link, Grid, Input, Sel, Field,
+} from '@/pages/careers/OnboardingShared'
+import OnboardingFormTab from '@/pages/careers/OnboardingFormTab'
+import OfferPortal from '@/pages/careers/OfferPortal'
 
-const accent = '#7C3AED'
 const EMPTY = {
   personal_details: { dob: '', gender: '', father_name: '', marital_status: '', blood_group: '' },
   address: { current: '', permanent: '', city: '', state: '', pincode: '' },
@@ -41,6 +45,10 @@ export default function OnboardingPortal() {
     { key: 'progress', label: 'Progress', icon: ListChecks },
     { key: 'profile', label: 'My Profile', icon: User },
     { key: 'documents', label: 'Documents', icon: FileText, badge: data.documents.filter(d => d.status === 'Rejected').length || null },
+    { key: 'form', label: 'Onboarding Form', icon: ListChecks, badge: null },
+    // Unlocks automatically once HR generates/sends the offer — reuses the existing
+    // Offer Portal end-to-end (PDF, signature, accept/decline/clarify, pre-joining).
+    ...(data.offer?.exists ? [{ key: 'offer', label: 'Offer Letter', icon: FileText, badge: null }] : []),
     { key: 'tasks', label: 'Tasks', icon: CheckSquare },
     { key: 'notifications', label: 'Notifications', icon: Bell, badge: data.notifications.length || null },
     { key: 'timeline', label: 'Timeline', icon: History },
@@ -74,6 +82,8 @@ export default function OnboardingPortal() {
         {tab === 'progress' && <Card title="Recruitment Progress"><ProgressTracker steps={data.progress} /></Card>}
         {tab === 'profile' && <ProfileTab token={token} data={data} onSaved={load} />}
         {tab === 'documents' && <DocumentsTab token={token} data={data} onChanged={load} />}
+        {tab === 'form' && <OnboardingFormTab token={token} data={data} onChanged={load} onGoDocs={() => setTab('documents')} />}
+        {tab === 'offer' && data.offer?.exists && <OfferPortal token={data.offer.token} embedded />}
         {tab === 'tasks' && <TasksTab tasks={data.tasks} />}
         {tab === 'notifications' && <NotificationsTab items={data.notifications} />}
         {tab === 'timeline' && <Card title="Activity Timeline"><AuditTimeline entries={data.timeline} /></Card>}
@@ -306,28 +316,10 @@ function MessagesTab({ items }) {
 
 // ── Primitives ───────────────────────────────────────────────────────────────
 const Center = ({ children }) => <div style={{ minHeight: '100vh', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 24, color: '#64748b', fontFamily: 'system-ui,sans-serif' }}>{children}</div>
-const Card = ({ title, action, children }) => (
-  <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 16, padding: 22 }}>
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}><h2 style={{ fontSize: 15.5, fontWeight: 800, margin: 0 }}>{title}</h2>{action}</div>
-    {children}
-  </div>
-)
 const Stat = ({ k, v, highlight }) => (
   <div style={{ background: highlight ? `${accent}0d` : '#f8fafc', border: `1px solid ${highlight ? accent + '30' : '#e2e8f0'}`, borderRadius: 12, padding: '12px 14px' }}>
     <div style={{ fontSize: 10.5, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{k}</div>
     <div style={{ fontSize: 14, fontWeight: 700, marginTop: 3, color: highlight ? accent : '#0f172a' }}>{v || '—'}</div>
   </div>
 )
-const ProgressBar = ({ percent }) => (
-  <div style={{ height: 10, borderRadius: 999, background: '#f1f5f9', overflow: 'hidden' }}>
-    <div style={{ width: `${percent}%`, height: '100%', background: `linear-gradient(90deg,#a78bfa,${accent})`, transition: 'width .3s' }} />
-  </div>
-)
-const Empty = ({ children }) => <p style={{ fontSize: 13, color: '#94a3b8', margin: 0 }}>{children}</p>
-const Link = ({ onClick, children }) => <button onClick={onClick} style={{ background: 'none', border: 'none', color: accent, cursor: 'pointer', fontSize: 12.5, fontWeight: 700 }}>{children}</button>
-const Grid = ({ children }) => <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>{children}</div>
 const RowGrid = ({ children, onRemove }) => <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 10, marginBottom: 10, alignItems: 'center' }}>{children}{onRemove ? <button onClick={onRemove} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#f87171' }}><Trash2 size={16} /></button> : <span />}</div>
-const inputStyle = { width: '100%', padding: '10px 12px', border: '1px solid #e2e8f0', borderRadius: 9, fontSize: 13.5, outline: 'none', boxSizing: 'border-box', color: '#0f172a', background: '#fff' }
-const Input = (p) => <input {...p} style={inputStyle} />
-const Sel = ({ opts, ...p }) => <select {...p} style={inputStyle}>{opts.map(o => <option key={o} value={o}>{o || 'Select…'}</option>)}</select>
-const Field = ({ label, children, full }) => <div style={full ? { gridColumn: '1/-1' } : undefined}><label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 6 }}>{label}</label>{children}</div>

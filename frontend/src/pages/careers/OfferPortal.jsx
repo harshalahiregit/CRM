@@ -13,8 +13,14 @@ const STATUS = (s) => ({
   Accepted: { c: '#059669', bg: '#ecfdf5' }, Declined: { c: '#dc2626', bg: '#fef2f2' }, Expired: { c: '#b45309', bg: '#fffbeb' },
 }[s] || { c: '#64748b', bg: '#f1f5f9' })
 
-export default function OfferPortal() {
-  const { token } = useParams()
+/**
+ * Also embedded inside the candidate Onboarding Portal's "Offer Letter" tab.
+ * Pass `token` to render it in place; without it the token comes from the route,
+ * so the standalone /offer/{token} page is unchanged.
+ */
+export default function OfferPortal({ token: tokenProp, embedded = false }) {
+  const { token: routeToken } = useParams()
+  const token = tokenProp || routeToken
   const [offer, setOffer] = useState(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)

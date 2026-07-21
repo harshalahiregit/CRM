@@ -46,6 +46,10 @@ export const hrApi = {
     queue:           (params = {}) => api.get('/hr/manpower-requests/queue', { params }).then(r => r.data),
     stats:           ()            => api.get('/hr/manpower-requests/stats').then(r => r.data),
     pendingApprovals:()            => api.get('/hr/manpower-requests/pending-approvals').then(r => r.data),
+    // Distinct project names for the searchable Project dropdown (dynamic, no new table).
+    projects:        ()            => api.get('/hr/manpower-requests/projects').then(r => r.data),
+    // Enterprise form lookups: business units, departments (+ by-BU map), hiring managers.
+    formOptions:     ()            => api.get('/hr/manpower-requests/form-options').then(r => r.data),
     get:             (id)          => api.get(`/hr/manpower-requests/${id}`).then(r => r.data),
     create:          (data)        => api.post('/hr/manpower-requests', data).then(r => r.data),
     update:          (id, data)    => api.put(`/hr/manpower-requests/${id}`, data).then(r => r.data),
@@ -58,9 +62,13 @@ export const hrApi = {
     rejectL2:        (id, remarks)      => api.post(`/hr/manpower-requests/${id}/reject-l2`, { remarks }).then(r => r.data),
     sendBack:        (id, remarks)      => api.post(`/hr/manpower-requests/${id}/send-back`, { remarks }).then(r => r.data),
     // HR queue actions
+    generateJd:      (id, data = {})    => api.post(`/hr/manpower-requests/${id}/generate-jd`, data).then(r => r.data),
+    templateJd:      (id, template)     => api.post(`/hr/manpower-requests/${id}/template-jd`, { template }).then(r => r.data),
+    analyzeJd:       (id, data = {})    => api.post(`/hr/manpower-requests/${id}/analyze-jd`, data).then(r => r.data),
+    jdImprovementDecision: (id, decision, ats_before, ats_after) => api.post(`/hr/manpower-requests/${id}/jd-improvement-decision`, { decision, ats_before, ats_after }).then(r => r.data),
+    jdTemplates:     ()                 => api.get('/hr/manpower-requests/jd-templates').then(r => r.data),
     convertToJd:     (id, data = {})    => api.post(`/hr/manpower-requests/${id}/convert-to-jd`, data).then(r => r.data),
     publish:         (id)               => api.post(`/hr/manpower-requests/${id}/publish`).then(r => r.data),
-    startHiring:     (id)               => api.post(`/hr/manpower-requests/${id}/start-hiring`).then(r => r.data),
     close:           (id, remarks = '') => api.post(`/hr/manpower-requests/${id}/close`, { remarks }).then(r => r.data),
     assignManager:   (id, manager_id)   => api.patch(`/hr/manpower-requests/${id}/assign-manager`, { manager_id }).then(r => r.data),
   },
@@ -72,6 +80,7 @@ export const hrApi = {
     bulk:         (action, ids) => api.post('/hr/jobs/bulk', { action, ids }).then(r => r.data),
     get:          (id)          => api.get(`/hr/jobs/${id}`).then(r => r.data),
     create:       (data)        => api.post('/hr/jobs', data).then(r => r.data),
+    analyzeJd:    (data)        => api.post('/hr/jobs/analyze-jd', data).then(r => r.data),
     update:       (id, data)    => api.put(`/hr/jobs/${id}`, data).then(r => r.data),
     updateStatus: (id, status)  => api.patch(`/hr/jobs/${id}/status`, { status }).then(r => r.data),
     updateExternalId: (id, platform, external_id) => api.patch(`/hr/jobs/${id}/external-id`, { platform, external_id }).then(r => r.data),
@@ -94,6 +103,11 @@ export const hrApi = {
   candidates: {
     list:          (params = {}) => api.get('/hr/candidates', { params }).then(r => r.data),
     get:           (id)          => api.get(`/hr/candidates/${id}`).then(r => r.data),
+    journey:       (id)          => api.get(`/hr/candidates/${id}/journey`).then(r => r.data),
+    communications:  (id)        => api.get(`/hr/candidates/${id}/communications`).then(r => r.data),
+    commPreview:     (id, channel, event) => api.get(`/hr/candidates/${id}/communication-preview`, { params: { channel, event } }).then(r => r.data),
+    communicate:     (id, data)  => api.post(`/hr/candidates/${id}/communicate`, data).then(r => r.data),
+    scheduleReminder:(id, type, days) => api.post(`/hr/candidates/${id}/reminder`, { type, days }).then(r => r.data),
     create:        (data)        => api.post('/hr/candidates', data).then(r => r.data),
     update:        (id, data)    => api.put(`/hr/candidates/${id}`, data).then(r => r.data),
     updateStage:   (id, stage)   => api.patch(`/hr/candidates/${id}/stage`, { stage }).then(r => r.data),
@@ -148,7 +162,10 @@ export const hrApi = {
     recordFeedback:   (id, data)    => api.patch(`/hr/interviews/${id}/feedback`, data).then(r => r.data),
     cancel:           (id, reason)  => api.patch(`/hr/interviews/${id}/cancel`, { reason }).then(r => r.data),
     generateMeetLink: (id)          => api.post(`/hr/interviews/${id}/meet-link`).then(r => r.data),
-    sendNotification: (id, type)    => api.post(`/hr/interviews/${id}/notify`, { type }).then(r => r.data),
+    sendNotification: (id, type, extra = {}) => api.post(`/hr/interviews/${id}/notify`, { type, ...extra }).then(r => r.data),
+    emailPreview:     (id, type = 'candidate') => api.get(`/hr/interviews/${id}/email-preview`, { params: { type } }).then(r => r.data),
+    panelUsers:       (role, company) => api.get('/hr/interview-panel/users', { params: { role, company } }).then(r => r.data),
+    panelOrgs:        (role)        => api.get('/hr/interview-panel/organizations', { params: { role } }).then(r => r.data),
     delete:           (id)          => api.delete(`/hr/interviews/${id}`).then(r => r.data),
   },
 
@@ -183,16 +200,37 @@ export const hrApi = {
 
   // ── Employees ───────────────────────────────────────────────────────
   employees: {
-    list:   (params = {}) => api.get('/hr/employees', { params }).then(r => r.data),
+    // list() ALWAYS resolves to an array so existing consumers (Attendance, pickers)
+    // keep working now that the endpoint is paginated. Use listPaged() when the
+    // paginator meta (current_page/last_page/total/per_page) is needed.
+    list:   (params = {}) => api.get('/hr/employees', { params }).then(r => Array.isArray(r.data) ? r.data : (r.data?.data ?? [])),
+    listPaged: (params = {}) => api.get('/hr/employees', { params }).then(r => r.data),
     stats:  ()            => api.get('/hr/employees/stats').then(r => r.data),
     get:    (id)          => api.get(`/hr/employees/${id}`).then(r => r.data),
     profile:(id)          => api.get(`/hr/employees/${id}/profile`).then(r => r.data),
+    // Exit Interview (SPK-1) — prefill comes from the employee record itself.
+    exitInterview:     (id)       => api.get(`/hr/employees/${id}/exit-interview`).then(r => r.data),
+    saveExitInterview: (id, data) => api.post(`/hr/employees/${id}/exit-interview`, data).then(r => r.data),
     create: (data)        => api.post('/hr/employees', data).then(r => r.data),
     update: (id, data)    => api.put(`/hr/employees/${id}`, data).then(r => r.data),
     delete: (id)          => api.delete(`/hr/employees/${id}`).then(r => r.data),
+    attendance: (id, params = {}) => api.get(`/hr/employees/${id}/attendance`, { params }).then(r => r.data),
   },
 
-  // ── Recruitment Services (external-company hiring intake) ────────────
+  attendance: {
+    list:       (params = {}) => api.get('/hr/attendance', { params }).then(r => r.data),
+    stats:      (params = {}) => api.get('/hr/attendance/stats', { params }).then(r => r.data),
+    manual:     (data)        => api.post('/hr/attendance', data).then(r => r.data),
+    correct:    (id, data)    => api.patch(`/hr/attendance/${id}`, data).then(r => r.data),
+    checkIn:    (data)        => api.post('/hr/attendance/check-in', data).then(r => r.data),
+    checkOut:   (data)        => api.post('/hr/attendance/check-out', data).then(r => r.data),
+    breakStart: (data)        => api.post('/hr/attendance/break-start', data).then(r => r.data),
+    breakEnd:   (data)        => api.post('/hr/attendance/break-end', data).then(r => r.data),
+    exportUrl:  (params = {}) => `/hr/attendance/export?${new URLSearchParams(params).toString()}`,
+    exportBlob: (params = {}) => api.get('/hr/attendance/export', { params, responseType: 'blob' }).then(r => r.data),
+  },
+
+  // ── Recruitment Services (external-company hiring intake) ────────────────
   recruitmentServices: {
     dashboard:      ()            => api.get('/recruitment-services/dashboard').then(r => r.data),
     companies:      (params = {}) => api.get('/recruitment-services/companies', { params }).then(r => r.data),
@@ -240,6 +278,32 @@ export const hrApi = {
     feedback:  (token, submission_id, decision, comment = '') => publicApi.post(`/client-tracking/${token}/feedback`, { submission_id, decision, comment }).then(r => r.data),
     rating:    (token, data)         => publicApi.post(`/client-tracking/${token}/rating`, data).then(r => r.data),
     resumeUrl: (shareToken)          => `${BASE}/client-tracking/resume/${shareToken}`,
+  },
+
+  // ── Employee Onboarding (HR-driven; authenticated) ──────────────────────
+  employeeOnboarding: {
+    dashboard:         ()             => api.get('/employee-onboarding/dashboard').then(r => r.data),
+    list:              (params = {})  => api.get('/employee-onboarding', { params }).then(r => r.data),
+    eligibleEmployees: (params = {})  => api.get('/employee-onboarding/eligible-employees', { params }).then(r => r.data),
+    create:            (data)         => api.post('/employee-onboarding', data).then(r => r.data),
+    get:               (id)           => api.get(`/employee-onboarding/${id}`).then(r => r.data),
+    saveSection:       (id, section, data) => api.patch(`/employee-onboarding/${id}/section/${section}`, data).then(r => r.data),
+    // HR section verification — the only writer of Verified / Rejected / Correction Requested.
+    verifySection:     (id, section, status, remarks) => api.patch(`/employee-onboarding/${id}/section/${section}/verify`, { status, remarks }).then(r => r.data),
+    setStage:          (id, stage)    => api.patch(`/employee-onboarding/${id}/stage`, { stage }).then(r => r.data),
+    updateTask:        (id, taskId, data) => api.patch(`/employee-onboarding/${id}/tasks/${taskId}`, data).then(r => r.data),
+    addEducation:      (id, data)     => api.post(`/employee-onboarding/${id}/education`, data).then(r => r.data),
+    updateEducation:   (id, rid, data) => api.put(`/employee-onboarding/${id}/education/${rid}`, data).then(r => r.data),
+    deleteEducation:   (id, rid)      => api.delete(`/employee-onboarding/${id}/education/${rid}`).then(r => r.data),
+    addExperience:     (id, data)     => api.post(`/employee-onboarding/${id}/experience`, data).then(r => r.data),
+    updateExperience:  (id, rid, data) => api.put(`/employee-onboarding/${id}/experience/${rid}`, data).then(r => r.data),
+    deleteExperience:  (id, rid)      => api.delete(`/employee-onboarding/${id}/experience/${rid}`).then(r => r.data),
+    addFamily:         (id, data)     => api.post(`/employee-onboarding/${id}/family`, data).then(r => r.data),
+    updateFamily:      (id, rid, data) => api.put(`/employee-onboarding/${id}/family/${rid}`, data).then(r => r.data),
+    deleteFamily:      (id, rid)      => api.delete(`/employee-onboarding/${id}/family/${rid}`).then(r => r.data),
+    addAsset:          (id, data)     => api.post(`/employee-onboarding/${id}/assets`, data).then(r => r.data),
+    updateAsset:       (id, rid, data) => api.put(`/employee-onboarding/${id}/assets/${rid}`, data).then(r => r.data),
+    deleteAsset:       (id, rid)      => api.delete(`/employee-onboarding/${id}/assets/${rid}`).then(r => r.data),
   },
 }
 

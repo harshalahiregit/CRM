@@ -10,6 +10,7 @@ use App\Models\Hr\HrManpowerRequest;
 use App\Models\User;
 use App\Support\Hr\JobPostingStatus as Status;
 use App\Support\Hr\ManpowerRequestStatus;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -48,7 +49,13 @@ class JobPostingService
                 'auditLogs.actor', 'publications',
                 // Full candidate pipeline for the Recruitment Workspace tabs.
                 'candidates' => fn ($q) => $q->latest(),
-                'candidates.interviewRounds', 'candidates.offer',
+                // assignedRecruiter powers the Applications tab's recruiter column;
+                // eager-loaded here to keep that tab from N+1 querying.
+                'candidates.interviewRounds', 'candidates.offer', 'candidates.assignedRecruiter',
+                // Candidate audit entries feed the workspace Activity tab. Capped per
+                // candidate so a job with a long pipeline can't bloat the response —
+                // the tab only renders the most recent entries anyway.
+                'candidates.auditLogs' => fn ($q) => $q->latest()->limit(15),
             ]);
         $jobPosting->setAttribute('progress', $this->progress($jobPosting));
         $this->attachLastActivity($jobPosting);
@@ -238,6 +245,9 @@ class JobPostingService
         $joined         = min($hired, $offersAccepted);      // Joined ≤ Offers Accepted
         $filled         = min($joined, $required);
 
+        $rejected   = (int) ($job->rejected_count    ?? 0);
+        $offersSent = (int) ($job->offers_sent_count ?? 0);
+
         return [
             'required'        => $required,
             'filled'          => $filled,
@@ -249,7 +259,43 @@ class JobPostingService
             'offers'          => $offers,
             'offers_accepted' => $offersAccepted,
             'joined'          => $joined,
+
+            // ── SPK-1 recruitment analytics (additive — existing keys unchanged) ──
+            'interviewed'      => $interviewed,                  // uncapped: candidates who had a round
+            'selected'         => $selected,
+            'offers_sent'      => min($offersSent, $offers),
+            'rejected'         => min($rejected, $applications),
+            // Applications → Joined. The headline funnel number.
+            'conversion_pct'   => $applications > 0 ? (int) round($joined / $applications * 100) : 0,
+            'open_positions'   => max(0, $required - $filled),
+            'filled_positions' => $filled,
+            'avg_hiring_days'  => $this->averageHiringDays($job),
         ];
+    }
+
+    /**
+     * Average days from application to joining, across candidates who actually
+     * joined. Null when nobody has joined yet — an average of zero hires would
+     * read as "0 days", which is worse than showing nothing.
+     */
+    private function averageHiringDays(HrJobPosting $job): ?int
+    {
+        $hired = $job->relationLoaded('candidates')
+            ? $job->candidates->where('stage', 'Hired')
+            : $job->candidates()->where('stage', 'Hired')->with('offer')->get();
+
+        $spans = [];
+        foreach ($hired as $c) {
+            $start = $c->applied_at ?? $c->created_at;
+            $end   = $c->offer?->joining_confirmed_at ?? $c->offer?->accepted_at ?? $c->updated_at;
+            if ($start && $end) {
+                // diffInDays is signed in Carbon 3 — abs() keeps the span positive
+                // regardless of argument order.
+                $spans[] = abs(Carbon::parse($start)->diffInDays(Carbon::parse($end)));
+            }
+        }
+
+        return $spans ? (int) round(array_sum($spans) / count($spans)) : null;
     }
 
     /** The 6 Job-Posting dashboard metrics. */
@@ -332,6 +378,12 @@ class JobPostingService
             'candidates as offers_count'          => fn ($q) => $q->has('offer'),
             'candidates as offers_accepted_count' => fn ($q) => $q->whereHas('offer', fn ($o) => $o->where('status', 'Accepted')),
             'candidates as joined_count'          => fn ($q) => $q->where('stage', 'Hired'),
+            // The OR must be grouped, otherwise it escapes the relationship's
+            // foreign-key constraint and counts candidates from other jobs.
+            'candidates as rejected_count'        => fn ($q) => $q->where(
+                fn ($w) => $w->where('stage', 'Rejected')->orWhere('final_decision', 'Rejected')
+            ),
+            'candidates as offers_sent_count'     => fn ($q) => $q->whereHas('offer', fn ($o) => $o->whereNotNull('sent_at')),
         ];
     }
 

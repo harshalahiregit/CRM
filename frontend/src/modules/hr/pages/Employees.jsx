@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useTheme } from '@/context/ThemeContext'
 import { Search, Building2, Plus, X, LayoutGrid, List, Eye, Pencil } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 
 const DEPT_COLORS = { Engineering:'#3b82f6', Sales:'#10b981', HR:'#7C3AED', Operations:'#f59e0b', Product:'#ec4899', Marketing:'#f97316', Finance:'#6366f1' }
 const STATUS_S = s => s==='Active'?{c:'#10b981',bg:'rgba(16,185,129,0.12)'}:s==='On Leave'?{c:'#f59e0b',bg:'rgba(245,158,11,0.12)'}:{c:'#f87171',bg:'rgba(239,68,68,0.1)'}
@@ -16,6 +17,31 @@ const EMPTY_FORM = { name:'', email:'', phone:'', dob:'', gender:'', address:'',
 const Avatar = ({ name, dept, size=44 }) => {
   const dc = deptColor(dept)
   return <div className="rounded-2xl flex items-center justify-center font-black text-white flex-shrink-0" style={{ width:size, height:size, fontSize:size*0.3, background:`linear-gradient(145deg,${dc}cc,${dc})`, boxShadow:`0 6px 18px ${dc}40` }}>{initials(name)}</div>
+}
+
+// Onboarding lifecycle shown ALONGSIDE the employee status — derived from the
+// employee-onboarding record, never a substitute for HrEmployee.status.
+const ONB_S = (s) => ({
+  Pending:     { c:'#d97706', bg:'rgba(245,158,11,0.14)' },
+  In_Progress: { c:'#2563eb', bg:'rgba(37,99,235,0.12)' },
+  Completed:   { c:'#059669', bg:'rgba(16,185,129,0.12)' },
+}[s] || { c:'var(--text-muted)', bg:'var(--bg-input)' })
+
+const OnboardingBadge = ({ status, progress, bar = false }) => {
+  if (!status) return null
+  const o = ONB_S(status)
+  return (
+    <div style={{ marginTop: 4 }}>
+      <span className="text-[9.5px] font-bold px-1.5 py-0.5 rounded-md" style={{ background:o.bg, color:o.c }}>
+        Onboarding: {String(status).replace('_',' ')}{progress ? ` (${progress}%)` : ''}
+      </span>
+      {bar && progress > 0 && (
+        <div className="mt-1 rounded-full" style={{ height:3, background:'var(--bg-input)' }}>
+          <div className="h-full rounded-full" style={{ width:`${progress}%`, background:o.c }}/>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function Employees() {
@@ -42,6 +68,9 @@ export default function Employees() {
 
   const showToast = (msg, type='success') => { setToast({msg,type}); setTimeout(()=>setToast(null),3000) }
 
+  const [page, setPage] = useState(1)
+  const [meta, setMeta] = useState({ current_page:1, last_page:1, total:0, per_page:25 })
+
   const fetchData = async () => {
     setLoading(true)
     try {
@@ -51,13 +80,24 @@ export default function Employees() {
       if (statusF!=='All') params.status = statusF
       if (joinedFrom) params.joined_from = joinedFrom
       if (search) params.search = search
-      const [emps, st] = await Promise.all([hrApi.employees.list(params), hrApi.employees.stats()])
-      setEmployees(emps); setStats(st)
+      params.page = page
+      const [res, st] = await Promise.all([hrApi.employees.listPaged(params), hrApi.employees.stats()])
+      // Laravel paginator: { data, current_page, last_page, total, per_page }
+      const rows = Array.isArray(res) ? res : (res?.data ?? [])
+      setEmployees(rows)
+      setMeta({
+        current_page: res?.current_page ?? 1,
+        last_page:    res?.last_page ?? 1,
+        total:        res?.total ?? rows.length,
+        per_page:     res?.per_page ?? rows.length,
+      })
+      setStats(st)
     } catch { showToast('Failed to load employees','error') }
     finally { setLoading(false) }
   }
-  useEffect(()=>{ fetchData() },[deptF, desigF, statusF, joinedFrom, search])
-  useEffect(()=>{ hrApi.employees.list().then(setOptionsList).catch(()=>{}) },[])
+  useEffect(()=>{ fetchData() },[deptF, desigF, statusF, joinedFrom, search, page])
+  useEffect(()=>{ setPage(1) },[deptF, desigF, statusF, joinedFrom, search])
+  useEffect(()=>{ hrApi.employees.list({ per_page: 200 }).then(r => setOptionsList(Array.isArray(r) ? r : (r?.data ?? []))).catch(()=>{}) },[])
 
   const departments = useMemo(()=>['All', ...new Set(optionsList.map(e=>e.department).filter(Boolean))], [optionsList])
   const designations = useMemo(()=>['All', ...new Set(optionsList.map(e=>e.designation).filter(Boolean))], [optionsList])
@@ -146,8 +186,8 @@ export default function Employees() {
         </div>
       </div>
 
-      {loading ? <div className="text-center py-12" style={{ color:'var(--text-muted)' }}>Loading…</div>
-        : employees.length===0 ? <div className="text-center py-12" style={{ color:'var(--text-muted)' }}>No employees found.</div>
+      {loading ? <HrLoading label="Loading employees…" />
+        : employees.length===0 ? <HrEmpty icon={Building2} title="No employees found" hint={hasFilters ? 'No employees match the current filters — try clearing them.' : 'Employees are created automatically when a candidate confirms joining.'} />
         : viewMode==='card' ? (
         /* ── CARD VIEW ── */
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -161,6 +201,7 @@ export default function Employees() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="font-bold text-sm" style={{ color:'var(--text-h)' }}>{emp.name}</p>
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:ss.bg, color:ss.c }}>{emp.status}</span>
+                      <OnboardingBadge status={emp.onboarding_status} progress={emp.onboarding_progress} bar/>
                     </div>
                     <p className="text-xs mt-0.5" style={{ color:'var(--text-muted)' }}>{emp.designation}</p>
                     <span className="text-[10px] font-semibold font-mono" style={{ color:'var(--text-muted)' }}>{emp.employee_code}</span>
@@ -194,7 +235,10 @@ export default function Employees() {
                     <td className="px-3 py-2.5"><div className="flex items-center gap-2.5"><Avatar name={emp.name} dept={emp.department} size={34}/><span className="font-semibold" style={{ color:'var(--text-h)' }}>{emp.name}</span></div></td>
                     <td className="px-3 py-2.5"><span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:`${deptColor(emp.department)}18`, color:deptColor(emp.department) }}>{emp.department||'—'}</span></td>
                     <td className="px-3 py-2.5" style={{ color:'var(--text-muted)' }}>{emp.designation||'—'}</td>
-                    <td className="px-3 py-2.5"><span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:ss.bg, color:ss.c }}>{emp.status}</span></td>
+                    <td className="px-3 py-2.5">
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:ss.bg, color:ss.c }}>{emp.status}</span>
+                      <OnboardingBadge status={emp.onboarding_status} progress={emp.onboarding_progress}/>
+                    </td>
                     <td className="px-3 py-2.5" style={{ color:'var(--text-muted)' }}>{emp.reporting_manager_name||'—'}</td>
                     <td className="px-3 py-2.5 whitespace-nowrap" style={{ color:'var(--text-muted)' }}>{fmtDate(emp.joining_date)}</td>
                     <td className="px-3 py-2.5" onClick={e=>e.stopPropagation()}>
@@ -275,6 +319,24 @@ export default function Employees() {
                 <button onClick={handleSave} disabled={saving} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)', opacity:saving?0.7:1 }}>{saving?'Saving…':editingId?'Save Changes':'Add Employee'}</button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pagination — server-driven; uses the paginator meta, no client slicing. */}
+      {meta.last_page > 1 && (
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <span className="text-[11px]" style={{ color:'var(--text-muted)' }}>
+            Showing {(meta.current_page - 1) * meta.per_page + 1}–{Math.min(meta.current_page * meta.per_page, meta.total)} of {meta.total}
+          </span>
+          <div className="flex items-center gap-2">
+            <button onClick={()=>setPage(p=>Math.max(1,p-1))} disabled={meta.current_page<=1}
+              className="px-3 py-1.5 rounded-xl text-[11px] font-bold"
+              style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)', opacity:meta.current_page<=1?0.5:1 }}>Previous</button>
+            <span className="text-[11px] font-bold" style={{ color:'var(--text-h)' }}>Page {meta.current_page} of {meta.last_page}</span>
+            <button onClick={()=>setPage(p=>Math.min(meta.last_page,p+1))} disabled={meta.current_page>=meta.last_page}
+              className="px-3 py-1.5 rounded-xl text-[11px] font-bold"
+              style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)', opacity:meta.current_page>=meta.last_page?0.5:1 }}>Next</button>
           </div>
         </div>
       )}

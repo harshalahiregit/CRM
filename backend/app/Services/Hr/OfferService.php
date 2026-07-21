@@ -3,12 +3,18 @@
 namespace App\Services\Hr;
 
 use App\Exceptions\BusinessException;
+use Barryvdh\DomPDF\Facade\Pdf;
 use App\Models\Hr\HrCandidate;
+use App\Models\Hr\HrEmployee;
+use App\Models\Hr\HrEmployeeOnboarding;
 use App\Models\Hr\HrOffer;
+use App\Models\User;
+use App\Services\Notifications\NotificationService;
 use App\Services\WhatsAppService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
@@ -21,6 +27,8 @@ class OfferService
     public function __construct(
         private CandidateService $candidateService,
         private OnboardingService $onboardingService,
+        private EmployeeOnboardingService $employeeOnboardingService,
+        private NotificationService $notifications,
     ) {
     }
 
@@ -70,9 +78,19 @@ class OfferService
 
         HrCandidate::where('id', $candidate->id)->where('tenant_id', $tenantId)->update(['stage' => 'Offer']);
 
+        // The letter is part of the offer: if it cannot be produced the whole creation
+        // is rolled back rather than leaving an offer with no downloadable document.
+        try {
+            $offer->update(['letter_path' => $this->renderLetter($offer)]);
+        } catch (\Throwable $e) {
+            Log::channel('hr')->error('Offer letter PDF generation failed', ['offer_id' => $offer->id, 'tenant_id' => $tenantId, 'error' => $e->getMessage()]);
+
+            throw new BusinessException('The offer letter could not be generated. Please try again.', 500);
+        }
+
         $candidate->recordAudit('Offer Generated', null, null, array_filter(['position' => $offer->position, 'offered_ctc' => $offer->offered_ctc]));
 
-        Log::channel('hr')->info('Offer generated', ['offer_id' => $offer->id, 'tenant_id' => $tenantId, 'candidate_id' => $candidate->id]);
+        Log::channel('hr')->info('Offer generated', ['offer_id' => $offer->id, 'tenant_id' => $tenantId, 'candidate_id' => $candidate->id, 'letter_path' => $offer->letter_path]);
 
         return $offer->load('candidate');
     }
@@ -188,9 +206,15 @@ class OfferService
         ]);
 
         optional($offer->candidate)->recordAudit('Offer Accepted', null, null, array_filter([
+
             'signed_by' => $meta['name'] ?? null,
             'ip' => $meta['ip'] ?? null, 'device' => $meta['device'] ?? null, 'browser' => $meta['browser'] ?? null,
         ]));
+
+        $this->notifyHr($offer->candidate, 'Offer accepted — '.($offer->candidate->name ?? 'Candidate'),
+            ($offer->candidate->name ?? 'The candidate').' has accepted the offer for '.$offer->position.'.'
+            .' Signed by: '.($offer->accepted_name ?: 'n/a').'.',
+            ['offer_id' => $offer->id, 'event' => 'offer_accepted']);
 
         Log::channel('hr')->info('Offer accepted', ['offer_id' => $offer->id, 'tenant_id' => $offer->tenant_id, 'ip' => $meta['ip'] ?? null]);
 
@@ -247,6 +271,15 @@ class OfferService
             'declined_at'   => null, 'expired_at' => null,
             'accepted_ip'   => null, 'accepted_device' => null, 'accepted_browser' => null,
         ]);
+
+        // Rebuild the letter so the candidate always downloads the current version.
+        try {
+            $offer->update(['letter_path' => $this->renderLetter($offer->fresh('candidate'))]);
+        } catch (\Throwable $e) {
+            Log::channel('hr')->error('Offer letter PDF regeneration failed', ['offer_id' => $offer->id, 'error' => $e->getMessage()]);
+
+            throw new BusinessException('The offer letter could not be regenerated. Please try again.', 500);
+        }
 
         optional($offer->candidate)->recordAudit('Offer Regenerated');
         Log::channel('hr')->info('Offer regenerated', ['offer_id' => $offer->id, 'tenant_id' => $offer->tenant_id]);
@@ -317,7 +350,7 @@ class OfferService
      * the Employee and move the candidate to Hired. Employee creation lives here
      * only (decoupled from offer acceptance).
      */
-    public function confirmJoining(HrOffer $offer): HrOffer
+    public function confirmJoining(HrOffer $offer, ?User $actor = null): HrOffer
     {
         if ($offer->status !== 'Accepted') {
             throw new BusinessException('Only an accepted offer can be confirmed for joining.', 422);
@@ -332,11 +365,20 @@ class OfferService
             $this->candidateService->updateDecision($candidate, 'Selected'); // legacy → Hired
         }
 
+        // The joined employee moves straight into Employee Onboarding, reusing the
+        // existing workflow. Never duplicated: skipped when a record already exists,
+        // and the manual POST /employee-onboarding route keeps working unchanged.
+        $this->startEmployeeOnboarding($candidate, $actor);
+
         // Joining confirmed + employee created → the offer is fully closed. Mark it
         // Completed so it leaves the active Offer Letters list and moves to history.
         $offer->update(['status' => 'Completed', 'joining_confirmed_at' => now()]);
 
         optional($candidate)->recordAudit('Offer Completed — Joined', null, null, ['offer_id' => $offer->id]);
+
+        $this->notifyHr($candidate, 'Joining confirmed — '.($candidate->name ?? 'Employee'),
+            ($candidate->name ?? 'The candidate').' has joined. The employee record and onboarding have been created.',
+            ['offer_id' => $offer->id, 'event' => 'joining_confirmed']);
 
         Log::channel('hr')->info('Offer joining confirmed', ['offer_id' => $offer->id, 'tenant_id' => $offer->tenant_id]);
 
@@ -344,6 +386,72 @@ class OfferService
     }
 
     /** HR pre-joining dashboard buckets by days-to-joining. */
+    /**
+     * Open Employee Onboarding for the employee just created from this candidate.
+     * Delegates to EmployeeOnboardingService::createFromEmployee() — no onboarding
+     * logic is reimplemented here. A failure never rolls back the joining.
+     */
+    /** Recruiter owning the candidate, else any HR/admin in the tenant. */
+    private function hrRecipient(?HrCandidate $candidate): ?string
+    {
+        if (! $candidate) {
+            return null;
+        }
+
+        $candidate->loadMissing('assignedRecruiter');
+
+        return $candidate->assignedRecruiter?->email
+            ?: User::where('tenant_id', $candidate->tenant_id)->whereIn('role', ['admin', 'hr'])->value('email');
+    }
+
+    /** Best-effort HR notification — never breaks the business transaction. */
+    private function notifyHr(?HrCandidate $candidate, string $subject, string $body, array $ctx = []): void
+    {
+        try {
+            $to = $this->hrRecipient($candidate);
+            if ($to) {
+                $this->notifications->email($to, $subject, $body, $ctx);
+            }
+        } catch (\Throwable $e) {
+            Log::channel('hr')->warning('HR notification failed', ['error' => $e->getMessage()] + $ctx);
+        }
+    }
+
+    private function startEmployeeOnboarding(?HrCandidate $candidate, ?User $actor): void
+    {
+        if (! $candidate) {
+            return;
+        }
+
+        $employee = HrEmployee::where('candidate_id', $candidate->id)
+            ->where('tenant_id', $candidate->tenant_id)
+            ->first();
+
+        if (! $employee) {
+            return;
+        }
+
+        if (HrEmployeeOnboarding::where('employee_id', $employee->id)->exists()) {
+            return;   // already onboarding — never create a duplicate
+        }
+
+        // createFromEmployee() audits against a real actor, so the trail is never
+        // anonymous. Without one (e.g. a CLI run) we skip rather than weaken it.
+        $actor = $actor ?: auth()->user();
+        if (! $actor) {
+            Log::channel('hr')->warning('Employee onboarding not auto-started: no actor available', ['employee_id' => $employee->id]);
+
+            return;
+        }
+
+        try {
+            $onboarding = $this->employeeOnboardingService->createFromEmployee($employee->id, $actor);
+            Log::channel('hr')->info('Employee onboarding auto-started on joining', ['employee_id' => $employee->id, 'onboarding_id' => $onboarding->id]);
+        } catch (\Throwable $e) {
+            Log::channel('hr')->error('Employee onboarding auto-start failed', ['employee_id' => $employee->id, 'error' => $e->getMessage()]);
+        }
+    }
+
     public function joiningBuckets(int $tenantId): array
     {
         $accepted = HrOffer::where('status', 'Accepted')->whereNull('joining_confirmed_at')
@@ -389,6 +497,26 @@ class OfferService
     }
 
     /* ─────────────── helpers ─────────────── */
+
+    /**
+     * Render the offer letter PDF onto the existing hr_documents disk and return the
+     * stored path. Overwrites any previous file for the same offer, so regeneration
+     * never leaves orphans. This is the ONLY place an offer PDF is produced.
+     */
+    public function renderLetter(HrOffer $offer): string
+    {
+        $offer->loadMissing('candidate');
+
+        $tenant     = \App\Models\Tenant::find($offer->tenant_id);
+        $onboarding = \App\Models\Hr\HrOnboarding::where('candidate_id', $offer->candidate_id)->first();
+
+        $pdf  = Pdf::loadView('pdf.offer_letter', compact('offer', 'tenant', 'onboarding'))->setPaper('a4');
+        $path = "hr/documents/offers/tenant_{$offer->tenant_id}/offer_{$offer->id}.pdf";
+
+        Storage::disk(self::DOC_DISK)->put($path, $pdf->output());
+
+        return $path;
+    }
 
     public function offerLetterFile(HrOffer $offer): ?array
     {

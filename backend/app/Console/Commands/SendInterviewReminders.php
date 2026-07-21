@@ -70,13 +70,24 @@ class SendInterviewReminders extends Command
             
             try {
                 InterviewReminderNotification::send($interview);
-                
+
                 // Mark as reminded
                 $interview->update(['reminder_sent_at' => now()]);
-                
+
+                // Record the actual send so the Communication Center can show
+                // "Reminder Sent" rather than leaving it at "Reminder Scheduled".
+                $candidate->recordAudit('Reminder Sent: Interview', null, null, [
+                    'channel'           => 'reminder',
+                    'comm'              => true,
+                    'sent'              => true,
+                    'status'            => 'Sent',
+                    'type'              => 'interview',
+                    'interview_round_id' => $interview->id,
+                ]);
+
                 $this->info("   ✅ Interview #{$interview->id}: Reminder sent to {$candidate->name} ({$candidate->phone})");
                 $sentCount++;
-                
+
             } catch (\Exception $e) {
                 $this->error("   ❌ Interview #{$interview->id}: Failed - {$e->getMessage()}");
                 $failedCount++;

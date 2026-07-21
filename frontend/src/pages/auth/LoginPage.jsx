@@ -60,7 +60,7 @@ export default function LoginPage() {
     const result = await login(values)
     if (result.success) {
       if (result.role === 'company') navigate('/company-portal/dashboard', { replace: true })
-      else if (result.role === 'third_party_vendor') navigate('/vendor-portal/app/dashboard', { replace: true })
+      else if (result.role === 'third_party_vendor') navigate('/vendor-portal/dashboard', { replace: true })
       else navigate(from, { replace: true })
     } else {
       setApiError(result.message)

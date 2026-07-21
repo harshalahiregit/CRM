@@ -1,6 +1,6 @@
 import { X } from 'lucide-react'
 
-export default function Drawer({ open, onClose, title, width = 'min(580px, 95vw)', children, footer }) {
+export default function Drawer({ open, onClose, title, width = 'min(820px, 95vw)', children, footer }) {
   if (!open) return null
 
   return (

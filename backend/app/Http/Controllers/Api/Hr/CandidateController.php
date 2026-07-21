@@ -10,12 +10,15 @@ use App\Http\Requests\Hr\UpdateCandidateDecisionRequest;
 use App\Http\Requests\Hr\UpdateCandidateStageRequest;
 use App\Models\Hr\HrCandidate;
 use App\Services\Hr\CandidateService;
+use App\Services\Hr\CommunicationService;
 use Illuminate\Http\Request;
 
 class CandidateController extends Controller
 {
-    public function __construct(private CandidateService $candidateService)
-    {
+    public function __construct(
+        private CandidateService $candidateService,
+        private CommunicationService $communicationService,
+    ) {
     }
 
     public function index(Request $request)
@@ -41,10 +44,76 @@ class CandidateController extends Controller
         return response()->json(
             $candidate->load([
                 'jobPosting', 'interviewRounds', 'offer', 'onboarding',
+                // onboarding.documents drives the Candidate 360° onboarding checklist,
+                // which is derived from verified documents rather than read from the
+                // stored document_checklist map (that map is not the source of truth).
+                'onboarding.documents',
+                // Employee Status (SPK-1) — present once the candidate has joined.
+                'employee',
                 'assignedRecruiter:id,name,internal_role', 'candidateNotes', 'documents',
                 'auditLogs.actor',
             ])
         );
+    }
+
+    /** Complete recruitment journey for one candidate (read-only aggregation). */
+    public function journey(Request $request, HrCandidate $candidate)
+    {
+        $this->assertTenant($request, $candidate);
+
+        return response()->json($this->candidateService->journey($candidate));
+    }
+
+    /* ─────────────── Communication Center (SPK-1) ─────────────── */
+
+    /** Unified communication history + delivery status. */
+    public function communications(Request $request, HrCandidate $candidate)
+    {
+        $this->assertTenant($request, $candidate);
+
+        return response()->json($this->communicationService->history($candidate));
+    }
+
+    /** Preview an email/WhatsApp for a stage event (variables auto-replaced). */
+    public function communicationPreview(Request $request, HrCandidate $candidate)
+    {
+        $this->assertTenant($request, $candidate);
+        $data = $request->validate([
+            'channel' => 'required|in:email,whatsapp',
+            'event'   => 'required|string',
+        ]);
+
+        return response()->json($this->communicationService->preview($candidate, $data['channel'], $data['event']));
+    }
+
+    /** Send an edited email/WhatsApp — reuses Mail / WhatsAppService + audit. */
+    public function communicate(Request $request, HrCandidate $candidate)
+    {
+        $this->assertTenant($request, $candidate);
+        $this->assertCanManage($request);
+        $data = $request->validate([
+            'channel' => 'required|in:email,whatsapp',
+            'event'   => 'required|string',
+            'subject' => 'nullable|string|max:255',
+            'body'    => 'required|string',
+        ]);
+
+        return response()->json($this->communicationService->send(
+            $candidate, $data['channel'], $data['event'], $data['subject'] ?? null, $data['body'], $request->user()
+        ));
+    }
+
+    /** Configure a reminder (interview reuses the existing scheduler). */
+    public function scheduleReminder(Request $request, HrCandidate $candidate)
+    {
+        $this->assertTenant($request, $candidate);
+        $this->assertCanManage($request);
+        $data = $request->validate([
+            'type' => 'required|in:interview,offer,joining',
+            'days' => 'required|integer|min:0|max:60',
+        ]);
+
+        return response()->json($this->communicationService->scheduleReminder($candidate, $data['type'], $data['days'], $request->user()));
     }
 
     public function update(Request $request, HrCandidate $candidate)

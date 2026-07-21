@@ -2,11 +2,12 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Pencil, UserX, Download, Printer, X, FileText, Eye, CheckCircle2, XCircle, Clock,
-  LayoutDashboard, User, Phone, Briefcase, FileCheck, Landmark, History,
+  LayoutDashboard, User, Phone, Briefcase, FileCheck, Landmark, History, CalendarCheck, ChevronLeft, ChevronRight, LogOut,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 import { offerPortalApi } from '@/services/offerPortalApi'
 import AuditTimeline from '@/components/ui/AuditTimeline'
+import { ST_COLOR } from './Attendance'
 
 const DEPT_COLORS = { Engineering:'#3b82f6', Sales:'#10b981', HR:'#7C3AED', Operations:'#f59e0b', Product:'#ec4899', Marketing:'#f97316', Finance:'#6366f1' }
 const deptColor = d => DEPT_COLORS[d]||'#7C3AED'
@@ -34,6 +35,7 @@ const TABS = [
   { key:'employment',label:'Employment',       icon:Briefcase },
   { key:'documents', label:'Documents',        icon:FileCheck },
   { key:'bank',      label:'Bank Details',     icon:Landmark },
+  { key:'attendance',label:'Attendance',       icon:CalendarCheck },
   { key:'timeline',  label:'Timeline',         icon:History },
 ]
 
@@ -111,12 +113,51 @@ export default function EmployeeProfile() {
           </div>
           <div className="no-print flex items-center gap-2 flex-wrap">
             <button onClick={()=>setEditing(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white" style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)' }}><Pencil size={13}/> Edit</button>
+            {/* Exit Interview (SPK-1) — internal form, prefilled from this record */}
+            <button onClick={()=>navigate(`/app/hr/employees/${e.id}/exit-interview`)} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold" style={{ background:'rgba(245,158,11,0.1)', color:'#f59e0b', border:'1px solid rgba(245,158,11,0.25)' }}><LogOut size={13}/> Exit Interview</button>
             <button onClick={deactivate} disabled={e.status==='Inactive'} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold" style={{ background:'rgba(239,68,68,0.1)', color:'#f87171', opacity:e.status==='Inactive'?0.5:1 }}><UserX size={13}/> Deactivate</button>
             <button onClick={downloadProfile} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold" style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}><Download size={13}/> Download</button>
             <button onClick={()=>window.print()} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold" style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}><Printer size={13}/> Print</button>
           </div>
         </div>
       </div>
+
+      {/* ── Onboarding lifecycle — derived from the employee-onboarding record.
+             Shown ALONGSIDE the employee status; it never replaces it. ── */}
+      {(() => {
+        const st = e.onboarding_status
+        const pct = Number(e.onboarding_progress || 0)
+        const o = ({
+          Pending:     { c:'#d97706', bg:'rgba(245,158,11,0.14)' },
+          In_Progress: { c:'#2563eb', bg:'rgba(37,99,235,0.12)' },
+          Completed:   { c:'#059669', bg:'rgba(16,185,129,0.12)' },
+        })[st] || { c:'var(--text-muted)', bg:'var(--bg-input)' }
+        return (
+          <div className="card-3d" style={{ padding:'18px' }}>
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <div>
+                <p className="text-[9px] font-bold uppercase tracking-wide" style={{ color:'var(--text-muted)' }}>Employee Status</p>
+                <p className="text-sm font-black mt-0.5" style={{ color:ss.c }}>{e.status}</p>
+              </div>
+              <div style={{ flex:1, minWidth:180 }}>
+                <p className="text-[9px] font-bold uppercase tracking-wide" style={{ color:'var(--text-muted)' }}>Onboarding Status</p>
+                {!st ? (
+                  <p className="text-xs font-semibold mt-1" style={{ color:'var(--text-muted)' }}>Onboarding not started</p>
+                ) : (
+                  <>
+                    <span className="inline-block text-[10.5px] font-bold px-2 py-0.5 rounded-lg mt-1" style={{ background:o.bg, color:o.c }}>
+                      {String(st).replace('_',' ')} {pct ? `(${pct}%)` : ''}
+                    </span>
+                    <div className="mt-2 rounded-full" style={{ height:6, background:'var(--bg-input)' }}>
+                      <div className="h-full rounded-full transition-all" style={{ width:`${pct}%`, background:o.c }}/>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* ── Tabs ── */}
       <div className="no-print flex gap-1.5 overflow-x-auto scrollbar-hide">
@@ -227,6 +268,8 @@ export default function EmployeeProfile() {
           </Grid>
         )}
 
+        {tab==='attendance' && <AttendanceTab employeeId={id} />}
+
         {tab==='timeline' && (
           <div>
             <p className="text-xs mb-4" style={{ color:'var(--text-muted)' }}>Full lifecycle — reused from audit logs (Applied → Interview → Offer → Joining → Employee, and every subsequent change).</p>
@@ -236,6 +279,122 @@ export default function EmployeeProfile() {
       </div>
 
       {editing && <EditModal employee={e} onClose={()=>setEditing(false)} onSaved={()=>{ setEditing(false); load() }} showToast={showToast} />}
+    </div>
+  )
+}
+
+// ── Attendance tab: summary + monthly calendar + day details ──
+const monthKey = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`
+function AttendanceTab({ employeeId }) {
+  const [month, setMonth] = useState(monthKey(new Date()))
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [day, setDay] = useState(null)
+
+  useEffect(() => {
+    let live = true; setLoading(true)
+    hrApi.employees.attendance(employeeId, { month })
+      .then(d => { if (live) setData(d) })
+      .catch(() => {})
+      .finally(() => { if (live) setLoading(false) })
+    return () => { live = false }
+  }, [employeeId, month])
+
+  const shiftMonth = (delta) => {
+    const [y, m] = month.split('-').map(Number)
+    setMonth(monthKey(new Date(y, m - 1 + delta, 1)))
+  }
+
+  if (loading || !data) return <p className="text-sm py-6" style={{ color:'var(--text-muted)' }}>Loading attendance…</p>
+
+  const byDate = Object.fromEntries((data.calendar||[]).map(d => [d.date, d]))
+  const [y, m] = month.split('-').map(Number)
+  const firstDow = new Date(y, m - 1, 1).getDay()
+  const daysInMonth = new Date(y, m, 0).getDate()
+  const cells = [...Array(firstDow).fill(null), ...Array.from({length:daysInMonth}, (_, i) => i + 1)]
+
+  const SUM = [
+    { l:'Attendance %', v:`${data.attendance_pct}%`, c:'#10b981' },
+    { l:'Present',      v:data.present_count,  c:'#10b981' },
+    { l:'Late',         v:data.late_count,     c:'#f59e0b' },
+    { l:'Absent',       v:data.absent_count,   c:'#ef4444' },
+    { l:'Leave',        v:data.leave_count,    c:'#3b82f6' },
+    { l:'Overtime',     v:`${data.overtime_hours}h`, c:'#a78bfa' },
+  ]
+
+  return (
+    <div className="space-y-4">
+      {/* Today's attendance */}
+      <div className="rounded-xl p-3" style={{ background:'var(--bg-input)', border:'1px solid var(--border)' }}>
+        <p className="text-[11px] font-bold mb-1" style={{ color:'var(--text-h)' }}>Today’s Attendance</p>
+        {data.today ? (
+          <div className="flex items-center gap-3 flex-wrap text-xs" style={{ color:'var(--text-muted)' }}>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:`${ST_COLOR(data.today.status)}1f`, color:ST_COLOR(data.today.status) }}>{data.today.status}</span>
+            <span>In: <b style={{ color:'var(--text-h)' }}>{data.today.check_in||'—'}</b></span>
+            <span>Out: <b style={{ color:'var(--text-h)' }}>{data.today.check_out||'—'}</b></span>
+            <span>Hours: <b style={{ color:'var(--text-h)' }}>{data.today.working_hours ?? '—'}</b></span>
+            <span>OT: <b style={{ color:'var(--text-h)' }}>{data.today.overtime_hours ?? '—'}</b></span>
+          </div>
+        ) : <p className="text-xs" style={{ color:'var(--text-muted)' }}>No attendance marked today.</p>}
+      </div>
+
+      {/* Monthly summary */}
+      <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+        {SUM.map(s=>(
+          <div key={s.l} className="rounded-xl px-3 py-2.5" style={{ background:'var(--bg-input)' }}>
+            <p className="text-lg font-black" style={{ color:s.c }}>{s.v}</p>
+            <p className="text-[10px] font-semibold" style={{ color:'var(--text-muted)' }}>{s.l}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Calendar */}
+      <div className="rounded-xl p-3" style={{ background:'var(--bg-input)', border:'1px solid var(--border)' }}>
+        <div className="flex items-center justify-between mb-3">
+          <button onClick={()=>shiftMonth(-1)} className="p-1.5 rounded-lg" style={{ background:'var(--bg-card)', color:'var(--text-muted)', border:'1px solid var(--border)' }}><ChevronLeft size={14}/></button>
+          <p className="text-sm font-bold" style={{ color:'var(--text-h)' }}>{data.month_label}</p>
+          <button onClick={()=>shiftMonth(1)} className="p-1.5 rounded-lg" style={{ background:'var(--bg-card)', color:'var(--text-muted)', border:'1px solid var(--border)' }}><ChevronRight size={14}/></button>
+        </div>
+        <div className="grid grid-cols-7 gap-1.5">
+          {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d=><div key={d} className="text-center text-[10px] font-bold py-1" style={{ color:'var(--text-muted)' }}>{d}</div>)}
+          {cells.map((n, i) => {
+            if (!n) return <div key={`b${i}`} />
+            const dateStr = `${month}-${String(n).padStart(2,'0')}`
+            const rec = byDate[dateStr]
+            const col = rec ? ST_COLOR(rec.status) : null
+            return (
+              <button key={dateStr} onClick={()=>rec && setDay(rec)} disabled={!rec}
+                className="aspect-square rounded-lg flex flex-col items-center justify-center text-xs font-bold transition-all"
+                style={{ background: rec ? `${col}22` : 'var(--bg-card)', color: rec ? col : 'var(--text-muted)', border:`1px solid ${rec ? col+'55' : 'var(--border)'}`, cursor: rec ? 'pointer' : 'default' }}>
+                {n}
+                {rec && <span className="w-1.5 h-1.5 rounded-full mt-0.5" style={{ background:col }} />}
+              </button>
+            )
+          })}
+        </div>
+        {/* Legend */}
+        <div className="flex flex-wrap gap-3 mt-3">
+          {[['Present','#10b981'],['Absent','#ef4444'],['Late','#f59e0b'],['Leave','#3b82f6'],['Holiday','#94a3b8']].map(([l,c])=>(
+            <div key={l} className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ background:c }}/><span className="text-[10px]" style={{ color:'var(--text-muted)' }}>{l}</span></div>
+          ))}
+        </div>
+      </div>
+
+      {/* Day details modal */}
+      {day && (
+        <div className="modal-backdrop" onClick={()=>setDay(null)}>
+          <div className="modal-box max-w-sm" onClick={e=>e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4"><h2 className="font-black text-base" style={{ color:'var(--text-h)' }}>{day.date}</h2><button onClick={()=>setDay(null)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
+            <span className="text-[11px] font-bold px-2.5 py-1 rounded-xl" style={{ background:`${ST_COLOR(day.status)}1f`, color:ST_COLOR(day.status) }}>{day.status}</span>
+            <div className="grid grid-cols-2 gap-2 mt-3">
+              {[['Check In',day.check_in],['Check Out',day.check_out],['Break Start',day.break_start],['Break End',day.break_end],['Working Hours',day.working_hours],['Overtime',day.overtime_hours],['Shift',day.shift]].map(([k,v])=>(
+                <div key={k} className="px-2.5 py-1.5 rounded-lg" style={{ background:'var(--bg-input)' }}><p className="text-[9px]" style={{ color:'var(--text-muted)' }}>{k}</p><p className="text-xs font-semibold" style={{ color:'var(--text-h)' }}>{v ?? '—'}</p></div>
+              ))}
+            </div>
+            {day.remarks && <div className="mt-2 px-2.5 py-1.5 rounded-lg" style={{ background:'var(--bg-input)' }}><p className="text-[9px]" style={{ color:'var(--text-muted)' }}>Remarks</p><p className="text-xs" style={{ color:'var(--text-h)' }}>{day.remarks}</p></div>}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

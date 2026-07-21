@@ -181,7 +181,7 @@ export default function Invoices() {
       {showDrawer && (
         <>
           <div className="drawer-backdrop" onClick={() => setShowDrawer(false)} />
-          <div className="drawer-panel" style={{ width: 'min(640px, 95vw)' }}>
+          <div className="drawer-panel" style={{ width: 'min(900px, 95vw)' }}>
             {/* Header */}
             <div className="drawer-header">
               <div className="flex items-center gap-2.5">

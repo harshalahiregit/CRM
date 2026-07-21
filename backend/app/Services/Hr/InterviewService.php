@@ -2,9 +2,11 @@
 
 namespace App\Services\Hr;
 
+use App\Exceptions\BusinessException;
 use App\Models\Hr\HrCandidate;
 use App\Models\Hr\HrInterviewRound;
 use App\Notifications\WhatsApp\InterviewScheduledNotification;
+use App\Support\Hr\InterviewSequence;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Log;
@@ -24,7 +26,9 @@ class InterviewService
 
     public function list(int $tenantId, array $filters): Collection
     {
-        $query = HrInterviewRound::with('candidate')
+        // candidate.jobPosting powers the "Job Title" column in the list view;
+        // a light (id, title) select keeps the list payload small.
+        $query = HrInterviewRound::with(['candidate', 'candidate.jobPosting:id,title'])
             ->whereHas('candidate', function ($q) use ($tenantId) {
                 $q->where('tenant_id', $tenantId);
             });
@@ -69,6 +73,8 @@ class InterviewService
         $candidate = HrCandidate::where('id', $data['candidate_id'])
             ->where('tenant_id', $tenantId)
             ->firstOrFail();
+
+        $this->assertSequenceAllows($candidate, $data['round_name']);
 
         $data['tenant_id'] = $tenantId;
         $mode = $data['mode'] ?? 'online';
@@ -121,6 +127,42 @@ class InterviewService
         return $round->load('candidate');
     }
 
+    /**
+     * SPK-1: a later round cannot be scheduled while an earlier one is still open.
+     *
+     * Only rounds the candidate ALREADY has are considered — the sequence is not
+     * forced to be complete, because plenty of hires legitimately skip a round
+     * (e.g. no Client Round). What this blocks is scheduling Manager while
+     * Technical is still awaiting its result. Cancelled rounds are ignored, and
+     * an unsequenced custom round name never blocks anything.
+     */
+    private function assertSequenceAllows(HrCandidate $candidate, ?string $roundName): void
+    {
+        $target = InterviewSequence::indexOf($roundName);
+        if ($target === null) {
+            return;   // custom/unsequenced round — nothing to enforce against
+        }
+
+        $blocking = $candidate->interviewRounds()
+            ->where('status', '!=', 'Cancelled')
+            ->get()
+            ->filter(function ($r) use ($target) {
+                $i = InterviewSequence::indexOf($r->round_name);
+
+                return $i !== null && $i < $target && $r->status !== 'Completed';
+            });
+
+        if ($blocking->isNotEmpty()) {
+            $names = $blocking->pluck('round_name')->unique()->implode(', ');
+
+            throw new BusinessException(
+                "Complete the earlier round(s) first: {$names}. ".
+                'A later round cannot be scheduled while an earlier one is still pending.',
+                422
+            );
+        }
+    }
+
     public function recordFeedback(HrInterviewRound $interviewRound, array $input): HrInterviewRound
     {
         $data = [
@@ -129,7 +171,14 @@ class InterviewService
             'status' => $input['status'] ?? 'Completed',
         ];
 
-        foreach (['technical_score', 'communication_score', 'problem_solving_score', 'rating', 'recommendation'] as $field) {
+        foreach ([
+            'technical_score', 'communication_score', 'problem_solving_score', 'rating', 'recommendation',
+            // Structured interviewer ratings (Doc 3 Module 6) — recorded alongside
+            // the existing scores; the overall_score formula is left unchanged.
+            'knowledge_score', 'confidence_score', 'ownership_score', 'learning_ability_score',
+            'decision_making_score', 'leadership_score', 'integrity_score', 'culture_fit_score',
+            'strengths', 'concerns',
+        ] as $field) {
             if (array_key_exists($field, $input) && $input[$field] !== null && $input[$field] !== '') {
                 $data[$field] = $input[$field];
             }
@@ -145,7 +194,13 @@ class InterviewService
         $interviewRound->update($data);
 
         // Interview-level audit.
-        $interviewRound->recordAudit('Feedback: '.$input['result'], null, $input['notes'] ?? null, array_filter([
+        // Label only — a skipped optional round reads as "<Round> Skipped" on the
+        // timeline instead of a feedback entry. No behaviour changes.
+        $auditAction = $input['result'] === 'Skipped'
+            ? $interviewRound->round_name.' Skipped'
+            : 'Feedback: '.$input['result'];
+
+        $interviewRound->recordAudit($auditAction, null, $input['notes'] ?? null, array_filter([
             'result'         => $input['result'],
             'recommendation' => $data['recommendation'] ?? null,
             'rating'         => $data['rating'] ?? null,
@@ -242,8 +297,15 @@ class InterviewService
                 $this->candidateService->updateStage($candidate, 'Interview');
             }
         } catch (\Throwable $e) {
-            // Never break feedback if a downstream transition can't apply.
-            Log::channel('hr')->warning('Interview outcome transition failed', ['interview_round_id' => $round->id, 'result' => $result, 'error' => $e->getMessage()]);
+            // Do NOT swallow: the feedback itself is saved, but the recruiter must be
+            // told that the follow-up transition (onboarding / stage) did not apply,
+            // otherwise the candidate silently stalls in the Interview stage.
+            Log::channel('hr')->error('Interview outcome transition failed', ['interview_round_id' => $round->id, 'result' => $result, 'error' => $e->getMessage()]);
+
+            throw new BusinessException(
+                'Feedback was saved, but the follow-up step failed: '.$e->getMessage(),
+                422
+            );
         }
     }
 
@@ -264,7 +326,12 @@ class InterviewService
         return "https://meet.google.com/{$code}";
     }
 
-    public function sendNotification(HrInterviewRound $interviewRound, string $type): void
+    /**
+     * @param  array|null  $override  optional ['subject'=>..,'body'=>..] edited in
+     *   the Email Preview popup. When present the edited HTML is sent instead of the
+     *   default template — the stored blade templates are never modified.
+     */
+    public function sendNotification(HrInterviewRound $interviewRound, string $type, ?array $override = null): void
     {
         $map = [
             'email_candidate'   => 'email_sent_candidate',
@@ -274,15 +341,11 @@ class InterviewService
         ];
 
         if ($type === 'email_candidate' && $interviewRound->candidate && $interviewRound->candidate->email) {
-            Mail::to($interviewRound->candidate->email)->send(
-                new \App\Mail\InterviewScheduledMail($interviewRound, 'candidate')
-            );
+            $this->sendEmail($interviewRound->candidate->email, $interviewRound, 'candidate', $override);
         }
 
         if ($type === 'email_interviewer' && $interviewRound->interviewer_email) {
-            Mail::to($interviewRound->interviewer_email)->send(
-                new \App\Mail\InterviewScheduledMail($interviewRound, 'interviewer')
-            );
+            $this->sendEmail($interviewRound->interviewer_email, $interviewRound, 'interviewer', $override);
         }
 
         if ($type === 'whatsapp') {
@@ -292,6 +355,21 @@ class InterviewService
         $interviewRound->update([$map[$type] => true]);
 
         Log::channel('hr')->info('Interview notification sent', ['interview_round_id' => $interviewRound->id, 'tenant_id' => $interviewRound->tenant_id, 'type' => $type]);
+    }
+
+    /** Send the interview email — edited content if provided, else the default template. */
+    private function sendEmail(string $to, HrInterviewRound $round, string $recipient, ?array $override): void
+    {
+        if (! empty($override['body'])) {
+            $subject = $override['subject'] ?? ('Interview Scheduled - '.$round->round_name);
+            Mail::html($override['body'], function ($m) use ($to, $subject) {
+                $m->to($to)->subject($subject);
+            });
+
+            return;
+        }
+
+        Mail::to($to)->send(new \App\Mail\InterviewScheduledMail($round, $recipient));
     }
 
     public function destroy(HrInterviewRound $interviewRound): void

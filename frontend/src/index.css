@@ -324,6 +324,27 @@ html.light .nav-3d-active {
   transition: all 0.2s ease;
 }
 .input-3d::placeholder { color: var(--text-muted); }
+
+/* Standardized dropdown affordance — every native <select> gets the SAME
+   downward chevron so a dropdown is never mistaken for a text box. Native
+   keyboard navigation, focus and the option list are preserved; only the
+   inconsistent OS arrow is replaced. Applies whether the select is styled via
+   .input-3d or an inline style object (hence the !important on the paint props). */
+select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 12px center !important;
+  background-size: 14px 14px !important;
+  padding-right: 34px !important;
+}
+select:hover { border-color: rgba(124,58,237,0.45); }
+select:focus { border-color: rgba(124,58,237,0.6); }
+/* Keep the option list readable in dark mode. */
+select option { background: var(--bg-input); color: var(--text-h); }
 .input-3d:focus {
   border-color: rgba(124,58,237,0.5);
   background: rgba(124,58,237,0.06);
@@ -565,6 +586,15 @@ html.light .header-3d {
 
   /* Kanban */
   .kanban-col { @apply flex flex-col gap-3 min-h-[200px] flex-shrink-0; width:280px; }
+
+  /* Candidate pipeline: the board is wider than the viewport, so it keeps a real
+     horizontal scrollbar — without it the later columns look cropped rather than
+     scrollable. Slim + themed so it doesn't fight the existing design. */
+  .hr-kanban-scroll { scrollbar-width:thin; scrollbar-color:rgba(124,58,237,0.45) transparent; }
+  .hr-kanban-scroll::-webkit-scrollbar { height:8px; }
+  .hr-kanban-scroll::-webkit-scrollbar-track { background:transparent; }
+  .hr-kanban-scroll::-webkit-scrollbar-thumb { background:rgba(124,58,237,0.35); border-radius:8px; }
+  .hr-kanban-scroll::-webkit-scrollbar-thumb:hover { background:rgba(124,58,237,0.6); }
 
   /* Touch */
   .touch-target { min-height:44px; min-width:44px; }
