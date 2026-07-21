@@ -19,7 +19,10 @@ class ProductService
 
     /* ── Products ───────────────────────────────────────────────── */
 
-    public function list(int $tenantId, array $filters = []): Collection
+    /**
+     * @param  array{user_id?:int,is_admin?:bool}  $viewer  Decorates can_edit per row.
+     */
+    public function list(int $tenantId, array $filters = [], array $viewer = []): Collection
     {
         $q = Product::forTenant($tenantId)->with('category:id,name');
 
@@ -33,6 +36,25 @@ class ProductService
             if (! empty($filters[$col])) {
                 $q->where($col, $filters[$col]);
             }
+        }
+
+        // Item filter — the blueprint's per-item dropdown.
+        if (! empty($filters['product_id'])) {
+            $q->whereKey($filters['product_id']);
+        }
+
+        // Tag filter. Tags are a JSON array and SQLite can't do whereJsonContains,
+        // so match the quoted needle in the encoded text — portable across drivers.
+        if (! empty($filters['tag'])) {
+            $q->where('tags', 'like', '%"'.$filters['tag'].'"%');
+        }
+
+        // Warehouse filter — items that actually sit at that site.
+        if (! empty($filters['warehouse_id'])) {
+            $q->whereExists(fn ($s) => $s->from('inventory_stock')
+                ->whereColumn('inventory_stock.product_id', 'inventory_products.id')
+                ->where('inventory_stock.warehouse_id', $filters['warehouse_id'])
+                ->where('inventory_stock.quantity', '>', 0));
         }
 
         // On-hand as a subquery — one query for the page instead of N per row.
@@ -50,10 +72,60 @@ class ProductService
 
         $rows = $q->latest('inventory_products.id')->get();
 
-        // "low_stock" is a derived flag the list/kanban colour-codes on.
-        return $rows->each(function (Product $p) {
+        // "low_stock" is a derived flag the list/kanban colour-codes on, and
+        // can_edit mirrors the backend barrier so the UI hides what it can't do.
+        $isAdmin = (bool) ($viewer['is_admin'] ?? false);
+        $userId = $viewer['user_id'] ?? null;
+        $rows->each(function (Product $p) use ($isAdmin, $userId) {
             $threshold = (float) ($p->reorder_point ?: $p->min_stock);
             $p->setAttribute('low_stock', $threshold > 0 && (float) $p->on_hand <= $threshold);
+            $p->setAttribute('can_edit', $isAdmin || ($userId !== null && (int) $p->created_by === (int) $userId));
+            $p->setAttribute('can_delete', $isAdmin);
+        });
+
+        // Alert filter (blueprint's Alert dropdown). It reads the computed
+        // on_hand, so it can only run once the rows are in hand.
+        if (! empty($filters['alert'])) {
+            $rows = $this->applyAlert($rows, $filters['alert'], $tenantId);
+        }
+
+        return $rows->values();
+    }
+
+    /**
+     * Minimum stock / Maximum stock / Out of stock / expiring within a month —
+     * the four choices the blueprint's Alert dropdown offers. Items excluded
+     * from stock math are never "alerting": they have no balance to judge.
+     */
+    private function applyAlert(Collection $rows, string $alert, int $tenantId): Collection
+    {
+        if ($alert === 'expiring') {
+            $days = (int) (app(ConfigService::class)->get($tenantId, 'expiry_alert_days') ?? 30);
+
+            // Lots expiring inside the window, from the voucher lines that carry them.
+            $ids = DB::table('inventory_voucher_items')
+                ->where('tenant_id', $tenantId)
+                ->whereNotNull('expiry_date')
+                ->whereDate('expiry_date', '>=', now()->toDateString())
+                ->whereDate('expiry_date', '<=', now()->addDays($days)->toDateString())
+                ->distinct()->pluck('product_id')->all();
+
+            return $rows->filter(fn (Product $p) => in_array($p->id, $ids, true));
+        }
+
+        return $rows->filter(function (Product $p) use ($alert) {
+            if ($p->without_checking_warehouse) {
+                return false;
+            }
+
+            $onHand = (float) $p->on_hand;
+
+            return match ($alert) {
+                'min_stock'    => (float) $p->min_stock > 0 && $onHand <= (float) $p->min_stock,
+                'max_stock'    => $p->max_stock !== null && (float) $p->max_stock > 0 && $onHand >= (float) $p->max_stock,
+                'out_of_stock' => $onHand <= 0,
+                default        => true,
+            };
         });
     }
 
@@ -100,11 +172,44 @@ class ProductService
         return $data;
     }
 
+    /**
+     * Every distinct tag in use, for the Items filter dropdown. Tags are freeform
+     * per item, so the vocabulary is whatever the tenant has actually typed.
+     */
+    public function tags(int $tenantId): array
+    {
+        $all = Product::forTenant($tenantId)->whereNotNull('tags')->pluck('tags')
+            ->flatMap(fn ($t) => is_array($t) ? $t : [])
+            ->map(fn ($t) => trim((string) $t))
+            ->filter()->unique()->sort()->values()->all();
+
+        return $all;
+    }
+
+    /** Drop unknown/ill-typed custom field values before they reach the JSON bag. */
+    private function cleanCustom(array $data, int $tenantId): array
+    {
+        if (array_key_exists('custom_fields', $data)) {
+            $data['custom_fields'] = app(ConfigService::class)
+                ->sanitizeValues($tenantId, 'product', $data['custom_fields']);
+        }
+
+        // Tags arrive as an array from the form or a comma string from an import.
+        if (array_key_exists('tags', $data) && ! is_array($data['tags'])) {
+            $data['tags'] = array_values(array_filter(array_map('trim', explode(',', (string) $data['tags']))));
+        }
+        if (array_key_exists('tags', $data) && is_array($data['tags'])) {
+            $data['tags'] = array_values(array_unique(array_filter(array_map('trim', $data['tags'])))) ?: null;
+        }
+
+        return $data;
+    }
+
     public function create(array $data, int $tenantId, int $userId): Product
     {
         $data['sku'] = trim($data['sku'] ?? '') ?: $this->nextSku($tenantId, $data['name']);
         $this->assertSkuFree($data['sku'], $tenantId);
-        $data = $this->syncUnit($this->syncPricing($data), $tenantId);
+        $data = $this->cleanCustom($this->syncUnit($this->syncPricing($data), $tenantId), $tenantId);
 
         // A barcode is expected on every physical item; generate one when the
         // user doesn't have a printed code to type in.
@@ -147,7 +252,7 @@ class ProductService
             throw new BusinessException('An item cannot be its own parent.', 422);
         }
 
-        $data = $this->syncUnit($this->syncPricing($data), $tenantId);
+        $data = $this->cleanCustom($this->syncUnit($this->syncPricing($data), $tenantId), $tenantId);
         $product->fill($data)->save();
 
         return $product->fresh('category');

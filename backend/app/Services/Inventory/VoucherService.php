@@ -21,8 +21,10 @@ use Illuminate\Support\Facades\DB;
  */
 class VoucherService
 {
-    public function __construct(private StockService $stock)
-    {
+    public function __construct(
+        private StockService $stock,
+        private InventoryNotifier $notifier,
+    ) {
     }
 
     /* ── Reads ──────────────────────────────────────────────────── */
@@ -37,6 +39,10 @@ class VoucherService
 
         if (! empty($filters['status'])) {
             $q->where('status', $filters['status']);
+        }
+        // Who raised it — lets an admin answer "show me everything Rohit filed".
+        if (! empty($filters['created_by'])) {
+            $q->where('created_by', $filters['created_by']);
         }
         if (! empty($filters['search'])) {
             $s = '%'.$filters['search'].'%';
@@ -150,6 +156,12 @@ class VoucherService
             throw new BusinessException('Add at least one line before posting.', 422);
         }
 
+        // Snapshot on-hand BEFORE the movement so the alert below can tell
+        // "just fell below the reorder point" apart from "has been low for a
+        // week" — only the first of those is news.
+        $productIds = $items->pluck('product_id')->filter()->map(fn ($i) => (int) $i)->unique()->values()->all();
+        $before = $this->onHandTotals($productIds, $tenantId);
+
         DB::transaction(function () use ($voucher, $items, $tenantId, $userId) {
             foreach ($items as $line) {
                 $this->postLine($voucher, $line, $tenantId, $userId);
@@ -161,6 +173,10 @@ class VoucherService
                 'posted_by' => $userId,
             ])->save();
         });
+
+        // Outside the transaction: an alert must never be able to roll back the
+        // movement it is announcing.
+        $this->announce($voucher, $productIds, $before, $tenantId, $userId, fn () => $this->notifier->voucherPosted($voucher, $userId));
 
         return $this->show($voucher->id, $tenantId);
     }
@@ -177,8 +193,12 @@ class VoucherService
             throw new BusinessException('This voucher is already cancelled.', 422);
         }
 
-        DB::transaction(function () use ($voucher, $tenantId, $userId) {
-            if ($voucher->status === 'posted') {
+        $wasPosted = $voucher->status === 'posted';
+        $productIds = $voucher->items()->pluck('product_id')->filter()->map(fn ($i) => (int) $i)->unique()->values()->all();
+        $before = $wasPosted ? $this->onHandTotals($productIds, $tenantId) : [];
+
+        DB::transaction(function () use ($voucher, $tenantId, $userId, $wasPosted) {
+            if ($wasPosted) {
                 foreach ($voucher->items()->get() as $line) {
                     $this->reverseLine($voucher, $line, $tenantId, $userId);
                 }
@@ -186,7 +206,87 @@ class VoucherService
             $voucher->forceFill(['status' => 'cancelled'])->save();
         });
 
+        // Reversing a receipt takes stock back out, so a cancellation can put an
+        // item below its reorder point just as surely as an issue can.
+        $this->announce(
+            $voucher, $wasPosted ? $productIds : [], $before, $tenantId, $userId,
+            fn () => $this->notifier->voucherCancelled($voucher, $userId, $wasPosted),
+        );
+
         return $this->show($voucher->id, $tenantId);
+    }
+
+    /* ── Alerts ─────────────────────────────────────────────────── */
+
+    /**
+     * Fire the "something happened to this document" notice, then work out which
+     * items crossed their reorder point as a result.
+     *
+     * Everything in here is best-effort: the stock has already moved and the
+     * ledger already says so, so a failure to tell anyone about it is a
+     * degraded alert, not a failed posting.
+     */
+    private function announce(Voucher $voucher, array $productIds, array $before, int $tenantId, int $userId, callable $documentNotice): void
+    {
+        try {
+            $documentNotice();
+
+            if (! $productIds) {
+                return;
+            }
+
+            $after = $this->onHandTotals($productIds, $tenantId);
+
+            $products = Product::forTenant($tenantId)
+                ->whereIn('id', $productIds)
+                ->where('status', 'active')
+                // Items excluded from stock math can't be low — they have no stock.
+                ->where('without_checking_warehouse', false)
+                ->get(['id', 'name', 'sku', 'min_stock', 'reorder_point']);
+
+            $crossed = [];
+            foreach ($products as $p) {
+                $threshold = (float) ($p->reorder_point ?: $p->min_stock);
+                if ($threshold <= 0) {
+                    continue;   // nobody set a level, so there's no line to cross
+                }
+
+                $was = (float) ($before[$p->id] ?? 0);
+                $now = (float) ($after[$p->id] ?? 0);
+
+                if ($was > $threshold && $now <= $threshold) {
+                    $crossed[] = ['product' => $p, 'on_hand' => $now, 'threshold' => $threshold];
+                }
+            }
+
+            $this->notifier->stockCrossedThreshold($tenantId, $crossed, $voucher->warehouse_id, $userId);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning(
+                "Inventory alerts failed for voucher {$voucher->code}: {$e->getMessage()}"
+            );
+        }
+    }
+
+    /** Total on-hand per product across every warehouse, keyed by product id. */
+    private function onHandTotals(array $productIds, int $tenantId): array
+    {
+        if (! $productIds) {
+            return [];
+        }
+
+        $totals = array_fill_keys($productIds, 0.0);
+
+        $rows = \App\Models\Inventory\Stock::forTenant($tenantId)
+            ->whereIn('product_id', $productIds)
+            ->selectRaw('product_id, COALESCE(SUM(quantity), 0) as qty')
+            ->groupBy('product_id')
+            ->get();
+
+        foreach ($rows as $row) {
+            $totals[(int) $row->product_id] = (float) $row->qty;
+        }
+
+        return $totals;
     }
 
     /* ── Posting internals ──────────────────────────────────────── */
@@ -291,6 +391,9 @@ class VoucherService
             $price = round((float) ($row['unit_price'] ?? 0), 2);
             $taxRate = round((float) ($row['tax_rate'] ?? 0), 2);
             $amount = round($qty * $price, 2);
+            // A discount can never exceed the line it discounts — otherwise the
+            // header total could go negative on a typo.
+            $discount = min(round((float) ($row['discount'] ?? 0), 2), $amount);
 
             VoucherItem::create([
                 'tenant_id'         => $tenantId,
@@ -303,6 +406,7 @@ class VoucherService
                 'quantity'          => $qty,
                 'unit_price'        => $price,
                 'tax_rate'          => $taxRate,
+                'discount'          => $discount,
                 'amount'            => $amount,
                 'available_qty'     => $this->onHand((int) $row['product_id'], $row['warehouse_id'] ?? $voucher->warehouse_id, $tenantId),
                 'lot_number'        => $row['lot_number'] ?? null,
@@ -314,18 +418,39 @@ class VoucherService
         $this->recalcTotals($voucher);
     }
 
-    /** Header totals are always derived from the lines — never typed in. */
+    /**
+     * Header totals are always derived from the lines — never typed in.
+     *
+     * Discount comes off the goods before tax (tax is charged on what's actually
+     * paid), and "value of inventory" is the stock value the document moves,
+     * costed at each item's cost price rather than its selling price — which is
+     * why it differs from total_amount on a delivery.
+     */
     private function recalcTotals(Voucher $voucher): void
     {
-        $rows = $voucher->items()->get();
+        $rows = $voucher->items()->with('product:id,cost_price')->get();
 
         $goods = round($rows->sum(fn ($r) => (float) $r->amount), 2);
-        $tax = round($rows->sum(fn ($r) => (float) $r->amount * (float) $r->tax_rate / 100), 2);
+        $discount = round($rows->sum(fn ($r) => (float) $r->discount), 2);
+        $net = max(0, $goods - $discount);
+        $tax = round($rows->sum(function ($r) use ($goods, $discount) {
+            // Spread the discount across lines in proportion to their value, so
+            // tax is charged on the discounted amount of each line.
+            $share = $goods > 0 ? ((float) $r->amount / $goods) * $discount : 0;
+
+            return max(0, (float) $r->amount - $share) * (float) $r->tax_rate / 100;
+        }), 2);
+
+        $inventoryValue = round($rows->sum(
+            fn ($r) => (float) $r->quantity * (float) ($r->product->cost_price ?? 0)
+        ), 2);
 
         $voucher->forceFill([
-            'total_goods'  => $goods,
-            'total_tax'    => $tax,
-            'total_amount' => round($goods + $tax, 2),
+            'total_goods'     => $goods,
+            'total_discount'  => $discount,
+            'total_tax'       => $tax,
+            'total_amount'    => round($net + $tax, 2),
+            'inventory_value' => $inventoryValue,
         ])->save();
     }
 

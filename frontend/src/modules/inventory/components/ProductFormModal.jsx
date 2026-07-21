@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { X, Check, PackagePlus, IndianRupee } from 'lucide-react'
+import { X, Check, PackagePlus, IndianRupee, Tag, ImagePlus, Trash2 } from 'lucide-react'
 import { inventoryApi, INV_ACCENT, calcSalePrice, calcProfitRatio } from '@/services/inventoryApi'
 import Select from '@/components/ui/Select'
 
@@ -24,6 +24,7 @@ const EMPTY = {
   cost_price: '', profit_ratio: '', sale_price: '', status: 'active',
   without_checking_warehouse: false,
   opening_stock: '', opening_warehouse_id: '',
+  tags: [], custom_fields: {},
 }
 
 export default function ProductFormModal({ open, onClose, product = null, onSaved }) {
@@ -37,6 +38,19 @@ export default function ProductFormModal({ open, onClose, product = null, onSave
   // One request behind every dropdown: units, types, groups(+subgroups), taxes, variations.
   const { data: settings } = useQuery({ queryKey: ['inv-settings'], queryFn: inventoryApi.settings.all, enabled: open })
   const { data: allProducts = [] } = useQuery({ queryKey: ['inv-products', {}], queryFn: () => inventoryApi.products.list(), enabled: open })
+  // The tenant's custom field definitions drive the "Custom fields" section.
+  const { data: customDefs = [] } = useQuery({
+    queryKey: ['inv-custom-fields', 'product'],
+    queryFn: () => inventoryApi.customFields.list('product'),
+    enabled: open,
+  })
+  // Defaults for min/max/reorder + the profit rule come from Settings.
+  const { data: config } = useQuery({ queryKey: ['inv-config'], queryFn: inventoryApi.config.get, enabled: open })
+
+  const [tagDraft, setTagDraft] = useState('')
+  const [imgUrl, setImgUrl] = useState(null)
+  const [imgErr, setImgErr] = useState('')
+  const imgInput = useRef(null)
 
   const units = settings?.units || []
   const types = settings?.types || []
@@ -50,7 +64,7 @@ export default function ProductFormModal({ open, onClose, product = null, onSave
 
   useEffect(() => {
     if (!open) return
-    setErr('')
+    setErr(''); setTagDraft(''); setImgErr('')
     setForm(editing
       ? {
           ...EMPTY, ...product,
@@ -58,11 +72,63 @@ export default function ProductFormModal({ open, onClose, product = null, onSave
           type_id: product.type_id ?? '', group_id: product.group_id ?? '', subgroup_id: product.subgroup_id ?? '',
           unit_id: product.unit_id ?? '', tax_id: product.tax_id ?? '', parent_id: product.parent_id ?? '',
           color_id: product.color_id ?? '', model_id: product.model_id ?? '', size_id: product.size_id ?? '', style_id: product.style_id ?? '',
+          tags: product.tags ?? [], custom_fields: product.custom_fields ?? {},
         }
-      : { ...EMPTY, opening_warehouse_id: warehouses.find(w => w.is_default)?.id ?? '' })
+      : {
+          ...EMPTY,
+          opening_warehouse_id: warehouses.find(w => w.is_default)?.id ?? '',
+          // New items start from the tenant's configured defaults (Settings →
+          // Minimum/maximum inventory), so nobody retypes the same numbers.
+          min_stock: config?.default_min_stock ?? 0,
+          max_stock: config?.default_max_stock ?? '',
+          reorder_point: config?.default_reorder_point ?? 0,
+          profit_ratio: config?.sale_price_rule === 'profit_ratio' ? (config?.default_profit_ratio ?? '') : '',
+        })
   }, [open, product, editing]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Load the existing image (it's private, so it comes back as a blob URL).
+  useEffect(() => {
+    if (!open || !editing || !product?.image_path) { setImgUrl(null); return }
+    let revoked = null
+    inventoryApi.products.imageBlob(product.id).then(url => { revoked = url; setImgUrl(url) })
+    return () => { if (revoked) URL.revokeObjectURL(revoked) }
+  }, [open, editing, product?.id, product?.image_path])
+
   const sf = (k, v) => setForm(p => ({ ...p, [k]: v }))
+
+  /* ── Tags ─────────────────────────────────────────────────────── */
+  const addTag = (raw) => {
+    const next = String(raw || '').split(',').map(t => t.trim()).filter(Boolean)
+    if (!next.length) return
+    setForm(p => ({ ...p, tags: [...new Set([...(p.tags || []), ...next])].slice(0, 30) }))
+    setTagDraft('')
+  }
+  const removeTag = (t) => setForm(p => ({ ...p, tags: (p.tags || []).filter(x => x !== t) }))
+
+  /* ── Image ────────────────────────────────────────────────────── */
+  const uploadImage = useMutation({
+    mutationFn: (file) => inventoryApi.products.uploadImage(product.id, file),
+    onSuccess: async () => {
+      setImgErr('')
+      qc.invalidateQueries({ queryKey: ['inv-products'] })
+      qc.invalidateQueries({ queryKey: ['inv-product', String(product.id)] })
+      setImgUrl(await inventoryApi.products.imageBlob(product.id))
+    },
+    onError: (e) => setImgErr(e?.message || 'Could not upload that image.'),
+  })
+  const removeImage = useMutation({
+    mutationFn: () => inventoryApi.products.deleteImage(product.id),
+    onSuccess: () => {
+      setImgUrl(null); setImgErr('')
+      qc.invalidateQueries({ queryKey: ['inv-products'] })
+      qc.invalidateQueries({ queryKey: ['inv-product', String(product.id)] })
+    },
+  })
+  // Snapshot the FileList before the input resets, or the File ref is gone.
+  const pickImage = (list) => {
+    const files = Array.from(list || [])
+    if (files.length) uploadImage.mutate(files[0])
+  }
 
   /**
    * Pricing is a triangle: cost + profit% → sale, and cost + sale → profit%.
@@ -250,6 +316,88 @@ export default function ProductFormModal({ open, onClose, product = null, onSave
               </p>
             </div>
           </Section>
+
+          {/* Tags — freeform labels the Items filter groups by. */}
+          <Section title="Tags" hint="Type a tag and press Enter. Used by the Items page's Tags filter.">
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {(form.tags || []).map(t => (
+                <span key={t} className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-lg"
+                  style={{ background: `color-mix(in srgb, ${INV_ACCENT} 14%, transparent)`, color: INV_ACCENT }}>
+                  <Tag size={10} />{t}
+                  <button type="button" onClick={() => removeTag(t)} aria-label={`Remove ${t}`} className="hover:opacity-60"><X size={10} /></button>
+                </span>
+              ))}
+              {!(form.tags || []).length && <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>No tags yet.</span>}
+            </div>
+            <input
+              value={tagDraft}
+              onChange={e => setTagDraft(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addTag(tagDraft) } }}
+              onBlur={() => addTag(tagDraft)}
+              placeholder="e.g. fragile, imported"
+              className={INPUT} style={INPUT_S} />
+          </Section>
+
+          {/* Image — upload needs an id, so it's offered once the item exists. */}
+          <Section title="Image" hint={editing ? 'JPG/PNG up to 5 MB.' : 'Save the item first, then reopen it to attach an image.'}>
+            {editing ? (
+              <div className="flex items-center gap-3">
+                <div className="rounded-xl flex items-center justify-center overflow-hidden shrink-0"
+                  style={{ width: 84, height: 84, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+                  {imgUrl
+                    ? <img src={imgUrl} alt={form.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    : <ImagePlus size={22} style={{ color: 'var(--text-muted)' }} />}
+                </div>
+                <div className="flex flex-col gap-2">
+                  <button type="button" onClick={() => imgInput.current?.click()} disabled={uploadImage.isPending}
+                    className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl disabled:opacity-50"
+                    style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-body)' }}>
+                    <ImagePlus size={13} /> {uploadImage.isPending ? 'Uploading…' : imgUrl ? 'Replace image' : 'Upload image'}
+                  </button>
+                  {imgUrl && (
+                    <button type="button" onClick={() => removeImage.mutate()}
+                      className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl"
+                      style={{ border: '1px solid var(--border)', color: 'var(--color-danger-500)' }}>
+                      <Trash2 size={13} /> Remove
+                    </button>
+                  )}
+                  {imgErr && <span className="text-[11px]" style={{ color: 'var(--color-danger-500)' }}>{imgErr}</span>}
+                </div>
+                <input ref={imgInput} type="file" accept="image/*" hidden
+                  onChange={e => { pickImage(e.target.files); e.target.value = '' }} />
+              </div>
+            ) : (
+              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Available after the item is created.</p>
+            )}
+          </Section>
+
+          {/* Custom fields — whatever this tenant defined in Settings. */}
+          {customDefs.length > 0 && (
+            <Section title="Custom fields" hint="Defined in Inventory → Settings → Custom fields.">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {customDefs.map(def => {
+                  const val = form.custom_fields?.[def.key] ?? ''
+                  const setVal = (v) => setForm(p => ({ ...p, custom_fields: { ...(p.custom_fields || {}), [def.key]: v } }))
+                  return (
+                    <Field key={def.id} label={def.label + (def.required ? ' *' : '')}>
+                      {def.type === 'select' ? (
+                        <Select value={val} onChange={setVal} placeholder="— none —"
+                          options={[{ value: '', label: '— none —' }, ...(def.options || []).map(o => ({ value: o, label: o }))]} />
+                      ) : def.type === 'checkbox' ? (
+                        <label className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-body)' }}>
+                          <input type="checkbox" checked={Boolean(val)} onChange={e => setVal(e.target.checked)} style={{ accentColor: INV_ACCENT }} />
+                          Yes
+                        </label>
+                      ) : (
+                        <input type={def.type === 'number' ? 'number' : def.type === 'date' ? 'date' : 'text'}
+                          value={val} onChange={e => setVal(e.target.value)} className={INPUT} style={INPUT_S} />
+                      )}
+                    </Field>
+                  )
+                })}
+              </div>
+            </Section>
+          )}
 
           {!editing && !form.without_checking_warehouse && (
             <Section title="Opening stock" hint="Optional — recorded as a real movement, so day one has an audit trail too.">

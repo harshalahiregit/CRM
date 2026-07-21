@@ -12,6 +12,44 @@ export const inventoryApi = {
   summary:  () => api.get('/inventory/summary').then(unwrap).catch(handleErr),
   lowStock: () => api.get('/inventory/low-stock').then(unwrap).catch(handleErr),
 
+  // §7 — the whole-module audit ledger, filterable and paged.
+  history: (params = {}) => api.get('/inventory/history', { params }).then(unwrap).catch(handleErr),
+
+  // §8 — kind = summary | valuation | analysis, all sharing one filter shape.
+  report: (kind, params = {}) => api.get(`/inventory/reports/${kind}`, { params }).then(unwrap).catch(handleErr),
+
+  // Internal people, for the "Staff" filter on reports/history.
+  staff: () => api.get('/inventory/staff').then(unwrap).catch(handleErr),
+
+  // Analytics — ABC/XYZ, turnover, dead stock, accuracy. The backend scopes the
+  // figures to the viewer (tenant-wide for an admin, own activity otherwise) and
+  // tells us which via `scope`.
+  analytics: (params = {}) => api.get('/inventory/analytics', { params }).then(unwrap).catch(handleErr),
+
+  // Traceability — batches, serial numbers, reservations, expiry.
+  batches: {
+    list:   (params = {}) => api.get('/inventory/batches', { params }).then(unwrap).catch(handleErr),
+    create: (data) => api.post('/inventory/batches', data).then(unwrap).catch(handleErr),
+    update: (id, data) => api.put(`/inventory/batches/${id}`, data).then(unwrap).catch(handleErr),
+    remove: (id) => api.delete(`/inventory/batches/${id}`).then(unwrap).catch(handleErr),
+    fefo:   (params) => api.get('/inventory/batches-fefo', { params }).then(unwrap).catch(handleErr),
+  },
+
+  expiry: (days) => api.get('/inventory/expiry', { params: days ? { days } : {} }).then(unwrap).catch(handleErr),
+
+  serials: {
+    list:   (params = {}) => api.get('/inventory/serials', { params }).then(unwrap).catch(handleErr),
+    create: (data) => api.post('/inventory/serials', data).then(unwrap).catch(handleErr),
+    update: (id, data) => api.put(`/inventory/serials/${id}`, data).then(unwrap).catch(handleErr),
+    remove: (id) => api.delete(`/inventory/serials/${id}`).then(unwrap).catch(handleErr),
+  },
+
+  reservations: {
+    list:    (params = {}) => api.get('/inventory/reservations', { params }).then(unwrap).catch(handleErr),
+    reserve: (data) => api.post('/inventory/reservations', data).then(unwrap).catch(handleErr),
+    close:   (id, as = 'released') => api.post(`/inventory/reservations/${id}/close`, { as }).then(unwrap).catch(handleErr),
+  },
+
   products: {
     list:   (params = {}) => api.get('/inventory/products', { params }).then(unwrap).catch(handleErr),
     get:    (id) => api.get(`/inventory/products/${id}`).then(unwrap).catch(handleErr),
@@ -22,6 +60,41 @@ export const inventoryApi = {
     lookup: (code) => api.get('/inventory/products/lookup', { params: { code } }).then(unwrap).catch(handleErr),
     levels: (id) => api.get(`/inventory/products/${id}/levels`).then(unwrap).catch(handleErr),
     history: (id, limit = 100) => api.get(`/inventory/products/${id}/history`, { params: { limit } }).then(unwrap).catch(handleErr),
+
+    // §1 — tag vocabulary, bulk actions, imports and item images.
+    tags: () => api.get('/inventory/products/tags').then(unwrap).catch(handleErr),
+    bulk: (action, ids, value = null) =>
+      api.post('/inventory/products/bulk', { action, ids, value }).then(unwrap).catch(handleErr),
+    importTemplate: (kind) => api.get(`/inventory/products/import/${kind}/template`).then(unwrap).catch(handleErr),
+    import: (kind, file) => {
+      const fd = new FormData()
+      fd.append('file', file)
+      return api.post(`/inventory/products/import/${kind}`, fd).then(unwrap).catch(handleErr)
+    },
+    uploadImage: (id, file) => {
+      const fd = new FormData()
+      fd.append('image', file)
+      return api.post(`/inventory/products/${id}/image`, fd).then(unwrap).catch(handleErr)
+    },
+    deleteImage: (id) => api.delete(`/inventory/products/${id}/image`).then(unwrap).catch(handleErr),
+    // Images are private — this is the authenticated URL the <img> can't use
+    // directly, so the caller fetches it as a blob.
+    imageBlob: (id) => api.get(`/inventory/products/${id}/image`, { responseType: 'blob' })
+      .then(r => URL.createObjectURL(r.data)).catch(() => null),
+  },
+
+  // §9 — configuration tabs, custom field definitions, and the reset tool.
+  config: {
+    get:  () => api.get('/inventory/config').then(unwrap).catch(handleErr),
+    save: (settings) => api.put('/inventory/config', { settings }).then(unwrap).catch(handleErr),
+    reset: (scopes, confirm) => api.post('/inventory/reset', { scopes, confirm }).then(unwrap).catch(handleErr),
+  },
+
+  customFields: {
+    list:   (entity) => api.get('/inventory/custom-fields', { params: entity ? { entity } : {} }).then(unwrap).catch(handleErr),
+    create: (data) => api.post('/inventory/custom-fields', data).then(unwrap).catch(handleErr),
+    update: (id, data) => api.put(`/inventory/custom-fields/${id}`, data).then(unwrap).catch(handleErr),
+    remove: (id) => api.delete(`/inventory/custom-fields/${id}`).then(unwrap).catch(handleErr),
   },
 
   categories: {
@@ -59,6 +132,8 @@ export const inventoryApi = {
     remove: (type, id) => api.delete(`/inventory/vouchers/${type}/${id}`).then(unwrap).catch(handleErr),
     post:   (type, id) => api.post(`/inventory/vouchers/${type}/${id}/post`).then(unwrap).catch(handleErr),
     cancel: (type, id) => api.post(`/inventory/vouchers/${type}/${id}/cancel`).then(unwrap).catch(handleErr),
+    // §2 "send received note" — email the document to a supplier/customer.
+    send:   (type, id, data) => api.post(`/inventory/vouchers/${type}/${id}/send`, data).then(unwrap).catch(handleErr),
   },
 
   // Settings master data (blueprint §10). `all()` is one request behind every
@@ -105,6 +180,23 @@ export const VOUCHER_STATUS = {
   posted:    { label: 'Posted',    color: '#10B981' },
   cancelled: { label: 'Cancelled', color: 'var(--color-danger-500)' },
 }
+
+/** The Items page's Alert dropdown (blueprint §1). */
+export const ALERT_OPTIONS = [
+  { value: 'min_stock',    label: 'At/below minimum stock' },
+  { value: 'max_stock',    label: 'At/above maximum stock' },
+  { value: 'out_of_stock', label: 'Out of stock' },
+  { value: 'expiring',     label: 'Expiring soon' },
+]
+
+/** Bulk actions the Items table offers on a checkbox selection. */
+export const BULK_ACTIONS = [
+  { value: 'status',      label: 'Set status' },
+  { value: 'category',    label: 'Set category' },
+  { value: 'add_tags',    label: 'Add tags' },
+  { value: 'remove_tags', label: 'Remove tags' },
+  { value: 'delete',      label: 'Delete', danger: true },
+]
 
 /** Settings screen tabs → API kind + the shape each row has. */
 export const SETTING_TABS = [

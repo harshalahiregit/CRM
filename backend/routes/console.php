@@ -43,3 +43,17 @@ Schedule::command('helpdesk:check-sla')
     ->everyFifteenMinutes()
     ->withoutOverlapping()
     ->runInBackground();
+
+// Inventory: the daily expiry digest.
+// Once a day at 07:00, not every fifteen minutes: expiry moves at the speed of
+// the calendar, so a batch that enters the alert window overnight is equally
+// urgent at seven in the morning as it was at midnight — and a digest that lands
+// at the start of the working day is one somebody actually acts on. Low stock is
+// NOT on this clock; it's edge-triggered the instant a posting crosses the
+// reorder point, which is when it's worth interrupting someone. The command is
+// idempotent (expiry_alerted_at), so a catch-up run after downtime sends one
+// digest rather than one per missed day.
+Schedule::command('inventory:run-alerts')
+    ->dailyAt('07:00')
+    ->withoutOverlapping()
+    ->runInBackground();

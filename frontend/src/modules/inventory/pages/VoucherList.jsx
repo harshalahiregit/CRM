@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
-import { FileText, Plus, Search, Send, Ban, Trash2, Eye } from 'lucide-react'
+import { FileText, Plus, Search, Send, Ban, Trash2, Eye, Mail } from 'lucide-react'
 import { inventoryApi, VOUCHER_TYPES, VOUCHER_STATUS, money } from '@/services/inventoryApi'
 import { useAuth } from '@/context/AuthContext'
 import Select from '@/components/ui/Select'
 import { ConfirmModal } from '@/components/ui/SearchPicker'
 import VoucherFormModal from '../components/VoucherFormModal'
+import SendVoucherModal from '../components/SendVoucherModal'
 
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 
@@ -26,9 +27,11 @@ export default function VoucherList() {
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState(null)
   const [confirm, setConfirm] = useState(null)   // { kind:'cancel'|'delete', row }
+  const [sending, setSending] = useState(null)   // voucher to email
   const [search, setSearch] = useState('')
   const [debounced, setDebounced] = useState('')
   const [status, setStatus] = useState('')
+  const [raisedBy, setRaisedBy] = useState('')   // who filed the document
   const [err, setErr] = useState('')
 
   useEffect(() => {
@@ -39,6 +42,13 @@ export default function VoucherList() {
   const filters = {}
   if (debounced) filters.search = debounced
   if (status) filters.status = status
+  if (raisedBy) filters.created_by = raisedBy
+
+  // Who raised each document. Admin-only: lets a manager answer "show me
+  // everything Rohit filed" without reading every row.
+  const { data: staff = [] } = useQuery({
+    queryKey: ['inv-staff'], queryFn: inventoryApi.staff, enabled: isAdmin,
+  })
 
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ['inv-vouchers', type, filters],
@@ -89,6 +99,12 @@ export default function VoucherList() {
           <Select size="sm" value={status} onChange={setStatus} placeholder="Any status"
             options={[{ value: '', label: 'Any status' }, ...Object.entries(VOUCHER_STATUS).map(([v, m]) => ({ value: v, label: m.label, dot: m.color }))]} />
         </div>
+        {isAdmin && (
+          <div style={{ minWidth: 150 }}>
+            <Select size="sm" value={raisedBy} onChange={setRaisedBy} placeholder="Raised by anyone"
+              options={[{ value: '', label: 'Raised by anyone' }, ...staff.map(u => ({ value: String(u.id), label: u.name }))]} />
+          </div>
+        )}
       </div>
 
       {err && (
@@ -106,6 +122,7 @@ export default function VoucherList() {
               <th className="px-4 py-3 font-bold">Voucher day</th>
               <th className="px-4 py-3 font-bold text-right">Lines</th>
               {cfg.pricing && <th className="px-4 py-3 font-bold text-right">Total</th>}
+              <th className="px-4 py-3 font-bold">Raised by</th>
               <th className="px-4 py-3 font-bold">Status</th>
               <th className="px-4 py-3 font-bold text-right">Actions</th>
             </tr>
@@ -113,14 +130,14 @@ export default function VoucherList() {
           <tbody>
             {isLoading && [1, 2, 3].map(i => (
               <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
-                {[...Array(cfg.pricing ? 8 : 7)].map((_, j) => (
+                {[...Array(cfg.pricing ? 9 : 8)].map((_, j) => (
                   <td key={j} className="px-4 py-3"><div className="h-4 rounded animate-pulse" style={{ background: 'var(--bg-input)' }} /></td>
                 ))}
               </tr>
             ))}
             {!isLoading && rows.length === 0 && (
-              <tr><td colSpan={8} className="px-4 py-12 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
-                {debounced || status ? 'No vouchers match.' : `No ${cfg.short.toLowerCase()} vouchers yet.`}
+              <tr><td colSpan={9} className="px-4 py-12 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
+                {debounced || status || raisedBy ? 'No vouchers match.' : `No ${cfg.short.toLowerCase()} vouchers yet.`}
               </td></tr>
             )}
             {!isLoading && rows.map(v => {
@@ -140,6 +157,7 @@ export default function VoucherList() {
                   <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>{fmtDate(v.date_add)}</td>
                   <td className="px-4 py-3 text-right text-xs tabular-nums" style={{ color: 'var(--text-muted)' }}>{v.items_count ?? 0}</td>
                   {cfg.pricing && <td className="px-4 py-3 text-right text-xs tabular-nums" style={{ color: 'var(--text-h)' }}>{money(v.total_amount)}</td>}
+                  <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>{v.creator?.name || '—'}</td>
                   <td className="px-4 py-3">
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg"
                       style={{ background: `color-mix(in srgb, ${st.color} 15%, transparent)`, color: st.color }}>{st.label}</span>
@@ -152,6 +170,7 @@ export default function VoucherList() {
                       {v.status === 'posted' && (
                         <RowBtn onClick={() => setConfirm({ kind: 'cancel', row: v })} label="Cancel — reverses stock" danger><Ban size={12} /></RowBtn>
                       )}
+                      <RowBtn onClick={() => setSending(v)} label="Email this document"><Mail size={12} /></RowBtn>
                       <RowBtn onClick={() => { setEditing(v); setShowForm(true) }} label="View"><Eye size={12} /></RowBtn>
                       {isAdmin && v.status !== 'posted' && (
                         <RowBtn onClick={() => setConfirm({ kind: 'delete', row: v })} label="Delete" danger><Trash2 size={12} /></RowBtn>
@@ -164,6 +183,8 @@ export default function VoucherList() {
           </tbody>
         </table>
       </div>
+
+      <SendVoucherModal type={type} voucher={sending} onClose={() => setSending(null)} />
 
       <VoucherFormModal open={showForm} type={type} voucher={editing}
         onClose={() => { setShowForm(false); setEditing(null) }} onSaved={() => setErr('')} />

@@ -76,6 +76,10 @@ const InventoryProductDetail = lazy(() => import('@/modules/inventory/pages/Prod
 const InventoryWarehouses = lazy(() => import('@/modules/inventory/pages/Warehouses'))
 const InventorySettings = lazy(() => import('@/modules/inventory/pages/InventorySettings'))
 const InventoryVouchers = lazy(() => import('@/modules/inventory/pages/VoucherList'))
+const InventoryHistory = lazy(() => import('@/modules/inventory/pages/InventoryHistory'))
+const InventoryReports = lazy(() => import('@/modules/inventory/pages/InventoryReports'))
+const InventoryAnalytics = lazy(() => import('@/modules/inventory/pages/InventoryAnalytics'))
+const InventoryTraceability = lazy(() => import('@/modules/inventory/pages/InventoryTraceability'))
 
 function ComingSoon({ name }) {
   return (
@@ -206,6 +210,10 @@ export default function AppRoutes() {
         <Route path="inventory/warehouses" element={<S><InventoryWarehouses /></S>} />
         {/* One page serves all four document types — :type selects the config. */}
         <Route path="inventory/vouchers/:type" element={<S><InventoryVouchers /></S>} />
+        <Route path="inventory/history" element={<S><InventoryHistory /></S>} />
+        <Route path="inventory/reports" element={<S><InventoryReports /></S>} />
+        <Route path="inventory/analytics" element={<S><InventoryAnalytics /></S>} />
+        <Route path="inventory/traceability" element={<S><InventoryTraceability /></S>} />
         <Route path="inventory/settings" element={<S><InventorySettings /></S>} />
 
         <Route path="invoices" element={<ComingSoon name="Invoices" />} />

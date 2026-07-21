@@ -7,7 +7,7 @@ import {
   ClipboardList, ChevronDown, Shield, UserCog,
   IndianRupee, FileSignature, CreditCard, FileX,
   ShoppingBag, UserPlus,
-  Boxes, PackagePlus, PackageMinus, ArrowLeftRight, Scale, Warehouse
+  Boxes, PackagePlus, PackageMinus, ArrowLeftRight, Scale, Warehouse, History, BarChart3, Activity, Layers3
 } from 'lucide-react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -74,6 +74,10 @@ const INVENTORY_SUB_ITEMS = [
   { label: 'Internal delivery note', path: '/app/inventory/vouchers/internal', icon: ArrowLeftRight },
   { label: 'Loss & adjustment', path: '/app/inventory/vouchers/loss_adjustment', icon: Scale },
   { label: 'Warehouse', path: '/app/inventory/warehouses', icon: Warehouse },
+  { label: 'Traceability', path: '/app/inventory/traceability', icon: Layers3 },
+  { label: 'Inventory history', path: '/app/inventory/history', icon: History },
+  { label: 'Analytics', path: '/app/inventory/analytics', icon: Activity },
+  { label: 'Report', path: '/app/inventory/reports', icon: BarChart3 },
   { label: 'Settings', path: '/app/inventory/settings', icon: Settings },
 ]
 

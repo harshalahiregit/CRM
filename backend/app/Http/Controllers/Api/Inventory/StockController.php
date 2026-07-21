@@ -23,7 +23,14 @@ class StockController extends Controller
     {
         $this->denyExternal($request);
 
-        return $this->success($this->stock->summary($request->user()->tenant_id), 'Summary computed');
+        return $this->success(
+            $this->stock->summary(
+                $request->user()->tenant_id,
+                $this->isAdmin($request),
+                $request->user()->id,
+            ),
+            'Summary computed'
+        );
     }
 
     /** Where one product sits, across every warehouse/bin. */
@@ -47,6 +54,30 @@ class StockController extends Controller
         return $this->success(
             $this->stock->history($product, $request->user()->tenant_id, min(max($limit, 1), 500)),
             'Movement history retrieved'
+        );
+    }
+
+    /** The whole-module audit ledger (blueprint §7) — every movement, filterable. */
+    public function ledger(Request $request)
+    {
+        $this->denyExternal($request);
+
+        $filters = $request->validate([
+            'product_id'   => 'nullable|integer|min:1',
+            'warehouse_id' => 'nullable|integer|min:1',
+            'actor_id'     => 'nullable|integer|min:1',
+            'type'         => 'nullable|string|max:30',
+            'from'         => 'nullable|date',
+            'to'           => 'nullable|date|after_or_equal:from',
+            'search'       => 'nullable|string|max:120',
+        ]);
+
+        $limit = min(max((int) $request->integer('limit', 200), 1), 500);
+        $offset = max((int) $request->integer('offset', 0), 0);
+
+        return $this->success(
+            $this->stock->ledger($request->user()->tenant_id, $filters, $limit, $offset),
+            'Inventory history retrieved'
         );
     }
 

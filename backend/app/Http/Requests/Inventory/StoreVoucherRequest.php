@@ -38,6 +38,7 @@ class StoreVoucherRequest extends FormRequest
             'items.*.quantity'          => 'required|numeric|min:0',
             'items.*.unit_price'        => 'nullable|numeric|min:0',
             'items.*.tax_rate'          => 'nullable|numeric|min:0|max:100',
+            'items.*.discount'          => 'nullable|numeric|min:0',
             'items.*.warehouse_id'      => ['nullable', 'integer', $wh()],
             'items.*.from_warehouse_id' => ['nullable', 'integer', $wh()],
             'items.*.to_warehouse_id'   => ['nullable', 'integer', $wh()],

@@ -16,7 +16,7 @@ import Select from '@/components/ui/Select'
 const today = () => new Date().toISOString().split('T')[0]
 const emptyLine = () => ({
   product_id: '', warehouse_id: '', from_warehouse_id: '', to_warehouse_id: '',
-  quantity: '', unit_price: '', tax_rate: '', lot_number: '', expiry_date: '', note: '',
+  quantity: '', unit_price: '', tax_rate: '', discount: '', lot_number: '', expiry_date: '', note: '',
 })
 
 export default function VoucherFormModal({ open, onClose, type, voucher = null, onSaved }) {
@@ -31,6 +31,14 @@ export default function VoucherFormModal({ open, onClose, type, voucher = null, 
 
   const { data: warehouses = [] } = useQuery({ queryKey: ['inv-warehouses'], queryFn: inventoryApi.warehouses.list, enabled: open })
   const { data: products = [] } = useQuery({ queryKey: ['inv-products', {}], queryFn: () => inventoryApi.products.list(), enabled: open })
+  const { data: staff = [] } = useQuery({ queryKey: ['inv-staff'], queryFn: inventoryApi.staff, enabled: open })
+  // Projects a receipt/delivery can be booked against. Inventory only reads the
+  // list; if the Projects module isn't reachable this degrades to "None".
+  const { data: projects = [] } = useQuery({
+    queryKey: ['inv-projects-lite'],
+    queryFn: () => import('@/services/projectApi').then(m => m.projectApi.list()).catch(() => []),
+    enabled: open,
+  })
   // Items excluded from stock math can't go on a stock document (backend agrees).
   const stockable = useMemo(() => products.filter(p => !p.without_checking_warehouse), [products])
   const byId = useMemo(() => Object.fromEntries(products.map(p => [String(p.id), p])), [products])
@@ -44,7 +52,7 @@ export default function VoucherFormModal({ open, onClose, type, voucher = null, 
       setLines((voucher.items || []).map(i => ({
         product_id: i.product_id, warehouse_id: i.warehouse_id ?? '',
         from_warehouse_id: i.from_warehouse_id ?? '', to_warehouse_id: i.to_warehouse_id ?? '',
-        quantity: i.quantity, unit_price: i.unit_price, tax_rate: i.tax_rate,
+        quantity: i.quantity, unit_price: i.unit_price, tax_rate: i.tax_rate, discount: i.discount ?? '',
         lot_number: i.lot_number ?? '', expiry_date: i.expiry_date ? String(i.expiry_date).split('T')[0] : '', note: i.note ?? '',
       })) || [emptyLine()])
     } else {
@@ -60,12 +68,21 @@ export default function VoucherFormModal({ open, onClose, type, voucher = null, 
   const sf = (k, v) => setForm(p => ({ ...p, [k]: v }))
   const sl = (i, k, v) => setLines(rows => rows.map((r, j) => j === i ? { ...r, [k]: v } : r))
 
-  // Totals mirror the server's rule: amount = qty × price, tax on top.
+  // Totals mirror the server's rule exactly: amount = qty x price, discount comes
+  // off the goods before tax, and "value of inventory" costs the stock moved at
+  // each item's cost price (which is why it differs from the money total).
   const totals = useMemo(() => {
-    const goods = lines.reduce((s, l) => s + (Number(l.quantity) || 0) * (Number(l.unit_price) || 0), 0)
-    const tax = lines.reduce((s, l) => s + (Number(l.quantity) || 0) * (Number(l.unit_price) || 0) * (Number(l.tax_rate) || 0) / 100, 0)
-    return { goods, tax, total: goods + tax }
-  }, [lines])
+    const amt = (l) => (Number(l.quantity) || 0) * (Number(l.unit_price) || 0)
+    const goods = lines.reduce((s, l) => s + amt(l), 0)
+    const discount = lines.reduce((s, l) => s + (Number(l.discount) || 0), 0)
+    const tax = lines.reduce((s, l) => {
+      const share = goods > 0 ? (amt(l) / goods) * discount : 0
+      return s + Math.max(0, amt(l) - share) * (Number(l.tax_rate) || 0) / 100
+    }, 0)
+    const inventoryValue = lines.reduce(
+      (s, l) => s + (Number(l.quantity) || 0) * (Number(byId[String(l.product_id)]?.cost_price) || 0), 0)
+    return { goods, discount, tax, total: Math.max(0, goods - discount) + tax, inventoryValue }
+  }, [lines, byId])
 
   const save = useMutation({
     mutationFn: async ({ post }) => {
@@ -76,6 +93,7 @@ export default function VoucherFormModal({ open, onClose, type, voucher = null, 
           quantity: Number(l.quantity) || 0,
           unit_price: Number(l.unit_price) || 0,
           tax_rate: Number(l.tax_rate) || 0,
+          discount: Number(l.discount) || 0,
           warehouse_id: l.warehouse_id || undefined,
           from_warehouse_id: l.from_warehouse_id || undefined,
           to_warehouse_id: l.to_warehouse_id || undefined,
@@ -161,15 +179,40 @@ export default function VoucherFormModal({ open, onClose, type, voucher = null, 
                   <F label="Requester"><input value={form.requester || ''} onChange={e => sf('requester', e.target.value)} className={I} style={IS} /></F>
                   <F label="Expiry date"><input type="date" value={form.expiry_date ? String(form.expiry_date).split('T')[0] : ''} onChange={e => sf('expiry_date', e.target.value)} className={I} style={IS} /></F>
                 </div>
+                {/* Links back to the paperwork this receipt came from. */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <F label="Purchase order no"><NumOrBlank value={form.pr_order_id} onChange={v => sf('pr_order_id', v)} /></F>
+                  <F label="Project">
+                    <Select value={form.project_id ?? ''} onChange={v => sf('project_id', v)} placeholder="None"
+                      options={[{ value: '', label: 'None' }, ...projects.map(pr => ({ value: pr.id, label: pr.name }))]} />
+                  </F>
+                  <F label="Buyer / salesman">
+                    <Select value={form.staff_id ?? ''} onChange={v => sf('staff_id', v)} placeholder="None"
+                      options={[{ value: '', label: 'None' }, ...staff.map(u => ({ value: u.id, label: u.name }))]} />
+                  </F>
+                </div>
               </>
             )}
 
             {type === 'delivery' && (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <F label="Customer name"><input value={form.customer_name || ''} onChange={e => sf('customer_name', e.target.value)} className={I} style={IS} /></F>
-                <F label="Address"><input value={form.address || ''} onChange={e => sf('address', e.target.value)} className={I} style={IS} /></F>
-                <F label="Invoice no"><input value={form.invoice_no || ''} onChange={e => sf('invoice_no', e.target.value)} className={I} style={IS} /></F>
-              </div>
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <F label="Customer name"><input value={form.customer_name || ''} onChange={e => sf('customer_name', e.target.value)} className={I} style={IS} /></F>
+                  <F label="Address"><input value={form.address || ''} onChange={e => sf('address', e.target.value)} className={I} style={IS} /></F>
+                  <F label="Invoice no"><input value={form.invoice_no || ''} onChange={e => sf('invoice_no', e.target.value)} className={I} style={IS} /></F>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <F label="Purchase order no"><NumOrBlank value={form.pr_order_id} onChange={v => sf('pr_order_id', v)} /></F>
+                  <F label="Project">
+                    <Select value={form.project_id ?? ''} onChange={v => sf('project_id', v)} placeholder="None"
+                      options={[{ value: '', label: 'None' }, ...projects.map(pr => ({ value: pr.id, label: pr.name }))]} />
+                  </F>
+                  <F label="Salesman">
+                    <Select value={form.staff_id ?? ''} onChange={v => sf('staff_id', v)} placeholder="None"
+                      options={[{ value: '', label: 'None' }, ...staff.map(u => ({ value: u.id, label: u.name }))]} />
+                  </F>
+                </div>
+              </>
             )}
 
             {type === 'loss_adjustment' && (
@@ -204,7 +247,7 @@ export default function VoucherFormModal({ open, onClose, type, voucher = null, 
                     <th className="px-2 py-2 font-bold">Unit</th>
                     <th className="px-2 py-2 font-bold text-right">Available</th>
                     <th className="px-2 py-2 font-bold text-right" style={{ minWidth: 90 }}>{isRecount ? 'Counted' : 'Quantity'}</th>
-                    {cfg.pricing && <><th className="px-2 py-2 font-bold text-right">Unit price</th><th className="px-2 py-2 font-bold text-right">Tax %</th><th className="px-2 py-2 font-bold text-right">Amount</th></>}
+                    {cfg.pricing && <><th className="px-2 py-2 font-bold text-right">Unit price</th><th className="px-2 py-2 font-bold text-right">Tax %</th><th className="px-2 py-2 font-bold text-right">Discount</th><th className="px-2 py-2 font-bold text-right">Amount</th></>}
                     {cfg.lots && <><th className="px-2 py-2 font-bold">Lot</th><th className="px-2 py-2 font-bold">Expiry</th></>}
                     <th />
                   </tr>
@@ -232,6 +275,7 @@ export default function VoucherFormModal({ open, onClose, type, voucher = null, 
                           <>
                             <td className="px-2 py-1.5"><NumIn value={l.unit_price} onChange={v => sl(i, 'unit_price', v)} /></td>
                             <td className="px-2 py-1.5"><NumIn value={l.tax_rate} onChange={v => sl(i, 'tax_rate', v)} /></td>
+                            <td className="px-2 py-1.5"><NumIn value={l.discount} onChange={v => sl(i, 'discount', v)} /></td>
                             <td className="px-2 py-1.5 text-right tabular-nums font-semibold" style={{ color: 'var(--text-h)' }}>{amount ? money(amount.toFixed(2)) : '—'}</td>
                           </>
                         )}
@@ -264,8 +308,10 @@ export default function VoucherFormModal({ open, onClose, type, voucher = null, 
               <div className="flex justify-end">
                 <dl className="text-xs space-y-1" style={{ minWidth: 230 }}>
                   <TotalRow label="Total goods" value={money(totals.goods.toFixed(2))} />
+                  {totals.discount > 0 && <TotalRow label="Total discount" value={'- ' + money(totals.discount.toFixed(2))} />}
                   <TotalRow label="Total tax" value={money(totals.tax.toFixed(2))} />
                   <TotalRow label="Total payment" value={money(totals.total.toFixed(2))} strong accent={cfg.accent} />
+                  <TotalRow label="Value of inventory" value={money(totals.inventoryValue.toFixed(2))} />
                 </dl>
               </div>
             )}
@@ -331,6 +377,11 @@ const F = ({ label, required, children }) => (
     </span>
     {children}
   </label>
+)
+
+const NumOrBlank = ({ value, onChange }) => (
+  <input type="number" min={1} value={value ?? ''} onChange={e => onChange(e.target.value === '' ? '' : Number(e.target.value))}
+    className={I} style={IS} placeholder="—" />
 )
 
 const TotalRow = ({ label, value, strong, accent }) => (

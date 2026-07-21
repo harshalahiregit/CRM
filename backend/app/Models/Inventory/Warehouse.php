@@ -19,6 +19,7 @@ class Warehouse extends Model
     protected $fillable = [
         'tenant_id', 'name', 'code', 'type', 'order', 'address', 'city', 'state',
         'zip_code', 'country', 'note', 'manager_id', 'is_default', 'display', 'status',
+        'custom_fields',
     ];
 
     protected $casts = [
@@ -26,6 +27,7 @@ class Warehouse extends Model
         // Blueprint's "Display" toggle — hides a site from pickers without deleting it.
         'display'    => 'boolean',
         'order'      => 'integer',
+        'custom_fields' => 'array',
     ];
 
     public function manager()

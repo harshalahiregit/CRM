@@ -32,7 +32,7 @@ class Voucher extends Model
         'expense_type', 'department', 'requester', 'buyer_id', 'pr_order_id', 'project_id',
         'customer_name', 'customer_id', 'address',
         'adjustment_type', 'reason',
-        'total_goods', 'total_tax', 'total_amount',
+        'total_goods', 'total_tax', 'total_discount', 'total_amount', 'inventory_value',
         'staff_id', 'route_point', 'posted_at', 'posted_by', 'created_by',
     ];
 
@@ -42,6 +42,8 @@ class Voucher extends Model
         'expiry_date'  => 'date',
         'posted_at'    => 'datetime',
         'total_goods'  => 'decimal:2',
+        'total_discount'  => 'decimal:2',
+        'inventory_value' => 'decimal:2',
         'total_tax'    => 'decimal:2',
         'total_amount' => 'decimal:2',
     ];

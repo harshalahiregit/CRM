@@ -20,6 +20,10 @@ use Illuminate\Support\Facades\DB;
  */
 class StockService
 {
+    public function __construct(private InventoryNotifier $notifier)
+    {
+    }
+
     /* ── Reads ──────────────────────────────────────────────────── */
 
     /** Stock rows for one product across every warehouse/bin. */
@@ -52,6 +56,75 @@ class StockService
             ->with(['actor:id,name', 'fromWarehouse:id,name', 'toWarehouse:id,name'])
             ->orderByDesc('created_at')->orderByDesc('id')
             ->limit($limit)->get();
+    }
+
+    /**
+     * The whole-module audit ledger (blueprint §7) — every receipt, issue,
+     * transfer and adjustment across all products, newest first and filterable.
+     * `opening` is derived rather than stored: a movement's closing balance minus
+     * the delta it applied IS the balance it started from, so each line reads
+     * opening → closing without a second query.
+     */
+    public function ledger(int $tenantId, array $f = [], int $limit = 200, int $offset = 0): array
+    {
+        $q = Movement::forTenant($tenantId)
+            ->with(['product:id,sku,name,base_unit', 'actor:id,name', 'fromWarehouse:id,name,code', 'toWarehouse:id,name,code']);
+
+        foreach (['product_id', 'warehouse_id', 'type', 'actor_id'] as $key) {
+            if (empty($f[$key])) {
+                continue;
+            }
+            match ($key) {
+                'warehouse_id' => $q->where(fn ($w) => $w->where('from_warehouse_id', $f[$key])->orWhere('to_warehouse_id', $f[$key])),
+                default        => $q->where($key, $f[$key]),
+            };
+        }
+
+        if (! empty($f['from'])) {
+            $q->whereDate('created_at', '>=', $f['from']);
+        }
+        if (! empty($f['to'])) {
+            $q->whereDate('created_at', '<=', $f['to']);
+        }
+        if (! empty($f['search'])) {
+            $term = '%'.$f['search'].'%';
+            $q->where(fn ($w) => $w->where('batch_no', 'like', $term)
+                ->orWhere('serial_no', 'like', $term)
+                ->orWhere('reason', 'like', $term)
+                ->orWhere('notes', 'like', $term)
+                ->orWhereHas('product', fn ($p) => $p->where('sku', 'like', $term)->orWhere('name', 'like', $term)));
+        }
+
+        $total = (clone $q)->count();
+
+        $rows = $q->orderByDesc('created_at')->orderByDesc('id')
+            ->limit($limit)->offset($offset)->get()
+            ->map(function (Movement $m) {
+                $closing = $m->balance_after !== null ? (float) $m->balance_after : null;
+                $delta = $m->direction === 'in' ? (float) $m->quantity
+                    : ($m->direction === 'out' ? -(float) $m->quantity : (float) $m->quantity);
+
+                return [
+                    'id'             => $m->id,
+                    'date'           => $m->created_at,
+                    'type'           => $m->type,
+                    'direction'      => $m->direction,
+                    'quantity'       => (float) $m->quantity,
+                    'opening'        => $closing !== null ? round($closing - $delta, 3) : null,
+                    'closing'        => $closing,
+                    'product'        => $m->product ? ['id' => $m->product->id, 'sku' => $m->product->sku, 'name' => $m->product->name, 'unit' => $m->product->base_unit] : null,
+                    'from_warehouse' => $m->fromWarehouse?->only(['id', 'name', 'code']),
+                    'to_warehouse'   => $m->toWarehouse?->only(['id', 'name', 'code']),
+                    'batch_no'       => $m->batch_no,
+                    'serial_no'      => $m->serial_no,
+                    'reason'         => $m->reason,
+                    'notes'          => $m->notes,
+                    'reference'      => $m->reference_type ? "{$m->reference_type}#{$m->reference_id}" : null,
+                    'actor'          => $m->actor?->only(['id', 'name']),
+                ];
+            });
+
+        return ['rows' => $rows, 'total' => $total, 'limit' => $limit, 'offset' => $offset];
     }
 
     /* ── Writes ─────────────────────────────────────────────────── */
@@ -92,7 +165,13 @@ class StockService
             throw new BusinessException('Unknown movement type.', 422);
         }
 
-        return DB::transaction(function () use ($d, $type, $qty, $direction, $product, $tenantId, $actorId) {
+        // Only for hand-made moves. A voucher line reaches here too, but the
+        // voucher groups its own alert across all its lines — checking here as
+        // well would send one email per line for the same posting.
+        $standalone = ! in_array($d['reference_type'] ?? null, ['voucher', 'voucher_reversal'], true);
+        $before = $standalone ? $this->onHandTotal($product->id, $tenantId) : null;
+
+        $movement = DB::transaction(function () use ($d, $type, $qty, $direction, $product, $tenantId, $actorId) {
             $balanceAfter = null;
 
             if ($direction === 'transfer') {
@@ -132,6 +211,56 @@ class StockService
                 'created_at'        => now(),
             ]);
         });
+
+        if ($standalone) {
+            $this->alertIfCrossed($product, $before, $tenantId, $d['warehouse_id'] ?? ($d['to_warehouse_id'] ?? null), $actorId);
+        }
+
+        return $movement;
+    }
+
+    /**
+     * Tell the right people if this move just pushed an item to or below its
+     * reorder point. Edge-triggered against the pre-move balance, so an item
+     * that was already low doesn't re-alert on every subsequent issue.
+     *
+     * Best-effort by design — the movement is already written and the ledger
+     * already explains it; a failed alert must not undo that.
+     */
+    private function alertIfCrossed(Product $product, ?float $before, int $tenantId, $warehouseId, ?int $actorId): void
+    {
+        try {
+            if ($before === null || $product->status !== 'active') {
+                return;
+            }
+
+            $threshold = (float) ($product->reorder_point ?: $product->min_stock);
+            if ($threshold <= 0) {
+                return;   // nobody set a level, so there's no line to cross
+            }
+
+            $now = $this->onHandTotal($product->id, $tenantId);
+            if ($before <= $threshold || $now > $threshold) {
+                return;
+            }
+
+            $this->notifier->stockCrossedThreshold(
+                $tenantId,
+                [['product' => $product, 'on_hand' => $now, 'threshold' => $threshold]],
+                $warehouseId,
+                (int) $actorId,
+            );
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning(
+                "Inventory stock alert failed for product {$product->id}: {$e->getMessage()}"
+            );
+        }
+    }
+
+    /** Total on-hand for one product across every warehouse. */
+    private function onHandTotal(int $productId, int $tenantId): float
+    {
+        return (float) Stock::forTenant($tenantId)->where('product_id', $productId)->sum('quantity');
     }
 
     /**
@@ -189,8 +318,19 @@ class StockService
             ->values();
     }
 
-    /** KPI tiles for the dashboard. */
-    public function summary(int $tenantId): array
+    /**
+     * KPI tiles for the dashboard.
+     *
+     * Stock levels are shared operational truth — scoping "what's on the shelf"
+     * per person would tell a storekeeper there are 0 units of something they
+     * can physically see. So those figures are identical for everyone.
+     *
+     * Two things are NOT flat:
+     *  • inventory VALUE is a finance figure, so it's admin-only (null otherwise);
+     *  • a `my` block gives each viewer their own work — what they moved today,
+     *    drafts they still owe, stock they've committed.
+     */
+    public function summary(int $tenantId, bool $isAdmin = true, ?int $userId = null): array
     {
         $totals = Stock::forTenant($tenantId)
             ->selectRaw('COALESCE(SUM(quantity),0) as qty, COALESCE(SUM(reserved_quantity),0) as res')->first();
@@ -206,8 +346,16 @@ class StockService
             ->selectRaw('COALESCE(SUM(inventory_stock.quantity * COALESCE(inventory_products.cost_price,0)),0) as v')
             ->value('v') ?? 0);
 
+        $today = now()->toDateString();
+
         return [
-            'inventory_value' => round($value, 2),
+            'is_admin' => $isAdmin,
+
+            // Finance figure — admins only. Null (not 0) so the UI can tell
+            // "you may not see this" apart from "it's worth nothing".
+            'inventory_value' => $isAdmin ? round($value, 2) : null,
+
+            // Shared operational truth — the same for everyone, deliberately.
             'total_quantity'  => $qty,
             'reserved'        => $reserved,
             'available'       => $qty - $reserved,
@@ -215,7 +363,35 @@ class StockService
             'warehouses'      => Warehouse::forTenant($tenantId)->where('status', 'active')->count(),
             'low_stock'       => $this->lowStock($tenantId)->count(),
             'out_of_stock'    => $this->outOfStockCount($tenantId),
-            'movements_today' => Movement::forTenant($tenantId)->whereDate('created_at', now()->toDateString())->count(),
+            'movements_today' => Movement::forTenant($tenantId)->whereDate('created_at', $today)->count(),
+
+            // Admin-only: work sitting with OTHER people. An unposted draft is
+            // stock that hasn't moved yet, and until now only its author could
+            // see it — which is exactly the thing a manager needs surfaced.
+            'team' => $isAdmin ? [
+                'open_drafts' => \App\Models\Inventory\Voucher::forTenant($tenantId)
+                    ->where('status', 'draft')
+                    ->when($userId, fn ($q) => $q->where('created_by', '!=', $userId))
+                    ->count(),
+                'reservations' => \App\Models\Inventory\Reservation::forTenant($tenantId)
+                    ->where('status', 'active')
+                    ->when($userId, fn ($q) => $q->where('created_by', '!=', $userId))
+                    ->count(),
+                'active_people' => Movement::forTenant($tenantId)
+                    ->whereDate('created_at', $today)->whereNotNull('actor_id')
+                    ->distinct()->count('actor_id'),
+            ] : null,
+
+            // …and the viewer's own work.
+            'my' => $userId ? [
+                'movements_today' => Movement::forTenant($tenantId)
+                    ->where('actor_id', $userId)->whereDate('created_at', $today)->count(),
+                // Documents this person raised but hasn't posted — stock they still owe.
+                'open_drafts' => \App\Models\Inventory\Voucher::forTenant($tenantId)
+                    ->where('created_by', $userId)->where('status', 'draft')->count(),
+                'reservations' => \App\Models\Inventory\Reservation::forTenant($tenantId)
+                    ->where('created_by', $userId)->where('status', 'active')->count(),
+            ] : null,
         ];
     }
 

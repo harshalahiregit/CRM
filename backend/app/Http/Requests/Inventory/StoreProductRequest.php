@@ -41,6 +41,11 @@ class StoreProductRequest extends FormRequest
             'size_id'         => ['nullable', 'integer', Rule::exists('inventory_attributes', 'id')->where('tenant_id', $tenantId)->where('kind', 'size')],
             'style_id'        => ['nullable', 'integer', Rule::exists('inventory_attributes', 'id')->where('tenant_id', $tenantId)->where('kind', 'style')],
 
+            // §1 Items — freeform tags + the tenant's custom field bag.
+            'tags'            => 'nullable|array|max:30',
+            'tags.*'          => 'string|max:40',
+            'custom_fields'   => 'nullable|array',
+
             'brand'           => 'nullable|string|max:100',
             'origin'          => 'nullable|string|max:100',
             'model'           => 'nullable|string|max:100',

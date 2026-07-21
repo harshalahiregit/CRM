@@ -16,6 +16,7 @@ class Product extends Model
 
     protected $fillable = [
         'tenant_id', 'sku', 'sku_code', 'sku_name', 'name', 'description', 'barcode',
+        'tags', 'custom_fields',
         'parent_id', 'category_id', 'type_id', 'group_id', 'subgroup_id',
         'brand', 'origin', 'model', 'variant', 'size', 'color',
         'color_id', 'model_id', 'size_id', 'style_id',
@@ -45,6 +46,8 @@ class Product extends Model
         'profit_ratio'    => 'decimal:2',
         // "Do not update inventory numbers" — excludes the item from stock math.
         'without_checking_warehouse' => 'boolean',
+        'tags'          => 'array',
+        'custom_fields' => 'array',
     ];
 
     public function category()
