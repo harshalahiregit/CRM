@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ListTodo, Plus, LayoutGrid, List, Search, X, SlidersHorizontal, Download,
-  Play, StopCircle, Pencil, Trash2, MessageSquare, Paperclip, CheckSquare,
+  Play, StopCircle, Pencil, Trash2, MessageSquare, Paperclip, CheckSquare, GitBranch,
 } from 'lucide-react'
 import { taskApi, TASK_STATUS, TASK_PRIORITY, TASK_ACCENT, relLabel, taskProgress } from '@/services/taskApi'
 import { exportCsv, stampedName } from '@/lib/exportCsv'
@@ -53,6 +53,9 @@ export default function TaskBoard() {
   const [status, setStatus] = useState('')
   const [priority, setPriority] = useState('')
   const [assignee, setAssignee] = useState('')
+  // Subtasks are work inside a task, not rows beside it, so the board shows only
+  // top-level tasks by default — exactly as it did before subtasks existed.
+  const [showSubtasks, setShowSubtasks] = useState(false)
 
   useEffect(() => {
     const t = setTimeout(() => setDebounced(search.trim()), 300)
@@ -69,8 +72,9 @@ export default function TaskBoard() {
     if (kpi === 'mine' && user?.id) f.assignee = user.id
     else if (assignee) f.assignee = assignee
     if (kpi === 'completed') f.status = 'complete'
+    if (showSubtasks) f.include_subtasks = 1
     return f
-  }, [relType, relId, debounced, status, priority, assignee, kpi, user])
+  }, [relType, relId, debounced, status, priority, assignee, kpi, user, showSubtasks])
 
   const { data: rawTasks = [], isLoading } = useQuery({
     queryKey: ['tasks', filters],
@@ -197,7 +201,7 @@ export default function TaskBoard() {
 
       {showFilters && (
         <FilterBar
-          {...{ search, setSearch, status, setStatus, priority, setPriority, assignee, setAssignee, staff }}
+          {...{ search, setSearch, status, setStatus, priority, setPriority, assignee, setAssignee, staff, showSubtasks, setShowSubtasks }}
           onClear={clearFilters} activeFilters={activeFilters}
         />
       )}
@@ -270,7 +274,7 @@ const PageBtn = ({ disabled, onClick, children }) => (
 
 /* ── Filters ──────────────────────────────────────────────────── */
 
-function FilterBar({ search, setSearch, status, setStatus, priority, setPriority, assignee, setAssignee, staff, onClear, activeFilters }) {
+function FilterBar({ search, setSearch, status, setStatus, priority, setPriority, assignee, setAssignee, staff, onClear, activeFilters, showSubtasks, setShowSubtasks }) {
   return (
     <div className="flex flex-wrap items-center gap-2 mb-4 p-2.5 rounded-2xl"
       style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
@@ -287,6 +291,18 @@ function FilterBar({ search, setSearch, status, setStatus, priority, setPriority
         options={Object.entries(TASK_PRIORITY).map(([v, c]) => ({ value: v, label: v[0].toUpperCase() + v.slice(1), dot: c }))} />
       <FilterSelect value={assignee} onChange={setAssignee} placeholder="Anyone"
         options={staff.map(s => ({ value: String(s.id), label: s.name }))} />
+
+      {/* Off by default: the board is a list of jobs, not of every step inside
+          them. On, each subtask row carries its parent so it still reads. */}
+      <button onClick={() => setShowSubtasks(v => !v)}
+        className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl"
+        style={{
+          background: showSubtasks ? `color-mix(in srgb, ${TASK_ACCENT} 14%, transparent)` : 'var(--bg-input)',
+          border: `1px solid ${showSubtasks ? TASK_ACCENT : 'var(--border)'}`,
+          color: showSubtasks ? TASK_ACCENT : 'var(--text-muted)',
+        }}>
+        <GitBranch size={13} /> Subtasks
+      </button>
 
       {activeFilters > 0 && (
         <button onClick={onClear} className="text-xs font-semibold px-3 py-2 rounded-xl"
@@ -421,7 +437,16 @@ function TaskCard({ task, dragging, onClick, ...dnd }) {
       }}>
       <div className="flex items-start gap-1.5">
         <span className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ background: TASK_PRIORITY[task.priority] || 'var(--text-muted)' }} />
-        <p className="text-xs leading-snug flex-1" style={{ color: 'var(--text-h)' }}>{task.name}</p>
+        <div className="flex-1 min-w-0">
+          {/* Only present when "Subtasks" is on. Without the parent's name a
+              subtask row on the board reads as an unrelated task. */}
+          {task.parent && (
+            <p className="flex items-center gap-0.5 text-[9px] truncate" style={{ color: 'var(--text-muted)' }}>
+              <GitBranch size={8} /> {task.parent.name}
+            </p>
+          )}
+          <p className="text-xs leading-snug" style={{ color: 'var(--text-h)' }}>{task.name}</p>
+        </div>
       </div>
       {task.tags?.length > 0 && <div className="mt-1.5 ml-3"><TagChips tags={task.tags} max={2} /></div>}
 
@@ -533,6 +558,11 @@ function TaskTable({ tasks, onOpen, staff, selected, setSelected, onEdit, onDele
                     style={{ accentColor: TASK_ACCENT, cursor: 'pointer' }} />
                 </td>
                 <td className="px-3 py-3">
+                  {t.parent && (
+                    <span className="flex items-center gap-0.5 text-[10px] truncate" style={{ color: 'var(--text-muted)', maxWidth: 220 }}>
+                      <GitBranch size={9} /> {t.parent.name}
+                    </span>
+                  )}
                   <span style={{ color: 'var(--text-h)' }}>{t.name}</span>
                   {link && <span className="block text-[10px] mt-0.5 truncate" style={{ color: 'var(--text-muted)', maxWidth: 220 }}>{link}</span>}
                   {t.tags?.length > 0 && <div className="mt-1"><TagChips tags={t.tags} /></div>}

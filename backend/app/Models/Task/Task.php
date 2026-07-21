@@ -14,7 +14,8 @@ class Task extends Model
     use HasFactory, SoftDeletes, BelongsToTenant;
 
     protected $fillable = [
-        'tenant_id', 'name', 'description', 'priority', 'status',
+        'tenant_id', 'parent_id', 'root_id', 'depth',
+        'name', 'description', 'priority', 'status',
         'start_date', 'due_date', 'date_finished', 'rel_type', 'rel_id',
         'milestone_id', 'billable', 'billed', 'hourly_rate',
         'is_public', 'visible_to_client', 'kanban_order', 'created_by',
@@ -23,6 +24,7 @@ class Task extends Model
     ];
 
     protected $casts = [
+        'depth'               => 'integer',
         'start_date'          => 'date',
         'due_date'            => 'date',
         'date_finished'       => 'datetime',
@@ -90,6 +92,31 @@ class Task extends Model
     public function recurringParent()
     {
         return $this->belongsTo(self::class, 'is_recurring_from');
+    }
+
+    /* ── Subtask tree ───────────────────────────────────────────── */
+
+    /** The task this one sits under. Null for a top-level task. */
+    public function parent()
+    {
+        return $this->belongsTo(self::class, 'parent_id');
+    }
+
+    /** The top of this task's tree. Points at itself for a top-level task. */
+    public function rootTask()
+    {
+        return $this->belongsTo(self::class, 'root_id');
+    }
+
+    /** Direct children only. The full tree is TaskTreeService's job. */
+    public function children()
+    {
+        return $this->hasMany(self::class, 'parent_id')->orderBy('kanban_order')->orderBy('id');
+    }
+
+    public function isSubtask(): bool
+    {
+        return $this->parent_id !== null;
     }
 
     // rel_id is polymorphic (project|ticket|customer) — resolved by the service,

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Bell, CheckCheck, Ticket, RefreshCw, MessageSquare, Inbox, TicketPlus, CheckSquare, AtSign, Eye, Activity, AlarmClock, FolderKanban, UserPlus } from 'lucide-react'
+import { Bell, CheckCheck, Ticket, RefreshCw, MessageSquare, Inbox, TicketPlus, CheckSquare, AtSign, Eye, Activity, AlarmClock, FolderKanban, UserPlus, TrendingDown, PackageX, PackageCheck, Truck, Ban, CalendarClock, GitBranch } from 'lucide-react'
 import { notificationApi } from '@/services/notificationApi'
 
 /**
@@ -29,6 +29,19 @@ const ICONS = {
   'project.status_changed':  { icon: FolderKanban,   color: 'var(--color-info-500)' },
   'project.due_soon':        { icon: AlarmClock,     color: 'var(--color-warning-500)' },
   'project.overdue':         { icon: AlarmClock,     color: 'var(--color-danger-500)' },
+  // Subtasks. "Assigned to you" is the loud one — it's work landing on your
+  // plate; the other two are things happening inside work you already own.
+  'task.subtask_assigned':   { icon: GitBranch,      color: 'var(--color-primary-500)' },
+  'task.subtask_added':      { icon: GitBranch,      color: 'var(--text-muted)' },
+  'task.subtask_completed':  { icon: CheckCheck,     color: 'var(--color-success-500)' },
+  // Inventory. Stock alerts are deliberately louder than document activity:
+  // "we've run out" needs a reaction, "a receipt was posted" is just news.
+  'inventory.low_stock':       { icon: TrendingDown,   color: 'var(--color-warning-500)' },
+  'inventory.out_of_stock':    { icon: PackageX,       color: 'var(--color-danger-500)' },
+  'inventory.expiring':        { icon: CalendarClock,  color: 'var(--color-warning-500)' },
+  'inventory.voucher_posted':  { icon: PackageCheck,   color: 'var(--color-success-500)' },
+  'inventory.voucher_cancelled': { icon: Ban,          color: 'var(--color-danger-500)' },
+  'inventory.transfer_incoming': { icon: Truck,        color: 'var(--color-info-500)' },
 }
 
 const timeAgo = (ts) => {

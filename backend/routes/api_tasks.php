@@ -2,10 +2,12 @@
 
 use App\Http\Controllers\Api\Task\TaskChecklistController;
 use App\Http\Controllers\Api\Task\TaskCommentController;
+use App\Http\Controllers\Api\Task\TaskConfigController;
 use App\Http\Controllers\Api\Task\TaskController;
 use App\Http\Controllers\Api\Task\TaskFileController;
 use App\Http\Controllers\Api\Task\TaskReminderController;
 use App\Http\Controllers\Api\Task\TaskStaffController;
+use App\Http\Controllers\Api\Task\TaskSubtaskController;
 use App\Http\Controllers\Api\Task\TaskTemplateController;
 use App\Http\Controllers\Api\Task\TaskTimerController;
 use Illuminate\Support\Facades\Route;
@@ -20,6 +22,10 @@ Route::middleware('auth:sanctum')->prefix('tasks')->group(function () {
     Route::post('/reorder',                 [TaskController::class, 'reorder']);
     Route::post('/bulk',                    [TaskController::class, 'bulk']);
     Route::patch('/checklist/{item}/toggle', [TaskChecklistController::class, 'toggle']);
+
+    // Notification / email switches (read: any staff, write: admin).
+    Route::get('/settings',  [TaskConfigController::class, 'index']);
+    Route::put('/settings',  [TaskConfigController::class, 'update']);
 
     // Reusable checklist templates (not task-scoped).
     Route::get('/templates',              [TaskTemplateController::class, 'index']);
@@ -37,6 +43,12 @@ Route::middleware('auth:sanctum')->prefix('tasks')->group(function () {
     // Assignees / followers
     Route::post('/{task}/assignees', [TaskController::class, 'assignees']);
     Route::post('/{task}/followers', [TaskController::class, 'followers']);
+
+    // Subtasks — the recursive tree under a task. `tree` returns every level in
+    // one response; `move` re-parents a branch (parent_id null pops it to the top).
+    Route::get('/{task}/tree',      [TaskSubtaskController::class, 'tree']);
+    Route::post('/{task}/subtasks', [TaskSubtaskController::class, 'store']);
+    Route::patch('/{task}/move',    [TaskSubtaskController::class, 'move']);
 
     // Checklist (+ templates applied to / saved from this task)
     Route::get('/{task}/checklist',  [TaskChecklistController::class, 'index']);

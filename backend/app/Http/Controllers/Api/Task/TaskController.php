@@ -41,7 +41,11 @@ class TaskController extends Controller
 
     public function index(Request $request)
     {
-        $filters = $request->only(['rel_type', 'rel_id', 'status', 'priority', 'assignee', 'search', 'tag']);
+        $filters = $request->only([
+            'rel_type', 'rel_id', 'status', 'priority', 'assignee', 'search', 'tag',
+            // Off by default: subtasks are work inside a task, not rows beside it.
+            'include_subtasks',
+        ]);
         return $this->success(
             $this->tasks->list($request->user()->tenant_id, $filters, $request->user()->id, $this->isAdmin($request)),
             'Tasks retrieved'

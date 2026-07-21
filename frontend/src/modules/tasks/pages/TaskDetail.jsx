@@ -6,8 +6,9 @@ import 'react-quill/dist/quill.snow.css'
 import {
   ArrowLeft, Users, Eye, CheckSquare, Square, MessageSquare, Play, StopCircle,
   Clock, Pencil, Trash2, ExternalLink, Send, Plus, Copy, RefreshCw, BookmarkPlus, ListPlus,
-  Lock, Globe, LifeBuoy, Info, Link2, X, EyeOff, FileText, Paperclip, Download,
+  Lock, Globe, LifeBuoy, Info, Link2, X, EyeOff, FileText, Paperclip, Download, GitBranch,
 } from 'lucide-react'
+import SubtaskTree from '../components/SubtaskTree'
 import RaiseTicketModal from '../../helpdesk/components/RaiseTicketModal'
 import { taskApi, TASK_STATUS, TASK_PRIORITY, TASK_ACCENT, relLabel, fmtDuration } from '@/services/taskApi'
 import Select from '@/components/ui/Select'
@@ -100,6 +101,7 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
   const [picker, setPicker] = useState(null)      // 'assignee' | 'follower' | 'template'
   const [savingTpl, setSavingTpl] = useState(false)
   const [newItem, setNewItem] = useState('')
+  const [newSubtask, setNewSubtask] = useState('')
   const [comment, setComment] = useState('')
   const [commentFiles, setCommentFiles] = useState([])
   const commentFileInput = useRef(null)
@@ -117,6 +119,13 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
   const syncFollow  = useMutation(mut((ids) => taskApi.followers(id, ids)))
   const addItem     = useMutation(mut((desc) => taskApi.addChecklist(id, desc)))
   const toggleItem  = useMutation(mut((iid) => taskApi.toggleChecklist(iid)))
+  // Subtasks. Every write invalidates the tree AND the task itself, because
+  // ticking a leaf five levels down changes the bar at the top of this modal.
+  const afterTree = () => { invalidate(); qc.invalidateQueries({ queryKey: ['task-tree', id] }) }
+  const addSubtask   = useMutation(mut(({ parentId, name }) => taskApi.addSubtask(parentId, { name }), afterTree))
+  const toggleSubtask = useMutation(mut(
+    ({ nodeId, next }) => taskApi.setStatus(nodeId, next), afterTree,
+  ))
   const addComment  = useMutation(mut(({ html, files }) => taskApi.addComment(id, html, files)))
   const saveDesc    = useMutation(mut((html) => taskApi.update(id, { description: html }), () => { invalidate(); setEditingDesc(false) }))
   const startTimer  = useMutation(mut(() => taskApi.startTimer(id), invalidateTime))
@@ -140,6 +149,10 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
 
   const { data: templates = [] } = useQuery({ queryKey: ['task-templates'], queryFn: taskApi.templates })
 
+  // The whole subtask tree in one request — the server carries root_id, so depth
+  // costs nothing here and there's no per-level fetching to orchestrate.
+  const { data: subtree } = useQuery({ queryKey: ['task-tree', id], queryFn: () => taskApi.tree(id) })
+
   if (isLoading) return <div className="rounded-2xl animate-pulse" style={{ height: 200, background: 'var(--bg-card)' }} />
   if (isError) {
     return (
@@ -161,8 +174,16 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
   const comments = task.comments || []
   const myTimer = (task.timers || []).find(t => !t.end_time && t.user_id === user?.id)
   const link = relLabel(task)
-  const done = checklist.filter(c => c.finished).length
-  const pct = checklist.length ? Math.round((done / checklist.length) * 100) : 0
+  const subtasks = subtree?.children || []
+  const ancestry = task.ancestry || []
+  // The bar now comes from the SERVER's roll-up, which counts checklist ticks and
+  // every leaf of the subtask tree together. Computing it here from the checklist
+  // alone would ignore work nested below and report a number the project page
+  // disagrees with. Falls back to local maths until the tree request lands.
+  const rolled = subtree?.progress || task.progress
+  const done = rolled ? rolled.done : checklist.filter(c => c.finished).length
+  const total = rolled ? rolled.total : checklist.length
+  const pct = rolled ? rolled.percent : (checklist.length ? Math.round((done / checklist.length) * 100) : 0)
   // "Hide completed items" filters what's rendered; the progress bar + count above
   // stay based on ALL items so the ratio still reflects the whole checklist.
   const visibleChecklist = hideCompleted ? checklist.filter(c => !c.finished) : checklist
@@ -196,6 +217,19 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
       <div className={`flex items-start justify-between gap-3 flex-wrap px-5 py-4 ${embedded ? '' : 'rounded-2xl'}`}
         style={{ background: 'linear-gradient(120deg, var(--color-primary-600), var(--color-primary-500))' }}>
         <div className="min-w-0">
+          {/* Where this sits in the tree. Only shown for a subtask — on a
+              top-level task the trail would just repeat the title below it. */}
+          {ancestry.length > 1 && (
+            <p className="flex items-center gap-1 flex-wrap mb-1" style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)' }}>
+              {ancestry.slice(0, -1).map((a, i) => (
+                <span key={a.id} className="inline-flex items-center gap-1">
+                  {i > 0 && <span style={{ opacity: 0.55 }}>›</span>}
+                  <button onClick={() => navigate(`/app/tasks/${a.id}`)} className="hover:underline font-semibold truncate"
+                    style={{ maxWidth: 180 }} title={a.name}>{a.name}</button>
+                </span>
+              ))}
+            </p>
+          )}
           <h1 className="font-black text-white truncate" style={{ fontSize: 18, letterSpacing: '-0.01em' }} title={task.name}>{task.name}</h1>
           <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
             <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg" style={{ background: 'rgba(255,255,255,0.22)', color: '#fff' }}>
@@ -322,7 +356,7 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
             </Card>
 
             <Card
-              title={`Checklist${checklist.length ? ` · ${done}/${checklist.length}` : ''}`}
+              title={`Checklist & subtasks${total ? ` · ${done}/${total}` : ''}`}
               icon={CheckSquare}
               action={checklist.some(c => c.finished) && (
                 <button onClick={() => setHideCompleted(v => !v)}
@@ -333,11 +367,26 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
                 </button>
               )}
             >
-              {checklist.length > 0 && (
+              {total > 0 && (
                 <div className="h-1 rounded-full mb-3 overflow-hidden" style={{ background: 'var(--bg-input)' }}>
                   <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: 'var(--color-success-500)' }} />
                 </div>
               )}
+
+              {/* Subtasks first — they're real work with owners and deadlines, so
+                  they outrank the loose ticks underneath them. */}
+              {subtasks.length > 0 && (
+                <div className="mb-2.5 pb-2.5" style={{ borderBottom: checklist.length ? '1px solid var(--border)' : 'none' }}>
+                  <SubtaskTree
+                    nodes={subtasks}
+                    busyId={toggleSubtask.isPending ? toggleSubtask.variables?.nodeId : null}
+                    onToggle={(n) => toggleSubtask.mutate({ nodeId: n.id, next: n.is_done ? 'in_progress' : 'complete' })}
+                    onAddChild={(parentId, name) => addSubtask.mutate({ parentId, name })}
+                    onOpen={(tid) => navigate(`/app/tasks/${tid}`)}
+                  />
+                </div>
+              )}
+
               <ul className="space-y-1.5 mb-3">
                 {visibleChecklist.map(c => (
                   <li key={c.id}>
@@ -351,13 +400,25 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
                     </button>
                   </li>
                 ))}
-                {checklist.length === 0 && <li className="text-xs" style={{ color: 'var(--text-muted)' }}>No items yet.</li>}
+                {checklist.length === 0 && subtasks.length === 0 && (
+                  <li className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    Nothing here yet. Add a quick tick below, or a subtask if it needs its own owner and deadline.
+                  </li>
+                )}
                 {checklist.length > 0 && visibleChecklist.length === 0 && (
                   <li className="text-xs" style={{ color: 'var(--text-muted)' }}>All items completed — nothing to show.</li>
                 )}
               </ul>
+
+              {/* Two ways to add, side by side, because they are genuinely
+                  different things: a tick is a reminder, a subtask is work you
+                  can hand to somebody with a date on it. */}
               <InlineAdd value={newItem} onChange={setNewItem} placeholder="Add checklist item…"
                 onSubmit={() => { const t = newItem.trim(); if (t) { addItem.mutate(t); setNewItem('') } }} icon={Plus} />
+              <div className="mt-1.5">
+                <InlineAdd value={newSubtask} onChange={setNewSubtask} placeholder="Add subtask (its own owner & deadline)…"
+                  onSubmit={() => { const t = newSubtask.trim(); if (t) { addSubtask.mutate({ parentId: id, name: t }); setNewSubtask('') } }}
+                  icon={GitBranch} /></div>
 
               <div className="flex items-center gap-2 mt-2.5 pt-2.5" style={{ borderTop: '1px solid var(--border)' }}>
                 <button onClick={() => setPicker('template')} className="flex items-center gap-1 text-[10px] font-bold"

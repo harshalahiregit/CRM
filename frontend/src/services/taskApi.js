@@ -31,6 +31,17 @@ export const taskApi = {
   checklist: (id) => api.get(`/tasks/${id}/checklist`).then(unwrap).catch(handleErr),
   addChecklist: (id, description) => api.post(`/tasks/${id}/checklist`, { description }).then(unwrap).catch(handleErr),
   toggleChecklist: (itemId) => api.patch(`/tasks/checklist/${itemId}/toggle`).then(unwrap).catch(handleErr),
+  // Subtasks — the recursive tree. `tree` returns every level in one response
+  // (the server carries root_id, so depth costs nothing), each node with its own
+  // rolled-up progress. `move` re-parents; parent_id null pops it to the top.
+  tree: (id) => api.get(`/tasks/${id}/tree`).then(unwrap).catch(handleErr),
+  addSubtask: (id, data) => api.post(`/tasks/${id}/subtasks`, data).then(unwrap).catch(handleErr),
+  move: (id, parent_id) => api.patch(`/tasks/${id}/move`, { parent_id }).then(unwrap).catch(handleErr),
+
+  // Notification / email switches (read: any staff, write: admin).
+  settings: () => api.get('/tasks/settings').then(unwrap).catch(handleErr),
+  saveSettings: (settings) => api.put('/tasks/settings', { settings }).then(unwrap).catch(handleErr),
+
   comments: (id) => api.get(`/tasks/${id}/comments`).then(unwrap).catch(handleErr),
   // Post a comment; when files are supplied, send multipart so they attach to it.
   // Overriding Content-Type lets axios set the multipart boundary itself — the

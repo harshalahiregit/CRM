@@ -16,6 +16,18 @@ class TaskRepository extends BaseRepository
     {
         $query = Task::forTenant($tenantId)->with('creator:id,name');
 
+        // Subtasks are work INSIDE a task, not rows beside it. A task with thirty
+        // subtasks would otherwise bury the board and inflate every count. They
+        // stay hidden unless explicitly asked for, in which case each one carries
+        // its parent so the row still makes sense out of context.
+        if (Schema::hasColumn('tasks', 'parent_id')) {
+            if (empty($filters['include_subtasks'])) {
+                $query->whereNull('parent_id');
+            } else {
+                $query->with('parent:id,name');
+            }
+        }
+
         // Counts the list view needs: checklist progress, and the comment/file
         // badges on kanban cards. withCount is one extra query total, versus
         // eager-loading every child row just to call ->count() on it.
@@ -84,7 +96,8 @@ class TaskRepository extends BaseRepository
         if ($visibility) {
             $uid = (int) $visibility['user_id'];
             $pids = $visibility['project_ids'] ?? [];
-            $query->where(function ($q) use ($uid, $pids) {
+
+            $predicate = function ($q) use ($uid, $pids) {
                 $q->where('created_by', $uid)->orWhere('is_public', true);
                 if (Schema::hasTable('task_assignees')) {
                     $q->orWhereHas('assignees', fn ($a) => $a->where('user_id', $uid));
@@ -94,6 +107,15 @@ class TaskRepository extends BaseRepository
                 }
                 if (! empty($pids)) {
                     $q->orWhere(fn ($x) => $x->where('rel_type', 'project')->whereIn('rel_id', $pids));
+                }
+            };
+
+            // Also visible when the top of its tree is: reaching a task means
+            // reaching the work inside it, or the tree lists with holes in it.
+            $query->where(function ($outer) use ($predicate) {
+                $outer->where($predicate);
+                if (Schema::hasColumn('tasks', 'root_id')) {
+                    $outer->orWhereHas('rootTask', fn ($r) => $r->where($predicate));
                 }
             });
         }

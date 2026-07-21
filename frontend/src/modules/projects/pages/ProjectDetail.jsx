@@ -4,12 +4,12 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft, RefreshCw, Plus, Users, Flag, Paperclip, Trash2, ListTodo, LifeBuoy,
   Pencil, Copy, Pin, PinOff, MoreHorizontal, Download, Upload, ExternalLink, Check, FileText,
-  Play, Search, Clock,
+  Play, Search, Clock, GitBranch,
 } from 'lucide-react'
 import { projectApi, PROJECT_STATUS, PROJECT_ACCENT } from '@/services/projectApi'
 import { useAuth } from '@/context/AuthContext'
 import { useStatuses, statusOptions } from '@/hooks/useStatuses'
-import { taskApi, TASK_PRIORITY } from '@/services/taskApi'
+import { taskApi, TASK_PRIORITY, TASK_ACCENT } from '@/services/taskApi'
 import Select from '@/components/ui/Select'
 import SearchPicker, { ConfirmModal } from '@/components/ui/SearchPicker'
 import { TagChips } from '@/components/ui/TagInput'
@@ -334,8 +334,12 @@ function TasksTab({ projectId, navigate, onNewTask }) {
   const [pageSize, setPageSize] = useState(25)
   const [openTaskId, setOpenTaskId] = useState(null)
 
-  const taskKey = ['tasks', { rel_type: 'project', rel_id: projectId }]
-  const { data: tasks = [], isLoading } = useQuery({ queryKey: taskKey, queryFn: () => taskApi.list({ rel_type: 'project', rel_id: projectId }) })
+  // Same rule as the main board: a project's task list is its jobs, not every
+  // step inside them. Subtasks are one toggle away, never in the way.
+  const [showSubtasks, setShowSubtasks] = useState(false)
+  const taskFilters = { rel_type: 'project', rel_id: projectId, ...(showSubtasks ? { include_subtasks: 1 } : {}) }
+  const taskKey = ['tasks', taskFilters]
+  const { data: tasks = [], isLoading } = useQuery({ queryKey: taskKey, queryFn: () => taskApi.list(taskFilters) })
 
   const refetch = () => qc.invalidateQueries({ queryKey: ['tasks'] })
   const setStatus = useMutation({ mutationFn: ({ id, status }) => taskApi.setStatus(id, status), onSuccess: refetch })
@@ -392,6 +396,15 @@ function TasksTab({ projectId, navigate, onNewTask }) {
           <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search…"
             style={{ width: '100%', padding: '7px 10px 7px 30px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--bg-input)', fontSize: 13, outline: 'none', color: 'var(--text-h)' }} />
         </div>
+        <button onClick={() => setShowSubtasks(v => !v)}
+          className="flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1.5 rounded-lg"
+          style={{
+            background: showSubtasks ? `color-mix(in srgb, ${TASK_ACCENT} 14%, transparent)` : 'var(--bg-input)',
+            border: `1px solid ${showSubtasks ? TASK_ACCENT : 'var(--border)'}`,
+            color: showSubtasks ? TASK_ACCENT : 'var(--text-muted)',
+          }}>
+          <GitBranch size={12} /> Subtasks
+        </button>
         <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Showing {rows.length} of {tasks.length}</span>
       </div>
 
@@ -419,6 +432,11 @@ function TasksTab({ projectId, navigate, onNewTask }) {
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                   <td style={{ padding: '9px 12px', fontSize: 12, fontFamily: 'monospace', color: 'var(--text-muted)' }}>{t.id}</td>
                   <td style={{ padding: '9px 12px' }}>
+                    {t.parent && (
+                      <span className="flex items-center gap-0.5 text-[10px] truncate" style={{ color: 'var(--text-muted)', maxWidth: 220 }}>
+                        <GitBranch size={9} /> {t.parent.name}
+                      </span>
+                    )}
                     <button onClick={() => setOpenTaskId(t.id)} className="text-left font-semibold text-xs hover:underline" style={{ color: 'var(--text-h)' }}>{t.name}</button>
                     <div className="mt-1">
                       <button onClick={() => startTimer.mutate(t.id)} disabled={startTimer.isPending}

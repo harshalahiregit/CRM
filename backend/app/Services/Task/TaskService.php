@@ -48,6 +48,8 @@ class TaskService
         private NotificationService $notifications,
         private TagService $tags,
         private \App\Services\StatusService $statuses,
+        private TaskTreeService $tree,
+        private TaskNotifier $notifier,
         ?CustomerServiceContract $customers = null,
     ) {
         $this->customers = $customers ?? new MockCustomerService();
@@ -95,7 +97,12 @@ class TaskService
     {
         $pids = $this->visibleProjectIds($tenantId, $userId);
 
-        return $query->where(function ($q) use ($userId, $pids) {
+        // The same predicate is applied twice: to the row itself, and to the top
+        // of its tree — so a subtask shows up in a listing when you can reach the
+        // task it lives inside. Exhaustive ancestor-walking is left to
+        // canSeeTask(); doing it per row in SQL would cost far more than it's
+        // worth on a list, and erring toward showing LESS here is safe.
+        $predicate = function ($q) use ($userId, $pids) {
             $q->where('created_by', $userId)->orWhere('is_public', true);
             if (Schema::hasTable('task_assignees')) {
                 $q->orWhereHas('assignees', fn ($a) => $a->where('user_id', $userId));
@@ -106,10 +113,60 @@ class TaskService
             if (! empty($pids)) {
                 $q->orWhere(fn ($x) => $x->where('rel_type', 'project')->whereIn('rel_id', $pids));
             }
+        };
+
+        return $query->where(function ($outer) use ($predicate) {
+            $outer->where($predicate);
+            if (Schema::hasColumn('tasks', 'root_id')) {
+                $outer->orWhereHas('rootTask', fn ($r) => $r->where($predicate));
+            }
         });
     }
 
+    /**
+     * A subtask inherits visibility from ANY of its ancestors.
+     *
+     * Judged node-by-node instead, a tree renders with holes: you'd see
+     * "Website" and "Design" but not "Homepage mockup" because nobody put you on
+     * it — while the progress bar above still counted it. A percentage you
+     * cannot account for is worse than no percentage.
+     *
+     * Checking only the root isn't enough either: put someone on "Design" and
+     * they own that branch, so everything under Design must open for them even
+     * though the root above it is somebody else's. Hence the whole chain, not
+     * just the two ends.
+     */
     private function canSeeTask(Task $task, int $tenantId, int $userId): bool
+    {
+        if ($this->canSeeNode($task, $tenantId, $userId)) {
+            return true;
+        }
+
+        if (! $task->parent_id) {
+            return false;
+        }
+
+        // ancestryOf() is top-first and includes this task; drop it and try each
+        // ancestor. One query, bounded by MAX_DEPTH.
+        $chain = $this->tree->ancestryOf($task, $tenantId);
+        $ancestorIds = array_column($chain, 'id');
+        array_pop($ancestorIds);
+
+        if (! $ancestorIds) {
+            return false;
+        }
+
+        foreach (Task::forTenant($tenantId)->whereIn('id', $ancestorIds)->get() as $ancestor) {
+            if ($this->canSeeNode($ancestor, $tenantId, $userId)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** The per-task rule, with no tree involved. */
+    private function canSeeNode(Task $task, int $tenantId, int $userId): bool
     {
         if ((int) $task->created_by === $userId || $task->is_public) {
             return true;
@@ -165,7 +222,55 @@ class TaskService
         ]);
         $task->setAttribute('tags', $this->tags->tagsFor('task', $task->id, $tenantId));
 
+        // The bar at the top of the modal. Computed server-side so the modal,
+        // the board and the project percentage can never quote different numbers
+        // for the same work.
+        $task->setAttribute('progress', $this->tree->progressForTask($task, $tenantId));
+        $task->setAttribute('ancestry', $this->tree->ancestryOf($task, $tenantId));
+
         return $this->decorateRelation($task, $tenantId);
+    }
+
+    /* ── Subtasks ───────────────────────────────────────────────── */
+
+    /** The whole tree under a task, each node with its own rolled-up progress. */
+    public function subtree(int $taskId, int $tenantId): array
+    {
+        return $this->tree->tree($taskId, $tenantId);
+    }
+
+    /** Rolled-up completion for one task: checklist items + the subtask tree. */
+    public function progressFor(int $taskId, int $tenantId): array
+    {
+        return $this->tree->progressFor($taskId, $tenantId);
+    }
+
+    /**
+     * Add a child task. Everything about it is its own — deadline, assignees,
+     * status — which is the entire point of a subtask over a checklist line.
+     */
+    public function addSubtask(int $parentId, array $data, int $tenantId, int $userId): Task
+    {
+        $parent = $this->find($parentId, $tenantId);
+
+        // A subtask belongs to whatever the parent belongs to, so a project's
+        // task tree stays inside that project rather than leaking to standalone.
+        $child = $this->create([
+            ...$data,
+            'parent_id' => $parent->id,
+            'rel_type'  => $data['rel_type'] ?? $parent->rel_type,
+            'rel_id'    => $data['rel_id'] ?? $parent->rel_id,
+        ], $tenantId, $userId);
+
+        $this->notifier->subtaskAdded($child, $parent, $userId);
+
+        return $child;
+    }
+
+    /** Re-parent a task (drag it elsewhere in the tree, or out to the top). */
+    public function moveSubtask(int $taskId, ?int $newParentId, int $tenantId): Task
+    {
+        return $this->tree->moveTo($taskId, $newParentId, $tenantId);
     }
 
     /**
@@ -193,7 +298,23 @@ class TaskService
         $tags = $data['tags'] ?? null;
         unset($data['assignee_ids'], $data['follower_ids'], $data['tags']);
 
-        $task = $this->tasks->create([...$data, 'tenant_id' => $tenantId, 'created_by' => $userId]);
+        // Where this sits in the subtask tree. A subtask deliberately inherits
+        // NOTHING from its parent except its position — not the assignees, not
+        // the deadline. It is a task in its own right that happens to live under
+        // another one.
+        $place = $this->tree->placeUnder(
+            ! empty($data['parent_id']) ? (int) $data['parent_id'] : null,
+            $tenantId
+        );
+        unset($data['parent_id'], $data['root_id'], $data['depth']);
+
+        $task = $this->tasks->create([...$data, ...$place, 'tenant_id' => $tenantId, 'created_by' => $userId]);
+
+        // A top-level task is the root of its own tree, which can only be
+        // stamped once the insert has given us an id.
+        if (! $place['parent_id']) {
+            $task->forceFill(['root_id' => $task->id])->save();
+        }
 
         // syncPivot notifies, so assigning at creation tells people right away.
         if ($assignees) {
@@ -262,14 +383,23 @@ class TaskService
         if ($from !== $status) {
             $labels = $this->statusLabels($tenantId);
             $label = $labels[$status] ?? $status;
-            foreach ($this->watcherIds($task, $actorId) as $uid) {
-                $this->notifications->notify(
-                    $uid, $tenantId, 'task.status_changed',
-                    "Task {$label}: {$task->name}",
-                    ($labels[$from] ?? $from)." → {$label}",
-                    "/app/tasks/{$task->id}",
-                    $actorId,
-                );
+            $title = "Task {$label}: {$task->name}";
+            $body = ($labels[$from] ?? $from)." → {$label}";
+
+            // A subtask CLOSING is its own event, announced up the tree, because
+            // what the people above care about is the parent's new percentage —
+            // not that a status field changed. Everything else is plain activity.
+            if ($status === $closed && $task->parent_id) {
+                $this->notifier->subtaskCompleted($task, (int) $actorId);
+            } else {
+                $watchers = $this->watcherIds($task, $actorId);
+                foreach ($watchers as $uid) {
+                    $this->notifications->notify(
+                        $uid, $tenantId, 'task.status_changed', $title, $body,
+                        "/app/tasks/{$task->id}", $actorId,
+                    );
+                }
+                $this->notifier->activity($task, $watchers, 'task.status_changed', $title, $body, (int) $actorId);
             }
         }
 
@@ -292,9 +422,27 @@ class TaskService
         return $ids->values()->all();
     }
 
+    /**
+     * Delete a task AND everything nested inside it.
+     *
+     * Subtasks are the work that makes up this task, not neighbours of it —
+     * "Pick colours" outliving "Website" is not a task anyone can act on, and
+     * left behind it points at a parent that no longer exists, so it vanishes
+     * from every tree while still counting nowhere. Deleting the branch is the
+     * only answer that leaves the data describing something real.
+     *
+     * Soft deletes throughout, so this is recoverable at the database level.
+     */
     public function delete(int $id, int $tenantId): void
     {
-        $this->find($id, $tenantId)->delete();
+        $task = $this->find($id, $tenantId);
+
+        $descendants = $this->tree->descendantIds($task->id, $tenantId);
+        if ($descendants) {
+            Task::forTenant($tenantId)->whereIn('id', $descendants)->delete();
+        }
+
+        $task->delete();
     }
 
     /**
@@ -420,6 +568,12 @@ class TaskService
                 $actorId,
             );
         }
+
+        // Email leg. Only for assignees — being added as a follower is something
+        // you find out when you next look, not something worth an inbox.
+        if ($isAssignee) {
+            $this->notifier->subtaskAssigned($task, $added, (int) $actorId);
+        }
     }
 
     /* ── Checklist ──────────────────────────────────────────────── */
@@ -501,12 +655,24 @@ class TaskService
             );
         }
 
-        foreach (array_diff($this->watcherIds($task, $userId), $mentioned) as $uid) {
+        $commented = array_values(array_diff($this->watcherIds($task, $userId), $mentioned));
+        foreach ($commented as $uid) {
             $this->notifications->notify(
                 $uid, $tenantId, 'task.commented',
                 "{$author} commented on: {$task->name}",
                 $excerpt, "/app/tasks/{$task->id}", $userId,
             );
+        }
+
+        // Email leg. Being named is louder than being copied, so the two groups
+        // get different subject lines — and nobody gets both.
+        if ($mentioned) {
+            $this->notifier->activity($task, $mentioned, 'task.mentioned',
+                "{$author} mentioned you on: {$task->name}", $excerpt, $userId);
+        }
+        if ($commented) {
+            $this->notifier->activity($task, $commented, 'task.commented',
+                "{$author} commented on: {$task->name}", $excerpt, $userId);
         }
 
         return $comment->load('user:id,name', 'attachments');
@@ -951,7 +1117,10 @@ class TaskService
             ->chunkById(100, function (Collection $tasks) use ($now, &$sent) {
                 foreach ($tasks as $task) {
                     $overdue = Carbon::parse($task->due_date)->endOfDay()->lt($now);
-                    foreach ($this->watcherIds($task, null) as $uid) {
+                    // A subtask carries its OWN deadline, so it gets its own
+                    // notice — the parent's date says nothing about this one.
+                    $watchers = $this->watcherIds($task, null);
+                    foreach ($watchers as $uid) {
                         $this->notifications->notify(
                             $uid, $task->tenant_id,
                             $overdue ? 'task.overdue' : 'task.due_soon',
@@ -961,6 +1130,10 @@ class TaskService
                         );
                         $sent++;
                     }
+                    $this->notifier->due($task, $watchers, $overdue);
+                    // Stamped regardless of delivery — notify() and the mailer
+                    // both swallow-log, and re-nagging daily because SMTP
+                    // hiccupped once is worse than missing one notice.
                     $task->forceFill(['deadline_notified' => true])->save();
                 }
             });

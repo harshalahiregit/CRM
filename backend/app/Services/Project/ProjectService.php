@@ -391,10 +391,30 @@ class ProjectService
                 ->where('rel_id', $project->id)
                 ->whereNull('deleted_at');
 
-            $total = (clone $tasks)->count();
-            // Counting TASK completions, so this uses the task closed-key.
-            $done  = (clone $tasks)->where('status', $this->statuses->closedKey('task', $tenantId) ?? 'complete')->count();
-            $pct   = $total > 0 ? (int) round($done / $total * 100) : 0;
+            // Only TOP-LEVEL tasks are counted as project rows; the work nested
+            // under them is counted by the tree roll-up below. Counting both
+            // would score the same job twice.
+            if (Schema::hasColumn('tasks', 'parent_id')) {
+                $tasks->whereNull('parent_id');
+            }
+
+            $rootIds = (clone $tasks)->pluck('id')->map(fn ($i) => (int) $i)->all();
+            $total = count($rootIds);
+            $done = (clone $tasks)->where('status', $this->statuses->closedKey('task', $tenantId) ?? 'complete')->count();
+
+            // The project bar and the bar inside a task modal must never disagree
+            // about the same work, so both come from TaskTreeService. Where a
+            // task has subtasks, its share of the project is how much of ITS tree
+            // is finished — not a binary open/closed.
+            $pct = $total > 0 ? (int) round($done / $total * 100) : 0;
+            if (Schema::hasColumn('tasks', 'root_id') && $rootIds) {
+                $rolled = app(\App\Services\Task\TaskTreeService::class)->progressForMany($rootIds, $tenantId);
+                if ($rolled['total'] > 0) {
+                    $pct = $rolled['percent'];
+                    $total = $rolled['total'];
+                    $done = $rolled['done'];
+                }
+            }
 
             $project->update(['progress' => $pct]);
 
