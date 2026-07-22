@@ -1,15 +1,19 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Landmark, TrendingUp, TrendingDown, Hourglass, AlertTriangle, Loader2 } from 'lucide-react'
+import { Landmark, TrendingUp, TrendingDown, Hourglass, AlertTriangle, Loader2, Waves } from 'lucide-react'
 import { accountsApi } from '@/services/accountsApi'
-import { inr, fmtDate } from '@/modules/accounts/format'
+import { fmtDate } from '@/modules/accounts/format'
+import { useMoneyFmt, MoneyToggle } from '@/components/ui/Money'
 
 /**
  * Accounts landing page (old-CRM Accounting dashboard parity). No charting
  * library is added for this — the trend/breakdown visuals are plain CSS bars
- * over the numbers the backend already derives from the ledger.
+ * over the numbers the backend already derives from the ledger. Figures are
+ * hidden by default via the same MoneyVisibility context as the customer
+ * profile — the eye toggle here shows/hides them for this session.
  */
 export default function Dashboard() {
+  const mfmt = useMoneyFmt()
   const { data, isLoading } = useQuery({ queryKey: ['accounts', 'dashboard'], queryFn: accountsApi.dashboard })
 
   if (isLoading || !data) {
@@ -18,21 +22,25 @@ export default function Dashboard() {
 
   const maxTrend = Math.max(1, ...data.trend.flatMap(t => [t.income, t.expense]))
   const maxExpense = Math.max(1, ...data.expense_breakdown.map(e => Number(e.amount)))
+  const cf = data.cash_flow || {}
 
   const tiles = [
-    { label: 'Cash & Bank', value: inr(data.cash_and_bank), icon: Landmark, color: '#a78bfa' },
-    { label: 'This Month — Income', value: inr(data.month_income), icon: TrendingUp, color: '#10b981' },
-    { label: 'This Month — Expense', value: inr(data.month_expense), icon: TrendingDown, color: '#f87171' },
-    { label: 'Receivable (AR)', value: inr(data.receivable_total), icon: Hourglass, color: '#22d3ee' },
-    { label: 'Payable — Bills', value: inr(data.payable_total), icon: Hourglass, color: '#f59e0b' },
-    { label: 'Overdue Bills', value: inr(data.payable_overdue), icon: AlertTriangle, color: '#f87171' },
+    { label: 'Cash & Bank', value: mfmt(data.cash_and_bank), icon: Landmark, color: '#a78bfa' },
+    { label: 'This Month — Income', value: mfmt(data.month_income), icon: TrendingUp, color: '#10b981' },
+    { label: 'This Month — Expense', value: mfmt(data.month_expense), icon: TrendingDown, color: '#f87171' },
+    { label: 'Receivable (AR)', value: mfmt(data.receivable_total), icon: Hourglass, color: '#22d3ee' },
+    { label: 'Payable — Bills', value: mfmt(data.payable_total), icon: Hourglass, color: '#f59e0b' },
+    { label: 'Overdue Bills', value: mfmt(data.payable_overdue), icon: AlertTriangle, color: '#f87171' },
   ]
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div>
-        <h1 className="text-xl font-black" style={{ color: 'var(--text-h)' }}>Dashboard</h1>
-        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Live from the ledger — nothing here is a separate source of truth</p>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-black" style={{ color: 'var(--text-h)' }}>Dashboard</h1>
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Live from the ledger — nothing here is a separate source of truth</p>
+        </div>
+        <MoneyToggle />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -57,8 +65,8 @@ export default function Dashboard() {
             {data.trend.map((t) => (
               <div key={t.month} className="flex-1 flex flex-col items-center gap-1">
                 <div className="w-full flex items-end justify-center gap-1" style={{ height: 130 }}>
-                  <div title={inr(t.income)} className="flex-1 rounded-t-md" style={{ height: `${(t.income / maxTrend) * 100}%`, background: '#10b981', minHeight: 2 }} />
-                  <div title={inr(t.expense)} className="flex-1 rounded-t-md" style={{ height: `${(t.expense / maxTrend) * 100}%`, background: '#f87171', minHeight: 2 }} />
+                  <div title={mfmt(t.income)} className="flex-1 rounded-t-md" style={{ height: `${(t.income / maxTrend) * 100}%`, background: '#10b981', minHeight: 2 }} />
+                  <div title={mfmt(t.expense)} className="flex-1 rounded-t-md" style={{ height: `${(t.expense / maxTrend) * 100}%`, background: '#f87171', minHeight: 2 }} />
                 </div>
                 <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{t.month}</span>
               </div>
@@ -81,7 +89,7 @@ export default function Dashboard() {
                 <div key={e.name}>
                   <div className="flex justify-between text-xs mb-1">
                     <span style={{ color: 'var(--text-h)' }}>{e.name}</span>
-                    <span className="font-bold" style={{ color: 'var(--text-muted)' }}>{inr(e.amount)}</span>
+                    <span className="font-bold" style={{ color: 'var(--text-muted)' }}>{mfmt(e.amount)}</span>
                   </div>
                   <div className="h-1.5 rounded-full" style={{ background: 'var(--bg-input)' }}>
                     <div className="h-full rounded-full" style={{ width: `${(e.amount / maxExpense) * 100}%`, background: '#a78bfa' }} />
@@ -93,6 +101,39 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Cash Flow this month */}
+      <div className="kpi-3d">
+        <div className="flex items-center gap-2 mb-4">
+          <Waves size={15} style={{ color: '#22d3ee' }} />
+          <h3 className="font-bold text-sm" style={{ color: 'var(--text-h)' }}>Cash Flow — this month</h3>
+          <Link to="/app/accounts/reports/cash-flow" className="text-[11px] font-bold ml-auto" style={{ color: 'var(--accent, #a78bfa)' }}>Full report →</Link>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div>
+            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Opening Cash</p>
+            <p className="text-lg font-black" style={{ color: 'var(--text-h)' }}>{mfmt(cf.opening_cash)}</p>
+          </div>
+          <div>
+            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Net Movement</p>
+            <p className="text-lg font-black" style={{ color: (cf.net ?? 0) >= 0 ? '#10b981' : '#f87171' }}>{mfmt(cf.net)}</p>
+          </div>
+          <div>
+            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Closing Cash</p>
+            <p className="text-lg font-black" style={{ color: 'var(--text-h)' }}>{mfmt(cf.closing_cash)}</p>
+          </div>
+        </div>
+        {!!(cf.sections?.length) && (
+          <div className="mt-4 pt-4 grid gap-3 sm:grid-cols-3" style={{ borderTop: '1px solid var(--border)' }}>
+            {cf.sections.map(s => (
+              <div key={s.key}>
+                <p className="text-[11px] capitalize" style={{ color: 'var(--text-muted)' }}>{s.key} activities</p>
+                <p className="text-sm font-bold" style={{ color: s.total >= 0 ? '#10b981' : '#f87171' }}>{mfmt(s.total)}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Bank accounts + recent vouchers */}
       <div className="grid gap-5 lg:grid-cols-2">
         <div className="kpi-3d">
@@ -102,7 +143,7 @@ export default function Dashboard() {
           ) : data.bank_accounts.map(b => (
             <div key={b.id} className="flex justify-between items-center py-2" style={{ borderBottom: '1px solid var(--border)' }}>
               <span className="text-sm" style={{ color: 'var(--text-h)' }}>{b.bank_name}</span>
-              <span className="text-sm font-bold" style={{ color: 'var(--text-h)' }}>{inr(b.current_balance)}</span>
+              <span className="text-sm font-bold" style={{ color: 'var(--text-h)' }}>{mfmt(b.current_balance)}</span>
             </div>
           ))}
         </div>
@@ -117,7 +158,7 @@ export default function Dashboard() {
                 <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-h)' }}>{v.number}</p>
                 <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{v.voucher_type?.name} · {fmtDate(v.date)}</p>
               </div>
-              <span className="text-sm font-bold flex-shrink-0" style={{ color: 'var(--text-h)' }}>{inr(v.total_amount)}</span>
+              <span className="text-sm font-bold flex-shrink-0" style={{ color: 'var(--text-h)' }}>{mfmt(v.total_amount)}</span>
             </Link>
           ))}
         </div>

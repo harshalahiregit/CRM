@@ -5,6 +5,7 @@ namespace App\Services\Accounts;
 use App\Models\Accounts\Bill;
 use App\Models\Accounts\Voucher;
 use App\Services\Accounts\Reports\AgeingReport;
+use App\Services\Accounts\Reports\CashFlowReport;
 use App\Services\Accounts\Reports\ProfitAndLossReport;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -20,6 +21,7 @@ class DashboardService
         private BankAccountService $bankAccounts,
         private ProfitAndLossReport $profitAndLoss,
         private AgeingReport $ageing,
+        private CashFlowReport $cashFlow,
     ) {
     }
 
@@ -34,6 +36,7 @@ class DashboardService
 
         $pnl = $this->profitAndLoss->generate($tenantId, ['from' => $monthStart, 'to' => $monthEnd]);
 
+        $cashFlow = $this->cashFlow->generate($tenantId, ['from' => $monthStart, 'to' => $monthEnd]);
         $receivable = $this->ageing->generate($tenantId, 'receivable', ['to' => $today->toDateString()]);
         $payableBills = round((float) Bill::forTenant($tenantId)->where('status', 'unpaid')->sum('amount'), 2);
         $overdueBills = round((float) Bill::forTenant($tenantId)->where('status', 'unpaid')
@@ -84,6 +87,7 @@ class DashboardService
             'receivable_total' => (float) ($receivable['totals']['total'] ?? 0),
             'payable_total'    => $payableBills,
             'payable_overdue'  => $overdueBills,
+            'cash_flow'        => $cashFlow,
             'trend'            => $trend,
             'expense_breakdown' => $expenseByLedger,
             'recent_vouchers'   => $recentVouchers,
