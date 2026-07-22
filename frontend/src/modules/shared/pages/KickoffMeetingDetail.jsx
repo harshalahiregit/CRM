@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, CalendarDays, Clock, MapPin, Users, CheckCircle2, XCircle,
   Send, Copy, Upload, AlertTriangle, Loader2, FileText, ShieldCheck, History,
+  Sparkles, Eye, Download,
 } from 'lucide-react'
 import { kickoffApi } from '@/services/kickoffApi'
 import {
@@ -209,43 +210,95 @@ export default function KickoffMeetingDetail() {
   )
 }
 
-/* ── MoM upload card ──────────────────────────────────────────────────────── */
+/* ── MoM document card ────────────────────────────────────────────────────────
+ * Two ways to attach minutes: generate a PDF from the meeting's own data, or
+ * upload a document manually. Either fills the single MoM slot; regenerating or
+ * re-uploading replaces the previous file. View/Download serve whatever is there. */
 function MomCard({ m, onUploaded, onError }) {
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy] = useState(null) // 'upload' | 'gen' | 'view' | 'dl'
 
   const pick = async (e) => {
     const f = e.target.files?.[0]
     if (!f) return
-    setBusy(true); onError(null)
+    setBusy('upload'); onError(null)
     try {
-      const updated = await kickoffApi.uploadMom(m.id, f)
-      onUploaded(updated)
+      onUploaded(await kickoffApi.uploadMom(m.id, f))
     } catch (err) {
       onError(err?.response?.data?.message || 'Could not upload the document.')
-    } finally { setBusy(false); e.target.value = '' }
+    } finally { setBusy(null); e.target.value = '' }
+  }
+
+  const generate = async () => {
+    setBusy('gen'); onError(null)
+    try {
+      onUploaded(await kickoffApi.generateMom(m.id))
+    } catch (err) {
+      onError(err?.response?.data?.message || 'Could not generate the MOM PDF.')
+    } finally { setBusy(null) }
+  }
+
+  const openPdf = async (download) => {
+    setBusy(download ? 'dl' : 'view'); onError(null)
+    try {
+      if (!m.mom_path) onUploaded(await kickoffApi.generateMom(m.id))
+      const blob = await kickoffApi.momBlob(m.id)
+      const url = URL.createObjectURL(blob)
+      if (download) {
+        const a = document.createElement('a')
+        a.href = url; a.download = `MOM-${m.id}.pdf`
+        document.body.appendChild(a); a.click(); a.remove()
+      } else {
+        window.open(url, '_blank', 'noopener')
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 60000)
+    } catch (err) {
+      onError(err?.response?.data?.message || 'Could not open the MOM PDF.')
+    } finally { setBusy(null) }
   }
 
   return (
     <div className="pr-glass" style={{ padding: 20 }}>
       <SectionTitle icon={FileText}>Minutes document</SectionTitle>
+
       {m.mom_path ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12, padding: '11px 13px', borderRadius: 11, background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.3)' }}>
           <FileText size={16} style={{ color: '#10b981', flexShrink: 0 }} />
-          <span style={{ fontSize: 12.5, color: 'var(--text-h)', flex: 1 }}>Document uploaded</span>
+          <span style={{ fontSize: 12.5, color: 'var(--text-h)', flex: 1 }}>MOM document ready</span>
           <label style={{ fontSize: 11.5, fontWeight: 700, color: '#a78bfa', cursor: 'pointer' }}>
             Replace<input type="file" accept=".pdf,.doc,.docx" onChange={pick} style={{ display: 'none' }} />
           </label>
         </div>
       ) : (
-        <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7, marginTop: 12, padding: '20px', borderRadius: 12, cursor: 'pointer',
+        <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7, marginTop: 12, padding: '18px', borderRadius: 12, cursor: 'pointer',
           background: 'linear-gradient(150deg, rgba(124,58,237,.1), rgba(124,58,237,.03))', border: '1.5px dashed rgba(124,58,237,.4)' }}>
-          {busy ? <Loader2 size={22} style={{ color: '#a78bfa' }} className="ko-spin" /> : <Upload size={22} style={{ color: '#a78bfa' }} />}
-          <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-h)' }}>{busy ? 'Uploading…' : 'Upload minutes (PDF/DOC)'}</span>
-          <input type="file" accept=".pdf,.doc,.docx" onChange={pick} disabled={busy} style={{ display: 'none' }} />
+          {busy === 'upload' ? <Loader2 size={22} style={{ color: '#a78bfa' }} className="ko-spin" /> : <Upload size={22} style={{ color: '#a78bfa' }} />}
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-h)' }}>{busy === 'upload' ? 'Uploading…' : 'Upload minutes (PDF/DOC)'}</span>
+          <input type="file" accept=".pdf,.doc,.docx" onChange={pick} disabled={busy === 'upload'} style={{ display: 'none' }} />
         </label>
       )}
+
+      {/* Generate / View / Download */}
+      <div style={{ display: 'grid', gridTemplateColumns: m.mom_path ? '1fr 1fr' : '1fr', gap: 8, marginTop: 10 }}>
+        <MomBtn onClick={generate} busy={busy === 'gen'} icon={Sparkles} tone="#7C3AED">{m.mom_path ? 'Regenerate PDF' : 'Generate PDF'}</MomBtn>
+        {m.mom_path && <MomBtn onClick={() => openPdf(false)} busy={busy === 'view'} icon={Eye} tone="#10b981">View PDF</MomBtn>}
+      </div>
+      {m.mom_path && (
+        <MomBtn onClick={() => openPdf(true)} busy={busy === 'dl'} icon={Download} tone="#0ea5e9" full>Download PDF</MomBtn>
+      )}
+
       <style>{`@keyframes koSpin{to{transform:rotate(360deg)}}.ko-spin{animation:koSpin .9s linear infinite}`}</style>
     </div>
+  )
+}
+
+function MomBtn({ onClick, busy, icon: Icon, tone, full, children }) {
+  return (
+    <button onClick={onClick} disabled={busy}
+      style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '9px 12px', borderRadius: 10, cursor: busy ? 'wait' : 'pointer',
+        width: full ? '100%' : undefined, marginTop: full ? 8 : 0,
+        fontSize: 12.5, fontWeight: 700, color: tone, background: `${tone}14`, border: `1px solid ${tone}44` }}>
+      {busy ? <Loader2 size={14} className="ko-spin" /> : <Icon size={14} />} {children}
+    </button>
   )
 }
 

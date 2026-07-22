@@ -19,12 +19,23 @@ export const kickoffApi = {
   transition: (id, data) => api.post(`/kickoff/meetings/${id}/transition`, data).then(r => r.data),
   delete:   (id)       => api.delete(`/kickoff/meetings/${id}`).then(r => r.data),
 
-  // MoM is an uploaded document — no PDF generation dependency (yet).
+  // Post-meeting attendance edit — [{ id, attended }]. Audit-logged server-side.
+  markAttendance: (id, attendance) => api.patch(`/kickoff/meetings/${id}/attendance`, { attendance }).then(r => r.data),
+
+  // Manual reminder. Returns { email:{sent,skipped,failed}, whatsapp, sms, recipients }.
+  // Email is a real send; whatsapp/sms are queued stubs — never implied as delivered.
+  remind: (id) => api.post(`/kickoff/meetings/${id}/remind`).then(r => r.data),
+
+  // MoM document. uploadMom keeps the manual-upload path; generateMom builds the
+  // PDF from existing data (regenerating replaces the prior file). momBlob fetches
+  // the stored file as a blob for inline view / download.
   uploadMom: (id, file) => {
     const fd = new FormData()
     fd.append('mom', file)
     return upload(`/kickoff/meetings/${id}/mom`, fd)
   },
+  generateMom: (id) => api.post(`/kickoff/meetings/${id}/mom/generate`).then(r => r.data),
+  momBlob: (id) => api.get(`/kickoff/meetings/${id}/mom`, { responseType: 'blob' }).then(r => r.data),
 
   // Returns { meeting, ack_token } — the token is disclosed only here. The page
   // composes the link from window.location.origin, as the badge QR does.

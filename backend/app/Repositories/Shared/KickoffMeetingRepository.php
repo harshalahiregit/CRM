@@ -15,7 +15,11 @@ class KickoffMeetingRepository extends BaseRepository
     {
         $query = KickoffMeeting::forTenant($tenantId)
             ->with(['creator:id,name', 'kickoffable'])
-            ->withCount('attendees');
+            ->withCount([
+                'attendees',
+                // Present count drives the list's "Attendance" column (present/total).
+                'attendees as attended_count' => fn ($q) => $q->where('attended', true),
+            ]);
 
         if (! empty($filters['status']) && $filters['status'] !== 'All') {
             $query->where('status', $filters['status']);
