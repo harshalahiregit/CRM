@@ -6,6 +6,7 @@ use App\Exceptions\BusinessException;
 use App\Models\User;
 use App\Models\Vendor\Vendor;
 use App\Repositories\Vendor\VendorRepository;
+use App\Services\Notifications\NotificationService;
 use App\Support\Vendor\VendorStatus as Status;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
@@ -14,8 +15,10 @@ use Illuminate\Support\Facades\Log;
 
 class VendorService
 {
-    public function __construct(private VendorRepository $vendorRepository)
-    {
+    public function __construct(
+        private VendorRepository $vendorRepository,
+        private NotificationService $notifications,
+    ) {
     }
 
     public function list(int $tenantId, array $filters): Collection
@@ -136,6 +139,12 @@ class VendorService
             $vendor->user->update(['status' => $this->loginStatusFor($status)]);
         }
 
+        // Activation → welcome the vendor across every channel (email live now,
+        // WhatsApp/SMS routed through the same service).
+        if ($status === Status::ACTIVE && $from !== Status::ACTIVE) {
+            $this->sendWelcome($vendor);
+        }
+
         $vendor->recordAudit('Vendor Status Changed', $actor, $remarks, ['from' => $from, 'to' => $status]);
 
         Log::channel('vendor')->info('Vendor status changed', [
@@ -241,6 +250,31 @@ class VendorService
     private function loginStatusFor(?string $vendorStatus): string
     {
         return $vendorStatus === Status::ACTIVE ? 'active' : 'inactive';
+    }
+
+    /** Send an ad-hoc email to a vendor (the Dashboard "Send Email" action). */
+    public function sendEmail(Vendor $vendor, string $subject, string $body, ?User $actor = null): string
+    {
+        $result = $this->notifications->email($vendor->email, $subject, $body, ['vendor_id' => $vendor->id]);
+        $vendor->recordAudit('Vendor Email Sent', $actor, $subject, ['result' => $result]);
+
+        return $result;
+    }
+
+    /** Multi-channel welcome sent the moment a vendor is activated. */
+    private function sendWelcome(Vendor $vendor): void
+    {
+        $name = $vendor->user->name ?? $vendor->company_name;
+        $subject = 'Welcome to the Third Party Vendor Portal';
+        $body = "Hello {$name},\n\nWelcome to the Third Party Vendor Portal. Your account has been approved successfully. "
+            ."You can now access the system using your registered credentials.";
+
+        $ctx = ['vendor_id' => $vendor->id, 'event' => 'welcome'];
+        $this->notifications->email($vendor->email, $subject, $body, $ctx);
+        $this->notifications->whatsapp($vendor->phone, $body, $ctx);
+        $this->notifications->sms($vendor->phone, $body, $ctx);
+
+        Log::channel('vendor')->info('Vendor welcome dispatched', ['vendor_id' => $vendor->id]);
     }
 
     /** Replace the vendor's contact list, enforcing a single primary. */

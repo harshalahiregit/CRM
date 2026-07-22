@@ -88,6 +88,21 @@ class VendorController extends Controller
         return response()->json($this->vendorService->stats($request->user()->tenant_id));
     }
 
+    /** Dashboard "Send Email" action — an ad-hoc message to the vendor. */
+    public function sendEmail(Request $request, Vendor $vendor)
+    {
+        $this->assertTenant($request, $vendor);
+
+        $data = $request->validate([
+            'subject' => 'required|string|max:200',
+            'body'    => 'required|string|max:5000',
+        ]);
+
+        $result = $this->vendorService->sendEmail($vendor, $data['subject'], $data['body'], $request->user());
+
+        return response()->json(['status' => 'success', 'result' => $result]);
+    }
+
     private function assertTenant(Request $request, Vendor $vendor): void
     {
         abort_unless((int) $vendor->tenant_id === (int) $request->user()->tenant_id, 404, 'Vendor not found');

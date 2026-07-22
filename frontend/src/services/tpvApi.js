@@ -24,6 +24,7 @@ export const tpvApi = {
     create:    (data)        => api.post('/vendors', data).then(r => r.data),
     update:    (id, data)    => api.put(`/vendors/${id}`, data).then(r => r.data),
     setStatus: (id, status)  => api.patch(`/vendors/${id}/status`, { status }).then(r => r.data),
+    sendEmail: (id, data)    => api.post(`/vendors/${id}/email`, data).then(r => r.data),
     delete:    (id)          => api.delete(`/vendors/${id}`).then(r => r.data),
   },
 

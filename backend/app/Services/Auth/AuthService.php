@@ -5,6 +5,9 @@ namespace App\Services\Auth;
 use App\Exceptions\BusinessException;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Models\Vendor\Vendor;
+use App\Support\AgencyContext;
+use App\Support\Vendor\VendorStatus;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -126,6 +129,25 @@ class AuthService
                 'zip'        => $data['zip'] ?? null,
                 'website'    => $data['website'] ?? null,
             ],
+        ]);
+
+        // Self-registered vendors land in the admin Dashboard immediately as a
+        // Vendor record — Inactive until an admin activates them. They belong to
+        // the agency tenant (external parties aren't independent tenants), and the
+        // Temporary/Permanent choice maps to the vendor_type.
+        Vendor::create([
+            'tenant_id'   => AgencyContext::tenantId(),
+            'user_id'     => $user->id,
+            'company_name'=> $data['username'] ?? $user->name,
+            'vendor_type' => $data['tpv_type'] === 'temporary' ? 'temporary' : 'standard',
+            'engagements' => ['tpv'],
+            'email'       => $user->email,
+            'phone'       => $data['phone'] ?? null,
+            'city'        => $data['city'] ?? null,
+            'state'       => $data['state'] ?? null,
+            'country'     => $data['country'] ?? null,
+            'pincode'     => $data['zip'] ?? null,
+            'status'      => VendorStatus::INACTIVE,
         ]);
 
         Log::channel('auth')->info('TPV registered, pending approval', ['user_id' => $user->id]);

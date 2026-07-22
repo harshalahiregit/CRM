@@ -56,13 +56,8 @@ const SALES_SUB_ITEMS = [
 ]
 
 const TPV_SUB_ITEMS = [
-  { label: 'TPV Dashboard', path: '/app/tpv/dashboard', icon: LayoutDashboard },
-  { label: 'Kickoff Meetings', path: '/app/tpv/kickoff', icon: CalendarDays },
-  { label: 'Vendor Onboarding', path: '/app/tpv/onboarding', icon: Rocket },
-  { label: 'Documents', path: '/app/tpv/documents', icon: FileText },
-  { label: 'Workforce', path: '/app/tpv/workforce', icon: UserCheck },
-  { label: 'Compliance', path: '/app/tpv/compliance', icon: CheckSquare },
-  { label: 'Gate Log', path: '/app/tpv/gate-log', icon: Shield },
+  { label: 'Dashboard',       path: '/app/tpv/dashboard', icon: LayoutDashboard },
+  { label: 'Kickoff Meeting', path: '/app/tpv/kickoff',   icon: CalendarDays },
 ]
 
 export default function Sidebar({ collapsed, onToggle }) {
@@ -279,17 +274,17 @@ export default function Sidebar({ collapsed, onToggle }) {
 
         {/* ── TPV Module sub-nav ── */}
         <div className="mt-2">
-          {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>Third-Party Vendors</p>}
+          {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>Thirdparty Vendor</p>}
           <button
             onClick={() => setTpvExpanded(e => !e)}
-            title={collapsed ? 'Third-Party Vendors' : ''}
+            title={collapsed ? 'Thirdparty Vendor' : ''}
             className="nav-3d mb-0.5 w-full"
             style={{ justifyContent: collapsed ? 'center' : undefined, color: '#a78bfa' }}
           >
             <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.15)' }}>
               <Shield size={13} style={{ color: '#a78bfa' }} />
             </div>
-            {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Third-Party Vendors</span><ChevronDown size={13} className={clsx('transition-transform duration-200', tpvExpanded && 'rotate-180')} /></>}
+            {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Thirdparty Vendor</span><ChevronDown size={13} className={clsx('transition-transform duration-200', tpvExpanded && 'rotate-180')} /></>}
           </button>
           {(tpvExpanded || collapsed) && TPV_SUB_ITEMS.map(({ label, path, icon: Icon }) => (
             <NavLink key={path} to={path}>

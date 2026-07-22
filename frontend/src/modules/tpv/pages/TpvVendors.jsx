@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Plus, RefreshCw, Search, Eye, Pencil, Trash2, Users, CheckCircle, XCircle, Building2, X,
+  Plus, RefreshCw, Search, Eye, Pencil, Trash2, Users, CheckCircle, XCircle, Building2, X, Mail, CalendarDays,
 } from 'lucide-react'
 import { tpvApi } from '@/services/tpvApi'
 import { useAuth } from '@/context/AuthContext'
-import { canManageTpv } from '../constants'
+import { canManageTpv, fmtDate } from '../constants'
 import {
   KIT3D_STYLE, inputStyle, labelStyle, Overlay, ModalFooter, Field, TextInput, SelectInput,
 } from '@/components/ui/kit3d'
@@ -25,6 +25,7 @@ export default function TpvVendors() {
   const [loading, setLoad] = useState(true)
   const [search, setSearch] = useState('')
   const [editing, setEditing] = useState(null)   // form object (with id when editing), or null
+  const [emailing, setEmailing] = useState(null) // vendor to email, or null
 
   const load = useCallback(() => {
     setLoad(true)
@@ -76,7 +77,8 @@ export default function TpvVendors() {
         </div>
         <div style={{ display: 'flex', gap: 9 }}>
           <button onClick={load} style={ghostBtn}><RefreshCw size={14} /> Refresh</button>
-          {manage && <button onClick={() => setEditing({ ...EMPTY_FORM })} style={solidBtn}><Plus size={15} /> Add Vendor</button>}
+          <button onClick={() => navigate('/app/tpv/kickoff')} style={ghostBtn}><CalendarDays size={14} /> Kickoff Meeting</button>
+          {manage && <button onClick={() => setEditing({ ...EMPTY_FORM })} style={solidBtn}><Plus size={15} /> New Third Party Vendor</button>}
         </div>
       </div>
 
@@ -100,14 +102,14 @@ export default function TpvVendors() {
           <div style={{ width: 60, height: 60, borderRadius: '50%', margin: '0 auto 16px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(124,58,237,0.12)' }}><Building2 size={28} style={{ color: '#a78bfa' }} /></div>
           <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text-h)' }}>No vendors yet</h3>
           <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '6px 0 18px' }}>Add a third-party vendor to give them a portal login.</p>
-          {manage && <button onClick={() => setEditing({ ...EMPTY_FORM })} style={{ ...solidBtn, margin: '0 auto' }}><Plus size={15} /> Add Vendor</button>}
+          {manage && <button onClick={() => setEditing({ ...EMPTY_FORM })} style={{ ...solidBtn, margin: '0 auto' }}><Plus size={15} /> New Third Party Vendor</button>}
         </div>
       ) : (
         <div className="pr-glass" style={{ padding: 0, borderRadius: 16, overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
-              <thead><tr>{['ID', 'Vendor Name', 'Company', 'Phone', 'Email', 'Status', 'Actions'].map((h, i) => (
-                <th key={h} style={{ textAlign: i === 6 ? 'right' : 'left', padding: '11px 14px', fontSize: 10, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid var(--border)' }}>{h}</th>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
+              <thead><tr>{['ID', 'Vendor Name', 'Company', 'Phone', 'Email', 'Status', 'Date Created', 'Options'].map((h, i) => (
+                <th key={h} style={{ textAlign: i === 7 ? 'right' : 'left', padding: '11px 14px', fontSize: 10, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid var(--border)' }}>{h}</th>
               ))}</tr></thead>
               <tbody>
                 {filtered.map(v => (
@@ -120,10 +122,12 @@ export default function TpvVendors() {
                     <td style={{ padding: '10px 14px' }}>
                       <ToggleSwitch on={v.status === 'Active'} disabled={!manage} onChange={() => toggleStatus(v)} />
                     </td>
+                    <td style={{ padding: '10px 14px', fontSize: 12.5, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{v.created_at ? fmtDate(v.created_at) : '—'}</td>
                     <td style={{ padding: '8px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                       <div style={{ display: 'inline-flex', gap: 6 }}>
                         <IconBtn title="View" onClick={() => navigate(`/app/tpv/view/${v.id}`)}><Eye size={13} /></IconBtn>
                         {manage && <IconBtn title="Edit" onClick={() => openEdit(v)}><Pencil size={13} /></IconBtn>}
+                        {manage && <IconBtn title="Send Email" onClick={() => setEmailing(v)}><Mail size={13} /></IconBtn>}
                         {manage && <IconBtn title="Delete" color="#ef4444" onClick={() => remove(v)}><Trash2 size={13} /></IconBtn>}
                       </div>
                     </td>
@@ -136,7 +140,41 @@ export default function TpvVendors() {
       )}
 
       {editing && <VendorModal form={editing} onClose={() => setEditing(null)} onDone={() => { setEditing(null); load() }} />}
+      {emailing && <EmailModal vendor={emailing} onClose={() => setEmailing(null)} />}
     </div>
+  )
+}
+
+// ── Send-email compose modal ────────────────────────────────────────────────────
+function EmailModal({ vendor, onClose }) {
+  const [subject, setSubject] = useState('')
+  const [body, setBody] = useState('')
+  const [sending, setSending] = useState(false)
+  const [err, setErr] = useState(null)
+  const [sent, setSent] = useState(false)
+
+  const send = async () => {
+    if (!subject.trim() || !body.trim()) { setErr('Subject and message are required.'); return }
+    setSending(true); setErr(null)
+    try { await tpvApi.vendors.sendEmail(vendor.id, { subject, body }); setSent(true); setTimeout(onClose, 900) }
+    catch (e) { setErr(e?.response?.data?.message || 'Could not send email.'); setSending(false) }
+  }
+
+  return (
+    <Overlay onClose={onClose} width={520}>
+      <div style={{ padding: '20px 22px 6px' }}>
+        <h2 style={{ margin: 0, fontSize: 17, fontWeight: 900, color: 'var(--text-h)' }}>Send Email</h2>
+        <p style={{ margin: '3px 0 0', fontSize: 12.5, color: 'var(--text-muted)' }}>To {vendor.email || 'this vendor'} · {vendor.company_name}</p>
+      </div>
+      <div style={{ padding: '10px 22px' }}>
+        {!vendor.email && <div style={{ padding: '8px 12px', borderRadius: 10, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', marginBottom: 10, fontSize: 12.5, color: 'var(--text-h)' }}>This vendor has no email on file.</div>}
+        <Field label="Subject"><TextInput value={subject} onChange={e => setSubject(e.target.value)} placeholder="Subject" /></Field>
+        <Field label="Message" full><textarea value={body} onChange={e => setBody(e.target.value)} rows={6} placeholder="Type your message…" style={{ ...inputStyle, resize: 'vertical' }} /></Field>
+        {err && <div style={{ fontSize: 12.5, color: '#ef4444', marginTop: 6 }}>{err}</div>}
+        {sent && <div style={{ fontSize: 12.5, color: '#10b981', marginTop: 6, fontWeight: 700 }}>Email sent.</div>}
+      </div>
+      <ModalFooter onClose={onClose} onConfirm={send} loading={sending} confirmLabel="Send Email" color="#7C3AED" />
+    </Overlay>
   )
 }
 
