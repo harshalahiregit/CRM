@@ -136,7 +136,18 @@ class VendorService
         // Mirror the toggle onto the portal login so an Inactive vendor is locked
         // out immediately (login gate + portal middleware both key off user status).
         if ($vendor->user_id && $vendor->user) {
-            $vendor->user->update(['status' => $this->loginStatusFor($status)]);
+            $userUpdate = ['status' => $this->loginStatusFor($status)];
+
+            // A temporary vendor's 5-day access window starts at activation, not
+            // at registration — so the clock reflects when the admin approved.
+            // Permanent (standard) vendors never expire.
+            if ($status === Status::ACTIVE && $from !== Status::ACTIVE) {
+                $userUpdate['access_expires_at'] = $vendor->vendor_type === 'temporary'
+                    ? now()->addDays(5)->toDateString()
+                    : null;
+            }
+
+            $vendor->user->update($userUpdate);
         }
 
         // Activation → welcome the vendor across every channel (email live now,
