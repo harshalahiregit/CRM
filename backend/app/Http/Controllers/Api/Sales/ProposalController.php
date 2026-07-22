@@ -41,7 +41,13 @@ class ProposalController extends Controller
 
     public function show(Proposal $proposal, Request $request)
     {
-        return response()->json($this->proposalService->show($proposal, $request->user()->tenant_id));
+        $loaded = $this->proposalService->show($proposal, $request->user()->tenant_id);
+
+        return response()->json([
+            ...$loaded->toArray(),
+            'can_download'  => $this->canDownload($request->user(), $loaded),
+            'tax_breakdown' => $loaded->taxBreakdown(),
+        ]);
     }
 
     public function update(UpdateProposalRequest $request, Proposal $proposal)
@@ -114,8 +120,53 @@ class ProposalController extends Controller
     public function exportPDF(Request $request, Proposal $proposal)
     {
         $proposal = $this->proposalService->show($proposal, $request->user()->tenant_id);
+        abort_unless($this->canDownload($request->user(), $proposal), 403, 'You are not authorized to download this proposal.');
         $pdf = Pdf::loadView('pdf.proposal', ['proposal' => $proposal]);
 
         return $pdf->download("proposal-{$proposal->id}.pdf");
+    }
+
+    /** Internal download restricted to owner / assignee / admin (meeting 2.3). */
+    private function canDownload($user, Proposal $proposal): bool
+    {
+        return $user->role === 'admin'
+            || $proposal->created_by === $user->id
+            || $proposal->assigned_to === $user->id;
+    }
+
+    public function submit(Request $request, Proposal $proposal)
+    {
+        $data = $request->validate([
+            'subject' => 'nullable|string|max:255',
+            'body'    => 'nullable|string|max:65535',
+            'cc'      => 'nullable|array|max:10',
+            'cc.*'    => 'email',
+        ]);
+
+        $updated = $this->proposalService->submit(
+            $proposal,
+            $data,
+            $request->user()->tenant_id,
+            app(\App\Services\Mail\TenantMailer::class),
+            config('cors.frontend_url') ?? env('FRONTEND_URL', $request->headers->get('origin') ?: 'http://localhost:5173'),
+            config('app.url'),
+        );
+
+        return response()->json($updated);
+    }
+
+    public function saveAsTemplate(Request $request, Proposal $proposal)
+    {
+        $data = $request->validate([
+            'name'     => 'required|string|max:255',
+            'category' => 'nullable|string|max:100',
+        ]);
+
+        $template = app(\App\Services\Sales\ProposalTemplateService::class)->createFromProposal(
+            $proposal, $data['name'], $data['category'] ?? null,
+            $request->user()->tenant_id, $request->user()->id
+        );
+
+        return response()->json($template, 201);
     }
 }

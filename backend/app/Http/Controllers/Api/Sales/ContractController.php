@@ -71,10 +71,83 @@ class ContractController extends Controller
     public function sign(Request $request, SalesContract $contract)
     {
         $data = $request->validate([
-            'signature_data' => 'nullable|string',
-            'signed_by_name' => 'nullable|string|max:255',
+            'method' => 'required|in:draw,type,upload',
+            'image'  => 'nullable|string|max:1400000',   // ~1MB base64 data URL
+            'name'   => 'required|string|max:255',
+            'email'  => 'nullable|email|max:255',
         ]);
-        return response()->json($this->contractService->sign($contract, $data, $request->user()->tenant_id, $request->user()->id));
+
+        return response()->json($this->contractService->sign(
+            $contract, $data, $request->user()->tenant_id, $request->user()->id,
+            $request->ip(), $request->userAgent(),
+        ));
+    }
+
+    /* ── Comments ──────────────────────────────────────────────── */
+    public function addComment(Request $request, SalesContract $contract)
+    {
+        $data = $request->validate(['body' => 'required|string|max:5000']);
+
+        return response()->json(
+            $this->contractService->addComment($contract, $data['body'], $request->user()->tenant_id, $request->user()->id),
+            201,
+        );
+    }
+
+    public function deleteComment(Request $request, SalesContract $contract, int $comment)
+    {
+        $this->contractService->deleteComment($contract, $comment, $request->user()->tenant_id, $request->user()->id);
+
+        return response()->json(['message' => 'Deleted']);
+    }
+
+    /* ── Renewal history ───────────────────────────────────────── */
+    public function renewals(Request $request, SalesContract $contract)
+    {
+        $shown = $this->contractService->show($contract, $request->user()->tenant_id);
+
+        return response()->json(collect($shown->renewalChain())->map(fn ($c) => [
+            'id' => $c->id, 'reference_no' => $c->reference_no, 'version' => $c->version,
+            'status' => $c->status, 'value' => $c->value,
+            'start_date' => $c->start_date?->toDateString(), 'end_date' => $c->end_date?->toDateString(),
+            'signed_at' => $c->signed_at, 'is_current' => $c->id === $contract->id,
+        ])->values());
+    }
+
+    /* ── PDF + send ────────────────────────────────────────────── */
+    public function exportPDF(Request $request, SalesContract $contract)
+    {
+        $shown = $this->contractService->show($contract, $request->user()->tenant_id);
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.contract', ['contract' => $shown]);
+
+        return $pdf->download("contract-{$shown->reference_no}.pdf");
+    }
+
+    public function send(Request $request, SalesContract $contract)
+    {
+        $data = $request->validate([
+            'to'      => 'required|email',
+            'cc'      => 'nullable|array|max:10',
+            'cc.*'    => 'email',
+            'subject' => 'nullable|string|max:255',
+            'body'    => 'nullable|string|max:65535',
+        ]);
+
+        $shown = $this->contractService->show($contract, $request->user()->tenant_id);
+        $portalUrl = rtrim(env('FRONTEND_URL', 'http://localhost:5173'), '/').'/portal/contracts/'.$shown->public_token;
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.contract', ['contract' => $shown])->output();
+        $body = \App\Support\HtmlSanitizer::clean($data['body'] ?? '<p>Please find the contract attached. You can review and sign it online using the link below.</p>');
+
+        app(\App\Services\Mail\TenantMailer::class)->send(
+            $request->user()->tenant_id,
+            $data['to'],
+            new \App\Mail\Sales\ContractMail($shown, $body, $portalUrl, $pdf, $data['subject'] ?? "Contract: {$shown->subject}"),
+            array_slice(array_values(array_unique($data['cc'] ?? [])), 0, 10),
+        );
+
+        $shown->logActivity('updated', "Contract emailed to {$data['to']}", null, null, $request->user()->id);
+
+        return response()->json(['message' => 'Contract sent to '.$data['to']]);
     }
 
     /* ── Contract Types ─────────────────────────────────────────── */

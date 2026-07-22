@@ -41,6 +41,10 @@ const SalesPayments = lazy(() => import('@/modules/sales/pages/Payments'))
 const CreditNotes = lazy(() => import('@/modules/sales/pages/CreditNotes'))
 const SalesItems = lazy(() => import('@/modules/sales/pages/Items'))
 const ProposalDetail = lazy(() => import('@/modules/sales/pages/ProposalDetail'))
+const ProposalWizard = lazy(() => import('@/modules/sales/pages/ProposalWizard'))
+const ProposalPortal = lazy(() => import('@/modules/sales/pages/ProposalPortal'))
+const ContractDetail = lazy(() => import('@/modules/sales/pages/ContractDetail'))
+const ContractPortal = lazy(() => import('@/modules/sales/pages/ContractPortal'))
 const InvoiceDetail = lazy(() => import('@/modules/sales/pages/InvoiceDetail'))
 const EstimateDetail = lazy(() => import('@/modules/sales/pages/EstimateDetail'))
 const Leads = lazy(() => import('@/modules/sales/pages/Leads'))
@@ -54,12 +58,42 @@ const Contracts = lazy(() => import('@/modules/sales/pages/Contracts'))
 const WebToLeadForms = lazy(() => import('@/modules/sales/pages/WebToLeadForms'))
 const Forecast = lazy(() => import('@/modules/sales/pages/Forecast'))
 const Commission = lazy(() => import('@/modules/sales/pages/Commission'))
+const SettingsLayout = lazy(() => import('@/modules/settings/SettingsLayout'))
+const MailSettings = lazy(() => import('@/modules/settings/pages/MailSettings'))
+const CustomFieldsSettings = lazy(() => import('@/modules/settings/pages/CustomFieldsSettings'))
+const CompanyFinanceSettings = lazy(() => import('@/modules/settings/pages/CompanyFinanceSettings'))
+const TaxRatesSettings = lazy(() => import('@/modules/settings/pages/TaxRatesSettings'))
+const ExpenseCategoriesSettings = lazy(() => import('@/modules/settings/pages/ExpenseCategoriesSettings'))
 const PublicLeadForm = lazy(() => import('@/modules/sales/public/PublicLeadForm'))
 
 // Customer Module (lazy)
 const CustomerLayout = lazy(() => import('@/modules/customer/CustomerLayout'))
 const Customers = lazy(() => import('@/modules/customer/pages/Customers'))
 const CustomerDetail = lazy(() => import('@/modules/customer/pages/CustomerDetail'))
+
+// Accounts Module (lazy)
+const AccountsLayout = lazy(() => import('@/modules/accounts/AccountsLayout'))
+const ChartOfAccounts = lazy(() => import('@/modules/accounts/pages/ChartOfAccounts'))
+const Vouchers = lazy(() => import('@/modules/accounts/pages/Vouchers'))
+const VoucherDetail = lazy(() => import('@/modules/accounts/pages/VoucherDetail'))
+const AccountsSettings = lazy(() => import('@/modules/accounts/pages/Settings'))
+const AccBankAccounts = lazy(() => import('@/modules/accounts/pages/BankAccounts'))
+const AccReconcile = lazy(() => import('@/modules/accounts/pages/Reconcile'))
+const AccCheques = lazy(() => import('@/modules/accounts/pages/Cheques'))
+const AccBudgets = lazy(() => import('@/modules/accounts/pages/Budgets'))
+const AccBudgetDetail = lazy(() => import('@/modules/accounts/pages/BudgetDetail'))
+const AccReportsIndex = lazy(() => import('@/modules/accounts/pages/reports/ReportsIndex'))
+const AccTrialBalance = lazy(() => import('@/modules/accounts/pages/reports/TrialBalance'))
+const AccProfitLoss = lazy(() => import('@/modules/accounts/pages/reports/ProfitAndLoss'))
+const AccBalanceSheet = lazy(() => import('@/modules/accounts/pages/reports/BalanceSheet'))
+const AccLedgerStatement = lazy(() => import('@/modules/accounts/pages/reports/LedgerStatement'))
+const AccGeneralLedger = lazy(() => import('@/modules/accounts/pages/reports/GeneralLedger'))
+const AccDayBook = lazy(() => import('@/modules/accounts/pages/reports/DayBook'))
+const AccCashFlow = lazy(() => import('@/modules/accounts/pages/reports/CashFlow'))
+const AccAgeing = lazy(() => import('@/modules/accounts/pages/reports/Ageing'))
+const AccGstr1 = lazy(() => import('@/modules/accounts/pages/reports/Gstr1'))
+const AccGstr3b = lazy(() => import('@/modules/accounts/pages/reports/Gstr3b'))
+const AccTds = lazy(() => import('@/modules/accounts/pages/reports/Tds'))
 
 // Helpdesk Module (lazy)
 const HelpdeskLayout = lazy(() => import('@/modules/helpdesk/HelpdeskLayout'))
@@ -157,7 +191,10 @@ export default function AppRoutes() {
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard" element={<S><SalesDashboard /></S>} />
           <Route path="proposals" element={<S><Proposals /></S>} />
-          <Route path="estimates" element={<S><Estimates /></S>} />
+          <Route path="proposals/new" element={<S><ProposalWizard /></S>} />
+          <Route path="proposals/:id/edit" element={<S><ProposalWizard /></S>} />
+          <Route path="estimates" element={<S><Estimates docType="estimate" /></S>} />
+          <Route path="proforma-invoices" element={<S><Estimates docType="proforma" /></S>} />
           <Route path="invoices" element={<S><SalesInvoices /></S>} />
           <Route path="delivery-notes" element={<S><DeliveryNotes /></S>} />
           <Route path="payments" element={<S><SalesPayments /></S>} />
@@ -174,6 +211,7 @@ export default function AppRoutes() {
           <Route path="proposal-templates" element={<S><ProposalTemplates /></S>} />
           <Route path="tasks" element={<S><Tasks /></S>} />
           <Route path="contracts" element={<S><Contracts /></S>} />
+          <Route path="contracts/:id" element={<S><ContractDetail /></S>} />
           <Route path="web-to-lead" element={<S><WebToLeadForms /></S>} />
           <Route path="forecast" element={<S><Forecast /></S>} />
           <Route path="commission" element={<S><Commission /></S>} />
@@ -183,6 +221,32 @@ export default function AppRoutes() {
         <Route path="customers" element={<S><CustomerLayout /></S>}>
           <Route index element={<S><Customers /></S>} />
           <Route path=":id" element={<S><CustomerDetail /></S>} />
+        </Route>
+
+        {/* ACCOUNTS MODULE */}
+        <Route path="accounts" element={<S><AccountsLayout /></S>}>
+          <Route index element={<Navigate to="chart-of-accounts" replace />} />
+          <Route path="chart-of-accounts" element={<S><ChartOfAccounts /></S>} />
+          <Route path="vouchers" element={<S><Vouchers /></S>} />
+          <Route path="vouchers/:id" element={<S><VoucherDetail /></S>} />
+          <Route path="reports" element={<S><AccReportsIndex /></S>} />
+          <Route path="reports/trial-balance" element={<S><AccTrialBalance /></S>} />
+          <Route path="reports/profit-loss" element={<S><AccProfitLoss /></S>} />
+          <Route path="reports/balance-sheet" element={<S><AccBalanceSheet /></S>} />
+          <Route path="reports/ledger-statement" element={<S><AccLedgerStatement /></S>} />
+          <Route path="reports/general-ledger" element={<S><AccGeneralLedger /></S>} />
+          <Route path="reports/day-book" element={<S><AccDayBook /></S>} />
+          <Route path="reports/cash-flow" element={<S><AccCashFlow /></S>} />
+          <Route path="reports/ageing" element={<S><AccAgeing /></S>} />
+          <Route path="reports/gstr-1" element={<S><AccGstr1 /></S>} />
+          <Route path="reports/gstr-3b" element={<S><AccGstr3b /></S>} />
+          <Route path="reports/tds" element={<S><AccTds /></S>} />
+          <Route path="banking" element={<S><AccBankAccounts /></S>} />
+          <Route path="banking/:bankId/reconcile" element={<S><AccReconcile /></S>} />
+          <Route path="cheques" element={<S><AccCheques /></S>} />
+          <Route path="budgets" element={<S><AccBudgets /></S>} />
+          <Route path="budgets/:id" element={<S><AccBudgetDetail /></S>} />
+          <Route path="settings" element={<S><AccountsSettings /></S>} />
         </Route>
 
         {/* HELPDESK MODULE */}
@@ -210,7 +274,14 @@ export default function AppRoutes() {
         <Route path="vendors" element={<ComingSoon name="Vendors" />} />
         <Route path="tickets" element={<ComingSoon name="Tickets" />} />
         <Route path="reports/*" element={<ComingSoon name="Reports" />} />
-        <Route path="settings/*" element={<ComingSoon name="Settings" />} />
+        <Route path="settings" element={<S><SettingsLayout /></S>}>
+          <Route index element={<Navigate to="mail" replace />} />
+          <Route path="mail" element={<S><MailSettings /></S>} />
+          <Route path="custom-fields" element={<S><CustomFieldsSettings /></S>} />
+          <Route path="company" element={<S><CompanyFinanceSettings /></S>} />
+          <Route path="tax-rates" element={<S><TaxRatesSettings /></S>} />
+          <Route path="expense-categories" element={<S><ExpenseCategoriesSettings /></S>} />
+        </Route>
       </Route>
 
       {/* Public Helpdesk (no auth): shareable KB article + tenant help center */}
@@ -219,6 +290,10 @@ export default function AppRoutes() {
 
       {/* Public Web-to-Lead form (no auth) */}
       <Route path="/f/:token" element={<S><PublicLeadForm /></S>} />
+
+      {/* Public proposal portal (share link / QR target) */}
+      <Route path="/portal/proposals/:token" element={<S><ProposalPortal /></S>} />
+      <Route path="/portal/contracts/:token" element={<S><ContractPortal /></S>} />
 
       <Route path="/vendor-portal/*" element={<ComingSoon name="Vendor Portal" />} />
 

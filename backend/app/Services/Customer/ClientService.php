@@ -68,13 +68,17 @@ class ClientService
             $contacts     = $data['contacts']      ?? [];
             $groupIds     = $data['group_ids']     ?? [];
             $customFields = $data['custom_fields'] ?? [];
-            unset($data['contacts'], $data['group_ids'], $data['custom_fields']);
+            $admins       = $data['admins']        ?? null; // ordered user ids (stepper); absent for CSV import
+            unset($data['contacts'], $data['group_ids'], $data['custom_fields'], $data['admins']);
 
             $client = Client::create([...$data, 'tenant_id' => $tenantId, 'added_by' => $userId]);
 
             $this->syncContacts($client, $contacts, $tenantId);
             $client->groups()->sync($this->tenantGroupIds($groupIds, $tenantId));
             $this->customFields->saveValues($tenantId, 'customers', $client->id, $customFields);
+            if (is_array($admins) && $admins !== []) {
+                $this->syncAdmins($client, $admins, $tenantId);
+            }
 
             Log::channel('customer')->info('Client created', ['client_id' => $client->id, 'tenant_id' => $tenantId]);
 
@@ -145,6 +149,32 @@ class ClientService
         return $client;
     }
 
+    /**
+     * Save the pinned map location. Coordinates are only meaningful as a
+     * pair, so a missing half clears the pin (the address text is kept —
+     * it stays useful on its own).
+     */
+    public function updateLocation(Client $client, array $data, int $tenantId): Client
+    {
+        $this->assertTenant($client, $tenantId);
+
+        $lat = $data['latitude'] ?? null;
+        $lng = $data['longitude'] ?? null;
+        $hasPin = $lat !== null && $lng !== null;
+
+        $client->update([
+            'map_address' => $data['map_address'] ?? null,
+            'latitude'    => $hasPin ? $lat : null,
+            'longitude'   => $hasPin ? $lng : null,
+        ]);
+
+        Log::channel('customer')->info('Client map location updated', [
+            'client_id' => $client->id, 'tenant_id' => $tenantId, 'pinned' => $hasPin,
+        ]);
+
+        return $client->fresh();
+    }
+
     public function delete(Client $client, int $tenantId): void
     {
         $this->assertTenant($client, $tenantId);
@@ -191,6 +221,8 @@ class ClientService
                 'is_primary'          => $isPrimary,
                 'active'              => $row['active'] ?? true,
                 'email_notifications' => $row['email_notifications'] ?? null,
+                'permissions'         => $this->cleanPermissions($row['permissions'] ?? null),
+                'emails_enabled'      => (bool) ($row['emails_enabled'] ?? true),
             ];
 
             if (! empty($row['id'])) {
@@ -213,6 +245,16 @@ class ClientService
         if (! $primarySeen && ! $client->contacts()->where('is_primary', true)->exists()) {
             $client->contacts()->oldest()->first()?->update(['is_primary' => true]);
         }
+    }
+
+    /** Known modules only, deduped, canonical order; null stays null. */
+    private function cleanPermissions(?array $permissions): ?array
+    {
+        if ($permissions === null) {
+            return null;
+        }
+
+        return array_values(array_intersect(ClientContact::MODULES, $permissions));
     }
 
     private function tenantGroupIds(array $groupIds, int $tenantId): array
@@ -275,11 +317,20 @@ class ClientService
     {
         $this->assertTenant($client, $tenantId);
 
-        $validIds = User::where('tenant_id', $tenantId)->whereIn('id', $userIds)->pluck('id')->all();
-        $client->admins()->sync($validIds);
+        // Payload ORDER is meaningful (primary → 2nd → 3rd fallback). whereIn
+        // returns DB order, so re-sort the valid ids by their payload position
+        // before syncing with a sort_order pivot value.
+        $valid = User::where('tenant_id', $tenantId)->whereIn('id', $userIds)->pluck('id')->all();
+        $ordered = array_values(array_intersect($userIds, $valid));
+
+        $pivot = [];
+        foreach ($ordered as $i => $id) {
+            $pivot[$id] = ['sort_order' => $i];
+        }
+        $client->admins()->sync($pivot);
 
         Log::channel('customer')->info('Customer admins updated', [
-            'client_id' => $client->id, 'admins' => $validIds,
+            'client_id' => $client->id, 'admins' => $ordered,
         ]);
 
         return $this->admins($client, $tenantId);

@@ -55,6 +55,13 @@ class StoreClientRequest extends FormRequest
             'group_ids.*'      => 'integer',
             'custom_fields'    => 'nullable|array',
 
+            // Ordered account-handler ids (primary → fallbacks). Deliberately
+            // nullable at the API level: the create-stepper UI enforces ≥1
+            // admin, but CSV import and API callers post without admins and
+            // must keep working. Tenant/role validity checked in the service.
+            'admins'           => 'nullable|array',
+            'admins.*'         => 'integer|distinct',
+
             'contacts'                => 'nullable|array',
             'contacts.*.id'           => 'nullable|integer',
             'contacts.*.first_name'   => 'required_with:contacts|string|max:255',

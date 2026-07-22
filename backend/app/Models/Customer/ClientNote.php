@@ -10,7 +10,15 @@ class ClientNote extends Model
 {
     use BelongsToTenant;
 
-    protected $fillable = ['tenant_id', 'client_id', 'content', 'created_by'];
+    protected $fillable = [
+        'tenant_id', 'client_id', 'content', 'created_by',
+        'priority', 'deadline', 'reminder_at', 'visibility',
+    ];
+
+    protected $casts = [
+        'deadline'    => 'date:Y-m-d',
+        'reminder_at' => 'datetime',
+    ];
 
     public function author()
     {

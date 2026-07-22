@@ -8,13 +8,15 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Support\Str;
 use App\Models\Traits\BelongsToTenant;
+use App\Models\Traits\CalculatesDocumentTotals;
+use App\Models\Traits\LogsSalesActivity;
 
 class Proposal extends Model
 {
-    use HasFactory, SoftDeletes, BelongsToTenant;
+    use HasFactory, SoftDeletes, BelongsToTenant, CalculatesDocumentTotals, LogsSalesActivity;
 
     protected $fillable = [
-        'tenant_id', 'subject', 'reference_no', 'rel_type', 'rel_id', 'project_id',
+        'tenant_id', 'subject', 'reference_no', 'rel_type', 'rel_id', 'contact_id', 'project_id',
         'date', 'open_till', 'currency', 'discount_type', 'discount_amount',
         'subtotal', 'tax_total', 'total', 'status', 'assigned_to',
         'proposal_to', 'address', 'city', 'state', 'country', 'zip',
@@ -23,7 +25,10 @@ class Proposal extends Model
         'template_id', 'qr_code_data', 'public_view_otp_enabled',
         'email_opened_at', 'email_opened_device', 'email_opened_count',
         'pdf_header', 'pdf_footer', 'company_logo_url', 'company_stamp_url',
+        'portal_viewed_at', 'portal_view_count', 'acceptance_ip', 'acceptance_user_agent',
+        'email_subject', 'email_body', 'email_cc', 'last_emailed_at',
         'converted_estimate_id', 'converted_invoice_id',
+        'supply_type', 'discount_mode', 'discount_value',
     ];
 
     protected $casts = [
@@ -39,6 +44,10 @@ class Proposal extends Model
         'public_view_otp_enabled' => 'boolean',
         'email_opened_at'         => 'datetime',
         'email_opened_count'      => 'integer',
+        'portal_viewed_at'        => 'datetime',
+        'portal_view_count'       => 'integer',
+        'email_cc'                => 'array',
+        'last_emailed_at'         => 'datetime',
     ];
 
     protected static function booted(): void
@@ -69,6 +78,16 @@ class Proposal extends Model
         return $this->belongsTo(User::class, 'assigned_to');
     }
 
+    public function contact()
+    {
+        return $this->belongsTo(\App\Models\Customer\ClientContact::class, 'contact_id');
+    }
+
+    public function pages()
+    {
+        return $this->morphMany(ContentPage::class, 'pageable')->orderBy('sort_order');
+    }
+
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');
@@ -88,25 +107,13 @@ class Proposal extends Model
     /* ── Helpers ─────────────────────────────── */
     public function recalcTotals(): void
     {
-        $subtotal      = 0;
-        $taxTotal      = 0;
-        $discountTotal = 0;
+        $t = $this->computeDocumentTotals();
 
-        foreach ($this->lineItems as $li) {
-            $base      = $li->qty * $li->rate;
-            $discount  = $li->discount;
-            $afterDis  = $base - $discount;
-            $taxAmount = $afterDis * ($li->tax / 100);
-
-            $subtotal      += $base;
-            $discountTotal += $discount;
-            $taxTotal      += $taxAmount;
-        }
-
-        $this->subtotal        = round($subtotal, 2);
-        $this->tax_total       = round($taxTotal, 2);
-        $this->discount_amount = round($discountTotal, 2);
-        $this->total           = round($subtotal - $discountTotal + $taxTotal, 2);
+        $this->subtotal        = $t['subtotal'];
+        $this->tax_total       = $t['tax_total'];
+        $this->discount_amount = $t['all_discounts'];
+        $this->total           = $t['total'];
+        $this->supply_type     = $this->computeSupplyType();
         $this->saveQuietly();
     }
 }

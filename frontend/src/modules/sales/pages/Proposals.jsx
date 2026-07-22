@@ -10,8 +10,10 @@ import { leadApi } from '@/services/leadApi'
 import { useClientOptions } from '@/hooks/useClientOptions'
 import StatusBadge from '../components/StatusBadge'
 import LineItemsTable from '../components/LineItemsTable'
+import RowMenu from '../components/RowMenu'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import { useToast } from '@/hooks/useToast'
+import RichTextEditor from '@/components/ui/RichTextEditor'
 
 const fmt = v => '₹' + Number(v || 0).toLocaleString('en-IN')
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
@@ -71,8 +73,7 @@ export default function Proposals() {
   useEffect(() => {
     if (searchParams.get('new') === '1') {
       const cid = searchParams.get('client_id') || ''
-      setForm(p => ({ ...p, rel_type: 'customer', rel_id: cid }))
-      setShowDrawer(true)
+      navigate(`/app/sales/proposals/new${cid ? `?client_id=${cid}` : ''}`)
     }
   }, [searchParams])
 
@@ -132,7 +133,7 @@ export default function Proposals() {
         </div>
       )}
 
-      <div className="space-y-6 animate-[tiltIn_0.35s_ease_forwards]" onClick={() => setOpenMenu(null)}>
+      <div className="space-y-6 animate-[tiltIn_0.35s_ease]" onClick={() => setOpenMenu(null)}>
 
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -144,7 +145,7 @@ export default function Proposals() {
           <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Manage and track all your sales proposals</p>
         </div>
         <button
-          onClick={e => { e.stopPropagation(); setShowDrawer(true) }}
+          onClick={e => { e.stopPropagation(); navigate('/app/sales/proposals/new') }}
           className="flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold text-white transition-all hover:scale-[1.03]"
           style={{ background: 'linear-gradient(135deg,#9f67ff,#7C3AED,#5b21b6)', boxShadow: '0 6px 20px rgba(124,58,237,0.45)' }}>
           <Plus size={15} /> New Proposal
@@ -241,30 +242,22 @@ export default function Proposals() {
                     <td className="py-3.5 px-4 whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>{fmtDate(p.open_till)}</td>
                     <td className="py-3.5 px-4" style={{ color: 'var(--text-muted)' }}>{p.assigned || '—'}</td>
                     <td className="py-3.5 px-4"><StatusBadge status={p.status} /></td>
-                    <td className="py-3.5 px-4 relative" onClick={e => e.stopPropagation()}>
-                      <button
-                        onClick={() => setOpenMenu(openMenu === p.id ? null : p.id)}
-                        className="w-8 h-8 rounded-xl flex items-center justify-center transition-colors hover:bg-[rgba(124,58,237,0.08)]">
-                        <MoreVertical size={14} style={{ color: 'var(--text-muted)' }} />
-                      </button>
-                      {openMenu === p.id && (
-                        <div className="absolute right-2 top-10 z-50 rounded-2xl shadow-2xl py-1.5 min-w-[180px] overflow-hidden"
-                          style={{ background: 'var(--bg-card)', border: '1px solid var(--border-purple)', boxShadow: '0 20px 60px rgba(0,0,0,0.3), 0 0 30px rgba(124,58,237,0.1)' }}>
-                          {[
-                            { icon: Send, label: 'Send to Client', action: () => handleSend(p) },
-                            { icon: Trash2, label: 'Delete', action: () => setConfirmDelete(p), danger: true },
-                          ].map(a => (
-                            <button key={a.label}
-                              onClick={() => { a.action(); setOpenMenu(null) }}
-                              className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-medium transition-colors"
-                              onMouseEnter={e => e.currentTarget.style.background = a.danger ? 'rgba(239,68,68,0.06)' : 'rgba(124,58,237,0.06)'}
-                              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                              style={{ color: a.danger ? '#f87171' : 'var(--text-h)' }}>
-                              <a.icon size={13} /> {a.label}
-                            </button>
-                          ))}
-                        </div>
-                      )}
+                    <td className="py-3.5 px-4" onClick={e => e.stopPropagation()}>
+                      <RowMenu width={188}>
+                        {[
+                          { icon: Send, label: 'Send to Client', action: () => handleSend(p) },
+                          { icon: Trash2, label: 'Delete', action: () => setConfirmDelete(p), danger: true },
+                        ].map(a => (
+                          <button key={a.label}
+                            onClick={() => a.action()}
+                            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-colors"
+                            onMouseEnter={e => e.currentTarget.style.background = a.danger ? 'rgba(239,68,68,0.06)' : 'rgba(124,58,237,0.06)'}
+                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                            style={{ color: a.danger ? '#f87171' : 'var(--text-h)' }}>
+                            <a.icon size={13} /> {a.label}
+                          </button>
+                        ))}
+                      </RowMenu>
                     </td>
                   </tr>
                 ))}
@@ -274,7 +267,7 @@ export default function Proposals() {
                       <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl"
                         style={{ background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.15)' }}>📋</div>
                       <p className="text-sm font-semibold" style={{ color: 'var(--text-muted)' }}>No proposals found</p>
-                      <button onClick={() => setShowDrawer(true)} className="text-xs font-bold" style={{ color: '#a78bfa' }}>+ Create your first proposal</button>
+                      <button onClick={() => navigate('/app/sales/proposals/new')} className="text-xs font-bold" style={{ color: '#a78bfa' }}>+ Create your first proposal</button>
                     </div>
                   </td></tr>
                 )}
@@ -290,7 +283,7 @@ export default function Proposals() {
       {showDrawer && (
         <>
           <div className="drawer-backdrop" onClick={() => setShowDrawer(false)} />
-          <div className="drawer-panel" style={{ width: 'min(600px, 95vw)' }}>
+          <div className="drawer-panel" style={{ width: 'min(1080px, 96vw)' }}>
             {/* Drawer Header */}
             <div className="drawer-header">
               <div>
@@ -497,7 +490,7 @@ export default function Proposals() {
                     <label className="label">Notes</label>
                     <textarea className="input-3d text-sm resize-none" rows={4} placeholder="Additional notes visible on the proposal…" value={form.notes} onChange={e => sf('notes', e.target.value)} />
                     <label className="label mt-3">Terms &amp; Conditions</label>
-                    <textarea className="input-3d text-sm resize-none" rows={3} placeholder="Payment terms, validity, conditions…" value={form.terms} onChange={e => sf('terms', e.target.value)} />
+                    <RichTextEditor value={form.terms} onChange={v => sf('terms', v)} placeholder="Payment terms, validity, conditions…" minHeight={120} />
                   </div>
                 </div>
               </div>

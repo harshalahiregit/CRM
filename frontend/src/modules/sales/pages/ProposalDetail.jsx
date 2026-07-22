@@ -10,6 +10,7 @@ import { salesApi } from '@/services/salesApi'
 import StatusBadge from '../components/StatusBadge'
 import ActivityTimeline from '../components/ActivityTimeline'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
+import ProposalSubmitModal from '../components/ProposalSubmitModal'
 
 const fmt     = v => '₹' + Number(v || 0).toLocaleString('en-IN')
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
@@ -34,6 +35,8 @@ export default function ProposalDetail() {
   const [isInternal, setIsInternal]   = useState(false)
   const [posting, setPosting]         = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [emailModal, setEmailModal] = useState(false)
+  const [templateModal, setTemplateModal] = useState(false)
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type })
@@ -63,12 +66,24 @@ export default function ProposalDetail() {
   const taxTotal  = Number(proposal.tax_total || 0)
   const grand     = Number(proposal.total || 0)
 
-  const events = [
-    { type: 'created',  label: 'Proposal created',       date: proposal.created_at },
-    proposal.sent_at     && { type: 'sent',     label: 'Sent to client', detail: proposal.client_email, date: proposal.sent_at },
-    proposal.accepted_at && { type: 'accepted', label: 'Accepted by client',   date: proposal.accepted_at },
-    proposal.declined_at && { type: 'declined', label: 'Declined by client',   date: proposal.declined_at },
-  ].filter(Boolean)
+  // Prefer the real server-logged activity trail (created / sent / email
+  // opened / portal viewed / accepted / declined); fall back to deriving from
+  // fields for older proposals that predate activity logging.
+  const events = (proposal.activities?.length)
+    ? proposal.activities.map(a => ({
+        type: a.type,
+        label: a.description,
+        detail: a.performer?.name,
+        date: a.created_at,
+      }))
+    : [
+        { type: 'created',  label: 'Proposal created',       date: proposal.created_at },
+        proposal.sent_at         && { type: 'sent',     label: 'Sent to client', detail: proposal.client_email, date: proposal.sent_at },
+        proposal.email_opened_at && { type: 'email_opened', label: 'Client opened the email', date: proposal.email_opened_at },
+        proposal.portal_viewed_at && { type: 'portal_viewed', label: 'Client viewed the secure link', date: proposal.portal_viewed_at },
+        proposal.accepted_at     && { type: 'accepted', label: 'Accepted by client',   date: proposal.accepted_at },
+        proposal.declined_at     && { type: 'declined', label: 'Declined by client',   date: proposal.declined_at },
+      ].filter(Boolean)
 
   const url = `${window.location.origin}/portal/proposals/${proposal.portal_token}`
 
@@ -171,7 +186,7 @@ export default function ProposalDetail() {
           {toast.msg}
         </div>
       )}
-      <div className="space-y-6 animate-[tiltIn_0.35s_ease_forwards]">
+      <div className="space-y-6 animate-[tiltIn_0.35s_ease]">
 
         {/* Top bar */}
         <div className="flex items-center justify-between flex-wrap gap-3">
@@ -196,9 +211,17 @@ export default function ProposalDetail() {
               <Link2 size={13} /> Portal Link
             </button>
             {[
-              { icon: Send,     label: 'Send',        action: handleSend },
+              { icon: Send,     label: proposal.last_emailed_at ? 'Resend Email' : 'Send Email', action: () => setEmailModal(true) },
+              { icon: MessageSquare, label: 'WhatsApp', action: () => {
+                const phone = (proposal.contact?.phone || proposal.phone || '').replace(/\D/g, '')
+                const link = `${window.location.origin}/portal/proposals/${proposal.portal_token}`
+                const text = encodeURIComponent(`Hi! Please review our proposal "${proposal.subject}": ${link}`)
+                window.open(phone ? `https://wa.me/${phone}?text=${text}` : `https://wa.me/?text=${text}`, '_blank')
+              } },
+              { icon: FileText, label: 'Edit', action: () => navigate(`/app/sales/proposals/${proposal.id}/edit`) },
               { icon: QrCode,   label: 'Generate QR', action: handleGenerateQR },
-              { icon: Download, label: 'PDF',         action: handleDownloadPdf },
+              ...(proposal.can_download !== false ? [{ icon: Download, label: 'PDF', action: handleDownloadPdf }] : []),
+              { icon: Link2, label: 'Save as Template', action: () => setTemplateModal(true) },
             ].map(a => (
               <button key={a.label} onClick={a.action}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all hover:scale-[1.02]"
@@ -503,6 +526,17 @@ export default function ProposalDetail() {
               ) : (
                 <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Not opened yet. Tracking activates once the client opens the proposal email.</p>
               )}
+              <div className="mt-3 pt-3 space-y-2 text-xs" style={{ borderTop: '1px solid var(--border)' }}>
+                <p className="font-bold" style={{ color: 'var(--text-h)' }}>Portal views</p>
+                {proposal.portal_view_count > 0 ? (
+                  <>
+                    <div className="flex justify-between"><span style={{ color: 'var(--text-muted)' }}>Times viewed</span><span className="font-semibold" style={{ color: 'var(--text-h)' }}>{proposal.portal_view_count}</span></div>
+                    <div className="flex justify-between"><span style={{ color: 'var(--text-muted)' }}>Last viewed</span><span className="font-semibold" style={{ color: 'var(--text-h)' }}>{fmtDate(proposal.portal_viewed_at)}</span></div>
+                  </>
+                ) : (
+                  <p style={{ color: 'var(--text-muted)' }}>The public link hasn't been opened yet.</p>
+                )}
+              </div>
             </div>
 
             {/* Activity */}
@@ -514,6 +548,19 @@ export default function ProposalDetail() {
         </div>
       </div>
 
+      {emailModal && (
+        <ProposalSubmitModal
+          proposal={proposal}
+          resend={!!proposal.last_emailed_at}
+          onClose={() => setEmailModal(false)}
+          onSent={() => { setEmailModal(false); showToast('Email sent'); reload() }}
+        />
+      )}
+
+      {templateModal && (
+        <SaveAsTemplateModal proposal={proposal} onClose={() => setTemplateModal(false)} showToast={showToast} />
+      )}
+
       {confirmDelete && (
         <ConfirmDialog
           title="Delete this proposal?"
@@ -524,6 +571,53 @@ export default function ProposalDetail() {
           onCancel={() => setConfirmDelete(false)}
         />
       )}
+    </>
+  )
+}
+
+
+function SaveAsTemplateModal({ proposal, onClose, showToast }) {
+  const [name, setName] = useState(proposal.subject)
+  const [category, setCategory] = useState('')
+  const [categories, setCategories] = useState([])
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    salesApi.proposalTemplates.categories().then(setCategories).catch(() => {})
+  }, [])
+
+  const save = async () => {
+    if (!name.trim()) return showToast('Template name required', 'error')
+    setSaving(true)
+    try {
+      await salesApi.proposals.saveAsTemplate(proposal.id, { name, category: category || null })
+      showToast('Saved to template library')
+      onClose()
+    } catch (e) { showToast(e.message, 'error') } finally { setSaving(false) }
+  }
+
+  return (
+    <>
+      <div className="drawer-backdrop" onClick={onClose} />
+      <div className="drawer-panel" style={{ width: 'min(440px, 96vw)' }}>
+        <div className="drawer-header">
+          <h2 className="font-black text-lg" style={{ color: 'var(--text-h)' }}>Save as Template</h2>
+          <button onClick={onClose} className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ border: '1px solid var(--border)' }}>✕</button>
+        </div>
+        <div className="drawer-body space-y-4">
+          <div><label className="label">Template Name *</label><input className="input-3d text-sm" value={name} onChange={e => setName(e.target.value)} /></div>
+          <div>
+            <label className="label">Category</label>
+            <input className="input-3d text-sm" list="tpl-categories" value={category} onChange={e => setCategory(e.target.value)} placeholder="e.g. Consulting" />
+            <datalist id="tpl-categories">{categories.map(c => <option key={c} value={c} />)}</datalist>
+          </div>
+          <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Content pages are copied; pricing line items are not part of templates.</p>
+        </div>
+        <div className="drawer-footer">
+          <button onClick={onClose} className="flex-1 py-3 rounded-2xl text-sm font-semibold" style={{ background: 'var(--bg-input)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Cancel</button>
+          <button onClick={save} disabled={saving} className="flex-[2] py-3 rounded-2xl text-sm font-bold text-white disabled:opacity-60" style={{ background: 'linear-gradient(135deg,#9f67ff,#7C3AED,#5b21b6)' }}>{saving ? 'Saving…' : 'Save Template'}</button>
+        </div>
+      </div>
     </>
   )
 }

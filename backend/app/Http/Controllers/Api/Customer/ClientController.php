@@ -4,11 +4,13 @@ namespace App\Http\Controllers\Api\Customer;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Customer\StoreClientRequest;
+use App\Http\Requests\Customer\UpdateClientLocationRequest;
 use App\Http\Requests\Customer\UpdateClientRequest;
 use App\Models\Customer\Client;
 use App\Services\Customer\ClientImportExportService;
 use App\Services\Customer\ClientLedgerService;
 use App\Services\Customer\ClientService;
+use App\Services\Customer\GeocodingService;
 use App\Services\Customer\CustomFieldService;
 use App\Support\Spreadsheet;
 use Illuminate\Http\Request;
@@ -50,7 +52,9 @@ class ClientController extends Controller
     {
         $tenantId = $request->user()->tenant_id;
         $data = $this->clients->show($client, $tenantId)->toArray();
-        $data['custom_fields'] = $this->customFields->valuesFor($tenantId, 'customers', $client->id);
+        $data['custom_fields'] = $this->customFields->valuesFor(
+            $tenantId, 'customers', $client->id, $request->user()->role === 'admin'
+        );
         $data['financials']    = $this->ledger->financials($client, $tenantId);
         return response()->json($data);
     }
@@ -128,12 +132,38 @@ class ClientController extends Controller
         ]);
     }
 
+    /* ── Assignable staff without a client (create-stepper step 3) ── */
+    public function assignableStaff(Request $request)
+    {
+        return response()->json($this->clients->assignableStaff($request->user()->tenant_id));
+    }
+
     public function syncAdmins(Client $client, Request $request)
     {
         $data = $request->validate(['user_ids' => 'array', 'user_ids.*' => 'integer']);
         return response()->json(
             $this->clients->syncAdmins($client, $data['user_ids'] ?? [], $request->user()->tenant_id)
         );
+    }
+
+    /* ── Map location (pinned site coordinates) ───────────────── */
+
+    /** Save the customer's pinned site location (address text + coordinates). */
+    public function updateLocation(Client $client, UpdateClientLocationRequest $request)
+    {
+        $updated = $this->clients->updateLocation(
+            $client, $request->validated(), $request->user()->tenant_id
+        );
+
+        return response()->json($updated->only(['id', 'map_address', 'latitude', 'longitude']));
+    }
+
+    /** Address search backing the map picker. */
+    public function geocode(Request $request, GeocodingService $geocoder)
+    {
+        $data = $request->validate(['q' => 'required|string|min:3|max:250']);
+
+        return response()->json($geocoder->search($data['q']));
     }
 
     /* ── Import (CSV or Excel) ────────────────────────────────── */

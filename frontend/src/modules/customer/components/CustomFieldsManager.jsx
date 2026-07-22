@@ -3,54 +3,28 @@ import { X, Plus, Edit2, Trash2 } from 'lucide-react'
 import { customerApi } from '@/services/customerApi'
 import { useToast } from '@/hooks/useToast'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
+import CustomFieldForm, { FIELD_TYPES as TYPES } from './CustomFieldForm'
 
 // Mirrors the old CRM's Setup → Custom Fields: define fields once (scoped to
 // customers) and they render on every customer's Custom Fields tab to fill in.
-const TYPES = [
-  { value: 'input', label: 'Text' },
-  { value: 'number', label: 'Number' },
-  { value: 'textarea', label: 'Text area' },
-  { value: 'select', label: 'Dropdown (select)' },
-  { value: 'multiselect', label: 'Multi-select' },
-  { value: 'checkbox', label: 'Checkbox' },
-  { value: 'date_picker', label: 'Date' },
-]
-const NEEDS_OPTIONS = ['select', 'multiselect']
-const EMPTY = { name: '', type: 'input', options: '', required: false, show_on_table: false, field_to: 'customers' }
-
+// The definition form itself is the shared CustomFieldForm (also used by
+// Settings → Custom Fields and the inline quick-add).
 export default function CustomFieldsManager({ onClose }) {
   const toast = useToast()
   const [fields, setFields] = useState(null)
   const [editing, setEditing] = useState(null)   // null = list view; object = form
-  const [form, setForm] = useState(EMPTY)
-  const [saving, setSaving] = useState(false)
   const [confirmDel, setConfirmDel] = useState(null)
 
   const load = () => customerApi.customFields.list('customers').then(setFields).catch(e => toast.error(e.message))
   useEffect(() => { load() }, [])
 
-  const openNew = () => { setForm(EMPTY); setEditing({ id: null }) }
-  const openEdit = (f) => {
-    setForm({ name: f.name, type: f.type, options: f.options || '', required: !!f.required, show_on_table: !!f.show_on_table, field_to: 'customers' })
-    setEditing(f)
-  }
-
-  const save = async () => {
-    if (!form.name.trim()) return toast.error('Field name is required')
-    setSaving(true)
-    try {
-      if (editing?.id) { await customerApi.customFields.update(editing.id, form); toast.success('Custom field updated') }
-      else { await customerApi.customFields.create(form); toast.success('Custom field created') }
-      setEditing(null); load()
-    } catch (e) { toast.error(e.message) } finally { setSaving(false) }
-  }
+  const openNew = () => setEditing({ id: null })
+  const openEdit = (f) => setEditing(f)
 
   const doDelete = async () => {
     try { await customerApi.customFields.remove(confirmDel.id); toast.success('Custom field deleted'); load() }
     catch (e) { toast.error(e.message) } finally { setConfirmDel(null) }
   }
-
-  const sf = (k, v) => setForm(p => ({ ...p, [k]: v }))
 
   return (
     <>
@@ -68,38 +42,14 @@ export default function CustomFieldsManager({ onClose }) {
           </div>
 
           <div className="p-5">
-            {/* ── Definition form ── */}
+            {/* ── Definition form (shared component) ── */}
             {editing ? (
-              <div className="space-y-4">
-                <div>
-                  <label className="label">Field Name *</label>
-                  <input className="input-3d text-sm" placeholder="e.g. Industry" value={form.name} onChange={e => sf('name', e.target.value)} />
-                </div>
-                <div>
-                  <label className="label">Field Type</label>
-                  <select className="input-3d text-sm" value={form.type} onChange={e => sf('type', e.target.value)}>
-                    {TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                  </select>
-                </div>
-                {NEEDS_OPTIONS.includes(form.type) && (
-                  <div>
-                    <label className="label">Options <span style={{ textTransform: 'none', fontWeight: 400 }}>(one per line)</span></label>
-                    <textarea rows={4} className="input-3d text-sm resize-none" placeholder={'IT Services\nManufacturing\nRetail'} value={form.options} onChange={e => sf('options', e.target.value)} />
-                  </div>
-                )}
-                <div className="flex gap-5">
-                  <label className="flex items-center gap-2 text-sm cursor-pointer" style={{ color: 'var(--text-muted)' }}>
-                    <input type="checkbox" checked={form.required} onChange={e => sf('required', e.target.checked)} /> Required
-                  </label>
-                  <label className="flex items-center gap-2 text-sm cursor-pointer" style={{ color: 'var(--text-muted)' }}>
-                    <input type="checkbox" checked={form.show_on_table} onChange={e => sf('show_on_table', e.target.checked)} /> Show in list
-                  </label>
-                </div>
-                <div className="flex gap-2 justify-end pt-2">
-                  <button onClick={() => setEditing(null)} className="px-4 py-2 rounded-xl text-sm font-semibold" style={{ background: 'var(--bg-input)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Cancel</button>
-                  <button onClick={save} disabled={saving} className="px-5 py-2 rounded-xl text-sm font-bold text-white disabled:opacity-60" style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>{saving ? 'Saving…' : editing.id ? 'Save' : 'Add Field'}</button>
-                </div>
-              </div>
+              <CustomFieldForm
+                fieldTo="customers"
+                initial={editing.id ? editing : null}
+                onSaved={() => { setEditing(null); load() }}
+                onCancel={() => setEditing(null)}
+              />
             ) : (
               /* ── Definition list ── */
               <div className="space-y-3">

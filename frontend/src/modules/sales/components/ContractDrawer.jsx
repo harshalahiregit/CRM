@@ -11,6 +11,18 @@ export default function ContractDrawer({ open, onClose, contractId, onSaved }) {
   const clients = useClientOptions()
   const [form, setForm] = useState(BLANK)
   const [types, setTypes] = useState([])
+  const [addingType, setAddingType] = useState(false)
+  const [newType, setNewType] = useState('')
+
+  const addType = async () => {
+    if (!newType.trim()) return
+    try {
+      const t = await contractApi.createType(newType.trim())
+      setTypes(p => [...p, t])
+      sf('contract_type_id', t.id)
+      setAddingType(false); setNewType('')
+    } catch (e) { /* surfaced by drawer toast if present */ }
+  }
   const [saving, setSaving] = useState(false)
   const sf = (k, v) => setForm(p => ({ ...p, [k]: v }))
 
@@ -56,11 +68,23 @@ export default function ContractDrawer({ open, onClose, contractId, onSaved }) {
           </select>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <div><label className="label">Type</label>
-            <select className="input-3d text-sm" value={form.contract_type_id} onChange={e => sf('contract_type_id', e.target.value)}>
-              <option value="">—</option>
-              {types.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
+          <div>
+            <div className="flex items-center justify-between">
+              <label className="label">Type</label>
+              <button type="button" onClick={() => setAddingType(a => !a)} className="text-[11px] font-bold" style={{ color: 'var(--accent)' }}>+ New type</button>
+            </div>
+            {addingType ? (
+              <div className="flex gap-1.5">
+                <input className="input-3d text-sm flex-1" placeholder="Type name" value={newType} onChange={e => setNewType(e.target.value)}
+                  onKeyDown={async e => { if (e.key === 'Enter') await addType() }} autoFocus />
+                <button type="button" onClick={addType} className="px-3 rounded-xl text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>Add</button>
+              </div>
+            ) : (
+              <select className="input-3d text-sm" value={form.contract_type_id} onChange={e => sf('contract_type_id', e.target.value)}>
+                <option value="">—</option>
+                {types.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            )}
           </div>
           <div><label className="label">Value (₹)</label><input type="number" className="input-3d text-sm" value={form.value} onChange={e => sf('value', e.target.value)} /></div>
         </div>

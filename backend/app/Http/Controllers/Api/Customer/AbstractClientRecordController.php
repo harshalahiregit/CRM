@@ -20,6 +20,29 @@ abstract class AbstractClientRecordController extends Controller
     /** Name of the hasMany relation on Client (e.g. 'contracts'). */
     abstract protected function relation(): string;
 
+    /**
+     * Fields holding rich text — sanitized on write so stored HTML is safe to
+     * render. Subclasses override to opt in.
+     *
+     * @return array<int, string>
+     */
+    protected function htmlFields(): array
+    {
+        return [];
+    }
+
+    /** Sanitize any rich-text fields present in the validated payload. */
+    protected function sanitizeHtml(array $data): array
+    {
+        foreach ($this->htmlFields() as $field) {
+            if (isset($data[$field])) {
+                $data[$field] = \App\Support\HtmlSanitizer::clean($data[$field]);
+            }
+        }
+
+        return $data;
+    }
+
     /** Validation rules for store/update. */
     abstract protected function rules(): array;
 
@@ -32,7 +55,7 @@ abstract class AbstractClientRecordController extends Controller
     public function store(Client $client, Request $request)
     {
         $this->assertClientTenant($client, $request->user()->tenant_id);
-        $data = $request->validate($this->rules());
+        $data = $this->sanitizeHtml($request->validate($this->rules()));
 
         $record = $client->{$this->relation()}()->create([
             ...$data,
@@ -48,7 +71,7 @@ abstract class AbstractClientRecordController extends Controller
         $this->assertClientTenant($client, $request->user()->tenant_id);
         // Resolve within the client's relation → inherently client + tenant scoped.
         $record = $client->{$this->relation()}()->findOrFail($recordId);
-        $record->update($request->validate($this->rules()));
+        $record->update($this->sanitizeHtml($request->validate($this->rules())));
         return response()->json($record);
     }
 

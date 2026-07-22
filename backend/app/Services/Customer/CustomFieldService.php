@@ -43,35 +43,49 @@ class CustomFieldService
         $field->delete(); // cascades values via FK
     }
 
+    /** Apply a new field ordering (only touches this tenant's fields). */
+    public function reorder(array $ids, int $tenantId): void
+    {
+        foreach (array_values($ids) as $order => $id) {
+            CustomField::forTenant($tenantId)->whereKey($id)->update(['field_order' => $order]);
+        }
+    }
+
     /**
      * Values for one record, keyed by field slug, merged with definitions so
      * the frontend can render inputs even when no value exists yet.
      *
      * @return array<int, array{id:int, slug:string, name:string, type:string, required:bool, options:array, value:mixed}>
      */
-    public function valuesFor(int $tenantId, string $fieldTo, int $relId): array
+    public function valuesFor(int $tenantId, string $fieldTo, int $relId, bool $isAdmin = true): array
     {
-        $fields = $this->definitions($tenantId, $fieldTo);
+        $fields = $this->definitions($tenantId, $fieldTo)
+            ->when(! $isAdmin, fn ($c) => $c->reject(fn (CustomField $f) => $f->only_admin))
+            ->values();
+
         $stored = CustomFieldValue::forTenant($tenantId)
             ->where('field_to', $fieldTo)
             ->where('rel_id', $relId)
             ->pluck('value', 'field_id');
 
         return $fields->map(fn (CustomField $f) => [
-            'id'       => $f->id,
-            'slug'     => $f->slug,
-            'name'     => $f->name,
-            'type'     => $f->type,
-            'required' => $f->required,
-            'options'  => $f->optionList(),
-            'value'    => $this->decodeValue($f->type, $stored[$f->id] ?? $f->default_value),
+            'id'             => $f->id,
+            'slug'           => $f->slug,
+            'name'           => $f->name,
+            'type'           => $f->type,
+            'required'       => $f->required,
+            'options'        => $f->optionList(),
+            'bs_column'      => $f->bs_column,
+            'display_inline' => $f->display_inline,
+            'default_value'  => $f->default_value,
+            'value'          => $this->decodeValue($f->type, $stored[$f->id] ?? $f->default_value),
         ])->all();
     }
 
-    /** Multiselect values are stored JSON-encoded — decode them back to an array. */
+    /** Multi-value types (multiselect + checkbox groups) are stored JSON-encoded. */
     private function decodeValue(string $type, $value)
     {
-        if ($type === 'multiselect' && is_string($value) && $value !== '') {
+        if (in_array($type, ['multiselect', 'checkbox'], true) && is_string($value) && $value !== '') {
             $decoded = json_decode($value, true);
             return is_array($decoded) ? $decoded : $value;
         }

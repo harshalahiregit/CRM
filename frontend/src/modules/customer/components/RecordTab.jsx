@@ -3,6 +3,7 @@ import { Plus, Edit2, X } from 'lucide-react'
 import { customerApi } from '@/services/customerApi'
 import { useToast } from '@/hooks/useToast'
 import ConfirmIconButton from './ConfirmIconButton'
+import RichTextEditor from '@/components/ui/RichTextEditor'
 
 const fmtMoney = v => '₹' + Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const d10 = s => (s ? String(s).slice(0, 10) : '—')
@@ -25,7 +26,7 @@ const blankForm = (fields) => Object.fromEntries(fields.map(f => [f.key, f.type 
  * same parent-id-first signature) to reuse it for other parents — e.g. a
  * follow-ups adapter closed over a (subjectType, subjectId) pair.
  */
-export default function RecordTab({ clientId, schema, api: apiProp }) {
+export default function RecordTab({ clientId, schema, api: apiProp, dynamicOptions = {} }) {
   const toast = useToast()
   const api = apiProp || customerApi[schema.apiKey]
   const [rows, setRows] = useState(null)
@@ -46,7 +47,9 @@ export default function RecordTab({ clientId, schema, api: apiProp }) {
     setSaving(true)
     try {
       const payload = { ...form }
-      schema.fields.forEach(f => { if ((f.type === 'money' || f.type === 'number') && payload[f.key] === '') payload[f.key] = null })
+      // Omit empty numeric fields (don't send null) so the NOT-NULL DB defaults
+      // apply — sending null would violate the column and 500.
+      schema.fields.forEach(f => { if ((f.type === 'money' || f.type === 'number') && payload[f.key] === '') delete payload[f.key] })
       if (editing?.id) { await api.update(clientId, editing.id, payload); toast.success(`${schema.title.replace(/s$/, '')} updated`) }
       else { await api.create(clientId, payload); toast.success(`${schema.title.replace(/s$/, '')} added`) }
       setEditing(null); load()
@@ -85,10 +88,11 @@ export default function RecordTab({ clientId, schema, api: apiProp }) {
             <button onClick={() => setEditing(null)} className="p-1 rounded-lg hover:bg-[rgba(239,68,68,0.08)]"><X size={15} style={{ color: 'var(--text-muted)' }} /></button>
           </div>
           <div className="grid md:grid-cols-2 gap-4">
-            {schema.fields.map(f => (
-              <div key={f.key} className={f.type === 'textarea' ? 'md:col-span-2' : ''}>
+            {schema.fields.filter(f => !f.showIf || form[f.showIf.key] === f.showIf.value).map(f => (
+              <div key={f.key} className={['textarea', 'richtext'].includes(f.type) ? 'md:col-span-2' : ''}>
                 <label className="label">{f.label}{f.required ? ' *' : ''}</label>
-                <FieldInput field={f} value={form[f.key]} onChange={v => sf(f.key, v)} />
+                <FieldInput field={f} value={form[f.key]} onChange={v => sf(f.key, v)} dynamicOptions={dynamicOptions} />
+                {f.helpText && <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>{f.helpText}</p>}
               </div>
             ))}
           </div>
@@ -133,10 +137,30 @@ export default function RecordTab({ clientId, schema, api: apiProp }) {
   )
 }
 
-function FieldInput({ field, value, onChange }) {
+function FieldInput({ field, value, onChange, dynamicOptions = {} }) {
   if (field.type === 'textarea') return <textarea rows={2} className="input-3d text-sm resize-none" value={value} onChange={e => onChange(e.target.value)} />
+  // Notepad-style field (headings, bold, lists, links) — same editor as customer Notes.
+  if (field.type === 'richtext') return <RichTextEditor value={value || ''} onChange={onChange} placeholder={field.placeholder || 'Write here…'} minHeight={140} />
   if (field.type === 'checkbox') return <label className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}><input type="checkbox" checked={!!value} onChange={e => onChange(e.target.checked)} /> Yes</label>
-  if (field.type === 'select') return <select className="input-3d text-sm" value={value} onChange={e => onChange(e.target.value)}>{field.options.map(o => <option key={o} value={o}>{o}</option>)}</select>
+  if (field.type === 'select') {
+    // Options from schema OR fetched at runtime via optionsKey. Each option is
+    // either a plain string (value === label, e.g. expense categories, which are
+    // stored as text) or {value, label} for relations that must persist an ID
+    // (e.g. project_id). The current value stays selectable even if it has
+    // dropped out of the source list.
+    const raw = field.optionsKey ? (dynamicOptions[field.optionsKey] || []) : (field.options || [])
+    const opts = raw.map(o => (o && typeof o === 'object' ? o : { value: o, label: o }))
+    const known = opts.some(o => String(o.value) === String(value))
+    const withCurrent = value !== '' && value != null && !known
+      ? [{ value, label: String(value) }, ...opts]
+      : opts
+    return (
+      <select className="input-3d text-sm" value={value ?? ''} onChange={e => onChange(e.target.value)}>
+        <option value="">{field.placeholder || '—'}</option>
+        {withCurrent.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+    )
+  }
   if (field.type === 'date') return <input type="date" className="input-3d text-sm" value={value} onChange={e => onChange(e.target.value)} />
   if (field.type === 'money' || field.type === 'number') return <input type="number" className="input-3d text-sm" value={value} onChange={e => onChange(e.target.value)} />
   return <input className="input-3d text-sm" value={value} onChange={e => onChange(e.target.value)} />

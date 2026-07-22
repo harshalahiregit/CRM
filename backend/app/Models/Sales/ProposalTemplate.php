@@ -12,7 +12,7 @@ class ProposalTemplate extends Model
     use HasFactory, BelongsToTenant;
 
     protected $fillable = [
-        'tenant_id', 'name', 'description', 'category', 'content',
+        'tenant_id', 'name', 'description', 'category', 'content', 'terms',
         'thumbnail_url', 'is_default', 'sort_order', 'created_by',
     ];
 
@@ -28,5 +28,10 @@ class ProposalTemplate extends Model
     public function proposals()
     {
         return $this->hasMany(Proposal::class, 'template_id');
+    }
+
+    public function pages()
+    {
+        return $this->morphMany(ContentPage::class, 'pageable')->orderBy('sort_order');
     }
 }

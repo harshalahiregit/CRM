@@ -40,7 +40,7 @@ export default function EstimateDetail() {
   }, [id])
 
   if (loading) return (
-    <div className="space-y-4 animate-[tiltIn_0.35s_ease_forwards]">
+    <div className="space-y-4 animate-[tiltIn_0.35s_ease]">
       {[1, 2, 3].map(i => <div key={i} className="skeleton h-28 rounded-2xl" style={{ background: 'var(--border)' }} />)}
     </div>
   )
@@ -121,7 +121,7 @@ export default function EstimateDetail() {
           {toast.msg}
         </div>
       )}
-      <div className="space-y-6 animate-[tiltIn_0.35s_ease_forwards]">
+      <div className="space-y-6 animate-[tiltIn_0.35s_ease]">
 
         {/* Top bar */}
         <div className="flex items-center justify-between flex-wrap gap-3">

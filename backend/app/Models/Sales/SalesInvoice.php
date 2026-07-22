@@ -7,10 +7,11 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use App\Models\Traits\BelongsToTenant;
+use App\Models\Traits\CalculatesDocumentTotals;
 
 class SalesInvoice extends Model
 {
-    use HasFactory, SoftDeletes, BelongsToTenant;
+    use HasFactory, SoftDeletes, BelongsToTenant, CalculatesDocumentTotals;
 
     protected $table = 'sales_invoices';
 
@@ -23,6 +24,8 @@ class SalesInvoice extends Model
         'status', 'adminnote', 'clientnote', 'terms', 'tags',
         'sent_at', 'created_by',
         'invoice_type', 'gst_paid', 'gst_amount', 'after_discount_amount',
+        'supply_type', 'discount_mode', 'discount_value',
+        'billing_street', 'billing_city', 'billing_state', 'billing_zip', 'billing_country',
         'public_link_token', 'public_link_expiry', 'msme_udyam_number',
         'eway_bill_number', 'eway_bill_date', 'payment_reminder_enabled',
         'reminder_schedule', 'feedback_email_sent',
@@ -94,21 +97,15 @@ class SalesInvoice extends Model
     /* ── Helpers ─────────────────────────────── */
     public function recalcTotals(): void
     {
-        $subtotal = $taxTotal = $discountTotal = 0;
-        foreach ($this->lineItems as $li) {
-            $base          = $li->qty * $li->rate;
-            $afterDis      = $base - $li->discount;
-            $taxAmount     = $afterDis * ($li->tax / 100);
-            $subtotal     += $base;
-            $discountTotal+= $li->discount;
-            $taxTotal     += $taxAmount;
-        }
-        $this->subtotal              = round($subtotal, 2);
-        $this->tax_total             = round($taxTotal, 2);
-        $this->discount_total        = round($discountTotal, 2);
-        $this->after_discount_amount = round($subtotal - $discountTotal, 2);
-        $this->gst_amount            = round($taxTotal, 2);
-        $this->total                 = round($subtotal - $discountTotal + $taxTotal, 2);
+        $t = $this->computeDocumentTotals();
+
+        $this->subtotal              = $t['subtotal'];
+        $this->tax_total             = $t['tax_total'];
+        $this->discount_total        = $t['all_discounts'];
+        $this->after_discount_amount = $t['after_discount'];
+        $this->gst_amount            = $t['tax_total'];
+        $this->total                 = $t['total'];
+        $this->supply_type           = $this->computeSupplyType();
         $this->saveQuietly();
     }
 

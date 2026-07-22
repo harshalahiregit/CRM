@@ -16,7 +16,7 @@ const catColor = cat =>
   cat==='Consulting'     ? {bg:'rgba(249,115,22,0.1)', color:'#fb923c'} :
                            {bg:'rgba(16,185,129,0.1)', color:'#10b981'}
 
-const EMPTY_FORM = { name:'', description:'', long_description:'', rate:'', unit:'project', tax_rate:18, tax2:0, category:'Development' }
+const EMPTY_FORM = { name:'', description:'', long_description:'', rate:'', unit:'project', tax_rate:18, tax_rate_2:0, category:'Development' }
 
 export default function Items() {
   const csvRef = useRef(null)
@@ -43,7 +43,7 @@ export default function Items() {
   const openCreate = () => { setEditing(null); setForm(EMPTY_FORM); setShowDrawer(true) }
   const openEdit = item => {
     setEditing(item)
-    setForm({ name:item.name, description:item.description, long_description:item.long_description, rate:item.rate, unit:item.unit, tax_rate:item.tax_rate, tax2:item.tax2||0, category:item.category })
+    setForm({ name:item.name, description:item.description, long_description:item.long_description, rate:item.rate, unit:item.unit, tax_rate:item.tax_rate, tax_rate_2:item.tax_rate_2||0, category:item.category })
     setShowDrawer(true)
   }
 
@@ -64,7 +64,7 @@ export default function Items() {
   return (
     <>
       {toast && <div className="fixed top-5 right-5 z-[9999] px-5 py-3 rounded-2xl text-sm font-semibold text-white shadow-2xl animate-[slideDown_0.3s_ease]" style={{background:toast.type==='success'?'linear-gradient(135deg,#10b981,#059669)':'linear-gradient(135deg,#f87171,#ef4444)'}}>{toast.msg}</div>}
-      <div className="space-y-6 animate-[tiltIn_0.35s_ease_forwards]">
+      <div className="space-y-6 animate-[tiltIn_0.35s_ease]">
 
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -140,7 +140,7 @@ export default function Items() {
                 <div className="flex items-end justify-between">
                   <div>
                     <p className="text-lg font-black" style={{color:'#a78bfa'}}>{fmt(item.rate)}</p>
-                    <p className="text-[10px]" style={{color:'var(--text-muted)'}}>per {item.unit} · Tax {item.tax_rate}%{item.tax2?` + ${item.tax2}%`:''}</p>
+                    <p className="text-[10px]" style={{color:'var(--text-muted)'}}>per {item.unit} · Tax {item.tax_rate}%{item.tax_rate_2?` + ${item.tax_rate_2}%`:''}</p>
                   </div>
                 </div>
               </div>
@@ -168,7 +168,7 @@ export default function Items() {
                       <td className="py-3.5 px-4 font-bold" style={{color:'#a78bfa'}}>{fmt(item.rate)}</td>
                       <td className="py-3.5 px-4" style={{color:'var(--text-muted)'}}>{item.unit}</td>
                       <td className="py-3.5 px-4" style={{color:'var(--text-muted)'}}>{item.tax_rate}%</td>
-                      <td className="py-3.5 px-4" style={{color:'var(--text-muted)'}}>{item.tax2||0}%</td>
+                      <td className="py-3.5 px-4" style={{color:'var(--text-muted)'}}>{item.tax_rate_2||0}%</td>
                       <td className="py-3.5 px-4">
                         <div className="flex gap-1">
                           <button onClick={()=>openEdit(item)} className="p-1.5 rounded-lg hover:bg-[rgba(124,58,237,0.08)] transition-colors"><Edit2 size={12} style={{color:'var(--text-muted)'}}/></button>
@@ -246,22 +246,22 @@ export default function Items() {
                     </div>
                     <div>
                       <label className="label">Tax 2 (Secondary)</label>
-                      <select className="input-3d text-sm" value={form.tax2} onChange={e => sf('tax2', Number(e.target.value))}>
+                      <select className="input-3d text-sm" value={form.tax_rate_2} onChange={e => sf('tax_rate_2', Number(e.target.value))}>
                         {TAXES.map(t => <option key={t} value={t}>{t === 0 ? 'None' : `${t}%`}</option>)}
                       </select>
                     </div>
                   </div>
 
                   {/* Tax preview */}
-                  {(form.rate && (form.tax_rate || form.tax2)) ? (
+                  {(form.rate && (form.tax_rate || form.tax_rate_2)) ? (
                     <div className="p-3 rounded-xl" style={{ background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.15)' }}>
                       <p className="text-xs font-bold mb-2" style={{ color: '#a78bfa' }}>Tax Preview (per unit)</p>
                       <div className="space-y-1 text-xs" style={{ color: 'var(--text-muted)' }}>
                         <div className="flex justify-between"><span>Base Rate</span><span className="font-semibold" style={{ color: 'var(--text-h)' }}>{fmt(form.rate)}</span></div>
                         {form.tax_rate > 0 && <div className="flex justify-between"><span>Tax 1 ({form.tax_rate}%)</span><span style={{ color: 'var(--text-h)' }}>{fmt(form.rate * form.tax_rate / 100)}</span></div>}
-                        {form.tax2 > 0 && <div className="flex justify-between"><span>Tax 2 ({form.tax2}%)</span><span style={{ color: 'var(--text-h)' }}>{fmt(form.rate * form.tax2 / 100)}</span></div>}
+                        {form.tax_rate_2 > 0 && <div className="flex justify-between"><span>Tax 2 ({form.tax_rate_2}%)</span><span style={{ color: 'var(--text-h)' }}>{fmt(form.rate * form.tax_rate_2 / 100)}</span></div>}
                         <div className="flex justify-between pt-1 font-black text-sm" style={{ borderTop: '1px solid var(--border)', color: 'var(--text-h)' }}>
-                          <span>Total</span><span style={{ color: '#a78bfa' }}>{fmt(Number(form.rate) * (1 + (form.tax_rate + form.tax2) / 100))}</span>
+                          <span>Total</span><span style={{ color: '#a78bfa' }}>{fmt(Number(form.rate) * (1 + (form.tax_rate + form.tax_rate_2) / 100))}</span>
                         </div>
                       </div>
                     </div>

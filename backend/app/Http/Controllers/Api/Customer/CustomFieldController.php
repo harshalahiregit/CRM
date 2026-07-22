@@ -46,18 +46,33 @@ class CustomFieldController extends Controller
         return response()->json(['message' => 'Custom field deleted']);
     }
 
+    /** Persist a new field ordering (array of ids, in display order). */
+    public function reorder(Request $request)
+    {
+        $data = $request->validate(['ids' => 'required|array', 'ids.*' => 'integer']);
+        $this->customFields->reorder($data['ids'], $request->user()->tenant_id);
+        return response()->json(['message' => 'Order updated']);
+    }
+
     private function validateField(Request $request, ?CustomField $existing = null): array
     {
         return $request->validate([
-            'field_to'      => ['sometimes', Rule::in(CustomField::FIELD_TARGETS)],
-            'name'          => ['required', 'string', 'max:150'],
-            'type'          => ['required', Rule::in(CustomField::TYPES)],
-            'options'       => ['nullable', 'string'],
-            'required'      => ['nullable', 'boolean'],
-            'field_order'   => ['nullable', 'integer'],
-            'active'        => ['nullable', 'boolean'],
-            'show_on_table' => ['nullable', 'boolean'],
-            'default_value' => ['nullable', 'string'],
+            'field_to'       => ['sometimes', Rule::in(CustomField::FIELD_TARGETS)],
+            'name'           => ['required', 'string', 'max:150'],
+            'type'           => ['required', Rule::in(CustomField::TYPES)],
+            'options'        => ['nullable', 'string'],
+            'required'       => ['nullable', 'boolean'],
+            'field_order'    => ['nullable', 'integer', 'min:0'],
+            'bs_column'      => ['nullable', Rule::in([12, 6, 4, 3])],
+            'only_admin'     => ['nullable', 'boolean'],
+            'display_inline' => ['nullable', 'boolean'],
+            'active'                => ['nullable', 'boolean'],
+            'show_on_table'         => ['nullable', 'boolean'],
+            'default_value'         => ['nullable', 'string'],
+            'show_on_pdf'           => ['nullable', 'boolean'],
+            'show_on_client_portal' => ['nullable', 'boolean'],
+            'disallow_client_edit'  => ['nullable', 'boolean'],
+            'show_on_ticket_form'   => ['nullable', 'boolean'],
         ]);
     }
 }

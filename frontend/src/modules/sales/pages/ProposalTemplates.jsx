@@ -1,14 +1,16 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Plus, Trash2, Copy, LayoutTemplate } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Copy, LayoutTemplate, Edit2 } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
+import PagesEditor from '../components/PagesEditor'
+import RichTextEditor from '@/components/ui/RichTextEditor'
 import Drawer from '@/components/ui/Drawer'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import EmptyState from '@/components/ui/EmptyState'
 import FormField, { Input, Select, Textarea } from '@/components/ui/FormField'
 import { useToast } from '@/hooks/useToast'
 
-const EMPTY_FORM = { name: '', description: '', category: '', content: '', is_default: false }
+const EMPTY_FORM = { name: '', description: '', category: '', content: '', terms: '', is_default: false, pages: [{ title: 'Page 1', content: '' }] }
 
 export default function ProposalTemplates() {
   const navigate = useNavigate()
@@ -17,8 +19,10 @@ export default function ProposalTemplates() {
   const [loading, setLoading] = useState(true)
   const [showDrawer, setShowDrawer] = useState(false)
   const [form, setForm] = useState(EMPTY_FORM)
+  const [categories, setCategories] = useState([])
   const [creating, setCreating] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(null)
+  const [editing, setEditing] = useState(null)   // null = create, template = edit
 
   const sf = (k, v) => setForm(p => ({ ...p, [k]: v }))
 
@@ -27,15 +31,27 @@ export default function ProposalTemplates() {
     salesApi.proposalTemplates.list().then(d => { setData(d); setLoading(false) })
   }
   useEffect(() => { load() }, [])
+  useEffect(() => { salesApi.proposalTemplates.categories().then(setCategories).catch(() => {}) }, [])
 
-  const handleCreate = async () => {
+  const openCreate = () => { setEditing(null); setForm(EMPTY_FORM); setShowDrawer(true) }
+
+  const openEdit = (t) => {
+    setEditing(t)
+    setForm({
+      name: t.name || '', description: t.description || '', category: t.category || '',
+      content: t.content || '', terms: t.terms || '', is_default: !!t.is_default,
+      pages: (t.pages || []).length ? t.pages.map(p => ({ title: p.title, content: p.content })) : [{ title: 'Page 1', content: '' }],
+    })
+    setShowDrawer(true)
+  }
+
+  const handleSave = async () => {
     if (!form.name) return toast.error('Template name is required')
     setCreating(true)
     try {
-      await salesApi.proposalTemplates.create(form)
-      toast.success('Template created')
-      setShowDrawer(false)
-      setForm(EMPTY_FORM)
+      if (editing) { await salesApi.proposalTemplates.update(editing.id, form); toast.success('Template updated') }
+      else { await salesApi.proposalTemplates.create(form); toast.success('Template created') }
+      setShowDrawer(false); setEditing(null); setForm(EMPTY_FORM)
       load()
     } catch (e) {
       toast.error(e.message)
@@ -81,7 +97,7 @@ export default function ProposalTemplates() {
             <h1 className="text-2xl font-black" style={{ color: 'var(--text-h)', letterSpacing: '-0.03em' }}>Proposal Templates</h1>
           </div>
         </div>
-        <button onClick={() => setShowDrawer(true)}
+        <button onClick={openCreate}
           className="flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold text-white transition-all hover:scale-[1.03]"
           style={{ background: 'linear-gradient(135deg,#9f67ff,#7C3AED)', boxShadow: '0 6px 20px rgba(124,58,237,0.4)' }}>
           <Plus size={15} /> New Template
@@ -98,7 +114,7 @@ export default function ProposalTemplates() {
           icon={LayoutTemplate}
           title="No templates yet"
           description="Create reusable proposal templates so your team can start new proposals faster."
-          action={<button onClick={() => setShowDrawer(true)} className="btn-3d">Create your first template</button>}
+          action={<button onClick={openCreate} className="btn-3d">Create your first template</button>}
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -121,6 +137,9 @@ export default function ProposalTemplates() {
                   style={{ background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.25)', color: '#a78bfa' }}>
                   <Copy size={12} /> Use Template
                 </button>
+                <button onClick={() => openEdit(t)} className="btn-icon" title="Edit template">
+                  <Edit2 size={14} style={{ color: 'var(--text-muted)' }} />
+                </button>
                 <button onClick={() => setConfirmDelete(t)} className="btn-icon">
                   <Trash2 size={14} style={{ color: '#f87171' }} />
                 </button>
@@ -134,10 +153,11 @@ export default function ProposalTemplates() {
       <Drawer
         open={showDrawer}
         onClose={() => setShowDrawer(false)}
-        title="New Proposal Template"
+        width="min(980px, 96vw)"
+        title={editing ? 'Edit Proposal Template' : 'New Proposal Template'}
         footer={
-          <button onClick={handleCreate} disabled={creating} className="btn-3d w-full">
-            {creating ? 'Creating…' : 'Create Template'}
+          <button onClick={handleSave} disabled={creating} className="btn-3d w-full">
+            {creating ? 'Saving…' : editing ? 'Save Template' : 'Create Template'}
           </button>
         }
       >
@@ -145,20 +165,18 @@ export default function ProposalTemplates() {
           <FormField label="Name" required>
             <Input value={form.name} onChange={e => sf('name', e.target.value)} />
           </FormField>
-          <FormField label="Category" hint="optional">
-            <Select value={form.category} onChange={e => sf('category', e.target.value)}>
-              <option value="">Uncategorized</option>
-              <option value="consulting">Consulting</option>
-              <option value="development">Development</option>
-              <option value="design">Design</option>
-              <option value="retainer">Retainer</option>
-            </Select>
+          <FormField label="Category" hint="optional — pick an existing one or type a new one">
+            <Input list="template-categories" value={form.category} onChange={e => sf('category', e.target.value)} placeholder="e.g. Consulting" />
+            <datalist id="template-categories">{categories.map(c => <option key={c} value={c} />)}</datalist>
           </FormField>
           <FormField label="Description" hint="optional">
             <Textarea rows={2} value={form.description} onChange={e => sf('description', e.target.value)} />
           </FormField>
-          <FormField label="Content" hint="Seeded into the proposal's notes when this template is used">
-            <Textarea rows={8} placeholder="Default proposal text, terms, scope of work…" value={form.content} onChange={e => sf('content', e.target.value)} />
+          <FormField label="Content Pages" hint="Multi-page rich content — copied into proposals created from this template">
+            <PagesEditor pages={form.pages} onChange={pages => sf('pages', pages)} minHeight={220} />
+          </FormField>
+          <FormField label="Terms & Conditions" hint="Default terms — pre-filled on proposals built from this template">
+            <RichTextEditor value={form.terms} onChange={v => sf('terms', v)} placeholder="Payment terms, validity, scope notes…" minHeight={140} />
           </FormField>
         </div>
       </Drawer>

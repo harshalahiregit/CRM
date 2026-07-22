@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\Customer\ClientAttachmentController;
 use App\Http\Controllers\Api\Customer\ClientContactController;
 use App\Http\Controllers\Api\Customer\ClientContractController;
 use App\Http\Controllers\Api\Customer\ClientController;
+use App\Http\Controllers\Api\Customer\ExpenseCategoryController;
 use App\Http\Controllers\Api\Customer\ClientExpenseController;
 use App\Http\Controllers\Api\Customer\ClientGroupController;
 use App\Http\Controllers\Api\Customer\ClientNoteController;
@@ -38,14 +39,34 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('customers')->gr
     // Custom field definitions
     Route::get('/custom-fields',                  [CustomFieldController::class, 'index']);
     Route::post('/custom-fields',                 [CustomFieldController::class, 'store']);
+    Route::post('/custom-fields/reorder',         [CustomFieldController::class, 'reorder']);
     Route::put('/custom-fields/{customField}',    [CustomFieldController::class, 'update']);
     Route::delete('/custom-fields/{customField}', [CustomFieldController::class, 'destroy']);
+
+    // Assignable staff (create-stepper needs it before a client exists;
+    // must stay ABOVE the /{client} wildcard routes)
+    Route::get('/assignable-staff', [ClientController::class, 'assignableStaff']);
 
     // Clients CRUD
     Route::get('/',            [ClientController::class, 'index']);
     Route::post('/',           [ClientController::class, 'store']);
+
+    // ── Expense categories master + Projects stub ──────────────────────
+    // Static paths — MUST stay above the /{client} wildcard routes.
+    Route::get('/expense-categories',                        [ExpenseCategoryController::class, 'index']);
+    Route::post('/expense-categories',                       [ExpenseCategoryController::class, 'store']);
+    Route::put('/expense-categories/{expenseCategory}',      [ExpenseCategoryController::class, 'update']);
+    Route::delete('/expense-categories/{expenseCategory}',   [ExpenseCategoryController::class, 'destroy']);
+    // Projects module doesn't exist yet — honest empty list so the
+    // Billable→Project dropdown is wired for the day it ships.
+    Route::get('/projects-stub', fn () => response()->json([]));
+
+    // Map picker: address search (static — must stay above /{client})
+    Route::get('/geocode', [ClientController::class, 'geocode']);
+
     Route::get('/{client}',    [ClientController::class, 'show']);
     Route::put('/{client}',    [ClientController::class, 'update']);
+    Route::put('/{client}/location', [ClientController::class, 'updateLocation']);
     Route::patch('/{client}/active', [ClientController::class, 'toggleActive']);
     Route::delete('/{client}', [ClientController::class, 'destroy']);
 
@@ -73,6 +94,7 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('customers')->gr
     // Notes
     Route::get('/{client}/notes',          [ClientNoteController::class, 'index']);
     Route::post('/{client}/notes',         [ClientNoteController::class, 'store']);
+    Route::put('/{client}/notes/{note}',   [ClientNoteController::class, 'update']);
     Route::delete('/{client}/notes/{note}', [ClientNoteController::class, 'destroy']);
 
     // Reminders

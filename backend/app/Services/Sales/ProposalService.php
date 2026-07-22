@@ -8,14 +8,21 @@ use App\Models\Sales\Estimate;
 use App\Models\Sales\Proposal;
 use App\Models\Sales\SalesInvoice;
 use App\Models\Sales\SalesLineItem;
+use App\Mail\Sales\ProposalMail;
+use App\Models\Customer\ClientContact;
 use App\Repositories\Sales\ProposalRepository;
+use App\Services\Mail\TenantMailer;
+use App\Support\HtmlSanitizer;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class ProposalService
 {
-    public function __construct(private ProposalRepository $proposalRepository)
-    {
+    public function __construct(
+        private ProposalRepository $proposalRepository,
+        private ContentPageService $contentPages,
+    ) {
     }
 
     public function list(int $tenantId, ?string $status, ?string $search)
@@ -26,6 +33,13 @@ class ProposalService
     public function create(array $data, array $lineItems, int $tenantId, int $userId): Proposal
     {
         return DB::transaction(function () use ($data, $lineItems, $tenantId, $userId) {
+            $pages = $data['pages'] ?? null;
+            unset($data['pages']);
+            if (isset($data['terms'])) {
+                $data['terms'] = HtmlSanitizer::clean($data['terms']); // now rich text
+            }
+            $this->assertContactBelongs($data, $tenantId);
+
             $proposal = Proposal::create([
                 ...$data,
                 'tenant_id'  => $tenantId,
@@ -33,8 +47,13 @@ class ProposalService
                 'status'     => $data['status'] ?? 'Draft',
             ]);
 
+            if (is_array($pages)) {
+                $this->contentPages->syncPages($proposal, $pages, $tenantId);
+            }
+
             $this->syncLineItems($proposal, $lineItems);
             $proposal->recalcTotals();
+            $proposal->logActivity('created', "Proposal \"{$proposal->subject}\" created", null, null, $userId);
 
             Log::channel('sales')->info('Proposal created', ['proposal_id' => $proposal->id, 'tenant_id' => $tenantId]);
 
@@ -45,7 +64,11 @@ class ProposalService
     public function show(Proposal $proposal, int $tenantId): Proposal
     {
         $this->assertTenant($proposal, $tenantId);
-        return $proposal->load(['lineItems', 'assignedUser']);
+        return $proposal->load([
+            'lineItems', 'assignedUser', 'pages',
+            'contact:id,client_id,first_name,last_name,email,phone',
+            'activities.performer:id,name',
+        ]);
     }
 
     public function update(Proposal $proposal, array $data, ?array $lineItems, bool $hasLineItems, int $tenantId): Proposal
@@ -53,7 +76,23 @@ class ProposalService
         $this->assertTenant($proposal, $tenantId);
 
         return DB::transaction(function () use ($proposal, $data, $lineItems, $hasLineItems, $tenantId) {
+            $pages = $data['pages'] ?? null;
+            $hasPages = array_key_exists('pages', $data);
+            unset($data['pages']);
+            if (isset($data['terms'])) {
+                $data['terms'] = HtmlSanitizer::clean($data['terms']); // now rich text
+            }
+            $this->assertContactBelongs([
+                'rel_type' => $data['rel_type'] ?? $proposal->rel_type,
+                'rel_id' => $data['rel_id'] ?? $proposal->rel_id,
+                'contact_id' => $data['contact_id'] ?? null,
+            ], $tenantId);
+
             $proposal->update($data);
+
+            if ($hasPages) {
+                $this->contentPages->syncPages($proposal, $pages ?? [], $tenantId);
+            }
 
             if ($hasLineItems) {
                 $this->syncLineItems($proposal, $lineItems ?? []);
@@ -134,16 +173,167 @@ class ProposalService
         return $proposal->load('lineItems');
     }
 
+    /**
+     * Whitelisted payload for the public portal — never leaks internal
+     * fields (creator, tenant internals, email engagement, tokens).
+     */
+    public function publicPayload(Proposal $proposal): array
+    {
+        $proposal->loadMissing(['lineItems', 'pages']);
+
+        return [
+            'subject'      => $proposal->subject,
+            'reference_no' => $proposal->reference_no,
+            'date'         => $proposal->date?->toDateString(),
+            'open_till'    => $proposal->open_till?->toDateString(),
+            'currency'     => $proposal->currency,
+            'proposal_to'  => $proposal->proposal_to,
+            'address'      => $proposal->address,
+            'city'         => $proposal->city,
+            'state'        => $proposal->state,
+            'country'      => $proposal->country,
+            'zip'          => $proposal->zip,
+            'status'       => $proposal->status,
+            'notes'        => $proposal->notes,
+            'terms'        => $proposal->terms,
+            'subtotal'     => $proposal->subtotal,
+            'tax_total'    => $proposal->tax_total,
+            'tax_breakdown'=> $proposal->taxBreakdown(),
+            'total'        => $proposal->total,
+            'supply_type'  => $proposal->supply_type,
+            'discount_amount' => $proposal->discount_amount,
+            'accepted_at'  => $proposal->accepted_at,
+            'declined_at'  => $proposal->declined_at,
+            'is_expired'   => (bool) ($proposal->open_till && $proposal->open_till->isPast() && ! in_array($proposal->status, ['Accepted', 'Declined'])),
+            'pages'        => $proposal->pages->map(fn ($pg) => ['title' => $pg->title, 'content' => $pg->content])->values(),
+            'line_items'   => $proposal->lineItems->map(fn ($li) => [
+                'item_name' => $li->item_name, 'description' => $li->description,
+                'qty' => $li->qty, 'unit' => $li->unit, 'rate' => $li->rate,
+                'tax' => $li->tax, 'discount' => $li->discount, 'amount' => $li->total,
+            ])->values(),
+        ];
+    }
+
+    /** Teaser shown while the OTP gate is locked — enough to know what it is, nothing more. */
+    public function teaserPayload(Proposal $proposal): array
+    {
+        return ['subject' => $proposal->subject, 'reference_no' => $proposal->reference_no];
+    }
+
+    public function recordPortalView(Proposal $proposal): void
+    {
+        $first = (int) $proposal->portal_view_count === 0;
+        $proposal->forceFill(['portal_viewed_at' => now()])->save();
+        $proposal->increment('portal_view_count');
+
+        // Log the first portal view to the pipeline timeline (the counter on
+        // the engagement panel tracks the rest, so we don't flood it).
+        if ($first) {
+            $proposal->logActivity('portal_viewed', 'Client viewed the proposal on the secure link');
+        }
+    }
+
+    public function publicRespond(Proposal $proposal, string $action, ?string $ip = null, ?string $userAgent = null): Proposal
+    {
+        return DB::transaction(function () use ($proposal, $action, $ip, $userAgent) {
+            $locked = Proposal::whereKey($proposal->id)->lockForUpdate()->first();
+            if ($locked->status !== 'Sent') {
+                throw new BusinessException('This proposal can no longer be responded to.', 409);
+            }
+            // Old-CRM rule: past open_till the public link is view-only.
+            if ($locked->open_till && $locked->open_till->isPast()) {
+                throw new BusinessException('This proposal has expired and can no longer be responded to.', 409);
+            }
+            $locked->update($action === 'accept'
+                ? [
+                    'status' => 'Accepted', 'accepted_at' => now(),
+                    'acceptance_ip' => $ip,
+                    'acceptance_user_agent' => $userAgent ? mb_substr($userAgent, 0, 255) : null,
+                ]
+                : ['status' => 'Declined', 'declined_at' => now()]);
+
+            $locked->logActivity(
+                $action === 'accept' ? 'accepted' : 'declined',
+                $action === 'accept' ? 'Client accepted the proposal' : 'Client declined the proposal',
+                null, $action === 'accept' ? "IP {$ip}" : null,
+            );
+
+            Log::channel('sales')->info("Proposal {$action}ed via portal", [
+                'proposal_id' => $locked->id, 'ip' => $ip,
+            ]);
+
+            return $locked;
+        });
+    }
+
+    /** Shared PDF renderer (detail download + submit email attachment). */
+    public function renderPdf(Proposal $proposal): string
+    {
+        $proposal->loadMissing(['lineItems', 'pages']);
+
+        return Pdf::loadView('pdf.proposal', ['proposal' => $proposal])->output();
+    }
+
+    /**
+     * B-4 submit: persist the email draft first, send via the tenant's
+     * mailer with PDF + portal link, and only mark Sent after a successful
+     * send — a failure leaves the proposal Draft with the draft retained.
+     */
+    public function submit(Proposal $proposal, array $email, int $tenantId, TenantMailer $mailer, string $frontendUrl, string $apiUrl): Proposal
+    {
+        $this->assertTenant($proposal, $tenantId);
+        $proposal->loadMissing('contact');
+
+        $to = $proposal->contact?->email ?: $proposal->email;
+        if (! $to) {
+            throw new BusinessException('Assign a recipient contact with an email address before submitting.', 422);
+        }
+
+        $cc = array_slice(array_values(array_unique($email['cc'] ?? [])), 0, 10);
+        $subject = $email['subject'] ?? "Proposal: {$proposal->subject}";
+        $body = HtmlSanitizer::clean($email['body'] ?? '');
+
+        // Draft survives a failed send.
+        $proposal->update(['email_subject' => $subject, 'email_body' => $body, 'email_cc' => $cc]);
+
+        $portalUrl = rtrim($frontendUrl, '/').'/portal/proposals/'.$proposal->portal_token;
+        $pixelUrl  = rtrim($apiUrl, '/').'/api/public/proposals/'.$proposal->portal_token.'/track';
+        $pdf = $this->renderPdf($proposal);
+
+        $mailer->send($tenantId, $to, new ProposalMail($proposal, $body, $portalUrl, $pixelUrl, $pdf, $subject), $cc);
+
+        $resend = (bool) $proposal->sent_at;
+        $proposal->update([
+            'status'          => in_array($proposal->status, ['Accepted', 'Declined']) ? $proposal->status : 'Sent',
+            'sent_at'         => $proposal->sent_at ?? now(),
+            'last_emailed_at' => now(),
+        ]);
+
+        $proposal->logActivity(
+            $resend ? 'resent' : 'sent',
+            ($resend ? 'Proposal re-emailed to ' : 'Proposal emailed to ').$to.(count($cc) ? ' (cc '.count($cc).')' : ''),
+        );
+
+        Log::channel('sales')->info('Proposal emailed', ['proposal_id' => $proposal->id, 'tenant_id' => $tenantId, 'cc_count' => count($cc)]);
+
+        return $proposal->fresh()->load(['lineItems', 'pages', 'contact']);
+    }
+
     public function trackEmailOpen(string $token, ?string $device): void
     {
         $proposal = Proposal::where('portal_token', $token)->first();
         if (! $proposal) return;
 
+        $first = (int) $proposal->email_opened_count === 0;
         $proposal->increment('email_opened_count');
         $proposal->update([
             'email_opened_at'     => $proposal->email_opened_at ?? now(),
             'email_opened_device' => $device ?? $proposal->email_opened_device,
         ]);
+
+        if ($first) {
+            $proposal->logActivity('email_opened', 'Client opened the proposal email');
+        }
 
         Log::channel('sales')->info('Proposal email opened', [
             'proposal_id' => $proposal->id, 'tenant_id' => $proposal->tenant_id, 'count' => $proposal->email_opened_count,
@@ -278,6 +468,10 @@ class ProposalService
                      ->delete();
 
         foreach ($items as $idx => $item) {
+            $taxInfo = SalesLineItem::normalizeTaxes($item);
+            $item['tax'] = $taxInfo['tax'];
+            // Resolve % discounts to an amount for the stored line total.
+            $item['discount'] = SalesLineItem::discountAmount($item);
             $total = SalesLineItem::computeTotal($item);
             SalesLineItem::create([
                 'lineable_type' => Proposal::class,
@@ -288,11 +482,32 @@ class ProposalService
                 'qty'           => $item['qty'],
                 'unit'          => $item['unit'] ?? 'pcs',
                 'rate'          => $item['rate'],
-                'tax'           => $item['tax'] ?? 0,
-                'discount'      => $item['discount'] ?? 0,
+                'tax'           => $taxInfo['tax'],
+                'taxes'         => $taxInfo['taxes'],
+                'discount'      => $item['discount'],
+                'discount_mode' => $item['discount_mode'] ?? 'fixed',
                 'total'         => $total,
                 'sort_order'    => $idx,
             ]);
+        }
+    }
+
+    /** A chosen recipient contact must belong to the proposal's customer (and tenant). */
+    private function assertContactBelongs(array $data, int $tenantId): void
+    {
+        $contactId = $data['contact_id'] ?? null;
+        if (! $contactId) {
+            return;
+        }
+        if (($data['rel_type'] ?? null) !== 'customer' || empty($data['rel_id'])) {
+            throw new BusinessException('A recipient contact requires a customer.', 422);
+        }
+        $ok = ClientContact::where('id', $contactId)
+            ->where('tenant_id', $tenantId)
+            ->where('client_id', $data['rel_id'])
+            ->exists();
+        if (! $ok) {
+            throw new BusinessException('Selected contact does not belong to this customer.', 422);
         }
     }
 }

@@ -6,7 +6,8 @@ import {
   UserCheck, CalendarDays, FileText, Rocket, Building2,
   ClipboardList, ChevronDown, Shield, UserCog,
   IndianRupee, FileSignature, CreditCard, FileX,
-  ShoppingBag, UserPlus, Link2, RefreshCw, LayoutTemplate, Globe, TrendingUp
+  ShoppingBag, UserPlus, Link2, RefreshCw, LayoutTemplate, Globe, TrendingUp,
+  Landmark, BookText, Scale
 } from 'lucide-react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
@@ -52,7 +53,8 @@ const SALES_SUB_ITEMS = [
 
   { group: 'Documents',       label: 'Proposals', path: '/app/sales/proposals', icon: FileSignature },
   { group: 'Documents',       label: 'Proposal Templates', path: '/app/sales/proposal-templates', icon: LayoutTemplate },
-  { group: 'Documents',       label: 'Proforma Invoices', path: '/app/sales/estimates', icon: ClipboardList },
+  { group: 'Documents',       label: 'Estimates', path: '/app/sales/estimates', icon: ClipboardList },
+  { group: 'Documents',       label: 'Proforma Invoices', path: '/app/sales/proforma-invoices', icon: ClipboardList },
   { group: 'Documents',       label: 'Tax Invoices', path: '/app/sales/invoices', icon: Receipt },
   { group: 'Documents',       label: 'Delivery Notes', path: '/app/sales/delivery-notes', icon: Truck },
   { group: 'Documents',       label: 'Credit Notes', path: '/app/sales/credit-notes', icon: FileX },
@@ -65,6 +67,16 @@ const SALES_SUB_ITEMS = [
   { group: 'Catalog & Setup', label: 'Items', path: '/app/sales/items', icon: ShoppingBag },
   { group: 'Catalog & Setup', label: 'Contracts', path: '/app/sales/contracts', icon: FileSignature },
   { group: 'Catalog & Setup', label: 'Web-to-Lead', path: '/app/sales/web-to-lead', icon: Globe },
+]
+
+const ACCOUNTS_SUB_ITEMS = [
+  { label: 'Chart of Accounts', path: '/app/accounts/chart-of-accounts', icon: Landmark },
+  { label: 'Vouchers', path: '/app/accounts/vouchers', icon: BookText },
+  { label: 'Bank Accounts', path: '/app/accounts/banking', icon: CreditCard },
+  { label: 'Cheques', path: '/app/accounts/cheques', icon: FileText },
+  { label: 'Budgets', path: '/app/accounts/budgets', icon: BarChart2 },
+  { label: 'Reports', path: '/app/accounts/reports', icon: Scale },
+  { label: 'Settings', path: '/app/accounts/settings', icon: Settings },
 ]
 
 const HELPDESK_SUB_ITEMS = [
@@ -82,6 +94,7 @@ export default function Sidebar({ collapsed, onToggle }) {
   const navigate = useNavigate()
   const [hrExpanded, setHrExpanded] = useState(true)
   const [salesExpanded, setSalesExpanded] = useState(true)
+  const [accountsExpanded, setAccountsExpanded] = useState(true)
   const [helpdeskExpanded, setHelpdeskExpanded] = useState(true)
   const hrInstalled = isModuleInstalled('hr')
   const [activeLeadsCount, setActiveLeadsCount] = useState(null)
@@ -268,6 +281,35 @@ export default function Sidebar({ collapsed, onToggle }) {
               </div>
             )}
           </NavLink>
+        </div>
+
+        {/* ── Accounts Module sub-nav ── */}
+        <div className="mt-2">
+          {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>Accounts & Finance</p>}
+          <button
+            onClick={() => setAccountsExpanded(e => !e)}
+            title={collapsed ? 'Accounts & Finance' : ''}
+            className="nav-3d mb-0.5 w-full"
+            style={{ justifyContent: collapsed ? 'center' : undefined, color: '#a78bfa' }}
+          >
+            <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.15)' }}>
+              <Landmark size={13} style={{ color: '#a78bfa' }} />
+            </div>
+            {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Accounts & Finance</span><ChevronDown size={13} className={clsx('transition-transform duration-200', accountsExpanded && 'rotate-180')} /></>}
+          </button>
+          {(accountsExpanded || collapsed) && ACCOUNTS_SUB_ITEMS.map(({ label, path, icon: Icon }) => (
+            <NavLink key={path} to={path}>
+              {({ isActive }) => (
+                <div title={collapsed ? label : ''} className={clsx('nav-3d mb-0.5', isActive && 'nav-3d-active')} style={{ justifyContent: collapsed ? 'center' : undefined, paddingLeft: collapsed ? undefined : '28px' }}>
+                  <div className="flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: isActive ? 'rgba(255,255,255,0.15)' : 'rgba(124,58,237,0.06)' }}>
+                    <Icon size={12} />
+                  </div>
+                  {!collapsed && <span className="truncate text-xs">{label}</span>}
+                  {isActive && !collapsed && <div className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: '#c4b5fd' }} />}
+                </div>
+              )}
+            </NavLink>
+          ))}
         </div>
 
         {/* ── Sales Module sub-nav ── */}

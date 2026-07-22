@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Plus, FileSignature, CheckCircle, AlertTriangle, IndianRupee, RefreshCw } from 'lucide-react'
 import { contractApi } from '@/services/contractApi'
 import { useToast } from '@/hooks/useToast'
@@ -11,6 +12,7 @@ const d10 = s => (s ? String(s).slice(0, 10) : '—')
 
 export default function Contracts() {
   const toast = useToast()
+  const nav = useNavigate()
   const [rows, setRows] = useState(null)
   const [filter, setFilter] = useState('')
   const [search, setSearch] = useState('')
@@ -65,21 +67,22 @@ export default function Contracts() {
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead><tr style={{ background: 'rgba(124,58,237,0.04)', borderBottom: '1px solid var(--border)' }}>
-              {['Reference', 'Subject', 'Customer', 'Value', 'Start', 'End', 'Status', ''].map(h => <th key={h} className="py-3 px-4 text-left label-caps whitespace-nowrap">{h}</th>)}
+              {['Reference', 'Subject', 'Customer', 'Value', 'Start', 'End', 'Signed', 'Status', ''].map(h => <th key={h} className="py-3 px-4 text-left label-caps whitespace-nowrap">{h}</th>)}
             </tr></thead>
             <tbody>
               {rows === null ? (
-                <tr><td colSpan={8} className="p-6 text-center" style={{ color: 'var(--text-muted)' }}>Loading…</td></tr>
+                <tr><td colSpan={9} className="p-6 text-center" style={{ color: 'var(--text-muted)' }}>Loading…</td></tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={8} className="py-12 text-center" style={{ color: 'var(--text-muted)' }}>No contracts yet.</td></tr>
+                <tr><td colSpan={9} className="py-12 text-center" style={{ color: 'var(--text-muted)' }}>No contracts yet.</td></tr>
               ) : rows.map(c => (
-                <tr key={c.id} className="cursor-pointer" onClick={() => setDrawer({ open: true, id: c.id })} style={{ borderBottom: '1px solid var(--border)' }}>
+                <tr key={c.id} className="cursor-pointer" onClick={() => nav(`/app/sales/contracts/${c.id}`)} style={{ borderBottom: '1px solid var(--border)' }}>
                   <td className="py-3 px-4 font-bold" style={{ color: 'var(--text-h)' }}>{c.reference_no}</td>
                   <td className="py-3 px-4" style={{ color: 'var(--text-body)' }}>{c.subject}</td>
                   <td className="py-3 px-4" style={{ color: 'var(--text-muted)' }}>{c.client?.company || '—'}</td>
                   <td className="py-3 px-4 font-semibold" style={{ color: '#10b981' }}>{fmt(c.value)}</td>
                   <td className="py-3 px-4" style={{ color: 'var(--text-muted)' }}>{d10(c.start_date)}</td>
                   <td className="py-3 px-4" style={{ color: 'var(--text-muted)' }}>{d10(c.end_date)}</td>
+                  <td className="py-3 px-4" style={{ color: c.signed_at ? '#10b981' : 'var(--text-muted)' }} title={c.signed_at ? `Signed by ${c.signed_by_name || ''}` : 'Unsigned'}>{c.signed_at ? '✓ Signed' : '—'}</td>
                   <td className="py-3 px-4"><span className="text-[10px] font-bold px-2 py-0.5 rounded-md" style={{ background: `${STATUS_COLORS[c.status]}22`, color: STATUS_COLORS[c.status] }}>{c.status}</span></td>
                   <td className="py-3 px-4" onClick={e => e.stopPropagation()}>
                     <div className="flex gap-1 justify-end">

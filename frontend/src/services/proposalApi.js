@@ -28,6 +28,12 @@ export const proposalApi = {
   updateStatus: (id, status) =>
     api.patch(`/sales/proposals/${id}/status`, { status }).then(r => r.data).catch(handleErr),
 
+  submit: (id, email) =>
+    api.post(`/sales/proposals/${id}/submit`, email).then(r => r.data).catch(handleErr),
+
+  saveAsTemplate: (id, data) =>
+    api.post(`/sales/proposals/${id}/save-as-template`, data).then(r => r.data).catch(handleErr),
+
   generateQR: (id) =>
     api.post(`/sales/proposals/${id}/generate-qr`).then(r => r.data).catch(handleErr),
 

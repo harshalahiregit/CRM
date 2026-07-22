@@ -1,9 +1,8 @@
 import { Plus, Trash2 } from 'lucide-react'
+import { useTaxRates } from '@/hooks/useTaxRates'
+import TaxSelect from './TaxSelect'
 
 const fmt = v => '₹' + Number(v || 0).toLocaleString('en-IN')
-
-// GST slab options standard in India
-const TAX_SLABS = [0, 5, 12, 18, 28]
 
 const EMPTY_ROW = {
   item_name: '',
@@ -12,19 +11,69 @@ const EMPTY_ROW = {
   unit: 'pcs',
   rate: 0,
   tax: 18,
+  taxes: [],           // [{name, rate}] — several may apply (CGST+SGST)
   discount: 0,   // flat discount per line in ₹
 }
 
 const UNITS = ['pcs', 'hrs', 'days', 'months', 'kg', 'ltr', 'box', 'set']
 
-function calcLine(row) {
-  const base    = Number(row.qty) * Number(row.rate)
-  const afterDis = base - Number(row.discount || 0)
-  const taxAmt  = afterDis * (Number(row.tax) / 100)
-  return { base, afterDis, taxAmt, total: afterDis + taxAmt }
+/** A line's named taxes; legacy rows (flat `tax` only) yield an empty list. */
+function rowTaxes(row) {
+  return Array.isArray(row.taxes) ? row.taxes : []
 }
 
-export default function LineItemsTable({ items = [], onChange }) {
+/**
+ * Tax grouped by NAME across all lines (CGST 9%, SGST 9%, IGST 18% …), so the
+ * totals block itemises each one. `factor` carries the before-tax discount
+ * proportion so the breakdown always sums to the tax total.
+ */
+function taxBreakdown(rows, factor) {
+  const byName = new Map()
+  for (const row of rows) {
+    const taxes = rowTaxes(row)
+    if (!taxes.length) continue
+    const { afterDis } = calcLine(row)
+    for (const t of taxes) {
+      const rate = Number(t.rate || 0)
+      const key = `${t.name}|${rate}`
+      const amount = afterDis * (rate / 100) * factor
+      const prev = byName.get(key)
+      if (prev) prev.amount += amount
+      else byName.set(key, { name: t.name, rate, amount })
+    }
+  }
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name))
+}
+
+function lineDiscount(row) {
+  const base = Number(row.qty) * Number(row.rate)
+  const val = Number(row.discount || 0)
+  const amt = row.discount_mode === 'percent' ? base * val / 100 : val
+  return Math.min(Math.max(amt, 0), Math.max(base, 0))
+}
+
+/**
+ * `taxAfterDiscount` mirrors the document's discount_type:
+ *   before_tax → tax worked out BEFORE the discount (on the full line value)
+ *   after_tax  → discount first, tax on the discounted value
+ */
+function calcLine(row, taxAfterDiscount = false) {
+  const base = Number(row.qty) * Number(row.rate)
+  const dis = lineDiscount(row)
+  const afterDis = base - dis
+  const taxAmt = (taxAfterDiscount ? afterDis : base) * (Number(row.tax) / 100)
+  return { base, dis, afterDis, taxAmt, total: afterDis + taxAmt }
+}
+
+/**
+ * Line items + totals. Optional document-level extras:
+ *   discount        {type: 'before_tax'|'after_tax'} — when tax is computed
+ *                   relative to the line discounts
+ *   onDiscountChange(next)  — enables the tax-timing control when passed
+ *   supplyType      'intra' | 'inter' | null — drives the CGST/SGST vs IGST rows
+ */
+export default function LineItemsTable({ items = [], onChange, discount = null, onDiscountChange = null, supplyType }) {
+  const TAX_RATES = useTaxRates()
   // Always have at least one row
   const rows = items.length > 0 ? items : [{ ...EMPTY_ROW }]
 
@@ -42,11 +91,21 @@ export default function LineItemsTable({ items = [], onChange }) {
     onChange(rows.filter((_, i) => i !== idx))
   }
 
-  // Totals
-  const subtotal   = rows.reduce((s, r) => s + Number(r.qty) * Number(r.rate), 0)
-  const discountTotal = rows.reduce((s, r) => s + Number(r.discount || 0), 0)
-  const taxTotal   = rows.reduce((s, r) => s + calcLine(r).taxAmt, 0)
-  const grandTotal = subtotal - discountTotal + taxTotal
+  // Totals — mirrors backend CalculatesDocumentTotals
+  const subtotal      = rows.reduce((s, r) => s + Number(r.qty) * Number(r.rate), 0)
+  const lineDiscounts = rows.reduce((s, r) => s + lineDiscount(r), 0)
+  const baseAfterLines = subtotal - lineDiscounts
+
+  // Document-level discount removed — discounts live on each line now.
+  // discount_type only decides whether tax is computed before or after them.
+  const docType = discount?.type || 'before_tax'
+  const taxAfterDiscount = docType === 'after_tax'
+  const taxTotal = rows.reduce((s, r) => s + calcLine(r, taxAfterDiscount).taxAmt, 0)
+  const grandTotal = baseAfterLines + taxTotal
+  const afterDiscount = baseAfterLines
+  // Same proportion the tax total was scaled by, so the per-name rows tally.
+  const taxFactor = fullTax > 0 ? taxTotal / fullTax : 1
+  const breakdown = taxBreakdown(rows, taxFactor)
 
   return (
     <div className="space-y-3">
@@ -60,7 +119,7 @@ export default function LineItemsTable({ items = [], onChange }) {
               <th className="px-3 py-2.5 text-left label-caps" style={{ width: '60px' }}>Qty</th>
               <th className="px-3 py-2.5 text-left label-caps" style={{ width: '70px' }}>Unit</th>
               <th className="px-3 py-2.5 text-left label-caps" style={{ width: '100px' }}>Rate (₹)</th>
-              <th className="px-3 py-2.5 text-left label-caps" style={{ width: '70px' }}>Tax %</th>
+              <th className="px-3 py-2.5 text-left label-caps" style={{ width: '116px' }}>Tax</th>
               <th className="px-3 py-2.5 text-left label-caps" style={{ width: '90px' }}>Discount</th>
               <th className="px-3 py-2.5 text-right label-caps" style={{ width: '100px' }}>Total</th>
               <th className="px-3 py-2.5 w-8" />
@@ -68,7 +127,7 @@ export default function LineItemsTable({ items = [], onChange }) {
           </thead>
           <tbody>
             {rows.map((row, idx) => {
-              const line = calcLine(row)
+              const line = calcLine(row, taxAfterDiscount)
               return (
                 <tr key={idx} style={{ borderBottom: idx < rows.length - 1 ? '1px solid var(--border)' : 'none' }}>
                   {/* Item name */}
@@ -122,27 +181,40 @@ export default function LineItemsTable({ items = [], onChange }) {
                       onChange={e => update(idx, 'rate', e.target.value)}
                     />
                   </td>
-                  {/* Tax */}
+                  {/* Tax — several named taxes may apply to one line */}
                   <td className="px-3 py-2">
-                    <select
-                      className="input-3d text-xs"
-                      style={{ padding: '5px 8px', width: '64px' }}
-                      value={row.tax}
-                      onChange={e => update(idx, 'tax', Number(e.target.value))}
-                    >
-                      {TAX_SLABS.map(t => <option key={t} value={t}>{t}%</option>)}
-                    </select>
-                  </td>
-                  {/* Discount */}
-                  <td className="px-3 py-2">
-                    <input
-                      type="number" min="0" step="0.01"
-                      className="input-3d text-xs"
-                      style={{ padding: '5px 8px', width: '80px' }}
-                      placeholder="0"
-                      value={row.discount}
-                      onChange={e => update(idx, 'discount', e.target.value)}
+                    <TaxSelect
+                      options={TAX_RATES}
+                      value={rowTaxes(row)}
+                      onChange={(taxes) => {
+                        // Mirror the summed rate into `tax` so line/doc math stays one source of truth.
+                        const sum = taxes.reduce((s, t) => s + Number(t.rate || 0), 0)
+                        onChange(rows.map((r, i) => i === idx ? { ...r, taxes, tax: sum } : r))
+                      }}
                     />
+                  </td>
+                  {/* Discount — flat amount or % of this line */}
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number" min="0" step="0.01"
+                        className="input-3d text-xs"
+                        style={{ padding: '5px 8px', width: '70px' }}
+                        placeholder="0"
+                        value={row.discount}
+                        onChange={e => update(idx, 'discount', e.target.value)}
+                      />
+                      <select
+                        className="input-3d text-xs"
+                        style={{ padding: '5px 4px', width: '52px' }}
+                        value={row.discount_mode || 'fixed'}
+                        onChange={e => update(idx, 'discount_mode', e.target.value)}
+                        title="Fixed amount or percentage of this line"
+                      >
+                        <option value="fixed">₹</option>
+                        <option value="percent">%</option>
+                      </select>
+                    </div>
                   </td>
                   {/* Line total */}
                   <td className="px-3 py-2 text-right font-bold" style={{ color: '#a78bfa' }}>
@@ -174,14 +246,38 @@ export default function LineItemsTable({ items = [], onChange }) {
         <Plus size={13} /> Add Line Item
       </button>
 
+      {/* When tax is calculated relative to the line discounts */}
+      {onDiscountChange && (
+        <div className="flex flex-wrap items-center gap-2 justify-end text-xs">
+          <span className="label-caps" style={{ color: 'var(--accent)' }}>Tax Calculation</span>
+          <select className="input-3d text-xs" style={{ width: 'auto', padding: '5px 8px' }} value={docType}
+            onChange={e => onDiscountChange({ ...discount, type: e.target.value })}>
+            <option value="before_tax">Before tax — tax before discount</option>
+            <option value="after_tax">After tax — tax after discount</option>
+          </select>
+        </div>
+      )}
+
       {/* Totals */}
-      <div className="ml-auto w-72 space-y-0 text-xs rounded-xl overflow-hidden"
+      <div className="ml-auto w-80 space-y-0 text-xs rounded-xl overflow-hidden"
         style={{ border: '1px solid var(--border)' }}>
-        {[
-          { label: 'Subtotal',  value: fmt(subtotal) },
-          discountTotal > 0 && { label: 'Discount',   value: `− ${fmt(discountTotal)}`, color: '#10b981' },
-          { label: 'Tax (GST)', value: fmt(taxTotal) },
-        ].filter(Boolean).map((row, i) => (
+        {(() => {
+          // Itemise each selected tax by name; legacy lines fall back to the
+          // state-derived split, then to a single combined row.
+          const taxRows = breakdown.length
+            ? breakdown.map(t => ({ label: `${t.name} (${t.rate}%)`, value: fmt(t.amount) }))
+            : supplyType === 'intra'
+              ? [{ label: 'CGST', value: fmt(taxTotal / 2) }, { label: 'SGST', value: fmt(taxTotal / 2) }]
+              : supplyType === 'inter'
+                ? [{ label: 'IGST', value: fmt(taxTotal) }]
+                : [{ label: 'Tax (GST)', value: fmt(taxTotal) }]
+          return [
+            { label: 'Subtotal', value: fmt(subtotal) },
+            lineDiscounts > 0 && { label: 'Discounts', value: `− ${fmt(lineDiscounts)}`, color: '#10b981' },
+            lineDiscounts > 0 && { label: 'After discount', value: fmt(baseAfterLines) },
+            ...taxRows,
+          ].filter(Boolean)
+        })().map((row, i) => (
           <div key={i} className="flex justify-between px-4 py-2.5"
             style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(124,58,237,0.02)', borderBottom: '1px solid var(--border)', color: 'var(--text-muted)' }}>
             <span>{row.label}</span>
@@ -194,6 +290,11 @@ export default function LineItemsTable({ items = [], onChange }) {
           <span style={{ color: '#a78bfa' }}>{fmt(grandTotal)}</span>
         </div>
       </div>
+      {supplyType == null && !breakdown.length && (
+        <p className="text-right text-[11px]" style={{ color: '#f59e0b' }}>
+          CGST/SGST vs IGST is detected from your registered state (Settings → Company & Finance) and the customer's billing state — set both to see the split.
+        </p>
+      )}
     </div>
   )
 }

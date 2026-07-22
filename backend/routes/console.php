@@ -13,3 +13,9 @@ Schedule::command('whatsapp:interview-reminders')
     ->hourly()
     ->withoutOverlapping()
     ->runInBackground();
+
+// Accounts: flag post-dated cheques that fall due (daily, early morning)
+Schedule::command('accounts:pdc-due')
+    ->dailyAt('06:00')
+    ->withoutOverlapping()
+    ->runInBackground();

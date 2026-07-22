@@ -92,9 +92,22 @@ class ClientLedgerService
     {
         $this->assertTenant($client, $tenantId);
 
-        return $this->invoiceScope($tenantId, $client->id)
+        $invoices = $this->invoiceScope($tenantId, $client->id)
             ->select('id', 'number', 'date', 'due_date', 'total', 'paid', 'balance', 'status')
-            ->orderByDesc('date')->when($limit, fn ($q) => $q->limit($limit))->get()->all();
+            ->orderByDesc('date')->when($limit, fn ($q) => $q->limit($limit))->get();
+
+        // Attach each invoice's payments so the tab can show the full
+        // invoice ↔ payment linkage (amount, mode, TDS, note) inline.
+        $payments = DB::table('sales_payments')
+            ->whereIn('invoice_id', $invoices->pluck('id'))
+            ->select('id', 'invoice_id', 'date', 'amount', 'mode', 'transaction_id', 'tds_amount', 'note')
+            ->orderBy('date')->get()->groupBy('invoice_id');
+
+        return $invoices->map(function ($inv) use ($payments) {
+            $inv->payments = array_values(($payments[$inv->id] ?? collect())->all());
+
+            return $inv;
+        })->all();
     }
 
     public function estimates(Client $client, int $tenantId): array
@@ -103,7 +116,7 @@ class ClientLedgerService
 
         return DB::table('estimates')
             ->where('tenant_id', $tenantId)->where('client_id', $client->id)->whereNull('deleted_at')
-            ->select('id', 'reference', 'subject', 'date', 'valid_until', 'total', 'status')
+            ->select('id', 'reference', 'subject', 'date', 'valid_until', 'total', 'status', 'estimate_type')
             ->orderByDesc('date')->limit(self::TAB_LIMIT)->get()->all();
     }
 

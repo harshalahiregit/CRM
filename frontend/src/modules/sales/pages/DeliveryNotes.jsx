@@ -3,6 +3,7 @@ import { Plus, Send, Check, Trash2, X, MoreVertical, Truck, MapPin, ChevronDown,
 import { salesApi } from '@/services/salesApi'
 import { useClientOptions } from '@/hooks/useClientOptions'
 import StatusBadge from '../components/StatusBadge'
+import RowMenu from '../components/RowMenu'
 
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 
@@ -78,7 +79,7 @@ export default function DeliveryNotes() {
           {toast.msg}
         </div>
       )}
-      <div className="space-y-6 animate-[tiltIn_0.35s_ease_forwards]" onClick={() => setOpenMenu(null)}>
+      <div className="space-y-6 animate-[tiltIn_0.35s_ease]" onClick={() => setOpenMenu(null)}>
 
         {/* Header */}
         <div className="flex items-center justify-between flex-wrap gap-3">
@@ -151,29 +152,22 @@ export default function DeliveryNotes() {
                       <td className="py-3.5 px-4 text-center font-bold" style={{ color: 'var(--text-h)' }}>{dn.items_count}</td>
                       <td className="py-3.5 px-4 whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>{fmtDate(dn.delivery_date)}</td>
                       <td className="py-3.5 px-4"><StatusBadge status={dn.status} /></td>
-                      <td className="py-3.5 px-4 relative" onClick={e => e.stopPropagation()}>
-                        <button onClick={() => setOpenMenu(openMenu === dn.id ? null : dn.id)}
-                          className="w-8 h-8 rounded-xl flex items-center justify-center transition-colors hover:bg-[rgba(124,58,237,0.08)]">
-                          <MoreVertical size={14} style={{ color: 'var(--text-muted)' }} />
-                        </button>
-                        {openMenu === dn.id && (
-                          <div className="absolute right-2 top-10 z-50 rounded-2xl shadow-2xl py-1.5 min-w-[180px] overflow-hidden"
-                            style={{ background: 'var(--bg-card)', border: '1px solid var(--border-purple)', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
-                            {[
-                              { icon: Send, label: 'Send to Customer', action: () => showToast('Delivery note sent!') },
-                              { icon: Check, label: 'Mark as Delivered', action: () => showToast('Marked as Delivered!') },
-                              { icon: Trash2, label: 'Delete', action: () => showToast('Deleted!', 'error'), danger: true },
-                            ].map(a => (
-                              <button key={a.label} onClick={() => { a.action(); setOpenMenu(null) }}
-                                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-medium transition-colors"
-                                onMouseEnter={e => e.currentTarget.style.background = a.danger ? 'rgba(239,68,68,0.06)' : 'rgba(124,58,237,0.06)'}
-                                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                                style={{ color: a.danger ? '#f87171' : 'var(--text-h)' }}>
-                                <a.icon size={13} /> {a.label}
-                              </button>
-                            ))}
-                          </div>
-                        )}
+                      <td className="py-3.5 px-4" onClick={e => e.stopPropagation()}>
+                        <RowMenu width={188}>
+                          {[
+                            { icon: Send, label: 'Send to Customer', action: () => showToast('Delivery note sent!') },
+                            { icon: Check, label: 'Mark as Delivered', action: () => showToast('Marked as Delivered!') },
+                            { icon: Trash2, label: 'Delete', action: () => showToast('Deleted!', 'error'), danger: true },
+                          ].map(a => (
+                            <button key={a.label} onClick={() => a.action()}
+                              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-colors"
+                              onMouseEnter={e => e.currentTarget.style.background = a.danger ? 'rgba(239,68,68,0.06)' : 'rgba(124,58,237,0.06)'}
+                              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                              style={{ color: a.danger ? '#f87171' : 'var(--text-h)' }}>
+                              <a.icon size={13} /> {a.label}
+                            </button>
+                          ))}
+                        </RowMenu>
                       </td>
                     </tr>
                   ))}

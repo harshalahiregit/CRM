@@ -24,6 +24,9 @@ class StoreContractRequest extends FormRequest
             'description'         => 'nullable|string',
             'status'              => 'nullable|in:draft,active,expired,terminated,renewed',
             'renewal_notice_days' => 'nullable|integer|min:0',
+            'pages'            => 'nullable|array',
+            'pages.*.title'    => 'nullable|string|max:255',
+            'pages.*.content'  => 'nullable|string',
         ];
     }
 }

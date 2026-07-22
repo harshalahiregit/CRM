@@ -38,12 +38,13 @@ export const EXPENSES = {
   ],
   fields: [
     { key: 'name', label: 'Name', type: 'text', required: true },
-    { key: 'category', label: 'Category', type: 'text' },
+    { key: 'category', label: 'Category', type: 'select', optionsKey: 'expenseCategories', placeholder: 'Select category…' },
     { key: 'amount', label: 'Amount', type: 'money' },
     { key: 'date', label: 'Date', type: 'date' },
     { key: 'payment_mode', label: 'Payment Mode', type: 'text' },
     { key: 'billable', label: 'Billable', type: 'checkbox' },
-    { key: 'note', label: 'Note', type: 'textarea' },
+    { key: 'project_id', label: 'Project', type: 'select', optionsKey: 'projects', showIf: { key: 'billable', value: true }, placeholder: 'No project', helpText: 'Projects module coming soon — the link activates when it ships.' },
+    { key: 'note', label: 'Note', type: 'richtext', placeholder: 'Details, approvals, receipts reference…' },
   ],
 }
 

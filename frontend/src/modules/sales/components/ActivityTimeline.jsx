@@ -14,6 +14,7 @@ const ICONS = {
   contact: Bell, follow_up: Bell, reminder: Bell,
   task: ListChecks, contract: FileSignature, renewed: RefreshCw,
   proposal_sent: Send, questionnaire_submitted: FileText,
+  resent: Send, email_opened: Eye, portal_viewed: Eye,
 }
 
 const fmtDate = d => d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''

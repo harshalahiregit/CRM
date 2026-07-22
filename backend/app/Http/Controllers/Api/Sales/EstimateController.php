@@ -20,7 +20,8 @@ class EstimateController extends Controller
     {
         $estimates = $this->estimateService->list(
             $request->user()->tenant_id,
-            $request->filled('status') ? $request->status : null
+            $request->filled('status') ? $request->status : null,
+            $request->filled('type') ? $request->type : null,
         );
 
         return response()->json($estimates);
@@ -80,5 +81,14 @@ class EstimateController extends Controller
         $updated = $this->estimateService->recordPayment($estimate, $request->validated(), $request->user()->tenant_id);
 
         return response()->json($updated);
+    }
+
+    public function convertToProforma(Request $request, Estimate $estimate)
+    {
+        $proforma = $this->estimateService->convertToProforma(
+            $estimate, $request->user()->tenant_id, $request->user()->id
+        );
+
+        return response()->json($proforma, 201);
     }
 }

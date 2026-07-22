@@ -9,6 +9,7 @@ use App\Models\Sales\CreditNoteApplication;
 use App\Models\Sales\CreditNoteRefund;
 use App\Models\Sales\SalesInvoice;
 use App\Models\Sales\SalesLineItem;
+use App\Support\HtmlSanitizer;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -35,6 +36,9 @@ class CreditNoteService
     public function create(array $data, int $tenantId, int $userId): CreditNote
     {
         return DB::transaction(function () use ($data, $tenantId, $userId) {
+            if (isset($data['terms'])) {
+                $data['terms'] = HtmlSanitizer::clean($data['terms']); // rich text
+            }
             $cn = CreditNote::create([
                 ...$data,
                 'tenant_id'  => $tenantId,
@@ -154,6 +158,9 @@ class CreditNoteService
         }
 
         return DB::transaction(function () use ($creditNote, $data, $amount, $userId, $tenantId) {
+            if (isset($data['terms'])) {
+                $data['terms'] = HtmlSanitizer::clean($data['terms']); // rich text
+            }
             CreditNoteRefund::create([
                 'credit_note_id' => $creditNote->id,
                 'amount'         => $amount,
@@ -205,8 +212,10 @@ class CreditNoteService
                 'qty'           => $item['qty'],
                 'unit'          => $item['unit'] ?? 'pcs',
                 'rate'          => $item['rate'],
-                'tax'           => $item['tax'] ?? 0,
-                'discount'      => $item['discount'] ?? 0,
+                'tax'           => $taxInfo['tax'],
+                'taxes'         => $taxInfo['taxes'],
+                'discount'      => $item['discount'],
+                'discount_mode' => $item['discount_mode'] ?? 'fixed',
                 'total'         => $lineTotal,
                 'sort_order'    => $idx,
             ]);

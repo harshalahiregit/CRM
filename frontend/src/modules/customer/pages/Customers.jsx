@@ -7,15 +7,25 @@ import {
 import { customerApi } from '@/services/customerApi'
 import { useToast } from '@/hooks/useToast'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
-import CustomFieldInput from '../components/CustomFieldInput'
+import CustomFieldInput, { cfWidthStyle } from '../components/CustomFieldInput'
 import CustomFieldsManager from '../components/CustomFieldsManager'
+import CustomFieldForm from '../components/CustomFieldForm'
 import ToggleSwitch from '../components/ToggleSwitch'
+import StepperNav from '../components/StepperNav'
+import AdminOrderPicker from '../components/AdminOrderPicker'
 import { CURRENCIES, LANGUAGES } from '../components/customerFormConstants'
+import ContactPermissions, { DEFAULT_PERMISSIONS, DEFAULT_NOTIFICATIONS, permissionsFromLegacy } from '../components/ContactPermissions'
 
-// Old-CRM order. Customer Admins is edit-only (you must save the customer first),
-// so it's appended only when editing.
-const CREATE_TABS = ['Details', 'Custom Fields', 'Billing & Shipping']
-const EDIT_TABS = [...CREATE_TABS, 'Customer Admins']
+// Meeting 1.1 order: create is a guided 4-step flow (steps 1–3 mandatory,
+// Custom Fields optional). Editing keeps free tab navigation over the same
+// sections.
+const STEPS = [
+  { key: 'Details', label: 'Customer Detail' },
+  { key: 'Billing & Shipping', label: 'Billing & Shipping' },
+  { key: 'Customer Admins', label: 'Customer Admin' },
+  { key: 'Custom Fields', label: 'Custom Field', optional: true },
+]
+const EDIT_TABS = STEPS.map(s => s.key)
 const EMPTY = {
   company: '', gst_number: '', phone: '', website: '', parent_company: '', vendor_id: '',
   opening_balance: '', opening_balance_date: '', show_primary_contact: false,
@@ -25,7 +35,7 @@ const EMPTY = {
   shipping_street: '', shipping_city: '', shipping_state: '', shipping_zip: '', shipping_country: '',
   social_links: { linkedin: '', facebook: '', instagram: '', twitter: '' },
   foundation_date: '', dob: '', anniversary_date: '',
-  contacts: [{ first_name: '', last_name: '', email: '', phone: '', title: '', is_primary: true }],
+  contacts: [{ first_name: '', last_name: '', email: '', phone: '', title: '', is_primary: true, permissions: DEFAULT_PERMISSIONS, email_notifications: DEFAULT_NOTIFICATIONS, emails_enabled: true }],
   apply_to_previous_documents: false,
 }
 
@@ -46,7 +56,10 @@ export default function Customers() {
   const [form, setForm] = useState(EMPTY)
   const [customFieldDefs, setCustomFieldDefs] = useState([])
   const [groupOptions, setGroupOptions] = useState([])
-  const [adminData, setAdminData] = useState({ assigned: [], assignable: [] })
+  const [staffOptions, setStaffOptions] = useState([])   // assignable staff for AdminOrderPicker
+  const [adminOrder, setAdminOrder] = useState([])       // ordered user ids (primary → fallbacks)
+  const [completedSteps, setCompletedSteps] = useState(new Set())
+  const [quickField, setQuickField] = useState(false)    // inline "+ New field" (meeting 1.2)
   const [saving, setSaving] = useState(false)
   const [fieldsMgr, setFieldsMgr] = useState(false)
 
@@ -71,9 +84,10 @@ export default function Customers() {
 
   const openCreate = () => {
     setEditing(null); setForm(EMPTY); setTab('Details')
-    setAdminData({ assigned: [], assignable: [] })
+    setAdminOrder([]); setCompletedSteps(new Set()); setQuickField(false)
     customerApi.customFields.list().then(setCustomFieldDefs).catch(() => setCustomFieldDefs([]))
     customerApi.groups.list().then(setGroupOptions).catch(() => setGroupOptions([]))
+    customerApi.assignableStaff().then(setStaffOptions).catch(() => setStaffOptions([]))
     setDrawer(true)
   }
 
@@ -86,7 +100,10 @@ export default function Customers() {
         customerApi.groups.list().catch(() => []),
         customerApi.admins(row.id).catch(() => ({ assigned: [], assignable: [] })),
       ])
-      setCustomFieldDefs(defs); setGroupOptions(groups); setAdminData(admins)
+      setCustomFieldDefs(defs); setGroupOptions(groups)
+      setStaffOptions(admins.assignable || [])
+      setAdminOrder((admins.assigned || []).map(a => a.id))  // server returns pivot order
+      setCompletedSteps(new Set()); setQuickField(false)
       const cfMap = {}
       ;(full.custom_fields ?? []).forEach(f => { cfMap[f.id] = f.value ?? '' })
       setForm({
@@ -116,32 +133,71 @@ export default function Customers() {
     } catch (e) { toast.error(e.message) }
   }
 
-  const toggleAdmin = async (userId) => {
+  // Edit mode: ordered admin changes sync immediately (create mode just holds
+  // the order locally and submits it with the customer).
+  const changeAdminOrder = async (orderedIds) => {
+    setAdminOrder(orderedIds)
     if (!editing) return
-    const assignedIds = adminData.assigned.map(a => a.id)
-    const next = assignedIds.includes(userId) ? assignedIds.filter(x => x !== userId) : [...assignedIds, userId]
     try {
-      const updated = await customerApi.syncAdmins(editing.id, next)
-      setAdminData(d => ({ ...d, assigned: updated }))
+      const updated = await customerApi.syncAdmins(editing.id, orderedIds)
+      setAdminOrder(updated.map(a => a.id))
     } catch (e) { toast.error(e.message) }
+  }
+
+  /* ── Stepper validation (create mode) — meeting 1.1 mandatory steps ── */
+  const stepError = (stepKey) => {
+    if (stepKey === 'Details' && !form.company.trim()) return 'Company name is required'
+    if (stepKey === 'Billing & Shipping' && !(form.billing_street.trim() && form.billing_city.trim() && form.billing_state.trim()))
+      return 'Billing address (street, city & state) is required — invoicing depends on it'
+    if (stepKey === 'Customer Admins' && adminOrder.length === 0)
+      return 'Assign at least one account handler'
+    return null
+  }
+
+  const goNext = () => {
+    const err = stepError(tab)
+    if (err) return toast.error(err)
+    const idx = STEPS.findIndex(s => s.key === tab)
+    setCompletedSteps(prev => new Set([...prev, tab]))
+    if (idx < STEPS.length - 1) setTab(STEPS[idx + 1].key)
+  }
+  const goBack = () => {
+    const idx = STEPS.findIndex(s => s.key === tab)
+    if (idx > 0) setTab(STEPS[idx - 1].key)
   }
 
   const setContact = (i, k, v) => setForm(p => {
     const contacts = p.contacts.map((c, idx) => idx === i ? { ...c, [k]: v } : c)
     return { ...p, contacts }
   })
-  const addContact = () => setForm(p => ({ ...p, contacts: [...p.contacts, { first_name: '', last_name: '', email: '', phone: '', title: '', is_primary: false }] }))
+  const addContact = () => setForm(p => ({ ...p, contacts: [...p.contacts, { first_name: '', last_name: '', email: '', phone: '', title: '', is_primary: false, permissions: DEFAULT_PERMISSIONS, email_notifications: DEFAULT_NOTIFICATIONS, emails_enabled: true }] }))
   const removeContact = (i) => setForm(p => ({ ...p, contacts: p.contacts.filter((_, idx) => idx !== i) }))
 
   const save = async () => {
-    if (!form.company.trim()) { setTab('Details'); return toast.error('Company name is required') }
+    // Re-validate every mandatory step (guards against direct Save via edit tabs)
+    for (const s of STEPS) {
+      if (s.optional) continue
+      if (editing && s.key === 'Customer Admins') continue // edit syncs admins live
+      const err = stepError(s.key)
+      if (err) { setTab(s.key); return toast.error(err) }
+    }
     setSaving(true)
     try {
+      // Drop the seeded/blank contact rows — the backend rule
+      // `contacts.*.first_name => required_with:contacts` would otherwise
+      // reject a customer created with only a company name.
+      const contacts = (form.contacts || []).filter(c => (c.first_name || '').trim())
       const payload = {
         ...form,
+        contacts,
         vendor_id: form.vendor_id || null,
-        opening_balance: form.opening_balance === '' ? null : form.opening_balance,
+        // opening_balance is a NOT-NULL numeric (DB default 0). An empty box
+        // means "no opening balance" = 0 — never send null. The date beside it
+        // is genuinely nullable.
+        opening_balance: form.opening_balance === '' ? 0 : form.opening_balance,
         opening_balance_date: form.opening_balance_date || null,
+        // Ordered account handlers (create only — edit syncs live)
+        ...(editing ? {} : { admins: adminOrder }),
       }
       if (editing) { await customerApi.update(editing.id, payload); toast.success('Customer updated') }
       else { await customerApi.create(payload); toast.success('Customer created') }
@@ -209,7 +265,7 @@ export default function Customers() {
 
   return (
     <>
-      <div className="space-y-6 animate-[tiltIn_0.35s_ease_forwards]">
+      <div className="space-y-6 animate-[tiltIn_0.35s_ease]">
         {/* Header */}
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
@@ -369,15 +425,21 @@ export default function Customers() {
               </button>
             </div>
 
-            {/* Tabs */}
-            <div className="flex gap-1 px-5 pt-4">
-              {(editing ? EDIT_TABS : CREATE_TABS).map(t => (
-                <button key={t} onClick={() => setTab(t)} className="px-3.5 py-2 rounded-xl text-xs font-bold transition-all"
-                  style={{ background: tab === t ? 'linear-gradient(135deg,#7C3AED,#5b21b6)' : 'transparent', color: tab === t ? '#fff' : 'var(--text-muted)' }}>
-                  {t}
-                </button>
-              ))}
-            </div>
+            {/* Create = guided stepper (meeting 1.1); Edit = free tab navigation */}
+            {editing ? (
+              <div className="flex gap-1 px-5 pt-4">
+                {EDIT_TABS.map(t => (
+                  <button key={t} onClick={() => setTab(t)} className="px-3.5 py-2 rounded-xl text-xs font-bold transition-all"
+                    style={{ background: tab === t ? 'linear-gradient(135deg,#7C3AED,#5b21b6)' : 'transparent', color: tab === t ? '#fff' : 'var(--text-muted)' }}>
+                    {t}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="px-5 pt-4">
+                <StepperNav steps={STEPS} current={tab} completed={completedSteps} onStepClick={setTab} />
+              </div>
+            )}
 
             <div className="drawer-body">
               {tab === 'Details' && (
@@ -490,6 +552,21 @@ export default function Customers() {
                         <input className="input-3d text-sm" placeholder="Phone" value={c.phone || ''} onChange={e => setContact(i, 'phone', e.target.value)} />
                       </div>
                       <input className="input-3d text-sm" placeholder="Job title / position" value={c.title || ''} onChange={e => setContact(i, 'title', e.target.value)} />
+                      <details>
+                        <summary className="text-[11px] font-bold cursor-pointer select-none" style={{ color: 'var(--accent)' }}>Permissions & email notifications</summary>
+                        <div className="mt-2">
+                          <ContactPermissions
+                            compact
+                            permissions={c.permissions ?? permissionsFromLegacy(c.email_notifications)}
+                            notifications={c.email_notifications ?? DEFAULT_NOTIFICATIONS}
+                            emailsEnabled={c.emails_enabled !== false}
+                            onChange={({ permissions, email_notifications, emails_enabled }) => setForm(p => ({
+                              ...p,
+                              contacts: p.contacts.map((x, idx) => idx === i ? { ...x, permissions, email_notifications, emails_enabled } : x),
+                            }))}
+                          />
+                        </div>
+                      </details>
                     </div>
                   ))}
                 </div>
@@ -539,51 +616,79 @@ export default function Customers() {
 
               {tab === 'Custom Fields' && (
                 <div className="space-y-4">
-                  {customFieldDefs.length === 0 ? (
+                  {/* Inline quick-add (meeting 1.2): create a field without leaving the flow */}
+                  <div className="flex justify-end">
+                    <button type="button" onClick={() => setQuickField(q => !q)} className="text-xs font-bold flex items-center gap-1" style={{ color: 'var(--accent)' }}>
+                      <Plus size={12} /> {quickField ? 'Close' : 'New field'}
+                    </button>
+                  </div>
+                  {quickField && (
+                    <div className="p-4 rounded-xl" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+                      <CustomFieldForm
+                        fieldTo="customers"
+                        onSaved={() => { setQuickField(false); customerApi.customFields.list().then(setCustomFieldDefs).catch(() => {}) }}
+                        onCancel={() => setQuickField(false)}
+                      />
+                    </div>
+                  )}
+                  {customFieldDefs.length === 0 && !quickField ? (
                     <div className="py-10 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
-                      No custom fields defined yet.<br />Define them under Customers → Custom Fields settings.
+                      No custom fields defined yet — use “New field” above or Settings → Custom Fields.
                     </div>
-                  ) : customFieldDefs.map(def => (
-                    <div key={def.id}>
-                      <label className="label">{def.name}{def.required ? ' *' : ''}</label>
-                      <CustomFieldInput def={def}
-                        value={form.custom_fields?.[def.id] ?? def.default_value ?? ''}
-                        onChange={v => setForm(p => ({ ...p, custom_fields: { ...(p.custom_fields || {}), [def.id]: v } }))} />
+                  ) : (
+                    <div className="flex flex-wrap gap-4">
+                      {customFieldDefs.map(def => (
+                        <div key={def.id} style={cfWidthStyle(def.bs_column)}>
+                          <label className="label">{def.name}{def.required ? ' *' : ''}</label>
+                          <CustomFieldInput def={def}
+                            value={form.custom_fields?.[def.id] ?? def.default_value ?? ''}
+                            onChange={v => setForm(p => ({ ...p, custom_fields: { ...(p.custom_fields || {}), [def.id]: v } }))} />
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
                 </div>
               )}
 
               {tab === 'Customer Admins' && (
                 <div className="space-y-3">
-                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Staff assigned here are the account managers for this customer.</p>
-                  {adminData.assignable.length === 0 ? (
-                    <div className="py-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No staff users available to assign.</div>
-                  ) : adminData.assignable.map(u => {
-                    const on = adminData.assigned.some(a => a.id === u.id)
-                    return (
-                      <label key={u.id} className="flex items-center gap-3 p-3 rounded-xl cursor-pointer" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
-                        <input type="checkbox" checked={on} onChange={() => toggleAdmin(u.id)} />
-                        <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.12)' }}>
-                          <UserCog size={14} style={{ color: 'var(--accent)' }} />
-                        </div>
-                        <div>
-                          <p className="text-sm font-semibold" style={{ color: 'var(--text-h)' }}>{u.name}</p>
-                          <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{u.email}</p>
-                        </div>
-                      </label>
-                    )
-                  })}
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    Account handlers from YOUR team for this customer — the client talks to the
+                    primary; fallbacks take over in order when the primary is unavailable.
+                  </p>
+                  <AdminOrderPicker staff={staffOptions} value={adminOrder} onChange={changeAdminOrder} />
                 </div>
               )}
             </div>
 
             <div className="drawer-footer">
-              <button onClick={() => setDrawer(false)} className="flex-1 py-3 rounded-2xl text-sm font-semibold" style={{ background: 'var(--bg-input)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Cancel</button>
-              <button onClick={save} disabled={saving} className="flex-[2] py-3 rounded-2xl text-sm font-bold text-white hover:scale-[1.01] transition-all disabled:opacity-60"
-                style={{ background: 'linear-gradient(135deg,#9f67ff,#7C3AED,#5b21b6)', boxShadow: '0 6px 20px rgba(124,58,237,0.4)' }}>
-                {saving ? 'Saving…' : editing ? 'Save Changes' : 'Create Customer'}
-              </button>
+              {editing ? (
+                <>
+                  <button onClick={() => setDrawer(false)} className="flex-1 py-3 rounded-2xl text-sm font-semibold" style={{ background: 'var(--bg-input)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Cancel</button>
+                  <button onClick={save} disabled={saving} className="flex-[2] py-3 rounded-2xl text-sm font-bold text-white hover:scale-[1.01] transition-all disabled:opacity-60"
+                    style={{ background: 'linear-gradient(135deg,#9f67ff,#7C3AED,#5b21b6)', boxShadow: '0 6px 20px rgba(124,58,237,0.4)' }}>
+                    {saving ? 'Saving…' : 'Save Changes'}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button onClick={tab === STEPS[0].key ? () => setDrawer(false) : goBack}
+                    className="flex-1 py-3 rounded-2xl text-sm font-semibold" style={{ background: 'var(--bg-input)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+                    {tab === STEPS[0].key ? 'Cancel' : 'Back'}
+                  </button>
+                  {tab !== STEPS[STEPS.length - 1].key ? (
+                    <button onClick={goNext} className="flex-[2] py-3 rounded-2xl text-sm font-bold text-white hover:scale-[1.01] transition-all"
+                      style={{ background: 'linear-gradient(135deg,#9f67ff,#7C3AED,#5b21b6)', boxShadow: '0 6px 20px rgba(124,58,237,0.4)' }}>
+                      Next →
+                    </button>
+                  ) : (
+                    <button onClick={save} disabled={saving} className="flex-[2] py-3 rounded-2xl text-sm font-bold text-white hover:scale-[1.01] transition-all disabled:opacity-60"
+                      style={{ background: 'linear-gradient(135deg,#9f67ff,#7C3AED,#5b21b6)', boxShadow: '0 6px 20px rgba(124,58,237,0.4)' }}>
+                      {saving ? 'Saving…' : 'Create Customer'}
+                    </button>
+                  )}
+                </>
+              )}
             </div>
           </div>
         </>

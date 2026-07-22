@@ -22,6 +22,7 @@ class Client extends Model
         'tenant_id', 'company', 'gst_number', 'phone', 'website', 'parent_company',
         'opening_balance', 'opening_balance_date', 'vendor_id', 'lead_id',
         'address', 'city', 'state', 'zip', 'country',
+        'map_address', 'latitude', 'longitude',
         'billing_street', 'billing_city', 'billing_state', 'billing_zip', 'billing_country',
         'shipping_street', 'shipping_city', 'shipping_state', 'shipping_zip', 'shipping_country',
         'social_links', 'foundation_date', 'dob', 'anniversary_date',
@@ -57,7 +58,11 @@ class Client extends Model
 
     public function admins(): BelongsToMany
     {
-        return $this->belongsToMany(User::class, 'customer_admins')->withTimestamps();
+        // Ordered: pivot sort_order 0 = primary handler, 1 = second fallback, …
+        return $this->belongsToMany(User::class, 'customer_admins')
+                    ->withPivot('sort_order')
+                    ->orderByPivot('sort_order')
+                    ->withTimestamps();
     }
 
     public function creator()

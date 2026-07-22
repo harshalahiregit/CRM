@@ -22,6 +22,9 @@ class UpdateContractRequest extends FormRequest
             'end_date'            => 'nullable|date',
             'description'         => 'nullable|string',
             'renewal_notice_days' => 'nullable|integer|min:0',
+            'pages'            => 'nullable|array',
+            'pages.*.title'    => 'nullable|string|max:255',
+            'pages.*.content'  => 'nullable|string',
         ];
     }
 }

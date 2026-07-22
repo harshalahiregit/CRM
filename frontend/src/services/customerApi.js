@@ -51,9 +51,10 @@ export const customerApi = {
   payments:   (id) => api.get(`/customers/${id}/payments`).then(r => r.data).catch(handleErr),
   statement:  (id) => api.get(`/customers/${id}/statement`).then(r => r.data).catch(handleErr),
 
-  // Customer admins (account managers)
+  // Customer admins (account managers) — user_ids array order = fallback order
   admins:     (id) => api.get(`/customers/${id}/admins`).then(r => r.data).catch(handleErr),
   syncAdmins: (id, userIds) => api.put(`/customers/${id}/admins`, { user_ids: userIds }).then(r => r.data).catch(handleErr),
+  assignableStaff: () => api.get('/customers/assignable-staff').then(r => r.data).catch(handleErr),
 
   // Contacts (per-customer)
   contacts: {
@@ -65,9 +66,19 @@ export const customerApi = {
   },
 
   // Notes
+  expenseCategories: {
+    list:   () => api.get('/customers/expense-categories').then(r => r.data).catch(handleErr),
+    create: (data) => api.post('/customers/expense-categories', data).then(r => r.data).catch(handleErr),
+    update: (id, data) => api.put(`/customers/expense-categories/${id}`, data).then(r => r.data).catch(handleErr),
+    remove: (id) => api.delete(`/customers/expense-categories/${id}`).then(r => r.data).catch(handleErr),
+  },
+  projects: {
+    list: () => api.get('/customers/projects-stub').then(r => r.data).catch(handleErr),
+  },
   notes: {
     list:   (id) => api.get(`/customers/${id}/notes`).then(r => r.data).catch(handleErr),
     create: (id, data) => api.post(`/customers/${id}/notes`, data).then(r => r.data).catch(handleErr),
+    update: (id, noteId, data) => api.put(`/customers/${id}/notes/${noteId}`, data).then(r => r.data).catch(handleErr),
     remove: (id, noteId) => api.delete(`/customers/${id}/notes/${noteId}`).then(r => r.data).catch(handleErr),
   },
 
@@ -137,12 +148,17 @@ export const customerApi = {
   },
 
   // Custom field definitions
+  // Map location picker
+  geocode: (q) => api.get('/customers/geocode', { params: { q } }).then(r => r.data).catch(handleErr),
+  updateLocation: (id, data) => api.put(`/customers/${id}/location`, data).then(r => r.data).catch(handleErr),
+
   customFields: {
     list: (fieldTo = 'customers') =>
       api.get('/customers/custom-fields', { params: { field_to: fieldTo } }).then(r => r.data).catch(handleErr),
     create: (data) => api.post('/customers/custom-fields', data).then(r => r.data).catch(handleErr),
     update: (id, data) => api.put(`/customers/custom-fields/${id}`, data).then(r => r.data).catch(handleErr),
     remove: (id) => api.delete(`/customers/custom-fields/${id}`).then(r => r.data).catch(handleErr),
+    reorder: (ids) => api.post('/customers/custom-fields/reorder', { ids }).then(r => r.data).catch(handleErr),
   },
 }
 

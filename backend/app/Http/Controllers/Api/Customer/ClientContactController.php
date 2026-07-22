@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\Customer\Concerns\AssertsClientTenant;
 use App\Http\Controllers\Controller;
 use App\Models\Customer\Client;
 use App\Models\Customer\ClientContact;
+use App\Services\Customer\CustomFieldService;
 use Illuminate\Http\Request;
 
 /**
@@ -20,18 +21,32 @@ class ClientContactController extends Controller
 
     public const NOTIFICATION_KEYS = ['invoice', 'estimate', 'credit_note', 'proposal', 'project', 'ticket', 'task', 'contract'];
 
+    public function __construct(private CustomFieldService $customFields)
+    {
+    }
+
     public function index(Client $client, Request $request)
     {
         $this->assertClientTenant($client, $request->user()->tenant_id);
-        return response()->json($client->contacts()->orderByDesc('is_primary')->get());
+        $tenantId = $request->user()->tenant_id;
+        $isAdmin  = $request->user()->role === 'admin';
+
+        $contacts = $client->contacts()->orderByDesc('is_primary')->get()
+            ->map(function (ClientContact $c) use ($tenantId, $isAdmin) {
+                $c->custom_fields = $this->customFields->valuesFor($tenantId, 'contacts', $c->id, $isAdmin);
+                return $c;
+            });
+
+        return response()->json($contacts);
     }
 
     public function store(Client $client, Request $request)
     {
         $this->assertClientTenant($client, $request->user()->tenant_id);
-        $data = $this->validated($request, $client->id);
+        [$data, $customFields] = $this->validated($request, $client->id);
 
         $contact = $client->contacts()->create([...$data, 'tenant_id' => $client->tenant_id]);
+        $this->customFields->saveValues($client->tenant_id, 'contacts', $contact->id, $customFields);
         $this->reconcilePrimary($client, $contact);
 
         return response()->json($contact->fresh(), 201);
@@ -40,7 +55,9 @@ class ClientContactController extends Controller
     public function update(Client $client, ClientContact $contact, Request $request)
     {
         $this->guard($client, $contact, $request);
-        $contact->update($this->validated($request, $client->id, $contact->id));
+        [$data, $customFields] = $this->validated($request, $client->id, $contact->id);
+        $contact->update($data);
+        $this->customFields->saveValues($client->tenant_id, 'contacts', $contact->id, $customFields);
         $this->reconcilePrimary($client, $contact);
 
         return response()->json($contact->fresh());
@@ -67,6 +84,7 @@ class ClientContactController extends Controller
         return response()->json(['message' => 'Contact deleted']);
     }
 
+    /** @return array{0: array, 1: array} [contact attributes, custom-field values] */
     private function validated(Request $request, int $clientId, ?int $contactId = null): array
     {
         $data = $request->validate([
@@ -75,10 +93,28 @@ class ClientContactController extends Controller
             'email'               => 'nullable|email|max:255',
             'phone'               => 'nullable|string|max:30',
             'title'               => 'nullable|string|max:100',
+            'avatar'              => 'nullable|string|max:500000',
+            'direction'           => 'nullable|in:ltr,rtl',
+            'password'            => 'nullable|string|min:6|max:72',
             'is_primary'          => 'nullable|boolean',
             'active'              => 'nullable|boolean',
             'email_notifications' => 'nullable|array',
+            'permissions'         => 'nullable|array',
+            'permissions.*'       => 'string',
+            'emails_enabled'      => 'nullable|boolean',
+            'custom_fields'       => 'nullable|array',
         ]);
+
+        $customFields = $data['custom_fields'] ?? [];
+        unset($data['custom_fields']);
+
+        // Blank password means "keep the existing one" — never overwrite with
+        // empty. When a new one IS given, stamp the change time.
+        if (empty($data['password'])) {
+            unset($data['password']);
+        } else {
+            $data['last_password_change'] = now();
+        }
 
         // Keep only recognised notification keys.
         if (isset($data['email_notifications'])) {
@@ -88,7 +124,15 @@ class ClientContactController extends Controller
             );
         }
 
-        return $data;
+        // Keep only known modules, deduped, in canonical order.
+        if (isset($data['permissions'])) {
+            $data['permissions'] = array_values(array_intersect(
+                ClientContact::MODULES,
+                $data['permissions'],
+            ));
+        }
+
+        return [$data, $customFields];
     }
 
     /** Ensure exactly one primary contact when this one is flagged primary. */

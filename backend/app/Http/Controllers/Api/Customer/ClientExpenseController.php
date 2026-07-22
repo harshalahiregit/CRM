@@ -9,6 +9,12 @@ class ClientExpenseController extends AbstractClientRecordController
         return 'expenses';
     }
 
+    /** `note` is a rich-text (notepad-style) field. */
+    protected function htmlFields(): array
+    {
+        return ['note'];
+    }
+
     protected function rules(): array
     {
         return [
@@ -18,6 +24,7 @@ class ClientExpenseController extends AbstractClientRecordController
             'date'         => 'nullable|date',
             'payment_mode' => 'nullable|string|max:100',
             'billable'     => 'nullable|boolean',
+            'project_id'   => 'nullable|integer',
             'note'         => 'nullable|string',
         ];
     }

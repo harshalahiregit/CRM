@@ -48,6 +48,15 @@
         @if($proposal->phone){{ $proposal->phone }}@endif
     </div>
 
+    @if($proposal->relationLoaded('pages') && $proposal->pages->isNotEmpty())
+        @foreach($proposal->pages as $pg)
+            <div class="box" style="margin-top: 16px; page-break-inside: avoid;">
+                <strong>{{ $pg->title }}</strong><br>
+                {!! $pg->content !!}
+            </div>
+        @endforeach
+    @endif
+
     <table class="items">
         <thead>
             <tr><th>Item</th><th>Qty</th><th>Rate</th><th>Tax</th><th>Total</th></tr>
@@ -67,13 +76,36 @@
 
     <div class="totals">
         <div><span>Subtotal</span><span>{{ number_format($proposal->subtotal, 2) }}</span></div>
-        <div><span>Tax</span><span>{{ number_format($proposal->tax_total, 2) }}</span></div>
+        @if($proposal->discount_amount > 0)
+            <div><span>Discount</span><span>-{{ number_format($proposal->discount_amount, 2) }}</span></div>
+        @endif
+@php($taxRows = $proposal->taxBreakdown())
+        @if(count($taxRows))
+            @foreach($taxRows as $t)
+                <div><span>{{ $t['name'] }} ({{ rtrim(rtrim(number_format($t['rate'], 2, '.', ''), '0'), '.') }}%)</span><span>{{ number_format($t['amount'], 2) }}</span></div>
+            @endforeach
+        @elseif($proposal->supply_type === 'intra')
+            <div><span>CGST</span><span>{{ number_format($proposal->tax_total / 2, 2) }}</span></div>
+            <div><span>SGST</span><span>{{ number_format($proposal->tax_total / 2, 2) }}</span></div>
+        @elseif($proposal->supply_type === 'inter')
+            <div><span>IGST</span><span>{{ number_format($proposal->tax_total, 2) }}</span></div>
+        @else
+            <div><span>Tax</span><span>{{ number_format($proposal->tax_total, 2) }}</span></div>
+        @endif
         <div class="grand"><span>Total</span><span>{{ $proposal->currency }} {{ number_format($proposal->total, 2) }}</span></div>
     </div>
 
     @if($proposal->notes)
         <div class="box" style="margin-top: 24px;">
             <strong>Notes</strong><br>{{ $proposal->notes }}
+        </div>
+    @endif
+
+    @if($proposal->terms)
+        {{-- Terms is sanitized rich text (HtmlSanitizer) — safe to render as HTML. --}}
+        <div class="box" style="margin-top: 16px;">
+            <strong>Terms &amp; Conditions</strong>
+            <div>{!! $proposal->terms !!}</div>
         </div>
     @endif
 

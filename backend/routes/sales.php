@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\Sales\SalesDashboardController;
 use App\Http\Controllers\Api\Sales\ItemController;
 use App\Http\Controllers\Api\Sales\ProposalController;
+use App\Http\Controllers\Api\Sales\TaxRateController;
 use App\Http\Controllers\Api\Sales\EstimateController;
 use App\Http\Controllers\Api\Sales\InvoiceController;
 use App\Http\Controllers\Api\Sales\CreditNoteController;
@@ -77,6 +78,11 @@ Route::middleware('auth:sanctum')->prefix('sales')->group(function () {
     Route::patch('/contracts/{contract}/status',    [ContractController::class, 'updateStatus']);
     Route::post('/contracts/{contract}/renew',      [ContractController::class, 'renew']);
     Route::post('/contracts/{contract}/sign',       [ContractController::class, 'sign']);
+    Route::get('/contracts/{contract}/renewals',    [ContractController::class, 'renewals']);
+    Route::get('/contracts/{contract}/pdf',         [ContractController::class, 'exportPDF']);
+    Route::post('/contracts/{contract}/send',       [ContractController::class, 'send']);
+    Route::post('/contracts/{contract}/comments',   [ContractController::class, 'addComment']);
+    Route::delete('/contracts/{contract}/comments/{comment}', [ContractController::class, 'deleteComment']);
 
     // ── Web-to-Lead forms (admin) ───────────────────────────────
     Route::get('/web-to-lead-forms',                    [WebToLeadFormController::class, 'index']);
@@ -115,14 +121,23 @@ Route::middleware('auth:sanctum')->prefix('sales')->group(function () {
     Route::put('/proposals/{proposal}',                   [ProposalController::class, 'update']);
     Route::delete('/proposals/{proposal}',                [ProposalController::class, 'destroy']);
     Route::patch('/proposals/{proposal}/send',            [ProposalController::class, 'send']);
+    Route::post('/proposals/{proposal}/submit',           [ProposalController::class, 'submit']);
     Route::patch('/proposals/{proposal}/status',          [ProposalController::class, 'updateStatus']);
     Route::post('/proposals/{proposal}/generate-qr',      [ProposalController::class, 'generateQR']);
     Route::post('/proposals/{proposal}/convert-to-estimate', [ProposalController::class, 'convertToEstimate']);
     Route::post('/proposals/{proposal}/convert-to-invoice',  [ProposalController::class, 'convertToInvoice']);
     Route::get('/proposals/{proposal}/pdf',               [ProposalController::class, 'exportPDF']);
+    Route::post('/proposals/{proposal}/save-as-template', [ProposalController::class, 'saveAsTemplate']);
 
     // Proposal Templates
+    // GST tax slabs (Settings → Tax Rates; consumed by line-item pickers)
+    Route::get('/tax-rates',              [TaxRateController::class, 'index']);
+    Route::post('/tax-rates',             [TaxRateController::class, 'store']);
+    Route::put('/tax-rates/{taxRate}',    [TaxRateController::class, 'update']);
+    Route::delete('/tax-rates/{taxRate}', [TaxRateController::class, 'destroy']);
+
     Route::get('/proposal-templates',                          [ProposalTemplateController::class, 'index']);
+    Route::get('/proposal-templates/categories',               [ProposalTemplateController::class, 'categories']);
     Route::post('/proposal-templates',                         [ProposalTemplateController::class, 'store']);
     Route::put('/proposal-templates/{proposalTemplate}',       [ProposalTemplateController::class, 'update']);
     Route::delete('/proposal-templates/{proposalTemplate}',    [ProposalTemplateController::class, 'destroy']);
@@ -136,6 +151,7 @@ Route::middleware('auth:sanctum')->prefix('sales')->group(function () {
     Route::delete('/estimates/{estimate}',                     [EstimateController::class, 'destroy']);
     Route::patch('/estimates/{estimate}/send',                 [EstimateController::class, 'send']);
     Route::post('/estimates/{estimate}/convert-to-invoice',    [EstimateController::class, 'convertToInvoice']);
+    Route::post('/estimates/{estimate}/convert-to-proforma', [EstimateController::class, 'convertToProforma']);
     Route::post('/estimates/{estimate}/payments',              [EstimateController::class, 'recordPayment']);
 
     // Invoices

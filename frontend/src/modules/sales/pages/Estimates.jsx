@@ -7,8 +7,10 @@ import {
 import { salesApi } from '@/services/salesApi'
 import { useClientOptions } from '@/hooks/useClientOptions'
 import StatusBadge from '../components/StatusBadge'
+import RowMenu from '../components/RowMenu'
 import LineItemsTable from '../components/LineItemsTable'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
+import RichTextEditor from '@/components/ui/RichTextEditor'
 
 const fmt = v => '₹' + Number(v || 0).toLocaleString('en-IN')
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
@@ -20,7 +22,8 @@ const EMPTY_FORM = {
   subject: '', client_id: '', project_id: '',
   date: new Date().toISOString().split('T')[0],
   valid_until: '', currency: 'INR',
-  discount_type: 'none', sale_agent: '', status: 'Draft',
+  discount_type: 'before_tax', discount_mode: 'fixed', discount_value: 0,
+  sale_agent: '', status: 'Draft',
   adminnote: '', clientnote: '', terms: '', tags: '',
   address: '', city: '', state: '', country: 'India', zip: '',
   line_items: [],
@@ -34,7 +37,10 @@ const PIPE_COLS = [
   { key: 'Expired',  color: '#fbbf24', bg: 'rgba(245,158,11,0.08)' },
 ]
 
-export default function Estimates() {
+export default function Estimates({ docType = 'proforma' }) {
+  const isEstimate = docType === 'estimate'
+  const DOC_LABEL = isEstimate ? 'Estimate' : 'Proforma Invoice'
+  const DOC_LABEL_PLURAL = isEstimate ? 'Estimates' : 'Proforma Invoices'
   const navigate = useNavigate()
   const clientOptions = useClientOptions()
   const [data, setData]         = useState([])
@@ -52,9 +58,9 @@ export default function Estimates() {
 
   const load = () => {
     setLoading(true)
-    salesApi.estimates.list({ status: filter !== 'All' ? filter : undefined }).then(d => { setData(d); setLoading(false) })
+    salesApi.estimates.list({ status: filter !== 'All' ? filter : undefined, type: docType }).then(d => { setData(d); setLoading(false) })
   }
-  useEffect(() => { load() }, [filter])
+  useEffect(() => { load() }, [filter, docType])
 
   // Arriving from a customer profile's "New Proforma Invoice" button.
   const [searchParams, setSearchParams] = useSearchParams()
@@ -71,8 +77,8 @@ export default function Estimates() {
 
   const handleCreate = async () => {
     if (!form.subject || !form.client_id) return showToast('Subject & customer required', 'error')
-    await salesApi.estimates.create({ ...form, client_id: Number(form.client_id) })
-    showToast('Proforma Invoice created!')
+    await salesApi.estimates.create({ estimate_type: docType, ...form, client_id: Number(form.client_id) })
+    showToast(`${DOC_LABEL} created!`)
     setShowDrawer(false)
     setForm(EMPTY_FORM)
     load()
@@ -84,6 +90,16 @@ export default function Estimates() {
     sent: data.filter(e => e.status === 'Sent').length,
     accepted: data.filter(e => e.status === 'Accepted').length,
     totalVal: data.reduce((s, e) => s + Number(e.total || 0), 0),
+  }
+
+  const handleConvertToProforma = async (estimate) => {
+    try {
+      const pf = await salesApi.estimates.convertToProforma(estimate.id)
+      showToast(`Converted to ${pf.reference}`)
+      load()
+    } catch (e) {
+      showToast(e.message || 'Failed to convert', 'error')
+    }
   }
 
   const handleConvert = async (estimate) => {
@@ -99,7 +115,7 @@ export default function Estimates() {
   const handleDelete = async () => {
     try {
       await salesApi.estimates.delete(confirmDelete.id)
-      showToast('Proforma invoice deleted')
+      showToast(`${DOC_LABEL} deleted`)
       setConfirmDelete(null)
       load()
     } catch (e) {
@@ -116,14 +132,14 @@ export default function Estimates() {
         </div>
       )}
 
-      <div className="space-y-6 animate-[tiltIn_0.35s_ease_forwards]" onClick={() => setOpenMenu(null)}>
+      <div className="space-y-6 animate-[tiltIn_0.35s_ease]" onClick={() => setOpenMenu(null)}>
 
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <p className="label-caps mb-1">Sales & Revenue</p>
           <h1 className="font-black" style={{ fontSize: 'clamp(1.3rem,2vw,1.8rem)', color: 'var(--text-h)', letterSpacing: '-0.02em' }}>
-            <span className="text-gradient">Proforma Invoices</span>
+            <span className="text-gradient">{DOC_LABEL_PLURAL}</span>
           </h1>
           <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Price quotes sent to customers</p>
         </div>
@@ -146,7 +162,7 @@ export default function Estimates() {
           <button onClick={() => setShowDrawer(true)}
             className="flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold text-white transition-all hover:scale-[1.03]"
             style={{ background: 'linear-gradient(135deg,#9f67ff,#7C3AED,#5b21b6)', boxShadow: '0 6px 20px rgba(124,58,237,0.45)' }}>
-            <Plus size={15} /> New Proforma Invoice
+            <Plus size={15} /> New {DOC_LABEL}
           </button>
         </div>
       </div>
@@ -218,29 +234,25 @@ export default function Estimates() {
                       <td className="py-3.5 px-4 font-bold whitespace-nowrap" style={{ color: 'var(--text-h)' }}>{fmt(e.total)}</td>
                       <td className="py-3.5 px-4 whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>{fmtDate(e.valid_until)}</td>
                       <td className="py-3.5 px-4"><StatusBadge status={e.status} /></td>
-                      <td className="py-3.5 px-4 relative" onClick={ev => ev.stopPropagation()}>
-                        <button onClick={() => setOpenMenu(openMenu === e.id ? null : e.id)}
-                          className="w-8 h-8 rounded-xl flex items-center justify-center transition-colors hover:bg-[rgba(124,58,237,0.08)]">
-                          <MoreVertical size={14} style={{ color: 'var(--text-muted)' }} />
-                        </button>
-                        {openMenu === e.id && (
-                          <div className="absolute right-2 top-10 z-50 rounded-2xl shadow-2xl py-1.5 min-w-[170px] overflow-hidden"
-                            style={{ background: 'var(--bg-card)', border: '1px solid var(--border-purple)', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
-                            {[
-                              { icon: Send, label: 'Send to Client', action: () => showToast('Proforma Invoice sent!') },
-                              { icon: Receipt, label: 'Convert to Tax Invoice', action: () => handleConvert(e) },
-                              { icon: Trash2, label: 'Delete', action: () => setConfirmDelete(e), danger: true },
-                            ].map(a => (
-                              <button key={a.label} onClick={() => { a.action(); setOpenMenu(null) }}
-                                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-medium transition-colors"
-                                onMouseEnter={ev => ev.currentTarget.style.background = a.danger ? 'rgba(239,68,68,0.06)' : 'rgba(124,58,237,0.06)'}
-                                onMouseLeave={ev => ev.currentTarget.style.background = 'transparent'}
-                                style={{ color: a.danger ? '#f87171' : 'var(--text-h)' }}>
-                                <a.icon size={13} />{a.label}
-                              </button>
-                            ))}
-                          </div>
-                        )}
+                      <td className="py-3.5 px-4" onClick={ev => ev.stopPropagation()}>
+                        <RowMenu width={188}>
+                          {[
+                            // Email-out for estimates lands with the estimate mail flow — no fake success toast.
+                            { icon: Send, label: 'Send to Client (soon)', action: () => showToast('Estimate emailing is coming soon', 'error'), disabled: true },
+                            isEstimate
+                              ? { icon: Receipt, label: 'Convert to Proforma', action: () => handleConvertToProforma(e) }
+                              : { icon: Receipt, label: 'Convert to Tax Invoice', action: () => handleConvert(e) },
+                            { icon: Trash2, label: 'Delete', action: () => setConfirmDelete(e), danger: true },
+                          ].map(a => (
+                            <button key={a.label} onClick={() => a.action()}
+                              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-colors"
+                              onMouseEnter={ev => ev.currentTarget.style.background = a.danger ? 'rgba(239,68,68,0.06)' : 'rgba(124,58,237,0.06)'}
+                              onMouseLeave={ev => ev.currentTarget.style.background = 'transparent'}
+                              style={{ color: a.danger ? '#f87171' : 'var(--text-h)' }}>
+                              <a.icon size={13} />{a.label}
+                            </button>
+                          ))}
+                        </RowMenu>
                       </td>
                     </tr>
                   ))}
@@ -301,7 +313,7 @@ export default function Estimates() {
                         <div className="flex items-center justify-between">
                           <span className="text-sm font-black" style={{ color: '#a78bfa' }}>{fmt(e.total)}</span>
                           <div className="flex gap-1">
-                            <button onClick={() => showToast('Proforma Invoice sent!')} className="p-1.5 rounded-lg hover:bg-[rgba(124,58,237,0.08)] transition-colors">
+                            <button onClick={() => showToast('Estimate emailing is coming soon', 'error')} title="Coming soon" className="p-1.5 rounded-lg opacity-50 transition-colors">
                               <Send size={11} style={{ color: 'var(--text-muted)' }} />
                             </button>
                             <button onClick={() => showToast('Converted!')} className="p-1.5 rounded-lg hover:bg-[rgba(124,58,237,0.08)] transition-colors">
@@ -331,7 +343,7 @@ export default function Estimates() {
       {showDrawer && (
         <>
           <div className="drawer-backdrop" onClick={() => setShowDrawer(false)} />
-          <div className="drawer-panel" style={{ width: 'min(600px, 95vw)' }}>
+          <div className="drawer-panel" style={{ width: 'min(1080px, 96vw)' }}>
             {/* Drawer Header */}
             <div className="drawer-header">
               <div>
@@ -340,7 +352,7 @@ export default function Estimates() {
                     style={{ background: 'linear-gradient(135deg,#9f67ff,#7C3AED)', boxShadow: '0 4px 12px rgba(124,58,237,0.4)' }}>
                     <FileText size={14} className="text-white" />
                   </div>
-                  <h2 className="font-black text-lg" style={{ color: 'var(--text-h)', letterSpacing: '-0.02em' }}>New Proforma Invoice</h2>
+                  <h2 className="font-black text-lg" style={{ color: 'var(--text-h)', letterSpacing: '-0.02em' }}>New {DOC_LABEL}</h2>
                 </div>
                 <p className="text-xs mt-1 ml-[42px]" style={{ color: 'var(--text-muted)' }}>Create a formal price quote for a customer</p>
               </div>
@@ -460,6 +472,8 @@ export default function Estimates() {
                 <LineItemsTable
                   items={form.line_items}
                   onChange={rows => sf('line_items', rows)}
+                  discount={{ type: form.discount_type, mode: form.discount_mode, value: form.discount_value }}
+                  onDiscountChange={d => setForm(p => ({ ...p, discount_type: d.type ?? p.discount_type, discount_mode: d.mode ?? p.discount_mode, discount_value: d.value ?? p.discount_value }))}
                 />
               </div>
 
@@ -487,9 +501,7 @@ export default function Estimates() {
                   </div>
                   <div>
                     <label className="label">Terms & Conditions</label>
-                    <textarea className="input-3d text-sm resize-none" rows={3}
-                      placeholder="Terms and conditions for this estimate…"
-                      value={form.terms} onChange={e => sf('terms', e.target.value)} />
+                    <RichTextEditor value={form.terms} onChange={v => sf('terms', v)} placeholder="Terms and conditions for this estimate…" minHeight={120} />
                   </div>
                   <div>
                     <label className="label"><Tag size={10} className="inline mr-1" />Tags (comma separated)</label>
@@ -510,7 +522,7 @@ export default function Estimates() {
               <button onClick={handleCreate}
                 className="flex-[2] py-3 rounded-2xl text-sm font-bold text-white transition-all hover:scale-[1.01]"
                 style={{ background: 'linear-gradient(135deg,#9f67ff,#7C3AED,#5b21b6)', boxShadow: '0 6px 20px rgba(124,58,237,0.4)' }}>
-                Create Proforma Invoice
+                Create {DOC_LABEL}
               </button>
             </div>
           </div>
