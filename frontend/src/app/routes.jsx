@@ -73,6 +73,9 @@ const CustomerDetail = lazy(() => import('@/modules/customer/pages/CustomerDetai
 
 // Accounts Module (lazy)
 const AccountsLayout = lazy(() => import('@/modules/accounts/AccountsLayout'))
+const AccDashboard = lazy(() => import('@/modules/accounts/pages/Dashboard'))
+const AccBills = lazy(() => import('@/modules/accounts/pages/Bills'))
+const AccTransfer = lazy(() => import('@/modules/accounts/pages/Transfer'))
 const ChartOfAccounts = lazy(() => import('@/modules/accounts/pages/ChartOfAccounts'))
 const Vouchers = lazy(() => import('@/modules/accounts/pages/Vouchers'))
 const VoucherDetail = lazy(() => import('@/modules/accounts/pages/VoucherDetail'))
@@ -225,7 +228,10 @@ export default function AppRoutes() {
 
         {/* ACCOUNTS MODULE */}
         <Route path="accounts" element={<S><AccountsLayout /></S>}>
-          <Route index element={<Navigate to="chart-of-accounts" replace />} />
+          <Route index element={<Navigate to="dashboard" replace />} />
+          <Route path="dashboard" element={<S><AccDashboard /></S>} />
+          <Route path="bills" element={<S><AccBills /></S>} />
+          <Route path="transfer" element={<S><AccTransfer /></S>} />
           <Route path="chart-of-accounts" element={<S><ChartOfAccounts /></S>} />
           <Route path="vouchers" element={<S><Vouchers /></S>} />
           <Route path="vouchers/:id" element={<S><VoucherDetail /></S>} />

@@ -45,4 +45,34 @@ class VoucherController extends Controller
         $reversal = $this->reversal->cancel($voucher, $request->user()->tenant_id, $request->user()->id, $data['reason'] ?? null);
         return response()->json(['message' => 'Voucher cancelled', 'reversal' => $reversal]);
     }
+
+    /**
+     * Fund transfer between two asset ledgers (old-CRM "Transfer" — the
+     * feature the reference build's sidebar mislabels "Convert" due to a
+     * language-key collision). A thin, friendlier front door onto a Contra
+     * voucher: Dr the destination ledger, Cr the source ledger.
+     */
+    public function transfer(Request $request)
+    {
+        $data = $request->validate([
+            'from_ledger_id' => 'required|integer|different:to_ledger_id|exists:acc_ledgers,id',
+            'to_ledger_id'   => 'required|integer|exists:acc_ledgers,id',
+            'date'           => 'required|date',
+            'amount'         => 'required|numeric|gt:0',
+            'narration'      => 'nullable|string|max:255',
+        ]);
+
+        $voucher = $this->posting->post([
+            'voucher_type_code' => 'contra',
+            'date'              => $data['date'],
+            'narration'         => $data['narration'] ?? 'Fund transfer',
+            'source_type'       => 'fund_transfer',
+            'lines' => [
+                ['ledger_id' => $data['to_ledger_id'], 'debit' => $data['amount']],
+                ['ledger_id' => $data['from_ledger_id'], 'credit' => $data['amount']],
+            ],
+        ], $request->user()->tenant_id, $request->user()->id);
+
+        return response()->json($voucher, 201);
+    }
 }

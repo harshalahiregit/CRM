@@ -11,6 +11,15 @@ export const accountsApi = {
   setupStatus: () => api.get('/accounts/setup').then(r => r.data).catch(handleErr),
   runSetup:    () => api.post('/accounts/setup').then(r => r.data).catch(handleErr),
 
+  dashboard: () => api.get('/accounts/dashboard').then(r => r.data).catch(handleErr),
+
+  // Vendor Bills
+  bills: {
+    list: (params = {}) => api.get('/accounts/bills', { params }).then(r => r.data).catch(handleErr),
+    create: (data) => api.post('/accounts/bills', data).then(r => r.data).catch(handleErr),
+    pay: (id, data) => api.post(`/accounts/bills/${id}/pay`, data).then(r => r.data).catch(handleErr),
+  },
+
   // Chart of accounts — groups
   groups: {
     tree: () => api.get('/accounts/account-groups').then(r => r.data).catch(handleErr),
@@ -35,6 +44,7 @@ export const accountsApi = {
     get: (id) => api.get(`/accounts/vouchers/${id}`).then(r => r.data).catch(handleErr),
     create: (data) => api.post('/accounts/vouchers', data).then(r => r.data).catch(handleErr),
     cancel: (id, reason) => api.post(`/accounts/vouchers/${id}/cancel`, { reason }).then(r => r.data).catch(handleErr),
+    transfer: (data) => api.post('/accounts/vouchers/transfer', data).then(r => r.data).catch(handleErr),
   },
 
   // Reports (all derived from the ledger)

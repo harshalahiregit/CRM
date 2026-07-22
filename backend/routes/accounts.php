@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\Api\Accounts\BillController;
+use App\Http\Controllers\Api\Accounts\DashboardController;
 use App\Http\Controllers\Api\Accounts\AccountGroupController;
 use App\Http\Controllers\Api\Accounts\BankAccountController;
 use App\Http\Controllers\Api\Accounts\BudgetController;
@@ -24,6 +26,8 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('accounts')->gro
     // First-run setup + status
     Route::get('/setup',  [SetupController::class, 'status']);
     Route::post('/setup', [SetupController::class, 'store']);
+
+    Route::get('/dashboard', [DashboardController::class, 'index']);
 
     // Reports (all derived from the ledger)
     Route::get('/reports/trial-balance',    [ReportController::class, 'trialBalance']);
@@ -73,6 +77,12 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('accounts')->gro
     Route::post('/vouchers',                   [VoucherController::class, 'store']);
     Route::get('/vouchers/{voucher}',          [VoucherController::class, 'show']);
     Route::post('/vouchers/{voucher}/cancel',  [VoucherController::class, 'cancel']);
+    Route::post('/vouchers/transfer',          [VoucherController::class, 'transfer']);
+
+    // Vendor Bills (old-CRM "Bills" parity)
+    Route::get('/bills',            [BillController::class, 'index']);
+    Route::post('/bills',           [BillController::class, 'store']);
+    Route::post('/bills/{bill}/pay', [BillController::class, 'pay']);
 
     /* ── Phase 2: Banking ──────────────────────────────────────── */
 

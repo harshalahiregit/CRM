@@ -7,7 +7,7 @@ import {
   ClipboardList, ChevronDown, Shield, UserCog,
   IndianRupee, FileSignature, CreditCard, FileX,
   ShoppingBag, UserPlus, Link2, RefreshCw, LayoutTemplate, Globe, TrendingUp,
-  Landmark, BookText, Scale
+  Landmark, BookText, Scale, ArrowLeftRight
 } from 'lucide-react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
@@ -70,10 +70,13 @@ const SALES_SUB_ITEMS = [
 ]
 
 const ACCOUNTS_SUB_ITEMS = [
+  { label: 'Dashboard', path: '/app/accounts/dashboard', icon: LayoutDashboard },
   { label: 'Chart of Accounts', path: '/app/accounts/chart-of-accounts', icon: Landmark },
   { label: 'Vouchers', path: '/app/accounts/vouchers', icon: BookText },
+  { label: 'Bills', path: '/app/accounts/bills', icon: Receipt },
   { label: 'Bank Accounts', path: '/app/accounts/banking', icon: CreditCard },
   { label: 'Cheques', path: '/app/accounts/cheques', icon: FileText },
+  { label: 'Transfer Funds', path: '/app/accounts/transfer', icon: ArrowLeftRight },
   { label: 'Budgets', path: '/app/accounts/budgets', icon: BarChart2 },
   { label: 'Reports', path: '/app/accounts/reports', icon: Scale },
   { label: 'Settings', path: '/app/accounts/settings', icon: Settings },
