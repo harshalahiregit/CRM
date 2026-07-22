@@ -24,19 +24,20 @@ function rowTaxes(row) {
 
 /**
  * Tax grouped by NAME across all lines (CGST 9%, SGST 9%, IGST 18% …), so the
- * totals block itemises each one. `factor` carries the before-tax discount
- * proportion so the breakdown always sums to the tax total.
+ * totals block itemises each one. Mirrors calcLine's before/after-discount
+ * base exactly, so the breakdown always sums to the overall tax total.
  */
-function taxBreakdown(rows, factor) {
+function taxBreakdown(rows, taxAfterDiscount) {
   const byName = new Map()
   for (const row of rows) {
     const taxes = rowTaxes(row)
     if (!taxes.length) continue
-    const { afterDis } = calcLine(row)
+    const { base, afterDis } = calcLine(row)
+    const taxBase = taxAfterDiscount ? afterDis : base
     for (const t of taxes) {
       const rate = Number(t.rate || 0)
       const key = `${t.name}|${rate}`
-      const amount = afterDis * (rate / 100) * factor
+      const amount = taxBase * (rate / 100)
       const prev = byName.get(key)
       if (prev) prev.amount += amount
       else byName.set(key, { name: t.name, rate, amount })
@@ -103,9 +104,7 @@ export default function LineItemsTable({ items = [], onChange, discount = null, 
   const taxTotal = rows.reduce((s, r) => s + calcLine(r, taxAfterDiscount).taxAmt, 0)
   const grandTotal = baseAfterLines + taxTotal
   const afterDiscount = baseAfterLines
-  // Same proportion the tax total was scaled by, so the per-name rows tally.
-  const taxFactor = fullTax > 0 ? taxTotal / fullTax : 1
-  const breakdown = taxBreakdown(rows, taxFactor)
+  const breakdown = taxBreakdown(rows, taxAfterDiscount)
 
   return (
     <div className="space-y-3">
