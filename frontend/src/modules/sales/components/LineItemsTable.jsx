@@ -10,7 +10,7 @@ const EMPTY_ROW = {
   qty: 1,
   unit: 'pcs',
   rate: 0,
-  tax: 18,
+  tax: 0,
   taxes: [],           // [{name, rate}] — several may apply (CGST+SGST)
   discount: 0,   // flat discount per line in ₹
 }
