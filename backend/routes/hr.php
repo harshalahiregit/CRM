@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\Hr\AttendanceController;
 use App\Http\Controllers\Api\Hr\ExitInterviewController;
 use App\Http\Controllers\Api\Hr\OrganizationController;
 use App\Http\Controllers\Api\Hr\SalaryComponentController;
+use App\Http\Controllers\Api\Hr\SalaryStructureController;
 use Illuminate\Support\Facades\Route;
 
 // ── HR Module Routes (Sanctum) ──────────────────────────────────────────
@@ -189,6 +190,13 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::post('/payroll/salary-components',             [SalaryComponentController::class, 'store']);
     Route::put('/payroll/salary-components/{id}',         [SalaryComponentController::class, 'update']);
     Route::patch('/payroll/salary-components/{id}/status',[SalaryComponentController::class, 'updateStatus']);
+
+    // Payroll → Salary Structures (Phase 2). Composes components into a computed CTC.
+    Route::get('/payroll/salary-structures',              [SalaryStructureController::class, 'index']);
+    Route::get('/payroll/salary-structures/{id}',         [SalaryStructureController::class, 'show']);
+    Route::post('/payroll/salary-structures',             [SalaryStructureController::class, 'store']);
+    Route::put('/payroll/salary-structures/{id}',         [SalaryStructureController::class, 'update']);
+    Route::patch('/payroll/salary-structures/{id}/status',[SalaryStructureController::class, 'updateStatus']);
 
     // Attendance
     Route::get('/attendance/stats',          [AttendanceController::class, 'stats']);

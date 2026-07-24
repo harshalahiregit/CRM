@@ -256,6 +256,13 @@ export const hrApi = {
       update:     (id, data)    => api.put(`/hr/payroll/salary-components/${id}`, data).then(r => r.data),
       setStatus:  (id, active)  => api.patch(`/hr/payroll/salary-components/${id}/status`, { is_active: active }).then(r => r.data),
     },
+    salaryStructures: {
+      list:       (params = {}) => api.get('/hr/payroll/salary-structures', { params }).then(r => r.data),
+      get:        (id)          => api.get(`/hr/payroll/salary-structures/${id}`).then(r => r.data),
+      create:     (data)        => api.post('/hr/payroll/salary-structures', data).then(r => r.data),
+      update:     (id, data)    => api.put(`/hr/payroll/salary-structures/${id}`, data).then(r => r.data),
+      setStatus:  (id, active)  => api.patch(`/hr/payroll/salary-structures/${id}/status`, { is_active: active }).then(r => r.data),
+    },
   },
 
   attendance: {
