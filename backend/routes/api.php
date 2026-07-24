@@ -3,6 +3,7 @@
 require __DIR__.'/auth.php';
 require __DIR__.'/admin.php';
 require __DIR__.'/hr.php';
+require __DIR__.'/performance.php';
 require __DIR__.'/recruitment_services.php';
 require __DIR__.'/employee_onboarding.php';
 require __DIR__.'/sales.php';

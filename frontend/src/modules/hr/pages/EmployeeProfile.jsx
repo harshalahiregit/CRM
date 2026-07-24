@@ -94,6 +94,7 @@ export default function EmployeeProfile() {
   const [orgOpts, setOrgOpts] = useState(null)   // reuse existing Organization Setup options (read-only)
   const [salary, setSalary] = useState(null)     // Payroll Phase 3 — current + history (read-only here)
   const [payslips, setPayslips] = useState([])   // Payroll Phase 5 — payslip history (read-only)
+  const [perf, setPerf] = useState(null)         // PMS Phase 7 — performance timeline (read-only)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [tab, setTab]       = useState('overview')
@@ -112,6 +113,8 @@ export default function EmployeeProfile() {
   useEffect(()=>{ hrApi.payroll.employeeSalary.get(id).then(setSalary).catch(()=>{}) },[id])
   // Payslip history from Payroll Phase 5 — read-only, with PDF download.
   useEffect(()=>{ hrApi.payroll.payslips.forEmployee(id).then(setPayslips).catch(()=>{}) },[id])
+  // Performance timeline from PMS Phase 7 — read-only (goals/reviews/promotion/increment).
+  useEffect(()=>{ hrApi.performance.timeline(id).then(setPerf).catch(()=>{}) },[id])
 
   const completeness = useMemo(()=> data ? computeCompleteness(data) : null, [data])
 
@@ -475,10 +478,42 @@ export default function EmployeeProfile() {
         )}
 
         {tab==='performance' && (
-          <div>
-            <IntegrationNote icon={Target} title="Performance" subtitle="Future integration"
-              hint="KRA, KPI, DPR and MPR with acceptance signatures will plug in here. No performance logic is implemented yet." chips={['KRA','KPI','DPR','MPR']} />
-            <AiInsight hint="Will generate a performance summary, target-achievement and risk signals once PMS is live." />
+          <div className="space-y-5">
+            {!perf ? <p className="text-sm py-4" style={{ color:'var(--text-muted)' }}>Loading performance…</p> : (
+              <>
+                {/* Goals */}
+                <div>
+                  <p className="text-[11px] font-bold uppercase mb-2" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Goals / KRA</p>
+                  {perf.goals.length===0 ? <p className="text-xs" style={{ color:'var(--text-muted)' }}>No goals assigned.</p>
+                    : <div className="space-y-1.5">{perf.goals.map(g=>(
+                        <div key={g.id} className="px-3 py-2 rounded-xl" style={{ background:'var(--bg-input)' }}>
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <span className="text-xs font-semibold" style={{ color:'var(--text-h)' }}>{g.goal_title}</span>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={g.status==='Completed'?{background:'rgba(16,185,129,0.12)',color:'#10b981'}:{background:'rgba(37,99,235,0.12)',color:'#2563eb'}}>{g.status} · {g.progress}%</span>
+                          </div>
+                          <div className="mt-1 h-1.5 rounded-full" style={{ background:'var(--bg-card)' }}><div className="h-full rounded-full" style={{ width:`${g.progress}%`, background:'#7C3AED' }}/></div>
+                        </div>
+                      ))}</div>}
+                </div>
+                {/* Reviews */}
+                <div>
+                  <p className="text-[11px] font-bold uppercase mb-2" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Reviews &amp; Ratings</p>
+                  {perf.reviews.length===0 ? <p className="text-xs" style={{ color:'var(--text-muted)' }}>No reviews yet.</p>
+                    : <div className="space-y-1.5">{perf.reviews.map(r=>(
+                        <div key={r.id} className="flex items-center justify-between px-3 py-2 rounded-xl" style={{ background:'var(--bg-input)' }}>
+                          <span className="text-xs font-semibold" style={{ color:'var(--text-h)' }}>{r.review_type} · {r.period_label||'—'}</span>
+                          <span className="flex items-center gap-2"><span className="text-[10px]" style={{ color:'var(--text-muted)' }}>{r.status}</span><span className="text-sm font-black" style={{ color:'#8b5cf6' }}>{r.overall_rating}</span></span>
+                        </div>
+                      ))}</div>}
+                </div>
+                {/* Promotion + Increment history */}
+                <Grid>
+                  <Field k="Promotion Recommendations" v={perf.promotions.length ? `${perf.promotions.length} (${perf.promotions.filter(p=>p.eligible).length} eligible)` : 'None'}/>
+                  <Field k="Increment Recommendations" v={perf.increments.length ? `${perf.increments.length} · latest ${perf.increments[0].suggested_percentage}%` : 'None'}/>
+                </Grid>
+              </>
+            )}
+            <AiInsight hint="Reserved — will generate a performance summary, promotion insight and attrition risk from this history." />
           </div>
         )}
 

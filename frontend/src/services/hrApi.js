@@ -309,6 +309,45 @@ export const hrApi = {
     },
   },
 
+  // ── Performance Management System (PMS) ─────────────────────────────────
+  performance: {
+    dashboard: ()           => api.get('/hr/performance/dashboard').then(r => r.data),
+    timeline:  (employeeId) => api.get(`/hr/performance/timeline/${employeeId}`).then(r => r.data),
+    kpis: {
+      list:      (params = {}) => api.get('/hr/performance/kpis', { params }).then(r => r.data),
+      create:    (data)        => api.post('/hr/performance/kpis', data).then(r => r.data),
+      update:    (id, data)    => api.put(`/hr/performance/kpis/${id}`, data).then(r => r.data),
+      setStatus: (id, active)  => api.patch(`/hr/performance/kpis/${id}/status`, { is_active: active }).then(r => r.data),
+    },
+    goals: {
+      list:   (params = {}) => api.get('/hr/performance/goals', { params }).then(r => r.data),
+      create: (data)        => api.post('/hr/performance/goals', data).then(r => r.data),
+      update: (id, data)    => api.put(`/hr/performance/goals/${id}`, data).then(r => r.data),
+    },
+    assignments: {
+      list:   (params = {})       => api.get('/hr/performance/assignments', { params }).then(r => r.data),
+      assign: (goalId, employeeIds) => api.post('/hr/performance/assignments', { goal_id: goalId, employee_ids: employeeIds }).then(r => r.data),
+      update: (id, data)          => api.patch(`/hr/performance/assignments/${id}`, data).then(r => r.data),
+    },
+    reviews: {
+      list:      (params = {}) => api.get('/hr/performance/reviews', { params }).then(r => r.data),
+      get:       (id)          => api.get(`/hr/performance/reviews/${id}`).then(r => r.data),
+      create:    (data)        => api.post('/hr/performance/reviews', data).then(r => r.data),
+      update:    (id, data)    => api.put(`/hr/performance/reviews/${id}`, data).then(r => r.data),
+      setStatus: (id, status)  => api.patch(`/hr/performance/reviews/${id}/status`, { status }).then(r => r.data),
+    },
+    promotions: {
+      list:      (params = {}) => api.get('/hr/performance/promotions', { params }).then(r => r.data),
+      generate:  (employeeId)  => api.post('/hr/performance/promotions/generate', { employee_id: employeeId }).then(r => r.data),
+      setStatus: (id, status, recommended_designation) => api.patch(`/hr/performance/promotions/${id}/status`, { status, recommended_designation }).then(r => r.data),
+    },
+    increments: {
+      list:      (params = {}) => api.get('/hr/performance/increments', { params }).then(r => r.data),
+      generate:  (employeeId)  => api.post('/hr/performance/increments/generate', { employee_id: employeeId }).then(r => r.data),
+      setStatus: (id, status)  => api.patch(`/hr/performance/increments/${id}/status`, { status }).then(r => r.data),
+    },
+  },
+
   attendance: {
     list:       (params = {}) => api.get('/hr/attendance', { params }).then(r => r.data),
     stats:      (params = {}) => api.get('/hr/attendance/stats', { params }).then(r => r.data),

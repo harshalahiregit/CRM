@@ -57,6 +57,7 @@ const CompanyApprovals = lazy(() => import('@/modules/hr/pages/CompanyApprovals'
 const Attendance = lazy(() => import('@/modules/hr/pages/Attendance'))
 const OrganizationSetup = lazy(() => import('@/modules/hr/pages/OrganizationSetup'))
 const Payroll = lazy(() => import('@/modules/hr/pages/Payroll'))
+const Performance = lazy(() => import('@/modules/hr/pages/Performance'))
 const EmployeeOnboarding = lazy(() => import('@/modules/hr/pages/EmployeeOnboarding'))
 const EmployeeOnboardingDetail = lazy(() => import('@/modules/hr/pages/EmployeeOnboardingDetail'))
 
@@ -250,6 +251,7 @@ export default function AppRoutes() {
           <Route path="attendance" element={<S><Attendance /></S>} />
           <Route path="organization-setup" element={<S><OrganizationSetup /></S>} />
           <Route path="payroll" element={<S><Payroll /></S>} />
+          <Route path="performance" element={<S><Performance /></S>} />
           <Route path="employee-onboarding" element={<S><EmployeeOnboarding /></S>} />
           <Route path="employee-onboarding/:id" element={<S><EmployeeOnboardingDetail /></S>} />
         </Route>
