@@ -88,6 +88,15 @@ return [
             'throw'      => false,
         ],
 
+        // Generated TPV onboarding Kickoff PDFs (Step 1). Private, served via
+        // controller. Distinct from the shared kickoff-meeting MoM store above.
+        'tpv_kickoff' => [
+            'driver'     => 'local',
+            'root'       => storage_path('app/private/tpv/kickoff'),
+            'visibility' => 'private',
+            'throw'      => false,
+        ],
+
         // Signed contract / MSA documents. Private — commercial agreements.
         'contract_docs' => [
             'driver'     => 'local',

@@ -17,6 +17,31 @@ export const tpvApi = {
     get: () => api.get('/tpv/dashboard').then(r => r.data),
   },
 
+  // ── Advanced approval workflow (Phase 3) ────────────────────────────
+  approvals: {
+    list:     ()         => api.get('/tpv/approvals').then(r => r.data),
+    history:  (id)       => api.get(`/tpv/onboarding/${id}/approvals`).then(r => r.data),
+    decide:   (id, data) => api.post(`/tpv/onboarding/${id}/approvals/decide`, data).then(r => r.data),
+    escalate: ()         => api.post('/tpv/approvals/escalate').then(r => r.data),
+    delegations: {
+      list:   ()     => api.get('/tpv/approval-delegations').then(r => r.data),
+      create: (data) => api.post('/tpv/approval-delegations', data).then(r => r.data),
+    },
+  },
+
+  // ── Temporary TPV access lifecycle (Phase 2) ────────────────────────
+  access: {
+    // Vendor's own server-authoritative countdown.
+    countdown:       ()             => api.get('/tpv/access/countdown').then(r => r.data),
+    // Admin / staff.
+    list:            ()             => api.get('/tpv/vendors/temporary').then(r => r.data),
+    createTemporary: (data)         => api.post('/tpv/vendors/temporary', data).then(r => r.data),
+    extend:          (vendorId, d)  => api.post(`/tpv/vendors/${vendorId}/access/extend`, d).then(r => r.data),
+    expire:          (vendorId)     => api.post(`/tpv/vendors/${vendorId}/access/expire`).then(r => r.data),
+    convert:         (vendorId)     => api.post(`/tpv/vendors/${vendorId}/access/convert`).then(r => r.data),
+    status:          (vendorId)     => api.get(`/tpv/vendors/${vendorId}/access/status`).then(r => r.data),
+  },
+
   // ── Onboarding — the 6-step wizard ──────────────────────────────────
   onboarding: {
     list:     (params = {}) => api.get('/tpv/onboarding', { params }).then(r => r.data),
@@ -28,10 +53,17 @@ export const tpvApi = {
     // Wizard actions
     saveProfile: (id, profile) => api.post(`/tpv/onboarding/${id}/profile`, { profile }).then(r => r.data),
     setStep:     (id, step)    => api.patch(`/tpv/onboarding/${id}/step`, { step }).then(r => r.data),
-    submit:      (id)          => api.post(`/tpv/onboarding/${id}/submit`).then(r => r.data),
+    submit:      (id, data = {}) => api.post(`/tpv/onboarding/${id}/submit`, data).then(r => r.data),
+    // Step 1 — Kickoff PDF (blob), acknowledgement, and view/download/print logging.
+    kickoffPdf:      (id)        => api.get(`/tpv/onboarding/${id}/kickoff`, { responseType: 'blob' }).then(r => r.data),
+    acceptKickoff:   (id)        => api.post(`/tpv/onboarding/${id}/kickoff/accept`).then(r => r.data),
+    logKickoffEvent: (id, event) => api.post(`/tpv/onboarding/${id}/kickoff/log`, { event }).then(r => r.data),
     // Admin
     approve:         (id, remarks = '') => api.post(`/tpv/onboarding/${id}/approve`, { remarks }).then(r => r.data),
-    requestResubmit: (id, remarks)      => api.post(`/tpv/onboarding/${id}/resubmit`, { remarks }).then(r => r.data),
+    reject:          (id, remarks = '') => api.post(`/tpv/onboarding/${id}/reject`, { remarks }).then(r => r.data),
+    hold:            (id, remarks = '') => api.post(`/tpv/onboarding/${id}/hold`, { reason: remarks, remarks }).then(r => r.data),
+    release:         (id)               => api.post(`/tpv/onboarding/${id}/release`).then(r => r.data),
+    requestResubmit: (id, remarks = '') => api.post(`/tpv/onboarding/${id}/resubmit`, { remarks }).then(r => r.data),
   },
 
   // ── Statutory documents — the validation engine ─────────────────────
@@ -53,6 +85,11 @@ export const tpvApi = {
     review:   (documentId, decision, remarks = '') =>
       api.post(`/tpv/documents/${documentId}/review`, { decision, remarks }).then(r => r.data),
     delete:   (documentId) => api.delete(`/tpv/documents/${documentId}`).then(r => r.data),
+
+    // ── Version history (Phase 3) ─────────────────────────────────────
+    versions:        (documentId)            => api.get(`/tpv/documents/${documentId}/versions`).then(r => r.data),
+    downloadVersion: (documentId, versionId) => api.get(`/tpv/documents/${documentId}/versions/${versionId}/download`, { responseType: 'blob' }).then(r => r.data),
+    restoreVersion:  (documentId, versionId) => api.post(`/tpv/documents/${documentId}/versions/${versionId}/restore`).then(r => r.data),
     downloadUrl: (documentId) => `/tpv/documents/${documentId}/download`,
     // Fetch as a blob so the private, token-authed file can be opened in a tab.
     open: async (documentId) => {
@@ -70,11 +107,27 @@ export const tpvApi = {
     create:   (data)        => api.post('/tpv/workers', data).then(r => r.data),
     update:   (id, data)    => api.put(`/tpv/workers/${id}`, data).then(r => r.data),
     delete:   (id)          => api.delete(`/tpv/workers/${id}`).then(r => r.data),
-    // Step records
-    saveMedical:   (id, data) => api.post(`/tpv/workers/${id}/medical`, data).then(r => r.data),
-    saveInduction: (id, data) => api.post(`/tpv/workers/${id}/induction`, data).then(r => r.data),
-    issuePpe:      (id, data) => api.post(`/tpv/workers/${id}/ppe`, data).then(r => r.data),
-    removePpe:     (id, ppeId) => api.delete(`/tpv/workers/${id}/ppe/${ppeId}`).then(r => r.data),
+    // Step records & 1:1 Reference Actions
+    toggleStatus:    (id, is_active) => api.patch(`/tpv/workers/${id}/toggle-status`, { is_active }).then(r => r.data),
+    uploadWorkers:   (file, vendor_id) => {
+      const fd = new FormData()
+      fd.append('worker_file', file)
+      fd.append('vendor_id', vendor_id)
+      return upload('/tpv/workers/upload', fd)
+    },
+    saveMedical:     (id, data) => api.post(`/tpv/workers/${id}/medical`, data).then(r => r.data),
+    markMedical:     (id, data) => api.post(`/tpv/workers/${id}/mark-medical`, data).then(r => r.data),
+    saveInduction:   (id, data) => api.post(`/tpv/workers/${id}/induction`, data).then(r => r.data),
+    markInduction:   (id, data) => api.post(`/tpv/workers/${id}/mark-induction`, data).then(r => r.data),
+    getPpeInventory: ()         => api.get('/tpv/workers/ppe-inventory').then(r => r.data),
+    updatePpeStock:  (data)       => api.post('/tpv/workers/ppe-stock', data).then(r => r.data),
+    issuePpe:        (id, data) => api.post(`/tpv/workers/${id}/ppe`, data).then(r => r.data),
+    markPpe:         (id, data) => api.post(`/tpv/workers/${id}/mark-ppe`, data).then(r => r.data),
+    removePpe:       (id, ppeId) => api.delete(`/tpv/workers/${id}/ppe/${ppeId}`).then(r => r.data),
+    markCardStatus:  (id, card_status) => api.post(`/tpv/workers/${id}/mark-card-status`, { card_status }).then(r => r.data),
+    markPunch:       (id, punch_count, punch_reason) => api.post(`/tpv/workers/${id}/mark-punch`, { punch_count, punch_reason }).then(r => r.data),
+    decide:          (id, status, remarks = '') => api.post(`/tpv/workers/${id}/decide`, { status, remarks }).then(r => r.data),
+    scanAccess:      (token) => api.get(`/scan-access/${token}`).then(r => r.data),
     // Admin — site access. activate() returns { worker, qr_token }; the token is
     // surfaced exactly once, at issue time.
     activate:  (id, validUntil = null) => api.post(`/tpv/workers/${id}/activate`, validUntil ? { valid_until: validUntil } : {}).then(r => r.data),
@@ -103,6 +156,15 @@ export const tpvApi = {
     void:      (strikeId, reason) => api.post(`/tpv/strikes/${strikeId}/void`, { reason }).then(r => r.data),
   },
 
+  // ── Vendor contacts — master contact list per vendor (no hard delete) ──
+  contacts: {
+    list:      (vendorId, params = {}) => api.get(`/tpv/vendors/${vendorId}/contacts`, { params }).then(r => r.data),
+    get:       (vendorId, id)          => api.get(`/tpv/vendors/${vendorId}/contacts/${id}`).then(r => r.data),
+    create:    (vendorId, data)        => api.post(`/tpv/vendors/${vendorId}/contacts`, data).then(r => r.data),
+    update:    (vendorId, id, data)    => api.put(`/tpv/vendors/${vendorId}/contacts/${id}`, data).then(r => r.data),
+    setStatus: (vendorId, id, status)  => api.patch(`/tpv/vendors/${vendorId}/contacts/${id}/status`, { status }).then(r => r.data),
+  },
+
   // ── Vendor master (shared with Purchase) — the onboarding vendor picker ─
   // ── Third-party vendors (master + portal login), scoped to tpv engagement ──
   vendors: {
@@ -110,7 +172,9 @@ export const tpvApi = {
     get:       (id)          => api.get(`/vendors/${id}`).then(r => r.data),
     create:    (data)        => api.post('/vendors', data).then(r => r.data),
     update:    (id, data)    => api.put(`/vendors/${id}`, data).then(r => r.data),
+    approve:   (id, remarks = '') => api.post(`/vendors/${id}/approve`, { remarks }).then(r => r.data),
     setStatus: (id, status)  => api.patch(`/vendors/${id}/status`, { status }).then(r => r.data),
+    sendEmail: (id, data)    => api.post(`/vendors/${id}/email`, data).then(r => r.data),
     delete:    (id)          => api.delete(`/vendors/${id}`).then(r => r.data),
   },
 }

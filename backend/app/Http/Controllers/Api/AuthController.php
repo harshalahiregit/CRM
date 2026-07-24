@@ -12,7 +12,10 @@ use App\Http\Requests\Auth\TPVRegisterRequest;
 use App\Http\Requests\Auth\VendorRegisterRequest;
 use App\Http\Resources\TenantResource;
 use App\Http\Resources\UserResource;
+use App\Models\User;
+use App\Models\UserSession;
 use App\Services\Auth\AuthService;
+use App\Services\Auth\SessionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -131,5 +134,53 @@ class AuthController extends Controller
             'user'   => (new UserResource($user))->resolve(),
             'tenant' => $user->tenant ? (new TenantResource($user->tenant))->resolve() : null,
         ]);
+    }
+
+    /* ── Session management (Phase 3) ──────────────────────────────── */
+
+    /** GET /api/auth/sessions — the caller's active sessions. */
+    public function sessions(Request $request, SessionService $sessions): JsonResponse
+    {
+        $currentTokenId = optional($request->user()->currentAccessToken())->id;
+
+        return $this->success([
+            'sessions'     => $sessions->listFor($request->user(), $currentTokenId),
+            'idle_minutes' => (int) config('auth_sessions.idle_minutes', 30),
+        ], 'Active sessions');
+    }
+
+    /** DELETE /api/auth/sessions/{session} — revoke one of the caller's sessions. */
+    public function revokeSession(Request $request, UserSession $session, SessionService $sessions): JsonResponse
+    {
+        $sessions->revoke($request->user(), $session);
+
+        return $this->success(null, 'Session revoked.');
+    }
+
+    /** POST /api/auth/sessions/logout-others — end every other session. */
+    public function logoutOthers(Request $request, SessionService $sessions): JsonResponse
+    {
+        $currentTokenId = optional($request->user()->currentAccessToken())->id;
+        $n = $sessions->revokeOthers($request->user(), $currentTokenId);
+
+        return $this->success(['revoked' => $n], 'Signed out of other sessions.');
+    }
+
+    /** POST /api/auth/heartbeat — keep the current session alive (idle reset). */
+    public function heartbeat(Request $request, SessionService $sessions): JsonResponse
+    {
+        $sessions->touch($request->user());
+
+        return $this->success(null, 'ok');
+    }
+
+    /** POST /api/admin/users/{user}/force-logout — admin ends all a user's sessions. */
+    public function forceLogout(Request $request, User $user, SessionService $sessions): JsonResponse
+    {
+        abort_unless((int) $user->tenant_id === (int) $request->user()->tenant_id, 404, 'User not found');
+
+        $n = $sessions->forceLogout($user, $request->user());
+
+        return $this->success(['revoked' => $n], 'User signed out of all devices.');
     }
 }

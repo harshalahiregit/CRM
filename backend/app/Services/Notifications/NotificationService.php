@@ -40,4 +40,30 @@ class NotificationService
             return 'failed';
         }
     }
+
+    /**
+     * WhatsApp channel. Stubbed until a provider (e.g. WhatsAppService/Meta Cloud
+     * API) is wired — records intent so the multi-channel flow is complete and the
+     * provider drops in here without touching callers. Returns 'queued'|'skipped'.
+     */
+    public function whatsapp(?string $to, string $body, array $context = []): string
+    {
+        if (! $to) {
+            return 'skipped';
+        }
+        Log::channel('hr')->info('WhatsApp notification queued (provider pending)', ['to' => $to] + $context);
+
+        return 'queued';
+    }
+
+    /** SMS / text channel. Stubbed like WhatsApp — logs intent, provider plugs in here. */
+    public function sms(?string $to, string $body, array $context = []): string
+    {
+        if (! $to) {
+            return 'skipped';
+        }
+        Log::channel('hr')->info('SMS notification queued (provider pending)', ['to' => $to] + $context);
+
+        return 'queued';
+    }
 }

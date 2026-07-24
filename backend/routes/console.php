@@ -13,3 +13,15 @@ Schedule::command('whatsapp:interview-reminders')
     ->hourly()
     ->withoutOverlapping()
     ->runInBackground();
+
+// Temporary TPV expiry reminders (7d/3d/1d/6h) + lapsed-window expiry — hourly.
+Schedule::command('tpv:temporary-access-reminders')
+    ->hourly()
+    ->withoutOverlapping()
+    ->runInBackground();
+
+// Onboarding approval SLA escalations — hourly.
+Schedule::command('tpv:approval-escalations')
+    ->hourly()
+    ->withoutOverlapping()
+    ->runInBackground();

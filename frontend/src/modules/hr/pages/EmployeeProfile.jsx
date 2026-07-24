@@ -1,13 +1,14 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  ArrowLeft, Pencil, UserX, Download, Printer, X, FileText, Eye, CheckCircle2, XCircle, Clock,
-  LayoutDashboard, User, Phone, Briefcase, FileCheck, Landmark, History, CalendarCheck, ChevronLeft, ChevronRight, LogOut,
+  ArrowLeft, Pencil, UserX, Download, Printer, X, FileText, Eye, LogOut,
+  LayoutDashboard, User, Briefcase, FileCheck, Landmark, History,
+  CalendarCheck, CalendarDays, Target, GraduationCap, Mail, Boxes,
+  Sparkles, Plug,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 import { offerPortalApi } from '@/services/offerPortalApi'
 import AuditTimeline from '@/components/ui/AuditTimeline'
-import { ST_COLOR } from './Attendance'
 
 const DEPT_COLORS = { Engineering:'#3b82f6', Sales:'#10b981', HR:'#7C3AED', Operations:'#f59e0b', Product:'#ec4899', Marketing:'#f97316', Finance:'#6366f1' }
 const deptColor = d => DEPT_COLORS[d]||'#7C3AED'
@@ -16,33 +17,80 @@ const fmtDate  = d => d ? new Date(d).toLocaleDateString('en-IN',{day:'2-digit',
 const STATUS_S = s => s==='Active'?{c:'#10b981',bg:'rgba(16,185,129,0.12)'}:s==='On Leave'?{c:'#f59e0b',bg:'rgba(245,158,11,0.12)'}:{c:'#f87171',bg:'rgba(239,68,68,0.1)'}
 const DOC_ST = s => s==='Verified'?{c:'#10b981',bg:'rgba(16,185,129,0.12)'}:s==='Rejected'?{c:'#f87171',bg:'rgba(239,68,68,0.1)'}:{c:'#f59e0b',bg:'rgba(245,158,11,0.12)'}
 
+const has = v => v !== null && v !== undefined && String(v).trim() !== ''
+const pct = (filled, total) => total ? Math.round((filled/total)*100) : 0
+
 // Canonical document list for the Documents tab, mapped onto stored onboarding types.
+// `virtual` entries are generated letters (not uploaded files) and don't count toward completeness.
 const DOC_LIST = [
   { key:'aadhaar', label:'Aadhaar' },
   { key:'pan', label:'PAN' },
+  { key:'passport', label:'Passport' },
   { key:'resume', label:'Resume' },
   { key:'educational_certificate', label:'Educational Certificates' },
   { key:'experience_document', label:'Experience Documents' },
   { key:'offer_letter', label:'Offer Letter', virtual:true },
   { key:'appointment_letter', label:'Appointment Letter', virtual:true },
+  { key:'confirmation_letter', label:'Confirmation Letter', virtual:true },
   { key:'nda', label:'NDA', virtual:true },
 ]
 
+// The 12 lifecycle tabs. Present ones read live data; future ones are structure-only
+// placeholders that later plug into their own modules (no business logic here).
 const TABS = [
-  { key:'overview',  label:'Overview',        icon:LayoutDashboard },
-  { key:'personal',  label:'Personal Details', icon:User },
-  { key:'contact',   label:'Contact',          icon:Phone },
-  { key:'employment',label:'Employment',       icon:Briefcase },
-  { key:'documents', label:'Documents',        icon:FileCheck },
-  { key:'bank',      label:'Bank Details',     icon:Landmark },
-  { key:'attendance',label:'Attendance',       icon:CalendarCheck },
-  { key:'timeline',  label:'Timeline',         icon:History },
+  { key:'overview',    label:'Overview',             icon:LayoutDashboard },
+  { key:'personal',    label:'Personal Information',  icon:User },
+  { key:'employment',  label:'Employment',            icon:Briefcase },
+  { key:'documents',   label:'Documents',             icon:FileCheck },
+  { key:'bank',        label:'Bank & Tax',            icon:Landmark },
+  { key:'assets',      label:'Assets',                icon:Boxes },
+  { key:'attendance',  label:'Attendance',            icon:CalendarCheck },
+  { key:'leave',       label:'Leave',                 icon:CalendarDays },
+  { key:'performance', label:'Performance',           icon:Target },
+  { key:'training',    label:'Training',              icon:GraduationCap },
+  { key:'letters',     label:'Letters',               icon:Mail },
+  { key:'timeline',    label:'Timeline',              icon:History },
 ]
+
+// Dynamic profile completeness from the existing profile payload (client-side; no API).
+function computeCompleteness(data) {
+  const e = data.employee, s = data.submission || {}
+  const basic = [
+    e.name, e.email, e.phone, e.dob || s.personal?.dob, e.gender || s.personal?.gender,
+    e.address || s.address?.current, s.personal?.blood_group, s.personal?.marital_status,
+    s.emergency?.name, data.recruitment?.nationality,
+  ]
+  const employment = [e.department, e.designation, e.reporting_manager_name, e.joining_date, e.confirmation_date]
+  const bank = [s.bank?.account_name, s.bank?.bank_name, s.bank?.account_number, s.bank?.ifsc]
+  const realDocs = DOC_LIST.filter(d => !d.virtual)
+  const docByType = Object.fromEntries((data.documents || []).map(d => [d.type, d]))
+  const docsFilled = realDocs.filter(d => docByType[d.key]).length
+
+  const sections = [
+    { label:'Basic Information', pct: pct(basic.filter(has).length, basic.length) },
+    { label:'Employment',        pct: pct(employment.filter(has).length, employment.length) },
+    { label:'Documents',         pct: pct(docsFilled, realDocs.length) },
+    { label:'Bank',              pct: pct(bank.filter(has).length, bank.length) },
+  ]
+  const overall = Math.round(sections.reduce((a, x) => a + x.pct, 0) / sections.length)
+  return { sections, overall }
+}
+
+// Probation status derived from existing employee fields (no probation module needed).
+const probationStatus = (e) => {
+  if (e.confirmation_date) return { label:'Confirmed', c:'#10b981' }
+  if (e.probation_end_date) {
+    const ended = new Date(e.probation_end_date) < new Date()
+    return ended ? { label:'Probation Ended', c:'#f59e0b' } : { label:'On Probation', c:'#3b82f6' }
+  }
+  return { label:'Not set', c:'var(--text-muted)' }
+}
 
 export default function EmployeeProfile() {
   const { id } = useParams()
   const navigate = useNavigate()
   const [data, setData]     = useState(null)
+  const [orgOpts, setOrgOpts] = useState(null)   // reuse existing Organization Setup options (read-only)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [tab, setTab]       = useState('overview')
@@ -55,6 +103,10 @@ export default function EmployeeProfile() {
     try { setData(await hrApi.employees.profile(id)) } catch { setNotFound(true) } finally { setLoading(false) }
   }, [id])
   useEffect(()=>{ load() },[load])
+  // Grade / Role names come from the existing Organization Setup masters — no new API.
+  useEffect(()=>{ hrApi.organization.options().then(setOrgOpts).catch(()=>{}) },[])
+
+  const completeness = useMemo(()=> data ? computeCompleteness(data) : null, [data])
 
   if (loading) return <div className="text-center py-20" style={{ color:'var(--text-muted)' }}>Loading profile…</div>
   if (notFound || !data) return <div className="text-center py-20" style={{ color:'var(--text-muted)' }}>Employee not found.</div>
@@ -62,7 +114,11 @@ export default function EmployeeProfile() {
   const e = data.employee
   const ss = STATUS_S(e.status)
   const dc = deptColor(e.department)
+  const prob = probationStatus(e)
   const docByType = Object.fromEntries((data.documents||[]).map(d=>[d.type,d]))
+  const pendingDocs = (data.documents||[]).filter(d => (d.status||'Pending')==='Pending').length
+  const gradeName = orgOpts?.grades?.find(g => g.id === e.grade_id)?.name
+  const roleName  = orgOpts?.roles?.find(r => r.id === e.job_role_id)?.name
 
   const viewDoc = async (docId) => {
     try { const blob = await hrApi.onboarding.documentBlob(data.onboarding_id, docId); const url = URL.createObjectURL(blob); window.open(url,'_blank','noopener'); setTimeout(()=>URL.revokeObjectURL(url),30000) }
@@ -102,6 +158,7 @@ export default function EmployeeProfile() {
               <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="font-black" style={{ fontSize:'clamp(1.2rem,2vw,1.5rem)', color:'var(--text-h)' }}>{e.name}</h1>
                 <span className="text-[11px] font-bold px-2.5 py-1 rounded-xl" style={{ background:ss.bg, color:ss.c }}>{e.status}</span>
+                <span className="text-[11px] font-bold px-2.5 py-1 rounded-xl" style={{ background:`${prob.c}1f`, color:prob.c }}>{prob.label}</span>
               </div>
               <p className="text-sm mt-0.5" style={{ color:'var(--text-muted)' }}>{e.designation} · <span style={{ color:dc, fontWeight:700 }}>{e.department}</span></p>
               <div className="flex items-center gap-3 mt-1.5 flex-wrap text-xs" style={{ color:'var(--text-muted)' }}>
@@ -113,7 +170,6 @@ export default function EmployeeProfile() {
           </div>
           <div className="no-print flex items-center gap-2 flex-wrap">
             <button onClick={()=>setEditing(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white" style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)' }}><Pencil size={13}/> Edit</button>
-            {/* Exit Interview (SPK-1) — internal form, prefilled from this record */}
             <button onClick={()=>navigate(`/app/hr/employees/${e.id}/exit-interview`)} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold" style={{ background:'rgba(245,158,11,0.1)', color:'#f59e0b', border:'1px solid rgba(245,158,11,0.25)' }}><LogOut size={13}/> Exit Interview</button>
             <button onClick={deactivate} disabled={e.status==='Inactive'} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold" style={{ background:'rgba(239,68,68,0.1)', color:'#f87171', opacity:e.status==='Inactive'?0.5:1 }}><UserX size={13}/> Deactivate</button>
             <button onClick={downloadProfile} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold" style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}><Download size={13}/> Download</button>
@@ -126,7 +182,7 @@ export default function EmployeeProfile() {
              Shown ALONGSIDE the employee status; it never replaces it. ── */}
       {(() => {
         const st = e.onboarding_status
-        const pct = Number(e.onboarding_progress || 0)
+        const p = Number(e.onboarding_progress || 0)
         const o = ({
           Pending:     { c:'#d97706', bg:'rgba(245,158,11,0.14)' },
           In_Progress: { c:'#2563eb', bg:'rgba(37,99,235,0.12)' },
@@ -146,10 +202,10 @@ export default function EmployeeProfile() {
                 ) : (
                   <>
                     <span className="inline-block text-[10.5px] font-bold px-2 py-0.5 rounded-lg mt-1" style={{ background:o.bg, color:o.c }}>
-                      {String(st).replace('_',' ')} {pct ? `(${pct}%)` : ''}
+                      {String(st).replace('_',' ')} {p ? `(${p}%)` : ''}
                     </span>
                     <div className="mt-2 rounded-full" style={{ height:6, background:'var(--bg-input)' }}>
-                      <div className="h-full rounded-full transition-all" style={{ width:`${pct}%`, background:o.c }}/>
+                      <div className="h-full rounded-full transition-all" style={{ width:`${p}%`, background:o.c }}/>
                     </div>
                   </>
                 )}
@@ -172,72 +228,104 @@ export default function EmployeeProfile() {
       {/* ── Tab content ── */}
       <div className="card-3d" style={{ padding:'22px' }}>
         {tab==='overview' && (
-          <Grid>
-            <Field k="Employee ID" v={e.employee_code} mono/>
-            <Field k="Status" v={e.status}/>
-            <Field k="Employment Type" v={data.offer ? 'Full-time' : '—'}/>
-            <Field k="Department" v={e.department}/>
-            <Field k="Designation" v={e.designation}/>
-            <Field k="Joining Date" v={fmtDate(e.joining_date)}/>
-            <Field k="Confirmation Date" v={fmtDate(e.confirmation_date)}/>
-            <Field k="Reporting Manager" v={e.reporting_manager_name}/>
-            <Field k="Applied For" v={data.recruitment?.applied_job}/>
-            <Field k="Source" v={data.recruitment?.source}/>
-            <Field k="Candidate Ref" v={data.recruitment?.reference} mono/>
-            <Field k="Offer" v={data.offer ? `${data.offer.reference} · ${data.offer.status}` : '—'}/>
-          </Grid>
+          <div className="space-y-5">
+            {/* Quick cards */}
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+              <QuickCard label="Profile Completion" value={`${completeness.overall}%`} color="#7C3AED" bar={completeness.overall} />
+              <QuickCard label="Assigned Assets" value="—" color="#0ea5e9" note="Inventory" />
+              <QuickCard label="Pending Documents" value={pendingDocs} color={pendingDocs?'#f59e0b':'#10b981'} />
+              <QuickCard label="Pending Training" value="—" color="#a78bfa" note="L&D" />
+              <QuickCard label="Pending Letters" value="—" color="#ec4899" note="Letters" />
+            </div>
+
+            {/* Core identity */}
+            <Grid>
+              <Field k="Employee ID" v={e.employee_code} mono/>
+              <Field k="Status" v={e.status}/>
+              <Field k="Department" v={e.department}/>
+              <Field k="Designation" v={e.designation}/>
+              <Field k="Reporting Manager" v={e.reporting_manager_name}/>
+              <Field k="Joining Date" v={fmtDate(e.joining_date)}/>
+              <Field k="Probation Status" v={prob.label}/>
+              <Field k="Confirmation Date" v={fmtDate(e.confirmation_date)}/>
+              <Field k="Offer" v={data.offer ? `${data.offer.reference} · ${data.offer.status}` : '—'}/>
+            </Grid>
+
+            {/* Profile completeness breakdown */}
+            <div>
+              <p className="text-[11px] font-bold uppercase mb-2" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Profile Completeness</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2.5">
+                {completeness.sections.map(s=>(
+                  <div key={s.label}>
+                    <div className="flex justify-between mb-1">
+                      <span className="text-xs" style={{ color:'var(--text-muted)' }}>{s.label}</span>
+                      <span className="text-xs font-black" style={{ color: s.pct>=80?'#10b981':s.pct>=50?'#f59e0b':'#f87171' }}>{s.pct}%</span>
+                    </div>
+                    <div className="h-1.5 rounded-full" style={{ background:'var(--bg-input)' }}><div className="h-full rounded-full" style={{ width:`${s.pct}%`, background: s.pct>=80?'#10b981':s.pct>=50?'#f59e0b':'#f87171' }}/></div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <AiInsight hint="Will highlight missing information and suggest which fields to complete for a full profile." />
+          </div>
         )}
 
         {tab==='personal' && (
-          <Grid>
-            <Field k="Date of Birth" v={fmtDate(e.dob) !== '—' ? fmtDate(e.dob) : fmtDate(data.submission?.personal?.dob)}/>
-            <Field k="Gender" v={e.gender || data.submission?.personal?.gender}/>
-            <Field k="Blood Group" v={data.submission?.personal?.blood_group}/>
-            <Field k="Marital Status" v={data.submission?.personal?.marital_status}/>
-            <Field k="Nationality" v={data.recruitment?.nationality}/>
-            <Field k="Father / Guardian" v={data.submission?.personal?.father_name}/>
-          </Grid>
-        )}
-
-        {tab==='contact' && (
-          <Grid>
-            <Field k="Mobile" v={e.phone}/>
-            <Field k="Email" v={e.email}/>
-            <Field k="Present Address" v={data.submission?.address?.current || e.address} full/>
-            <Field k="Permanent Address" v={data.submission?.address?.permanent} full/>
-            <Field k="City / State" v={[data.submission?.address?.city, data.submission?.address?.state].filter(Boolean).join(', ')}/>
-            <Field k="Pincode" v={data.submission?.address?.pincode}/>
-            <Field k="Emergency Contact" v={data.submission?.emergency?.name ? `${data.submission.emergency.name}${data.submission.emergency.relation?` (${data.submission.emergency.relation})`:''}${data.submission.emergency.phone?` · ${data.submission.emergency.phone}`:''}` : '—'} full/>
-          </Grid>
+          <div>
+            <Grid>
+              <Field k="Full Name" v={e.name}/>
+              <Field k="Date of Birth" v={fmtDate(e.dob) !== '—' ? fmtDate(e.dob) : fmtDate(data.submission?.personal?.dob)}/>
+              <Field k="Gender" v={e.gender || data.submission?.personal?.gender}/>
+              <Field k="Blood Group" v={data.submission?.personal?.blood_group}/>
+              <Field k="Marital Status" v={data.submission?.personal?.marital_status}/>
+              <Field k="Nationality" v={data.recruitment?.nationality}/>
+              <Field k="Mobile" v={e.phone}/>
+              <Field k="Email" v={e.email}/>
+              <Field k="Father / Guardian" v={data.submission?.personal?.father_name}/>
+              <Field k="Present Address" v={data.submission?.address?.current || e.address} full/>
+              <Field k="Permanent Address" v={data.submission?.address?.permanent} full/>
+              <Field k="City / State" v={[data.submission?.address?.city, data.submission?.address?.state].filter(Boolean).join(', ')}/>
+              <Field k="Pincode" v={data.submission?.address?.pincode}/>
+              <Field k="Emergency Contact" v={data.submission?.emergency?.name ? `${data.submission.emergency.name}${data.submission.emergency.relation?` (${data.submission.emergency.relation})`:''}${data.submission.emergency.phone?` · ${data.submission.emergency.phone}`:''}` : '—'} full/>
+            </Grid>
+            <AiInsight hint="Will flag missing personal details (emergency contact, blood group, nationality) needed for compliance." />
+          </div>
         )}
 
         {tab==='employment' && (
-          <Grid>
-            <Field k="Company" v="—"/>
-            <Field k="Branch" v="—"/>
-            <Field k="Department" v={e.department}/>
-            <Field k="Designation" v={e.designation}/>
-            <Field k="Shift" v="—"/>
-            <Field k="Reporting Manager" v={e.reporting_manager_name}/>
-            <Field k="Probation" v={fmtDate(e.probation_end_date)!=='—' ? `Until ${fmtDate(e.probation_end_date)}` : (data.offer?.probation_period||'—')}/>
-            <Field k="Notice Period" v={data.offer?.notice_period}/>
-            <Field k="Work Location" v="—"/>
-            <Field k="Offered CTC" v={data.offer?.offered_ctc ? `₹${Number(data.offer.offered_ctc).toLocaleString('en-IN')}` : '—'}/>
-          </Grid>
+          <div>
+            <Grid>
+              <Field k="Department" v={e.department}/>
+              <Field k="Designation" v={e.designation}/>
+              <Field k="Grade" v={gradeName || (e.grade_id ? '—' : 'Not assigned')}/>
+              <Field k="Role" v={roleName || (e.job_role_id ? '—' : 'Not assigned')}/>
+              <Field k="Reporting Manager" v={e.reporting_manager_name}/>
+              <Field k="Joining Date" v={fmtDate(e.joining_date)}/>
+              <Field k="Confirmation Date" v={fmtDate(e.confirmation_date)}/>
+              <Field k="Employment Status" v={e.status}/>
+              <Field k="Probation" v={fmtDate(e.probation_end_date)!=='—' ? `Until ${fmtDate(e.probation_end_date)}` : (data.offer?.probation_period||'—')}/>
+              <Field k="Notice Period" v={data.offer?.notice_period}/>
+            </Grid>
+            <p className="text-[11px] mt-3 px-3 py-2 rounded-lg" style={{ background:'var(--bg-input)', color:'var(--text-muted)' }}>
+              Grade &amp; Role link to <b>Organization Setup</b> masters. Payroll (CTC/salary structure) is intentionally out of scope here.
+            </p>
+            <AiInsight hint="Will suggest promotion or role changes based on tenure, grade and performance signals." />
+          </div>
         )}
 
         {tab==='documents' && (
           <div className="space-y-2">
-            <p className="text-xs mb-2" style={{ color:'var(--text-muted)' }}>Documents are reused from onboarding verification — read-only here.</p>
+            <p className="text-xs mb-2" style={{ color:'var(--text-muted)' }}>Documents are reused from onboarding verification — read-only here. Full document management arrives in a later phase.</p>
             {DOC_LIST.map(d=>{
               const doc = docByType[d.key]
               const isOffer = d.key==='offer_letter'
-              const available = !!doc || (isOffer && offerLetterUrl)
               const st = doc ? DOC_ST(doc.status) : null
               return (
                 <div key={d.key} className="flex items-center gap-2 px-3 py-2.5 rounded-xl flex-wrap" style={{ background:'var(--bg-input)', border:'1px solid var(--border)' }}>
                   <FileText size={13} style={{ color:'#a78bfa' }}/>
                   <span className="text-xs font-semibold" style={{ color:'var(--text-h)' }}>{d.label}</span>
+                  {d.virtual && !doc && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background:'var(--bg-card)', color:'var(--text-muted)', border:'1px solid var(--border)' }}>Generated</span>}
                   {doc && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background:st.bg, color:st.c }}>{doc.status}</span>}
                   {doc && <span className="text-[10px] truncate" style={{ color:'var(--text-muted)', maxWidth:180 }}>{doc.original_name}</span>}
                   <div className="ml-auto flex items-center gap-1.5">
@@ -255,25 +343,99 @@ export default function EmployeeProfile() {
                 </div>
               )
             })}
+            <AiInsight hint="Will detect missing or expiring documents (Aadhaar, PAN, passport) and prompt for uploads." />
           </div>
         )}
 
         {tab==='bank' && (
-          <Grid>
-            <Field k="Account Holder" v={data.submission?.bank?.account_name}/>
-            <Field k="Bank" v={data.submission?.bank?.bank_name}/>
-            <Field k="Account Number" v={data.submission?.bank?.account_number} mono/>
-            <Field k="IFSC" v={data.submission?.bank?.ifsc} mono/>
-            <Field k="Branch" v={data.submission?.bank?.branch}/>
-          </Grid>
+          <div>
+            <p className="text-[11px] font-bold uppercase mb-2" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Bank Details</p>
+            <Grid>
+              <Field k="Account Holder" v={data.submission?.bank?.account_name}/>
+              <Field k="Bank" v={data.submission?.bank?.bank_name}/>
+              <Field k="Account Number" v={data.submission?.bank?.account_number} mono/>
+              <Field k="IFSC" v={data.submission?.bank?.ifsc} mono/>
+              <Field k="Branch" v={data.submission?.bank?.branch}/>
+            </Grid>
+            <p className="text-[11px] font-bold uppercase mt-5 mb-2" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Tax (structure only — Payroll not implemented)</p>
+            <Grid>
+              <Field k="PAN" v={data.submission?.bank?.pan}/>
+              <Field k="Tax Regime" v={null}/>
+              <Field k="Investment Declaration" v={null}/>
+              <Field k="Form 16" v={null}/>
+            </Grid>
+            <AiInsight hint="Reserved for payroll & tax integration — will validate PAN/bank details and flag mismatches." />
+          </div>
         )}
 
-        {tab==='attendance' && <AttendanceTab employeeId={id} />}
+        {tab==='assets' && (
+          <div>
+            <div className="overflow-x-auto rounded-xl" style={{ border:'1px solid var(--border)' }}>
+              <table className="w-full text-sm" style={{ minWidth:560 }}>
+                <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{['Asset Name','Asset Code','Serial Number','Assigned Date','Status'].map(h=><th key={h} className="text-left px-3 py-2.5 label-caps whitespace-nowrap">{h}</th>)}</tr></thead>
+                <tbody><tr><td colSpan={5} className="px-3 py-10 text-center text-xs" style={{ color:'var(--text-muted)' }}>No assets assigned.</td></tr></tbody>
+              </table>
+            </div>
+            <IntegrationNote icon={Boxes} title="Reserved for the existing Inventory module"
+              hint="Assigned assets (Laptop, Monitor, Mobile, SIM, ID Card, Access Card…) will be read from Inventory and displayed here. HRMS will not manage inventory itself." />
+            <AiInsight hint="Will suggest standard assets missing for this role (e.g. laptop, access card) based on department." />
+          </div>
+        )}
+
+        {tab==='attendance' && (
+          <div>
+            {/* Explicit product decision: attendance lives in SangoeTrack, not HRMS. */}
+            <IntegrationNote icon={Plug} title="Attendance" subtitle="Coming from SangoeTrack"
+              hint="Not available until integration. This section will consume SangoeTrack APIs only — HRMS never stores or computes attendance." big />
+            <AiInsight hint="Reserved for SangoeTrack integration — will summarise attendance trends once connected." />
+          </div>
+        )}
+
+        {tab==='leave' && (
+          <div>
+            <IntegrationNote icon={CalendarDays} title="Leave" subtitle="Future integration"
+              hint="Leave balances, requests and approvals will appear here once the Leave module is available." chips={['Casual','Sick','Earned','LOP','Maternity','Paternity']} />
+            <AiInsight hint="Will surface leave patterns and balance risks once the Leave module is connected." />
+          </div>
+        )}
+
+        {tab==='performance' && (
+          <div>
+            <IntegrationNote icon={Target} title="Performance" subtitle="Future integration"
+              hint="KRA, KPI, DPR and MPR with acceptance signatures will plug in here. No performance logic is implemented yet." chips={['KRA','KPI','DPR','MPR']} />
+            <AiInsight hint="Will generate a performance summary, target-achievement and risk signals once PMS is live." />
+          </div>
+        )}
+
+        {tab==='training' && (
+          <div>
+            <IntegrationNote icon={GraduationCap} title="Training" subtitle="Future Learning & Development integration"
+              hint="Assigned, completed and pending trainings plus certificates will appear here once L&D is available." chips={['Assigned','Completed','Pending','Certificates']} />
+            <AiInsight hint="Will recommend training and retraining based on role, skill gaps and history." />
+          </div>
+        )}
+
+        {tab==='letters' && (
+          <div>
+            <div className="space-y-2">
+              {['Appointment Letter','Confirmation Letter','Probation Extension','Promotion Letter','Warning Letter','Experience Letter','Relieving Letter'].map(l=>(
+                <div key={l} className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ background:'var(--bg-input)', border:'1px solid var(--border)' }}>
+                  <Mail size={13} style={{ color:'#a78bfa' }}/>
+                  <span className="text-xs font-semibold" style={{ color:'var(--text-h)' }}>{l}</span>
+                  <span className="ml-auto text-[10px] font-semibold" style={{ color:'var(--text-muted)' }}>Not available</span>
+                </div>
+              ))}
+            </div>
+            <IntegrationNote icon={FileText} title="Letters" subtitle="Future generated letters"
+              hint="System-generated letters with templates & placeholders will be produced here. The existing Offer Letter continues to live in the Offer workflow." />
+          </div>
+        )}
 
         {tab==='timeline' && (
           <div>
-            <p className="text-xs mb-4" style={{ color:'var(--text-muted)' }}>Full lifecycle — reused from audit logs (Applied → Interview → Offer → Joining → Employee, and every subsequent change).</p>
+            <p className="text-xs mb-4" style={{ color:'var(--text-muted)' }}>Full lifecycle — reused from audit logs (Applied → Interview → Offer → Joining → Employee, and every subsequent change). Future events (Promotion, Asset Assigned, Confirmation, Exit) will append here automatically.</p>
             <AuditTimeline entries={data.timeline} />
+            <AiInsight hint="Will produce a plain-language career summary of this employee's journey from the timeline." />
           </div>
         )}
       </div>
@@ -283,123 +445,41 @@ export default function EmployeeProfile() {
   )
 }
 
-// ── Attendance tab: summary + monthly calendar + day details ──
-const monthKey = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`
-function AttendanceTab({ employeeId }) {
-  const [month, setMonth] = useState(monthKey(new Date()))
-  const [data, setData] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [day, setDay] = useState(null)
-
-  useEffect(() => {
-    let live = true; setLoading(true)
-    hrApi.employees.attendance(employeeId, { month })
-      .then(d => { if (live) setData(d) })
-      .catch(() => {})
-      .finally(() => { if (live) setLoading(false) })
-    return () => { live = false }
-  }, [employeeId, month])
-
-  const shiftMonth = (delta) => {
-    const [y, m] = month.split('-').map(Number)
-    setMonth(monthKey(new Date(y, m - 1 + delta, 1)))
-  }
-
-  if (loading || !data) return <p className="text-sm py-6" style={{ color:'var(--text-muted)' }}>Loading attendance…</p>
-
-  const byDate = Object.fromEntries((data.calendar||[]).map(d => [d.date, d]))
-  const [y, m] = month.split('-').map(Number)
-  const firstDow = new Date(y, m - 1, 1).getDay()
-  const daysInMonth = new Date(y, m, 0).getDate()
-  const cells = [...Array(firstDow).fill(null), ...Array.from({length:daysInMonth}, (_, i) => i + 1)]
-
-  const SUM = [
-    { l:'Attendance %', v:`${data.attendance_pct}%`, c:'#10b981' },
-    { l:'Present',      v:data.present_count,  c:'#10b981' },
-    { l:'Late',         v:data.late_count,     c:'#f59e0b' },
-    { l:'Absent',       v:data.absent_count,   c:'#ef4444' },
-    { l:'Leave',        v:data.leave_count,    c:'#3b82f6' },
-    { l:'Overtime',     v:`${data.overtime_hours}h`, c:'#a78bfa' },
-  ]
-
-  return (
-    <div className="space-y-4">
-      {/* Today's attendance */}
-      <div className="rounded-xl p-3" style={{ background:'var(--bg-input)', border:'1px solid var(--border)' }}>
-        <p className="text-[11px] font-bold mb-1" style={{ color:'var(--text-h)' }}>Today’s Attendance</p>
-        {data.today ? (
-          <div className="flex items-center gap-3 flex-wrap text-xs" style={{ color:'var(--text-muted)' }}>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:`${ST_COLOR(data.today.status)}1f`, color:ST_COLOR(data.today.status) }}>{data.today.status}</span>
-            <span>In: <b style={{ color:'var(--text-h)' }}>{data.today.check_in||'—'}</b></span>
-            <span>Out: <b style={{ color:'var(--text-h)' }}>{data.today.check_out||'—'}</b></span>
-            <span>Hours: <b style={{ color:'var(--text-h)' }}>{data.today.working_hours ?? '—'}</b></span>
-            <span>OT: <b style={{ color:'var(--text-h)' }}>{data.today.overtime_hours ?? '—'}</b></span>
-          </div>
-        ) : <p className="text-xs" style={{ color:'var(--text-muted)' }}>No attendance marked today.</p>}
-      </div>
-
-      {/* Monthly summary */}
-      <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
-        {SUM.map(s=>(
-          <div key={s.l} className="rounded-xl px-3 py-2.5" style={{ background:'var(--bg-input)' }}>
-            <p className="text-lg font-black" style={{ color:s.c }}>{s.v}</p>
-            <p className="text-[10px] font-semibold" style={{ color:'var(--text-muted)' }}>{s.l}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Calendar */}
-      <div className="rounded-xl p-3" style={{ background:'var(--bg-input)', border:'1px solid var(--border)' }}>
-        <div className="flex items-center justify-between mb-3">
-          <button onClick={()=>shiftMonth(-1)} className="p-1.5 rounded-lg" style={{ background:'var(--bg-card)', color:'var(--text-muted)', border:'1px solid var(--border)' }}><ChevronLeft size={14}/></button>
-          <p className="text-sm font-bold" style={{ color:'var(--text-h)' }}>{data.month_label}</p>
-          <button onClick={()=>shiftMonth(1)} className="p-1.5 rounded-lg" style={{ background:'var(--bg-card)', color:'var(--text-muted)', border:'1px solid var(--border)' }}><ChevronRight size={14}/></button>
-        </div>
-        <div className="grid grid-cols-7 gap-1.5">
-          {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d=><div key={d} className="text-center text-[10px] font-bold py-1" style={{ color:'var(--text-muted)' }}>{d}</div>)}
-          {cells.map((n, i) => {
-            if (!n) return <div key={`b${i}`} />
-            const dateStr = `${month}-${String(n).padStart(2,'0')}`
-            const rec = byDate[dateStr]
-            const col = rec ? ST_COLOR(rec.status) : null
-            return (
-              <button key={dateStr} onClick={()=>rec && setDay(rec)} disabled={!rec}
-                className="aspect-square rounded-lg flex flex-col items-center justify-center text-xs font-bold transition-all"
-                style={{ background: rec ? `${col}22` : 'var(--bg-card)', color: rec ? col : 'var(--text-muted)', border:`1px solid ${rec ? col+'55' : 'var(--border)'}`, cursor: rec ? 'pointer' : 'default' }}>
-                {n}
-                {rec && <span className="w-1.5 h-1.5 rounded-full mt-0.5" style={{ background:col }} />}
-              </button>
-            )
-          })}
-        </div>
-        {/* Legend */}
-        <div className="flex flex-wrap gap-3 mt-3">
-          {[['Present','#10b981'],['Absent','#ef4444'],['Late','#f59e0b'],['Leave','#3b82f6'],['Holiday','#94a3b8']].map(([l,c])=>(
-            <div key={l} className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ background:c }}/><span className="text-[10px]" style={{ color:'var(--text-muted)' }}>{l}</span></div>
-          ))}
-        </div>
-      </div>
-
-      {/* Day details modal */}
-      {day && (
-        <div className="modal-backdrop" onClick={()=>setDay(null)}>
-          <div className="modal-box max-w-sm" onClick={e=>e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4"><h2 className="font-black text-base" style={{ color:'var(--text-h)' }}>{day.date}</h2><button onClick={()=>setDay(null)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
-            <span className="text-[11px] font-bold px-2.5 py-1 rounded-xl" style={{ background:`${ST_COLOR(day.status)}1f`, color:ST_COLOR(day.status) }}>{day.status}</span>
-            <div className="grid grid-cols-2 gap-2 mt-3">
-              {[['Check In',day.check_in],['Check Out',day.check_out],['Break Start',day.break_start],['Break End',day.break_end],['Working Hours',day.working_hours],['Overtime',day.overtime_hours],['Shift',day.shift]].map(([k,v])=>(
-                <div key={k} className="px-2.5 py-1.5 rounded-lg" style={{ background:'var(--bg-input)' }}><p className="text-[9px]" style={{ color:'var(--text-muted)' }}>{k}</p><p className="text-xs font-semibold" style={{ color:'var(--text-h)' }}>{v ?? '—'}</p></div>
-              ))}
-            </div>
-            {day.remarks && <div className="mt-2 px-2.5 py-1.5 rounded-lg" style={{ background:'var(--bg-input)' }}><p className="text-[9px]" style={{ color:'var(--text-muted)' }}>Remarks</p><p className="text-xs" style={{ color:'var(--text-h)' }}>{day.remarks}</p></div>}
-          </div>
-        </div>
-      )}
+/* ── Overview quick card ── */
+const QuickCard = ({ label, value, color, note, bar }) => (
+  <div className="rounded-xl px-3 py-3" style={{ background:'var(--bg-input)', border:'1px solid var(--border)' }}>
+    <div className="flex items-center justify-between">
+      <p className="text-2xl font-black" style={{ color }}>{value}</p>
+      {note && <span className="text-[8.5px] font-bold px-1.5 py-0.5 rounded" style={{ background:'var(--bg-card)', color:'var(--text-muted)', border:'1px solid var(--border)' }}>{note}</span>}
     </div>
-  )
-}
+    <p className="text-[10.5px] font-semibold mt-1" style={{ color:'var(--text-muted)' }}>{label}</p>
+    {bar !== undefined && <div className="mt-1.5 h-1 rounded-full" style={{ background:'var(--bg-card)' }}><div className="h-full rounded-full" style={{ width:`${bar}%`, background:color }}/></div>}
+  </div>
+)
 
-// ── Edit modal ──
+/* ── AI-ready integration point (no AI implemented — placeholder only) ── */
+const AiInsight = ({ hint }) => (
+  <div className="mt-4 rounded-xl p-3 flex items-start gap-2.5" style={{ background:'rgba(124,58,237,0.05)', border:'1px dashed rgba(124,58,237,0.3)' }}>
+    <Sparkles size={15} style={{ color:'#a78bfa', marginTop:1, flexShrink:0 }}/>
+    <div>
+      <p className="text-[11px] font-bold" style={{ color:'#a78bfa' }}>AI Insights <span className="font-normal" style={{ color:'var(--text-muted)' }}>· coming soon</span></p>
+      <p className="text-[11px] mt-0.5" style={{ color:'var(--text-muted)' }}>{hint}</p>
+    </div>
+  </div>
+)
+
+/* ── Future-module / integration placeholder ── */
+const IntegrationNote = ({ icon:Icon, title, subtitle, hint, chips, big }) => (
+  <div className="flex flex-col items-center justify-center text-center rounded-xl mt-2" style={{ padding: big ? '48px 20px' : '32px 20px', background:'var(--bg-input)', border:'1px dashed var(--border)' }}>
+    <div className="rounded-2xl flex items-center justify-center mb-3" style={{ width: big?60:52, height: big?60:52, background:'rgba(124,58,237,0.1)' }}><Icon size={big?26:22} style={{ color:'#a78bfa' }}/></div>
+    <p className="text-sm font-black" style={{ color:'var(--text-h)' }}>{title}</p>
+    {subtitle && <p className="text-xs font-semibold mt-1" style={{ color:'#a78bfa' }}>{subtitle}</p>}
+    {hint && <p className="text-[11px] mt-2 max-w-md" style={{ color:'var(--text-muted)' }}>{hint}</p>}
+    {chips && <div className="flex gap-1.5 flex-wrap justify-center mt-3">{chips.map(c=><span key={c} className="text-[10px] font-bold px-2 py-1 rounded-lg" style={{ background:'var(--bg-card)', color:'var(--text-muted)', border:'1px solid var(--border)' }}>{c}</span>)}</div>}
+  </div>
+)
+
+// ── Edit modal (unchanged behaviour — same fields, same update API) ──
 function EditModal({ employee, onClose, onSaved, showToast }) {
   const F = ['name','email','phone','department','designation','reporting_manager_name','joining_date','probation_end_date','confirmation_date','status']
   const [form, setForm] = useState(Object.fromEntries(F.map(k=>[k, employee[k] ?? (k==='status'?'Active':'')])))

@@ -5,14 +5,56 @@ namespace App\Http\Controllers\Api\Tpv;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Tpv\SaveOnboardingProfileRequest;
 use App\Http\Requests\Tpv\StoreTpvOnboardingRequest;
+use App\Http\Requests\Tpv\SubmitOnboardingRequest;
 use App\Models\Tpv\TpvOnboarding;
+use App\Services\Tpv\KickoffPdfService;
 use App\Services\Tpv\TpvOnboardingService;
+use App\Support\UserAgentInfo;
 use Illuminate\Http\Request;
 
 class TpvOnboardingController extends Controller
 {
-    public function __construct(private TpvOnboardingService $tpvOnboardingService)
+    public function __construct(
+        private TpvOnboardingService $tpvOnboardingService,
+        private KickoffPdfService $kickoffPdfService,
+    ) {
+    }
+
+    /** Step 1 — stream the Kickoff PDF (generated + cached on first access). */
+    public function kickoffPdf(Request $request, TpvOnboarding $onboarding)
     {
+        $this->assertTenant($request, $onboarding);
+
+        return $this->kickoffPdfService->stream($onboarding);
+    }
+
+    /** Step 1 — record the vendor's acknowledgement with captured context. */
+    public function acceptKickoff(Request $request, TpvOnboarding $onboarding)
+    {
+        $this->assertTenant($request, $onboarding);
+
+        $ua = UserAgentInfo::parse($request->userAgent());
+
+        return response()->json(
+            $this->tpvOnboardingService->acknowledgeKickoff($onboarding, $request->user(), [
+                'ip' => $request->ip(), 'browser' => $ua['browser'], 'device' => $ua['device'],
+            ])
+        );
+    }
+
+    /** Step 1 — audit a Kickoff PDF interaction (viewed / downloaded / printed). */
+    public function logKickoffEvent(Request $request, TpvOnboarding $onboarding)
+    {
+        $this->assertTenant($request, $onboarding);
+
+        $data = $request->validate(['event' => 'required|in:viewed,downloaded,printed']);
+        $ua = UserAgentInfo::parse($request->userAgent());
+
+        $this->tpvOnboardingService->logKickoffEvent($onboarding, $data['event'], $request->user(), [
+            'ip' => $request->ip(), 'browser' => $ua['browser'], 'device' => $ua['device'],
+        ]);
+
+        return response()->json(['status' => 'logged']);
     }
 
     public function index(Request $request)
@@ -73,11 +115,15 @@ class TpvOnboardingController extends Controller
         );
     }
 
-    public function submit(Request $request, TpvOnboarding $onboarding)
+    public function submit(SubmitOnboardingRequest $request, TpvOnboarding $onboarding)
     {
         $this->assertTenant($request, $onboarding);
 
-        return response()->json($this->tpvOnboardingService->submit($onboarding, $request->user()));
+        $ua = UserAgentInfo::parse($request->userAgent());
+
+        return response()->json($this->tpvOnboardingService->submit($onboarding, $request->user(), [
+            'ip' => $request->ip(), 'browser' => $ua['browser'], 'device' => $ua['device'],
+        ]));
     }
 
     public function approve(Request $request, TpvOnboarding $onboarding)
@@ -88,6 +134,41 @@ class TpvOnboardingController extends Controller
 
         return response()->json(
             $this->tpvOnboardingService->approve($onboarding, $request->user(), $data['remarks'] ?? null)
+        );
+    }
+
+    public function reject(Request $request, TpvOnboarding $onboarding)
+    {
+        $this->assertTenant($request, $onboarding);
+
+        $data = $request->validate(['remarks' => 'required|string']);
+
+        return response()->json(
+            $this->tpvOnboardingService->reject($onboarding, $request->user(), $data['remarks'])
+        );
+    }
+
+    public function hold(Request $request, TpvOnboarding $onboarding)
+    {
+        $this->assertTenant($request, $onboarding);
+
+        $data = $request->validate([
+            'reason'  => 'nullable|string',
+            'remarks' => 'nullable|string',
+        ]);
+        $reason = $data['reason'] ?? $data['remarks'] ?? 'Onboarding placed on hold';
+
+        return response()->json(
+            $this->tpvOnboardingService->hold($onboarding, $request->user(), $reason)
+        );
+    }
+
+    public function release(Request $request, TpvOnboarding $onboarding)
+    {
+        $this->assertTenant($request, $onboarding);
+
+        return response()->json(
+            $this->tpvOnboardingService->release($onboarding, $request->user())
         );
     }
 

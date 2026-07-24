@@ -4,6 +4,7 @@ namespace App\Models\Tpv;
 
 use App\Models\Traits\Auditable;
 use App\Models\Traits\BelongsToTenant;
+use App\Models\Tpv\OnboardingApproval;
 use App\Models\User;
 use App\Models\Vendor\Vendor;
 use App\Support\Tpv\TpvOnboardingStatus as Status;
@@ -23,13 +24,21 @@ class TpvOnboarding extends Model
     protected $fillable = [
         'tenant_id','vendor_id','kickoff_meeting_id','current_step','profile',
         'status','submitted_at','approved_at','approved_by','remarks','work_start_letter_path',
+        'registration_number','hold_reason',
+        'kickoff_pdf_path','acknowledged','acknowledged_by','acknowledged_at','acknowledged_ip','acknowledged_browser','acknowledged_device',
+        'declaration_accepted_at','onboarding_complete','completed_at','completed_ip','completed_browser','completed_device',
     ];
 
     protected $casts = [
-        'current_step'  => 'integer',
-        'profile'       => 'array',
-        'submitted_at'  => 'datetime',
-        'approved_at'   => 'datetime',
+        'current_step'            => 'integer',
+        'profile'                 => 'array',
+        'submitted_at'            => 'datetime',
+        'approved_at'             => 'datetime',
+        'acknowledged'            => 'boolean',
+        'acknowledged_at'         => 'datetime',
+        'declaration_accepted_at' => 'datetime',
+        'onboarding_complete'     => 'boolean',
+        'completed_at'            => 'datetime',
     ];
 
     protected $appends = ['status_label'];
@@ -44,6 +53,12 @@ class TpvOnboarding extends Model
     public function approver()
     {
         return $this->belongsTo(User::class, 'approved_by');
+    }
+
+    /** Multi-level approval chain (Phase 3). */
+    public function approvals()
+    {
+        return $this->hasMany(OnboardingApproval::class, 'tpv_onboarding_id');
     }
 
     /**
@@ -76,6 +91,11 @@ class TpvOnboarding extends Model
     public function isEditable(): bool
     {
         return Status::isEditable($this->status);
+    }
+
+    public function isKickoffAcknowledged(): bool
+    {
+        return (bool) $this->acknowledged;
     }
 
     /**

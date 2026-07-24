@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import {
   Plus, RefreshCw, Search, ShieldAlert, Ban, RotateCcw, AlertTriangle, Eye, Skull,
 } from 'lucide-react'
 import { tpvApi } from '@/services/tpvApi'
+import { portalApi } from '@/services/portalApi'
 import { useAuth } from '@/context/AuthContext'
 import {
   SEVERITIES, severityCfg, STRIKE_LIMIT, workerStatusCfg,
@@ -16,11 +17,17 @@ import {
 
 export default function TpvStrikes() {
   const navigate = useNavigate()
+  const { vendorId } = useParams()           // present inside the vendor-scoped admin workspace
+  const scoped = !!vendorId
   const { user } = useAuth()
   const admin = canApproveTpv(user)
+  // Portal mode: vendorId absent. Backend scopes to own vendor from token.
+  const isPortal = user?.role === 'third_party_vendor'
+  const api = isPortal ? portalApi : tpvApi
 
   const [rows, setRows]     = useState([])
   const [stats, setStats]   = useState({})
+  const [codes, setCodes]   = useState(scoped ? null : undefined)  // Set<worker_code> when scoped
   const [loading, setLoad]  = useState(true)
   const [search, setSearch] = useState('')
   const [severity, setSeverity] = useState('All')
@@ -28,32 +35,64 @@ export default function TpvStrikes() {
   const [issuing, setIssuing] = useState(false)
   const [voiding, setVoiding] = useState(null)
 
+  const workerHref = (wid) => scoped
+    ? `/app/tpv/workforce/vendor/${vendorId}/workers/${wid}`
+    : (isPortal ? `/vendor-portal/workforce/workers/${wid}` : `/app/tpv/workforce/${wid}`)
+
   const fetchAll = useCallback(async () => {
     setLoad(true)
     try {
-      const [l, s] = await Promise.all([
-        tpvApi.strikes.list({ severity: severity === 'All' ? undefined : severity, active: onlyActive ? 'true' : undefined }),
-        tpvApi.strikes.stats(),
-      ])
+      const calls = [
+        api.strikes.list({ severity: severity === 'All' ? undefined : severity, active: onlyActive ? 'true' : undefined }),
+        api.strikes.stats(),
+      ]
+      // In admin scoped mode: fetch vendor worker set for client-side filtering.
+      // In portal mode: backend scopes data to own vendor.
+      if (scoped) calls.push(api.workers.list({ vendor_id: vendorId }))
+      const [l, s, w] = await Promise.all(calls)
       setRows(Array.isArray(l?.data ?? l) ? (l.data ?? l) : [])
       setStats(s?.data ?? s ?? {})
+      if (scoped) {
+        const workers = Array.isArray(w?.data ?? w) ? (w.data ?? w) : []
+        setCodes(new Set(workers.map(x => x.worker_code)))
+      }
     } catch (e) { console.error('Failed to load strikes', e) }
     finally { setLoad(false) }
-  }, [severity, onlyActive])
+  }, [severity, onlyActive, scoped, vendorId, api])
   useEffect(() => { fetchAll() }, [fetchAll])
 
-  const filtered = rows.filter(r => {
+  const inScope = (wk) => !scoped || (codes && codes.has(wk?.worker_code))
+  const ready = !scoped || codes !== null
+  const scopedRows = scoped ? rows.filter(r => inScope(r.worker)) : rows
+
+  const filtered = scopedRows.filter(r => {
     const q = search.toLowerCase()
     return !q || r.worker?.name?.toLowerCase().includes(q) || r.reason?.toLowerCase().includes(q) || r.worker?.worker_code?.toLowerCase().includes(q)
   })
 
+  // Vendor scope: recompute the ledger KPIs from the filtered rows (stats is global).
+  const scopedStats = (() => {
+    const activeRows = scopedRows.filter(r => r.is_active)
+    const byWorker = {}
+    activeRows.forEach(r => { byWorker[r.tpv_worker_id] = (byWorker[r.tpv_worker_id] || 0) + 1 })
+    return {
+      active:       activeRows.length,
+      critical:     activeRows.filter(r => r.severity === 'Critical').length,
+      at_risk:      Object.values(byWorker).filter(c => c >= STRIKE_LIMIT - 1).length,
+      terminations: scopedRows.filter(r => r.triggered_termination).length,
+      voided:       scopedRows.filter(r => !r.is_active).length,
+      total:        scopedRows.length,
+    }
+  })()
+  const view = scoped ? scopedStats : stats
+
   const statCards = [
-    { label: 'Active',        value: stats.active,       color: '#f59e0b' },
-    { label: 'Critical',      value: stats.critical,     color: '#ef4444' },
-    { label: 'At Risk',       value: stats.at_risk,      color: '#f97316', hint: `${STRIKE_LIMIT - 1} strikes — one from termination` },
-    { label: 'Terminations',  value: stats.terminations, color: '#ef4444' },
-    { label: 'Voided',        value: stats.voided,       color: '#10b981' },
-    { label: 'Total',         value: stats.total,        color: '#7C3AED' },
+    { label: 'Active',        value: view.active,       color: '#f59e0b' },
+    { label: 'Critical',      value: view.critical,     color: '#ef4444' },
+    { label: 'At Risk',       value: view.at_risk,      color: '#f97316', hint: `${STRIKE_LIMIT - 1} strikes — one from termination` },
+    { label: 'Terminations',  value: view.terminations, color: '#ef4444' },
+    { label: 'Voided',        value: view.voided,       color: '#10b981' },
+    { label: 'Total',         value: view.total,        color: '#7C3AED' },
   ]
 
   return (
@@ -103,7 +142,7 @@ export default function TpvStrikes() {
         </label>
       </div>
 
-      {loading ? (
+      {loading || !ready ? (
         <div style={{ textAlign: 'center', padding: 60, color: 'var(--text-muted)' }}>Loading strike ledger…</div>
       ) : filtered.length === 0 ? (
         <div className="pr-glass" style={{ padding: 60, textAlign: 'center' }}>
@@ -116,7 +155,7 @@ export default function TpvStrikes() {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {filtered.map(r => (
-            <StrikeRow key={r.id} r={r} admin={admin} onVoid={() => setVoiding(r)} onOpenWorker={() => navigate(`/app/tpv/workforce/${r.tpv_worker_id}`)} />
+            <StrikeRow key={r.id} r={r} admin={admin} onVoid={() => setVoiding(r)} onOpenWorker={() => navigate(workerHref(r.tpv_worker_id))} />
           ))}
         </div>
       )}

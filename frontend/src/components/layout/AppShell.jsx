@@ -3,6 +3,7 @@ import { Outlet } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import Header from './Header'
 import MobileBottomNav from './MobileBottomNav'
+import IdleTimeoutWarning from '@/components/common/IdleTimeoutWarning'
 import clsx from 'clsx'
 import { useTheme } from '@/context/ThemeContext'
 
@@ -64,6 +65,9 @@ export default function AppShell() {
 
       {/* Mobile bottom nav */}
       <MobileBottomNav />
+
+      {/* Idle-timeout warning (session management) */}
+      <IdleTimeoutWarning />
     </div>
   )
 }

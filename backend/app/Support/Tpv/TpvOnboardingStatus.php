@@ -18,18 +18,24 @@ final class TpvOnboardingStatus
     public const SUBMITTED         = 'Submitted';
     public const UNDER_REVIEW      = 'Under_Review';
     public const RESUBMIT_REQUIRED = 'Resubmit_Required';
+    public const ON_HOLD           = 'On_Hold';
     public const APPROVED          = 'Approved';
     public const REJECTED          = 'Rejected';
 
     /** All persisted statuses. */
     public const ALL = [
         self::DRAFT, self::IN_PROGRESS, self::SUBMITTED, self::UNDER_REVIEW,
-        self::RESUBMIT_REQUIRED, self::APPROVED, self::REJECTED,
+        self::RESUBMIT_REQUIRED, self::ON_HOLD, self::APPROVED, self::REJECTED,
     ];
 
     /** Statuses where the vendor may still edit their submission. */
     public const EDITABLE = [
         self::DRAFT, self::IN_PROGRESS, self::RESUBMIT_REQUIRED,
+    ];
+
+    /** States an admin can act on from the Final Approval screen. */
+    public const DECIDABLE = [
+        self::SUBMITTED, self::UNDER_REVIEW,
     ];
 
     /** Total steps in the onboarding wizard. */
@@ -42,6 +48,7 @@ final class TpvOnboardingStatus
         self::SUBMITTED         => 'Submitted',
         self::UNDER_REVIEW      => 'Under Review',
         self::RESUBMIT_REQUIRED => 'Resubmit Required',
+        self::ON_HOLD           => 'On Hold',
         self::APPROVED          => 'Approved',
         self::REJECTED          => 'Rejected',
     ];

@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\Hr\OnboardingController;
 use App\Http\Controllers\Api\Hr\EmployeeController;
 use App\Http\Controllers\Api\Hr\AttendanceController;
 use App\Http\Controllers\Api\Hr\ExitInterviewController;
+use App\Http\Controllers\Api\Hr\OrganizationController;
 use Illuminate\Support\Facades\Route;
 
 // ── HR Module Routes (Sanctum) ──────────────────────────────────────────
@@ -155,6 +156,31 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::get('/employees/{employee}',     [EmployeeController::class, 'show']);
     Route::put('/employees/{employee}',     [EmployeeController::class, 'update']);
     Route::delete('/employees/{employee}',  [EmployeeController::class, 'destroy']);
+
+    // ── Organization Setup — Department / Designation / Grade / Role masters ──
+    Route::get('/organization/overview',  [OrganizationController::class, 'overview']);
+    Route::get('/organization/options',   [OrganizationController::class, 'options']);
+    Route::get('/organization/hierarchy', [OrganizationController::class, 'hierarchy']);
+
+    Route::get('/departments',          [OrganizationController::class, 'departments']);
+    Route::post('/departments',         [OrganizationController::class, 'storeDepartment']);
+    Route::put('/departments/{id}',     [OrganizationController::class, 'updateDepartment']);
+    Route::delete('/departments/{id}',  [OrganizationController::class, 'destroyDepartment']);
+
+    Route::get('/designations',         [OrganizationController::class, 'designations']);
+    Route::post('/designations',        [OrganizationController::class, 'storeDesignation']);
+    Route::put('/designations/{id}',    [OrganizationController::class, 'updateDesignation']);
+    Route::delete('/designations/{id}', [OrganizationController::class, 'destroyDesignation']);
+
+    Route::get('/grades',               [OrganizationController::class, 'grades']);
+    Route::post('/grades',              [OrganizationController::class, 'storeGrade']);
+    Route::put('/grades/{id}',          [OrganizationController::class, 'updateGrade']);
+    Route::delete('/grades/{id}',       [OrganizationController::class, 'destroyGrade']);
+
+    Route::get('/org-roles',            [OrganizationController::class, 'roles']);
+    Route::post('/org-roles',           [OrganizationController::class, 'storeRole']);
+    Route::put('/org-roles/{id}',       [OrganizationController::class, 'updateRole']);
+    Route::delete('/org-roles/{id}',    [OrganizationController::class, 'destroyRole']);
 
     // Attendance
     Route::get('/attendance/stats',          [AttendanceController::class, 'stats']);

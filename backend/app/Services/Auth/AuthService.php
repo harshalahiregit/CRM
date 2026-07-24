@@ -6,7 +6,9 @@ use App\Exceptions\BusinessException;
 use App\Models\Hr\HrExternalCompany;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Models\Vendor\Vendor;
 use App\Support\AgencyContext;
+use App\Support\Vendor\VendorStatus;
 use App\Support\Hr\CompanyAccountStatus;
 use App\Support\Hr\CompanyType;
 use Illuminate\Support\Facades\DB;
@@ -27,9 +29,14 @@ class AuthService
 
         $this->assertUserCanLogin($user);
 
-        // Revoke old tokens (single device)
-        $user->tokens()->delete();
-        $token = $user->createToken('crm-auth-token', ['*'], now()->addDays(30))->plainTextToken;
+        // Establish a tracked session (applies the concurrency policy — default
+        // 'single' preserves the prior one-device behaviour) and issue the token.
+        $ua = \App\Support\UserAgentInfo::parse(request()->userAgent());
+        $token = app(\App\Services\Auth\SessionService::class)->establish(
+            $user,
+            (bool) ($data['remember'] ?? false),
+            ['ip' => request()->ip(), 'browser' => $ua['browser'], 'device' => $ua['device']],
+        );
 
         // Track last login; company logins also get an audit-based login history.
         $ip = request()->ip();
@@ -127,7 +134,10 @@ class AuthService
             'role'              => 'third_party_vendor',
             'status'            => 'pending',
             'tpv_type'          => $data['tpv_type'],
-            'access_expires_at' => $data['tpv_type'] === 'temporary' ? now()->addDays(5)->toDateString() : null,
+            // A temporary vendor's 5-day access window starts at admin activation,
+            // not at registration — so it is null here and set in
+            // VendorService::updateStatus when the admin approves.
+            'access_expires_at' => null,
             'phone'             => $data['phone'] ?? null,
             'designation'       => $data['position'] ?? null,
             'meta'              => [
@@ -140,6 +150,25 @@ class AuthService
                 'zip'        => $data['zip'] ?? null,
                 'website'    => $data['website'] ?? null,
             ],
+        ]);
+
+        // Self-registered vendors land in the admin Dashboard immediately as a
+        // Vendor record — Inactive until an admin activates them. They belong to
+        // the agency tenant (external parties aren't independent tenants), and the
+        // Temporary/Permanent choice maps to the vendor_type.
+        Vendor::create([
+            'tenant_id'   => AgencyContext::tenantId(),
+            'user_id'     => $user->id,
+            'company_name'=> $data['username'] ?? $user->name,
+            'vendor_type' => $data['tpv_type'] === 'temporary' ? 'temporary' : 'standard',
+            'engagements' => ['tpv'],
+            'email'       => $user->email,
+            'phone'       => $data['phone'] ?? null,
+            'city'        => $data['city'] ?? null,
+            'state'       => $data['state'] ?? null,
+            'country'     => $data['country'] ?? null,
+            'pincode'     => $data['zip'] ?? null,
+            'status'      => VendorStatus::INACTIVE,
         ]);
 
         Log::channel('auth')->info('TPV registered, pending approval', ['user_id' => $user->id]);
@@ -224,7 +253,7 @@ class AuthService
 
     public function logout(User $user): void
     {
-        $user->currentAccessToken()->delete();
+        app(\App\Services\Auth\SessionService::class)->endCurrent($user);
         Log::channel('auth')->info('User logged out', ['user_id' => $user->id]);
     }
 

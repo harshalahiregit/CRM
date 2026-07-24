@@ -9,6 +9,7 @@ use App\Http\Requests\Shared\UpdateKickoffMeetingRequest;
 use App\Models\Shared\KickoffMeeting;
 use App\Services\Shared\KickoffMeetingService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 
 class KickoffMeetingController extends Controller
 {
@@ -70,6 +71,64 @@ class KickoffMeetingController extends Controller
 
         return response()->json(
             $this->kickoffService->uploadMom($kickoffMeeting, $request->file('mom'), $request->user())
+        );
+    }
+
+    /** Mark who attended — a post-meeting edit of the attendance flags. */
+    public function attendance(Request $request, KickoffMeeting $kickoffMeeting)
+    {
+        $this->assertTenant($request, $kickoffMeeting);
+
+        $data = $request->validate([
+            'attendance'            => 'required|array|min:1',
+            'attendance.*.id'       => 'required|integer',
+            'attendance.*.attended' => 'required|boolean',
+        ]);
+
+        return response()->json(
+            $this->kickoffService->markAttendance($kickoffMeeting, $data['attendance'], $request->user())
+        );
+    }
+
+    /** Send a manual reminder — email is live, WhatsApp/SMS are queued stubs. */
+    public function remind(Request $request, KickoffMeeting $kickoffMeeting)
+    {
+        $this->assertTenant($request, $kickoffMeeting);
+
+        return response()->json([
+            'status' => 'success',
+            'result' => $this->kickoffService->sendReminder($kickoffMeeting, $request->user()),
+        ]);
+    }
+
+    /** Generate (or regenerate) the Minutes-of-Meeting PDF from existing data. */
+    public function generateMom(Request $request, KickoffMeeting $kickoffMeeting)
+    {
+        $this->assertTenant($request, $kickoffMeeting);
+
+        return response()->json(
+            $this->kickoffService->generateMom($kickoffMeeting, $request->user())
+        );
+    }
+
+    /** Stream the stored MoM document — inline for View, attachment for Download. */
+    public function momFile(Request $request, KickoffMeeting $kickoffMeeting)
+    {
+        $this->assertTenant($request, $kickoffMeeting);
+
+        abort_unless(
+            $kickoffMeeting->mom_path && Storage::disk('kickoff_docs')->exists($kickoffMeeting->mom_path),
+            404,
+            'No minutes document has been generated yet.'
+        );
+
+        $disposition = $request->boolean('download') ? 'attachment' : 'inline';
+
+        return Storage::disk('kickoff_docs')->response(
+            $kickoffMeeting->mom_path,
+            "MOM-{$kickoffMeeting->id}.pdf",
+            ['Content-Type' => 'application/pdf'],
+            $disposition
         );
     }
 

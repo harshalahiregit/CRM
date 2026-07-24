@@ -18,9 +18,22 @@ class TpvWorker extends Model
 
     protected $fillable = [
         'tenant_id','vendor_id','created_by','worker_code',
-        'name','dob','gender','designation','skill_category','aadhar_number','mobile',
+        'name','dob','age','age_reason','gender','designation','skill_category','aadhar_number','mobile','email',
         'blood_group','address','emergency_contact','emergency_phone','photo_path',
-        'current_step','status',
+        'current_step','status','is_active',
+        // Step 2
+        'medical_status','medical_type','doctor_name','organization_name','doctor_registration','doctor_designation',
+        'eyesight','height','weight','blood_pressure','height_phobia','heart_disease','habits','handicapped',
+        'system_ip','geo_location','mh_version','mh_q1','mh_q2','mh_q3','mh_q4','mh_q5','mh_q6','mh_score','mh_risk','mh_flag',
+        'doctor_comments','physical_score','medical_result','signature_file','external_doctor_name','external_doctor_regid','external_pdf',
+        // Step 3
+        'induction_status','induction_type','trainer','induction_location','induction_start','induction_end','induction_duration',
+        'induction_device','induction_photo','induction_signature','induction_thumb','induction_proof_file',
+        // Step 4
+        'ppe_status','ppe_items','ppe_issued_to','ppe_remarks','ppe_issued_at',
+        // Step 5
+        'card_status','card_issued_at','punch_count','punch_1_at','punch_1_reason','punch_2_at','punch_2_reason','punch_3_at','punch_3_reason','punch_log',
+        'approval_status','approval_remarks','approved_at','approved_by',
         'badge_number','qr_token','badge_issued_at','badge_issued_by','badge_valid_until',
         'remarks',
     ];
@@ -28,6 +41,16 @@ class TpvWorker extends Model
     protected $casts = [
         'dob'               => 'date',
         'current_step'      => 'integer',
+        'is_active'         => 'boolean',
+        'punch_log'         => 'array',
+        'induction_start'   => 'datetime',
+        'induction_end'     => 'datetime',
+        'ppe_issued_at'     => 'datetime',
+        'punch_1_at'        => 'datetime',
+        'punch_2_at'        => 'datetime',
+        'punch_3_at'        => 'datetime',
+        'card_issued_at'    => 'datetime',
+        'approved_at'       => 'datetime',
         'badge_issued_at'   => 'datetime',
         'badge_valid_until' => 'date',
     ];

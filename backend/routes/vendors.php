@@ -19,6 +19,7 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('vendors')->grou
     Route::get('/{vendor}',                 [VendorController::class, 'show']);
     Route::put('/{vendor}',                 [VendorController::class, 'update']);
     Route::patch('/{vendor}/status',        [VendorController::class, 'updateStatus']);
+    Route::post('/{vendor}/email',          [VendorController::class, 'sendEmail']);
     Route::delete('/{vendor}',              [VendorController::class, 'destroy']);
 });
 

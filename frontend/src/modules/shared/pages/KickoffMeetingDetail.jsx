@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, CalendarDays, Clock, MapPin, Users, CheckCircle2, XCircle,
   Send, Copy, Upload, AlertTriangle, Loader2, FileText, ShieldCheck, History,
+  Sparkles, Eye, Download, Video, ExternalLink,
 } from 'lucide-react'
 import { kickoffApi } from '@/services/kickoffApi'
+import { meetingApi } from '@/services/meetingApi'
 import {
   KO_STATUS, koStatusCfg, koNextStatuses, koModeLabel, fmtDateTime, fmtDate,
 } from '../kickoffConstants'
@@ -22,8 +24,18 @@ export default function KickoffMeetingDetail() {
   const [err, setErr]     = useState(null)
   const [ackLink, setAckLink] = useState(null)
   const [action, setAction]   = useState(null)   // { to } transition modal
+  const [linkData, setLinkData]     = useState(null)    // online meeting link data
+  const [genLinkBusy, setGenLinkBusy] = useState(false) // link generation in progress
 
-  const load = () => kickoffApi.get(id).then(d => { setM(d?.data ?? d); setLoad(false) }).catch(() => { setErr('Could not load this meeting.'); setLoad(false) })
+  const load = () => kickoffApi.get(id).then(d => {
+    const mtg = d?.data ?? d
+    setM(mtg)
+    setLoad(false)
+    // Fetch stored online meeting link if applicable
+    if (mtg?.mode === 'online' && mtg?.meeting_platform) {
+      meetingApi.getLink(id).then(setLinkData).catch(() => {})
+    }
+  }).catch(() => { setErr('Could not load this meeting.'); setLoad(false) })
   useEffect(() => { load() }, [id])
 
   const publish = async () => {
@@ -109,6 +121,25 @@ export default function KickoffMeetingDetail() {
               </div>
             )}
           </div>
+
+          {/* Online meeting link (shown only when mode = 'online') */}
+          {m.mode === 'online' && (
+            <OnlineMeetingCard
+              meeting={m}
+              linkData={linkData}
+              busy={genLinkBusy}
+              onGenerate={async (platform) => {
+                setGenLinkBusy(true); setErr(null)
+                try {
+                  const res = await meetingApi.generateLink(m.id, platform)
+                  setLinkData(res.link)
+                  setM(res.meeting)
+                } catch (e) {
+                  setErr(e?.response?.data?.message || 'Could not generate meeting link.')
+                } finally { setGenLinkBusy(false) }
+              }}
+            />
+          )}
 
           {/* Attendees */}
           <div className="pr-glass" style={{ padding: 20 }}>
@@ -209,43 +240,95 @@ export default function KickoffMeetingDetail() {
   )
 }
 
-/* ── MoM upload card ──────────────────────────────────────────────────────── */
+/* ── MoM document card ────────────────────────────────────────────────────────
+ * Two ways to attach minutes: generate a PDF from the meeting's own data, or
+ * upload a document manually. Either fills the single MoM slot; regenerating or
+ * re-uploading replaces the previous file. View/Download serve whatever is there. */
 function MomCard({ m, onUploaded, onError }) {
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy] = useState(null) // 'upload' | 'gen' | 'view' | 'dl'
 
   const pick = async (e) => {
     const f = e.target.files?.[0]
     if (!f) return
-    setBusy(true); onError(null)
+    setBusy('upload'); onError(null)
     try {
-      const updated = await kickoffApi.uploadMom(m.id, f)
-      onUploaded(updated)
+      onUploaded(await kickoffApi.uploadMom(m.id, f))
     } catch (err) {
       onError(err?.response?.data?.message || 'Could not upload the document.')
-    } finally { setBusy(false); e.target.value = '' }
+    } finally { setBusy(null); e.target.value = '' }
+  }
+
+  const generate = async () => {
+    setBusy('gen'); onError(null)
+    try {
+      onUploaded(await kickoffApi.generateMom(m.id))
+    } catch (err) {
+      onError(err?.response?.data?.message || 'Could not generate the MOM PDF.')
+    } finally { setBusy(null) }
+  }
+
+  const openPdf = async (download) => {
+    setBusy(download ? 'dl' : 'view'); onError(null)
+    try {
+      if (!m.mom_path) onUploaded(await kickoffApi.generateMom(m.id))
+      const blob = await kickoffApi.momBlob(m.id)
+      const url = URL.createObjectURL(blob)
+      if (download) {
+        const a = document.createElement('a')
+        a.href = url; a.download = `MOM-${m.id}.pdf`
+        document.body.appendChild(a); a.click(); a.remove()
+      } else {
+        window.open(url, '_blank', 'noopener')
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 60000)
+    } catch (err) {
+      onError(err?.response?.data?.message || 'Could not open the MOM PDF.')
+    } finally { setBusy(null) }
   }
 
   return (
     <div className="pr-glass" style={{ padding: 20 }}>
       <SectionTitle icon={FileText}>Minutes document</SectionTitle>
+
       {m.mom_path ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12, padding: '11px 13px', borderRadius: 11, background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.3)' }}>
           <FileText size={16} style={{ color: '#10b981', flexShrink: 0 }} />
-          <span style={{ fontSize: 12.5, color: 'var(--text-h)', flex: 1 }}>Document uploaded</span>
+          <span style={{ fontSize: 12.5, color: 'var(--text-h)', flex: 1 }}>MOM document ready</span>
           <label style={{ fontSize: 11.5, fontWeight: 700, color: '#a78bfa', cursor: 'pointer' }}>
             Replace<input type="file" accept=".pdf,.doc,.docx" onChange={pick} style={{ display: 'none' }} />
           </label>
         </div>
       ) : (
-        <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7, marginTop: 12, padding: '20px', borderRadius: 12, cursor: 'pointer',
+        <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7, marginTop: 12, padding: '18px', borderRadius: 12, cursor: 'pointer',
           background: 'linear-gradient(150deg, rgba(124,58,237,.1), rgba(124,58,237,.03))', border: '1.5px dashed rgba(124,58,237,.4)' }}>
-          {busy ? <Loader2 size={22} style={{ color: '#a78bfa' }} className="ko-spin" /> : <Upload size={22} style={{ color: '#a78bfa' }} />}
-          <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-h)' }}>{busy ? 'Uploading…' : 'Upload minutes (PDF/DOC)'}</span>
-          <input type="file" accept=".pdf,.doc,.docx" onChange={pick} disabled={busy} style={{ display: 'none' }} />
+          {busy === 'upload' ? <Loader2 size={22} style={{ color: '#a78bfa' }} className="ko-spin" /> : <Upload size={22} style={{ color: '#a78bfa' }} />}
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-h)' }}>{busy === 'upload' ? 'Uploading…' : 'Upload minutes (PDF/DOC)'}</span>
+          <input type="file" accept=".pdf,.doc,.docx" onChange={pick} disabled={busy === 'upload'} style={{ display: 'none' }} />
         </label>
       )}
+
+      {/* Generate / View / Download */}
+      <div style={{ display: 'grid', gridTemplateColumns: m.mom_path ? '1fr 1fr' : '1fr', gap: 8, marginTop: 10 }}>
+        <MomBtn onClick={generate} busy={busy === 'gen'} icon={Sparkles} tone="#7C3AED">{m.mom_path ? 'Regenerate PDF' : 'Generate PDF'}</MomBtn>
+        {m.mom_path && <MomBtn onClick={() => openPdf(false)} busy={busy === 'view'} icon={Eye} tone="#10b981">View PDF</MomBtn>}
+      </div>
+      {m.mom_path && (
+        <MomBtn onClick={() => openPdf(true)} busy={busy === 'dl'} icon={Download} tone="#0ea5e9" full>Download PDF</MomBtn>
+      )}
+
       <style>{`@keyframes koSpin{to{transform:rotate(360deg)}}.ko-spin{animation:koSpin .9s linear infinite}`}</style>
     </div>
+  )
+}
+
+function MomBtn({ onClick, busy, icon: Icon, tone, full, children }) {
+  return (
+    <button onClick={onClick} disabled={busy}
+      style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '9px 12px', borderRadius: 10, cursor: busy ? 'wait' : 'pointer',
+        width: full ? '100%' : undefined, marginTop: full ? 8 : 0,
+        fontSize: 12.5, fontWeight: 700, color: tone, background: `${tone}14`, border: `1px solid ${tone}44` }}>
+      {busy ? <Loader2 size={14} className="ko-spin" /> : <Icon size={14} />} {children}
+    </button>
   )
 }
 
@@ -312,6 +395,120 @@ function TransitionModal({ m, to, onClose, onDone }) {
       </div>
       <ModalFooter onClose={onClose} onConfirm={save} loading={saving} confirmLabel={actionLabel(m.status, to)} color={tc.color === '#94a3b8' ? '#7C3AED' : tc.color} />
     </Overlay>
+  )
+}
+
+/* ── Online Meeting card ──────────────────────────────────────────────────────
+ * Shown below the Schedule card when mode = 'online'.
+ * States:
+ *   1. linkData present  → show link, Copy + Open buttons, passcode/ID
+ *   2. linkData absent   → show "Generate Meeting Link" button
+ *   3. busy              → spinner
+ */
+const PLATFORM_LABELS = {
+  google_meet: 'Google Meet',
+  zoom:        'Zoom',
+  teams:       'Microsoft Teams',
+  stub:        'Generic Link',
+}
+const PLATFORM_COLORS = {
+  google_meet: '#4285F4',
+  zoom:        '#2D8CFF',
+  teams:       '#6264A7',
+  stub:        '#a78bfa',
+}
+
+function OnlineMeetingCard({ meeting, linkData, busy, onGenerate }) {
+  const [copied, setCopied] = useState(false)
+
+  const copy = () => {
+    if (!linkData?.link) return
+    navigator.clipboard?.writeText(linkData.link)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  const platform    = linkData?.platform ?? meeting.meeting_platform ?? 'stub'
+  const color       = PLATFORM_COLORS[platform] ?? '#a78bfa'
+  const platformLbl = PLATFORM_LABELS[platform]  ?? platform
+
+  return (
+    <div className="pr-glass" style={{ padding: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+        <Video size={15} style={{ color: '#a78bfa' }} />
+        <h2 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: 'var(--text-h)' }}>Online Meeting</h2>
+        <span style={{ marginLeft: 'auto', padding: '3px 10px', borderRadius: 999, fontSize: 11, fontWeight: 800, background: `${color}18`, color, border: `1px solid ${color}44` }}>
+          {platformLbl}
+        </span>
+      </div>
+
+      {busy ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '14px', borderRadius: 12, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+          <Loader2 size={16} className="ko-spin" style={{ color: '#a78bfa' }} />
+          <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Generating meeting link…</span>
+        </div>
+      ) : linkData?.link ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {/* Link row */}
+          <div style={{ display: 'flex', gap: 7 }}>
+            <input
+              readOnly
+              value={linkData.link}
+              style={{ flex: 1, padding: '9px 11px', borderRadius: 9, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)', fontSize: 12, fontFamily: 'monospace', minWidth: 0 }}
+            />
+            <button
+              onClick={copy}
+              title="Copy link"
+              style={{ padding: '0 12px', borderRadius: 9, cursor: 'pointer', background: copied ? 'rgba(16,185,129,0.1)' : 'var(--bg-card)', border: `1px solid ${copied ? 'rgba(16,185,129,0.4)' : 'var(--border)'}`, color: copied ? '#10b981' : 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, transition: 'all .15s ease' }}
+            >
+              <Copy size={13} /> {copied ? 'Copied!' : 'Copy'}
+            </button>
+            <a
+              href={linkData.link}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ padding: '0 12px', borderRadius: 9, cursor: 'pointer', background: `${color}14`, border: `1px solid ${color}44`, color, display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, textDecoration: 'none' }}
+            >
+              <ExternalLink size={13} /> Open
+            </a>
+          </div>
+
+          {/* Meta row */}
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            {linkData.id && (
+              <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                ID: <strong style={{ color: 'var(--text-h)', fontFamily: 'monospace' }}>{linkData.id}</strong>
+              </span>
+            )}
+            {linkData.passcode && (
+              <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                Passcode: <strong style={{ color: 'var(--text-h)', fontFamily: 'monospace' }}>{linkData.passcode}</strong>
+              </span>
+            )}
+          </div>
+
+          {/* Regenerate */}
+          <button
+            onClick={() => onGenerate(platform)}
+            style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 13px', borderRadius: 9, cursor: 'pointer', fontSize: 11.5, fontWeight: 700, color: 'var(--text-muted)', background: 'var(--bg-card)', border: '1px solid var(--border)' }}
+          >
+            <Video size={12} /> Regenerate link
+          </button>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: 0, lineHeight: 1.5 }}>
+            No meeting link has been generated yet. Click below to create one.
+          </p>
+          <button
+            onClick={() => onGenerate(platform)}
+            style={{ ...solidBtn, alignSelf: 'flex-start' }}
+          >
+            <Video size={15} /> Generate Meeting Link
+          </button>
+        </div>
+      )}
+    </div>
   )
 }
 

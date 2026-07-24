@@ -141,7 +141,7 @@ export default function TPVRegisterPage() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit(d => console.log(d))} className="p-5">
+        <form onSubmit={handleSubmit(onSubmit)} className="p-5">
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
 
             {/* ── LEFT ── ACCOUNT USER INFORMATION ── */}
@@ -240,6 +240,14 @@ export default function TPVRegisterPage() {
               </Field>
             </div>
           </div>
+
+          {/* Server-side error (duplicate email, validation, etc.) */}
+          {apiError && (
+            <div className="mt-4 px-4 py-3 rounded-xl text-sm"
+                 style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', color: '#fca5a5' }}>
+              {apiError}
+            </div>
+          )}
 
           {/* Terms & Submit */}
           <div className="mt-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4

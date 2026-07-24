@@ -14,7 +14,9 @@ class HrEmployee extends Model
     protected $fillable = [
         'tenant_id','user_id','candidate_id','onboarding_id','employee_code',
         'name','email','phone','dob','gender','address','department','designation',
-        'reporting_manager_name','joining_date','probation_end_date','confirmation_date','status',
+        'department_id','designation_id','grade_id','job_role_id',
+        'reporting_manager_name','reporting_manager_id',
+        'joining_date','probation_end_date','confirmation_date','status',
     ];
 
     protected $casts = [
@@ -53,6 +55,37 @@ class HrEmployee extends Model
     public function employeeOnboarding()
     {
         return $this->hasOne(HrEmployeeOnboarding::class, 'employee_id');
+    }
+
+    /*
+     | Organization Setup links (nullable). These sit alongside the legacy
+     | free-text department / designation / reporting_manager_name columns —
+     | reads that still use the strings keep working; new code prefers the FKs.
+     */
+    public function departmentRef()
+    {
+        return $this->belongsTo(HrDepartment::class, 'department_id');
+    }
+
+    public function designationRef()
+    {
+        return $this->belongsTo(HrDesignation::class, 'designation_id');
+    }
+
+    public function grade()
+    {
+        return $this->belongsTo(HrGrade::class, 'grade_id');
+    }
+
+    public function jobRole()
+    {
+        return $this->belongsTo(HrJobRole::class, 'job_role_id');
+    }
+
+    /** Reporting manager (another employee), when linked by id. */
+    public function reportingManager()
+    {
+        return $this->belongsTo(HrEmployee::class, 'reporting_manager_id');
     }
 
     /*

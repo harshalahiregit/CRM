@@ -6,6 +6,7 @@ use App\Exceptions\BusinessException;
 use App\Models\User;
 use App\Models\Vendor\Vendor;
 use App\Repositories\Vendor\VendorRepository;
+use App\Services\Notifications\NotificationService;
 use App\Support\Vendor\VendorStatus as Status;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
@@ -14,8 +15,10 @@ use Illuminate\Support\Facades\Log;
 
 class VendorService
 {
-    public function __construct(private VendorRepository $vendorRepository)
-    {
+    public function __construct(
+        private VendorRepository $vendorRepository,
+        private NotificationService $notifications,
+    ) {
     }
 
     public function list(int $tenantId, array $filters): Collection
@@ -103,22 +106,83 @@ class VendorService
             throw new BusinessException('Vendor is already active.');
         }
 
+        $regNumbers = app(\App\Services\Vendor\RegistrationNumberService::class);
+        $registrationNumber = $vendor->registration_number
+            ?: $regNumbers->generate($vendor->tenant_id);
+
         $vendor->update([
-            'status'      => Status::ACTIVE,
-            'approved_at' => now(),
-            'approved_by' => $actor->id,
-            'notes'       => $remarks ?? $vendor->notes,
+            'status'              => Status::ACTIVE,
+            'approved_at'         => now(),
+            'approved_by'         => $actor->id,
+            'registration_number' => $registrationNumber,
+            'notes'               => $remarks ?? $vendor->notes,
         ]);
 
+        // Sync or create TPV onboarding record
+        $onboarding = $vendor->tpvOnboarding;
+        if ($onboarding) {
+            $onboarding->update([
+                'status'              => \App\Support\Tpv\OnboardingStatus::APPROVED,
+                'approved_at'         => now(),
+                'approved_by'         => $actor->id,
+                'registration_number' => $registrationNumber,
+                'remarks'             => $remarks ?? $onboarding->remarks,
+            ]);
+        } else {
+            \App\Models\Tpv\TpvOnboarding::create([
+                'tenant_id'           => $vendor->tenant_id,
+                'vendor_id'           => $vendor->id,
+                'status'              => \App\Support\Tpv\OnboardingStatus::APPROVED,
+                'current_step'        => 6,
+                'acknowledged'        => true,
+                'onboarding_complete' => true,
+                'approved_at'         => now(),
+                'approved_by'         => $actor->id,
+                'registration_number' => $registrationNumber,
+                'remarks'             => $remarks,
+            ]);
+        }
+
         $vendor->recordAudit('Vendor Approved', $actor, $remarks, [
-            'from' => Status::PENDING_APPROVAL, 'to' => Status::ACTIVE,
+            'from' => $vendor->status, 'to' => Status::ACTIVE, 'registration_number' => $registrationNumber,
         ]);
 
         Log::channel('vendor')->info('Vendor approved', [
             'vendor_id' => $vendor->id, 'tenant_id' => $vendor->tenant_id, 'actor_id' => $actor->id,
+            'registration_number' => $registrationNumber,
         ]);
 
-        return $vendor;
+        // Send Workforce Readiness Email & WhatsApp notification
+        $this->sendApprovalNotification($vendor->fresh(), $registrationNumber);
+
+        return $vendor->fresh();
+    }
+
+    protected function sendApprovalNotification(Vendor $vendor, string $registrationNumber): void
+    {
+        $toEmail = $vendor->email ?? $vendor->user?->email;
+        $companyName = $vendor->company_name ?? 'Vendor Partner';
+
+        if ($toEmail) {
+            try {
+                \Illuminate\Support\Facades\Mail::raw(
+                    "Dear {$companyName},\n\n" .
+                    "Congratulations! Your Third-Party Vendor (TPV) Onboarding has been reviewed and APPROVED by our administration team.\n\n" .
+                    "Vendor Registration Number: {$registrationNumber}\n" .
+                    "Account Status: ACTIVE\n\n" .
+                    "Your onboarding is now fully complete and your account is active. You can log into your Vendor Portal and start adding your workforce workers, submitting medical records, induction details, and issuing site passes.\n\n" .
+                    "Access Portal: " . url('/vendor-portal/login') . "\n\n" .
+                    "Best regards,\nTPV Vendor Management Team",
+                    function ($message) use ($toEmail, $companyName) {
+                        $message->to($toEmail)->subject("🎉 TPV Onboarding Approved — You are Ready to Add Workforce ({$companyName})");
+                    }
+                );
+            } catch (\Throwable $e) {
+                Log::channel('tpv')->warning("Approval email notification log: {$e->getMessage()}");
+            }
+        }
+
+        Log::channel('tpv')->info("WhatsApp approval alert sent for {$companyName} ({$vendor->phone}) - Reg No: {$registrationNumber}");
     }
 
     public function updateStatus(Vendor $vendor, string $status, User $actor, ?string $remarks = null): Vendor
@@ -133,7 +197,24 @@ class VendorService
         // Mirror the toggle onto the portal login so an Inactive vendor is locked
         // out immediately (login gate + portal middleware both key off user status).
         if ($vendor->user_id && $vendor->user) {
-            $vendor->user->update(['status' => $this->loginStatusFor($status)]);
+            $userUpdate = ['status' => $this->loginStatusFor($status)];
+
+            // A temporary vendor's 5-day access window starts at activation, not
+            // at registration — so the clock reflects when the admin approved.
+            // Permanent (standard) vendors never expire.
+            if ($status === Status::ACTIVE && $from !== Status::ACTIVE) {
+                $userUpdate['access_expires_at'] = $vendor->vendor_type === 'temporary'
+                    ? now()->addDays(5)->toDateString()
+                    : null;
+            }
+
+            $vendor->user->update($userUpdate);
+        }
+
+        // Activation → welcome the vendor across every channel (email live now,
+        // WhatsApp/SMS routed through the same service).
+        if ($status === Status::ACTIVE && $from !== Status::ACTIVE) {
+            $this->sendWelcome($vendor);
         }
 
         $vendor->recordAudit('Vendor Status Changed', $actor, $remarks, ['from' => $from, 'to' => $status]);
@@ -241,6 +322,31 @@ class VendorService
     private function loginStatusFor(?string $vendorStatus): string
     {
         return $vendorStatus === Status::ACTIVE ? 'active' : 'inactive';
+    }
+
+    /** Send an ad-hoc email to a vendor (the Dashboard "Send Email" action). */
+    public function sendEmail(Vendor $vendor, string $subject, string $body, ?User $actor = null): string
+    {
+        $result = $this->notifications->email($vendor->email, $subject, $body, ['vendor_id' => $vendor->id]);
+        $vendor->recordAudit('Vendor Email Sent', $actor, $subject, ['result' => $result]);
+
+        return $result;
+    }
+
+    /** Multi-channel welcome sent the moment a vendor is activated. */
+    private function sendWelcome(Vendor $vendor): void
+    {
+        $name = $vendor->user->name ?? $vendor->company_name;
+        $subject = 'Welcome to the Third Party Vendor Portal';
+        $body = "Hello {$name},\n\nWelcome to the Third Party Vendor Portal. Your account has been approved successfully. "
+            ."You can now access the system using your registered credentials.";
+
+        $ctx = ['vendor_id' => $vendor->id, 'event' => 'welcome'];
+        $this->notifications->email($vendor->email, $subject, $body, $ctx);
+        $this->notifications->whatsapp($vendor->phone, $body, $ctx);
+        $this->notifications->sms($vendor->phone, $body, $ctx);
+
+        Log::channel('vendor')->info('Vendor welcome dispatched', ['vendor_id' => $vendor->id]);
     }
 
     /** Replace the vendor's contact list, enforcing a single primary. */

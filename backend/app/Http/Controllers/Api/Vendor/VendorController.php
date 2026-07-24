@@ -36,7 +36,7 @@ class VendorController extends Controller
     {
         $this->assertTenant($request, $vendor);
 
-        return response()->json($vendor->load(['contacts', 'documents', 'accountManager:id,name', 'user:id,name,email,status']));
+        return response()->json($vendor->load(['contacts', 'documents', 'tpvOnboarding', 'accountManager:id,name', 'user:id,name,email,status']));
     }
 
     public function update(Request $request, Vendor $vendor, UpdateVendorRequest $updateRequest)
@@ -86,6 +86,21 @@ class VendorController extends Controller
     public function stats(Request $request)
     {
         return response()->json($this->vendorService->stats($request->user()->tenant_id));
+    }
+
+    /** Dashboard "Send Email" action — an ad-hoc message to the vendor. */
+    public function sendEmail(Request $request, Vendor $vendor)
+    {
+        $this->assertTenant($request, $vendor);
+
+        $data = $request->validate([
+            'subject' => 'required|string|max:200',
+            'body'    => 'required|string|max:5000',
+        ]);
+
+        $result = $this->vendorService->sendEmail($vendor, $data['subject'], $data['body'], $request->user());
+
+        return response()->json(['status' => 'success', 'result' => $result]);
     }
 
     private function assertTenant(Request $request, Vendor $vendor): void

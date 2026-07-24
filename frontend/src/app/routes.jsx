@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { ProtectedRoute, GuestRoute } from '@/router/ProtectedRoute'
 import AppShell from '@/components/layout/AppShell'
 import { Suspense, lazy } from 'react'
+import { useAuth } from '@/context/AuthContext'
 
 // Auth pages (eager)
 import LoginPage from '@/pages/auth/LoginPage'
@@ -13,6 +14,7 @@ import PendingApprovalPage from '@/pages/auth/PendingApprovalPage'
 
 // Core pages (lazy)
 const DashboardPage = lazy(() => import('@/pages/dashboard/DashboardPage'))
+const ActiveSessions = lazy(() => import('@/pages/settings/ActiveSessions'))
 const ModulesPage = lazy(() => import('@/pages/modules/ModulesPage'))
 
 // Company Portal (lazy)
@@ -32,6 +34,7 @@ const OnboardingPortal = lazy(() => import('@/pages/careers/OnboardingPortal'))
 const OfferPortal = lazy(() => import('@/pages/careers/OfferPortal'))
 const HiringRequestPortal = lazy(() => import('@/pages/careers/HiringRequestPortal'))
 const ClientTrackingPortal = lazy(() => import('@/pages/careers/ClientTrackingPortal'))
+const PublicScanAccess = lazy(() => import('@/pages/public/PublicScanAccess'))
 
 // HR Module (lazy)
 const HRLayout = lazy(() => import('@/modules/hr/HRLayout'))
@@ -52,6 +55,7 @@ const RecruitmentServices = lazy(() => import('@/modules/hr/pages/RecruitmentSer
 const RecruiterWorkspace = lazy(() => import('@/modules/hr/pages/RecruiterWorkspace'))
 const CompanyApprovals = lazy(() => import('@/modules/hr/pages/CompanyApprovals'))
 const Attendance = lazy(() => import('@/modules/hr/pages/Attendance'))
+const OrganizationSetup = lazy(() => import('@/modules/hr/pages/OrganizationSetup'))
 const EmployeeOnboarding = lazy(() => import('@/modules/hr/pages/EmployeeOnboarding'))
 const EmployeeOnboardingDetail = lazy(() => import('@/modules/hr/pages/EmployeeOnboardingDetail'))
 
@@ -92,11 +96,17 @@ const TPVLayout = lazy(() => import('@/modules/tpv/TPVLayout'))
 const TpvVendors = lazy(() => import('@/modules/tpv/pages/TpvVendors'))
 const TpvVendorDetail = lazy(() => import('@/modules/tpv/pages/TpvVendorDetail'))
 const TpvOnboardings = lazy(() => import('@/modules/tpv/pages/TpvOnboardings'))
+const TpvTemporaryVendors = lazy(() => import('@/modules/tpv/pages/TpvTemporaryVendors'))
+const TpvApprovals = lazy(() => import('@/modules/tpv/pages/TpvApprovals'))
 const TpvOnboardingWizard = lazy(() => import('@/modules/tpv/pages/TpvOnboardingWizard'))
 const TpvWorkers = lazy(() => import('@/modules/tpv/pages/TpvWorkers'))
 const TpvWorkerWizard = lazy(() => import('@/modules/tpv/pages/TpvWorkerWizard'))
 const TpvGateLog = lazy(() => import('@/modules/tpv/pages/TpvGateLog'))
 const TpvStrikes = lazy(() => import('@/modules/tpv/pages/TpvStrikes'))
+// Vendor-scoped Workforce workspace — its own rail, entered after Onboarding Step-6.
+const WorkforceLayout = lazy(() => import('@/modules/tpv/WorkforceLayout'))
+const WorkforceDashboard = lazy(() => import('@/modules/tpv/pages/WorkforceDashboard'))
+const WorkforceAttendance = lazy(() => import('@/modules/tpv/pages/WorkforceAttendance'))
 
 // Public site-gate screen (lazy, no auth — the badge QR token is the credential)
 const GateScan = lazy(() => import('@/pages/gate/GateScan'))
@@ -112,6 +122,7 @@ const ChecklistDetail = lazy(() => import('@/modules/compliance/pages/ChecklistD
 // Built polymorphically so Shivam's Project&Task module can attach without a
 // second table.
 const KickoffMeetings = lazy(() => import('@/modules/shared/pages/KickoffMeetings'))
+const KickoffMeetingCreate = lazy(() => import('@/modules/shared/pages/KickoffMeetingCreate'))
 const KickoffMeetingDetail = lazy(() => import('@/modules/shared/pages/KickoffMeetingDetail'))
 const KickoffAck = lazy(() => import('@/pages/kickoff/KickoffAck'))
 
@@ -122,6 +133,7 @@ const PortalDashboard = lazy(() => import('@/pages/vendor-portal/PortalDashboard
 const PortalDocuments = lazy(() => import('@/pages/vendor-portal/PortalDocuments'))
 const PortalOrderDetail = lazy(() => import('@/pages/vendor-portal/PortalOrderDetail'))
 const PortalInvoiceDetail = lazy(() => import('@/pages/vendor-portal/PortalInvoiceDetail'))
+const PortalWorkforceShell = lazy(() => import('@/pages/vendor-portal/PortalWorkforceShell'))
 
 function ComingSoon({ name }) {
   return (
@@ -159,10 +171,20 @@ function PageLoader() {
 
 const S = ({ children }) => <Suspense fallback={<PageLoader />}>{children}</Suspense>
 
+// Smart root redirect — sends each role to the correct landing page.
+function RootRedirect() {
+  const { isAuthenticated, user } = useAuth()
+  if (!isAuthenticated) return <Navigate to="/auth/login" replace />
+  const role = user?.role
+  if (role === 'vendor' || role === 'third_party_vendor') return <Navigate to="/vendor-portal/dashboard" replace />
+  if (role === 'company') return <Navigate to="/company-portal/dashboard" replace />
+  return <Navigate to="/app/dashboard" replace />
+}
+
 export default function AppRoutes() {
   return (
     <Routes>
-      <Route path="/" element={<Navigate to="/app/dashboard" replace />} />
+      <Route path="/" element={<RootRedirect />} />
 
       {/* Auth routes */}
       <Route path="/auth">
@@ -193,10 +215,11 @@ export default function AppRoutes() {
       {/* Public kickoff-minutes acknowledgement — no auth, token is the credential. */}
       <Route path="/kickoff/ack/:token" element={<S><KickoffAck /></S>} />
 
-      {/* Protected app routes */}
-      <Route path="/app" element={<ProtectedRoute><AppShell /></ProtectedRoute>}>
+      {/* Protected app routes — internal staff only */}
+      <Route path="/app" element={<ProtectedRoute roles={['admin', 'staff', 'manager']}><AppShell /></ProtectedRoute>}>
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="dashboard" element={<S><DashboardPage /></S>} />
+        <Route path="sessions" element={<S><ActiveSessions /></S>} />
         <Route path="modules" element={<S><ModulesPage /></S>} />
 
         {/* ADMIN MODULE (Admin Only) */}
@@ -224,6 +247,7 @@ export default function AppRoutes() {
           <Route path="recruiter-workspace" element={<S><RecruiterWorkspace /></S>} />
           <Route path="company-approvals" element={<S><CompanyApprovals /></S>} />
           <Route path="attendance" element={<S><Attendance /></S>} />
+          <Route path="organization-setup" element={<S><OrganizationSetup /></S>} />
           <Route path="employee-onboarding" element={<S><EmployeeOnboarding /></S>} />
           <Route path="employee-onboarding/:id" element={<S><EmployeeOnboardingDetail /></S>} />
         </Route>
@@ -273,9 +297,12 @@ export default function AppRoutes() {
           <Route path="dashboard" element={<S><TpvVendors /></S>} />
           <Route path="view/:id" element={<S><TpvVendorDetail /></S>} />
           <Route path="kickoff" element={<S><KickoffMeetings /></S>} />
+          <Route path="kickoff/new" element={<S><KickoffMeetingCreate /></S>} />
           <Route path="kickoff/:id" element={<S><KickoffMeetingDetail /></S>} />
           <Route path="onboarding" element={<S><TpvOnboardings /></S>} />
           <Route path="onboarding/:id" element={<S><TpvOnboardingWizard /></S>} />
+          <Route path="temporary" element={<S><TpvTemporaryVendors /></S>} />
+          <Route path="approvals" element={<S><TpvApprovals /></S>} />
           <Route path="documents" element={<ComingSoon name="Vendor Documents" />} />
           <Route path="workforce" element={<S><TpvWorkers /></S>} />
           <Route path="workforce/:id" element={<S><TpvWorkerWizard /></S>} />
@@ -283,6 +310,19 @@ export default function AppRoutes() {
           <Route path="compliance/templates/:id" element={<S><TemplateBuilder /></S>} />
           <Route path="compliance/checklists/:id" element={<S><ChecklistDetail /></S>} />
           <Route path="gate-log" element={<S><TpvGateLog /></S>} />
+          <Route path="strikes" element={<S><TpvStrikes /></S>} />
+        </Route>
+
+        {/* WORKFORCE — vendor-scoped workspace (own rail), entered from Onboarding Step-6.
+            Sibling of the TPV rail so it swaps in its own ModuleShell. Reuses the
+            existing Workers/Wizard/GateLog/Strikes screens, scoped to :vendorId. */}
+        <Route path="tpv/workforce/vendor/:vendorId" element={<S><WorkforceLayout /></S>}>
+          <Route index element={<Navigate to="dashboard" replace />} />
+          <Route path="dashboard" element={<S><WorkforceDashboard /></S>} />
+          <Route path="workers" element={<S><TpvWorkers /></S>} />
+          <Route path="workers/:id" element={<S><TpvWorkerWizard /></S>} />
+          <Route path="gate-log" element={<S><TpvGateLog /></S>} />
+          <Route path="attendance" element={<S><WorkforceAttendance /></S>} />
           <Route path="strikes" element={<S><TpvStrikes /></S>} />
         </Route>
 
@@ -302,15 +342,36 @@ export default function AppRoutes() {
         <Route path="settings/*" element={<ComingSoon name="Settings" />} />
       </Route>
 
-      {/* Vendor Self-Service Portal — vendor / third_party_vendor only. */}
+      {/* Vendor Self-Service Portal — vendor / third_party_vendor only.
+          Purchase-side vendors see Dashboard + Documents + Orders + Invoices.
+          Third-party vendors see Dashboard + Onboarding (always) + Workforce (after activation).
+          All data is scoped server-side from the auth token — no vendor id in any URL. */}
       <Route path="/vendor-portal" element={
         <ProtectedRoute roles={['vendor', 'third_party_vendor']}><S><VendorPortalShell /></S></ProtectedRoute>
       }>
         <Route index element={<Navigate to="dashboard" replace />} />
-        <Route path="dashboard" element={<S><PortalDashboard /></S>} />
-        <Route path="documents" element={<S><PortalDocuments /></S>} />
-        <Route path="orders/:id" element={<S><PortalOrderDetail /></S>} />
-        <Route path="invoices/:id" element={<S><PortalInvoiceDetail /></S>} />
+        <Route path="dashboard"         element={<S><PortalDashboard /></S>} />
+
+        {/* TPV Onboarding — reuses existing TpvOnboardings list + TpvOnboardingWizard exactly.
+            Pages detect user.role === 'third_party_vendor' and switch to portalApi. */}
+        <Route path="onboarding"        element={<S><TpvOnboardings /></S>} />
+        <Route path="onboarding/:id"    element={<S><TpvOnboardingWizard /></S>} />
+
+        {/* TPV Workforce — PortalWorkforceShell resolves vendor from token (no :vendorId in URL). */}
+        <Route path="workforce" element={<S><PortalWorkforceShell /></S>}>
+          <Route index element={<Navigate to="dashboard" replace />} />
+          <Route path="dashboard"   element={<S><WorkforceDashboard /></S>} />
+          <Route path="workers"     element={<S><TpvWorkers /></S>} />
+          <Route path="workers/:id" element={<S><TpvWorkerWizard /></S>} />
+          <Route path="gate-log"    element={<S><TpvGateLog /></S>} />
+          <Route path="attendance"  element={<S><WorkforceAttendance /></S>} />
+          <Route path="strikes"     element={<S><TpvStrikes /></S>} />
+        </Route>
+
+        {/* Purchase-side vendor routes (vendor role only) */}
+        <Route path="documents"         element={<S><PortalDocuments /></S>} />
+        <Route path="orders/:id"        element={<S><PortalOrderDetail /></S>} />
+        <Route path="invoices/:id"      element={<S><PortalInvoiceDetail /></S>} />
       </Route>
 
       {/* External Company Portal — company accounts only. Sprint 1: Dashboard live;
@@ -326,6 +387,9 @@ export default function AppRoutes() {
         <Route path="profile" element={<S><CompanyProfile /></S>} />
         <Route path="settings" element={<S><CompanySettings /></S>} />
       </Route>
+
+      {/* Public Standalone QR Scan Verification Page */}
+      <Route path="/scan-access/:token" element={<S><PublicScanAccess /></S>} />
 
       <Route path="*" element={
         <div className="flex flex-col items-center justify-center min-h-screen gap-4" style={{ background: 'var(--bg-global)' }}>

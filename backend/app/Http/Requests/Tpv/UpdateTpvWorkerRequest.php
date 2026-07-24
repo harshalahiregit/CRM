@@ -14,19 +14,21 @@ class UpdateTpvWorkerRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'vendor_id'         => 'sometimes|required|integer|exists:vendors,id',
+            'vendor_id'         => 'nullable|integer',
             'name'              => 'sometimes|required|string|max:120',
-            'dob'               => 'nullable|date|before:today',
-            'gender'            => 'nullable|in:Male,Female,Other,Prefer not to say',
+            'dob'               => 'nullable|date',
+            'gender'            => 'nullable|string',
             'designation'       => 'nullable|string|max:120',
-            'skill_category'    => 'nullable|in:Skilled,Semi_Skilled,Unskilled,Supervisor',
-            'aadhar_number'     => 'nullable|digits:12',
+            'skill_category'    => 'nullable|string',
+            'aadhar_number'     => 'nullable|string',
             'mobile'            => 'nullable|string|max:20',
             'blood_group'       => 'nullable|string|max:8',
             'address'           => 'nullable|string',
             'emergency_contact' => 'nullable|string|max:120',
             'emergency_phone'   => 'nullable|string|max:20',
             'remarks'           => 'nullable|string',
+            'age_reason'        => 'nullable|string',
+            'email'             => 'nullable|string',
         ];
     }
 }

@@ -4,7 +4,7 @@ import { useTheme } from '@/context/ThemeContext'
 import { hrApi } from '@/services/hrApi'
 import {
   LayoutDashboard, ClipboardList, Briefcase, Users,
-  Calendar, FileText, Rocket, Building2, ChevronRight, ArrowLeft, ArrowRight, CalendarCheck, Network, Headset, BadgeCheck, UserCheck
+  Calendar, FileText, Rocket, Building2, ChevronRight, ArrowLeft, ArrowRight, CalendarCheck, Network, Boxes, Headset, BadgeCheck, UserCheck
 } from 'lucide-react'
 
 // ── The numbered Recruitment Pipeline (unchanged: same order, routes, full
@@ -32,6 +32,7 @@ const PIPELINE = [
 ]
 
 const SUPPORTING = [
+  { label: 'Organization Setup',   path: '/app/hr/organization-setup',   icon: Boxes },
   { label: 'Recruitment Services', path: '/app/hr/recruitment-services', icon: Network },
   { label: 'Recruiter Desk',       path: '/app/hr/recruiter-workspace',  icon: Headset },
   { label: 'Company Approvals',    path: '/app/hr/company-approvals',    icon: BadgeCheck },

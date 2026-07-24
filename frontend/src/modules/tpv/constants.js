@@ -8,19 +8,21 @@ export const OB_STATUS = {
   SUBMITTED:         'Submitted',
   UNDER_REVIEW:      'Under_Review',
   RESUBMIT_REQUIRED: 'Resubmit_Required',
+  ON_HOLD:           'On_Hold',
   APPROVED:          'Approved',
   REJECTED:          'Rejected',
 }
 export const OB_STATUS_CONFIG = {
   [OB_STATUS.DRAFT]:             { label: 'Draft',             color: '#94a3b8', bg: 'rgba(148,163,184,0.15)' },
   [OB_STATUS.IN_PROGRESS]:       { label: 'In Progress',       color: '#0ea5e9', bg: 'rgba(14,165,233,0.15)' },
-  [OB_STATUS.SUBMITTED]:         { label: 'Submitted',         color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
+  [OB_STATUS.SUBMITTED]:         { label: 'Awaiting Review',   color: '#3b82f6', bg: 'rgba(59,130,246,0.15)' },
   [OB_STATUS.UNDER_REVIEW]:      { label: 'Under Review',      color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
   [OB_STATUS.RESUBMIT_REQUIRED]: { label: 'Resubmit Required', color: '#ef4444', bg: 'rgba(239,68,68,0.15)' },
+  [OB_STATUS.ON_HOLD]:           { label: 'On Hold',           color: '#b45309', bg: 'rgba(245,158,11,0.15)' },
   [OB_STATUS.APPROVED]:          { label: 'Approved',          color: '#10b981', bg: 'rgba(16,185,129,0.15)' },
   [OB_STATUS.REJECTED]:          { label: 'Rejected',          color: '#ef4444', bg: 'rgba(239,68,68,0.15)' },
 }
-export const obStatusCfg = (s) => OB_STATUS_CONFIG[s] || OB_STATUS_CONFIG[OB_STATUS.DRAFT]
+export const obStatusCfg = (s) => OB_STATUS_CONFIG[s] || { label: s || 'Draft', color: '#94a3b8', bg: 'rgba(148,163,184,0.15)' }
 
 // Statuses where the vendor may still edit (mirrors TpvOnboardingStatus::EDITABLE).
 export const OB_EDITABLE = [OB_STATUS.DRAFT, OB_STATUS.IN_PROGRESS, OB_STATUS.RESUBMIT_REQUIRED]
@@ -67,6 +69,17 @@ export const WORKER_STATUS_CONFIG = {
 }
 export const workerStatusCfg = (s) => WORKER_STATUS_CONFIG[s] || WORKER_STATUS_CONFIG[WORKER_STATUS.DRAFT]
 export const isWorkerEditable = (s) => s === WORKER_STATUS.DRAFT
+
+// ── Vendor contact — App\Support\Tpv\TpvContactStatus ────────────────────────
+export const CONTACT_STATUS = {
+  ACTIVE:   'Active',
+  INACTIVE: 'Inactive',
+}
+export const CONTACT_STATUS_CONFIG = {
+  [CONTACT_STATUS.ACTIVE]:   { label: 'Active',   color: '#10b981', bg: 'rgba(16,185,129,0.15)' },
+  [CONTACT_STATUS.INACTIVE]: { label: 'Inactive', color: '#94a3b8', bg: 'rgba(148,163,184,0.15)' },
+}
+export const contactStatusCfg = (s) => CONTACT_STATUS_CONFIG[s] || CONTACT_STATUS_CONFIG[CONTACT_STATUS.INACTIVE]
 
 // ── Medical fitness — App\Support\Tpv\TpvMedicalFitness ──────────────────────
 export const FITNESS = [

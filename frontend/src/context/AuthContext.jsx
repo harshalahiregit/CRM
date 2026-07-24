@@ -11,10 +11,10 @@ export function AuthProvider({ children }) {
   const isAuthenticated = !!user && !!localStorage.getItem('crm_token')
 
   /* ── LOGIN ───────────────────────────────────────────────────────── */
-  const login = useCallback(async ({ email, password, role }) => {
+  const login = useCallback(async ({ email, password, role, remember }) => {
     setLoading(true)
     try {
-      const { data } = await api.post('/auth/login', { email, password, role })
+      const { data } = await api.post('/auth/login', { email, password, role, remember: !!remember })
       const { access_token, user: u, tenant: t } = data.data
 
       localStorage.setItem('crm_token',  access_token)

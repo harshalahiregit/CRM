@@ -217,6 +217,37 @@ export const hrApi = {
     attendance: (id, params = {}) => api.get(`/hr/employees/${id}/attendance`, { params }).then(r => r.data),
   },
 
+  // ── Organization Setup — Department / Designation / Grade / Role masters ──
+  organization: {
+    overview:  ()          => api.get('/hr/organization/overview').then(r => r.data),
+    options:   ()          => api.get('/hr/organization/options').then(r => r.data),
+    hierarchy: ()          => api.get('/hr/organization/hierarchy').then(r => r.data),
+    departments: {
+      list:   ()           => api.get('/hr/departments').then(r => r.data),
+      create: (data)       => api.post('/hr/departments', data).then(r => r.data),
+      update: (id, data)   => api.put(`/hr/departments/${id}`, data).then(r => r.data),
+      delete: (id)         => api.delete(`/hr/departments/${id}`).then(r => r.data),
+    },
+    designations: {
+      list:   ()           => api.get('/hr/designations').then(r => r.data),
+      create: (data)       => api.post('/hr/designations', data).then(r => r.data),
+      update: (id, data)   => api.put(`/hr/designations/${id}`, data).then(r => r.data),
+      delete: (id)         => api.delete(`/hr/designations/${id}`).then(r => r.data),
+    },
+    grades: {
+      list:   ()           => api.get('/hr/grades').then(r => r.data),
+      create: (data)       => api.post('/hr/grades', data).then(r => r.data),
+      update: (id, data)   => api.put(`/hr/grades/${id}`, data).then(r => r.data),
+      delete: (id)         => api.delete(`/hr/grades/${id}`).then(r => r.data),
+    },
+    roles: {
+      list:   ()           => api.get('/hr/org-roles').then(r => r.data),
+      create: (data)       => api.post('/hr/org-roles', data).then(r => r.data),
+      update: (id, data)   => api.put(`/hr/org-roles/${id}`, data).then(r => r.data),
+      delete: (id)         => api.delete(`/hr/org-roles/${id}`).then(r => r.data),
+    },
+  },
+
   attendance: {
     list:       (params = {}) => api.get('/hr/attendance', { params }).then(r => r.data),
     stats:      (params = {}) => api.get('/hr/attendance/stats', { params }).then(r => r.data),

@@ -5,11 +5,16 @@ namespace App\Services\Shared;
 use App\Exceptions\BusinessException;
 use App\Models\Shared\KickoffAttendee;
 use App\Models\Shared\KickoffMeeting;
+use App\Models\Tenant;
+use App\Models\Tpv\TpvOnboarding;
 use App\Models\User;
+use App\Models\Vendor\Vendor;
 use App\Models\Vendor\VendorContact;
 use App\Repositories\Shared\KickoffMeetingRepository;
+use App\Services\Notifications\NotificationService;
 use App\Support\Shared\KickoffStatus as Status;
 use App\Support\Shared\KickoffSubject;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -18,8 +23,10 @@ class KickoffMeetingService
 {
     private const DISK = 'kickoff_docs';
 
-    public function __construct(private KickoffMeetingRepository $repo)
-    {
+    public function __construct(
+        private KickoffMeetingRepository $repo,
+        private NotificationService $notifications,
+    ) {
     }
 
     public function list(int $tenantId, array $filters)
@@ -169,6 +176,7 @@ class KickoffMeetingService
         $path = $file->storeAs("tenant-{$meeting->tenant_id}/meeting-{$meeting->id}", $name, self::DISK);
 
         $meeting->update(['mom_path' => $path]);
+        $this->syncOnboardingPointer($meeting->kickoffable, $meeting->id);
         $meeting->recordAudit('mom_uploaded', $actor, 'Minutes of meeting uploaded');
 
         return $this->find($meeting->id, $actor->tenant_id);
@@ -184,14 +192,61 @@ class KickoffMeetingService
         if ($meeting->status !== Status::COMPLETED) {
             throw new BusinessException('Complete the meeting before sending its minutes for acknowledgement.');
         }
+        if (! $meeting->mom_path) {
+            throw new BusinessException('Generate or upload the MOM PDF before sending for acknowledgement.');
+        }
         if ($meeting->acknowledged_at) {
             throw new BusinessException('This meeting has already been acknowledged.');
         }
 
         $meeting->update(['ack_token' => Str::random(48)]);
+
+        $this->sendMomNotifications($meeting);
+
         $meeting->recordAudit('mom_published', $actor, 'Minutes sent to the vendor for acknowledgement');
 
         return $this->find($meeting->id, $actor->tenant_id);
+    }
+
+    /**
+     * Send email + WhatsApp notifications to vendor when MOM is sent for acknowledgement.
+     */
+    private function sendMomNotifications(KickoffMeeting $meeting): void
+    {
+        $meeting->loadMissing(['attendees', 'kickoffable']);
+
+        $subject = $meeting->kickoffable;
+        $vendor = null;
+        $onboarding = null;
+
+        if ($subject instanceof Vendor) {
+            $vendor = $subject;
+            $onboarding = TpvOnboarding::forTenant($meeting->tenant_id)->where('vendor_id', $vendor->id)->latest()->first();
+        } elseif ($subject instanceof TpvOnboarding) {
+            $onboarding = $subject;
+            $vendor = $onboarding->vendor;
+        }
+
+        if ($onboarding && ! $onboarding->kickoff_meeting_id) {
+            $onboarding->update(['kickoff_meeting_id' => $meeting->id]);
+        }
+
+        $email = $vendor?->email;
+        $phone = $vendor?->phone;
+
+        if (! $email && $meeting->attendees->count() > 0) {
+            $email = $meeting->attendees->firstWhere('email', '!=', null)?->email;
+        }
+
+        $subjectTitle = "Minutes of Meeting Ready: {$meeting->title}";
+        $body = "The Minutes of Meeting (MOM) for \"{$meeting->title}\" have been published and are ready for your review and acknowledgement.\n\nPlease log into the Vendor Portal (Step 1 Onboarding) to view the document and record your acknowledgement.";
+
+        if ($email) {
+            $this->notifications->email($email, $subjectTitle, $body, ['kickoff_meeting_id' => $meeting->id]);
+        }
+        if ($phone) {
+            $this->notifications->whatsapp($phone, $body, ['kickoff_meeting_id' => $meeting->id]);
+        }
     }
 
     /* ── Public acknowledgement (no auth — the token is the credential) ── */
@@ -240,7 +295,125 @@ class KickoffMeetingService
         $meeting->delete();
     }
 
+    /**
+     * Mark who actually turned up — a post-meeting edit of the attendance flags,
+     * distinct from rebuilding the roster. Only rows that belong to this meeting
+     * are touched; unknown ids are ignored rather than erroring the whole call.
+     */
+    public function markAttendance(KickoffMeeting $meeting, array $rows, User $actor): KickoffMeeting
+    {
+        $present = 0;
+        $absent  = 0;
+
+        foreach ($rows as $row) {
+            $attendee = $meeting->attendees()->whereKey($row['id'])->first();
+            if (! $attendee) {
+                continue;
+            }
+            $attended = ! empty($row['attended']);
+            $attendee->update(['attended' => $attended]);
+            $attended ? $present++ : $absent++;
+        }
+
+        $meeting->recordAudit('attendance_marked', $actor, "Attendance updated: {$present} present, {$absent} absent");
+        Log::channel('tpv')->info('Kickoff attendance marked', [
+            'meeting_id' => $meeting->id, 'actor_id' => $actor->id, 'present' => $present, 'absent' => $absent,
+        ]);
+
+        return $this->find($meeting->id, $actor->tenant_id);
+    }
+
+    /**
+     * Send a manual meeting reminder. Email is a real send; WhatsApp and SMS are
+     * stubbed (log-and-queue) upstream, so the per-channel result reports exactly
+     * what happened and the UI must not imply WhatsApp/SMS were delivered.
+     */
+    public function sendReminder(KickoffMeeting $meeting, User $actor): array
+    {
+        $meeting->loadMissing('attendees', 'kickoffable');
+
+        $subjectName = KickoffSubject::nameOf($meeting->kickoffable);
+        $when    = $meeting->scheduled_at ? $meeting->scheduled_at->format('d M Y, g:i A') : 'a date to be confirmed';
+        $where   = $meeting->location ? " at {$meeting->location}" : '';
+        $subject = "Reminder: {$meeting->title}";
+        $body    = "This is a reminder for the kickoff meeting \"{$meeting->title}\""
+            .($subjectName ? " with {$subjectName}" : '')
+            .", scheduled for {$when}{$where}.";
+
+        // Email — one per attendee that has an address.
+        $email = ['sent' => 0, 'skipped' => 0, 'failed' => 0];
+        foreach ($meeting->attendees as $attendee) {
+            $result = $this->notifications->email($attendee->email, $subject, $body, [
+                'kickoff_meeting_id' => $meeting->id,
+            ]);
+            $email[$result] = ($email[$result] ?? 0) + 1;
+        }
+
+        // WhatsApp / SMS — stubs. Directed at the vendor's phone (the attendee
+        // registry holds no numbers). 'queued' means logged, never delivered.
+        $phone    = $this->subjectPhone($meeting->kickoffable);
+        $whatsapp = $this->notifications->whatsapp($phone, $body, ['kickoff_meeting_id' => $meeting->id]);
+        $sms      = $this->notifications->sms($phone, $body, ['kickoff_meeting_id' => $meeting->id]);
+
+        $meeting->recordAudit('reminder_sent', $actor, "Reminder sent — email: {$email['sent']} sent, WhatsApp/SMS queued");
+        Log::channel('tpv')->info('Kickoff reminder sent', [
+            'meeting_id' => $meeting->id, 'actor_id' => $actor->id, 'email' => $email,
+        ]);
+
+        return [
+            'recipients' => $meeting->attendees->count(),
+            'email'      => $email,
+            'whatsapp'   => $whatsapp,
+            'sms'        => $sms,
+        ];
+    }
+
+    /**
+     * Build the Minutes-of-Meeting PDF from existing meeting data only — no new
+     * fields, just what's already recorded. Regenerating replaces the previous
+     * file so there is only ever one current MoM document.
+     */
+    public function generateMom(KickoffMeeting $meeting, User $actor): KickoffMeeting
+    {
+        $meeting->loadMissing('attendees', 'kickoffable', 'creator');
+
+        $pdf = Pdf::loadView('pdf.kickoff_mom', [
+            'meeting'     => $meeting,
+            'tenant'      => Tenant::find($meeting->tenant_id),
+            'subjectName' => KickoffSubject::nameOf($meeting->kickoffable),
+            'generatedBy' => $actor->name,
+            'generatedAt' => now(),
+        ])->setPaper('a4');
+
+        // Replace the prior document rather than orphan it on disk.
+        if ($meeting->mom_path && Storage::disk(self::DISK)->exists($meeting->mom_path)) {
+            Storage::disk(self::DISK)->delete($meeting->mom_path);
+        }
+
+        $path = "tenant-{$meeting->tenant_id}/meeting-{$meeting->id}/mom-".Str::random(12).'.pdf';
+        Storage::disk(self::DISK)->put($path, $pdf->output());
+
+        $meeting->update(['mom_path' => $path]);
+        $this->syncOnboardingPointer($meeting->kickoffable, $meeting->id);
+        $meeting->recordAudit('mom_generated', $actor, 'Minutes of meeting PDF generated');
+
+        return $this->find($meeting->id, $actor->tenant_id);
+    }
+
     /* ── internals ─────────────────────────────────────────────── */
+
+    /** The vendor phone behind a subject, for the stubbed WhatsApp/SMS channels. */
+    private function subjectPhone(?object $subject): ?string
+    {
+        if ($subject instanceof Vendor) {
+            return $subject->phone;
+        }
+        if ($subject instanceof TpvOnboarding) {
+            return $subject->vendor?->phone;
+        }
+
+        return null;
+    }
 
     /**
      * Rebuild the attendee list from the payload. A vendor_contact_id is verified
@@ -297,6 +470,14 @@ class KickoffMeetingService
     {
         if ($subject instanceof \App\Models\Tpv\TpvOnboarding) {
             $subject->update(['kickoff_meeting_id' => $meetingId]);
+        } elseif ($subject instanceof \App\Models\Vendor\Vendor) {
+            $onboarding = \App\Models\Tpv\TpvOnboarding::forTenant($subject->tenant_id)
+                ->where('vendor_id', $subject->id)
+                ->latest()
+                ->first();
+            if ($onboarding) {
+                $onboarding->update(['kickoff_meeting_id' => $meetingId]);
+            }
         }
     }
 

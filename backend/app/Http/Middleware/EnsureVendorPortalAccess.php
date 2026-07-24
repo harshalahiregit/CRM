@@ -44,7 +44,12 @@ class EnsureVendorPortalAccess
         // Resolve within the caller's tenant — a vendor login is bound to one
         // tenant, and the record must belong to it.
         $vendor = Vendor::forTenant($user->tenant_id)
-            ->where('user_id', $user->id)
+            ->where(function ($q) use ($user) {
+                $q->where('user_id', $user->id);
+                if (! empty($user->email)) {
+                    $q->orWhere('email', $user->email);
+                }
+            })
             ->first();
 
         if (! $vendor) {
@@ -52,6 +57,10 @@ class EnsureVendorPortalAccess
                 'status'  => 'error',
                 'message' => 'Your account is not linked to a vendor profile yet. Please contact the procurement team.',
             ], 403);
+        }
+
+        if (! $vendor->user_id) {
+            $vendor->update(['user_id' => $user->id]);
         }
 
         // Ambient identity for the request — endpoints and the ownership helper
