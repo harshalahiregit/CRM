@@ -384,9 +384,10 @@ export default function EmployeeProfile() {
 
         {tab==='attendance' && (
           <div>
-            {/* Explicit product decision: attendance lives in SangoeTrack, not HRMS. */}
+            {/* Explicit product decision: attendance lives in the external SangoeTrack
+                app, never in HRMS. This is only an integration placeholder. */}
             <IntegrationNote icon={Plug} title="Attendance" subtitle="Coming from SangoeTrack"
-              hint="Not available until integration. This section will consume SangoeTrack APIs only — HRMS never stores or computes attendance." big />
+              hint="(Not available until integration) — This employee's attendance will be displayed here once SangoeTrack integration is completed." big />
             <AiInsight hint="Reserved for SangoeTrack integration — will summarise attendance trends once connected." />
           </div>
         )}

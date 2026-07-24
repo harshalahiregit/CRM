@@ -4,7 +4,7 @@ import { useTheme } from '@/context/ThemeContext'
 import { hrApi } from '@/services/hrApi'
 import {
   LayoutDashboard, ClipboardList, Briefcase, Users,
-  Calendar, FileText, Rocket, Building2, ChevronRight, ArrowLeft, ArrowRight, CalendarCheck, Network, Boxes, Headset, BadgeCheck, UserCheck
+  Calendar, FileText, Rocket, Building2, ChevronRight, ArrowLeft, ArrowRight, Network, Boxes, Headset, BadgeCheck, UserCheck
 } from 'lucide-react'
 
 // ── The numbered Recruitment Pipeline (unchanged: same order, routes, full
@@ -28,7 +28,10 @@ const PIPELINE = [
   { n: 7,  label: 'Offer Letters',        short: 'Offers',          path: '/app/hr/offers',              icon: FileText,        phase: 'recruit',   ck: 'offers',        metric: 'Pending Offers'             },
   { n: 8,  label: 'Employees',            short: 'Employees',       path: '/app/hr/employees',           icon: Building2,       phase: 'lifecycle', ck: 'employees',     metric: 'Newly Joined Employees'     },
   { n: 9,  label: 'Employee Onboarding',  short: 'Emp. Onboarding', path: '/app/hr/employee-onboarding', icon: UserCheck,       phase: 'lifecycle', ck: 'empOnboarding', metric: 'Pending Employee Onboardings' },
-  { n: 10, label: 'Attendance',           short: 'Attendance',      path: '/app/hr/attendance',          icon: CalendarCheck,   phase: 'lifecycle'                                                         },
+  // Attendance is intentionally NOT an HRMS workflow step — it belongs to the
+  // external SangoeTrack app. The page + route (/app/hr/attendance) and its
+  // backend remain intact for later SangoeTrack integration; only the nav entry
+  // is removed so HRMS never presents itself as an attendance system.
 ]
 
 const SUPPORTING = [
@@ -41,7 +44,7 @@ const SUPPORTING = [
 const PHASE_BANDS = [
   { key: 'planning',  range: '1–3'  },
   { key: 'recruit',   range: '4–7'  },
-  { key: 'lifecycle', range: '8–10' },
+  { key: 'lifecycle', range: '8–9' },
 ]
 
 const num = (v) => (typeof v === 'number' ? v : null)
