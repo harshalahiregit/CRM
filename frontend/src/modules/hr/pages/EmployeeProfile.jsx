@@ -93,6 +93,7 @@ export default function EmployeeProfile() {
   const [data, setData]     = useState(null)
   const [orgOpts, setOrgOpts] = useState(null)   // reuse existing Organization Setup options (read-only)
   const [salary, setSalary] = useState(null)     // Payroll Phase 3 — current + history (read-only here)
+  const [payslips, setPayslips] = useState([])   // Payroll Phase 5 — payslip history (read-only)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [tab, setTab]       = useState('overview')
@@ -109,6 +110,8 @@ export default function EmployeeProfile() {
   useEffect(()=>{ hrApi.organization.options().then(setOrgOpts).catch(()=>{}) },[])
   // Current salary + history from Payroll Phase 3 — displayed read-only in Bank & Tax.
   useEffect(()=>{ hrApi.payroll.employeeSalary.get(id).then(setSalary).catch(()=>{}) },[id])
+  // Payslip history from Payroll Phase 5 — read-only, with PDF download.
+  useEffect(()=>{ hrApi.payroll.payslips.forEmployee(id).then(setPayslips).catch(()=>{}) },[id])
 
   const completeness = useMemo(()=> data ? computeCompleteness(data) : null, [data])
 
@@ -409,6 +412,30 @@ export default function EmployeeProfile() {
               </>
             ) : (
               <p className="text-xs px-3 py-3 rounded-xl" style={{ background:'var(--bg-input)', color:'var(--text-muted)' }}>No salary assigned yet — assign one from <b>Payroll → Employee Salary</b>.</p>
+            )}
+
+            {/* Payslips (Payroll Phase 5) — read-only history with PDF download. */}
+            <p className="text-[11px] font-bold uppercase mt-5 mb-2" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Payslips</p>
+            {payslips.length === 0 ? (
+              <p className="text-xs px-3 py-3 rounded-xl" style={{ background:'var(--bg-input)', color:'var(--text-muted)' }}>No payslips yet — generated from a completed payroll run.</p>
+            ) : (
+              <div className="space-y-1.5">
+                {payslips.map(p => (
+                  <div key={p.id} className="flex items-center justify-between px-3 py-2 rounded-xl flex-wrap gap-2" style={{ background:'var(--bg-input)', opacity:p.status==='Cancelled'?0.6:1 }}>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-mono font-bold" style={{ color:'#a78bfa' }}>{p.payslip_number}</span>
+                      <span className="text-[11px]" style={{ color:'var(--text-muted)' }}>{p.period_label}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold" style={{ color:'#10b981' }}>{money(p.net_salary)}</span>
+                      <button onClick={()=>hrApi.payroll.payslips.download(p.id, `${p.payslip_number}.pdf`).catch(()=>showToast('Download failed','error'))}
+                        className="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded" style={{ background:'rgba(59,130,246,0.1)', color:'#60a5fa' }}>
+                        <Download size={11}/> PDF
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
 
             <AiInsight hint="Reserved for payroll & tax integration — will validate PAN/bank details and flag mismatches." />

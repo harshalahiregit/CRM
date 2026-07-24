@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useTheme } from '@/context/ThemeContext'
 import {
   Wallet, Coins, Search, Plus, Pencil, X, Power, Lock, Sparkles, Layers, Users, PlayCircle, ReceiptText,
-  Trash2, IndianRupee, Eye, Calendar, CheckCircle2, Ban, Plug,
+  Trash2, IndianRupee, Eye, Calendar, CheckCircle2, Ban, Plug, Download, FileText,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
@@ -20,7 +20,7 @@ const TABS = [
   { key:'structures', label:'Salary Structures', icon:Layers,      ready:true },
   { key:'employee',   label:'Employee Salary',   icon:Users,       ready:true },
   { key:'processing', label:'Payroll Processing', icon:PlayCircle,  ready:true },
-  { key:'payslips',   label:'Payslips',          icon:ReceiptText, ready:false },
+  { key:'payslips',   label:'Payslips',          icon:ReceiptText, ready:true },
 ]
 
 export default function Payroll() {
@@ -64,6 +64,7 @@ export default function Payroll() {
         : tab === 'structures' ? <SalaryStructures showToast={showToast} />
         : tab === 'employee' ? <EmployeeSalary showToast={showToast} />
         : tab === 'processing' ? <PayrollProcessing showToast={showToast} />
+        : tab === 'payslips' ? <Payslips showToast={showToast} />
         : (
           <div className="card-3d flex flex-col items-center justify-center text-center" style={{ padding:'56px 20px' }}>
             <div className="rounded-2xl flex items-center justify-center mb-3" style={{ width:60, height:60, background:'rgba(124,58,237,0.1)' }}><current.icon size={26} style={{ color:'#a78bfa' }}/></div>
@@ -962,6 +963,184 @@ function RunSummaryModal({ run, onClose }) {
               ))}
             </tbody>
           </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   Payslips — generate from a completed run, list, view breakdown, download PDF
+   ──────────────────────────────────────────────────────────────────────── */
+function Payslips({ showToast }) {
+  const [rows, setRows] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+  const [genOpen, setGenOpen] = useState(false)
+  const [view, setView] = useState(null)
+  const [downloading, setDownloading] = useState(null)
+
+  const load = useCallback(() => {
+    setLoading(true)
+    const params = {}
+    if (search) params.search = search
+    hrApi.payroll.payslips.list(params).then(setRows).catch(() => showToast('Failed to load payslips', 'error')).finally(() => setLoading(false))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search])
+  useEffect(() => { load() }, [load])
+
+  const download = async (p) => {
+    setDownloading(p.id)
+    try { await hrApi.payroll.payslips.download(p.id, `${p.payslip_number}.pdf`); showToast('Payslip downloaded') }
+    catch { showToast('Download failed', 'error') }
+    finally { setDownloading(null) }
+  }
+  const openView = async (p) => {
+    try { setView(await hrApi.payroll.payslips.get(p.id)) } catch { showToast('Failed to load payslip', 'error') }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="kpi-3d"><p className="text-3xl font-black" style={{ color:'#7C3AED' }}>{rows.length}</p><p className="text-xs font-medium mt-1" style={{ color:'var(--text-muted)' }}>Payslips</p></div>
+        <div className="kpi-3d"><p className="text-3xl font-black" style={{ color:'#10b981' }}>{rows.filter(r=>r.status==='Generated').length}</p><p className="text-xs font-medium mt-1" style={{ color:'var(--text-muted)' }}>Generated</p></div>
+      </div>
+
+      <div className="card-3d" style={{ padding:'16px' }}>
+        <div className="flex gap-3 flex-wrap items-end">
+          <div className="relative flex-1 min-w-[200px]">
+            <label className="label">Search</label>
+            <Search size={14} className="absolute left-3 top-[34px]" style={{ color:'var(--text-muted)' }}/>
+            <input className="input-3d pl-9 text-sm" placeholder="Payslip number, employee name or code…" value={search} onChange={e=>setSearch(e.target.value)}/>
+          </div>
+          <button onClick={()=>setGenOpen(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white ml-auto" style={{ background:GRAD, boxShadow:'0 4px 14px rgba(124,58,237,0.4)' }}><FileText size={15}/> Generate Payslips</button>
+        </div>
+      </div>
+
+      {loading ? <HrLoading label="Loading payslips…" />
+        : rows.length === 0 ? <HrEmpty icon={ReceiptText} title="No payslips yet" hint="Generate payslips from a completed payroll run." />
+        : (
+          <div className="card-3d overflow-x-auto" style={{ padding:'6px' }}>
+            <table className="w-full text-sm" style={{ minWidth:820 }}>
+              <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{['Payslip No.','Employee','Month','Net Salary','Generated','Status','Action'].map(h=><th key={h} className={`text-left px-3 py-3 label-caps whitespace-nowrap ${h==='Action'?'text-right':''}`}>{h}</th>)}</tr></thead>
+              <tbody>
+                {rows.map(p => (
+                  <tr key={p.id} style={{ borderBottom:'1px solid var(--border)', opacity:p.status==='Cancelled'?0.6:1 }}>
+                    <td className="px-3 py-2.5 font-mono font-bold" style={{ color:'#a78bfa' }}>{p.payslip_number}</td>
+                    <td className="px-3 py-2.5"><span className="font-bold" style={{ color:'var(--text-h)' }}>{p.employee_name}</span> <span className="text-[10px] font-mono" style={{ color:'var(--text-muted)' }}>{p.employee_code}</span></td>
+                    <td className="px-3 py-2.5" style={{ color:'var(--text-muted)' }}>{p.period_label}</td>
+                    <td className="px-3 py-2.5 font-black" style={{ color:'#10b981' }}>{inr(p.net_salary)}</td>
+                    <td className="px-3 py-2.5 text-[11px]" style={{ color:'var(--text-muted)' }}>{p.generated_at ? new Date(p.generated_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) : '—'}</td>
+                    <td className="px-3 py-2.5"><span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={p.status==='Generated'?{background:'rgba(16,185,129,0.12)',color:'#10b981'}:{background:'var(--bg-input)',color:'var(--text-muted)'}}>{p.status}</span></td>
+                    <td className="px-3 py-2.5">
+                      <div className="flex gap-1.5 justify-end">
+                        <button onClick={()=>openView(p)} title="View" className="p-1.5 rounded-lg" style={{ background:'rgba(124,58,237,0.1)', color:'#a78bfa' }}><Eye size={13}/></button>
+                        <button onClick={()=>download(p)} disabled={downloading===p.id} title="Download PDF" className="p-1.5 rounded-lg" style={{ background:'rgba(59,130,246,0.1)', color:'#60a5fa' }}><Download size={13}/></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+      {/* AI-ready extension point (no AI implemented). */}
+      <div className="rounded-xl p-3 flex items-start gap-2.5" style={{ background:'rgba(124,58,237,0.05)', border:'1px dashed rgba(124,58,237,0.3)' }}>
+        <Sparkles size={15} style={{ color:'#a78bfa', marginTop:1, flexShrink:0 }}/>
+        <div>
+          <p className="text-[11px] font-bold" style={{ color:'#a78bfa' }}>AI Insights <span className="font-normal" style={{ color:'var(--text-muted)' }}>· coming soon</span></p>
+          <p className="text-[11px] mt-0.5" style={{ color:'var(--text-muted)' }}>Will run salary trend analysis, payslip anomaly detection, and per-employee salary insights.</p>
+        </div>
+      </div>
+
+      {genOpen && <GeneratePayslipsModal onClose={()=>setGenOpen(false)} onDone={()=>{ setGenOpen(false); load() }} showToast={showToast} />}
+      {view && <PayslipDetailModal payslip={view} onClose={()=>setView(null)} onDownload={()=>download(view)} />}
+    </div>
+  )
+}
+
+function GeneratePayslipsModal({ onClose, onDone, showToast }) {
+  const [runs, setRuns] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(null)
+
+  useEffect(() => {
+    hrApi.payroll.runs.list().then(r => setRuns(r.filter(x => x.status === 'Completed'))).catch(() => {}).finally(() => setLoading(false))
+  }, [])
+
+  const generate = async (run) => {
+    setBusy(run.id)
+    try {
+      const res = await hrApi.payroll.runs.generatePayslips(run.id)
+      showToast(`${res.generated} generated, ${res.skipped} already existed`)
+      onDone()
+    } catch (e) { showToast(e.response?.data?.message || 'Generation failed', 'error'); setBusy(null) }
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>Generate Payslips</h2><button onClick={onClose} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
+        <p className="text-xs mb-3" style={{ color:'var(--text-muted)' }}>Select a completed payroll run. Payslips are created for every employee record; existing ones are skipped.</p>
+        {loading ? <p className="text-sm py-4" style={{ color:'var(--text-muted)' }}>Loading runs…</p>
+          : runs.length === 0 ? <p className="text-xs px-3 py-4 rounded-xl" style={{ background:'var(--bg-input)', color:'var(--text-muted)' }}>No completed payroll runs. Process a run first in Payroll Processing.</p>
+          : (
+            <div className="space-y-2">
+              {runs.map(r => (
+                <div key={r.id} className="flex items-center justify-between px-3 py-2.5 rounded-xl" style={{ background:'var(--bg-input)', border:'1px solid var(--border)' }}>
+                  <div>
+                    <p className="text-sm font-bold" style={{ color:'var(--text-h)' }}>{r.period_label}</p>
+                    <p className="text-[10px]" style={{ color:'var(--text-muted)' }}>{r.total_employees} employee(s) · net {inr(r.total_net)}</p>
+                  </div>
+                  <button onClick={()=>generate(r)} disabled={busy===r.id} className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-white" style={{ background:GRAD, opacity:busy===r.id?0.7:1 }}>{busy===r.id?'Generating…':'Generate'}</button>
+                </div>
+              ))}
+            </div>
+          )}
+      </div>
+    </div>
+  )
+}
+
+function PayslipDetailModal({ payslip, onClose, onDownload }) {
+  const bd = payslip.breakdown || { earnings:[], benefits:[], deductions:[] }
+  const Line = ({ name, amount, accent }) => (
+    <div className="flex justify-between py-1.5" style={{ borderBottom:'1px dashed var(--border)' }}>
+      <span className="text-xs" style={{ color:'var(--text-muted)' }}>{name}</span>
+      <span className="text-xs font-bold" style={{ color:accent||'var(--text-h)' }}>{inr(amount)}</span>
+    </div>
+  )
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:640, width:'95%', maxHeight:'92vh', overflowY:'auto' }}>
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{payslip.payslip_number}</h2>
+          <button onClick={onClose} style={{ color:'var(--text-muted)' }}><X size={18}/></button>
+        </div>
+        <p className="text-xs mb-4" style={{ color:'var(--text-muted)' }}>{payslip.employee_name} · {payslip.employee_code} · {payslip.designation} · {payslip.period_label}</p>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <p className="text-[11px] font-bold uppercase mb-1" style={{ color:'#10b981' }}>Earnings</p>
+            {(bd.earnings||[]).map((r,i)=><Line key={'e'+i} name={r.name} amount={r.amount} accent="#10b981"/>)}
+            {(bd.benefits||[]).map((r,i)=><Line key={'b'+i} name={`${r.name} (benefit)`} amount={r.amount} accent="#3b82f6"/>)}
+          </div>
+          <div>
+            <p className="text-[11px] font-bold uppercase mb-1" style={{ color:'#f87171' }}>Deductions</p>
+            {(bd.deductions||[]).map((r,i)=><Line key={'d'+i} name={r.name} amount={r.amount} accent="#f87171"/>)}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2 mt-4">
+          <div className="rounded-xl px-3 py-2.5" style={{ background:'var(--bg-input)' }}><p className="text-sm font-black" style={{ color:'#10b981' }}>{inr(payslip.gross_salary)}</p><p className="text-[10px]" style={{ color:'var(--text-muted)' }}>Gross</p></div>
+          <div className="rounded-xl px-3 py-2.5" style={{ background:'var(--bg-input)' }}><p className="text-sm font-black" style={{ color:'#f87171' }}>{inr(payslip.total_deductions)}</p><p className="text-[10px]" style={{ color:'var(--text-muted)' }}>Deductions</p></div>
+          <div className="rounded-xl px-3 py-2.5" style={{ background:'rgba(124,58,237,0.1)' }}><p className="text-sm font-black" style={{ color:'#7C3AED' }}>{inr(payslip.net_salary)}</p><p className="text-[10px]" style={{ color:'var(--text-muted)' }}>Net</p></div>
+        </div>
+
+        <div className="flex gap-3 pt-5">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm font-semibold" style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}>Close</button>
+          <button onClick={onDownload} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-1.5" style={{ background:GRAD }}><Download size={14}/> Download PDF</button>
         </div>
       </div>
     </div>

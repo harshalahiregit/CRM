@@ -278,6 +278,19 @@ export const hrApi = {
       process:   (id)          => api.post(`/hr/payroll/runs/${id}/process`).then(r => r.data),
       records:   (id)          => api.get(`/hr/payroll/runs/${id}/records`).then(r => r.data),
       setStatus: (id, status)  => api.patch(`/hr/payroll/runs/${id}/status`, { status }).then(r => r.data),
+      generatePayslips: (id)   => api.post(`/hr/payroll/runs/${id}/generate-payslips`).then(r => r.data),
+    },
+    // Payslips (Phase 5) — generated from a completed run; PDF via dompdf.
+    payslips: {
+      list:     (params = {})   => api.get('/hr/payroll/payslips', { params }).then(r => r.data),
+      get:      (id)            => api.get(`/hr/payroll/payslips/${id}`).then(r => r.data),
+      forEmployee: (employeeId) => api.get(`/hr/employees/${employeeId}/payslips`).then(r => r.data),
+      // Authenticated blob fetch → triggers a browser download of the PDF.
+      download: (id, filename)  => api.get(`/hr/payroll/payslips/${id}/download`, { responseType: 'blob' }).then(r => {
+        const url = URL.createObjectURL(r.data)
+        const a = document.createElement('a'); a.href = url; a.download = filename || `payslip-${id}.pdf`; a.click()
+        setTimeout(() => URL.revokeObjectURL(url), 1500)
+      }),
     },
   },
 

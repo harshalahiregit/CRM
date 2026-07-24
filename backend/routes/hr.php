@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\Hr\SalaryComponentController;
 use App\Http\Controllers\Api\Hr\SalaryStructureController;
 use App\Http\Controllers\Api\Hr\EmployeeSalaryController;
 use App\Http\Controllers\Api\Hr\PayrollRunController;
+use App\Http\Controllers\Api\Hr\PayslipController;
 use Illuminate\Support\Facades\Route;
 
 // ── HR Module Routes (Sanctum) ──────────────────────────────────────────
@@ -213,6 +214,13 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::post('/payroll/runs/{id}/process',   [PayrollRunController::class, 'process']);
     Route::get('/payroll/runs/{id}/records',    [PayrollRunController::class, 'records']);
     Route::patch('/payroll/runs/{id}/status',   [PayrollRunController::class, 'updateStatus']);
+
+    // Payroll → Payslips (Phase 5). Generated from a completed run; PDF via dompdf.
+    Route::get('/payroll/payslips',                    [PayslipController::class, 'index']);
+    Route::get('/payroll/payslips/{id}',               [PayslipController::class, 'show']);
+    Route::get('/payroll/payslips/{id}/download',       [PayslipController::class, 'download']);
+    Route::post('/payroll/runs/{id}/generate-payslips', [PayslipController::class, 'generate']);
+    Route::get('/employees/{employeeId}/payslips',      [PayslipController::class, 'employeePayslips']);
 
     // Attendance
     Route::get('/attendance/stats',          [AttendanceController::class, 'stats']);
