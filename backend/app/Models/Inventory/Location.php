@@ -17,7 +17,10 @@ class Location extends Model
 
     public const TYPES = ['zone', 'rack', 'shelf', 'bin', 'position'];
 
-    protected $fillable = ['tenant_id', 'warehouse_id', 'parent_id', 'name', 'code', 'type', 'capacity'];
+    /** What a location's `capacity` number actually counts. See the migration. */
+    public const CAPACITY_UOMS = ['units', 'volume', 'weight'];
+
+    protected $fillable = ['tenant_id', 'warehouse_id', 'parent_id', 'name', 'code', 'type', 'capacity', 'capacity_uom'];
 
     protected $casts = ['capacity' => 'decimal:3'];
 

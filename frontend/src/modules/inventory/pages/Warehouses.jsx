@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Warehouse, Plus, Trash2, Star, Boxes, MapPin, ChevronRight, X, Check } from 'lucide-react'
-import { inventoryApi, INV_ACCENT, WAREHOUSE_TYPES, LOCATION_TYPES, fmtQty } from '@/services/inventoryApi'
+import { Warehouse, Plus, Trash2, Star, Boxes, MapPin, ChevronRight, X, Check, Printer, AlertTriangle, Gauge, HelpCircle } from 'lucide-react'
+import { inventoryApi, INV_ACCENT, WAREHOUSE_TYPES, LOCATION_TYPES, CAPACITY_UOMS, fmtQty } from '@/services/inventoryApi'
 import { useAuth } from '@/context/AuthContext'
 import Select from '@/components/ui/Select'
 import { ConfirmModal } from '@/components/ui/SearchPicker'
+import LocationLabelSheet from '../components/LocationLabelSheet'
 
 const typeLabel = (t) => WAREHOUSE_TYPES.find(x => x.value === t)?.label || t
 
@@ -141,22 +142,31 @@ const Stat = ({ label, value }) => (
 
 function LocationPanel({ warehouse, isAdmin }) {
   const qc = useQueryClient()
-  const [form, setForm] = useState({ name: '', type: 'bin', parent_id: '' })
+  const [form, setForm] = useState({ name: '', type: 'bin', parent_id: '', capacity: '', capacity_uom: 'units' })
   const [err, setErr] = useState('')
+  const [printing, setPrinting] = useState(false)
+  // The plain list answers "what bins exist"; occupancy answers "how full, and
+  // what's wrong" — a different question, so it's a mode rather than always-on.
+  const [occupancy, setOccupancy] = useState(false)
 
   const { data: locations = [] } = useQuery({
     queryKey: ['inv-locations', warehouse.id], queryFn: () => inventoryApi.warehouses.locations(warehouse.id),
   })
   const bust = () => {
     qc.invalidateQueries({ queryKey: ['inv-locations', warehouse.id] })
+    qc.invalidateQueries({ queryKey: ['inv-layout', warehouse.id] })
     qc.invalidateQueries({ queryKey: ['inv-warehouses'] })
   }
 
   const add = useMutation({
     mutationFn: () => inventoryApi.warehouses.createLocation(warehouse.id, {
       name: form.name.trim(), type: form.type, parent_id: form.parent_id || undefined,
+      // A capacity is only meaningful with the unit it counts, so the two travel
+      // together or not at all.
+      capacity: form.capacity === '' ? undefined : Number(form.capacity),
+      capacity_uom: form.capacity === '' ? undefined : form.capacity_uom,
     }),
-    onSuccess: () => { setForm({ name: '', type: 'bin', parent_id: '' }); setErr(''); bust() },
+    onSuccess: () => { setForm({ name: '', type: 'bin', parent_id: '', capacity: '', capacity_uom: 'units' }); setErr(''); bust() },
     onError: (e) => setErr(e?.message || 'Could not add that location.'),
   })
   const del = useMutation({
@@ -167,10 +177,35 @@ function LocationPanel({ warehouse, isAdmin }) {
 
   return (
     <div className="px-4 pb-4" style={{ borderTop: '1px solid var(--border)' }}>
-      <p className="text-[10px] font-bold uppercase tracking-wide mt-3 mb-2" style={{ color: 'var(--text-muted)' }}>
-        Storage layout — zone › rack › shelf › bin
-      </p>
+      <div className="flex flex-wrap items-center gap-2 mt-3 mb-2">
+        <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+          Storage layout — zone › rack › shelf › bin
+        </p>
+        {locations.length > 0 && (
+          <button onClick={() => setOccupancy(v => !v)}
+            className="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg"
+            style={{
+              border: `1px solid ${occupancy ? INV_ACCENT : 'var(--border)'}`,
+              background: occupancy ? `color-mix(in srgb, ${INV_ACCENT} 12%, transparent)` : 'transparent',
+              color: occupancy ? INV_ACCENT : 'var(--text-muted)',
+            }}>
+            <Gauge size={11} /> Occupancy
+          </button>
+        )}
+        {/* A bin with no label on it is a bin nobody can scan, so printing sits
+            next to the list rather than behind a menu somewhere else. */}
+        {locations.length > 0 && (
+          <button onClick={() => setPrinting(true)}
+            className="ml-auto flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg"
+            style={{ border: '1px solid var(--border)', color: INV_ACCENT }}>
+            <Printer size={11} /> Print labels
+          </button>
+        )}
+      </div>
 
+      {occupancy && <OccupancyView warehouseId={warehouse.id} />}
+
+      {!occupancy && (
       <ul className="space-y-1 mb-3">
         {locations.map(l => (
           <li key={l.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg" style={{ background: 'var(--bg-input)' }}>
@@ -190,10 +225,11 @@ function LocationPanel({ warehouse, isAdmin }) {
           </li>
         )}
       </ul>
+      )}
 
       {err && <p className="text-[11px] mb-2" style={{ color: 'var(--color-danger-500)' }}>{err}</p>}
 
-      {isAdmin && (
+      {isAdmin && !occupancy && (
         <form onSubmit={e => { e.preventDefault(); if (form.name.trim()) add.mutate() }} className="flex flex-wrap gap-2">
           <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Location name (e.g. Rack A)"
             className="flex-1 rounded-lg outline-none" style={{ minWidth: 150, padding: '7px 10px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }} />
@@ -204,15 +240,161 @@ function LocationPanel({ warehouse, isAdmin }) {
             <Select size="sm" value={form.parent_id} onChange={v => setForm(f => ({ ...f, parent_id: v }))} placeholder="Top level"
               options={[{ value: '', label: 'Top level' }, ...locations.map(l => ({ value: l.id, label: l.path || l.name }))]} />
           </div>
+          {/* Capacity and its unit go together — a number with no unit can't be
+              compared to anything, so entering one enables the other. */}
+          <input type="number" min={0} step="0.001" value={form.capacity}
+            onChange={e => setForm(f => ({ ...f, capacity: e.target.value }))} placeholder="Limit"
+            title="How much this bin holds (optional)"
+            className="rounded-lg outline-none text-right" style={{ width: 80, padding: '7px 10px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }} />
+          <div style={{ width: 100 }}>
+            <Select size="sm" value={form.capacity_uom} onChange={v => setForm(f => ({ ...f, capacity_uom: v }))}
+              disabled={form.capacity === ''} options={CAPACITY_UOMS.map(u => ({ value: u.value, label: u.label }))} />
+          </div>
           <button type="submit" disabled={!form.name.trim() || add.isPending}
             className="px-3 rounded-lg disabled:opacity-40" style={{ background: INV_ACCENT, color: '#fff' }} aria-label="Add location">
             <Plus size={13} />
           </button>
         </form>
       )}
+
+      {printing && (
+        <LocationLabelSheet locations={locations} warehouseName={warehouse.name} onClose={() => setPrinting(false)} />
+      )}
     </div>
   )
 }
+
+/* ── Occupancy ────────────────────────────────────────────────── */
+
+const PROBLEM_LABEL = {
+  unlocated:            'Stock nobody can find',
+  over_capacity:        'Bins over their limit',
+  mixed_bins:           'More than one item in a bin',
+  missing_product_data: 'Items with no size on file',
+}
+
+/**
+ * How full the building is, and what's wrong with the picture. `measure` decides
+ * what "full" counts — a rack beam's limit is weight, a pick face's is units.
+ */
+function OccupancyView({ warehouseId }) {
+  const [measure, setMeasure] = useState('units')
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['inv-layout', warehouseId, measure],
+    queryFn: () => inventoryApi.warehouses.layout(warehouseId, measure),
+  })
+
+  if (isLoading || !data) {
+    return <div className="h-24 rounded-xl animate-pulse mb-3" style={{ background: 'var(--bg-input)' }} />
+  }
+
+  const t = data.totals
+
+  return (
+    <div className="mb-3">
+      <div className="flex flex-wrap items-center gap-2 mb-2">
+        <div style={{ width: 130 }}>
+          <Select size="sm" value={measure} onChange={setMeasure}
+            options={CAPACITY_UOMS.map(u => ({ value: u.value, label: `By ${u.label.toLowerCase()}` }))} />
+        </div>
+        <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+          {CAPACITY_UOMS.find(u => u.value === measure)?.hint}
+        </span>
+      </div>
+
+      {/* The four numbers a warehouse is judged on. Utilisation counts only
+          measured bins; unmeasured ones are reported separately so the figure
+          isn't built out of unknowns. */}
+      <div className="grid gap-2 mb-3" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(88px,1fr))' }}>
+        <Tile label="Utilisation" value={t.utilisation == null ? '—' : `${t.utilisation}%`} />
+        <Tile label="Bins" value={t.bins} />
+        <Tile label="Over limit" value={t.over_capacity} danger={t.over_capacity > 0} />
+        <Tile label="Empty" value={t.empty} />
+        {t.unmeasured > 0 && <Tile label="Unmeasured" value={t.unmeasured} muted />}
+      </div>
+
+      {data.problems?.length > 0 && (
+        <div className="rounded-xl px-3 py-2.5 mb-3"
+          style={{ background: 'color-mix(in srgb, #f59e0b 9%, transparent)', border: '1px solid #f59e0b' }}>
+          {data.problems.map(p => (
+            <div key={p.kind} className="mb-1.5 last:mb-0">
+              <p className="flex items-center gap-1.5 text-[11px] font-bold" style={{ color: '#b45309' }}>
+                <AlertTriangle size={11} /> {PROBLEM_LABEL[p.kind] || p.kind}
+                {p.count > 1 ? ` (${p.count})` : ''}
+              </p>
+              <p className="text-[11px] ml-4" style={{ color: 'var(--text-body)' }}>{p.detail}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="space-y-1">
+        {data.tree.map(n => <BinRow key={n.id} node={n} />)}
+        {data.tree.length === 0 && (
+          <p className="text-[11px] py-2" style={{ color: 'var(--text-muted)' }}>
+            No bins mapped yet — add one below to start tracking occupancy.
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/** One location and everything under it, indented by depth. */
+function BinRow({ node }) {
+  const pct = node.utilisation
+  const leaf = !node.children?.length
+  // A colour only where a real comparison exists: amber past 80%, red over.
+  const barColor = node.over ? 'var(--color-danger-500)' : pct >= 80 ? '#f59e0b' : INV_ACCENT
+
+  return (
+    <>
+      <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg"
+        style={{ background: 'var(--bg-input)', marginLeft: node.depth * 14 }}>
+        <MapPin size={11} style={{ color: node.over ? 'var(--color-danger-500)' : 'var(--text-muted)', flexShrink: 0 }} />
+        <span className="text-xs truncate" style={{ color: 'var(--text-h)', minWidth: 90 }}>{node.name}</span>
+        <span className="text-[9px] px-1.5 py-0.5 rounded capitalize" style={{ background: 'var(--bg-card)', color: 'var(--text-muted)' }}>{node.type}</span>
+
+        {node.skus > 1 && (
+          <span className="text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ background: 'color-mix(in srgb, #f59e0b 15%, transparent)', color: '#b45309' }}>
+            {node.skus} items
+          </span>
+        )}
+
+        <span className="ml-auto text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
+          {fmtQty(node.quantity)} on hand
+        </span>
+
+        {/* Only a bin with a comparable limit gets a fill bar. Everything else
+            says why it can't be measured rather than showing a misleading one. */}
+        {leaf && (
+          node.comparable ? (
+            <span className="flex items-center gap-1.5" style={{ width: 120 }}>
+              <span className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--bg-card)' }}>
+                <span className="block h-full rounded-full" style={{ width: `${Math.min(pct, 100)}%`, background: barColor }} />
+              </span>
+              <span className="text-[10px] tabular-nums font-bold" style={{ color: barColor, width: 34, textAlign: 'right' }}>{pct}%</span>
+            </span>
+          ) : (
+            <span className="flex items-center gap-1 text-[10px]" style={{ color: 'var(--text-muted)', width: 120 }} title="No comparable limit set for this bin">
+              <HelpCircle size={10} /> {node.capacity != null ? `limit in ${node.capacity_uom}` : 'no limit set'}
+            </span>
+          )
+        )}
+      </div>
+      {node.children?.map(c => <BinRow key={c.id} node={c} />)}
+    </>
+  )
+}
+
+const Tile = ({ label, value, danger, muted }) => (
+  <div className="rounded-xl px-2.5 py-2" style={{ background: 'var(--bg-input)' }}>
+    <p className="text-[9px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>{label}</p>
+    <p className="text-sm font-black tabular-nums"
+      style={{ color: danger ? 'var(--color-danger-500)' : muted ? 'var(--text-muted)' : 'var(--text-h)' }}>{value}</p>
+  </div>
+)
 
 /* ── New warehouse ────────────────────────────────────────────── */
 

@@ -122,6 +122,9 @@ const CONFIG_FIELDS = {
       { key: 'auto_generate_sku',     label: 'Auto-generate SKU', type: 'bool' },
       { key: 'auto_generate_barcode', label: 'Auto-generate barcode', type: 'bool' },
       { key: 'expiry_alert_days',     label: 'Expiry alert (days ahead)', type: 'number', hint: 'Drives the Items page’s "Expiring soon" alert' },
+      // A yearly stocktake is the count everyone plans and nobody finishes.
+      { key: 'cycle_count_auto',      label: 'Raise a cycle count every week', type: 'bool', hint: 'Monday 08:00, one random sample per warehouse. Skipped wherever the last sheet is still open' },
+      { key: 'cycle_count_sample',    label: 'Places to check each week', type: 'number', hint: 'Nobody can predict which shelf gets picked, so no shelf can be kept tidy just for the audit' },
     ],
   },
   approval: {
@@ -139,6 +142,8 @@ const CONFIG_FIELDS = {
       { key: 'notify_stock_alerts',     label: 'Low stock & out of stock', type: 'bool', hint: 'Sent the moment a posting pushes an item to or below its reorder point — once per crossing, not repeatedly' },
       { key: 'notify_voucher_activity', label: 'Voucher posted / cancelled', type: 'bool', hint: 'Also tells a warehouse manager when stock is transferred in to them' },
       { key: 'notify_expiry_alerts',    label: 'Expiring batches', type: 'bool', hint: 'Daily digest at 07:00, using the expiry window in Inventory setting' },
+      { key: 'notify_count_activity',   label: 'Physical counts', type: 'bool', hint: 'A sheet assigned, finished, or signed off. A submitted count always emails — until it is signed, the ledger is knowingly wrong' },
+      { key: 'notify_capacity_alerts',  label: 'Bin housekeeping', type: 'bool', hint: 'Daily digest of bins over their limit and stock sitting at a site with no bin recorded' },
       { key: 'email_alerts',            label: 'Send these by email too', type: 'bool', hint: 'Off keeps the in-app bell working while nothing leaves the building' },
       { key: 'alert_email_extra',       label: 'Also copy this address', type: 'text', placeholder: 'purchasing@company.com', hint: 'Optional — a shared inbox that should see every alert' },
     ],

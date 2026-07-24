@@ -2,8 +2,12 @@
 
 namespace App\Services\Inventory;
 
+use App\Mail\Inventory\CapacityAlertMail;
+use App\Mail\Inventory\CountSessionMail;
 use App\Mail\Inventory\ExpiryAlertMail;
+use App\Mail\Inventory\PickListMail;
 use App\Mail\Inventory\StockAlertMail;
+use App\Mail\Inventory\TransferMail;
 use App\Mail\Inventory\VoucherActivityMail;
 use App\Models\Inventory\Product;
 use App\Models\Inventory\Voucher;
@@ -115,6 +119,117 @@ class InventoryNotifier
         }
     }
 
+    /* ── Approvals ──────────────────────────────────────────────── */
+
+    /**
+     * A document is waiting on somebody's decision.
+     *
+     * This one always emails, whatever the noise budget: an unapproved document
+     * is stock that has NOT moved, and every hour it sits there is an hour the
+     * warehouse is blocked on a person who doesn't know they're the blocker.
+     */
+    public function approvalRequested(Voucher $voucher, int $actorId): void
+    {
+        $actor = $this->name($actorId);
+        $label = $voucher->type_label.' '.$voucher->code;
+
+        // The raiser cannot approve their own work, so they are excluded here —
+        // telling them would be telling them about themselves.
+        $audience = $this->audience($voucher->tenant_id, $voucher->warehouse_id, $actorId);
+
+        $this->bell(
+            $audience, $voucher->tenant_id, 'inventory.approval_requested',
+            "Approval needed: {$label}",
+            "{$actor} sent this for approval — ".$this->voucherLine($voucher),
+            $this->voucherLink($voucher),
+            $actorId,
+        );
+
+        $this->mailTo(
+            $voucher->tenant_id,
+            $this->emails($audience),
+            fn () => new VoucherActivityMail(
+                $voucher,
+                "Approval needed: {$label}",
+                "{$actor} has sent this document for approval. Nothing moves in the warehouse until somebody decides.",
+            ),
+            "approval request for {$voucher->code}",
+        );
+    }
+
+    /** Approved or sent back. Either way the person who raised it needs to know. */
+    public function approvalDecided(Voucher $voucher, int $actorId, bool $approved, ?string $reason): void
+    {
+        $actor = $this->name($actorId);
+        $label = $voucher->type_label.' '.$voucher->code;
+
+        $title = $approved ? "Approved: {$label}" : "Sent back: {$label}";
+        $body = $approved
+            ? "{$actor} approved this. It can be posted now."
+            : "{$actor} sent this back: ".$reason;
+
+        // Straight to the author — plus admins, because a rejection is a fact
+        // about the warehouse, not a private note between two people.
+        $audience = $this->audience($voucher->tenant_id, $voucher->warehouse_id, $actorId, [$voucher->created_by]);
+
+        $this->bell(
+            $audience, $voucher->tenant_id,
+            $approved ? 'inventory.approval_granted' : 'inventory.approval_rejected',
+            $title, $body, $this->voucherLink($voucher), $actorId,
+        );
+
+        if ($voucher->created_by && (int) $voucher->created_by !== $actorId) {
+            $this->mailTo(
+                $voucher->tenant_id,
+                $this->emails([(int) $voucher->created_by]),
+                fn () => new VoucherActivityMail($voucher, $title, $body),
+                "approval decision on {$voucher->code}",
+            );
+        }
+    }
+
+    /**
+     * Inspection rejected some of a delivery.
+     *
+     * Always emails: a rejection is money already committed to goods that are
+     * not usable, and it is a supplier conversation someone has to start today.
+     * Nothing else in the app surfaces it until the document is opened by hand.
+     */
+    public function goodsRejected(Voucher $voucher, int $actorId): void
+    {
+        $actor = $this->name($actorId);
+        $label = $voucher->type_label.' '.$voucher->code;
+
+        $lines = $voucher->items()->where('rejected_qty', '>', 0)->with('product:id,sku,name')->get();
+        if ($lines->isEmpty()) {
+            return;
+        }
+
+        $body = $lines->take(4)
+            ->map(fn ($l) => ($l->product->name ?? 'Item').' — '.$this->qty((float) $l->rejected_qty).' rejected: '.$l->rejection_reason)
+            ->implode('; ');
+
+        $audience = $this->audience($voucher->tenant_id, $voucher->warehouse_id, null, [$voucher->created_by]);
+
+        $this->bell(
+            $audience, $voucher->tenant_id, 'inventory.goods_rejected',
+            "Goods rejected on {$label}".($voucher->supplier_name ? " — {$voucher->supplier_name}" : ''),
+            $body, $this->voucherLink($voucher), null,
+        );
+
+        $this->mailTo(
+            $voucher->tenant_id,
+            $this->emails($audience),
+            fn () => new VoucherActivityMail(
+                $voucher,
+                "Goods rejected: {$label}",
+                "{$actor} inspected this delivery and rejected part of it. The rejected quantity has NOT gone on the shelf. "
+                    ."Raise a vendor return so the supplier takes it back.\n\n".$body,
+            ),
+            "rejection on {$voucher->code}",
+        );
+    }
+
     /** Goods are on their way to a warehouse someone else runs. */
     private function transferIncoming(Voucher $voucher, int $actorId): void
     {
@@ -155,6 +270,331 @@ class InventoryNotifier
             ),
             "incoming transfer {$voucher->code}",
         );
+    }
+
+    /* ── Pick, pack, ship ───────────────────────────────────────── */
+
+    /** A job landed on somebody's list. Straight to them, not the whole team. */
+    public function pickListAssigned($list, int $userId, int $actorId): void
+    {
+        if ($userId === $actorId || ! $this->on($list->tenant_id, 'notify_voucher_activity')) {
+            return;
+        }
+
+        $actor = $this->name($actorId);
+        $lines = $list->lines()->count();
+
+        $this->bell(
+            [$userId], $list->tenant_id, 'inventory.pick_assigned',
+            "{$actor} assigned you a pick: {$list->code}",
+            $lines.' line(s) to pick'.($list->warehouse ? ' at '.$list->warehouse->name : ''),
+            '/app/inventory/fulfilment', $actorId,
+        );
+
+        $this->mailTo(
+            $list->tenant_id,
+            $this->emails([$userId]),
+            fn () => new PickListMail($list, "You have a pick to do: {$list->code}",
+                "{$actor} assigned this to you. The list below is what to collect and where from."),
+            "pick assignment {$list->code}",
+        );
+    }
+
+    /**
+     * The parcel left the building.
+     *
+     * Emails whether or not a courier account exists — when there is none, the
+     * tracking number was typed off the courier's own slip, and that is exactly
+     * the thing a colleague chasing the customer needs to have in writing.
+     */
+    public function parcelShipped($list, int $actorId, bool $manual): void
+    {
+        if (! $this->on($list->tenant_id, 'notify_voucher_activity')) {
+            return;
+        }
+
+        $actor = $this->name($actorId);
+        $track = $list->tracking_number
+            ? $list->carrier.' '.$list->tracking_number
+            : 'no tracking number recorded';
+
+        $audience = $this->audience($list->tenant_id, $list->warehouse_id, $actorId, [$list->created_by, $list->assigned_to]);
+
+        $this->bell(
+            $audience, $list->tenant_id, 'inventory.parcel_shipped',
+            "{$actor} shipped {$list->code}",
+            $track.($manual ? ' (recorded by hand)' : ''),
+            '/app/inventory/fulfilment', $actorId,
+        );
+
+        $this->mailTo(
+            $list->tenant_id,
+            $this->emails($audience),
+            fn () => new PickListMail($list, "Shipped: {$list->code}",
+                "{$actor} dispatched this parcel. Tracking: {$track}."),
+            "shipment {$list->code}",
+        );
+    }
+
+    /** It arrived. In-app only — by now nobody is waiting on an inbox. */
+    public function parcelDelivered($list, int $actorId): void
+    {
+        if (! $this->on($list->tenant_id, 'notify_voucher_activity')) {
+            return;
+        }
+
+        $who = $list->received_by ? " — signed for by {$list->received_by}" : '';
+
+        $this->bell(
+            $this->audience($list->tenant_id, $list->warehouse_id, $actorId, [$list->created_by, $list->assigned_to]),
+            $list->tenant_id, 'inventory.parcel_delivered',
+            "Delivered: {$list->code}", trim($who, ' —') ?: 'Marked as delivered.',
+            '/app/inventory/fulfilment', $actorId,
+        );
+    }
+
+    /* ── Transfers on the road ──────────────────────────────────── */
+
+    /**
+     * A lorry left. Always emails the receiving end, whatever the noise budget:
+     * somebody has to be at the other site to take it in, and a consignment that
+     * arrives unannounced sits on a loading bay.
+     */
+    public function transferDispatched($transfer, int $actorId): void
+    {
+        if (! $this->on($transfer->tenant_id, 'notify_voucher_activity')) {
+            return;
+        }
+
+        $actor = $this->name($actorId);
+        $lines = $transfer->lines()->count();
+        $eta = $transfer->expected_at ? ' — expected '.$transfer->expected_at->format('d M Y') : '';
+
+        // The destination's manager first, because they are the ones who have to
+        // do something. Admins come along because it is stock in motion.
+        $audience = $this->audience($transfer->tenant_id, $transfer->to_warehouse_id, $actorId);
+
+        $this->bell(
+            $audience, $transfer->tenant_id, 'inventory.transfer_dispatched',
+            "Stock on its way to {$this->warehouseName($transfer->to_warehouse_id)} — {$transfer->code}",
+            "{$actor} dispatched {$lines} line(s) from ".$this->warehouseName($transfer->from_warehouse_id).$eta,
+            '/app/inventory/transfers', $actorId,
+        );
+
+        $this->mailTo(
+            $transfer->tenant_id,
+            $this->emails($audience),
+            fn () => new TransferMail($transfer, "On its way: {$transfer->code}",
+                "{$actor} dispatched this consignment. Until somebody receives it, the stock is held in transit and is on nobody's shelf."),
+            "dispatch of {$transfer->code}",
+        );
+    }
+
+    /**
+     * It arrived — and possibly not all of it.
+     *
+     * A clean receipt is in-app only; a SHORT one always emails, because the
+     * gap is money that left one building and never reached another, and it is
+     * only worth chasing while the driver still remembers the trip.
+     */
+    public function transferReceived($transfer, int $actorId, array $summary): void
+    {
+        if (! $this->on($transfer->tenant_id, 'notify_voucher_activity')) {
+            return;
+        }
+
+        $actor = $this->name($actorId);
+        $short = ($summary['short_qty'] ?? 0) > 0;
+
+        $title = $short
+            ? "Short delivery on {$transfer->code}"
+            : "Received: {$transfer->code}";
+        $body = $short
+            ? $this->qty((float) $summary['short_qty']).' unit(s) did not arrive — '.$this->money((float) $summary['short_value']).' at cost'
+            : 'Everything that was sent arrived.';
+
+        // The people who packed it are the ones who can say what went on the
+        // lorry, so the SOURCE warehouse hears about this one.
+        $audience = $this->audience($transfer->tenant_id, $transfer->from_warehouse_id, $actorId, [$transfer->dispatched_by]);
+
+        $this->bell(
+            $audience, $transfer->tenant_id,
+            $short ? 'inventory.transfer_short' : 'inventory.transfer_received',
+            $title, "{$actor} received this at ".$this->warehouseName($transfer->to_warehouse_id).". {$body}",
+            '/app/inventory/transfers', $actorId,
+        );
+
+        if ($short) {
+            $this->mailTo(
+                $transfer->tenant_id,
+                $this->emails($audience),
+                fn () => new TransferMail(
+                    $transfer, $title,
+                    "{$actor} received this consignment and it came up short. {$body} "
+                        .'The missing units are still held in transit — they have NOT been written off. '
+                        .'Either they turn up and get received late, or somebody signs them off as a transit loss.',
+                    $summary,
+                ),
+                "short delivery on {$transfer->code}",
+            );
+        }
+    }
+
+    /** Somebody signed off stock that never arrived. */
+    public function transferLoss($transfer, int $actorId, string $reason, array $summary): void
+    {
+        $actor = $this->name($actorId);
+
+        // Both ends, plus admins: a write-off is a fact about the route, not a
+        // private decision at the receiving desk.
+        $audience = array_values(array_unique(array_merge(
+            $this->audience($transfer->tenant_id, $transfer->from_warehouse_id, $actorId, [$transfer->dispatched_by]),
+            $this->audience($transfer->tenant_id, $transfer->to_warehouse_id, $actorId),
+        )));
+
+        $title = "Transit loss written off — {$transfer->code}";
+
+        $this->bell(
+            $audience, $transfer->tenant_id, 'inventory.transfer_loss',
+            $title, "{$actor}: {$reason}", '/app/inventory/transfers', $actorId,
+        );
+
+        // Always emails. This is the one moment stock is declared gone with
+        // nobody having seen where it went.
+        $this->mailTo(
+            $transfer->tenant_id,
+            $this->emails($audience),
+            fn () => new TransferMail(
+                $transfer, $title,
+                "{$actor} wrote off stock that never arrived on this consignment. Reason given: {$reason}",
+                $summary,
+            ),
+            "transit loss on {$transfer->code}",
+        );
+    }
+
+    /* ── Physical counts ────────────────────────────────────────── */
+
+    /** A count sheet landed on somebody's list. Straight to them. */
+    public function countAssigned($session, int $userId, int $actorId): void
+    {
+        if ($userId === $actorId || ! $this->on($session->tenant_id, 'notify_count_activity')) {
+            return;
+        }
+
+        $actor = $actorId ? $this->name($actorId) : 'The scheduler';
+        $lines = $session->lines()->count();
+        $what = $session->name ?: $this->scopeLabel($session);
+
+        $this->bell(
+            [$userId], $session->tenant_id, 'inventory.count_assigned',
+            "{$actor} assigned you a count: {$session->code}",
+            $lines.' line(s) to walk — '.$what.($session->warehouse ? ' at '.$session->warehouse->name : ''),
+            // Actor 0 means the scheduler raised it, not a person.
+            '/app/inventory/counts', $actorId ?: null,
+        );
+
+        $this->mailTo(
+            $session->tenant_id,
+            $this->emails([$userId]),
+            fn () => new CountSessionMail($session, "You have a count to do: {$session->code}",
+                "{$actor} assigned this to you. Walk the list below and record what is physically there."),
+            "count assignment {$session->code}",
+        );
+    }
+
+    /**
+     * A finished sheet is waiting on somebody's signature.
+     *
+     * This one always emails, like an approval request: an unapproved count is a
+     * known discrepancy that the ledger is still lying about, and every day it
+     * sits unsigned is a day the numbers are knowingly wrong.
+     *
+     * @param  array  $summary  the variance block from CountService::variance()
+     */
+    public function countSubmitted($session, int $actorId, array $summary): void
+    {
+        $actor = $this->name($actorId);
+
+        // The counter cannot approve their own sheet, so they are excluded —
+        // telling them would be telling them about themselves.
+        $audience = $this->audience($session->tenant_id, $session->warehouse_id, $actorId);
+
+        $body = $summary['variances'] > 0
+            ? $summary['variances'].' of '.$summary['counted'].' line(s) disagree with the ledger — '
+                .$this->money((float) $summary['variance_value']).' at cost'
+            : 'Every line matched the ledger.';
+
+        $this->bell(
+            $audience, $session->tenant_id, 'inventory.count_submitted',
+            "Count needs approval: {$session->code}",
+            "{$actor} finished counting. {$body}",
+            '/app/inventory/counts', $actorId,
+        );
+
+        $this->mailTo(
+            $session->tenant_id,
+            $this->emails($audience),
+            fn () => new CountSessionMail(
+                $session,
+                "Count needs approval: {$session->code}",
+                "{$actor} has finished this count and sent it for approval. {$body} "
+                    .'Nothing is corrected in the ledger until somebody signs it off.',
+                $summary,
+            ),
+            "count approval request {$session->code}",
+        );
+    }
+
+    /** Signed off, or sent back to be walked again. */
+    public function countDecided($session, int $actorId, bool $approved, ?string $reason): void
+    {
+        $actor = $this->name($actorId);
+
+        $title = $approved ? "Count approved: {$session->code}" : "Count sent back: {$session->code}";
+        $body = $approved
+            ? "{$actor} approved this count. The corrections are now in the ledger"
+                .($session->variance_value !== null ? ' ('.$this->money((float) $session->variance_value).' at cost).' : '.')
+            : "{$actor} sent this back: ".$reason;
+
+        // Both the counter and whoever raised the sheet: one did the work, the
+        // other is waiting on the answer.
+        $audience = $this->audience($session->tenant_id, $session->warehouse_id, $actorId, [$session->assigned_to, $session->created_by]);
+
+        $this->bell(
+            $audience, $session->tenant_id,
+            $approved ? 'inventory.count_approved' : 'inventory.count_rejected',
+            $title, $body, '/app/inventory/counts', $actorId,
+        );
+
+        // Straight to the counter's inbox — someone else just decided what
+        // happens to work they did with their own hands.
+        $counter = (int) ($session->assigned_to ?: $session->created_by);
+        if ($counter && $counter !== $actorId) {
+            $this->mailTo(
+                $session->tenant_id,
+                $this->emails([$counter]),
+                fn () => new CountSessionMail($session, $title, $body),
+                "count decision on {$session->code}",
+            );
+        }
+    }
+
+    private function scopeLabel($session): string
+    {
+        return match ($session->scope) {
+            'location' => 'selected bins',
+            'category' => 'selected categories',
+            'abc'      => 'class '.($session->scope_ref['abc_class'] ?? 'A').' items',
+            'product'  => 'selected items',
+            'random'   => 'a random sample',
+            default    => 'the whole warehouse',
+        };
+    }
+
+    private function money(float $n): string
+    {
+        return ($n < 0 ? '-' : '').number_format(abs($n), 2);
     }
 
     /* ── Stock level alerts ─────────────────────────────────────── */
@@ -212,6 +652,75 @@ class InventoryNotifier
             $this->emails($audience),
             fn () => new StockAlertMail($subject, $crossed, $out !== [], $this->warehouseName($warehouseId)),
             'stock alert',
+        );
+    }
+
+    /* ── Bin capacity ───────────────────────────────────────────── */
+
+    /**
+     * The daily housekeeping digest: bins holding more than they can take, and
+     * stock at a site with no bin recorded at all.
+     *
+     * One message covering every warehouse, like the expiry digest — an
+     * overfull shelf is a job for the morning, not an interruption. The second
+     * half matters more than the first: a bin over its limit is a tidy-up, but
+     * stock nobody can locate is stock that will be re-ordered because somebody
+     * could not find it.
+     *
+     * @param  array  $sites  from LayoutService::capacityAlerts()
+     */
+    public function binsOverCapacity(int $tenantId, array $sites): void
+    {
+        if (! $sites || ! $this->on($tenantId, 'notify_capacity_alerts')) {
+            return;
+        }
+
+        $overCount = array_sum(array_map(fn ($s) => count($s['over']), $sites));
+        $lost = array_sum(array_map(fn ($s) => (float) $s['unlocated'], $sites));
+
+        $bits = [];
+        if ($overCount) {
+            $bits[] = "{$overCount} bin(s) over capacity";
+        }
+        if ($lost > 0) {
+            $bits[] = $this->qty($lost).' unit(s) with no bin recorded';
+        }
+        $subject = 'Warehouse housekeeping: '.implode(', ', $bits);
+
+        $body = collect($sites)->take(3)->map(function ($s) {
+            $part = $s['warehouse']['name'].' — ';
+            $part .= $s['over'] ? count($s['over']).' bin(s) over their limit' : 'no bins over';
+            if ($s['unlocated'] > 0) {
+                $part .= ', '.$this->qty((float) $s['unlocated']).' unlocated';
+            }
+
+            return $part;
+        })->implode('; ');
+
+        // Every warehouse's manager plus admins. Passing no warehouse id keeps
+        // it to admins, so each site is announced against its own.
+        foreach ($sites as $site) {
+            $audience = $this->audience($tenantId, $site['warehouse']['id'], null);
+
+            $this->bell(
+                $audience, $tenantId, 'inventory.capacity',
+                $subject, $body, '/app/inventory/warehouses', null,
+            );
+        }
+
+        $all = $this->audience($tenantId, null, null);
+        foreach ($sites as $site) {
+            $mgr = Warehouse::forTenant($tenantId)->whereKey($site['warehouse']['id'])->value('manager_id');
+            if ($mgr) {
+                $all[] = (int) $mgr;
+            }
+        }
+
+        $this->mailTo(
+            $tenantId,
+            $this->emails(array_values(array_unique($all))),
+            fn () => new CapacityAlertMail($subject, $sites),
+            'capacity digest',
         );
     }
 

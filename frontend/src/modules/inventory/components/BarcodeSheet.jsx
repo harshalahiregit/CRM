@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { X, Printer } from 'lucide-react'
 import { INV_ACCENT, money } from '@/services/inventoryApi'
+import QrCode from './QrCode'
 
 /**
  * Printable barcode labels (blueprint §1 "Print barcode").
@@ -77,6 +78,7 @@ function Barcode({ value, height = 44 }) {
 export default function BarcodeSheet({ products = [], onClose }) {
   const [copies, setCopies] = useState(1)
   const [showPrice, setShowPrice] = useState(true)
+  const [symbology, setSymbology] = useState('barcode')
 
   // One entry per copy, so "3 copies of 4 items" prints 12 labels.
   const labels = products.flatMap(p => Array.from({ length: Math.max(1, Number(copies) || 1) }, () => p))
@@ -112,6 +114,20 @@ export default function BarcodeSheet({ products = [], onClose }) {
             Show price
           </label>
 
+          {/* Both symbologies encode the same string, so a label printed either
+              way resolves identically at the scanner. Code 128 is narrower on a
+              shelf edge; QR survives being scuffed and reads at an angle. */}
+          <div className="flex items-center gap-1 text-[11px] rounded-lg p-0.5" style={{ background: 'var(--bg-input)' }}>
+            {[['barcode', 'Barcode'], ['qr', 'QR']].map(([v, label]) => (
+              <button key={v} onClick={() => setSymbology(v)}
+                className="px-2 py-1 rounded-md font-bold"
+                style={{
+                  background: symbology === v ? INV_ACCENT : 'transparent',
+                  color: symbology === v ? '#fff' : 'var(--text-muted)',
+                }}>{label}</button>
+            ))}
+          </div>
+
           <div className="ml-auto flex items-center gap-2">
             <button onClick={() => window.print()}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold"
@@ -133,8 +149,10 @@ export default function BarcodeSheet({ products = [], onClose }) {
                 {showPrice && p.sale_price != null && (
                   <p style={{ fontSize: 11, fontWeight: 700, color: '#0f172a', margin: '2px 0 0' }}>{money(p.sale_price)}</p>
                 )}
-                <div style={{ margin: '5px 0 2px' }}>
-                  <Barcode value={p.barcode || p.sku} />
+                <div style={{ margin: '5px 0 2px', display: 'flex', justifyContent: 'center' }}>
+                  {symbology === 'qr'
+                    ? <QrCode value={p.barcode || p.sku} size={78} />
+                    : <Barcode value={p.barcode || p.sku} />}
                 </div>
                 <p style={{ fontSize: 9, fontFamily: 'monospace', letterSpacing: '0.08em', color: '#0f172a', margin: 0 }}>
                   {p.barcode || p.sku}

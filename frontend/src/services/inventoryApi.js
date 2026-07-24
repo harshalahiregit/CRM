@@ -113,6 +113,10 @@ export const inventoryApi = {
     locations:      (id) => api.get(`/inventory/warehouses/${id}/locations`).then(unwrap).catch(handleErr),
     createLocation: (id, data) => api.post(`/inventory/warehouses/${id}/locations`, data).then(unwrap).catch(handleErr),
     deleteLocation: (id, locId) => api.delete(`/inventory/warehouses/${id}/locations/${locId}`).then(unwrap).catch(handleErr),
+    // The site as a building: bin occupancy, over-capacity, unlocated stock.
+    // `measure` = units | volume | weight — what "full" counts.
+    layout:  (id, measure = 'units') => api.get(`/inventory/warehouses/${id}/layout`, { params: { measure } }).then(unwrap).catch(handleErr),
+    putaway: (id, data) => api.post(`/inventory/warehouses/${id}/putaway`, data).then(unwrap).catch(handleErr),
   },
 
   stock: {
@@ -134,6 +138,115 @@ export const inventoryApi = {
     cancel: (type, id) => api.post(`/inventory/vouchers/${type}/${id}/cancel`).then(unwrap).catch(handleErr),
     // §2 "send received note" — email the document to a supplier/customer.
     send:   (type, id, data) => api.post(`/inventory/vouchers/${type}/${id}/send`, data).then(unwrap).catch(handleErr),
+
+    // The approval gate. Only reachable where Settings > Approval switched a
+    // rule on; submit belongs to the raiser, approve/reject to someone else.
+    // Goods-in inspection (§13). Recorded BEFORE posting, because posting a
+    // receipt moves the ACCEPTED quantity, not whatever turned up on the lorry.
+    inspect: (type, id, lines) => api.post(`/inventory/vouchers/${type}/${id}/inspect`, { lines }).then(unwrap).catch(handleErr),
+    vendorReturn: (type, id) => api.post(`/inventory/vouchers/${type}/${id}/vendor-return`).then(unwrap).catch(handleErr),
+
+    // Paperwork on the document: challan, test certificate, QC photos, POD.
+    // Files live on a private disk, so downloads are fetched as an authenticated
+    // blob rather than linked to directly.
+    files: (type, id) => api.get(`/inventory/vouchers/${type}/${id}/files`).then(unwrap).catch(handleErr),
+    uploadFiles: (type, id, fileList, kind = 'document') => {
+      const fd = new FormData()
+      Array.from(fileList).forEach(f => fd.append('files[]', f))
+      fd.append('kind', kind)
+      // Overriding Content-Type lets axios set the multipart boundary itself —
+      // the instance default (application/json) would break the upload.
+      return api.post(`/inventory/vouchers/${type}/${id}/files`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      }).then(unwrap).catch(handleErr)
+    },
+    deleteFile: (type, id, fileId) => api.delete(`/inventory/vouchers/${type}/${id}/files/${fileId}`).then(unwrap).catch(handleErr),
+    downloadFile: async (type, id, fileId, name) => {
+      const res = await api.get(`/inventory/vouchers/${type}/${id}/files/${fileId}/download`, { responseType: 'blob' }).catch(handleErr)
+      const url = URL.createObjectURL(res.data)
+      const a = document.createElement('a')
+      a.href = url; a.download = name || 'attachment'
+      a.click()
+      URL.revokeObjectURL(url)
+    },
+
+    submit:  (type, id) => api.post(`/inventory/vouchers/${type}/${id}/submit`).then(unwrap).catch(handleErr),
+    approve: (type, id) => api.post(`/inventory/vouchers/${type}/${id}/approve`).then(unwrap).catch(handleErr),
+    reject:  (type, id, reason) => api.post(`/inventory/vouchers/${type}/${id}/reject`, { reason }).then(unwrap).catch(handleErr),
+  },
+
+  /** Documents waiting on the current user's decision, across all four types. */
+  pendingApprovals: () => api.get('/inventory/approvals/pending').then(unwrap).catch(handleErr),
+
+  /**
+   * One call for the scanner: give it any code and the server says what it is —
+   * product, serial, batch, bin, warehouse or document. A miss comes back as
+   * found:false with a 200, because an unlabelled box is a normal thing to scan,
+   * not a client error worth an exception.
+   */
+  scan: (code) => api.post('/inventory/scan', { code }).then(unwrap).catch(handleErr),
+
+  /**
+   * Pick, pack, ship. Nothing here moves stock — shipping posts the delivery
+   * voucher, and that is what writes the movement.
+   */
+  fulfilment: {
+    list:    (params = {}) => api.get('/inventory/fulfilment', { params }).then(unwrap).catch(handleErr),
+    get:     (id) => api.get(`/inventory/fulfilment/${id}`).then(unwrap).catch(handleErr),
+    create:  (data) => api.post('/inventory/fulfilment', data).then(unwrap).catch(handleErr),
+    assign:  (id, assigned_to) => api.patch(`/inventory/fulfilment/${id}/assign`, { assigned_to }).then(unwrap).catch(handleErr),
+    pick:    (id, lines) => api.post(`/inventory/fulfilment/${id}/pick`, { lines }).then(unwrap).catch(handleErr),
+    picked:  (id) => api.post(`/inventory/fulfilment/${id}/picked`).then(unwrap).catch(handleErr),
+    pack:    (id, lines) => api.post(`/inventory/fulfilment/${id}/pack`, { lines }).then(unwrap).catch(handleErr),
+    ship:    (id, data) => api.post(`/inventory/fulfilment/${id}/ship`, data).then(unwrap).catch(handleErr),
+    deliver: (id, data) => api.post(`/inventory/fulfilment/${id}/deliver`, data).then(unwrap).catch(handleErr),
+    cancel:  (id) => api.post(`/inventory/fulfilment/${id}/cancel`).then(unwrap).catch(handleErr),
+    // Which couriers exist and which are actually connected — the UI says so
+    // rather than leaving people wondering why a number must be typed by hand.
+    carriers: () => api.get('/inventory/fulfilment/carriers').then(unwrap).catch(handleErr),
+  },
+
+  /**
+   * Physical counts. Counting writes to the count sheet only — APPROVAL is what
+   * posts the corrections to the ledger, and never by whoever did the walking.
+   */
+  counts: {
+    list:    (params = {}) => api.get('/inventory/counts', { params }).then(unwrap).catch(handleErr),
+    get:     (id) => api.get(`/inventory/counts/${id}`).then(unwrap).catch(handleErr),
+    create:  (data) => api.post('/inventory/counts', data).then(unwrap).catch(handleErr),
+    assign:  (id, assigned_to) => api.patch(`/inventory/counts/${id}/assign`, { assigned_to }).then(unwrap).catch(handleErr),
+    // A counter found something the sheet doesn't list.
+    addLine: (id, data) => api.post(`/inventory/counts/${id}/lines`, data).then(unwrap).catch(handleErr),
+    count:   (id, lines) => api.post(`/inventory/counts/${id}/count`, { lines }).then(unwrap).catch(handleErr),
+    recount: (id, lines) => api.post(`/inventory/counts/${id}/recount`, { lines }).then(unwrap).catch(handleErr),
+    submit:  (id) => api.post(`/inventory/counts/${id}/submit`).then(unwrap).catch(handleErr),
+    approve: (id) => api.post(`/inventory/counts/${id}/approve`).then(unwrap).catch(handleErr),
+    reject:  (id, reason) => api.post(`/inventory/counts/${id}/reject`, { reason }).then(unwrap).catch(handleErr),
+    cancel:  (id) => api.post(`/inventory/counts/${id}/cancel`).then(unwrap).catch(handleErr),
+    photo:   (id, lineId, file) => {
+      const fd = new FormData()
+      fd.append('photo', file)
+      return api.post(`/inventory/counts/${id}/lines/${lineId}/photo`, fd,
+        { headers: { 'Content-Type': 'multipart/form-data' } }).then(unwrap).catch(handleErr)
+    },
+    photoUrl: (id, lineId) => `/api/inventory/counts/${id}/lines/${lineId}/photo`,
+  },
+
+  /**
+   * Consignments. Dispatch moves stock into the transit warehouse; receiving
+   * moves what actually arrived out of it. Anything left over stays in transit
+   * until it is received late or deliberately written off.
+   */
+  transfers: {
+    list:     (params = {}) => api.get('/inventory/transfers', { params }).then(unwrap).catch(handleErr),
+    get:      (id) => api.get(`/inventory/transfers/${id}`).then(unwrap).catch(handleErr),
+    create:   (data) => api.post('/inventory/transfers', data).then(unwrap).catch(handleErr),
+    dispatch: (id, data) => api.post(`/inventory/transfers/${id}/dispatch`, data).then(unwrap).catch(handleErr),
+    receive:  (id, lines) => api.post(`/inventory/transfers/${id}/receive`, { lines }).then(unwrap).catch(handleErr),
+    writeOff: (id, lines, reason) => api.post(`/inventory/transfers/${id}/write-off`, { lines, reason }).then(unwrap).catch(handleErr),
+    cancel:   (id) => api.post(`/inventory/transfers/${id}/cancel`).then(unwrap).catch(handleErr),
+    // Does the transit balance match what the open consignments claim? Admin-only.
+    reconcile: () => api.get('/inventory/transfers/reconcile').then(unwrap).catch(handleErr),
   },
 
   // Settings master data (blueprint §10). `all()` is one request behind every
@@ -176,9 +289,62 @@ export const VOUCHER_TYPES = {
 }
 
 export const VOUCHER_STATUS = {
-  draft:     { label: 'Draft',     color: 'var(--text-muted)' },
-  posted:    { label: 'Posted',    color: '#10B981' },
-  cancelled: { label: 'Cancelled', color: 'var(--color-danger-500)' },
+  draft:            { label: 'Draft',      color: 'var(--text-muted)' },
+  // Only appear where Settings > Approval switched a rule on. Everywhere else a
+  // draft still goes straight to posted, exactly as it always did.
+  pending_approval: { label: 'Awaiting approval', color: '#f59e0b' },
+  approved:         { label: 'Approved',   color: '#3b82f6' },
+  posted:           { label: 'Posted',     color: '#10B981' },
+  cancelled:        { label: 'Cancelled',  color: 'var(--color-danger-500)' },
+}
+
+/**
+ * The fulfilment stages, in order. A parcel only ever moves forward, so the
+ * order here IS the workflow — the UI reads the next action off it.
+ */
+export const PICK_STATUS = {
+  open:      { label: 'To pick',   color: 'var(--text-muted)', next: 'Start picking' },
+  picking:   { label: 'Picking',   color: '#3b82f6',           next: 'Finish picking' },
+  picked:    { label: 'To pack',   color: '#8b5cf6',           next: 'Pack it' },
+  packed:    { label: 'To ship',   color: '#f59e0b',           next: 'Ship it' },
+  shipped:   { label: 'Shipped',   color: '#0ea5e9',           next: 'Mark delivered' },
+  delivered: { label: 'Delivered', color: '#10B981',           next: null },
+  cancelled: { label: 'Cancelled', color: 'var(--color-danger-500)', next: null },
+}
+
+/**
+ * The count stages. `counting` is where a rejected sheet lands too, so the
+ * label has to make sense both the first time and the second.
+ */
+export const COUNT_STATUS = {
+  draft:            { label: 'Not started',       color: 'var(--text-muted)' },
+  counting:         { label: 'Being counted',     color: '#3b82f6' },
+  pending_approval: { label: 'Awaiting approval', color: '#f59e0b' },
+  approved:         { label: 'Approved',          color: '#10B981' },
+  cancelled:        { label: 'Cancelled',         color: 'var(--color-danger-500)' },
+}
+
+/** How a sheet's lines were chosen. */
+export const COUNT_SCOPES = [
+  { value: 'random',   label: 'Random sample',    hint: 'Nobody can predict which shelf gets checked — the cheapest honest count there is.' },
+  { value: 'abc',      label: 'By ABC class',     hint: 'Count the items that carry the value most often.' },
+  { value: 'location', label: 'Chosen bins',      hint: 'Verify particular racks or bins.' },
+  { value: 'category', label: 'Chosen categories', hint: 'Everything in one part of the catalogue.' },
+  { value: 'product',  label: 'Chosen items',     hint: 'A short list you already suspect.' },
+  { value: 'full',     label: 'Whole warehouse',  hint: 'A wall-to-wall stocktake. Thorough, and rarely finished.' },
+]
+
+/**
+ * The consignment stages. `in_transit` is the one that matters: goods that have
+ * left one shelf and not yet reached another are on nobody's, and saying so is
+ * the entire point of the feature.
+ */
+export const TRANSFER_STATUS = {
+  draft:      { label: 'Not sent yet', color: 'var(--text-muted)', next: 'Dispatch' },
+  in_transit: { label: 'On the road',  color: '#0ea5e9',           next: 'Receive' },
+  received:   { label: 'Received',     color: '#8b5cf6',           next: null },
+  closed:     { label: 'Complete',     color: '#10B981',           next: null },
+  cancelled:  { label: 'Turned round', color: 'var(--color-danger-500)', next: null },
 }
 
 /** The Items page's Alert dropdown (blueprint §1). */
@@ -232,6 +398,13 @@ export const WAREHOUSE_TYPES = [
   { value: 'open_yard',    label: 'Open Yard' },
   { value: 'transit',      label: 'Transit' },
   { value: 'virtual',      label: 'Virtual' },
+]
+
+/** What a bin's capacity number counts. A number with no unit is not a limit. */
+export const CAPACITY_UOMS = [
+  { value: 'units',  label: 'Units',  hint: 'A plain count. Honest only where a bin holds one kind of thing.' },
+  { value: 'weight', label: 'Weight', hint: 'Sum of quantity × the product weight. The limit that matters for a rack beam.' },
+  { value: 'volume', label: 'Volume', hint: 'Sum of quantity × the product volume.' },
 ]
 
 export const LOCATION_TYPES = [

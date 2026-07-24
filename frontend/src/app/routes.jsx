@@ -80,6 +80,10 @@ const InventoryHistory = lazy(() => import('@/modules/inventory/pages/InventoryH
 const InventoryReports = lazy(() => import('@/modules/inventory/pages/InventoryReports'))
 const InventoryAnalytics = lazy(() => import('@/modules/inventory/pages/InventoryAnalytics'))
 const InventoryTraceability = lazy(() => import('@/modules/inventory/pages/InventoryTraceability'))
+const InventoryScan = lazy(() => import('@/modules/inventory/pages/InventoryScan'))
+const InventoryFulfilment = lazy(() => import('@/modules/inventory/pages/InventoryFulfilment'))
+const InventoryCounts = lazy(() => import('@/modules/inventory/pages/InventoryCounts'))
+const InventoryTransfers = lazy(() => import('@/modules/inventory/pages/InventoryTransfers'))
 
 function ComingSoon({ name }) {
   return (
@@ -214,6 +218,10 @@ export default function AppRoutes() {
         <Route path="inventory/reports" element={<S><InventoryReports /></S>} />
         <Route path="inventory/analytics" element={<S><InventoryAnalytics /></S>} />
         <Route path="inventory/traceability" element={<S><InventoryTraceability /></S>} />
+        <Route path="inventory/scan" element={<S><InventoryScan /></S>} />
+        <Route path="inventory/fulfilment" element={<S><InventoryFulfilment /></S>} />
+        <Route path="inventory/counts" element={<S><InventoryCounts /></S>} />
+        <Route path="inventory/transfers" element={<S><InventoryTransfers /></S>} />
         <Route path="inventory/settings" element={<S><InventorySettings /></S>} />
 
         <Route path="invoices" element={<ComingSoon name="Invoices" />} />

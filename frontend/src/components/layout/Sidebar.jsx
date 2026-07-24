@@ -7,7 +7,8 @@ import {
   ClipboardList, ChevronDown, Shield, UserCog,
   IndianRupee, FileSignature, CreditCard, FileX,
   ShoppingBag, UserPlus,
-  Boxes, PackagePlus, PackageMinus, ArrowLeftRight, Scale, Warehouse, History, BarChart3, Activity, Layers3
+  Boxes, PackagePlus, PackageMinus, ArrowLeftRight, Scale, Warehouse, History, BarChart3, Activity, Layers3, ScanLine,
+  ClipboardCheck
 } from 'lucide-react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -68,10 +69,18 @@ const HELPDESK_SUB_ITEMS = [
 // Inventory OS — mirrors the blueprint's left-nav parent + its sub-pages.
 const INVENTORY_SUB_ITEMS = [
   { label: 'Inventory Dashboard', path: '/app/inventory', icon: LayoutDashboard, end: true },
+  // High in the list on purpose: on a warehouse floor this is the first thing
+  // someone reaches for, not a tool buried under reports.
+  { label: 'Scan', path: '/app/inventory/scan', icon: ScanLine },
   { label: 'Items', path: '/app/inventory/products', icon: Package },
   { label: 'Receiving voucher', path: '/app/inventory/vouchers/receipt', icon: PackagePlus },
   { label: 'Delivery voucher', path: '/app/inventory/vouchers/delivery', icon: PackageMinus },
+  { label: 'Pick, pack & ship', path: '/app/inventory/fulfilment', icon: Truck },
+  // Next to the daily work, not under Reports: a count is something people DO.
+  { label: 'Physical counts', path: '/app/inventory/counts', icon: ClipboardCheck },
   { label: 'Internal delivery note', path: '/app/inventory/vouchers/internal', icon: ArrowLeftRight },
+  // Right under the note it comes from — the consignment is what happens next.
+  { label: 'Consignments', path: '/app/inventory/transfers', icon: Truck },
   { label: 'Loss & adjustment', path: '/app/inventory/vouchers/loss_adjustment', icon: Scale },
   { label: 'Warehouse', path: '/app/inventory/warehouses', icon: Warehouse },
   { label: 'Traceability', path: '/app/inventory/traceability', icon: Layers3 },

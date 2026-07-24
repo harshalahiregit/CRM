@@ -21,8 +21,11 @@ class VoucherController extends Controller
     use ApiResponse;
     use GuardsInventoryAccess;
 
-    public function __construct(private VoucherService $vouchers)
-    {
+    public function __construct(
+        private VoucherService $vouchers,
+        private \App\Services\Inventory\ApprovalService $approvals,
+        private \App\Services\Inventory\ReceivingService $receiving,
+    ) {
     }
 
     public function index(Request $request, string $type)
@@ -31,7 +34,14 @@ class VoucherController extends Controller
         $this->vouchers->assertType($type);
         $filters = $request->only(['status', 'search', 'from', 'to', 'created_by']);
 
-        return $this->success($this->vouchers->list($type, $request->user()->tenant_id, $filters), 'Vouchers retrieved');
+        return $this->success(
+            $this->vouchers->list($type, $request->user()->tenant_id, $filters, [
+                'user_id'       => $request->user()->id,
+                'is_admin'      => $this->isAdmin($request),
+                'warehouse_ids' => $this->managedWarehouseIds($request),
+            ]),
+            'Vouchers retrieved'
+        );
     }
 
     public function show(Request $request, string $type, int $id)
@@ -77,6 +87,124 @@ class VoucherController extends Controller
         return $this->success(
             $this->vouchers->post($id, $request->user()->tenant_id, $request->user()->id),
             'Voucher posted — stock updated'
+        );
+    }
+
+    /* ── Receiving inspection (§13) ─────────────────────────────── */
+
+    /**
+     * Record what actually turned up and what passed inspection. Same bar as
+     * posting, because this decides what reaches the shelf.
+     */
+    public function inspect(Request $request, string $type, int $id)
+    {
+        $this->guardVoucherManage($request, $id, 'inspect this delivery');
+        $this->vouchers->assertType($type);
+
+        $data = $request->validate([
+            'lines'                    => 'required|array|min:1',
+            'lines.*.id'               => 'required|integer',
+            'lines.*.received_qty'     => 'nullable|numeric|min:0',
+            'lines.*.accepted_qty'     => 'nullable|numeric|min:0',
+            'lines.*.rejection_reason' => 'nullable|string|max:500',
+        ]);
+
+        return $this->success(
+            $this->receiving->inspect($id, $data['lines'], $request->user()->tenant_id, $request->user()->id),
+            'Inspection saved'
+        );
+    }
+
+    /** What the supplier has to take back. */
+    public function vendorReturn(Request $request, string $type, int $id)
+    {
+        $this->guardVoucherManage($request, $id, 'raise a vendor return');
+        $this->vouchers->assertType($type);
+
+        return $this->success(
+            $this->receiving->vendorReturn($id, $request->user()->tenant_id, $request->user()->id),
+            'Vendor return raised'
+        );
+    }
+
+    /* ── Approval gate ──────────────────────────────────────────── */
+
+    /** Send a draft for approval. Same bar as editing — it's your document. */
+    public function submit(Request $request, string $type, int $id)
+    {
+        $this->guardVoucherManage($request, $id, 'send this document for approval');
+        $this->vouchers->assertType($type);
+
+        return $this->success(
+            $this->approvals->submit($id, $request->user()->tenant_id, $request->user()->id),
+            'Sent for approval'
+        );
+    }
+
+    /**
+     * Approve / reject.
+     *
+     * Deliberately a HIGHER bar than posting: an approver must be an admin or
+     * the manager of the warehouse involved. guardVoucherManage would also let
+     * the document's own creator through, and someone approving their own work
+     * is exactly what this gate exists to prevent (ApprovalService refuses it
+     * again on the way past, so the rule holds even if this guard is loosened).
+     */
+    public function approve(Request $request, string $type, int $id)
+    {
+        $this->denyExternal($request);
+        $this->vouchers->assertType($type);
+        $this->assertApprover($request, $id);
+
+        return $this->success(
+            $this->approvals->approve($id, $request->user()->tenant_id, $request->user()->id),
+            'Approved — it can be posted now'
+        );
+    }
+
+    public function reject(Request $request, string $type, int $id)
+    {
+        $this->denyExternal($request);
+        $this->vouchers->assertType($type);
+        $this->assertApprover($request, $id);
+
+        $data = $request->validate(['reason' => 'required|string|max:1000']);
+
+        return $this->success(
+            $this->approvals->reject($id, $request->user()->tenant_id, $request->user()->id, $data['reason']),
+            'Sent back to the requester'
+        );
+    }
+
+    /** Everything waiting on this user's decision, across all four types. */
+    public function pending(Request $request)
+    {
+        $this->denyExternal($request);
+
+        return $this->success(
+            $this->approvals->pendingFor(
+                $request->user()->tenant_id,
+                $request->user()->id,
+                $this->isAdmin($request),
+                $this->managedWarehouseIds($request),
+            ),
+            'Pending approvals retrieved'
+        );
+    }
+
+    private function assertApprover(Request $request, int $voucherId): void
+    {
+        if ($this->isAdmin($request)) {
+            return;
+        }
+
+        $warehouseId = \App\Models\Inventory\Voucher::forTenant($request->user()->tenant_id)
+            ->whereKey($voucherId)->value('warehouse_id');
+
+        abort_unless(
+            $warehouseId && in_array((int) $warehouseId, $this->managedWarehouseIds($request), true),
+            403,
+            'Only an admin or the manager of that warehouse can approve this document.'
         );
     }
 

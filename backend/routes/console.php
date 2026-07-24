@@ -57,3 +57,14 @@ Schedule::command('inventory:run-alerts')
     ->dailyAt('07:00')
     ->withoutOverlapping()
     ->runInBackground();
+
+// Inventory: raise the week's random cycle-count sheets.
+// Monday morning, before the week fills up — a count sheet that lands on a
+// Friday afternoon is a count sheet that gets walked in a hurry or not at all.
+// Off unless a tenant switches `cycle_count_auto` on, and skipped for any
+// warehouse whose last sheet is still open, so a catch-up run after downtime
+// never stacks four weeks of counting onto one person.
+Schedule::command('inventory:cycle-counts')
+    ->weeklyOn(1, '08:00')
+    ->withoutOverlapping()
+    ->runInBackground();

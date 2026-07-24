@@ -116,7 +116,47 @@ class WarehouseService
             }
         }
 
-        return Location::create([...$data, 'warehouse_id' => $warehouseId, 'tenant_id' => $tenantId]);
+        // Every location gets a scannable code. Without one the printed shelf
+        // label has nothing a scanner can resolve, and "scan the bin you're
+        // standing at" — which the whole picking and counting flow rests on —
+        // silently does nothing.
+        $data['code'] = ! empty($data['code'])
+            ? $this->uniqueLocationCode(strtoupper(trim($data['code'])), $tenantId)
+            : $this->generateLocationCode($warehouseId, $data['name'] ?? 'LOC', $tenantId);
+
+        // fresh() so the response carries every column — capacity and
+        // capacity_uom included — even when the caller left them unset. Without
+        // it the create response is missing exactly the fields the layout screen
+        // reads back, and null looks like "key absent" rather than "not measured".
+        return Location::create([...$data, 'warehouse_id' => $warehouseId, 'tenant_id' => $tenantId])->fresh();
+    }
+
+    /**
+     * A code a human can read off a shelf and a scanner can resolve:
+     * warehouse code, then the location name compacted — "MAIN-RACKA".
+     */
+    private function generateLocationCode(int $warehouseId, string $name, int $tenantId): string
+    {
+        $wh = Location::query()->getConnection()->table('inventory_warehouses')
+            ->where('id', $warehouseId)->first(['code', 'id']);
+
+        $prefix = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string) ($wh->code ?? '')) ?: 'WH'.$warehouseId);
+        $slug = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $name)) ?: 'LOC';
+
+        return $this->uniqueLocationCode(substr($prefix, 0, 8).'-'.substr($slug, 0, 10), $tenantId);
+    }
+
+    /** Append -2, -3 … until it's free. Codes are what scanners match on. */
+    private function uniqueLocationCode(string $base, int $tenantId): string
+    {
+        $code = $base;
+        $i = 2;
+        while (Location::forTenant($tenantId)->where('code', $code)->exists()) {
+            $code = $base.'-'.$i;
+            $i++;
+        }
+
+        return $code;
     }
 
     public function deleteLocation(int $id, int $tenantId): void

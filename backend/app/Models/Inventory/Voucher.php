@@ -46,7 +46,27 @@ class Voucher extends Model
         'inventory_value' => 'decimal:2',
         'total_tax'    => 'decimal:2',
         'total_amount' => 'decimal:2',
+        'approved_at'  => 'datetime',
+        'rejected_at'  => 'datetime',
+        'submitted_at' => 'datetime',
     ];
+
+    /**
+     * The document lifecycle. `pending_approval` and `approved` only appear in
+     * workspaces that switched a rule on in Settings > Approval; everywhere else
+     * a draft goes straight to posted, exactly as it always did.
+     */
+    public const STATUSES = ['draft', 'pending_approval', 'approved', 'posted', 'cancelled'];
+
+    public function approver()
+    {
+        return $this->belongsTo(User::class, 'approved_by');
+    }
+
+    public function rejecter()
+    {
+        return $this->belongsTo(User::class, 'rejected_by');
+    }
 
     public function items()
     {

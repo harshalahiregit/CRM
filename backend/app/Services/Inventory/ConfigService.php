@@ -45,6 +45,12 @@ class ConfigService
         'expiry_alert_days'        => 30,
         'default_warehouse_id'     => null,
 
+        // Cycle counting. Off by default: raising sheets nobody asked for would
+        // fill a working warehouse's queue with homework. Turned on, a small
+        // random sample every week beats an annual shutdown that never happens.
+        'cycle_count_auto'         => false,
+        'cycle_count_sample'       => 20,
+
         // "Approval setting" tab.
         'require_approval_receipt'   => false,
         'require_approval_delivery'  => false,
@@ -59,6 +65,14 @@ class ConfigService
         'notify_stock_alerts'      => true,   // low stock / out of stock
         'notify_voucher_activity'  => true,   // posted, cancelled, incoming transfer
         'notify_expiry_alerts'     => true,   // batches nearing expiry
+        // Physical counts. Its own switch because the audience is different:
+        // a variance is a money question for whoever signs it off, not news for
+        // everyone who wants to hear about a posted receipt.
+        'notify_count_activity'    => true,   // count assigned / submitted / decided
+        // Bins over their limit, and stock sitting at a site with no bin
+        // recorded. Housekeeping, so it rides the daily digest rather than
+        // interrupting anyone the moment a shelf fills up.
+        'notify_capacity_alerts'   => true,
         'email_alerts'             => true,   // send the above as email too
         'alert_email_extra'        => null,   // extra address to copy (purchasing@…)
     ];

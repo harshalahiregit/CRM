@@ -28,8 +28,10 @@ class RunInventoryAlerts extends Command
 
     protected $description = 'Send the inventory expiry digest (in-app + email) for each tenant';
 
-    public function handle(InventoryNotifier $notifier, ConfigService $config): int
+    public function handle(InventoryNotifier $notifier, ConfigService $config, \App\Services\Inventory\LayoutService $layout): int
     {
+        $this->housekeeping($notifier, $layout);
+
         $tenants = DB::table('inventory_batches')
             ->when($this->option('tenant'), fn ($q, $t) => $q->where('tenant_id', (int) $t))
             ->distinct()->pluck('tenant_id');
@@ -84,5 +86,37 @@ class RunInventoryAlerts extends Command
         $this->info($sent ? "Expiry digest sent for {$sent} tenant(s)." : 'Nothing expiring.');
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Bins over their limit, and stock at a site with no bin recorded.
+     *
+     * On the daily clock rather than edge-triggered, unlike low stock: a full
+     * shelf is a job for the morning, and recomputing every bin's load on every
+     * movement would cost far more than the warning is worth. Runs before the
+     * expiry sweep and is independently switchable, so a workspace that has not
+     * modelled its bins never hears from it.
+     */
+    private function housekeeping(InventoryNotifier $notifier, \App\Services\Inventory\LayoutService $layout): void
+    {
+        $tenants = DB::table('inventory_warehouses')
+            ->when($this->option('tenant'), fn ($q, $t) => $q->where('tenant_id', (int) $t))
+            ->distinct()->pluck('tenant_id');
+
+        foreach ($tenants as $tenantId) {
+            try {
+                $sites = $layout->capacityAlerts((int) $tenantId);
+                if (! $sites) {
+                    continue;
+                }
+
+                $notifier->binsOverCapacity((int) $tenantId, $sites);
+                $this->info("Tenant {$tenantId}: housekeeping digest for ".count($sites).' warehouse(s).');
+            } catch (\Throwable $e) {
+                // One tenant's broken layout must not stop every other tenant's
+                // expiry digest, which is the more urgent of the two.
+                $this->line("Tenant {$tenantId}: housekeeping skipped — {$e->getMessage()}");
+            }
+        }
     }
 }

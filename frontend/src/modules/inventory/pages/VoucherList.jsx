@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
-import { FileText, Plus, Search, Send, Ban, Trash2, Eye, Mail } from 'lucide-react'
+import { FileText, Plus, Search, Send, Ban, Trash2, Eye, Mail, SendHorizontal, CheckCircle2, XCircle, ShieldAlert, ClipboardCheck, Truck } from 'lucide-react'
 import { inventoryApi, VOUCHER_TYPES, VOUCHER_STATUS, money } from '@/services/inventoryApi'
 import { useAuth } from '@/context/AuthContext'
 import Select from '@/components/ui/Select'
-import { ConfirmModal } from '@/components/ui/SearchPicker'
+import { ConfirmModal, InputModal } from '@/components/ui/SearchPicker'
 import VoucherFormModal from '../components/VoucherFormModal'
 import SendVoucherModal from '../components/SendVoucherModal'
+import InspectReceiptModal from '../components/InspectReceiptModal'
 
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 
@@ -27,6 +28,8 @@ export default function VoucherList() {
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState(null)
   const [confirm, setConfirm] = useState(null)   // { kind:'cancel'|'delete', row }
+  const [rejecting, setRejecting] = useState(null)   // the row being sent back
+  const [inspecting, setInspecting] = useState(null) // the delivery being inspected
   const [sending, setSending] = useState(null)   // voucher to email
   const [search, setSearch] = useState('')
   const [debounced, setDebounced] = useState('')
@@ -66,6 +69,34 @@ export default function VoucherList() {
   const post = useMutation({ mutationFn: (id) => inventoryApi.vouchers.post(type, id), onSuccess: () => { setErr(''); bust() }, onError: onErr })
   const cancel = useMutation({ mutationFn: (id) => inventoryApi.vouchers.cancel(type, id), onSuccess: () => { setConfirm(null); setErr(''); bust() }, onError: onErr })
   const remove = useMutation({ mutationFn: (id) => inventoryApi.vouchers.remove(type, id), onSuccess: () => { setConfirm(null); setErr(''); bust() }, onError: onErr })
+
+  // The approval gate. Present only where Settings > Approval switched a rule on
+  // — the server decides that per document and sends needs_approval/can_approve,
+  // so the buttons below can never offer an action the API would refuse.
+  const bustApprovals = () => { bust(); qc.invalidateQueries({ queryKey: ['inv-approvals'] }) }
+  const submit = useMutation({ mutationFn: (id) => inventoryApi.vouchers.submit(type, id), onSuccess: () => { setErr(''); bustApprovals() }, onError: onErr })
+  const approve = useMutation({ mutationFn: (id) => inventoryApi.vouchers.approve(type, id), onSuccess: () => { setErr(''); bustApprovals() }, onError: onErr })
+  // Fulfilment starts where the order lives, so the button is on the row
+  // rather than making someone go and find the delivery again from Pick & Ship.
+  const raisePick = useMutation({
+    mutationFn: (id) => inventoryApi.fulfilment.create({ voucher_id: id }),
+    onSuccess: () => { setErr(''); qc.invalidateQueries({ queryKey: ['inv-fulfilment'] }); navigate('/app/inventory/fulfilment') },
+    onError: onErr,
+  })
+
+  // Same reasoning for a transfer that travels: the decision to send it by road
+  // is made looking at the note, not by hunting for it again from Consignments.
+  const raiseConsignment = useMutation({
+    mutationFn: (id) => inventoryApi.transfers.create({ voucher_id: id }),
+    onSuccess: () => { setErr(''); qc.invalidateQueries({ queryKey: ['inv-transfers'] }); navigate('/app/inventory/transfers') },
+    onError: onErr,
+  })
+
+  const reject = useMutation({
+    mutationFn: ({ id, reason }) => inventoryApi.vouchers.reject(type, id, reason),
+    onSuccess: () => { setRejecting(null); setErr(''); bustApprovals() },
+    onError: onErr,
+  })
 
   if (!cfg) {
     return <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Unknown voucher type.</p>
@@ -151,7 +182,15 @@ export default function VoucherList() {
                   onClick={() => { setEditing(v); setShowForm(true) }}
                   onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-input)'}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                  <td className="px-4 py-3 font-mono text-[11px] font-bold" style={{ color: cfg.accent }}>{v.code}</td>
+                  <td className="px-4 py-3 font-mono text-[11px] font-bold" style={{ color: cfg.accent }}>
+                    {v.code}
+                    {/* A rejection is only useful if the reason travels with it. */}
+                    {v.status === 'draft' && v.rejection_reason && (
+                      <span className="flex items-start gap-1 mt-1 font-sans font-normal text-[10px]" style={{ color: 'var(--color-danger-500)', maxWidth: 190 }}>
+                        <ShieldAlert size={10} className="mt-px shrink-0" /> {v.rejection_reason}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-xs truncate" style={{ color: 'var(--text-h)', maxWidth: 180 }}>{who || '—'}</td>
                   <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>{v.warehouse?.name || (type === 'internal' ? 'per line' : '—')}</td>
                   <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>{fmtDate(v.date_add)}</td>
@@ -164,8 +203,39 @@ export default function VoucherList() {
                   </td>
                   <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-1">
-                      {v.status === 'draft' && (
+                      {/* A draft shows BOTH paths when a rule applies: the
+                          server refuses a direct post anyway, so hiding the
+                          Post button here would just leave people guessing. */}
+                      {(v.status === 'draft' || v.status === 'approved') && (
                         <RowBtn onClick={() => post.mutate(v.id)} label="Post — moves stock" color={cfg.accent}><Send size={12} /></RowBtn>
+                      )}
+                      {/* Inspection belongs to receiving only, and only while
+                          the goods have not yet gone on the shelf. */}
+                      {type === 'delivery' && (v.status === 'draft' || v.status === 'approved') && (
+                        <RowBtn onClick={() => raisePick.mutate(v.id)} label="Pick, pack & ship this" color="#0ea5e9">
+                          <Truck size={12} />
+                        </RowBtn>
+                      )}
+                      {/* Only worth offering while the note has not moved its
+                          stock yet — a posted transfer has already happened. */}
+                      {type === 'internal' && (v.status === 'draft' || v.status === 'approved') && (
+                        <RowBtn onClick={() => raiseConsignment.mutate(v.id)} label="Send by road — track it in transit" color="#0ea5e9">
+                          <Truck size={12} />
+                        </RowBtn>
+                      )}
+                      {type === 'receipt' && (v.status === 'draft' || v.status === 'approved') && (
+                        <RowBtn onClick={() => setInspecting(v)} label="Inspect the delivery" color="#0ea5e9">
+                          <ClipboardCheck size={12} />
+                        </RowBtn>
+                      )}
+                      {v.status === 'draft' && v.needs_approval && (
+                        <RowBtn onClick={() => submit.mutate(v.id)} label="Send for approval" color="#f59e0b"><SendHorizontal size={12} /></RowBtn>
+                      )}
+                      {v.status === 'pending_approval' && v.can_approve && (
+                        <>
+                          <RowBtn onClick={() => approve.mutate(v.id)} label="Approve" color="#3b82f6"><CheckCircle2 size={12} /></RowBtn>
+                          <RowBtn onClick={() => setRejecting(v)} label="Send back with a reason" danger><XCircle size={12} /></RowBtn>
+                        </>
                       )}
                       {v.status === 'posted' && (
                         <RowBtn onClick={() => setConfirm({ kind: 'cancel', row: v })} label="Cancel — reverses stock" danger><Ban size={12} /></RowBtn>
@@ -186,6 +256,8 @@ export default function VoucherList() {
 
       <SendVoucherModal type={type} voucher={sending} onClose={() => setSending(null)} />
 
+      {inspecting && <InspectReceiptModal voucher={inspecting} onClose={() => setInspecting(null)} />}
+
       <VoucherFormModal open={showForm} type={type} voucher={editing}
         onClose={() => { setShowForm(false); setEditing(null) }} onSaved={() => setErr('')} />
 
@@ -196,6 +268,15 @@ export default function VoucherList() {
           ? `${confirm?.row?.code} has already moved stock. Cancelling writes reversing movements — the ledger keeps both, so the history stays honest.`
           : `${confirm?.row?.code} will be removed. Only drafts can be deleted.`}
         confirmLabel={confirm?.kind === 'cancel' ? 'Cancel voucher' : 'Delete'} danger />
+
+      {/* Rejection always carries a reason. "No" on its own gives the person who
+          raised it nothing to fix, so the server refuses an empty one too. */}
+      <InputModal open={Boolean(rejecting)} onClose={() => setRejecting(null)}
+        onSubmit={(reason) => reject.mutate({ id: rejecting.id, reason })}
+        title="Send this back?"
+        subtitle={`${rejecting?.code} returns to draft so it can be corrected and resent.`}
+        placeholder="What needs fixing? e.g. Supplier invoice number is missing"
+        submitLabel="Send back" accent={cfg.accent} />
     </div>
   )
 }

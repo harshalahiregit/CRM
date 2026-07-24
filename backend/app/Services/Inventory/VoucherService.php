@@ -24,12 +24,19 @@ class VoucherService
     public function __construct(
         private StockService $stock,
         private InventoryNotifier $notifier,
+        private ApprovalService $approvals,
+        private ReceivingService $receiving,
     ) {
     }
 
     /* ── Reads ──────────────────────────────────────────────────── */
 
-    public function list(string $type, int $tenantId, array $filters = []): Collection
+    /**
+     * @param  array  $viewer  ['user_id' => int, 'is_admin' => bool, 'warehouse_ids' => int[]]
+     *                         Used only to decorate rows with what this person
+     *                         may do, so the UI never offers a refused action.
+     */
+    public function list(string $type, int $tenantId, array $filters = [], array $viewer = []): Collection
     {
         $this->assertType($type);
 
@@ -59,7 +66,36 @@ class VoucherService
             $q->whereDate('date_add', '<=', $filters['to']);
         }
 
-        return $q->latest('id')->get();
+        return $this->decorateApproval($q->latest('id')->get(), $viewer);
+    }
+
+    /**
+     * Tell the client two things it cannot work out for itself: whether this
+     * document has to go through the approval gate, and whether THIS viewer is
+     * allowed to decide on it. Without them the UI would either hide the button
+     * from the person who needs it or offer one that 403s.
+     */
+    private function decorateApproval(Collection $rows, array $viewer): Collection
+    {
+        if ($rows->isEmpty()) {
+            return $rows;
+        }
+
+        $userId = (int) ($viewer['user_id'] ?? 0);
+        $isAdmin = (bool) ($viewer['is_admin'] ?? false);
+        $managed = array_map('intval', $viewer['warehouse_ids'] ?? []);
+
+        return $rows->each(function (Voucher $v) use ($userId, $isAdmin, $managed) {
+            $v->setAttribute('needs_approval', $this->approvals->isRequired($v));
+
+            // You can never approve your own document — that is the whole point
+            // of a second pair of eyes, so the button is not offered either.
+            $v->setAttribute('can_approve',
+                $v->status === 'pending_approval'
+                && (int) $v->created_by !== $userId
+                && ($isAdmin || ($v->warehouse_id && in_array((int) $v->warehouse_id, $managed, true)))
+            );
+        });
     }
 
     public function show(int $id, int $tenantId): Voucher
@@ -69,7 +105,18 @@ class VoucherService
             'items.product:id,sku,name,base_unit',
             'items.warehouse:id,name', 'items.fromWarehouse:id,name', 'items.toWarehouse:id,name',
             'warehouse:id,name', 'creator:id,name', 'staff:id,name',
+            'approver:id,name', 'rejecter:id,name',
         ]);
+
+        // A receipt carries its own headline: ordered vs received vs accepted,
+        // whether it was short, and whether a vendor return is still owed. The
+        // client would otherwise have to derive all of that from the lines and
+        // could easily derive it differently from the server.
+        if ($v->type === 'receipt') {
+            $v->setAttribute('receiving', $this->receiving->summary($v));
+        }
+
+        $v->setAttribute('needs_approval', $this->approvals->isRequired($v));
 
         return $v;
     }
@@ -151,9 +198,29 @@ class VoucherService
             throw new BusinessException('A cancelled voucher cannot be posted.', 422);
         }
 
+        // The approval gate, if this workspace asked for one. Checked here rather
+        // than in the controller because posting is the only moment stock moves —
+        // any other path to it would otherwise walk straight past the rule.
+        $this->approvals->assertPostable($voucher);
+
+        // A document travelling as a consignment has already had its stock moved
+        // out of the source by the dispatch. Posting it here would write a second
+        // set of movements for the same goods and double the transfer.
+        $this->assertNotTravelling($voucher, $tenantId, 'posted');
+
         $items = VoucherItem::forTenant($tenantId)->where('voucher_id', $voucher->id)->get();
         if ($items->isEmpty()) {
             throw new BusinessException('Add at least one line before posting.', 422);
+        }
+
+        // A receipt where inspection rejected everything would post silently and
+        // move nothing, leaving a "posted" document and an unchanged shelf.
+        // Better to say so than to look like it worked.
+        if ($voucher->type === 'receipt' && $items->sum(fn ($i) => $i->postableQuantity()) <= 0) {
+            throw new BusinessException(
+                'Every line on this receipt was rejected, so there is nothing to put on the shelf. Raise a vendor return instead.',
+                422
+            );
         }
 
         // Snapshot on-hand BEFORE the movement so the alert below can tell
@@ -192,6 +259,11 @@ class VoucherService
         if ($voucher->status === 'cancelled') {
             throw new BusinessException('This voucher is already cancelled.', 422);
         }
+
+        // Same reason as posting: the consignment owns those movements, and its
+        // own cancel knows how to turn the lorry round. A blind reversal here
+        // would send stock back from a warehouse it never reached.
+        $this->assertNotTravelling($voucher, $tenantId, 'cancelled');
 
         $wasPosted = $voucher->status === 'posted';
         $productIds = $voucher->items()->pluck('product_id')->filter()->map(fn ($i) => (int) $i)->unique()->values()->all();
@@ -289,6 +361,34 @@ class VoucherService
         return $totals;
     }
 
+    /**
+     * An internal note that was handed to a consignment is no longer this
+     * service's to move: the dispatch already took the stock out of the source
+     * and the transfer owns the rest of the journey. Acting on it here would
+     * write a second set of movements for goods that have already left.
+     *
+     * Resolved lazily through the container rather than injected, because the
+     * dependency only runs the other way in practice and a constructor pair
+     * would be a cycle.
+     */
+    private function assertNotTravelling(Voucher $voucher, int $tenantId, string $what): void
+    {
+        if ($voucher->type !== 'internal') {
+            return;
+        }
+
+        $live = app(TransferService::class)->liveTransferFor($voucher->id, $tenantId);
+        if (! $live) {
+            return;
+        }
+
+        throw new BusinessException(
+            "This note is travelling as consignment {$live->code}, so it cannot be {$what} here. "
+                .'Use the consignment to dispatch, receive or turn it round.',
+            422
+        );
+    }
+
     /* ── Posting internals ──────────────────────────────────────── */
 
     private function postLine(Voucher $v, VoucherItem $line, int $tenantId, int $userId): void
@@ -309,11 +409,24 @@ class VoucherService
             return;
         }
 
+        // A RECEIPT posts what was ACCEPTED, not what turned up. Damaged goods
+        // are in the building but must never become sellable stock, or the next
+        // customer order picks a broken unit. postableQuantity() falls back to
+        // the line quantity when nobody inspected, so receipts written before
+        // inspection existed keep meaning exactly what they meant.
+        $qty = $v->type === 'receipt' ? $line->postableQuantity() : (float) $line->quantity;
+
+        // A line rejected in full moves nothing at all — and record() refuses a
+        // zero quantity, so it has to be skipped rather than posted as zero.
+        if ($qty <= 0) {
+            return;
+        }
+
         $this->stock->record([
             ...$ref,
             'product_id'        => $line->product_id,
             'type'              => $this->movementTypeFor($v),
-            'quantity'          => (float) $line->quantity,
+            'quantity'          => $qty,
             'warehouse_id'      => $line->warehouse_id ?? $v->warehouse_id,
             'location_id'       => $line->location_id,
             'from_warehouse_id' => $line->from_warehouse_id,
@@ -353,12 +466,21 @@ class VoucherService
         }
 
         $wasIn = $v->type === 'receipt';
+
+        // Take back exactly what went in. A receipt that only accepted 8 of 10
+        // put 8 on the shelf, so reversing 10 would invent two units out of an
+        // inspection failure.
+        $qty = $wasIn ? $line->postableQuantity() : (float) $line->quantity;
+        if ($qty <= 0) {
+            return;
+        }
+
         $this->stock->record([
             ...$ref,
             'product_id'   => $line->product_id,
             'type'         => 'adjustment',
             'direction'    => $wasIn ? 'out' : 'in',
-            'quantity'     => (float) $line->quantity,
+            'quantity'     => $qty,
             'warehouse_id' => $line->warehouse_id ?? $v->warehouse_id,
             'location_id'  => $line->location_id,
             'reason'       => $reason,

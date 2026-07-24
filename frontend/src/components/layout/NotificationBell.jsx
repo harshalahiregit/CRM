@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Bell, CheckCheck, Ticket, RefreshCw, MessageSquare, Inbox, TicketPlus, CheckSquare, AtSign, Eye, Activity, AlarmClock, FolderKanban, UserPlus, TrendingDown, PackageX, PackageCheck, Truck, Ban, CalendarClock, GitBranch } from 'lucide-react'
+import { Bell, CheckCheck, Ticket, RefreshCw, MessageSquare, Inbox, TicketPlus, CheckSquare, AtSign, Eye, Activity, AlarmClock, FolderKanban, UserPlus, TrendingDown, PackageX, PackageCheck, Truck, Ban, CalendarClock, GitBranch, ShieldAlert, ShieldCheck, ShieldX, ClipboardCheck, Boxes } from 'lucide-react'
 import { notificationApi } from '@/services/notificationApi'
 
 /**
@@ -42,6 +42,24 @@ const ICONS = {
   'inventory.voucher_posted':  { icon: PackageCheck,   color: 'var(--color-success-500)' },
   'inventory.voucher_cancelled': { icon: Ban,          color: 'var(--color-danger-500)' },
   'inventory.transfer_incoming': { icon: Truck,        color: 'var(--color-info-500)' },
+  // Approvals. "Needed" is amber because somebody's work is stopped until you act.
+  'inventory.approval_requested': { icon: ShieldAlert, color: 'var(--color-warning-500)' },
+  'inventory.approval_granted':   { icon: ShieldCheck, color: 'var(--color-success-500)' },
+  'inventory.approval_rejected':  { icon: ShieldX,     color: 'var(--color-danger-500)' },
+  // Physical counts. "Needs approval" is amber for the same reason as a voucher:
+  // until somebody signs it, the ledger is knowingly wrong.
+  'inventory.count_assigned':  { icon: ClipboardCheck, color: 'var(--color-primary-500)' },
+  'inventory.count_submitted': { icon: ClipboardCheck, color: 'var(--color-warning-500)' },
+  'inventory.count_approved':  { icon: ShieldCheck,    color: 'var(--color-success-500)' },
+  'inventory.count_rejected':  { icon: ShieldX,        color: 'var(--color-danger-500)' },
+  // Consignments. A short delivery is red, not amber: stock left one building
+  // and never reached another, and it is only chaseable while the trip is fresh.
+  'inventory.transfer_dispatched': { icon: Truck,     color: 'var(--color-info-500)' },
+  'inventory.transfer_received':   { icon: PackageCheck, color: 'var(--color-success-500)' },
+  'inventory.transfer_short':      { icon: PackageX,  color: 'var(--color-danger-500)' },
+  'inventory.transfer_loss':       { icon: PackageX,  color: 'var(--color-danger-500)' },
+  // Bin housekeeping — a shelf over its limit, or stock nobody can locate.
+  'inventory.capacity':            { icon: Boxes,     color: 'var(--color-warning-500)' },
 }
 
 const timeAgo = (ts) => {

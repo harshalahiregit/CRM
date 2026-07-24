@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Controllers\Traits\ApiResponse;
 use App\Models\Inventory\Location;
 use App\Models\Inventory\Warehouse;
+use App\Services\Inventory\LayoutService;
 use App\Services\Inventory\WarehouseService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -15,8 +16,10 @@ class WarehouseController extends Controller
     use ApiResponse;
     use GuardsInventoryAccess;
 
-    public function __construct(private WarehouseService $warehouses)
-    {
+    public function __construct(
+        private WarehouseService $warehouses,
+        private LayoutService $layout,
+    ) {
     }
 
     public function index(Request $request)
@@ -77,9 +80,46 @@ class WarehouseController extends Controller
             'type'      => ['required', Rule::in(Location::TYPES)],
             'parent_id' => ['nullable', 'integer', Rule::exists('inventory_locations', 'id')->where('tenant_id', $tenantId)],
             'capacity'  => 'nullable|numeric|min:0',
+            // A capacity with no unit is not a capacity — 500 washers and 500
+            // engines do not fit the same shelf.
+            'capacity_uom' => ['nullable', Rule::in(Location::CAPACITY_UOMS)],
         ]);
 
         return $this->success($this->warehouses->createLocation($warehouse, $data, $tenantId), 'Location created', 201);
+    }
+
+    /**
+     * The site as a building: what is in each bin, how full it is, and what is
+     * wrong with the picture. `measure` decides what "full" counts.
+     */
+    public function layout(Request $request, int $warehouse)
+    {
+        $this->denyExternal($request);
+
+        return $this->success(
+            $this->layout->forWarehouse($warehouse, $request->user()->tenant_id, $request->query('measure', 'units')),
+            'Layout retrieved'
+        );
+    }
+
+    /** Where should this go? Every option says which rule produced it. */
+    public function putaway(Request $request, int $warehouse)
+    {
+        $this->denyExternal($request);
+
+        $data = $request->validate([
+            'product_id' => 'required|integer|min:1',
+            'quantity'   => 'required|numeric|min:0',
+            'measure'    => ['nullable', Rule::in(Location::CAPACITY_UOMS)],
+        ]);
+
+        return $this->success(
+            $this->layout->suggestPutaway(
+                (int) $data['product_id'], (float) $data['quantity'], $warehouse,
+                $request->user()->tenant_id, $data['measure'] ?? 'units',
+            ),
+            'Put-away suggestions retrieved'
+        );
     }
 
     public function destroyLocation(Request $request, int $warehouse, int $location)
