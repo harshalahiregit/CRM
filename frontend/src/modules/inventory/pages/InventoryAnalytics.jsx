@@ -40,6 +40,8 @@ export default function InventoryAnalytics() {
       ...(warehouse ? { warehouse_id: warehouse } : {}),
       ...(focus ? { actor_id: focus } : {}),
     }),
+    // Auto-refresh every 30s, like the other dashboards.
+    refetchInterval: 30_000,
   })
 
   const mine = data?.scope === 'mine'

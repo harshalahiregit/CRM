@@ -79,6 +79,8 @@ export default function TaskBoard() {
   const { data: rawTasks = [], isLoading } = useQuery({
     queryKey: ['tasks', filters],
     queryFn: () => taskApi.list(filters),
+    // Auto-refresh every 30s so a board left open stays current.
+    refetchInterval: 30_000,
   })
   const { data: staff = [] } = useQuery({ queryKey: ['task-staff'], queryFn: taskApi.staff })
 

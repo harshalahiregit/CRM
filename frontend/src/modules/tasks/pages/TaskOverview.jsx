@@ -16,8 +16,9 @@ import { useAuth } from '@/context/AuthContext'
 
 export default function TaskOverview() {
   const navigate = useNavigate()
-  const { data: stats } = useQuery({ queryKey: ['task-stats'], queryFn: taskApi.stats })
-  const { data: tasks = [], isLoading } = useQuery({ queryKey: ['tasks', {}], queryFn: () => taskApi.list() })
+  // Dashboard figures auto-refresh every 30s, matching Inventory and Helpdesk.
+  const { data: stats } = useQuery({ queryKey: ['task-stats'], queryFn: taskApi.stats, refetchInterval: 30_000 })
+  const { data: tasks = [], isLoading } = useQuery({ queryKey: ['tasks', {}], queryFn: () => taskApi.list(), refetchInterval: 30_000 })
   const { data: staff = [] } = useQuery({ queryKey: ['task-staff'], queryFn: taskApi.staff })
 
   const byStatus = useMemo(() => Object.entries(TASK_STATUS).map(([k, m]) => ({
