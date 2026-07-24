@@ -14,7 +14,14 @@ use Illuminate\Support\Facades\Route;
 
 // ── Task Module (owner: Shivam, Sanctum) ────────────────────────────────
 // Isolated route file. Registered once from routes/api.php via a single require.
-Route::middleware('auth:sanctum')->prefix('tasks')->group(function () {
+//
+// `role:admin,staff` is the whole-module barrier: portal roles (client, vendor,
+// third_party_vendor) are never staff, never assignees and never followers, so
+// they have no business in internal task management. Guarding the GROUP rather
+// than each endpoint means a new task route is protected the day it is added —
+// which is how the earlier leaks (a per-controller guard simply forgotten on
+// /stats and /staff) happened in the first place.
+Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tasks')->group(function () {
     // Static segments BEFORE /{task} so they aren't captured as a task id.
     Route::get('/billable',                 [TaskController::class, 'billable']);
     Route::get('/stats',                    [TaskController::class, 'stats']);

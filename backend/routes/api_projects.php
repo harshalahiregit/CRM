@@ -10,7 +10,12 @@ use Illuminate\Support\Facades\Route;
 
 // ── Projects Module (owner: Shivam, Sanctum) ────────────────────────────
 // Isolated route file. Registered once from routes/api.php via a single require.
-Route::middleware('auth:sanctum')->prefix('projects')->group(function () {
+//
+// `role:admin,staff` bars the portal roles from the whole module: they can never
+// be project members (see ProjectService::EXTERNAL_ROLES), so a project list
+// only ever came back empty for them anyway — this makes that a clean 403 at the
+// door instead of an empty 200, and protects any future project route by default.
+Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('projects')->group(function () {
     Route::get('/',                    [ProjectController::class, 'index']);
     Route::post('/',                   [ProjectController::class, 'store']);
 

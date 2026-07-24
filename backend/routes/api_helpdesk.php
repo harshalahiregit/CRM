@@ -49,7 +49,16 @@ Route::post('/helpdesk/public/kb/articles/{slug}/feedback', [KbArticleController
 
 // ── Helpdesk & Support Module (owner: Shivam, Sanctum) ──────────────────
 // Isolated route file. Registered once from routes/api.php via a single require.
-Route::middleware('auth:sanctum')->prefix('helpdesk')->group(function () {
+//
+// `role:admin,staff` guards the AUTHENTICATED group only — everything above this
+// line (the /helpdesk/public/* widget, KB help centre, one-click feedback and
+// inbound email) stays open, because that is the entire surface a client or
+// vendor is meant to touch. The authenticated group is staff tooling: tickets,
+// analytics, agents, settings, canned responses, tags and KB authoring. Ticket
+// /index already refused portal roles by hand; the rest (analytics, agents,
+// settings, canned-responses, tags, kb authoring) had simply been left open.
+// Guarding the group closes all of them at once and keeps new routes safe.
+Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('helpdesk')->group(function () {
 
     // ── Manager analytics ───────────────────────────────────────
     Route::get('/analytics', [HelpdeskDashboardController::class, 'analytics']);
