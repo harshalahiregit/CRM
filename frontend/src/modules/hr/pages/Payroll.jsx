@@ -2,10 +2,11 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useTheme } from '@/context/ThemeContext'
 import {
   Wallet, Coins, Search, Plus, Pencil, X, Power, Lock, Sparkles, Layers, Users, PlayCircle, ReceiptText,
-  Trash2, IndianRupee, Eye, Calendar, CheckCircle2, Ban, Plug, Download, FileText,
+  Trash2, IndianRupee, Eye, Calendar, CheckCircle2, Ban, Plug, Download, FileText, BarChart3,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
+import PayrollReports from './PayrollReports'
 
 const GRAD = 'linear-gradient(135deg,#7C3AED,#5b21b6)'
 const TYPES = ['Earning', 'Deduction', 'Benefit']
@@ -21,6 +22,7 @@ const TABS = [
   { key:'employee',   label:'Employee Salary',   icon:Users,       ready:true },
   { key:'processing', label:'Payroll Processing', icon:PlayCircle,  ready:true },
   { key:'payslips',   label:'Payslips',          icon:ReceiptText, ready:true },
+  { key:'reports',    label:'Payroll Reports',   icon:BarChart3,   ready:true },
 ]
 
 export default function Payroll() {
@@ -65,6 +67,7 @@ export default function Payroll() {
         : tab === 'employee' ? <EmployeeSalary showToast={showToast} />
         : tab === 'processing' ? <PayrollProcessing showToast={showToast} />
         : tab === 'payslips' ? <Payslips showToast={showToast} />
+        : tab === 'reports' ? <PayrollReports showToast={showToast} />
         : (
           <div className="card-3d flex flex-col items-center justify-center text-center" style={{ padding:'56px 20px' }}>
             <div className="rounded-2xl flex items-center justify-center mb-3" style={{ width:60, height:60, background:'rgba(124,58,237,0.1)' }}><current.icon size={26} style={{ color:'#a78bfa' }}/></div>

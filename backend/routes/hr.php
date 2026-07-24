@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\Hr\SalaryStructureController;
 use App\Http\Controllers\Api\Hr\EmployeeSalaryController;
 use App\Http\Controllers\Api\Hr\PayrollRunController;
 use App\Http\Controllers\Api\Hr\PayslipController;
+use App\Http\Controllers\Api\Hr\PayrollReportController;
 use Illuminate\Support\Facades\Route;
 
 // ── HR Module Routes (Sanctum) ──────────────────────────────────────────
@@ -221,6 +222,15 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::get('/payroll/payslips/{id}/download',       [PayslipController::class, 'download']);
     Route::post('/payroll/runs/{id}/generate-payslips', [PayslipController::class, 'generate']);
     Route::get('/employees/{employeeId}/payslips',      [PayslipController::class, 'employeePayslips']);
+
+    // Payroll → Reports & Analytics (Phase 6). Read-only over existing frozen data.
+    Route::get('/payroll/reports/filters',     [PayrollReportController::class, 'filterOptions']);
+    Route::get('/payroll/reports/summary',     [PayrollReportController::class, 'summary']);
+    Route::get('/payroll/reports/employees',   [PayrollReportController::class, 'employees']);
+    Route::get('/payroll/reports/departments', [PayrollReportController::class, 'departments']);
+    Route::get('/payroll/reports/components',  [PayrollReportController::class, 'components']);
+    Route::get('/payroll/reports/trends',      [PayrollReportController::class, 'trends']);
+    Route::get('/payroll/reports/export',      [PayrollReportController::class, 'export']);
 
     // Attendance
     Route::get('/attendance/stats',          [AttendanceController::class, 'stats']);

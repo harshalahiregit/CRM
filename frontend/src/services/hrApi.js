@@ -280,6 +280,21 @@ export const hrApi = {
       setStatus: (id, status)  => api.patch(`/hr/payroll/runs/${id}/status`, { status }).then(r => r.data),
       generatePayslips: (id)   => api.post(`/hr/payroll/runs/${id}/generate-payslips`).then(r => r.data),
     },
+    // Payroll Reports & Analytics (Phase 6) — read-only over frozen data.
+    reports: {
+      filters:     ()             => api.get('/hr/payroll/reports/filters').then(r => r.data),
+      summary:     (params = {})  => api.get('/hr/payroll/reports/summary', { params }).then(r => r.data),
+      employees:   (params = {})  => api.get('/hr/payroll/reports/employees', { params }).then(r => r.data),
+      departments: (params = {})  => api.get('/hr/payroll/reports/departments', { params }).then(r => r.data),
+      components:  (params = {})  => api.get('/hr/payroll/reports/components', { params }).then(r => r.data),
+      trends:      (params = {})  => api.get('/hr/payroll/reports/trends', { params }).then(r => r.data),
+      // CSV (Excel) or PDF export → triggers a browser download.
+      export: (report, format, params = {}) => api.get('/hr/payroll/reports/export', { params: { ...params, report, format }, responseType: 'blob' }).then(r => {
+        const url = URL.createObjectURL(r.data)
+        const a = document.createElement('a'); a.href = url; a.download = `${report}-report.${format === 'pdf' ? 'pdf' : 'csv'}`; a.click()
+        setTimeout(() => URL.revokeObjectURL(url), 1500)
+      }),
+    },
     // Payslips (Phase 5) — generated from a completed run; PDF via dompdf.
     payslips: {
       list:     (params = {})   => api.get('/hr/payroll/payslips', { params }).then(r => r.data),
