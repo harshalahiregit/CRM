@@ -248,6 +248,16 @@ export const hrApi = {
     },
   },
 
+  // ── Payroll → Salary Components master (Phase 1) ────────────────────────
+  payroll: {
+    salaryComponents: {
+      list:       (params = {}) => api.get('/hr/payroll/salary-components', { params }).then(r => r.data),
+      create:     (data)        => api.post('/hr/payroll/salary-components', data).then(r => r.data),
+      update:     (id, data)    => api.put(`/hr/payroll/salary-components/${id}`, data).then(r => r.data),
+      setStatus:  (id, active)  => api.patch(`/hr/payroll/salary-components/${id}/status`, { is_active: active }).then(r => r.data),
+    },
+  },
+
   attendance: {
     list:       (params = {}) => api.get('/hr/attendance', { params }).then(r => r.data),
     stats:      (params = {}) => api.get('/hr/attendance/stats', { params }).then(r => r.data),

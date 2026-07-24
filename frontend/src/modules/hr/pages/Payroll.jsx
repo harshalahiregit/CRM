@@ -1,0 +1,259 @@
+import { useState, useEffect, useCallback } from 'react'
+import { useTheme } from '@/context/ThemeContext'
+import {
+  Wallet, Coins, Search, Plus, Pencil, X, Power, Lock, Sparkles, Layers, Users, PlayCircle, ReceiptText,
+} from 'lucide-react'
+import { hrApi } from '@/services/hrApi'
+import { HrLoading, HrEmpty } from '@/components/ui/HrState'
+
+const GRAD = 'linear-gradient(135deg,#7C3AED,#5b21b6)'
+const TYPES = ['Earning', 'Deduction', 'Benefit']
+const CALC_TYPES = ['Fixed', 'Percentage']
+const TYPE_C = { Earning:{c:'#10b981',bg:'rgba(16,185,129,0.12)'}, Deduction:{c:'#f87171',bg:'rgba(239,68,68,0.1)'}, Benefit:{c:'#3b82f6',bg:'rgba(59,130,246,0.12)'} }
+const money = v => v === null || v === undefined || v === '' ? '—' : `₹${Number(v).toLocaleString('en-IN')}`
+
+// Payroll module tabs. Only "Salary Components" is built (Phase 1); the rest are
+// reserved structure for future phases — shown, locked, never routed to a page.
+const TABS = [
+  { key:'components', label:'Salary Components', icon:Coins,       ready:true },
+  { key:'structures', label:'Salary Structures', icon:Layers,      ready:false },
+  { key:'employee',   label:'Employee Salary',   icon:Users,       ready:false },
+  { key:'processing', label:'Payroll Processing', icon:PlayCircle,  ready:false },
+  { key:'payslips',   label:'Payslips',          icon:ReceiptText, ready:false },
+]
+
+export default function Payroll() {
+  useTheme()
+  const [tab, setTab] = useState('components')
+  const [toast, setToast] = useState(null)
+  const showToast = (msg, type='success') => { setToast({msg,type}); setTimeout(()=>setToast(null),3000) }
+
+  const current = TABS.find(t => t.key === tab)
+
+  return (
+    <div className="space-y-6 animate-[tiltIn_0.35s_ease_forwards]">
+      {toast && <div className="fixed top-5 right-5 z-[9999] px-5 py-3 rounded-2xl text-sm font-semibold text-white shadow-2xl" style={{ background:toast.type==='success'?'linear-gradient(135deg,#10b981,#059669)':'linear-gradient(135deg,#f87171,#ef4444)' }}>{toast.msg}</div>}
+
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <p className="label-caps mb-1">HR Records</p>
+          <h1 className="font-black flex items-center gap-2" style={{ fontSize:'clamp(1.3rem,2vw,1.7rem)', color:'var(--text-h)', letterSpacing:'-0.02em' }}>
+            <Wallet size={22} style={{ color:'#a78bfa' }}/> <span className="text-gradient">Payroll</span>
+          </h1>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1.5 flex-wrap">
+        {TABS.map(t => {
+          const active = tab === t.key
+          return (
+            <button key={t.key} onClick={()=>setTab(t.key)}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all"
+              style={{ background: active ? GRAD : 'var(--bg-input)', color: active ? '#fff' : 'var(--text-muted)', border: active ? 'none' : '1px solid var(--border)' }}>
+              <t.icon size={15}/> {t.label}
+              {!t.ready && <Lock size={11} style={{ opacity:0.7 }}/>}
+            </button>
+          )
+        })}
+      </div>
+
+      {current.ready
+        ? <SalaryComponents showToast={showToast} />
+        : (
+          <div className="card-3d flex flex-col items-center justify-center text-center" style={{ padding:'56px 20px' }}>
+            <div className="rounded-2xl flex items-center justify-center mb-3" style={{ width:60, height:60, background:'rgba(124,58,237,0.1)' }}><current.icon size={26} style={{ color:'#a78bfa' }}/></div>
+            <p className="text-sm font-black" style={{ color:'var(--text-h)' }}>{current.label}</p>
+            <p className="text-xs mt-1" style={{ color:'var(--text-muted)' }}>Coming in a future Payroll phase.</p>
+            <p className="text-[11px] mt-2 max-w-md" style={{ color:'var(--text-muted)' }}>This phase delivers the Salary Components master only. Structures, employee salary, processing and payslips build on top of it later.</p>
+          </div>
+        )}
+    </div>
+  )
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   Salary Components master
+   ──────────────────────────────────────────────────────────────────────── */
+const EMPTY = { name:'', code:'', type:'Earning', calculation_type:'Fixed', amount_value:'', percentage_value:'', based_on:'Basic', description:'', is_active:true }
+
+function SalaryComponents({ showToast }) {
+  const [rows, setRows] = useState([])
+  const [stats, setStats] = useState({ total:0, earnings:0, deductions:0, benefits:0, active:0 })
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+  const [typeF, setTypeF] = useState('All')
+  const [statusF, setStatusF] = useState('All')
+  const [modal, setModal] = useState(null)     // { editing, form }
+  const [saving, setSaving] = useState(false)
+
+  const load = useCallback(() => {
+    setLoading(true)
+    const params = {}
+    if (typeF !== 'All') params.type = typeF
+    if (statusF !== 'All') params.status = statusF
+    if (search) params.search = search
+    hrApi.payroll.salaryComponents.list(params)
+      .then(res => { setRows(res.data || []); setStats(res.stats || stats) })
+      .catch(() => showToast('Failed to load salary components', 'error'))
+      .finally(() => setLoading(false))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [typeF, statusF, search])
+  useEffect(() => { load() }, [load])
+
+  const openCreate = () => setModal({ editing:null, form:{ ...EMPTY } })
+  const openEdit = (r) => setModal({ editing:r.id, form:{
+    name:r.name, code:r.code, type:r.type, calculation_type:r.calculation_type,
+    amount_value:r.amount_value ?? '', percentage_value:r.percentage_value ?? '',
+    based_on:r.based_on || 'Basic', description:r.description || '', is_active:r.is_active,
+  }})
+
+  const save = async () => {
+    const { editing, form } = modal
+    if (!form.name.trim() || !form.code.trim()) return showToast('Name and code are required', 'error')
+    if (form.calculation_type === 'Fixed' && form.amount_value === '') return showToast('Amount value is required for a fixed component', 'error')
+    if (form.calculation_type === 'Percentage' && form.percentage_value === '') return showToast('Percentage value is required', 'error')
+    // Send only the value relevant to the chosen calculation type.
+    const payload = { ...form,
+      amount_value: form.calculation_type === 'Fixed' ? form.amount_value : null,
+      percentage_value: form.calculation_type === 'Percentage' ? form.percentage_value : null,
+      based_on: form.calculation_type === 'Percentage' ? form.based_on : null,
+    }
+    setSaving(true)
+    try {
+      if (editing) await hrApi.payroll.salaryComponents.update(editing, payload)
+      else await hrApi.payroll.salaryComponents.create(payload)
+      showToast(`Component ${editing ? 'updated' : 'created'}`)
+      setModal(null); load()
+    } catch (e) { showToast(e.response?.data?.message || 'Save failed', 'error') }
+    finally { setSaving(false) }
+  }
+
+  const toggleStatus = async (r) => {
+    try { await hrApi.payroll.salaryComponents.setStatus(r.id, !r.is_active); showToast(r.is_active ? 'Deactivated' : 'Activated'); load() }
+    catch (e) { showToast(e.response?.data?.message || 'Failed', 'error') }
+  }
+
+  const KPIS = [
+    { l:'Total', v:stats.total, c:'#7C3AED' },
+    { l:'Earnings', v:stats.earnings, c:'#10b981' },
+    { l:'Deductions', v:stats.deductions, c:'#f87171' },
+    { l:'Benefits', v:stats.benefits, c:'#3b82f6' },
+    { l:'Active', v:stats.active, c:'#0ea5e9' },
+  ]
+  const hasFilters = typeF!=='All' || statusF!=='All' || search
+
+  return (
+    <div className="space-y-4">
+      {/* KPIs */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        {KPIS.map(k => (
+          <div key={k.l} className="kpi-3d"><p className="text-3xl font-black" style={{ color:k.c }}>{k.v}</p><p className="text-xs font-medium mt-1" style={{ color:'var(--text-muted)' }}>{k.l}</p></div>
+        ))}
+      </div>
+
+      {/* Filters + add */}
+      <div className="card-3d" style={{ padding:'16px' }}>
+        <div className="flex gap-3 flex-wrap items-end">
+          <div className="relative flex-1 min-w-[200px]">
+            <label className="label">Search</label>
+            <Search size={14} className="absolute left-3 top-[34px]" style={{ color:'var(--text-muted)' }}/>
+            <input className="input-3d pl-9 text-sm" placeholder="Name, code, description…" value={search} onChange={e=>setSearch(e.target.value)}/>
+          </div>
+          <div className="min-w-[150px]">
+            <label className="label">Type</label>
+            <select className="input-3d text-sm" value={typeF} onChange={e=>setTypeF(e.target.value)}>{['All',...TYPES].map(t=><option key={t}>{t}</option>)}</select>
+          </div>
+          <div className="min-w-[130px]">
+            <label className="label">Status</label>
+            <select className="input-3d text-sm" value={statusF} onChange={e=>setStatusF(e.target.value)}>{['All','Active','Inactive'].map(s=><option key={s}>{s}</option>)}</select>
+          </div>
+          {hasFilters && <button onClick={()=>{ setTypeF('All'); setStatusF('All'); setSearch('') }} className="px-3 py-2.5 rounded-xl text-xs font-bold" style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}>Clear</button>}
+          <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white ml-auto" style={{ background:GRAD, boxShadow:'0 4px 14px rgba(124,58,237,0.4)' }}><Plus size={15}/> Add Component</button>
+        </div>
+      </div>
+
+      {loading ? <HrLoading label="Loading salary components…" />
+        : rows.length === 0 ? <HrEmpty icon={Coins} title="No salary components yet" hint={hasFilters ? 'No components match the current filters.' : 'Create reusable components (Basic, HRA, PF…) that future salary structures will build on.'} />
+        : (
+          <div className="card-3d overflow-x-auto" style={{ padding:'6px' }}>
+            <table className="w-full text-sm" style={{ minWidth:760 }}>
+              <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{['Component','Code','Type','Calculation','Value','Status','Actions'].map(h=><th key={h} className={`text-left px-3 py-3 label-caps whitespace-nowrap ${h==='Actions'?'text-right':''}`}>{h}</th>)}</tr></thead>
+              <tbody>
+                {rows.map(r => {
+                  const tc = TYPE_C[r.type] || { c:'var(--text-muted)', bg:'var(--bg-input)' }
+                  return (
+                    <tr key={r.id} style={{ borderBottom:'1px solid var(--border)', opacity:r.is_active?1:0.55 }}>
+                      <td className="px-3 py-2.5 font-bold" style={{ color:'var(--text-h)' }}>{r.name}</td>
+                      <td className="px-3 py-2.5 font-mono font-bold" style={{ color:'#a78bfa' }}>{r.code}</td>
+                      <td className="px-3 py-2.5"><span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:tc.bg, color:tc.c }}>{r.type}</span></td>
+                      <td className="px-3 py-2.5" style={{ color:'var(--text-muted)' }}>{r.calculation_type}</td>
+                      <td className="px-3 py-2.5 font-semibold" style={{ color:'var(--text-h)' }}>{r.calculation_type==='Percentage' ? `${Number(r.percentage_value)}% of ${r.based_on||'Basic'}` : money(r.amount_value)}</td>
+                      <td className="px-3 py-2.5"><span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={r.is_active?{background:'rgba(16,185,129,0.12)',color:'#10b981'}:{background:'var(--bg-input)',color:'var(--text-muted)'}}>{r.is_active?'Active':'Inactive'}</span></td>
+                      <td className="px-3 py-2.5">
+                        <div className="flex gap-1.5 justify-end">
+                          <button onClick={()=>openEdit(r)} title="Edit" className="p-1.5 rounded-lg" style={{ background:'rgba(124,58,237,0.1)', color:'#a78bfa' }}><Pencil size={13}/></button>
+                          <button onClick={()=>toggleStatus(r)} title={r.is_active?'Deactivate':'Activate'} className="p-1.5 rounded-lg" style={r.is_active?{background:'rgba(239,68,68,0.1)',color:'#f87171'}:{background:'rgba(16,185,129,0.1)',color:'#10b981'}}><Power size={13}/></button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+      {/* AI-ready extension point (no AI implemented). */}
+      <div className="rounded-xl p-3 flex items-start gap-2.5" style={{ background:'rgba(124,58,237,0.05)', border:'1px dashed rgba(124,58,237,0.3)' }}>
+        <Sparkles size={15} style={{ color:'#a78bfa', marginTop:1, flexShrink:0 }}/>
+        <div>
+          <p className="text-[11px] font-bold" style={{ color:'#a78bfa' }}>AI Insights <span className="font-normal" style={{ color:'var(--text-muted)' }}>· coming soon</span></p>
+          <p className="text-[11px] mt-0.5" style={{ color:'var(--text-muted)' }}>Will suggest salary benchmarks, detect duplicate components, and surface cost/optimization analysis.</p>
+        </div>
+      </div>
+
+      {/* Create / Edit modal */}
+      {modal && (
+        <div className="modal-backdrop" onClick={()=>setModal(null)}>
+          <div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()} style={{ maxHeight:'90vh', overflowY:'auto' }}>
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{modal.editing ? 'Edit Component' : 'Add Salary Component'}</h2>
+              <button onClick={()=>setModal(null)} style={{ color:'var(--text-muted)' }}><X size={18}/></button>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="label">Component Name *</label><input className="input-3d text-sm" placeholder="e.g. House Rent Allowance" value={modal.form.name} onChange={e=>setModal(m=>({...m,form:{...m.form,name:e.target.value}}))}/></div>
+              <div><label className="label">Component Code *</label><input className="input-3d text-sm" placeholder="e.g. HRA" value={modal.form.code} onChange={e=>setModal(m=>({...m,form:{...m.form,code:e.target.value}}))}/></div>
+              <div><label className="label">Type</label>
+                <select className="input-3d text-sm" value={modal.form.type} onChange={e=>setModal(m=>({...m,form:{...m.form,type:e.target.value}}))}>{TYPES.map(t=><option key={t}>{t}</option>)}</select>
+              </div>
+              <div><label className="label">Calculation Type</label>
+                <select className="input-3d text-sm" value={modal.form.calculation_type} onChange={e=>setModal(m=>({...m,form:{...m.form,calculation_type:e.target.value}}))}>{CALC_TYPES.map(t=><option key={t}>{t}</option>)}</select>
+              </div>
+              {modal.form.calculation_type === 'Fixed' ? (
+                <div className="col-span-2"><label className="label">Amount Value (₹)</label><input type="number" min="0" className="input-3d text-sm" placeholder="e.g. 30000" value={modal.form.amount_value} onChange={e=>setModal(m=>({...m,form:{...m.form,amount_value:e.target.value}}))}/></div>
+              ) : (
+                <>
+                  <div><label className="label">Percentage Value (%)</label><input type="number" min="0" max="100" className="input-3d text-sm" placeholder="e.g. 40" value={modal.form.percentage_value} onChange={e=>setModal(m=>({...m,form:{...m.form,percentage_value:e.target.value}}))}/></div>
+                  <div><label className="label">Based On</label><input className="input-3d text-sm" placeholder="e.g. Basic" value={modal.form.based_on} onChange={e=>setModal(m=>({...m,form:{...m.form,based_on:e.target.value}}))}/></div>
+                </>
+              )}
+              <div className="col-span-2"><label className="label">Description</label><textarea rows={2} className="input-3d text-sm resize-none" value={modal.form.description} onChange={e=>setModal(m=>({...m,form:{...m.form,description:e.target.value}}))}/></div>
+              {modal.editing && (
+                <div className="col-span-2 flex items-center gap-2">
+                  <input type="checkbox" id="sc-active" checked={modal.form.is_active} onChange={e=>setModal(m=>({...m,form:{...m.form,is_active:e.target.checked}}))}/>
+                  <label htmlFor="sc-active" className="text-xs font-semibold" style={{ color:'var(--text-muted)' }}>Active</label>
+                </div>
+              )}
+            </div>
+            <div className="flex gap-3 pt-5">
+              <button onClick={()=>setModal(null)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold" style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}>Cancel</button>
+              <button onClick={save} disabled={saving} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background:GRAD, opacity:saving?0.7:1 }}>{saving?'Saving…':modal.editing?'Save Changes':'Add Component'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

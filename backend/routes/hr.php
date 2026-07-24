@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\Hr\EmployeeController;
 use App\Http\Controllers\Api\Hr\AttendanceController;
 use App\Http\Controllers\Api\Hr\ExitInterviewController;
 use App\Http\Controllers\Api\Hr\OrganizationController;
+use App\Http\Controllers\Api\Hr\SalaryComponentController;
 use Illuminate\Support\Facades\Route;
 
 // ── HR Module Routes (Sanctum) ──────────────────────────────────────────
@@ -181,6 +182,13 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::post('/org-roles',           [OrganizationController::class, 'storeRole']);
     Route::put('/org-roles/{id}',       [OrganizationController::class, 'updateRole']);
     Route::delete('/org-roles/{id}',    [OrganizationController::class, 'destroyRole']);
+
+    // ── Payroll → Salary Components master (Phase 1). No hard delete — status toggle only.
+    //    The /payroll/* prefix reserves the namespace for future phases (structures, etc.).
+    Route::get('/payroll/salary-components',              [SalaryComponentController::class, 'index']);
+    Route::post('/payroll/salary-components',             [SalaryComponentController::class, 'store']);
+    Route::put('/payroll/salary-components/{id}',         [SalaryComponentController::class, 'update']);
+    Route::patch('/payroll/salary-components/{id}/status',[SalaryComponentController::class, 'updateStatus']);
 
     // Attendance
     Route::get('/attendance/stats',          [AttendanceController::class, 'stats']);
