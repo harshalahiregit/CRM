@@ -16,6 +16,14 @@ class AppServiceProvider extends ServiceProvider
             \App\Contracts\AI\AIProviderInterface::class,
             fn () => \App\Services\AI\AIProviderFactory::make()
         );
+
+        // Payroll attendance boundary — placeholder until SangoeTrack integration.
+        // Swap this binding for a SangoeTrackAttendanceProvider to go live; payroll
+        // logic depends only on the AttendanceProvider interface.
+        $this->app->bind(
+            \App\Contracts\Hr\AttendanceProvider::class,
+            \App\Services\Hr\Attendance\PlaceholderAttendanceProvider::class
+        );
     }
 
     /**

@@ -270,6 +270,15 @@ export const hrApi = {
       update:    (employeeId, id, data)=> api.put(`/hr/payroll/employees/${employeeId}/salary/${id}`, data).then(r => r.data),
       setStatus: (employeeId, id, active) => api.patch(`/hr/payroll/employees/${employeeId}/salary/${id}/status`, { is_active: active }).then(r => r.data),
     },
+    // Payroll Processing (Phase 4) — monthly runs.
+    runs: {
+      list:      (params = {}) => api.get('/hr/payroll/runs', { params }).then(r => r.data),
+      get:       (id)          => api.get(`/hr/payroll/runs/${id}`).then(r => r.data),
+      create:    (month, year) => api.post('/hr/payroll/runs', { month, year }).then(r => r.data),
+      process:   (id)          => api.post(`/hr/payroll/runs/${id}/process`).then(r => r.data),
+      records:   (id)          => api.get(`/hr/payroll/runs/${id}/records`).then(r => r.data),
+      setStatus: (id, status)  => api.patch(`/hr/payroll/runs/${id}/status`, { status }).then(r => r.data),
+    },
   },
 
   attendance: {

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useTheme } from '@/context/ThemeContext'
 import {
   Wallet, Coins, Search, Plus, Pencil, X, Power, Lock, Sparkles, Layers, Users, PlayCircle, ReceiptText,
-  Trash2, IndianRupee, Eye,
+  Trash2, IndianRupee, Eye, Calendar, CheckCircle2, Ban, Plug,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
@@ -19,7 +19,7 @@ const TABS = [
   { key:'components', label:'Salary Components', icon:Coins,       ready:true },
   { key:'structures', label:'Salary Structures', icon:Layers,      ready:true },
   { key:'employee',   label:'Employee Salary',   icon:Users,       ready:true },
-  { key:'processing', label:'Payroll Processing', icon:PlayCircle,  ready:false },
+  { key:'processing', label:'Payroll Processing', icon:PlayCircle,  ready:true },
   { key:'payslips',   label:'Payslips',          icon:ReceiptText, ready:false },
 ]
 
@@ -63,6 +63,7 @@ export default function Payroll() {
       {tab === 'components' ? <SalaryComponents showToast={showToast} />
         : tab === 'structures' ? <SalaryStructures showToast={showToast} />
         : tab === 'employee' ? <EmployeeSalary showToast={showToast} />
+        : tab === 'processing' ? <PayrollProcessing showToast={showToast} />
         : (
           <div className="card-3d flex flex-col items-center justify-center text-center" style={{ padding:'56px 20px' }}>
             <div className="rounded-2xl flex items-center justify-center mb-3" style={{ width:60, height:60, background:'rgba(124,58,237,0.1)' }}><current.icon size={26} style={{ color:'#a78bfa' }}/></div>
@@ -763,6 +764,205 @@ function ManageSalary({ employee, structures, onClose, onChanged, showToast }) {
             </div>
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   Payroll Processing — monthly runs (create → process → summary + records)
+   ──────────────────────────────────────────────────────────────────────── */
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
+const RUN_ST = {
+  Draft:      { c:'#f59e0b', bg:'rgba(245,158,11,0.14)' },
+  Processing: { c:'#2563eb', bg:'rgba(37,99,235,0.12)' },
+  Completed:  { c:'#10b981', bg:'rgba(16,185,129,0.12)' },
+  Cancelled:  { c:'#f87171', bg:'rgba(239,68,68,0.1)' },
+}
+
+function PayrollProcessing({ showToast }) {
+  const [runs, setRuns] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [creating, setCreating] = useState(false)
+  const [processingId, setProcessingId] = useState(null)
+  const [view, setView] = useState(null)   // run being viewed (with records)
+
+  const load = useCallback(() => {
+    setLoading(true)
+    hrApi.payroll.runs.list().then(setRuns).catch(() => showToast('Failed to load payroll runs', 'error')).finally(() => setLoading(false))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  const process = async (run) => {
+    setProcessingId(run.id)
+    try {
+      const res = await hrApi.payroll.runs.process(run.id)
+      showToast(`Payroll processed — ${res.total_employees} employee(s)`)
+      load(); openView(res)
+    } catch (e) { showToast(e.response?.data?.message || 'Processing failed', 'error') }
+    finally { setProcessingId(null) }
+  }
+  const cancel = async (run) => {
+    try { await hrApi.payroll.runs.setStatus(run.id, 'Cancelled'); showToast('Run cancelled'); load() }
+    catch (e) { showToast(e.response?.data?.message || 'Failed', 'error') }
+  }
+  const openView = async (run) => {
+    try {
+      const [full, records] = await Promise.all([hrApi.payroll.runs.get(run.id), hrApi.payroll.runs.records(run.id)])
+      setView({ ...full, records })
+    } catch { showToast('Failed to load run', 'error') }
+  }
+
+  const completed = runs.filter(r => r.status === 'Completed')
+  const latest = completed[0]
+
+  return (
+    <div className="space-y-4">
+      {/* Summary KPIs from the latest completed run */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="kpi-3d"><p className="text-3xl font-black" style={{ color:'#7C3AED' }}>{latest?.total_employees ?? '—'}</p><p className="text-xs font-medium mt-1" style={{ color:'var(--text-muted)' }}>Employees {latest?`· ${latest.period_label}`:''}</p></div>
+        <div className="kpi-3d"><p className="text-2xl font-black" style={{ color:'#10b981' }}>{latest?inr(latest.total_gross):'—'}</p><p className="text-xs font-medium mt-1" style={{ color:'var(--text-muted)' }}>Total Gross</p></div>
+        <div className="kpi-3d"><p className="text-2xl font-black" style={{ color:'#f87171' }}>{latest?inr(latest.total_deductions):'—'}</p><p className="text-xs font-medium mt-1" style={{ color:'var(--text-muted)' }}>Total Deduction</p></div>
+        <div className="kpi-3d"><p className="text-2xl font-black" style={{ color:'#0ea5e9' }}>{latest?inr(latest.total_net):'—'}</p><p className="text-xs font-medium mt-1" style={{ color:'var(--text-muted)' }}>Total Net</p></div>
+      </div>
+
+      {/* Attendance integration notice */}
+      <div className="rounded-xl p-3 flex items-center gap-2.5" style={{ background:'var(--bg-input)', border:'1px dashed var(--border)' }}>
+        <Plug size={15} style={{ color:'#a78bfa', flexShrink:0 }}/>
+        <p className="text-[11px]" style={{ color:'var(--text-muted)' }}><b style={{ color:'var(--text-h)' }}>Attendance:</b> coming from SangoeTrack — not connected. Payroll uses full payable days until integration.</p>
+      </div>
+
+      <div className="flex justify-end">
+        <button onClick={()=>setCreating(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background:GRAD, boxShadow:'0 4px 14px rgba(124,58,237,0.4)' }}><Plus size={15}/> Create Payroll Run</button>
+      </div>
+
+      {loading ? <HrLoading label="Loading payroll runs…" />
+        : runs.length === 0 ? <HrEmpty icon={Calendar} title="No payroll runs yet" hint="Create a monthly run to process payroll from assigned employee salaries." />
+        : (
+          <div className="card-3d overflow-x-auto" style={{ padding:'6px' }}>
+            <table className="w-full text-sm" style={{ minWidth:820 }}>
+              <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{['Month','Employees','Gross','Deduction','Net','Status','Action'].map(h=><th key={h} className={`text-left px-3 py-3 label-caps whitespace-nowrap ${h==='Action'?'text-right':''}`}>{h}</th>)}</tr></thead>
+              <tbody>
+                {runs.map(r => {
+                  const st = RUN_ST[r.status] || {}
+                  return (
+                    <tr key={r.id} style={{ borderBottom:'1px solid var(--border)', opacity:r.status==='Cancelled'?0.6:1 }}>
+                      <td className="px-3 py-2.5 font-bold" style={{ color:'var(--text-h)' }}>{r.period_label}</td>
+                      <td className="px-3 py-2.5" style={{ color:'var(--text-muted)' }}>{r.total_employees}</td>
+                      <td className="px-3 py-2.5 font-semibold" style={{ color:'#10b981' }}>{inr(r.total_gross)}</td>
+                      <td className="px-3 py-2.5 font-semibold" style={{ color:'#f87171' }}>{inr(r.total_deductions)}</td>
+                      <td className="px-3 py-2.5 font-black" style={{ color:'#0ea5e9' }}>{inr(r.total_net)}</td>
+                      <td className="px-3 py-2.5"><span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:st.bg, color:st.c }}>{r.status}</span></td>
+                      <td className="px-3 py-2.5">
+                        <div className="flex gap-1.5 justify-end">
+                          {r.status === 'Draft' && <>
+                            <button onClick={()=>process(r)} disabled={processingId===r.id} className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-white flex items-center gap-1" style={{ background:GRAD, opacity:processingId===r.id?0.7:1 }}><PlayCircle size={12}/> {processingId===r.id?'Processing…':'Process'}</button>
+                            <button onClick={()=>cancel(r)} title="Cancel" className="p-1.5 rounded-lg" style={{ background:'rgba(239,68,68,0.1)', color:'#f87171' }}><Ban size={13}/></button>
+                          </>}
+                          {r.status === 'Completed' && <button onClick={()=>openView(r)} className="text-[11px] font-bold px-3 py-1.5 rounded-lg flex items-center gap-1" style={{ background:'rgba(124,58,237,0.1)', color:'#a78bfa' }}><Eye size={12}/> View</button>}
+                          {r.status === 'Cancelled' && <span className="text-[10px]" style={{ color:'var(--text-muted)' }}>—</span>}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+      {/* AI-ready extension point (no AI implemented). */}
+      <div className="rounded-xl p-3 flex items-start gap-2.5" style={{ background:'rgba(124,58,237,0.05)', border:'1px dashed rgba(124,58,237,0.3)' }}>
+        <Sparkles size={15} style={{ color:'#a78bfa', marginTop:1, flexShrink:0 }}/>
+        <div>
+          <p className="text-[11px] font-bold" style={{ color:'#a78bfa' }}>AI Insights <span className="font-normal" style={{ color:'var(--text-muted)' }}>· coming soon</span></p>
+          <p className="text-[11px] mt-0.5" style={{ color:'var(--text-muted)' }}>Will run payroll anomaly detection, salary variance analysis, cost forecasting and per-employee payroll insights.</p>
+        </div>
+      </div>
+
+      {creating && <CreateRunModal onClose={()=>setCreating(false)} onCreated={(run)=>{ setCreating(false); load(); process(run) }} showToast={showToast} />}
+      {view && <RunSummaryModal run={view} onClose={()=>setView(null)} />}
+    </div>
+  )
+}
+
+function CreateRunModal({ onClose, onCreated, showToast }) {
+  const now = new Date()
+  const [month, setMonth] = useState(now.getMonth() + 1)
+  const [year, setYear] = useState(now.getFullYear())
+  const [saving, setSaving] = useState(false)
+  const years = [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1]
+
+  const create = async () => {
+    setSaving(true)
+    try {
+      const run = await hrApi.payroll.runs.create(Number(month), Number(year))
+      onCreated(run)
+    } catch (e) { showToast(e.response?.data?.message || 'Could not create run', 'error'); setSaving(false) }
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-box max-w-sm" onClick={e=>e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-5"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>Create Payroll Run</h2><button onClick={onClose} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
+        <div className="grid grid-cols-2 gap-3">
+          <div><label className="label">Month</label><select className="input-3d text-sm" value={month} onChange={e=>setMonth(e.target.value)}>{MONTHS.map((m,i)=><option key={m} value={i+1}>{m}</option>)}</select></div>
+          <div><label className="label">Year</label><select className="input-3d text-sm" value={year} onChange={e=>setYear(e.target.value)}>{years.map(y=><option key={y} value={y}>{y}</option>)}</select></div>
+        </div>
+        <p className="text-[11px] mt-3" style={{ color:'var(--text-muted)' }}>The run is created then processed immediately from all employees with an active salary.</p>
+        <div className="flex gap-3 pt-4">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm font-semibold" style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}>Cancel</button>
+          <button onClick={create} disabled={saving} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background:GRAD, opacity:saving?0.7:1 }}>{saving?'Creating…':'Create & Process'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function RunSummaryModal({ run, onClose }) {
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:900, width:'95%', maxHeight:'92vh', overflowY:'auto' }}>
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="font-black text-lg flex items-center gap-2" style={{ color:'var(--text-h)' }}><CheckCircle2 size={18} style={{ color:'#10b981' }}/> {run.period_label}</h2>
+          <button onClick={onClose} style={{ color:'var(--text-muted)' }}><X size={18}/></button>
+        </div>
+        <p className="text-xs mb-4" style={{ color:'var(--text-muted)' }}>Payroll {run.status}{run.processed_at?` · processed ${new Date(run.processed_at).toLocaleString('en-IN')}`:''}</p>
+
+        {/* Final summary */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+          {[['Total Employees', run.total_employees, '#7C3AED', false],['Total Gross', run.total_gross, '#10b981', true],['Total Deduction', run.total_deductions, '#f87171', true],['Total Net', run.total_net, '#0ea5e9', true]].map(([l,v,c,m])=>(
+            <div key={l} className="rounded-xl px-3 py-3" style={{ background:'var(--bg-input)' }}><p className="text-xl font-black" style={{ color:c }}>{m?inr(v):v}</p><p className="text-[10px] font-semibold mt-1" style={{ color:'var(--text-muted)' }}>{l}</p></div>
+          ))}
+        </div>
+
+        {run.attendance && !run.attendance.connected && (
+          <div className="rounded-xl p-2.5 mb-4 flex items-center gap-2" style={{ background:'var(--bg-input)', border:'1px dashed var(--border)' }}>
+            <Plug size={13} style={{ color:'#a78bfa' }}/><span className="text-[11px]" style={{ color:'var(--text-muted)' }}>Attendance from {run.attendance.source}: {run.attendance.message}. Full payable days used.</span>
+          </div>
+        )}
+
+        {/* Records */}
+        <p className="text-[11px] font-bold uppercase mb-2" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Employee Records</p>
+        <div className="overflow-x-auto rounded-xl" style={{ border:'1px solid var(--border)' }}>
+          <table className="w-full text-sm" style={{ minWidth:720 }}>
+            <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{['Employee','Gross','Benefits','Deductions','Net','Payable Days','Attendance'].map(h=><th key={h} className="text-left px-3 py-2.5 label-caps whitespace-nowrap">{h}</th>)}</tr></thead>
+            <tbody>
+              {(run.records||[]).map(r => (
+                <tr key={r.id} style={{ borderBottom:'1px solid var(--border)' }}>
+                  <td className="px-3 py-2.5"><span className="font-semibold" style={{ color:'var(--text-h)' }}>{r.employee_name}</span> <span className="text-[10px] font-mono" style={{ color:'#a78bfa' }}>{r.employee_code}</span></td>
+                  <td className="px-3 py-2.5" style={{ color:'#10b981' }}>{inr(r.gross_salary)}</td>
+                  <td className="px-3 py-2.5" style={{ color:'#3b82f6' }}>{inr(r.total_benefits)}</td>
+                  <td className="px-3 py-2.5" style={{ color:'#f87171' }}>{inr(r.total_deductions)}</td>
+                  <td className="px-3 py-2.5 font-black" style={{ color:'var(--text-h)' }}>{inr(r.net_salary)}</td>
+                  <td className="px-3 py-2.5" style={{ color:'var(--text-muted)' }}>{r.payable_days ?? '—'}</td>
+                  <td className="px-3 py-2.5 text-[10px]" style={{ color:'var(--text-muted)' }}>{r.attendance_source}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   )

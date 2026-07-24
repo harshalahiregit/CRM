@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\Hr\OrganizationController;
 use App\Http\Controllers\Api\Hr\SalaryComponentController;
 use App\Http\Controllers\Api\Hr\SalaryStructureController;
 use App\Http\Controllers\Api\Hr\EmployeeSalaryController;
+use App\Http\Controllers\Api\Hr\PayrollRunController;
 use Illuminate\Support\Facades\Route;
 
 // ── HR Module Routes (Sanctum) ──────────────────────────────────────────
@@ -204,6 +205,14 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::post('/payroll/employees/{employeeId}/salary',                [EmployeeSalaryController::class, 'store']);
     Route::put('/payroll/employees/{employeeId}/salary/{id}',            [EmployeeSalaryController::class, 'update']);
     Route::patch('/payroll/employees/{employeeId}/salary/{id}/status',   [EmployeeSalaryController::class, 'updateStatus']);
+
+    // Payroll → Payroll Processing (Phase 4). Monthly runs + frozen snapshots.
+    Route::get('/payroll/runs',                 [PayrollRunController::class, 'index']);
+    Route::post('/payroll/runs',                [PayrollRunController::class, 'store']);
+    Route::get('/payroll/runs/{id}',            [PayrollRunController::class, 'show']);
+    Route::post('/payroll/runs/{id}/process',   [PayrollRunController::class, 'process']);
+    Route::get('/payroll/runs/{id}/records',    [PayrollRunController::class, 'records']);
+    Route::patch('/payroll/runs/{id}/status',   [PayrollRunController::class, 'updateStatus']);
 
     // Attendance
     Route::get('/attendance/stats',          [AttendanceController::class, 'stats']);
