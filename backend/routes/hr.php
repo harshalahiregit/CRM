@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\Hr\ExitInterviewController;
 use App\Http\Controllers\Api\Hr\OrganizationController;
 use App\Http\Controllers\Api\Hr\SalaryComponentController;
 use App\Http\Controllers\Api\Hr\SalaryStructureController;
+use App\Http\Controllers\Api\Hr\EmployeeSalaryController;
 use Illuminate\Support\Facades\Route;
 
 // ── HR Module Routes (Sanctum) ──────────────────────────────────────────
@@ -197,6 +198,12 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::post('/payroll/salary-structures',             [SalaryStructureController::class, 'store']);
     Route::put('/payroll/salary-structures/{id}',         [SalaryStructureController::class, 'update']);
     Route::patch('/payroll/salary-structures/{id}/status',[SalaryStructureController::class, 'updateStatus']);
+
+    // Payroll → Employee Salary Assignment (Phase 3). Frozen snapshot; single active per employee.
+    Route::get('/payroll/employees/{employeeId}/salary',                 [EmployeeSalaryController::class, 'show']);
+    Route::post('/payroll/employees/{employeeId}/salary',                [EmployeeSalaryController::class, 'store']);
+    Route::put('/payroll/employees/{employeeId}/salary/{id}',            [EmployeeSalaryController::class, 'update']);
+    Route::patch('/payroll/employees/{employeeId}/salary/{id}/status',   [EmployeeSalaryController::class, 'updateStatus']);
 
     // Attendance
     Route::get('/attendance/stats',          [AttendanceController::class, 'stats']);

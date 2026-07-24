@@ -14,6 +14,7 @@ const DEPT_COLORS = { Engineering:'#3b82f6', Sales:'#10b981', HR:'#7C3AED', Oper
 const deptColor = d => DEPT_COLORS[d]||'#7C3AED'
 const initials = n => (n||'').split(' ').slice(0,2).map(x=>x[0]).join('').toUpperCase()
 const fmtDate  = d => d ? new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) : '—'
+const money    = v => (v === null || v === undefined || v === '') ? '—' : `₹${Number(v).toLocaleString('en-IN')}`
 const STATUS_S = s => s==='Active'?{c:'#10b981',bg:'rgba(16,185,129,0.12)'}:s==='On Leave'?{c:'#f59e0b',bg:'rgba(245,158,11,0.12)'}:{c:'#f87171',bg:'rgba(239,68,68,0.1)'}
 const DOC_ST = s => s==='Verified'?{c:'#10b981',bg:'rgba(16,185,129,0.12)'}:s==='Rejected'?{c:'#f87171',bg:'rgba(239,68,68,0.1)'}:{c:'#f59e0b',bg:'rgba(245,158,11,0.12)'}
 
@@ -91,6 +92,7 @@ export default function EmployeeProfile() {
   const navigate = useNavigate()
   const [data, setData]     = useState(null)
   const [orgOpts, setOrgOpts] = useState(null)   // reuse existing Organization Setup options (read-only)
+  const [salary, setSalary] = useState(null)     // Payroll Phase 3 — current + history (read-only here)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [tab, setTab]       = useState('overview')
@@ -105,6 +107,8 @@ export default function EmployeeProfile() {
   useEffect(()=>{ load() },[load])
   // Grade / Role names come from the existing Organization Setup masters — no new API.
   useEffect(()=>{ hrApi.organization.options().then(setOrgOpts).catch(()=>{}) },[])
+  // Current salary + history from Payroll Phase 3 — displayed read-only in Bank & Tax.
+  useEffect(()=>{ hrApi.payroll.employeeSalary.get(id).then(setSalary).catch(()=>{}) },[id])
 
   const completeness = useMemo(()=> data ? computeCompleteness(data) : null, [data])
 
@@ -364,6 +368,49 @@ export default function EmployeeProfile() {
               <Field k="Investment Declaration" v={null}/>
               <Field k="Form 16" v={null}/>
             </Grid>
+
+            {/* Payroll — current salary + history (Payroll Phase 3). Read-only here;
+                assign/revise happens in Payroll → Employee Salary. */}
+            <div className="flex items-center justify-between mt-5 mb-2">
+              <p className="text-[11px] font-bold uppercase" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Payroll — Current Salary</p>
+              {salary?.current && <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:'rgba(16,185,129,0.12)', color:'#10b981' }}>Active</span>}
+            </div>
+            {salary?.current ? (
+              <>
+                <Grid>
+                  <Field k="Salary Structure" v={salary.current.structure_name}/>
+                  <Field k="Effective Date" v={fmtDate(salary.current.effective_from)}/>
+                  <Field k="Annual CTC" v={money(salary.current.annual_ctc)}/>
+                  <Field k="Monthly CTC" v={money(salary.current.monthly_ctc)}/>
+                  <Field k="Gross Salary" v={money(salary.current.gross_salary)}/>
+                  <Field k="Benefits" v={money(salary.current.total_benefits)}/>
+                  <Field k="Deductions" v={money(salary.current.total_deductions)}/>
+                  <Field k="Net Salary" v={money(salary.current.net_salary)}/>
+                </Grid>
+                {salary.history?.length > 1 && (
+                  <>
+                    <p className="text-[11px] font-bold uppercase mt-4 mb-2" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Salary History</p>
+                    <div className="space-y-1.5">
+                      {salary.history.map(h => (
+                        <div key={h.id} className="flex items-center justify-between px-3 py-2 rounded-xl flex-wrap gap-2" style={{ background:'var(--bg-input)', opacity:h.status==='active'?1:0.7 }}>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-semibold" style={{ color:'var(--text-h)' }}>{h.structure_name}</span>
+                            <span className="text-[10px]" style={{ color:'var(--text-muted)' }}>{fmtDate(h.effective_from)}{h.effective_to?` → ${fmtDate(h.effective_to)}`:' → present'}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold" style={{ color:'#10b981' }}>{money(h.monthly_ctc)}/mo</span>
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={h.status==='active'?{background:'rgba(16,185,129,0.12)',color:'#10b981'}:{background:'var(--bg-card)',color:'var(--text-muted)'}}>{h.status}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </>
+            ) : (
+              <p className="text-xs px-3 py-3 rounded-xl" style={{ background:'var(--bg-input)', color:'var(--text-muted)' }}>No salary assigned yet — assign one from <b>Payroll → Employee Salary</b>.</p>
+            )}
+
             <AiInsight hint="Reserved for payroll & tax integration — will validate PAN/bank details and flag mismatches." />
           </div>
         )}

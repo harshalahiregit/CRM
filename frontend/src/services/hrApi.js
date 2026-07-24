@@ -263,6 +263,13 @@ export const hrApi = {
       update:     (id, data)    => api.put(`/hr/payroll/salary-structures/${id}`, data).then(r => r.data),
       setStatus:  (id, active)  => api.patch(`/hr/payroll/salary-structures/${id}/status`, { is_active: active }).then(r => r.data),
     },
+    // Employee Salary Assignment (Phase 3) — nested under an employee.
+    employeeSalary: {
+      get:       (employeeId)          => api.get(`/hr/payroll/employees/${employeeId}/salary`).then(r => r.data),
+      assign:    (employeeId, data)    => api.post(`/hr/payroll/employees/${employeeId}/salary`, data).then(r => r.data),
+      update:    (employeeId, id, data)=> api.put(`/hr/payroll/employees/${employeeId}/salary/${id}`, data).then(r => r.data),
+      setStatus: (employeeId, id, active) => api.patch(`/hr/payroll/employees/${employeeId}/salary/${id}/status`, { is_active: active }).then(r => r.data),
+    },
   },
 
   attendance: {

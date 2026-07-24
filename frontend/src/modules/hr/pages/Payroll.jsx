@@ -18,7 +18,7 @@ const money = v => v === null || v === undefined || v === '' ? '—' : `₹${Num
 const TABS = [
   { key:'components', label:'Salary Components', icon:Coins,       ready:true },
   { key:'structures', label:'Salary Structures', icon:Layers,      ready:true },
-  { key:'employee',   label:'Employee Salary',   icon:Users,       ready:false },
+  { key:'employee',   label:'Employee Salary',   icon:Users,       ready:true },
   { key:'processing', label:'Payroll Processing', icon:PlayCircle,  ready:false },
   { key:'payslips',   label:'Payslips',          icon:ReceiptText, ready:false },
 ]
@@ -62,6 +62,7 @@ export default function Payroll() {
 
       {tab === 'components' ? <SalaryComponents showToast={showToast} />
         : tab === 'structures' ? <SalaryStructures showToast={showToast} />
+        : tab === 'employee' ? <EmployeeSalary showToast={showToast} />
         : (
           <div className="card-3d flex flex-col items-center justify-center text-center" style={{ padding:'56px 20px' }}>
             <div className="rounded-2xl flex items-center justify-center mb-3" style={{ width:60, height:60, background:'rgba(124,58,237,0.1)' }}><current.icon size={26} style={{ color:'#a78bfa' }}/></div>
@@ -536,6 +537,232 @@ function StructureBuilder({ builder, setBuilder, compById, components, orgOpts, 
           <button onClick={()=>setBuilder(null)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold" style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}>Cancel</button>
           <button onClick={onSave} disabled={saving} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background:GRAD, opacity:saving?0.7:1 }}>{saving?'Saving…':builder.editing?'Save Changes':'Create Structure'}</button>
         </div>
+      </div>
+    </div>
+  )
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   Employee Salary — assign a structure to an employee (frozen snapshot + history)
+   ──────────────────────────────────────────────────────────────────────── */
+function EmployeeSalary({ showToast }) {
+  const [employees, setEmployees] = useState([])
+  const [structures, setStructures] = useState([])
+  const [salaryByEmp, setSalaryByEmp] = useState({})  // employeeId -> current salary (or null)
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+  const [manage, setManage] = useState(null)          // employee being managed
+
+  useEffect(() => {
+    setLoading(true)
+    Promise.all([
+      hrApi.employees.list({ per_page: 200 }),
+      hrApi.payroll.salaryStructures.list({ status: 'Active' }),
+    ]).then(([emps, str]) => {
+      const list = Array.isArray(emps) ? emps : (emps?.data ?? [])
+      setEmployees(list)
+      setStructures(str.data || [])
+      // Fetch each employee's current salary (small tenant; per-employee endpoint).
+      return Promise.all(list.map(e =>
+        hrApi.payroll.employeeSalary.get(e.id).then(s => [e.id, s.current]).catch(() => [e.id, null])
+      ))
+    }).then(pairs => setSalaryByEmp(Object.fromEntries(pairs || [])))
+      .catch(() => showToast('Failed to load employee salaries', 'error'))
+      .finally(() => setLoading(false))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const refreshOne = (employeeId, current) => setSalaryByEmp(m => ({ ...m, [employeeId]: current }))
+
+  const filtered = employees.filter(e => {
+    if (!search) return true
+    const s = search.toLowerCase()
+    return (e.name||'').toLowerCase().includes(s) || (e.employee_code||'').toLowerCase().includes(s) || (e.department||'').toLowerCase().includes(s)
+  })
+  const assignedCount = Object.values(salaryByEmp).filter(Boolean).length
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="kpi-3d"><p className="text-3xl font-black" style={{ color:'#7C3AED' }}>{employees.length}</p><p className="text-xs font-medium mt-1" style={{ color:'var(--text-muted)' }}>Employees</p></div>
+        <div className="kpi-3d"><p className="text-3xl font-black" style={{ color:'#10b981' }}>{assignedCount}</p><p className="text-xs font-medium mt-1" style={{ color:'var(--text-muted)' }}>Salary Assigned</p></div>
+        <div className="kpi-3d"><p className="text-3xl font-black" style={{ color:'#f59e0b' }}>{employees.length - assignedCount}</p><p className="text-xs font-medium mt-1" style={{ color:'var(--text-muted)' }}>Pending</p></div>
+      </div>
+
+      <div className="card-3d" style={{ padding:'16px' }}>
+        <div className="relative">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color:'var(--text-muted)' }}/>
+          <input className="input-3d pl-9 text-sm" placeholder="Search employee by name, code or department…" value={search} onChange={e=>setSearch(e.target.value)}/>
+        </div>
+      </div>
+
+      {loading ? <HrLoading label="Loading employee salaries…" />
+        : filtered.length === 0 ? <HrEmpty icon={Users} title="No employees found" hint="Employees are created from the recruitment lifecycle." />
+        : (
+          <div className="card-3d overflow-x-auto" style={{ padding:'6px' }}>
+            <table className="w-full text-sm" style={{ minWidth:760 }}>
+              <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{['Employee','Department','Salary Structure','Monthly CTC','Status','Actions'].map(h=><th key={h} className={`text-left px-3 py-3 label-caps whitespace-nowrap ${h==='Actions'?'text-right':''}`}>{h}</th>)}</tr></thead>
+              <tbody>
+                {filtered.map(e => {
+                  const sal = salaryByEmp[e.id]
+                  return (
+                    <tr key={e.id} style={{ borderBottom:'1px solid var(--border)' }}>
+                      <td className="px-3 py-2.5"><span className="font-bold" style={{ color:'var(--text-h)' }}>{e.name}</span><span className="ml-2 text-[10px] font-mono font-bold" style={{ color:'#a78bfa' }}>{e.employee_code}</span></td>
+                      <td className="px-3 py-2.5" style={{ color:'var(--text-muted)' }}>{e.department||'—'}</td>
+                      <td className="px-3 py-2.5" style={{ color:'var(--text-h)' }}>{sal ? sal.structure_name : <span style={{ color:'var(--text-muted)' }}>Not assigned</span>}</td>
+                      <td className="px-3 py-2.5 font-black" style={{ color: sal?'#10b981':'var(--text-muted)' }}>{sal ? inr(sal.monthly_ctc) : '—'}</td>
+                      <td className="px-3 py-2.5">{sal ? <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:'rgba(16,185,129,0.12)', color:'#10b981' }}>Active</span> : <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:'var(--bg-input)', color:'var(--text-muted)' }}>Pending</span>}</td>
+                      <td className="px-3 py-2.5 text-right">
+                        <button onClick={()=>setManage(e)} className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-white" style={{ background:GRAD }}>{sal ? 'Manage' : 'Assign'}</button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+      {/* AI-ready extension point (no AI implemented). */}
+      <div className="rounded-xl p-3 flex items-start gap-2.5" style={{ background:'rgba(124,58,237,0.05)', border:'1px dashed rgba(124,58,237,0.3)' }}>
+        <Sparkles size={15} style={{ color:'#a78bfa', marginTop:1, flexShrink:0 }}/>
+        <div>
+          <p className="text-[11px] font-bold" style={{ color:'#a78bfa' }}>AI Insights <span className="font-normal" style={{ color:'var(--text-muted)' }}>· coming soon</span></p>
+          <p className="text-[11px] mt-0.5" style={{ color:'var(--text-muted)' }}>Will suggest salary benchmarks, increment recommendations, pay-gap analysis, and salary anomaly detection.</p>
+        </div>
+      </div>
+
+      {manage && <ManageSalary employee={manage} structures={structures} onClose={()=>setManage(null)} onChanged={(cur)=>refreshOne(manage.id, cur)} showToast={showToast} />}
+    </div>
+  )
+}
+
+/* Per-employee salary drawer: current snapshot + assign/revise + history. */
+function ManageSalary({ employee, structures, onClose, onChanged, showToast }) {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [structureId, setStructureId] = useState('')
+  const [effectiveFrom, setEffectiveFrom] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const load = useCallback(() => {
+    setLoading(true)
+    hrApi.payroll.employeeSalary.get(employee.id)
+      .then(d => { setData(d); onChanged(d.current) })
+      .catch(() => showToast('Failed to load salary', 'error'))
+      .finally(() => setLoading(false))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employee.id])
+  useEffect(() => { load() }, [load])
+
+  const selected = structures.find(s => s.id === Number(structureId))
+  const preview = selected ? {
+    monthly: selected.totals.ctc, annual: selected.totals.ctc * 12,
+    gross: selected.totals.gross_earnings, benefits: selected.totals.employer_benefits,
+    deductions: selected.totals.deductions, net: selected.totals.net_pay,
+  } : null
+
+  const assign = async () => {
+    if (!structureId) return showToast('Select a salary structure', 'error')
+    if (!effectiveFrom) return showToast('Effective date is required', 'error')
+    setSaving(true)
+    try {
+      const res = await hrApi.payroll.employeeSalary.assign(employee.id, { salary_structure_id: Number(structureId), effective_from: effectiveFrom })
+      showToast(data?.current ? 'Salary revised' : 'Salary assigned')
+      setData(res); onChanged(res.current); setStructureId(''); setEffectiveFrom('')
+    } catch (e) { showToast(e.response?.data?.message || 'Assignment failed', 'error') }
+    finally { setSaving(false) }
+  }
+
+  const cur = data?.current
+  const Row = ({ k, v, accent }) => (
+    <div className="flex justify-between py-1.5" style={{ borderBottom:'1px dashed var(--border)' }}>
+      <span className="text-xs" style={{ color:'var(--text-muted)' }}>{k}</span>
+      <span className="text-xs font-bold" style={{ color: accent || 'var(--text-h)' }}>{v}</span>
+    </div>
+  )
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:820, width:'95%', maxHeight:'92vh', overflowY:'auto' }}>
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{employee.name} <span className="text-xs font-mono" style={{ color:'#a78bfa' }}>{employee.employee_code}</span></h2>
+          <button onClick={onClose} style={{ color:'var(--text-muted)' }}><X size={18}/></button>
+        </div>
+        <p className="text-xs mb-4" style={{ color:'var(--text-muted)' }}>{employee.designation} · {employee.department}</p>
+
+        {loading ? <p className="text-sm py-6" style={{ color:'var(--text-muted)' }}>Loading…</p> : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Current + assign */}
+            <div className="space-y-4">
+              <div>
+                <p className="text-[11px] font-bold uppercase mb-2" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Current Salary</p>
+                {cur ? (
+                  <div className="rounded-xl p-3" style={{ background:'var(--bg-input)', border:'1px solid var(--border)' }}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-bold" style={{ color:'var(--text-h)' }}>{cur.structure_name}</span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:'rgba(16,185,129,0.12)', color:'#10b981' }}>Active</span>
+                    </div>
+                    <p className="text-[10px] mb-2" style={{ color:'var(--text-muted)' }}>Effective {cur.effective_from}{cur.effective_to?` → ${cur.effective_to}`:''}</p>
+                    <Row k="Annual CTC" v={inr(cur.annual_ctc)} accent="#7C3AED"/>
+                    <Row k="Monthly CTC" v={inr(cur.monthly_ctc)} accent="#7C3AED"/>
+                    <Row k="Gross Salary" v={inr(cur.gross_salary)} accent="#10b981"/>
+                    <Row k="Benefits" v={inr(cur.total_benefits)} accent="#3b82f6"/>
+                    <Row k="Deductions" v={inr(cur.total_deductions)} accent="#f87171"/>
+                    <Row k="Net Salary" v={inr(cur.net_salary)}/>
+                  </div>
+                ) : <p className="text-xs px-3 py-4 rounded-xl" style={{ background:'var(--bg-input)', color:'var(--text-muted)' }}>No salary assigned yet.</p>}
+              </div>
+
+              <div>
+                <p className="text-[11px] font-bold uppercase mb-2" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>{cur ? 'Revise Salary' : 'Assign Salary'}</p>
+                <div className="space-y-2">
+                  <div><label className="label">Salary Structure</label>
+                    <select className="input-3d text-sm" value={structureId} onChange={e=>setStructureId(e.target.value)}>
+                      <option value="">Select a structure…</option>
+                      {structures.map(s=><option key={s.id} value={s.id}>{s.name} — {inr(s.totals.ctc)}/mo</option>)}
+                    </select>
+                  </div>
+                  <div><label className="label">Effective From</label><input type="date" className="input-3d text-sm" value={effectiveFrom} onChange={e=>setEffectiveFrom(e.target.value)}/></div>
+                  {preview && (
+                    <div className="rounded-xl p-2.5 text-[11px]" style={{ background:'rgba(124,58,237,0.06)', border:'1px dashed rgba(124,58,237,0.3)' }}>
+                      <p className="font-bold mb-1" style={{ color:'#a78bfa' }}>Snapshot preview</p>
+                      <div className="grid grid-cols-2 gap-x-3" style={{ color:'var(--text-muted)' }}>
+                        <span>Annual CTC: <b style={{ color:'var(--text-h)' }}>{inr(preview.annual)}</b></span>
+                        <span>Monthly: <b style={{ color:'var(--text-h)' }}>{inr(preview.monthly)}</b></span>
+                        <span>Gross: <b style={{ color:'var(--text-h)' }}>{inr(preview.gross)}</b></span>
+                        <span>Net: <b style={{ color:'var(--text-h)' }}>{inr(preview.net)}</b></span>
+                      </div>
+                    </div>
+                  )}
+                  <button onClick={assign} disabled={saving} className="w-full py-2.5 rounded-xl text-sm font-bold text-white" style={{ background:GRAD, opacity:saving?0.7:1 }}>{saving?'Saving…':cur?'Revise Salary':'Assign Salary'}</button>
+                  {cur && <p className="text-[10px]" style={{ color:'var(--text-muted)' }}>Revising archives the current salary into history — existing records are never altered.</p>}
+                </div>
+              </div>
+            </div>
+
+            {/* History */}
+            <div>
+              <p className="text-[11px] font-bold uppercase mb-2" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Salary History</p>
+              {(!data?.history || data.history.length === 0) ? <p className="text-xs" style={{ color:'var(--text-muted)' }}>No history yet.</p> : (
+                <div className="space-y-2">
+                  {data.history.map(h => (
+                    <div key={h.id} className="rounded-xl p-2.5" style={{ background:'var(--bg-input)', border:'1px solid var(--border)', opacity:h.status==='active'?1:0.7 }}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold" style={{ color:'var(--text-h)' }}>{h.structure_name}</span>
+                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-lg" style={h.status==='active'?{background:'rgba(16,185,129,0.12)',color:'#10b981'}:{background:'var(--bg-card)',color:'var(--text-muted)'}}>{h.status}</span>
+                      </div>
+                      <div className="flex items-center justify-between mt-1">
+                        <span className="text-[10px]" style={{ color:'var(--text-muted)' }}>{h.effective_from}{h.effective_to?` → ${h.effective_to}`:' → present'}</span>
+                        <span className="text-[11px] font-black" style={{ color:'#10b981' }}>{inr(h.monthly_ctc)}/mo</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
