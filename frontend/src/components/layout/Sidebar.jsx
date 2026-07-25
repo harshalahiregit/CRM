@@ -8,7 +8,7 @@ import {
   IndianRupee, FileSignature, CreditCard, FileX,
   ShoppingBag, UserPlus,
   Boxes, PackagePlus, PackageMinus, ArrowLeftRight, Scale, Warehouse, History, BarChart3, Activity, Layers3, ScanLine,
-  ClipboardCheck, ShoppingCart, Hourglass
+  ClipboardCheck, ShoppingCart, Hourglass, Wrench
 } from 'lucide-react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -89,6 +89,7 @@ const INVENTORY_SUB_ITEMS = [
   { label: 'Inventory history', path: '/app/inventory/history', icon: History },
   { label: 'Analytics', path: '/app/inventory/analytics', icon: Activity },
   { label: 'Dead stock', path: '/app/inventory/dead-stock', icon: Hourglass },
+  { label: 'Assets', path: '/app/inventory/assets', icon: Wrench },
   { label: 'Report', path: '/app/inventory/reports', icon: BarChart3 },
   { label: 'Settings', path: '/app/inventory/settings', icon: Settings },
 ]

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\Inventory\AnalyticsController;
+use App\Http\Controllers\Api\Inventory\AssetController;
 use App\Http\Controllers\Api\Inventory\CategoryController;
 use App\Http\Controllers\Api\Inventory\ConfigController;
 use App\Http\Controllers\Api\Inventory\CountController;
@@ -229,6 +230,16 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('inventory')->gr
     Route::post('/purchase-orders/{id}/send',   [PurchaseOrderController::class, 'markSent'])->where('id', '[0-9]+');
     Route::post('/purchase-orders/{id}/receive', [PurchaseOrderController::class, 'receive'])->where('id', '[0-9]+');
     Route::post('/purchase-orders/{id}/cancel', [PurchaseOrderController::class, 'cancel'])->where('id', '[0-9]+');
+
+    // Asset register (company equipment/tools) + maintenance history.
+    Route::get('/assets',              [AssetController::class, 'index']);
+    Route::post('/assets',             [AssetController::class, 'store']);
+    Route::get('/assets/{asset}',      [AssetController::class, 'show'])->where('asset', '[0-9]+');
+    Route::put('/assets/{asset}',      [AssetController::class, 'update'])->where('asset', '[0-9]+');
+    Route::delete('/assets/{asset}',   [AssetController::class, 'destroy'])->where('asset', '[0-9]+');
+    Route::post('/assets/{asset}/assign', [AssetController::class, 'assign'])->where('asset', '[0-9]+');
+    Route::patch('/assets/{asset}/status', [AssetController::class, 'setStatus'])->where('asset', '[0-9]+');
+    Route::post('/assets/{asset}/events', [AssetController::class, 'addEvent'])->where('asset', '[0-9]+');
 
     // Warehouses + bin locations
     Route::get('/warehouses',        [WarehouseController::class, 'index']);

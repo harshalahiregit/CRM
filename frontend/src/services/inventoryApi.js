@@ -79,6 +79,18 @@ export const inventoryApi = {
     generate: () => api.post('/inventory/purchase-orders/generate').then(unwrap).catch(handleErr),
   },
 
+  // Asset register (company equipment/tools).
+  assets: {
+    list:      (params = {}) => api.get('/inventory/assets', { params }).then(unwrap).catch(handleErr),
+    get:       (id) => api.get(`/inventory/assets/${id}`).then(unwrap).catch(handleErr),
+    create:    (data) => api.post('/inventory/assets', data).then(unwrap).catch(handleErr),
+    update:    (id, data) => api.put(`/inventory/assets/${id}`, data).then(unwrap).catch(handleErr),
+    remove:    (id) => api.delete(`/inventory/assets/${id}`).then(unwrap).catch(handleErr),
+    assign:    (id, assigned_to) => api.post(`/inventory/assets/${id}/assign`, { assigned_to }).then(unwrap).catch(handleErr),
+    setStatus: (id, status) => api.patch(`/inventory/assets/${id}/status`, { status }).then(unwrap).catch(handleErr),
+    addEvent:  (id, data) => api.post(`/inventory/assets/${id}/events`, data).then(unwrap).catch(handleErr),
+  },
+
   // Dead-stock action workflow.
   deadStock: {
     candidates: (days = 90) => api.get('/inventory/dead-stock/candidates', { params: { days } }).then(unwrap).catch(handleErr),
