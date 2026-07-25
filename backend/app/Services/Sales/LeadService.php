@@ -16,7 +16,10 @@ use Illuminate\Support\Str;
 
 class LeadService
 {
-    public function __construct(private LeadRepository $leadRepository)
+    public function __construct(
+        private LeadRepository $leadRepository,
+        private CommissionService $commissionService,
+    )
     {
     }
 
@@ -204,6 +207,10 @@ class LeadService
             $this->updateGoalAchievement($lead, $tenantId);
 
             $lead->logActivity('converted', 'Lead converted to customer', null, $data['company'] ?? $lead->company);
+
+            // Generate any won-deal commission entries (idempotent).
+            $this->commissionService->computeForWonLead($lead->fresh());
+
             Log::channel('sales')->info('Lead converted', ['lead_id' => $lead->id, 'tenant_id' => $tenantId]);
 
             return [

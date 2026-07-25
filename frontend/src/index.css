@@ -24,6 +24,7 @@ html.dark {
   --text-body:      #c4bde0;
   --text-muted:     #8b85a8;
   --text-faint:     rgba(237,234,248,0.35);
+  --accent:         #a78bfa;   /* readable purple accent (dark theme) */
 
   --shadow-card:    0 4px 24px rgba(0,0,0,0.4), 0 1px 4px rgba(0,0,0,0.3);
   --shadow-card-3d: 0 8px 32px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.4),
@@ -51,16 +52,18 @@ html.light {
   --bg-card-hover:  #faf9ff;
   --bg-sidebar:     #ffffff;
   --bg-header:      rgba(255,255,255,0.94);
-  --bg-input:       rgba(124,58,237,0.04);
+  --bg-input:       rgba(124,58,237,0.05);
 
-  --border:         rgba(124,58,237,0.10);
-  --border-purple:  rgba(124,58,237,0.20);
-  --border-input:   rgba(124,58,237,0.15);
+  /* Stronger borders so cards, inputs & tables are clearly defined on white. */
+  --border:         rgba(80,60,130,0.20);
+  --border-purple:  rgba(124,58,237,0.30);
+  --border-input:   rgba(80,60,130,0.28);
 
   --text-h:         #1a1535;
   --text-body:      #2d2559;
-  --text-muted:     #6b63a0;
-  --text-faint:     rgba(26,21,53,0.35);
+  --text-muted:     #453d6b;   /* darkened for strong contrast on white (was #6b63a0) */
+  --text-faint:     rgba(26,21,53,0.5);
+  --accent:         #7c3aed;   /* darker purple accent — readable on white (light theme) */
 
   --shadow-card:    0 2px 12px rgba(124,58,237,0.08), 0 1px 4px rgba(0,0,0,0.04);
   --shadow-card-3d: 0 8px 32px rgba(124,58,237,0.12), 0 2px 8px rgba(0,0,0,0.06),
@@ -132,6 +135,7 @@ h1,h2,h3,h4,h5,h6 { color: var(--text-h); }
   content: '';
   position: absolute;
   inset: 0;
+  z-index: -1;
   border-radius: 20px;
   background: linear-gradient(135deg, var(--card-shine) 0%, transparent 50%);
   pointer-events: none;
@@ -140,6 +144,7 @@ h1,h2,h3,h4,h5,h6 { color: var(--text-h); }
 .card-3d::after {
   content: '';
   position: absolute;
+  z-index: -1;
   bottom: -2px; left: 10%; right: 10%;
   height: 8px;
   border-radius: 50%;
@@ -148,13 +153,7 @@ h1,h2,h3,h4,h5,h6 { color: var(--text-h); }
   transition: all 0.3s ease;
 }
 .card-3d:hover {
-  transform: translateY(-6px) rotateX(2deg) scale(1.01);
   box-shadow: var(--shadow-hover-3d);
-}
-.card-3d:hover::after {
-  opacity: 0.7;
-  filter: blur(12px);
-  bottom: -8px;
 }
 
 /* 3D KPI Card — extra prominent */
@@ -174,6 +173,7 @@ h1,h2,h3,h4,h5,h6 { color: var(--text-h); }
 .kpi-3d::before {
   content: '';
   position: absolute;
+  z-index: -1;
   top: 0; left: 0; right: 0;
   height: 50%;
   background: linear-gradient(180deg, var(--card-shine) 0%, transparent 100%);
@@ -184,6 +184,7 @@ h1,h2,h3,h4,h5,h6 { color: var(--text-h); }
 .kpi-3d::after {
   content: '';
   position: absolute;
+  z-index: -1;
   bottom: -4px; left: 15%; right: 15%;
   height: 10px;
   border-radius: 50%;
@@ -192,13 +193,7 @@ h1,h2,h3,h4,h5,h6 { color: var(--text-h); }
   transition: all 0.35s ease;
 }
 .kpi-3d:hover {
-  transform: translateY(-8px) rotateX(3deg) rotateY(-1deg) scale(1.02);
   box-shadow: var(--shadow-hover-3d);
-}
-.kpi-3d:hover::after {
-  bottom: -12px;
-  filter: blur(16px);
-  opacity: 0.8;
 }
 
 /* 3D Sidebar */
@@ -226,8 +221,11 @@ h1,h2,h3,h4,h5,h6 { color: var(--text-h); }
   padding: 0 20px;
   height: 64px;
   background: var(--bg-header);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  /* No backdrop-filter here: an element with its own backdrop-filter is
+     excluded from other elements' backdrop sampling, so a modal/drawer overlay
+     could not blur the header (it stayed crisp while the rest blurred). The
+     header background is ~92% opaque, so dropping the blur is visually
+     negligible in normal use but lets overlays blur the header consistently. */
   border-bottom: 1px solid var(--border);
   box-shadow: var(--shadow-header);
   transition: all 0.3s ease;
@@ -309,6 +307,11 @@ html.light .nav-3d-active {
 }
 
 /* 3D Input */
+/* In @layer components so Tailwind utilities (pl-*, text-*, w-*) override the
+   base — e.g. `pl-10` on a search input makes room for its icon. Unlayered,
+   this padding shorthand would beat those utilities and the icon would overlap
+   the text. */
+@layer components {
 .input-3d {
   width: 100%;
   padding: 12px 16px;
@@ -342,6 +345,7 @@ html.light .input-3d:focus {
     inset 0 2px 6px rgba(124,58,237,0.08),
     0 0 0 3px rgba(124,58,237,0.12),
     0 1px 0 rgba(255,255,255,1);
+}
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -531,6 +535,99 @@ html.light .header-3d {
   /* PAGE CONTAINER */
   .page-container { @apply min-h-screen pt-16 pb-20 md:pb-6; padding-left:var(--sidebar-width,260px); transition:padding-left 0.3s ease; }
   @media (max-width:768px) { .page-container { padding-left:0 !important; } .header-3d { left:0 !important; } }
+
+  /* RICH TEXT EDITOR + rendered rich content (notes, proposal/contract pages) */
+  .rte-body:empty::before { content: attr(data-placeholder); color: var(--text-muted); pointer-events: none; }
+  .rte-body h2, .rich-content h2 { font-size: 1.15rem; font-weight: 800; margin: 0.6em 0 0.3em; color: var(--text-h); }
+  .rte-body h3, .rich-content h3 { font-size: 1rem; font-weight: 700; margin: 0.5em 0 0.25em; color: var(--text-h); }
+  .rte-body ul, .rich-content ul { list-style: disc; padding-left: 1.4em; margin: 0.4em 0; }
+  .rte-body ol, .rich-content ol { list-style: decimal; padding-left: 1.4em; margin: 0.4em 0; }
+  .rte-body a, .rich-content a { color: var(--accent); text-decoration: underline; }
+  .rte-body table, .rich-content table { border-collapse: collapse; width: 100%; margin: 0.6em 0; }
+  .rte-body th, .rte-body td, .rich-content th, .rich-content td { border: 1px solid var(--border-2, var(--border)); padding: 6px 10px; text-align: left; font-size: 0.85em; }
+  .rte-body th, .rich-content th { background: rgba(124,58,237,0.06); font-weight: 700; }
+  .rte-body img, .rich-content img { max-width: 100%; height: auto; border-radius: 8px; margin: 0.4em 0; }
+  .rte-body p, .rich-content p { margin: 0.35em 0; }
+  /* Embedded media (video/audio/YouTube-Vimeo iframe) */
+  .rte-body video, .rich-content video { max-width: 100%; border-radius: 10px; margin: 0.5em 0; background: #000; }
+  .rte-body audio, .rich-content audio { width: 100%; margin: 0.5em 0; }
+  .rte-body iframe, .rich-content iframe { max-width: 100%; aspect-ratio: 16 / 9; width: 560px; border: 0; border-radius: 10px; margin: 0.5em 0; }
+  .rte-body figure, .rich-content figure { margin: 0.6em 0; }
+  .rte-body figcaption, .rich-content figcaption { font-size: 0.8em; color: var(--text-muted); text-align: center; margin-top: 0.3em; }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   PROFILE SECTION SIDE-NAV (customer detail nav)
+   ══════════════════════════════════════════════════════════════ */
+.profile-sidenav { position: sticky; top: 16px; align-self: flex-start; }
+
+.sidenav-group + .sidenav-group {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.sidenav-label {
+  display: block;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  padding: 8px 10px 5px;
+}
+.sidenav-label::before {
+  content: "";
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 999px;
+  background: var(--g, #7c3aed);
+  margin-right: 7px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--g, #7c3aed) 18%, transparent);
+}
+
+.sidenav-item {
+  --g: #7c3aed;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-body);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background .14s ease, color .14s ease, box-shadow .14s ease;
+}
+.sidenav-ico {
+  width: 26px; height: 26px;
+  flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--g) 14%, transparent);
+  color: var(--g);
+  transition: background .14s ease, color .14s ease;
+}
+.sidenav-item:hover { background: color-mix(in srgb, var(--g) 9%, transparent); color: var(--text-h); }
+.sidenav-item.is-active {
+  background: color-mix(in srgb, var(--g) 13%, transparent);
+  color: var(--g);
+  font-weight: 800;
+  box-shadow: inset 3px 0 0 var(--g);
+}
+.sidenav-item.is-active .sidenav-ico { background: var(--g); color: #fff; }
+
+/* Mobile: collapse the vertical menu into a horizontal scroll strip */
+@media (max-width: 1023px) {
+  .profile-sidenav { position: static; display: flex; gap: 6px; overflow-x: auto; }
+  .sidenav-group { display: flex; align-items: center; gap: 6px; margin: 0 !important; padding: 0 !important; border: none !important; }
+  .sidenav-label { display: none; }
+  .sidenav-item { width: auto; white-space: nowrap; }
+  .sidenav-item.is-active { box-shadow: inset 0 -3px 0 var(--g); }
 }
 
 /* ══════════════════════════════════════════════════════════════

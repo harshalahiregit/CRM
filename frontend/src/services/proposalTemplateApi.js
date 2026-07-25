@@ -10,6 +10,9 @@ export const proposalTemplateApi = {
   list: () =>
     api.get('/sales/proposal-templates').then(r => r.data).catch(handleErr),
 
+  categories: () =>
+    api.get('/sales/proposal-templates/categories').then(r => r.data).catch(handleErr),
+
   create: (data) =>
     api.post('/sales/proposal-templates', data).then(r => r.data).catch(handleErr),
 

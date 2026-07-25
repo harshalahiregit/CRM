@@ -16,7 +16,7 @@ class User extends Authenticatable
         'tenant_id', 'name', 'email', 'password',
         'role', 'internal_role', 'department', 'status', 
         'vendor_type', 'tpv_type', 'access_expires_at', 
-        'phone', 'company', 'designation', 'avatar', 'meta',
+        'phone', 'company', 'designation', 'avatar', 'meta', 'emails_enabled',
     ];
 
     protected $hidden = ['password', 'remember_token'];
@@ -28,6 +28,7 @@ class User extends Authenticatable
             'access_expires_at' => 'date',
             'password'          => 'hashed',
             'meta'              => 'array',
+            'emails_enabled'    => 'boolean',
         ];
     }
 

@@ -15,7 +15,7 @@ class SalesLineItem extends Model
     protected $fillable = [
         'lineable_type', 'lineable_id', 'item_id',
         'item_name', 'description', 'qty', 'unit',
-        'rate', 'tax', 'discount', 'total', 'sort_order',
+        'rate', 'tax', 'taxes', 'discount', 'discount_mode', 'total', 'sort_order',
         'hsn_sac_code',
     ];
 
@@ -23,6 +23,7 @@ class SalesLineItem extends Model
         'qty'      => 'decimal:2',
         'rate'     => 'decimal:2',
         'tax'      => 'decimal:2',
+        'taxes'    => 'array',
         'discount' => 'decimal:2',
         'total'    => 'decimal:2',
     ];
@@ -35,6 +36,52 @@ class SalesLineItem extends Model
     public function item()
     {
         return $this->belongsTo(SalesItem::class, 'item_id');
+    }
+
+    /**
+     * Normalise a submitted line's tax selection.
+     *
+     * A line may carry several named taxes (CGST 9% + SGST 9%). The summed
+     * rate is mirrored into `tax` so every existing totals calculation,
+     * report and PDF keeps working untouched — `taxes` only adds the
+     * per-name breakdown. Lines submitted the old way (a bare `tax`
+     * percentage) are passed through with taxes = null.
+     *
+     * @return array{taxes: ?array<int, array{name: string, rate: float}>, tax: float}
+     */
+    public static function normalizeTaxes(array $item): array
+    {
+        $submitted = $item['taxes'] ?? null;
+        $fallback  = ['taxes' => null, 'tax' => (float) ($item['tax'] ?? 0)];
+
+        if (! is_array($submitted) || $submitted === []) {
+            return $fallback;
+        }
+
+        $clean = [];
+        foreach ($submitted as $tax) {
+            $name = trim((string) ($tax['name'] ?? ''));
+            if ($name === '') {
+                continue;
+            }
+            $clean[] = ['name' => $name, 'rate' => round((float) ($tax['rate'] ?? 0), 2)];
+        }
+
+        if ($clean === []) {
+            return $fallback;
+        }
+
+        return ['taxes' => $clean, 'tax' => round(array_sum(array_column($clean, 'rate')), 2)];
+    }
+
+    /** Resolved discount amount for a line (flat ₹ or % of the line value). */
+    public static function discountAmount(array $data): float
+    {
+        $base = (float) ($data['qty'] ?? 0) * (float) ($data['rate'] ?? 0);
+        $value = (float) ($data['discount'] ?? 0);
+        $amount = ($data['discount_mode'] ?? 'fixed') === 'percent' ? $base * $value / 100 : $value;
+
+        return round(min(max($amount, 0), max($base, 0)), 2);
     }
 
     /**

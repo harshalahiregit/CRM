@@ -10,6 +10,7 @@ import { salesApi } from '@/services/salesApi'
 import StatusBadge from '../components/StatusBadge'
 import ActivityTimeline from '../components/ActivityTimeline'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
+import ProposalSubmitModal from '../components/ProposalSubmitModal'
 
 const fmt     = v => '₹' + Number(v || 0).toLocaleString('en-IN')
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
@@ -34,6 +35,8 @@ export default function ProposalDetail() {
   const [isInternal, setIsInternal]   = useState(false)
   const [posting, setPosting]         = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [emailModal, setEmailModal] = useState(false)
+  const [templateModal, setTemplateModal] = useState(false)
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type })
@@ -63,12 +66,24 @@ export default function ProposalDetail() {
   const taxTotal  = Number(proposal.tax_total || 0)
   const grand     = Number(proposal.total || 0)
 
-  const events = [
-    { type: 'created',  label: 'Proposal created',       date: proposal.created_at },
-    proposal.sent_at     && { type: 'sent',     label: 'Sent to client', detail: proposal.client_email, date: proposal.sent_at },
-    proposal.accepted_at && { type: 'accepted', label: 'Accepted by client',   date: proposal.accepted_at },
-    proposal.declined_at && { type: 'declined', label: 'Declined by client',   date: proposal.declined_at },
-  ].filter(Boolean)
+  // Prefer the real server-logged activity trail (created / sent / email
+  // opened / portal viewed / accepted / declined); fall back to deriving from
+  // fields for older proposals that predate activity logging.
+  const events = (proposal.activities?.length)
+    ? proposal.activities.map(a => ({
+        type: a.type,
+        label: a.description,
+        detail: a.performer?.name,
+        date: a.created_at,
+      }))
+    : [
+        { type: 'created',  label: 'Proposal created',       date: proposal.created_at },
+        proposal.sent_at         && { type: 'sent',     label: 'Sent to client', detail: proposal.client_email, date: proposal.sent_at },
+        proposal.email_opened_at && { type: 'email_opened', label: 'Client opened the email', date: proposal.email_opened_at },
+        proposal.portal_viewed_at && { type: 'portal_viewed', label: 'Client viewed the secure link', date: proposal.portal_viewed_at },
+        proposal.accepted_at     && { type: 'accepted', label: 'Accepted by client',   date: proposal.accepted_at },
+        proposal.declined_at     && { type: 'declined', label: 'Declined by client',   date: proposal.declined_at },
+      ].filter(Boolean)
 
   const url = `${window.location.origin}/portal/proposals/${proposal.portal_token}`
 
@@ -126,6 +141,26 @@ export default function ProposalDetail() {
     }
   }
 
+  const handleConvertToEstimate = async () => {
+    try {
+      const est = await salesApi.proposals.convertToEstimate(proposal.id)
+      showToast('Converted to Proforma Invoice')
+      setTimeout(() => navigate(`/app/sales/estimates/${est.id}`), 700)
+    } catch (e) {
+      showToast(e.message || 'Failed to convert', 'error')
+    }
+  }
+
+  const handleConvertToInvoice = async () => {
+    try {
+      const inv = await salesApi.proposals.convertToInvoice(proposal.id)
+      showToast('Converted to Tax Invoice')
+      setTimeout(() => navigate(`/app/sales/invoices/${inv.id}`), 700)
+    } catch (e) {
+      showToast(e.message || 'Failed to convert', 'error')
+    }
+  }
+
   const postComment = async () => {
     if (!newComment.trim()) return
     setPosting(true)
@@ -151,7 +186,7 @@ export default function ProposalDetail() {
           {toast.msg}
         </div>
       )}
-      <div className="space-y-6 animate-[tiltIn_0.35s_ease_forwards]">
+      <div className="space-y-6 animate-[tiltIn_0.35s_ease]">
 
         {/* Top bar */}
         <div className="flex items-center justify-between flex-wrap gap-3">
@@ -176,9 +211,17 @@ export default function ProposalDetail() {
               <Link2 size={13} /> Portal Link
             </button>
             {[
-              { icon: Send,     label: 'Send',        action: handleSend },
+              { icon: Send,     label: proposal.last_emailed_at ? 'Resend Email' : 'Send Email', action: () => setEmailModal(true) },
+              { icon: MessageSquare, label: 'WhatsApp', action: () => {
+                const phone = (proposal.contact?.phone || proposal.phone || '').replace(/\D/g, '')
+                const link = `${window.location.origin}/portal/proposals/${proposal.portal_token}`
+                const text = encodeURIComponent(`Hi! Please review our proposal "${proposal.subject}": ${link}`)
+                window.open(phone ? `https://wa.me/${phone}?text=${text}` : `https://wa.me/?text=${text}`, '_blank')
+              } },
+              { icon: FileText, label: 'Edit', action: () => navigate(`/app/sales/proposals/${proposal.id}/edit`) },
               { icon: QrCode,   label: 'Generate QR', action: handleGenerateQR },
-              { icon: Download, label: 'PDF',         action: handleDownloadPdf },
+              ...(proposal.can_download !== false ? [{ icon: Download, label: 'PDF', action: handleDownloadPdf }] : []),
+              { icon: Link2, label: 'Save as Template', action: () => setTemplateModal(true) },
             ].map(a => (
               <button key={a.label} onClick={a.action}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all hover:scale-[1.02]"
@@ -292,13 +335,14 @@ export default function ProposalDetail() {
                   <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
                     <table className="w-full text-xs">
                       <thead><tr style={{ background: 'var(--bg-input)', borderBottom: '1px solid var(--border)' }}>
-                        {['Item', 'Description', 'Qty', 'Rate', 'Tax', 'Amount'].map(h => <th key={h} className="px-4 py-2.5 text-left label-caps">{h}</th>)}
+                        {['Item', 'Description', 'HSN/SAC', 'Qty', 'Rate', 'Tax', 'Amount'].map(h => <th key={h} className="px-4 py-2.5 text-left label-caps">{h}</th>)}
                       </tr></thead>
                       <tbody>
                         {proposal.line_items.map((item, i) => (
                           <tr key={i} style={{ borderBottom: i < proposal.line_items.length - 1 ? '1px solid var(--border)' : 'none' }}>
                             <td className="px-4 py-2.5 font-semibold" style={{ color: 'var(--text-h)' }}>{item.item_name}</td>
                             <td className="px-4 py-2.5" style={{ color: 'var(--text-muted)' }}>{item.description || '—'}</td>
+                            <td className="px-4 py-2.5" style={{ color: 'var(--text-muted)' }}>{item.hsn_sac_code || '—'}</td>
                             <td className="px-4 py-2.5" style={{ color: 'var(--text-muted)' }}>{item.qty}</td>
                             <td className="px-4 py-2.5" style={{ color: 'var(--text-muted)' }}>{fmt(item.rate)}</td>
                             <td className="px-4 py-2.5" style={{ color: 'var(--text-muted)' }}>{item.tax}%</td>
@@ -316,15 +360,52 @@ export default function ProposalDetail() {
                 </div>
               )}
 
-              {/* Client actions */}
+              {/* Client actions — equal-weight solid buttons */}
               {(proposal.status === 'Sent' || proposal.status === 'Open') && (
-                <div className="mt-6 pt-5 flex gap-3" style={{ borderTop: '1px solid var(--border)' }}>
-                  <button onClick={() => handleStatusChange('Accepted')} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background: 'linear-gradient(135deg,#10b981,#059669)' }}>
-                    <CheckCircle size={14} /> Mark Accepted
+                <div className="mt-6 pt-5 flex flex-wrap gap-3" style={{ borderTop: '1px solid var(--border)' }}>
+                  <button onClick={() => handleStatusChange('Accepted')}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-transform hover:-translate-y-0.5"
+                    style={{ background: 'linear-gradient(135deg,#10b981,#059669)', boxShadow: '0 4px 14px rgba(16,185,129,0.3)' }}>
+                    <CheckCircle size={15} /> Mark Accepted
                   </button>
-                  <button onClick={() => handleStatusChange('Declined')} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold" style={{ background: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' }}>
-                    <XCircle size={14} /> Mark Declined
+                  <button onClick={() => handleStatusChange('Declined')}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-transform hover:-translate-y-0.5"
+                    style={{ background: 'linear-gradient(135deg,#fb7185,#e11d48)', boxShadow: '0 4px 14px rgba(225,29,72,0.28)' }}>
+                    <XCircle size={15} /> Mark Declined
                   </button>
+                </div>
+              )}
+
+              {/* Convert actions — customer proposals only. Two equal-weight solid
+                  buttons (distinct colours) so neither reads as disabled. */}
+              {proposal.rel_type === 'customer' && (
+                <div className="mt-4 pt-5 flex flex-wrap items-center gap-3" style={{ borderTop: '1px solid var(--border)' }}>
+                  {proposal.converted_estimate_id ? (
+                    <button onClick={() => navigate(`/app/sales/estimates/${proposal.converted_estimate_id}`)}
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-transform hover:-translate-y-0.5"
+                      style={{ background: 'rgba(79,70,229,0.12)', color: '#6366f1', border: '1px solid rgba(99,102,241,0.35)' }}>
+                      <FileText size={15} /> View Proforma Invoice
+                    </button>
+                  ) : (
+                    <button onClick={handleConvertToEstimate}
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-transform hover:-translate-y-0.5"
+                      style={{ background: 'linear-gradient(135deg,#6366f1,#4338ca)', boxShadow: '0 4px 14px rgba(79,70,229,0.3)' }}>
+                      <FileText size={15} /> Convert to Proforma Invoice
+                    </button>
+                  )}
+                  {proposal.converted_invoice_id ? (
+                    <button onClick={() => navigate(`/app/sales/invoices/${proposal.converted_invoice_id}`)}
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-transform hover:-translate-y-0.5"
+                      style={{ background: 'rgba(124,58,237,0.12)', color: '#7C3AED', border: '1px solid rgba(124,58,237,0.35)' }}>
+                      <FileText size={15} /> View Tax Invoice
+                    </button>
+                  ) : (
+                    <button onClick={handleConvertToInvoice}
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-transform hover:-translate-y-0.5"
+                      style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)', boxShadow: '0 4px 14px rgba(124,58,237,0.3)' }}>
+                      <FileText size={15} /> Convert to Tax Invoice
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -459,6 +540,17 @@ export default function ProposalDetail() {
               ) : (
                 <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Not opened yet. Tracking activates once the client opens the proposal email.</p>
               )}
+              <div className="mt-3 pt-3 space-y-2 text-xs" style={{ borderTop: '1px solid var(--border)' }}>
+                <p className="font-bold" style={{ color: 'var(--text-h)' }}>Portal views</p>
+                {proposal.portal_view_count > 0 ? (
+                  <>
+                    <div className="flex justify-between"><span style={{ color: 'var(--text-muted)' }}>Times viewed</span><span className="font-semibold" style={{ color: 'var(--text-h)' }}>{proposal.portal_view_count}</span></div>
+                    <div className="flex justify-between"><span style={{ color: 'var(--text-muted)' }}>Last viewed</span><span className="font-semibold" style={{ color: 'var(--text-h)' }}>{fmtDate(proposal.portal_viewed_at)}</span></div>
+                  </>
+                ) : (
+                  <p style={{ color: 'var(--text-muted)' }}>The public link hasn't been opened yet.</p>
+                )}
+              </div>
             </div>
 
             {/* Activity */}
@@ -470,6 +562,19 @@ export default function ProposalDetail() {
         </div>
       </div>
 
+      {emailModal && (
+        <ProposalSubmitModal
+          proposal={proposal}
+          resend={!!proposal.last_emailed_at}
+          onClose={() => setEmailModal(false)}
+          onSent={() => { setEmailModal(false); showToast('Email sent'); reload() }}
+        />
+      )}
+
+      {templateModal && (
+        <SaveAsTemplateModal proposal={proposal} onClose={() => setTemplateModal(false)} showToast={showToast} />
+      )}
+
       {confirmDelete && (
         <ConfirmDialog
           title="Delete this proposal?"
@@ -480,6 +585,53 @@ export default function ProposalDetail() {
           onCancel={() => setConfirmDelete(false)}
         />
       )}
+    </>
+  )
+}
+
+
+function SaveAsTemplateModal({ proposal, onClose, showToast }) {
+  const [name, setName] = useState(proposal.subject)
+  const [category, setCategory] = useState('')
+  const [categories, setCategories] = useState([])
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    salesApi.proposalTemplates.categories().then(setCategories).catch(() => {})
+  }, [])
+
+  const save = async () => {
+    if (!name.trim()) return showToast('Template name required', 'error')
+    setSaving(true)
+    try {
+      await salesApi.proposals.saveAsTemplate(proposal.id, { name, category: category || null })
+      showToast('Saved to template library')
+      onClose()
+    } catch (e) { showToast(e.message, 'error') } finally { setSaving(false) }
+  }
+
+  return (
+    <>
+      <div className="drawer-backdrop" onClick={onClose} />
+      <div className="drawer-panel" style={{ width: 'min(440px, 96vw)' }}>
+        <div className="drawer-header">
+          <h2 className="font-black text-lg" style={{ color: 'var(--text-h)' }}>Save as Template</h2>
+          <button onClick={onClose} className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ border: '1px solid var(--border)' }}>✕</button>
+        </div>
+        <div className="drawer-body space-y-4">
+          <div><label className="label">Template Name *</label><input className="input-3d text-sm" value={name} onChange={e => setName(e.target.value)} /></div>
+          <div>
+            <label className="label">Category</label>
+            <input className="input-3d text-sm" list="tpl-categories" value={category} onChange={e => setCategory(e.target.value)} placeholder="e.g. Consulting" />
+            <datalist id="tpl-categories">{categories.map(c => <option key={c} value={c} />)}</datalist>
+          </div>
+          <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Content pages are copied; pricing line items are not part of templates.</p>
+        </div>
+        <div className="drawer-footer">
+          <button onClick={onClose} className="flex-1 py-3 rounded-2xl text-sm font-semibold" style={{ background: 'var(--bg-input)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Cancel</button>
+          <button onClick={save} disabled={saving} className="flex-[2] py-3 rounded-2xl text-sm font-bold text-white disabled:opacity-60" style={{ background: 'linear-gradient(135deg,#9f67ff,#7C3AED,#5b21b6)' }}>{saving ? 'Saving…' : 'Save Template'}</button>
+        </div>
+      </div>
     </>
   )
 }

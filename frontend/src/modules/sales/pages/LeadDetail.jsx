@@ -11,6 +11,9 @@ import {
 } from '@/hooks/useLeads'
 import { useToast } from '@/hooks/useToast'
 import ActivityTimeline from '../components/ActivityTimeline'
+import FollowUpsPanel from '../components/FollowUpsPanel'
+import WinProbabilityBadge from '../components/WinProbabilityBadge'
+import NextBestActionChip from '../components/NextBestActionChip'
 import StatusBadge from '../components/StatusBadge'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import EmptyState from '@/components/ui/EmptyState'
@@ -196,8 +199,13 @@ export default function LeadDetail() {
 
           {/* Sidebar */}
           <div className="space-y-5">
+            <NextBestActionChip leadId={lead.id} />
+
             <div className="card-3d" style={{ padding: '20px' }}>
-              <h3 className="font-bold text-sm mb-4" style={{ color: 'var(--text-h)' }}>Summary</h3>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-sm" style={{ color: 'var(--text-h)' }}>Summary</h3>
+                <WinProbabilityBadge lead={lead} />
+              </div>
               <div className="space-y-3 text-xs">
                 <SummaryRow label="Assigned to" value={lead.assigned_user?.name || 'Unassigned'} />
                 <SummaryRow label="Created by" value={lead.creator?.name || '—'} />
@@ -219,6 +227,8 @@ export default function LeadDetail() {
                 </button>
               )}
             </div>
+
+            <FollowUpsPanel subjectType="lead" subjectId={lead.id} />
           </div>
         </div>
       </div>
@@ -272,6 +282,12 @@ function ProfileTab({ lead }) {
           <InfoRow icon={Globe} label="Website" value={lead.website} />
           <InfoRow icon={MapPin} label="Location" value={[lead.city, lead.state, lead.country].filter(Boolean).join(', ') || '—'} />
           <InfoRow icon={Tag} label="Tags" value={lead.tags} />
+          <InfoRow icon={FileText} label="GST" value={lead.gst} />
+          <InfoRow icon={FileText} label="PAN" value={lead.pan} />
+          <InfoRow icon={Building2} label="Industry" value={lead.industry} />
+          <InfoRow icon={TrendingUp} label="Campaign" value={lead.campaign} />
+          <InfoRow icon={Flame} label="Priority" value={lead.priority ? lead.priority[0].toUpperCase() + lead.priority.slice(1) : '—'} />
+          <InfoRow icon={FileText} label="Expected Close" value={lead.expected_close_date ? String(lead.expected_close_date).slice(0, 10) : '—'} />
         </div>
         {lead.description && (
           <p className="text-xs mt-4 pt-4" style={{ color: 'var(--text-muted)', borderTop: '1px solid var(--border)' }}>

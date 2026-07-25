@@ -56,7 +56,7 @@ export default function SalesDashboard() {
   const maxRev = Math.max(...data.revenue_by_month.map(r => r.amount), 1)
 
   return (
-    <div className="space-y-6 animate-[tiltIn_0.35s_ease_forwards]">
+    <div className="space-y-6 animate-[tiltIn_0.35s_ease]">
       <div>
         <p className="label-caps mb-1">Sales & Revenue</p>
         <h1 className="font-black" style={{ fontSize: 'clamp(1.4rem,2.5vw,1.9rem)', color: 'var(--text-h)', letterSpacing: '-0.02em' }}>

@@ -7,10 +7,11 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use App\Models\Traits\BelongsToTenant;
+use App\Models\Traits\CalculatesDocumentTotals;
 
 class Estimate extends Model
 {
-    use HasFactory, SoftDeletes, BelongsToTenant;
+    use HasFactory, SoftDeletes, BelongsToTenant, CalculatesDocumentTotals;
 
     protected $fillable = [
         'tenant_id', 'reference', 'subject', 'client_id', 'project_id',
@@ -21,6 +22,8 @@ class Estimate extends Model
         'adminnote', 'clientnote', 'terms', 'tags',
         'sent_at', 'created_by',
         'estimate_type', 'payment_received', 'payment_amount',
+        'supply_type', 'discount_mode', 'discount_value',
+        'billing_street', 'billing_city', 'billing_state', 'billing_zip', 'billing_country',
         'payment_date', 'converted_invoice_id',
     ];
 
@@ -41,14 +44,22 @@ class Estimate extends Model
     protected static function booted(): void
     {
         static::creating(function (Estimate $est) {
+            if (empty($est->estimate_type)) {
+                $est->estimate_type = 'proforma';
+            }
             if (empty($est->reference)) {
-                $year  = date('Y');
-                $count = static::where('tenant_id', $est->tenant_id)
+                $year   = date('Y');
+                $prefix = $est->estimate_type === 'estimate' ? 'EST-' : 'PI-';
+                // withTrashed(): soft-deleted rows still occupy the UNIQUE
+                // index on `reference`, so they must be counted or the next
+                // create reuses a number and the insert fails. Sequences are
+                // separate per type (EST-/PI-), matching the sidebar split.
+                $count = static::withTrashed()
+                               ->where('tenant_id', $est->tenant_id)
+                               ->where('estimate_type', $est->estimate_type)
                                ->whereYear('created_at', $year)
                                ->count() + 1;
-                // "PI-" (Proforma Invoice) per the Sales Master Plan V2 terminology
-                // rename — pre-existing records keep their original "EST-" reference.
-                $est->reference = 'PI-' . $year . '-' . str_pad($count, 3, '0', STR_PAD_LEFT);
+                $est->reference = $prefix . $year . '-' . str_pad($count, 3, '0', STR_PAD_LEFT);
             }
         });
     }
@@ -77,19 +88,13 @@ class Estimate extends Model
     /* ── Helpers ─────────────────────────────── */
     public function recalcTotals(): void
     {
-        $subtotal = $taxTotal = $discountTotal = 0;
-        foreach ($this->lineItems as $li) {
-            $base         = $li->qty * $li->rate;
-            $afterDis     = $base - $li->discount;
-            $taxAmount    = $afterDis * ($li->tax / 100);
-            $subtotal    += $base;
-            $discountTotal+= $li->discount;
-            $taxTotal    += $taxAmount;
-        }
-        $this->subtotal      = round($subtotal, 2);
-        $this->tax_total     = round($taxTotal, 2);
-        $this->discount_total= round($discountTotal, 2);
-        $this->total         = round($subtotal - $discountTotal + $taxTotal, 2);
+        $t = $this->computeDocumentTotals();
+
+        $this->subtotal       = $t['subtotal'];
+        $this->tax_total      = $t['tax_total'];
+        $this->discount_total = $t['all_discounts'];
+        $this->total          = $t['total'];
+        $this->supply_type    = $this->computeSupplyType();
         $this->saveQuietly();
     }
 }

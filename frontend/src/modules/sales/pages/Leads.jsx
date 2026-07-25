@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { salesApi } from '@/services/salesApi'
+import WinProbabilityBadge from '../components/WinProbabilityBadge'
 import {
   Plus, Search, MoreVertical, X, UserPlus, Flame, Thermometer, Snowflake,
   Eye, Trash2, XCircle, RotateCcw, TrendingUp, Users, Target, DollarSign,
@@ -24,8 +26,9 @@ export default function Leads() {
   const [toast, setToast] = useState(null)
   const [showDrawer, setShowDrawer] = useState(false)
   const [openMenu, setOpenMenu] = useState(null)
+  const [menuPos, setMenuPos] = useState(null)  // fixed-position anchor for the row menu so it escapes the table's overflow
   const [selected, setSelected] = useState([])
-  const [form, setForm] = useState({ name:'', email:'', phone:'', company:'', title:'', website:'', description:'', lead_value:'', source_id:'', status_id:'', assigned_to:'', tags:'', address:'', city:'', state:'', country:'', zip:'', referral_type:'none', referral_value:'', referral_contact:'' })
+  const [form, setForm] = useState({ name:'', email:'', phone:'', company:'', title:'', website:'', pan:'', gst:'', industry:'', campaign:'', priority:'medium', expected_close_date:'', description:'', lead_value:'', source_id:'', status_id:'', assigned_to:'', tags:'', address:'', city:'', state:'', country:'', zip:'', referral_type:'none', referral_value:'', referral_contact:'' })
 
   const showToast = (msg, type='success') => { setToast({msg,type}); setTimeout(()=>setToast(null),3000) }
   const sf = (k,v) => setForm(p=>({...p,[k]:v}))
@@ -49,10 +52,17 @@ export default function Leads() {
   const handleCreate = async () => {
     if (!form.name.trim()) return showToast('Name is required','error')
     try {
-      await salesApi.leads.create(form)
+      // lead_value & referral_value are NOT-NULL numerics (DB default 0). An
+      // empty box would become null and break the insert, so send 0 instead.
+      const payload = {
+        ...form,
+        lead_value: form.lead_value === '' ? 0 : form.lead_value,
+        referral_value: form.referral_value === '' ? 0 : form.referral_value,
+      }
+      await salesApi.leads.create(payload)
       showToast('Lead created')
       setShowDrawer(false)
-      setForm({ name:'', email:'', phone:'', company:'', title:'', website:'', description:'', lead_value:'', source_id:'', status_id:'', assigned_to:'', tags:'', address:'', city:'', state:'', country:'', zip:'', referral_type:'none', referral_value:'', referral_contact:'' })
+      setForm({ name:'', email:'', phone:'', company:'', title:'', website:'', pan:'', gst:'', industry:'', campaign:'', priority:'medium', expected_close_date:'', description:'', lead_value:'', source_id:'', status_id:'', assigned_to:'', tags:'', address:'', city:'', state:'', country:'', zip:'', referral_type:'none', referral_value:'', referral_contact:'' })
       load()
     } catch(e) { showToast(e.message,'error') }
   }
@@ -99,7 +109,7 @@ export default function Leads() {
     <>
       {toast && <div className="fixed top-5 right-5 z-[9999] px-5 py-3 rounded-2xl text-sm font-semibold text-white shadow-2xl" style={{background:toast.type==='success'?'linear-gradient(135deg,#10b981,#059669)':'linear-gradient(135deg,#f87171,#ef4444)'}}>{toast.msg}</div>}
 
-      <div className="space-y-6 animate-[tiltIn_0.35s_ease_forwards]" onClick={()=>setOpenMenu(null)}>
+      <div className="space-y-6 animate-[tiltIn_0.35s_ease]" onClick={()=>setOpenMenu(null)}>
 
         {/* Header */}
         <div className="flex items-center justify-between flex-wrap gap-3">
@@ -196,15 +206,15 @@ export default function Leads() {
                         <td className="py-3 px-3 text-xs" style={{color:'var(--text-muted)'}}>{l.source?.name||'—'}</td>
                         <td className="py-3 px-3"><span className="text-[11px] font-bold px-2.5 py-1 rounded-lg text-white" style={{background:l.status?.color||'#6b7280'}}>{l.status?.name||'—'}</span></td>
                         <td className="py-3 px-3 text-xs" style={{color:'var(--text-muted)'}}>{l.assigned_user?.name||'Unassigned'}</td>
-                        <td className="py-3 px-3 relative">
-                          <button onClick={e=>{e.stopPropagation();setOpenMenu(openMenu===l.id?null:l.id)}} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-[rgba(124,58,237,0.08)]"><MoreVertical size={14} style={{color:'var(--text-muted)'}}/></button>
-                          {openMenu===l.id && (
-                            <div className="absolute right-0 top-full mt-1 w-40 rounded-2xl p-1.5 z-50 shadow-2xl" style={{background:'var(--bg-card)',border:'1px solid var(--border)'}}>
+                        <td className="py-3 px-3">
+                          <button onClick={e=>{e.stopPropagation();const r=e.currentTarget.getBoundingClientRect();setMenuPos({top:r.bottom+6,right:window.innerWidth-r.right});setOpenMenu(openMenu===l.id?null:l.id)}} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-[rgba(124,58,237,0.08)]"><MoreVertical size={14} style={{color:'var(--text-muted)'}}/></button>
+                          {openMenu===l.id && createPortal(
+                            <div className="w-40 rounded-2xl p-1.5 z-[9998] shadow-2xl" style={{position:'fixed',top:menuPos?.top,right:menuPos?.right,background:'var(--bg-card)',border:'1px solid var(--border)'}} onClick={e=>e.stopPropagation()}>
                               <button onClick={()=>{setOpenMenu(null);navigate(`/app/sales/leads/${l.id}`)}} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold hover:bg-[rgba(124,58,237,0.06)]" style={{color:'var(--text-h)'}}><Eye size={12}/>View</button>
                               {!l.lost && <button onClick={()=>handleAction('lost',l)} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold hover:bg-[rgba(239,68,68,0.06)]" style={{color:'#f87171'}}><XCircle size={12}/>Mark Lost</button>}
                               {(l.lost||l.junk) && <button onClick={()=>handleAction('restore',l)} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold hover:bg-[rgba(16,185,129,0.06)]" style={{color:'#10b981'}}><RotateCcw size={12}/>Restore</button>}
                               <button onClick={()=>handleAction('delete',l)} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold hover:bg-[rgba(239,68,68,0.06)]" style={{color:'#f87171'}}><Trash2 size={12}/>Delete</button>
-                            </div>
+                            </div>, document.body
                           )}
                         </td>
                       </tr>
@@ -241,7 +251,7 @@ export default function Leads() {
                           <span className="inline-flex items-center gap-0.5 text-[10px] font-bold" style={{color:TEMP_COLOR[l.lead_temperature]}}><TI size={10}/>{l.lead_score}</span>
                         </div>
                         <div className="flex items-center justify-between mt-2">
-                          <span className="text-[10px]" style={{color:'var(--text-muted)'}}>{l.source?.name||''}</span>
+                          <WinProbabilityBadge lead={l} />
                           {l.assigned_user && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md" style={{background:'rgba(124,58,237,0.1)',color:'#a78bfa'}}>{l.assigned_user.name.split(' ')[0]}</span>}
                         </div>
                       </div>
@@ -296,6 +306,23 @@ export default function Leads() {
                   </div>
                   <div><label className="label">Tags</label><input className="input-3d text-sm" placeholder="Comma-separated tags" value={form.tags} onChange={e=>sf('tags',e.target.value)}/></div>
                   <div><label className="label">Description</label><textarea className="input-3d text-sm" rows={3} placeholder="Notes about this lead…" value={form.description} onChange={e=>sf('description',e.target.value)}/></div>
+                </div>
+              </div>
+              {/* Business / Qualification */}
+              <div className="mt-6"><p className="label-caps mb-4" style={{color:'#a78bfa'}}>Business / Qualification</p>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><label className="label">GST Number</label><input className="input-3d text-sm" placeholder="27AAECM1234K1Z5" value={form.gst} onChange={e=>sf('gst',e.target.value)}/></div>
+                    <div><label className="label">PAN</label><input className="input-3d text-sm" placeholder="AAECM1234K" value={form.pan} onChange={e=>sf('pan',e.target.value)}/></div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><label className="label">Industry</label><input className="input-3d text-sm" placeholder="e.g. Textiles" value={form.industry} onChange={e=>sf('industry',e.target.value)}/></div>
+                    <div><label className="label">Campaign</label><input className="input-3d text-sm" placeholder="e.g. Q3 Outreach" value={form.campaign} onChange={e=>sf('campaign',e.target.value)}/></div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><label className="label">Priority</label><select className="input-3d text-sm" value={form.priority} onChange={e=>sf('priority',e.target.value)}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></div>
+                    <div><label className="label">Expected Close Date</label><input type="date" className="input-3d text-sm" value={form.expected_close_date} onChange={e=>sf('expected_close_date',e.target.value)}/></div>
+                  </div>
                 </div>
               </div>
               {/* Referral */}

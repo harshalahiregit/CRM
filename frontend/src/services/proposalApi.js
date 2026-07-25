@@ -28,8 +28,20 @@ export const proposalApi = {
   updateStatus: (id, status) =>
     api.patch(`/sales/proposals/${id}/status`, { status }).then(r => r.data).catch(handleErr),
 
+  submit: (id, email) =>
+    api.post(`/sales/proposals/${id}/submit`, email).then(r => r.data).catch(handleErr),
+
+  saveAsTemplate: (id, data) =>
+    api.post(`/sales/proposals/${id}/save-as-template`, data).then(r => r.data).catch(handleErr),
+
   generateQR: (id) =>
     api.post(`/sales/proposals/${id}/generate-qr`).then(r => r.data).catch(handleErr),
+
+  convertToEstimate: (id) =>
+    api.post(`/sales/proposals/${id}/convert-to-estimate`).then(r => r.data).catch(handleErr),
+
+  convertToInvoice: (id) =>
+    api.post(`/sales/proposals/${id}/convert-to-invoice`).then(r => r.data).catch(handleErr),
 
   // PDF endpoint requires the auth token, so a plain <a href> won't work —
   // fetch as a blob and trigger the download via a temporary object URL.

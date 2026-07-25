@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Plus, Send, CreditCard, Trash2, X, MoreVertical, Bell, RefreshCw, Tag, User } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
+import { useClientOptions } from '@/hooks/useClientOptions'
 import StatusBadge from '../components/StatusBadge'
 import LineItemsTable from '../components/LineItemsTable'
+import RowMenu from '../components/RowMenu'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
+import RichTextEditor from '@/components/ui/RichTextEditor'
 
 const fmt = v => '₹' + Number(v||0).toLocaleString('en-IN')
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) : '—'
@@ -13,8 +16,9 @@ const PAY_MODES = ['Bank Transfer','Cash','Cheque','Stripe','Razorpay','PayPal',
 const STATUSES = ['Draft','Unpaid','Partially Paid','Paid','Overdue','Cancelled']
 
 const EMPTY = {
-  client:'', project_id:'', date: new Date().toISOString().split('T')[0],
-  due_date:'', currency:'INR', sale_agent:'', discount_type:'none',
+  client_id:'', project_id:'', date: new Date().toISOString().split('T')[0],
+  due_date:'', currency:'INR', sale_agent:'', discount_type:'before_tax',
+  discount_mode:'fixed', discount_value: 0,
   recurring: false, recur_interval:'1', recur_type:'month', cycles:'0',
   allowed_modes: ['Bank Transfer','UPI','Razorpay'],
   cancel_overdue_reminders: false,
@@ -22,10 +26,11 @@ const EMPTY = {
   line_items: [],
 }
 
-const EMPTY_PAY = { amount:'', mode:'Bank Transfer', transaction_id:'', tds_amount:'', tds_section:'' }
+const EMPTY_PAY = { amount:'', date: new Date().toISOString().split('T')[0], mode:'Bank Transfer', transaction_id:'', tds_amount:'', tds_section:'' }
 
 export default function Invoices() {
   const navigate = useNavigate()
+  const clientOptions = useClientOptions()
   const [data, setData]         = useState([])
   const [loading, setLoading]   = useState(true)
   const [filter, setFilter]     = useState('All')
@@ -49,9 +54,21 @@ export default function Invoices() {
   }
   useEffect(()=>{ load() },[filter])
 
+  // Arriving from a customer profile's "New Invoice" button: open the create
+  // drawer with that customer preselected.
+  const [searchParams, setSearchParams] = useSearchParams()
+  useEffect(() => {
+    if (searchParams.get('new') === '1') {
+      const cid = searchParams.get('client_id') || ''
+      setForm(p => ({ ...p, client_id: cid }))
+      setShowDrawer(true)
+      setSearchParams({}, { replace: true })
+    }
+  }, [])
+
   const handleCreate = async () => {
-    if(!form.client) return showToast('Client required','error')
-    await salesApi.invoices.create({...form, amount:0})
+    if(!form.client_id) return showToast('Customer required','error')
+    await salesApi.invoices.create({...form, client_id: Number(form.client_id)})
     showToast('Invoice created!'); setShowDrawer(false); setForm(EMPTY); load()
   }
   const handlePay = async () => {
@@ -99,7 +116,7 @@ export default function Invoices() {
   return (
     <>
       {toast && <div className="fixed top-5 right-5 z-[9999] px-5 py-3 rounded-2xl text-sm font-semibold text-white shadow-2xl animate-[slideDown_0.3s_ease]" style={{background:toast.type==='success'?'linear-gradient(135deg,#10b981,#059669)':'linear-gradient(135deg,#f87171,#ef4444)'}}>{toast.msg}</div>}
-      <div className="space-y-6 animate-[tiltIn_0.35s_ease_forwards]" onClick={()=>setOpenMenu(null)}>
+      <div className="space-y-6 animate-[tiltIn_0.35s_ease]" onClick={()=>setOpenMenu(null)}>
 
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -170,29 +187,23 @@ export default function Invoices() {
                     <td className="py-3.5 px-4 font-bold whitespace-nowrap" style={{color:'var(--text-h)'}}>{fmt(inv.total)}</td>
                     <td className="py-3.5 px-4 font-bold whitespace-nowrap" style={{color:inv.balance>0?'#f87171':'#10b981'}}>{fmt(inv.balance)}</td>
                     <td className="py-3.5 px-4"><StatusBadge status={inv.status}/></td>
-                    <td className="py-3.5 px-4 relative" onClick={e=>e.stopPropagation()}>
-                      <button onClick={()=>setOpenMenu(openMenu===inv.id?null:inv.id)} className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-[rgba(124,58,237,0.08)] transition-colors">
-                        <MoreVertical size={14} style={{color:'var(--text-muted)'}}/>
-                      </button>
-                      {openMenu===inv.id && (
-                        <div className="absolute right-2 top-10 z-50 rounded-2xl shadow-2xl py-1.5 min-w-[180px] overflow-hidden"
-                          style={{background:'var(--bg-card)',border:'1px solid var(--border-purple)',boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
-                          {[
-                            {icon:CreditCard, label:'Record Payment', action:()=>{setSelectedInv(inv);setShowPayModal(true)}},
-                            {icon:Send, label:'Send Invoice', action:()=>showToast('Invoice sent!')},
-                            {icon:Bell, label:'Send Reminder', action:()=>handleSendReminder(inv)},
-                            {icon:Trash2, label:'Delete', action:()=>setConfirmDelete(inv), danger:true},
-                          ].map(a=>(
-                            <button key={a.label} onClick={()=>{a.action();setOpenMenu(null)}}
-                              className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-medium transition-colors"
-                              onMouseEnter={e=>e.currentTarget.style.background=a.danger?'rgba(239,68,68,0.06)':'rgba(124,58,237,0.06)'}
-                              onMouseLeave={e=>e.currentTarget.style.background='transparent'}
-                              style={{color:a.danger?'#f87171':'var(--text-h)'}}>
-                              <a.icon size={13}/>{a.label}
-                            </button>
-                          ))}
-                        </div>
-                      )}
+                    <td className="py-3.5 px-4" onClick={e=>e.stopPropagation()}>
+                      <RowMenu width={188}>
+                        {[
+                          {icon:CreditCard, label:'Record Payment', action:()=>{setSelectedInv(inv);setShowPayModal(true)}},
+                          {icon:Send, label:'Send Invoice', action:()=>showToast('Invoice sent!')},
+                          {icon:Bell, label:'Send Reminder', action:()=>handleSendReminder(inv)},
+                          {icon:Trash2, label:'Delete', action:()=>setConfirmDelete(inv), danger:true},
+                        ].map(a=>(
+                          <button key={a.label} onClick={()=>a.action()}
+                            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-colors"
+                            onMouseEnter={e=>e.currentTarget.style.background=a.danger?'rgba(239,68,68,0.06)':'rgba(124,58,237,0.06)'}
+                            onMouseLeave={e=>e.currentTarget.style.background='transparent'}
+                            style={{color:a.danger?'#f87171':'var(--text-h)'}}>
+                            <a.icon size={13}/>{a.label}
+                          </button>
+                        ))}
+                      </RowMenu>
                     </td>
                   </tr>
                 ))}
@@ -215,7 +226,7 @@ export default function Invoices() {
       {showDrawer && (
         <>
           <div className="drawer-backdrop" onClick={() => setShowDrawer(false)} />
-          <div className="drawer-panel" style={{ width: 'min(640px, 95vw)' }}>
+          <div className="drawer-panel" style={{ width: 'min(1080px, 96vw)' }}>
             {/* Header */}
             <div className="drawer-header">
               <div className="flex items-center gap-2.5">
@@ -241,9 +252,9 @@ export default function Invoices() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="label">Customer *</label>
-                      <select className="input-3d text-sm" value={form.client} onChange={e => sf('client', e.target.value)}>
+                      <select className="input-3d text-sm" value={form.client_id} onChange={e => sf('client_id', e.target.value)}>
                         <option value="">Select customer…</option>
-                        {salesApi.clients.map(c => <option key={c} value={c}>{c}</option>)}
+                        {clientOptions.map(c => <option key={c.id} value={c.id}>{c.company}</option>)}
                       </select>
                     </div>
                     <div>
@@ -286,6 +297,8 @@ export default function Invoices() {
                 <LineItemsTable
                   items={form.line_items}
                   onChange={rows => sf('line_items', rows)}
+                  discount={{ type: form.discount_type, mode: form.discount_mode, value: form.discount_value }}
+                  onDiscountChange={d => setForm(p => ({ ...p, discount_type: d.type ?? p.discount_type, discount_mode: d.mode ?? p.discount_mode, discount_value: d.value ?? p.discount_value }))}
                 />
               </div>
               </div>
@@ -384,7 +397,7 @@ export default function Invoices() {
                   </div>
                   <div>
                     <label className="label">Terms & Conditions</label>
-                    <textarea className="input-3d text-sm resize-none" rows={2} placeholder="Payment terms, conditions…" value={form.terms} onChange={e => sf('terms', e.target.value)} />
+                    <RichTextEditor value={form.terms} onChange={v => sf('terms', v)} placeholder="Payment terms, conditions…" minHeight={120} />
                   </div>
                   <div>
                     <label className="label"><Tag size={10} className="inline mr-1" />Tags</label>

@@ -49,6 +49,16 @@ class ProposalTemplateController extends Controller
         return response()->json(['message' => 'Deleted']);
     }
 
+    // Distinct categories for the free-text + datalist picker.
+    public function categories(Request $request)
+    {
+        return response()->json(
+            ProposalTemplate::where('tenant_id', $request->user()->tenant_id)
+                ->whereNotNull('category')->where('category', '!=', '')
+                ->distinct()->orderBy('category')->pluck('category')
+        );
+    }
+
     public function clone(Request $request, ProposalTemplate $proposalTemplate)
     {
         $proposal = $this->proposalTemplateService->cloneToProposal(

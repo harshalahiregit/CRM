@@ -16,9 +16,11 @@ import { dashboardApi } from '@/services/dashboardApi'
 import { paymentLinkApi } from '@/services/paymentLinkApi'
 import { retainerInvoiceApi } from '@/services/retainerInvoiceApi'
 import { proposalTemplateApi } from '@/services/proposalTemplateApi'
+import { activityApi } from '@/services/activityApi'
 
 export const salesApi = {
   dashboard: dashboardApi.sales,
+  activities: activityApi,
   proposals: proposalApi,
   estimates: estimateApi,
   invoices: invoiceApi,
@@ -34,10 +36,10 @@ export const salesApi = {
   paymentLinks: paymentLinkApi,
   retainerInvoices: retainerInvoiceApi,
   proposalTemplates: proposalTemplateApi,
-
-  // Kept for dropdowns that need a flat client list
-  // Replace with a real /contacts endpoint when that module is built
-  clients: [],
 }
+
+// NOTE: client dropdowns now use the real Customer module via
+// `useClientOptions()` / `fetchClientOptions()` from '@/services/customerApi'.
+// The old hardcoded `salesApi.clients: []` stub has been removed.
 
 export default salesApi

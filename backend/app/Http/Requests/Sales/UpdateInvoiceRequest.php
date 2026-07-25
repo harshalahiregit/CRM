@@ -14,6 +14,9 @@ class UpdateInvoiceRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'discount_type' => 'nullable|in:none,before_tax,after_tax',
+            'discount_mode' => 'nullable|in:fixed,percent',
+            'discount_value'=> 'nullable|numeric|min:0',
             'status'             => 'sometimes|in:Draft,Unpaid,Partially Paid,Paid,Overdue,Cancelled',
             'due_date'           => 'sometimes|date',
             'adminnote'          => 'nullable|string',

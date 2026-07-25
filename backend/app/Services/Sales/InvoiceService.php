@@ -9,14 +9,18 @@ use App\Models\Sales\SalesInvoice;
 use App\Models\Sales\SalesLineItem;
 use App\Models\Sales\SalesPayment;
 use App\Repositories\Sales\InvoiceRepository;
+use App\Services\Sales\CommissionService;
+use App\Support\HtmlSanitizer;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class InvoiceService
 {
-    public function __construct(private InvoiceRepository $invoiceRepository)
-    {
+    public function __construct(
+        private InvoiceRepository $invoiceRepository,
+        private CommissionService $commissionService,
+    ) {
     }
 
     public function list(int $tenantId, array $filters)
@@ -32,6 +36,9 @@ class InvoiceService
     public function create(array $data, int $tenantId, int $userId): SalesInvoice
     {
         return DB::transaction(function () use ($data, $tenantId, $userId) {
+            if (isset($data['terms'])) {
+                $data['terms'] = HtmlSanitizer::clean($data['terms']); // rich text
+            }
             $lineItems = $data['line_items'] ?? [];
             unset($data['line_items']);
 
@@ -67,6 +74,9 @@ class InvoiceService
         $this->assertBelongsToTenant($invoice, $tenantId);
 
         return DB::transaction(function () use ($invoice, $data, $tenantId) {
+            if (isset($data['terms'])) {
+                $data['terms'] = HtmlSanitizer::clean($data['terms']); // rich text
+            }
             $hasLineItems = array_key_exists('line_items', $data);
             $lineItems = $data['line_items'] ?? [];
             unset($data['line_items']);
@@ -132,6 +142,9 @@ class InvoiceService
         }
 
         return DB::transaction(function () use ($invoice, $data, $tenantId, $userId) {
+            if (isset($data['terms'])) {
+                $data['terms'] = HtmlSanitizer::clean($data['terms']); // rich text
+            }
             $payment = SalesPayment::create([
                 'tenant_id'      => $tenantId,
                 'invoice_id'     => $invoice->id,
@@ -148,6 +161,10 @@ class InvoiceService
             ]);
 
             $invoice->recalcBalance();
+
+            // Generate commission entries when the invoice becomes fully paid.
+            // Idempotent (unique rule+source), so repeated partial payments are safe.
+            $this->commissionService->computeForInvoice($invoice->fresh());
 
             Log::channel('sales')->info('Payment recorded', [
                 'invoice_id' => $invoice->id,
@@ -260,11 +277,14 @@ class InvoiceService
                 'item_id'       => $item['item_id'] ?? null,
                 'item_name'     => $item['item_name'],
                 'description'   => $item['description'] ?? null,
+                'hsn_sac_code'  => $item['hsn_sac_code'] ?? null,
                 'qty'           => $item['qty'],
                 'unit'          => $item['unit'] ?? 'pcs',
                 'rate'          => $item['rate'],
-                'tax'           => $item['tax'] ?? 0,
-                'discount'      => $item['discount'] ?? 0,
+                'tax'           => $taxInfo['tax'],
+                'taxes'         => $taxInfo['taxes'],
+                'discount'      => $item['discount'],
+                'discount_mode' => $item['discount_mode'] ?? 'fixed',
                 'total'         => SalesLineItem::computeTotal($item),
                 'sort_order'    => $idx,
             ]);

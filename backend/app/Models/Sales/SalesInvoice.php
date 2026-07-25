@@ -7,10 +7,11 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use App\Models\Traits\BelongsToTenant;
+use App\Models\Traits\CalculatesDocumentTotals;
 
 class SalesInvoice extends Model
 {
-    use HasFactory, SoftDeletes, BelongsToTenant;
+    use HasFactory, SoftDeletes, BelongsToTenant, CalculatesDocumentTotals;
 
     protected $table = 'sales_invoices';
 
@@ -23,6 +24,8 @@ class SalesInvoice extends Model
         'status', 'adminnote', 'clientnote', 'terms', 'tags',
         'sent_at', 'created_by',
         'invoice_type', 'gst_paid', 'gst_amount', 'after_discount_amount',
+        'supply_type', 'discount_mode', 'discount_value',
+        'billing_street', 'billing_city', 'billing_state', 'billing_zip', 'billing_country',
         'public_link_token', 'public_link_expiry', 'msme_udyam_number',
         'eway_bill_number', 'eway_bill_date', 'payment_reminder_enabled',
         'reminder_schedule', 'feedback_email_sent',
@@ -57,7 +60,11 @@ class SalesInvoice extends Model
         static::creating(function (SalesInvoice $inv) {
             if (empty($inv->number)) {
                 $year  = date('Y');
-                $count = static::where('tenant_id', $inv->tenant_id)
+                // withTrashed(): soft-deleted rows still occupy the UNIQUE
+                // index on `number`, so they must be counted or the next
+                // create reuses a number and the insert fails.
+                $count = static::withTrashed()
+                               ->where('tenant_id', $inv->tenant_id)
                                ->whereYear('created_at', $year)
                                ->count() + 1;
                 $inv->number = 'INV-' . $year . '-' . str_pad($count, 3, '0', STR_PAD_LEFT);
@@ -90,21 +97,15 @@ class SalesInvoice extends Model
     /* ── Helpers ─────────────────────────────── */
     public function recalcTotals(): void
     {
-        $subtotal = $taxTotal = $discountTotal = 0;
-        foreach ($this->lineItems as $li) {
-            $base          = $li->qty * $li->rate;
-            $afterDis      = $base - $li->discount;
-            $taxAmount     = $afterDis * ($li->tax / 100);
-            $subtotal     += $base;
-            $discountTotal+= $li->discount;
-            $taxTotal     += $taxAmount;
-        }
-        $this->subtotal              = round($subtotal, 2);
-        $this->tax_total             = round($taxTotal, 2);
-        $this->discount_total        = round($discountTotal, 2);
-        $this->after_discount_amount = round($subtotal - $discountTotal, 2);
-        $this->gst_amount            = round($taxTotal, 2);
-        $this->total                 = round($subtotal - $discountTotal + $taxTotal, 2);
+        $t = $this->computeDocumentTotals();
+
+        $this->subtotal              = $t['subtotal'];
+        $this->tax_total             = $t['tax_total'];
+        $this->discount_total        = $t['all_discounts'];
+        $this->after_discount_amount = $t['after_discount'];
+        $this->gst_amount            = $t['tax_total'];
+        $this->total                 = $t['total'];
+        $this->supply_type           = $this->computeSupplyType();
         $this->saveQuietly();
     }
 
@@ -128,9 +129,11 @@ class SalesInvoice extends Model
     {
         if (
             $this->balance > 0
-            && $this->due_date->isPast()
-            && !in_array($this->status, ['Paid', 'Cancelled'])
+            && $this->due_date && $this->due_date->isPast()
+            && !in_array($this->status, ['Paid', 'Cancelled', 'Overdue'])
         ) {
+            // Exclude 'Overdue' above so an already-overdue invoice isn't
+            // re-written on every list() call (write-on-read).
             $this->status = 'Overdue';
             $this->saveQuietly();
         }

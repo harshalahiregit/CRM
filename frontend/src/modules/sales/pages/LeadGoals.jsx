@@ -37,9 +37,11 @@ export default function LeadGoals() {
     const payload = {
       ...form,
       user_id: form.user_id || null,
-      target_count: form.target_count || null,
-      target_value: form.target_value || null,
-      incentive_value: form.incentive_value || null,
+      // target_count/target_value/incentive_value are NOT-NULL numerics
+      // (DB default 0) — send 0 for an empty box, never null.
+      target_count: form.target_count === '' ? 0 : form.target_count,
+      target_value: form.target_value === '' ? 0 : form.target_value,
+      incentive_value: form.incentive_value === '' ? 0 : form.incentive_value,
     }
     createGoal.mutate(payload, {
       onSuccess: () => { toast.success('Goal created'); setShowDrawer(false); setForm(EMPTY_FORM) },

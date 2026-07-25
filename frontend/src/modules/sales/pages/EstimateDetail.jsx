@@ -40,7 +40,7 @@ export default function EstimateDetail() {
   }, [id])
 
   if (loading) return (
-    <div className="space-y-4 animate-[tiltIn_0.35s_ease_forwards]">
+    <div className="space-y-4 animate-[tiltIn_0.35s_ease]">
       {[1, 2, 3].map(i => <div key={i} className="skeleton h-28 rounded-2xl" style={{ background: 'var(--border)' }} />)}
     </div>
   )
@@ -121,7 +121,7 @@ export default function EstimateDetail() {
           {toast.msg}
         </div>
       )}
-      <div className="space-y-6 animate-[tiltIn_0.35s_ease_forwards]">
+      <div className="space-y-6 animate-[tiltIn_0.35s_ease]">
 
         {/* Top bar */}
         <div className="flex items-center justify-between flex-wrap gap-3">
@@ -289,7 +289,7 @@ export default function EstimateDetail() {
                     <table className="w-full text-xs">
                       <thead>
                         <tr style={{ background: 'var(--bg-input)', borderBottom: '1px solid var(--border)' }}>
-                          {['#', 'Item', 'Description', 'Qty', 'Rate', 'Tax', 'Amount'].map(h => (
+                          {['#', 'Item', 'Description', 'HSN/SAC', 'Qty', 'Rate', 'Tax', 'Amount'].map(h => (
                             <th key={h} className="px-4 py-2.5 text-left label-caps">{h}</th>
                           ))}
                         </tr>
@@ -304,6 +304,7 @@ export default function EstimateDetail() {
                               <td className="px-4 py-3 max-w-[180px]" style={{ color: 'var(--text-muted)' }}>
                                 <span className="truncate block">{item.description || '—'}</span>
                               </td>
+                              <td className="px-4 py-3" style={{ color: 'var(--text-muted)' }}>{item.hsn_sac_code || '—'}</td>
                               <td className="px-4 py-3" style={{ color: 'var(--text-muted)' }}>{item.qty}</td>
                               <td className="px-4 py-3" style={{ color: 'var(--text-muted)' }}>{fmt(item.rate)}</td>
                               <td className="px-4 py-3" style={{ color: 'var(--text-muted)' }}>{item.tax}%</td>

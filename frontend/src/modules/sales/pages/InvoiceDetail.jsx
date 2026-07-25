@@ -114,7 +114,7 @@ export default function InvoiceDetail() {
   return (
     <>
       {toast && <div className="fixed top-5 right-5 z-[9999] px-5 py-3 rounded-2xl text-sm font-semibold text-white shadow-2xl" style={{ background: toast.type === 'success' ? 'linear-gradient(135deg,#10b981,#059669)' : 'linear-gradient(135deg,#f87171,#ef4444)' }}>{toast.msg}</div>}
-      <div className="space-y-6 animate-[tiltIn_0.35s_ease_forwards]">
+      <div className="space-y-6 animate-[tiltIn_0.35s_ease]">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <button onClick={() => navigate('/app/sales/invoices')} className="w-9 h-9 rounded-xl flex items-center justify-center transition-colors hover:bg-[rgba(124,58,237,0.08)]" style={{ border: '1px solid var(--border)' }}>
