@@ -62,6 +62,7 @@ class StoreProposalRequest extends FormRequest
             'line_items.*.discount_mode' => 'nullable|in:fixed,percent',
             'line_items.*.unit'        => 'nullable|string',
             'line_items.*.description' => 'nullable|string',
+            'line_items.*.hsn_sac_code' => 'nullable|string|max:20',
         ];
     }
 }

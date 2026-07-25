@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Settings as SettingsIcon, Loader2, Lock, Unlock, Plus, Trash2 } from 'lucide-react'
+import { Settings as SettingsIcon, Loader2, Lock, Unlock, Plus, Trash2, Pencil, X } from 'lucide-react'
 import { accountsApi } from '@/services/accountsApi'
 import { fmtDate } from '@/modules/accounts/format'
 import { useToast } from '@/hooks/useToast'
@@ -87,32 +87,60 @@ function GstRatesTab() {
   )
 }
 
+const HSN_EMPTY = { code: '', description: '', type: 'hsn', default_gst_rate_id: '', is_active: true }
 function HsnSacTab() {
   const toast = useToast(); const qc = useQueryClient()
-  const { data: page, isLoading } = useQuery({ queryKey: ['accounts', 'hsn-sac'], queryFn: () => accountsApi.hsnSac.list() })
+  const [search, setSearch] = useState('')
+  const { data: page, isLoading } = useQuery({ queryKey: ['accounts', 'hsn-sac', search], queryFn: () => accountsApi.hsnSac.list(search) })
   const { data: rates = [] } = useQuery({ queryKey: ['accounts', 'gst-rates'], queryFn: accountsApi.gstRates.list })
   const rows = page?.data ?? []
-  const [form, setForm] = useState({ code: '', description: '', type: 'hsn', default_gst_rate_id: '' })
+  const [form, setForm] = useState(HSN_EMPTY)
+  const [editId, setEditId] = useState(null)
   const inv = () => qc.invalidateQueries({ queryKey: ['accounts', 'hsn-sac'] })
-  const create = useMutation({ mutationFn: () => accountsApi.hsnSac.create({ ...form, default_gst_rate_id: form.default_gst_rate_id || null }), onSuccess: () => { toast.success('Saved'); setForm({ code: '', description: '', type: 'hsn', default_gst_rate_id: '' }); inv() }, onError: e => toast.error(e.message) })
+  const reset = () => { setForm(HSN_EMPTY); setEditId(null) }
+
+  const payload = () => ({ ...form, default_gst_rate_id: form.default_gst_rate_id || null })
+  const create = useMutation({ mutationFn: () => accountsApi.hsnSac.create(payload()), onSuccess: () => { toast.success('Code added'); reset(); inv() }, onError: e => toast.error(e.message) })
+  const update = useMutation({ mutationFn: () => accountsApi.hsnSac.update(editId, payload()), onSuccess: () => { toast.success('Code updated'); reset(); inv() }, onError: e => toast.error(e.message) })
+  // The update endpoint requires code+type, so a toggle resends the full row.
+  const toggle = useMutation({ mutationFn: (r) => accountsApi.hsnSac.update(r.id, { code: r.code, description: r.description, type: r.type, default_gst_rate_id: r.default_gst_rate_id || null, is_active: !r.is_active }), onSuccess: inv, onError: e => toast.error(e.message) })
   const remove = useMutation({ mutationFn: (id) => accountsApi.hsnSac.remove(id), onSuccess: () => { toast.success('Deleted'); inv() }, onError: e => toast.error(e.message) })
   if (isLoading) return <Spin />
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+  const startEdit = (r) => { setEditId(r.id); setForm({ code: r.code, description: r.description || '', type: r.type, default_gst_rate_id: r.default_gst_rate_id || '', is_active: r.is_active ?? true }) }
+  const saving = create.isPending || update.isPending
+
   return (
     <div className="space-y-4">
+      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>The HSN (goods) / SAC (services) master. Codes here appear as suggestions on document line items, and a code's Default GST auto-fills the line's tax.</p>
       <div className="kpi-3d grid grid-cols-2 sm:grid-cols-5 gap-3 items-end">
-        <FormField label="Code"><Input value={form.code} onChange={e => set('code', e.target.value)} /></FormField>
+        <FormField label="Code"><Input value={form.code} onChange={e => set('code', e.target.value)} placeholder="e.g. 998314" /></FormField>
         <FormField label="Description"><Input value={form.description} onChange={e => set('description', e.target.value)} /></FormField>
-        <FormField label="Type"><Select value={form.type} onChange={e => set('type', e.target.value)}><option value="hsn">HSN</option><option value="sac">SAC</option></Select></FormField>
+        <FormField label="Type"><Select value={form.type} onChange={e => set('type', e.target.value)}><option value="hsn">HSN (goods)</option><option value="sac">SAC (services)</option></Select></FormField>
         <FormField label="Default GST"><Select value={form.default_gst_rate_id} onChange={e => set('default_gst_rate_id', e.target.value)}><option value="">—</option>{rates.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</Select></FormField>
-        <button className="btn-3d" disabled={!form.code || create.isPending} onClick={() => create.mutate()}>Add</button>
+        <div className="flex gap-2">
+          <button className="btn-3d flex-1" disabled={!form.code || saving} onClick={() => (editId ? update.mutate() : create.mutate())}>{editId ? 'Update' : 'Add'}</button>
+          {editId && <button className="px-2 rounded-lg" style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }} onClick={reset} title="Cancel edit"><X size={15} /></button>}
+        </div>
       </div>
+      <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search code / description…" style={{ maxWidth: 280 }} />
       <div className="table-wrapper"><table className="table">
-        <thead><tr><th>Code</th><th>Description</th><th>Type</th><th>Default GST</th><th></th></tr></thead>
-        <tbody>{rows.length === 0 && <tr><td colSpan={5} style={{ color: 'var(--text-muted)' }}>No HSN/SAC codes yet.</td></tr>}
+        <thead><tr><th>Code</th><th>Description</th><th>Type</th><th>Default GST</th><th style={{ textAlign: 'center' }}>Active</th><th></th></tr></thead>
+        <tbody>{rows.length === 0 && <tr><td colSpan={6} style={{ color: 'var(--text-muted)' }}>No HSN/SAC codes yet.</td></tr>}
         {rows.map(r => (
-          <tr key={r.id}><td style={{ color: 'var(--text-h)', fontWeight: 600 }}>{r.code}</td><td style={{ color: 'var(--text-muted)' }}>{r.description || '—'}</td><td className="uppercase text-xs">{r.type}</td><td>{r.default_rate?.name || '—'}</td>
-          <td style={{ textAlign: 'right' }}><button onClick={() => remove.mutate(r.id)} style={{ color: '#f87171' }}><Trash2 size={14} /></button></td></tr>
+          <tr key={r.id} style={{ opacity: r.is_active === false ? 0.55 : 1 }}>
+            <td style={{ color: 'var(--text-h)', fontWeight: 600 }}>{r.code}</td>
+            <td style={{ color: 'var(--text-muted)' }}>{r.description || '—'}</td>
+            <td className="uppercase text-xs">{r.type}</td>
+            <td>{r.default_rate?.name || '—'}</td>
+            <td style={{ textAlign: 'center' }}>
+              <input type="checkbox" checked={r.is_active ?? true} onChange={() => toggle.mutate(r)} title="Active" />
+            </td>
+            <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+              <button onClick={() => startEdit(r)} style={{ color: '#a78bfa', marginRight: 10 }} title="Edit"><Pencil size={13} /></button>
+              <button onClick={() => remove.mutate(r.id)} style={{ color: '#f87171' }} title="Delete"><Trash2 size={14} /></button>
+            </td>
+          </tr>
         ))}</tbody>
       </table></div>
     </div>

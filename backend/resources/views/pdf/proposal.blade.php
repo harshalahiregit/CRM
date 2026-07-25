@@ -75,12 +75,13 @@
 
     <table class="items">
         <thead>
-            <tr><th>Item</th><th>Qty</th><th>Rate</th><th>Tax</th><th>Total</th></tr>
+            <tr><th>Item</th><th>HSN/SAC</th><th>Qty</th><th>Rate</th><th>Tax</th><th>Total</th></tr>
         </thead>
         <tbody>
             @foreach($proposal->lineItems as $item)
                 <tr>
                     <td>{{ $item->item_name }}</td>
+                    <td>{{ $item->hsn_sac_code ?: '—' }}</td>
                     <td>{{ $item->qty }}</td>
                     <td>{{ number_format($item->rate, 2) }}</td>
                     <td>{{ $item->tax }}%</td>

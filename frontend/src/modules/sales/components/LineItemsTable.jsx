@@ -1,5 +1,6 @@
 import { Plus, Trash2 } from 'lucide-react'
 import { useTaxRates } from '@/hooks/useTaxRates'
+import { useHsnSac } from '@/hooks/useHsnSac'
 import TaxSelect from './TaxSelect'
 
 const fmt = v => '₹' + Number(v || 0).toLocaleString('en-IN')
@@ -7,6 +8,7 @@ const fmt = v => '₹' + Number(v || 0).toLocaleString('en-IN')
 const EMPTY_ROW = {
   item_name: '',
   description: '',
+  hsn_sac_code: '',
   qty: 1,
   unit: 'pcs',
   rate: 0,
@@ -14,6 +16,9 @@ const EMPTY_ROW = {
   taxes: [],           // [{name, rate}] — several may apply (CGST+SGST)
   discount: 0,   // flat discount per line in ₹
 }
+
+// A stable id for the shared HSN suggestions datalist.
+const HSN_LIST_ID = 'hsn-sac-suggestions'
 
 const UNITS = ['pcs', 'hrs', 'days', 'months', 'kg', 'ltr', 'box', 'set']
 
@@ -75,6 +80,7 @@ function calcLine(row, taxAfterDiscount = false) {
  */
 export default function LineItemsTable({ items = [], onChange, discount = null, onDiscountChange = null, supplyType }) {
   const TAX_RATES = useTaxRates()
+  const HSN_CODES = useHsnSac()
   // Always have at least one row
   const rows = items.length > 0 ? items : [{ ...EMPTY_ROW }]
 
@@ -84,6 +90,25 @@ export default function LineItemsTable({ items = [], onChange, discount = null, 
       return { ...r, [field]: rawValue }
     })
     onChange(updated)
+  }
+
+  /**
+   * Picking (or typing) an HSN/SAC code that matches a master entry with a
+   * default GST rate auto-fills this line's tax — the point of maintaining the
+   * HSN master. A code with no default rate, or a free-typed unknown code, just
+   * stores the text and leaves the tax as-is.
+   */
+  const updateHsn = (idx, code) => {
+    const match = HSN_CODES.find(h => h.code?.toLowerCase() === code.trim().toLowerCase())
+    onChange(rows.map((r, i) => {
+      if (i !== idx) return r
+      const next = { ...r, hsn_sac_code: code }
+      if (match && match.rate != null) {
+        next.taxes = [{ name: match.rateName || `GST ${match.rate}%`, rate: match.rate }]
+        next.tax = match.rate
+      }
+      return next
+    }))
   }
 
   const addRow    = () => onChange([...rows, { ...EMPTY_ROW }])
@@ -110,11 +135,12 @@ export default function LineItemsTable({ items = [], onChange, discount = null, 
     <div className="space-y-3">
       {/* Table */}
       <div className="overflow-x-auto rounded-xl" style={{ border: '1px solid var(--border)' }}>
-        <table className="w-full text-xs" style={{ minWidth: '700px' }}>
+        <table className="w-full text-xs" style={{ minWidth: '800px' }}>
           <thead>
             <tr style={{ background: 'rgba(124,58,237,0.04)', borderBottom: '1px solid var(--border)' }}>
               <th className="px-3 py-2.5 text-left label-caps" style={{ minWidth: '140px' }}>Item / Service</th>
-              <th className="px-3 py-2.5 text-left label-caps" style={{ minWidth: '160px' }}>Description</th>
+              <th className="px-3 py-2.5 text-left label-caps" style={{ minWidth: '150px' }}>Description</th>
+              <th className="px-3 py-2.5 text-left label-caps" style={{ width: '96px' }}>HSN/SAC</th>
               <th className="px-3 py-2.5 text-left label-caps" style={{ width: '60px' }}>Qty</th>
               <th className="px-3 py-2.5 text-left label-caps" style={{ width: '70px' }}>Unit</th>
               <th className="px-3 py-2.5 text-left label-caps" style={{ width: '100px' }}>Rate (₹)</th>
@@ -147,6 +173,17 @@ export default function LineItemsTable({ items = [], onChange, discount = null, 
                       placeholder="Short description"
                       value={row.description}
                       onChange={e => update(idx, 'description', e.target.value)}
+                    />
+                  </td>
+                  {/* HSN / SAC — suggestions from the master; a match auto-fills tax */}
+                  <td className="px-3 py-2">
+                    <input
+                      className="input-3d text-xs"
+                      style={{ padding: '5px 8px', width: '88px' }}
+                      placeholder="HSN/SAC"
+                      list={HSN_LIST_ID}
+                      value={row.hsn_sac_code || ''}
+                      onChange={e => updateHsn(idx, e.target.value)}
                     />
                   </td>
                   {/* Qty */}
@@ -235,6 +272,15 @@ export default function LineItemsTable({ items = [], onChange, discount = null, 
           </tbody>
         </table>
       </div>
+
+      {/* Shared HSN/SAC suggestions from the Accounts master */}
+      <datalist id={HSN_LIST_ID}>
+        {HSN_CODES.map(h => (
+          <option key={h.code} value={h.code}>
+            {h.description ? `${h.description}${h.rate != null ? ` · GST ${h.rate}%` : ''}` : (h.rate != null ? `GST ${h.rate}%` : h.type?.toUpperCase())}
+          </option>
+        ))}
+      </datalist>
 
       {/* Add row */}
       <button

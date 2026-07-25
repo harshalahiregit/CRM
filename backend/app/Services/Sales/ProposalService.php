@@ -486,6 +486,7 @@ class ProposalService
                 'item_id'       => $item['item_id'] ?? null,
                 'item_name'     => $item['item_name'],
                 'description'   => $item['description'] ?? null,
+                'hsn_sac_code'  => $item['hsn_sac_code'] ?? null,
                 'qty'           => $item['qty'],
                 'unit'          => $item['unit'] ?? 'pcs',
                 'rate'          => $item['rate'],

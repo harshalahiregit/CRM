@@ -42,7 +42,7 @@ class TaxMasterService
     /* ── HSN / SAC ────────────────────────────────────────────── */
     public function hsnSac(int $tenantId, ?string $search = null)
     {
-        return HsnSac::forTenant($tenantId)->with('defaultRate:id,name')->search($search)->orderBy('code')->paginate(100);
+        return HsnSac::forTenant($tenantId)->with('defaultRate:id,name,rate_percent')->search($search)->orderBy('code')->paginate(100);
     }
 
     public function saveHsnSac(?HsnSac $row, array $data, int $tenantId): HsnSac
