@@ -3,7 +3,24 @@ import {
   Bold, Italic, Underline, Heading2, Heading3,
   List, ListOrdered, Link2, Table, Image as ImageIcon,
   AlignLeft, AlignCenter, AlignRight, Video, Music,
+  Baseline, Highlighter, Eraser,
 } from 'lucide-react'
+
+// Word-like font controls. Families are web-safe so they render in the PDF too.
+const FONT_FAMILIES = [
+  { label: 'Default', value: '' },
+  { label: 'Sans Serif', value: 'Arial, Helvetica, sans-serif' },
+  { label: 'Serif', value: 'Georgia, "Times New Roman", serif' },
+  { label: 'Mono', value: '"Courier New", monospace' },
+]
+// execCommand fontSize uses 1–7 buckets; with styleWithCSS these become
+// keyword font-sizes the sanitizer allows.
+const FONT_SIZES = [
+  { label: 'Small', value: '2' },
+  { label: 'Normal', value: '3' },
+  { label: 'Large', value: '5' },
+  { label: 'Huge', value: '7' },
+]
 
 /**
  * Dependency-free rich text editor (contenteditable) shared by customer notes,
@@ -54,6 +71,16 @@ export default function RichTextEditor({ value = '', onChange, placeholder = 'Wr
   }
 
   const insertHTML = (html) => exec('insertHTML', html)
+
+  // Apply a CSS-based inline style to the selection (emits <span style> the
+  // sanitizer keeps, instead of legacy <font> tags).
+  const applyCss = (cmd, val) => {
+    ref.current?.focus()
+    document.execCommand('styleWithCSS', false, true)
+    document.execCommand(cmd, false, val)
+    document.execCommand('styleWithCSS', false, false)
+    emit()
+  }
 
   const insertLink = () => {
     const url = window.prompt('Link URL (https://…)')
@@ -142,6 +169,30 @@ export default function RichTextEditor({ value = '', onChange, placeholder = 'Wr
   return (
     <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-input)', background: 'var(--bg-input)' }}>
       <div className="flex items-center gap-0.5 flex-wrap px-2 py-1.5" style={{ borderBottom: '1px solid var(--border)' }}>
+        {/* Font family + size + colours (Word-like) */}
+        <div className="flex items-center gap-1">
+          <select title="Font" onMouseDown={e => e.stopPropagation()} onChange={e => applyCss('fontName', e.target.value)}
+            className="text-xs rounded-lg px-1.5 h-7 outline-none" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-muted)', maxWidth: 96 }}>
+            {FONT_FAMILIES.map(f => <option key={f.label} value={f.value}>{f.label}</option>)}
+          </select>
+          <select title="Font size" defaultValue="3" onChange={e => applyCss('fontSize', e.target.value)}
+            className="text-xs rounded-lg px-1.5 h-7 outline-none" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+            {FONT_SIZES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+          </select>
+          <label title="Text colour" className="w-7 h-7 rounded-lg flex items-center justify-center cursor-pointer hover:bg-[rgba(124,58,237,0.1)] relative">
+            <Baseline size={14} style={{ color: 'var(--text-muted)' }} />
+            <input type="color" className="absolute inset-0 opacity-0 cursor-pointer" onChange={e => applyCss('foreColor', e.target.value)} />
+          </label>
+          <label title="Highlight" className="w-7 h-7 rounded-lg flex items-center justify-center cursor-pointer hover:bg-[rgba(124,58,237,0.1)] relative">
+            <Highlighter size={14} style={{ color: 'var(--text-muted)' }} />
+            <input type="color" className="absolute inset-0 opacity-0 cursor-pointer" onChange={e => applyCss('hiliteColor', e.target.value)} />
+          </label>
+          <button type="button" title="Clear formatting" onMouseDown={e => e.preventDefault()} onClick={() => exec('removeFormat')}
+            className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-[rgba(124,58,237,0.1)] transition-colors">
+            <Eraser size={13} style={{ color: 'var(--text-muted)' }} />
+          </button>
+        </div>
+        <span className="w-px h-4 mx-1" style={{ background: 'var(--border)' }} />
         {GROUPS.map((group, gi) => (
           <div key={gi} className="flex items-center gap-0.5">
             {gi > 0 && <span className="w-px h-4 mx-1" style={{ background: 'var(--border)' }} />}

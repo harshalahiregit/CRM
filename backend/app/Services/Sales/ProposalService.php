@@ -307,7 +307,21 @@ class ProposalService
         $pixelUrl  = rtrim($apiUrl, '/').'/api/public/proposals/'.$proposal->portal_token.'/track';
         $pdf = $this->renderPdf($proposal);
 
-        $mailer->send($tenantId, $to, new ProposalMail($proposal, $body, $portalUrl, $pixelUrl, $pdf, $subject), $cc);
+        // Decode any user-added attachments (data-URL or bare base64) → raw bytes.
+        $attachments = collect($email['attachments'] ?? [])
+            ->map(function ($a) {
+                $raw = (string) ($a['data'] ?? '');
+                if (str_contains($raw, ',')) {
+                    $raw = substr($raw, strpos($raw, ',') + 1); // strip "data:...;base64," prefix
+                }
+                $content = base64_decode($raw, true);
+                return $content === false || $content === ''
+                    ? null
+                    : ['name' => $a['name'] ?? 'attachment', 'mime' => $a['mime'] ?? 'application/octet-stream', 'content' => $content];
+            })
+            ->filter()->values()->all();
+
+        $mailer->send($tenantId, $to, new ProposalMail($proposal, $body, $portalUrl, $pixelUrl, $pdf, $subject, $attachments), $cc);
 
         $resend = (bool) $proposal->sent_at;
         $proposal->update([

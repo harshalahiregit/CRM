@@ -20,6 +20,9 @@ class ProposalMail extends Mailable
      * @param string $pixelUrl   open-tracking pixel URL
      * @param string $pdfBinary  rendered proposal PDF
      */
+    /**
+     * @param array $extraAttachments  user-added files: [['name','mime','content'(raw bytes)], …]
+     */
     public function __construct(
         public Proposal $proposal,
         public string $bodyHtml,
@@ -27,6 +30,7 @@ class ProposalMail extends Mailable
         public string $pixelUrl,
         private string $pdfBinary,
         private string $subjectLine,
+        private array $extraAttachments = [],
     ) {
     }
 
@@ -42,9 +46,18 @@ class ProposalMail extends Mailable
 
     public function attachments(): array
     {
-        return [
+        // The rendered proposal PDF is always attached.
+        $out = [
             Attachment::fromData(fn () => $this->pdfBinary, "proposal-{$this->proposal->id}.pdf")
                 ->withMime('application/pdf'),
         ];
+
+        // Plus any files the sender added in the submit modal.
+        foreach ($this->extraAttachments as $a) {
+            $out[] = Attachment::fromData(fn () => $a['content'], $a['name'])
+                ->withMime($a['mime'] ?: 'application/octet-stream');
+        }
+
+        return $out;
     }
 }

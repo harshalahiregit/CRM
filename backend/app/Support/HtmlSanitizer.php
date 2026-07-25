@@ -55,6 +55,15 @@ class HtmlSanitizer
         'max-width'   => '~^\d{1,4}(px|%)?$~i',
         'height'      => '~^(auto|\d{1,4}(px|%)?)$~i',
         'margin'      => '~^[\d.\s a-z%]{1,40}$~i',
+        // Rich text formatting (Word-like) — colours, sizes and font family.
+        // Values are strictly validated so no url()/expression() can sneak in.
+        'color'            => '~^(#[0-9a-f]{3,8}|rgba?\([\d.,\s%]{1,40}\)|[a-z]{3,20})$~i',
+        'background-color' => '~^(#[0-9a-f]{3,8}|rgba?\([\d.,\s%]{1,40}\)|[a-z]{3,20})$~i',
+        'font-size'        => '~^(xx-small|x-small|small|medium|large|x-large|xx-large|smaller|larger|\d{1,3}(px|pt|em|rem|%))$~i',
+        'font-family'      => '~^[\w\s,\-\'"]{1,80}$~',
+        'font-weight'      => '~^(normal|bold|bolder|lighter|[1-9]00)$~i',
+        'font-style'       => '~^(normal|italic)$~i',
+        'text-decoration'  => '~^(none|underline|line-through)$~i',
     ];
 
     public static function clean(?string $html): string

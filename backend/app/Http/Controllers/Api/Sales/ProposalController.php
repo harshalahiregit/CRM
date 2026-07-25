@@ -141,6 +141,12 @@ class ProposalController extends Controller
             'body'    => 'nullable|string|max:65535',
             'cc'      => 'nullable|array|max:10',
             'cc.*'    => 'email',
+            // User-added attachments (base64). The proposal PDF is always attached
+            // server-side regardless — these are extras.
+            'attachments'        => 'nullable|array|max:5',
+            'attachments.*.name' => 'required_with:attachments|string|max:200',
+            'attachments.*.mime' => 'nullable|string|max:150',
+            'attachments.*.data' => 'required_with:attachments|string|max:9000000', // ~6.5MB/file
         ]);
 
         $updated = $this->proposalService->submit(

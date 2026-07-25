@@ -360,46 +360,50 @@ export default function ProposalDetail() {
                 </div>
               )}
 
-              {/* Client actions */}
+              {/* Client actions — equal-weight solid buttons */}
               {(proposal.status === 'Sent' || proposal.status === 'Open') && (
-                <div className="mt-6 pt-5 flex gap-3" style={{ borderTop: '1px solid var(--border)' }}>
-                  <button onClick={() => handleStatusChange('Accepted')} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background: 'linear-gradient(135deg,#10b981,#059669)' }}>
-                    <CheckCircle size={14} /> Mark Accepted
+                <div className="mt-6 pt-5 flex flex-wrap gap-3" style={{ borderTop: '1px solid var(--border)' }}>
+                  <button onClick={() => handleStatusChange('Accepted')}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-transform hover:-translate-y-0.5"
+                    style={{ background: 'linear-gradient(135deg,#10b981,#059669)', boxShadow: '0 4px 14px rgba(16,185,129,0.3)' }}>
+                    <CheckCircle size={15} /> Mark Accepted
                   </button>
-                  <button onClick={() => handleStatusChange('Declined')} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold" style={{ background: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' }}>
-                    <XCircle size={14} /> Mark Declined
+                  <button onClick={() => handleStatusChange('Declined')}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-transform hover:-translate-y-0.5"
+                    style={{ background: 'linear-gradient(135deg,#fb7185,#e11d48)', boxShadow: '0 4px 14px rgba(225,29,72,0.28)' }}>
+                    <XCircle size={15} /> Mark Declined
                   </button>
                 </div>
               )}
 
-              {/* Convert actions — customer proposals only. Consistent, equal-weight
-                  buttons on one line: outlined = Proforma, solid = Tax Invoice. */}
+              {/* Convert actions — customer proposals only. Two equal-weight solid
+                  buttons (distinct colours) so neither reads as disabled. */}
               {proposal.rel_type === 'customer' && (
                 <div className="mt-4 pt-5 flex flex-wrap items-center gap-3" style={{ borderTop: '1px solid var(--border)' }}>
                   {proposal.converted_estimate_id ? (
                     <button onClick={() => navigate(`/app/sales/estimates/${proposal.converted_estimate_id}`)}
-                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-colors"
-                      style={{ background: 'transparent', color: '#7C3AED', border: '1.5px solid #7C3AED' }}>
-                      <FileText size={14} /> View Proforma Invoice
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-transform hover:-translate-y-0.5"
+                      style={{ background: 'rgba(79,70,229,0.12)', color: '#6366f1', border: '1px solid rgba(99,102,241,0.35)' }}>
+                      <FileText size={15} /> View Proforma Invoice
                     </button>
                   ) : (
                     <button onClick={handleConvertToEstimate}
-                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-colors hover:bg-[rgba(124,58,237,0.06)]"
-                      style={{ background: 'transparent', color: '#7C3AED', border: '1.5px solid #7C3AED' }}>
-                      <FileText size={14} /> Convert to Proforma Invoice
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-transform hover:-translate-y-0.5"
+                      style={{ background: 'linear-gradient(135deg,#6366f1,#4338ca)', boxShadow: '0 4px 14px rgba(79,70,229,0.3)' }}>
+                      <FileText size={15} /> Convert to Proforma Invoice
                     </button>
                   )}
                   {proposal.converted_invoice_id ? (
                     <button onClick={() => navigate(`/app/sales/invoices/${proposal.converted_invoice_id}`)}
-                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white"
-                      style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)', boxShadow: '0 4px 14px rgba(124,58,237,0.3)' }}>
-                      <FileText size={14} /> View Tax Invoice
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-transform hover:-translate-y-0.5"
+                      style={{ background: 'rgba(124,58,237,0.12)', color: '#7C3AED', border: '1px solid rgba(124,58,237,0.35)' }}>
+                      <FileText size={15} /> View Tax Invoice
                     </button>
                   ) : (
                     <button onClick={handleConvertToInvoice}
-                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white"
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-transform hover:-translate-y-0.5"
                       style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)', boxShadow: '0 4px 14px rgba(124,58,237,0.3)' }}>
-                      <FileText size={14} /> Convert to Tax Invoice
+                      <FileText size={15} /> Convert to Tax Invoice
                     </button>
                   )}
                 </div>
