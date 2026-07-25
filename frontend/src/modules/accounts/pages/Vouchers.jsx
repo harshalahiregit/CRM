@@ -73,12 +73,8 @@ export default function Vouchers() {
         </div>
         <div className="flex items-center gap-2">
           <GhostButton className="flex items-center gap-2" onClick={() => setTaxDrawer(true)}><Receipt size={15} /> Tax Invoice</GhostButton>
+          <GhostButton className="flex items-center gap-2" onClick={() => setManageTypes(true)}><Settings2 size={15} /> Voucher Types</GhostButton>
           <button className="btn-3d flex items-center gap-2" onClick={() => setDrawer(true)}><Plus size={15} /> New Voucher</button>
-          <button title="Manage voucher types" onClick={() => setManageTypes(true)}
-            className="w-10 h-10 rounded-xl flex items-center justify-center transition-colors hover:bg-[rgba(124,58,237,0.08)]"
-            style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
-            <Settings2 size={16} />
-          </button>
         </div>
       </div>
 

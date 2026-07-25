@@ -9,6 +9,7 @@ use App\Services\Accounts\PostingService;
 use App\Services\Accounts\ReversalService;
 use App\Services\Accounts\TransferService;
 use App\Services\Accounts\VoucherService;
+use App\Support\HtmlSanitizer;
 use Illuminate\Http\Request;
 
 class VoucherController extends Controller
@@ -63,8 +64,13 @@ class VoucherController extends Controller
             'date'           => 'required|date',
             'amount'         => 'required|numeric|gt:0',
             'narration'      => 'nullable|string|max:255',
+            'notes_html'     => 'nullable|string|max:65535',
             'transfer_category_id' => 'nullable|integer|exists:acc_transfer_categories,id',
         ]);
+
+        if (! empty($data['notes_html'])) {
+            $data['notes_html'] = HtmlSanitizer::clean($data['notes_html']);
+        }
 
         $voucher = $this->transfers->transfer($data, $request->user()->tenant_id, $request->user()->id);
 

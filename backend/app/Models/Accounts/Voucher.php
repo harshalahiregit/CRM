@@ -22,7 +22,7 @@ class Voucher extends Model
 
     protected $fillable = [
         'tenant_id', 'voucher_type_id', 'financial_year_id', 'number', 'date',
-        'narration', 'party_id', 'reference_no', 'status', 'total_amount',
+        'narration', 'notes_html', 'party_id', 'reference_no', 'status', 'total_amount',
         'is_reversal', 'reversed_voucher_id', 'created_by', 'source_type', 'source_id',
         'transfer_category_id',
     ];

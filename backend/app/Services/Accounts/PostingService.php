@@ -75,6 +75,7 @@ class PostingService
                 'number'            => $number,
                 'date'              => $data['date'],
                 'narration'         => $data['narration'] ?? null,
+                'notes_html'        => $data['notes_html'] ?? null,
                 'party_id'          => $data['party_id'] ?? null,
                 'reference_no'      => $data['reference_no'] ?? null,
                 'status'            => 'posted',

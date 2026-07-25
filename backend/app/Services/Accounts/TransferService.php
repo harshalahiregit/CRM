@@ -65,7 +65,7 @@ class TransferService
     }
 
     /**
-     * @param array $data {from_ledger_id, to_ledger_id, date, amount, narration?, transfer_category_id?}
+     * @param array $data {from_ledger_id, to_ledger_id, date, amount, narration?, notes_html?, transfer_category_id?}
      */
     public function transfer(array $data, int $tenantId, ?int $userId): Voucher
     {
@@ -97,6 +97,7 @@ class TransferService
             'voucher_type_code' => $voucherType,
             'date'              => $data['date'],
             'narration'         => $data['narration'] ?: 'Fund transfer',
+            'notes_html'        => $data['notes_html'] ?? null,
             'party_id'          => $partyId,
             'source_type'       => 'fund_transfer',
             'transfer_category_id' => $data['transfer_category_id'] ?? null,
