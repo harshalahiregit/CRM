@@ -1,6 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Settings as SettingsIcon, Loader2, Lock, Unlock, Plus, Trash2, Pencil, X } from 'lucide-react'
+import {
+  Settings as SettingsIcon, Loader2, Lock, Unlock, Plus, Trash2, Pencil, X,
+  Building2, CalendarRange, Hash, Network, Layers, Tags, ArrowLeftRight,
+  BookOpen, Percent, Barcode, Receipt, History,
+} from 'lucide-react'
 import { accountsApi } from '@/services/accountsApi'
 import { fmtDate } from '@/modules/accounts/format'
 import { useToast } from '@/hooks/useToast'
@@ -12,42 +16,120 @@ import BillCategoriesManager from '@/modules/accounts/components/BillCategoriesM
 import TransferCategoriesManager from '@/modules/accounts/components/TransferCategoriesManager'
 import ChequebooksManager from '@/modules/accounts/components/ChequebooksManager'
 
-const TABS = ['Company', 'Financial Years', 'Numbering', 'Account Groups', 'Voucher Types', 'Bill Categories', 'Chequebooks', 'GST Rates', 'HSN/SAC', 'TDS', 'Transfer Categories', 'Audit Trail']
+// Grouped left-nav — sections separate the one-off (Company, Numbering) from
+// the growing list of manageable masters/categories, instead of one long row
+// of same-weight tabs.
+const GROUPS = [
+  {
+    heading: 'General',
+    items: [
+      { key: 'Company', label: 'Company Profile', icon: Building2 },
+      { key: 'Financial Years', label: 'Financial Years', icon: CalendarRange },
+      { key: 'Numbering', label: 'Numbering Series', icon: Hash },
+    ],
+  },
+  {
+    heading: 'Chart Setup',
+    items: [
+      { key: 'Account Groups', label: 'Account Groups', icon: Network },
+      { key: 'Voucher Types', label: 'Voucher Types', icon: Layers },
+    ],
+  },
+  {
+    heading: 'Categories & Masters',
+    items: [
+      { key: 'Bill Categories', label: 'Bill Categories', icon: Tags },
+      { key: 'Transfer Categories', label: 'Transfer Categories', icon: ArrowLeftRight },
+      { key: 'Chequebooks', label: 'Chequebooks', icon: BookOpen },
+    ],
+  },
+  {
+    heading: 'Tax & Compliance',
+    items: [
+      { key: 'GST Rates', label: 'GST Rates', icon: Percent },
+      { key: 'HSN/SAC', label: 'HSN / SAC Codes', icon: Barcode },
+      { key: 'TDS', label: 'TDS Sections', icon: Receipt },
+    ],
+  },
+  {
+    heading: 'System',
+    items: [
+      { key: 'Audit Trail', label: 'Audit Trail', icon: History },
+    ],
+  },
+]
+
+const PANELS = {
+  'Company': CompanyTab,
+  'Financial Years': FinancialYearsTab,
+  'Numbering': NumberingTab,
+  'Account Groups': AccountGroupsManager,
+  'Voucher Types': VoucherTypesManager,
+  'Bill Categories': BillCategoriesManager,
+  'Transfer Categories': TransferCategoriesManager,
+  'Chequebooks': ChequebooksManager,
+  'GST Rates': GstRatesTab,
+  'HSN/SAC': HsnSacTab,
+  'TDS': TdsTab,
+  'Audit Trail': AuditTab,
+}
+
+// These panels already render their own title + description — the shell
+// header would just duplicate it, so it's suppressed for these keys.
+const SELF_HEADED = new Set(['Account Groups', 'Voucher Types', 'Bill Categories', 'Transfer Categories', 'Chequebooks'])
 
 export default function AccountsSettings() {
   const [tab, setTab] = useState('Company')
+  const active = GROUPS.flatMap(g => g.items).find(i => i.key === tab)
+  const Panel = PANELS[tab]
 
   return (
-    <div className="space-y-5 animate-fade-in max-w-4xl">
-      <div className="flex items-center gap-3">
+    <div className="animate-fade-in max-w-6xl">
+      <div className="flex items-center gap-3 mb-6">
         <div className="w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.12)' }}>
           <SettingsIcon size={18} style={{ color: '#a78bfa' }} />
         </div>
-        <h1 className="text-xl font-black" style={{ color: 'var(--text-h)' }}>Accounts Settings</h1>
+        <div>
+          <h1 className="text-xl font-black" style={{ color: 'var(--text-h)' }}>Accounts Settings</h1>
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Company details, numbering, and every manageable master in one place</p>
+        </div>
       </div>
 
-      <div className="flex gap-1 flex-wrap" style={{ borderBottom: '1px solid var(--border)' }}>
-        {TABS.map(t => (
-          <button key={t} onClick={() => setTab(t)}
-            className="px-4 py-2.5 text-sm font-bold -mb-px"
-            style={{ color: tab === t ? '#a78bfa' : 'var(--text-muted)', borderBottom: tab === t ? '2px solid #a78bfa' : '2px solid transparent' }}>
-            {t}
-          </button>
-        ))}
-      </div>
+      <div className="flex flex-col md:flex-row gap-5 items-start">
+        {/* Grouped section nav */}
+        <nav className="w-full md:w-60 flex-shrink-0 card-3d space-y-4" style={{ padding: '14px 10px' }}>
+          {GROUPS.map(group => (
+            <div key={group.heading}>
+              <p className="label-caps px-3 mb-1" style={{ color: 'var(--text-faint, var(--text-muted))', fontSize: 10 }}>{group.heading}</p>
+              {group.items.map(({ key, label, icon: Icon }) => (
+                <button key={key} onClick={() => setTab(key)}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold mb-0.5 transition-colors text-left"
+                  style={tab === key
+                    ? { background: 'linear-gradient(135deg,#7C3AED,#6d28d9)', color: '#fff' }
+                    : { color: 'var(--text-body)', background: 'transparent' }}
+                  onMouseEnter={e => { if (tab !== key) e.currentTarget.style.background = 'rgba(124,58,237,0.06)' }}
+                  onMouseLeave={e => { if (tab !== key) e.currentTarget.style.background = 'transparent' }}>
+                  <Icon size={15} style={{ flexShrink: 0 }} /> {label}
+                </button>
+              ))}
+            </div>
+          ))}
+        </nav>
 
-      {tab === 'Company' && <CompanyTab />}
-      {tab === 'Financial Years' && <FinancialYearsTab />}
-      {tab === 'Numbering' && <NumberingTab />}
-      {tab === 'Account Groups' && <AccountGroupsManager />}
-      {tab === 'Voucher Types' && <VoucherTypesManager />}
-      {tab === 'Bill Categories' && <BillCategoriesManager />}
-      {tab === 'Chequebooks' && <ChequebooksManager />}
-      {tab === 'GST Rates' && <GstRatesTab />}
-      {tab === 'HSN/SAC' && <HsnSacTab />}
-      {tab === 'TDS' && <TdsTab />}
-      {tab === 'Transfer Categories' && <TransferCategoriesManager />}
-      {tab === 'Audit Trail' && <AuditTab />}
+        {/* Active panel — panels bring their own boxed sections (kpi-3d forms,
+            table-wrapper lists), so this stays unboxed to avoid double-carding. */}
+        <div className="flex-1 min-w-0 w-full">
+          {!SELF_HEADED.has(tab) && (
+            <div className="flex items-center gap-2 mb-4">
+              {active && <active.icon size={16} style={{ color: '#a78bfa' }} />}
+              <h2 className="text-sm font-black" style={{ color: 'var(--text-h)' }}>{active?.label}</h2>
+            </div>
+          )}
+          {SELF_HEADED.has(tab)
+            ? <div className="card-3d" style={{ padding: 20 }}>{Panel && <Panel />}</div>
+            : Panel && <Panel />}
+        </div>
+      </div>
     </div>
   )
 }
