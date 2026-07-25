@@ -53,6 +53,8 @@ export default function ProductFormModal({ open, onClose, product = null, onSave
   const imgInput = useRef(null)
   // Alternate pack units (Box=12, Carton=144…). Loaded on edit; empty for new.
   const [altUnits, setAltUnits] = useState([])
+  // Supplier links (preferred / multiple vendors). Loaded on edit; empty for new.
+  const [pv, setPv] = useState([])
 
   const units = settings?.units || []
   const types = settings?.types || []
@@ -88,14 +90,20 @@ export default function ProductFormModal({ open, onClose, product = null, onSave
         })
   }, [open, product, editing]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load the product's alternate units when editing (the list row doesn't carry them).
+  // Active vendors for the supplier dropdown.
+  const { data: vendorList = [] } = useQuery({ queryKey: ['inv-vendors-active'], queryFn: () => inventoryApi.vendors.list({ status: 'active' }), enabled: open })
+
+  // Load the product's alternate units + supplier links when editing.
   useEffect(() => {
     if (open && editing && product?.id) {
       inventoryApi.products.units(product.id)
         .then(rows => setAltUnits((rows || []).map(u => ({ name: u.name, factor: String(u.factor), barcode: u.barcode || '' }))))
         .catch(() => setAltUnits([]))
+      inventoryApi.products.vendors(product.id)
+        .then(rows => setPv((rows || []).map(r => ({ vendor_id: String(r.vendor_id), vendor_sku: r.vendor_sku || '', price: r.price ?? '', moq: r.moq ?? '', is_preferred: !!r.is_preferred }))))
+        .catch(() => setPv([]))
     } else if (open) {
-      setAltUnits([])
+      setAltUnits([]); setPv([])
     }
   }, [open, editing, product?.id])
 
@@ -162,11 +170,14 @@ export default function ProductFormModal({ open, onClose, product = null, onSave
         ? await inventoryApi.products.update(product.id, payload)
         : await inventoryApi.products.create(payload)
       const id = editing ? product.id : saved?.id
-      // Persist alternate units against the (now-existing) product id.
+      // Persist alternate units + supplier links against the product id.
       if (id) {
         await inventoryApi.products.saveUnits(id, altUnits
           .filter(u => (u.name || '').trim() && Number(u.factor) > 0)
           .map(u => ({ name: u.name.trim(), factor: Number(u.factor), barcode: u.barcode || null })))
+        await inventoryApi.products.saveVendors(id, pv
+          .filter(r => r.vendor_id)
+          .map(r => ({ vendor_id: Number(r.vendor_id), vendor_sku: r.vendor_sku || null, price: r.price === '' ? null : Number(r.price), moq: r.moq === '' ? null : Number(r.moq), is_preferred: !!r.is_preferred })))
       }
       return saved
     },
@@ -352,6 +363,31 @@ export default function ProductFormModal({ open, onClose, product = null, onSave
               ))}
               <button type="button" onClick={() => setAltUnits(a => [...a, { name: '', factor: '', barcode: '' }])}
                 className="text-xs font-bold flex items-center gap-1.5" style={{ color: INV_ACCENT }}><Plus size={13} /> Add unit</button>
+            </div>
+          </Section>
+
+          <Section title="Suppliers" hint="Vendors that supply this item. Mark one as preferred — that's who reordering suggests. Manage vendor records in Inventory → Vendors.">
+            <div className="space-y-2">
+              {pv.map((r, i) => (
+                <div key={i} className="flex gap-2 items-center flex-wrap">
+                  <div style={{ flex: '2 1 160px' }}>
+                    <Select value={r.vendor_id} onChange={v => setPv(a => a.map((x, j) => j === i ? { ...x, vendor_id: v } : x))} placeholder="Choose vendor"
+                      options={vendorList.map(v => ({ value: String(v.id), label: v.name }))} />
+                  </div>
+                  <input value={r.vendor_sku} onChange={e => setPv(a => a.map((x, j) => j === i ? { ...x, vendor_sku: e.target.value } : x))} placeholder="Vendor SKU" className={INPUT} style={{ ...INPUT_S, flex: '1 1 90px' }} />
+                  <input type="number" min="0" value={r.price} onChange={e => setPv(a => a.map((x, j) => j === i ? { ...x, price: e.target.value } : x))} placeholder="Price" className={INPUT} style={{ ...INPUT_S, flex: '1 1 70px' }} />
+                  <input type="number" min="0" value={r.moq} onChange={e => setPv(a => a.map((x, j) => j === i ? { ...x, moq: e.target.value } : x))} placeholder="MOQ" className={INPUT} style={{ ...INPUT_S, flex: '1 1 60px' }} />
+                  <button type="button" onClick={() => setPv(a => a.map((x, j) => ({ ...x, is_preferred: j === i })))}
+                    className="text-[11px] font-bold px-2 py-1.5 rounded-lg shrink-0"
+                    title="Set as preferred vendor"
+                    style={r.is_preferred ? { background: `color-mix(in srgb, ${INV_ACCENT} 16%, transparent)`, color: INV_ACCENT } : { border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+                    ★ {r.is_preferred ? 'Preferred' : 'Prefer'}
+                  </button>
+                  <button type="button" onClick={() => setPv(a => a.filter((_, j) => j !== i))} className="p-1.5 rounded-lg shrink-0" style={{ color: 'var(--color-danger-500)' }} aria-label="Remove vendor"><Trash2 size={14} /></button>
+                </div>
+              ))}
+              <button type="button" onClick={() => setPv(a => [...a, { vendor_id: '', vendor_sku: '', price: '', moq: '', is_preferred: a.length === 0 }])}
+                className="text-xs font-bold flex items-center gap-1.5" style={{ color: INV_ACCENT }}><Plus size={13} /> Add supplier</button>
             </div>
           </Section>
 

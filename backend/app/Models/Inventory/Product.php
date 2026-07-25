@@ -144,4 +144,10 @@ class Product extends Model
     {
         return $this->hasMany(ProductUnit::class, 'product_id')->orderBy('order')->orderBy('id');
     }
+
+    /** Vendors that supply this item (with their SKU, price, MOQ, preferred flag). */
+    public function vendorLinks()
+    {
+        return $this->hasMany(ProductVendor::class, 'product_id');
+    }
 }

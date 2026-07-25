@@ -203,6 +203,38 @@ class ProductController extends Controller
         return $this->success(['base_qty' => $base], 'Converted');
     }
 
+    /* ── Product ↔ vendor links ─────────────────────────────────── */
+
+    public function vendors(Request $request, int $product)
+    {
+        $this->denyExternal($request);
+
+        return $this->success(
+            app(\App\Services\Inventory\VendorService::class)->forProduct($product, $request->user()->tenant_id),
+            'Product vendors retrieved'
+        );
+    }
+
+    public function saveVendors(Request $request, int $product)
+    {
+        $this->guardProductManage($request, $product, 'edit this item');
+
+        $data = $request->validate([
+            'vendors'                  => 'present|array',
+            'vendors.*.vendor_id'      => 'required|integer|min:1',
+            'vendors.*.vendor_sku'     => 'nullable|string|max:80',
+            'vendors.*.price'          => 'nullable|numeric|min:0',
+            'vendors.*.moq'            => 'nullable|numeric|min:0',
+            'vendors.*.lead_time_days' => 'nullable|integer|min:0',
+            'vendors.*.is_preferred'   => 'nullable|boolean',
+        ]);
+
+        return $this->success(
+            app(\App\Services\Inventory\VendorService::class)->setForProduct($product, $data['vendors'], $request->user()->tenant_id),
+            'Vendors saved'
+        );
+    }
+
     public function destroy(Request $request, int $product)
     {
         $this->requireAdmin($request, 'delete a product');

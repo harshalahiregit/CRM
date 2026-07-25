@@ -56,6 +56,14 @@ export const inventoryApi = {
     close:   (id, as = 'released') => api.post(`/inventory/reservations/${id}/close`, { as }).then(unwrap).catch(handleErr),
   },
 
+  // Vendor master (suppliers).
+  vendors: {
+    list:   (params = {}) => api.get('/inventory/vendors', { params }).then(unwrap).catch(handleErr),
+    create: (data) => api.post('/inventory/vendors', data).then(unwrap).catch(handleErr),
+    update: (id, data) => api.put(`/inventory/vendors/${id}`, data).then(unwrap).catch(handleErr),
+    remove: (id) => api.delete(`/inventory/vendors/${id}`).then(unwrap).catch(handleErr),
+  },
+
   products: {
     list:   (params = {}) => api.get('/inventory/products', { params }).then(unwrap).catch(handleErr),
     get:    (id) => api.get(`/inventory/products/${id}`).then(unwrap).catch(handleErr),
@@ -70,6 +78,8 @@ export const inventoryApi = {
     units:     (id) => api.get(`/inventory/products/${id}/units`).then(unwrap).catch(handleErr),
     saveUnits: (id, units) => api.put(`/inventory/products/${id}/units`, { units }).then(unwrap).catch(handleErr),
     convert:   (id, qty, unit) => api.get(`/inventory/products/${id}/convert`, { params: { qty, unit } }).then(unwrap).catch(handleErr),
+    vendors:     (id) => api.get(`/inventory/products/${id}/vendors`).then(unwrap).catch(handleErr),
+    saveVendors: (id, vendors) => api.put(`/inventory/products/${id}/vendors`, { vendors }).then(unwrap).catch(handleErr),
 
     // §1 — tag vocabulary, bulk actions, imports and item images.
     tags: () => api.get('/inventory/products/tags').then(unwrap).catch(handleErr),

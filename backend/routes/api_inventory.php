@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\Inventory\ScanController;
 use App\Http\Controllers\Api\Inventory\StockController;
 use App\Http\Controllers\Api\Inventory\TraceabilityController;
 use App\Http\Controllers\Api\Inventory\TransferController;
+use App\Http\Controllers\Api\Inventory\VendorController;
 use App\Http\Controllers\Api\Inventory\VoucherController;
 use App\Http\Controllers\Api\Inventory\VoucherFileController;
 use App\Http\Controllers\Api\Inventory\WarehouseController;
@@ -196,6 +197,14 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('inventory')->gr
     Route::get('/products/{product}/units',    [ProductController::class, 'units']);
     Route::put('/products/{product}/units',    [ProductController::class, 'saveUnits']);
     Route::get('/products/{product}/convert',  [ProductController::class, 'convert']);
+    Route::get('/products/{product}/vendors',  [ProductController::class, 'vendors']);
+    Route::put('/products/{product}/vendors',  [ProductController::class, 'saveVendors']);
+
+    // Vendor master
+    Route::get('/vendors',             [VendorController::class, 'index']);
+    Route::post('/vendors',            [VendorController::class, 'store']);
+    Route::put('/vendors/{vendor}',    [VendorController::class, 'update']);
+    Route::delete('/vendors/{vendor}', [VendorController::class, 'destroy']);
 
     // Warehouses + bin locations
     Route::get('/warehouses',        [WarehouseController::class, 'index']);

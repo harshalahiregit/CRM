@@ -83,6 +83,7 @@ const INVENTORY_SUB_ITEMS = [
   { label: 'Consignments', path: '/app/inventory/transfers', icon: Truck },
   { label: 'Loss & adjustment', path: '/app/inventory/vouchers/loss_adjustment', icon: Scale },
   { label: 'Warehouse', path: '/app/inventory/warehouses', icon: Warehouse },
+  { label: 'Vendors', path: '/app/inventory/vendors', icon: Truck },
   { label: 'Traceability', path: '/app/inventory/traceability', icon: Layers3 },
   { label: 'Inventory history', path: '/app/inventory/history', icon: History },
   { label: 'Analytics', path: '/app/inventory/analytics', icon: Activity },
