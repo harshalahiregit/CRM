@@ -86,6 +86,7 @@ const InventoryCounts = lazy(() => import('@/modules/inventory/pages/InventoryCo
 const InventoryTransfers = lazy(() => import('@/modules/inventory/pages/InventoryTransfers'))
 const InventoryVendors = lazy(() => import('@/modules/inventory/pages/InventoryVendors'))
 const InventoryPurchaseOrders = lazy(() => import('@/modules/inventory/pages/InventoryPurchaseOrders'))
+const InventoryDeadStock = lazy(() => import('@/modules/inventory/pages/InventoryDeadStock'))
 
 function ComingSoon({ name }) {
   return (
@@ -226,6 +227,7 @@ export default function AppRoutes() {
         <Route path="inventory/transfers" element={<S><InventoryTransfers /></S>} />
         <Route path="inventory/vendors" element={<S><InventoryVendors /></S>} />
         <Route path="inventory/purchase-orders" element={<S><InventoryPurchaseOrders /></S>} />
+        <Route path="inventory/dead-stock" element={<S><InventoryDeadStock /></S>} />
         <Route path="inventory/settings" element={<S><InventorySettings /></S>} />
 
         <Route path="invoices" element={<ComingSoon name="Invoices" />} />

@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\Inventory\AnalyticsController;
 use App\Http\Controllers\Api\Inventory\CategoryController;
 use App\Http\Controllers\Api\Inventory\ConfigController;
 use App\Http\Controllers\Api\Inventory\CountController;
+use App\Http\Controllers\Api\Inventory\DeadStockController;
 use App\Http\Controllers\Api\Inventory\InventoryStaffController;
 use App\Http\Controllers\Api\Inventory\ProductController;
 use App\Http\Controllers\Api\Inventory\PurchaseOrderController;
@@ -41,6 +42,13 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('inventory')->gr
 
     // Analytics — ABC/XYZ, turnover, dead stock, accuracy. Viewer-aware.
     Route::get('/analytics',  [AnalyticsController::class, 'index']);
+
+    // Dead-stock action workflow — decide and track what happens to dead stock.
+    Route::get('/dead-stock/candidates',  [DeadStockController::class, 'candidates']);
+    Route::get('/dead-stock',             [DeadStockController::class, 'index']);
+    Route::post('/dead-stock',            [DeadStockController::class, 'store']);
+    Route::patch('/dead-stock/{id}/status', [DeadStockController::class, 'updateStatus'])->where('id', '[0-9]+');
+    Route::delete('/dead-stock/{id}',     [DeadStockController::class, 'destroy'])->where('id', '[0-9]+');
 
     // Traceability: batches, serials, reservations, expiry.
     Route::get('/batches',            [TraceabilityController::class, 'batches']);

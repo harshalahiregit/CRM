@@ -79,6 +79,15 @@ export const inventoryApi = {
     generate: () => api.post('/inventory/purchase-orders/generate').then(unwrap).catch(handleErr),
   },
 
+  // Dead-stock action workflow.
+  deadStock: {
+    candidates: (days = 90) => api.get('/inventory/dead-stock/candidates', { params: { days } }).then(unwrap).catch(handleErr),
+    list:       (params = {}) => api.get('/inventory/dead-stock', { params }).then(unwrap).catch(handleErr),
+    create:     (data) => api.post('/inventory/dead-stock', data).then(unwrap).catch(handleErr),
+    setStatus:  (id, status) => api.patch(`/inventory/dead-stock/${id}/status`, { status }).then(unwrap).catch(handleErr),
+    remove:     (id) => api.delete(`/inventory/dead-stock/${id}`).then(unwrap).catch(handleErr),
+  },
+
   products: {
     list:   (params = {}) => api.get('/inventory/products', { params }).then(unwrap).catch(handleErr),
     get:    (id) => api.get(`/inventory/products/${id}`).then(unwrap).catch(handleErr),
