@@ -113,6 +113,30 @@ return [
             'replace_placeholders' => true,
         ],
 
+        'vendor' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/vendor.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'days' => env('LOG_DAILY_DAYS', 14),
+            'replace_placeholders' => true,
+        ],
+
+        'tpv' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/tpv.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'days' => env('LOG_DAILY_DAYS', 14),
+            'replace_placeholders' => true,
+        ],
+
+        'compliance' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/compliance.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'days' => env('LOG_DAILY_DAYS', 14),
+            'replace_placeholders' => true,
+        ],
+
         'errors' => [
             'driver' => 'daily',
             'path' => storage_path('logs/errors.log'),

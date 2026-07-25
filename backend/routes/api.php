@@ -12,3 +12,9 @@ require __DIR__.'/api_tasks.php';
 require __DIR__.'/api_inventory.php';
 require __DIR__.'/settings.php';
 require __DIR__.'/public.php';
+
+// Vendor master + third-party-vendor (TPV) module and its shared engines.
+require __DIR__.'/vendors.php';
+require __DIR__.'/tpv.php';
+require __DIR__.'/compliance.php';
+require __DIR__.'/shared.php';

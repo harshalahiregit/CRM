@@ -3,8 +3,15 @@
 namespace App\Services\Auth;
 
 use App\Exceptions\BusinessException;
+use App\Models\Hr\HrExternalCompany;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Models\Vendor\Vendor;
+use App\Support\AgencyContext;
+use App\Support\Vendor\VendorStatus;
+use App\Support\Hr\CompanyAccountStatus;
+use App\Support\Hr\CompanyType;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -25,6 +32,15 @@ class AuthService
         // Revoke old tokens (single device)
         $user->tokens()->delete();
         $token = $user->createToken('crm-auth-token', ['*'], now()->addDays(30))->plainTextToken;
+
+        // Track last login; company logins also get an audit-based login history.
+        $ip = request()->ip();
+        $user->forceFill(['last_login_at' => now(), 'last_login_ip' => $ip])->saveQuietly();
+        if ($user->role === 'company') {
+            app(\App\Services\AuditLogService::class)->record($user, 'Signed in', $user, null, [
+                'ip' => $ip, 'device' => request()->userAgent(), 'login' => true,
+            ]);
+        }
 
         Log::channel('auth')->info('User logged in', ['user_id' => $user->id, 'tenant_id' => $user->tenant_id]);
 
@@ -113,7 +129,10 @@ class AuthService
             'role'              => 'third_party_vendor',
             'status'            => 'pending',
             'tpv_type'          => $data['tpv_type'],
-            'access_expires_at' => $data['tpv_type'] === 'temporary' ? now()->addDays(5)->toDateString() : null,
+            // A temporary vendor's 5-day access window starts at admin activation,
+            // not at registration — so it is null here and set in
+            // VendorService::updateStatus when the admin approves.
+            'access_expires_at' => null,
             'phone'             => $data['phone'] ?? null,
             'designation'       => $data['position'] ?? null,
             'meta'              => [
@@ -126,6 +145,25 @@ class AuthService
                 'zip'        => $data['zip'] ?? null,
                 'website'    => $data['website'] ?? null,
             ],
+        ]);
+
+        // Self-registered vendors land in the admin Dashboard immediately as a
+        // Vendor record — Inactive until an admin activates them. They belong to
+        // the agency tenant (external parties aren't independent tenants), and the
+        // Temporary/Permanent choice maps to the vendor_type.
+        Vendor::create([
+            'tenant_id'   => AgencyContext::tenantId(),
+            'user_id'     => $user->id,
+            'company_name'=> $data['username'] ?? $user->name,
+            'vendor_type' => $data['tpv_type'] === 'temporary' ? 'temporary' : 'standard',
+            'engagements' => ['tpv'],
+            'email'       => $user->email,
+            'phone'       => $data['phone'] ?? null,
+            'city'        => $data['city'] ?? null,
+            'state'       => $data['state'] ?? null,
+            'country'     => $data['country'] ?? null,
+            'pincode'     => $data['zip'] ?? null,
+            'status'      => VendorStatus::INACTIVE,
         ]);
 
         Log::channel('auth')->info('TPV registered, pending approval', ['user_id' => $user->id]);
@@ -154,6 +192,58 @@ class AuthService
         Log::channel('auth')->info('Client registered, pending approval', ['user_id' => $user->id]);
 
         return $user;
+    }
+
+    /**
+     * External company self-registration.
+     *
+     * Creates BOTH the company record and its admin login as Pending, in one
+     * transaction, bound to the agency tenant (companies are clients of the
+     * agency, not independent tenants). HR sees the pending company and approves
+     * it — that flips both to Active. No tenant is assigned at approval.
+     */
+    public function registerCompany(array $data): array
+    {
+        return DB::transaction(function () use ($data) {
+            $tenantId = AgencyContext::tenantId();
+
+            $company = HrExternalCompany::create([
+                'tenant_id'      => $tenantId,
+                'name'           => $data['company_name'],
+                'company_type'   => $data['company_type'] ?? CompanyType::CLIENT,
+                'industry'       => $data['industry'] ?? null,
+                'company_size'   => $data['company_size'] ?? null,
+                'website'        => $data['website'] ?? null,
+                'gst_number'     => $data['gst_number'] ?? null,
+                'pan_number'     => $data['pan_number'] ?? null,
+                'contact_person' => $data['admin_name'],
+                'contact_email'  => $data['admin_email'],
+                'contact_phone'  => $data['admin_phone'] ?? null,
+                'status'         => CompanyAccountStatus::PENDING_APPROVAL,
+            ]);
+
+            $user = User::create([
+                'tenant_id'           => $tenantId,
+                'external_company_id' => $company->id,
+                'name'                => $data['admin_name'],
+                'email'               => $data['admin_email'],
+                'password'            => Hash::make($data['password']),
+                'role'                => 'company',
+                'internal_role'       => 'company_admin',
+                'status'              => 'pending',
+                'phone'               => $data['admin_phone'] ?? null,
+                'company'             => $data['company_name'],
+            ]);
+
+            $company->recordAudit('Company registered — pending approval', null, $company->name, [
+                'company_code' => $company->company_code, 'client_visible' => false,
+            ]);
+            Log::channel('auth')->info('Company registered, pending approval', [
+                'company_id' => $company->id, 'user_id' => $user->id, 'tenant_id' => $tenantId,
+            ]);
+
+            return ['company' => $company, 'user' => $user];
+        });
     }
 
     public function logout(User $user): void
