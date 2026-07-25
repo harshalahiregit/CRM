@@ -7,8 +7,9 @@ import { useToast } from '@/hooks/useToast'
 import FormField, { Input, Select } from '@/components/ui/FormField'
 import { GhostButton } from '@/modules/accounts/components/Btn'
 import AccountGroupsManager from '@/modules/accounts/components/AccountGroupsManager'
+import VoucherTypesManager from '@/modules/accounts/components/VoucherTypesManager'
 
-const TABS = ['Company', 'Financial Years', 'Numbering', 'Account Groups', 'GST Rates', 'HSN/SAC', 'TDS', 'Transfer Categories', 'Audit Trail']
+const TABS = ['Company', 'Financial Years', 'Numbering', 'Account Groups', 'Voucher Types', 'GST Rates', 'HSN/SAC', 'TDS', 'Transfer Categories', 'Audit Trail']
 
 export default function AccountsSettings() {
   const [tab, setTab] = useState('Company')
@@ -36,6 +37,7 @@ export default function AccountsSettings() {
       {tab === 'Financial Years' && <FinancialYearsTab />}
       {tab === 'Numbering' && <NumberingTab />}
       {tab === 'Account Groups' && <AccountGroupsManager />}
+      {tab === 'Voucher Types' && <VoucherTypesManager />}
       {tab === 'GST Rates' && <GstRatesTab />}
       {tab === 'HSN/SAC' && <HsnSacTab />}
       {tab === 'TDS' && <TdsTab />}

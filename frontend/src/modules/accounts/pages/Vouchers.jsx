@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Plus, BookText, Loader2, Trash2, X, Receipt } from 'lucide-react'
+import { Plus, BookText, Loader2, Trash2, X, Receipt, Settings2 } from 'lucide-react'
 import { accountsApi } from '@/services/accountsApi'
 import { fmtDate, VOUCHER_TYPES } from '@/modules/accounts/format'
 import { useInr } from '@/modules/accounts/useMoney'
@@ -10,6 +10,7 @@ import DataTable from '@/components/ui/DataTable'
 import Drawer from '@/components/ui/Drawer'
 import FormField, { Input, Select, Textarea } from '@/components/ui/FormField'
 import { GhostButton } from '@/modules/accounts/components/Btn'
+import VoucherTypesManager from '@/modules/accounts/components/VoucherTypesManager'
 
 const STATUS_COLORS = { posted: '#10b981', cancelled: '#f87171', draft: '#f59e0b' }
 
@@ -21,6 +22,10 @@ export default function Vouchers() {
   const [filters, setFilters] = useState({ type: '', status: '', search: '' })
   const [drawer, setDrawer] = useState(false)
   const [taxDrawer, setTaxDrawer] = useState(false)
+  const [manageTypes, setManageTypes] = useState(false)
+
+  const { data: voucherTypes = [] } = useQuery({ queryKey: ['accounts', 'voucher-types'], queryFn: accountsApi.voucherTypes.list, retry: false })
+  const activeTypes = (voucherTypes.length ? voucherTypes.filter(t => t.active) : VOUCHER_TYPES.map(t => ({ code: t.code, name: t.label })))
 
   const { data: page, isLoading } = useQuery({
     queryKey: ['accounts', 'vouchers', filters],
@@ -69,6 +74,11 @@ export default function Vouchers() {
         <div className="flex items-center gap-2">
           <GhostButton className="flex items-center gap-2" onClick={() => setTaxDrawer(true)}><Receipt size={15} /> Tax Invoice</GhostButton>
           <button className="btn-3d flex items-center gap-2" onClick={() => setDrawer(true)}><Plus size={15} /> New Voucher</button>
+          <button title="Manage voucher types" onClick={() => setManageTypes(true)}
+            className="w-10 h-10 rounded-xl flex items-center justify-center transition-colors hover:bg-[rgba(124,58,237,0.08)]"
+            style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+            <Settings2 size={16} />
+          </button>
         </div>
       </div>
 
@@ -118,7 +128,13 @@ export default function Vouchers() {
         ? <div className="flex justify-center py-10"><Loader2 className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div>
         : <DataTable columns={columns} rows={vouchers} onRowClick={(r) => navigate(`/app/accounts/vouchers/${r.id}`)} />}
 
-      {drawer && <VoucherDrawer saving={post.isPending} onClose={() => setDrawer(false)} onSave={(p) => post.mutate(p)} />}
+      {drawer && <VoucherDrawer types={activeTypes} saving={post.isPending} onClose={() => setDrawer(false)} onSave={(p) => post.mutate(p)} />}
+      {manageTypes && (
+        <Drawer open onClose={() => setManageTypes(false)} title="Manage Voucher Types" width="min(640px, 96vw)"
+          footer={<GhostButton className="w-full" onClick={() => setManageTypes(false)}>Done</GhostButton>}>
+          <VoucherTypesManager />
+        </Drawer>
+      )}
       {taxDrawer && <TaxInvoiceDrawer saving={postTax.isPending} onClose={() => setTaxDrawer(false)} onSave={(p) => postTax.mutate(p)} />}
     </div>
   )
@@ -211,7 +227,8 @@ function TaxInvoiceDrawer({ saving, onClose, onSave }) {
 
 const emptyLine = () => ({ ledger_id: '', debit: '', credit: '', line_narration: '' })
 
-function VoucherDrawer({ saving, onClose, onSave }) {
+function VoucherDrawer({ types, saving, onClose, onSave }) {
+  const typeOptions = types?.length ? types : VOUCHER_TYPES.map(t => ({ code: t.code, name: t.label }))
   const inr = useInr()
   const [head, setHead] = useState({
     voucher_type_code: 'journal',
@@ -268,7 +285,7 @@ function VoucherDrawer({ saving, onClose, onSave }) {
         <div className="grid grid-cols-2 gap-3">
           <FormField label="Voucher type" required>
             <Select value={head.voucher_type_code} onChange={e => setHeadK('voucher_type_code', e.target.value)}>
-              {VOUCHER_TYPES.map(t => <option key={t.code} value={t.code}>{t.label}</option>)}
+              {typeOptions.map(t => <option key={t.code} value={t.code}>{t.name}</option>)}
             </Select>
           </FormField>
           <FormField label="Date" required>

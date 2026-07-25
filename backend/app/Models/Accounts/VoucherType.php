@@ -18,12 +18,14 @@ class VoucherType extends Model
     protected $table = 'acc_voucher_types';
 
     protected $fillable = [
-        'tenant_id', 'code', 'name', 'numbering_series_id', 'affects_stock', 'affects_gst',
+        'tenant_id', 'code', 'name', 'is_system', 'active', 'numbering_series_id', 'affects_stock', 'affects_gst',
     ];
 
     protected $casts = [
         'affects_stock' => 'boolean',
         'affects_gst'   => 'boolean',
+        'is_system'     => 'boolean',
+        'active'        => 'boolean',
     ];
 
     public function numberingSeries(): BelongsTo

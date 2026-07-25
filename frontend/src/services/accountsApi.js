@@ -166,7 +166,12 @@ export const accountsApi = {
     create: (data) => api.post('/accounts/financial-years', data).then(r => r.data).catch(handleErr),
     lock:   (id, isClosed) => api.patch(`/accounts/financial-years/${id}/lock`, { is_closed: isClosed }).then(r => r.data).catch(handleErr),
   },
-  voucherTypes:    () => api.get('/accounts/voucher-types').then(r => r.data).catch(handleErr),
+  voucherTypes: {
+    list:   () => api.get('/accounts/voucher-types').then(r => r.data).catch(handleErr),
+    create: (data) => api.post('/accounts/voucher-types', data).then(r => r.data).catch(handleErr),
+    update: (id, data) => api.put(`/accounts/voucher-types/${id}`, data).then(r => r.data).catch(handleErr),
+    remove: (id) => api.delete(`/accounts/voucher-types/${id}`).then(r => r.data).catch(handleErr),
+  },
   numberingSeries: {
     list:   () => api.get('/accounts/numbering-series').then(r => r.data).catch(handleErr),
     update: (id, data) => api.put(`/accounts/numbering-series/${id}`, data).then(r => r.data).catch(handleErr),

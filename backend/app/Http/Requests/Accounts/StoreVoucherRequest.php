@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Accounts;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 /**
  * Structural validation only — the balance invariant, ledger-tenant ownership,
@@ -19,7 +20,11 @@ class StoreVoucherRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'voucher_type_code' => ['required', 'string', 'in:sales,purchase,payment,receipt,contra,journal,debit_note,credit_note,stock_journal'],
+            // Any of this tenant's active voucher types — the nine seeded kinds
+            // plus any custom types the tenant has added.
+            'voucher_type_code' => ['required', 'string', Rule::exists('acc_voucher_types', 'code')
+                ->where('tenant_id', $this->user()->tenant_id)
+                ->where('active', true)],
             'date'              => ['required', 'date'],
             'narration'         => ['nullable', 'string', 'max:1000'],
             'party_id'          => ['nullable', 'integer'],

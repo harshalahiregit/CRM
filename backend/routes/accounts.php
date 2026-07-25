@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\Accounts\TaxInvoiceController;
 use App\Http\Controllers\Api\Accounts\TaxMasterController;
 use App\Http\Controllers\Api\Accounts\TransferController;
 use App\Http\Controllers\Api\Accounts\VoucherController;
+use App\Http\Controllers\Api\Accounts\VoucherTypeController;
 use Illuminate\Support\Facades\Route;
 
 // ── Accounts Module (Sanctum) ───────────────────────────────────────────
@@ -54,7 +55,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('accounts')->gro
     Route::patch('/financial-years/{financialYear}/lock', [SettingsController::class, 'toggleFinancialYear']);
 
     // Settings — voucher types & numbering
-    Route::get('/voucher-types',              [SettingsController::class, 'voucherTypes']);
+    Route::get('/voucher-types',              [VoucherTypeController::class, 'index']);
+    Route::post('/voucher-types',             [VoucherTypeController::class, 'store']);
+    Route::put('/voucher-types/{voucherType}',   [VoucherTypeController::class, 'update']);
+    Route::delete('/voucher-types/{voucherType}',[VoucherTypeController::class, 'destroy']);
     Route::get('/numbering-series',           [SettingsController::class, 'numberingSeries']);
     Route::put('/numbering-series/{series}',  [SettingsController::class, 'updateNumberingSeries']);
 
