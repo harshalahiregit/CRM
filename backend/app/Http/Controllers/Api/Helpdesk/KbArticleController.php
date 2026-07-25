@@ -51,10 +51,14 @@ class KbArticleController extends Controller
     {
         $result = $this->kb->publish($article, $request->user()->tenant_id);
 
+        // Public article page is a FRONTEND route (/kb/a/:slug), not this API
+        // endpoint — point the shareable link there.
+        $frontend = rtrim(config('app.frontend_url') ?: config('app.url'), '/');
+
         return $this->success([
             'article'     => $result,
             'public_slug' => $result->public_slug,
-            'public_url'  => url("/api/helpdesk/public/kb/articles/{$result->public_slug}"),
+            'public_url'  => "{$frontend}/kb/a/{$result->public_slug}",
         ], 'Article published');
     }
 
@@ -68,5 +72,31 @@ class KbArticleController extends Controller
     {
         $data = $request->validate(['direction' => ['required', 'in:up,down']]);
         return $this->success($this->kb->vote($article, $data['direction'], $request->user()->tenant_id), 'Vote recorded');
+    }
+
+    /* ── Star rating + comment (REQ-11) ────────────────────────── */
+
+    /**
+     * Public (no-auth) star rating by share slug. Registered outside the Sanctum
+     * group and rate-limited at the route, mirroring the public thumbs vote. One
+     * rating per reader (de-duped by fingerprint in the service).
+     */
+    public function publicFeedback(Request $request, string $slug)
+    {
+        $data = $request->validate([
+            'rating'  => ['required', 'integer', 'min:1', 'max:5'],
+            'comment' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        return $this->success(
+            $this->kb->submitFeedback($slug, (int) $data['rating'], $data['comment'] ?? null),
+            'Thanks for your feedback'
+        );
+    }
+
+    /** Admin: list the star-rating feedback left on an article. */
+    public function feedback(Request $request, int $article)
+    {
+        return $this->success($this->kb->listFeedback($article, $request->user()->tenant_id), 'Feedback retrieved');
     }
 }

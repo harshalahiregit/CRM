@@ -1,25 +1,25 @@
 import { createContext, useContext, useState, useCallback } from 'react'
 import api from '@/lib/api'
+import { setAuth, getToken, getUser, getTenant, clearAuth, updateUserTenant } from '@/lib/authStorage'
 
 const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
-  const [user,   setUser]   = useState(() => { try { return JSON.parse(localStorage.getItem('crm_user'))   } catch { return null } })
-  const [tenant, setTenant] = useState(() => { try { return JSON.parse(localStorage.getItem('crm_tenant')) } catch { return null } })
+  const [user,   setUser]   = useState(() => getUser())
+  const [tenant, setTenant] = useState(() => getTenant())
   const [loading, setLoading] = useState(false)
 
-  const isAuthenticated = !!user && !!localStorage.getItem('crm_token')
+  const isAuthenticated = !!user && !!getToken()
 
   /* ── LOGIN ───────────────────────────────────────────────────────── */
-  const login = useCallback(async ({ email, password, role }) => {
+  const login = useCallback(async ({ email, password, role, remember }) => {
     setLoading(true)
     try {
       const { data } = await api.post('/auth/login', { email, password, role })
       const { access_token, user: u, tenant: t } = data.data
 
-      localStorage.setItem('crm_token',  access_token)
-      localStorage.setItem('crm_user',   JSON.stringify(u))
-      localStorage.setItem('crm_tenant', JSON.stringify(t))
+      // "Remember me" → localStorage (persists); otherwise sessionStorage (this tab only).
+      setAuth({ token: access_token, user: u, tenant: t, remember: !!remember })
       setUser(u)
       setTenant(t)
 
@@ -41,9 +41,8 @@ export function AuthProvider({ children }) {
       const { data } = await api.post('/auth/register', payload)
       const { access_token, user: u, tenant: t } = data.data
 
-      localStorage.setItem('crm_token',  access_token)
-      localStorage.setItem('crm_user',   JSON.stringify(u))
-      localStorage.setItem('crm_tenant', JSON.stringify(t))
+      // A brand-new registration persists by default.
+      setAuth({ token: access_token, user: u, tenant: t, remember: true })
       setUser(u)
       setTenant(t)
 
@@ -61,9 +60,7 @@ export function AuthProvider({ children }) {
   /* ── LOGOUT ──────────────────────────────────────────────────────── */
   const logout = useCallback(async () => {
     try { await api.post('/auth/logout') } catch { /* ignore if token already invalid */ }
-    localStorage.removeItem('crm_token')
-    localStorage.removeItem('crm_user')
-    localStorage.removeItem('crm_tenant')
+    clearAuth()
     setUser(null)
     setTenant(null)
   }, [])
@@ -74,8 +71,7 @@ export function AuthProvider({ children }) {
       const { data } = await api.get('/auth/me')
       const u = data.data.user
       const t = data.data.tenant
-      localStorage.setItem('crm_user',   JSON.stringify(u))
-      localStorage.setItem('crm_tenant', JSON.stringify(t))
+      updateUserTenant(u, t)
       setUser(u)
       setTenant(t)
     } catch { /* silent fail */ }

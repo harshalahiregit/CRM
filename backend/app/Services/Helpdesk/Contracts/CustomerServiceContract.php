@@ -24,4 +24,16 @@ interface CustomerServiceContract
      * Whether the customer exists and belongs to the tenant.
      */
     public function exists(int $customerId, int $tenantId): bool;
+
+    /**
+     * Every customer visible to the tenant, for "pick a customer" UI.
+     *
+     * Added because a searchable customer picker is impossible with only
+     * getCustomer(id) — the alternative was making users type a raw customer id
+     * into a form, which is what this replaces. Any real implementation already
+     * has this query; it just wasn't exposed.
+     *
+     * @return array<int, array{id:int, name:string, email:?string, company:?string}>
+     */
+    public function listCustomers(int $tenantId): array;
 }

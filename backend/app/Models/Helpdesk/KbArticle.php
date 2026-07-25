@@ -13,8 +13,8 @@ class KbArticle extends Model
     protected $table = 'kb_articles';
 
     protected $fillable = [
-        'tenant_id', 'category_id', 'subcategory_id', 'title', 'excerpt',
-        'content', 'is_published', 'public_slug', 'published_at',
+        'tenant_id', 'category_id', 'subcategory_id', 'department_id', 'title', 'excerpt',
+        'content', 'is_published', 'public_slug', 'published_at', 'tags',
         'thumbs_up', 'thumbs_down',
     ];
 
@@ -23,6 +23,7 @@ class KbArticle extends Model
         'published_at' => 'datetime',
         'thumbs_up'    => 'integer',
         'thumbs_down'  => 'integer',
+        'tags'         => 'array',
     ];
 
     /* ── Scopes ─────────────────────────────────────────────────── */
@@ -40,5 +41,21 @@ class KbArticle extends Model
     public function subcategory()
     {
         return $this->belongsTo(KbSubcategory::class, 'subcategory_id');
+    }
+
+    public function department()
+    {
+        return $this->belongsTo(TicketDepartment::class, 'department_id');
+    }
+
+    /**
+     * Star-rating + comment feedback (REQ-11). Independent of the thumbs vote.
+     * Aggregates (avg_rating / total_ratings) are attached by KnowledgeBaseService
+     * where they are needed, so listing endpoints stay a single grouped query
+     * rather than an accessor per row.
+     */
+    public function kbFeedback()
+    {
+        return $this->hasMany(KbArticleFeedback::class, 'article_id');
     }
 }

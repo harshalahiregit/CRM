@@ -107,13 +107,47 @@ const HelpdeskLayout = lazy(() => import('@/modules/helpdesk/HelpdeskLayout'))
 const HelpdeskAnalytics = lazy(() => import('@/modules/helpdesk/pages/HelpdeskAnalytics'))
 const TicketGrid = lazy(() => import('@/modules/helpdesk/pages/TicketGrid'))
 const KnowledgeBaseHome = lazy(() => import('@/modules/helpdesk/pages/KnowledgeBaseHome'))
+const KbArticleView = lazy(() => import('@/modules/helpdesk/pages/KbArticleView'))
 const KbAdmin = lazy(() => import('@/modules/helpdesk/pages/KbAdmin'))
-const MyTasks = lazy(() => import('@/modules/helpdesk/pages/MyTasks'))
 const WidgetSettings = lazy(() => import('@/modules/helpdesk/pages/WidgetSettings'))
+const SupportSettings = lazy(() => import('@/modules/helpdesk/pages/SupportSettings'))
+const StatusManager = lazy(() => import('@/modules/settings/pages/StatusManager'))
 const TicketThread = lazy(() => import('@/modules/helpdesk/components/TicketThread'))
 // Public (no-auth) Helpdesk pages
 const PublicArticle = lazy(() => import('@/modules/helpdesk/public/PublicArticle'))
 const PublicKb = lazy(() => import('@/modules/helpdesk/public/PublicKb'))
+
+// Projects Module (lazy)
+const ProjectList = lazy(() => import('@/modules/projects/pages/ProjectList'))
+const ProjectDetail = lazy(() => import('@/modules/projects/pages/ProjectDetail'))
+
+// Task Module (lazy)
+const TaskBoard = lazy(() => import('@/modules/tasks/pages/TaskBoard'))
+const TaskDetail = lazy(() => import('@/modules/tasks/pages/TaskDetail'))
+const TaskOverview = lazy(() => import('@/modules/tasks/pages/TaskOverview'))
+
+// Inventory Module (lazy)
+const InventoryDashboard = lazy(() => import('@/modules/inventory/pages/InventoryDashboard'))
+const InventoryProducts = lazy(() => import('@/modules/inventory/pages/ProductList'))
+const InventoryProductDetail = lazy(() => import('@/modules/inventory/pages/ProductDetail'))
+const InventoryWarehouses = lazy(() => import('@/modules/inventory/pages/Warehouses'))
+const InventorySettings = lazy(() => import('@/modules/inventory/pages/InventorySettings'))
+const InventoryVouchers = lazy(() => import('@/modules/inventory/pages/VoucherList'))
+const InventoryHistory = lazy(() => import('@/modules/inventory/pages/InventoryHistory'))
+const InventoryReports = lazy(() => import('@/modules/inventory/pages/InventoryReports'))
+const InventoryAnalytics = lazy(() => import('@/modules/inventory/pages/InventoryAnalytics'))
+const InventoryTraceability = lazy(() => import('@/modules/inventory/pages/InventoryTraceability'))
+const InventoryScan = lazy(() => import('@/modules/inventory/pages/InventoryScan'))
+const InventoryFulfilment = lazy(() => import('@/modules/inventory/pages/InventoryFulfilment'))
+const InventoryCounts = lazy(() => import('@/modules/inventory/pages/InventoryCounts'))
+const InventoryTransfers = lazy(() => import('@/modules/inventory/pages/InventoryTransfers'))
+const InventoryVendors = lazy(() => import('@/modules/inventory/pages/InventoryVendors'))
+const InventoryPurchaseOrders = lazy(() => import('@/modules/inventory/pages/InventoryPurchaseOrders'))
+const InventoryDeadStock = lazy(() => import('@/modules/inventory/pages/InventoryDeadStock'))
+const InventoryAssets = lazy(() => import('@/modules/inventory/pages/InventoryAssets'))
+const InventoryRentals = lazy(() => import('@/modules/inventory/pages/InventoryRentals'))
+const InventoryVmi = lazy(() => import('@/modules/inventory/pages/InventoryVmi'))
+const InventoryManufacturing = lazy(() => import('@/modules/inventory/pages/InventoryManufacturing'))
 
 function ComingSoon({ name }) {
   return (
@@ -267,12 +301,13 @@ export default function AppRoutes() {
         <Route path="helpdesk" element={<S><HelpdeskLayout /></S>}>
           <Route index element={<Navigate to="analytics" replace />} />
           <Route path="analytics" element={<S><HelpdeskAnalytics /></S>} />
-          <Route path="my-tasks" element={<S><MyTasks /></S>} />
           <Route path="tickets" element={<S><TicketGrid /></S>} />
           <Route path="tickets/:id" element={<S><TicketThread /></S>} />
           <Route path="knowledge-base" element={<S><KnowledgeBaseHome /></S>} />
+          <Route path="knowledge-base/:id" element={<S><KbArticleView /></S>} />
           <Route path="kb-admin" element={<S><KbAdmin /></S>} />
           <Route path="widget" element={<S><WidgetSettings /></S>} />
+          <Route path="settings" element={<S><SupportSettings /></S>} />
         </Route>
 
         {/* Core CRM */}
@@ -282,8 +317,37 @@ export default function AppRoutes() {
         <Route path="deals" element={<ComingSoon name="Deals" />} />
         <Route path="deals/new" element={<ComingSoon name="New Deal" />} />
         <Route path="deals/:id" element={<ComingSoon name="Deal Detail" />} />
-        <Route path="tasks" element={<S><Tasks /></S>} />
-        <Route path="projects" element={<ComingSoon name="Projects" />} />
+        <Route path="tasks" element={<S><TaskBoard /></S>} />
+        {/* Static segment before :id so "overview" isn't parsed as a task id. */}
+        <Route path="tasks/overview" element={<S><TaskOverview /></S>} />
+        <Route path="tasks/:id" element={<S><TaskDetail /></S>} />
+        <Route path="projects" element={<S><ProjectList /></S>} />
+        <Route path="projects/:id" element={<S><ProjectDetail /></S>} />
+
+        {/* Inventory OS — Phase 1 foundation */}
+        <Route path="inventory" element={<S><InventoryDashboard /></S>} />
+        <Route path="inventory/products" element={<S><InventoryProducts /></S>} />
+        <Route path="inventory/products/:id" element={<S><InventoryProductDetail /></S>} />
+        <Route path="inventory/warehouses" element={<S><InventoryWarehouses /></S>} />
+        {/* One page serves all four document types — :type selects the config. */}
+        <Route path="inventory/vouchers/:type" element={<S><InventoryVouchers /></S>} />
+        <Route path="inventory/history" element={<S><InventoryHistory /></S>} />
+        <Route path="inventory/reports" element={<S><InventoryReports /></S>} />
+        <Route path="inventory/analytics" element={<S><InventoryAnalytics /></S>} />
+        <Route path="inventory/traceability" element={<S><InventoryTraceability /></S>} />
+        <Route path="inventory/scan" element={<S><InventoryScan /></S>} />
+        <Route path="inventory/fulfilment" element={<S><InventoryFulfilment /></S>} />
+        <Route path="inventory/counts" element={<S><InventoryCounts /></S>} />
+        <Route path="inventory/transfers" element={<S><InventoryTransfers /></S>} />
+        <Route path="inventory/vendors" element={<S><InventoryVendors /></S>} />
+        <Route path="inventory/purchase-orders" element={<S><InventoryPurchaseOrders /></S>} />
+        <Route path="inventory/dead-stock" element={<S><InventoryDeadStock /></S>} />
+        <Route path="inventory/assets" element={<S><InventoryAssets /></S>} />
+        <Route path="inventory/rentals" element={<S><InventoryRentals /></S>} />
+        <Route path="inventory/vmi" element={<S><InventoryVmi /></S>} />
+        <Route path="inventory/manufacturing" element={<S><InventoryManufacturing /></S>} />
+        <Route path="inventory/settings" element={<S><InventorySettings /></S>} />
+
         <Route path="invoices" element={<ComingSoon name="Invoices" />} />
         <Route path="vendors" element={<ComingSoon name="Vendors" />} />
         <Route path="tickets" element={<ComingSoon name="Tickets" />} />
@@ -296,6 +360,7 @@ export default function AppRoutes() {
           <Route path="tax-rates" element={<S><TaxRatesSettings /></S>} />
           <Route path="expense-categories" element={<S><ExpenseCategoriesSettings /></S>} />
           <Route path="account-groups" element={<S><AccountGroupsSettings /></S>} />
+          <Route path="statuses" element={<S><StatusManager /></S>} />
         </Route>
       </Route>
 

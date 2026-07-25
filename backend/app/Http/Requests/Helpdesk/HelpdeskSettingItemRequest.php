@@ -1,0 +1,36 @@
+<?php
+
+namespace App\Http\Requests\Helpdesk;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+/**
+ * Create/update one settings-list item (priority | status | department).
+ * Admin-only. Fields are permissive because the three list types share this
+ * request — only the fields relevant to a given type are sent.
+ */
+class HelpdeskSettingItemRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return $this->user()?->role === 'admin';
+    }
+
+    public function rules(): array
+    {
+        return [
+            'name'                 => ($this->isMethod('post') ? 'required' : 'sometimes').'|string|max:100',
+            'color'                => 'nullable|string|max:9',
+            'order'                => 'nullable|integer|min:0',
+            'is_default'           => 'boolean',        // priorities
+            'first_response_hours' => 'nullable|integer|min:0|max:9999', // priorities (SLA)
+            'resolution_hours'     => 'nullable|integer|min:0|max:9999', // priorities (SLA)
+            'is_closed_status'     => 'boolean',        // statuses
+            'sla_paused'           => 'boolean',        // statuses (SLA)
+            'description'          => 'nullable|string|max:255', // departments
+            // departments: who is notified for tickets raised against this dept
+            'manager_ids'          => 'nullable|array|max:20',
+            'manager_ids.*'        => 'integer|exists:users,id',
+        ];
+    }
+}

@@ -45,4 +45,13 @@ class MockCustomerService implements CustomerServiceContract
         // Mock rule: any positive id is a valid customer for any tenant.
         return $customerId > 0;
     }
+
+    /** The fixed roster — enough to drive a real customer picker before Sales lands. */
+    public function listCustomers(int $tenantId): array
+    {
+        return array_map(
+            fn (int $id) => $this->getCustomer($id, $tenantId),
+            array_keys(self::ROSTER),
+        );
+    }
 }

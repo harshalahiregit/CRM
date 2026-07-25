@@ -1,2 +1,9 @@
 powershell.cmd
+
+# secrets & local backups
+.env.bak*
+backend/.env.bak*
+# tool / build artifacts
 graphify-out/
+docx_content.txt
+frontend/vite.config.js.timestamp-*.mjs

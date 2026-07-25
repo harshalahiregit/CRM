@@ -105,7 +105,13 @@ class HtmlSanitizer
             $tag = strtolower($child->nodeName);
 
             // Scriptable/dangerous elements: drop entirely (content too).
-            if (in_array($tag, ['script', 'style', 'object', 'embed', 'form', 'link', 'meta', 'base'], true)) {
+            if (in_array($tag, [
+                'script', 'style', 'object', 'embed', 'form', 'link', 'meta', 'base',
+                // Form controls and script-carrying containers (svg/math can hold
+                // handlers; noscript/template can hide a payload from the parser).
+                'input', 'button', 'textarea', 'select', 'option',
+                'svg', 'math', 'template', 'noscript', 'title', 'head',
+            ], true)) {
                 $node->removeChild($child);
                 continue;
             }

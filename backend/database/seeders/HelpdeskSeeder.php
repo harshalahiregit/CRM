@@ -165,47 +165,32 @@ class HelpdeskSeeder extends Seeder
             }
         }
 
-        // ── Knowledge Base: 3 categories × 2 sub-categories × 2 articles ──
-        $tree = [
-            'Getting Started' => [
-                'Setup'  => ['Installing the app', 'Your first login'],
-                'Basics' => ['Navigating the dashboard', 'Inviting your team'],
-            ],
-            'Billing & Plans' => [
-                'Invoices' => ['Understanding your invoice', 'Downloading past invoices'],
-                'Payments' => ['Adding a payment method', 'Our refund policy'],
-            ],
-            'Troubleshooting' => [
-                'Login Issues' => ['Reset your password', 'Two-factor authentication problems'],
-                'Performance'  => ['Reports are slow to load', 'Clearing your cache'],
-            ],
-        ];
+        // ── Knowledge Base: genuine, professional support articles ──
+        $tree = $this->kbContent();
 
         $articleCount = 0;
         $published = 0;
         foreach ($tree as $catName => $subs) {
             $cat = KbCategory::create(['tenant_id' => $tenantId, 'name' => $catName, 'slug' => Str::slug($catName)]);
-            foreach ($subs as $subName => $titles) {
+            foreach ($subs as $subName => $articles) {
                 $sub = KbSubcategory::create(['tenant_id' => $tenantId, 'category_id' => $cat->id, 'name' => $subName, 'slug' => Str::slug($subName)]);
-                foreach ($titles as $title) {
-                    $isPub = fake()->boolean(65);
+                foreach ($articles as $art) {
+                    $title = $art['title'];
                     KbArticle::create([
                         'tenant_id'      => $tenantId,
                         'category_id'    => $cat->id,
                         'subcategory_id' => $sub->id,
                         'title'          => $title,
-                        'excerpt'        => fake()->sentence(10),
-                        'content'        => '<h2>'.$title.'</h2><p>'.fake()->paragraph().'</p>'
-                                            .'<ol><li>'.fake()->sentence().'</li><li>'.fake()->sentence().'</li><li>'.fake()->sentence().'</li></ol>'
-                                            .'<p>'.fake()->paragraph().'</p>',
-                        'is_published'   => $isPub,
-                        'public_slug'    => $isPub ? Str::slug($title).'-'.Str::lower(Str::random(6)) : null,
-                        'published_at'   => $isPub ? $now->copy()->subDays(rand(1, 20)) : null,
-                        'thumbs_up'      => fake()->numberBetween(2, 60),
-                        'thumbs_down'    => fake()->numberBetween(0, 10),
+                        'excerpt'        => $art['excerpt'],
+                        'content'        => $art['content'],
+                        'is_published'   => true,
+                        'public_slug'    => Str::slug($title).'-'.Str::lower(Str::random(6)),
+                        'published_at'   => $now->copy()->subDays(rand(1, 40)),
+                        'thumbs_up'      => fake()->numberBetween(8, 120),
+                        'thumbs_down'    => fake()->numberBetween(0, 6),
                     ]);
                     $articleCount++;
-                    $published += $isPub ? 1 : 0;
+                    $published++;
                 }
             }
         }
@@ -215,5 +200,232 @@ class HelpdeskSeeder extends Seeder
         if (! $hasCustomers) {
             $this->command->warn('  Note: no `customers` table yet — customer_id uses mock roster IDs resolved via CustomerServiceContract (schema-ready, not real integration).');
         }
+    }
+
+    /**
+     * Genuine, professional help-centre articles (3 categories × 2 sub-cats × 2 articles).
+     * Content uses semantic HTML (h2/h3/p/ol/ul/blockquote) styled by the .kb-read / .pub-prose rules.
+     */
+    private function kbContent(): array
+    {
+        return [
+            'Getting Started' => [
+                'Setup' => [
+                    [
+                        'title'   => 'Installing the Sangoe desktop app',
+                        'excerpt' => 'Download and install Sangoe on Windows or macOS in under five minutes.',
+                        'content' => <<<'HTML'
+<h2>Before you begin</h2>
+<p>Sangoe runs in any modern browser, but the desktop app adds native notifications, faster launch, and offline drafts. You will need administrator rights on your computer and about 300&nbsp;MB of free disk space.</p>
+<h3>Install on Windows</h3>
+<ol>
+<li>Go to <strong>Settings → Downloads</strong> and choose <em>Windows (.exe)</em>.</li>
+<li>Open the downloaded installer and accept the security prompt.</li>
+<li>Follow the wizard and launch Sangoe when it finishes.</li>
+</ol>
+<h3>Install on macOS</h3>
+<ol>
+<li>Download the <em>macOS (.dmg)</em> build.</li>
+<li>Drag the Sangoe icon into your <strong>Applications</strong> folder.</li>
+<li>Right-click the app and choose <em>Open</em> the first time to bypass Gatekeeper.</li>
+</ol>
+<blockquote>Tip: The desktop app updates itself automatically — you never need to reinstall for a new version.</blockquote>
+HTML,
+                    ],
+                    [
+                        'title'   => 'Signing in for the first time',
+                        'excerpt' => 'Activate your account, set a strong password, and turn on two-factor authentication.',
+                        'content' => <<<'HTML'
+<h2>Activate your invitation</h2>
+<p>When your administrator adds you, Sangoe emails an invitation link that is valid for 72&nbsp;hours. Clicking it brings you to the activation screen.</p>
+<ol>
+<li>Enter your full name as you want it shown to teammates.</li>
+<li>Create a password with at least 10 characters, including a number and a symbol.</li>
+<li>Choose <strong>Enable two-factor authentication</strong> and scan the QR code with any authenticator app.</li>
+</ol>
+<h3>If your link expired</h3>
+<p>Ask your administrator to resend the invite from <strong>Staff Management</strong>, or use <em>Forgot password</em> on the login page to receive a fresh link.</p>
+<blockquote>Security tip: Never reuse a password from another service. Sangoe protects business data, so a unique password matters.</blockquote>
+HTML,
+                    ],
+                ],
+                'Basics' => [
+                    [
+                        'title'   => 'A quick tour of your dashboard',
+                        'excerpt' => 'Understand the sidebar, top bar, widgets, and the ⌘K command palette.',
+                        'content' => <<<'HTML'
+<h2>The three areas of Sangoe</h2>
+<p>Every screen shares the same layout so you always know where things are.</p>
+<ul>
+<li><strong>Sidebar</strong> — switch between modules such as Helpdesk, Sales, Projects and HR.</li>
+<li><strong>Top bar</strong> — global search, notifications, theme toggle, and your profile.</li>
+<li><strong>Workspace</strong> — the content for the module you are in.</li>
+</ul>
+<h3>Move faster with the command palette</h3>
+<p>Press <code>Ctrl</code>+<code>K</code> (or <code>⌘</code>+<code>K</code> on Mac) anywhere to jump to a ticket, customer, article or action without touching the mouse.</p>
+<blockquote>Tip: Pin the modules you use most from <strong>Modules</strong> so they sit at the top of your sidebar.</blockquote>
+HTML,
+                    ],
+                    [
+                        'title'   => 'Inviting your team and setting roles',
+                        'excerpt' => 'Add teammates, assign roles, and control what each person can see.',
+                        'content' => <<<'HTML'
+<h2>Add a teammate</h2>
+<ol>
+<li>Open <strong>Staff Management</strong> from the sidebar.</li>
+<li>Click <strong>Invite member</strong> and enter their work email.</li>
+<li>Pick a role — this decides which modules and actions they can access.</li>
+</ol>
+<h3>What each role can do</h3>
+<ul>
+<li><strong>Admin</strong> — full access, including settings and billing.</li>
+<li><strong>Agent</strong> — works tickets and knowledge, but cannot change org settings.</li>
+<li><strong>Viewer</strong> — read-only access to reports and records.</li>
+</ul>
+<p>You can change anyone's role later; the change takes effect the next time they load a page.</p>
+HTML,
+                    ],
+                ],
+            ],
+            'Billing & Plans' => [
+                'Invoices' => [
+                    [
+                        'title'   => 'Understanding your monthly invoice',
+                        'excerpt' => 'A line-by-line explanation of charges, proration, and taxes.',
+                        'content' => <<<'HTML'
+<h2>How billing works</h2>
+<p>Sangoe bills per active seat, once a month, on the date you first subscribed. Your invoice always covers the period shown at the top.</p>
+<h3>Reading the line items</h3>
+<ul>
+<li><strong>Base plan</strong> — your plan price × number of seats.</li>
+<li><strong>Proration</strong> — a partial charge or credit when you add or remove seats mid-cycle.</li>
+<li><strong>Taxes</strong> — GST or local tax, calculated from your billing address.</li>
+</ul>
+<blockquote>Tip: Add a purchase-order number or VAT ID under <strong>Settings → Billing</strong> and it will appear on every future invoice.</blockquote>
+HTML,
+                    ],
+                    [
+                        'title'   => 'Downloading and sharing past invoices',
+                        'excerpt' => 'Get a PDF of any invoice and send it to your finance team.',
+                        'content' => <<<'HTML'
+<h2>Find your invoices</h2>
+<ol>
+<li>Go to <strong>Settings → Billing → Invoice history</strong>.</li>
+<li>Every invoice is listed newest first with its status.</li>
+<li>Click <strong>Download PDF</strong> on any row.</li>
+</ol>
+<h3>Send invoices to finance automatically</h3>
+<p>Add a billing-only email under <strong>Billing contacts</strong> and each new invoice is emailed there the moment it is issued — no manual forwarding needed.</p>
+HTML,
+                    ],
+                ],
+                'Payments' => [
+                    [
+                        'title'   => 'Adding or updating a payment method',
+                        'excerpt' => 'Store a card securely and set which one is charged by default.',
+                        'content' => <<<'HTML'
+<h2>Add a card</h2>
+<ol>
+<li>Open <strong>Settings → Billing → Payment methods</strong>.</li>
+<li>Click <strong>Add card</strong> and enter the details.</li>
+<li>Choose <strong>Set as default</strong> if this card should be charged going forward.</li>
+</ol>
+<p>Card details are handled by our PCI-compliant payment processor — Sangoe never stores your full card number.</p>
+<blockquote>Tip: Keep a backup card on file so a single expired card never interrupts your service.</blockquote>
+HTML,
+                    ],
+                    [
+                        'title'   => 'Our refund policy explained',
+                        'excerpt' => 'When refunds apply, how to request one, and how long they take.',
+                        'content' => <<<'HTML'
+<h2>What qualifies for a refund</h2>
+<p>We offer a full refund within 14&nbsp;days of your first payment, no questions asked. After that, monthly plans are non-refundable but you keep access until the end of the paid period.</p>
+<h3>How to request a refund</h3>
+<ol>
+<li>Open a ticket from <strong>Help → Contact support</strong>.</li>
+<li>Choose the <em>Billing</em> category and mention the invoice number.</li>
+<li>Our team confirms within one business day.</li>
+</ol>
+<p>Approved refunds return to your original payment method within 5–10 business days, depending on your bank.</p>
+HTML,
+                    ],
+                ],
+            ],
+            'Troubleshooting' => [
+                'Login Issues' => [
+                    [
+                        'title'   => 'How to reset your password',
+                        'excerpt' => 'Regain access in a couple of minutes using the reset link.',
+                        'content' => <<<'HTML'
+<h2>Reset from the login page</h2>
+<ol>
+<li>On the sign-in screen, click <strong>Forgot password?</strong></li>
+<li>Enter your work email and submit.</li>
+<li>Open the reset email and choose a new password.</li>
+</ol>
+<h3>Didn't get the email?</h3>
+<ul>
+<li>Check your spam or junk folder.</li>
+<li>Make sure you used the same email your account was created with.</li>
+<li>Wait two minutes — delivery can be briefly delayed.</li>
+</ul>
+<blockquote>Still stuck? Ask an administrator to trigger a reset for you from Staff Management.</blockquote>
+HTML,
+                    ],
+                    [
+                        'title'   => 'Fixing two-factor authentication problems',
+                        'excerpt' => 'What to do when your codes are rejected or you lose your device.',
+                        'content' => <<<'HTML'
+<h2>Codes are being rejected</h2>
+<p>Authenticator codes are time-based, so the most common cause is a clock that is out of sync.</p>
+<ol>
+<li>Open your authenticator app's settings and enable <strong>automatic time sync</strong>.</li>
+<li>Make sure your phone's date &amp; time is set to automatic.</li>
+<li>Try the next freshly generated code.</li>
+</ol>
+<h3>Lost your device</h3>
+<p>Use one of the backup codes you saved when you set up 2FA. If you have none, an administrator can reset your two-factor from <strong>Staff Management → member → Reset 2FA</strong>.</p>
+HTML,
+                    ],
+                ],
+                'Performance' => [
+                    [
+                        'title'   => 'Why reports load slowly (and how to fix it)',
+                        'excerpt' => 'Practical steps to speed up heavy dashboards and exports.',
+                        'content' => <<<'HTML'
+<h2>Common causes</h2>
+<p>Most slow reports come from a very wide date range or too many grouped columns loading at once.</p>
+<ol>
+<li>Narrow the date range to what you actually need.</li>
+<li>Remove grouping columns you are not using.</li>
+<li>Save the filtered view so it loads the same way next time.</li>
+</ol>
+<h3>Still slow?</h3>
+<p>Try a hard refresh (<code>Ctrl</code>+<code>Shift</code>+<code>R</code>) and confirm your connection is stable. If a specific report is consistently slow, send us its name and filters and we will investigate.</p>
+HTML,
+                    ],
+                    [
+                        'title'   => 'Clearing your browser cache',
+                        'excerpt' => 'Fix visual glitches and stale data by clearing cached files.',
+                        'content' => <<<'HTML'
+<h2>When to clear the cache</h2>
+<p>If the interface looks broken after an update, or old data lingers after a change, a cache clear usually fixes it.</p>
+<h3>Chrome &amp; Edge</h3>
+<ol>
+<li>Press <code>Ctrl</code>+<code>Shift</code>+<code>Delete</code>.</li>
+<li>Choose <strong>Cached images and files</strong>.</li>
+<li>Click <strong>Clear data</strong> and reload Sangoe.</li>
+</ol>
+<h3>Safari</h3>
+<ol>
+<li>Open <strong>Safari → Settings → Advanced</strong> and enable the Develop menu.</li>
+<li>Choose <strong>Develop → Empty Caches</strong>.</li>
+</ol>
+<blockquote>Tip: A hard refresh with <code>Ctrl</code>+<code>Shift</code>+<code>R</code> often works without clearing everything.</blockquote>
+HTML,
+                    ],
+                ],
+            ],
+        ];
     }
 }

@@ -12,13 +12,33 @@ const handleErr = (err) => {
 const unwrap = (r) => r.data?.data ?? r.data
 
 export const helpdeskApi = {
+  // Current user's helpdesk role flags — { role, is_admin, is_manager }.
+  // Gates admin-only nav (Settings / Widget / KB Admin) for department managers.
+  me: () =>
+    api.get('/helpdesk/me').then(unwrap).catch(handleErr),
+
   // Manager analytics dashboard
   analytics: () =>
     api.get('/helpdesk/analytics').then(unwrap).catch(handleErr),
 
+  // Support settings — priorities / statuses / departments + public-form settings (Phase 1)
+  settings: {
+    all: () => api.get('/helpdesk/settings').then(unwrap).catch(handleErr),
+    createItem: (type, data) => api.post(`/helpdesk/settings/${type}`, data).then(unwrap).catch(handleErr),
+    updateItem: (type, id, data) => api.put(`/helpdesk/settings/${type}/${id}`, data).then(unwrap).catch(handleErr),
+    deleteItem: (type, id) => api.delete(`/helpdesk/settings/${type}/${id}`).then(unwrap).catch(handleErr),
+    reorder: (type, ids) => api.patch(`/helpdesk/settings/${type}/reorder`, { ids }).then(unwrap).catch(handleErr),
+    updateGeneral: (data) => api.put('/helpdesk/settings/general', data).then(unwrap).catch(handleErr),
+  },
+
   // Tickets assigned to the current user (their task list)
   myTasks: () =>
     api.get('/helpdesk/my-tasks').then(unwrap).catch(handleErr),
+
+  // Assignable people in this tenant — powers the name pickers so agents never
+  // have to type a raw user id.
+  agents: () =>
+    api.get('/helpdesk/agents').then(unwrap).catch(handleErr),
 
   // Embeddable widget settings (admin)
   widget: {
@@ -39,6 +59,9 @@ export const helpdeskApi = {
       api.get(`/helpdesk/public/kb/articles/${slug}`).then(unwrap).catch(handleErr),
     vote: (slug, direction) =>
       api.patch(`/helpdesk/public/kb/articles/${slug}/vote`, { direction }).then(unwrap).catch(handleErr),
+    // REQ-11: 1-5 star rating + optional comment (independent of the thumbs vote)
+    submitFeedback: (slug, { rating, comment } = {}) =>
+      api.post(`/helpdesk/public/kb/articles/${slug}/feedback`, { rating, comment }).then(unwrap).catch(handleErr),
   },
 
   tickets: {
@@ -63,8 +86,51 @@ export const helpdeskApi = {
     assign: (id, assignedTo) =>
       api.patch(`/helpdesk/tickets/${id}/assign`, { assigned_to: assignedTo }).then(unwrap).catch(handleErr),
 
+    // Bulk status / assign / delete over the current selection in ONE request
+    // (instead of one HTTP call per ticket). Returns { ok: [ids], failed: [{id,reason}] }.
+    bulk: ({ action, ids, value }) =>
+      api.post('/helpdesk/tickets/bulk', { action, ids, value }).then(unwrap).catch(handleErr),
+
     feedback: (id, data) =>
       api.post(`/helpdesk/tickets/${id}/feedback`, data).then(unwrap).catch(handleErr),
+
+    // REQ-05: mark a ticket seen by the current user (clears its "new" dot).
+    markSeen: (id) =>
+      api.patch(`/helpdesk/tickets/${id}/seen`).then(unwrap).catch(handleErr),
+    // REQ-04-lite: count of visible tickets the current user hasn't opened yet.
+    unseenCount: () =>
+      api.get('/helpdesk/tickets/unseen-count').then(unwrap).catch(handleErr),
+    // Sidebar badge: open / in-progress / closed counts (visibility-scoped).
+    statusCounts: () =>
+      api.get('/helpdesk/tickets/status-counts').then(unwrap).catch(handleErr),
+
+    // Integration with Projects / Tasks
+    linkProject: (id, project_id) =>
+      api.patch(`/helpdesk/tickets/${id}/link-project`, { project_id }).then(unwrap).catch(handleErr),
+    createTask: (id, data) =>
+      api.post(`/helpdesk/tickets/${id}/create-task`, data).then(unwrap).catch(handleErr),
+    createTasks: (id, tasks) =>
+      api.post(`/helpdesk/tickets/${id}/create-tasks`, { tasks }).then(unwrap).catch(handleErr),
+
+    // AI summary (Phase 6) — cached server-side; pass refresh to regenerate
+    summarize: (id, refresh = false) =>
+      api.post(`/helpdesk/tickets/${id}/summarize`, { refresh }).then(unwrap).catch(handleErr),
+
+    // Tags + merge (Phase 3)
+    tags: (id) => api.get(`/helpdesk/tickets/${id}/tags`).then(unwrap).catch(handleErr),
+    addTag: (id, data) => api.post(`/helpdesk/tickets/${id}/tags`, data).then(unwrap).catch(handleErr),
+    removeTag: (id, tagId) => api.delete(`/helpdesk/tickets/${id}/tags/${tagId}`).then(unwrap).catch(handleErr),
+    merge: (id, merge_ticket_id) => api.post(`/helpdesk/tickets/${id}/merge`, { merge_ticket_id }).then(unwrap).catch(handleErr),
+
+    // Collaboration — private notes, reminders, related tickets (Phase 2)
+    notes: (id) => api.get(`/helpdesk/tickets/${id}/notes`).then(unwrap).catch(handleErr),
+    addNote: (id, content) => api.post(`/helpdesk/tickets/${id}/notes`, { content }).then(unwrap).catch(handleErr),
+    reminders: (id) => api.get(`/helpdesk/tickets/${id}/reminders`).then(unwrap).catch(handleErr),
+    addReminder: (id, data) => api.post(`/helpdesk/tickets/${id}/reminders`, data).then(unwrap).catch(handleErr),
+    reminderDone: (reminderId) => api.patch(`/helpdesk/reminders/${reminderId}/done`).then(unwrap).catch(handleErr),
+    related: (id) => api.get(`/helpdesk/tickets/${id}/related`).then(unwrap).catch(handleErr),
+    addRelated: (id, related_ticket_id) => api.post(`/helpdesk/tickets/${id}/related`, { related_ticket_id }).then(unwrap).catch(handleErr),
+    removeRelated: (id, relatedId) => api.delete(`/helpdesk/tickets/${id}/related/${relatedId}`).then(unwrap).catch(handleErr),
 
     // Conversation thread
     replies: (id) =>
@@ -92,6 +158,15 @@ export const helpdeskApi = {
           window.URL.revokeObjectURL(url)
         })
         .catch(handleErr),
+  },
+
+  // Canned responses (saved replies)
+  cannedResponses: {
+    list: () => api.get('/helpdesk/canned-responses').then(unwrap).catch(handleErr),
+    create: (data) => api.post('/helpdesk/canned-responses', data).then(unwrap).catch(handleErr),
+    update: (id, data) => api.put(`/helpdesk/canned-responses/${id}`, data).then(unwrap).catch(handleErr),
+    remove: (id) => api.delete(`/helpdesk/canned-responses/${id}`).then(unwrap).catch(handleErr),
+    used: (id) => api.post(`/helpdesk/canned-responses/${id}/used`).then(unwrap).catch(handleErr),
   },
 
   kb: {
@@ -133,6 +208,9 @@ export const helpdeskApi = {
 
     vote: (id, direction) =>
       api.patch(`/helpdesk/kb/articles/${id}/vote`, { direction }).then(unwrap).catch(handleErr),
+    // REQ-11: admin view of the star-rating feedback left on an article
+    articleFeedback: (id) =>
+      api.get(`/helpdesk/kb/articles/${id}/feedback`).then(unwrap).catch(handleErr),
     publish: (id) =>
       api.patch(`/helpdesk/kb/articles/${id}/publish`).then(unwrap).catch(handleErr),
     unpublish: (id) =>

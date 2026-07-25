@@ -15,9 +15,12 @@ class UpdateKbArticleRequest extends FormRequest
     {
         return [
             'subcategory_id' => 'sometimes|integer|exists:kb_subcategories,id',
+            'department_id'  => 'nullable|integer|exists:ticket_departments,id',
             'title'          => 'sometimes|required|string|max:255',
             'excerpt'        => 'nullable|string|max:500',
             'content'        => 'sometimes|required|string',
+            'tags'           => 'nullable|array|max:12',
+            'tags.*'         => 'string|max:40',
         ];
     }
 }

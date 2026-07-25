@@ -13,10 +13,17 @@ class HelpdeskWidgetSetting extends Model
     protected $table = 'helpdesk_widget_settings';
 
     protected $fillable = [
-        'tenant_id', 'public_key', 'allowed_origin', 'is_enabled',
+        'tenant_id', 'public_key', 'allowed_origin', 'is_enabled', 'department_id',
     ];
 
     protected $casts = [
-        'is_enabled' => 'boolean',
+        'is_enabled'    => 'boolean',
+        'department_id' => 'integer',
     ];
+
+    /** Department public submissions are routed to (null → tenant default). */
+    public function department()
+    {
+        return $this->belongsTo(TicketDepartment::class, 'department_id');
+    }
 }

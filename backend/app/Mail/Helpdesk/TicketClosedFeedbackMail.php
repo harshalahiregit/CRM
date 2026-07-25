@@ -4,13 +4,14 @@ namespace App\Mail\Helpdesk;
 
 use App\Models\Helpdesk\Ticket;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\URL;
 
-class TicketClosedFeedbackMail extends Mailable
+class TicketClosedFeedbackMail extends Mailable implements ShouldQueue
 {
     use Queueable, SerializesModels;
 
@@ -38,12 +39,22 @@ class TicketClosedFeedbackMail extends Mailable
             ),
         ])->all();
 
+        // Signed, expiring one-click reopen — same trust model as the star links.
+        // Lets a customer who isn't happy reopen the ticket straight from the
+        // email without logging in.
+        $reopenUrl = URL::temporarySignedRoute(
+            'helpdesk.reopen.oneclick',
+            now()->addDays(30),
+            ['ticket' => $this->ticket->id],
+        );
+
         return new Content(
             view: 'emails.helpdesk.ticket-closed-feedback',
             with: [
                 'ticket'       => $this->ticket,
                 'customerName' => $this->customer['name'] ?? 'there',
                 'stars'        => $stars,
+                'reopenUrl'    => $reopenUrl,
             ],
         );
     }
