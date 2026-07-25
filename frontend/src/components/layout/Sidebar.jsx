@@ -8,7 +8,7 @@ import {
   IndianRupee, FileSignature, CreditCard, FileX,
   ShoppingBag, UserPlus,
   Boxes, PackagePlus, PackageMinus, ArrowLeftRight, Scale, Warehouse, History, BarChart3, Activity, Layers3, ScanLine,
-  ClipboardCheck, ShoppingCart, Hourglass, Wrench, CalendarRange, Handshake
+  ClipboardCheck, ShoppingCart, Hourglass, Wrench, CalendarRange, Handshake, Factory
 } from 'lucide-react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -92,6 +92,7 @@ const INVENTORY_SUB_ITEMS = [
   { label: 'Dead stock', path: '/app/inventory/dead-stock', icon: Hourglass },
   { label: 'Assets', path: '/app/inventory/assets', icon: Wrench },
   { label: 'Rentals', path: '/app/inventory/rentals', icon: CalendarRange },
+  { label: 'Manufacturing', path: '/app/inventory/manufacturing', icon: Factory },
   { label: 'Report', path: '/app/inventory/reports', icon: BarChart3 },
   { label: 'Settings', path: '/app/inventory/settings', icon: Settings },
 ]

@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\Inventory\ConfigController;
 use App\Http\Controllers\Api\Inventory\CountController;
 use App\Http\Controllers\Api\Inventory\DeadStockController;
 use App\Http\Controllers\Api\Inventory\InventoryStaffController;
+use App\Http\Controllers\Api\Inventory\ManufacturingController;
 use App\Http\Controllers\Api\Inventory\ProductController;
 use App\Http\Controllers\Api\Inventory\PurchaseOrderController;
 use App\Http\Controllers\Api\Inventory\RentalController;
@@ -261,6 +262,20 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('inventory')->gr
     Route::delete('/vmi/{agreement}',    [VmiController::class, 'destroy'])->where('agreement', '[0-9]+');
     Route::get('/vmi/{agreement}/suggestions', [VmiController::class, 'suggestions'])->where('agreement', '[0-9]+');
     Route::post('/vmi/{agreement}/generate-po', [VmiController::class, 'generatePurchaseOrder'])->where('agreement', '[0-9]+');
+
+    // Manufacturing — BOMs (recipes) + build orders. Completing a build posts
+    // component issues and finished-goods receipts to the stock ledger.
+    Route::get('/boms',              [ManufacturingController::class, 'boms']);
+    Route::post('/boms',             [ManufacturingController::class, 'storeBom']);
+    Route::get('/boms/{bom}',        [ManufacturingController::class, 'showBom'])->where('bom', '[0-9]+');
+    Route::put('/boms/{bom}',        [ManufacturingController::class, 'updateBom'])->where('bom', '[0-9]+');
+    Route::delete('/boms/{bom}',     [ManufacturingController::class, 'destroyBom'])->where('bom', '[0-9]+');
+    Route::get('/builds',            [ManufacturingController::class, 'builds']);
+    Route::post('/builds',           [ManufacturingController::class, 'storeBuild']);
+    Route::get('/builds/{build}',    [ManufacturingController::class, 'showBuild'])->where('build', '[0-9]+');
+    Route::get('/builds/{build}/availability', [ManufacturingController::class, 'buildAvailability'])->where('build', '[0-9]+');
+    Route::patch('/builds/{build}/status',     [ManufacturingController::class, 'setBuildStatus'])->where('build', '[0-9]+');
+    Route::delete('/builds/{build}', [ManufacturingController::class, 'destroyBuild'])->where('build', '[0-9]+');
 
     // Warehouses + bin locations
     Route::get('/warehouses',        [WarehouseController::class, 'index']);

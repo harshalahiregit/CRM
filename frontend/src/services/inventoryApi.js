@@ -114,6 +114,21 @@ export const inventoryApi = {
     generatePO:  (id) => api.post(`/inventory/vmi/${id}/generate-po`).then(unwrap).catch(handleErr),
   },
 
+  // Manufacturing — BOMs + build orders.
+  manufacturing: {
+    boms:       (params = {}) => api.get('/inventory/boms', { params }).then(unwrap).catch(handleErr),
+    getBom:     (id) => api.get(`/inventory/boms/${id}`).then(unwrap).catch(handleErr),
+    createBom:  (data) => api.post('/inventory/boms', data).then(unwrap).catch(handleErr),
+    updateBom:  (id, data) => api.put(`/inventory/boms/${id}`, data).then(unwrap).catch(handleErr),
+    removeBom:  (id) => api.delete(`/inventory/boms/${id}`).then(unwrap).catch(handleErr),
+    builds:     (params = {}) => api.get('/inventory/builds', { params }).then(unwrap).catch(handleErr),
+    getBuild:   (id) => api.get(`/inventory/builds/${id}`).then(unwrap).catch(handleErr),
+    createBuild: (data) => api.post('/inventory/builds', data).then(unwrap).catch(handleErr),
+    availability: (id) => api.get(`/inventory/builds/${id}/availability`).then(unwrap).catch(handleErr),
+    setBuildStatus: (id, status) => api.patch(`/inventory/builds/${id}/status`, { status }).then(unwrap).catch(handleErr),
+    removeBuild: (id) => api.delete(`/inventory/builds/${id}`).then(unwrap).catch(handleErr),
+  },
+
   // Dead-stock action workflow.
   deadStock: {
     candidates: (days = 90) => api.get('/inventory/dead-stock/candidates', { params: { days } }).then(unwrap).catch(handleErr),
