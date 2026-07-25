@@ -91,6 +91,12 @@ class Vendor extends Model
         return $this->hasOne(TpvOnboarding::class, 'vendor_id');
     }
 
+    /** The Purchase onboarding workflow over this vendor, if engaged for Purchase. */
+    public function purchaseOnboarding()
+    {
+        return $this->hasOne(\App\Models\Purchase\PurchaseOnboarding::class, 'vendor_id');
+    }
+
     /** The portal login (role = vendor | third_party_vendor). */
     public function user()
     {

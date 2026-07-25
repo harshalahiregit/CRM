@@ -51,7 +51,7 @@ function getCategory(type) {
   return DOC_CATEGORIES[type] || 'Company Documents'
 }
 
-export default function TpvVendorDocuments({ vendorId, vendor, manage }) {
+export default function TpvVendorDocuments({ vendorId, vendor, manage, api = tpvApi, moduleName = 'Third Party Vendor' }) {
   const [checklist, setChecklist] = useState(null)
   const [loading, setLoading]     = useState(true)
   const [search, setSearch]       = useState('')
@@ -68,13 +68,13 @@ export default function TpvVendorDocuments({ vendorId, vendor, manage }) {
 
   const load = useCallback(() => {
     setLoading(true)
-    tpvApi.documents.checklist(vendorId)
+    api.documents.checklist(vendorId)
       .then(res => {
         setChecklist(res?.data ?? res)
         setLoading(false)
       })
       .catch(() => setLoading(false))
-  }, [vendorId])
+  }, [vendorId, api])
 
   useEffect(() => { load() }, [load])
 
@@ -166,7 +166,7 @@ export default function TpvVendorDocuments({ vendorId, vendor, manage }) {
     const { row, decision } = reviewing
     setBusyDoc(row.document_id)
     try {
-      await tpvApi.documents.review(row.document_id, decision, remarks)
+      await api.documents.review(row.document_id, decision, remarks)
       setReviewing(null)
       setActionSuccess(`Document ${row.type_label} ${decision === 'approve' ? 'Approved' : 'Rejected'} successfully. Notifications (Email, WhatsApp & In-App) dispatched.`)
       setTimeout(() => setActionSuccess(null), 5000)
@@ -182,7 +182,7 @@ export default function TpvVendorDocuments({ vendorId, vendor, manage }) {
   const handleViewDoc = async (row) => {
     if (!row.document_id) return
     try {
-      const url = await tpvApi.documents.open(row.document_id)
+      const url = await api.documents.open(row.document_id)
       const ext = (row.original_name || '').split('.').pop().toLowerCase()
       if (['jpg', 'jpeg', 'png', 'webp'].includes(ext)) {
         setPreviewDoc({ url, name: row.type_label, type: 'image' })
@@ -221,7 +221,7 @@ export default function TpvVendorDocuments({ vendorId, vendor, manage }) {
               <ShieldCheck size={18} style={{ color: '#7C3AED' }} /> Vendor Statutory &amp; Compliance Documents
             </h3>
             <p style={{ margin: '3px 0 0', fontSize: 12, color: 'var(--text-muted)' }}>
-              Approve or reject TPV vendor onboarding compliance documents. Updates sync real-time.
+              Approve or reject {moduleName.toLowerCase()} onboarding compliance documents. Updates sync real-time.
             </p>
           </div>
 
@@ -412,6 +412,7 @@ export default function TpvVendorDocuments({ vendorId, vendor, manage }) {
       {historyDoc && (
         <VersionHistoryDrawer
           documentId={historyDoc}
+          api={api}
           onClose={() => setHistoryDoc(null)}
           onRestored={() => { setHistoryDoc(null); load() }}
         />
@@ -521,20 +522,20 @@ function ReviewModal({ reviewing, onClose, onConfirm }) {
   )
 }
 
-function VersionHistoryDrawer({ documentId, onClose, onRestored }) {
+function VersionHistoryDrawer({ documentId, onClose, onRestored, api = tpvApi }) {
   const [versions, setVersions] = useState(null)
   const [busy, setBusy] = useState(null)
 
   useEffect(() => {
-    tpvApi.documents.versions(documentId)
+    api.documents.versions(documentId)
       .then(d => setVersions(d?.data ?? d ?? []))
       .catch(() => setVersions([]))
-  }, [documentId])
+  }, [documentId, api])
 
   const handleDownload = async (v) => {
     setBusy(`d${v.id}`)
     try {
-      const blob = await tpvApi.documents.downloadVersion(documentId, v.id)
+      const blob = await api.documents.downloadVersion(documentId, v.id)
       const url = URL.createObjectURL(blob)
       window.open(url, '_blank', 'noopener')
       setTimeout(() => URL.revokeObjectURL(url), 60000)

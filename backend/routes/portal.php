@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\Portal\PurchasePortalController;
 use App\Http\Controllers\Api\Portal\VendorPortalController;
 use Illuminate\Support\Facades\Route;
 
@@ -73,4 +74,31 @@ Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access'])->prefix('por
     Route::get('/gate-log',                               [VendorPortalController::class, 'gateLog']);
     Route::get('/attendance',                             [VendorPortalController::class, 'attendance']);
     Route::get('/strikes',                                [VendorPortalController::class, 'strikes']);
+
+    // ── Purchase Vendor Portal (mirror of the TPV self-service section) ─────
+    // Same ownership model: vendor resolved from the token, assertOwned() 404s
+    // anything not the caller's. Reuses PurchaseOnboardingService + the shared
+    // document/kickoff engines. Admin decisions are absent by design.
+    Route::prefix('purchase')->group(function () {
+        Route::get('/dashboard',                          [PurchasePortalController::class, 'me']);
+        Route::get('/me',                                 [PurchasePortalController::class, 'me']);
+
+        Route::get('/onboarding',                         [PurchasePortalController::class, 'onboarding']);
+        Route::get('/onboarding/{onboarding}',            [PurchasePortalController::class, 'onboardingShow']);
+        Route::get('/onboarding/{onboarding}/progress',   [PurchasePortalController::class, 'onboardingProgress']);
+        Route::get('/onboarding/{onboarding}/kickoff',        [PurchasePortalController::class, 'onboardingKickoffPdf']);
+        Route::post('/onboarding/{onboarding}/kickoff/accept',[PurchasePortalController::class, 'onboardingAcceptKickoff']);
+        Route::post('/onboarding/{onboarding}/kickoff/log',   [PurchasePortalController::class, 'onboardingLogKickoffEvent']);
+        Route::post('/onboarding/{onboarding}/profile',   [PurchasePortalController::class, 'saveProfile']);
+        Route::patch('/onboarding/{onboarding}/step',     [PurchasePortalController::class, 'setStep']);
+        Route::post('/onboarding/{onboarding}/submit',    [PurchasePortalController::class, 'submitOnboarding']);
+
+        Route::get('/documents',                          [PurchasePortalController::class, 'documents']);
+        Route::post('/documents',                         [PurchasePortalController::class, 'uploadDocument']);
+        Route::post('/documents/{document}/resubmit',     [PurchasePortalController::class, 'resubmitDocument']);
+        Route::get('/documents/{document}/download',      [PurchasePortalController::class, 'downloadDocument']);
+
+        Route::get('/kickoff',                            [PurchasePortalController::class, 'kickoff']);
+        Route::post('/kickoff/accept',                    [PurchasePortalController::class, 'acceptKickoff']);
+    });
 });

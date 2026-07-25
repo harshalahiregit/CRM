@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import {
   Plus, RefreshCw, Search, Rocket, Eye, Trash2, ShieldCheck, Clock, CheckCircle, XCircle,
 } from 'lucide-react'
 import { tpvApi } from '@/services/tpvApi'
-import { portalApi } from '@/services/portalApi'
 import { useAuth } from '@/context/AuthContext'
-import { OB_STATUS, OB_STATUS_CONFIG, obStatusCfg, vendorStatusCfg, canManageTpv, fmtDate } from '../constants'
+import { OB_STATUS, OB_STATUS_CONFIG, obStatusCfg, vendorStatusCfg, fmtDate } from '../constants'
+import { useVendorModule } from '../useVendorModule'
 import {
   KIT3D_STYLE, labelStyle, inputStyle, Overlay, ModalFooter, InfoBox,
   Field, SelectInput, ActBtn, StatusBadge as StatusPill,
@@ -15,13 +15,9 @@ import '@/pages/vendor-portal/portal.css'
 
 export default function TpvOnboardings() {
   const navigate = useNavigate()
-  const location = useLocation()
   const { user } = useAuth()
-  const manage = canManageTpv(user)
-  // When in vendor portal or logged in as vendor, use the self-service portal API and portal routes.
-  const isPortal = location.pathname.startsWith('/vendor-portal') || user?.role === 'third_party_vendor' || user?.role === 'vendor'
-  const api = isPortal ? portalApi : tpvApi
-  const wizardPath = (id) => isPortal ? `/vendor-portal/onboarding/${id}` : `/app/tpv/onboarding/${id}`
+  const cfg = useVendorModule()
+  const manage = cfg.canManage(user)
 
   const [rows, setRows]       = useState([])
   const [stats, setStats]     = useState({})
@@ -33,20 +29,21 @@ export default function TpvOnboardings() {
   const fetchAll = useCallback(async () => {
     setLoading(true)
     try {
-      const [listRes, statRes] = await Promise.all([api.onboarding.list(), api.onboarding.stats()])
+      const [listRes, statRes] = await Promise.all([cfg.api.onboarding.list(), cfg.api.onboarding.stats()])
       const listData = Array.isArray(listRes?.data ?? listRes)
         ? (listRes.data ?? listRes)
         : (listRes?.onboarding ? [listRes.onboarding] : [])
       setRows(listData)
       setStats(statRes?.data ?? statRes ?? {})
 
-      if (isPortal && listData.length > 0) {
-        navigate(`/vendor-portal/onboarding/${listData[0].id}`, { replace: true })
+      if (cfg.portal && listData.length > 0) {
+        navigate(cfg.onboardingPath(listData[0].id), { replace: true })
         return
       }
     } catch (e) { console.error('Failed to load onboardings', e) }
     finally { setLoading(false) }
-  }, [isPortal, navigate, api])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cfg.portal, cfg.api, navigate])
   useEffect(() => { fetchAll() }, [fetchAll])
 
   const filtered = rows.filter(r => {
@@ -57,7 +54,7 @@ export default function TpvOnboardings() {
 
   const remove = async (r) => {
     if (!confirm(`Delete the onboarding for ${r.vendor?.company_name}?`)) return
-    try { await api.onboarding.delete(r.id); fetchAll() }
+    try { await cfg.api.onboarding.delete(r.id); fetchAll() }
     catch (e) { alert(e?.response?.data?.message || 'Delete failed') }
   }
 
@@ -126,7 +123,7 @@ export default function TpvOnboardings() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {filtered.map(r => (
             <div key={r.id} className="pr-glass pr-lift pr-pop" style={{ padding: 20, cursor: 'pointer' }}
-              onClick={() => navigate(wizardPath(r.id))}>
+              onClick={() => navigate(cfg.onboardingPath(r.id))}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
@@ -148,7 +145,7 @@ export default function TpvOnboardings() {
                   </div>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-                  <ActBtn onClick={() => navigate(wizardPath(r.id))} icon={Eye} color="var(--text-muted)" bg="var(--bg-card)" border>Open Wizard</ActBtn>
+                  <ActBtn onClick={() => navigate(cfg.onboardingPath(r.id))} icon={Eye} color="var(--text-muted)" bg="var(--bg-card)" border>Open Wizard</ActBtn>
                   {manage && r.status === OB_STATUS.IN_PROGRESS && (
                     <ActBtn onClick={() => remove(r)} icon={Trash2} color="#f87171" bg="var(--bg-card)" border>Delete</ActBtn>
                   )}
@@ -159,29 +156,29 @@ export default function TpvOnboardings() {
         </div>
       )}
 
-      {creating && <CreateModal onClose={() => setCreating(false)} onCreated={(id) => { setCreating(false); navigate(wizardPath(id)) }} />}
+      {creating && <CreateModal api={cfg.api} onClose={() => setCreating(false)} onCreated={(id) => { setCreating(false); navigate(cfg.onboardingPath(id)) }} />}
     </div>
   )
 }
 
 // ── Start-onboarding modal ───────────────────────────────────────────────────
-function CreateModal({ onClose, onCreated }) {
+function CreateModal({ onClose, onCreated, api = tpvApi }) {
   const [vendors, setVendors] = useState([])
   const [vendorId, setVendorId] = useState('')
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    // Any vendor may be onboarded for TPV; the engagement tag is applied on create.
-    tpvApi.vendors.list({ engagement: undefined })
+    // Any vendor may be onboarded; the engagement tag is applied on create.
+    api.vendors.list({ engagement: undefined })
       .then(res => setVendors(Array.isArray(res?.data ?? res) ? (res.data ?? res) : []))
       .catch(() => {})
-  }, [])
+  }, [api])
 
   const create = async () => {
     if (!vendorId) { alert('Select a vendor.'); return }
     setSaving(true)
     try {
-      const ob = await tpvApi.onboarding.create({ vendor_id: Number(vendorId) })
+      const ob = await api.onboarding.create({ vendor_id: Number(vendorId) })
       onCreated(ob?.id ?? ob?.data?.id)
     } catch (e) { alert(e?.response?.data?.message || 'Could not start onboarding') }
     finally { setSaving(false) }

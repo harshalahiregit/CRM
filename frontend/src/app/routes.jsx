@@ -200,6 +200,15 @@ const PurchaseRfqDetail = lazy(() => import('@/modules/purchase/pages/PurchaseRf
 const PurchaseContracts = lazy(() => import('@/modules/purchase/pages/PurchaseContracts'))
 const PurchaseContractDetail = lazy(() => import('@/modules/purchase/pages/PurchaseContractDetail'))
 const PurchaseCatalog = lazy(() => import('@/modules/purchase/pages/PurchaseCatalog'))
+// Purchase Vendors reuse the TPV vendor components (see TPV imports below) — the
+// data source is swapped by useVendorModule() from the /app/purchase path.
+
+// Purchase Vendor Portal (lazy) — mirror of the vendor portal, role `vendor`.
+const PurchasePortalShell = lazy(() => import('@/pages/purchase-portal/PurchasePortalShell'))
+const PurchasePortalDashboard = lazy(() => import('@/pages/purchase-portal/PurchasePortalDashboard'))
+const PurchasePortalDocuments = lazy(() => import('@/pages/purchase-portal/PurchasePortalDocuments'))
+const PurchasePortalApproval = lazy(() => import('@/pages/purchase-portal/PurchasePortalApproval'))
+const PurchasePortalKickoff = lazy(() => import('@/pages/purchase-portal/PurchasePortalKickoff'))
 
 // TPV Module (lazy) — pages land here as they're built
 const TPVLayout = lazy(() => import('@/modules/tpv/TPVLayout'))
@@ -286,7 +295,8 @@ function RootRedirect() {
   const { isAuthenticated, user } = useAuth()
   if (!isAuthenticated) return <Navigate to="/auth/login" replace />
   const role = user?.role
-  if (role === 'vendor' || role === 'third_party_vendor') return <Navigate to="/vendor-portal/dashboard" replace />
+  if (role === 'third_party_vendor') return <Navigate to="/vendor-portal/dashboard" replace />
+  if (role === 'vendor') return <Navigate to="/purchase-portal/dashboard" replace />
   if (role === 'company') return <Navigate to="/company-portal/dashboard" replace />
   return <Navigate to="/app/dashboard" replace />
 }
@@ -466,8 +476,14 @@ export default function AppRoutes() {
           <Route path="contracts" element={<S><PurchaseContracts /></S>} />
           <Route path="contracts/:id" element={<S><PurchaseContractDetail /></S>} />
           <Route path="catalog" element={<S><PurchaseCatalog /></S>} />
+          {/* Purchase Vendors — a 1:1 mirror of the TPV vendor module: the SAME
+              TPV components, with useVendorModule() swapping the data source to
+              purchaseApi (detected from the /app/purchase path). */}
+          <Route path="vendors" element={<S><TpvVendors /></S>} />
+          <Route path="vendors/:id" element={<S><TpvVendorDetail /></S>} />
+          <Route path="onboarding" element={<S><TpvOnboardings /></S>} />
+          <Route path="onboarding/:id" element={<S><TpvOnboardingWizard /></S>} />
           {/* Sidebar tabs pending dedicated pages — placeholders keep nav intact */}
-          <Route path="vendors" element={<ComingSoon name="Purchase Vendors" />} />
           <Route path="vendor-items" element={<ComingSoon name="Vendor Items" />} />
           <Route path="order-returns" element={<ComingSoon name="Order Returns" />} />
           <Route path="reports" element={<ComingSoon name="Purchase Reports" />} />
@@ -604,6 +620,23 @@ export default function AppRoutes() {
         <Route path="documents"         element={<S><PortalDocuments /></S>} />
         <Route path="orders/:id"        element={<S><PortalOrderDetail /></S>} />
         <Route path="invoices/:id"      element={<S><PortalInvoiceDetail /></S>} />
+      </Route>
+
+      {/* Purchase Vendor Portal — procurement `vendor` role only. Mirror of the
+          TPV vendor portal; all data scoped server-side from the token (no vendor
+          id in any URL). TPV portal above is unaffected. */}
+      <Route path="/purchase-portal" element={
+        <ProtectedRoute roles={['vendor']}><S><PurchasePortalShell /></S></ProtectedRoute>
+      }>
+        <Route index element={<Navigate to="dashboard" replace />} />
+        <Route path="dashboard"  element={<S><PurchasePortalDashboard /></S>} />
+        {/* Onboarding reuses the SAME TpvOnboardings + TpvOnboardingWizard; the
+            purchase-portal path drives useVendorModule() to purchasePortalApi. */}
+        <Route path="onboarding" element={<S><TpvOnboardings /></S>} />
+        <Route path="onboarding/:id" element={<S><TpvOnboardingWizard /></S>} />
+        <Route path="documents"  element={<S><PurchasePortalDocuments /></S>} />
+        <Route path="approval"   element={<S><PurchasePortalApproval /></S>} />
+        <Route path="kickoff"    element={<S><PurchasePortalKickoff /></S>} />
       </Route>
 
       {/* External Company Portal — company accounts only. Sprint 1: Dashboard live;

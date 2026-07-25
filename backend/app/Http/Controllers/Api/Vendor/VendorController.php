@@ -36,7 +36,14 @@ class VendorController extends Controller
     {
         $this->assertTenant($request, $vendor);
 
-        return response()->json($vendor->load(['contacts', 'documents', 'tpvOnboarding', 'accountManager:id,name', 'user:id,name,email,status']));
+        $relations = ['contacts', 'documents', 'tpvOnboarding', 'accountManager:id,name', 'user:id,name,email,status'];
+        // Purchase vendors carry a separate onboarding record; load it so the shared
+        // detail screen can show the onboarding badge. Pure-TPV payloads are unchanged.
+        if ($vendor->hasEngagement('purchase')) {
+            $relations[] = 'purchaseOnboarding';
+        }
+
+        return response()->json($vendor->load($relations));
     }
 
     public function update(Request $request, Vendor $vendor, UpdateVendorRequest $updateRequest)
