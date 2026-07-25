@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\Inventory\StockController;
 use App\Http\Controllers\Api\Inventory\TraceabilityController;
 use App\Http\Controllers\Api\Inventory\TransferController;
 use App\Http\Controllers\Api\Inventory\VendorController;
+use App\Http\Controllers\Api\Inventory\VmiController;
 use App\Http\Controllers\Api\Inventory\VoucherController;
 use App\Http\Controllers\Api\Inventory\VoucherFileController;
 use App\Http\Controllers\Api\Inventory\WarehouseController;
@@ -251,6 +252,15 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('inventory')->gr
     Route::post('/rentals/{rental}/checkout', [RentalController::class, 'checkout'])->where('rental', '[0-9]+');
     Route::post('/rentals/{rental}/return',   [RentalController::class, 'returnItem'])->where('rental', '[0-9]+');
     Route::post('/rentals/{rental}/cancel',   [RentalController::class, 'cancel'])->where('rental', '[0-9]+');
+
+    // Vendor-managed inventory agreements + replenishment suggestions.
+    Route::get('/vmi',                   [VmiController::class, 'index']);
+    Route::post('/vmi',                  [VmiController::class, 'store']);
+    Route::get('/vmi/{agreement}',       [VmiController::class, 'show'])->where('agreement', '[0-9]+');
+    Route::put('/vmi/{agreement}',       [VmiController::class, 'update'])->where('agreement', '[0-9]+');
+    Route::delete('/vmi/{agreement}',    [VmiController::class, 'destroy'])->where('agreement', '[0-9]+');
+    Route::get('/vmi/{agreement}/suggestions', [VmiController::class, 'suggestions'])->where('agreement', '[0-9]+');
+    Route::post('/vmi/{agreement}/generate-po', [VmiController::class, 'generatePurchaseOrder'])->where('agreement', '[0-9]+');
 
     // Warehouses + bin locations
     Route::get('/warehouses',        [WarehouseController::class, 'index']);

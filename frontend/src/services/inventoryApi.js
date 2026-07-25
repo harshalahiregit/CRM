@@ -103,6 +103,17 @@ export const inventoryApi = {
     cancel:   (id) => api.post(`/inventory/rentals/${id}/cancel`).then(unwrap).catch(handleErr),
   },
 
+  // Vendor-managed inventory.
+  vmi: {
+    list:        (params = {}) => api.get('/inventory/vmi', { params }).then(unwrap).catch(handleErr),
+    get:         (id) => api.get(`/inventory/vmi/${id}`).then(unwrap).catch(handleErr),
+    create:      (data) => api.post('/inventory/vmi', data).then(unwrap).catch(handleErr),
+    update:      (id, data) => api.put(`/inventory/vmi/${id}`, data).then(unwrap).catch(handleErr),
+    remove:      (id) => api.delete(`/inventory/vmi/${id}`).then(unwrap).catch(handleErr),
+    suggestions: (id) => api.get(`/inventory/vmi/${id}/suggestions`).then(unwrap).catch(handleErr),
+    generatePO:  (id) => api.post(`/inventory/vmi/${id}/generate-po`).then(unwrap).catch(handleErr),
+  },
+
   // Dead-stock action workflow.
   deadStock: {
     candidates: (days = 90) => api.get('/inventory/dead-stock/candidates', { params: { days } }).then(unwrap).catch(handleErr),

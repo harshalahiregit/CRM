@@ -8,7 +8,7 @@ import {
   IndianRupee, FileSignature, CreditCard, FileX,
   ShoppingBag, UserPlus,
   Boxes, PackagePlus, PackageMinus, ArrowLeftRight, Scale, Warehouse, History, BarChart3, Activity, Layers3, ScanLine,
-  ClipboardCheck, ShoppingCart, Hourglass, Wrench, CalendarRange
+  ClipboardCheck, ShoppingCart, Hourglass, Wrench, CalendarRange, Handshake
 } from 'lucide-react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -85,6 +85,7 @@ const INVENTORY_SUB_ITEMS = [
   { label: 'Warehouse', path: '/app/inventory/warehouses', icon: Warehouse },
   { label: 'Vendors', path: '/app/inventory/vendors', icon: Truck },
   { label: 'Purchase orders', path: '/app/inventory/purchase-orders', icon: ShoppingCart },
+  { label: 'Vendor-managed', path: '/app/inventory/vmi', icon: Handshake },
   { label: 'Traceability', path: '/app/inventory/traceability', icon: Layers3 },
   { label: 'Inventory history', path: '/app/inventory/history', icon: History },
   { label: 'Analytics', path: '/app/inventory/analytics', icon: Activity },
