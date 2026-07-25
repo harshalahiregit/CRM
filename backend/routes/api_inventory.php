@@ -54,6 +54,8 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('inventory')->gr
     Route::post('/serials',             [TraceabilityController::class, 'storeSerials']);
     Route::put('/serials/{serial}',     [TraceabilityController::class, 'updateSerial']);
     Route::delete('/serials/{serial}',  [TraceabilityController::class, 'destroySerial']);
+    Route::get('/serials/{serial}/events',  [TraceabilityController::class, 'serialEvents']);
+    Route::post('/serials/{serial}/events', [TraceabilityController::class, 'addSerialEvent']);
 
     Route::get('/reservations',                         [TraceabilityController::class, 'reservations']);
     Route::post('/reservations',                        [TraceabilityController::class, 'reserve']);

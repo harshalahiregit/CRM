@@ -7,6 +7,7 @@ use App\Models\Inventory\Batch;
 use App\Models\Inventory\Product;
 use App\Models\Inventory\Reservation;
 use App\Models\Inventory\Serial;
+use App\Models\Inventory\SerialEvent;
 use App\Models\Inventory\Stock;
 use App\Models\Inventory\Warehouse;
 use Illuminate\Support\Facades\DB;
@@ -305,6 +306,59 @@ class TraceabilityService
     public function deleteSerial(int $id, int $tenantId): void
     {
         Serial::forTenant($tenantId)->findOrFail($id)->delete();
+    }
+
+    /** A serialised unit's life history — newest first. */
+    public function serialEvents(int $serialId, int $tenantId)
+    {
+        Serial::forTenant($tenantId)->findOrFail($serialId);
+
+        return SerialEvent::forTenant($tenantId)
+            ->where('serial_id', $serialId)
+            ->with('performer:id,name')
+            ->orderByDesc('performed_at')->orderByDesc('id')->get();
+    }
+
+    /**
+     * Log a service/repair/etc. event against a unit. If the event names a new
+     * status, the unit moves there too — so the current-state row and its history
+     * can never disagree.
+     */
+    public function addSerialEvent(int $serialId, array $d, int $tenantId, int $userId): SerialEvent
+    {
+        $serial = Serial::forTenant($tenantId)->findOrFail($serialId);
+
+        $type = $d['event_type'] ?? 'note';
+        if (! in_array($type, SerialEvent::TYPES, true)) {
+            throw new BusinessException('Unknown event type.', 422);
+        }
+
+        $statusTo = $d['status_to'] ?? null;
+        if ($statusTo !== null && ! in_array($statusTo, Serial::STATUSES, true)) {
+            throw new BusinessException('Unknown serial status.', 422);
+        }
+
+        return DB::transaction(function () use ($serial, $d, $type, $statusTo, $tenantId, $userId) {
+            $event = SerialEvent::create([
+                'tenant_id'    => $tenantId,
+                'serial_id'    => $serial->id,
+                'event_type'   => $type,
+                'status_from'  => $statusTo ? $serial->status : null,
+                'status_to'    => $statusTo,
+                'description'  => $d['description'],
+                'cost'         => $d['cost'] ?? null,
+                'vendor'       => $d['vendor'] ?? null,
+                'reference'    => $d['reference'] ?? null,
+                'performed_at' => $d['performed_at'] ?? now()->toDateString(),
+                'performed_by' => $userId,
+            ]);
+
+            if ($statusTo && $statusTo !== $serial->status) {
+                $serial->update(['status' => $statusTo]);
+            }
+
+            return $event->load('performer:id,name');
+        });
     }
 
     /* ══ Reservations ═════════════════════════════════════════════ */

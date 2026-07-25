@@ -266,6 +266,7 @@ function SerialsTab({ isAdmin }) {
   const [adding, setAdding] = useState(false)
   const [err, setErr] = useState('')
   const [draft, setDraft] = useState({ product_id: '', warehouse_id: '', numbers: '', warranty_until: '' })
+  const [historyFor, setHistoryFor] = useState(null)
 
   const { data: rows = [], isLoading } = useQuery({ queryKey: ['inv-serials', search], queryFn: () => inventoryApi.serials.list(search ? { search } : {}) })
   const { data: products = [] } = useQuery({ queryKey: ['inv-products', {}], queryFn: () => inventoryApi.products.list() })
@@ -336,10 +337,98 @@ function SerialsTab({ isAdmin }) {
             : '—',
           <Select key="st" size="sm" value={s.status} onChange={v => setStatus.mutate({ id: s.id, status: v })} options={SERIAL_STATUS}
             buttonStyle={{ color: SERIAL_COLOR[s.status], background: `color-mix(in srgb, ${SERIAL_COLOR[s.status]} 15%, transparent)`, border: 'none', borderRadius: 999, padding: '3px 9px', fontSize: 10.5, fontWeight: 700 }} />,
-          isAdmin ? <button key="d" onClick={() => del.mutate(s.id)} aria-label="Delete serial" className="hover:opacity-60"><Trash2 size={13} style={{ color: 'var(--color-danger-500)' }} /></button> : null,
+          <span key="d" className="inline-flex items-center gap-2 justify-end">
+            <button onClick={() => setHistoryFor(s)} title="Service / repair history" className="hover:opacity-60"><CalendarClock size={13} style={{ color: 'var(--text-muted)' }} /></button>
+            {isAdmin && <button onClick={() => del.mutate(s.id)} aria-label="Delete serial" className="hover:opacity-60"><Trash2 size={13} style={{ color: 'var(--color-danger-500)' }} /></button>}
+          </span>,
         ])}
       />
+
+      {historyFor && <SerialHistoryModal serial={historyFor} onClose={() => setHistoryFor(null)} onChanged={refresh} />}
     </>
+  )
+}
+
+const EVENT_TYPES = [
+  { value: 'service', label: 'Service' }, { value: 'repair', label: 'Repair' },
+  { value: 'replacement', label: 'Replacement' }, { value: 'inspection', label: 'Inspection' },
+  { value: 'status_change', label: 'Status change' }, { value: 'note', label: 'Note' },
+]
+
+const EMPTY_EVENT = { event_type: 'service', description: '', status_to: '', cost: '', vendor: '', reference: '', performed_at: '' }
+
+function SerialHistoryModal({ serial, onClose, onChanged }) {
+  const qc = useQueryClient()
+  const [err, setErr] = useState('')
+  const [form, setForm] = useState(EMPTY_EVENT)
+
+  const { data: events = [], isLoading } = useQuery({ queryKey: ['serial-events', serial.id], queryFn: () => inventoryApi.serials.events.list(serial.id) })
+  const reload = () => qc.invalidateQueries({ queryKey: ['serial-events', serial.id] })
+
+  const add = useMutation({
+    mutationFn: () => inventoryApi.serials.events.add(serial.id, {
+      event_type: form.event_type,
+      description: form.description.trim(),
+      status_to: form.status_to || null,
+      cost: form.cost ? Number(form.cost) : null,
+      vendor: form.vendor || null,
+      reference: form.reference || null,
+      performed_at: form.performed_at || null,
+    }),
+    onSuccess: () => { setForm(EMPTY_EVENT); setErr(''); reload(); onChanged?.() },
+    onError: (e) => setErr(e?.message || 'Could not log that event.'),
+  })
+
+  return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }} onClick={onClose}>
+      <div className="w-full max-w-lg rounded-2xl overflow-hidden flex flex-col" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', maxHeight: '85vh' }} onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
+          <div>
+            <div className="text-sm font-black" style={{ color: 'var(--text-h)' }}>Service history</div>
+            <div className="font-mono text-[11px]" style={{ color: 'var(--text-muted)' }}>{serial.serial_no} · {serial.product?.name}</div>
+          </div>
+          <button onClick={onClose} aria-label="Close"><X size={16} style={{ color: 'var(--text-muted)' }} /></button>
+        </div>
+
+        <div className="p-4 overflow-auto" style={{ flex: 1 }}>
+          <div className="grid gap-2 mb-2" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(130px,1fr))' }}>
+            <Fld label="Event"><Select size="sm" value={form.event_type} onChange={v => setForm(f => ({ ...f, event_type: v }))} options={EVENT_TYPES} /></Fld>
+            <Fld label="New status"><Select size="sm" value={form.status_to} onChange={v => setForm(f => ({ ...f, status_to: v }))} placeholder="— keep —" options={[{ value: '', label: '— keep —' }, ...SERIAL_STATUS]} /></Fld>
+            <Fld label="Cost"><input type="number" value={form.cost} onChange={e => setForm(f => ({ ...f, cost: e.target.value }))} style={INP} /></Fld>
+            <Fld label="Vendor"><input value={form.vendor} onChange={e => setForm(f => ({ ...f, vendor: e.target.value }))} style={INP} /></Fld>
+            <Fld label="Reference"><input value={form.reference} onChange={e => setForm(f => ({ ...f, reference: e.target.value }))} style={INP} placeholder="job card / RMA" /></Fld>
+            <Fld label="Date"><input type="date" value={form.performed_at} onChange={e => setForm(f => ({ ...f, performed_at: e.target.value }))} style={INP} /></Fld>
+          </div>
+          <Fld label="Description *"><input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} style={INP} placeholder="What was done" /></Fld>
+          {err && <p className="text-[11px] mt-2" style={{ color: 'var(--color-danger-500)' }}>{err}</p>}
+          <button disabled={!form.description.trim() || add.isPending} onClick={() => add.mutate()}
+            className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl mt-2 disabled:opacity-40" style={{ background: INV_ACCENT, color: '#fff' }}>
+            <Plus size={13} /> {add.isPending ? 'Logging…' : 'Log event'}
+          </button>
+
+          <div className="mt-4 space-y-2">
+            {isLoading && <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Loading…</p>}
+            {!isLoading && events.length === 0 && <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>No history yet — log the first event above.</p>}
+            {events.map(ev => (
+              <div key={ev.id} className="rounded-xl px-3 py-2" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase" style={{ color: INV_ACCENT }}>{ev.event_type}</span>
+                  <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{ev.performed_at ? String(ev.performed_at).split('T')[0] : ''}</span>
+                </div>
+                <div className="text-[12px] mt-0.5" style={{ color: 'var(--text-h)' }}>{ev.description}</div>
+                <div className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                  {ev.status_from && ev.status_to && <>{ev.status_from} → {ev.status_to} · </>}
+                  {ev.cost != null && <>{money(ev.cost)} · </>}
+                  {ev.vendor && <>{ev.vendor} · </>}
+                  {ev.reference && <>ref {ev.reference} · </>}
+                  {ev.performer?.name || ''}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 

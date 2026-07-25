@@ -28,6 +28,7 @@ class Serial extends Model
     public function batch() { return $this->belongsTo(Batch::class, 'batch_id'); }
     public function warehouse() { return $this->belongsTo(Warehouse::class, 'warehouse_id'); }
     public function creator() { return $this->belongsTo(User::class, 'created_by'); }
+    public function events() { return $this->hasMany(SerialEvent::class, 'serial_id'); }
 
     public function getUnderWarrantyAttribute(): ?bool
     {

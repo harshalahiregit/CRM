@@ -7,6 +7,7 @@ use App\Http\Controllers\Traits\ApiResponse;
 use App\Models\Inventory\Batch;
 use App\Models\Inventory\Reservation;
 use App\Models\Inventory\Serial;
+use App\Models\Inventory\SerialEvent;
 use App\Services\Inventory\TraceabilityService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -201,6 +202,38 @@ class TraceabilityController extends Controller
         $this->trace->deleteSerial($serial, $request->user()->tenant_id);
 
         return $this->success(null, 'Serial deleted');
+    }
+
+    /** A serialised unit's service/repair history. */
+    public function serialEvents(Request $request, int $serial)
+    {
+        $this->denyExternal($request);
+
+        return $this->success(
+            $this->trace->serialEvents($serial, $request->user()->tenant_id),
+            'Serial history retrieved'
+        );
+    }
+
+    /** Log a service/repair/replacement/etc. event against a unit. */
+    public function addSerialEvent(Request $request, int $serial)
+    {
+        $this->denyExternal($request);
+
+        $data = $request->validate([
+            'event_type'   => ['required', Rule::in(SerialEvent::TYPES)],
+            'description'  => 'required|string|max:1000',
+            'status_to'    => ['nullable', Rule::in(Serial::STATUSES)],
+            'cost'         => 'nullable|numeric|min:0',
+            'vendor'       => 'nullable|string|max:180',
+            'reference'    => 'nullable|string|max:120',
+            'performed_at' => 'nullable|date',
+        ]);
+
+        return $this->success(
+            $this->trace->addSerialEvent($serial, $data, $request->user()->tenant_id, $request->user()->id),
+            'Event logged', 201
+        );
     }
 
     /* ── Reservations ───────────────────────────────────────────── */

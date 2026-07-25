@@ -44,6 +44,10 @@ export const inventoryApi = {
     create: (data) => api.post('/inventory/serials', data).then(unwrap).catch(handleErr),
     update: (id, data) => api.put(`/inventory/serials/${id}`, data).then(unwrap).catch(handleErr),
     remove: (id) => api.delete(`/inventory/serials/${id}`).then(unwrap).catch(handleErr),
+    events: {
+      list: (id) => api.get(`/inventory/serials/${id}/events`).then(unwrap).catch(handleErr),
+      add:  (id, data) => api.post(`/inventory/serials/${id}/events`, data).then(unwrap).catch(handleErr),
+    },
   },
 
   reservations: {
