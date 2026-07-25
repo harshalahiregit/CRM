@@ -34,4 +34,15 @@ class CustomerDirectoryService implements CustomerServiceContract
     {
         return Client::forTenant($tenantId)->whereKey($customerId)->exists();
     }
+
+    public function listCustomers(int $tenantId): array
+    {
+        return Client::forTenant($tenantId)->with('primaryContact')->orderBy('company')->get()
+            ->map(fn (Client $client) => [
+                'id'      => $client->id,
+                'name'    => $client->company,
+                'email'   => $client->primaryContact?->email,
+                'company' => $client->company,
+            ])->all();
+    }
 }
