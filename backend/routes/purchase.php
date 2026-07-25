@@ -10,6 +10,9 @@ use App\Http\Controllers\Api\Purchase\PurchaseCatalogController;
 use App\Http\Controllers\Api\Purchase\PurchaseContractController;
 use App\Http\Controllers\Api\Purchase\PurchaseQuotationController;
 use App\Http\Controllers\Api\Purchase\PurchaseRfqController;
+use App\Http\Controllers\Api\Purchase\PurchaseOnboardingController;
+use App\Http\Controllers\Api\Purchase\PurchaseVendorDocumentController;
+use App\Http\Controllers\Api\Purchase\PurchaseContactController;
 use Illuminate\Support\Facades\Route;
 
 // ── Purchase & Procurement Module (Sanctum + role:admin,staff) ──────────
@@ -119,6 +122,41 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::put('/catalog/{catalogItem}',          [PurchaseCatalogController::class, 'update']);
     Route::post('/catalog/{catalogItem}/status',  [PurchaseCatalogController::class, 'setStatus']);
     Route::delete('/catalog/{catalogItem}',       [PurchaseCatalogController::class, 'destroy']); // Draft only
+
+    // ── Vendor onboarding (6-step wizard over the shared vendor master) ──
+    // Purchase mirror of the TPV onboarding; a purchase vendor is the shared
+    // Vendor tagged engagement 'purchase'. Approve/reject/hold are admin, below.
+    Route::get('/onboarding/stats',                  [PurchaseOnboardingController::class, 'stats']);
+    Route::get('/onboarding',                        [PurchaseOnboardingController::class, 'index']);
+    Route::post('/onboarding',                       [PurchaseOnboardingController::class, 'store']);
+    Route::get('/onboarding/{onboarding}',           [PurchaseOnboardingController::class, 'show']);
+    Route::get('/onboarding/{onboarding}/progress',  [PurchaseOnboardingController::class, 'progress']);
+    Route::post('/onboarding/{onboarding}/profile',  [PurchaseOnboardingController::class, 'saveProfile']);
+    Route::patch('/onboarding/{onboarding}/step',    [PurchaseOnboardingController::class, 'setStep']);
+    Route::post('/onboarding/{onboarding}/submit',   [PurchaseOnboardingController::class, 'submit']);
+    Route::delete('/onboarding/{onboarding}',        [PurchaseOnboardingController::class, 'destroy']);
+    // Step 1 — kickoff MOM PDF / acknowledgement (reuses the shared kickoff engine).
+    Route::get('/onboarding/{onboarding}/kickoff',        [PurchaseOnboardingController::class, 'kickoffPdf']);
+    Route::post('/onboarding/{onboarding}/kickoff/accept',[PurchaseOnboardingController::class, 'acceptKickoff']);
+    Route::post('/onboarding/{onboarding}/kickoff/log',   [PurchaseOnboardingController::class, 'logKickoffEvent']);
+
+    // ── Vendor contacts (reuse the shared TpvContactService / tpv_contacts) ─
+    Route::get('/vendors/{vendor}/contacts',                    [PurchaseContactController::class, 'index']);
+    Route::post('/vendors/{vendor}/contacts',                   [PurchaseContactController::class, 'store']);
+    Route::get('/vendors/{vendor}/contacts/{contact}',         [PurchaseContactController::class, 'show']);
+    Route::put('/vendors/{vendor}/contacts/{contact}',         [PurchaseContactController::class, 'update']);
+    Route::patch('/vendors/{vendor}/contacts/{contact}/status',[PurchaseContactController::class, 'setStatus']);
+
+    // ── Vendor documents (reuse the shared VendorDocument engine) ────────
+    // Purchase-scoped surface over the SAME model/service. Review is admin, below.
+    Route::get('/vendors/{vendor}/documents',                       [PurchaseVendorDocumentController::class, 'checklist']);
+    Route::post('/vendors/{vendor}/documents',                      [PurchaseVendorDocumentController::class, 'upload']);
+    Route::get('/documents/{document}/download',                    [PurchaseVendorDocumentController::class, 'download']);
+    Route::post('/documents/{document}/resubmit',                   [PurchaseVendorDocumentController::class, 'resubmit']);
+    Route::delete('/documents/{document}',                          [PurchaseVendorDocumentController::class, 'destroy']);
+    Route::get('/documents/{document}/versions',                    [PurchaseVendorDocumentController::class, 'versions']);
+    Route::get('/documents/{document}/versions/{version}/download', [PurchaseVendorDocumentController::class, 'downloadVersion']);
+    Route::post('/documents/{document}/versions/{version}/restore', [PurchaseVendorDocumentController::class, 'restoreVersion']);
 });
 
 // Approval authority is admin-only — a requester must not approve their own PR.
@@ -155,4 +193,14 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('purchase')->group(fun
     // admin authority.
     Route::post('/contracts/{contract}/activate',  [PurchaseContractController::class, 'activate']);
     Route::post('/contracts/{contract}/terminate', [PurchaseContractController::class, 'terminate']);
+
+    // Vendor onboarding decisions — a requester must not approve their own vendor.
+    Route::post('/onboarding/{onboarding}/approve',  [PurchaseOnboardingController::class, 'approve']);
+    Route::post('/onboarding/{onboarding}/reject',   [PurchaseOnboardingController::class, 'reject']);
+    Route::post('/onboarding/{onboarding}/hold',     [PurchaseOnboardingController::class, 'hold']);
+    Route::post('/onboarding/{onboarding}/release',  [PurchaseOnboardingController::class, 'release']);
+    Route::post('/onboarding/{onboarding}/resubmit', [PurchaseOnboardingController::class, 'requestResubmit']);
+
+    // Admin approve/reject a purchase vendor's statutory document.
+    Route::post('/documents/{document}/review',      [PurchaseVendorDocumentController::class, 'review']);
 });

@@ -29,8 +29,9 @@ const RELATIONSHIPS = ['Spouse', 'Parent', 'Sibling', 'Child', 'Friend', 'Collea
  * @param vendorId  — numeric vendor ID (required)
  * @param vendor    — the vendor object for auto-fill in the Add/Edit modal
  * @param manage    — boolean, true for admin/staff
+ * @param api       — data source (defaults to tpvApi; purchase/portal swap it in)
  */
-export default function TpvVendorContacts({ vendorId, vendor, manage }) {
+export default function TpvVendorContacts({ vendorId, vendor, manage, api = tpvApi }) {
   const [rows, setRows]       = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch]   = useState('')
@@ -40,11 +41,11 @@ export default function TpvVendorContacts({ vendorId, vendor, manage }) {
   const fetchAll = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await tpvApi.contacts.list(vendorId)
+      const res = await api.contacts.list(vendorId)
       setRows(Array.isArray(res?.data ?? res) ? (res.data ?? res) : [])
     } catch (e) { console.error('Failed to load contacts', e) }
     finally { setLoading(false) }
-  }, [vendorId])
+  }, [vendorId, api])
   useEffect(() => { fetchAll() }, [fetchAll])
 
   const filtered = useMemo(() => {
@@ -65,7 +66,7 @@ export default function TpvVendorContacts({ vendorId, vendor, manage }) {
   const toggleStatus = async (c) => {
     const next = c.status === CONTACT_STATUS.ACTIVE ? CONTACT_STATUS.INACTIVE : CONTACT_STATUS.ACTIVE
     if (!confirm(`${next === CONTACT_STATUS.ACTIVE ? 'Activate' : 'Deactivate'} ${c.full_name}?`)) return
-    try { await tpvApi.contacts.setStatus(vendorId, c.id, next); fetchAll() }
+    try { await api.contacts.setStatus(vendorId, c.id, next); fetchAll() }
     catch (e) { alert(e?.response?.data?.message || 'Could not update status') }
   }
 
@@ -173,6 +174,7 @@ export default function TpvVendorContacts({ vendorId, vendor, manage }) {
         vendor={vendor}
         mode={modal.mode}
         contact={modal.contact}
+        api={api}
         onClose={() => setModal(null)}
         onSaved={() => { setModal(null); fetchAll() }}
       />
@@ -217,7 +219,7 @@ const ReadOnlyInput = ({ value, placeholder }) => (
 )
 
 // ── Full Add / Edit / View modal ───────────────────────────────────────────
-function ContactModal({ vendorId, vendor, mode, contact, onClose, onSaved }) {
+function ContactModal({ vendorId, vendor, mode, contact, onClose, onSaved, api = tpvApi }) {
   const view = mode === 'view'
   const isEdit = mode === 'edit'
 
@@ -341,8 +343,8 @@ function ContactModal({ vendorId, vendor, mode, contact, onClose, onSaved }) {
         optional.forEach(k => { if (payload[k] === '') payload[k] = null })
       }
 
-      if (isEdit) await tpvApi.contacts.update(vendorId, contact.id, payload)
-      else        await tpvApi.contacts.create(vendorId, payload)
+      if (isEdit) await api.contacts.update(vendorId, contact.id, payload)
+      else        await api.contacts.create(vendorId, payload)
       onSaved()
     } catch (e) { alert(e?.response?.data?.message || 'Could not save contact') }
     finally { setSaving(false) }

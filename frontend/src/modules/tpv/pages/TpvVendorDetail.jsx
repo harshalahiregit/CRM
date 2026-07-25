@@ -4,9 +4,9 @@ import {
   ArrowLeft, Building2, User, Phone, Loader2, ShieldCheck, CheckCircle, XCircle, PauseCircle, CornerUpLeft, Clock, AlertTriangle,
   Briefcase, IndianRupee, ClipboardCheck, BarChart3, ChevronDown, ChevronRight,
 } from 'lucide-react'
-import { tpvApi } from '@/services/tpvApi'
 import { useAuth } from '@/context/AuthContext'
-import { canManageTpv, obStatusCfg } from '@/modules/tpv/constants'
+import { obStatusCfg } from '@/modules/tpv/constants'
+import { useVendorModule } from '@/modules/tpv/useVendorModule'
 import { KIT3D_STYLE, Overlay, ModalFooter } from '@/components/ui/kit3d'
 import ComingSoonSection from '@/modules/tpv/components/ComingSoonSection'
 import TpvVendorContacts from '@/modules/tpv/components/TpvVendorContacts'
@@ -31,7 +31,8 @@ export default function TpvVendorDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
   const { user } = useAuth()
-  const manage = canManageTpv(user)
+  const cfg = useVendorModule()
+  const manage = cfg.canManage(user)
   const [params, setParams] = useSearchParams()
   const [v, setV] = useState(null)
   const [loading, setLoad] = useState(true)
@@ -58,15 +59,17 @@ export default function TpvVendorDetail() {
 
   const load = useCallback(() => {
     setLoad(true)
-    tpvApi.vendors.get(id).then(r => { setV(r?.data ?? r); setLoad(false) }).catch(() => setLoad(false))
-  }, [id])
+    cfg.api.vendors.get(id).then(r => { setV(r?.data ?? r); setLoad(false) }).catch(() => setLoad(false))
+  }, [id, cfg.api])
   useEffect(() => { load() }, [load])
 
   if (loading) return <div style={wrap}><style>{KIT3D_STYLE}</style><Loader2 size={22} className="rfq-spin" style={{ color: '#a78bfa' }} /></div>
   if (!v) return <div style={wrap}><style>{KIT3D_STYLE}</style><p style={{ color: 'var(--text-muted)' }}>Vendor not found.</p></div>
 
   const isActive = v.status === 'Active'
-  const activeOnboarding = v.tpv_onboarding || v.tpvOnboarding || (v.onboardings && v.onboardings[0]) || null
+  const activeOnboarding = v.tpv_onboarding || v.tpvOnboarding
+    || v.purchase_onboarding || v.purchaseOnboarding
+    || (v.onboardings && v.onboardings[0]) || null
   const obStatus = activeOnboarding?.status || 'Draft'
   const obCfg = obStatusCfg(obStatus)
 
@@ -80,18 +83,18 @@ export default function TpvVendorDetail() {
     try {
       let ob = activeOnboarding
       if (!ob) {
-        const r = await tpvApi.onboarding.create({ vendor_id: v.id })
+        const r = await cfg.api.onboarding.create({ vendor_id: v.id })
         ob = r?.data ?? r
       }
 
       if (decisionModal === 'approve') {
-        await tpvApi.onboarding.approve(ob.id, remarks)
+        await cfg.api.onboarding.approve(ob.id, remarks)
       } else if (decisionModal === 'reject') {
-        await tpvApi.onboarding.reject(ob.id, remarks)
+        await cfg.api.onboarding.reject(ob.id, remarks)
       } else if (decisionModal === 'hold') {
-        await tpvApi.onboarding.hold(ob.id, remarks)
+        await cfg.api.onboarding.hold(ob.id, remarks)
       } else if (decisionModal === 'resubmit') {
-        await tpvApi.onboarding.requestResubmit(ob.id, remarks)
+        await cfg.api.onboarding.requestResubmit(ob.id, remarks)
       }
 
       setDecisionModal(null)
@@ -111,12 +114,12 @@ export default function TpvVendorDetail() {
       {/* Header Banner & Admin Action Bar */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 18, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flex: 1, minWidth: 280 }}>
-          <button onClick={() => navigate('/app/tpv/dashboard')} style={backBtn}><ArrowLeft size={16} /></button>
+          <button onClick={() => navigate(cfg.listPath)} style={backBtn}><ArrowLeft size={16} /></button>
           <div style={{ width: 54, height: 54, borderRadius: 16, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(124,58,237,0.14)', border: '1px solid rgba(124,58,237,0.3)' }}>
             <Building2 size={24} style={{ color: '#a78bfa' }} />
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <p className="label-caps" style={{ color: '#a78bfa', margin: 0, fontSize: 11, fontWeight: 800 }}>{v.vendor_code || `TPV-${v.id}`}</p>
+            <p className="label-caps" style={{ color: '#a78bfa', margin: 0, fontSize: 11, fontWeight: 800 }}>{v.vendor_code || `${cfg.codePrefix}-${v.id}`}</p>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 2 }}>
               <h1 style={{ color: 'var(--text-h)', fontSize: 22, fontWeight: 900, margin: 0, letterSpacing: '-0.02em' }}>{v.company_name}</h1>
               
@@ -215,7 +218,7 @@ export default function TpvVendorDetail() {
         </nav>
 
         <div style={{ flex: 1, minWidth: 0 }}>
-          <SectionContent tab={active} v={v} isActive={isActive} manage={manage} />
+          <SectionContent tab={active} v={v} isActive={isActive} manage={manage} api={cfg.api} moduleName={cfg.moduleName} />
         </div>
       </div>
 
@@ -262,7 +265,7 @@ export default function TpvVendorDetail() {
 }
 
 /** Routes the active section to live data or the shared placeholder. */
-function SectionContent({ tab, v, isActive, manage }) {
+function SectionContent({ tab, v, isActive, manage, api, moduleName }) {
   switch (tab) {
     case 'Overview':
       return (
@@ -309,9 +312,9 @@ function SectionContent({ tab, v, isActive, manage }) {
       )
     case 'Contact':
       // The Contact tab is now purely the master contact list (vendor-scoped CRUD).
-      return <TpvVendorContacts vendorId={v.id} vendor={v} manage={manage} />
+      return <TpvVendorContacts vendorId={v.id} vendor={v} manage={manage} api={api} />
     case 'Documents':
-      return <TpvVendorDocuments vendorId={v.id} vendor={v} manage={manage} />
+      return <TpvVendorDocuments vendorId={v.id} vendor={v} manage={manage} api={api} moduleName={moduleName} />
     default:
       return <ComingSoonSection name={tab} />
   }

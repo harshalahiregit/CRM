@@ -6,6 +6,10 @@
 
 import api from '@/lib/api'
 
+// Multipart helper — clear Content-Type so the browser sets the boundary.
+const upload = (url, formData) =>
+  api.post(url, formData, { headers: { 'Content-Type': undefined } }).then(r => r.data)
+
 export const purchaseApi = {
   // ── Unified procure-to-pay dashboard ────────────────────────────────
   dashboard: {
@@ -141,10 +145,98 @@ export const purchaseApi = {
     reverseCredit:      (id, appId) => api.delete(`/purchase/debit-notes/${id}/applications/${appId}`).then(r => r.data),
   },
 
-  // ── Vendor master (shared with TPV) — used for the vendor picker ─────
+  // ── Vendor master (shared with TPV) — Purchase engagement ───────────
+  // Uses the shared /vendors endpoints, always scoped to engagement 'purchase'.
+  // Mirrors tpvApi.vendors so the shared TPV vendor components work unchanged.
   vendors: {
-    list: (params = {}) => api.get('/vendors', { params: { engagement: 'purchase', ...params } }).then(r => r.data),
+    list:      (params = {}) => api.get('/vendors', { params: { engagement: 'purchase', ...params } }).then(r => r.data),
+    stats:     ()            => api.get('/vendors/stats', { params: { engagement: 'purchase' } }).then(r => r.data),
+    get:       (id)          => api.get(`/vendors/${id}`).then(r => r.data),
+    create:    (data)        => api.post('/vendors', { ...data, engagements: ['purchase'] }).then(r => r.data),
+    update:    (id, data)    => api.put(`/vendors/${id}`, data).then(r => r.data),
+    setStatus: (id, status)  => api.patch(`/vendors/${id}/status`, { status }).then(r => r.data),
+    sendEmail: (id, data)    => api.post(`/vendors/${id}/email`, data).then(r => r.data),
+    delete:    (id)          => api.delete(`/vendors/${id}`).then(r => r.data),
   },
+
+  // ── Purchase onboarding — the 6-step wizard (/purchase/onboarding) ───
+  // Mirrors tpvApi.onboarding (incl. decisions + kickoff) so the shared wizard works.
+  onboarding: {
+    list:     (params = {}) => api.get('/purchase/onboarding', { params }).then(r => r.data),
+    stats:    ()            => api.get('/purchase/onboarding/stats').then(r => r.data),
+    get:      (id)          => api.get(`/purchase/onboarding/${id}`).then(r => r.data),
+    progress: (id)          => api.get(`/purchase/onboarding/${id}/progress`).then(r => r.data),
+    create:   (data)        => api.post('/purchase/onboarding', data).then(r => r.data),
+    delete:   (id)          => api.delete(`/purchase/onboarding/${id}`).then(r => r.data),
+    saveProfile: (id, profile) => api.post(`/purchase/onboarding/${id}/profile`, { profile }).then(r => r.data),
+    setStep:     (id, step)    => api.patch(`/purchase/onboarding/${id}/step`, { step }).then(r => r.data),
+    submit:      (id, data = {}) => api.post(`/purchase/onboarding/${id}/submit`, data).then(r => r.data),
+    // Step 1 — kickoff PDF / acknowledgement (reuses the shared kickoff engine).
+    kickoffPdf:      (id)        => api.get(`/purchase/onboarding/${id}/kickoff`, { responseType: 'blob' }).then(r => r.data),
+    acceptKickoff:   (id)        => api.post(`/purchase/onboarding/${id}/kickoff/accept`).then(r => r.data),
+    logKickoffEvent: (id, event) => api.post(`/purchase/onboarding/${id}/kickoff/log`, { event }).then(r => r.data),
+    // Admin decisions (mirror tpvApi.onboarding).
+    approve:         (id, remarks = '') => api.post(`/purchase/onboarding/${id}/approve`, { remarks }).then(r => r.data),
+    reject:          (id, remarks = '') => api.post(`/purchase/onboarding/${id}/reject`, { remarks }).then(r => r.data),
+    hold:            (id, remarks = '') => api.post(`/purchase/onboarding/${id}/hold`, { reason: remarks, remarks }).then(r => r.data),
+    release:         (id)               => api.post(`/purchase/onboarding/${id}/release`).then(r => r.data),
+    requestResubmit: (id, remarks = '') => api.post(`/purchase/onboarding/${id}/resubmit`, { remarks }).then(r => r.data),
+  },
+
+  // ── Vendor contacts — mirrors tpvApi.contacts (/purchase/vendors/{v}/contacts) ─
+  contacts: {
+    list:      (vendorId, params = {}) => api.get(`/purchase/vendors/${vendorId}/contacts`, { params }).then(r => r.data),
+    get:       (vendorId, id)          => api.get(`/purchase/vendors/${vendorId}/contacts/${id}`).then(r => r.data),
+    create:    (vendorId, data)        => api.post(`/purchase/vendors/${vendorId}/contacts`, data).then(r => r.data),
+    update:    (vendorId, id, data)    => api.put(`/purchase/vendors/${vendorId}/contacts/${id}`, data).then(r => r.data),
+    setStatus: (vendorId, id, status)  => api.patch(`/purchase/vendors/${vendorId}/contacts/${id}/status`, { status }).then(r => r.data),
+  },
+
+  // ── Approval actions (admin) — the onboarding decision endpoints ────
+  approvals: {
+    approve:         (id, remarks = '') => api.post(`/purchase/onboarding/${id}/approve`, { remarks }).then(r => r.data),
+    reject:          (id, remarks = '') => api.post(`/purchase/onboarding/${id}/reject`, { remarks }).then(r => r.data),
+    hold:            (id, reason = '')  => api.post(`/purchase/onboarding/${id}/hold`, { reason }).then(r => r.data),
+    release:         (id)               => api.post(`/purchase/onboarding/${id}/release`).then(r => r.data),
+    requestResubmit: (id, remarks = '') => api.post(`/purchase/onboarding/${id}/resubmit`, { remarks }).then(r => r.data),
+  },
+
+  // ── Statutory documents (reuse the shared engine, /purchase surface) ─
+  documents: {
+    checklist: (vendorId) => api.get(`/purchase/vendors/${vendorId}/documents`).then(r => r.data),
+    upload:    (vendorId, type, file) => {
+      const fd = new FormData()
+      fd.append('type', type)
+      fd.append('file', file)
+      return upload(`/purchase/vendors/${vendorId}/documents`, fd)
+    },
+    resubmit: (documentId, file) => {
+      const fd = new FormData()
+      fd.append('file', file)
+      return upload(`/purchase/documents/${documentId}/resubmit`, fd)
+    },
+    review:   (documentId, decision, remarks = '') =>
+      api.post(`/purchase/documents/${documentId}/review`, { decision, remarks }).then(r => r.data),
+    delete:   (documentId) => api.delete(`/purchase/documents/${documentId}`).then(r => r.data),
+    versions:        (documentId)            => api.get(`/purchase/documents/${documentId}/versions`).then(r => r.data),
+    downloadVersion: (documentId, versionId) => api.get(`/purchase/documents/${documentId}/versions/${versionId}/download`, { responseType: 'blob' }).then(r => r.data),
+    restoreVersion:  (documentId, versionId) => api.post(`/purchase/documents/${documentId}/versions/${versionId}/restore`).then(r => r.data),
+    // Fetch as a blob so the private, token-authed file opens in a new tab.
+    open: async (documentId) => {
+      const res = await api.get(`/purchase/documents/${documentId}/download`, { responseType: 'blob' })
+      return URL.createObjectURL(res.data)
+    },
+  },
+
+  // A vendor-bound document api matching the shape PurchaseVendorDocuments wants,
+  // so the same component works for admin (bound to a vendorId) and the portal.
+  documentsFor: (vendorId) => ({
+    checklist: ()          => purchaseApi.documents.checklist(vendorId),
+    upload:    (type, file) => purchaseApi.documents.upload(vendorId, type, file),
+    resubmit:  (docId, file) => purchaseApi.documents.resubmit(docId, file),
+    review:    (docId, decision, remarks) => purchaseApi.documents.review(docId, decision, remarks),
+    open:      (docId)      => purchaseApi.documents.open(docId),
+  }),
 }
 
 export default purchaseApi

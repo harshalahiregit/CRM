@@ -3,9 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import {
   Plus, RefreshCw, Search, Eye, Pencil, Trash2, Users, CheckCircle, XCircle, Building2, X, Mail, CalendarDays,
 } from 'lucide-react'
-import { tpvApi } from '@/services/tpvApi'
 import { useAuth } from '@/context/AuthContext'
-import { canManageTpv, fmtDate } from '../constants'
+import { fmtDate } from '../constants'
+import { useVendorModule } from '../useVendorModule'
 import {
   KIT3D_STYLE, inputStyle, labelStyle, Overlay, ModalFooter, Field, TextInput, SelectInput,
 } from '@/components/ui/kit3d'
@@ -19,7 +19,8 @@ const EMPTY_FORM = {
 export default function TpvVendors() {
   const navigate = useNavigate()
   const { user } = useAuth()
-  const manage = canManageTpv(user)
+  const cfg = useVendorModule()
+  const manage = cfg.canManage(user)
 
   const [rows, setRows] = useState([])
   const [loading, setLoad] = useState(true)
@@ -29,10 +30,10 @@ export default function TpvVendors() {
 
   const load = useCallback(() => {
     setLoad(true)
-    tpvApi.vendors.list()
+    cfg.api.vendors.list()
       .then(r => { setRows(r?.data ?? r ?? []); setLoad(false) })
       .catch(() => setLoad(false))
-  }, [])
+  }, [cfg.api])
   useEffect(() => { load() }, [load])
 
   const counts = useMemo(() => {
@@ -50,12 +51,12 @@ export default function TpvVendors() {
 
   const toggleStatus = async (v) => {
     const next = v.status === 'Active' ? 'Inactive' : 'Active'
-    try { await tpvApi.vendors.setStatus(v.id, next); load() }
+    try { await cfg.api.vendors.setStatus(v.id, next); load() }
     catch (e) { alert(e?.response?.data?.message || 'Failed to update status') }
   }
   const remove = async (v) => {
     if (!confirm(`Delete vendor "${v.company_name}"? This cannot be undone.`)) return
-    try { await tpvApi.vendors.delete(v.id); load() }
+    try { await cfg.api.vendors.delete(v.id); load() }
     catch (e) { alert(e?.response?.data?.message || 'Failed to delete') }
   }
   const openEdit = (v) => setEditing({
@@ -71,14 +72,14 @@ export default function TpvVendors() {
 
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <p className="label-caps" style={{ color: '#a78bfa', margin: 0, fontSize: 11, fontWeight: 800, letterSpacing: '0.08em' }}>THIRD-PARTY VENDORS</p>
+          <p className="label-caps" style={{ color: '#a78bfa', margin: 0, fontSize: 11, fontWeight: 800, letterSpacing: '0.08em' }}>{cfg.moduleName.toUpperCase()}S</p>
           <h1 style={{ color: 'var(--text-h)', fontSize: 24, fontWeight: 900, margin: '2px 0 0', letterSpacing: '-0.02em' }}>Vendors</h1>
-          <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: '4px 0 0' }}>Manage third-party vendor accounts, portal logins and status.</p>
+          <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: '4px 0 0' }}>Manage {cfg.moduleName.toLowerCase()} accounts, portal logins and status.</p>
         </div>
         <div style={{ display: 'flex', gap: 9 }}>
           <button onClick={load} style={ghostBtn}><RefreshCw size={14} /> Refresh</button>
-          <button onClick={() => navigate('/app/tpv/kickoff')} style={ghostBtn}><CalendarDays size={14} /> Kickoff Meeting</button>
-          {manage && <button onClick={() => setEditing({ ...EMPTY_FORM })} style={solidBtn}><Plus size={15} /> New Third Party Vendor</button>}
+          <button onClick={() => navigate(cfg.kickoffListPath)} style={ghostBtn}><CalendarDays size={14} /> Kickoff Meeting</button>
+          {manage && <button onClick={() => setEditing({ ...EMPTY_FORM })} style={solidBtn}><Plus size={15} /> New {cfg.moduleName}</button>}
         </div>
       </div>
 
@@ -101,8 +102,8 @@ export default function TpvVendors() {
         <div className="pr-glass" style={{ padding: '48px 24px', textAlign: 'center' }}>
           <div style={{ width: 60, height: 60, borderRadius: '50%', margin: '0 auto 16px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(124,58,237,0.12)' }}><Building2 size={28} style={{ color: '#a78bfa' }} /></div>
           <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text-h)' }}>No vendors yet</h3>
-          <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '6px 0 18px' }}>Add a third-party vendor to give them a portal login.</p>
-          {manage && <button onClick={() => setEditing({ ...EMPTY_FORM })} style={{ ...solidBtn, margin: '0 auto' }}><Plus size={15} /> New Third Party Vendor</button>}
+          <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '6px 0 18px' }}>Add a {cfg.moduleName.toLowerCase()} to give them a portal login.</p>
+          {manage && <button onClick={() => setEditing({ ...EMPTY_FORM })} style={{ ...solidBtn, margin: '0 auto' }}><Plus size={15} /> New {cfg.moduleName}</button>}
         </div>
       ) : (
         <div className="pr-glass" style={{ padding: 0, borderRadius: 16, overflow: 'hidden' }}>
@@ -125,7 +126,7 @@ export default function TpvVendors() {
                     <td style={{ padding: '10px 14px', fontSize: 12.5, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{v.created_at ? fmtDate(v.created_at) : '—'}</td>
                     <td style={{ padding: '8px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                       <div style={{ display: 'inline-flex', gap: 6 }}>
-                        <IconBtn title="View" onClick={() => navigate(`/app/tpv/view/${v.id}`)}><Eye size={13} /></IconBtn>
+                        <IconBtn title="View" onClick={() => navigate(cfg.viewPath(v.id))}><Eye size={13} /></IconBtn>
                         {manage && <IconBtn title="Edit" onClick={() => openEdit(v)}><Pencil size={13} /></IconBtn>}
                         {manage && <IconBtn title="Send Email" onClick={() => setEmailing(v)}><Mail size={13} /></IconBtn>}
                         {manage && <IconBtn title="Delete" color="#ef4444" onClick={() => remove(v)}><Trash2 size={13} /></IconBtn>}
@@ -139,14 +140,14 @@ export default function TpvVendors() {
         </div>
       )}
 
-      {editing && <VendorModal form={editing} onClose={() => setEditing(null)} onDone={() => { setEditing(null); load() }} />}
-      {emailing && <EmailModal vendor={emailing} onClose={() => setEmailing(null)} />}
+      {editing && <VendorModal form={editing} cfg={cfg} onClose={() => setEditing(null)} onDone={() => { setEditing(null); load() }} />}
+      {emailing && <EmailModal vendor={emailing} api={cfg.api} onClose={() => setEmailing(null)} />}
     </div>
   )
 }
 
 // ── Send-email compose modal ────────────────────────────────────────────────────
-function EmailModal({ vendor, onClose }) {
+function EmailModal({ vendor, api, onClose }) {
   const [subject, setSubject] = useState('')
   const [body, setBody] = useState('')
   const [sending, setSending] = useState(false)
@@ -156,7 +157,7 @@ function EmailModal({ vendor, onClose }) {
   const send = async () => {
     if (!subject.trim() || !body.trim()) { setErr('Subject and message are required.'); return }
     setSending(true); setErr(null)
-    try { await tpvApi.vendors.sendEmail(vendor.id, { subject, body }); setSent(true); setTimeout(onClose, 900) }
+    try { await api.vendors.sendEmail(vendor.id, { subject, body }); setSent(true); setTimeout(onClose, 900) }
     catch (e) { setErr(e?.response?.data?.message || 'Could not send email.'); setSending(false) }
   }
 
@@ -205,7 +206,7 @@ const IconBtn = ({ children, title, color = 'var(--text-muted)', onClick }) => (
 )
 
 // ── Add / edit modal — Vendor Info · Login Credentials · Address ────────────────
-function VendorModal({ form, onClose, onDone }) {
+function VendorModal({ form, cfg, onClose, onDone }) {
   const isNew = !form.id
   const [f, setF] = useState(form)
   const [saving, setSaving] = useState(false)
@@ -224,12 +225,12 @@ function VendorModal({ form, onClose, onDone }) {
       name: f.name || null, company_name: f.company_name, email: f.email || null, phone: f.phone || null,
       gst_number: f.gst_number || null, status: f.status,
       address: f.address || null, city: f.city || null, state: f.state || null, pincode: f.pincode || null,
-      vendor_type: 'temporary', engagements: ['tpv'],
+      vendor_type: cfg.defaultVendorType, engagements: [cfg.engagement],
     }
     if (f.password) { payload.password = f.password; payload.password_confirmation = f.password_confirmation }
     try {
-      if (isNew) await tpvApi.vendors.create(payload)
-      else await tpvApi.vendors.update(f.id, payload)
+      if (isNew) await cfg.api.vendors.create(payload)
+      else await cfg.api.vendors.update(f.id, payload)
       onDone()
     } catch (e) {
       setErr(e?.response?.data?.message || Object.values(e?.response?.data?.errors || {})[0]?.[0] || 'Could not save vendor.')
@@ -240,11 +241,11 @@ function VendorModal({ form, onClose, onDone }) {
   return (
     <Overlay onClose={onClose} width={640}>
       <div style={{ padding: '20px 22px 6px' }}>
-        <h2 style={{ margin: 0, fontSize: 17, fontWeight: 900, color: 'var(--text-h)' }}>{isNew ? 'Add Third-party Vendor' : `Edit · ${form.company_name}`}</h2>
+        <h2 style={{ margin: 0, fontSize: 17, fontWeight: 900, color: 'var(--text-h)' }}>{isNew ? `Add ${cfg.moduleName}` : `Edit · ${form.company_name}`}</h2>
         <p style={{ margin: '3px 0 0', fontSize: 12.5, color: 'var(--text-muted)' }}>Vendor profile, portal login and address in one form.</p>
       </div>
       <div style={{ padding: '8px 22px', maxHeight: '64vh', overflowY: 'auto' }}>
-        <Section title="Thirdparty Vendor Information" />
+        <Section title={`${cfg.moduleName} Information`} />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <Field label="Vendor Name"><TextInput value={f.name} onChange={set('name')} placeholder="Contact / login name" /></Field>
           <Field label="Company *"><TextInput value={f.company_name} onChange={set('company_name')} placeholder="Company name" /></Field>

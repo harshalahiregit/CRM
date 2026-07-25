@@ -61,6 +61,7 @@ export default function LoginPage() {
     if (result.success) {
       if (result.role === 'company') navigate('/company-portal/dashboard', { replace: true })
       else if (result.role === 'third_party_vendor') navigate('/vendor-portal/dashboard', { replace: true })
+      else if (result.role === 'vendor') navigate('/purchase-portal/dashboard', { replace: true })
       else navigate(from, { replace: true })
     } else {
       setApiError(result.message)
