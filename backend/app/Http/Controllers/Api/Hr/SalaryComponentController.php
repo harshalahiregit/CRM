@@ -68,6 +68,11 @@ class SalaryComponentController extends Controller
             'amount_value'     => 'nullable|numeric|min:0',
             'percentage_value' => 'nullable|numeric|min:0|max:100',
             'based_on'         => 'nullable|string|max:120',
+            'formula'          => 'nullable|string|max:500',
+            'taxable'          => 'boolean',
+            'pf_applicable'    => 'boolean',
+            'esic_applicable'  => 'boolean',
+            'sequence'         => 'nullable|integer|min:0',
             'description'      => 'nullable|string',
             'is_active'        => 'boolean',
         ]);

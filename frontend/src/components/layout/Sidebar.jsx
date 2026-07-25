@@ -6,7 +6,7 @@ import {
   UserCheck, CalendarDays, FileText, Rocket, Building2,
   ClipboardList, ChevronDown, Shield, UserCog,
   IndianRupee, FileSignature, CreditCard, FileX,
-  ShoppingBag, UserPlus, ShoppingCart, ScanLine, Boxes, Undo2, Wallet, Award
+  ShoppingBag, UserPlus, ShoppingCart, ScanLine, Boxes, Undo2, Wallet, Award, GraduationCap, ShieldCheck, Bell
 } from 'lucide-react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
@@ -46,6 +46,11 @@ const HR_RECORDS_ITEMS = [
   { label: 'Organization Setup', path: '/app/hr/organization-setup', icon: Boxes },
   { label: 'Payroll', path: '/app/hr/payroll', icon: Wallet },
   { label: 'Performance', path: '/app/hr/performance', icon: Award },
+  { label: 'Leave Management', path: '/app/hr/leave-management', icon: CalendarDays },
+  { label: 'Learning & Development', path: '/app/hr/learning-development', icon: GraduationCap },
+  { label: 'Probation Management', path: '/app/hr/probation-management', icon: ShieldCheck },
+  { label: 'Exit Management', path: '/app/hr/exit-management', icon: LogOut },
+  { label: 'Notifications', path: '/app/hr/settings/notifications', icon: Bell },
 ]
 
 // Flat list of every HR leaf — used only for the collapsed icon rail.

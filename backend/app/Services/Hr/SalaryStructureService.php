@@ -20,8 +20,10 @@ use Illuminate\Support\Facades\Log;
  */
 class SalaryStructureService
 {
-    public function __construct(private SalaryStructureRepository $repo)
-    {
+    public function __construct(
+        private SalaryStructureRepository $repo,
+        private SalaryFormulaEngine $engine,
+    ) {
     }
 
     public function list(int $tenantId, array $filters): array
@@ -31,9 +33,14 @@ class SalaryStructureService
             ->all();
     }
 
-    public function show(int $id, int $tenantId): array
+    public function show(int $id, int $tenantId, ?User $actor = null): array
     {
-        return $this->present($this->find($id, $tenantId));
+        $structure = $this->find($id, $tenantId);
+        if ($actor) {
+            $structure->recordAudit('Salary Structure Viewed', $actor);
+        }
+
+        return $this->present($structure);
     }
 
     public function stats(int $tenantId): array
@@ -66,6 +73,7 @@ class SalaryStructureService
             return $structure;
         });
 
+        $this->persistTotals($structure);
         $structure->recordAudit('Salary Structure Created', $actor, null, ['name' => $structure->name, 'lines' => count($lines)]);
         $this->log('Salary structure created', $tenantId, $structure->id);
 
@@ -97,6 +105,7 @@ class SalaryStructureService
             }
         });
 
+        $this->persistTotals($structure);
         $structure->recordAudit('Salary Structure Updated', $actor, null, ['name' => $structure->name]);
         $this->log('Salary structure updated', $tenantId, $structure->id);
 
@@ -120,89 +129,79 @@ class SalaryStructureService
     */
 
     /**
-     * Resolve every line to a concrete amount. Fixed lines resolve directly;
-     * percentage lines resolve against the (already-resolved) line they are based
-     * on. Iterative so a percentage of a percentage still converges; anything
-     * unresolvable (missing base) settles at 0. Returns [lineId => amount].
+     * Build the engine input from a structure's lines. A line may override the
+     * component's calculation (calculation_type / formula / amount / percentage /
+     * based_on); when it doesn't, the component master value is used — so existing
+     * structures resolve exactly as before.
      */
-    private function resolve($structure): array
+    private function engineItems(HrSalaryStructure $structure): array
     {
-        $lines = $structure->lines;
-        // A percentage line's `based_on` may reference the base line by either its
-        // component name ("Basic Salary") or its code ("BASIC") — index both.
-        $byKey = [];
-        foreach ($lines as $line) {
-            if ($line->component) {
-                $byKey[mb_strtolower($line->component->name)] = $line;
-                if ($line->component->code) {
-                    $byKey[mb_strtolower($line->component->code)] = $line;
-                }
-            }
-        }
+        return $structure->lines->map(function ($line) {
+            $c = $line->component;
 
-        $resolved = [];
-        for ($pass = 0; $pass < 12 && count($resolved) < $lines->count(); $pass++) {
-            $progress = false;
-            foreach ($lines as $line) {
-                if (array_key_exists($line->id, $resolved) || ! $line->component) {
-                    continue;
-                }
-                $comp = $line->component;
-
-                if ($comp->calculation_type === 'Fixed') {
-                    $resolved[$line->id] = (float) ($line->amount ?? $comp->amount_value ?? 0);
-                    $progress = true;
-                    continue;
-                }
-
-                // Percentage — resolve against its base line (matched by name or code).
-                $baseName = mb_strtolower($line->based_on ?: ($comp->based_on ?: 'basic'));
-                $baseLine = $byKey[$baseName] ?? null;
-                if ($baseLine && array_key_exists($baseLine->id, $resolved)) {
-                    $pct = (float) ($line->percentage ?? $comp->percentage_value ?? 0);
-                    $resolved[$line->id] = round($pct / 100 * $resolved[$baseLine->id], 2);
-                    $progress = true;
-                }
-            }
-            if (! $progress) {
-                break;
-            }
-        }
-
-        // Unresolved (e.g. base not present) → 0, so totals stay well-defined.
-        foreach ($lines as $line) {
-            $resolved[$line->id] = $resolved[$line->id] ?? 0.0;
-        }
-
-        return $resolved;
+            return [
+                'key'              => $line->id,
+                'code'             => $c->code ?? ('CMP'.$line->id),
+                'name'             => $c->name ?? '(removed)',
+                'type'             => $c->type ?? 'Earning',
+                'calculation_type' => $line->calculation_type ?: ($c->calculation_type ?? 'Fixed'),
+                'amount'           => $line->amount ?? ($c->amount_value ?? null),
+                'percentage'       => $line->percentage ?? ($c->percentage_value ?? null),
+                'based_on'         => $line->based_on ?: ($c->based_on ?? null),
+                'formula'          => $line->formula ?: ($c->formula ?? null),
+                'sequence'         => $line->sort_order,
+            ];
+        })->all();
     }
 
-    /** Shape a structure into the API response with per-line computed amounts + totals. */
+    /** Compute + persist the denormalised monthly totals cache on the structure. */
+    private function persistTotals(HrSalaryStructure $structure): void
+    {
+        $structure->load('lines.component');
+        $bd = $this->engine->calculate($this->engineItems($structure))['breakdown'];
+        $structure->update([
+            'gross_salary'          => $bd['gross_salary']['monthly'],
+            'employer_contribution' => $bd['employer_contribution']['monthly'],
+            'monthly_ctc'           => $bd['ctc']['monthly'],
+            'annual_ctc'            => $bd['ctc']['yearly'],
+            'total_deduction'       => $bd['total_deduction']['monthly'],
+            'net_salary'            => $bd['net_salary']['monthly'],
+        ]);
+    }
+
+    /**
+     * Shape a structure into the API response. Amounts come from the central
+     * SalaryFormulaEngine (Fixed / Percentage / Formula / Manual, circular-safe). The
+     * legacy `totals` block is preserved verbatim (engine-derived, so identical for
+     * existing Fixed/Percentage structures) and a rich enterprise `breakdown` block
+     * (Earnings→Gross→Employer→CTC→Deductions→Net, monthly + yearly) is added.
+     */
     private function present(HrSalaryStructure $structure): array
     {
-        $resolved = $this->resolve($structure);
-        $earnings = $benefits = $deductions = 0.0;
+        $result = $this->engine->calculate($this->engineItems($structure));
+        $byKey = $result['resolved'];       // line id => monthly amount
+        $bd = $result['breakdown'];
 
-        $lines = $structure->lines->map(function ($line) use ($resolved, &$earnings, &$benefits, &$deductions) {
+        $lines = $structure->lines->map(function ($line) use ($byKey) {
             $comp = $line->component;
-            $amount = $resolved[$line->id] ?? 0.0;
-            $type = $comp->type ?? null;
-
-            if ($type === 'Earning')   { $earnings   += $amount; }
-            if ($type === 'Benefit')   { $benefits   += $amount; }
-            if ($type === 'Deduction') { $deductions += $amount; }
+            $amount = round($byKey[$line->id] ?? 0.0, 2);
 
             return [
                 'id'               => $line->id,
                 'component_id'     => $line->component_id,
                 'component_name'   => $comp->name ?? '(removed)',
                 'code'             => $comp->code ?? null,
-                'type'             => $type,
-                'calculation_type' => $comp->calculation_type ?? null,
+                'type'             => $comp->type ?? null,
+                'calculation_type' => $line->calculation_type ?: ($comp->calculation_type ?? null),
                 'amount'           => $line->amount !== null ? (float) $line->amount : null,
                 'percentage'       => $line->percentage !== null ? (float) $line->percentage : null,
                 'based_on'         => $line->based_on ?: ($comp->based_on ?? null),
-                'computed_amount'  => round($amount, 2),
+                'formula'          => $line->formula ?: ($comp->formula ?? null),
+                'taxable'          => (bool) ($comp->taxable ?? false),
+                'pf_applicable'    => (bool) ($comp->pf_applicable ?? false),
+                'esic_applicable'  => (bool) ($comp->esic_applicable ?? false),
+                'computed_amount'  => $amount,
+                'computed_yearly'  => round($amount * 12, 2),
                 'sort_order'       => $line->sort_order,
             ];
         })->all();
@@ -219,13 +218,100 @@ class SalaryStructureService
             'is_active'        => $structure->is_active,
             'lines'            => $lines,
             'totals'           => [
-                'gross_earnings'   => round($earnings, 2),
-                'employer_benefits'=> round($benefits, 2),
-                'deductions'       => round($deductions, 2),
-                'ctc'              => round($earnings + $benefits, 2),   // cost to company
-                'net_pay'          => round($earnings - $deductions, 2), // employee take-home
+                'gross_earnings'   => $bd['gross_salary']['monthly'],
+                'employer_benefits'=> $bd['employer_contribution']['monthly'],
+                'deductions'       => $bd['total_deduction']['monthly'],
+                'ctc'              => $bd['ctc']['monthly'],
+                'net_pay'          => $bd['net_salary']['monthly'],
             ],
+            'breakdown'        => $bd,
         ];
+    }
+
+    /**
+     * Live preview for the Salary Builder — resolve a not-yet-saved set of lines and
+     * return the enterprise breakdown, without persisting anything.
+     */
+    public function preview(array $lines, int $tenantId): array
+    {
+        $clean = $this->validateLines($lines, $tenantId);
+        $comps = HrSalaryComponent::where('tenant_id', $tenantId)
+            ->whereIn('id', collect($clean)->pluck('component_id'))->get()->keyBy('id');
+
+        $items = [];
+        foreach ($clean as $i => $l) {
+            $c = $comps[$l['component_id']] ?? null;
+            if (! $c) {
+                continue;
+            }
+            $items[] = [
+                'key'              => $i,
+                'code'             => $c->code,
+                'name'             => $c->name,
+                'type'             => $c->type,
+                'calculation_type' => $l['calculation_type'] ?: $c->calculation_type,
+                'amount'           => $l['amount'] ?? $c->amount_value,
+                'percentage'       => $l['percentage'] ?? $c->percentage_value,
+                'based_on'         => $l['based_on'] ?: $c->based_on,
+                'formula'          => $l['formula'] ?: $c->formula,
+                'sequence'         => $i,
+            ];
+        }
+
+        // Full result: `resolved` (per-line by index) for inline amounts + enterprise `breakdown`.
+        return $this->engine->calculate($items);
+    }
+
+    /** Duplicate a structure (with its lines) under a fresh unique name. */
+    public function duplicate(int $id, int $tenantId, ?User $actor = null): array
+    {
+        $src = $this->find($id, $tenantId);
+        $name = $this->uniqueCopyName($tenantId, $src->name);
+
+        $structure = DB::transaction(function () use ($src, $tenantId, $name, $actor) {
+            $new = HrSalaryStructure::create([
+                'tenant_id'      => $tenantId,
+                'name'           => $name,
+                'code'           => null,
+                'grade_id'       => $src->grade_id,
+                'designation_id' => $src->designation_id,
+                'description'    => $src->description,
+                'is_active'      => true,
+                'created_by'     => $actor?->id,
+                'updated_by'     => $actor?->id,
+            ]);
+            foreach ($src->lines as $l) {
+                $new->lines()->create([
+                    'component_id'     => $l->component_id,
+                    'calculation_type' => $l->calculation_type,
+                    'amount'           => $l->amount,
+                    'percentage'       => $l->percentage,
+                    'based_on'         => $l->based_on,
+                    'formula'          => $l->formula,
+                    'sort_order'       => $l->sort_order,
+                ]);
+            }
+
+            return $new;
+        });
+
+        $this->persistTotals($structure);
+        $structure->recordAudit('Salary Structure Duplicated', $actor, null, ['from' => $src->name, 'name' => $name]);
+        $this->log('Salary structure duplicated', $tenantId, $structure->id);
+
+        return $this->present($this->find($structure->id, $tenantId));
+    }
+
+    private function uniqueCopyName(int $tenantId, string $base): string
+    {
+        $candidate = "{$base} (Copy)";
+        $n = 2;
+        while (HrSalaryStructure::where('tenant_id', $tenantId)->whereRaw('LOWER(name) = ?', [mb_strtolower($candidate)])->exists()) {
+            $candidate = "{$base} (Copy {$n})";
+            $n++;
+        }
+
+        return $candidate;
     }
 
     /*
@@ -284,12 +370,15 @@ class SalaryStructureService
             if (! $cid || ! in_array($cid, $valid)) {
                 throw new BusinessException('One or more selected components are invalid for this tenant.');
             }
+            $calc = $line['calculation_type'] ?? null;
             $clean[] = [
-                'component_id' => $cid,
-                'amount'       => ($line['amount'] ?? '') === '' ? null : $line['amount'],
-                'percentage'   => ($line['percentage'] ?? '') === '' ? null : $line['percentage'],
-                'based_on'     => $line['based_on'] ?? null,
-                'sort_order'   => $i,
+                'component_id'     => $cid,
+                'calculation_type' => in_array($calc, HrSalaryComponent::CALC_TYPES, true) ? $calc : null,
+                'amount'           => ($line['amount'] ?? '') === '' ? null : $line['amount'],
+                'percentage'       => ($line['percentage'] ?? '') === '' ? null : $line['percentage'],
+                'based_on'         => $line['based_on'] ?? null,
+                'formula'          => ($line['formula'] ?? '') === '' ? null : $line['formula'],
+                'sort_order'       => $i,
             ];
         }
 

@@ -15,7 +15,7 @@ class HrSalaryStructureLine extends Model
     protected $table = 'hr_salary_structure_lines';
 
     protected $fillable = [
-        'structure_id', 'component_id', 'amount', 'percentage', 'based_on', 'sort_order',
+        'structure_id', 'component_id', 'calculation_type', 'amount', 'percentage', 'based_on', 'formula', 'sort_order',
     ];
 
     protected $casts = [

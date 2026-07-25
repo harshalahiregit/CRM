@@ -25,3 +25,15 @@ Schedule::command('tpv:approval-escalations')
     ->hourly()
     ->withoutOverlapping()
     ->runInBackground();
+
+// Central Notification Engine — generate HR reminders + escalations (daily).
+Schedule::command('notifications:remind')
+    ->dailyAt('07:00')
+    ->withoutOverlapping()
+    ->runInBackground();
+
+// Central Notification Engine — deliver queued emails/notifications (every 5 min).
+Schedule::command('notifications:process-queue')
+    ->everyFiveMinutes()
+    ->withoutOverlapping()
+    ->runInBackground();

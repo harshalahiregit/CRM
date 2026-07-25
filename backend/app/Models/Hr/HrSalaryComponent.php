@@ -18,17 +18,24 @@ class HrSalaryComponent extends Model
 
     protected $table = 'hr_salary_components';
 
-    public const TYPES = ['Earning', 'Deduction', 'Benefit'];
-    public const CALC_TYPES = ['Fixed', 'Percentage'];
+    // 'Benefit' is retained for backward compatibility and is treated as an employer
+    // contribution by the engine (Gross + Employer/Benefit = CTC).
+    public const TYPES = ['Earning', 'Employer', 'Deduction', 'Benefit'];
+    public const CALC_TYPES = ['Fixed', 'Percentage', 'Formula', 'Manual'];
 
     protected $fillable = [
         'tenant_id', 'name', 'code', 'type', 'calculation_type',
-        'amount_value', 'percentage_value', 'based_on', 'description', 'is_active',
+        'amount_value', 'percentage_value', 'based_on', 'formula', 'description', 'is_active',
+        'taxable', 'pf_applicable', 'esic_applicable', 'sequence', 'created_by', 'updated_by',
     ];
 
     protected $casts = [
         'amount_value'     => 'decimal:2',
         'percentage_value' => 'decimal:2',
         'is_active'        => 'boolean',
+        'taxable'          => 'boolean',
+        'pf_applicable'    => 'boolean',
+        'esic_applicable'  => 'boolean',
+        'sequence'         => 'integer',
     ];
 }

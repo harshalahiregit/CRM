@@ -196,17 +196,22 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::patch('/payroll/salary-components/{id}/status',[SalaryComponentController::class, 'updateStatus']);
 
     // Payroll → Salary Structures (Phase 2). Composes components into a computed CTC.
-    Route::get('/payroll/salary-structures',              [SalaryStructureController::class, 'index']);
-    Route::get('/payroll/salary-structures/{id}',         [SalaryStructureController::class, 'show']);
-    Route::post('/payroll/salary-structures',             [SalaryStructureController::class, 'store']);
-    Route::put('/payroll/salary-structures/{id}',         [SalaryStructureController::class, 'update']);
-    Route::patch('/payroll/salary-structures/{id}/status',[SalaryStructureController::class, 'updateStatus']);
+    // Enterprise Salary Engine adds live preview + duplicate (additive).
+    Route::get('/payroll/salary-structures',                 [SalaryStructureController::class, 'index']);
+    Route::post('/payroll/salary-structures/preview',        [SalaryStructureController::class, 'preview']);
+    Route::get('/payroll/salary-structures/{id}',            [SalaryStructureController::class, 'show'])->whereNumber('id');
+    Route::post('/payroll/salary-structures',               [SalaryStructureController::class, 'store']);
+    Route::post('/payroll/salary-structures/{id}/duplicate',[SalaryStructureController::class, 'duplicate'])->whereNumber('id');
+    Route::put('/payroll/salary-structures/{id}',           [SalaryStructureController::class, 'update'])->whereNumber('id');
+    Route::patch('/payroll/salary-structures/{id}/status',  [SalaryStructureController::class, 'updateStatus'])->whereNumber('id');
 
     // Payroll → Employee Salary Assignment (Phase 3). Frozen snapshot; single active per employee.
+    // Enterprise Salary Engine adds the read-only revision ledger (additive).
     Route::get('/payroll/employees/{employeeId}/salary',                 [EmployeeSalaryController::class, 'show']);
+    Route::get('/payroll/employees/{employeeId}/salary/revisions',       [EmployeeSalaryController::class, 'revisions']);
     Route::post('/payroll/employees/{employeeId}/salary',                [EmployeeSalaryController::class, 'store']);
-    Route::put('/payroll/employees/{employeeId}/salary/{id}',            [EmployeeSalaryController::class, 'update']);
-    Route::patch('/payroll/employees/{employeeId}/salary/{id}/status',   [EmployeeSalaryController::class, 'updateStatus']);
+    Route::put('/payroll/employees/{employeeId}/salary/{id}',            [EmployeeSalaryController::class, 'update'])->whereNumber('id');
+    Route::patch('/payroll/employees/{employeeId}/salary/{id}/status',   [EmployeeSalaryController::class, 'updateStatus'])->whereNumber('id');
 
     // Payroll → Payroll Processing (Phase 4). Monthly runs + frozen snapshots.
     Route::get('/payroll/runs',                 [PayrollRunController::class, 'index']);

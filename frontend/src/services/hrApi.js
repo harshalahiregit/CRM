@@ -262,10 +262,14 @@ export const hrApi = {
       create:     (data)        => api.post('/hr/payroll/salary-structures', data).then(r => r.data),
       update:     (id, data)    => api.put(`/hr/payroll/salary-structures/${id}`, data).then(r => r.data),
       setStatus:  (id, active)  => api.patch(`/hr/payroll/salary-structures/${id}/status`, { is_active: active }).then(r => r.data),
+      // Enterprise Salary Engine — live preview (no persist) + duplicate.
+      preview:    (lines)       => api.post('/hr/payroll/salary-structures/preview', { lines }).then(r => r.data),
+      duplicate:  (id)          => api.post(`/hr/payroll/salary-structures/${id}/duplicate`).then(r => r.data),
     },
     // Employee Salary Assignment (Phase 3) — nested under an employee.
     employeeSalary: {
       get:       (employeeId)          => api.get(`/hr/payroll/employees/${employeeId}/salary`).then(r => r.data),
+      revisions: (employeeId)          => api.get(`/hr/payroll/employees/${employeeId}/salary/revisions`).then(r => r.data),
       assign:    (employeeId, data)    => api.post(`/hr/payroll/employees/${employeeId}/salary`, data).then(r => r.data),
       update:    (employeeId, id, data)=> api.put(`/hr/payroll/employees/${employeeId}/salary/${id}`, data).then(r => r.data),
       setStatus: (employeeId, id, active) => api.patch(`/hr/payroll/employees/${employeeId}/salary/${id}/status`, { is_active: active }).then(r => r.data),
@@ -345,6 +349,333 @@ export const hrApi = {
       list:      (params = {}) => api.get('/hr/performance/increments', { params }).then(r => r.data),
       generate:  (employeeId)  => api.post('/hr/performance/increments/generate', { employee_id: employeeId }).then(r => r.data),
       setStatus: (id, status)  => api.patch(`/hr/performance/increments/${id}/status`, { status }).then(r => r.data),
+    },
+  },
+
+  // ── Leave Management — Phase 1 (Types + Policies) ───────────────────────
+  leave: {
+    types: {
+      list:      (params = {}) => api.get('/hr/leave/types', { params }).then(r => r.data),
+      create:    (data)        => api.post('/hr/leave/types', data).then(r => r.data),
+      update:    (id, data)    => api.put(`/hr/leave/types/${id}`, data).then(r => r.data),
+      setStatus: (id, active)  => api.patch(`/hr/leave/types/${id}/status`, { is_active: active }).then(r => r.data),
+    },
+    policies: {
+      list:      (params = {}) => api.get('/hr/leave/policies', { params }).then(r => r.data),
+      get:       (id)          => api.get(`/hr/leave/policies/${id}`).then(r => r.data),
+      create:    (data)        => api.post('/hr/leave/policies', data).then(r => r.data),
+      update:    (id, data)    => api.put(`/hr/leave/policies/${id}`, data).then(r => r.data),
+      setStatus: (id, active)  => api.patch(`/hr/leave/policies/${id}/status`, { is_active: active }).then(r => r.data),
+    },
+    // Employee Leave Balance & Allocation (Phase 2).
+    balances: {
+      list:       (params = {})  => api.get('/hr/leave/balances', { params }).then(r => r.data),
+      forEmployee:(employeeId)   => api.get(`/hr/leave/balances/${employeeId}`).then(r => r.data),
+      assign:     (data)         => api.post('/hr/leave/balances/assign', data).then(r => r.data),
+      allocate:   (data)         => api.post('/hr/leave/balances/allocate', data).then(r => r.data),
+      adjust:     (data)         => api.post('/hr/leave/balances/adjust', data).then(r => r.data),
+      history:    (balanceId)    => api.get(`/hr/leave/balances/history/${balanceId}`).then(r => r.data),
+    },
+    // Leave Applications (Phase 3).
+    applications: {
+      list:   (params = {}) => api.get('/hr/leave/applications', { params }).then(r => r.data),
+      get:    (id)          => api.get(`/hr/leave/applications/${id}`).then(r => r.data),
+      apply:  (formData)    => api.post('/hr/leave/applications', formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data),
+      submit: (id)          => api.patch(`/hr/leave/applications/${id}/submit`).then(r => r.data),
+      cancel: (id)          => api.patch(`/hr/leave/applications/${id}/cancel`).then(r => r.data),
+      attachmentUrl: (id)   => `${BASE}/hr/leave/applications/${id}/attachment`,
+    },
+    // Leave Approval workflow (Phase 4).
+    approvals: {
+      list:    (params = {})  => api.get('/hr/leave/approvals', { params }).then(r => r.data),
+      get:     (id)           => api.get(`/hr/leave/approvals/${id}`).then(r => r.data),
+      approve: (id, remarks)  => api.patch(`/hr/leave/approvals/${id}/approve`, { remarks }).then(r => r.data),
+      reject:  (id, remarks)  => api.patch(`/hr/leave/approvals/${id}/reject`, { remarks }).then(r => r.data),
+      history: (employeeId)   => api.get(`/hr/leave/approvals/history/${employeeId}`).then(r => r.data),
+    },
+    // Holiday Calendar (Phase 5).
+    holidays: {
+      list:      (params = {}) => api.get('/hr/leave/holidays', { params }).then(r => r.data),
+      calendar:  (params = {}) => api.get('/hr/leave/holidays/calendar', { params }).then(r => r.data),
+      get:       (id)          => api.get(`/hr/leave/holidays/${id}`).then(r => r.data),
+      create:    (data)        => api.post('/hr/leave/holidays', data).then(r => r.data),
+      update:    (id, data)    => api.put(`/hr/leave/holidays/${id}`, data).then(r => r.data),
+      setStatus: (id, active)  => api.patch(`/hr/leave/holidays/${id}/status`, { is_active: active }).then(r => r.data),
+    },
+    // Leave Reports & Analytics (final phase) — read-only.
+    reports: {
+      filters:     ()            => api.get('/hr/leave/reports/filters').then(r => r.data),
+      dashboard:   ()            => api.get('/hr/leave/reports/dashboard').then(r => r.data),
+      employees:   (params = {}) => api.get('/hr/leave/reports/employees', { params }).then(r => r.data),
+      departments: (params = {}) => api.get('/hr/leave/reports/departments', { params }).then(r => r.data),
+      types:       (params = {}) => api.get('/hr/leave/reports/types', { params }).then(r => r.data),
+      balances:    (params = {}) => api.get('/hr/leave/reports/balances', { params }).then(r => r.data),
+      holidays:    (params = {}) => api.get('/hr/leave/reports/holidays', { params }).then(r => r.data),
+      trends:      (params = {}) => api.get('/hr/leave/reports/trends', { params }).then(r => r.data),
+      export: (report, format, params = {}) => api.get('/hr/leave/reports/export', { params: { ...params, report, format }, responseType: 'blob' }).then(r => {
+        const url = URL.createObjectURL(r.data)
+        const a = document.createElement('a'); a.href = url; a.download = `leave-${report}-report.${format === 'pdf' ? 'pdf' : 'csv'}`; a.click()
+        setTimeout(() => URL.revokeObjectURL(url), 1500)
+      }),
+    },
+  },
+
+  // ── Exit / Separation Management — Phase 1 (Types + Policies) ───────────
+  exit: {
+    types: {
+      list:      (params = {}) => api.get('/hr/exit/types', { params }).then(r => r.data),
+      create:    (data)        => api.post('/hr/exit/types', data).then(r => r.data),
+      update:    (id, data)    => api.put(`/hr/exit/types/${id}`, data).then(r => r.data),
+      setStatus: (id, active)  => api.patch(`/hr/exit/types/${id}/status`, { is_active: active }).then(r => r.data),
+    },
+    policies: {
+      list:      (params = {}) => api.get('/hr/exit/policies', { params }).then(r => r.data),
+      get:       (id)          => api.get(`/hr/exit/policies/${id}`).then(r => r.data),
+      create:    (data)        => api.post('/hr/exit/policies', data).then(r => r.data),
+      update:    (id, data)    => api.put(`/hr/exit/policies/${id}`, data).then(r => r.data),
+      setStatus: (id, active)  => api.patch(`/hr/exit/policies/${id}/status`, { is_active: active }).then(r => r.data),
+    },
+    // Exit Requests (Phase 2). create/update send multipart (optional attachment);
+    // update uses POST + _method spoof so PHP parses the upload on an edit.
+    requests: {
+      list:        (params = {}) => api.get('/hr/exit/requests', { params }).then(r => r.data),
+      get:         (id)          => api.get(`/hr/exit/requests/${id}`).then(r => r.data),
+      forEmployee: (employeeId)  => api.get(`/hr/exit/requests/employee/${employeeId}`).then(r => r.data),
+      create:      (formData)    => api.post('/hr/exit/requests', formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data),
+      update:      (id, formData) => { formData.append('_method', 'PUT'); return api.post(`/hr/exit/requests/${id}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data) },
+      submit:      (id)          => api.patch(`/hr/exit/requests/${id}/submit`).then(r => r.data),
+      withdraw:    (id, data)    => api.patch(`/hr/exit/requests/${id}/withdraw`, data).then(r => r.data),
+      attachmentUrl: (id)        => `${BASE}/hr/exit/requests/${id}/attachment`,
+    },
+    // Exit Approval workflow (Phase 3). Submitted → Under Review → Approved / Rejected.
+    approvals: {
+      list:        (params = {}) => api.get('/hr/exit/approvals', { params }).then(r => r.data),
+      get:         (id)          => api.get(`/hr/exit/approvals/${id}`).then(r => r.data),
+      history:     (params = {}) => api.get('/hr/exit/approvals/history', { params }).then(r => r.data),
+      startReview: (id, remarks) => api.patch(`/hr/exit/approvals/${id}/review`, { review_remarks: remarks }).then(r => r.data),
+      updateRemarks: (id, remarks) => api.patch(`/hr/exit/approvals/${id}/remarks`, { review_remarks: remarks }).then(r => r.data),
+      approve:     (id, remarks) => api.patch(`/hr/exit/approvals/${id}/approve`, { remarks }).then(r => r.data),
+      reject:      (id, remarks) => api.patch(`/hr/exit/approvals/${id}/reject`, { remarks }).then(r => r.data),
+    },
+    // Departmental Clearance (Phase 4). Each department clears independently;
+    // overall completes when every mandatory department is cleared.
+    clearances: {
+      list:        (params = {}) => api.get('/hr/exit/clearances', { params }).then(r => r.data),
+      get:         (id)          => api.get(`/hr/exit/clearances/${id}`).then(r => r.data),
+      history:     (params = {}) => api.get('/hr/exit/clearances/history', { params }).then(r => r.data),
+      forEmployee: (employeeId)  => api.get(`/hr/exit/clearances/employee/${employeeId}`).then(r => r.data),
+      start:       (id, itemId, data = {}) => api.patch(`/hr/exit/clearances/${id}/items/${itemId}/start`, data).then(r => r.data),
+      clear:       (id, itemId, remarks)   => api.patch(`/hr/exit/clearances/${id}/items/${itemId}/clear`, { remarks }).then(r => r.data),
+      reject:      (id, itemId, remarks)   => api.patch(`/hr/exit/clearances/${id}/items/${itemId}/reject`, { remarks }).then(r => r.data),
+      remarks:     (id, itemId, data = {}) => api.patch(`/hr/exit/clearances/${id}/items/${itemId}/remarks`, data).then(r => r.data),
+    },
+    // Full & Final Settlement (Phase 5). Frozen snapshot from payroll/salary/leave (read-only).
+    settlements: {
+      list:        (params = {}) => api.get('/hr/exit/settlements', { params }).then(r => r.data),
+      get:         (id)          => api.get(`/hr/exit/settlements/${id}`).then(r => r.data),
+      history:     (params = {}) => api.get('/hr/exit/settlements/history', { params }).then(r => r.data),
+      forEmployee: (employeeId)  => api.get(`/hr/exit/settlements/employee/${employeeId}`).then(r => r.data),
+      generate:    (id, inputs = {}) => api.post(`/hr/exit/settlements/${id}/generate`, inputs).then(r => r.data),
+      review:      (id)          => api.patch(`/hr/exit/settlements/${id}/review`).then(r => r.data),
+      approve:     (id)          => api.patch(`/hr/exit/settlements/${id}/approve`).then(r => r.data),
+      settle:      (id)          => api.patch(`/hr/exit/settlements/${id}/settle`).then(r => r.data),
+    },
+    // Exit Reports & Analytics (Phase 6) — read-only. Export reuses the shared CSV/PDF pattern.
+    reports: {
+      filters:     ()            => api.get('/hr/exit/reports/filters').then(r => r.data),
+      dashboard:   ()            => api.get('/hr/exit/reports/dashboard').then(r => r.data),
+      employees:   (params = {}) => api.get('/hr/exit/reports/employees', { params }).then(r => r.data),
+      departments: (params = {}) => api.get('/hr/exit/reports/departments', { params }).then(r => r.data),
+      exitTypes:   (params = {}) => api.get('/hr/exit/reports/exit-types', { params }).then(r => r.data),
+      settlements: (params = {}) => api.get('/hr/exit/reports/settlements', { params }).then(r => r.data),
+      clearances:  (params = {}) => api.get('/hr/exit/reports/clearances', { params }).then(r => r.data),
+      trends:      (params = {}) => api.get('/hr/exit/reports/trends', { params }).then(r => r.data),
+      export: (report, format, params = {}) => api.get('/hr/exit/reports/export', { params: { ...params, report, format }, responseType: 'blob' }).then(r => {
+        const url = URL.createObjectURL(r.data)
+        const a = document.createElement('a'); a.href = url; a.download = `exit-${report}-report.${format === 'pdf' ? 'pdf' : 'csv'}`; a.click()
+        setTimeout(() => URL.revokeObjectURL(url), 1500)
+      }),
+    },
+  },
+
+  // ── Learning & Development — Phase 1 (Training Masters) ─────────────────
+  learning: {
+    categories: {
+      list:      (params = {}) => api.get('/hr/learning/categories', { params }).then(r => r.data),
+      create:    (data)        => api.post('/hr/learning/categories', data).then(r => r.data),
+      update:    (id, data)    => api.put(`/hr/learning/categories/${id}`, data).then(r => r.data),
+      setStatus: (id, active)  => api.patch(`/hr/learning/categories/${id}/status`, { is_active: active }).then(r => r.data),
+    },
+    types: {
+      list:      (params = {}) => api.get('/hr/learning/types', { params }).then(r => r.data),
+      create:    (data)        => api.post('/hr/learning/types', data).then(r => r.data),
+      update:    (id, data)    => api.put(`/hr/learning/types/${id}`, data).then(r => r.data),
+      setStatus: (id, active)  => api.patch(`/hr/learning/types/${id}/status`, { is_active: active }).then(r => r.data),
+    },
+    providers: {
+      list:      (params = {}) => api.get('/hr/learning/providers', { params }).then(r => r.data),
+      create:    (data)        => api.post('/hr/learning/providers', data).then(r => r.data),
+      update:    (id, data)    => api.put(`/hr/learning/providers/${id}`, data).then(r => r.data),
+      setStatus: (id, active)  => api.patch(`/hr/learning/providers/${id}/status`, { is_active: active }).then(r => r.data),
+    },
+    programs: {
+      list:      (params = {}) => api.get('/hr/learning/programs', { params }).then(r => r.data),
+      get:       (id)          => api.get(`/hr/learning/programs/${id}`).then(r => r.data),
+      create:    (data)        => api.post('/hr/learning/programs', data).then(r => r.data),
+      update:    (id, data)    => api.put(`/hr/learning/programs/${id}`, data).then(r => r.data),
+      setStatus: (id, active)  => api.patch(`/hr/learning/programs/${id}/status`, { is_active: active }).then(r => r.data),
+    },
+    sessions: {
+      list:      (params = {}) => api.get('/hr/learning/sessions', { params }).then(r => r.data),
+      calendar:  (params = {}) => api.get('/hr/learning/sessions/calendar', { params }).then(r => r.data),
+      get:       (id)          => api.get(`/hr/learning/sessions/${id}`).then(r => r.data),
+      create:    (data)        => api.post('/hr/learning/sessions', data).then(r => r.data),
+      update:    (id, data)    => api.put(`/hr/learning/sessions/${id}`, data).then(r => r.data),
+      setStatus: (id, status)  => api.patch(`/hr/learning/sessions/${id}/status`, { status }).then(r => r.data),
+    },
+    assignments: {
+      list:        (params = {}) => api.get('/hr/learning/assignments', { params }).then(r => r.data),
+      get:         (id)          => api.get(`/hr/learning/assignments/${id}`).then(r => r.data),
+      forEmployee: (employeeId)  => api.get(`/hr/learning/assignments/employee/${employeeId}`).then(r => r.data),
+      history:     (params = {}) => api.get('/hr/learning/assignments/history', { params }).then(r => r.data),
+      assign:      (data)        => api.post('/hr/learning/assignments', data).then(r => r.data),
+      start:       (id, data = {}) => api.patch(`/hr/learning/assignments/${id}/start`, data).then(r => r.data),
+      complete:    (id, remarks) => api.patch(`/hr/learning/assignments/${id}/complete`, { remarks }).then(r => r.data),
+      cancel:      (id, remarks) => api.patch(`/hr/learning/assignments/${id}/cancel`, { remarks }).then(r => r.data),
+    },
+    // Training Attendance (Phase 5) — separate from office attendance / SangoeTrack.
+    attendance: {
+      list:    (params = {}) => api.get('/hr/learning/attendance', { params }).then(r => r.data),
+      roster:  (sessionId)   => api.get(`/hr/learning/attendance/roster/${sessionId}`).then(r => r.data),
+      get:     (id)          => api.get(`/hr/learning/attendance/${id}`).then(r => r.data),
+      mark:    (data)        => api.post('/hr/learning/attendance', data).then(r => r.data),
+      update:  (id, data)    => api.put(`/hr/learning/attendance/${id}`, data).then(r => r.data),
+    },
+    assessments: {
+      list:   (params = {}) => api.get('/hr/learning/assessments', { params }).then(r => r.data),
+      get:    (id)          => api.get(`/hr/learning/assessments/${id}`).then(r => r.data),
+      create: (data)        => api.post('/hr/learning/assessments', data).then(r => r.data),
+      update: (id, data)    => api.put(`/hr/learning/assessments/${id}`, data).then(r => r.data),
+    },
+    quizzes: {
+      list:   (params = {}) => api.get('/hr/learning/quizzes', { params }).then(r => r.data),
+      get:    (id)          => api.get(`/hr/learning/quizzes/${id}`).then(r => r.data),
+      create: (data)        => api.post('/hr/learning/quizzes', data).then(r => r.data),
+      update: (id, data)    => api.put(`/hr/learning/quizzes/${id}`, data).then(r => r.data),
+    },
+    // Certificates + Completion (Phase 6).
+    certificates: {
+      list:     (params = {}) => api.get('/hr/learning/certificates', { params }).then(r => r.data),
+      get:      (id)          => api.get(`/hr/learning/certificates/${id}`).then(r => r.data),
+      generate: (data)        => api.post('/hr/learning/certificates', data).then(r => r.data),
+      expire:   (id)          => api.patch(`/hr/learning/certificates/${id}/expire`).then(r => r.data),
+      upload:   (id, formData) => api.post(`/hr/learning/certificates/${id}/upload`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data),
+      downloadUrl: (id)       => `${BASE}/hr/learning/certificates/${id}/download`,
+      download: (id) => api.get(`/hr/learning/certificates/${id}/download`, { responseType: 'blob' }).then(r => {
+        const url = URL.createObjectURL(r.data)
+        const a = document.createElement('a'); a.href = url; a.download = `certificate-${id}.pdf`; a.click()
+        setTimeout(() => URL.revokeObjectURL(url), 1500)
+      }),
+    },
+    completion: {
+      list:        (params = {}) => api.get('/hr/learning/completion', { params }).then(r => r.data),
+      forEmployee: (employeeId)  => api.get(`/hr/learning/completion/employee/${employeeId}`).then(r => r.data),
+    },
+    // Training Reports & Analytics (Phase 7) — read-only; export reuses shared CSV/PDF.
+    reports: {
+      filters:      ()            => api.get('/hr/learning/reports/filters').then(r => r.data),
+      dashboard:    ()            => api.get('/hr/learning/reports/dashboard').then(r => r.data),
+      employees:    (params = {}) => api.get('/hr/learning/reports/employees', { params }).then(r => r.data),
+      departments:  (params = {}) => api.get('/hr/learning/reports/departments', { params }).then(r => r.data),
+      programs:     (params = {}) => api.get('/hr/learning/reports/programs', { params }).then(r => r.data),
+      trainers:     (params = {}) => api.get('/hr/learning/reports/trainers', { params }).then(r => r.data),
+      attendance:   (params = {}) => api.get('/hr/learning/reports/attendance', { params }).then(r => r.data),
+      assessments:  (params = {}) => api.get('/hr/learning/reports/assessments', { params }).then(r => r.data),
+      certificates: (params = {}) => api.get('/hr/learning/reports/certificates', { params }).then(r => r.data),
+      completion:   (params = {}) => api.get('/hr/learning/reports/completion', { params }).then(r => r.data),
+      trends:       (params = {}) => api.get('/hr/learning/reports/trends', { params }).then(r => r.data),
+      export: (report, format, params = {}) => api.get('/hr/learning/reports/export', { params: { ...params, report, format }, responseType: 'blob' }).then(r => {
+        const url = URL.createObjectURL(r.data)
+        const a = document.createElement('a'); a.href = url; a.download = `training-${report}-report.${format === 'pdf' ? 'pdf' : 'csv'}`; a.click()
+        setTimeout(() => URL.revokeObjectURL(url), 1500)
+      }),
+    },
+  },
+
+  // ── Probation Management — Phase 1 (Masters & Policies) ─────────────────
+  probation: {
+    types: {
+      list:      (params = {}) => api.get('/hr/probation/types', { params }).then(r => r.data),
+      create:    (data)        => api.post('/hr/probation/types', data).then(r => r.data),
+      update:    (id, data)    => api.put(`/hr/probation/types/${id}`, data).then(r => r.data),
+      setStatus: (id, active)  => api.patch(`/hr/probation/types/${id}/status`, { is_active: active }).then(r => r.data),
+    },
+    policies: {
+      list:      (params = {}) => api.get('/hr/probation/policies', { params }).then(r => r.data),
+      get:       (id)          => api.get(`/hr/probation/policies/${id}`).then(r => r.data),
+      create:    (data)        => api.post('/hr/probation/policies', data).then(r => r.data),
+      update:    (id, data)    => api.put(`/hr/probation/policies/${id}`, data).then(r => r.data),
+      setStatus: (id, active)  => api.patch(`/hr/probation/policies/${id}/status`, { is_active: active }).then(r => r.data),
+    },
+    // Employee Probation (Phase 2).
+    employees: {
+      list:        (params = {}) => api.get('/hr/probation/employees', { params }).then(r => r.data),
+      get:         (id)          => api.get(`/hr/probation/employees/${id}`).then(r => r.data),
+      forEmployee: (employeeId)  => api.get(`/hr/probation/employees/employee/${employeeId}`).then(r => r.data),
+      assign:      (data)        => api.post('/hr/probation/employees', data).then(r => r.data),
+      update:      (id, data)    => api.put(`/hr/probation/employees/${id}`, data).then(r => r.data),
+      activate:    (id)          => api.patch(`/hr/probation/employees/${id}/activate`).then(r => r.data),
+      cancel:      (id, remarks) => api.patch(`/hr/probation/employees/${id}/cancel`, { remarks }).then(r => r.data),
+    },
+    // Probation Reviews (Phase 3).
+    reviews: {
+      list:        (params = {}) => api.get('/hr/probation/reviews', { params }).then(r => r.data),
+      get:         (id)          => api.get(`/hr/probation/reviews/${id}`).then(r => r.data),
+      forEmployee: (employeeId)  => api.get(`/hr/probation/reviews/employee/${employeeId}`).then(r => r.data),
+      create:      (data)        => api.post('/hr/probation/reviews', data).then(r => r.data),
+      update:      (id, data)    => api.put(`/hr/probation/reviews/${id}`, data).then(r => r.data),
+      submit:      (id)          => api.patch(`/hr/probation/reviews/${id}/submit`).then(r => r.data),
+      complete:    (id)          => api.patch(`/hr/probation/reviews/${id}/complete`).then(r => r.data),
+    },
+    // Probation Extensions (Phase 4).
+    extensions: {
+      list:        (params = {}) => api.get('/hr/probation/extensions', { params }).then(r => r.data),
+      get:         (id)          => api.get(`/hr/probation/extensions/${id}`).then(r => r.data),
+      history:     (params = {}) => api.get('/hr/probation/extensions/history', { params }).then(r => r.data),
+      forEmployee: (employeeId)  => api.get(`/hr/probation/extensions/employee/${employeeId}`).then(r => r.data),
+      request:     (data)        => api.post('/hr/probation/extensions', data).then(r => r.data),
+      update:      (id, data)    => api.put(`/hr/probation/extensions/${id}`, data).then(r => r.data),
+      approve:     (id, hrComments) => api.patch(`/hr/probation/extensions/${id}/approve`, { hr_comments: hrComments }).then(r => r.data),
+      reject:      (id, hrComments) => api.patch(`/hr/probation/extensions/${id}/reject`, { hr_comments: hrComments }).then(r => r.data),
+    },
+    // Probation Confirmations (Phase 5).
+    confirmations: {
+      list:        (params = {}) => api.get('/hr/probation/confirmations', { params }).then(r => r.data),
+      get:         (id)          => api.get(`/hr/probation/confirmations/${id}`).then(r => r.data),
+      history:     (params = {}) => api.get('/hr/probation/confirmations/history', { params }).then(r => r.data),
+      forEmployee: (employeeId)  => api.get(`/hr/probation/confirmations/employee/${employeeId}`).then(r => r.data),
+      create:      (data)        => api.post('/hr/probation/confirmations', data).then(r => r.data),
+      update:      (id, data)    => api.put(`/hr/probation/confirmations/${id}`, data).then(r => r.data),
+      approve:     (id, hrComments) => api.patch(`/hr/probation/confirmations/${id}/approve`, { hr_comments: hrComments }).then(r => r.data),
+      reject:      (id, hrComments) => api.patch(`/hr/probation/confirmations/${id}/reject`, { hr_comments: hrComments }).then(r => r.data),
+      confirm:     (id, data = {}) => api.patch(`/hr/probation/confirmations/${id}/confirm`, data).then(r => r.data),
+    },
+    // Probation Reports & Analytics (Phase 6) — read-only; export reuses shared CSV/PDF.
+    reports: {
+      filters:       ()            => api.get('/hr/probation/reports/filters').then(r => r.data),
+      dashboard:     ()            => api.get('/hr/probation/reports/dashboard').then(r => r.data),
+      employees:     (params = {}) => api.get('/hr/probation/reports/employees', { params }).then(r => r.data),
+      departments:   (params = {}) => api.get('/hr/probation/reports/departments', { params }).then(r => r.data),
+      policies:      (params = {}) => api.get('/hr/probation/reports/policies', { params }).then(r => r.data),
+      reviews:       (params = {}) => api.get('/hr/probation/reports/reviews', { params }).then(r => r.data),
+      extensions:    (params = {}) => api.get('/hr/probation/reports/extensions', { params }).then(r => r.data),
+      confirmations: (params = {}) => api.get('/hr/probation/reports/confirmations', { params }).then(r => r.data),
+      trends:        (params = {}) => api.get('/hr/probation/reports/trends', { params }).then(r => r.data),
+      export: (report, format, params = {}) => api.get('/hr/probation/reports/export', { params: { ...params, report, format }, responseType: 'blob' }).then(r => {
+        const url = URL.createObjectURL(r.data)
+        const a = document.createElement('a'); a.href = url; a.download = `probation-${report}-report.${format === 'pdf' ? 'pdf' : 'csv'}`; a.click()
+        setTimeout(() => URL.revokeObjectURL(url), 1500)
+      }),
     },
   },
 
@@ -435,6 +766,44 @@ export const hrApi = {
     addAsset:          (id, data)     => api.post(`/employee-onboarding/${id}/assets`, data).then(r => r.data),
     updateAsset:       (id, rid, data) => api.put(`/employee-onboarding/${id}/assets/${rid}`, data).then(r => r.data),
     deleteAsset:       (id, rid)      => api.delete(`/employee-onboarding/${id}/assets/${rid}`).then(r => r.data),
+  },
+
+  // ── Central Notification & Reminder Engine (platform foundation) ────────
+  notifications: {
+    // Recipient feed — navbar bell, Notification Center, history
+    list:        (params = {}) => api.get('/hr/notifications', { params }).then(r => r.data),
+    bell:        (limit = 10)  => api.get('/hr/notifications/bell', { params: { limit } }).then(r => r.data),
+    unreadCount: ()            => api.get('/hr/notifications/unread-count').then(r => r.data),
+    stats:       ()            => api.get('/hr/notifications/stats').then(r => r.data),
+    catalog:     ()            => api.get('/hr/notifications/catalog').then(r => r.data),
+    get:         (id)          => api.get(`/hr/notifications/${id}`).then(r => r.data),
+    markRead:    (id)          => api.patch(`/hr/notifications/${id}/read`).then(r => r.data),
+    markAllRead: ()            => api.post('/hr/notifications/mark-all-read').then(r => r.data),
+    forEmployee: (employeeId)  => api.get(`/hr/notifications/employee/${employeeId}`).then(r => r.data),
+    resend:      (id)          => api.post(`/hr/notifications/${id}/resend`).then(r => r.data),
+    // Templates
+    templates: {
+      list:      (params = {}) => api.get('/hr/notifications/templates', { params }).then(r => r.data),
+      create:    (data)        => api.post('/hr/notifications/templates', data).then(r => r.data),
+      update:    (id, data)    => api.put(`/hr/notifications/templates/${id}`, data).then(r => r.data),
+      setStatus: (id, active)  => api.patch(`/hr/notifications/templates/${id}/status`, { is_active: active }).then(r => r.data),
+      seed:      ()            => api.post('/hr/notifications/templates/seed').then(r => r.data),
+    },
+    // Reminder / escalation rules
+    rules: {
+      list:      (params = {}) => api.get('/hr/notifications/rules', { params }).then(r => r.data),
+      create:    (data)        => api.post('/hr/notifications/rules', data).then(r => r.data),
+      update:    (id, data)    => api.put(`/hr/notifications/rules/${id}`, data).then(r => r.data),
+      setStatus: (id, enabled) => api.patch(`/hr/notifications/rules/${id}/status`, { enabled }).then(r => r.data),
+    },
+    // Delivery queue monitor
+    queue: {
+      list:    (params = {}) => api.get('/hr/notifications/queue', { params }).then(r => r.data),
+      failed:  (params = {}) => api.get('/hr/notifications/queue/failed', { params }).then(r => r.data),
+      stats:   ()            => api.get('/hr/notifications/queue/stats').then(r => r.data),
+      process: ()            => api.post('/hr/notifications/queue/process').then(r => r.data),
+      retry:   (id)          => api.post(`/hr/notifications/queue/${id}/retry`).then(r => r.data),
+    },
   },
 }
 

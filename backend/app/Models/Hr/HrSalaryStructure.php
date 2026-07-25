@@ -18,10 +18,18 @@ class HrSalaryStructure extends Model
 
     protected $fillable = [
         'tenant_id', 'name', 'code', 'grade_id', 'designation_id', 'description', 'is_active',
+        'monthly_ctc', 'annual_ctc', 'gross_salary', 'employer_contribution', 'total_deduction', 'net_salary',
+        'created_by', 'updated_by',
     ];
 
     protected $casts = [
-        'is_active' => 'boolean',
+        'is_active'             => 'boolean',
+        'monthly_ctc'           => 'decimal:2',
+        'annual_ctc'            => 'decimal:2',
+        'gross_salary'          => 'decimal:2',
+        'employer_contribution' => 'decimal:2',
+        'total_deduction'       => 'decimal:2',
+        'net_salary'            => 'decimal:2',
     ];
 
     public function lines()

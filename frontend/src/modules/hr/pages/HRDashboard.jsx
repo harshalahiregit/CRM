@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { hrApi } from '@/services/hrApi'
 import { statusColor, statusLabel, canApproveL1, canApproveL2 } from '../constants'
+import NotificationWidget from '@/modules/notifications/NotificationWidget'
 import {
   Users, Briefcase, Calendar, FileText, TrendingUp, ClipboardList, Layers, Send, Rocket, PlayCircle, Lock,
   CheckCircle, XCircle, Clock, Bell, Mail, MessageCircle, ArrowRight, Timer, AlertCircle
@@ -323,18 +324,7 @@ export default function HRDashboard() {
               )}
             </div>
           </div>
-          <div className="card-3d" style={{ padding:'20px' }}>
-            <h2 className="font-bold text-sm mb-3" style={{ color:'var(--text-h)' }}>Notifications</h2>
-            <div className="space-y-2">
-              {[{icon:Mail,label:'Email Sent',count:24,color:'#3b82f6'},{icon:MessageCircle,label:'WhatsApp',count:18,color:'#25D366'},{icon:Bell,label:'In-App',count:7,color:'#a78bfa'}].map(n=>(
-                <div key={n.label} className="flex items-center gap-2.5 p-2 rounded-xl" style={{ background:'var(--bg-input)' }}>
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background:`${n.color}20` }}><n.icon size={13} style={{ color:n.color }}/></div>
-                  <span className="text-xs font-medium flex-1" style={{ color:'var(--text-muted)' }}>{n.label}</span>
-                  <span className="text-xs font-black" style={{ color:n.color }}>{n.count}</span>
-                </div>
-              ))}
-            </div>
-          </div>
+          <NotificationWidget />
         </div>
       </div>
     </div>

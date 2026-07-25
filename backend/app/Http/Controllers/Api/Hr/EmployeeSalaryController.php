@@ -22,6 +22,12 @@ class EmployeeSalaryController extends Controller
         return response()->json($this->service->forEmployee($employeeId, $this->tenant($request)));
     }
 
+    /** Read-only salary revision ledger for one employee. */
+    public function revisions(Request $request, int $employeeId)
+    {
+        return response()->json(['data' => $this->service->revisions($employeeId, $this->tenant($request))]);
+    }
+
     public function store(Request $request, int $employeeId)
     {
         $this->assertCanManage($request);
@@ -29,6 +35,7 @@ class EmployeeSalaryController extends Controller
             'salary_structure_id' => 'required|integer',
             'effective_from'      => 'required|date',
             'effective_to'        => 'nullable|date|after_or_equal:effective_from',
+            'reason'              => 'nullable|string|max:255',
         ]);
 
         return response()->json($this->service->assign($employeeId, $data, $this->tenant($request), $request->user()), 201);

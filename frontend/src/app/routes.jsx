@@ -58,8 +58,13 @@ const Attendance = lazy(() => import('@/modules/hr/pages/Attendance'))
 const OrganizationSetup = lazy(() => import('@/modules/hr/pages/OrganizationSetup'))
 const Payroll = lazy(() => import('@/modules/hr/pages/Payroll'))
 const Performance = lazy(() => import('@/modules/hr/pages/Performance'))
+const LeaveManagement = lazy(() => import('@/modules/hr/pages/LeaveManagement'))
+const ExitManagement = lazy(() => import('@/modules/hr/pages/ExitManagement'))
+const LearningDevelopment = lazy(() => import('@/modules/hr/pages/LearningDevelopment'))
+const ProbationManagement = lazy(() => import('@/modules/hr/pages/ProbationManagement'))
 const EmployeeOnboarding = lazy(() => import('@/modules/hr/pages/EmployeeOnboarding'))
 const EmployeeOnboardingDetail = lazy(() => import('@/modules/hr/pages/EmployeeOnboardingDetail'))
+const NotificationCenter = lazy(() => import('@/modules/notifications/NotificationCenter'))
 
 // Admin Module (lazy)
 const StaffManagement = lazy(() => import('@/pages/admin/StaffManagementPage'))
@@ -252,8 +257,13 @@ export default function AppRoutes() {
           <Route path="organization-setup" element={<S><OrganizationSetup /></S>} />
           <Route path="payroll" element={<S><Payroll /></S>} />
           <Route path="performance" element={<S><Performance /></S>} />
+          <Route path="leave-management" element={<S><LeaveManagement /></S>} />
+          <Route path="exit-management" element={<S><ExitManagement /></S>} />
+          <Route path="learning-development" element={<S><LearningDevelopment /></S>} />
+          <Route path="probation-management" element={<S><ProbationManagement /></S>} />
           <Route path="employee-onboarding" element={<S><EmployeeOnboarding /></S>} />
           <Route path="employee-onboarding/:id" element={<S><EmployeeOnboardingDetail /></S>} />
+          <Route path="settings/notifications" element={<S><NotificationCenter /></S>} />
         </Route>
 
         {/* SALES MODULE */}

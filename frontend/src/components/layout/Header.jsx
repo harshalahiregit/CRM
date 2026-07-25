@@ -1,8 +1,9 @@
-import { Search, Bell, Menu, X, User, LogOut, Settings, Moon, Sun, Sparkles, Command } from 'lucide-react'
+import { Search, Menu, X, User, LogOut, Settings, Moon, Sun, Sparkles, Command } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { useTheme } from '@/context/ThemeContext'
+import NotificationBell from '@/components/notifications/NotificationBell'
 import clsx from 'clsx'
 
 export default function Header({ sidebarCollapsed, mobileMenuOpen, onMobileMenuToggle, sidebarW = 260 }) {
@@ -110,25 +111,8 @@ export default function Header({ sidebarCollapsed, mobileMenuOpen, onMobileMenuT
           {isDark ? <Sun size={16} /> : <Moon size={16} />}
         </button>
 
-        {/* Notifications — 3D bell */}
-        <button
-          className="relative w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-200"
-          style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}
-          aria-label="Notifications"
-          onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(124,58,237,0.3)'; e.currentTarget.style.color = 'var(--text-h)'; e.currentTarget.style.transform = 'scale(1.05)' }}
-          onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.transform = 'scale(1)' }}
-        >
-          <Bell size={17} />
-          {/* 3D notification badge */}
-          <span
-            className="absolute top-1 right-1 w-2 h-2 rounded-full border-2"
-            style={{
-              background: '#7C3AED',
-              borderColor: isDark ? '#0b0b16' : '#f0f0f8',
-              boxShadow: '0 0 6px rgba(124,58,237,0.7)',
-            }}
-          />
-        </button>
+        {/* Notifications — Central Notification Engine bell */}
+        <NotificationBell />
 
         {/* User avatar menu */}
         <div className="relative" ref={menuRef}>

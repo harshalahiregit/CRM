@@ -4,11 +4,13 @@ import {
   ArrowLeft, Pencil, UserX, Download, Printer, X, FileText, Eye, LogOut,
   LayoutDashboard, User, Briefcase, FileCheck, Landmark, History,
   CalendarCheck, CalendarDays, Target, GraduationCap, Mail, Boxes,
-  Sparkles, Plug,
+  Sparkles, Plug, ShieldCheck, Wallet,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 import { offerPortalApi } from '@/services/offerPortalApi'
 import AuditTimeline from '@/components/ui/AuditTimeline'
+import EmployeeNotifications from '@/modules/notifications/EmployeeNotifications'
+import EmployeeSalarySection from '@/modules/hr/components/EmployeeSalarySection'
 
 const DEPT_COLORS = { Engineering:'#3b82f6', Sales:'#10b981', HR:'#7C3AED', Operations:'#f59e0b', Product:'#ec4899', Marketing:'#f97316', Finance:'#6366f1' }
 const deptColor = d => DEPT_COLORS[d]||'#7C3AED'
@@ -48,7 +50,9 @@ const TABS = [
   { key:'attendance',  label:'Attendance',            icon:CalendarCheck },
   { key:'leave',       label:'Leave',                 icon:CalendarDays },
   { key:'performance', label:'Performance',           icon:Target },
+  { key:'exit',        label:'Exit',                  icon:LogOut },
   { key:'training',    label:'Training',              icon:GraduationCap },
+  { key:'probation',   label:'Probation',             icon:ShieldCheck },
   { key:'letters',     label:'Letters',               icon:Mail },
   { key:'timeline',    label:'Timeline',              icon:History },
 ]
@@ -95,6 +99,18 @@ export default function EmployeeProfile() {
   const [salary, setSalary] = useState(null)     // Payroll Phase 3 — current + history (read-only here)
   const [payslips, setPayslips] = useState([])   // Payroll Phase 5 — payslip history (read-only)
   const [perf, setPerf] = useState(null)         // PMS Phase 7 — performance timeline (read-only)
+  const [leave, setLeave] = useState(null)       // Leave Phase 2 — balances (read-only)
+  const [leaveApps, setLeaveApps] = useState([]) // Leave Phase 3/4 — applications history (read-only)
+  const [holidays, setHolidays] = useState([])   // Leave Phase 5 — upcoming holidays (read-only)
+  const [exit, setExit] = useState({ loaded:false, req:null }) // Exit Phase 2 — current exit request (read-only)
+  const [exitClr, setExitClr] = useState({ loaded:false, data:null }) // Exit Phase 4 — clearance progress (read-only)
+  const [exitSet, setExitSet] = useState({ loaded:false, data:null }) // Exit Phase 5 — settlement summary (read-only)
+  const [training, setTraining] = useState({ loaded:false, data:[] }) // L&D Phase 4 — training assignments (read-only)
+  const [trainingRec, setTrainingRec] = useState([]) // L&D Phases 5-6 — attendance/assessment/quiz/certificate (read-only)
+  const [probation, setProbation] = useState({ loaded:false, data:[] }) // Probation Phase 2 — probation history (read-only)
+  const [probReviews, setProbReviews] = useState([]) // Probation Phase 3 — review history (read-only)
+  const [probExts, setProbExts] = useState([]) // Probation Phase 4 — extension history (read-only)
+  const [probConfs, setProbConfs] = useState([]) // Probation Phase 5 — confirmation (read-only)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [tab, setTab]       = useState('overview')
@@ -115,6 +131,30 @@ export default function EmployeeProfile() {
   useEffect(()=>{ hrApi.payroll.payslips.forEmployee(id).then(setPayslips).catch(()=>{}) },[id])
   // Performance timeline from PMS Phase 7 — read-only (goals/reviews/promotion/increment).
   useEffect(()=>{ hrApi.performance.timeline(id).then(setPerf).catch(()=>{}) },[id])
+  // Leave balances from Leave Phase 2 — read-only summary in the Leave tab.
+  useEffect(()=>{ hrApi.leave.balances.forEmployee(id).then(setLeave).catch(()=>{}) },[id])
+  // Leave applications history from Leave Phase 3/4 — read-only.
+  useEffect(()=>{ hrApi.leave.approvals.history(id).then(setLeaveApps).catch(()=>{}) },[id])
+  // Upcoming holidays applicable to this employee (Leave Phase 5) — read-only.
+  useEffect(()=>{ const today=new Date().toISOString().slice(0,10); hrApi.leave.holidays.list({ employee_id:id, status:'Active', from:today }).then(r=>setHolidays(r.data||[])).catch(()=>{}) },[id])
+  // Current (non-withdrawn) exit request from Exit Phase 2 — read-only in the Exit tab.
+  useEffect(()=>{ hrApi.exit.requests.forEmployee(id).then(req=>setExit({ loaded:true, req:req||null })).catch(()=>setExit({ loaded:true, req:null })) },[id])
+  // Departmental clearance progress from Exit Phase 4 — read-only in the Exit tab.
+  useEffect(()=>{ hrApi.exit.clearances.forEmployee(id).then(d=>setExitClr({ loaded:true, data:d||null })).catch(()=>setExitClr({ loaded:true, data:null })) },[id])
+  // Full & Final settlement summary from Exit Phase 5 — read-only in the Exit tab.
+  useEffect(()=>{ hrApi.exit.settlements.forEmployee(id).then(d=>setExitSet({ loaded:true, data:d||null })).catch(()=>setExitSet({ loaded:true, data:null })) },[id])
+  // Training assignments from L&D Phase 4 — read-only in the Training tab.
+  useEffect(()=>{ hrApi.learning.assignments.forEmployee(id).then(d=>setTraining({ loaded:true, data:Array.isArray(d)?d:[] })).catch(()=>setTraining({ loaded:true, data:[] })) },[id])
+  // Training records (attendance/assessment/quiz/certificate) from L&D Phases 5-6 — read-only.
+  useEffect(()=>{ hrApi.learning.completion.forEmployee(id).then(d=>setTrainingRec(Array.isArray(d)?d:[])).catch(()=>setTrainingRec([])) },[id])
+  // Probation history from Probation Phase 2 — read-only in the Probation tab.
+  useEffect(()=>{ hrApi.probation.employees.forEmployee(id).then(d=>setProbation({ loaded:true, data:Array.isArray(d)?d:[] })).catch(()=>setProbation({ loaded:true, data:[] })) },[id])
+  // Probation reviews from Probation Phase 3 — read-only review history in the Probation tab.
+  useEffect(()=>{ hrApi.probation.reviews.forEmployee(id).then(d=>setProbReviews(Array.isArray(d)?d:[])).catch(()=>setProbReviews([])) },[id])
+  // Probation extensions from Probation Phase 4 — read-only extension history in the Probation tab.
+  useEffect(()=>{ hrApi.probation.extensions.forEmployee(id).then(d=>setProbExts(Array.isArray(d)?d:[])).catch(()=>setProbExts([])) },[id])
+  // Probation confirmation from Probation Phase 5 — read-only in the Probation tab.
+  useEffect(()=>{ hrApi.probation.confirmations.forEmployee(id).then(d=>setProbConfs(Array.isArray(d)?d:[])).catch(()=>setProbConfs([])) },[id])
 
   const completeness = useMemo(()=> data ? computeCompleteness(data) : null, [data])
 
@@ -277,6 +317,8 @@ export default function EmployeeProfile() {
               </div>
             </div>
 
+            <EmployeeNotifications employeeId={id} />
+
             <AiInsight hint="Will highlight missing information and suggest which fields to complete for a full profile." />
           </div>
         )}
@@ -318,8 +360,15 @@ export default function EmployeeProfile() {
               <Field k="Notice Period" v={data.offer?.notice_period}/>
             </Grid>
             <p className="text-[11px] mt-3 px-3 py-2 rounded-lg" style={{ background:'var(--bg-input)', color:'var(--text-muted)' }}>
-              Grade &amp; Role link to <b>Organization Setup</b> masters. Payroll (CTC/salary structure) is intentionally out of scope here.
+              Grade &amp; Role link to <b>Organization Setup</b> masters.
             </p>
+
+            {/* Read-only Salary Structure (central Salary Engine — managed under Payroll). */}
+            <div className="mt-5">
+              <p className="text-[11px] font-bold uppercase mb-2 flex items-center gap-1.5" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}><Wallet size={12}/> Salary Structure</p>
+              <EmployeeSalarySection employeeId={id} />
+            </div>
+
             <AiInsight hint="Will suggest promotion or role changes based on tenure, grade and performance signals." />
           </div>
         )}
@@ -470,10 +519,75 @@ export default function EmployeeProfile() {
         )}
 
         {tab==='leave' && (
-          <div>
-            <IntegrationNote icon={CalendarDays} title="Leave" subtitle="Future integration"
-              hint="Leave balances, requests and approvals will appear here once the Leave module is available." chips={['Casual','Sick','Earned','LOP','Maternity','Paternity']} />
-            <AiInsight hint="Will surface leave patterns and balance risks once the Leave module is connected." />
+          <div className="space-y-4">
+            {/* Read-only leave summary (Leave Phase 2). Allocation/adjustment happens in Leave Management. */}
+            <Field k="Current Leave Policy" v={leave?.current_policy?.name} full/>
+            {!leave ? <p className="text-sm py-2" style={{ color:'var(--text-muted)' }}>Loading leave balances…</p>
+              : (leave.balances||[]).length===0 ? (
+                <p className="text-xs px-3 py-3 rounded-xl" style={{ background:'var(--bg-input)', color:'var(--text-muted)' }}>No leave balances yet — assign a policy from <b>Leave Management → Leave Balance</b>.</p>
+              ) : (
+                <>
+                  <p className="text-[11px] font-bold uppercase mb-1" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Leave Balance</p>
+                  <div className="overflow-x-auto rounded-xl" style={{ border:'1px solid var(--border)' }}>
+                    <table className="w-full text-sm" style={{ minWidth:520 }}>
+                      <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{['Leave Type','Allocated','Used','Available','History'].map(h=><th key={h} className="text-left px-3 py-2.5 label-caps whitespace-nowrap">{h}</th>)}</tr></thead>
+                      <tbody>{leave.balances.map(b=>(
+                        <tr key={b.id} style={{ borderBottom:'1px solid var(--border)' }}>
+                          <td className="px-3 py-2.5"><span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ background:b.color||'#7C3AED' }}/><span className="font-semibold" style={{ color:'var(--text-h)' }}>{b.leave_type}</span></span></td>
+                          <td className="px-3 py-2.5" style={{ color:'var(--text-muted)' }}>{b.allocated}</td>
+                          <td className="px-3 py-2.5" style={{ color:'#f87171' }}>{b.used}</td>
+                          <td className="px-3 py-2.5 font-black" style={{ color:'#10b981' }}>{b.available_balance}</td>
+                          <td className="px-3 py-2.5" style={{ color:'var(--text-muted)' }}>{b.transactions_count} txns</td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+
+            {/* Leave applications history (Phase 3/4) — read-only. */}
+            <p className="text-[11px] font-bold uppercase mt-5 mb-2" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Leave Applications</p>
+            {leaveApps.length === 0 ? (
+              <p className="text-xs px-3 py-3 rounded-xl" style={{ background:'var(--bg-input)', color:'var(--text-muted)' }}>No leave applications yet.</p>
+            ) : (
+              <div className="space-y-1.5">
+                {leaveApps.map(a => {
+                  const c = a.status==='Approved'?'#10b981':a.status==='Rejected'?'#f87171':a.status==='Submitted'?'#f59e0b':'#94a3b8'
+                  return (
+                    <div key={a.id} className="flex items-center justify-between px-3 py-2 rounded-xl flex-wrap gap-2" style={{ background:'var(--bg-input)' }}>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="w-2.5 h-2.5 rounded-full" style={{ background:a.color||'#7C3AED' }}/>
+                        <span className="text-xs font-semibold" style={{ color:'var(--text-h)' }}>{a.leave_type}</span>
+                        <span className="text-[10px]" style={{ color:'var(--text-muted)' }}>{fmtDate(a.from_date)} → {fmtDate(a.to_date)} · {a.days}d</span>
+                        {a.decision_remarks && <span className="text-[10px] italic" style={{ color:'var(--text-muted)' }}>“{a.decision_remarks}”</span>}
+                      </div>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:`${c}1f`, color:c }}>{a.status}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+            {/* Upcoming holidays (Phase 5) — read-only. */}
+            <p className="text-[11px] font-bold uppercase mt-5 mb-2" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Upcoming Holidays</p>
+            {holidays.length === 0 ? (
+              <p className="text-xs px-3 py-3 rounded-xl" style={{ background:'var(--bg-input)', color:'var(--text-muted)' }}>No upcoming holidays.</p>
+            ) : (
+              <div className="space-y-1.5">
+                {holidays.map(h => {
+                  const c = h.holiday_type==='National'?'#f87171':h.holiday_type==='Festival'?'#8b5cf6':h.holiday_type==='Company'?'#3b82f6':'#f59e0b'
+                  return (
+                    <div key={h.id} className="flex items-center justify-between px-3 py-2 rounded-xl flex-wrap gap-2" style={{ background:'var(--bg-input)' }}>
+                      <span className="text-xs font-semibold" style={{ color:'var(--text-h)' }}>{h.title}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px]" style={{ color:'var(--text-muted)' }}>{fmtDate(h.holiday_date)}</span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:`${c}1f`, color:c }}>{h.holiday_type}</span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+            <AiInsight hint="Reserved — will surface leave patterns and balance risks from this summary." />
           </div>
         )}
 
@@ -517,11 +631,312 @@ export default function EmployeeProfile() {
           </div>
         )}
 
+        {tab==='exit' && (
+          <div className="space-y-4">
+            {/* Read-only current exit request (Exit Phase 2). Raise / edit / withdraw happens in Exit Management. */}
+            {!exit.loaded ? <p className="text-sm py-4" style={{ color:'var(--text-muted)' }}>Loading exit request…</p>
+              : !exit.req ? (
+                <div className="px-3 py-4 rounded-xl text-xs" style={{ background:'var(--bg-input)', color:'var(--text-muted)' }}>
+                  No active exit request for this employee. Raise one from <b>HR Records → Exit Management → Exit Requests</b>.
+                </div>
+              ) : (() => {
+                const r = exit.req
+                const sc = r.status==='Submitted'?{c:'#3b82f6',bg:'rgba(59,130,246,0.12)'}:r.status==='Withdrawn'?{c:'#94a3b8',bg:'rgba(148,163,184,0.15)'}:{c:'var(--text-muted)',bg:'var(--bg-input)'}
+                return (
+                  <>
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <p className="text-[11px] font-bold uppercase" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Current Exit Request</p>
+                      <span className="text-[10px] font-bold px-2.5 py-1 rounded-lg" style={{ background:sc.bg, color:sc.c }}>{r.status}</span>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-4">
+                      <Field k="Exit Type" v={r.exit_type} />
+                      <Field k="Exit Policy" v={r.policy_name} />
+                      <Field k="Request Date" v={fmtDate(r.request_date)} />
+                      <Field k="Last Working Date" v={fmtDate(r.last_working_date)} />
+                      <Field k="Notice Period" v={`${r.notice_days} day(s)`} />
+                      <Field k="Notice Window" v={r.notice_start_date?`${fmtDate(r.notice_start_date)} → ${fmtDate(r.notice_end_date)}`:'—'} />
+                    </div>
+                    {r.reason && <Field k="Reason" v={r.reason} full />}
+                    {r.employee_remarks && <Field k="Employee Remarks" v={r.employee_remarks} full />}
+                    {r.hr_remarks && <Field k="HR Remarks" v={r.hr_remarks} full />}
+
+                    {/* Approval status (Exit Phase 3) — read-only. */}
+                    {(r.status==='Approved'||r.status==='Rejected'||r.decided_at||r.review_remarks) && (
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-4 pt-1">
+                        <Field k="Approval Status" v={r.status} />
+                        <Field k="Approval Date" v={fmtDate(r.decided_at)} />
+                        <Field k="Approval Remarks" v={r.decision_remarks} />
+                      </div>
+                    )}
+
+                    {/* Clearance progress (Exit Phase 4) — read-only. */}
+                    {exitClr.loaded && exitClr.data && (() => {
+                      const cl = exitClr.data
+                      const cs = cl.status==='Completed'?{c:'#10b981',bg:'rgba(16,185,129,0.14)'}:cl.status==='Rejected'?{c:'#f87171',bg:'rgba(239,68,68,0.12)'}:cl.status==='In Progress'?{c:'#f59e0b',bg:'rgba(245,158,11,0.14)'}:{c:'var(--text-muted)',bg:'var(--bg-input)'}
+                      const istyle = s => s==='Cleared'?{c:'#10b981',bg:'rgba(16,185,129,0.14)'}:s==='Rejected'?{c:'#f87171',bg:'rgba(239,68,68,0.12)'}:s==='In Progress'?{c:'#f59e0b',bg:'rgba(245,158,11,0.14)'}:{c:'var(--text-muted)',bg:'var(--bg-input)'}
+                      return (
+                        <div className="pt-2">
+                          <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+                            <p className="text-[11px] font-bold uppercase" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Clearance Progress</p>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-bold" style={{ color:'var(--text-muted)' }}>{cl.progress.cleared}/{cl.progress.total} cleared</span>
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:cs.bg, color:cs.c }}>{cl.status}</span>
+                            </div>
+                          </div>
+                          <div className="h-1.5 rounded-full mb-3" style={{ background:'var(--bg-input)' }}><div className="h-full rounded-full" style={{ width:`${cl.progress.total?Math.round(cl.progress.cleared/cl.progress.total*100):0}%`, background:'#7C3AED' }}/></div>
+                          <div className="space-y-1.5">
+                            {cl.items.map(it=>(
+                              <div key={it.id} className="flex items-center justify-between px-3 py-2 rounded-xl" style={{ background:'var(--bg-input)' }}>
+                                <span className="text-xs font-semibold" style={{ color:'var(--text-h)' }}>{it.department}{it.assigned_to && <span className="text-[10px] ml-2" style={{ color:'var(--text-muted)' }}>· {it.assigned_to}</span>}</span>
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:istyle(it.status).bg, color:istyle(it.status).c }}>{it.status}</span>
+                              </div>
+                            ))}
+                          </div>
+                          {cl.completed_at && <p className="text-[10px] mt-2" style={{ color:'var(--text-muted)' }}>Completion Date: {fmtDate(cl.completed_at)}</p>}
+                        </div>
+                      )
+                    })()}
+
+                    {/* Full & Final settlement (Exit Phase 5) — read-only. */}
+                    {exitSet.loaded && exitSet.data && (() => {
+                      const st = exitSet.data
+                      const ss = st.status==='Settled'?{c:'#10b981',bg:'rgba(16,185,129,0.14)'}:st.status==='Approved'?{c:'#a78bfa',bg:'rgba(124,58,237,0.14)'}:st.status==='Reviewed'?{c:'#f59e0b',bg:'rgba(245,158,11,0.14)'}:st.status==='Generated'?{c:'#3b82f6',bg:'rgba(59,130,246,0.12)'}:{c:'var(--text-muted)',bg:'var(--bg-input)'}
+                      const when = st.settled_at||st.approved_at||st.generated_at
+                      return (
+                        <div className="pt-2">
+                          <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+                            <p className="text-[11px] font-bold uppercase" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Full &amp; Final Settlement</p>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:ss.bg, color:ss.c }}>{st.status}</span>
+                          </div>
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-4">
+                            <Field k="Settlement Status" v={st.status} />
+                            <Field k="Settlement Amount" v={st.net_settlement!=null?money(st.net_settlement):'Not generated'} />
+                            <Field k="Settlement Date" v={when?fmtDate(when):'—'} />
+                          </div>
+                        </div>
+                      )
+                    })()}
+
+                    <p className="text-[11px] font-bold uppercase mt-3 mb-2" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Timeline</p>
+                    <div className="space-y-2.5">
+                      {(r.timeline||[]).map((t,i)=>(
+                        <div key={i} className="flex gap-3">
+                          <div className="mt-1.5 rounded-full flex-shrink-0" style={{ width:8, height:8, background:'#a78bfa' }}/>
+                          <div><p className="text-xs font-bold" style={{ color:'var(--text-h)' }}>{t.action}</p><p className="text-[10px]" style={{ color:'var(--text-muted)' }}>{t.actor_name||'System'} · {t.created_at?new Date(t.created_at).toLocaleString():''}</p></div>
+                        </div>
+                      ))}
+                      {(!r.timeline||!r.timeline.length) && <p className="text-xs" style={{ color:'var(--text-muted)' }}>No timeline yet.</p>}
+                    </div>
+                    <p className="text-[10px] mt-3" style={{ color:'var(--text-muted)' }}>Read-only. Manage this request from <b>HR Records → Exit Management</b>.</p>
+                  </>
+                )
+              })()}
+          </div>
+        )}
+
         {tab==='training' && (
-          <div>
-            <IntegrationNote icon={GraduationCap} title="Training" subtitle="Future Learning & Development integration"
-              hint="Assigned, completed and pending trainings plus certificates will appear here once L&D is available." chips={['Assigned','Completed','Pending','Certificates']} />
+          <div className="space-y-4">
+            {/* Read-only training assignments (L&D Phase 4). Managed in Learning & Development. */}
+            {!training.loaded ? <p className="text-sm py-4" style={{ color:'var(--text-muted)' }}>Loading trainings…</p>
+              : (() => {
+                const rows = training.data
+                if (rows.length === 0) return <p className="text-xs px-3 py-3 rounded-xl" style={{ background:'var(--bg-input)', color:'var(--text-muted)' }}>No trainings assigned yet — assign from <b>Learning &amp; Development → Assignment</b>.</p>
+                const AC = { Assigned:'#3b82f6', 'In Progress':'#f59e0b', Completed:'#10b981', Cancelled:'#f87171' }
+                const now = new Date()
+                const current = rows.filter(r => r.status==='Assigned' || r.status==='In Progress')
+                const upcoming = current.filter(r => r.session_start && new Date(r.session_start) >= now)
+                const completed = rows.filter(r => r.status==='Completed')
+                const K = [
+                  { l:'Assigned', v:current.length, c:'#3b82f6' }, { l:'Upcoming', v:upcoming.length, c:'#7C3AED' },
+                  { l:'Completed', v:completed.length, c:'#10b981' }, { l:'Total', v:rows.length, c:'#f59e0b' },
+                ]
+                const Table = ({ list }) => (
+                  <div className="overflow-x-auto rounded-xl" style={{ border:'1px solid var(--border)' }}>
+                    <table className="w-full text-sm" style={{ minWidth:560 }}>
+                      <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{['Program','Session','Due','Completion','Status'].map(h=><th key={h} className="text-left px-3 py-2.5 label-caps whitespace-nowrap">{h}</th>)}</tr></thead>
+                      <tbody>{list.map(r=>(
+                        <tr key={r.id} style={{ borderBottom:'1px solid var(--border)' }}>
+                          <td className="px-3 py-2.5"><span className="font-semibold" style={{ color:'var(--text-h)' }}>{r.program}</span> <span className="text-[10px] font-mono" style={{ color:'#a78bfa' }}>{r.program_code}</span></td>
+                          <td className="px-3 py-2.5" style={{ color:'var(--text-muted)' }}>{r.session_title||'—'}<div className="text-[10px]">{r.trainer_name} · {fmtDate(r.session_start)}</div></td>
+                          <td className="px-3 py-2.5" style={{ color:'var(--text-muted)' }}>{fmtDate(r.due_date)}</td>
+                          <td className="px-3 py-2.5 font-bold" style={{ color:'#7C3AED' }}>{r.completion_percentage}%</td>
+                          <td className="px-3 py-2.5"><span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:`${AC[r.status]||'#7C3AED'}1f`, color:AC[r.status]||'#7C3AED' }}>{r.status}</span></td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                )
+                return (
+                  <>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">{K.map(k=><div key={k.l} className="kpi-3d"><p className="text-3xl font-black" style={{ color:k.c }}>{k.v}</p><p className="text-xs font-medium mt-1" style={{ color:'var(--text-muted)' }}>{k.l}</p></div>)}</div>
+                    <div>
+                      <p className="text-[11px] font-bold uppercase mb-2" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Current Assignments</p>
+                      {current.length===0 ? <p className="text-xs px-3 py-2 rounded-xl" style={{ background:'var(--bg-input)', color:'var(--text-muted)' }}>No active trainings.</p> : <Table list={current} />}
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-bold uppercase mb-2 mt-4" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Completed &amp; History</p>
+                      {rows.filter(r=>r.status==='Completed'||r.status==='Cancelled').length===0 ? <p className="text-xs px-3 py-2 rounded-xl" style={{ background:'var(--bg-input)', color:'var(--text-muted)' }}>No completed trainings yet.</p> : <Table list={rows.filter(r=>r.status==='Completed'||r.status==='Cancelled')} />}
+                    </div>
+                    <p className="text-[10px]" style={{ color:'var(--text-muted)' }}>Read-only. Manage from <b>Learning &amp; Development</b>.</p>
+                  </>
+                )
+              })()}
+
+            {/* Attendance / Assessment / Quiz / Certificate (L&D Phases 5-6) — read-only. */}
+            {trainingRec.length > 0 && (
+              <div>
+                <p className="text-[11px] font-bold uppercase mb-2 mt-4" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Attendance, Assessment &amp; Certificates</p>
+                <div className="overflow-x-auto rounded-xl" style={{ border:'1px solid var(--border)' }}>
+                  <table className="w-full text-sm" style={{ minWidth:600 }}>
+                    <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{['Program','Attendance','Assessment','Quiz','Completion','Certificate'].map(h=><th key={h} className="text-left px-3 py-2.5 label-caps whitespace-nowrap">{h}</th>)}</tr></thead>
+                    <tbody>{trainingRec.map(r=>(
+                      <tr key={r.employee_training_id} style={{ borderBottom:'1px solid var(--border)' }}>
+                        <td className="px-3 py-2.5"><span className="font-semibold" style={{ color:'var(--text-h)' }}>{r.program}</span></td>
+                        <td className="px-3 py-2.5" style={{ color:r.attendance==='Present'?'#10b981':r.attendance==='Absent'?'#f87171':'var(--text-muted)' }}>{r.attendance||'—'}</td>
+                        <td className="px-3 py-2.5" style={{ color:r.assessment_result==='Pass'?'#10b981':r.assessment_result==='Fail'?'#f87171':'var(--text-muted)' }}>{r.assessment_result?`${r.assessment_result}${r.assessment_pct!=null?` (${r.assessment_pct}%)`:''}`:'—'}</td>
+                        <td className="px-3 py-2.5" style={{ color:r.quiz_passed===true?'#10b981':r.quiz_passed===false?'#f87171':'var(--text-muted)' }}>{r.quiz_passed===null||r.quiz_passed===undefined?'—':(r.quiz_passed?'Passed':'Failed')}</td>
+                        <td className="px-3 py-2.5 font-bold" style={{ color:'#7C3AED' }}>{r.completion_percentage}%</td>
+                        <td className="px-3 py-2.5">{r.certificate_number ? <a onClick={()=>hrApi.learning.certificates.download(r.certificate_id)} className="text-[11px] font-mono cursor-pointer" style={{ color:'#a78bfa' }}>{r.certificate_number}</a> : '—'}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              </div>
+            )}
             <AiInsight hint="Will recommend training and retraining based on role, skill gaps and history." />
+          </div>
+        )}
+
+        {tab==='probation' && (
+          <div className="space-y-4">
+            {/* Read-only probation (Probation Phase 2). Managed in Probation Management. */}
+            {!probation.loaded ? <p className="text-sm py-4" style={{ color:'var(--text-muted)' }}>Loading probation…</p>
+              : probation.data.length===0 ? (
+                <p className="text-xs px-3 py-3 rounded-xl" style={{ background:'var(--bg-input)', color:'var(--text-muted)' }}>No probation record — assign one from <b>HR Records → Probation Management → Employee Probation</b>.</p>
+              ) : (() => {
+                const PC = { Assigned:'#3b82f6', Active:'#10b981', Extended:'#f59e0b', Confirmed:'#8b5cf6', Failed:'#f87171', Cancelled:'#94a3b8' }
+                const current = probation.data.find(p => ['Assigned','Active','Extended'].includes(p.current_status)) || probation.data[0]
+                const cs = { c:PC[current.current_status]||'#7C3AED', bg:`${PC[current.current_status]||'#7C3AED'}1f` }
+                return (
+                  <>
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <p className="text-[11px] font-bold uppercase" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Current Probation</p>
+                      <span className="text-[10px] font-bold px-2.5 py-1 rounded-lg" style={{ background:cs.bg, color:cs.c }}>{current.current_status}</span>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-4">
+                      <Field k="Current Policy" v={current.policy} />
+                      <Field k="Probation Type" v={current.probation_type} />
+                      <Field k="Start Date" v={fmtDate(current.probation_start_date)} />
+                      <Field k="End Date" v={fmtDate(current.probation_end_date)} />
+                      <Field k="Remaining Days" v={current.remaining_days!=null?(current.remaining_days<0?`${-current.remaining_days} overdue`:`${current.remaining_days} days`):'—'} />
+                      <Field k="Review Cycle" v={current.review_cycle} />
+                      <Field k="Extension Count" v={current.extension_count} />
+                      <Field k="Confirmation Due" v={fmtDate(current.confirmation_due_date)} />
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-bold uppercase mb-2 mt-2 flex items-center gap-1.5" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}><History size={12}/> Timeline</p>
+                      <div className="space-y-2.5">
+                        {(current.timeline||[]).map((t,i)=>(
+                          <div key={i} className="flex gap-3"><div className="mt-1.5 rounded-full flex-shrink-0" style={{ width:8, height:8, background:'#a78bfa' }}/><div><p className="text-xs font-bold" style={{ color:'var(--text-h)' }}>{t.action}</p><p className="text-[10px]" style={{ color:'var(--text-muted)' }}>{t.actor_name||'System'} · {t.created_at?new Date(t.created_at).toLocaleString():''}</p></div></div>
+                        ))}
+                        {(!current.timeline||!current.timeline.length) && <p className="text-xs" style={{ color:'var(--text-muted)' }}>No timeline yet.</p>}
+                      </div>
+                    </div>
+                    {probation.data.length>1 && (
+                      <div>
+                        <p className="text-[11px] font-bold uppercase mb-2 mt-2" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>History</p>
+                        <div className="space-y-1.5">{probation.data.map(p=>(
+                          <div key={p.id} className="flex items-center justify-between px-3 py-2 rounded-xl" style={{ background:'var(--bg-input)' }}>
+                            <span className="text-xs font-semibold" style={{ color:'var(--text-h)' }}>{p.policy} <span className="text-[10px]" style={{ color:'var(--text-muted)' }}>· {fmtDate(p.probation_start_date)} → {fmtDate(p.probation_end_date)}</span></span>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:`${PC[p.current_status]||'#7C3AED'}1f`, color:PC[p.current_status]||'#7C3AED' }}>{p.current_status}</span>
+                          </div>
+                        ))}</div>
+                      </div>
+                    )}
+                    <p className="text-[10px]" style={{ color:'var(--text-muted)' }}>Read-only. Manage from <b>Probation Management</b>.</p>
+                  </>
+                )
+              })()}
+
+            {/* Review history (Probation Phase 3) — read-only. */}
+            {probReviews.length > 0 && (() => {
+              const RVC = { Draft:'#94a3b8', Submitted:'#3b82f6', Completed:'#10b981' }
+              const RCC = { Continue:'#3b82f6', Extend:'#f59e0b', Confirm:'#10b981', Fail:'#f87171' }
+              return (
+                <div>
+                  <p className="text-[11px] font-bold uppercase mb-2 mt-2" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Review History</p>
+                  <div className="overflow-x-auto rounded-xl" style={{ border:'1px solid var(--border)' }}>
+                    <table className="w-full text-sm" style={{ minWidth:600 }}>
+                      <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{['#','Date','Reviewer','Rating','Recommendation','Status'].map(h=><th key={h} className="text-left px-3 py-2.5 label-caps whitespace-nowrap">{h}</th>)}</tr></thead>
+                      <tbody>{probReviews.map(r=>(
+                        <tr key={r.id} style={{ borderBottom:'1px solid var(--border)' }}>
+                          <td className="px-3 py-2.5 font-bold" style={{ color:'#a78bfa' }}>#{r.review_no}</td>
+                          <td className="px-3 py-2.5" style={{ color:'var(--text-muted)' }}>{fmtDate(r.review_date)}</td>
+                          <td className="px-3 py-2.5" style={{ color:'var(--text-muted)' }}>{r.reviewer_name||'—'}</td>
+                          <td className="px-3 py-2.5 font-bold" style={{ color:'#f59e0b' }}>{r.overall_rating}/5</td>
+                          <td className="px-3 py-2.5"><span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:`${RCC[r.recommendation]||'#7C3AED'}1f`, color:RCC[r.recommendation]||'#7C3AED' }}>{r.recommendation}</span></td>
+                          <td className="px-3 py-2.5"><span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:`${RVC[r.status]||'#7C3AED'}1f`, color:RVC[r.status]||'#7C3AED' }}>{r.status}</span></td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                </div>
+              )
+            })()}
+
+            {/* Extension history (Probation Phase 4) — read-only. */}
+            {probExts.length > 0 && (() => {
+              const EC = { Pending:'#f59e0b', Approved:'#10b981', Rejected:'#f87171' }
+              const approved = probExts.filter(x=>x.status==='Approved')
+              const latest = approved[0] || probExts[0]
+              return (
+                <div>
+                  <div className="flex items-center justify-between flex-wrap gap-2 mb-2 mt-2">
+                    <p className="text-[11px] font-bold uppercase" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Extension History</p>
+                    <span className="text-[10px] font-bold" style={{ color:'var(--text-muted)' }}>{approved.length} approved · latest end {latest?fmtDate(latest.extended_end_date):'—'}</span>
+                  </div>
+                  <div className="overflow-x-auto rounded-xl" style={{ border:'1px solid var(--border)' }}>
+                    <table className="w-full text-sm" style={{ minWidth:600 }}>
+                      <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{['#','Current End','Extended End','Days','Requested By','Status'].map(h=><th key={h} className="text-left px-3 py-2.5 label-caps whitespace-nowrap">{h}</th>)}</tr></thead>
+                      <tbody>{probExts.map(x=>(
+                        <tr key={x.id} style={{ borderBottom:'1px solid var(--border)' }}>
+                          <td className="px-3 py-2.5 font-bold" style={{ color:'#a78bfa' }}>#{x.extension_number}</td>
+                          <td className="px-3 py-2.5" style={{ color:'var(--text-muted)' }}>{fmtDate(x.current_end_date)}</td>
+                          <td className="px-3 py-2.5" style={{ color:'var(--text-h)' }}>{fmtDate(x.extended_end_date)}</td>
+                          <td className="px-3 py-2.5 font-bold" style={{ color:'#7C3AED' }}>+{x.extension_days}d</td>
+                          <td className="px-3 py-2.5" style={{ color:'var(--text-muted)' }}>{x.requested_by_name||'—'}</td>
+                          <td className="px-3 py-2.5"><span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:`${EC[x.status]||'#7C3AED'}1f`, color:EC[x.status]||'#7C3AED' }}>{x.status}</span></td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                </div>
+              )
+            })()}
+
+            {/* Confirmation (Probation Phase 5) — read-only. */}
+            {probConfs.length > 0 && (() => {
+              const c = probConfs[0]
+              const CC = { Pending:'#f59e0b', Approved:'#3b82f6', Rejected:'#f87171', Confirmed:'#10b981' }
+              const cs = { c:CC[c.status]||'#7C3AED', bg:`${CC[c.status]||'#7C3AED'}1f` }
+              return (
+                <div>
+                  <div className="flex items-center justify-between flex-wrap gap-2 mb-2 mt-2">
+                    <p className="text-[11px] font-bold uppercase" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Confirmation</p>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:cs.bg, color:cs.c }}>{c.status}</span>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-4">
+                    <Field k="Confirmation Status" v={c.status} />
+                    <Field k="Recommendation" v={c.recommendation} />
+                    <Field k="Decision" v={c.decision} />
+                    <Field k="Confirmation Date" v={fmtDate(c.confirmation_date)} />
+                    <Field k="Effective Date" v={fmtDate(c.effective_date)} />
+                    <Field k="Review Summary" v={c.review_summary?`#${c.review_summary.review_no} · ${c.review_summary.rating}/5 · ${c.review_summary.recommendation}`:'—'} />
+                    <Field k="Extension Summary" v={c.extension_summary?`#${c.extension_summary.extension_number} · +${c.extension_summary.extension_days}d`:'—'} />
+                  </div>
+                </div>
+              )
+            })()}
           </div>
         )}
 

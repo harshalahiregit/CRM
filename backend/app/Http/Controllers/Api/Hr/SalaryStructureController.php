@@ -27,7 +27,30 @@ class SalaryStructureController extends Controller
 
     public function show(Request $request, int $id)
     {
-        return response()->json($this->service->show($id, $this->tenant($request)));
+        return response()->json($this->service->show($id, $this->tenant($request), $request->user()));
+    }
+
+    /** Live salary preview for the Salary Builder — resolve unsaved lines, no persist. */
+    public function preview(Request $request)
+    {
+        $data = $request->validate([
+            'lines'                    => 'required|array|min:1',
+            'lines.*.component_id'     => 'required|integer',
+            'lines.*.calculation_type' => 'nullable|string',
+            'lines.*.amount'           => 'nullable|numeric',
+            'lines.*.percentage'       => 'nullable|numeric',
+            'lines.*.based_on'         => 'nullable|string|max:150',
+            'lines.*.formula'          => 'nullable|string|max:500',
+        ]);
+
+        return response()->json($this->service->preview($data['lines'], $this->tenant($request)));
+    }
+
+    public function duplicate(Request $request, int $id)
+    {
+        $this->assertCanManage($request);
+
+        return response()->json($this->service->duplicate($id, $this->tenant($request), $request->user()), 201);
     }
 
     public function store(Request $request)
@@ -70,11 +93,13 @@ class SalaryStructureController extends Controller
             'designation_id'       => 'nullable|integer',
             'description'          => 'nullable|string',
             'is_active'            => 'boolean',
-            'lines'                => "$req|array|min:1",
-            'lines.*.component_id' => 'required|integer',
-            'lines.*.amount'       => 'nullable|numeric|min:0',
-            'lines.*.percentage'   => 'nullable|numeric|min:0|max:100',
-            'lines.*.based_on'     => 'nullable|string|max:150',
+            'lines'                    => "$req|array|min:1",
+            'lines.*.component_id'     => 'required|integer',
+            'lines.*.calculation_type' => 'nullable|string',
+            'lines.*.amount'           => 'nullable|numeric|min:0',
+            'lines.*.percentage'       => 'nullable|numeric|min:0|max:100',
+            'lines.*.based_on'         => 'nullable|string|max:150',
+            'lines.*.formula'          => 'nullable|string|max:500',
         ]);
     }
 

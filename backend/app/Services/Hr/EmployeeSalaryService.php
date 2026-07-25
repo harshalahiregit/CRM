@@ -5,6 +5,7 @@ namespace App\Services\Hr;
 use App\Exceptions\BusinessException;
 use App\Models\Hr\HrEmployee;
 use App\Models\Hr\HrEmployeeSalary;
+use App\Models\Hr\HrSalaryRevision;
 use App\Models\User;
 use App\Repositories\Hr\EmployeeSalaryRepository;
 use Illuminate\Support\Carbon;
@@ -37,7 +38,29 @@ class EmployeeSalaryService
         return [
             'current' => $current ? $this->present($current) : null,
             'history' => $this->repo->historyFor($employeeId, $tenantId)->map(fn ($s) => $this->present($s))->all(),
+            'revisions' => $this->revisions($employeeId, $tenantId),
         ];
+    }
+
+    /** Append-only salary revision ledger for one employee (newest first). */
+    public function revisions(int $employeeId, int $tenantId): array
+    {
+        return HrSalaryRevision::where('tenant_id', $tenantId)
+            ->where('employee_id', $employeeId)
+            ->orderByDesc('revision_no')->orderByDesc('id')->get()
+            ->map(fn ($r) => [
+                'id'                => $r->id,
+                'revision_no'       => $r->revision_no,
+                'effective_from'    => optional($r->effective_from)->toDateString(),
+                'reason'            => $r->reason,
+                'to_structure'      => $r->toStructure?->name,
+                'previous_monthly_ctc' => $r->previous_monthly_ctc !== null ? (float) $r->previous_monthly_ctc : null,
+                'new_monthly_ctc'   => (float) $r->new_monthly_ctc,
+                'new_annual_ctc'    => (float) $r->new_annual_ctc,
+                'new_net_salary'    => (float) $r->new_net_salary,
+                'changed_by'        => $r->changedBy?->name,
+                'created_at'        => optional($r->created_at)->toIso8601String(),
+            ])->all();
     }
 
     /**
@@ -49,8 +72,10 @@ class EmployeeSalaryService
         $this->assertEmployee($employeeId, $tenantId);
         $snapshot = $this->snapshotFromStructure((int) $data['salary_structure_id'], $tenantId);
         $effectiveFrom = $data['effective_from'];
+        $structureName = $snapshot['_structure_name'] ?? null;
+        unset($snapshot['_structure_name']);
 
-        DB::transaction(function () use ($employeeId, $tenantId, $data, $snapshot, $effectiveFrom, $actor) {
+        DB::transaction(function () use ($employeeId, $tenantId, $data, $snapshot, $effectiveFrom, $structureName, $actor) {
             // Archive the outgoing active salary — history stays intact, never edited away.
             $current = $this->repo->currentActive($employeeId, $tenantId);
             if ($current) {
@@ -63,22 +88,53 @@ class EmployeeSalaryService
                 $current->recordAudit('Salary Deactivated', $actor, 'Superseded by a new salary assignment');
             }
 
+            // Next revision number for this employee (append-only, never reused).
+            $revisionNo = (int) HrEmployeeSalary::where('tenant_id', $tenantId)
+                ->where('employee_id', $employeeId)->max('revision_no') + 1;
+
             $salary = HrEmployeeSalary::create([
                 'tenant_id'          => $tenantId,
                 'employee_id'        => $employeeId,
                 'salary_structure_id'=> (int) $data['salary_structure_id'],
                 'effective_from'     => $effectiveFrom,
                 'effective_to'       => $data['effective_to'] ?? null,
+                'revision_no'        => $revisionNo,
+                'reason'             => $data['reason'] ?? ($current ? 'Salary revision' : 'Initial assignment'),
+                'assigned_by'        => $actor?->id,
                 'status'             => HrEmployeeSalary::ACTIVE,
                 'created_by'         => $actor?->id,
                 'updated_by'         => $actor?->id,
                 ...$snapshot,
             ]);
-            $salary->recordAudit('Salary Assigned', $actor, null, [
-                'structure'   => $snapshot['_structure_name'] ?? null,
+            $salary->recordAudit($current ? 'Salary Revised' : 'Salary Assigned', $actor, null, [
+                'structure'   => $structureName,
+                'revision_no' => $revisionNo,
                 'monthly_ctc' => $snapshot['monthly_ctc'],
                 'annual_ctc'  => $snapshot['annual_ctc'],
             ]);
+
+            // Append-only revision ledger row (immutable).
+            HrSalaryRevision::create([
+                'tenant_id'                 => $tenantId,
+                'employee_id'               => $employeeId,
+                'employee_salary_id'        => $salary->id,
+                'from_structure_id'         => $current?->salary_structure_id,
+                'to_structure_id'           => (int) $data['salary_structure_id'],
+                'revision_no'               => $revisionNo,
+                'effective_from'            => $effectiveFrom,
+                'reason'                    => $data['reason'] ?? ($current ? 'Salary revision' : 'Initial assignment'),
+                'previous_monthly_ctc'      => $current?->monthly_ctc,
+                'previous_annual_ctc'       => $current?->annual_ctc,
+                'previous_net_salary'       => $current?->net_salary,
+                'new_monthly_ctc'           => $snapshot['monthly_ctc'],
+                'new_annual_ctc'            => $snapshot['annual_ctc'],
+                'new_gross_salary'          => $snapshot['gross_salary'],
+                'new_employer_contribution' => $snapshot['total_benefits'],
+                'new_total_deduction'       => $snapshot['total_deductions'],
+                'new_net_salary'            => $snapshot['net_salary'],
+                'changed_by'                => $actor?->id,
+            ]);
+
             $this->log('Salary assigned', $tenantId, $salary->id);
         });
 

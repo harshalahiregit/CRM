@@ -2,16 +2,18 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useTheme } from '@/context/ThemeContext'
 import {
   Wallet, Coins, Search, Plus, Pencil, X, Power, Lock, Sparkles, Layers, Users, PlayCircle, ReceiptText,
-  Trash2, IndianRupee, Eye, Calendar, CheckCircle2, Ban, Plug, Download, FileText, BarChart3,
+  Trash2, IndianRupee, Eye, Calendar, CheckCircle2, Ban, Plug, Download, FileText, BarChart3, Copy, History,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 import PayrollReports from './PayrollReports'
+import SalarySheet from '../components/SalarySheet'
 
 const GRAD = 'linear-gradient(135deg,#7C3AED,#5b21b6)'
-const TYPES = ['Earning', 'Deduction', 'Benefit']
-const CALC_TYPES = ['Fixed', 'Percentage']
-const TYPE_C = { Earning:{c:'#10b981',bg:'rgba(16,185,129,0.12)'}, Deduction:{c:'#f87171',bg:'rgba(239,68,68,0.1)'}, Benefit:{c:'#3b82f6',bg:'rgba(59,130,246,0.12)'} }
+// 'Benefit' retained for backward compatibility (legacy employer contribution).
+const TYPES = ['Earning', 'Employer', 'Deduction', 'Benefit']
+const CALC_TYPES = ['Fixed', 'Percentage', 'Formula', 'Manual']
+const TYPE_C = { Earning:{c:'#10b981',bg:'rgba(16,185,129,0.12)'}, Employer:{c:'#3b82f6',bg:'rgba(59,130,246,0.12)'}, Deduction:{c:'#f87171',bg:'rgba(239,68,68,0.1)'}, Benefit:{c:'#3b82f6',bg:'rgba(59,130,246,0.12)'} }
 const money = v => v === null || v === undefined || v === '' ? '—' : `₹${Number(v).toLocaleString('en-IN')}`
 
 // Payroll module tabs. Only "Salary Components" is built (Phase 1); the rest are
@@ -83,7 +85,7 @@ export default function Payroll() {
 /* ────────────────────────────────────────────────────────────────────────
    Salary Components master
    ──────────────────────────────────────────────────────────────────────── */
-const EMPTY = { name:'', code:'', type:'Earning', calculation_type:'Fixed', amount_value:'', percentage_value:'', based_on:'Basic', description:'', is_active:true }
+const EMPTY = { name:'', code:'', type:'Earning', calculation_type:'Fixed', amount_value:'', percentage_value:'', based_on:'Basic', formula:'', taxable:true, pf_applicable:false, esic_applicable:false, sequence:0, description:'', is_active:true }
 
 function SalaryComponents({ showToast }) {
   const [rows, setRows] = useState([])
@@ -113,7 +115,9 @@ function SalaryComponents({ showToast }) {
   const openEdit = (r) => setModal({ editing:r.id, form:{
     name:r.name, code:r.code, type:r.type, calculation_type:r.calculation_type,
     amount_value:r.amount_value ?? '', percentage_value:r.percentage_value ?? '',
-    based_on:r.based_on || 'Basic', description:r.description || '', is_active:r.is_active,
+    based_on:r.based_on || 'Basic', formula:r.formula || '',
+    taxable:r.taxable ?? true, pf_applicable:r.pf_applicable ?? false, esic_applicable:r.esic_applicable ?? false,
+    sequence:r.sequence ?? 0, description:r.description || '', is_active:r.is_active,
   }})
 
   const save = async () => {
@@ -121,11 +125,13 @@ function SalaryComponents({ showToast }) {
     if (!form.name.trim() || !form.code.trim()) return showToast('Name and code are required', 'error')
     if (form.calculation_type === 'Fixed' && form.amount_value === '') return showToast('Amount value is required for a fixed component', 'error')
     if (form.calculation_type === 'Percentage' && form.percentage_value === '') return showToast('Percentage value is required', 'error')
+    if (form.calculation_type === 'Formula' && !String(form.formula).trim()) return showToast('A formula is required for a formula component', 'error')
     // Send only the value relevant to the chosen calculation type.
     const payload = { ...form,
       amount_value: form.calculation_type === 'Fixed' ? form.amount_value : null,
       percentage_value: form.calculation_type === 'Percentage' ? form.percentage_value : null,
       based_on: form.calculation_type === 'Percentage' ? form.based_on : null,
+      formula: form.calculation_type === 'Formula' ? form.formula : null,
     }
     setSaving(true)
     try {
@@ -196,7 +202,7 @@ function SalaryComponents({ showToast }) {
                       <td className="px-3 py-2.5 font-mono font-bold" style={{ color:'#a78bfa' }}>{r.code}</td>
                       <td className="px-3 py-2.5"><span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:tc.bg, color:tc.c }}>{r.type}</span></td>
                       <td className="px-3 py-2.5" style={{ color:'var(--text-muted)' }}>{r.calculation_type}</td>
-                      <td className="px-3 py-2.5 font-semibold" style={{ color:'var(--text-h)' }}>{r.calculation_type==='Percentage' ? `${Number(r.percentage_value)}% of ${r.based_on||'Basic'}` : money(r.amount_value)}</td>
+                      <td className="px-3 py-2.5 font-semibold" style={{ color:'var(--text-h)' }}>{r.calculation_type==='Percentage' ? `${Number(r.percentage_value)}% of ${r.based_on||'Basic'}` : r.calculation_type==='Formula' ? <span className="font-mono text-[11px]" style={{ color:'#a78bfa' }}>{r.formula}</span> : r.calculation_type==='Manual' ? <span style={{ color:'var(--text-muted)' }}>Manual</span> : money(r.amount_value)}</td>
                       <td className="px-3 py-2.5"><span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={r.is_active?{background:'rgba(16,185,129,0.12)',color:'#10b981'}:{background:'var(--bg-input)',color:'var(--text-muted)'}}>{r.is_active?'Active':'Inactive'}</span></td>
                       <td className="px-3 py-2.5">
                         <div className="flex gap-1.5 justify-end">
@@ -240,12 +246,25 @@ function SalaryComponents({ showToast }) {
               </div>
               {modal.form.calculation_type === 'Fixed' ? (
                 <div className="col-span-2"><label className="label">Amount Value (₹)</label><input type="number" min="0" className="input-3d text-sm" placeholder="e.g. 30000" value={modal.form.amount_value} onChange={e=>setModal(m=>({...m,form:{...m.form,amount_value:e.target.value}}))}/></div>
-              ) : (
+              ) : modal.form.calculation_type === 'Percentage' ? (
                 <>
                   <div><label className="label">Percentage Value (%)</label><input type="number" min="0" max="100" className="input-3d text-sm" placeholder="e.g. 40" value={modal.form.percentage_value} onChange={e=>setModal(m=>({...m,form:{...m.form,percentage_value:e.target.value}}))}/></div>
                   <div><label className="label">Based On</label><input className="input-3d text-sm" placeholder="e.g. Basic" value={modal.form.based_on} onChange={e=>setModal(m=>({...m,form:{...m.form,based_on:e.target.value}}))}/></div>
                 </>
+              ) : modal.form.calculation_type === 'Formula' ? (
+                <div className="col-span-2"><label className="label">Formula</label><input className="input-3d text-sm font-mono" placeholder="e.g. 50% GROSS  ·  12% BASIC  ·  BASIC + HRA" value={modal.form.formula} onChange={e=>setModal(m=>({...m,form:{...m.form,formula:e.target.value}}))}/><p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>Reference other component codes and GROSS. Supports % + − × ÷ and parentheses.</p></div>
+              ) : (
+                <div className="col-span-2 text-[11px] px-3 py-2 rounded-lg" style={{ background:'var(--bg-input)', color:'var(--text-muted)' }}>Manual — the amount is entered per structure / employee.</div>
               )}
+              {/* Statutory flags + ordering */}
+              <div className="col-span-2 flex flex-wrap items-center gap-4 px-1">
+                {[['taxable','Taxable'],['pf_applicable','PF Applicable'],['esic_applicable','ESIC Applicable']].map(([k,lbl])=>(
+                  <label key={k} className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer" style={{ color:'var(--text-muted)' }}>
+                    <input type="checkbox" checked={!!modal.form[k]} onChange={e=>setModal(m=>({...m,form:{...m.form,[k]:e.target.checked}}))}/> {lbl}
+                  </label>
+                ))}
+                <div className="flex items-center gap-1.5 ml-auto"><span className="text-xs font-semibold" style={{ color:'var(--text-muted)' }}>Sequence</span><input type="number" min="0" className="input-3d text-xs" style={{ width:72, padding:'6px 8px' }} value={modal.form.sequence} onChange={e=>setModal(m=>({...m,form:{...m.form,sequence:e.target.value}}))}/></div>
+              </div>
               <div className="col-span-2"><label className="label">Description</label><textarea rows={2} className="input-3d text-sm resize-none" value={modal.form.description} onChange={e=>setModal(m=>({...m,form:{...m.form,description:e.target.value}}))}/></div>
               {modal.editing && (
                 <div className="col-span-2 flex items-center gap-2">
@@ -269,43 +288,6 @@ function SalaryComponents({ showToast }) {
    Salary Structures — compose components into a computed CTC breakdown
    ──────────────────────────────────────────────────────────────────────── */
 const inr = v => `₹${Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
-
-// Client-side CTC resolver — mirrors SalaryStructureService for a live preview.
-// The server recomputes authoritatively on save; this is instant feedback only.
-function computeBreakdown(lines, compById) {
-  const byKey = {}
-  lines.forEach((l, i) => {
-    const c = compById[l.component_id]; if (!c) return
-    byKey[c.name.toLowerCase()] = i
-    if (c.code) byKey[c.code.toLowerCase()] = i
-  })
-  const resolved = {}
-  for (let pass = 0; pass < 12 && Object.keys(resolved).length < lines.length; pass++) {
-    let progress = false
-    lines.forEach((l, i) => {
-      if (i in resolved) return
-      const c = compById[l.component_id]; if (!c) { resolved[i] = 0; progress = true; return }
-      if (c.calculation_type === 'Fixed') { resolved[i] = Number(l.amount ?? c.amount_value ?? 0); progress = true; return }
-      const base = String(l.based_on || c.based_on || 'basic').toLowerCase()
-      const bi = byKey[base]
-      if (bi !== undefined && bi in resolved) {
-        const pct = Number(l.percentage ?? c.percentage_value ?? 0)
-        resolved[i] = Math.round(pct / 100 * resolved[bi] * 100) / 100
-        progress = true
-      }
-    })
-    if (!progress) break
-  }
-  let earnings = 0, benefits = 0, deductions = 0
-  lines.forEach((l, i) => {
-    const c = compById[l.component_id]; if (!c) return
-    const a = resolved[i] ?? 0
-    if (c.type === 'Earning') earnings += a
-    if (c.type === 'Benefit') benefits += a
-    if (c.type === 'Deduction') deductions += a
-  })
-  return { resolved, earnings, benefits, deductions, ctc: earnings + benefits, net: earnings - deductions }
-}
 
 function SalaryStructures({ showToast }) {
   const [rows, setRows] = useState([])
@@ -346,7 +328,7 @@ function SalaryStructures({ showToast }) {
       setBuilder({ editing: full.id, form: {
         name: full.name, code: full.code || '', grade_id: full.grade_id || '', designation_id: full.designation_id || '',
         description: full.description || '',
-        lines: full.lines.map(l => ({ component_id: l.component_id, amount: l.amount ?? '', percentage: l.percentage ?? '', based_on: l.based_on || '' })),
+        lines: full.lines.map(l => ({ component_id: l.component_id, calculation_type: l.calculation_type || '', amount: l.amount ?? '', percentage: l.percentage ?? '', based_on: l.based_on || '', formula: l.formula || '' })),
       }})
     } catch { showToast('Failed to open structure', 'error') }
   }
@@ -354,6 +336,10 @@ function SalaryStructures({ showToast }) {
   const toggleStatus = async (r) => {
     try { await hrApi.payroll.salaryStructures.setStatus(r.id, !r.is_active); showToast(r.is_active ? 'Deactivated' : 'Activated'); load() }
     catch (e) { showToast(e.response?.data?.message || 'Failed', 'error') }
+  }
+  const duplicate = async (r) => {
+    try { await hrApi.payroll.salaryStructures.duplicate(r.id); showToast('Structure duplicated'); load() }
+    catch (e) { showToast(e.response?.data?.message || 'Duplicate failed', 'error') }
   }
 
   const save = async () => {
@@ -363,7 +349,7 @@ function SalaryStructures({ showToast }) {
     setSaving(true)
     try {
       const payload = { name: f.name, code: f.code || null, grade_id: f.grade_id || null, designation_id: f.designation_id || null, description: f.description || null,
-        lines: f.lines.map(l => ({ component_id: l.component_id, amount: l.amount === '' ? null : l.amount, percentage: l.percentage === '' ? null : l.percentage, based_on: l.based_on || null })) }
+        lines: f.lines.map(l => ({ component_id: l.component_id, calculation_type: l.calculation_type || null, amount: l.amount === '' ? null : l.amount, percentage: l.percentage === '' ? null : l.percentage, based_on: l.based_on || null, formula: l.formula || null })) }
       if (builder.editing) await hrApi.payroll.salaryStructures.update(builder.editing, payload)
       else await hrApi.payroll.salaryStructures.create(payload)
       showToast(`Structure ${builder.editing ? 'updated' : 'created'}`)
@@ -415,6 +401,7 @@ function SalaryStructures({ showToast }) {
                     <td className="px-3 py-2.5">
                       <div className="flex gap-1.5 justify-end">
                         <button onClick={()=>openEdit(r)} title="View / Edit" className="p-1.5 rounded-lg" style={{ background:'rgba(124,58,237,0.1)', color:'#a78bfa' }}><Eye size={13}/></button>
+                        <button onClick={()=>duplicate(r)} title="Duplicate" className="p-1.5 rounded-lg" style={{ background:'rgba(59,130,246,0.1)', color:'#3b82f6' }}><Copy size={13}/></button>
                         <button onClick={()=>toggleStatus(r)} title={r.is_active?'Deactivate':'Activate'} className="p-1.5 rounded-lg" style={r.is_active?{background:'rgba(239,68,68,0.1)',color:'#f87171'}:{background:'rgba(16,185,129,0.1)',color:'#10b981'}}><Power size={13}/></button>
                       </div>
                     </td>
@@ -432,29 +419,53 @@ function SalaryStructures({ showToast }) {
   )
 }
 
-/* Structure builder modal — line editor (left) + live CTC breakdown (right). */
+/* Structure builder modal — ordered line editor (left) + live enterprise salary
+   sheet (right, from the server Formula Engine). Supports Fixed / Percentage /
+   Formula / Manual per line, sequence ordering and per-line calc overrides. */
 function StructureBuilder({ builder, setBuilder, compById, components, orgOpts, saving, onSave }) {
   const f = builder.form
   const setForm = (patch) => setBuilder(b => ({ ...b, form: { ...b.form, ...patch } }))
   const setLine = (i, patch) => setForm({ lines: f.lines.map((l, idx) => idx === i ? { ...l, ...patch } : l) })
   const removeLine = (i) => setForm({ lines: f.lines.filter((_, idx) => idx !== i) })
+  const move = (i, dir) => {
+    const j = i + dir
+    if (j < 0 || j >= f.lines.length) return
+    const next = f.lines.slice(); [next[i], next[j]] = [next[j], next[i]]; setForm({ lines: next })
+  }
   const addComponent = (cid) => {
     if (!cid) return
     const c = compById[cid]
     if (f.lines.some(l => l.component_id === Number(cid))) return
-    setForm({ lines: [...f.lines, { component_id: Number(cid), amount: '', percentage: '', based_on: c?.calculation_type === 'Percentage' ? (c.based_on || '') : '' }] })
+    setForm({ lines: [...f.lines, { component_id: Number(cid), calculation_type: '', amount: '', percentage: '', based_on: c?.calculation_type === 'Percentage' ? (c.based_on || '') : '', formula: '' }] })
   }
-  const bd = computeBreakdown(f.lines, compById)
-  // Component names available as a percentage base (any line already added).
-  const baseOptions = f.lines.map(l => compById[l.component_id]).filter(Boolean).map(c => c.name)
 
-  const TYPE_ORDER = { Earning:0, Benefit:1, Deduction:2 }
-  const ordered = f.lines.map((l, i) => ({ l, i, c: compById[l.component_id] }))
-    .sort((a, b) => (TYPE_ORDER[a.c?.type] ?? 9) - (TYPE_ORDER[b.c?.type] ?? 9))
+  // Live enterprise breakdown from the central engine (debounced; server is authoritative).
+  const [preview, setPreview] = useState(null)
+  const [previewing, setPreviewing] = useState(false)
+  const [previewError, setPreviewError] = useState(null)
+  const linesKey = JSON.stringify(f.lines)
+  useEffect(() => {
+    if (!f.lines.length) { setPreview(null); setPreviewError(null); return }
+    let alive = true; setPreviewing(true)
+    const t = setTimeout(() => {
+      hrApi.payroll.salaryStructures.preview(f.lines.map(l => ({
+        component_id: l.component_id, calculation_type: l.calculation_type || null,
+        amount: l.amount === '' ? null : l.amount, percentage: l.percentage === '' ? null : l.percentage,
+        based_on: l.based_on || null, formula: l.formula || null,
+      }))).then(res => { if (alive) { setPreview(res); setPreviewError(null) } })
+        .catch(e => { if (alive) { setPreview(null); setPreviewError(e.response?.data?.message || 'Preview failed') } })
+        .finally(() => { if (alive) setPreviewing(false) })
+    }, 400)
+    return () => { alive = false; clearTimeout(t) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linesKey])
+
+  const resolved = preview?.resolved || {}
+  const baseOptions = ['GROSS', ...f.lines.map(l => compById[l.component_id]).filter(Boolean).map(c => c.code || c.name)]
 
   return (
     <div className="modal-backdrop" onClick={()=>setBuilder(null)}>
-      <div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:920, width:'95%', maxHeight:'92vh', overflowY:'auto' }}>
+      <div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:980, width:'96%', maxHeight:'92vh', overflowY:'auto' }}>
         <div className="flex items-center justify-between mb-5">
           <h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{builder.editing ? 'Edit Salary Structure' : 'New Salary Structure'}</h2>
           <button onClick={()=>setBuilder(null)} style={{ color:'var(--text-muted)' }}><X size={18}/></button>
@@ -481,39 +492,53 @@ function StructureBuilder({ builder, setBuilder, compById, components, orgOpts, 
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Lines */}
-          <div className="lg:col-span-2 space-y-2">
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+          {/* Lines (ordered — sequence = row order) */}
+          <div className="lg:col-span-3 space-y-2">
             {f.lines.length === 0 && <p className="text-xs py-6 text-center" style={{ color:'var(--text-muted)' }}>No components yet — add from the dropdown above.</p>}
-            {ordered.map(({ l, i, c }) => {
+            {f.lines.map((l, i) => {
+              const c = compById[l.component_id]
               if (!c) return null
               const tc = TYPE_C[c.type] || {}
+              const calc = l.calculation_type || c.calculation_type
               return (
                 <div key={i} className="rounded-xl p-2.5" style={{ background:'var(--bg-input)', border:'1px solid var(--border)' }}>
                   <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex flex-col -my-1">
+                      <button onClick={()=>move(i,-1)} disabled={i===0} className="leading-none disabled:opacity-30" style={{ color:'var(--text-muted)' }} title="Move up">▲</button>
+                      <button onClick={()=>move(i,1)} disabled={i===f.lines.length-1} className="leading-none disabled:opacity-30" style={{ color:'var(--text-muted)' }} title="Move down">▼</button>
+                    </div>
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:tc.bg, color:tc.c }}>{c.type}</span>
                     <span className="text-xs font-bold" style={{ color:'var(--text-h)' }}>{c.name}</span>
                     <span className="text-[10px] font-mono" style={{ color:'#a78bfa' }}>{c.code}</span>
-                    <span className="ml-auto text-xs font-black" style={{ color:'var(--text-h)' }}>{inr(bd.resolved[i])}</span>
+                    <span className="ml-auto text-xs font-black" style={{ color:'var(--text-h)' }}>{inr(resolved[i])}</span>
                     <button onClick={()=>removeLine(i)} className="p-1 rounded-lg" style={{ background:'rgba(239,68,68,0.1)', color:'#f87171' }}><Trash2 size={12}/></button>
                   </div>
-                  <div className="flex items-center gap-2 mt-2">
-                    {c.calculation_type === 'Fixed' ? (
+                  <div className="flex items-center gap-2 mt-2 flex-wrap">
+                    <select className="input-3d text-xs" style={{ width:120, padding:'6px 8px' }} value={l.calculation_type || ''} onChange={e=>setLine(i,{ calculation_type:e.target.value })} title="Calculation type (overrides component)">
+                      <option value="">{c.calculation_type} (default)</option>
+                      {CALC_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
+                    </select>
+                    {(calc === 'Fixed' || calc === 'Manual') && (
                       <div className="flex items-center gap-1.5">
                         <span className="text-[10px]" style={{ color:'var(--text-muted)' }}>Amount ₹</span>
                         <input type="number" min="0" className="input-3d text-xs" style={{ width:120, padding:'6px 8px' }} placeholder={String(c.amount_value ?? '0')} value={l.amount} onChange={e=>setLine(i,{ amount:e.target.value })}/>
                       </div>
-                    ) : (
+                    )}
+                    {calc === 'Percentage' && (
                       <>
                         <div className="flex items-center gap-1.5">
                           <input type="number" min="0" max="100" className="input-3d text-xs" style={{ width:70, padding:'6px 8px' }} placeholder={String(c.percentage_value ?? '0')} value={l.percentage} onChange={e=>setLine(i,{ percentage:e.target.value })}/>
                           <span className="text-[10px]" style={{ color:'var(--text-muted)' }}>% of</span>
                         </div>
-                        <select className="input-3d text-xs" style={{ width:160, padding:'6px 8px' }} value={l.based_on || c.based_on || ''} onChange={e=>setLine(i,{ based_on:e.target.value })}>
+                        <select className="input-3d text-xs" style={{ width:150, padding:'6px 8px' }} value={l.based_on || c.based_on || ''} onChange={e=>setLine(i,{ based_on:e.target.value })}>
                           <option value="">(base)</option>
-                          {baseOptions.filter(n => n !== c.name).map(n => <option key={n} value={n}>{n}</option>)}
+                          {baseOptions.filter(n => n !== c.code && n !== c.name).map(n => <option key={n} value={n}>{n}</option>)}
                         </select>
                       </>
+                    )}
+                    {calc === 'Formula' && (
+                      <input className="input-3d text-xs font-mono flex-1" style={{ minWidth:180, padding:'6px 8px' }} placeholder={c.formula || 'e.g. 50% GROSS, 12% BASIC'} value={l.formula} onChange={e=>setLine(i,{ formula:e.target.value })}/>
                     )}
                   </div>
                 </div>
@@ -521,20 +546,16 @@ function StructureBuilder({ builder, setBuilder, compById, components, orgOpts, 
             })}
           </div>
 
-          {/* Live breakdown */}
-          <div className="rounded-xl p-4 h-fit" style={{ background:'var(--bg-input)', border:'1px solid var(--border)', position:'sticky', top:0 }}>
-            <p className="text-[11px] font-bold uppercase mb-3 flex items-center gap-1.5" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}><IndianRupee size={12}/> CTC Breakdown</p>
-            {[['Gross Earnings', bd.earnings, '#10b981'],['Employer Benefits', bd.benefits, '#3b82f6'],['Deductions', bd.deductions, '#f87171'],['Net Pay', bd.net, 'var(--text-h)']].map(([l,v,c])=>(
-              <div key={l} className="flex justify-between py-1.5" style={{ borderBottom:'1px dashed var(--border)' }}>
-                <span className="text-xs" style={{ color:'var(--text-muted)' }}>{l}</span>
-                <span className="text-xs font-bold" style={{ color:c }}>{inr(v)}</span>
-              </div>
-            ))}
-            <div className="flex justify-between pt-3 mt-1">
-              <span className="text-sm font-black" style={{ color:'var(--text-h)' }}>CTC / month</span>
-              <span className="text-sm font-black" style={{ color:'#7C3AED' }}>{inr(bd.ctc)}</span>
+          {/* Live enterprise salary sheet */}
+          <div className="lg:col-span-2 h-fit" style={{ position:'sticky', top:0 }}>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[11px] font-bold uppercase flex items-center gap-1.5" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}><IndianRupee size={12}/> Live Salary Preview</p>
+              {previewing && <span className="text-[10px]" style={{ color:'#a78bfa' }}>updating…</span>}
             </div>
-            <p className="text-[10px] mt-2" style={{ color:'var(--text-muted)' }}>CTC = Gross Earnings + Employer Benefits. Recomputed on save.</p>
+            {previewError ? <div className="rounded-xl p-3 text-xs" style={{ background:'rgba(239,68,68,0.08)', color:'#f87171', border:'1px solid rgba(239,68,68,0.2)' }}>{previewError}</div>
+              : preview ? <SalarySheet breakdown={preview.breakdown} structureName={f.name || 'New Structure'} />
+              : <p className="text-xs py-6 text-center" style={{ color:'var(--text-muted)' }}>Add components to see the salary sheet.</p>}
+            <p className="text-[10px] mt-2" style={{ color:'var(--text-muted)' }}>CTC = Gross + Employer Contribution · Net = Gross − Deductions. Computed by the central engine.</p>
           </div>
         </div>
 
@@ -648,6 +669,7 @@ function ManageSalary({ employee, structures, onClose, onChanged, showToast }) {
   const [loading, setLoading] = useState(true)
   const [structureId, setStructureId] = useState('')
   const [effectiveFrom, setEffectiveFrom] = useState('')
+  const [reason, setReason] = useState('')
   const [saving, setSaving] = useState(false)
 
   const load = useCallback(() => {
@@ -672,9 +694,9 @@ function ManageSalary({ employee, structures, onClose, onChanged, showToast }) {
     if (!effectiveFrom) return showToast('Effective date is required', 'error')
     setSaving(true)
     try {
-      const res = await hrApi.payroll.employeeSalary.assign(employee.id, { salary_structure_id: Number(structureId), effective_from: effectiveFrom })
+      const res = await hrApi.payroll.employeeSalary.assign(employee.id, { salary_structure_id: Number(structureId), effective_from: effectiveFrom, reason: reason || null })
       showToast(data?.current ? 'Salary revised' : 'Salary assigned')
-      setData(res); onChanged(res.current); setStructureId(''); setEffectiveFrom('')
+      setData(res); onChanged(res.current); setStructureId(''); setEffectiveFrom(''); setReason('')
     } catch (e) { showToast(e.response?.data?.message || 'Assignment failed', 'error') }
     finally { setSaving(false) }
   }
@@ -729,6 +751,7 @@ function ManageSalary({ employee, structures, onClose, onChanged, showToast }) {
                     </select>
                   </div>
                   <div><label className="label">Effective From</label><input type="date" className="input-3d text-sm" value={effectiveFrom} onChange={e=>setEffectiveFrom(e.target.value)}/></div>
+                  <div><label className="label">Reason {cur && <span style={{ color:'var(--text-muted)' }}>(revision)</span>}</label><input className="input-3d text-sm" placeholder="e.g. Annual increment, Promotion…" value={reason} onChange={e=>setReason(e.target.value)}/></div>
                   {preview && (
                     <div className="rounded-xl p-2.5 text-[11px]" style={{ background:'rgba(124,58,237,0.06)', border:'1px dashed rgba(124,58,237,0.3)' }}>
                       <p className="font-bold mb-1" style={{ color:'#a78bfa' }}>Snapshot preview</p>
@@ -763,6 +786,28 @@ function ManageSalary({ employee, structures, onClose, onChanged, showToast }) {
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+
+              {/* Revision ledger (append-only) */}
+              {data?.revisions?.length > 0 && (
+                <div className="mt-4">
+                  <p className="text-[11px] font-bold uppercase mb-2 flex items-center gap-1.5" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}><History size={12}/> Revision History</p>
+                  <div className="space-y-2">
+                    {data.revisions.map(rv => (
+                      <div key={rv.id} className="rounded-xl p-2.5" style={{ background:'var(--bg-input)', border:'1px solid var(--border)' }}>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold" style={{ color:'var(--text-h)' }}>Rev #{rv.revision_no} · {rv.to_structure}</span>
+                          <span className="text-[10px]" style={{ color:'var(--text-muted)' }}>{rv.effective_from}</span>
+                        </div>
+                        <div className="flex items-center gap-2 mt-1 text-[11px]">
+                          {rv.previous_monthly_ctc != null && <span style={{ color:'var(--text-muted)' }}>{inr(rv.previous_monthly_ctc)}<span className="mx-1">→</span></span>}
+                          <span className="font-black" style={{ color:'#10b981' }}>{inr(rv.new_monthly_ctc)}/mo</span>
+                          {rv.reason && <span className="ml-auto italic" style={{ color:'var(--text-muted)' }}>{rv.reason}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>

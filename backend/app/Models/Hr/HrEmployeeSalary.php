@@ -22,7 +22,7 @@ class HrEmployeeSalary extends Model
 
     protected $fillable = [
         'tenant_id', 'employee_id', 'salary_structure_id',
-        'effective_from', 'effective_to',
+        'effective_from', 'effective_to', 'revision_no', 'reason', 'assigned_by',
         'annual_ctc', 'monthly_ctc', 'gross_salary', 'total_benefits', 'total_deductions', 'net_salary',
         'status', 'created_by', 'updated_by',
     ];
