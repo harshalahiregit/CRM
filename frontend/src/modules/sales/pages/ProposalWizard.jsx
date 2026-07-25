@@ -8,6 +8,7 @@ import { useClientOptions } from '@/hooks/useClientOptions'
 import { useToast } from '@/hooks/useToast'
 import LineItemsTable from '../components/LineItemsTable'
 import PagesEditor from '../components/PagesEditor'
+import CoverEditor from '../components/CoverEditor'
 import RichTextEditor from '@/components/ui/RichTextEditor'
 import ProposalDocument from '../components/ProposalDocument'
 import ProposalSubmitModal from '../components/ProposalSubmitModal'
@@ -23,6 +24,7 @@ const EMPTY = {
   public_view_otp_enabled: false,
   discount_type: 'before_tax', discount_mode: 'fixed', discount_value: 0,
   pages: [{ title: 'Introduction', content: '' }],
+  cover: { enabled: false, image: '', title: 'Proposal', heading: '' },
   line_items: [],
 }
 
@@ -64,6 +66,7 @@ export default function ProposalWizard() {
         date: p.date ? String(p.date).slice(0, 10) : EMPTY.date,
         open_till: p.open_till ? String(p.open_till).slice(0, 10) : '',
         public_view_otp_enabled: !!p.public_view_otp_enabled,
+        cover: p.cover || EMPTY.cover,
         pages: p.pages?.length ? p.pages.map(pg => ({ title: pg.title, content: pg.content }))
           : [{ title: 'Page 1', content: p.notes || '' }],   // legacy rule: notes → page 1
         line_items: (p.line_items || p.lineItems || []).map(li => ({
@@ -275,6 +278,7 @@ export default function ProposalWizard() {
       {/* ── Step 2: Content ── */}
       {step === 2 && (
         <div className="card-3d" style={{ padding: '20px' }}>
+          <CoverEditor value={form.cover} onChange={cover => sf('cover', cover)} />
           <PagesEditor pages={form.pages} onChange={pages => sf('pages', pages)} />
         </div>
       )}

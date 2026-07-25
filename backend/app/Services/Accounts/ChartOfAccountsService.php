@@ -125,7 +125,7 @@ class ChartOfAccountsService
         return Ledger::forTenant($tenantId)->active()
             ->with('group:id,name,nature')
             ->orderBy('name')
-            ->get(['id', 'name', 'group_id', 'is_bank', 'is_cash', 'is_party']);
+            ->get(['id', 'name', 'group_id', 'is_bank', 'is_cash', 'is_party', 'party_type']);
     }
 
     public function createLedger(array $data, int $tenantId, ?int $userId): Ledger
@@ -143,6 +143,7 @@ class ChartOfAccountsService
             'is_cash'              => $data['is_cash'] ?? false,
             'is_party'            => $data['is_party'] ?? false,
             'party_id'            => $data['party_id'] ?? null,
+            'party_type'          => $data['party_type'] ?? null,
             'is_active'           => $data['is_active'] ?? true,
         ]);
 
@@ -163,7 +164,7 @@ class ChartOfAccountsService
         $before = $ledger->toArray();
         $ledger->update(array_intersect_key($data, array_flip([
             'group_id', 'name', 'code', 'opening_balance', 'opening_balance_type',
-            'is_bank', 'is_cash', 'is_party', 'party_id', 'is_active',
+            'is_bank', 'is_cash', 'is_party', 'party_id', 'party_type', 'is_active',
         ])));
 
         $this->audit->log($tenantId, $userId, 'ledger', $ledger->id, 'update', $before, $ledger->fresh()->toArray());

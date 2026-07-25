@@ -137,17 +137,16 @@ function OtpGate({ token, teaser, onUnlocked }) {
       <h1 className="font-black text-lg" style={{ color: 'var(--text-h)' }}>{teaser?.subject || 'Protected proposal'}</h1>
       {teaser?.reference_no && <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{teaser.reference_no}</p>}
       <p className="text-xs mt-3 mb-5" style={{ color: 'var(--text-muted)' }}>
-        This proposal is protected. A one-time access code is sent to the account manager who issued it —
-        please ask them for the code to continue.
+        This proposal is protected. To confirm it's you, we'll email a one-time code to the address it was sent to.
       </p>
 
       {phase === 'idle' ? (
         <button onClick={request} disabled={busy} className="w-full py-3 rounded-2xl text-sm font-bold text-white flex items-center justify-center gap-2 disabled:opacity-60" style={{ background: 'linear-gradient(135deg,#9f67ff,#7C3AED,#5b21b6)' }}>
-          <Mail size={14} /> {busy ? 'Sending…' : 'Request access code'}
+          <Mail size={14} /> {busy ? 'Sending…' : 'Email me a code'}
         </button>
       ) : (
         <div className="space-y-3">
-          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Code sent to the account manager <b style={{ color: 'var(--text-h)' }}>{maskedEmail}</b>. Ask them for it.</p>
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Code sent to <b style={{ color: 'var(--text-h)' }}>{maskedEmail}</b>. Check your inbox.</p>
           <input
             className="input-3d text-center font-black tracking-[0.5em] text-xl"
             style={{ letterSpacing: '0.5em' }}

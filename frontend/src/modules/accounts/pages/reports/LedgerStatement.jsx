@@ -3,10 +3,12 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Loader2, BookOpen } from 'lucide-react'
 import { accountsApi } from '@/services/accountsApi'
-import { inr, fmtDate } from '@/modules/accounts/format'
+import { fmtDate } from '@/modules/accounts/format'
+import { useInr } from '@/modules/accounts/useMoney'
 import { Select } from '@/components/ui/FormField'
 
 export default function LedgerStatement() {
+  const inr = useInr()
   const [ledgerId, setLedgerId] = useState('')
   const [range, setRange] = useState({ from: '', to: '' })
 

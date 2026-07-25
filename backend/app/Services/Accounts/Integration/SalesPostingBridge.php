@@ -270,7 +270,7 @@ class SalesPostingBridge
 
         return Ledger::create([
             'tenant_id' => $tenantId, 'group_id' => $group->id, 'name' => $name,
-            'is_party' => true, 'party_id' => $clientId, 'opening_balance_type' => 'dr',
+            'is_party' => true, 'party_id' => $clientId, 'party_type' => 'client', 'opening_balance_type' => 'dr',
         ]);
     }
 }

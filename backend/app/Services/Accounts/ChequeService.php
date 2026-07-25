@@ -48,6 +48,9 @@ class ChequeService
         if (isset($filters['is_pdc']) && $filters['is_pdc'] !== '') {
             $query->where('is_pdc', (bool) $filters['is_pdc']);
         }
+        if (! empty($filters['bank_account_id'])) {
+            $query->where('bank_account_id', $filters['bank_account_id']);
+        }
 
         return $query->orderByDesc('cheque_date')->orderByDesc('id')->paginate((int) ($filters['per_page'] ?? 50));
     }

@@ -3,13 +3,15 @@ import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Loader2, Wand2, CheckCircle2, X } from 'lucide-react'
 import { accountsApi } from '@/services/accountsApi'
-import { inr, fmtDate } from '@/modules/accounts/format'
+import { fmtDate } from '@/modules/accounts/format'
+import { useInr } from '@/modules/accounts/useMoney'
 import { useToast } from '@/hooks/useToast'
 import FormField, { Input } from '@/components/ui/FormField'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import { GhostButton } from '@/modules/accounts/components/Btn'
 
 export default function Reconcile() {
+  const inr = useInr()
   const { bankId } = useParams()
   const toast = useToast()
   const qc = useQueryClient()
@@ -97,6 +99,7 @@ function StartForm({ saving, onStart }) {
 }
 
 function Workspace({ recId, onCancel, onDone }) {
+  const inr = useInr()
   const toast = useToast()
   const qc = useQueryClient()
   const { data, isLoading } = useQuery({

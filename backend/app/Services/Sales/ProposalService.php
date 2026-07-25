@@ -38,6 +38,9 @@ class ProposalService
             if (isset($data['terms'])) {
                 $data['terms'] = HtmlSanitizer::clean($data['terms']); // now rich text
             }
+            if (array_key_exists('cover', $data)) {
+                $data['cover'] = $this->cleanCover($data['cover']);
+            }
             $this->assertContactBelongs($data, $tenantId);
 
             $proposal = Proposal::create([
@@ -81,6 +84,9 @@ class ProposalService
             unset($data['pages']);
             if (isset($data['terms'])) {
                 $data['terms'] = HtmlSanitizer::clean($data['terms']); // now rich text
+            }
+            if (array_key_exists('cover', $data)) {
+                $data['cover'] = $this->cleanCover($data['cover']);
             }
             $this->assertContactBelongs([
                 'rel_type' => $data['rel_type'] ?? $proposal->rel_type,
@@ -205,6 +211,7 @@ class ProposalService
             'accepted_at'  => $proposal->accepted_at,
             'declined_at'  => $proposal->declined_at,
             'is_expired'   => (bool) ($proposal->open_till && $proposal->open_till->isPast() && ! in_array($proposal->status, ['Accepted', 'Declined'])),
+            'cover'        => $proposal->cover,
             'pages'        => $proposal->pages->map(fn ($pg) => ['title' => $pg->title, 'content' => $pg->content])->values(),
             'line_items'   => $proposal->lineItems->map(fn ($li) => [
                 'item_name' => $li->item_name, 'description' => $li->description,
@@ -490,6 +497,33 @@ class ProposalService
                 'sort_order'    => $idx,
             ]);
         }
+    }
+
+
+    /**
+     * Clean the cover-page payload: image restricted to a data:image or https
+     * URL, title/heading reduced to plain text (they render as headings, not
+     * HTML). Returns null when the cover is absent or disabled with no content.
+     */
+    private function cleanCover($cover): ?array
+    {
+        if (! is_array($cover)) {
+            return null;
+        }
+        $image = (string) ($cover['image'] ?? '');
+        if ($image !== '' && ! preg_match('~^(https?://|data:image/(png|jpe?g|gif|webp);base64,)~i', $image)) {
+            $image = '';
+        }
+        $clean = [
+            'enabled' => (bool) ($cover['enabled'] ?? false),
+            'image'   => $image,
+            'title'   => trim(strip_tags((string) ($cover['title'] ?? ''))),
+            'heading' => trim(strip_tags((string) ($cover['heading'] ?? ''))),
+        ];
+        if (! $clean['enabled'] && $clean['image'] === '' && $clean['title'] === '' && $clean['heading'] === '') {
+            return null;
+        }
+        return $clean;
     }
 
     /** A chosen recipient contact must belong to the proposal's customer (and tenant). */

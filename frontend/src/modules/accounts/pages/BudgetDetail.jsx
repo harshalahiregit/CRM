@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react'
+import { useInr } from '@/modules/accounts/useMoney'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Loader2, Plus, X, Save } from 'lucide-react'
 import { accountsApi } from '@/services/accountsApi'
-import { inr } from '@/modules/accounts/format'
+
 import { useToast } from '@/hooks/useToast'
 import { Select, Input } from '@/components/ui/FormField'
 
 export default function BudgetDetail() {
+  const inr = useInr()
   const { id } = useParams()
   const [tab, setTab] = useState('Targets')
   const { data, isLoading } = useQuery({ queryKey: ['accounts', 'budget', id], queryFn: () => accountsApi.budgets.get(id) })
@@ -32,6 +34,7 @@ export default function BudgetDetail() {
 }
 
 function TargetsTab({ budgetId, initial }) {
+  const inr = useInr()
   const toast = useToast(); const qc = useQueryClient()
   const [rows, setRows] = useState([])
   useEffect(() => { setRows((initial || []).map(l => ({ ledger_id: String(l.ledger_id), ledger: l.ledger, annual_amount: l.annual_amount }))) }, [initial])
@@ -83,6 +86,7 @@ function TargetsTab({ budgetId, initial }) {
 }
 
 function VsActualTab({ budgetId }) {
+  const inr = useInr()
   const { data, isLoading } = useQuery({ queryKey: ['accounts', 'budget-vs-actual', budgetId], queryFn: () => accountsApi.budgets.vsActual(budgetId) })
   if (isLoading || !data) return <div className="flex justify-center py-10"><Loader2 className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div>
   const t = data.totals

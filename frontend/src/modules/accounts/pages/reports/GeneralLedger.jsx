@@ -3,9 +3,11 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Loader2, BookOpen } from 'lucide-react'
 import { accountsApi } from '@/services/accountsApi'
-import { inr, fmtDate } from '@/modules/accounts/format'
+import { fmtDate } from '@/modules/accounts/format'
+import { useInr } from '@/modules/accounts/useMoney'
 
 export default function GeneralLedger() {
+  const inr = useInr()
   const [range, setRange] = useState({ from: '', to: '' })
   const { data, isLoading } = useQuery({
     queryKey: ['accounts', 'report', 'general-ledger', range],

@@ -3,7 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Plus, BookText, Loader2, Trash2, X, Receipt } from 'lucide-react'
 import { accountsApi } from '@/services/accountsApi'
-import { inr, fmtDate, VOUCHER_TYPES } from '@/modules/accounts/format'
+import { fmtDate, VOUCHER_TYPES } from '@/modules/accounts/format'
+import { useInr } from '@/modules/accounts/useMoney'
 import { useToast } from '@/hooks/useToast'
 import DataTable from '@/components/ui/DataTable'
 import Drawer from '@/components/ui/Drawer'
@@ -13,6 +14,7 @@ import { GhostButton } from '@/modules/accounts/components/Btn'
 const STATUS_COLORS = { posted: '#10b981', cancelled: '#f87171', draft: '#f59e0b' }
 
 export default function Vouchers() {
+  const inr = useInr()
   const toast = useToast()
   const qc = useQueryClient()
   const navigate = useNavigate()
@@ -70,13 +72,41 @@ export default function Vouchers() {
         </div>
       </div>
 
+      {/* Transaction type sub-tabs (old CRM parity: Sales, Expenses, Banking, etc.) */}
+      <div className="flex gap-1 overflow-x-auto pb-1" style={{ borderBottom: '2px solid var(--border)' }}>
+        {[
+          { code: '', label: 'All Transactions' },
+          { code: 'sales', label: 'Sales' },
+          { code: 'purchase', label: 'Purchase' },
+          { code: 'payment', label: 'Payment' },
+          { code: 'receipt', label: 'Receipt' },
+          { code: 'contra', label: 'Banking' },
+          { code: 'journal', label: 'Journal Entry' },
+          { code: 'debit_note', label: 'Debit Note' },
+          { code: 'credit_note', label: 'Credit Note' },
+        ].map(tab => {
+          const active = filters.type === tab.code
+          return (
+            <button
+              key={tab.code}
+              onClick={() => setFilters(f => ({ ...f, type: tab.code }))}
+              className="px-3.5 py-2 text-xs font-bold whitespace-nowrap rounded-t-xl transition-all"
+              style={{
+                color: active ? '#a78bfa' : 'var(--text-muted)',
+                background: active ? 'rgba(167,139,250,0.08)' : 'transparent',
+                borderBottom: active ? '2px solid #a78bfa' : '2px solid transparent',
+                marginBottom: '-2px',
+              }}
+            >
+              {tab.label}
+            </button>
+          )
+        })}
+      </div>
+
       <div className="flex flex-wrap items-center gap-2">
         <input className="input-3d text-sm flex-1 min-w-[200px]" placeholder="Search number / narration / ref…"
           value={filters.search} onChange={e => setFilters(f => ({ ...f, search: e.target.value }))} />
-        <Select value={filters.type} onChange={e => setFilters(f => ({ ...f, type: e.target.value }))} style={{ maxWidth: 200 }}>
-          <option value="">All types</option>
-          {VOUCHER_TYPES.map(t => <option key={t.code} value={t.code}>{t.label}</option>)}
-        </Select>
         <Select value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))} style={{ maxWidth: 160 }}>
           <option value="">All statuses</option>
           <option value="posted">Posted</option>
@@ -97,6 +127,7 @@ export default function Vouchers() {
 const emptyItem = () => ({ ledger_id: '', taxable_amount: '', gst_rate_id: '', hsn_sac_id: '' })
 
 function TaxInvoiceDrawer({ saving, onClose, onSave }) {
+  const inr = useInr()
   const [head, setHead] = useState({ type: 'sales', date: new Date().toISOString().slice(0, 10), party_ledger_id: '', place_of_supply_state: '', reference_no: '', tds_section_code: '' })
   const [items, setItems] = useState([emptyItem()])
   const { data: ledgers = [] } = useQuery({ queryKey: ['accounts', 'ledgers', 'options'], queryFn: accountsApi.ledgers.options })
@@ -181,6 +212,7 @@ function TaxInvoiceDrawer({ saving, onClose, onSave }) {
 const emptyLine = () => ({ ledger_id: '', debit: '', credit: '', line_narration: '' })
 
 function VoucherDrawer({ saving, onClose, onSave }) {
+  const inr = useInr()
   const [head, setHead] = useState({
     voucher_type_code: 'journal',
     date: new Date().toISOString().slice(0, 10),

@@ -1,11 +1,13 @@
 import { useState } from 'react'
+import { useInr } from '@/modules/accounts/useMoney'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Loader2, TrendingUp } from 'lucide-react'
 import { accountsApi } from '@/services/accountsApi'
-import { inr } from '@/modules/accounts/format'
+
 
 function Section({ title, rows, total }) {
+  const inr = useInr()
   return (
     <div className="table-wrapper">
       <table className="table">
@@ -29,6 +31,7 @@ function Section({ title, rows, total }) {
 }
 
 export default function ProfitAndLoss() {
+  const inr = useInr()
   const [range, setRange] = useState({ from: '', to: '' })
   const { data, isLoading } = useQuery({
     queryKey: ['accounts', 'report', 'profit-loss', range],

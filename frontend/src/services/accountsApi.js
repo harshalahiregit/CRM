@@ -11,14 +11,26 @@ export const accountsApi = {
   setupStatus: () => api.get('/accounts/setup').then(r => r.data).catch(handleErr),
   runSetup:    () => api.post('/accounts/setup').then(r => r.data).catch(handleErr),
 
-  dashboard: () => api.get('/accounts/dashboard').then(r => r.data).catch(handleErr),
+  dashboard: (params = {}) => api.get('/accounts/dashboard', { params }).then(r => r.data).catch(handleErr),
+
+  // Registers — per-ledger passbook (read-only)
+  registers: {
+    list:      (params = {}) => api.get('/accounts/registers', { params }).then(r => r.data).catch(handleErr),
+    statement: (ledgerId, params = {}) => api.get(`/accounts/registers/${ledgerId}`, { params }).then(r => r.data).catch(handleErr),
+  },
+
 
   // Vendor Bills
   bills: {
-    list: (params = {}) => api.get('/accounts/bills', { params }).then(r => r.data).catch(handleErr),
-    create: (data) => api.post('/accounts/bills', data).then(r => r.data).catch(handleErr),
-    pay: (id, data) => api.post(`/accounts/bills/${id}/pay`, data).then(r => r.data).catch(handleErr),
+    list:    (params = {}) => api.get('/accounts/bills', { params }).then(r => r.data).catch(handleErr),
+    create:  (data)       => api.post('/accounts/bills', data).then(r => r.data).catch(handleErr),
+    get:     (id)         => api.get(`/accounts/bills/${id}`).then(r => r.data).catch(handleErr),
+    pay:     (id, data)   => api.post(`/accounts/bills/${id}/pay`, data).then(r => r.data).catch(handleErr),
+    approve: (id)         => api.post(`/accounts/bills/${id}/approve`).then(r => r.data).catch(handleErr),
+    recur:   (id)         => api.post(`/accounts/bills/${id}/recur`).then(r => r.data).catch(handleErr),
+    remove:  (id)         => api.delete(`/accounts/bills/${id}`).then(r => r.data).catch(handleErr),
   },
+
 
   // Chart of accounts — groups
   groups: {
@@ -45,6 +57,19 @@ export const accountsApi = {
     create: (data) => api.post('/accounts/vouchers', data).then(r => r.data).catch(handleErr),
     cancel: (id, reason) => api.post(`/accounts/vouchers/${id}/cancel`, { reason }).then(r => r.data).catch(handleErr),
     transfer: (data) => api.post('/accounts/vouchers/transfer', data).then(r => r.data).catch(handleErr),
+  },
+
+  // Transfer Funds — grouped account picker, history, categories
+  transfers: {
+    accounts: () => api.get('/accounts/transfers/accounts').then(r => r.data).catch(handleErr),
+    history:  (params = {}) => api.get('/accounts/transfers', { params }).then(r => r.data).catch(handleErr),
+    cancel:   (id, reason) => api.post(`/accounts/transfers/${id}/cancel`, { reason }).then(r => r.data).catch(handleErr),
+  },
+  transferCategories: {
+    list:   () => api.get('/accounts/transfer-categories').then(r => r.data).catch(handleErr),
+    create: (data) => api.post('/accounts/transfer-categories', data).then(r => r.data).catch(handleErr),
+    update: (id, data) => api.put(`/accounts/transfer-categories/${id}`, data).then(r => r.data).catch(handleErr),
+    remove: (id) => api.delete(`/accounts/transfer-categories/${id}`).then(r => r.data).catch(handleErr),
   },
 
   // Reports (all derived from the ledger)

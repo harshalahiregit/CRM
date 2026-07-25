@@ -3,9 +3,11 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Loader2, CalendarDays } from 'lucide-react'
 import { accountsApi } from '@/services/accountsApi'
-import { inr, fmtDate } from '@/modules/accounts/format'
+import { fmtDate } from '@/modules/accounts/format'
+import { useInr } from '@/modules/accounts/useMoney'
 
 export default function DayBook() {
+  const inr = useInr()
   const today = new Date().toISOString().slice(0, 10)
   const [range, setRange] = useState({ from: today, to: today })
   const { data, isLoading } = useQuery({

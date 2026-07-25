@@ -47,7 +47,13 @@ class BillService
     public function create(array $data, int $tenantId, int $userId): Bill
     {
         return DB::transaction(function () use ($data, $tenantId, $userId) {
-            $vendorLedger = $this->vendorLedger($data['vendor_name'], $tenantId);
+            // vendor_ledger_id hook: when the Vendor module is built it will pass
+            // a pre-resolved ledger ID. Until then we auto-find-or-create.
+            $vendorLedger = $this->vendorLedger(
+                $data['vendor_name'],
+                $tenantId,
+                isset($data['vendor_ledger_id']) ? (int) $data['vendor_ledger_id'] : null
+            );
             $amount = round((float) $data['amount'], 2);
 
             $voucher = $this->posting->post([
@@ -73,6 +79,16 @@ class BillService
                 'amount'           => $amount,
                 'status'           => 'unpaid',
                 'note'             => $data['note'] ?? null,
+                'attachment'       => $data['attachment'] ?? null,
+                'attachment_name'  => $data['attachment_name'] ?? null,
+                'is_recurring'     => $data['is_recurring'] ?? false,
+                'recurring_type'   => $data['recurring_type'] ?? null,
+                'recurring_every'  => $data['recurring_every'] ?? null,
+                'recurring_cycles' => $data['recurring_cycles'] ?? null,
+                'recurring_parent_id' => $data['recurring_parent_id'] ?? null,
+                'next_recurrence_date' => ! empty($data['is_recurring'])
+                    ? $this->advanceDate($data['due_date'], $data['recurring_type'], $data['recurring_every'] ?? 1)
+                    : null,
                 'created_by'       => $userId,
             ]);
 
@@ -82,12 +98,88 @@ class BillService
         });
     }
 
+    /** Old-CRM "Approve payable" step — a bill must be approved before it can be paid. */
+    public function approve(Bill $bill, int $tenantId, int $userId): Bill
+    {
+        $this->assertTenant($bill, $tenantId);
+
+        if ($bill->approved) {
+            throw new BusinessException('This bill is already approved.');
+        }
+
+        $bill->update(['approved' => true, 'approved_by' => $userId, 'approved_at' => now()]);
+        Log::channel('accounts')->info('Bill approved', ['bill_id' => $bill->id, 'tenant_id' => $tenantId]);
+
+        return $bill->fresh();
+    }
+
+    /**
+     * Manually generate the next occurrence of a recurring bill (same
+     * vendor/amount/expense account, dates advanced one cycle). No
+     * background scheduler is wired up — a staff member triggers this
+     * explicitly, same trust boundary as everything else that posts here.
+     */
+    public function generateNextRecurrence(Bill $bill, int $tenantId, int $userId): Bill
+    {
+        $this->assertTenant($bill, $tenantId);
+
+        if (! $bill->is_recurring) {
+            throw new BusinessException('This bill is not set up as recurring.');
+        }
+        if ($bill->recurring_cycles !== null && $bill->recurring_done >= $bill->recurring_cycles) {
+            throw new BusinessException('This recurring bill has completed all its cycles.');
+        }
+
+        return DB::transaction(function () use ($bill, $tenantId, $userId) {
+            $expenseLedgerId = $bill->voucher->lines()
+                ->where('ledger_id', '!=', $bill->vendor_ledger_id)->value('ledger_id');
+
+            $nextDate = $bill->next_recurrence_date ?? now()->toDateString();
+            // Carbon's diffInDays is signed since Carbon 3 — force absolute so the
+            // gap between bill date and due date can't invert the new bill's dates.
+            $span = abs($bill->due_date->diffInDays($bill->bill_date));
+
+            $next = $this->create([
+                'vendor_name'       => $bill->vendor_name,
+                'bill_number'       => $bill->bill_number,
+                'bill_date'         => $nextDate,
+                'due_date'          => \Illuminate\Support\Carbon::parse($nextDate)->addDays($span)->toDateString(),
+                'amount'            => (float) $bill->amount,
+                'expense_ledger_id' => $expenseLedgerId,
+                'note'              => $bill->note,
+                'is_recurring'      => true,
+                'recurring_type'    => $bill->recurring_type,
+                'recurring_every'   => $bill->recurring_every,
+                'recurring_cycles'  => $bill->recurring_cycles,
+                'recurring_parent_id' => $bill->recurring_parent_id ?? $bill->id,
+            ], $tenantId, $userId);
+
+            $bill->increment('recurring_done');
+
+            return $next;
+        });
+    }
+
+    private function advanceDate(string $from, ?string $type, int $every = 1): ?string
+    {
+        $d = \Illuminate\Support\Carbon::parse($from);
+        return match ($type) {
+            'week'  => $d->addWeeks($every)->toDateString(),
+            'month' => $d->addMonths($every)->toDateString(),
+            'year'  => $d->addYears($every)->toDateString(),
+            default => null,
+        };
+    }
+
     public function pay(Bill $bill, array $data, int $tenantId, int $userId): Bill
     {
         $this->assertTenant($bill, $tenantId);
 
         if ($bill->status === 'paid') {
             throw new BusinessException('This bill is already marked paid.');
+        }
+        if (! $bill->approved) {
+            throw new BusinessException('Approve this bill before recording payment.');
         }
 
         return DB::transaction(function () use ($bill, $data, $tenantId, $userId) {
@@ -112,9 +204,27 @@ class BillService
         });
     }
 
-    /** Find (or create) this vendor's control ledger under Sundry Creditors. */
-    private function vendorLedger(string $vendorName, int $tenantId): Ledger
+    /**
+     * Resolve the vendor's control ledger under Sundry Creditors.
+     *
+     * Vendor module hook: when $explicitLedgerId is supplied (i.e. the caller
+     * already knows the vendor's ledger, as the Vendor module will), we skip
+     * the name-based find-or-create and return the existing ledger directly.
+     * This is the ONLY place that needs changing when vendor management ships.
+     */
+    private function vendorLedger(string $vendorName, int $tenantId, ?int $explicitLedgerId = null): Ledger
     {
+        // Fast path — vendor module supplies a pre-resolved ledger ID.
+        if ($explicitLedgerId !== null) {
+            $ledger = Ledger::forTenant($tenantId)->find($explicitLedgerId);
+            if (! $ledger) {
+                throw new BusinessException('Vendor ledger not found for this company.');
+            }
+            return $ledger;
+        }
+
+        // Fallback — free-text vendor name: find an existing party ledger by name
+        // or auto-create one under Sundry Creditors (same as Tally's behaviour).
         $vendorName = trim($vendorName);
         $ledger = Ledger::forTenant($tenantId)->where('is_party', true)
             ->where('name', $vendorName)->first();
@@ -129,7 +239,7 @@ class BillService
 
         return Ledger::create([
             'tenant_id' => $tenantId, 'group_id' => $group->id, 'name' => $vendorName,
-            'is_party' => true, 'opening_balance_type' => 'cr',
+            'is_party' => true, 'party_type' => 'vendor', 'opening_balance_type' => 'cr',
         ]);
     }
 
@@ -139,4 +249,34 @@ class BillService
             throw new \App\Exceptions\UnauthorizedTenantException();
         }
     }
+
+    /**
+     * Delete an unpaid bill and cancel its voucher.
+     *
+     * Old-CRM parity: delete_bill_ajax(). Only unpaid bills may be removed;
+     * paid bills are permanent because they have a matching payment voucher
+     * in the ledger that cannot be silently unwound.
+     */
+    public function delete(Bill $bill, int $tenantId): array
+    {
+        $this->assertTenant($bill, $tenantId);
+
+        if ($bill->status === 'paid') {
+            throw new BusinessException('Paid bills cannot be deleted. Cancel the payment voucher first.');
+        }
+
+        return DB::transaction(function () use ($bill) {
+            // Cancel the purchase voucher so the ledger stays balanced.
+            if ($bill->voucher_id) {
+                $bill->voucher?->update(['status' => 'cancelled']);
+            }
+
+            $bill->delete();
+
+            Log::channel('accounts')->info('Bill deleted', ['bill_id' => $bill->id, 'tenant_id' => $bill->tenant_id]);
+
+            return ['deleted' => true];
+        });
+    }
 }
+

@@ -8,12 +8,14 @@ use App\Http\Controllers\Api\Accounts\BudgetController;
 use App\Http\Controllers\Api\Accounts\ChequeController;
 use App\Http\Controllers\Api\Accounts\LedgerController;
 use App\Http\Controllers\Api\Accounts\ReconciliationController;
+use App\Http\Controllers\Api\Accounts\RegisterController;
 use App\Http\Controllers\Api\Accounts\ReportController;
 use App\Http\Controllers\Api\Accounts\SettingsController;
 use App\Http\Controllers\Api\Accounts\SetupController;
 use App\Http\Controllers\Api\Accounts\StatementImportController;
 use App\Http\Controllers\Api\Accounts\TaxInvoiceController;
 use App\Http\Controllers\Api\Accounts\TaxMasterController;
+use App\Http\Controllers\Api\Accounts\TransferController;
 use App\Http\Controllers\Api\Accounts\VoucherController;
 use Illuminate\Support\Facades\Route;
 
@@ -79,10 +81,28 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('accounts')->gro
     Route::post('/vouchers/{voucher}/cancel',  [VoucherController::class, 'cancel']);
     Route::post('/vouchers/transfer',          [VoucherController::class, 'transfer']);
 
+    // Transfer Funds — accounts picker, history, cancel/reverse, categories
+    Route::get('/transfers/accounts',                 [TransferController::class, 'accounts']);
+    Route::get('/transfers',                          [TransferController::class, 'history']);
+    Route::post('/transfers/{voucher}/cancel',         [TransferController::class, 'cancel']);
+    Route::get('/transfer-categories',                 [TransferController::class, 'categories']);
+    Route::post('/transfer-categories',                [TransferController::class, 'storeCategory']);
+    Route::put('/transfer-categories/{category}',      [TransferController::class, 'updateCategory']);
+    Route::delete('/transfer-categories/{category}',   [TransferController::class, 'destroyCategory']);
+
     // Vendor Bills (old-CRM "Bills" parity)
-    Route::get('/bills',            [BillController::class, 'index']);
-    Route::post('/bills',           [BillController::class, 'store']);
-    Route::post('/bills/{bill}/pay', [BillController::class, 'pay']);
+    Route::get('/bills',                 [BillController::class, 'index']);
+    Route::post('/bills',                [BillController::class, 'store']);
+    Route::get('/bills/{bill}',          [BillController::class, 'show']);
+    Route::post('/bills/{bill}/pay',     [BillController::class, 'pay']);
+    Route::post('/bills/{bill}/approve', [BillController::class, 'approve']);
+    Route::post('/bills/{bill}/recur',   [BillController::class, 'generateNextRecurrence']);
+    Route::delete('/bills/{bill}',       [BillController::class, 'destroy']);
+
+    // Registers — per-ledger passbook (read-only derived view, no {ledger} conflict
+    // because /registers is under a separate prefix from /ledgers)
+    Route::get('/registers',             [RegisterController::class, 'index']);
+    Route::get('/registers/{ledger}',    [RegisterController::class, 'show']);
 
     /* ── Phase 2: Banking ──────────────────────────────────────── */
 

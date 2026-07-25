@@ -22,7 +22,7 @@ class Ledger extends Model
     protected $fillable = [
         'tenant_id', 'group_id', 'name', 'code',
         'opening_balance', 'opening_balance_type',
-        'is_bank', 'is_cash', 'is_party', 'party_id', 'is_active',
+        'is_bank', 'is_cash', 'is_party', 'party_id', 'party_type', 'is_active',
     ];
 
     protected $casts = [

@@ -83,6 +83,7 @@ class PostingService
                 'reversed_voucher_id' => $data['reversed_voucher_id'] ?? null,
                 'source_type'       => $data['source_type'] ?? null,
                 'source_id'         => $data['source_id'] ?? null,
+                'transfer_category_id' => $data['transfer_category_id'] ?? null,
                 'created_by'        => $userId,
             ]);
 

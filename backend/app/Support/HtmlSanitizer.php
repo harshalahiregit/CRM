@@ -12,22 +12,49 @@ use DOMNode;
  * if edge cases outgrow it, mews/purifier is the upgrade path.
  *
  * Allowed: structural/text tags + tables + links (http/https only) + images
- * (data:image/* or http/https only). Everything else is unwrapped to its text
- * content; all attributes except the whitelisted ones are stripped.
+ * (data:image/* or http/https) + native media (<audio>/<video> with https src)
+ * + a STRICT allowlist of embed iframes (YouTube / Vimeo only, forced-sandboxed).
+ * A small, whitelisted subset of inline style (text-align, width) is kept for
+ * layout/alignment; everything else — tags, attributes, styles, schemes — is
+ * stripped. Unknown tags are unwrapped to their text content.
  */
 class HtmlSanitizer
 {
     private const ALLOWED_TAGS = [
         'p', 'br', 'b', 'strong', 'i', 'em', 'u', 'h2', 'h3',
         'ul', 'ol', 'li', 'a', 'table', 'thead', 'tbody', 'tr', 'th', 'td',
-        'img', 'div', 'span',
+        'img', 'div', 'span', 'figure', 'figcaption',
+        'audio', 'video', 'source', 'iframe',
     ];
 
     private const ALLOWED_ATTRS = [
-        'a'   => ['href'],
-        'img' => ['src', 'alt', 'width', 'height'],
-        'td'  => ['colspan', 'rowspan'],
-        'th'  => ['colspan', 'rowspan'],
+        'a'      => ['href'],
+        'img'    => ['src', 'alt', 'width', 'height', 'style'],
+        'td'     => ['colspan', 'rowspan', 'align', 'width', 'style'],
+        'th'     => ['colspan', 'rowspan', 'align', 'width', 'style'],
+        'table'  => ['width', 'align', 'border', 'cellpadding', 'cellspacing', 'style'],
+        'p'      => ['style'],
+        'div'    => ['style'],
+        'h2'     => ['style'],
+        'h3'     => ['style'],
+        'span'   => ['style'],
+        'figure' => ['style'],
+        'audio'  => ['controls', 'src'],
+        'video'  => ['controls', 'width', 'height', 'src', 'poster', 'style'],
+        'source' => ['src', 'type'],
+        'iframe' => ['src', 'width', 'height', 'allowfullscreen', 'title', 'style'],
+    ];
+
+    /** Only these hosts/paths may be embedded via <iframe>. */
+    private const IFRAME_ALLOWLIST = '~^https://(www\.)?(youtube\.com/embed/|youtube-nocookie\.com/embed/|player\.vimeo\.com/video/)~i';
+
+    /** Style properties we keep, each with a value pattern it must match. */
+    private const ALLOWED_STYLES = [
+        'text-align'  => '~^(left|right|center|justify)$~i',
+        'width'       => '~^\d{1,4}(px|%)?$~i',
+        'max-width'   => '~^\d{1,4}(px|%)?$~i',
+        'height'      => '~^(auto|\d{1,4}(px|%)?)$~i',
+        'margin'      => '~^[\d.\s a-z%]{1,40}$~i',
     ];
 
     public static function clean(?string $html): string
@@ -37,8 +64,6 @@ class HtmlSanitizer
         }
 
         $doc = new DOMDocument();
-        // Suppress warnings from malformed fragments; wrap so the fragment
-        // parses with a known root and UTF-8 is honored.
         libxml_use_internal_errors(true);
         $doc->loadHTML(
             '<?xml encoding="utf-8"?><div id="__root">' . $html . '</div>',
@@ -63,30 +88,44 @@ class HtmlSanitizer
 
     private static function walk(DOMNode $node): void
     {
-        // Iterate over a static copy — we mutate the tree while walking.
         $children = iterator_to_array($node->childNodes);
         foreach ($children as $child) {
-            if ($child instanceof DOMElement) {
-                $tag = strtolower($child->nodeName);
-
-                // Drop scriptable/embedding elements entirely (content too).
-                if (in_array($tag, ['script', 'style', 'iframe', 'object', 'embed', 'form', 'link', 'meta'], true)) {
-                    $node->removeChild($child);
-                    continue;
-                }
-
-                if (! in_array($tag, self::ALLOWED_TAGS, true)) {
-                    // Unwrap: hoist children in place, drop the tag itself.
-                    while ($child->firstChild) {
-                        $node->insertBefore($child->firstChild, $child);
-                    }
-                    $node->removeChild($child);
-                    continue;
-                }
-
-                self::filterAttributes($child, $tag);
-                self::walk($child);
+            if (! ($child instanceof DOMElement)) {
+                continue;
             }
+            $tag = strtolower($child->nodeName);
+
+            // Scriptable/dangerous elements: drop entirely (content too).
+            if (in_array($tag, ['script', 'style', 'object', 'embed', 'form', 'link', 'meta', 'base'], true)) {
+                $node->removeChild($child);
+                continue;
+            }
+
+            // iframe survives ONLY if its src is on the embed allowlist.
+            if ($tag === 'iframe') {
+                $src = trim($child->getAttribute('src'));
+                if (! preg_match(self::IFRAME_ALLOWLIST, $src)) {
+                    $node->removeChild($child);
+                    continue;
+                }
+                self::filterAttributes($child, $tag);
+                // Force a locked-down sandbox regardless of what was submitted.
+                $child->setAttribute('sandbox', 'allow-scripts allow-same-origin allow-presentation');
+                $child->setAttribute('loading', 'lazy');
+                continue; // no children worth walking
+            }
+
+            if (! in_array($tag, self::ALLOWED_TAGS, true)) {
+                // Unwrap: hoist children in place, drop the tag itself.
+                while ($child->firstChild) {
+                    $node->insertBefore($child->firstChild, $child);
+                }
+                $node->removeChild($child);
+                continue;
+            }
+
+            self::filterAttributes($child, $tag);
+            self::walk($child);
         }
     }
 
@@ -104,12 +143,33 @@ class HtmlSanitizer
 
             $value = trim($attr->value);
 
+            // URL-bearing attributes: enforce safe schemes per element.
             if ($name === 'href' && ! preg_match('~^https?://~i', $value)) {
                 $el->removeAttribute($attr->name);
             }
-
-            if ($name === 'src' && ! preg_match('~^(https?://|data:image/(png|jpe?g|gif|webp);base64,)~i', $value)) {
+            if ($name === 'src') {
+                $ok = match ($tag) {
+                    'img'    => (bool) preg_match('~^(https?://|data:image/(png|jpe?g|gif|webp);base64,)~i', $value),
+                    'iframe' => (bool) preg_match(self::IFRAME_ALLOWLIST, $value),
+                    default  => (bool) preg_match('~^https://~i', $value), // audio/video/source: https only
+                };
+                if (! $ok) {
+                    $el->removeAttribute($attr->name);
+                }
+            }
+            if ($name === 'align' && ! preg_match('~^(left|right|center|justify)$~i', $value)) {
                 $el->removeAttribute($attr->name);
+            }
+            if (in_array($name, ['width', 'height'], true) && ! preg_match('~^\d{1,4}%?$~', $value)) {
+                $el->removeAttribute($attr->name);
+            }
+            if ($name === 'style') {
+                $clean = self::cleanStyle($value);
+                if ($clean === '') {
+                    $el->removeAttribute($attr->name);
+                } else {
+                    $el->setAttribute('style', $clean);
+                }
             }
         }
 
@@ -117,5 +177,24 @@ class HtmlSanitizer
             $el->setAttribute('rel', 'noopener noreferrer');
             $el->setAttribute('target', '_blank');
         }
+    }
+
+    /** Keep only whitelisted style properties whose value matches its pattern. */
+    private static function cleanStyle(string $style): string
+    {
+        $kept = [];
+        foreach (explode(';', $style) as $decl) {
+            if (! str_contains($decl, ':')) {
+                continue;
+            }
+            [$prop, $val] = array_map('trim', explode(':', $decl, 2));
+            $prop = strtolower($prop);
+            $val = trim($val);
+            if (isset(self::ALLOWED_STYLES[$prop]) && preg_match(self::ALLOWED_STYLES[$prop], $val)) {
+                $kept[] = "{$prop}: {$val}";
+            }
+        }
+
+        return implode('; ', $kept);
     }
 }

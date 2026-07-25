@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Landmark, FolderTree, Search, Loader2, Trash2, Pencil } from 'lucide-react'
 import { accountsApi } from '@/services/accountsApi'
-import { inr, NATURE_LABEL } from '@/modules/accounts/format'
+import { NATURE_LABEL } from '@/modules/accounts/format'
+import { useInr } from '@/modules/accounts/useMoney'
 import { useToast } from '@/hooks/useToast'
 import DataTable from '@/components/ui/DataTable'
 import Drawer from '@/components/ui/Drawer'
@@ -15,6 +16,7 @@ const NATURE_COLORS = {
 }
 
 export default function ChartOfAccounts() {
+  const inr = useInr()
   const toast = useToast()
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
@@ -152,6 +154,7 @@ function LedgerDrawer({ ledger, groups, saving, onClose, onSave }) {
     is_bank: ledger.is_bank || false,
     is_cash: ledger.is_cash || false,
     is_party: ledger.is_party || false,
+    party_type: ledger.party_type || '',
     is_active: ledger.is_active ?? true,
   })
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
@@ -202,6 +205,17 @@ function LedgerDrawer({ ledger, groups, saving, onClose, onSave }) {
             </label>
           ))}
         </div>
+        {form.is_party && (
+          <FormField label="Party type" hint="Groups this account in Transfer Funds and future Vendor/TPV screens.">
+            <Select value={form.party_type} onChange={e => set('party_type', e.target.value)}>
+              <option value="">Unclassified</option>
+              <option value="client">Client</option>
+              <option value="vendor">Vendor</option>
+              <option value="tpv">Third-Party Vendor</option>
+              <option value="other">Other</option>
+            </Select>
+          </FormField>
+        )}
         {form.id && (
           <label className="flex items-center gap-2 text-sm cursor-pointer" style={{ color: 'var(--text-muted)' }}>
             <input type="checkbox" checked={form.is_active} onChange={e => set('is_active', e.target.checked)} /> Active

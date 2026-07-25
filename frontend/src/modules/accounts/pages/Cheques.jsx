@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, ScrollText, Loader2, Trash2, Clock } from 'lucide-react'
+import { Plus, ScrollText, Loader2, Trash2, Clock, Pencil } from 'lucide-react'
 import { accountsApi } from '@/services/accountsApi'
-import { inr, fmtDate } from '@/modules/accounts/format'
+import { fmtDate } from '@/modules/accounts/format'
+import { useInr } from '@/modules/accounts/useMoney'
 import { useToast } from '@/hooks/useToast'
 import DataTable from '@/components/ui/DataTable'
 import Drawer from '@/components/ui/Drawer'
@@ -16,90 +17,158 @@ const STATUS_COLORS = {
 }
 const NEXT_STATUS = {
   post_dated: ['issued', 'deposited', 'cancelled'],
-  issued: ['presented', 'deposited', 'cleared', 'bounced', 'cancelled'],
-  deposited: ['presented', 'cleared', 'bounced', 'cancelled'],
-  presented: ['cleared', 'bounced', 'cancelled'],
-  bounced: ['deposited', 'cancelled'],
+  issued:     ['presented', 'deposited', 'cleared', 'bounced', 'cancelled'],
+  deposited:  ['presented', 'cleared', 'bounced', 'cancelled'],
+  presented:  ['cleared', 'bounced', 'cancelled'],
+  bounced:    ['deposited', 'cancelled'],
   cleared: [], cancelled: [],
 }
 
+const CHEQUE_DEFAULTS = {
+  direction: 'issued', bank_account_id: '', cheque_no: '',
+  cheque_date: new Date().toISOString().slice(0, 10),
+  party_name: '', amount: '', is_pdc: false, pdc_due_date: '', memo: '',
+}
+
 export default function Cheques() {
+  const inr = useInr()
   const toast = useToast()
   const qc = useQueryClient()
-  const [filters, setFilters] = useState({ direction: '', status: '', search: '' })
-  const [drawer, setDrawer] = useState(false)
-  const [confirm, setConfirm] = useState(null)
+  const [filters, setFilters]     = useState({ direction: '', status: '', search: '', bank_account_id: '' })
+  const [drawer, setDrawer]       = useState(false)
+  const [editTarget, setEditTarget] = useState(null)  // cheque being edited
+  const [confirm, setConfirm]     = useState(null)
 
   const { data: summary } = useQuery({ queryKey: ['accounts', 'cheques', 'summary'], queryFn: accountsApi.cheques.summary })
   const { data: banks = [] } = useQuery({ queryKey: ['accounts', 'bank-accounts'], queryFn: accountsApi.bankAccounts.list })
   const { data: page, isLoading } = useQuery({
     queryKey: ['accounts', 'cheques', filters],
-    queryFn: () => accountsApi.cheques.list({ ...filters, per_page: 100 }),
+    queryFn:  () => accountsApi.cheques.list({ ...filters, per_page: 100 }),
   })
-  const cheques = page?.data ?? []
+  const cheques  = page?.data ?? []
   const invalidate = () => qc.invalidateQueries({ queryKey: ['accounts', 'cheques'] })
 
   const create = useMutation({
     mutationFn: (f) => accountsApi.cheques.create(f),
     onSuccess: () => { toast.success('Cheque recorded'); setDrawer(false); invalidate() },
-    onError: (e) => toast.error(e.message),
+    onError:   (e) => toast.error(e.message),
+  })
+  const edit = useMutation({
+    mutationFn: (f) => accountsApi.cheques.update(editTarget.id, f),
+    onSuccess: () => { toast.success('Cheque updated'); setEditTarget(null); invalidate() },
+    onError:   (e) => toast.error(e.message),
   })
   const changeStatus = useMutation({
     mutationFn: ({ id, status }) => accountsApi.cheques.changeStatus(id, status),
     onSuccess: () => { toast.success('Status updated'); invalidate() },
-    onError: (e) => toast.error(e.message),
+    onError:   (e) => toast.error(e.message),
   })
   const remove = useMutation({
     mutationFn: (id) => accountsApi.cheques.remove(id),
     onSuccess: () => { toast.success('Cheque deleted'); setConfirm(null); invalidate() },
-    onError: (e) => { toast.error(e.message); setConfirm(null) },
+    onError:   (e) => { toast.error(e.message); setConfirm(null) },
   })
 
   const today = new Date().toISOString().slice(0, 10)
+
   const columns = [
-    { key: 'cheque_no', label: 'Cheque', sortable: true, render: (r) => (
-      <div>
-        <span className="font-semibold" style={{ color: 'var(--text-h)' }}>{r.cheque_no || '—'}</span>
-        <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{r.party_name || '—'}</div>
-      </div>
-    ) },
-    { key: 'direction', label: 'Dir', render: (r) => <span className="capitalize text-xs">{r.direction}</span> },
-    { key: 'cheque_date', label: 'Date', sortable: true, render: (r) => {
-      // pdc_due_date arrives as a full ISO datetime — compare date-only so "due today" is caught.
-      const due = (r.pdc_due_date || '').slice(0, 10)
-      const isDue = due && due <= today
-      return (
-        <span>{fmtDate(r.cheque_date)}
-          {r.is_pdc && r.status === 'post_dated' && (
-            <span className="ml-1.5 inline-flex items-center gap-0.5 text-[10px]" style={{ color: isDue ? '#f87171' : '#f59e0b' }}>
-              <Clock size={10} /> PDC {isDue ? 'due' : fmtDate(r.pdc_due_date)}
-            </span>
-          )}
+    {
+      key: 'cheque_no', label: 'Cheque', sortable: true,
+      render: (r) => (
+        <div>
+          <span className="font-semibold" style={{ color: 'var(--text-h)' }}>{r.cheque_no || '—'}</span>
+          <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{r.party_name || '—'}</div>
+        </div>
+      ),
+    },
+    {
+      key: 'direction', label: 'Dir',
+      render: (r) => (
+        <span className="text-[11px] font-bold capitalize px-2 py-0.5 rounded-lg"
+          style={{
+            background: r.direction === 'issued' ? 'rgba(248,113,113,0.12)' : 'rgba(34,211,238,0.12)',
+            color:      r.direction === 'issued' ? '#f87171' : '#22d3ee',
+          }}>
+          {r.direction}
         </span>
-      )
-    } },
-    { key: 'amount', label: 'Amount', align: 'right', sortable: true, render: (r) => inr(r.amount) },
-    { key: 'status', label: 'Status', render: (r) => <span className="text-xs font-bold capitalize" style={{ color: STATUS_COLORS[r.status] }}>{r.status.replace('_', ' ')}</span> },
-    { key: 'actions', label: '', align: 'right', render: (r) => (
-      <div className="flex items-center justify-end gap-2">
-        {NEXT_STATUS[r.status]?.length > 0 && (
-          <select className="input-3d text-xs" style={{ padding: '2px 6px', width: 'auto' }} value="" onChange={e => e.target.value && changeStatus.mutate({ id: r.id, status: e.target.value })}>
-            <option value="">Move to…</option>
-            {NEXT_STATUS[r.status].map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
-          </select>
-        )}
-        <button className="p-1.5 rounded-lg" title="Delete" onClick={() => setConfirm(r)} style={{ color: '#f87171' }}><Trash2 size={14} /></button>
-      </div>
-    ) },
+      ),
+    },
+    {
+      key: 'cheque_date', label: 'Date', sortable: true,
+      render: (r) => {
+        const due   = (r.pdc_due_date || '').slice(0, 10)
+        const isDue = due && due <= today
+        return (
+          <span>{fmtDate(r.cheque_date)}
+            {r.is_pdc && r.status === 'post_dated' && (
+              <span className="ml-1.5 inline-flex items-center gap-0.5 text-[10px]"
+                style={{ color: isDue ? '#f87171' : '#f59e0b' }}>
+                <Clock size={10} /> PDC {isDue ? 'due' : fmtDate(r.pdc_due_date)}
+              </span>
+            )}
+          </span>
+        )
+      },
+    },
+    {
+      key: 'bank', label: 'Bank',
+      render: (r) => <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{r.bank_account?.bank_name || r.bank_account?.ledger?.name || '—'}</span>,
+    },
+    {
+      key: 'amount', label: 'Amount', align: 'right', sortable: true,
+      render: (r) => <span className="font-bold">{inr(r.amount)}</span>,
+    },
+    {
+      key: 'status', label: 'Status',
+      render: (r) => (
+        <span className="text-xs font-bold capitalize"
+          style={{ color: STATUS_COLORS[r.status] ?? 'var(--text-muted)' }}>
+          {r.status.replace('_', ' ')}
+        </span>
+      ),
+    },
+    {
+      key: 'actions', label: '', align: 'right',
+      render: (r) => (
+        <div className="flex items-center justify-end gap-2">
+          {/* Status transition */}
+          {NEXT_STATUS[r.status]?.length > 0 && (
+            <select className="input-3d text-xs" style={{ padding: '2px 6px', width: 'auto' }}
+              value="" onChange={e => e.target.value && changeStatus.mutate({ id: r.id, status: e.target.value })}>
+              <option value="">Move to…</option>
+              {NEXT_STATUS[r.status].map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
+            </select>
+          )}
+          {/* Edit */}
+          {!['cleared', 'cancelled'].includes(r.status) && (
+            <button title="Edit" onClick={() => setEditTarget(r)}
+              className="p-1.5 rounded-lg hover:opacity-80 transition-opacity"
+              style={{ color: '#a78bfa' }}>
+              <Pencil size={13} />
+            </button>
+          )}
+          {/* Delete */}
+          <button title="Delete" onClick={() => setConfirm(r)}
+            className="p-1.5 rounded-lg hover:opacity-80 transition-opacity"
+            style={{ color: '#f87171' }}>
+            <Trash2 size={14} />
+          </button>
+        </div>
+      ),
+    },
   ]
 
   const kpis = [
-    ['Total', summary?.total], ['Pending', summary?.pending],
-    ['PDC', summary?.pdc], ['PDC due', summary?.pdc_due], ['Bounced', summary?.bounced],
+    ['Total',    summary?.total,    'var(--text-h)'],
+    ['Pending',  summary?.pending,  '#f59e0b'],
+    ['PDC',      summary?.pdc,      '#a78bfa'],
+    ['PDC due',  summary?.pdc_due,  summary?.pdc_due > 0 ? '#f87171' : 'var(--text-muted)'],
+    ['Bounced',  summary?.bounced,  summary?.bounced > 0 ? '#f87171' : 'var(--text-muted)'],
   ]
 
   return (
     <div className="space-y-5 animate-fade-in">
+      {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.12)' }}>
@@ -113,55 +182,96 @@ export default function Cheques() {
         <button className="btn-3d flex items-center gap-2" onClick={() => setDrawer(true)}><Plus size={15} /> New Cheque</button>
       </div>
 
+      {/* KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-        {kpis.map(([label, val]) => (
+        {kpis.map(([label, val, color]) => (
           <div key={label} className="kpi-3d">
             <p className="text-[10px] uppercase font-bold" style={{ color: 'var(--text-muted)' }}>{label}</p>
-            <p className="text-xl font-black" style={{ color: label === 'PDC due' && val > 0 ? '#f87171' : 'var(--text-h)' }}>{val ?? '—'}</p>
+            <p className="text-xl font-black mt-1" style={{ color }}>{val ?? '—'}</p>
           </div>
         ))}
       </div>
 
+      {/* Filters */}
       <div className="flex flex-wrap items-center gap-2">
-        <input className="input-3d text-sm flex-1 min-w-[200px]" placeholder="Search cheque no / party…" value={filters.search} onChange={e => setFilters(f => ({ ...f, search: e.target.value }))} />
-        <Select value={filters.direction} onChange={e => setFilters(f => ({ ...f, direction: e.target.value }))} style={{ maxWidth: 160 }}>
-          <option value="">All directions</option><option value="issued">Issued</option><option value="received">Received</option>
+        <input className="input-3d text-sm flex-1 min-w-[180px]" placeholder="Search cheque no / party…"
+          value={filters.search} onChange={e => setFilters(f => ({ ...f, search: e.target.value }))} />
+        <Select value={filters.direction} onChange={e => setFilters(f => ({ ...f, direction: e.target.value }))} style={{ maxWidth: 140 }}>
+          <option value="">All dirs</option>
+          <option value="issued">Issued</option>
+          <option value="received">Received</option>
         </Select>
-        <Select value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))} style={{ maxWidth: 160 }}>
+        <Select value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))} style={{ maxWidth: 150 }}>
           <option value="">All statuses</option>
-          {Object.keys(NEXT_STATUS).map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
+          {Object.keys(STATUS_COLORS).map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
         </Select>
+        {banks.length > 0 && (
+          <Select value={filters.bank_account_id} onChange={e => setFilters(f => ({ ...f, bank_account_id: e.target.value }))} style={{ maxWidth: 180 }}>
+            <option value="">All banks</option>
+            {banks.map(b => <option key={b.id} value={b.id}>{b.bank_name || b.ledger?.name}</option>)}
+          </Select>
+        )}
       </div>
 
-      {isLoading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div>
+      {isLoading
+        ? <div className="flex justify-center py-10"><Loader2 className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div>
         : <DataTable columns={columns} rows={cheques} />}
 
-      {drawer && <ChequeDrawer banks={banks} saving={create.isPending} onClose={() => setDrawer(false)} onSave={(f) => create.mutate(f)} />}
+      {/* New cheque drawer */}
+      {drawer && (
+        <ChequeDrawer
+          banks={banks}
+          saving={create.isPending}
+          onClose={() => setDrawer(false)}
+          onSave={(f) => create.mutate(f)}
+        />
+      )}
+
+      {/* Edit cheque drawer */}
+      {editTarget && (
+        <ChequeDrawer
+          banks={banks}
+          initialValues={editTarget}
+          saving={edit.isPending}
+          onClose={() => setEditTarget(null)}
+          onSave={(f) => edit.mutate(f)}
+          isEdit
+        />
+      )}
 
       {confirm && (
-        <ConfirmDialog title="Delete cheque?" message={`Cheque ${confirm.cheque_no || ''} for ${inr(confirm.amount)} will be removed.`} confirmLabel="Delete"
-          onCancel={() => setConfirm(null)} onConfirm={() => remove.mutate(confirm.id)} />
+        <ConfirmDialog
+          title="Delete cheque?"
+          message={`Cheque ${confirm.cheque_no || ''} for ${inr(confirm.amount)} will be removed.`}
+          confirmLabel="Delete"
+          onCancel={() => setConfirm(null)}
+          onConfirm={() => remove.mutate(confirm.id)}
+        />
       )}
     </div>
   )
 }
 
-function ChequeDrawer({ banks, saving, onClose, onSave }) {
-  const [form, setForm] = useState({
-    direction: 'issued', bank_account_id: '', cheque_no: '', cheque_date: new Date().toISOString().slice(0, 10),
-    party_name: '', amount: '', is_pdc: false, pdc_due_date: '', memo: '',
-  })
+function ChequeDrawer({ banks, initialValues, saving, onClose, onSave, isEdit = false }) {
+  const [form, setForm] = useState(initialValues ?? CHEQUE_DEFAULTS)
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
   const valid = form.direction && form.cheque_date && form.amount !== ''
 
   return (
-    <Drawer open onClose={onClose} title="New Cheque"
+    <Drawer open onClose={onClose} title={isEdit ? 'Edit Cheque' : 'New Cheque'}
       footer={
         <div className="flex gap-3">
           <GhostButton className="flex-1" onClick={onClose}>Cancel</GhostButton>
-          <button className="btn-3d flex-1 flex items-center justify-center gap-2" disabled={!valid || saving}
-            onClick={() => onSave({ ...form, amount: Number(form.amount), bank_account_id: form.bank_account_id || null, pdc_due_date: form.pdc_due_date || null })}>
-            {saving && <Loader2 size={15} className="animate-spin" />} Save
+          <button className="btn-3d flex-1 flex items-center justify-center gap-2"
+            disabled={!valid || saving}
+            onClick={() => onSave({
+              ...form,
+              amount: Number(form.amount),
+              bank_account_id: form.bank_account_id || null,
+              pdc_due_date: form.pdc_due_date || null,
+            })}>
+            {saving && <Loader2 size={15} className="animate-spin" />}
+            {isEdit ? 'Save changes' : 'Record Cheque'}
           </button>
         </div>
       }>
@@ -184,11 +294,13 @@ function ChequeDrawer({ banks, saving, onClose, onSave }) {
           <FormField label="Cheque date" required><Input type="date" value={form.cheque_date} onChange={e => set('cheque_date', e.target.value)} /></FormField>
           <FormField label="Party name"><Input value={form.party_name} onChange={e => set('party_name', e.target.value)} /></FormField>
         </div>
+
         <label className="flex items-center gap-2 text-sm cursor-pointer" style={{ color: 'var(--text-muted)' }}>
-          <input type="checkbox" checked={form.is_pdc} onChange={e => set('is_pdc', e.target.checked)} /> Post-dated cheque (PDC)
+          <input type="checkbox" checked={form.is_pdc} onChange={e => set('is_pdc', e.target.checked)} />
+          Post-dated cheque (PDC)
         </label>
-        {(form.is_pdc) && (
-          <FormField label="PDC due date" hint="Defaults to the cheque date.">
+        {form.is_pdc && (
+          <FormField label="PDC due date" hint="Date when this cheque can be presented.">
             <Input type="date" value={form.pdc_due_date} onChange={e => set('pdc_due_date', e.target.value)} />
           </FormField>
         )}

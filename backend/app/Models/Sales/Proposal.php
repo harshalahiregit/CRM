@@ -24,7 +24,7 @@ class Proposal extends Model
         'sent_at', 'accepted_at', 'declined_at', 'created_by',
         'template_id', 'qr_code_data', 'public_view_otp_enabled',
         'email_opened_at', 'email_opened_device', 'email_opened_count',
-        'pdf_header', 'pdf_footer', 'company_logo_url', 'company_stamp_url',
+        'pdf_header', 'pdf_footer', 'company_logo_url', 'company_stamp_url', 'cover',
         'portal_viewed_at', 'portal_view_count', 'acceptance_ip', 'acceptance_user_agent',
         'email_subject', 'email_body', 'email_cc', 'last_emailed_at',
         'converted_estimate_id', 'converted_invoice_id',
@@ -47,6 +47,7 @@ class Proposal extends Model
         'portal_viewed_at'        => 'datetime',
         'portal_view_count'       => 'integer',
         'email_cc'                => 'array',
+        'cover'                   => 'array',
         'last_emailed_at'         => 'datetime',
     ];
 

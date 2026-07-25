@@ -9,6 +9,7 @@ use App\Models\Accounts\GstRate;
 use App\Models\Accounts\Ledger;
 use App\Models\Accounts\NumberingSeries;
 use App\Models\Accounts\TdsSection;
+use App\Models\Accounts\TransferCategory;
 use App\Models\Accounts\VoucherType;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -106,6 +107,7 @@ class AccountsSetupService
             $this->seedTaxLedgers($tenantId);
             $this->seedIntegrationLedgers($tenantId);
             $this->seedAccountMappings($tenantId);
+            $this->seedTransferCategories($tenantId);
 
             Log::channel('accounts')->info('Accounts module set up for tenant', ['tenant_id' => $tenantId]);
 
@@ -284,6 +286,27 @@ class AccountsSetupService
                     ['ledger_id' => $ledgerIds->get($ledgerName)],
                 );
             }
+        }
+    }
+
+    /** Default "Category / Head" options for the Transfer Funds screen. */
+    private function seedTransferCategories(int $tenantId): void
+    {
+        foreach ([
+            'Fund Transfer' => 'Routine move between your own accounts',
+            'Reversal / Correction' => 'Undoing a wrongly recorded entry',
+            'Excess Payment Return' => 'Returning an amount a client overpaid',
+            'Double Payment Refund' => 'A vendor/TPV returning a duplicate payment',
+            'Client Refund' => 'Refund issued to a client',
+            'Vendor Refund' => 'Refund issued to a vendor',
+            'Owner Drawings' => 'Funds withdrawn by the owner/promoter',
+            'Bank Charges' => 'Bank fees, charges, or interest adjustments',
+            'Other' => 'Anything that does not fit the above',
+        ] as $name => $description) {
+            TransferCategory::firstOrCreate(
+                ['tenant_id' => $tenantId, 'name' => $name],
+                ['description' => $description, 'is_active' => true],
+            );
         }
     }
 }

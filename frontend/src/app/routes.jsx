@@ -64,6 +64,7 @@ const CustomFieldsSettings = lazy(() => import('@/modules/settings/pages/CustomF
 const CompanyFinanceSettings = lazy(() => import('@/modules/settings/pages/CompanyFinanceSettings'))
 const TaxRatesSettings = lazy(() => import('@/modules/settings/pages/TaxRatesSettings'))
 const ExpenseCategoriesSettings = lazy(() => import('@/modules/settings/pages/ExpenseCategoriesSettings'))
+const AccountGroupsSettings = lazy(() => import('@/modules/settings/pages/AccountGroupsSettings'))
 const PublicLeadForm = lazy(() => import('@/modules/sales/public/PublicLeadForm'))
 
 // Customer Module (lazy)
@@ -85,6 +86,8 @@ const AccReconcile = lazy(() => import('@/modules/accounts/pages/Reconcile'))
 const AccCheques = lazy(() => import('@/modules/accounts/pages/Cheques'))
 const AccBudgets = lazy(() => import('@/modules/accounts/pages/Budgets'))
 const AccBudgetDetail = lazy(() => import('@/modules/accounts/pages/BudgetDetail'))
+const AccRegisters = lazy(() => import('@/modules/accounts/pages/Registers'))
+const AccRegisterDetail = lazy(() => import('@/modules/accounts/pages/RegisterDetail'))
 const AccReportsIndex = lazy(() => import('@/modules/accounts/pages/reports/ReportsIndex'))
 const AccTrialBalance = lazy(() => import('@/modules/accounts/pages/reports/TrialBalance'))
 const AccProfitLoss = lazy(() => import('@/modules/accounts/pages/reports/ProfitAndLoss'))
@@ -235,6 +238,8 @@ export default function AppRoutes() {
           <Route path="chart-of-accounts" element={<S><ChartOfAccounts /></S>} />
           <Route path="vouchers" element={<S><Vouchers /></S>} />
           <Route path="vouchers/:id" element={<S><VoucherDetail /></S>} />
+          <Route path="registers" element={<S><AccRegisters /></S>} />
+          <Route path="registers/:ledgerId" element={<S><AccRegisterDetail /></S>} />
           <Route path="reports" element={<S><AccReportsIndex /></S>} />
           <Route path="reports/trial-balance" element={<S><AccTrialBalance /></S>} />
           <Route path="reports/profit-loss" element={<S><AccProfitLoss /></S>} />
@@ -287,6 +292,7 @@ export default function AppRoutes() {
           <Route path="company" element={<S><CompanyFinanceSettings /></S>} />
           <Route path="tax-rates" element={<S><TaxRatesSettings /></S>} />
           <Route path="expense-categories" element={<S><ExpenseCategoriesSettings /></S>} />
+          <Route path="account-groups" element={<S><AccountGroupsSettings /></S>} />
         </Route>
       </Route>
 

@@ -17,7 +17,7 @@ class ChequeController extends Controller
     public function index(Request $request)
     {
         return response()->json($this->cheques->list($request->user()->tenant_id, $request->only([
-            'direction', 'status', 'is_pdc', 'search', 'per_page',
+            'direction', 'status', 'is_pdc', 'search', 'per_page', 'bank_account_id',
         ])));
     }
 

@@ -1,13 +1,15 @@
 import { useState } from 'react'
+import { useInr } from '@/modules/accounts/useMoney'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Loader2, Waves } from 'lucide-react'
 import { accountsApi } from '@/services/accountsApi'
-import { inr } from '@/modules/accounts/format'
+
 
 const LABELS = { operating: 'Operating Activities', investing: 'Investing Activities', financing: 'Financing Activities' }
 
 export default function CashFlow() {
+  const inr = useInr()
   const [range, setRange] = useState({ from: '', to: '' })
   const { data, isLoading } = useQuery({
     queryKey: ['accounts', 'report', 'cash-flow', range],

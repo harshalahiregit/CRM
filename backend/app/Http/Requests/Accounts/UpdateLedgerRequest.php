@@ -23,6 +23,7 @@ class UpdateLedgerRequest extends FormRequest
             'is_cash'              => ['nullable', 'boolean'],
             'is_party'             => ['nullable', 'boolean'],
             'party_id'             => ['nullable', 'integer'],
+            'party_type'           => ['nullable', 'in:client,vendor,tpv,other'],
             'is_active'            => ['nullable', 'boolean'],
         ];
     }

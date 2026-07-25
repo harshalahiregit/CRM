@@ -3,7 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Plus, PieChart, Loader2, Trash2 } from 'lucide-react'
 import { accountsApi } from '@/services/accountsApi'
-import { inr, fmtDate } from '@/modules/accounts/format'
+import { fmtDate } from '@/modules/accounts/format'
+import { useInr } from '@/modules/accounts/useMoney'
 import { useToast } from '@/hooks/useToast'
 import DataTable from '@/components/ui/DataTable'
 import Drawer from '@/components/ui/Drawer'
@@ -12,6 +13,7 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import { GhostButton } from '@/modules/accounts/components/Btn'
 
 export default function Budgets() {
+  const inr = useInr()
   const toast = useToast(); const qc = useQueryClient(); const navigate = useNavigate()
   const [drawer, setDrawer] = useState(false)
   const [confirm, setConfirm] = useState(null)

@@ -1,11 +1,13 @@
 import { useState } from 'react'
+import { useInr } from '@/modules/accounts/useMoney'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Loader2, Hourglass } from 'lucide-react'
 import { accountsApi } from '@/services/accountsApi'
-import { inr } from '@/modules/accounts/format'
+
 
 export default function Ageing() {
+  const inr = useInr()
   const [type, setType] = useState('receivable')
   const [to, setTo] = useState('')
   const { data, isLoading } = useQuery({

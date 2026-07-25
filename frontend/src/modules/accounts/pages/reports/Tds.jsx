@@ -1,11 +1,13 @@
 import { useState } from 'react'
+import { useInr } from '@/modules/accounts/useMoney'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Loader2, Percent } from 'lucide-react'
 import { accountsApi } from '@/services/accountsApi'
-import { inr } from '@/modules/accounts/format'
+
 
 export default function Tds() {
+  const inr = useInr()
   const [range, setRange] = useState({ from: '', to: '' })
   const { data, isLoading } = useQuery({ queryKey: ['accounts', 'report', 'tds', range], queryFn: () => accountsApi.reports.tds(range) })
 

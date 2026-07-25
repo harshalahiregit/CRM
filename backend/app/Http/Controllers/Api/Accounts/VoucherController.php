@@ -7,6 +7,7 @@ use App\Http\Requests\Accounts\StoreVoucherRequest;
 use App\Models\Accounts\Voucher;
 use App\Services\Accounts\PostingService;
 use App\Services\Accounts\ReversalService;
+use App\Services\Accounts\TransferService;
 use App\Services\Accounts\VoucherService;
 use Illuminate\Http\Request;
 
@@ -16,6 +17,7 @@ class VoucherController extends Controller
         private VoucherService $vouchers,
         private PostingService $posting,
         private ReversalService $reversal,
+        private TransferService $transfers,
     ) {
     }
 
@@ -47,10 +49,11 @@ class VoucherController extends Controller
     }
 
     /**
-     * Fund transfer between two asset ledgers (old-CRM "Transfer" — the
-     * feature the reference build's sidebar mislabels "Convert" due to a
-     * language-key collision). A thin, friendlier front door onto a Contra
-     * voucher: Dr the destination ledger, Cr the source ledger.
+     * Fund transfer — the friendly front door onto the ledger for moving money
+     * between any two accounts (own, client, vendor, or third-party-vendor).
+     * The correct voucher type (Contra/Payment/Receipt) is chosen automatically
+     * by TransferService based on the two accounts involved; the caller never
+     * needs to think about it. Kept at this URL for frontend compatibility.
      */
     public function transfer(Request $request)
     {
@@ -60,18 +63,10 @@ class VoucherController extends Controller
             'date'           => 'required|date',
             'amount'         => 'required|numeric|gt:0',
             'narration'      => 'nullable|string|max:255',
+            'transfer_category_id' => 'nullable|integer|exists:acc_transfer_categories,id',
         ]);
 
-        $voucher = $this->posting->post([
-            'voucher_type_code' => 'contra',
-            'date'              => $data['date'],
-            'narration'         => $data['narration'] ?? 'Fund transfer',
-            'source_type'       => 'fund_transfer',
-            'lines' => [
-                ['ledger_id' => $data['to_ledger_id'], 'debit' => $data['amount']],
-                ['ledger_id' => $data['from_ledger_id'], 'credit' => $data['amount']],
-            ],
-        ], $request->user()->tenant_id, $request->user()->id);
+        $voucher = $this->transfers->transfer($data, $request->user()->tenant_id, $request->user()->id);
 
         return response()->json($voucher, 201);
     }

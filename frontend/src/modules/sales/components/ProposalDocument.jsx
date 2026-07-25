@@ -13,9 +13,29 @@ export default function ProposalDocument({ proposal }) {
   const pages = proposal.pages || []
   const lineItems = proposal.line_items || proposal.lineItems || []
   const cur = proposal.currency || 'INR'
+  const cover = proposal.cover && proposal.cover.enabled ? proposal.cover : null
 
   return (
-    <div className="mx-auto" style={{ maxWidth: 820 }}>
+    <div className="mx-auto space-y-5" style={{ maxWidth: 820 }}>
+      {/* Cover page (Page 1) — a distinct card before the document body */}
+      {cover && (
+        <div className="card-3d overflow-hidden" style={{ padding: 0 }}>
+          {cover.image && (
+            <img src={cover.image} alt="" style={{ width: '100%', maxHeight: 340, objectFit: 'cover', display: 'block' }} />
+          )}
+          <div className="text-center" style={{ padding: 'clamp(28px, 5vw, 56px)' }}>
+            {cover.title && <p className="label-caps mb-2" style={{ color: 'var(--accent)', letterSpacing: '0.15em' }}>{cover.title}</p>}
+            <h1 className="font-black" style={{ fontSize: 'clamp(1.6rem, 4vw, 2.6rem)', color: 'var(--text-h)', letterSpacing: '-0.02em', lineHeight: 1.15 }}>
+              {cover.heading || proposal.subject}
+            </h1>
+            {(proposal.proposal_to) && (
+              <p className="text-sm mt-4" style={{ color: 'var(--text-muted)' }}>Prepared for <b style={{ color: 'var(--text-h)' }}>{proposal.proposal_to}</b></p>
+            )}
+            {d10(proposal.date) && <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{d10(proposal.date)}</p>}
+          </div>
+        </div>
+      )}
+
       <div className="card-3d" style={{ padding: 'clamp(24px, 5vw, 48px)' }}>
         {/* Header */}
         <div className="pb-5 mb-6" style={{ borderBottom: '2px solid var(--accent)' }}>

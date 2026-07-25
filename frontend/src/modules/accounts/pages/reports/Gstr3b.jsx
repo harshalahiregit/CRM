@@ -1,13 +1,15 @@
 import { useState } from 'react'
+import { useInr } from '@/modules/accounts/useMoney'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Loader2, FileCheck2 } from 'lucide-react'
 import { accountsApi } from '@/services/accountsApi'
-import { inr } from '@/modules/accounts/format'
+
 
 const COMPS = ['cgst', 'sgst', 'igst', 'cess']
 
 export default function Gstr3b() {
+  const inr = useInr()
   const [range, setRange] = useState({ from: '', to: '' })
   const { data, isLoading } = useQuery({ queryKey: ['accounts', 'report', 'gstr3b', range], queryFn: () => accountsApi.reports.gstr3b(range) })
 

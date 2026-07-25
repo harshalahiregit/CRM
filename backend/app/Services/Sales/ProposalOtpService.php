@@ -29,14 +29,18 @@ class ProposalOtpService
     /** @return array{email: string} masked recipient email */
     public function request(Proposal $proposal): array
     {
-        // Zero-trust gatekeeping: the OTP goes to the INTERNAL owner (admin),
-        // NOT the client. The admin relays the code to the intended person over
-        // a trusted channel, so a forwarded link can't be opened by whoever
-        // holds it. Owner = proposal creator → assigned user → a tenant admin.
-        $email = $this->adminRecipient($proposal);
-        if (! $email) {
-            throw new BusinessException('No internal owner email is on file to send the access code to.', 422);
+        // Zero-trust: the OTP goes to the intended RECIPIENT(s) — the client on
+        // the proposal's To (recipient contact) and any CC addresses. A leaked/
+        // forwarded link is useless because the code only lands in the mailbox
+        // of whoever the proposal was legitimately addressed to, not whoever
+        // happens to hold the URL.
+        $proposal->loadMissing('contact');
+        $to = $proposal->contact?->email ?: $proposal->email;
+        if (! $to) {
+            throw new BusinessException('No recipient email is on file for this proposal.', 422);
         }
+        // CC the same people the proposal itself was sent to.
+        $cc = array_values(array_filter(array_unique($proposal->email_cc ?? []), fn ($e) => $e && $e !== $to));
 
         $recent = ProposalOtp::where('proposal_id', $proposal->id)
             ->where('created_at', '>=', now()->subHour())->count();
@@ -55,21 +59,10 @@ class ProposalOtpService
             'expires_at'  => now()->addMinutes(self::CODE_TTL_MINUTES),
         ]);
 
-        $this->tenantMailer->send($proposal->tenant_id, $email, new ProposalOtpMail($proposal, $code));
+        $this->tenantMailer->send($proposal->tenant_id, $to, new ProposalOtpMail($proposal, $code), $cc);
 
-        // Masked owner email so the client knows whom to ask for the code.
-        return ['email' => $this->maskEmail($email), 'recipient' => 'account_manager'];
-    }
-
-    /** Internal owner to receive the access code: creator → assignee → tenant admin. */
-    private function adminRecipient(Proposal $proposal): ?string
-    {
-        $proposal->loadMissing('creator', 'assignedUser');
-
-        return $proposal->creator?->email
-            ?: $proposal->assignedUser?->email
-            ?: \App\Models\User::where('tenant_id', $proposal->tenant_id)
-                ->where('role', 'admin')->value('email');
+        // Masked recipient email so the client sees where the code went.
+        return ['email' => $this->maskEmail($to), 'recipient' => 'client'];
     }
 
     /** @return array{access_token: string, expires_in: int} */

@@ -24,6 +24,7 @@ class Voucher extends Model
         'tenant_id', 'voucher_type_id', 'financial_year_id', 'number', 'date',
         'narration', 'party_id', 'reference_no', 'status', 'total_amount',
         'is_reversal', 'reversed_voucher_id', 'created_by', 'source_type', 'source_id',
+        'transfer_category_id',
     ];
 
     protected $casts = [
@@ -61,6 +62,11 @@ class Voucher extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function transferCategory(): BelongsTo
+    {
+        return $this->belongsTo(TransferCategory::class, 'transfer_category_id');
     }
 
     public function scopePosted($query)
