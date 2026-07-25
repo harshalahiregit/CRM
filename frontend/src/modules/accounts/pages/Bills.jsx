@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Plus, Receipt, Loader2, AlertTriangle, Paperclip, RefreshCw,
-  CheckCircle2, X, Trash2, Eye, Download, ExternalLink,
+  CheckCircle2, X, Trash2, Eye, Download, ExternalLink, Settings2, Check,
 } from 'lucide-react'
 import { accountsApi } from '@/services/accountsApi'
 import { fmtDate } from '@/modules/accounts/format'
@@ -13,12 +13,34 @@ import Drawer from '@/components/ui/Drawer'
 import FormField, { Input, Select, Textarea } from '@/components/ui/FormField'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import { GhostButton } from '@/modules/accounts/components/Btn'
+import BillCategoriesManager from '@/modules/accounts/components/BillCategoriesManager'
 
 const EMPTY = {
-  vendor_name: '', vendor_ledger_id: '', bill_number: '', bill_date: '', due_date: '',
+  vendor_name: '', vendor_ledger_id: '', category: '', bill_number: '', bill_date: '', due_date: '',
   amount: '', expense_ledger_id: '', note: '',
   attachment: '', attachment_name: '',
   is_recurring: false, recurring_type: 'month', recurring_every: 1, recurring_cycles: '',
+}
+
+/**
+ * Recurring frequency presets. Each maps to the backend's {recurring_type,
+ * recurring_every} pair — advanceDate() multiplies the unit by "every", so
+ * Quarterly is simply month × 3 and Bi-monthly month × 2 (no backend change).
+ */
+const FREQUENCIES = [
+  { type: 'week',  every: 1, label: 'Weekly' },
+  { type: 'week',  every: 2, label: 'Bi-weekly (every 2 weeks)' },
+  { type: 'month', every: 1, label: 'Monthly' },
+  { type: 'month', every: 2, label: 'Bi-monthly (every 2 months)' },
+  { type: 'month', every: 3, label: 'Quarterly (every 3 months)' },
+  { type: 'month', every: 6, label: 'Half-yearly (every 6 months)' },
+  { type: 'year',  every: 1, label: 'Yearly' },
+]
+
+/** Friendly label for a stored {type, every} recurrence, falling back to a literal phrase. */
+function freqLabel(type, every) {
+  const hit = FREQUENCIES.find(f => f.type === type && f.every === Number(every))
+  return hit ? hit.label : `Every ${every} ${type}(s)`
 }
 
 /**
@@ -37,6 +59,11 @@ export default function Bills() {
   const qc = useQueryClient()
   const [filters, setFilters] = useState({ status: '', vendor: '' })
   const [drawer, setDrawer] = useState(false)
+  const [manageCat, setManageCat] = useState(false)   // Bill Categories manager drawer
+  const [addingCat, setAddingCat] = useState(false)   // inline "+ category" row
+  const [newCat, setNewCat] = useState('')
+  const [addingLedger, setAddingLedger] = useState(false) // inline "+ expense account" row
+  const [newLedger, setNewLedger] = useState({ name: '', group_id: '' })
   const [viewBill, setViewBill] = useState(null)      // bill detail slide-over
   const [payingBill, setPayingBill] = useState(null)
   const [deleteBill, setDeleteBill] = useState(null)
@@ -44,6 +71,8 @@ export default function Bills() {
   const [payForm, setPayForm] = useState({ bank_ledger_id: '', paid_date: new Date().toISOString().slice(0, 10) })
 
   const { data: ledgers = [] } = useQuery({ queryKey: ['accounts', 'ledgers', 'options'], queryFn: accountsApi.ledgers.options })
+  const { data: categories = [] } = useQuery({ queryKey: ['accounts', 'bill-categories'], queryFn: accountsApi.billCategories.list, retry: false })
+  const { data: groupsFlat = [] } = useQuery({ queryKey: ['accounts', 'groups', 'flat'], queryFn: accountsApi.groups.flat, retry: false })
   const { data: page, isLoading } = useQuery({
     queryKey: ['accounts', 'bills', filters],
     queryFn: () => accountsApi.bills.list({ ...filters, per_page: 100 }),
@@ -51,8 +80,33 @@ export default function Bills() {
   const bills = page?.data ?? []
   const invalidate = () => qc.invalidateQueries({ queryKey: ['accounts', 'bills'] })
 
+  const activeCategories = categories.filter(c => c.active)
   const expenseLedgers = ledgers.filter(l => l.group?.nature === 'expense')
   const bankLedgers    = ledgers.filter(l => l.is_bank || l.is_cash)
+  const expenseGroups  = groupsFlat.filter(g => g.nature === 'expense')
+
+  // Inline "+ category" from the New Bill form — adds to the master and selects it.
+  const addCategory = useMutation({
+    mutationFn: () => accountsApi.billCategories.create({ name: newCat.trim() }),
+    onSuccess: (row) => {
+      qc.invalidateQueries({ queryKey: ['accounts', 'bill-categories'] })
+      sf('category', row?.name || newCat.trim())
+      setNewCat(''); setAddingCat(false)
+    },
+    onError: (e) => toast.error(e.message),
+  })
+
+  // Inline "+ expense account" — quick-creates an expense ledger and selects it.
+  const addLedger = useMutation({
+    mutationFn: () => accountsApi.ledgers.create({ name: newLedger.name.trim(), group_id: Number(newLedger.group_id) }),
+    onSuccess: (row) => {
+      qc.invalidateQueries({ queryKey: ['accounts', 'ledgers', 'options'] })
+      if (row?.id) sf('expense_ledger_id', row.id)
+      setNewLedger({ name: '', group_id: '' }); setAddingLedger(false)
+      toast.success('Account created')
+    },
+    onError: (e) => toast.error(e.message),
+  })
 
   const create = useMutation({
     mutationFn: () => accountsApi.bills.create({
@@ -189,7 +243,12 @@ export default function Bills() {
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Vendor bills — Approve, then Pay. Posts a Purchase voucher immediately.</p>
           </div>
         </div>
-        <button onClick={() => setDrawer(true)} className="btn-3d flex items-center gap-2"><Plus size={15} /> New Bill</button>
+        <div className="flex items-center gap-2">
+          <GhostButton className="!py-2 !px-3 flex items-center gap-1.5" title="Manage bill categories" onClick={() => setManageCat(true)}>
+            <Settings2 size={14} /> Categories
+          </GhostButton>
+          <button onClick={() => setDrawer(true)} className="btn-3d flex items-center gap-2"><Plus size={15} /> New Bill</button>
+        </div>
       </div>
 
       {/* Summary KPI strip */}
@@ -239,11 +298,58 @@ export default function Bills() {
             <FormField label="Bill Date" required><Input type="date" value={form.bill_date} onChange={e => sf('bill_date', e.target.value)} /></FormField>
             <FormField label="Due Date" required><Input type="date" value={form.due_date} onChange={e => sf('due_date', e.target.value)} /></FormField>
           </div>
+          {/* Bill category — classification master, manageable from Settings */}
+          <FormField label="Category" hint="Classify the bill (Utilities, Rent…). Manage in Settings ▸ Bill Categories">
+            <div className="flex items-center gap-1.5">
+              <Select value={form.category} onChange={e => sf('category', e.target.value)}>
+                <option value="">— None —</option>
+                {activeCategories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                {form.category && !activeCategories.some(c => c.name === form.category) && <option value={form.category}>{form.category}</option>}
+              </Select>
+              <button type="button" title="Add a category" onClick={() => { setAddingCat(a => !a); setNewCat('') }}
+                className="p-2 rounded-lg flex-shrink-0" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#a78bfa' }}>
+                <Plus size={15} />
+              </button>
+            </div>
+            {addingCat && (
+              <div className="flex items-center gap-1.5 mt-2">
+                <Input autoFocus value={newCat} onChange={e => setNewCat(e.target.value)} placeholder="New category name"
+                  onKeyDown={e => { if (e.key === 'Enter' && newCat.trim()) { e.preventDefault(); addCategory.mutate() } }} />
+                <button type="button" onClick={() => newCat.trim() && addCategory.mutate()} disabled={!newCat.trim() || addCategory.isPending}
+                  className="p-2 rounded-lg flex-shrink-0 disabled:opacity-50" style={{ background: 'rgba(16,185,129,0.15)', color: '#10b981' }}><Check size={15} /></button>
+                <button type="button" onClick={() => { setAddingCat(false); setNewCat('') }}
+                  className="p-2 rounded-lg flex-shrink-0" style={{ background: 'var(--bg-input)', color: 'var(--text-muted)' }}><X size={15} /></button>
+              </div>
+            )}
+          </FormField>
+
           <FormField label="Expense / Purchase Account" required hint="What this bill is for — debited when posted">
-            <Select value={form.expense_ledger_id} onChange={e => sf('expense_ledger_id', e.target.value)}>
-              <option value="">Select…</option>
-              {expenseLedgers.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-            </Select>
+            <div className="flex items-center gap-1.5">
+              <Select value={form.expense_ledger_id} onChange={e => sf('expense_ledger_id', e.target.value)}>
+                <option value="">Select…</option>
+                {expenseLedgers.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+              </Select>
+              <button type="button" title="Add an expense account" onClick={() => { setAddingLedger(a => !a); setNewLedger({ name: '', group_id: expenseGroups[0]?.id || '' }) }}
+                className="p-2 rounded-lg flex-shrink-0" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#a78bfa' }}>
+                <Plus size={15} />
+              </button>
+            </div>
+            {addingLedger && (
+              <div className="mt-2 p-3 rounded-xl space-y-2" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+                <Input autoFocus value={newLedger.name} onChange={e => setNewLedger(l => ({ ...l, name: e.target.value }))} placeholder="Account name — e.g. Electricity" />
+                <Select value={newLedger.group_id} onChange={e => setNewLedger(l => ({ ...l, group_id: e.target.value }))}>
+                  <option value="">Select group…</option>
+                  {expenseGroups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </Select>
+                <div className="flex items-center gap-1.5">
+                  <button type="button" onClick={() => newLedger.name.trim() && newLedger.group_id && addLedger.mutate()}
+                    disabled={!newLedger.name.trim() || !newLedger.group_id || addLedger.isPending}
+                    className="btn-3d flex-1 !py-1.5 text-xs disabled:opacity-50">{addLedger.isPending ? 'Creating…' : 'Create account'}</button>
+                  <button type="button" onClick={() => { setAddingLedger(false); setNewLedger({ name: '', group_id: '' }) }}
+                    className="px-3 py-1.5 rounded-lg text-xs" style={{ color: 'var(--text-muted)' }}>Cancel</button>
+                </div>
+              </div>
+            )}
           </FormField>
 
           <FormField label="Attachment" hint="Invoice/receipt copy, max 1MB">
@@ -264,16 +370,12 @@ export default function Bills() {
             <input type="checkbox" checked={form.is_recurring} onChange={e => sf('is_recurring', e.target.checked)} /> Recurring bill
           </label>
           {form.is_recurring && (
-            <div className="grid grid-cols-3 gap-3 p-3 rounded-xl" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
-              <FormField label="Every">
-                <div className="flex items-center gap-1.5">
-                  <Input type="number" min="1" value={form.recurring_every} onChange={e => sf('recurring_every', e.target.value)} />
-                  <Select value={form.recurring_type} onChange={e => sf('recurring_type', e.target.value)}>
-                    <option value="week">week(s)</option>
-                    <option value="month">month(s)</option>
-                    <option value="year">year(s)</option>
-                  </Select>
-                </div>
+            <div className="grid grid-cols-2 gap-3 p-3 rounded-xl" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+              <FormField label="Frequency">
+                <Select value={`${form.recurring_type}:${form.recurring_every}`}
+                  onChange={e => { const [type, every] = e.target.value.split(':'); sf('recurring_type', type); sf('recurring_every', Number(every)) }}>
+                  {FREQUENCIES.map(f => <option key={`${f.type}:${f.every}`} value={`${f.type}:${f.every}`}>{f.label}</option>)}
+                </Select>
               </FormField>
               <FormField label="Cycles" hint="Blank = indefinite">
                 <Input type="number" min="1" value={form.recurring_cycles} onChange={e => sf('recurring_cycles', e.target.value)} placeholder="∞" />
@@ -281,6 +383,11 @@ export default function Bills() {
             </div>
           )}
         </div>
+      </Drawer>
+
+      {/* ── Manage Bill Categories Drawer ────────────────── */}
+      <Drawer open={manageCat} onClose={() => setManageCat(false)} title="Bill Categories">
+        <BillCategoriesManager />
       </Drawer>
 
       {/* ── Bill Detail Drawer ───────────────────────────── */}
@@ -350,6 +457,7 @@ function BillDetailDrawer({ bill, bankLedgers, onClose, onApprove, onPay }) {
         <div className="space-y-2">
           {[
             ['Vendor',     bill.vendor_name],
+            bill.category && ['Category', bill.category],
             ['Bill No.',   bill.bill_number || '—'],
             ['Bill Date',  fmtDate(bill.bill_date)],
             ['Due Date',   fmtDate(bill.due_date)],

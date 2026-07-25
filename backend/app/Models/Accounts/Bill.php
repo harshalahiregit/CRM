@@ -12,7 +12,7 @@ class Bill extends Model
     protected $table = 'acc_bills';
 
     protected $fillable = [
-        'tenant_id', 'voucher_id', 'vendor_ledger_id', 'vendor_name', 'bill_number',
+        'tenant_id', 'voucher_id', 'vendor_ledger_id', 'vendor_name', 'category', 'bill_number',
         'bill_date', 'due_date', 'amount', 'status', 'paid_voucher_id', 'paid_date',
         'note', 'attachment', 'attachment_name', 'approved', 'approved_by', 'approved_at',
         'is_recurring', 'recurring_type', 'recurring_every', 'recurring_cycles',

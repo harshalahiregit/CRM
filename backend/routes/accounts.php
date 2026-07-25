@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\Accounts\BillController;
+use App\Http\Controllers\Api\Accounts\BillCategoryController;
 use App\Http\Controllers\Api\Accounts\DashboardController;
 use App\Http\Controllers\Api\Accounts\AccountGroupController;
 use App\Http\Controllers\Api\Accounts\BankAccountController;
@@ -95,6 +96,11 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('accounts')->gro
     Route::delete('/transfer-categories/{category}',   [TransferController::class, 'destroyCategory']);
 
     // Vendor Bills (old-CRM "Bills" parity)
+    Route::get('/bill-categories',              [BillCategoryController::class, 'index']);
+    Route::post('/bill-categories',             [BillCategoryController::class, 'store']);
+    Route::put('/bill-categories/{billCategory}',   [BillCategoryController::class, 'update']);
+    Route::delete('/bill-categories/{billCategory}',[BillCategoryController::class, 'destroy']);
+
     Route::get('/bills',                 [BillController::class, 'index']);
     Route::post('/bills',                [BillController::class, 'store']);
     Route::get('/bills/{bill}',          [BillController::class, 'show']);

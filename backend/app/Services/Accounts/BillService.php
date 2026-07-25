@@ -73,6 +73,7 @@ class BillService
                 'voucher_id'       => $voucher->id,
                 'vendor_ledger_id' => $vendorLedger->id,
                 'vendor_name'      => $data['vendor_name'],
+                'category'         => $data['category'] ?? null,
                 'bill_number'      => $data['bill_number'] ?? null,
                 'bill_date'        => $data['bill_date'],
                 'due_date'         => $data['due_date'],
@@ -141,6 +142,7 @@ class BillService
 
             $next = $this->create([
                 'vendor_name'       => $bill->vendor_name,
+                'category'          => $bill->category,
                 'bill_number'       => $bill->bill_number,
                 'bill_date'         => $nextDate,
                 'due_date'          => \Illuminate\Support\Carbon::parse($nextDate)->addDays($span)->toDateString(),

@@ -8,8 +8,10 @@ import FormField, { Input, Select } from '@/components/ui/FormField'
 import { GhostButton } from '@/modules/accounts/components/Btn'
 import AccountGroupsManager from '@/modules/accounts/components/AccountGroupsManager'
 import VoucherTypesManager from '@/modules/accounts/components/VoucherTypesManager'
+import BillCategoriesManager from '@/modules/accounts/components/BillCategoriesManager'
+import TransferCategoriesManager from '@/modules/accounts/components/TransferCategoriesManager'
 
-const TABS = ['Company', 'Financial Years', 'Numbering', 'Account Groups', 'Voucher Types', 'GST Rates', 'HSN/SAC', 'TDS', 'Transfer Categories', 'Audit Trail']
+const TABS = ['Company', 'Financial Years', 'Numbering', 'Account Groups', 'Voucher Types', 'Bill Categories', 'GST Rates', 'HSN/SAC', 'TDS', 'Transfer Categories', 'Audit Trail']
 
 export default function AccountsSettings() {
   const [tab, setTab] = useState('Company')
@@ -38,10 +40,11 @@ export default function AccountsSettings() {
       {tab === 'Numbering' && <NumberingTab />}
       {tab === 'Account Groups' && <AccountGroupsManager />}
       {tab === 'Voucher Types' && <VoucherTypesManager />}
+      {tab === 'Bill Categories' && <BillCategoriesManager />}
       {tab === 'GST Rates' && <GstRatesTab />}
       {tab === 'HSN/SAC' && <HsnSacTab />}
       {tab === 'TDS' && <TdsTab />}
-      {tab === 'Transfer Categories' && <TransferCategoriesTab />}
+      {tab === 'Transfer Categories' && <TransferCategoriesManager />}
       {tab === 'Audit Trail' && <AuditTab />}
     </div>
   )
@@ -136,34 +139,6 @@ function TdsTab() {
         <thead><tr><th>Section</th><th>Description</th><th style={{ textAlign: 'right' }}>Rate</th><th style={{ textAlign: 'right' }}>Threshold</th><th></th></tr></thead>
         <tbody>{rows.map(r => (
           <tr key={r.id}><td style={{ color: 'var(--text-h)', fontWeight: 600 }}>{r.section_code}</td><td style={{ color: 'var(--text-muted)' }}>{r.description || '—'}</td><td style={{ textAlign: 'right' }}>{r.rate_percent}%</td><td style={{ textAlign: 'right' }}>{Number(r.threshold).toLocaleString('en-IN')}</td>
-          <td style={{ textAlign: 'right' }}><button onClick={() => remove.mutate(r.id)} style={{ color: '#f87171' }}><Trash2 size={14} /></button></td></tr>
-        ))}</tbody>
-      </table></div>
-    </div>
-  )
-}
-
-function TransferCategoriesTab() {
-  const toast = useToast(); const qc = useQueryClient()
-  const { data: rows = [], isLoading } = useQuery({ queryKey: ['accounts', 'transfer-categories'], queryFn: accountsApi.transferCategories.list })
-  const [form, setForm] = useState({ name: '', description: '' })
-  const inv = () => qc.invalidateQueries({ queryKey: ['accounts', 'transfer-categories'] })
-  const create = useMutation({ mutationFn: () => accountsApi.transferCategories.create(form), onSuccess: () => { toast.success('Category added'); setForm({ name: '', description: '' }); inv() }, onError: e => toast.error(e.message) })
-  const remove = useMutation({ mutationFn: (id) => accountsApi.transferCategories.remove(id), onSuccess: () => { toast.success('Deleted'); inv() }, onError: e => toast.error(e.message) })
-  if (isLoading) return <Spin />
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
-  return (
-    <div className="space-y-4">
-      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>The "Category / Head" options shown on the Transfer Funds screen — used to classify a move (reversal, refund, etc.) for reporting.</p>
-      <div className="kpi-3d grid grid-cols-2 sm:grid-cols-3 gap-3 items-end">
-        <FormField label="Name"><Input value={form.name} onChange={e => set('name', e.target.value)} placeholder="e.g. Vendor Refund" /></FormField>
-        <FormField label="Description"><Input value={form.description} onChange={e => set('description', e.target.value)} /></FormField>
-        <button className="btn-3d" disabled={!form.name.trim() || create.isPending} onClick={() => create.mutate()}>Add</button>
-      </div>
-      <div className="table-wrapper"><table className="table">
-        <thead><tr><th>Name</th><th>Description</th><th></th></tr></thead>
-        <tbody>{rows.map(r => (
-          <tr key={r.id}><td style={{ color: 'var(--text-h)', fontWeight: 600 }}>{r.name}</td><td style={{ color: 'var(--text-muted)' }}>{r.description || '—'}</td>
           <td style={{ textAlign: 'right' }}><button onClick={() => remove.mutate(r.id)} style={{ color: '#f87171' }}><Trash2 size={14} /></button></td></tr>
         ))}</tbody>
       </table></div>

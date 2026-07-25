@@ -35,6 +35,7 @@ class BillController extends Controller
     {
         $data = $request->validate([
             'vendor_name'        => 'required|string|max:255',
+            'category'           => 'nullable|string|max:100',
             // vendor_ledger_id: optional hook for the future Vendor module. When
             // supplied, BillService skips the auto-create and uses this ledger.
             'vendor_ledger_id'   => 'nullable|integer|exists:acc_ledgers,id',
