@@ -91,6 +91,18 @@ export const inventoryApi = {
     addEvent:  (id, data) => api.post(`/inventory/assets/${id}/events`, data).then(unwrap).catch(handleErr),
   },
 
+  // Rental register.
+  rentals: {
+    list:     (params = {}) => api.get('/inventory/rentals', { params }).then(unwrap).catch(handleErr),
+    get:      (id) => api.get(`/inventory/rentals/${id}`).then(unwrap).catch(handleErr),
+    create:   (data) => api.post('/inventory/rentals', data).then(unwrap).catch(handleErr),
+    update:   (id, data) => api.put(`/inventory/rentals/${id}`, data).then(unwrap).catch(handleErr),
+    remove:   (id) => api.delete(`/inventory/rentals/${id}`).then(unwrap).catch(handleErr),
+    checkout: (id, data) => api.post(`/inventory/rentals/${id}/checkout`, data).then(unwrap).catch(handleErr),
+    return:   (id, data) => api.post(`/inventory/rentals/${id}/return`, data).then(unwrap).catch(handleErr),
+    cancel:   (id) => api.post(`/inventory/rentals/${id}/cancel`).then(unwrap).catch(handleErr),
+  },
+
   // Dead-stock action workflow.
   deadStock: {
     candidates: (days = 90) => api.get('/inventory/dead-stock/candidates', { params: { days } }).then(unwrap).catch(handleErr),

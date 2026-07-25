@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\Inventory\DeadStockController;
 use App\Http\Controllers\Api\Inventory\InventoryStaffController;
 use App\Http\Controllers\Api\Inventory\ProductController;
 use App\Http\Controllers\Api\Inventory\PurchaseOrderController;
+use App\Http\Controllers\Api\Inventory\RentalController;
 use App\Http\Controllers\Api\Inventory\ReportController;
 use App\Http\Controllers\Api\Inventory\SettingsController;
 use App\Http\Controllers\Api\Inventory\FulfilmentController;
@@ -240,6 +241,16 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('inventory')->gr
     Route::post('/assets/{asset}/assign', [AssetController::class, 'assign'])->where('asset', '[0-9]+');
     Route::patch('/assets/{asset}/status', [AssetController::class, 'setStatus'])->where('asset', '[0-9]+');
     Route::post('/assets/{asset}/events', [AssetController::class, 'addEvent'])->where('asset', '[0-9]+');
+
+    // Rental register — items let out to customers, expected back.
+    Route::get('/rentals',                 [RentalController::class, 'index']);
+    Route::post('/rentals',                [RentalController::class, 'store']);
+    Route::get('/rentals/{rental}',        [RentalController::class, 'show'])->where('rental', '[0-9]+');
+    Route::put('/rentals/{rental}',        [RentalController::class, 'update'])->where('rental', '[0-9]+');
+    Route::delete('/rentals/{rental}',     [RentalController::class, 'destroy'])->where('rental', '[0-9]+');
+    Route::post('/rentals/{rental}/checkout', [RentalController::class, 'checkout'])->where('rental', '[0-9]+');
+    Route::post('/rentals/{rental}/return',   [RentalController::class, 'returnItem'])->where('rental', '[0-9]+');
+    Route::post('/rentals/{rental}/cancel',   [RentalController::class, 'cancel'])->where('rental', '[0-9]+');
 
     // Warehouses + bin locations
     Route::get('/warehouses',        [WarehouseController::class, 'index']);
