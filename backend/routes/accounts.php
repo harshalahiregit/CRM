@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\Accounts\BankAccountController;
 use App\Http\Controllers\Api\Accounts\BudgetController;
 use App\Http\Controllers\Api\Accounts\ChequeController;
 use App\Http\Controllers\Api\Accounts\ChequebookController;
+use App\Http\Controllers\Api\Accounts\PartyDirectoryController;
 use App\Http\Controllers\Api\Accounts\LedgerController;
 use App\Http\Controllers\Api\Accounts\ReconciliationController;
 use App\Http\Controllers\Api\Accounts\RegisterController;
@@ -167,6 +168,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('accounts')->gro
     Route::put('/budgets/{budget}/lines',           [BudgetController::class, 'saveLines']);
     Route::get('/budgets/{budget}/vs-actual',       [BudgetController::class, 'budgetVsActual']);
     Route::delete('/budgets/{budget}',              [BudgetController::class, 'destroy']);
+
+    // Party directory (payee/payer picker) + projects seam for cheque forms
+    Route::get('/party-directory', [PartyDirectoryController::class, 'index']);
+    Route::get('/projects',        [PartyDirectoryController::class, 'projects']);
 
     // Chequebook inventory (static paths before {chequebook})
     Route::get('/chequebooks/summary',        [ChequebookController::class, 'summary']);

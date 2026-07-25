@@ -20,8 +20,9 @@ class Cheque extends Model
 
     protected $fillable = [
         'tenant_id', 'bank_account_id', 'chequebook_id', 'voucher_id', 'direction', 'cheque_no',
-        'cheque_date', 'party_name', 'amount', 'is_account_payee', 'status', 'is_pdc', 'pdc_due_date',
-        'cleared_date', 'memo', 'reference', 'source_type', 'payer_bank', 'created_by',
+        'cheque_date', 'party_name', 'party_type', 'party_id', 'amount', 'is_account_payee', 'status',
+        'is_pdc', 'pdc_due_date', 'cleared_date', 'memo', 'reference', 'project_id', 'source_type',
+        'payer_bank', 'created_by',
     ];
 
     protected $casts = [

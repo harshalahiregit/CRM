@@ -113,6 +113,9 @@ class ChequeService
                 'cheque_no'        => $chequeNo,
                 'cheque_date'      => $chequeDate,
                 'party_name'       => $data['party_name'] ?? null,
+                'party_type'       => $data['party_type'] ?? null,
+                'party_id'         => $data['party_id'] ?? null,
+                'project_id'       => $data['project_id'] ?? null,
                 'amount'           => $data['amount'] ?? 0,
                 'is_account_payee' => $data['is_account_payee'] ?? true,
                 'status'           => $status,
@@ -137,8 +140,9 @@ class ChequeService
         $this->assert($cheque, $tenantId);
         $before = $cheque->toArray();
         $cheque->update(array_intersect_key($data, array_flip([
-            'bank_account_id', 'cheque_no', 'cheque_date', 'party_name', 'amount', 'memo', 'pdc_due_date',
-            'is_account_payee', 'reference', 'source_type', 'payer_bank',
+            'bank_account_id', 'cheque_no', 'cheque_date', 'party_name', 'party_type', 'party_id',
+            'amount', 'memo', 'pdc_due_date', 'is_account_payee', 'reference', 'project_id',
+            'source_type', 'payer_bank',
         ])));
         $this->audit->log($tenantId, $userId, 'cheque', $cheque->id, 'update', $before, $cheque->fresh()->toArray());
         return $cheque->load('bankAccount:id,bank_name', 'chequebook:id,name');

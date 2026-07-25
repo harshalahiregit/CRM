@@ -303,11 +303,28 @@ function ChequeList({ direction, inr, banks, onView, onEdit, onDelete, onStatus 
 /* ── Issue cheque drawer (spec §2 — bank → book → auto number) ─────────────── */
 const ISSUE_EMPTY = {
   bank_account_id: '', chequebook_id: '', cheque_no: '', cheque_date: new Date().toISOString().slice(0, 10),
-  party_name: '', amount: '', is_account_payee: true, reference: '', is_pdc: false, pdc_due_date: '', memo: '',
+  party_name: '', party_type: '', party_id: '', amount: '', is_account_payee: true,
+  reference: '', project_id: '', is_pdc: false, pdc_due_date: '', memo: '',
 }
 function IssueChequeDrawer({ banks, books, initial, isEdit = false, saving, onClose, onSave }) {
   const [form, setForm] = useState(initial ? { ...ISSUE_EMPTY, ...initial, is_account_payee: initial.is_account_payee ?? true } : ISSUE_EMPTY)
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  // Payee directory: customers + vendors + third-party vendors (§ future modules).
+  const { data: dir } = useQuery({ queryKey: ['accounts', 'party-directory'], queryFn: () => accountsApi.partyDirectory.list(), retry: false })
+  const { data: projects = [] } = useQuery({ queryKey: ['accounts', 'projects'], queryFn: accountsApi.projects.list, retry: false })
+  const hasParties = (dir?.customers?.length || dir?.vendors?.length || dir?.tpv?.length) > 0
+  const [manualPayee, setManualPayee] = useState(false)
+  const useDropdown = hasParties && !manualPayee && !(isEdit && !form.party_id)
+
+  const pickParty = (val) => {
+    if (val === '__manual__') { setManualPayee(true); setForm(f => ({ ...f, party_type: '', party_id: '' })); return }
+    if (!val) { setForm(f => ({ ...f, party_name: '', party_type: '', party_id: '' })); return }
+    const [type, id] = val.split(':')
+    const groups = { customer: dir?.customers, vendor: dir?.vendors, tpv: dir?.tpv }
+    const hit = (groups[type] || []).find(p => String(p.id) === id)
+    setForm(f => ({ ...f, party_name: hit?.name || '', party_type: type, party_id: id }))
+  }
 
   const bankBooks = useMemo(
     () => books.filter(b => String(b.bank_account_id) === String(form.bank_account_id) && b.status === 'active' && b.next_cheque_no),
@@ -321,6 +338,9 @@ function IssueChequeDrawer({ banks, books, initial, isEdit = false, saving, onCl
     bank_account_id: form.bank_account_id || null,
     chequebook_id: isEdit ? undefined : (form.chequebook_id || null),
     cheque_no: (!isEdit && form.chequebook_id) ? undefined : (form.cheque_no || null),
+    party_type: form.party_id ? form.party_type : null,
+    party_id: form.party_id || null,
+    project_id: form.project_id || null,
     pdc_due_date: form.pdc_due_date || null,
   })
 
@@ -361,13 +381,54 @@ function IssueChequeDrawer({ banks, books, initial, isEdit = false, saving, onCl
         )}
         {isEdit && <FormField label="Cheque no."><Input value={form.cheque_no || ''} onChange={e => set('cheque_no', e.target.value)} /></FormField>}
 
+        {/* Payee — from the party directory (Customers / Vendors / Third-Party Vendors) */}
+        <FormField label="Payee (Vendor / Client / TPV)" required
+          hint={hasParties ? 'Choose a party, or enter a name manually' : 'Directory is empty — enter the payee name'}>
+          {useDropdown ? (
+            <div className="flex items-center gap-2">
+              <Select value={form.party_id ? `${form.party_type}:${form.party_id}` : ''} onChange={e => pickParty(e.target.value)}>
+                <option value="">Select payee…</option>
+                {dir?.customers?.length > 0 && (
+                  <optgroup label="Customers">
+                    {dir.customers.map(p => <option key={`customer:${p.id}`} value={`customer:${p.id}`}>{p.name}</option>)}
+                  </optgroup>
+                )}
+                {dir?.vendors?.length > 0 && (
+                  <optgroup label="Vendors">
+                    {dir.vendors.map(p => <option key={`vendor:${p.id}`} value={`vendor:${p.id}`}>{p.name}</option>)}
+                  </optgroup>
+                )}
+                {dir?.tpv?.length > 0 && (
+                  <optgroup label="Third-Party Vendors">
+                    {dir.tpv.map(p => <option key={`tpv:${p.id}`} value={`tpv:${p.id}`}>{p.name}</option>)}
+                  </optgroup>
+                )}
+                <option value="__manual__">✏️  Enter name manually…</option>
+              </Select>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <Input value={form.party_name} onChange={e => set('party_name', e.target.value)} placeholder="Payee name" />
+              {hasParties && (
+                <button type="button" onClick={() => { setManualPayee(false); set('party_name', '') }}
+                  className="text-xs whitespace-nowrap px-2 py-1.5 rounded-lg" style={{ color: '#a78bfa', border: '1px solid var(--border)' }}>
+                  Directory
+                </button>
+              )}
+            </div>
+          )}
+        </FormField>
+
         <div className="grid grid-cols-2 gap-3">
-          <FormField label="Payee (Vendor / Client)" required>
-            <Input value={form.party_name} onChange={e => set('party_name', e.target.value)} placeholder="Payee name" />
-          </FormField>
           <FormField label="Amount" required><Input type="number" step="0.01" value={form.amount} onChange={e => set('amount', e.target.value)} /></FormField>
           <FormField label="Issue date" required><Input type="date" value={form.cheque_date} onChange={e => set('cheque_date', e.target.value)} /></FormField>
-          <FormField label="Project / Work reference"><Input value={form.reference} onChange={e => set('reference', e.target.value)} /></FormField>
+          <FormField label="Project" hint={projects.length ? null : 'Projects module coming soon'}>
+            <Select value={form.project_id || ''} onChange={e => set('project_id', e.target.value)} disabled={!projects.length}>
+              <option value="">{projects.length ? 'Select project…' : 'No projects yet'}</option>
+              {projects.map(p => <option key={p.id} value={p.id}>{p.name || p.title}</option>)}
+            </Select>
+          </FormField>
+          <FormField label="Work reference"><Input value={form.reference} onChange={e => set('reference', e.target.value)} placeholder="e.g. PO number, work order" /></FormField>
         </div>
 
         <label className="flex items-center gap-2 text-sm cursor-pointer" style={{ color: 'var(--text-h)' }}>
@@ -389,17 +450,30 @@ function IssueChequeDrawer({ banks, books, initial, isEdit = false, saving, onCl
 
 /* ── Receive cheque drawer (spec §4 — incoming register) ──────────────────── */
 const RECEIVE_EMPTY = {
-  source_type: 'client', party_name: '', payer_bank: '', cheque_no: '',
+  source_type: 'client', party_name: '', party_type: '', party_id: '', payer_bank: '', cheque_no: '',
   cheque_date: new Date().toISOString().slice(0, 10), amount: '', reference: '', status: 'received', memo: '',
 }
+// Received "source type" (client) maps to the directory's "customer" type.
+const SRC_TO_DIR = { client: 'customers', vendor: 'vendors', other: null }
 function ReceiveChequeDrawer({ initial, isEdit = false, saving, onClose, onSave }) {
   const [form, setForm] = useState(initial ? { ...RECEIVE_EMPTY, ...initial } : RECEIVE_EMPTY)
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
   const valid = form.party_name && form.cheque_date && form.amount !== ''
 
+  const { data: dir } = useQuery({ queryKey: ['accounts', 'party-directory'], queryFn: () => accountsApi.partyDirectory.list(), retry: false })
+  const suggestions = SRC_TO_DIR[form.source_type] ? (dir?.[SRC_TO_DIR[form.source_type]] || []) : [...(dir?.customers || []), ...(dir?.vendors || []), ...(dir?.tpv || [])]
+
+  // Typing/selecting a payer captures the structured link when it matches a directory entry.
+  const onPayer = (name) => {
+    const hit = suggestions.find(p => p.name?.toLowerCase() === name.trim().toLowerCase())
+    setForm(f => ({ ...f, party_name: name, party_type: hit ? (form.source_type === 'client' ? 'customer' : form.source_type) : '', party_id: hit ? String(hit.id) : '' }))
+  }
+
   const submit = () => onSave({
     ...form, direction: 'received', amount: Number(form.amount),
     is_pdc: false, bank_account_id: null, cheque_no: form.cheque_no || null,
+    party_type: form.party_id ? (form.source_type === 'client' ? 'customer' : form.source_type) : null,
+    party_id: form.party_id || null,
   })
 
   return (
@@ -413,14 +487,17 @@ function ReceiveChequeDrawer({ initial, isEdit = false, saving, onClose, onSave 
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
           <FormField label="Source type" required>
-            <Select value={form.source_type} onChange={e => set('source_type', e.target.value)}>
-              <option value="client">Client</option>
+            <Select value={form.source_type} onChange={e => setForm(f => ({ ...f, source_type: e.target.value, party_type: '', party_id: '' }))}>
+              <option value="client">Client / Customer</option>
               <option value="vendor">Vendor</option>
               <option value="other">Other</option>
             </Select>
           </FormField>
-          <FormField label="Payer name" required hint="Type to add a new payer">
-            <Input value={form.party_name} onChange={e => set('party_name', e.target.value)} placeholder="Who the cheque is from" />
+          <FormField label="Payer name" required hint="Pick from the directory or type a new payer">
+            <Input list="cheque-payer-directory" value={form.party_name} onChange={e => onPayer(e.target.value)} placeholder="Who the cheque is from" />
+            <datalist id="cheque-payer-directory">
+              {suggestions.map(p => <option key={`${p.type}:${p.id}`} value={p.name} />)}
+            </datalist>
           </FormField>
           <FormField label="Cheque no."><Input value={form.cheque_no || ''} onChange={e => set('cheque_no', e.target.value)} /></FormField>
           <FormField label="Cheque date" required><Input type="date" value={form.cheque_date} onChange={e => set('cheque_date', e.target.value)} /></FormField>

@@ -21,6 +21,10 @@ class StoreChequeRequest extends FormRequest
             'cheque_no'        => ['nullable', 'string', 'max:40'],
             'cheque_date'      => ['required', 'date'],
             'party_name'       => ['nullable', 'string', 'max:255'],
+            // Structured payee/payer link (seam for the future Vendor / TPV / Customer directory).
+            'party_type'       => ['nullable', 'in:customer,vendor,tpv'],
+            'party_id'         => ['nullable', 'integer'],
+            'project_id'       => ['nullable', 'integer'],
             'amount'           => ['required', 'numeric', 'min:0'],
             'is_account_payee' => ['nullable', 'boolean'],
             'is_pdc'           => ['nullable', 'boolean'],

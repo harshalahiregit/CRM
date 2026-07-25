@@ -146,6 +146,15 @@ export const accountsApi = {
     complete:    (id) => api.post(`/accounts/reconciliations/${id}/complete`).then(r => r.data).catch(handleErr),
     cancel:      (id) => api.delete(`/accounts/reconciliations/${id}`).then(r => r.data).catch(handleErr),
   },
+  // Unified payee/payer directory (customers + vendor/TPV party ledgers) and the
+  // projects seam — both feed the cheque forms; projects is an empty stub until
+  // the Projects module ships.
+  partyDirectory: {
+    list: (search = '') => api.get('/accounts/party-directory', { params: { search } }).then(r => r.data).catch(handleErr),
+  },
+  projects: {
+    list: () => api.get('/accounts/projects').then(r => r.data).catch(handleErr),
+  },
   chequebooks: {
     list:    (params = {}) => api.get('/accounts/chequebooks', { params }).then(r => r.data).catch(handleErr),
     summary: () => api.get('/accounts/chequebooks/summary').then(r => r.data).catch(handleErr),
