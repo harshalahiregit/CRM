@@ -10,8 +10,9 @@ import AccountGroupsManager from '@/modules/accounts/components/AccountGroupsMan
 import VoucherTypesManager from '@/modules/accounts/components/VoucherTypesManager'
 import BillCategoriesManager from '@/modules/accounts/components/BillCategoriesManager'
 import TransferCategoriesManager from '@/modules/accounts/components/TransferCategoriesManager'
+import ChequebooksManager from '@/modules/accounts/components/ChequebooksManager'
 
-const TABS = ['Company', 'Financial Years', 'Numbering', 'Account Groups', 'Voucher Types', 'Bill Categories', 'GST Rates', 'HSN/SAC', 'TDS', 'Transfer Categories', 'Audit Trail']
+const TABS = ['Company', 'Financial Years', 'Numbering', 'Account Groups', 'Voucher Types', 'Bill Categories', 'Chequebooks', 'GST Rates', 'HSN/SAC', 'TDS', 'Transfer Categories', 'Audit Trail']
 
 export default function AccountsSettings() {
   const [tab, setTab] = useState('Company')
@@ -41,6 +42,7 @@ export default function AccountsSettings() {
       {tab === 'Account Groups' && <AccountGroupsManager />}
       {tab === 'Voucher Types' && <VoucherTypesManager />}
       {tab === 'Bill Categories' && <BillCategoriesManager />}
+      {tab === 'Chequebooks' && <ChequebooksManager />}
       {tab === 'GST Rates' && <GstRatesTab />}
       {tab === 'HSN/SAC' && <HsnSacTab />}
       {tab === 'TDS' && <TdsTab />}

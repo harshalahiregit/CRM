@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\Accounts\AccountGroupController;
 use App\Http\Controllers\Api\Accounts\BankAccountController;
 use App\Http\Controllers\Api\Accounts\BudgetController;
 use App\Http\Controllers\Api\Accounts\ChequeController;
+use App\Http\Controllers\Api\Accounts\ChequebookController;
 use App\Http\Controllers\Api\Accounts\LedgerController;
 use App\Http\Controllers\Api\Accounts\ReconciliationController;
 use App\Http\Controllers\Api\Accounts\RegisterController;
@@ -166,6 +167,14 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('accounts')->gro
     Route::put('/budgets/{budget}/lines',           [BudgetController::class, 'saveLines']);
     Route::get('/budgets/{budget}/vs-actual',       [BudgetController::class, 'budgetVsActual']);
     Route::delete('/budgets/{budget}',              [BudgetController::class, 'destroy']);
+
+    // Chequebook inventory (static paths before {chequebook})
+    Route::get('/chequebooks/summary',        [ChequebookController::class, 'summary']);
+    Route::get('/chequebooks',                [ChequebookController::class, 'index']);
+    Route::post('/chequebooks',               [ChequebookController::class, 'store']);
+    Route::put('/chequebooks/{chequebook}',   [ChequebookController::class, 'update']);
+    Route::patch('/chequebooks/{chequebook}/close', [ChequebookController::class, 'close']);
+    Route::delete('/chequebooks/{chequebook}', [ChequebookController::class, 'destroy']);
 
     // Cheques (static paths before {cheque})
     Route::get('/cheques/summary',            [ChequeController::class, 'summary']);

@@ -14,16 +14,23 @@ class StoreChequeRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'direction'       => ['required', 'in:issued,received'],
-            'bank_account_id' => ['nullable', 'integer'],
-            'voucher_id'      => ['nullable', 'integer'],
-            'cheque_no'       => ['nullable', 'string', 'max:40'],
-            'cheque_date'     => ['required', 'date'],
-            'party_name'      => ['nullable', 'string', 'max:255'],
-            'amount'          => ['required', 'numeric', 'min:0'],
-            'is_pdc'          => ['nullable', 'boolean'],
-            'pdc_due_date'    => ['nullable', 'date'],
-            'memo'            => ['nullable', 'string', 'max:255'],
+            'direction'        => ['required', 'in:issued,received'],
+            'bank_account_id'  => ['nullable', 'integer'],
+            'chequebook_id'    => ['nullable', 'integer'],
+            'voucher_id'       => ['nullable', 'integer'],
+            'cheque_no'        => ['nullable', 'string', 'max:40'],
+            'cheque_date'      => ['required', 'date'],
+            'party_name'       => ['nullable', 'string', 'max:255'],
+            'amount'           => ['required', 'numeric', 'min:0'],
+            'is_account_payee' => ['nullable', 'boolean'],
+            'is_pdc'           => ['nullable', 'boolean'],
+            'pdc_due_date'     => ['nullable', 'date'],
+            'memo'             => ['nullable', 'string', 'max:255'],
+            'reference'        => ['nullable', 'string', 'max:255'],
+            'source_type'      => ['nullable', 'in:client,vendor,other'],
+            'payer_bank'       => ['nullable', 'string', 'max:255'],
+            // Received cheques may be recorded straight into a deposit state.
+            'status'           => ['nullable', 'in:issued,received,deposited,presented,cleared,bounced,cancelled,post_dated'],
         ];
     }
 }

@@ -146,6 +146,14 @@ export const accountsApi = {
     complete:    (id) => api.post(`/accounts/reconciliations/${id}/complete`).then(r => r.data).catch(handleErr),
     cancel:      (id) => api.delete(`/accounts/reconciliations/${id}`).then(r => r.data).catch(handleErr),
   },
+  chequebooks: {
+    list:    (params = {}) => api.get('/accounts/chequebooks', { params }).then(r => r.data).catch(handleErr),
+    summary: () => api.get('/accounts/chequebooks/summary').then(r => r.data).catch(handleErr),
+    create:  (data) => api.post('/accounts/chequebooks', data).then(r => r.data).catch(handleErr),
+    update:  (id, data) => api.put(`/accounts/chequebooks/${id}`, data).then(r => r.data).catch(handleErr),
+    close:   (id) => api.patch(`/accounts/chequebooks/${id}/close`).then(r => r.data).catch(handleErr),
+    remove:  (id) => api.delete(`/accounts/chequebooks/${id}`).then(r => r.data).catch(handleErr),
+  },
   cheques: {
     list:    (params = {}) => api.get('/accounts/cheques', { params }).then(r => r.data).catch(handleErr),
     summary: () => api.get('/accounts/cheques/summary').then(r => r.data).catch(handleErr),

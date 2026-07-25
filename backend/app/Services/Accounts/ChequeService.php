@@ -5,7 +5,9 @@ namespace App\Services\Accounts;
 use App\Exceptions\BusinessException;
 use App\Exceptions\UnauthorizedTenantException;
 use App\Models\Accounts\Cheque;
+use App\Models\Accounts\Chequebook;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -19,9 +21,14 @@ use Illuminate\Support\Facades\Log;
  */
 class ChequeService
 {
-    /** Allowed status transitions (kept deliberately permissive but guarded). */
+    /**
+     * Allowed status transitions (kept deliberately permissive but guarded).
+     * Issued cheques: issued → presented (in-process) → cleared (withdrawn/settled).
+     * Received cheques start at `received` and are deposited before clearing.
+     */
     private const TRANSITIONS = [
-        'post_dated' => ['issued', 'deposited', 'cancelled'],
+        'post_dated' => ['issued', 'received', 'deposited', 'cancelled'],
+        'received'   => ['deposited', 'presented', 'cleared', 'bounced', 'cancelled'],
         'issued'     => ['presented', 'deposited', 'cleared', 'bounced', 'cancelled'],
         'deposited'  => ['presented', 'cleared', 'bounced', 'cancelled'],
         'presented'  => ['cleared', 'bounced', 'cancelled'],
@@ -37,7 +44,7 @@ class ChequeService
     public function list(int $tenantId, array $filters)
     {
         $query = Cheque::forTenant($tenantId)
-            ->with('bankAccount:id,bank_name')
+            ->with('bankAccount:id,bank_name,account_no', 'chequebook:id,name')
             ->search($filters['search'] ?? null);
 
         foreach (['direction', 'status'] as $f) {
@@ -60,7 +67,11 @@ class ChequeService
         $base = fn () => Cheque::forTenant($tenantId);
         return [
             'total'        => $base()->count(),
-            'pending'      => $base()->whereIn('status', ['issued', 'deposited', 'presented', 'post_dated'])->count(),
+            'pending'      => $base()->whereIn('status', ['issued', 'received', 'deposited', 'presented', 'post_dated'])->count(),
+            // Settlement buckets used by the inventory dashboard (spec §1).
+            'issued'       => $base()->where('direction', 'issued')->where('status', 'issued')->count(),
+            'in_process'   => $base()->whereIn('status', ['presented', 'deposited'])->count(),
+            'cleared'      => $base()->where('status', 'cleared')->count(),
             'pdc'          => $base()->where('is_pdc', true)->where('status', 'post_dated')->count(),
             'pdc_due'      => $base()->where('is_pdc', true)->where('status', 'post_dated')
                                 ->whereDate('pdc_due_date', '<=', Carbon::today())->count(),
@@ -70,29 +81,55 @@ class ChequeService
 
     public function create(array $data, int $tenantId, ?int $userId): Cheque
     {
+        $direction  = $data['direction'];
         $chequeDate = $data['cheque_date'];
         $isPdc = (bool) ($data['is_pdc'] ?? false) || Carbon::parse($chequeDate)->isFuture();
 
-        $cheque = Cheque::create([
-            'tenant_id'       => $tenantId,
-            'bank_account_id' => $data['bank_account_id'] ?? null,
-            'voucher_id'      => $data['voucher_id'] ?? null,
-            'direction'       => $data['direction'],
-            'cheque_no'       => $data['cheque_no'] ?? null,
-            'cheque_date'     => $chequeDate,
-            'party_name'      => $data['party_name'] ?? null,
-            'amount'          => $data['amount'] ?? 0,
-            'status'          => $isPdc ? 'post_dated' : ($data['status'] ?? 'issued'),
-            'is_pdc'          => $isPdc,
-            'pdc_due_date'    => $isPdc ? ($data['pdc_due_date'] ?? $chequeDate) : null,
-            'memo'            => $data['memo'] ?? null,
-            'created_by'      => $userId,
-        ]);
+        return DB::transaction(function () use ($data, $tenantId, $userId, $direction, $chequeDate, $isPdc) {
+            $chequeNo = $data['cheque_no'] ?? null;
+            $chequebookId = $data['chequebook_id'] ?? null;
 
-        $this->audit->log($tenantId, $userId, 'cheque', $cheque->id, 'create', after: $cheque->toArray());
-        Log::channel('accounts')->info('Cheque recorded', ['cheque_id' => $cheque->id, 'tenant_id' => $tenantId]);
+            // Auto-sequencing (spec §2): an issued cheque drawn from a chequebook
+            // takes the next unused leaf — no manual entry. A number typed by hand
+            // still wins (e.g. correcting a mis-print) but the book still advances.
+            if ($direction === 'issued' && $chequebookId) {
+                $book = Chequebook::forTenant($tenantId)->findOrFail($chequebookId);
+                $allocated = $book->allocateNext();
+                $chequeNo = $chequeNo ?: $allocated;
+            }
 
-        return $cheque->load('bankAccount:id,bank_name');
+            // Received cheques enter the register at `received`; issued at `issued`
+            // (or `post_dated` when future-dated).
+            $status = $isPdc
+                ? 'post_dated'
+                : ($data['status'] ?? ($direction === 'received' ? 'received' : 'issued'));
+
+            $cheque = Cheque::create([
+                'tenant_id'        => $tenantId,
+                'bank_account_id'  => $data['bank_account_id'] ?? null,
+                'chequebook_id'    => $chequebookId,
+                'voucher_id'       => $data['voucher_id'] ?? null,
+                'direction'        => $direction,
+                'cheque_no'        => $chequeNo,
+                'cheque_date'      => $chequeDate,
+                'party_name'       => $data['party_name'] ?? null,
+                'amount'           => $data['amount'] ?? 0,
+                'is_account_payee' => $data['is_account_payee'] ?? true,
+                'status'           => $status,
+                'is_pdc'           => $isPdc,
+                'pdc_due_date'     => $isPdc ? ($data['pdc_due_date'] ?? $chequeDate) : null,
+                'memo'             => $data['memo'] ?? null,
+                'reference'        => $data['reference'] ?? null,
+                'source_type'      => $data['source_type'] ?? null,
+                'payer_bank'       => $data['payer_bank'] ?? null,
+                'created_by'       => $userId,
+            ]);
+
+            $this->audit->log($tenantId, $userId, 'cheque', $cheque->id, 'create', after: $cheque->toArray());
+            Log::channel('accounts')->info('Cheque recorded', ['cheque_id' => $cheque->id, 'tenant_id' => $tenantId]);
+
+            return $cheque->load('bankAccount:id,bank_name', 'chequebook:id,name');
+        });
     }
 
     public function update(Cheque $cheque, array $data, int $tenantId, ?int $userId): Cheque
@@ -101,9 +138,10 @@ class ChequeService
         $before = $cheque->toArray();
         $cheque->update(array_intersect_key($data, array_flip([
             'bank_account_id', 'cheque_no', 'cheque_date', 'party_name', 'amount', 'memo', 'pdc_due_date',
+            'is_account_payee', 'reference', 'source_type', 'payer_bank',
         ])));
         $this->audit->log($tenantId, $userId, 'cheque', $cheque->id, 'update', $before, $cheque->fresh()->toArray());
-        return $cheque->load('bankAccount:id,bank_name');
+        return $cheque->load('bankAccount:id,bank_name', 'chequebook:id,name');
     }
 
     public function changeStatus(Cheque $cheque, string $status, ?string $clearedDate, int $tenantId, ?int $userId): Cheque

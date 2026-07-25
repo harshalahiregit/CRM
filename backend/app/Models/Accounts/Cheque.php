@@ -19,22 +19,28 @@ class Cheque extends Model
     protected $table = 'acc_cheques';
 
     protected $fillable = [
-        'tenant_id', 'bank_account_id', 'voucher_id', 'direction', 'cheque_no',
-        'cheque_date', 'party_name', 'amount', 'status', 'is_pdc', 'pdc_due_date',
-        'cleared_date', 'memo', 'created_by',
+        'tenant_id', 'bank_account_id', 'chequebook_id', 'voucher_id', 'direction', 'cheque_no',
+        'cheque_date', 'party_name', 'amount', 'is_account_payee', 'status', 'is_pdc', 'pdc_due_date',
+        'cleared_date', 'memo', 'reference', 'source_type', 'payer_bank', 'created_by',
     ];
 
     protected $casts = [
-        'cheque_date'  => 'date',
-        'pdc_due_date' => 'date',
-        'cleared_date' => 'date',
-        'amount'       => 'decimal:2',
-        'is_pdc'       => 'boolean',
+        'cheque_date'      => 'date',
+        'pdc_due_date'     => 'date',
+        'cleared_date'     => 'date',
+        'amount'           => 'decimal:2',
+        'is_pdc'           => 'boolean',
+        'is_account_payee' => 'boolean',
     ];
 
     public function bankAccount(): BelongsTo
     {
         return $this->belongsTo(BankAccount::class);
+    }
+
+    public function chequebook(): BelongsTo
+    {
+        return $this->belongsTo(Chequebook::class);
     }
 
     public function scopeSearch($query, ?string $term)

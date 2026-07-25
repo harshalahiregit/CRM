@@ -47,7 +47,7 @@ class ChequeController extends Controller
     public function changeStatus(Cheque $cheque, Request $request)
     {
         $data = $request->validate([
-            'status'       => 'required|in:issued,deposited,presented,cleared,bounced,cancelled,post_dated',
+            'status'       => 'required|in:issued,received,deposited,presented,cleared,bounced,cancelled,post_dated',
             'cleared_date' => 'nullable|date',
         ]);
         $updated = $this->cheques->changeStatus($cheque, $data['status'], $data['cleared_date'] ?? null, $request->user()->tenant_id, $request->user()->id);
