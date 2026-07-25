@@ -37,6 +37,14 @@ const MAX_IMAGE_BYTES = 500 * 1024 // keep pages PDF-friendly
 
 const IMAGE_SIZES = { Small: '33%', Medium: '66%', Full: '100%' }
 
+// A fixed height + tight px-1.5 padding clips descenders in Firefox's native
+// <select> rendering. Give the box a touch more height/padding and an explicit
+// line-height so the label sits fully inside it, matching the icon buttons beside it.
+const SELECT_STYLE = {
+  background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-muted)',
+  height: 28, lineHeight: '26px', padding: '0 6px', maxWidth: 100, boxSizing: 'border-box',
+}
+
 // Turn a pasted YouTube/Vimeo watch URL into its embeddable form (the only
 // hosts the sanitizer's iframe allowlist accepts). Returns null if unknown.
 function toEmbedUrl(url) {
@@ -172,11 +180,11 @@ export default function RichTextEditor({ value = '', onChange, placeholder = 'Wr
         {/* Font family + size + colours (Word-like) */}
         <div className="flex items-center gap-1">
           <select title="Font" onMouseDown={e => e.stopPropagation()} onChange={e => applyCss('fontName', e.target.value)}
-            className="text-xs rounded-lg px-1.5 h-7 outline-none" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-muted)', maxWidth: 96 }}>
+            className="text-xs rounded-lg outline-none" style={SELECT_STYLE}>
             {FONT_FAMILIES.map(f => <option key={f.label} value={f.value}>{f.label}</option>)}
           </select>
           <select title="Font size" defaultValue="3" onChange={e => applyCss('fontSize', e.target.value)}
-            className="text-xs rounded-lg px-1.5 h-7 outline-none" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+            className="text-xs rounded-lg outline-none" style={{ ...SELECT_STYLE, maxWidth: 78 }}>
             {FONT_SIZES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
           </select>
           <label title="Text colour" className="w-7 h-7 rounded-lg flex items-center justify-center cursor-pointer hover:bg-[rgba(124,58,237,0.1)] relative">
