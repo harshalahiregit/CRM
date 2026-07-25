@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { X, Check, ArrowLeftRight, ClipboardCheck } from 'lucide-react'
+import { X, Check, ArrowLeftRight, ClipboardCheck, MapPin, Camera, Loader2 } from 'lucide-react'
 import { inventoryApi, INV_ACCENT, MOVEMENT_TYPES, fmtQty } from '@/services/inventoryApi'
 import Select from '@/components/ui/Select'
 
@@ -15,12 +15,15 @@ export default function StockMoveModal({ open, onClose, mode = 'move', product, 
   const adjusting = mode === 'adjust'
   const [form, setForm] = useState({})
   const [err, setErr] = useState('')
+  const [geo, setGeo] = useState(null)          // { lat, lng, address }
+  const [geoBusy, setGeoBusy] = useState(false)
+  const [photo, setPhoto] = useState(null)      // base64 data URL
 
   const { data: warehouses = [] } = useQuery({ queryKey: ['inv-warehouses'], queryFn: inventoryApi.warehouses.list, enabled: open })
 
   useEffect(() => {
     if (!open) return
-    setErr('')
+    setErr(''); setGeo(null); setPhoto(null); setGeoBusy(false)
     const def = warehouses.find(w => w.is_default)?.id ?? warehouses[0]?.id ?? ''
     setForm({
       type: 'receive', quantity: '', unit: '', warehouse_id: def,
@@ -30,6 +33,31 @@ export default function StockMoveModal({ open, onClose, mode = 'move', product, 
 
   const sf = (k, v) => setForm(p => ({ ...p, [k]: v }))
   const isTransfer = form.type === 'transfer'
+
+  // The site the move physically happens at drives the compliance switches.
+  const activeWhId = isTransfer ? form.from_warehouse_id : form.warehouse_id
+  const activeWh = warehouses.find(w => String(w.id) === String(activeWhId))
+  const needsGps = !adjusting && activeWh?.require_move_gps
+  const needsPhoto = !adjusting && activeWh?.require_move_photo
+
+  const captureLocation = () => {
+    if (!navigator.geolocation) { setErr('This device has no location support.'); return }
+    setGeoBusy(true)
+    navigator.geolocation.getCurrentPosition(
+      (pos) => { setGeo({ lat: +pos.coords.latitude.toFixed(7), lng: +pos.coords.longitude.toFixed(7), address: '' }); setGeoBusy(false) },
+      () => { setErr('Could not get your location — allow location access and retry.'); setGeoBusy(false) },
+      { enableHighAccuracy: true, timeout: 10000 },
+    )
+  }
+
+  const pickPhoto = (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 8 * 1024 * 1024) { setErr('Photo is too large (max 8 MB).'); return }
+    const reader = new FileReader()
+    reader.onload = () => setPhoto(reader.result)
+    reader.readAsDataURL(file)
+  }
 
   // Current on-hand at the chosen site — shown so the person can sanity-check.
   const { data: levelData } = useQuery({
@@ -69,6 +97,8 @@ export default function StockMoveModal({ open, onClose, mode = 'move', product, 
       product_id: product.id, type: form.type, quantity: Number(baseQty),
       reason: form.reason || undefined, notes: form.notes || undefined,
     }
+    if (geo) { p.gps_lat = geo.lat; p.gps_lng = geo.lng; if (geo.address) p.geo_address = geo.address }
+    if (photo) p.photo = photo
     if (isTransfer) {
       p.from_warehouse_id = Number(form.from_warehouse_id)
       p.to_warehouse_id = Number(form.to_warehouse_id)
@@ -82,6 +112,7 @@ export default function StockMoveModal({ open, onClose, mode = 'move', product, 
 
   const valid = Number(form.quantity) >= 0 && form.quantity !== ''
     && (adjusting ? form.warehouse_id : (isTransfer ? form.from_warehouse_id && form.to_warehouse_id && form.from_warehouse_id !== form.to_warehouse_id : form.warehouse_id))
+    && (!needsGps || geo) && (!needsPhoto || photo)
 
   return (
     <div className="fixed inset-0 z-[55] flex items-start justify-center p-4 overflow-y-auto"
@@ -158,6 +189,32 @@ export default function StockMoveModal({ open, onClose, mode = 'move', product, 
               className="w-full rounded-xl outline-none"
               style={{ padding: '10px 12px', fontSize: 13.5, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }} />
           </Field>
+
+          {/* Per-movement provenance. Always available; a site can *require* either
+              one, in which case it's marked and the submit button waits for it. */}
+          {!adjusting && (
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={captureLocation} disabled={geoBusy}
+                className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl"
+                style={{ border: `1px solid ${geo ? INV_ACCENT : (needsGps ? 'var(--color-danger-500)' : 'var(--border)')}`, color: geo ? INV_ACCENT : 'var(--text-body)' }}>
+                {geoBusy ? <Loader2 size={13} className="animate-spin" /> : <MapPin size={13} />}
+                {geo ? `Location set (${geo.lat}, ${geo.lng})` : (needsGps ? 'Location required — capture' : 'Capture location')}
+              </button>
+
+              <label className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl cursor-pointer"
+                style={{ border: `1px solid ${photo ? INV_ACCENT : (needsPhoto ? 'var(--color-danger-500)' : 'var(--border)')}`, color: photo ? INV_ACCENT : 'var(--text-body)' }}>
+                <Camera size={13} /> {photo ? 'Photo attached' : (needsPhoto ? 'Photo required — add' : 'Add photo')}
+                <input type="file" accept="image/*" capture="environment" onChange={pickPhoto} style={{ display: 'none' }} />
+              </label>
+
+              {photo && (
+                <div className="flex items-center gap-2">
+                  <img src={photo} alt="move" style={{ height: 34, width: 34, objectFit: 'cover', borderRadius: 8 }} />
+                  <button type="button" onClick={() => setPhoto(null)} className="text-[11px]" style={{ color: 'var(--color-danger-500)' }}>remove</button>
+                </div>
+              )}
+            </div>
+          )}
 
           {err && (
             <p className="text-xs px-3 py-2 rounded-lg"

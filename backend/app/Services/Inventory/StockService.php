@@ -9,6 +9,7 @@ use App\Models\Inventory\Stock;
 use App\Models\Inventory\Warehouse;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * The stock ledger engine.
@@ -171,7 +172,15 @@ class StockService
         $standalone = ! in_array($d['reference_type'] ?? null, ['voucher', 'voucher_reversal'], true);
         $before = $standalone ? $this->onHandTotal($product->id, $tenantId) : null;
 
-        $movement = DB::transaction(function () use ($d, $type, $qty, $direction, $product, $tenantId, $actorId) {
+        // Per-movement provenance. Decode any photo first so a site that *requires*
+        // one can be enforced before the ledger moves. Compliance is only checked
+        // for hand-made moves — a voucher posting has its own paperwork.
+        $photoPath = $this->storeMovePhoto($d['photo'] ?? null, $tenantId);
+        if ($standalone) {
+            $this->enforceMoveCompliance($d, $direction, $tenantId, $photoPath);
+        }
+
+        $movement = DB::transaction(function () use ($d, $type, $qty, $direction, $product, $tenantId, $actorId, $photoPath) {
             $balanceAfter = null;
 
             if ($direction === 'transfer') {
@@ -205,6 +214,10 @@ class StockService
                 'balance_after'     => $balanceAfter,
                 'reason'            => $d['reason'] ?? null,
                 'notes'             => $d['notes'] ?? null,
+                'gps_lat'           => $d['gps_lat'] ?? null,
+                'gps_lng'           => $d['gps_lng'] ?? null,
+                'geo_address'       => $d['geo_address'] ?? null,
+                'photo_path'        => $photoPath,
                 'reference_type'    => $d['reference_type'] ?? null,
                 'reference_id'      => $d['reference_id'] ?? null,
                 'actor_id'          => $actorId,
@@ -217,6 +230,60 @@ class StockService
         }
 
         return $movement;
+    }
+
+    /**
+     * A warehouse can require a GPS fix and/or a photo on every hand-made move
+     * there — the field-audit switches on the site. Checked against the physical
+     * site of the action: where the goods leave for an issue/transfer-out, where
+     * they land for a receipt.
+     */
+    private function enforceMoveCompliance(array $d, string $direction, int $tenantId, ?string $photoPath): void
+    {
+        $whId = $direction === 'transfer'
+            ? (int) ($d['from_warehouse_id'] ?? 0)
+            : (int) ($d['warehouse_id'] ?? 0);
+        if (! $whId) {
+            return;
+        }
+
+        $wh = Warehouse::forTenant($tenantId)->find($whId);
+        if (! $wh) {
+            return;
+        }
+
+        if ($wh->require_move_gps && ($d['gps_lat'] ?? null) === null) {
+            throw new BusinessException("{$wh->name} requires a GPS location on every stock move. Enable location and try again.", 422);
+        }
+        if ($wh->require_move_photo && ! $photoPath) {
+            throw new BusinessException("{$wh->name} requires a photo on every stock move.", 422);
+        }
+    }
+
+    /**
+     * Store a base64 data-URL photo taken at the point of a move to the private
+     * disk, returning its path. Anything that isn't a decodable image is ignored
+     * rather than failing the move — the ledger write is what matters.
+     */
+    private function storeMovePhoto(?string $photo, int $tenantId): ?string
+    {
+        if (! $photo || ! str_starts_with($photo, 'data:image')) {
+            return null;
+        }
+
+        if (! preg_match('/^data:image\/(\w+);base64,(.+)$/s', $photo, $m)) {
+            return null;
+        }
+        $ext = strtolower($m[1]) === 'jpeg' ? 'jpg' : preg_replace('/[^a-z0-9]/', '', strtolower($m[1]));
+        $binary = base64_decode($m[2], true);
+        if ($binary === false || strlen($binary) > 8 * 1024 * 1024) {   // cap at 8MB
+            return null;
+        }
+
+        $path = "inventory/movements/{$tenantId}/".uniqid('mv_', true).".{$ext}";
+        Storage::disk('local')->put($path, $binary);
+
+        return $path;
     }
 
     /**

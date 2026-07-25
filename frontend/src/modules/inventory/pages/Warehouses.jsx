@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Warehouse, Plus, Trash2, Star, Boxes, MapPin, ChevronRight, X, Check, Printer, AlertTriangle, Gauge, HelpCircle } from 'lucide-react'
+import { Warehouse, Plus, Trash2, Star, Boxes, MapPin, ChevronRight, X, Check, Printer, AlertTriangle, Gauge, HelpCircle, Pencil, Thermometer, Droplets } from 'lucide-react'
 import { inventoryApi, INV_ACCENT, WAREHOUSE_TYPES, LOCATION_TYPES, CAPACITY_UOMS, fmtQty } from '@/services/inventoryApi'
 import { useAuth } from '@/context/AuthContext'
 import Select from '@/components/ui/Select'
@@ -20,8 +20,10 @@ export default function Warehouses() {
   const isAdmin = user?.role === 'admin'
 
   const [creating, setCreating] = useState(false)
+  const [editing, setEditing] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [expanded, setExpanded] = useState(null)
+  const [envExpanded, setEnvExpanded] = useState(null)
   const [err, setErr] = useState('')
 
   const { data: warehouses = [], isLoading } = useQuery({ queryKey: ['inv-warehouses'], queryFn: inventoryApi.warehouses.list })
@@ -101,11 +103,26 @@ export default function Warehouses() {
                 <Stat label="Bins" value={w.location_count ?? 0} />
               </div>
 
+              {(w.track_environment || w.type === 'cold_storage') && (
+                <button onClick={() => setEnvExpanded(envExpanded === w.id ? null : w.id)} aria-label="Environment"
+                  title="Environment"
+                  className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                  style={{ background: envExpanded === w.id ? `color-mix(in srgb, ${INV_ACCENT} 14%, transparent)` : 'var(--bg-input)', border: '1px solid var(--border)', color: envExpanded === w.id ? INV_ACCENT : 'var(--text-muted)' }}>
+                  <Thermometer size={14} />
+                </button>
+              )}
               <button onClick={() => setExpanded(expanded === w.id ? null : w.id)} aria-label="Show locations"
                 className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
                 style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
                 <ChevronRight size={14} style={{ transform: expanded === w.id ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }} />
               </button>
+              {isAdmin && (
+                <button onClick={() => setEditing(w)} aria-label={`Edit ${w.name}`}
+                  className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                  style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+                  <Pencil size={13} />
+                </button>
+              )}
               {isAdmin && (
                 <button onClick={() => setConfirmDelete(w)} aria-label={`Delete ${w.name}`}
                   className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
@@ -115,12 +132,14 @@ export default function Warehouses() {
               )}
             </div>
 
+            {envExpanded === w.id && <EnvPanel warehouse={w} />}
             {expanded === w.id && <LocationPanel warehouse={w} isAdmin={isAdmin} />}
           </section>
         ))}
       </div>
 
       {creating && <WarehouseModal onClose={() => setCreating(false)} onSaved={refresh} />}
+      {editing && <WarehouseModal warehouse={editing} onClose={() => setEditing(null)} onSaved={refresh} />}
 
       <ConfirmModal open={Boolean(confirmDelete)} onClose={() => setConfirmDelete(null)}
         onConfirm={() => remove.mutate(confirmDelete.id)}
@@ -396,20 +415,98 @@ const Tile = ({ label, value, danger, muted }) => (
   </div>
 )
 
+/* ── Environment monitoring ───────────────────────────────────── */
+
+function EnvPanel({ warehouse }) {
+  const qc = useQueryClient()
+  const [temp, setTemp] = useState('')
+  const [humidity, setHumidity] = useState('')
+  const [note, setNote] = useState('')
+  const [err, setErr] = useState('')
+
+  const { data: readings = [], isLoading } = useQuery({
+    queryKey: ['inv-env', warehouse.id], queryFn: () => inventoryApi.warehouses.environment(warehouse.id),
+  })
+  const band = (min, max) => (min == null && max == null) ? '—' : `${min ?? '−'}…${max ?? '−'}`
+
+  const log = useMutation({
+    mutationFn: () => inventoryApi.warehouses.logEnvironment(warehouse.id, {
+      temperature: temp === '' ? null : Number(temp),
+      humidity: humidity === '' ? null : Number(humidity),
+      note: note || null,
+    }),
+    onSuccess: () => { setTemp(''); setHumidity(''); setNote(''); setErr(''); qc.invalidateQueries({ queryKey: ['inv-env', warehouse.id] }) },
+    onError: (e) => setErr(e?.message || 'Could not log the reading.'),
+  })
+
+  return (
+    <div className="px-4 pb-4" style={{ borderTop: '1px solid var(--border)' }}>
+      <div className="flex flex-wrap items-center gap-3 mt-3 mb-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+        <span className="flex items-center gap-1"><Thermometer size={12} style={{ color: INV_ACCENT }} /> Band {band(warehouse.temp_min, warehouse.temp_max)}°</span>
+        <span className="flex items-center gap-1"><Droplets size={12} style={{ color: INV_ACCENT }} /> Band {band(warehouse.humidity_min, warehouse.humidity_max)}%</span>
+      </div>
+
+      <form onSubmit={e => { e.preventDefault(); if (temp !== '' || humidity !== '') log.mutate() }} className="flex flex-wrap gap-2 mb-3">
+        <input type="number" step="0.1" value={temp} onChange={e => setTemp(e.target.value)} placeholder="Temp °"
+          className="rounded-lg outline-none" style={{ width: 90, padding: '7px 10px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }} />
+        <input type="number" step="0.1" value={humidity} onChange={e => setHumidity(e.target.value)} placeholder="Humidity %"
+          className="rounded-lg outline-none" style={{ width: 100, padding: '7px 10px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }} />
+        <input value={note} onChange={e => setNote(e.target.value)} placeholder="Note (optional)"
+          className="flex-1 rounded-lg outline-none" style={{ minWidth: 120, padding: '7px 10px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }} />
+        <button type="submit" disabled={(temp === '' && humidity === '') || log.isPending} className="px-3 rounded-lg text-xs font-bold disabled:opacity-40" style={{ background: INV_ACCENT, color: '#fff' }}>Log</button>
+      </form>
+
+      {err && <p className="text-[11px] mb-2" style={{ color: 'var(--color-danger-500)' }}>{err}</p>}
+
+      {isLoading ? <div className="h-12 rounded-lg animate-pulse" style={{ background: 'var(--bg-input)' }} /> : (
+        <ul className="space-y-1">
+          {readings.length === 0 && <li className="text-[11px] py-1" style={{ color: 'var(--text-muted)' }}>No readings logged yet.</li>}
+          {readings.map(r => (
+            <li key={r.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs" style={{ background: 'var(--bg-input)' }}>
+              <span className="w-2 h-2 rounded-full shrink-0" style={{ background: r.in_band ? '#10B981' : 'var(--color-danger-500)' }} />
+              <span style={{ color: 'var(--text-h)' }}>{r.temperature != null ? `${Number(r.temperature)}°` : ''} {r.humidity != null ? `${Number(r.humidity)}%` : ''}</span>
+              {!r.in_band && <span className="text-[10px] font-bold" style={{ color: 'var(--color-danger-500)' }}>OUT OF RANGE</span>}
+              {r.note && <span className="truncate" style={{ color: 'var(--text-muted)' }}>· {r.note}</span>}
+              <span className="ml-auto text-[10px]" style={{ color: 'var(--text-muted)' }}>{r.recorder?.name || ''} · {r.recorded_at ? new Date(r.recorded_at).toLocaleString() : ''}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 /* ── New warehouse ────────────────────────────────────────────── */
 
-function WarehouseModal({ onClose, onSaved }) {
-  const [form, setForm] = useState({ name: '', code: '', type: 'godown', address: '', is_default: false })
+function WarehouseModal({ warehouse, onClose, onSaved }) {
+  const editing = Boolean(warehouse?.id)
+  const [form, setForm] = useState({
+    name: warehouse?.name || '', code: warehouse?.code || '', type: warehouse?.type || 'godown',
+    address: warehouse?.address || '', is_default: warehouse?.is_default || false,
+    temp_min: warehouse?.temp_min ?? '', temp_max: warehouse?.temp_max ?? '',
+    humidity_min: warehouse?.humidity_min ?? '', humidity_max: warehouse?.humidity_max ?? '',
+    track_environment: warehouse?.track_environment || false,
+    require_move_gps: warehouse?.require_move_gps || false,
+    require_move_photo: warehouse?.require_move_photo || false,
+  })
   const [err, setErr] = useState('')
   const sf = (k, v) => setForm(p => ({ ...p, [k]: v }))
 
+  const num = (v) => v === '' || v === null ? null : Number(v)
   const save = useMutation({
-    mutationFn: () => inventoryApi.warehouses.create({
-      name: form.name.trim(), code: form.code.trim() || undefined, type: form.type,
-      address: form.address.trim() || undefined, is_default: form.is_default,
-    }),
+    mutationFn: () => {
+      const payload = {
+        name: form.name.trim(), code: form.code.trim() || undefined, type: form.type,
+        address: form.address.trim() || undefined, is_default: form.is_default,
+        temp_min: num(form.temp_min), temp_max: num(form.temp_max),
+        humidity_min: num(form.humidity_min), humidity_max: num(form.humidity_max),
+        track_environment: form.track_environment,
+        require_move_gps: form.require_move_gps, require_move_photo: form.require_move_photo,
+      }
+      return editing ? inventoryApi.warehouses.update(warehouse.id, payload) : inventoryApi.warehouses.create(payload)
+    },
     onSuccess: () => { onSaved?.(); onClose() },
-    onError: (e) => setErr(e?.message || 'Could not create the warehouse.'),
+    onError: (e) => setErr(e?.message || 'Could not save the warehouse.'),
   })
 
   return (
@@ -419,7 +516,7 @@ function WarehouseModal({ onClose, onSaved }) {
         className="w-full rounded-2xl overflow-hidden my-8" style={{ maxWidth: 480, background: 'var(--bg-global)', boxShadow: '0 24px 70px rgba(0,0,0,0.45)' }}>
         <header className="flex items-center gap-2.5 px-5 py-4" style={{ background: `linear-gradient(120deg, ${INV_ACCENT}, #059669)` }}>
           <Boxes size={18} style={{ color: '#fff' }} />
-          <h2 className="font-bold text-white" style={{ fontSize: 15 }}>New Warehouse</h2>
+          <h2 className="font-bold text-white" style={{ fontSize: 15 }}>{editing ? 'Edit Warehouse' : 'New Warehouse'}</h2>
           <button type="button" onClick={onClose} aria-label="Close" className="ml-auto opacity-90 hover:opacity-100">
             <X size={18} style={{ color: '#fff' }} />
           </button>
@@ -439,6 +536,27 @@ function WarehouseModal({ onClose, onSaved }) {
               style={{ accentColor: INV_ACCENT, width: 15, height: 15 }} />
             <span className="text-xs font-semibold" style={{ color: 'var(--text-h)' }}>Make this the default site</span>
           </label>
+
+          {/* Environment & compliance — matters for cold stores and controlled
+              rooms; the switches turn a site into a field-audited one. */}
+          <div className="rounded-xl p-3 space-y-3" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+            <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Environment &amp; compliance</p>
+            <div className="grid grid-cols-2 gap-3">
+              <L label="Temp min (°)"><input type="number" step="0.1" value={form.temp_min} onChange={e => sf('temp_min', e.target.value)} className={I} style={IS} placeholder="e.g. 2" /></L>
+              <L label="Temp max (°)"><input type="number" step="0.1" value={form.temp_max} onChange={e => sf('temp_max', e.target.value)} className={I} style={IS} placeholder="e.g. 8" /></L>
+              <L label="Humidity min (%)"><input type="number" step="0.1" value={form.humidity_min} onChange={e => sf('humidity_min', e.target.value)} className={I} style={IS} /></L>
+              <L label="Humidity max (%)"><input type="number" step="0.1" value={form.humidity_max} onChange={e => sf('humidity_max', e.target.value)} className={I} style={IS} /></L>
+            </div>
+            {[['track_environment', 'Track temperature / humidity at this site'],
+              ['require_move_gps', 'Require a GPS location on every stock move here'],
+              ['require_move_photo', 'Require a photo on every stock move here']].map(([k, label]) => (
+              <label key={k} className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={form[k]} onChange={e => sf(k, e.target.checked)} style={{ accentColor: INV_ACCENT, width: 15, height: 15 }} />
+                <span className="text-xs font-semibold" style={{ color: 'var(--text-h)' }}>{label}</span>
+              </label>
+            ))}
+          </div>
+
           {err && <p className="text-xs px-3 py-2 rounded-lg" style={{ background: 'color-mix(in srgb, var(--color-danger-500) 12%, transparent)', color: 'var(--color-danger-500)' }}>{err}</p>}
         </div>
 
@@ -448,7 +566,7 @@ function WarehouseModal({ onClose, onSaved }) {
           <button type="submit" disabled={!form.name.trim() || save.isPending}
             className="flex items-center gap-1.5 text-sm font-bold px-5 py-2.5 rounded-xl disabled:opacity-40"
             style={{ background: INV_ACCENT, color: '#fff' }}>
-            <Check size={16} /> {save.isPending ? 'Saving…' : 'Create'}
+            <Check size={16} /> {save.isPending ? 'Saving…' : (editing ? 'Save' : 'Create')}
           </button>
         </footer>
       </form>

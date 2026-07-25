@@ -7,6 +7,7 @@ use App\Http\Controllers\Traits\ApiResponse;
 use App\Models\Inventory\Location;
 use App\Models\Inventory\Warehouse;
 use App\Services\Inventory\LayoutService;
+use App\Services\Inventory\WarehouseEnvService;
 use App\Services\Inventory\WarehouseService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -19,6 +20,7 @@ class WarehouseController extends Controller
     public function __construct(
         private WarehouseService $warehouses,
         private LayoutService $layout,
+        private WarehouseEnvService $env,
     ) {
     }
 
@@ -147,6 +149,47 @@ class WarehouseController extends Controller
             'is_default' => 'nullable|boolean',
             'display'    => 'nullable|boolean',
             'status'     => ['nullable', Rule::in(['active', 'inactive'])],
+
+            // Environment band + field-audit switches.
+            'temp_min'      => 'nullable|numeric|between:-100,200',
+            'temp_max'      => 'nullable|numeric|between:-100,200',
+            'humidity_min'  => 'nullable|numeric|between:0,100',
+            'humidity_max'  => 'nullable|numeric|between:0,100',
+            'track_environment'  => 'nullable|boolean',
+            'require_move_gps'   => 'nullable|boolean',
+            'require_move_photo' => 'nullable|boolean',
         ];
+    }
+
+    /* ── Environment monitoring ─────────────────────────────────── */
+
+    public function envReadings(Request $request, int $warehouse)
+    {
+        $this->denyExternal($request);
+
+        return $this->success(
+            $this->env->readings($warehouse, $request->user()->tenant_id),
+            'Environment readings retrieved'
+        );
+    }
+
+    public function storeEnvReading(Request $request, int $warehouse)
+    {
+        $this->denyExternal($request);
+
+        $data = $request->validate([
+            'temperature' => 'nullable|numeric|between:-100,200',
+            'humidity'    => 'nullable|numeric|between:0,100',
+            'note'        => 'nullable|string|max:255',
+        ]);
+
+        if (($data['temperature'] ?? null) === null && ($data['humidity'] ?? null) === null) {
+            return $this->error('Record a temperature or a humidity reading.', 422);
+        }
+
+        return $this->success(
+            $this->env->record($warehouse, $data, $request->user()->tenant_id, $request->user()->id),
+            'Environment reading logged', 201
+        );
     }
 }

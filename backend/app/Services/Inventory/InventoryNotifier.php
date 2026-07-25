@@ -299,6 +299,48 @@ class InventoryNotifier
         );
     }
 
+    /**
+     * A temperature/humidity reading fell outside a site's band. Always bells the
+     * responsible people and (subject to the master switch) emails them — a
+     * broken cold chain is spoilage in progress, and the window to save the stock
+     * is measured in hours. Audience = admins + the site's manager.
+     */
+    public function environmentBreach(Warehouse $warehouse, $reading, int $actorId): void
+    {
+        $bits = [];
+        if ($reading->temperature !== null) {
+            $bits[] = 'temp '.rtrim(rtrim(number_format((float) $reading->temperature, 2, '.', ''), '0'), '.').'°'
+                .($warehouse->temp_min !== null || $warehouse->temp_max !== null
+                    ? ' (band '.($warehouse->temp_min ?? '−').'…'.($warehouse->temp_max ?? '−').')' : '');
+        }
+        if ($reading->humidity !== null) {
+            $bits[] = 'humidity '.rtrim(rtrim(number_format((float) $reading->humidity, 2, '.', ''), '0'), '.').'%'
+                .($warehouse->humidity_min !== null || $warehouse->humidity_max !== null
+                    ? ' (band '.($warehouse->humidity_min ?? '−').'…'.($warehouse->humidity_max ?? '−').')' : '');
+        }
+
+        $title = "Environment out of range: {$warehouse->name}";
+        $body = implode('; ', $bits).'. Check the site before stored stock is affected.';
+
+        $audience = $this->audience($warehouse->tenant_id, $warehouse->id, null, [$actorId]);
+
+        $this->bell(
+            $audience, $warehouse->tenant_id, 'inventory.env_breach',
+            $title, $body, '/app/inventory/warehouses', null,
+        );
+
+        $this->mailTo(
+            $warehouse->tenant_id,
+            $this->emails($audience),
+            fn () => new VoucherActivityMail(
+                new Voucher(['tenant_id' => $warehouse->tenant_id, 'code' => $warehouse->code ?? $warehouse->name, 'type' => 'internal']),
+                $title,
+                $body,
+            ),
+            "environment breach at {$warehouse->name}",
+        );
+    }
+
     /** Goods are on their way to a warehouse someone else runs. */
     private function transferIncoming(Voucher $voucher, int $actorId): void
     {

@@ -161,6 +161,9 @@ export const inventoryApi = {
     // `measure` = units | volume | weight — what "full" counts.
     layout:  (id, measure = 'units') => api.get(`/inventory/warehouses/${id}/layout`, { params: { measure } }).then(unwrap).catch(handleErr),
     putaway: (id, data) => api.post(`/inventory/warehouses/${id}/putaway`, data).then(unwrap).catch(handleErr),
+    // Environment monitoring (temp/humidity) for controlled sites.
+    environment:    (id) => api.get(`/inventory/warehouses/${id}/environment`).then(unwrap).catch(handleErr),
+    logEnvironment: (id, data) => api.post(`/inventory/warehouses/${id}/environment`, data).then(unwrap).catch(handleErr),
   },
 
   stock: {

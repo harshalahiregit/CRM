@@ -37,6 +37,14 @@ class StockMovementRequest extends FormRequest
 
             'reason' => 'nullable|string|max:255',
             'notes'  => 'nullable|string|max:2000',
+
+            // Per-movement provenance (spec §warehouse). A site can *require* these
+            // via its compliance switches; the service enforces that, not here.
+            'gps_lat'     => 'nullable|numeric|between:-90,90',
+            'gps_lng'     => 'nullable|numeric|between:-180,180',
+            'geo_address' => 'nullable|string|max:255',
+            // A photo taken at the point of the move, sent as a base64 data URL.
+            'photo'       => 'nullable|string',
         ];
     }
 }

@@ -37,12 +37,15 @@ class Movement extends Model
         'tenant_id', 'product_id', 'type', 'direction', 'quantity',
         'from_warehouse_id', 'to_warehouse_id', 'from_location_id', 'to_location_id',
         'balance_after', 'batch_no', 'serial_no', 'reason', 'notes',
+        'gps_lat', 'gps_lng', 'geo_address', 'photo_path',
         'reference_type', 'reference_id', 'actor_id', 'created_at',
     ];
 
     protected $casts = [
         'quantity'      => 'decimal:3',
         'balance_after' => 'decimal:3',
+        'gps_lat'       => 'decimal:7',
+        'gps_lng'       => 'decimal:7',
         'created_at'    => 'datetime',
     ];
 

@@ -36,6 +36,8 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('inventory')->gr
 
     // Inventory history (§7) — the whole-module audit ledger.
     Route::get('/history',    [StockController::class, 'ledger']);
+    // The photo taken at the point of a movement (private disk).
+    Route::get('/movements/{movement}/photo', [StockController::class, 'movementPhoto'])->where('movement', '[0-9]+');
 
     // Reports (§8) — summary | valuation | analysis.
     Route::get('/reports/{kind}', [ReportController::class, 'show']);
@@ -239,6 +241,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('inventory')->gr
     // unit is refused rather than guessed at.
     Route::get('/warehouses/{warehouse}/layout',  [WarehouseController::class, 'layout']);
     Route::post('/warehouses/{warehouse}/putaway', [WarehouseController::class, 'putaway']);
+
+    // Environment monitoring (temp/humidity) for controlled sites.
+    Route::get('/warehouses/{warehouse}/environment',  [WarehouseController::class, 'envReadings']);
+    Route::post('/warehouses/{warehouse}/environment', [WarehouseController::class, 'storeEnvReading']);
 
     Route::get('/warehouses/{warehouse}/locations',  [WarehouseController::class, 'locations']);
     Route::post('/warehouses/{warehouse}/locations', [WarehouseController::class, 'storeLocation']);

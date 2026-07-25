@@ -119,4 +119,15 @@ class StockController extends Controller
 
         return $this->success($this->stock->lowStock($request->user()->tenant_id), 'Low stock retrieved');
     }
+
+    /** The photo taken at the point of a movement (private disk, authenticated). */
+    public function movementPhoto(Request $request, int $movement)
+    {
+        $this->denyExternal($request);
+
+        $row = \App\Models\Inventory\Movement::forTenant($request->user()->tenant_id)->findOrFail($movement);
+        abort_unless($row->photo_path && \Illuminate\Support\Facades\Storage::disk('local')->exists($row->photo_path), 404, 'No photo on that movement.');
+
+        return \Illuminate\Support\Facades\Storage::disk('local')->download($row->photo_path, "movement-{$movement}.jpg");
+    }
 }
