@@ -6,7 +6,7 @@ import {
   UserPlus, Link2, RefreshCw, LayoutTemplate, Globe, TrendingUp, Landmark, BookText, Scale,
   ArrowLeftRight, BookOpen, Boxes, PackagePlus, PackageMinus, Warehouse, History,
   BarChart3, Activity, Layers3, ScanLine, ClipboardCheck, ShoppingCart, Hourglass, Wrench,
-  CalendarRange, Handshake, Factory
+  CalendarRange, Handshake, Factory, Undo2
 } from 'lucide-react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -126,6 +126,21 @@ const INVENTORY_SUB_ITEMS = [
   { label: 'Settings', path: '/app/inventory/settings', icon: Settings },
 ]
 
+const PURCHASE_SUB_ITEMS = [
+  { label: 'Items',            path: '/app/purchase/catalog',       icon: Package },
+  { label: 'Vendors',          path: '/app/purchase/vendors',       icon: Truck },
+  { label: 'Vendor-Items',     path: '/app/purchase/vendor-items',  icon: Boxes },
+  { label: 'Purchase request', path: '/app/purchase/requests',      icon: ClipboardList },
+  { label: 'Quotations',       path: '/app/purchase/quotations',    icon: FileSignature },
+  { label: 'Purchase order',   path: '/app/purchase/orders',        icon: ShoppingBag },
+  { label: 'Order Returns',    path: '/app/purchase/order-returns', icon: Undo2 },
+  { label: 'Contracts',        path: '/app/purchase/contracts',     icon: FileText },
+  { label: 'Debit Notes',      path: '/app/purchase/debit-notes',   icon: FileX },
+  { label: 'Invoices',         path: '/app/purchase/invoices',      icon: Receipt },
+  { label: 'Reports',          path: '/app/purchase/reports',       icon: BarChart2 },
+  { label: 'Setting',          path: '/app/purchase/settings',      icon: Settings },
+]
+
 const TPV_SUB_ITEMS = [
   { label: 'Dashboard',       path: '/app/tpv/dashboard', icon: LayoutDashboard },
   { label: 'Kickoff Meeting', path: '/app/tpv/kickoff',   icon: CalendarDays },
@@ -141,6 +156,7 @@ export default function Sidebar({ collapsed, onToggle }) {
   const [helpdeskExpanded, setHelpdeskExpanded] = useState(true)
   const [inventoryExpanded, setInventoryExpanded] = useState(true)
   const [tpvExpanded, setTpvExpanded] = useState(true)
+  const [purchaseExpanded, setPurchaseExpanded] = useState(true)
   const hrInstalled = isModuleInstalled('hr')
   const [activeLeadsCount, setActiveLeadsCount] = useState(null)
 
@@ -497,6 +513,35 @@ export default function Sidebar({ collapsed, onToggle }) {
                   </div>
                   {!collapsed && <span className="truncate text-xs">{label}</span>}
                   {isActive && !collapsed && <div className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: '#6ee7b7' }} />}
+                </div>
+              )}
+            </NavLink>
+          ))}
+        </div>
+
+        {/* ── Purchase Module sub-nav ── */}
+        <div className="mt-2">
+          {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>Purchase</p>}
+          <button
+            onClick={() => setPurchaseExpanded(e => !e)}
+            title={collapsed ? 'Purchase' : ''}
+            className="nav-3d mb-0.5 w-full"
+            style={{ justifyContent: collapsed ? 'center' : undefined, color: '#a78bfa' }}
+          >
+            <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.15)' }}>
+              <ShoppingBag size={13} style={{ color: '#a78bfa' }} />
+            </div>
+            {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Purchase</span><ChevronDown size={13} className={clsx('transition-transform duration-200', purchaseExpanded && 'rotate-180')} /></>}
+          </button>
+          {(purchaseExpanded || collapsed) && PURCHASE_SUB_ITEMS.map(({ label, path, icon: Icon }) => (
+            <NavLink key={path} to={path}>
+              {({ isActive }) => (
+                <div title={collapsed ? label : ''} className={clsx('nav-3d mb-0.5', isActive && 'nav-3d-active')} style={{ justifyContent: collapsed ? 'center' : undefined, paddingLeft: collapsed ? undefined : '28px' }}>
+                  <div className="flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: isActive ? 'rgba(255,255,255,0.15)' : 'rgba(124,58,237,0.06)' }}>
+                    <Icon size={12} />
+                  </div>
+                  {!collapsed && <span className="truncate text-xs">{label}</span>}
+                  {isActive && !collapsed && <div className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: '#c4b5fd' }} />}
                 </div>
               )}
             </NavLink>

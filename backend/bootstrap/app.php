@@ -25,6 +25,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // Register custom middleware aliases
         $middleware->alias([
             'role' => \App\Http\Middleware\EnsureUserHasRole::class,
+            'vendor.portal' => \App\Http\Middleware\EnsureVendorPortalAccess::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
