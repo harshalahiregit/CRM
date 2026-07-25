@@ -23,7 +23,7 @@ export default function StockMoveModal({ open, onClose, mode = 'move', product, 
     setErr('')
     const def = warehouses.find(w => w.is_default)?.id ?? warehouses[0]?.id ?? ''
     setForm({
-      type: 'receive', quantity: '', warehouse_id: def,
+      type: 'receive', quantity: '', unit: '', warehouse_id: def,
       from_warehouse_id: def, to_warehouse_id: '', reason: '', notes: '',
     })
   }, [open, warehouses.length]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -37,6 +37,13 @@ export default function StockMoveModal({ open, onClose, mode = 'move', product, 
   })
   const atSite = (levelData?.levels || []).find(l => String(l.warehouse_id) === String(form.warehouse_id))
   const onHandHere = atSite ? fmtQty(atSite.quantity) : '0'
+
+  // Alternate units for this item — lets qty be entered in Box/Carton etc.
+  const { data: unitList = [] } = useQuery({
+    queryKey: ['inv-product-units', product?.id], queryFn: () => inventoryApi.products.units(product.id), enabled: open && !!product?.id,
+  })
+  const factor = form.unit ? Number(unitList.find(u => u.name === form.unit)?.factor || 1) : 1
+  const baseQty = form.quantity === '' ? '' : +(Number(form.quantity) * factor).toFixed(3)
 
   const save = useMutation({
     mutationFn: (payload) => adjusting ? inventoryApi.stock.adjust(payload) : inventoryApi.stock.move(payload),
@@ -55,11 +62,11 @@ export default function StockMoveModal({ open, onClose, mode = 'move', product, 
     if (adjusting) {
       return save.mutate({
         product_id: product.id, warehouse_id: Number(form.warehouse_id),
-        quantity: Number(form.quantity), reason: form.reason || undefined,
+        quantity: Number(baseQty), reason: form.reason || undefined,
       })
     }
     const p = {
-      product_id: product.id, type: form.type, quantity: Number(form.quantity),
+      product_id: product.id, type: form.type, quantity: Number(baseQty),
       reason: form.reason || undefined, notes: form.notes || undefined,
     }
     if (isTransfer) {
@@ -125,10 +132,19 @@ export default function StockMoveModal({ open, onClose, mode = 'move', product, 
             </Field>
           )}
 
-          <Field label={adjusting ? 'Counted quantity (the new total)' : 'Quantity'}>
-            <input type="number" min="0" step="0.001" value={form.quantity} onChange={e => sf('quantity', e.target.value)}
-              className="w-full rounded-xl outline-none" autoFocus
-              style={{ padding: '10px 12px', fontSize: 15, fontWeight: 700, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }} />
+          <Field label={adjusting ? 'Counted quantity (the new total)' : 'Quantity'}
+            hint={form.unit && form.quantity !== '' ? `= ${baseQty} ${product?.base_unit || 'base'}` : null}>
+            <div className="flex gap-2">
+              <input type="number" min="0" step="0.001" value={form.quantity} onChange={e => sf('quantity', e.target.value)}
+                className="flex-1 rounded-xl outline-none" autoFocus
+                style={{ padding: '10px 12px', fontSize: 15, fontWeight: 700, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }} />
+              {unitList.length > 0 && (
+                <div style={{ minWidth: 132 }}>
+                  <Select value={form.unit} onChange={v => sf('unit', v)}
+                    options={[{ value: '', label: product?.base_unit || 'Base unit' }, ...unitList.map(u => ({ value: u.name, label: `${u.name} (×${u.factor})` }))]} />
+                </div>
+              )}
+            </div>
           </Field>
 
           {adjusting && (

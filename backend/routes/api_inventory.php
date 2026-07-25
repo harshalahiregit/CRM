@@ -193,6 +193,9 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('inventory')->gr
     Route::delete('/products/{product}/image', [ProductController::class, 'deleteImage']);
     Route::get('/products/{product}/levels',  [StockController::class, 'levels']);
     Route::get('/products/{product}/history', [StockController::class, 'history']);
+    Route::get('/products/{product}/units',    [ProductController::class, 'units']);
+    Route::put('/products/{product}/units',    [ProductController::class, 'saveUnits']);
+    Route::get('/products/{product}/convert',  [ProductController::class, 'convert']);
 
     // Warehouses + bin locations
     Route::get('/warehouses',        [WarehouseController::class, 'index']);

@@ -66,6 +66,10 @@ export const inventoryApi = {
     lookup: (code) => api.get('/inventory/products/lookup', { params: { code } }).then(unwrap).catch(handleErr),
     levels: (id) => api.get(`/inventory/products/${id}/levels`).then(unwrap).catch(handleErr),
     history: (id, limit = 100) => api.get(`/inventory/products/${id}/history`, { params: { limit } }).then(unwrap).catch(handleErr),
+    // Alternate units of measure (Box=12, Carton=144…) + convert helper.
+    units:     (id) => api.get(`/inventory/products/${id}/units`).then(unwrap).catch(handleErr),
+    saveUnits: (id, units) => api.put(`/inventory/products/${id}/units`, { units }).then(unwrap).catch(handleErr),
+    convert:   (id, qty, unit) => api.get(`/inventory/products/${id}/convert`, { params: { qty, unit } }).then(unwrap).catch(handleErr),
 
     // §1 — tag vocabulary, bulk actions, imports and item images.
     tags: () => api.get('/inventory/products/tags').then(unwrap).catch(handleErr),

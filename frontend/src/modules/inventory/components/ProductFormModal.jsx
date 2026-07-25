@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { X, Check, PackagePlus, IndianRupee, Tag, ImagePlus, Trash2 } from 'lucide-react'
+import { X, Check, PackagePlus, IndianRupee, Tag, ImagePlus, Trash2, Plus } from 'lucide-react'
 import { inventoryApi, INV_ACCENT, calcSalePrice, calcProfitRatio } from '@/services/inventoryApi'
 import Select from '@/components/ui/Select'
 
@@ -51,6 +51,8 @@ export default function ProductFormModal({ open, onClose, product = null, onSave
   const [imgUrl, setImgUrl] = useState(null)
   const [imgErr, setImgErr] = useState('')
   const imgInput = useRef(null)
+  // Alternate pack units (Box=12, Carton=144…). Loaded on edit; empty for new.
+  const [altUnits, setAltUnits] = useState([])
 
   const units = settings?.units || []
   const types = settings?.types || []
@@ -85,6 +87,17 @@ export default function ProductFormModal({ open, onClose, product = null, onSave
           profit_ratio: config?.sale_price_rule === 'profit_ratio' ? (config?.default_profit_ratio ?? '') : '',
         })
   }, [open, product, editing]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Load the product's alternate units when editing (the list row doesn't carry them).
+  useEffect(() => {
+    if (open && editing && product?.id) {
+      inventoryApi.products.units(product.id)
+        .then(rows => setAltUnits((rows || []).map(u => ({ name: u.name, factor: String(u.factor), barcode: u.barcode || '' }))))
+        .catch(() => setAltUnits([]))
+    } else if (open) {
+      setAltUnits([])
+    }
+  }, [open, editing, product?.id])
 
   // Load the existing image (it's private, so it comes back as a blob URL).
   useEffect(() => {
@@ -144,9 +157,19 @@ export default function ProductFormModal({ open, onClose, product = null, onSave
   const setSale = (v) => setForm(p => ({ ...p, sale_price: v, profit_ratio: calcProfitRatio(p.cost_price, v) || p.profit_ratio }))
 
   const save = useMutation({
-    mutationFn: (payload) => editing
-      ? inventoryApi.products.update(product.id, payload)
-      : inventoryApi.products.create(payload),
+    mutationFn: async (payload) => {
+      const saved = editing
+        ? await inventoryApi.products.update(product.id, payload)
+        : await inventoryApi.products.create(payload)
+      const id = editing ? product.id : saved?.id
+      // Persist alternate units against the (now-existing) product id.
+      if (id) {
+        await inventoryApi.products.saveUnits(id, altUnits
+          .filter(u => (u.name || '').trim() && Number(u.factor) > 0)
+          .map(u => ({ name: u.name.trim(), factor: Number(u.factor), barcode: u.barcode || null })))
+      }
+      return saved
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['inv-products'] })
       qc.invalidateQueries({ queryKey: ['inv-summary'] })
@@ -314,6 +337,21 @@ export default function ProductFormModal({ open, onClose, product = null, onSave
                 Keeps this item out of all stock maths — no balances, no movements, no low-stock alerts.
                 Use it for services or anything you don't physically hold.
               </p>
+            </div>
+          </Section>
+
+          <Section title="Alternate units" hint="Extra packs this item is counted or traded in — Box = 12, Carton = 144. The base unit is 1; ×base is how many base units each pack holds.">
+            <div className="space-y-2">
+              {altUnits.map((u, i) => (
+                <div key={i} className="flex gap-2 items-center">
+                  <input value={u.name} onChange={e => setAltUnits(a => a.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} placeholder="Unit (e.g. Box)" className={INPUT} style={{ ...INPUT_S, flex: 2 }} />
+                  <input type="number" min="0" step="any" value={u.factor} onChange={e => setAltUnits(a => a.map((x, j) => j === i ? { ...x, factor: e.target.value } : x))} placeholder="× base" className={INPUT} style={{ ...INPUT_S, flex: 1 }} />
+                  <input value={u.barcode} onChange={e => setAltUnits(a => a.map((x, j) => j === i ? { ...x, barcode: e.target.value } : x))} placeholder="Barcode (optional)" className={INPUT} style={{ ...INPUT_S, flex: 2 }} />
+                  <button type="button" onClick={() => setAltUnits(a => a.filter((_, j) => j !== i))} className="p-1.5 rounded-lg shrink-0" style={{ color: 'var(--color-danger-500)' }} aria-label="Remove unit"><Trash2 size={14} /></button>
+                </div>
+              ))}
+              <button type="button" onClick={() => setAltUnits(a => [...a, { name: '', factor: '', barcode: '' }])}
+                className="text-xs font-bold flex items-center gap-1.5" style={{ color: INV_ACCENT }}><Plus size={13} /> Add unit</button>
             </div>
           </Section>
 

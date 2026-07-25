@@ -162,6 +162,47 @@ class ProductController extends Controller
         return $this->success($this->products->update($product, $request->validated(), $request->user()->tenant_id), 'Product updated');
     }
 
+    /* ── Alternate units of measure ─────────────────────────────── */
+
+    public function units(Request $request, int $product)
+    {
+        $this->denyExternal($request);
+
+        return $this->success($this->products->units($product, $request->user()->tenant_id), 'Units retrieved');
+    }
+
+    public function saveUnits(Request $request, int $product)
+    {
+        $this->guardProductManage($request, $product, 'edit this item');
+
+        $data = $request->validate([
+            'units'            => 'present|array',
+            'units.*.name'     => 'required|string|max:40',
+            'units.*.factor'   => 'required|numeric|gt:0',
+            'units.*.barcode'  => 'nullable|string|max:80',
+        ]);
+
+        return $this->success(
+            $this->products->saveUnits($product, $data['units'], $request->user()->tenant_id),
+            'Units saved'
+        );
+    }
+
+    /** Convert a quantity in an alternate unit to base units. */
+    public function convert(Request $request, int $product)
+    {
+        $this->denyExternal($request);
+
+        $data = $request->validate([
+            'qty'  => 'required|numeric',
+            'unit' => 'nullable|string|max:40',
+        ]);
+
+        $base = $this->products->convertToBase($product, (float) $data['qty'], $data['unit'] ?? null, $request->user()->tenant_id);
+
+        return $this->success(['base_qty' => $base], 'Converted');
+    }
+
     public function destroy(Request $request, int $product)
     {
         $this->requireAdmin($request, 'delete a product');

@@ -138,4 +138,10 @@ class Product extends Model
     {
         return $this->hasMany(Movement::class, 'product_id');
     }
+
+    /** Alternate pack units (Box, Carton…) with their factor to the base unit. */
+    public function units()
+    {
+        return $this->hasMany(ProductUnit::class, 'product_id')->orderBy('order')->orderBy('id');
+    }
 }

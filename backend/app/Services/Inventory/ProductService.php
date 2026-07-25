@@ -6,6 +6,7 @@ use App\Exceptions\BusinessException;
 use App\Models\Inventory\Category;
 use App\Models\Inventory\Movement;
 use App\Models\Inventory\Product;
+use App\Models\Inventory\ProductUnit;
 use App\Models\Inventory\Stock;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
@@ -132,11 +133,74 @@ class ProductService
     public function show(int $id, int $tenantId): Product
     {
         $product = $this->find($id, $tenantId);
-        $product->load('category:id,name', 'creator:id,name');
+        $product->load('category:id,name', 'creator:id,name', 'units');
         $product->setAttribute('levels', $this->stock->levelsFor($id, $tenantId));
         $product->setAttribute('totals', $this->stock->totalsFor($id, $tenantId));
 
         return $product;
+    }
+
+    /* ── Alternate units of measure ─────────────────────────────── */
+
+    /** A product's alternate pack units (Box, Carton…). */
+    public function units(int $productId, int $tenantId)
+    {
+        $this->find($productId, $tenantId);
+
+        return ProductUnit::forTenant($tenantId)->where('product_id', $productId)
+            ->orderBy('order')->orderBy('id')->get();
+    }
+
+    /**
+     * Replace a product's alternate-unit set (the form sends the whole list).
+     * The base unit is implicit (factor 1) and never stored here; rows without a
+     * name or a positive factor are dropped.
+     */
+    public function saveUnits(int $productId, array $rows, int $tenantId)
+    {
+        $this->find($productId, $tenantId);
+
+        return DB::transaction(function () use ($productId, $rows, $tenantId) {
+            ProductUnit::forTenant($tenantId)->where('product_id', $productId)->delete();
+
+            $out = collect();
+            foreach (array_values($rows) as $i => $r) {
+                $name = trim((string) ($r['name'] ?? ''));
+                $factor = (float) ($r['factor'] ?? 0);
+                if ($name === '' || $factor <= 0) {
+                    continue;
+                }
+                $out->push(ProductUnit::create([
+                    'tenant_id'  => $tenantId,
+                    'product_id' => $productId,
+                    'name'       => $name,
+                    'factor'     => $factor,
+                    'barcode'    => $r['barcode'] ?? null,
+                    'order'      => $i,
+                ]));
+            }
+
+            return $out;
+        });
+    }
+
+    /**
+     * Convert a quantity given in $unit to base units. Null/''/'base' is already
+     * base. An unknown unit is a hard error — silently treating it as base would
+     * corrupt the ledger.
+     */
+    public function convertToBase(int $productId, float $qty, ?string $unit, int $tenantId): float
+    {
+        if ($unit === null || $unit === '' || strtolower($unit) === 'base') {
+            return round($qty, 3);
+        }
+
+        $row = ProductUnit::forTenant($tenantId)->where('product_id', $productId)->where('name', $unit)->first();
+        if (! $row) {
+            throw new BusinessException("Unknown unit '{$unit}' for this item.", 422);
+        }
+
+        return round($qty * (float) $row->factor, 3);
     }
 
     /**
