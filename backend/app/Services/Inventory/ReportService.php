@@ -215,6 +215,12 @@ class ReportService
             $q->where('p.category_id', $s['category_id']);
         }
 
+        // Cost value follows the tenant's costing method (FIFO/LIFO/average),
+        // valued off the batch cost layers — not a single flat product cost.
+        $method = app(CostingService::class)->method($tenantId);
+        $costing = app(CostingService::class);
+        $whId = $s['warehouse_id'] ?: null;
+
         $rows = $q->groupBy('st.product_id', 'p.sku', 'p.name', 'p.base_unit', 'p.cost_price', 'p.sale_price')
             ->orderBy('p.name')
             ->get([
@@ -223,10 +229,13 @@ class ReportService
                 DB::raw('SUM(st.quantity) as qty'),
                 DB::raw('SUM(st.reserved_quantity) as reserved'),
             ])
-            ->map(function ($r) {
+            ->map(function ($r) use ($method, $costing, $tenantId, $whId) {
                 $qty  = (float) $r->qty;
-                $cost = (float) ($r->cost_price ?? 0);
+                $fallback = (float) ($r->cost_price ?? 0);
                 $sale = (float) ($r->sale_price ?? 0);
+
+                $costValue = $costing->onHandValue((int) $r->product_id, $fallback, $qty, $method, $tenantId, $whId);
+                $unitCost = $qty != 0.0 ? $costValue / $qty : $fallback;
 
                 return [
                     'product_id'   => (int) $r->product_id,
@@ -236,11 +245,11 @@ class ReportService
                     'quantity'     => round($qty, 3),
                     'reserved'     => round((float) $r->reserved, 3),
                     'available'    => round($qty - (float) $r->reserved, 3),
-                    'cost_price'   => round($cost, 2),
+                    'cost_price'   => round($unitCost, 2),
                     'sale_price'   => round($sale, 2),
-                    'cost_value'   => round($qty * $cost, 2),
+                    'cost_value'   => round($costValue, 2),
                     'sale_value'   => round($qty * $sale, 2),
-                    'margin'       => round($qty * ($sale - $cost), 2),
+                    'margin'       => round($qty * $sale - $costValue, 2),
                 ];
             })
             ->filter(fn ($r) => $r['quantity'] != 0.0)
@@ -256,6 +265,7 @@ class ReportService
                 'margin'     => round(array_sum(array_column($rows, 'margin')), 2),
                 'lines'      => count($rows),
             ],
+            'costing_method' => $method,
             'filters' => $this->describe($tenantId, $s),
         ];
     }
