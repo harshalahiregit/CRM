@@ -6,9 +6,11 @@ use App\Mail\Inventory\CapacityAlertMail;
 use App\Mail\Inventory\CountSessionMail;
 use App\Mail\Inventory\ExpiryAlertMail;
 use App\Mail\Inventory\PickListMail;
+use App\Mail\Inventory\RecallMail;
 use App\Mail\Inventory\StockAlertMail;
 use App\Mail\Inventory\TransferMail;
 use App\Mail\Inventory\VoucherActivityMail;
+use App\Models\Inventory\Batch;
 use App\Models\Inventory\Product;
 use App\Models\Inventory\Voucher;
 use App\Models\Inventory\Warehouse;
@@ -227,6 +229,38 @@ class InventoryNotifier
                     ."Raise a vendor return so the supplier takes it back.\n\n".$body,
             ),
             "rejection on {$voucher->code}",
+        );
+    }
+
+    /**
+     * A batch/lot was recalled — a safety/compliance event, so it always bells
+     * the responsible people and (subject to the master email switch) emails
+     * them. Audience = admins + the manager of the batch's warehouse.
+     */
+    public function batchRecalled(Batch $batch, int $actorId): void
+    {
+        $actor = $this->name($actorId);
+        $product = $batch->product->name ?? ('Item #'.$batch->product_id);
+        $wh = $this->warehouseName($batch->warehouse_id);
+
+        $title = "Batch recalled: {$batch->batch_no} — {$product}";
+        $body = "{$actor} recalled batch {$batch->batch_no} of {$product}"
+            .($wh ? " at {$wh}" : '')
+            .". Reason: {$batch->recall_reason}. "
+            .$this->qty((float) $batch->remaining_qty)." remaining quarantined and removed from picking.";
+
+        $audience = $this->audience($batch->tenant_id, $batch->warehouse_id, $actorId);
+
+        $this->bell(
+            $audience, $batch->tenant_id, 'inventory.batch_recalled',
+            $title, $body, '/app/inventory/traceability', $actorId,
+        );
+
+        $this->mailTo(
+            $batch->tenant_id,
+            $this->emails($audience),
+            fn () => new RecallMail($title, $product, $batch, $body),
+            "recall of batch {$batch->batch_no}",
         );
     }
 

@@ -108,6 +108,12 @@ function BatchesTab({ isAdmin }) {
     onError: (e) => setErr(e?.message || 'Could not update that batch.'),
   })
   const del = useMutation({ mutationFn: (id) => inventoryApi.batches.remove(id), onSuccess: refresh, onError: (e) => setErr(e?.message || 'Could not delete that batch.') })
+  const recall = useMutation({ mutationFn: ({ id, reason }) => inventoryApi.batches.recall(id, reason), onSuccess: refresh, onError: (e) => setErr(e?.message || 'Could not recall that batch.') })
+  const lift = useMutation({ mutationFn: (id) => inventoryApi.batches.liftRecall(id), onSuccess: refresh, onError: (e) => setErr(e?.message || 'Could not lift the recall.') })
+  const doRecall = (b) => {
+    const reason = window.prompt(`Recall batch ${b.batch_no}?\nThis quarantines the remaining stock and alerts the team.\n\nReason:`)
+    if (reason && reason.trim()) recall.mutate({ id: b.id, reason: reason.trim() })
+  }
 
   return (
     <>
@@ -146,7 +152,9 @@ function BatchesTab({ isAdmin }) {
         empty="No batches yet. Create one when stock arrives with a lot number."
         rows={rows.map(b => [
           <span key="b"><span className="block font-mono font-bold text-[11px]" style={{ color: 'var(--text-h)' }}>{b.batch_no}</span>
-            {b.lot_number && <span className="block text-[9px]" style={{ color: 'var(--text-muted)' }}>lot {b.lot_number}</span>}</span>,
+            {b.lot_number && <span className="block text-[9px]" style={{ color: 'var(--text-muted)' }}>lot {b.lot_number}</span>}
+            {b.is_recalled && <span className="inline-block mt-0.5 text-[8.5px] font-bold px-1.5 py-0.5 rounded-full" title={b.recall_reason || 'Recalled'}
+              style={{ background: 'color-mix(in srgb, var(--color-danger-500) 16%, transparent)', color: 'var(--color-danger-500)' }}>⚠ RECALLED</span>}</span>,
           <span key="i"><span className="block font-semibold" style={{ color: 'var(--text-h)' }}>{b.product?.name}</span>
             <span className="block text-[9px]" style={{ color: 'var(--text-muted)' }}>{b.product?.sku}</span></span>,
           b.warehouse?.name || '—',
@@ -154,7 +162,12 @@ function BatchesTab({ isAdmin }) {
           <ExpiryCell key="e" batch={b} />,
           <Select key="q" size="sm" value={b.quality_status} onChange={v => setQuality.mutate({ id: b.id, quality_status: v })} options={QUALITY}
             buttonStyle={{ color: QUALITY_COLOR[b.quality_status], background: `color-mix(in srgb, ${QUALITY_COLOR[b.quality_status]} 15%, transparent)`, border: 'none', borderRadius: 999, padding: '3px 9px', fontSize: 10.5, fontWeight: 700 }} />,
-          isAdmin ? <button key="d" onClick={() => del.mutate(b.id)} aria-label="Delete batch" className="hover:opacity-60"><Trash2 size={13} style={{ color: 'var(--color-danger-500)' }} /></button> : null,
+          <span key="d" className="inline-flex items-center gap-2 justify-end">
+            {b.is_recalled
+              ? (isAdmin && <button onClick={() => lift.mutate(b.id)} title="Lift recall" className="text-[10px] font-bold px-2 py-1 rounded-lg" style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}>Lift</button>)
+              : <button onClick={() => doRecall(b)} title="Recall this batch" className="hover:opacity-60"><AlertTriangle size={13} style={{ color: '#f59e0b' }} /></button>}
+            {isAdmin && <button onClick={() => del.mutate(b.id)} aria-label="Delete batch" className="hover:opacity-60"><Trash2 size={13} style={{ color: 'var(--color-danger-500)' }} /></button>}
+          </span>,
         ])}
       />
     </>

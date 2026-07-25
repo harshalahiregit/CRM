@@ -92,6 +92,30 @@ class TraceabilityController extends Controller
         return $this->success(null, 'Batch deleted');
     }
 
+    /** Recall a batch — quarantines it and alerts the responsible people. */
+    public function recallBatch(Request $request, int $batch)
+    {
+        $this->denyExternal($request);
+
+        $data = $request->validate(['reason' => 'required|string|max:500']);
+
+        return $this->success(
+            $this->trace->recallBatch($batch, $data['reason'], $request->user()->tenant_id, $request->user()->id),
+            'Batch recalled'
+        );
+    }
+
+    /** Lift a recall — admin only, since it returns the stock to sellable. */
+    public function liftRecall(Request $request, int $batch)
+    {
+        $this->requireAdmin($request, 'lift a recall');
+
+        return $this->success(
+            $this->trace->liftRecall($batch, $request->user()->tenant_id),
+            'Recall lifted'
+        );
+    }
+
     /** FEFO pick plan — which batches to draw a quantity from, soonest expiry first. */
     public function fefo(Request $request)
     {

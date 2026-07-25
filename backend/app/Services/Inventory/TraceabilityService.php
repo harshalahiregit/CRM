@@ -115,6 +115,58 @@ class TraceabilityService
     }
 
     /**
+     * Recall a batch/lot. A recall quarantines the batch — quality_status moves
+     * to 'quarantine', which every issue/FEFO path already refuses to draw from,
+     * so the affected units can't leave the building. Records who/why and alerts
+     * the responsible people (safety/compliance event).
+     */
+    public function recallBatch(int $id, string $reason, int $tenantId, int $userId): Batch
+    {
+        $reason = trim($reason);
+        if ($reason === '') {
+            throw new BusinessException('Give a reason for the recall.', 422);
+        }
+
+        $batch = Batch::forTenant($tenantId)
+            ->with(['product:id,sku,name', 'warehouse:id,name,manager_id'])
+            ->findOrFail($id);
+
+        if ($batch->recalled_at) {
+            throw new BusinessException('That batch is already under recall.', 422);
+        }
+
+        $batch->update([
+            'recalled_at'    => now(),
+            'recall_reason'  => $reason,
+            'recalled_by'    => $userId,
+            'quality_status' => 'quarantine',
+        ]);
+
+        app(InventoryNotifier::class)->batchRecalled($batch, $userId);
+
+        return $batch->fresh(['product', 'warehouse', 'recaller']);
+    }
+
+    /** Lift a recall — clears the flags and returns the batch to 'passed'. */
+    public function liftRecall(int $id, int $tenantId): Batch
+    {
+        $batch = Batch::forTenant($tenantId)->findOrFail($id);
+
+        if (! $batch->recalled_at) {
+            throw new BusinessException('That batch is not under recall.', 422);
+        }
+
+        $batch->update([
+            'recalled_at'    => null,
+            'recall_reason'  => null,
+            'recalled_by'    => null,
+            'quality_status' => 'passed',
+        ]);
+
+        return $batch->fresh(['product', 'warehouse']);
+    }
+
+    /**
      * FEFO pick list — First Expired, First Out. Given a quantity, returns which
      * batches to draw from and how much from each, soonest-expiring first.
      * Batches that aren't quality-passed are skipped: held stock is not sellable

@@ -45,6 +45,8 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('inventory')->gr
     Route::post('/batches',           [TraceabilityController::class, 'storeBatch']);
     Route::put('/batches/{batch}',    [TraceabilityController::class, 'updateBatch']);
     Route::delete('/batches/{batch}', [TraceabilityController::class, 'destroyBatch']);
+    Route::post('/batches/{batch}/recall',      [TraceabilityController::class, 'recallBatch']);
+    Route::post('/batches/{batch}/lift-recall', [TraceabilityController::class, 'liftRecall']);
     Route::get('/batches-fefo',       [TraceabilityController::class, 'fefo']);
     Route::get('/expiry',             [TraceabilityController::class, 'expiry']);
 

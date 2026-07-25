@@ -32,6 +32,8 @@ export const inventoryApi = {
     create: (data) => api.post('/inventory/batches', data).then(unwrap).catch(handleErr),
     update: (id, data) => api.put(`/inventory/batches/${id}`, data).then(unwrap).catch(handleErr),
     remove: (id) => api.delete(`/inventory/batches/${id}`).then(unwrap).catch(handleErr),
+    recall:     (id, reason) => api.post(`/inventory/batches/${id}/recall`, { reason }).then(unwrap).catch(handleErr),
+    liftRecall: (id) => api.post(`/inventory/batches/${id}/lift-recall`).then(unwrap).catch(handleErr),
     fefo:   (params) => api.get('/inventory/batches-fefo', { params }).then(unwrap).catch(handleErr),
   },
 
