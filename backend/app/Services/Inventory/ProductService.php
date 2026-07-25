@@ -77,7 +77,7 @@ class ProductService
         $isAdmin = (bool) ($viewer['is_admin'] ?? false);
         $userId = $viewer['user_id'] ?? null;
         $rows->each(function (Product $p) use ($isAdmin, $userId) {
-            $threshold = (float) ($p->reorder_point ?: $p->min_stock);
+            $threshold = $p->reorderThreshold();
             $p->setAttribute('low_stock', $threshold > 0 && (float) $p->on_hand <= $threshold);
             $p->setAttribute('can_edit', $isAdmin || ($userId !== null && (int) $p->created_by === (int) $userId));
             $p->setAttribute('can_delete', $isAdmin);

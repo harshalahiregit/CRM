@@ -113,6 +113,22 @@ class Product extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    /**
+     * The on-hand level at or below which this item counts as "low" and should
+     * be reordered. The reorder point (falling back to minimum stock) is the
+     * trigger, but it can never sit below the safety-stock floor — the buffer you
+     * never want to breach. Returns 0 when nothing is configured (never flagged).
+     *
+     * Requires reorder_point, min_stock and safety_stock to be loaded; partial
+     * selects that drive low-stock logic must include all three.
+     */
+    public function reorderThreshold(): float
+    {
+        $trigger = (float) ($this->reorder_point ?: $this->min_stock);
+
+        return max($trigger, (float) $this->safety_stock);
+    }
+
     public function stock()
     {
         return $this->hasMany(Stock::class, 'product_id');

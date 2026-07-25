@@ -314,11 +314,11 @@ class VoucherService
                 ->where('status', 'active')
                 // Items excluded from stock math can't be low — they have no stock.
                 ->where('without_checking_warehouse', false)
-                ->get(['id', 'name', 'sku', 'min_stock', 'reorder_point']);
+                ->get(['id', 'name', 'sku', 'min_stock', 'reorder_point', 'safety_stock']);
 
             $crossed = [];
             foreach ($products as $p) {
-                $threshold = (float) ($p->reorder_point ?: $p->min_stock);
+                $threshold = $p->reorderThreshold();
                 if ($threshold <= 0) {
                     continue;   // nobody set a level, so there's no line to cross
                 }

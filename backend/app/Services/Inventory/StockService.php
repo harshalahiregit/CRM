@@ -234,7 +234,7 @@ class StockService
                 return;
             }
 
-            $threshold = (float) ($product->reorder_point ?: $product->min_stock);
+            $threshold = $product->reorderThreshold();
             if ($threshold <= 0) {
                 return;   // nobody set a level, so there's no line to cross
             }
@@ -312,7 +312,7 @@ class StockService
             )
             ->get()
             ->filter(function (Product $p) {
-                $threshold = (float) ($p->reorder_point ?: $p->min_stock);
+                $threshold = $p->reorderThreshold();
                 return $threshold > 0 && (float) $p->on_hand <= $threshold;
             })
             ->values();
