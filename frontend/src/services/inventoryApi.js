@@ -64,6 +64,21 @@ export const inventoryApi = {
     remove: (id) => api.delete(`/inventory/vendors/${id}`).then(unwrap).catch(handleErr),
   },
 
+  // Purchase orders + auto-reorder.
+  purchaseOrders: {
+    list:     (params = {}) => api.get('/inventory/purchase-orders', { params }).then(unwrap).catch(handleErr),
+    get:      (id) => api.get(`/inventory/purchase-orders/${id}`).then(unwrap).catch(handleErr),
+    create:   (data) => api.post('/inventory/purchase-orders', data).then(unwrap).catch(handleErr),
+    update:   (id, data) => api.put(`/inventory/purchase-orders/${id}`, data).then(unwrap).catch(handleErr),
+    submit:   (id) => api.post(`/inventory/purchase-orders/${id}/submit`).then(unwrap).catch(handleErr),
+    approve:  (id) => api.post(`/inventory/purchase-orders/${id}/approve`).then(unwrap).catch(handleErr),
+    send:     (id) => api.post(`/inventory/purchase-orders/${id}/send`).then(unwrap).catch(handleErr),
+    receive:  (id, received) => api.post(`/inventory/purchase-orders/${id}/receive`, { received }).then(unwrap).catch(handleErr),
+    cancel:   (id) => api.post(`/inventory/purchase-orders/${id}/cancel`).then(unwrap).catch(handleErr),
+    // Draft one PO per preferred vendor for everything below reorder point.
+    generate: () => api.post('/inventory/purchase-orders/generate').then(unwrap).catch(handleErr),
+  },
+
   products: {
     list:   (params = {}) => api.get('/inventory/products', { params }).then(unwrap).catch(handleErr),
     get:    (id) => api.get(`/inventory/products/${id}`).then(unwrap).catch(handleErr),

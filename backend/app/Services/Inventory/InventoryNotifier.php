@@ -264,6 +264,41 @@ class InventoryNotifier
         );
     }
 
+    /**
+     * Auto-reorder raised draft purchase orders. Bells the buyers (admins +
+     * whoever ran it) so they know there's procurement waiting to be reviewed —
+     * in-app only, because a draft PO is a to-do, not an incident. If some items
+     * had no vendor and were skipped, that's called out so they get one assigned.
+     *
+     * @param  \App\Models\Inventory\PurchaseOrder[]  $created
+     */
+    public function purchaseOrdersGenerated(int $tenantId, array $created, int $skipped, ?int $actorId): void
+    {
+        if (! $created && ! $skipped) {
+            return;
+        }
+
+        $n = count($created);
+        $subject = $n > 0
+            ? "{$n} draft purchase order(s) ready to review"
+            : 'Low-stock items need a vendor before they can be reordered';
+
+        $body = collect($created)->take(4)
+            ->map(fn ($po) => ($po->code ?? 'PO').' — '.($po->vendor->name ?? 'vendor').', '.$po->lines->count().' line(s)')
+            ->implode('; ');
+        if ($skipped > 0) {
+            $body .= ($body ? '. ' : '')."{$skipped} low-stock item(s) have no vendor linked and were skipped.";
+        }
+
+        // Buyers = admins; the actor is kept in because they asked for this.
+        $audience = $this->audience($tenantId, null, null);
+
+        $this->bell(
+            $audience, $tenantId, 'inventory.po_generated',
+            $subject, $body, '/app/inventory/purchase-orders', $actorId,
+        );
+    }
+
     /** Goods are on their way to a warehouse someone else runs. */
     private function transferIncoming(Voucher $voucher, int $actorId): void
     {

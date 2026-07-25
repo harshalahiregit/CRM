@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\Inventory\ConfigController;
 use App\Http\Controllers\Api\Inventory\CountController;
 use App\Http\Controllers\Api\Inventory\InventoryStaffController;
 use App\Http\Controllers\Api\Inventory\ProductController;
+use App\Http\Controllers\Api\Inventory\PurchaseOrderController;
 use App\Http\Controllers\Api\Inventory\ReportController;
 use App\Http\Controllers\Api\Inventory\SettingsController;
 use App\Http\Controllers\Api\Inventory\FulfilmentController;
@@ -205,6 +206,19 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('inventory')->gr
     Route::post('/vendors',            [VendorController::class, 'store']);
     Route::put('/vendors/{vendor}',    [VendorController::class, 'update']);
     Route::delete('/vendors/{vendor}', [VendorController::class, 'destroy']);
+
+    // Purchase orders + auto-reorder. `generate` and `pending` sit BEFORE
+    // /{id} so they aren't captured as a numeric id.
+    Route::post('/purchase-orders/generate',    [PurchaseOrderController::class, 'generate']);
+    Route::get('/purchase-orders',              [PurchaseOrderController::class, 'index']);
+    Route::post('/purchase-orders',             [PurchaseOrderController::class, 'store']);
+    Route::get('/purchase-orders/{id}',         [PurchaseOrderController::class, 'show'])->where('id', '[0-9]+');
+    Route::put('/purchase-orders/{id}',         [PurchaseOrderController::class, 'update'])->where('id', '[0-9]+');
+    Route::post('/purchase-orders/{id}/submit', [PurchaseOrderController::class, 'submit'])->where('id', '[0-9]+');
+    Route::post('/purchase-orders/{id}/approve', [PurchaseOrderController::class, 'approve'])->where('id', '[0-9]+');
+    Route::post('/purchase-orders/{id}/send',   [PurchaseOrderController::class, 'markSent'])->where('id', '[0-9]+');
+    Route::post('/purchase-orders/{id}/receive', [PurchaseOrderController::class, 'receive'])->where('id', '[0-9]+');
+    Route::post('/purchase-orders/{id}/cancel', [PurchaseOrderController::class, 'cancel'])->where('id', '[0-9]+');
 
     // Warehouses + bin locations
     Route::get('/warehouses',        [WarehouseController::class, 'index']);
