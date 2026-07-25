@@ -28,6 +28,10 @@ export default function ProposalDocument({ proposal }) {
             <h1 className="font-black" style={{ fontSize: 'clamp(1.6rem, 4vw, 2.6rem)', color: 'var(--text-h)', letterSpacing: '-0.02em', lineHeight: 1.15 }}>
               {cover.heading || proposal.subject}
             </h1>
+            {cover.body && (
+              <div className="rte-body text-left mt-5 mx-auto" style={{ maxWidth: 620, color: 'var(--text-body)' }}
+                dangerouslySetInnerHTML={{ __html: cover.body }} />
+            )}
             {(proposal.proposal_to) && (
               <p className="text-sm mt-4" style={{ color: 'var(--text-muted)' }}>Prepared for <b style={{ color: 'var(--text-h)' }}>{proposal.proposal_to}</b></p>
             )}

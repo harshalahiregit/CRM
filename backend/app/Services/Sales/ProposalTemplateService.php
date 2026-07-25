@@ -5,6 +5,7 @@ namespace App\Services\Sales;
 use App\Exceptions\UnauthorizedTenantException;
 use App\Models\Sales\Proposal;
 use App\Models\Sales\ProposalTemplate;
+use App\Support\CoverSanitizer;
 use App\Support\HtmlSanitizer;
 use Illuminate\Support\Facades\Log;
 
@@ -29,6 +30,9 @@ class ProposalTemplateService
         unset($data['pages']);
         if (isset($data['terms'])) {
             $data['terms'] = HtmlSanitizer::clean($data['terms']);
+        }
+        if (array_key_exists('cover', $data)) {
+            $data['cover'] = CoverSanitizer::clean($data['cover']);
         }
 
         $template = ProposalTemplate::create([
@@ -55,6 +59,9 @@ class ProposalTemplateService
         unset($data['pages']);
         if (isset($data['terms'])) {
             $data['terms'] = HtmlSanitizer::clean($data['terms']);
+        }
+        if (array_key_exists('cover', $data)) {
+            $data['cover'] = CoverSanitizer::clean($data['cover']);
         }
 
         $template->update($data);
@@ -91,6 +98,7 @@ class ProposalTemplateService
             'subject'     => $template->name,
             'notes'       => $template->content,
             'terms'       => $template->terms,
+            'cover'       => $template->cover,
             'date'        => now()->toDateString(),
             'status'      => 'Draft',
         ]);
@@ -120,6 +128,7 @@ class ProposalTemplateService
             'category'   => $category,
             'content'    => $proposal->notes,
             'terms'      => $proposal->terms,
+            'cover'      => $proposal->cover,
         ]);
         $this->contentPages->copyPages($proposal, $template, $tenantId);
 

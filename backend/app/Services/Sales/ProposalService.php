@@ -522,23 +522,7 @@ class ProposalService
      */
     private function cleanCover($cover): ?array
     {
-        if (! is_array($cover)) {
-            return null;
-        }
-        $image = (string) ($cover['image'] ?? '');
-        if ($image !== '' && ! preg_match('~^(https?://|data:image/(png|jpe?g|gif|webp);base64,)~i', $image)) {
-            $image = '';
-        }
-        $clean = [
-            'enabled' => (bool) ($cover['enabled'] ?? false),
-            'image'   => $image,
-            'title'   => trim(strip_tags((string) ($cover['title'] ?? ''))),
-            'heading' => trim(strip_tags((string) ($cover['heading'] ?? ''))),
-        ];
-        if (! $clean['enabled'] && $clean['image'] === '' && $clean['title'] === '' && $clean['heading'] === '') {
-            return null;
-        }
-        return $clean;
+        return \App\Support\CoverSanitizer::clean($cover);
     }
 
     /** A chosen recipient contact must belong to the proposal's customer (and tenant). */

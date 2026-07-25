@@ -1,5 +1,6 @@
 import { useRef } from 'react'
 import { Image as ImageIcon, X, LayoutTemplate } from 'lucide-react'
+import RichTextEditor from '@/components/ui/RichTextEditor'
 
 /**
  * Cover page (Page 1) editor — a main image, a title and a heading shown
@@ -9,7 +10,7 @@ import { Image as ImageIcon, X, LayoutTemplate } from 'lucide-react'
  */
 const MAX_COVER_IMAGE = 1024 * 1024
 
-const BLANK = { enabled: true, image: '', title: '', heading: '' }
+const BLANK = { enabled: true, image: '', title: '', heading: '', body: '' }
 
 export default function CoverEditor({ value, onChange }) {
   const cover = value || BLANK
@@ -79,6 +80,14 @@ export default function CoverEditor({ value, onChange }) {
               <input className="input-3d text-sm" placeholder='e.g. "Proposal for Construction Project"' value={cover.heading || ''} onChange={e => set({ heading: e.target.value })} />
             </div>
             <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>The title sits small above the big heading on the cover.</p>
+          </div>
+
+          {/* Rich content block — the editable cover body (Word-like) */}
+          <div className="md:col-span-2">
+            <label className="label">Cover Content</label>
+            <RichTextEditor value={cover.body || ''} onChange={body => set({ body })} minHeight={140}
+              placeholder="Add an introduction, summary or highlights for the cover — format with fonts, colours, images…" />
+            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>Appears under the heading on the cover page.</p>
           </div>
         </div>
       )}

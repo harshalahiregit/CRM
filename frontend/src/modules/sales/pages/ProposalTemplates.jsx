@@ -2,63 +2,26 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Plus, Trash2, Copy, LayoutTemplate, Edit2 } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
-import PagesEditor from '../components/PagesEditor'
-import RichTextEditor from '@/components/ui/RichTextEditor'
-import Drawer from '@/components/ui/Drawer'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import EmptyState from '@/components/ui/EmptyState'
-import FormField, { Input, Select, Textarea } from '@/components/ui/FormField'
 import { useToast } from '@/hooks/useToast'
-
-const EMPTY_FORM = { name: '', description: '', category: '', content: '', terms: '', is_default: false, pages: [{ title: 'Page 1', content: '' }] }
 
 export default function ProposalTemplates() {
   const navigate = useNavigate()
   const toast = useToast()
   const [data, setData] = useState([])
   const [loading, setLoading] = useState(true)
-  const [showDrawer, setShowDrawer] = useState(false)
-  const [form, setForm] = useState(EMPTY_FORM)
-  const [categories, setCategories] = useState([])
-  const [creating, setCreating] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(null)
-  const [editing, setEditing] = useState(null)   // null = create, template = edit
-
-  const sf = (k, v) => setForm(p => ({ ...p, [k]: v }))
 
   const load = () => {
     setLoading(true)
     salesApi.proposalTemplates.list().then(d => { setData(d); setLoading(false) })
   }
   useEffect(() => { load() }, [])
-  useEffect(() => { salesApi.proposalTemplates.categories().then(setCategories).catch(() => {}) }, [])
 
-  const openCreate = () => { setEditing(null); setForm(EMPTY_FORM); setShowDrawer(true) }
-
-  const openEdit = (t) => {
-    setEditing(t)
-    setForm({
-      name: t.name || '', description: t.description || '', category: t.category || '',
-      content: t.content || '', terms: t.terms || '', is_default: !!t.is_default,
-      pages: (t.pages || []).length ? t.pages.map(p => ({ title: p.title, content: p.content })) : [{ title: 'Page 1', content: '' }],
-    })
-    setShowDrawer(true)
-  }
-
-  const handleSave = async () => {
-    if (!form.name) return toast.error('Template name is required')
-    setCreating(true)
-    try {
-      if (editing) { await salesApi.proposalTemplates.update(editing.id, form); toast.success('Template updated') }
-      else { await salesApi.proposalTemplates.create(form); toast.success('Template created') }
-      setShowDrawer(false); setEditing(null); setForm(EMPTY_FORM)
-      load()
-    } catch (e) {
-      toast.error(e.message)
-    } finally {
-      setCreating(false)
-    }
-  }
+  // Create / edit use the SAME full-page Cover + Pages editor as the proposal builder.
+  const openCreate = () => navigate('/app/sales/proposal-templates/new')
+  const openEdit = (t) => navigate(`/app/sales/proposal-templates/${t.id}/edit`)
 
   const handleClone = async (template) => {
     try {
@@ -83,7 +46,6 @@ export default function ProposalTemplates() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
@@ -149,46 +111,14 @@ export default function ProposalTemplates() {
         </div>
       )}
 
-      {/* Create drawer */}
-      <Drawer
-        open={showDrawer}
-        onClose={() => setShowDrawer(false)}
-        width="min(980px, 96vw)"
-        title={editing ? 'Edit Proposal Template' : 'New Proposal Template'}
-        footer={
-          <button onClick={handleSave} disabled={creating} className="btn-3d w-full">
-            {creating ? 'Saving…' : editing ? 'Save Template' : 'Create Template'}
-          </button>
-        }
-      >
-        <div className="space-y-4">
-          <FormField label="Name" required>
-            <Input value={form.name} onChange={e => sf('name', e.target.value)} />
-          </FormField>
-          <FormField label="Category" hint="optional — pick an existing one or type a new one">
-            <Input list="template-categories" value={form.category} onChange={e => sf('category', e.target.value)} placeholder="e.g. Consulting" />
-            <datalist id="template-categories">{categories.map(c => <option key={c} value={c} />)}</datalist>
-          </FormField>
-          <FormField label="Description" hint="optional">
-            <Textarea rows={2} value={form.description} onChange={e => sf('description', e.target.value)} />
-          </FormField>
-          <FormField label="Content Pages" hint="Multi-page rich content — copied into proposals created from this template">
-            <PagesEditor pages={form.pages} onChange={pages => sf('pages', pages)} minHeight={220} />
-          </FormField>
-          <FormField label="Terms & Conditions" hint="Default terms — pre-filled on proposals built from this template">
-            <RichTextEditor value={form.terms} onChange={v => sf('terms', v)} placeholder="Payment terms, validity, scope notes…" minHeight={140} />
-          </FormField>
-        </div>
-      </Drawer>
-
       {confirmDelete && (
         <ConfirmDialog
           title="Delete this template?"
           message={`This will permanently delete "${confirmDelete.name}". Proposals already created from it are unaffected.`}
           confirmLabel="Delete"
           tone="danger"
-          onConfirm={handleDelete}
           onCancel={() => setConfirmDelete(null)}
+          onConfirm={handleDelete}
         />
       )}
     </div>

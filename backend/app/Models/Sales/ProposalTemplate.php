@@ -12,12 +12,13 @@ class ProposalTemplate extends Model
     use HasFactory, BelongsToTenant;
 
     protected $fillable = [
-        'tenant_id', 'name', 'description', 'category', 'content', 'terms',
+        'tenant_id', 'name', 'description', 'category', 'content', 'terms', 'cover',
         'thumbnail_url', 'is_default', 'sort_order', 'created_by',
     ];
 
     protected $casts = [
         'is_default' => 'boolean',
+        'cover'      => 'array',
     ];
 
     public function creator()

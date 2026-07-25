@@ -25,6 +25,8 @@
         .cover img { max-width: 100%; max-height: 360px; border-radius: 8px; margin-bottom: 28px; }
         .cover .ctitle { text-transform: uppercase; letter-spacing: 3px; color: #7C3AED; font-size: 12px; font-weight: bold; margin-bottom: 10px; }
         .cover .cheading { font-size: 30px; font-weight: 800; color: #1a1535; line-height: 1.2; margin: 0; }
+        .cover .cbody { text-align: left; max-width: 620px; margin: 22px auto 0; color: #334155; font-size: 13px; line-height: 1.6; }
+        .cover .cbody img { max-width: 100%; }
         .cover .cmeta { color: #64748b; font-size: 13px; margin-top: 18px; }
     </style>
 </head>
@@ -35,6 +37,7 @@
             @if(!empty($cv['image']))<img src="{{ $cv['image'] }}">@endif
             @if(!empty($cv['title']))<div class="ctitle">{{ $cv['title'] }}</div>@endif
             <h1 class="cheading">{{ $cv['heading'] ?: $proposal->subject }}</h1>
+            @if(!empty($cv['body']))<div class="cbody">{!! $cv['body'] !!}</div>@endif
             @if($proposal->proposal_to)<p class="cmeta">Prepared for <strong>{{ $proposal->proposal_to }}</strong></p>@endif
             <p class="cmeta">{{ optional($proposal->date)->format('d M Y') }}</p>
         </div>
