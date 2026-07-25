@@ -257,11 +257,11 @@ function RenewalsTab({ id, nav }) {
 function TasksTab({ contract, toast }) {
   const [tasks, setTasks] = useState(null)
   const [name, setName] = useState('')
-  const load = () => taskApi.list({ taskable_type: 'contract', taskable_id: contract.id }).then(r => setTasks(r?.data ?? r ?? [])).catch(() => setTasks([]))
+  const load = () => taskApi.list({ rel_type: 'contract', rel_id: contract.id }).then(r => setTasks(r?.data ?? r ?? [])).catch(() => setTasks([]))
   useEffect(() => { load() }, [contract.id])
   const add = async () => {
     if (!name.trim()) return
-    try { await taskApi.create({ name, taskable_type: 'contract', taskable_id: contract.id }); setName(''); load(); toast.success('Task created') }
+    try { await taskApi.create({ name, rel_type: 'contract', rel_id: contract.id }); setName(''); load(); toast.success('Task created') }
     catch (e) { toast.error(e.message) }
   }
   return (

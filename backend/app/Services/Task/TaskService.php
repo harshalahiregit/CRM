@@ -1324,6 +1324,13 @@ class TaskService
             'ticket' => Schema::hasTable('tickets')
                 ? [Ticket::forTenant($tenantId)->whereKey($relId)->value('subject') ?? "Ticket #{$relId}", "/app/helpdesk/tickets/{$relId}"]
                 : [null, null],
+            // Customer + contract links come from the Sales/Customer modules.
+            'customer' => Schema::hasTable('clients')
+                ? [\App\Models\Customer\Client::forTenant($tenantId)->whereKey($relId)->value('company') ?? "Customer #{$relId}", "/app/customers/{$relId}"]
+                : [null, null],
+            'contract' => Schema::hasTable('sales_contracts')
+                ? [\App\Models\Sales\SalesContract::forTenant($tenantId)->whereKey($relId)->value('subject') ?? "Contract #{$relId}", "/app/sales/contracts/{$relId}"]
+                : [null, null],
             default => [null, null],
         };
     }

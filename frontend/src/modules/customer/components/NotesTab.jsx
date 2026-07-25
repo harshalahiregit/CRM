@@ -74,8 +74,8 @@ export default function NotesTab({ id, client, notes, reload, toast }) {
         description: stripHtml(n.content),
         priority: n.priority || undefined,
         due_date: d10(n.deadline) || undefined,
-        taskable_type: 'customer',
-        taskable_id: Number(id),
+        rel_type: 'customer',
+        rel_id: Number(id),
       })
       toast.success('Task created from note')
     } catch (e) { toast.error(e.message) }

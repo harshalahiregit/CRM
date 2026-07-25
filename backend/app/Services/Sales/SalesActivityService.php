@@ -22,7 +22,7 @@ class SalesActivityService
         'invoice'    => \App\Models\Sales\SalesInvoice::class,
         'credit_note'=> \App\Models\Sales\CreditNote::class,
         'contract'   => \App\Models\Sales\SalesContract::class,
-        'task'       => \App\Models\Sales\Task::class,
+        'task'       => \App\Models\Task\Task::class,
         'customer'   => \App\Models\Customer\Client::class,
     ];
 

@@ -6,7 +6,7 @@ use App\Exceptions\UnauthorizedTenantException;
 use App\Models\Sales\Lead;
 use App\Models\Sales\LeadActivity;
 use App\Models\Sales\Reminder;
-use App\Models\Sales\Task;
+use App\Models\Task\Task;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -127,12 +127,13 @@ class SalesInsightService
     {
         $weight = ['urgent' => 0, 'high' => 1, 'medium' => 2, 'low' => 3];
 
+        // Tasks module (owner: Shivam) — `status` is a string key resolved via the
+        // task_statuses lookup, and assignees is a hasMany pivot keyed by user_id.
         $query = Task::forTenant($tenantId)
-            ->whereNull('date_finished')
-            ->with('status:id,name,color');
+            ->whereNull('date_finished');
 
         if ($userId) {
-            $query->whereHas('assignees', fn ($q) => $q->where('users.id', $userId));
+            $query->whereHas('assignees', fn ($q) => $q->where('user_id', $userId));
         }
 
         return $query->get()

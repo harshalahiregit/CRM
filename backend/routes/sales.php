@@ -16,8 +16,6 @@ use App\Http\Controllers\Api\Sales\HsnSacController;
 use App\Http\Controllers\Api\Sales\ProposalTemplateController;
 use App\Http\Controllers\Api\Sales\SalesActivityController;
 use App\Http\Controllers\Api\Sales\SalesInsightController;
-use App\Http\Controllers\Api\Sales\TaskController;
-use App\Http\Controllers\Api\Sales\TaskStatusController;
 use App\Http\Controllers\Api\Sales\ReminderController;
 use App\Http\Controllers\Api\Sales\ContractController;
 use App\Http\Controllers\Api\Sales\WebToLeadFormController;
@@ -35,26 +33,6 @@ Route::middleware('auth:sanctum')->prefix('sales')->group(function () {
     Route::get('/activities', [SalesActivityController::class, 'index']);
 
     // ── Tasks ───────────────────────────────────────────────────
-    Route::get('/task-statuses',                 [TaskStatusController::class, 'index']);
-    Route::post('/task-statuses',                [TaskStatusController::class, 'store']);
-    Route::put('/task-statuses/{taskStatus}',    [TaskStatusController::class, 'update']);
-    Route::delete('/task-statuses/{taskStatus}', [TaskStatusController::class, 'destroy']);
-
-    Route::get('/tasks/kanban',                  [TaskController::class, 'kanban']);
-    Route::post('/tasks/reorder',                [TaskController::class, 'reorder']);
-    Route::get('/tasks',                         [TaskController::class, 'index']);
-    Route::post('/tasks',                        [TaskController::class, 'store']);
-    Route::get('/tasks/{task}',                  [TaskController::class, 'show']);
-    Route::put('/tasks/{task}',                  [TaskController::class, 'update']);
-    Route::delete('/tasks/{task}',               [TaskController::class, 'destroy']);
-    Route::patch('/tasks/{task}/status',         [TaskController::class, 'updateStatus']);
-    Route::patch('/tasks/{task}/assign',         [TaskController::class, 'assign']);
-    Route::patch('/tasks/{task}/progress',       [TaskController::class, 'updateProgress']);
-    Route::post('/tasks/{task}/checklist',       [TaskController::class, 'addChecklistItem']);
-    Route::patch('/task-checklist/{item}',       [TaskController::class, 'toggleChecklistItem']);
-    Route::delete('/task-checklist/{item}',      [TaskController::class, 'deleteChecklistItem']);
-    Route::post('/tasks/{task}/comments',        [TaskController::class, 'addComment']);
-    Route::delete('/task-comments/{comment}',    [TaskController::class, 'deleteComment']);
 
     // ── Follow-ups / Reminders ──────────────────────────────────
     Route::get('/reminders/upcoming',            [ReminderController::class, 'upcoming']);

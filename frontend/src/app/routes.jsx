@@ -54,7 +54,6 @@ const PaymentLinks = lazy(() => import('@/modules/sales/pages/PaymentLinks'))
 const RetainerInvoices = lazy(() => import('@/modules/sales/pages/RetainerInvoices'))
 const ProposalTemplates = lazy(() => import('@/modules/sales/pages/ProposalTemplates'))
 const ProposalTemplateEditor = lazy(() => import('@/modules/sales/pages/ProposalTemplateEditor'))
-const Tasks = lazy(() => import('@/modules/sales/pages/Tasks'))
 const Contracts = lazy(() => import('@/modules/sales/pages/Contracts'))
 const WebToLeadForms = lazy(() => import('@/modules/sales/pages/WebToLeadForms'))
 const Forecast = lazy(() => import('@/modules/sales/pages/Forecast'))
@@ -252,7 +251,9 @@ export default function AppRoutes() {
           <Route path="proposal-templates" element={<S><ProposalTemplates /></S>} />
           <Route path="proposal-templates/new" element={<S><ProposalTemplateEditor /></S>} />
           <Route path="proposal-templates/:id/edit" element={<S><ProposalTemplateEditor /></S>} />
-          <Route path="tasks" element={<S><Tasks /></S>} />
+          {/* Sales Tasks retired — the Tasks module (owner: Shivam) is now the single
+              Tasks feature; sales tasks are tasks with rel_type=customer/contract. */}
+          <Route path="tasks" element={<Navigate to="/app/tasks" replace />} />
           <Route path="contracts" element={<S><Contracts /></S>} />
           <Route path="contracts/:id" element={<S><ContractDetail /></S>} />
           <Route path="web-to-lead" element={<S><WebToLeadForms /></S>} />

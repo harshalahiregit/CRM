@@ -136,6 +136,7 @@ export const REL_TYPES = [
   { value: 'project',    label: 'Project' },
   { value: 'ticket',     label: 'Ticket' },
   { value: 'customer',   label: 'Customer' },
+  { value: 'contract',   label: 'Contract' },
 ]
 
 /** Human label for a task's link, using the server-resolved rel_label. */
