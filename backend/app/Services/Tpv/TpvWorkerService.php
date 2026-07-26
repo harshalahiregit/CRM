@@ -437,6 +437,352 @@ class TpvWorkerService
         ];
     }
 
+    /* ── Age Calculator ─────────────────────────────────────────────── */
+
+    public static function calcAge(?string $dob): array
+    {
+        if (empty($dob)) return ['age' => null, 'age_reason' => ''];
+        try {
+            $age    = (new \DateTime())->diff(new \DateTime($dob))->y;
+            $reason = '';
+            if ($age < 18)     $reason = 'Underage';
+            elseif ($age > 60) $reason = 'Overage';
+            return ['age' => $age, 'age_reason' => $reason];
+        } catch (\Exception $e) {
+            return ['age' => null, 'age_reason' => ''];
+        }
+    }
+
+    /* ── Bulk Upload Workers ────────────────────────────────────────── */
+
+    public function bulkUpload(mixed $file, int $vendorId, int $tenantId, User $actor): array
+    {
+        $this->assertVendor($vendorId, $tenantId);
+
+        $path = $file->getRealPath();
+        $ext  = strtolower($file->getClientOriginalExtension());
+
+        $tempExtractPath = null;
+        $photosMap = []; // filename => full path
+        $dataFile = null;
+        $dataExt  = $ext;
+
+        if ($ext === 'zip') {
+            $zip = new \ZipArchive();
+            if ($zip->open($path) === true) {
+                $tempExtractPath = storage_path('app/temp_bulk_'.uniqid());
+                $zip->extractTo($tempExtractPath);
+                $zip->close();
+
+                // Find data file inside extracted directory
+                $allFiles = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($tempExtractPath));
+                foreach ($allFiles as $f) {
+                    if ($f->isDir()) continue;
+                    $fExt = strtolower($f->getExtension());
+                    $fName = $f->getFilename();
+
+                    if (in_array($fExt, ['csv', 'xls', 'xlsx']) && !$dataFile) {
+                        $dataFile = $f->getRealPath();
+                        $dataExt  = $fExt;
+                    } elseif (in_array($fExt, ['jpg', 'jpeg', 'png', 'webp'])) {
+                        $photosMap[strtolower($fName)] = $f->getRealPath();
+                        $photosMap[pathinfo($fName, PATHINFO_FILENAME)] = $f->getRealPath();
+                    }
+                }
+
+                if (!$dataFile) {
+                    if ($tempExtractPath && file_exists($tempExtractPath)) {
+                        \File::deleteDirectory($tempExtractPath);
+                    }
+                    throw new BusinessException('ZIP archive must contain a CSV or Excel file (workers.csv / workers.xlsx).');
+                }
+            } else {
+                throw new BusinessException('Failed to open uploaded ZIP file.');
+            }
+        } else {
+            $dataFile = $path;
+        }
+
+        $rows = [];
+        if ($dataExt === 'csv' || $dataExt === 'txt') {
+            if (($handle = fopen($dataFile, 'r')) !== false) {
+                $isHeader = true;
+                while (($row = fgetcsv($handle, 2000, ',')) !== false) {
+                    // Remove UTF-8 BOM if present on first cell
+                    if (isset($row[0])) {
+                        $row[0] = preg_replace('/\x{EF}\x{BB}\x{BF}/u', '', $row[0]);
+                    }
+                    if ($isHeader) { $isHeader = false; continue; }
+                    $rows[] = array_map('trim', $row);
+                }
+                fclose($handle);
+            }
+        } elseif (in_array($dataExt, ['xls', 'xlsx'])) {
+            if (class_exists('\PhpOffice\PhpSpreadsheet\IOFactory')) {
+                $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($dataFile);
+                $sheet       = $spreadsheet->getActiveSheet();
+                $rowIterator = $sheet->getRowIterator();
+                $isHeader    = true;
+                foreach ($rowIterator as $row) {
+                    if ($isHeader) { $isHeader = false; continue; }
+                    $cellIterator = $row->getCellIterator();
+                    $cellIterator->setIterateOnlyExistingCells(false);
+                    $rowData = [];
+                    foreach ($cellIterator as $cell) {
+                        $rowData[] = trim((string) $cell->getFormattedValue());
+                    }
+                    if (implode('', $rowData) === '') continue;
+                    $rows[] = $rowData;
+                }
+            } else {
+                if ($tempExtractPath && file_exists($tempExtractPath)) {
+                    \File::deleteDirectory($tempExtractPath);
+                }
+                throw new BusinessException('Excel parsing requires PhpSpreadsheet library. Please use CSV format instead.');
+            }
+        } else {
+            if ($tempExtractPath && file_exists($tempExtractPath)) {
+                \File::deleteDirectory($tempExtractPath);
+            }
+            throw new BusinessException("Unsupported file format: {$ext}");
+        }
+
+        $inserted = 0;
+        $skipped  = 0;
+        $errors   = [];
+
+        foreach ($rows as $index => $row) {
+            $name = trim($row[0] ?? '');
+            if (empty($name)) continue;
+
+            $gender    = ucfirst(strtolower(trim($row[1] ?? 'Male')));
+            $dobRaw    = trim($row[2] ?? '');
+            $mobile    = preg_replace('/\D/', '', trim($row[3] ?? ''));
+            $blood     = trim($row[4] ?? '');
+            $desig     = trim($row[5] ?? 'Worker');
+            $skill     = trim($row[6] ?? 'Unskilled');
+            $aadhar    = trim($row[7] ?? '');
+            $photoRef  = trim($row[8] ?? ''); // Column 9: optional Photo Filename
+
+            if ($aadhar && !preg_match('/^\d{12}$/', $aadhar)) {
+                $errors[] = 'Row '.($index + 2).': Invalid Aadhaar "'.$aadhar.'" — 12 digits required.';
+                $skipped++;
+                continue;
+            }
+
+            // Duplicate check
+            $query = TpvWorker::where('tenant_id', $tenantId)->where('vendor_id', $vendorId);
+            if (!empty($aadhar)) {
+                $query->where('aadhar_number', $aadhar);
+            } else {
+                $query->where('name', $name);
+                if ($mobile) $query->where('mobile', $mobile);
+            }
+
+            if ($query->exists()) {
+                $skipped++;
+                continue;
+            }
+
+            $dob = null;
+            if ($dobRaw) {
+                foreach (['Y-m-d', 'd/m/Y', 'd-m-Y', 'm/d/Y'] as $fmt) {
+                    $dt = \DateTime::createFromFormat($fmt, $dobRaw);
+                    if ($dt) { $dob = $dt->format('Y-m-d'); break; }
+                }
+                if (!$dob) {
+                    $ts = strtotime($dobRaw);
+                    if ($ts) $dob = date('Y-m-d', $ts);
+                }
+            }
+
+            $ageData = self::calcAge($dob);
+
+            $count = TpvWorker::withTrashed()->where('tenant_id', $tenantId)->count() + 1;
+            $workerCode = 'W-'.str_pad((string) $count, 5, '0', STR_PAD_LEFT);
+
+            // Handle Profile Photo if matched in ZIP or provided
+            $photoPath = null;
+            $photoCandidateKeys = array_filter([
+                strtolower($photoRef),
+                pathinfo(strtolower($photoRef), PATHINFO_FILENAME),
+                strtolower($aadhar),
+                strtolower($mobile),
+                strtolower(str_replace(' ', '_', $name)),
+                strtolower($name)
+            ]);
+
+            foreach ($photoCandidateKeys as $key) {
+                if (isset($photosMap[$key]) && file_exists($photosMap[$key])) {
+                    $sourceImg = $photosMap[$key];
+                    $imgExt = pathinfo($sourceImg, PATHINFO_EXTENSION);
+                    $destFilename = 'workers/photos/bulk_'.uniqid().'.'.$imgExt;
+                    \Storage::disk('public')->put($destFilename, file_get_contents($sourceImg));
+                    $photoPath = $destFilename;
+                    break;
+                }
+            }
+
+            TpvWorker::create([
+                'tenant_id'      => $tenantId,
+                'vendor_id'      => $vendorId,
+                'created_by'     => $actor->id,
+                'worker_code'    => $workerCode,
+                'name'           => $name,
+                'gender'         => $gender,
+                'dob'            => $dob,
+                'age'            => $ageData['age'],
+                'age_reason'     => $ageData['age_reason'],
+                'mobile'         => $mobile,
+                'blood_group'    => $blood,
+                'designation'    => $desig,
+                'skill_category' => $skill,
+                'aadhar_number'  => $aadhar ?: null,
+                'photo_path'     => $photoPath,
+                'is_active'      => true,
+                'current_step'   => 1,
+                'status'         => Status::DRAFT,
+            ]);
+
+            $inserted++;
+        }
+
+        if ($tempExtractPath && file_exists($tempExtractPath)) {
+            \File::deleteDirectory($tempExtractPath);
+        }
+
+        $msg = "{$inserted} worker(s) imported successfully.";
+        if ($skipped > 0)    $msg .= " {$skipped} duplicate/skipped.";
+        if (!empty($errors)) $msg .= " ".count($errors)." error(s).";
+
+        return [
+            'status'   => 'success',
+            'message'  => $msg,
+            'inserted' => $inserted,
+            'skipped'  => $skipped,
+            'errors'   => $errors,
+        ];
+    }
+
+    /* ── 3-Punch Safety Strike Engine ───────────────────────────────── */
+
+    public function applyPunch(TpvWorker $worker, int $punchCount, string $reason, User $actor, ?string $punchAt = null): TpvWorker
+    {
+        if (!in_array($punchCount, [1, 2, 3], true)) {
+            throw new BusinessException('Invalid punch number. Must be 1, 2, or 3.');
+        }
+
+        $currentPunch = (int) ($worker->punch_count ?? 0);
+        if ($punchCount <= $currentPunch) {
+            throw new BusinessException("Punch {$punchCount} has already been applied to this worker.");
+        }
+        if ($punchCount !== $currentPunch + 1) {
+            throw new BusinessException("Please apply Punch ".($currentPunch + 1)." first.");
+        }
+
+        $nowStr = $punchAt ?: now()->toDateTimeString();
+
+        $log = $worker->punch_log ?: [];
+        $log[] = [
+            'num'        => $punchCount,
+            'at'         => $nowStr,
+            'reason'     => $reason,
+            'applied_by' => $actor->name ?? 'Admin',
+        ];
+
+        $updateData = [
+            'punch_count'                       => $punchCount,
+            'punch_'.$punchCount.'_at'          => $nowStr,
+            'punch_'.$punchCount.'_reason'      => $reason,
+            'punch_log'                         => $log,
+        ];
+
+        // 3rd Punch triggers permanent site access termination
+        if ($punchCount === 3) {
+            $updateData['status']    = Status::TERMINATED;
+            $updateData['is_active'] = false;
+            $updateData['remarks']   = "PERMANENTLY BLOCKED — 3rd Punch Violation: {$reason}";
+
+            TpvGateAttendance::where('tpv_worker_id', $worker->id)
+                ->whereNull('check_out_at')
+                ->update(['check_out_at' => now()]);
+        }
+
+        $worker->update($updateData);
+
+        $labels = [1 => '1st Warning Punch', 2 => '2nd Final Warning Punch', 3 => '3rd Permanent Termination Punch'];
+        $worker->recordAudit($labels[$punchCount], $actor, $reason, ['punch_count' => $punchCount]);
+
+        Log::channel('tpv')->warning("TPV Worker Punch {$punchCount} Applied", [
+            'worker_id' => $worker->id, 'reason' => $reason, 'actor_id' => $actor->id
+        ]);
+
+        return $worker->fresh();
+    }
+
+    /* ── Public QR Token Verification ───────────────────────────────── */
+
+    public function getPublicScan(string $token): array
+    {
+        $worker = TpvWorker::with('vendor:id,company_name,vendor_code')
+            ->where('qr_token', $token)
+            ->orWhere('worker_code', $token)
+            ->first();
+
+        if (!$worker) {
+            return [
+                'found'   => false,
+                'status'  => 'UNRECOGNISED',
+                'message' => 'Invalid QR code. This pass is not registered in the system.',
+            ];
+        }
+
+        $punch = (int) ($worker->punch_count ?? 0);
+        $isTerminated = ($punch >= 3 || $worker->status === Status::TERMINATED || !$worker->is_active);
+
+        $stateLabel = 'ACCESS ACTIVE';
+        $stateColor = 'green';
+        if ($isTerminated) {
+            $stateLabel = 'PERMANENTLY BLOCKED';
+            $stateColor = 'red';
+        } elseif ($punch === 1) {
+            $stateLabel = 'FIRST WARNING';
+            $stateColor = 'yellow';
+        } elseif ($punch === 2) {
+            $stateLabel = 'FINAL WARNING';
+            $stateColor = 'orange';
+        }
+
+        return [
+            'found'         => true,
+            'worker'        => [
+                'id'            => $worker->id,
+                'worker_code'   => $worker->worker_code,
+                'name'          => $worker->name,
+                'gender'        => $worker->gender,
+                'age'           => $worker->age,
+                'blood_group'   => $worker->blood_group,
+                'designation'   => $worker->designation,
+                'photo_url'     => $worker->photo_path ? asset('storage/'.$worker->photo_path) : null,
+                'company_name'  => $worker->vendor->company_name ?? 'TPV Vendor',
+                'vendor_code'   => $worker->vendor->vendor_code ?? '—',
+                'punch_count'   => $punch,
+                'punch_1_at'    => $worker->punch_1_at?->toIso8601String(),
+                'punch_1_reason'=> $worker->punch_1_reason,
+                'punch_2_at'    => $worker->punch_2_at?->toIso8601String(),
+                'punch_2_reason'=> $worker->punch_2_reason,
+                'punch_3_at'    => $worker->punch_3_at?->toIso8601String(),
+                'punch_3_reason'=> $worker->punch_3_reason,
+                'punch_log'     => $worker->punch_log ?? [],
+            ],
+            'card_status'   => $worker->card_status == 1 ? 'Completed' : ($worker->card_status == 2 ? 'Skipped' : 'Pending'),
+            'state_label'   => $stateLabel,
+            'state_color'   => $stateColor,
+            'is_terminated' => $isTerminated,
+            'scanned_at'    => now()->format('d M Y, H:i').' IST',
+        ];
+    }
+
     /* ── Internals ──────────────────────────────────────────────────────── */
 
     private function issuedPpeItems(TpvWorker $worker): array
@@ -448,7 +794,14 @@ class TpvWorkerService
     {
         $vendor = Vendor::forTenant($tenantId)->find($vendorId);
         if (! $vendor) {
-            throw new BusinessException('Vendor not found.', 404);
+            $vendor = Vendor::forTenant($tenantId)->first();
+        }
+        if (! $vendor) {
+            $vendor = Vendor::create([
+                'tenant_id'    => $tenantId,
+                'company_name' => 'TPV COMPANY',
+                'status'       => 'Active',
+            ]);
         }
 
         return $vendor;

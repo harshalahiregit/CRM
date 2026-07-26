@@ -174,7 +174,7 @@ function ItemModal({ item, onClose, onDone }) {
   }
 
   return (
-    <Overlay onClose={onClose} width={620}>
+    <Overlay onClose={onClose} width={860}>
       <div style={{ padding: '20px 22px 8px' }}>
         <h2 style={{ margin: 0, fontSize: 17, fontWeight: 900, color: 'var(--text-h)' }}>{isNew ? 'New Catalog Item' : `Edit · ${item.sku}`}</h2>
         <p style={{ margin: '3px 0 0', fontSize: 12.5, color: 'var(--text-muted)' }}>Values here become the defaults snapshotted onto a line when this item is picked.</p>

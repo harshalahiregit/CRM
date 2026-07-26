@@ -1,8 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useParams } from 'react-router-dom'
 import {
   RefreshCw, Users, ScanLine, CheckCircle, AlertTriangle, XCircle, Clock, LogIn, LogOut,
 } from 'lucide-react'
 import { tpvApi } from '@/services/tpvApi'
+import { portalApi } from '@/services/portalApi'
+import { useAuth } from '@/context/AuthContext'
 import { GATE_DECISION, GATE_DECISION_CONFIG, gateDecisionCfg, fmtTime, fmtDateTime } from '../constants'
 import { KIT3D_STYLE, inputStyle, StatusBadge as StatusPill } from '@/components/ui/kit3d'
 
@@ -12,10 +15,18 @@ const TABS = [
 ]
 
 export default function TpvGateLog() {
+  const { vendorId } = useParams()           // present inside the vendor-scoped admin workspace
+  const scoped = !!vendorId
+  const { user } = useAuth()
+  // Portal mode: vendorId is absent (clean URLs). scoped remains false because
+  // the backend already scopes all gate data to own vendor from the token.
+  const isPortal = user?.role === 'third_party_vendor'
+  const api = isPortal ? portalApi : tpvApi
   const [tab, setTab]       = useState('roster')
   const [stats, setStats]   = useState({})
   const [roster, setRoster] = useState(null)
   const [log, setLog]       = useState([])
+  const [codes, setCodes]   = useState(scoped ? null : undefined)  // Set<worker_code> when scoped
   const [loading, setLoad]  = useState(true)
   const [date, setDate]     = useState(new Date().toISOString().slice(0, 10))
   const [decision, setDecision] = useState('All')
@@ -23,20 +34,47 @@ export default function TpvGateLog() {
   const fetchAll = useCallback(async () => {
     setLoad(true)
     try {
-      const [s, r, l] = await Promise.all([
-        tpvApi.gate.stats(),
-        tpvApi.gate.roster(date),
-        tpvApi.gate.log({ date, decision: decision === 'All' ? undefined : decision }),
-      ])
+      const calls = [
+        api.gate.stats(),
+        api.gate.roster(date),
+        api.gate.log({ date, decision: decision === 'All' ? undefined : decision }),
+      ]
+      // In admin scoped mode: fetch own vendor worker set for client-side filtering.
+      // In portal mode: backend already scopes data — no extra call needed.
+      if (scoped) calls.push(api.workers.list({ vendor_id: vendorId }))
+      const [s, r, l, w] = await Promise.all(calls)
       setStats(s?.data ?? s ?? {})
       setRoster(r?.data ?? r ?? null)
       setLog(Array.isArray(l?.data ?? l) ? (l.data ?? l) : [])
+      if (scoped) {
+        const workers = Array.isArray(w?.data ?? w) ? (w.data ?? w) : []
+        setCodes(new Set(workers.map(x => x.worker_code)))
+      }
     } catch (e) { console.error('Failed to load gate data', e) }
     finally { setLoad(false) }
-  }, [date, decision])
+  }, [date, decision, scoped, vendorId, api])
   useEffect(() => { fetchAll() }, [fetchAll])
 
-  const statCards = [
+  // Vendor scope: filter the tenant-wide rows to this vendor's workers and
+  // recompute the KPI cards from the filtered data (stats endpoint is global).
+  const inScope = (wk) => !scoped || (codes && codes.has(wk?.worker_code))
+  const rosterView = (() => {
+    if (!scoped || !roster) return roster
+    const rows = (roster.rows || []).filter(r => inScope(r.worker))
+    const onSite = rows.filter(r => r.on_site).length
+    const total_minutes = rows.reduce((sum, r) => sum + (r.duration_minutes || 0), 0)
+    return { ...roster, rows, summary: { total: rows.length, on_site: onSite, departed: rows.length - onSite, total_minutes } }
+  })()
+  const logView = scoped ? log.filter(r => inScope(r.worker)) : log
+  const ready = !scoped || codes !== null
+
+  const scopedRosterRows = rosterView?.rows || []
+  const statCards = scoped ? [
+    { label: 'On Site Now',      value: scopedRosterRows.filter(r => r.on_site).length, color: '#10b981' },
+    { label: 'Checked In',       value: scopedRosterRows.length,                        color: '#0ea5e9' },
+    { label: 'Scans',            value: logView.length,                                 color: '#7C3AED' },
+    { label: 'Refused',          value: logView.filter(r => r.decision === GATE_DECISION.DENY).length, color: '#ef4444' },
+  ] : [
     { label: 'On Site Now',      value: stats.on_site_now,      color: '#10b981' },
     { label: 'Checked In Today', value: stats.checked_in_today,  color: '#0ea5e9' },
     { label: 'Scans Today',      value: stats.scans_today,       color: '#7C3AED' },
@@ -91,9 +129,9 @@ export default function TpvGateLog() {
         )}
       </div>
 
-      {loading ? (
+      {loading || !ready ? (
         <div style={{ textAlign: 'center', padding: 60, color: 'var(--text-muted)' }}>Loading gate data…</div>
-      ) : tab === 'roster' ? <Roster roster={roster} /> : <ScanLog rows={log} />}
+      ) : tab === 'roster' ? <Roster roster={rosterView} /> : <ScanLog rows={logView} />}
     </div>
   )
 }

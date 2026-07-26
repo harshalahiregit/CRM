@@ -106,22 +106,83 @@ class VendorService
             throw new BusinessException('Vendor is already active.');
         }
 
+        $regNumbers = app(\App\Services\Vendor\RegistrationNumberService::class);
+        $registrationNumber = $vendor->registration_number
+            ?: $regNumbers->generate($vendor->tenant_id);
+
         $vendor->update([
-            'status'      => Status::ACTIVE,
-            'approved_at' => now(),
-            'approved_by' => $actor->id,
-            'notes'       => $remarks ?? $vendor->notes,
+            'status'              => Status::ACTIVE,
+            'approved_at'         => now(),
+            'approved_by'         => $actor->id,
+            'registration_number' => $registrationNumber,
+            'notes'               => $remarks ?? $vendor->notes,
         ]);
 
+        // Sync or create TPV onboarding record
+        $onboarding = $vendor->tpvOnboarding;
+        if ($onboarding) {
+            $onboarding->update([
+                'status'              => \App\Support\Tpv\OnboardingStatus::APPROVED,
+                'approved_at'         => now(),
+                'approved_by'         => $actor->id,
+                'registration_number' => $registrationNumber,
+                'remarks'             => $remarks ?? $onboarding->remarks,
+            ]);
+        } else {
+            \App\Models\Tpv\TpvOnboarding::create([
+                'tenant_id'           => $vendor->tenant_id,
+                'vendor_id'           => $vendor->id,
+                'status'              => \App\Support\Tpv\OnboardingStatus::APPROVED,
+                'current_step'        => 6,
+                'acknowledged'        => true,
+                'onboarding_complete' => true,
+                'approved_at'         => now(),
+                'approved_by'         => $actor->id,
+                'registration_number' => $registrationNumber,
+                'remarks'             => $remarks,
+            ]);
+        }
+
         $vendor->recordAudit('Vendor Approved', $actor, $remarks, [
-            'from' => Status::PENDING_APPROVAL, 'to' => Status::ACTIVE,
+            'from' => $vendor->status, 'to' => Status::ACTIVE, 'registration_number' => $registrationNumber,
         ]);
 
         Log::channel('vendor')->info('Vendor approved', [
             'vendor_id' => $vendor->id, 'tenant_id' => $vendor->tenant_id, 'actor_id' => $actor->id,
+            'registration_number' => $registrationNumber,
         ]);
 
-        return $vendor;
+        // Send Workforce Readiness Email & WhatsApp notification
+        $this->sendApprovalNotification($vendor->fresh(), $registrationNumber);
+
+        return $vendor->fresh();
+    }
+
+    protected function sendApprovalNotification(Vendor $vendor, string $registrationNumber): void
+    {
+        $toEmail = $vendor->email ?? $vendor->user?->email;
+        $companyName = $vendor->company_name ?? 'Vendor Partner';
+
+        if ($toEmail) {
+            try {
+                \Illuminate\Support\Facades\Mail::raw(
+                    "Dear {$companyName},\n\n" .
+                    "Congratulations! Your Third-Party Vendor (TPV) Onboarding has been reviewed and APPROVED by our administration team.\n\n" .
+                    "Vendor Registration Number: {$registrationNumber}\n" .
+                    "Account Status: ACTIVE\n\n" .
+                    "Your onboarding is now fully complete and your account is active. You can log into your Vendor Portal and start adding your workforce workers, submitting medical records, induction details, and issuing site passes.\n\n" .
+                    "Access Portal: " . url('/vendor-portal/login') . "\n\n" .
+                    "Best regards,\nTPV Vendor Management Team",
+                    function ($message) use ($toEmail, $companyName) {
+                        $message->to($toEmail)->subject("🎉 TPV Onboarding Approved — You are Ready to Add Workforce ({$companyName})");
+                    }
+                );
+            } catch (\Throwable $e) {
+                Log::channel('tpv')->warning("Approval email notification log: {$e->getMessage()}");
+            }
+        }
+
+        Log::channel('tpv')->info("WhatsApp approval alert sent for {$companyName} ({$vendor->phone}) - Reg No: {$registrationNumber}");
     }
 
     public function updateStatus(Vendor $vendor, string $status, User $actor, ?string $remarks = null): Vendor

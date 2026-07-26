@@ -336,7 +336,7 @@ function InvoiceFormModal({ editing, setEditing, saving, admin, onClose, onSave 
   const t = totalsOf(f.items)
 
   return (
-    <Overlay onClose={onClose} width={860}>
+    <Overlay onClose={onClose} width={1180}>
       <h2 style={{ color: 'var(--text-h)', margin: '0 0 4px', fontSize: 18, fontWeight: 800 }}>{f.id ? 'Edit' : 'New'} Purchase Invoice</h2>
       <p style={{ color: 'var(--text-muted)', fontSize: 12, margin: '0 0 18px' }}>Record the vendor's bill, add line items, then save as draft{admin ? ' or approve it as payable' : ''}.</p>
 
@@ -422,7 +422,7 @@ function PaymentModal({ invoice, onClose, onDone }) {
   }
 
   return (
-    <Overlay onClose={() => !saving && onClose()} width={520}>
+    <Overlay onClose={() => !saving && onClose()} width={720}>
       <h2 style={{ color: 'var(--text-h)', margin: '0 0 4px', fontSize: 18, fontWeight: 800 }}>Record Payment · {invoice.invoice_number}</h2>
       <p style={{ color: 'var(--text-muted)', fontSize: 12, margin: '0 0 16px' }}>Outstanding balance: <strong style={{ color: '#f59e0b' }}>{fmtMoney(balance, invoice.currency)}</strong></p>
 
@@ -553,7 +553,7 @@ function DetailModal({ invoice, admin, onClose, onPay, onReversePayment }) {
   ].filter(([, v]) => v)
 
   return (
-    <Overlay onClose={onClose} width={760}>
+    <Overlay onClose={onClose} width={1120}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
         <h3 style={{ color: 'var(--text-h)', margin: 0, fontSize: 17, fontWeight: 800 }}>{invoice.invoice_number}{invoice.title ? ` · ${invoice.title}` : ''}</h3>
         <StatusBadge status={invoice.status} />

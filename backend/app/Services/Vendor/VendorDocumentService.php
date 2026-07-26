@@ -78,6 +78,8 @@ class VendorDocumentService
                 'approved'  => $approved,
                 'rejected'  => $rejected,
                 'pending'   => $uploaded - $approved - $rejected,
+                // % of required documents approved — drives the Step-4 progress bar.
+                'progress_percent' => count($required) > 0 ? (int) round($approved / count($required) * 100) : 0,
             ],
             // Onboarding may be finalised only when every required doc is approved.
             'complete'    => $approved === count($required),

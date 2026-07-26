@@ -12,6 +12,7 @@ const ROLES = [
   { value: 'vendor',              label: 'Vendor',               icon: '🏭' },
   { value: 'third_party_vendor',  label: 'Third-Party Vendor',   icon: '🤝' },
   { value: 'client',              label: 'Client / Customer',    icon: '👤' },
+  { value: 'company',             label: 'Company',              icon: '🏢' },
 ]
 
 const schema = z.object({
@@ -58,7 +59,8 @@ export default function LoginPage() {
     setApiError('')
     const result = await login(values)
     if (result.success) {
-      if (result.role === 'third_party_vendor') navigate('/vendor-portal/app/dashboard', { replace: true })
+      if (result.role === 'company') navigate('/company-portal/dashboard', { replace: true })
+      else if (result.role === 'third_party_vendor') navigate('/vendor-portal/dashboard', { replace: true })
       else navigate(from, { replace: true })
     } else {
       setApiError(result.message)

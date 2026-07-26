@@ -6,13 +6,12 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Purchase\StorePurchaseRequestRequest;
 use App\Http\Requests\Purchase\UpdatePurchaseRequestRequest;
 use App\Models\Purchase\PurchaseRequest;
-use App\Services\Purchase\PurchaseDocumentPdfService;
 use App\Services\Purchase\PurchaseRequestService;
 use Illuminate\Http\Request;
 
 class PurchaseRequestController extends Controller
 {
-    public function __construct(private PurchaseRequestService $purchaseRequestService, private PurchaseDocumentPdfService $pdfService)
+    public function __construct(private PurchaseRequestService $purchaseRequestService)
     {
     }
 
@@ -91,18 +90,6 @@ class PurchaseRequestController extends Controller
     public function stats(Request $request)
     {
         return response()->json($this->purchaseRequestService->stats($request->user()->tenant_id));
-    }
-
-    /** Internal PR approval sheet as PDF — ?inline=1 streams, otherwise downloads. */
-    public function downloadPdf(Request $request, PurchaseRequest $purchaseRequest)
-    {
-        $this->assertTenant($request, $purchaseRequest);
-        $pdf = $this->pdfService->renderRequest($purchaseRequest);
-        $file = "{$purchaseRequest->pr_number}.pdf";
-
-        return $request->boolean('inline')
-            ? $pdf->stream($file)
-            : $pdf->download($file);
     }
 
     private function assertTenant(Request $request, PurchaseRequest $purchaseRequest): void

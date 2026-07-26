@@ -3,8 +3,10 @@ import { useAuth } from '@/context/AuthContext'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { hrApi } from '@/services/hrApi'
+import { statusColor, statusLabel, canApproveL1, canApproveL2 } from '../constants'
+import NotificationWidget from '@/modules/notifications/NotificationWidget'
 import {
-  Users, Briefcase, Calendar, FileText, TrendingUp,
+  Users, Briefcase, Calendar, FileText, TrendingUp, ClipboardList, Layers, Send, Rocket, PlayCircle, Lock,
   CheckCircle, XCircle, Clock, Bell, Mail, MessageCircle, ArrowRight, Timer, AlertCircle
 } from 'lucide-react'
 
@@ -26,7 +28,17 @@ const KPI = ({ label, value, icon: Icon, gradient, shadow, sub, onClick }) => (
 )
 
 const pc = p => p==='High'?{bg:'rgba(239,68,68,0.1)',color:'#f87171',bdr:'rgba(239,68,68,0.2)'}:p==='Medium'?{bg:'rgba(245,158,11,0.1)',color:'#fbbf24',bdr:'rgba(245,158,11,0.2)'}:{bg:'rgba(16,185,129,0.1)',color:'#10b981',bdr:'rgba(16,185,129,0.2)'}
-const sc = s => s==='Approved'?{bg:'rgba(16,185,129,0.1)',color:'#10b981'}:s==='Rejected'?{bg:'rgba(239,68,68,0.1)',color:'#f87171'}:{bg:'rgba(245,158,11,0.1)',color:'#fbbf24'}
+
+// Compact stat tile for the recruitment-workflow metric row
+const MiniStat = ({ label, value, icon: Icon, color, onClick }) => (
+  <div className={`kpi-3d ${onClick ? 'cursor-pointer hover:scale-[1.02] transition-transform' : ''}`} onClick={onClick} style={{ padding: 14 }}>
+    <div className="flex items-center gap-2 mb-2">
+      <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: `${color}20` }}><Icon size={14} style={{ color }} /></div>
+    </div>
+    <p className="text-xl font-black" style={{ color: 'var(--text-h)' }}>{value ?? 0}</p>
+    <p className="text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>{label}</p>
+  </div>
+)
 
 export default function HRDashboard() {
   const navigate = useNavigate()
@@ -53,6 +65,8 @@ export default function HRDashboard() {
   }
 
   const kpis = dashboardData?.kpis || {}
+  const rec = dashboardData?.recruitment_kpis || {}
+  const manpower = dashboardData?.manpower || {}
   const pipeline = dashboardData?.pipeline || []
   const sourceBreakdown = dashboardData?.source_breakdown || []
   const recentRequests = dashboardData?.recent_requests || []
@@ -60,7 +74,30 @@ export default function HRDashboard() {
   const hiringTrend = dashboardData?.hiring_trend || []
 
   const maxS = Math.max(...sourceBreakdown.map(s => s.count), 1)
-  const isManager = user?.role === 'hiring_manager' || user?.role === 'admin'
+  const isManager = canApproveL1(user) || canApproveL2(user)
+
+  // Recruitment onboarding → offer → joining KPIs (auto-derived, tenant-scoped)
+  const recruitmentStats = [
+    { label: 'Waiting for Candidate',   value: rec.waiting_for_candidate,     icon: Clock,       color: '#f59e0b', to: '/app/hr/onboarding' },
+    { label: 'Waiting for HR Verify',   value: rec.waiting_for_hr,            icon: ClipboardList, color: '#0ea5e9', to: '/app/hr/onboarding' },
+    { label: 'Ready for Approval',      value: rec.ready_for_approval,        icon: CheckCircle, color: '#10b981', to: '/app/hr/onboarding' },
+    { label: 'Offer Pending',           value: rec.offer_pending,             icon: Send,        color: '#a78bfa', to: '/app/hr/offers' },
+    { label: 'Offer Accepted',          value: rec.offer_accepted,            icon: FileText,    color: '#8b5cf6', to: '/app/hr/offers' },
+    { label: 'Joining This Week',       value: rec.joining_this_week,         icon: Calendar,    color: '#14b8a6', to: '/app/hr/offers' },
+    { label: 'Employee Creation Pending', value: rec.employee_creation_pending, icon: Rocket,    color: '#f97316', to: '/app/hr/offers' },
+  ]
+
+  // 8 recruitment-workflow metrics required by the HR module spec
+  const workflowStats = [
+    { label: 'Total Requests',   value: manpower.total_requests,   icon: ClipboardList, color: '#7C3AED', status: 'All' },
+    { label: 'L1 Pending',       value: manpower.l1_pending,       icon: Clock,         color: '#f59e0b', status: 'L1_Pending' },
+    { label: 'L2 Pending',       value: manpower.l2_pending,       icon: Clock,         color: '#8b5cf6', status: 'L2_Pending' },
+    { label: 'Ready for HR',     value: manpower.ready_for_hr,     icon: Send,          color: '#0ea5e9', status: 'Ready_for_HR' },
+    { label: 'Converted to JD',  value: manpower.converted_to_jd,  icon: Layers,        color: '#6366f1', status: 'Converted_to_JD' },
+    { label: 'Posted Jobs',      value: manpower.posted_jobs,      icon: Rocket,        color: '#10b981', status: 'Job_Posted' },
+    { label: 'Active Hiring',    value: manpower.active_hiring,    icon: PlayCircle,    color: '#14b8a6', status: 'Hiring_in_Progress' },
+    { label: 'Closed Positions', value: manpower.closed_positions, icon: Lock,          color: '#64748b', status: 'Closed' },
+  ]
 
   return (
     <div className="space-y-6 animate-[tiltIn_0.35s_ease_forwards]">
@@ -132,7 +169,7 @@ export default function HRDashboard() {
             gradient="linear-gradient(145deg,#fb923c,#f97316)" 
             shadow="#f97316"
             sub="Awaiting your action"
-            onClick={() => navigate('/app/hr/manpower-requests?status=Pending')}
+            onClick={() => navigate('/app/hr/manpower-requests')}
           />
         )}
         
@@ -151,6 +188,33 @@ export default function HRDashboard() {
           gradient="linear-gradient(145deg,#f87171,#dc2626)" 
           shadow="#dc2626" 
         />
+      </div>
+
+      {/* ── Recruitment Pipeline KPIs — onboarding → offer → joining ── */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-bold text-base" style={{ color:'var(--text-h)' }}>Onboarding &amp; Offer Pipeline</h2>
+          <button onClick={()=>navigate('/app/hr/onboarding')} className="text-xs font-semibold flex items-center gap-1" style={{ color:'#a78bfa' }}>Onboarding tracker <ArrowRight size={11}/></button>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+          {recruitmentStats.map(s => (
+            <MiniStat key={s.label} label={s.label} value={s.value} icon={s.icon} color={s.color} onClick={()=>navigate(s.to)} />
+          ))}
+        </div>
+      </div>
+
+      {/* ── Recruitment Workflow — Manpower Request pipeline (8 metrics) ── */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-bold text-base" style={{ color:'var(--text-h)' }}>Recruitment Workflow</h2>
+          <button onClick={()=>navigate('/app/hr/manpower-requests')} className="text-xs font-semibold flex items-center gap-1" style={{ color:'#a78bfa' }}>Manage requests <ArrowRight size={11}/></button>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
+          {workflowStats.map(s => (
+            <MiniStat key={s.label} label={s.label} value={s.value} icon={s.icon} color={s.color}
+              onClick={()=>navigate(`/app/hr/manpower-requests?status=${s.status}`)} />
+          ))}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
@@ -219,7 +283,7 @@ export default function HRDashboard() {
               <tbody>
                 {recentRequests.length > 0 ? recentRequests.slice(0, 5).map(r=>{
                   const p=pc(r.priority)
-                  const s=sc(r.status)
+                  const s=statusColor(r.status)
                   return(
                     <tr key={r.id} style={{ borderBottom:'1px solid var(--border)' }} onMouseEnter={e=>e.currentTarget.style.background='rgba(124,58,237,0.04)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
                       <td className="py-2.5 pr-3 font-bold" style={{ color:'#a78bfa' }}>MR-{r.id}</td>
@@ -227,7 +291,7 @@ export default function HRDashboard() {
                       <td className="py-2.5 pr-3 max-w-[120px] truncate" style={{ color:'var(--text-muted)' }}>{r.position_title}</td>
                       <td className="py-2.5 pr-3 text-center font-bold" style={{ color:'var(--text-h)' }}>{r.number_of_posts}</td>
                       <td className="py-2.5 pr-3"><span className="px-2 py-0.5 rounded-lg text-[10px] font-bold" style={{ background:p.bg,color:p.color,border:`1px solid ${p.bdr}` }}>{r.priority}</span></td>
-                      <td className="py-2.5 pr-3"><span className="px-2 py-0.5 rounded-lg text-[10px] font-bold" style={{ background:s.bg,color:s.color }}>{r.status}</span></td>
+                      <td className="py-2.5 pr-3"><span className="px-2 py-0.5 rounded-lg text-[10px] font-bold" style={{ background:s.bg,color:s.color }}>{statusLabel(r.status)}</span></td>
                       <td className="py-2.5" style={{ color:'var(--text-muted)' }}>{new Date(r.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</td>
                     </tr>
                   )
@@ -260,18 +324,7 @@ export default function HRDashboard() {
               )}
             </div>
           </div>
-          <div className="card-3d" style={{ padding:'20px' }}>
-            <h2 className="font-bold text-sm mb-3" style={{ color:'var(--text-h)' }}>Notifications</h2>
-            <div className="space-y-2">
-              {[{icon:Mail,label:'Email Sent',count:24,color:'#3b82f6'},{icon:MessageCircle,label:'WhatsApp',count:18,color:'#25D366'},{icon:Bell,label:'In-App',count:7,color:'#a78bfa'}].map(n=>(
-                <div key={n.label} className="flex items-center gap-2.5 p-2 rounded-xl" style={{ background:'var(--bg-input)' }}>
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background:`${n.color}20` }}><n.icon size={13} style={{ color:n.color }}/></div>
-                  <span className="text-xs font-medium flex-1" style={{ color:'var(--text-muted)' }}>{n.label}</span>
-                  <span className="text-xs font-black" style={{ color:n.color }}>{n.count}</span>
-                </div>
-              ))}
-            </div>
-          </div>
+          <NotificationWidget />
         </div>
       </div>
     </div>

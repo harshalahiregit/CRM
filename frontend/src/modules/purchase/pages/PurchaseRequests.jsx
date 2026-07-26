@@ -3,9 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import {
   Plus, RefreshCw, Search, Send, ThumbsUp, ThumbsDown, Eye, Pencil, Trash2,
   FileText, ShieldCheck, ShoppingBag, CheckCircle, XCircle, Clock,
-  LayoutGrid, List, Trash, PackagePlus, ChevronLeft, ChevronRight, Package, FileDown, Printer,
+  LayoutGrid, List, Trash, PackagePlus, ChevronLeft, ChevronRight, Package,
 } from 'lucide-react'
-import { purchaseApi, downloadPurchasePdf } from '@/services/purchaseApi'
+import { purchaseApi } from '@/services/purchaseApi'
 import { useAuth } from '@/context/AuthContext'
 import AuditTimeline from '@/components/ui/AuditTimeline'
 import {
@@ -415,7 +415,7 @@ function RequestFormModal({ editing, setEditing, saving, requestedBy, onClose, o
   const today = new Date().toISOString().slice(0, 10)
 
   return (
-    <Overlay onClose={onClose} width={860}>
+    <Overlay onClose={onClose} width={1180}>
       <h2 style={{ color: 'var(--text-h)', margin: '0 0 4px', fontSize: 18, fontWeight: 800 }}>{f.id ? 'Edit' : 'New'} Purchase Request</h2>
       <p style={{ color: 'var(--text-muted)', fontSize: 12, margin: '0 0 18px' }}>Fill the header, add line items, then save as draft or submit for approval.</p>
 
@@ -572,14 +572,10 @@ function DetailModal({ request, onClose }) {
     ['Requested By', request.requester?.name], ['Approved By', request.approver?.name],
   ].filter(([, v]) => v)
   return (
-    <Overlay onClose={onClose} width={720}>
+    <Overlay onClose={onClose} width={1000}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
         <h3 style={{ color: 'var(--text-h)', margin: 0, fontSize: 17, fontWeight: 800 }}>{request.pr_number || `PR-${request.id}`} · {request.title}</h3>
         <StatusBadge status={request.status} />
-        <div style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6 }}>
-          <button onClick={() => downloadPurchasePdf('requests', request.id, { filename: `${request.pr_number || 'PR-' + request.id}.pdf` })} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 9, border: 'none', background: 'linear-gradient(135deg,#7C3AED,#5b21b6)', color: '#fff', fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}><FileDown size={13} /> PDF</button>
-          <button onClick={() => downloadPurchasePdf('requests', request.id, { inline: true })} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-h)', fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}><Printer size={13} /> Print</button>
-        </div>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 20px', marginBottom: 16 }}>
         {meta.map(([k, v]) => (

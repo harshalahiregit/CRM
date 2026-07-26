@@ -8,13 +8,47 @@ use App\Http\Requests\Vendor\ReviewVendorDocumentRequest;
 use App\Http\Requests\Vendor\UploadVendorDocumentRequest;
 use App\Models\Vendor\Vendor;
 use App\Models\Vendor\VendorDocument;
+use App\Models\Vendor\VendorDocumentVersion;
 use App\Services\Vendor\VendorDocumentService;
+use App\Services\Vendor\VendorDocumentVersionService;
 use Illuminate\Http\Request;
 
 class VendorDocumentController extends Controller
 {
-    public function __construct(private VendorDocumentService $documentService)
+    public function __construct(
+        private VendorDocumentService $documentService,
+        private VendorDocumentVersionService $versionService,
+    ) {
+    }
+
+    /** Full version history for a document (newest first). */
+    public function versions(Request $request, VendorDocument $document)
     {
+        $this->assertDocumentTenant($request, $document);
+
+        return response()->json($document->versions()->orderByDesc('version_no')->get());
+    }
+
+    /** Download a specific previous version (audited). */
+    public function downloadVersion(Request $request, VendorDocument $document, VendorDocumentVersion $version)
+    {
+        $this->assertDocumentTenant($request, $document);
+        abort_unless((int) $version->vendor_document_id === (int) $document->id, 404, 'Version not found');
+
+        $file = $this->versionService->resolveDownload($version, $request->user());
+
+        return response()->download($file['path'], $file['filename'], [
+            'Content-Type'        => $file['mime'],
+            'Content-Disposition' => 'inline; filename="'.$file['filename'].'"',
+        ]);
+    }
+
+    /** Restore a previous version — moves the document back to Pending review. */
+    public function restoreVersion(Request $request, VendorDocument $document, VendorDocumentVersion $version)
+    {
+        $this->assertDocumentTenant($request, $document);
+
+        return response()->json($this->versionService->restore($document, $version, $request->user()));
     }
 
     /** The required-vs-uploaded validation matrix for a vendor. */

@@ -36,7 +36,7 @@ class VendorController extends Controller
     {
         $this->assertTenant($request, $vendor);
 
-        return response()->json($vendor->load(['contacts', 'documents', 'accountManager:id,name', 'user:id,name,email,status']));
+        return response()->json($vendor->load(['contacts', 'documents', 'tpvOnboarding', 'accountManager:id,name', 'user:id,name,email,status']));
     }
 
     public function update(Request $request, Vendor $vendor, UpdateVendorRequest $updateRequest)

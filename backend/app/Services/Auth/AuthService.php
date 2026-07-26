@@ -29,9 +29,23 @@ class AuthService
 
         $this->assertUserCanLogin($user);
 
-        // Revoke old tokens (single device)
-        $user->tokens()->delete();
-        $token = $user->createToken('crm-auth-token', ['*'], now()->addDays(30))->plainTextToken;
+        // Establish a tracked session (applies the concurrency policy — default
+        // 'single' preserves the prior one-device behaviour) and issue the token.
+        $ua = \App\Support\UserAgentInfo::parse(request()->userAgent());
+        $token = app(\App\Services\Auth\SessionService::class)->establish(
+            $user,
+            (bool) ($data['remember'] ?? false),
+            ['ip' => request()->ip(), 'browser' => $ua['browser'], 'device' => $ua['device']],
+        );
+
+        // Track last login; company logins also get an audit-based login history.
+        $ip = request()->ip();
+        $user->forceFill(['last_login_at' => now(), 'last_login_ip' => $ip])->saveQuietly();
+        if ($user->role === 'company') {
+            app(\App\Services\AuditLogService::class)->record($user, 'Signed in', $user, null, [
+                'ip' => $ip, 'device' => request()->userAgent(), 'login' => true,
+            ]);
+        }
 
         // Track last login; company logins also get an audit-based login history.
         $ip = request()->ip();
@@ -248,7 +262,7 @@ class AuthService
 
     public function logout(User $user): void
     {
-        $user->currentAccessToken()->delete();
+        app(\App\Services\Auth\SessionService::class)->endCurrent($user);
         Log::channel('auth')->info('User logged out', ['user_id' => $user->id]);
     }
 

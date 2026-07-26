@@ -1,30 +1,30 @@
 import { useState, useEffect } from 'react'
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, FileCheck, LogOut, Building2, Sun, Moon } from 'lucide-react'
+import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
+import {
+  LayoutDashboard, ClipboardList, HardHat, LogOut, Building2,
+  Sun, Moon, Bell, User, FileText, HelpCircle, ChevronRight, Menu, X,
+} from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { portalApi } from '@/services/portalApi'
 import { KIT3D_STYLE } from '@/components/ui/kit3d'
+import TemporaryAccessBanner from '@/modules/tpv/components/TemporaryAccessBanner'
+import './portal.css'
 
 /**
  * Dedicated chrome for the vendor portal — deliberately NOT the internal AppShell.
- * A vendor must never see the staff sidebar (Modules, Deals, Vendors master…);
- * they get their own minimal top bar and a two-tab rail scoped to what they own.
+ * Fixed 260 px left sidebar + sticky top header.
+ * Navigation is dynamic based on vendor status (same logic as before, UI only changed).
  */
-const NAV = [
-  { to: '/vendor-portal/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/vendor-portal/documents', label: 'Documents', icon: FileCheck },
-]
-
 export default function VendorPortalShell() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
-  const [company, setCompany] = useState(null)
+  const location = useLocation()
+  const [vendor, setVendor] = useState(null)
   const [theme, setTheme] = useState(() => localStorage.getItem('crm_theme') || 'dark')
+  const [sidebarOpen, setSidebarOpen] = useState(false)
 
   useEffect(() => {
-    // The vendor's company name for the header — cheap and confirms the portal
-    // is scoped to them.
-    portalApi.me().then(d => setCompany(d?.vendor?.company_name)).catch(() => {})
+    portalApi.me().then(d => setVendor(d?.vendor ?? null)).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -32,56 +32,177 @@ export default function VendorPortalShell() {
     localStorage.setItem('crm_theme', theme)
   }, [theme])
 
+  // Close mobile sidebar on navigation
+  useEffect(() => { setSidebarOpen(false) }, [location.pathname])
+
   const doLogout = async () => { try { await logout() } finally { navigate('/auth/login') } }
 
+  // Derive page title from current route
+  const pageTitles = {
+    '/vendor-portal/dashboard': 'Dashboard',
+    '/vendor-portal/onboarding': 'Onboarding',
+    '/vendor-portal/documents': 'Documents',
+    '/vendor-portal/workforce': 'Workforce',
+    '/vendor-portal/workforce/dashboard': 'Workforce Dashboard',
+    '/vendor-portal/workforce/workers': 'Workers',
+    '/vendor-portal/workforce/gate-log': 'Gate Log',
+    '/vendor-portal/workforce/attendance': 'Attendance',
+    '/vendor-portal/workforce/strikes': 'Safety Strikes',
+  }
+  const pageTitle = Object.entries(pageTitles).reverse()
+    .find(([path]) => location.pathname.startsWith(path))?.[1] ?? 'Portal'
+
+  // Workforce tab appears automatically once admin activates the vendor (same logic, unchanged)
+  const mainNavItems = [
+    { to: '/vendor-portal/dashboard',  label: 'Dashboard',   icon: LayoutDashboard },
+    { to: '/vendor-portal/onboarding', label: 'Onboarding',  icon: ClipboardList },
+    { to: '/vendor-portal/documents',  label: 'Documents',   icon: FileText },
+    ...(vendor?.status === 'Active'
+      ? [{ to: '/vendor-portal/workforce', label: 'Workforce', icon: HardHat }]
+      : []),
+  ]
+
+  const bottomNavItems = [
+    { to: '/vendor-portal/dashboard', label: 'Profile', icon: User, exact: false },
+  ]
+
+  // Get user initials for avatar
+  const initials = (vendor?.company_name || user?.name || 'VP')
+    .split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()
+
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg-global)' }}>
+    <div className="portal-root">
       <style>{KIT3D_STYLE}</style>
 
-      {/* Top bar */}
-      <header style={{ position: 'sticky', top: 0, zIndex: 20, display: 'flex', alignItems: 'center', gap: 16, padding: '12px 24px',
-        background: 'var(--bg-card)', borderBottom: '1px solid var(--border)', backdropFilter: 'blur(10px)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ width: 38, height: 38, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(145deg,#a78bfa,#7C3AED)', boxShadow: '0 8px 20px -4px #7C3AED88, inset 0 1px 0 rgba(255,255,255,.35)' }}>
-            <Building2 size={19} color="#fff" />
-          </span>
+      {/* Mobile overlay */}
+      {sidebarOpen && (
+        <div
+          onClick={() => setSidebarOpen(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 35, backdropFilter: 'blur(2px)' }}
+        />
+      )}
+
+      {/* ── Sidebar ─────────────────────────────────────────────────── */}
+      <aside className={`portal-sidebar${sidebarOpen ? ' open' : ''}`}>
+        {/* Brand */}
+        <div className="portal-sidebar-brand">
+          <div className="portal-sidebar-logo">
+            <Building2 size={18} color="#fff" />
+          </div>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 14.5, fontWeight: 900, color: 'var(--text-h)', letterSpacing: '-0.01em', lineHeight: 1.1 }}>Vendor Portal</div>
-            <div style={{ fontSize: 11.5, color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 240 }}>{company || user?.name || 'Signed in'}</div>
+            <div className="portal-sidebar-title">Vendor Portal</div>
+            <div className="portal-sidebar-subtitle">{vendor?.company_name || user?.name || 'Signed in'}</div>
           </div>
         </div>
 
-        {/* Nav tabs */}
-        <nav style={{ display: 'flex', gap: 6, marginLeft: 12 }}>
-          {NAV.map(({ to, label, icon: Icon }) => (
-            <NavLink key={to} to={to}
-              style={({ isActive }) => ({
-                display: 'inline-flex', alignItems: 'center', gap: 7, padding: '8px 14px', borderRadius: 10, fontSize: 13, fontWeight: 700,
-                textDecoration: 'none',
-                background: isActive ? 'linear-gradient(145deg,#a78bfa,#7C3AED)' : 'transparent',
-                color: isActive ? '#fff' : 'var(--text-muted)',
-                boxShadow: isActive ? '0 6px 16px -6px rgba(124,58,237,.6)' : 'none',
-              })}>
-              <Icon size={15} /> {label}
+        {/* Main Navigation */}
+        <nav className="portal-nav">
+          <div className="portal-nav-section">Main Menu</div>
+
+          {mainNavItems.map(({ to, label, icon: Icon }) => (
+            <NavLink
+              key={to}
+              to={to}
+              end={to === '/vendor-portal/dashboard'}
+              className={({ isActive }) => `portal-nav-item${isActive ? ' active' : ''}`}
+            >
+              <Icon size={16} className="portal-nav-icon" />
+              {label}
             </NavLink>
           ))}
+
+          <div className="portal-nav-section" style={{ marginTop: 8 }}>Account</div>
+
+          <NavLink
+            to="/vendor-portal/dashboard"
+            className={({ isActive }) => `portal-nav-item${isActive ? '' : ''}`}
+            style={{ color: 'var(--text-muted)' }}
+            onClick={e => e.preventDefault()}
+          >
+            <User size={16} />
+            Profile
+          </NavLink>
+
+          <a
+            href="mailto:support@company.com"
+            className="portal-nav-item"
+          >
+            <HelpCircle size={16} />
+            Support
+          </a>
         </nav>
 
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} title="Toggle theme"
-            style={{ width: 36, height: 36, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
-            {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-          </button>
-          <button onClick={doLogout}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 10, cursor: 'pointer', fontSize: 13, fontWeight: 700, background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#f87171' }}>
-            <LogOut size={15} /> Sign out
+        {/* Sidebar Bottom — Logout */}
+        <div className="portal-sidebar-bottom">
+          <button onClick={doLogout} className="portal-nav-item" style={{ color: '#f87171', width: '100%' }}>
+            <LogOut size={16} />
+            Sign Out
           </button>
         </div>
-      </header>
+      </aside>
 
-      <main style={{ maxWidth: 1200, margin: '0 auto', padding: '24px' }}>
-        <Outlet />
-      </main>
+      {/* ── Main Area ───────────────────────────────────────────────── */}
+      <div className="portal-main">
+
+        {/* Temporary access countdown (same as before) */}
+        <TemporaryAccessBanner vendor={vendor} />
+
+        {/* Top Header */}
+        <header className="portal-header">
+          {/* Mobile hamburger */}
+          <button
+            onClick={() => setSidebarOpen(v => !v)}
+            className="portal-icon-btn"
+            style={{ display: 'none' }}
+            id="portal-hamburger"
+          >
+            <Menu size={17} />
+          </button>
+          <style>{`@media(max-width:768px){#portal-hamburger{display:flex!important}}`}</style>
+
+          <div className="portal-header-title">{pageTitle}</div>
+
+          <div className="portal-header-right">
+            {/* Notifications */}
+            <button className="portal-icon-btn" title="Notifications">
+              <Bell size={16} />
+              <span className="notif-dot" />
+            </button>
+
+            {/* Dark mode toggle */}
+            <button
+              onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
+              className="portal-icon-btn"
+              title="Toggle theme"
+            >
+              {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+            </button>
+
+            {/* User chip */}
+            <div className="portal-user-chip">
+              <div className="portal-avatar">{initials}</div>
+              <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-h)', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {vendor?.company_name || user?.name || 'Account'}
+              </span>
+            </div>
+
+            {/* Sign out (header) */}
+            <button
+              onClick={doLogout}
+              className="portal-icon-btn"
+              title="Sign out"
+              style={{ color: '#f87171' }}
+            >
+              <LogOut size={16} />
+            </button>
+          </div>
+        </header>
+
+        {/* Page Content */}
+        <main className="portal-content">
+          <Outlet />
+        </main>
+      </div>
     </div>
   )
 }

@@ -26,11 +26,22 @@ class Vendor extends Model
         'registration_number','gst_number','pan_number',
         'address','city','state','country','pincode',
         'status','approved_at','approved_by','notes',
+        // Temporary TPV access (Phase 2)
+        'is_temporary','access_start_at','access_expires_at','access_status',
+        'access_extended_at','access_extended_by','extension_reason',
+        'converted_to_permanent_at','converted_by','temporary_created_by','validity_days','access_reminders_sent',
     ];
 
     protected $casts = [
-        'engagements' => 'array',
-        'approved_at' => 'datetime',
+        'engagements'               => 'array',
+        'approved_at'               => 'datetime',
+        'is_temporary'              => 'boolean',
+        'access_start_at'           => 'datetime',
+        'access_expires_at'         => 'datetime',
+        'access_extended_at'        => 'datetime',
+        'converted_to_permanent_at' => 'datetime',
+        'validity_days'             => 'integer',
+        'access_reminders_sent'     => 'array',
     ];
 
     protected $appends = ['status_label'];
@@ -55,6 +66,12 @@ class Vendor extends Model
     public function contacts()
     {
         return $this->hasMany(VendorContact::class, 'vendor_id');
+    }
+
+    /** Normalized bank account, mirrored from the TPV onboarding profile. */
+    public function bankAccount()
+    {
+        return $this->hasOne(VendorBankAccount::class, 'vendor_id');
     }
 
     /** The primary contact, per the is_primary flag. */
@@ -106,6 +123,39 @@ class Vendor extends Model
     public function hasEngagement(string $engagement): bool
     {
         return in_array($engagement, $this->engagements ?? [], true);
+    }
+
+    /* ── Temporary access helpers (Phase 2) ─────────────────────────────── */
+
+    public function isTemporary(): bool
+    {
+        return (bool) $this->is_temporary;
+    }
+
+    /** Server-authoritative seconds remaining (never negative). */
+    public function accessSecondsRemaining(): int
+    {
+        if (! $this->access_expires_at) {
+            return 0;
+        }
+
+        return (int) max(0, $this->access_expires_at->getTimestamp() - now()->getTimestamp());
+    }
+
+    public function accessBand(): string
+    {
+        return \App\Support\Tpv\TpvAccessStatus::band($this->accessSecondsRemaining());
+    }
+
+    public function isAccessExpired(): bool
+    {
+        if (! $this->isTemporary() || ! $this->access_expires_at || $this->access_status === \App\Support\Tpv\TpvAccessStatus::CONVERTED) {
+            return false;
+        }
+
+        // Either force-expired (status) or the clock has run out.
+        return $this->access_status === \App\Support\Tpv\TpvAccessStatus::EXPIRED
+            || $this->accessSecondsRemaining() <= 0;
     }
 
     /* ── Scopes ─────────────────────────────────────────────────────────── */

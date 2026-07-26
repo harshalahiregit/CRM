@@ -167,7 +167,7 @@ export default function CreditNotes() {
       {showDrawer && (
         <>
           <div className="drawer-backdrop" onClick={() => setShowDrawer(false)} />
-          <div className="drawer-panel" style={{ width: 'min(580px, 95vw)' }}>
+          <div className="drawer-panel" style={{ width: 'min(820px, 95vw)' }}>
             <div className="drawer-header">
               <div>
                 <h2 className="font-black text-lg" style={{ color: 'var(--text-h)' }}>New Credit Note</h2>

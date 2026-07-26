@@ -29,6 +29,8 @@ class KickoffMeeting extends Model
         'original_scheduled_at','delay_reason',
         'mom_path','minutes','completed_at',
         'ack_token','acknowledged_at','acknowledged_by_name','acknowledged_ip',
+        // Online meeting fields (nullable — only set when mode = 'online')
+        'meeting_platform','meeting_link','meeting_id','meeting_passcode','meeting_host_link',
     ];
 
     protected $casts = [

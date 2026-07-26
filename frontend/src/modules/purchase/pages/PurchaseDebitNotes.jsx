@@ -368,7 +368,7 @@ function DebitNoteFormModal({ editing, setEditing, saving, manage, onClose, onSa
   const poMode = !!f.purchase_order_id
 
   return (
-    <Overlay onClose={onClose} width={860}>
+    <Overlay onClose={onClose} width={1180}>
       <h2 style={{ color: 'var(--text-h)', margin: '0 0 4px', fontSize: 18, fontWeight: 800 }}>{f.id ? 'Edit' : 'New'} Debit Note</h2>
       <p style={{ color: 'var(--text-muted)', fontSize: 12, margin: '0 0 18px' }}>Return goods against a purchase order (adjusts inventory) or raise a standalone debit.</p>
 
@@ -472,7 +472,7 @@ function RefundModal({ dn, onClose, onDone }) {
   }
 
   return (
-    <Overlay onClose={() => !saving && onClose()} width={520}>
+    <Overlay onClose={() => !saving && onClose()} width={720}>
       <h2 style={{ color: 'var(--text-h)', margin: '0 0 4px', fontSize: 18, fontWeight: 800 }}>Record Vendor Refund · {dn.debit_number}</h2>
       <p style={{ color: 'var(--text-muted)', fontSize: 12, margin: '0 0 16px' }}>Outstanding claim: <strong style={{ color: '#f59e0b' }}>{fmtMoney(balance, dn.currency)}</strong></p>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
@@ -528,7 +528,7 @@ function ApplyCreditModal({ dn, onClose, onDone }) {
   }
 
   return (
-    <Overlay onClose={() => !saving && onClose()} width={540}>
+    <Overlay onClose={() => !saving && onClose()} width={760}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 4 }}>
         <GitMerge size={18} style={{ color: '#a78bfa' }} />
         <h2 style={{ color: 'var(--text-h)', margin: 0, fontSize: 18, fontWeight: 800 }}>Apply Credit · {dn.debit_number}</h2>
@@ -637,7 +637,7 @@ function DetailModal({ dn, admin, onClose, onRefund, onApply, onReverseRefund, o
   ].filter(([, v]) => v)
 
   return (
-    <Overlay onClose={onClose} width={760}>
+    <Overlay onClose={onClose} width={1120}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
         <h3 style={{ color: 'var(--text-h)', margin: 0, fontSize: 17, fontWeight: 800 }}>{dn.debit_number}</h3>
         <StatusBadge status={dn.status} />

@@ -60,9 +60,45 @@ class VendorDocument extends Model
         'loi_wo_po'            => 'LOI / WO / PO',
     ];
 
+    /**
+     * Version capture is a side effect: whenever the file is created or changed
+     * (upload / replace / resubmit / restore), snapshot an immutable copy. Wrapped
+     * so a versioning failure can never break the existing upload/review flow.
+     */
+    protected static function booted(): void
+    {
+        static::created(function (VendorDocument $doc) {
+            if ($doc->file_path) {
+                self::captureVersionSafely($doc);
+            }
+        });
+
+        static::updated(function (VendorDocument $doc) {
+            if ($doc->wasChanged('file_path') && $doc->file_path) {
+                self::captureVersionSafely($doc);
+            }
+        });
+    }
+
+    private static function captureVersionSafely(VendorDocument $doc): void
+    {
+        try {
+            app(\App\Services\Vendor\VendorDocumentVersionService::class)->capture($doc);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::channel('tpv')->warning('Document version capture failed', [
+                'document_id' => $doc->id, 'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
     public function vendor()
     {
         return $this->belongsTo(Vendor::class, 'vendor_id');
+    }
+
+    public function versions()
+    {
+        return $this->hasMany(VendorDocumentVersion::class, 'vendor_document_id');
     }
 
     public function reviewer()

@@ -22,10 +22,17 @@ return Application::configure(basePath: dirname(__DIR__))
         // Sanctum stateful domains
         $middleware->statefulApi();
         
+        // Idle-timeout enforcement for tracked sessions — defensive, additive.
+        $middleware->api(append: [
+            \App\Http\Middleware\EnforceIdleTimeout::class,
+        ]);
+
         // Register custom middleware aliases
         $middleware->alias([
             'role' => \App\Http\Middleware\EnsureUserHasRole::class,
             'vendor.portal' => \App\Http\Middleware\EnsureVendorPortalAccess::class,
+            'company.portal' => \App\Http\Middleware\EnsureCompanyPortalAccess::class,
+            'temp.access' => \App\Http\Middleware\EnsureTemporaryAccessNotExpired::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

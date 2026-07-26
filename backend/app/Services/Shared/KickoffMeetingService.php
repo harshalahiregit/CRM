@@ -176,6 +176,7 @@ class KickoffMeetingService
         $path = $file->storeAs("tenant-{$meeting->tenant_id}/meeting-{$meeting->id}", $name, self::DISK);
 
         $meeting->update(['mom_path' => $path]);
+        $this->syncOnboardingPointer($meeting->kickoffable, $meeting->id);
         $meeting->recordAudit('mom_uploaded', $actor, 'Minutes of meeting uploaded');
 
         return $this->find($meeting->id, $actor->tenant_id);
@@ -191,14 +192,61 @@ class KickoffMeetingService
         if ($meeting->status !== Status::COMPLETED) {
             throw new BusinessException('Complete the meeting before sending its minutes for acknowledgement.');
         }
+        if (! $meeting->mom_path) {
+            throw new BusinessException('Generate or upload the MOM PDF before sending for acknowledgement.');
+        }
         if ($meeting->acknowledged_at) {
             throw new BusinessException('This meeting has already been acknowledged.');
         }
 
         $meeting->update(['ack_token' => Str::random(48)]);
+
+        $this->sendMomNotifications($meeting);
+
         $meeting->recordAudit('mom_published', $actor, 'Minutes sent to the vendor for acknowledgement');
 
         return $this->find($meeting->id, $actor->tenant_id);
+    }
+
+    /**
+     * Send email + WhatsApp notifications to vendor when MOM is sent for acknowledgement.
+     */
+    private function sendMomNotifications(KickoffMeeting $meeting): void
+    {
+        $meeting->loadMissing(['attendees', 'kickoffable']);
+
+        $subject = $meeting->kickoffable;
+        $vendor = null;
+        $onboarding = null;
+
+        if ($subject instanceof Vendor) {
+            $vendor = $subject;
+            $onboarding = TpvOnboarding::forTenant($meeting->tenant_id)->where('vendor_id', $vendor->id)->latest()->first();
+        } elseif ($subject instanceof TpvOnboarding) {
+            $onboarding = $subject;
+            $vendor = $onboarding->vendor;
+        }
+
+        if ($onboarding && ! $onboarding->kickoff_meeting_id) {
+            $onboarding->update(['kickoff_meeting_id' => $meeting->id]);
+        }
+
+        $email = $vendor?->email;
+        $phone = $vendor?->phone;
+
+        if (! $email && $meeting->attendees->count() > 0) {
+            $email = $meeting->attendees->firstWhere('email', '!=', null)?->email;
+        }
+
+        $subjectTitle = "Minutes of Meeting Ready: {$meeting->title}";
+        $body = "The Minutes of Meeting (MOM) for \"{$meeting->title}\" have been published and are ready for your review and acknowledgement.\n\nPlease log into the Vendor Portal (Step 1 Onboarding) to view the document and record your acknowledgement.";
+
+        if ($email) {
+            $this->notifications->email($email, $subjectTitle, $body, ['kickoff_meeting_id' => $meeting->id]);
+        }
+        if ($phone) {
+            $this->notifications->whatsapp($phone, $body, ['kickoff_meeting_id' => $meeting->id]);
+        }
     }
 
     /* ── Public acknowledgement (no auth — the token is the credential) ── */
@@ -346,6 +394,7 @@ class KickoffMeetingService
         Storage::disk(self::DISK)->put($path, $pdf->output());
 
         $meeting->update(['mom_path' => $path]);
+        $this->syncOnboardingPointer($meeting->kickoffable, $meeting->id);
         $meeting->recordAudit('mom_generated', $actor, 'Minutes of meeting PDF generated');
 
         return $this->find($meeting->id, $actor->tenant_id);
@@ -421,6 +470,14 @@ class KickoffMeetingService
     {
         if ($subject instanceof \App\Models\Tpv\TpvOnboarding) {
             $subject->update(['kickoff_meeting_id' => $meetingId]);
+        } elseif ($subject instanceof \App\Models\Vendor\Vendor) {
+            $onboarding = \App\Models\Tpv\TpvOnboarding::forTenant($subject->tenant_id)
+                ->where('vendor_id', $subject->id)
+                ->latest()
+                ->first();
+            if ($onboarding) {
+                $onboarding->update(['kickoff_meeting_id' => $meetingId]);
+            }
         }
     }
 

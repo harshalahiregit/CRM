@@ -1,11 +1,12 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, CalendarDays, Clock, MapPin, Users, CheckCircle2, XCircle,
   Send, Copy, Upload, AlertTriangle, Loader2, FileText, ShieldCheck, History,
-  Sparkles, Eye, Download,
+  Sparkles, Eye, Download, Video, ExternalLink,
 } from 'lucide-react'
 import { kickoffApi } from '@/services/kickoffApi'
+import { meetingApi } from '@/services/meetingApi'
 import {
   KO_STATUS, koStatusCfg, koNextStatuses, koModeLabel, fmtDateTime, fmtDate,
 } from '../kickoffConstants'
@@ -23,8 +24,18 @@ export default function KickoffMeetingDetail() {
   const [err, setErr]     = useState(null)
   const [ackLink, setAckLink] = useState(null)
   const [action, setAction]   = useState(null)   // { to } transition modal
+  const [linkData, setLinkData]     = useState(null)    // online meeting link data
+  const [genLinkBusy, setGenLinkBusy] = useState(false) // link generation in progress
 
-  const load = () => kickoffApi.get(id).then(d => { setM(d?.data ?? d); setLoad(false) }).catch(() => { setErr('Could not load this meeting.'); setLoad(false) })
+  const load = () => kickoffApi.get(id).then(d => {
+    const mtg = d?.data ?? d
+    setM(mtg)
+    setLoad(false)
+    // Fetch stored online meeting link if applicable
+    if (mtg?.mode === 'online' && mtg?.meeting_platform) {
+      meetingApi.getLink(id).then(setLinkData).catch(() => {})
+    }
+  }).catch(() => { setErr('Could not load this meeting.'); setLoad(false) })
   useEffect(() => { load() }, [id])
 
   const publish = async () => {
@@ -110,6 +121,25 @@ export default function KickoffMeetingDetail() {
               </div>
             )}
           </div>
+
+          {/* Online meeting link (shown only when mode = 'online') */}
+          {m.mode === 'online' && (
+            <OnlineMeetingCard
+              meeting={m}
+              linkData={linkData}
+              busy={genLinkBusy}
+              onGenerate={async (platform) => {
+                setGenLinkBusy(true); setErr(null)
+                try {
+                  const res = await meetingApi.generateLink(m.id, platform)
+                  setLinkData(res.link)
+                  setM(res.meeting)
+                } catch (e) {
+                  setErr(e?.response?.data?.message || 'Could not generate meeting link.')
+                } finally { setGenLinkBusy(false) }
+              }}
+            />
+          )}
 
           {/* Attendees */}
           <div className="pr-glass" style={{ padding: 20 }}>
@@ -365,6 +395,120 @@ function TransitionModal({ m, to, onClose, onDone }) {
       </div>
       <ModalFooter onClose={onClose} onConfirm={save} loading={saving} confirmLabel={actionLabel(m.status, to)} color={tc.color === '#94a3b8' ? '#7C3AED' : tc.color} />
     </Overlay>
+  )
+}
+
+/* ── Online Meeting card ──────────────────────────────────────────────────────
+ * Shown below the Schedule card when mode = 'online'.
+ * States:
+ *   1. linkData present  → show link, Copy + Open buttons, passcode/ID
+ *   2. linkData absent   → show "Generate Meeting Link" button
+ *   3. busy              → spinner
+ */
+const PLATFORM_LABELS = {
+  google_meet: 'Google Meet',
+  zoom:        'Zoom',
+  teams:       'Microsoft Teams',
+  stub:        'Generic Link',
+}
+const PLATFORM_COLORS = {
+  google_meet: '#4285F4',
+  zoom:        '#2D8CFF',
+  teams:       '#6264A7',
+  stub:        '#a78bfa',
+}
+
+function OnlineMeetingCard({ meeting, linkData, busy, onGenerate }) {
+  const [copied, setCopied] = useState(false)
+
+  const copy = () => {
+    if (!linkData?.link) return
+    navigator.clipboard?.writeText(linkData.link)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  const platform    = linkData?.platform ?? meeting.meeting_platform ?? 'stub'
+  const color       = PLATFORM_COLORS[platform] ?? '#a78bfa'
+  const platformLbl = PLATFORM_LABELS[platform]  ?? platform
+
+  return (
+    <div className="pr-glass" style={{ padding: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+        <Video size={15} style={{ color: '#a78bfa' }} />
+        <h2 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: 'var(--text-h)' }}>Online Meeting</h2>
+        <span style={{ marginLeft: 'auto', padding: '3px 10px', borderRadius: 999, fontSize: 11, fontWeight: 800, background: `${color}18`, color, border: `1px solid ${color}44` }}>
+          {platformLbl}
+        </span>
+      </div>
+
+      {busy ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '14px', borderRadius: 12, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+          <Loader2 size={16} className="ko-spin" style={{ color: '#a78bfa' }} />
+          <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Generating meeting link…</span>
+        </div>
+      ) : linkData?.link ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {/* Link row */}
+          <div style={{ display: 'flex', gap: 7 }}>
+            <input
+              readOnly
+              value={linkData.link}
+              style={{ flex: 1, padding: '9px 11px', borderRadius: 9, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)', fontSize: 12, fontFamily: 'monospace', minWidth: 0 }}
+            />
+            <button
+              onClick={copy}
+              title="Copy link"
+              style={{ padding: '0 12px', borderRadius: 9, cursor: 'pointer', background: copied ? 'rgba(16,185,129,0.1)' : 'var(--bg-card)', border: `1px solid ${copied ? 'rgba(16,185,129,0.4)' : 'var(--border)'}`, color: copied ? '#10b981' : 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, transition: 'all .15s ease' }}
+            >
+              <Copy size={13} /> {copied ? 'Copied!' : 'Copy'}
+            </button>
+            <a
+              href={linkData.link}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ padding: '0 12px', borderRadius: 9, cursor: 'pointer', background: `${color}14`, border: `1px solid ${color}44`, color, display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, textDecoration: 'none' }}
+            >
+              <ExternalLink size={13} /> Open
+            </a>
+          </div>
+
+          {/* Meta row */}
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            {linkData.id && (
+              <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                ID: <strong style={{ color: 'var(--text-h)', fontFamily: 'monospace' }}>{linkData.id}</strong>
+              </span>
+            )}
+            {linkData.passcode && (
+              <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                Passcode: <strong style={{ color: 'var(--text-h)', fontFamily: 'monospace' }}>{linkData.passcode}</strong>
+              </span>
+            )}
+          </div>
+
+          {/* Regenerate */}
+          <button
+            onClick={() => onGenerate(platform)}
+            style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 13px', borderRadius: 9, cursor: 'pointer', fontSize: 11.5, fontWeight: 700, color: 'var(--text-muted)', background: 'var(--bg-card)', border: '1px solid var(--border)' }}
+          >
+            <Video size={12} /> Regenerate link
+          </button>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: 0, lineHeight: 1.5 }}>
+            No meeting link has been generated yet. Click below to create one.
+          </p>
+          <button
+            onClick={() => onGenerate(platform)}
+            style={{ ...solidBtn, alignSelf: 'flex-start' }}
+          >
+            <Video size={15} /> Generate Meeting Link
+          </button>
+        </div>
+      )}
+    </div>
   )
 }
 

@@ -195,7 +195,7 @@ function IssueModal({ onClose, onDone }) {
   const activeCount = templates.length
 
   return (
-    <Overlay onClose={onClose} width={520}>
+    <Overlay onClose={onClose} width={720}>
       <h3 style={{ margin: '0 0 4px', fontSize: 17, fontWeight: 900, color: 'var(--text-h)' }}>Issue a checklist</h3>
       <p style={{ margin: '0 0 16px', fontSize: 12.5, color: 'var(--text-muted)' }}>The assignee gets a link they can open on a phone without logging in.</p>
 
@@ -253,7 +253,7 @@ function FillLinkPanel({ issued, onClose }) {
   }
 
   return (
-    <Overlay onClose={onClose} width={520}>
+    <Overlay onClose={onClose} width={720}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
         <span style={{ width: 34, height: 34, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(16,185,129,0.15)' }}>
           <Check size={17} style={{ color: '#10b981' }} />

@@ -25,8 +25,16 @@
     </div>
     
     <p>We believe you will be a valuable addition to our team and look forward to having you on board.</p>
-    
-    <p>Please review the offer details and confirm your acceptance at your earliest convenience.</p>
+
+    @if(!empty($portalLink))
+        <p>Please review your offer letter and respond (accept / decline / request clarification) securely here:</p>
+        <p style="text-align:center;margin:24px 0;">
+            <a href="{{ $portalLink }}" class="button" style="background:#7C3AED;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:700;">View &amp; Respond to Offer</a>
+        </p>
+        <p style="font-size:13px;color:#64748b;">Or copy this link: {{ $portalLink }}</p>
+    @else
+        <p>Please review the offer details and confirm your acceptance at your earliest convenience.</p>
+    @endif
     
     <p>Should you have any questions, please don't hesitate to contact us.</p>
     

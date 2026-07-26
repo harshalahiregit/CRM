@@ -175,7 +175,7 @@ function NewRfqModal({ onClose, onDone }) {
   }
 
   return (
-    <Overlay onClose={onClose} width={760}>
+    <Overlay onClose={onClose} width={1120}>
       <div style={{ padding: '20px 22px 8px' }}>
         <h2 style={{ margin: 0, fontSize: 17, fontWeight: 900, color: 'var(--text-h)' }}>New Request for Quotation</h2>
         <p style={{ margin: '3px 0 0', fontSize: 12.5, color: 'var(--text-muted)' }}>Define what you need and which vendors to ask.</p>

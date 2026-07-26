@@ -1,20 +1,27 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import {
   Plus, RefreshCw, Search, Rocket, Eye, Trash2, ShieldCheck, Clock, CheckCircle, XCircle,
 } from 'lucide-react'
 import { tpvApi } from '@/services/tpvApi'
+import { portalApi } from '@/services/portalApi'
 import { useAuth } from '@/context/AuthContext'
 import { OB_STATUS, OB_STATUS_CONFIG, obStatusCfg, vendorStatusCfg, canManageTpv, fmtDate } from '../constants'
 import {
   KIT3D_STYLE, labelStyle, inputStyle, Overlay, ModalFooter, InfoBox,
   Field, SelectInput, ActBtn, StatusBadge as StatusPill,
 } from '@/components/ui/kit3d'
+import '@/pages/vendor-portal/portal.css'
 
 export default function TpvOnboardings() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { user } = useAuth()
   const manage = canManageTpv(user)
+  // When in vendor portal or logged in as vendor, use the self-service portal API and portal routes.
+  const isPortal = location.pathname.startsWith('/vendor-portal') || user?.role === 'third_party_vendor' || user?.role === 'vendor'
+  const api = isPortal ? portalApi : tpvApi
+  const wizardPath = (id) => isPortal ? `/vendor-portal/onboarding/${id}` : `/app/tpv/onboarding/${id}`
 
   const [rows, setRows]       = useState([])
   const [stats, setStats]     = useState({})
@@ -26,12 +33,20 @@ export default function TpvOnboardings() {
   const fetchAll = useCallback(async () => {
     setLoading(true)
     try {
-      const [listRes, statRes] = await Promise.all([tpvApi.onboarding.list(), tpvApi.onboarding.stats()])
-      setRows(Array.isArray(listRes?.data ?? listRes) ? (listRes.data ?? listRes) : [])
+      const [listRes, statRes] = await Promise.all([api.onboarding.list(), api.onboarding.stats()])
+      const listData = Array.isArray(listRes?.data ?? listRes)
+        ? (listRes.data ?? listRes)
+        : (listRes?.onboarding ? [listRes.onboarding] : [])
+      setRows(listData)
       setStats(statRes?.data ?? statRes ?? {})
+
+      if (isPortal && listData.length > 0) {
+        navigate(`/vendor-portal/onboarding/${listData[0].id}`, { replace: true })
+        return
+      }
     } catch (e) { console.error('Failed to load onboardings', e) }
     finally { setLoading(false) }
-  }, [])
+  }, [isPortal, navigate, api])
   useEffect(() => { fetchAll() }, [fetchAll])
 
   const filtered = rows.filter(r => {
@@ -42,7 +57,7 @@ export default function TpvOnboardings() {
 
   const remove = async (r) => {
     if (!confirm(`Delete the onboarding for ${r.vendor?.company_name}?`)) return
-    try { await tpvApi.onboarding.delete(r.id); fetchAll() }
+    try { await api.onboarding.delete(r.id); fetchAll() }
     catch (e) { alert(e?.response?.data?.message || 'Delete failed') }
   }
 
@@ -111,7 +126,7 @@ export default function TpvOnboardings() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {filtered.map(r => (
             <div key={r.id} className="pr-glass pr-lift pr-pop" style={{ padding: 20, cursor: 'pointer' }}
-              onClick={() => navigate(`/app/tpv/onboarding/${r.id}`)}>
+              onClick={() => navigate(wizardPath(r.id))}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
@@ -133,7 +148,7 @@ export default function TpvOnboardings() {
                   </div>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-                  <ActBtn onClick={() => navigate(`/app/tpv/onboarding/${r.id}`)} icon={Eye} color="var(--text-muted)" bg="var(--bg-card)" border>Open Wizard</ActBtn>
+                  <ActBtn onClick={() => navigate(wizardPath(r.id))} icon={Eye} color="var(--text-muted)" bg="var(--bg-card)" border>Open Wizard</ActBtn>
                   {manage && r.status === OB_STATUS.IN_PROGRESS && (
                     <ActBtn onClick={() => remove(r)} icon={Trash2} color="#f87171" bg="var(--bg-card)" border>Delete</ActBtn>
                   )}
@@ -144,7 +159,7 @@ export default function TpvOnboardings() {
         </div>
       )}
 
-      {creating && <CreateModal onClose={() => setCreating(false)} onCreated={(id) => { setCreating(false); navigate(`/app/tpv/onboarding/${id}`) }} />}
+      {creating && <CreateModal onClose={() => setCreating(false)} onCreated={(id) => { setCreating(false); navigate(wizardPath(id)) }} />}
     </div>
   )
 }
@@ -173,7 +188,7 @@ function CreateModal({ onClose, onCreated }) {
   }
 
   return (
-    <Overlay onClose={() => !saving && onClose()} width={520}>
+    <Overlay onClose={() => !saving && onClose()} width={720}>
       <h2 style={{ color: 'var(--text-h)', margin: '0 0 4px', fontSize: 18, fontWeight: 800 }}>Start Vendor Onboarding</h2>
       <p style={{ color: 'var(--text-muted)', fontSize: 12, margin: '0 0 16px' }}>Pick the vendor to take through the six-step HSSE onboarding.</p>
       <InfoBox>The required document set depends on the vendor type — <strong>standard</strong> vendors need the full statutory set, <strong>temporary</strong> vendors a reduced one.</InfoBox>

@@ -27,8 +27,7 @@ export default function KickoffMeetings() {
   const [banner, setBanner] = useState(null)
   const [pdfBusy, setPdfBusy] = useState(null)
 
-  // Row-action modal targets
-  const [showNew, setShowNew]         = useState(false)
+  // Row-action modal targets — showNew removed: create navigates to full page
   const [editFor, setEditFor]         = useState(null)
   const [attendanceFor, setAttFor]    = useState(null)
   const [reminderFor, setRemindFor]   = useState(null)
@@ -79,7 +78,7 @@ export default function KickoffMeetings() {
         </div>
         <div style={{ display: 'flex', gap: 9 }}>
           <button onClick={load} style={ghostBtn}><RefreshCw size={14} /> Refresh</button>
-          <button onClick={() => setShowNew(true)} style={solidBtn}><Plus size={15} /> Schedule meeting</button>
+          <button onClick={() => navigate('/app/tpv/kickoff/new')} style={solidBtn}><Plus size={15} /> Schedule meeting</button>
         </div>
       </div>
 
@@ -124,7 +123,7 @@ export default function KickoffMeetings() {
           {[1, 2, 3].map(i => <div key={i} className="skeleton" style={{ height: 64, borderRadius: 12, background: 'var(--border)' }} />)}
         </div>
       ) : data.length === 0 ? (
-        <EmptyState onNew={() => setShowNew(true)} filter={filter} />
+        <EmptyState filter={filter} />
       ) : (
         <div className="pr-glass" style={{ padding: 0, borderRadius: 16, overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
@@ -181,7 +180,6 @@ export default function KickoffMeetings() {
         </div>
       )}
 
-      {showNew && <MeetingModal onClose={() => setShowNew(false)} onDone={(m) => { setShowNew(false); if (m?.id) navigate(`/app/tpv/kickoff/${m.id}`) }} />}
       {editFor && <MeetingModal meeting={editFor} onClose={() => setEditFor(null)} onDone={() => { setEditFor(null); load() }} />}
       {attendanceFor && <AttendanceModal id={attendanceFor} onClose={() => setAttFor(null)} onDone={() => { setAttFor(null); load() }} />}
       {reminderFor && <ReminderModal m={reminderFor} onClose={() => setRemindFor(null)} />}
@@ -243,7 +241,7 @@ function EmptyState({ onNew, filter }) {
       <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '6px 0 18px' }}>
         Schedule a pre-onboarding meeting with a vendor to get started.
       </p>
-      {filter === 'All' && <button onClick={onNew} style={{ ...solidBtn, margin: '0 auto' }}><Plus size={15} /> Schedule meeting</button>}
+      {filter === 'All' && <button onClick={() => navigate('/app/tpv/kickoff/new')} style={{ ...solidBtn, margin: '0 auto' }}><Plus size={15} /> Schedule meeting</button>}
     </div>
   )
 }

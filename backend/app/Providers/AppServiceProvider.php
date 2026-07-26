@@ -28,6 +28,20 @@ class AppServiceProvider extends ServiceProvider
         // targets after an admin edits them. `scoped` is dropped at the request
         // boundary, which is exactly the lifetime the cache should have.
         $this->app->scoped(\App\Services\Helpdesk\SlaService::class);
+
+        // Vendor-neutral AI provider — resolved from config('ai.provider').
+        $this->app->bind(
+            \App\Contracts\AI\AIProviderInterface::class,
+            fn () => \App\Services\AI\AIProviderFactory::make()
+        );
+
+        // Payroll attendance boundary — placeholder until SangoeTrack integration.
+        // Swap this binding for a SangoeTrackAttendanceProvider to go live; payroll
+        // logic depends only on the AttendanceProvider interface.
+        $this->app->bind(
+            \App\Contracts\Hr\AttendanceProvider::class,
+            \App\Services\Hr\Attendance\PlaceholderAttendanceProvider::class
+        );
     }
 
     /**

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\Shared\KickoffMeetingController;
+use App\Http\Controllers\Api\Shared\KickoffMeetingLinkController;
 use App\Http\Controllers\Api\Shared\PublicKickoffController;
 use Illuminate\Support\Facades\Route;
 
@@ -34,4 +35,8 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('kickoff')->grou
     Route::get('/meetings/{kickoffMeeting}/mom',         [KickoffMeetingController::class, 'momFile']);
     Route::post('/meetings/{kickoffMeeting}/publish',    [KickoffMeetingController::class, 'publish']);
     Route::delete('/meetings/{kickoffMeeting}', [KickoffMeetingController::class, 'destroy']);
+
+    // ── Online meeting link generation ────────────────────────────────────────
+    Route::post('/meetings/{kickoffMeeting}/generate-link', [KickoffMeetingLinkController::class, 'generate']);
+    Route::get('/meetings/{kickoffMeeting}/link',           [KickoffMeetingLinkController::class, 'show']);
 });

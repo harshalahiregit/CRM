@@ -152,7 +152,7 @@ function NewContractModal({ onClose, onDone }) {
   }
 
   return (
-    <Overlay onClose={onClose} width={720}>
+    <Overlay onClose={onClose} width={1000}>
       <div style={{ padding: '20px 22px 8px' }}>
         <h2 style={{ margin: 0, fontSize: 17, fontWeight: 900, color: 'var(--text-h)' }}>New Contract</h2>
         <p style={{ margin: '3px 0 0', fontSize: 12.5, color: 'var(--text-muted)' }}>Lock in terms and — for a rate contract — pre-negotiated prices.</p>

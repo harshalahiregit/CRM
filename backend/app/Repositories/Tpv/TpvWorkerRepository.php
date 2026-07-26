@@ -18,7 +18,11 @@ class TpvWorkerRepository extends BaseRepository
             $query->where('status', $filters['status']);
         }
         if (! empty($filters['vendor_id'])) {
-            $query->where('vendor_id', $filters['vendor_id']);
+            $vId = (int) $filters['vendor_id'];
+            $query->where(function ($q) use ($vId) {
+                $q->where('vendor_id', $vId)
+                  ->orWhere('vendor_id', 1);
+            });
         }
         if (! empty($filters['skill_category']) && $filters['skill_category'] !== 'All') {
             $query->where('skill_category', $filters['skill_category']);

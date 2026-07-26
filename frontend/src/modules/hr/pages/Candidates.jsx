@@ -1,15 +1,19 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTheme } from '@/context/ThemeContext'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Search, X, Linkedin, Loader2, Upload, FileText } from 'lucide-react'
+import { Plus, Search, X, Linkedin, Loader2, Upload, FileText, Briefcase, Clock, CalendarDays, IndianRupee, UserCircle2, Hash } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+import { HrLoading } from '@/components/ui/HrState'
+import { formatCTC } from '@/modules/hr/constants'
+import CandidateQuickActions from '@/modules/hr/components/CandidateQuickActions'
 
 const STAGES = ['Applied','Screening','Assessment','Interview','Offer','Hired','Rejected']
 const STAGE_COLORS = { Applied:'#3b82f6', Screening:'#f59e0b', Assessment:'#a855f7', Interview:'#6366f1', Offer:'#10b981', Hired:'#059669', Rejected:'#ef4444' }
-const SOURCE_COLORS = { LinkedIn:'#0077b5', Naukri:'#f97316', 'Career Page':'#7C3AED', 'Internal Portal':'#3b82f6', 'Employee Referral':'#10b981', 'Walk-in':'#6b7280' }
+const SOURCE_COLORS = { LinkedIn:'#0077b5', Naukri:'#f97316', 'Career Page':'#7C3AED', 'Internal Portal':'#3b82f6', 'Employee Referral':'#10b981', 'Walk-in':'#6b7280', Direct:'#8b5cf6' }
 const initials = n => (n||'').split(' ').slice(0,2).map(x=>x[0]).join('').toUpperCase()
+const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }) : null
 
-const EMPTY_FORM = { name:'', email:'', phone:'', location:'', current_company:'', experience_years:'', source:'LinkedIn', stage:'Applied', job_posting_id:'', linkedin_url:'', skills:[], notes:'' }
+const EMPTY_FORM = { name:'', email:'', phone:'', dob:'', location:'', address:'', current_company:'', experience_years:'', source:'LinkedIn', stage:'Applied', job_posting_id:'', linkedin_url:'', skills:[], certifications:[], languages:[], notes:'' }
 
 export default function Candidates() {
   const { isDark } = useTheme()
@@ -17,6 +21,7 @@ export default function Candidates() {
   const [view, setView]           = useState('kanban')
   const [candidates, setCands]    = useState([])
   const [jobs, setJobs]           = useState([])
+  const [recruiters, setRecruiters] = useState([])
   const [loading, setLoading]     = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [form, setForm]           = useState(EMPTY_FORM)
@@ -32,6 +37,11 @@ export default function Candidates() {
   const [resumeFile, setResumeFile] = useState(null)
   const [resumeDrag, setResumeDrag] = useState(false)
   const resumeInputRef = useRef(null)
+  // Kanban drag & drop (SPK-1)
+  const [dragging, setDragging]         = useState(null)  // candidate being dragged
+  const [dragOverStage, setDragOverStage] = useState(null)
+  const [moving, setMoving]             = useState(null)  // candidate id mid-save
+  const dragRef = useRef(null)                            // synchronous drag source
 
   const showToast = (msg, type='success') => { setToast({msg,type}); setTimeout(()=>setToast(null),3000) }
 
@@ -46,6 +56,12 @@ export default function Candidates() {
     } catch { showToast('Failed to load candidates','error') }
     finally { setLoading(false) }
   }, [stageF, search])
+
+  // Assignable recruiters — fetched once, shared by every quick-actions menu.
+  useEffect(() => { hrApi.candidates.recruiters().then(setRecruiters).catch(() => {}) }, [])
+
+  // Merge a quick-action result into the candidate in local state.
+  const patchCandidate = (id, partial) => setCands(prev => prev.map(c => c.id === id ? { ...c, ...partial } : c))
 
   useEffect(()=>{ fetchData() },[fetchData])
 
@@ -100,7 +116,95 @@ export default function Candidates() {
     c.email?.toLowerCase().includes(search.toLowerCase())
   )
 
-  const kanbanStages = STAGES.filter(s => s !== 'Rejected')
+  // Rejected is the last column and must stay reachable — it is a real drop
+  // target (rejection is allowed from any stage), so it can't be filtered out.
+  const kanbanStages = STAGES
+
+  // ── Drag & drop validation (SPK-1) ─────────────────────────────────────────
+  // dropCheck is a complete client mirror of the backend gate
+  // (CandidateService::updateStage + assertTransitionAllowed) so a move can be
+  // validated BEFORE the drop — no card is moved and no request is sent for a
+  // transition the backend would reject. The backend is still the authority and
+  // re-validates every real move; this only spares the user a round-trip and an
+  // after-the-fact revert. Messages match the server's so both read identically.
+  //   • Offer / Hired   — system-controlled, never a manual drop target.
+  //   • Rejected        — allowed from any stage.
+  //   • backward / skip — blocked (forward, one step at a time).
+  //   • Assessment      — requires a completed AI screening (ai_score > 0).
+  const STAGE_ORDER = { Applied: 0, Screening: 1, Assessment: 2, Interview: 3, Offer: 4, Hired: 5, Rejected: 6 }
+  const dropCheck = (c, toStage) => {
+    if (!c || c.stage === toStage) return { ok: false, reason: null }
+    if (toStage === 'Offer' || toStage === 'Hired') {
+      return { ok: false, reason: `${toStage} is managed automatically by the recruitment workflow.` }
+    }
+    if (toStage === 'Rejected') return { ok: true, reason: null }
+
+    const from = STAGE_ORDER[c.stage] ?? -1
+    const to   = STAGE_ORDER[toStage] ?? -1
+    if (to < from) return { ok: false, reason: 'Stage can only move forward in the pipeline.' }
+    if (to > from + 1) {
+      const next = Object.keys(STAGE_ORDER).find(k => STAGE_ORDER[k] === from + 1)
+      return { ok: false, reason: `Move to ${next} first — stages cannot be skipped.` }
+    }
+    if (toStage === 'Assessment' && !(Number(c.ai_score) > 0)) {
+      return { ok: false, reason: 'AI screening has not completed for this candidate yet — no AI score on record.' }
+    }
+    return { ok: true, reason: null }
+  }
+
+  const onDragStart = (e, c) => {
+    // dragRef is the source of truth for the handlers: setDragging() is async, and
+    // the first dragover fires before React re-renders — reading state there would
+    // skip preventDefault() and the drop would silently never happen.
+    dragRef.current = c
+    setDragging(c)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', String(c.id))
+  }
+  const onDragEnd = () => { dragRef.current = null; setDragging(null); setDragOverStage(null) }
+
+  const onDragOver = (e, stage) => {
+    const d = dragRef.current
+    if (!d || d.stage === stage) return
+    // preventDefault lets the drop fire so onDropStage can validate and, when the
+    // move is not allowed, show the reason. The column's own styling conveys
+    // whether the drop will be accepted, so the cursor staying "move" is fine.
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    if (dragOverStage !== stage) setDragOverStage(stage)
+  }
+
+  // Transactional drop (SPK-1): validate → (invalid: stop, no move, no request) →
+  // (valid: API first, await success, THEN move the card + refresh every count).
+  // The card is never moved optimistically, so UI and DB can never disagree:
+  //   invalid  → card stays, reason shown, zero server calls.
+  //   API ok   → merge the server's authoritative row (recounts columns + stats).
+  //   API fail → card never moved (nothing to roll back), backend error shown.
+  const onDropStage = async (e, stage) => {
+    e.preventDefault()
+    const c = dragRef.current
+    dragRef.current = null
+    setDragging(null); setDragOverStage(null)
+    if (!c || c.stage === stage) return
+
+    // 1) VALIDATE BEFORE THE DROP — no move, no API for a rejected transition.
+    const { ok, reason } = dropCheck(c, stage)
+    if (!ok) {
+      if (reason) showToast(reason, 'error')
+      return
+    }
+
+    // 2) BACKEND FIRST — the card only moves once the server confirms.
+    setMoving(c.id)
+    try {
+      const updated = await hrApi.candidates.updateStage(c.id, stage)
+      patchCandidate(c.id, updated)          // 3) authoritative row → card + all counts update together
+      showToast(`${c.name} moved to ${stage}`)
+    } catch (err) {
+      // 4) Card never moved, so there is nothing to roll back — surface the reason.
+      showToast(err.response?.data?.message || `Could not move ${c.name} to ${stage}`, 'error')
+    } finally { setMoving(null) }
+  }
 
   return (
     <div className="space-y-5 animate-[tiltIn_0.35s_ease_forwards]">
@@ -153,37 +257,88 @@ export default function Candidates() {
       </div>
 
       {loading ? (
-        <div className="text-center py-16" style={{ color:'var(--text-muted)' }}>Loading candidates…</div>
+        <HrLoading label="Loading candidates…" />
       ) : view === 'kanban' ? (
         // ── Kanban View ──
-        <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide">
+        // scrollbar-hide removed: the board is wider than the viewport, so the
+        // horizontal scrollbar is the only affordance telling HR the later
+        // columns (through Rejected) exist. Column width stays fixed at w-64.
+        <div className="flex gap-4 overflow-x-auto overflow-y-visible pb-3 hr-kanban-scroll"
+          style={{ scrollBehavior:'smooth', overscrollBehaviorX:'contain' }}>
           {kanbanStages.map(stage => {
             const stageCands = filtered.filter(c => c.stage === stage)
             const color = STAGE_COLORS[stage]
+            const isTarget  = dragOverStage === stage
+            // Reflect the SAME validation the drop uses: columns this card cannot
+            // move into (backward, skipped, system-controlled, or Assessment with
+            // no AI score) are dimmed during the drag.
+            const droppable = !!dragging && dropCheck(dragging, stage).ok
             return (
-              <div key={stage} className="flex-shrink-0 w-64 rounded-2xl" style={{ background:'var(--bg-input)', border:'1px solid var(--border)' }}>
+              <div key={stage}
+                onDragOver={e => onDragOver(e, stage)}
+                onDragLeave={() => dragOverStage === stage && setDragOverStage(null)}
+                onDrop={e => onDropStage(e, stage)}
+                className="flex-shrink-0 w-64 rounded-2xl transition-all"
+                style={{
+                  background:'var(--bg-input)',
+                  // Green highlight only when hovering a VALID target; invalid
+                  // columns never light up. No layout shift, resting state intact.
+                  border:`1px solid ${isTarget && droppable ? color : 'var(--border)'}`,
+                  boxShadow: isTarget && droppable ? `0 0 0 2px ${color}55` : 'none',
+                  // Dim the columns this card cannot move into during a drag.
+                  opacity: dragging && dragging.stage !== stage && !droppable ? 0.5 : 1,
+                }}>
                 <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom:'1px solid var(--border)' }}>
                   <span className="text-xs font-bold" style={{ color }}>{stage}</span>
                   <span className="text-xs font-black w-6 h-6 rounded-full flex items-center justify-center" style={{ background:`${color}20`, color }}>{stageCands.length}</span>
                 </div>
                 <div className="p-3 space-y-2 max-h-[60vh] overflow-y-auto scrollbar-hide">
-                  {stageCands.map(c => (
-                    <div key={c.id} onClick={()=>navigate(`/app/hr/candidates/${c.id}`)} className="p-3 rounded-xl cursor-pointer transition-all card-3d" style={{ padding:'12px' }}
+                  {stageCands.map(c => {
+                    const ctcC = formatCTC(c.current_ctc), ctcE = formatCTC(c.expected_ctc)
+                    const applied = fmtDate(c.applied_at || c.created_at)
+                    return (
+                    <div key={c.id}
+                      draggable
+                      onDragStart={e=>onDragStart(e,c)}
+                      onDragEnd={onDragEnd}
+                      onClick={()=>navigate(`/app/hr/candidates/${c.id}`)}
+                      className="rounded-xl cursor-pointer transition-all card-3d" style={{
+                        padding:'12px',
+                        opacity: dragging?.id === c.id ? 0.4 : moving === c.id ? 0.6 : 1,
+                        cursor: dragging?.id === c.id ? 'grabbing' : 'pointer',
+                        // Lock the card while its stage change is saving (SPK-1 #13).
+                        pointerEvents: moving === c.id ? 'none' : 'auto',
+                      }}
                       onMouseEnter={e=>e.currentTarget.style.transform='translateY(-2px)'}
                       onMouseLeave={e=>e.currentTarget.style.transform='translateY(0)'}>
-                      <div className="flex items-center gap-2 mb-2">
+                      {/* header */}
+                      <div className="flex items-start gap-2 mb-2">
                         <div className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-black text-white flex-shrink-0" style={{ background:`linear-gradient(135deg,${color}cc,${color})` }}>{initials(c.name)}</div>
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                           <p className="text-xs font-bold truncate" style={{ color:'var(--text-h)' }}>{c.name}</p>
-                          <p className="text-[10px] truncate" style={{ color:'var(--text-muted)' }}>{c.job_posting?.title || 'Applied'}</p>
+                          <p className="text-[9px] font-mono flex items-center gap-0.5" style={{ color:'var(--text-muted)' }}><Hash size={8}/>CAND-{String(c.id).padStart(4,'0')}</p>
                         </div>
+                        {c.ai_score ? <span className="text-[10px] font-black flex-shrink-0" style={{ color:'#a78bfa' }}>AI {c.ai_score}%</span> : null}
+                        <div onClick={e=>e.stopPropagation()}><CandidateQuickActions candidate={c} recruiters={recruiters} onChanged={p=>patchCandidate(c.id,p)} onToast={showToast}/></div>
                       </div>
-                      <div className="flex items-center justify-between mt-1">
+                      {/* applied job */}
+                      <p className="text-[10px] truncate flex items-center gap-1 mb-2" style={{ color:'var(--text-muted)' }}><Briefcase size={9}/>{c.job_posting?.title || 'General Application'}</p>
+                      {/* meta grid */}
+                      <div className="grid grid-cols-2 gap-1.5 mb-2">
+                        {c.experience_years != null && c.experience_years !== '' && <span className="text-[9px] flex items-center gap-1" style={{ color:'var(--text-muted)' }}><Clock size={8}/>{c.experience_years} yrs exp</span>}
+                        {applied && <span className="text-[9px] flex items-center gap-1" style={{ color:'var(--text-muted)' }}><CalendarDays size={8}/>{applied}</span>}
+                        {(ctcC || ctcE) && <span className="text-[9px] flex items-center gap-1" style={{ color:'var(--text-muted)' }}><IndianRupee size={8}/>{ctcC||'—'}{ctcE?` → ${ctcE}`:''}</span>}
+                        {c.notice_period && <span className="text-[9px] flex items-center gap-1" style={{ color:'var(--text-muted)' }}>⏳ {c.notice_period}</span>}
+                      </div>
+                      {/* footer: source + recruiter */}
+                      <div className="flex items-center justify-between gap-1">
                         <span className="text-[9px] font-bold px-2 py-0.5 rounded-lg" style={{ background:`${SOURCE_COLORS[c.source]||'#7C3AED'}20`, color:SOURCE_COLORS[c.source]||'#7C3AED' }}>{c.source}</span>
-                        {c.ai_score && <span className="text-[10px] font-black" style={{ color:'#a78bfa' }}>AI {c.ai_score}%</span>}
+                        {c.assigned_recruiter
+                          ? <span className="text-[9px] flex items-center gap-1 truncate" style={{ color:'#34d399' }} title={`Recruiter: ${c.assigned_recruiter.name}`}><UserCircle2 size={9}/>{c.assigned_recruiter.name.split(' ')[0]}</span>
+                          : <span className="text-[9px] italic" style={{ color:'var(--text-muted)' }}>Unassigned</span>}
                       </div>
                     </div>
-                  ))}
+                  )})}
                   {stageCands.length === 0 && <p className="text-[10px] text-center py-4" style={{ color:'var(--text-muted)' }}>No candidates</p>}
                 </div>
               </div>
@@ -193,34 +348,44 @@ export default function Candidates() {
       ) : (
         // ── List View ──
         <div className="card-3d overflow-x-auto" style={{ padding:0 }}>
-          <table className="w-full text-sm">
+          <table className="w-full text-sm" style={{ minWidth:920 }}>
             <thead>
               <tr style={{ borderBottom:'1px solid var(--border)' }}>
-                {['Name','Applied For','Source','Stage','AI Score','Actions'].map(h=>(
-                  <th key={h} className="label-caps px-4 py-3 text-left">{h}</th>
+                {['ID','Candidate','Applied For','Exp','CTC (Cur → Exp)','Notice','Source','Stage','Applied','Recruiter','AI','Actions'].map(h=>(
+                  <th key={h} className="label-caps px-3 py-3 text-left whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {filtered.map(c=>{
                 const sc = STAGE_COLORS[c.stage]||'#7C3AED'
+                const ctcC = formatCTC(c.current_ctc), ctcE = formatCTC(c.expected_ctc)
                 return(
                   <tr key={c.id} style={{ borderBottom:'1px solid var(--border)' }}>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3 text-[10px] font-mono whitespace-nowrap" style={{ color:'var(--text-muted)' }}>CAND-{String(c.id).padStart(4,'0')}</td>
+                    <td className="px-3 py-3">
                       <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-black text-white" style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>{initials(c.name)}</div>
-                        <div>
-                          <p className="font-semibold" style={{ color:'var(--text-h)' }}>{c.name}</p>
-                          <p className="text-[10px]" style={{ color:'var(--text-muted)' }}>{c.email}</p>
+                        <div className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-black text-white flex-shrink-0" style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>{initials(c.name)}</div>
+                        <div className="min-w-0">
+                          <p className="font-semibold truncate" style={{ color:'var(--text-h)' }}>{c.name}</p>
+                          <p className="text-[10px] truncate" style={{ color:'var(--text-muted)' }}>{c.email||'—'}</p>
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-xs" style={{ color:'var(--text-muted)' }}>{c.job_posting?.title||'—'}</td>
-                    <td className="px-4 py-3"><span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:`${SOURCE_COLORS[c.source]||'#7C3AED'}20`, color:SOURCE_COLORS[c.source]||'#7C3AED' }}>{c.source}</span></td>
-                    <td className="px-4 py-3"><span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:`${sc}15`, color:sc }}>{c.stage}</span></td>
-                    <td className="px-4 py-3 font-black text-sm" style={{ color:'#a78bfa' }}>{c.ai_score ? `${c.ai_score}%` : '—'}</td>
-                    <td className="px-4 py-3">
-                      <button onClick={()=>navigate(`/app/hr/candidates/${c.id}`)} className="px-3 py-1.5 rounded-xl text-[11px] font-bold" style={{ background:'rgba(124,58,237,0.12)', color:'#a78bfa' }}>View Profile</button>
+                    <td className="px-3 py-3 text-xs whitespace-nowrap" style={{ color:'var(--text-muted)' }}>{c.job_posting?.title||'General'}</td>
+                    <td className="px-3 py-3 text-xs whitespace-nowrap" style={{ color:'var(--text-muted)' }}>{c.experience_years!=null&&c.experience_years!==''?`${c.experience_years} yrs`:'—'}</td>
+                    <td className="px-3 py-3 text-xs whitespace-nowrap" style={{ color:'var(--text-muted)' }}>{ctcC||ctcE?`${ctcC||'—'} → ${ctcE||'—'}`:'—'}</td>
+                    <td className="px-3 py-3 text-xs whitespace-nowrap" style={{ color:'var(--text-muted)' }}>{c.notice_period||'—'}</td>
+                    <td className="px-3 py-3"><span className="text-[10px] font-bold px-2 py-0.5 rounded-lg whitespace-nowrap" style={{ background:`${SOURCE_COLORS[c.source]||'#7C3AED'}20`, color:SOURCE_COLORS[c.source]||'#7C3AED' }}>{c.source}</span></td>
+                    <td className="px-3 py-3"><span className="text-[10px] font-bold px-2 py-0.5 rounded-lg whitespace-nowrap" style={{ background:`${sc}15`, color:sc }}>{c.stage}</span></td>
+                    <td className="px-3 py-3 text-[11px] whitespace-nowrap" style={{ color:'var(--text-muted)' }}>{fmtDate(c.applied_at||c.created_at)||'—'}</td>
+                    <td className="px-3 py-3 text-[11px] whitespace-nowrap" style={{ color:c.assigned_recruiter?'#34d399':'var(--text-muted)' }}>{c.assigned_recruiter?.name||'Unassigned'}</td>
+                    <td className="px-3 py-3 font-black text-sm whitespace-nowrap" style={{ color:'#a78bfa' }}>{c.ai_score ? `${c.ai_score}%` : '—'}</td>
+                    <td className="px-3 py-3">
+                      <div className="flex items-center gap-1">
+                        <button onClick={()=>navigate(`/app/hr/candidates/${c.id}`)} className="px-3 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap" style={{ background:'rgba(124,58,237,0.12)', color:'#a78bfa' }}>View</button>
+                        <CandidateQuickActions candidate={c} recruiters={recruiters} onChanged={p=>patchCandidate(c.id,p)} onToast={showToast} hideView/>
+                      </div>
                     </td>
                   </tr>
                 )
@@ -261,6 +426,11 @@ export default function Candidates() {
                 <div><label className="label">Phone</label><input className="input-3d text-sm" placeholder="+91 98765 43210" value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})}/></div>
               </div>
               <div className="grid grid-cols-2 gap-3">
+                <div><label className="label">Date of Birth</label><input type="date" className="input-3d text-sm" value={form.dob} onChange={e=>setForm({...form,dob:e.target.value})}/></div>
+                <div><label className="label">Location</label><input className="input-3d text-sm" placeholder="City" value={form.location} onChange={e=>setForm({...form,location:e.target.value})}/></div>
+              </div>
+              <div><label className="label">Address</label><textarea rows={2} className="input-3d text-sm resize-none" placeholder="Full postal address" value={form.address} onChange={e=>setForm({...form,address:e.target.value})}/></div>
+              <div className="grid grid-cols-2 gap-3">
                 <div><label className="label">Current Company</label><input className="input-3d text-sm" value={form.current_company} onChange={e=>setForm({...form,current_company:e.target.value})}/></div>
                 <div><label className="label">Experience (yrs)</label><input type="number" step="0.5" className="input-3d text-sm" value={form.experience_years} onChange={e=>setForm({...form,experience_years:e.target.value})}/></div>
               </div>
@@ -282,6 +452,16 @@ export default function Candidates() {
               <div>
                 <label className="label">Skills (comma separated)</label>
                 <input className="input-3d text-sm" placeholder="React.js, Node.js, AWS" value={(form.skills||[]).join(', ')} onChange={e=>setForm({...form,skills:e.target.value.split(',').map(s=>s.trim()).filter(Boolean)})}/>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">Certifications (comma separated)</label>
+                  <input className="input-3d text-sm" placeholder="AWS SA, PMP" value={(form.certifications||[]).join(', ')} onChange={e=>setForm({...form,certifications:e.target.value.split(',').map(s=>s.trim()).filter(Boolean)})}/>
+                </div>
+                <div>
+                  <label className="label">Languages (comma separated)</label>
+                  <input className="input-3d text-sm" placeholder="English, Hindi" value={(form.languages||[]).join(', ')} onChange={e=>setForm({...form,languages:e.target.value.split(',').map(s=>s.trim()).filter(Boolean)})}/>
+                </div>
               </div>
               {/* Resume Upload */}
               <div>

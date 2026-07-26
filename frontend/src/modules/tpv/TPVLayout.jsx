@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, CalendarDays, Rocket, FileText,
-  UserCheck, CheckSquare, ScanLine, ShieldAlert
+  UserCheck, CheckSquare, ScanLine, ShieldAlert, Clock, ShieldCheck
 } from 'lucide-react'
 import ModuleShell from '@/components/layout/ModuleShell'
 
@@ -13,6 +13,8 @@ const TPV_NAV = [
   { label: 'Dashboard',   path: '/app/tpv/dashboard',  icon: LayoutDashboard },
   { label: 'Kickoff',     path: '/app/tpv/kickoff',    icon: CalendarDays    },
   { label: 'Onboarding',  path: '/app/tpv/onboarding', icon: Rocket          },
+  { label: 'Temporary',   path: '/app/tpv/temporary',  icon: Clock           },
+  { label: 'Approvals',   path: '/app/tpv/approvals',  icon: ShieldCheck     },
   { label: 'Documents',   path: '/app/tpv/documents',  icon: FileText        },
   { label: 'Workforce',   path: '/app/tpv/workforce',  icon: UserCheck       },
   { label: 'Compliance',  path: '/app/tpv/compliance', icon: CheckSquare     },

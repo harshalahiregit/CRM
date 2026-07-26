@@ -6,29 +6,6 @@
 
 import api from '@/lib/api'
 
-/**
- * Fetch a Purchase document PDF (PR / RFQ / PO) as an authenticated blob and
- * either download it or open it in a new tab for printing. A plain <a href>
- * can't carry the Bearer token, so we stream the blob through the api client.
- *   kind: 'requests' | 'rfqs' | 'orders'
- */
-export async function downloadPurchasePdf(kind, id, { inline = false, filename } = {}) {
-  const res = await api.get(`/purchase/${kind}/${id}/download-pdf`, {
-    params: inline ? { inline: 1 } : {},
-    responseType: 'blob',
-  })
-  const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
-  if (inline) {
-    window.open(url, '_blank')                       // Print → new tab
-  } else {
-    const a = document.createElement('a')
-    a.href = url
-    a.download = filename || `${kind}-${id}.pdf`
-    document.body.appendChild(a); a.click(); a.remove()
-  }
-  setTimeout(() => URL.revokeObjectURL(url), 15000)
-}
-
 export const purchaseApi = {
   // ── Unified procure-to-pay dashboard ────────────────────────────────
   dashboard: {
