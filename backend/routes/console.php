@@ -74,6 +74,13 @@ Schedule::command('notifications:process-queue')
     ->withoutOverlapping()
     ->runInBackground();
 
+// HR: expire offers past their validity window (hourly). Reuses OfferService::expireIfDue;
+// previously offers only expired lazily when the candidate opened the portal.
+Schedule::command('offers:expire-due')
+    ->hourly()
+    ->withoutOverlapping()
+    ->runInBackground();
+
 // Inventory: the daily expiry digest.
 // Once a day at 07:00, not every fifteen minutes: expiry moves at the speed of
 // the calendar, so a batch that enters the alert window overnight is equally

@@ -7,6 +7,7 @@ import {
   ClipboardList, Layers, XCircle, User, ShieldCheck, Activity, LayoutGrid, List, Globe, Trash2,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+import { useMasterData } from '@/modules/hr/useMasterData'
 import { useAuth } from '@/context/AuthContext'
 import JobListView from './JobListView'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
@@ -400,6 +401,14 @@ function IconBtn({ icon: Icon, label, color, onClick, disabled }) {
 
 // ── Job form modal ───────────────────────────────────────────────────────────
 function JobFormModal({ form, setForm, editingId, careerSlug, busy, onClose, onSave }) {
+  // Departments come from the shared Org Setup master data (single source of truth);
+  // active-only server-side. DEPARTMENTS remains only as an offline fallback.
+  const { masters } = useMasterData()
+  const deptNames = (masters.departments || []).map(d => d.name)
+  const deptSource = deptNames.length ? deptNames : DEPARTMENTS
+  // Keep a saved-but-now-inactive value selectable so existing records display it.
+  const deptOptions = form.department && !deptSource.includes(form.department)
+    ? [form.department, ...deptSource] : deptSource
   const set = (k) => (e) => setForm(p => ({ ...p, [k]: e.target.value }))
   const toggleSource = (s) => setForm(p => ({ ...p, sources: (p.sources || []).includes(s) ? p.sources.filter(x => x !== s) : [...(p.sources || []), s] }))
   const pubUrl = publicApplyUrl(careerSlug, editingId)
@@ -454,7 +463,7 @@ function JobFormModal({ form, setForm, editingId, careerSlug, busy, onClose, onS
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
         <Field label="Job Title *"><input value={form.title} onChange={set('title')} placeholder="e.g. Senior Developer" style={inputStyle} /></Field>
-        <Field label="Department *"><select value={form.department} onChange={set('department')} style={{ ...inputStyle, cursor: 'pointer' }}><option value="">Select…</option>{DEPARTMENTS.map(d => <option key={d}>{d}</option>)}</select></Field>
+        <Field label="Department *"><select value={form.department} onChange={set('department')} style={{ ...inputStyle, cursor: 'pointer' }}><option value="">Select…</option>{deptOptions.map(d => <option key={d}>{d}</option>)}</select></Field>
         <Field label="Location *"><input value={form.location} onChange={set('location')} placeholder="e.g. Pune" style={inputStyle} /></Field>
         <Field label="Employment Type"><select value={form.job_type} onChange={set('job_type')} style={{ ...inputStyle, cursor: 'pointer' }}>{EMPLOYMENT_TYPES.map(t => <option key={t}>{t}</option>)}</select></Field>
         <Field label="Work Mode"><select value={form.work_mode || 'Onsite'} onChange={set('work_mode')} style={{ ...inputStyle, cursor: 'pointer' }}>{WORK_MODES.map(t => <option key={t}>{t}</option>)}</select></Field>

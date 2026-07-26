@@ -14,7 +14,7 @@ class HrCandidate extends Model
     protected $table = 'hr_candidates';
 
     protected $fillable = [
-        'tenant_id','job_posting_id','name','email','phone','dob','location','address',
+        'tenant_id','job_posting_id','project_id','name','email','phone','dob','location','address',
         'current_company','experience_years','source','stage',
         'education','certifications','languages','professional_references',
         'linkedin_url','linkedin_data','resume_path','ai_score','ai_breakdown','screening_answers',
@@ -43,6 +43,12 @@ class HrCandidate extends Model
     public function jobPosting()
     {
         return $this->belongsTo(HrJobPosting::class, 'job_posting_id');
+    }
+
+    /** The Project this candidate belongs to (inherited from the Job Posting). */
+    public function project()
+    {
+        return $this->belongsTo(\App\Models\Project\Project::class, 'project_id');
     }
 
     public function interviewRounds()

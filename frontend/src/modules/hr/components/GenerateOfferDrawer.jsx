@@ -24,30 +24,47 @@ const EMPTY_FORM = { candidate_id: '', position: '', department: '', offered_ctc
  */
 export default function GenerateOfferDrawer({
   open, eligible = [], candidateId = null, candidateName = '', onboarding = null, onClose, onCreated, showToast,
+  reviseOffer = null, onRevised,
 }) {
   const navigate = useNavigate()
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [structures, setStructures] = useState([])
   const [preview, setPreview] = useState(null)   // { name, breakdown } when a structure is linked
+  const [revisionReason, setRevisionReason] = useState('')
 
-  const fixed = candidateId != null
-  const match = fixed ? eligible.find(o => Number(o.candidate_id) === Number(candidateId)) : null
-  const blocked = fixed && !match
+  // Revising an existing offer reuses this same form + drawer (no duplicate modal).
+  const isRevise = !!reviseOffer
+  const fixed = isRevise || candidateId != null
+  const match = (!isRevise && candidateId != null) ? eligible.find(o => Number(o.candidate_id) === Number(candidateId)) : null
+  const blocked = !isRevise && candidateId != null && !match  // onboarding gate never applies to a revision
 
   useEffect(() => {
     if (!open) return
-    setPreview(null)
-    const src = match || null
-    setForm({
-      ...EMPTY_FORM,
-      candidate_id: fixed ? String(candidateId) : '',
-      position: src?.position || '',
-      department: src?.department || '',
-    })
+    setPreview(null); setRevisionReason('')
+    if (isRevise) {
+      setForm({
+        candidate_id: String(reviseOffer.candidate_id),
+        position: reviseOffer.position || '', department: reviseOffer.department || '',
+        offered_ctc: reviseOffer.offered_ctc ? String(reviseOffer.offered_ctc) : '',
+        salary_structure_id: reviseOffer.salary_structure_id ? String(reviseOffer.salary_structure_id) : '',
+        joining_date: (reviseOffer.joining_date || '').slice(0, 10),
+        probation_period: reviseOffer.probation_period || '3 months',
+        notice_period: reviseOffer.notice_period || '1 month',
+        validity_date: (reviseOffer.validity_date || '').slice(0, 10),
+      })
+    } else {
+      const src = match || null
+      setForm({
+        ...EMPTY_FORM,
+        candidate_id: fixed ? String(candidateId) : '',
+        position: src?.position || '',
+        department: src?.department || '',
+      })
+    }
     // Active salary structures the recruiter can base the offer on (Salary Engine).
     hrApi.payroll.salaryStructures.list({ status: 'Active' }).then(r => setStructures(r.data || [])).catch(() => setStructures([]))
-  }, [open, candidateId, match, fixed])
+  }, [open, candidateId, match, fixed, isRevise, reviseOffer])
 
   if (!open) return null
 
@@ -64,6 +81,20 @@ export default function GenerateOfferDrawer({
   }
 
   const create = async () => {
+    // Revision path — snapshots the current version, resets to Draft (re-approval needed).
+    if (isRevise) {
+      if (!revisionReason.trim()) return showToast?.('A revision reason is required', 'error')
+      if (!form.offered_ctc || !form.joining_date) return showToast?.('CTC and joining date required', 'error')
+      setSaving(true)
+      try {
+        const updated = await hrApi.offers.revise(reviseOffer.id, { ...form, revision_reason: revisionReason.trim() })
+        showToast?.('Offer revised — new version created (Draft)')
+        onRevised?.(updated); onClose?.()
+      } catch (e) {
+        showToast?.(e.response?.data?.message || 'Offer could not be revised', 'error')
+      } finally { setSaving(false) }
+      return
+    }
     if (!form.candidate_id || !form.offered_ctc || !form.joining_date) {
       return showToast?.('Candidate, CTC and joining date required', 'error')
     }
@@ -151,20 +182,28 @@ export default function GenerateOfferDrawer({
 
   return (
     <Drawer
-      open onClose={onClose} title="Generate Offer Letter" width="min(640px, 95vw)"
+      open onClose={onClose} title={isRevise ? 'Revise Offer' : 'Generate Offer Letter'} width="min(640px, 95vw)"
       footer={(
         <div className="flex gap-3">
           <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm font-semibold" style={{ background: 'var(--bg-input)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Cancel</button>
-          <button onClick={create} disabled={saving} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)', opacity: saving ? 0.7 : 1 }}>{saving ? 'Generating…' : 'Generate'}</button>
+          <button onClick={create} disabled={saving} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)', opacity: saving ? 0.7 : 1 }}>{saving ? (isRevise ? 'Revising…' : 'Generating…') : (isRevise ? 'Revise Offer' : 'Generate')}</button>
         </div>
       )}
     >
       <div className="space-y-3">
+        {isRevise && (
+          <div>
+            <label className="label">Revision Reason *</label>
+            <textarea rows={2} className="input-3d text-sm resize-none" placeholder="Why is this offer being revised?" value={revisionReason} onChange={e => setRevisionReason(e.target.value)}
+              style={!revisionReason.trim() ? { borderColor: 'rgba(248,113,113,0.5)' } : undefined} />
+            <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>Version {reviseOffer?.version} is preserved in history; the revised offer resets to Draft and must be re-approved.</p>
+          </div>
+        )}
         {fixed ? (
           <div>
             <label className="label">Candidate</label>
             <div className="text-sm font-bold px-3 py-2 rounded-xl" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }}>
-              {candidateName || match?.candidate_name}
+              {candidateName || match?.candidate_name || reviseOffer?.candidate?.name || 'Candidate'}
             </div>
           </div>
         ) : (

@@ -4,7 +4,7 @@ import Drawer from '@/components/ui/Drawer'
 import StarRating from '@/modules/hr/components/StarRating'
 import { hrApi } from '@/services/hrApi'
 import {
-  EMPTY_FB, OUTCOMES, outcomeFromIv, STRUCTURED_RATINGS, nextRoundName,
+  EMPTY_FB, OUTCOMES, outcomeFromIv, STRUCTURED_RATINGS, nextRoundName, ATTENDANCE_OPTIONS,
 } from '@/modules/hr/components/interviewFlow'
 
 /**
@@ -45,6 +45,7 @@ export default function InterviewFeedbackDrawer({
       problem_solving_score: interview.problem_solving_score ?? '',
       ...Object.fromEntries(STRUCTURED_RATINGS.map(s => [s.k, interview[s.k] ?? ''])),
       strengths: interview.strengths || '', concerns: interview.concerns || '', notes: interview.notes || '',
+      attendance: interview.attendance || 'Present', duration: interview.duration ?? '', remarks: interview.remarks || '',
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, interview?.id])
@@ -61,8 +62,10 @@ export default function InterviewFeedbackDrawer({
   })()
 
   const submit = async () => {
-    if (fb.outcome === 'Reject' && !(fb.concerns?.trim() || fb.notes?.trim())) {
-      return showToast?.('Please add a reason for rejection.', 'error')
+    // Both Reject and Hold require a reason (Phase 4).
+    const needsReason = fb.outcome === 'Reject' || fb.outcome === 'Hold'
+    if (needsReason && !(fb.concerns?.trim() || fb.notes?.trim())) {
+      return showToast?.(`Please add a reason for ${fb.outcome === 'Reject' ? 'rejection' : 'hold'}.`, 'error')
     }
     const backendResult = fb.outcome === 'Reject' ? 'Failed'
       : fb.outcome === 'Hold' ? 'On Hold'
@@ -77,6 +80,10 @@ export default function InterviewFeedbackDrawer({
         ...Object.fromEntries(STRUCTURED_RATINGS.map(s => [s.k, fb[s.k] ? Number(fb[s.k]) : undefined])),
         strengths: fb.strengths || undefined,
         concerns: fb.concerns || undefined,
+        // Completion metadata (Phase 2).
+        attendance: fb.attendance || undefined,
+        duration: fb.duration ? Number(fb.duration) : undefined,
+        remarks: fb.remarks || undefined,
       }
       const updated = await hrApi.interviews.recordFeedback(interview.id, payload)
       onSaved?.(updated)
@@ -84,6 +91,7 @@ export default function InterviewFeedbackDrawer({
       // clicks a button. No setTimeout, no auto-close, no auto-navigate.
       setDone({
         outcome: oc, rating: fb.rating, overall: overallPreview,
+        attendance: fb.attendance, duration: fb.duration,
         round: interview.round_name, name: interview.candidate?.name, nextRound,
         mode: fb.outcome === 'Reject' ? 'rejected'
           : fb.outcome === 'Hold' ? 'hold'
@@ -135,6 +143,8 @@ export default function InterviewFeedbackDrawer({
 
         <div className="space-y-2">
           <Row label="Outcome"><span style={{ color: done.outcome.color }}>{done.outcome.dot} {done.outcome.key}</span></Row>
+          <Row label="Attendance">{done.attendance || '—'}</Row>
+          {done.duration ? <Row label="Duration">{done.duration} min</Row> : null}
           <Row label="Overall Rating">
             {done.rating ? <span className="inline-flex items-center gap-2"><StarRating value={done.rating} readOnly /> <span>{done.rating}/5</span></span> : '—'}
           </Row>
@@ -194,8 +204,31 @@ export default function InterviewFeedbackDrawer({
           <p className="text-[9px] font-bold uppercase tracking-wide mb-1" style={{ color: oc.color }}>Interview Outcome Summary</p>
           <p className="text-[11px] font-semibold" style={{ color: oc.color }}>{oc.dot} {oc.blurb}</p>
           {oc.positive && <p className="text-[10.5px] mt-1" style={{ color: 'var(--text-muted)' }}>Next step: <b style={{ color: 'var(--text-h)' }}>{nextRound || 'Offer Stage'}</b></p>}
-          {oc.key === 'Hold' && <p className="text-[10.5px] mt-1" style={{ color: 'var(--text-muted)' }}>Candidate stays in the Interview stage — nothing progresses.</p>}
+          {oc.key === 'Hold' && <p className="text-[10.5px] mt-1" style={{ color: 'var(--text-muted)' }}>Candidate stays in the Interview stage — nothing progresses. Reason for hold is required.</p>}
           {oc.key === 'Reject' && <p className="text-[10.5px] mt-1" style={{ color: 'var(--text-muted)' }}>Future interview rounds will be <b>locked</b>. Reason for rejection is required.</p>}
+        </div>
+
+        {/* Attendance + Duration (Phase 2 completion metadata) */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="label">Attendance</label>
+            <div className="flex rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+              {ATTENDANCE_OPTIONS.map(a => {
+                const sel = fb.attendance === a.key
+                return (
+                  <button key={a.key} type="button" disabled={readOnly} onClick={() => setFb(f => ({ ...f, attendance: a.key }))}
+                    className="flex-1 py-2 text-[11px] font-bold transition-all"
+                    style={{ background: sel ? `${a.color}1a` : 'var(--bg-input)', color: sel ? a.color : 'var(--text-muted)' }}>
+                    {a.key}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+          <div>
+            <label className="label">Duration (minutes)</label>
+            <input type="number" min="0" max="1440" disabled={readOnly} className="input-3d text-sm" placeholder="e.g. 45" value={fb.duration} onChange={set('duration')} />
+          </div>
         </div>
 
         <div>
@@ -226,15 +259,18 @@ export default function InterviewFeedbackDrawer({
         <div className="grid grid-cols-2 gap-3">
           <div><label className="label">Strengths</label><textarea rows={2} disabled={readOnly} className="input-3d text-sm resize-none" placeholder="What stood out?" value={fb.strengths} onChange={set('strengths')} /></div>
           <div>
-            <label className="label">{fb.outcome === 'Reject' ? 'Reason for Rejection *' : 'Concerns'}</label>
+            <label className="label">{fb.outcome === 'Reject' ? 'Reason for Rejection *' : fb.outcome === 'Hold' ? 'Reason for Hold *' : 'Concerns'}</label>
             <textarea rows={2} disabled={readOnly} className="input-3d text-sm resize-none"
-              placeholder={fb.outcome === 'Reject' ? 'Required — why is the candidate rejected?' : 'Any reservations?'}
+              placeholder={fb.outcome === 'Reject' ? 'Required — why is the candidate rejected?' : fb.outcome === 'Hold' ? 'Required — why is the candidate on hold?' : 'Any reservations?'}
               value={fb.concerns} onChange={set('concerns')}
-              style={fb.outcome === 'Reject' && !fb.concerns?.trim() ? { borderColor: 'rgba(248,113,113,0.5)' } : undefined} />
+              style={(fb.outcome === 'Reject' || fb.outcome === 'Hold') && !fb.concerns?.trim() ? { borderColor: 'rgba(248,113,113,0.5)' } : undefined} />
           </div>
         </div>
 
         <div><label className="label">Comments</label><textarea rows={2} disabled={readOnly} className="input-3d text-sm resize-none" value={fb.notes} onChange={set('notes')} /></div>
+
+        {/* Remarks — free-text, distinct from the evaluation comments (Phase 2). */}
+        <div><label className="label">Remarks</label><textarea rows={2} disabled={readOnly} className="input-3d text-sm resize-none" placeholder="Internal remarks (optional)" value={fb.remarks} onChange={set('remarks')} /></div>
       </div>
     </Drawer>
   )

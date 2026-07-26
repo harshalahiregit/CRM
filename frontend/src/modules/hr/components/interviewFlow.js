@@ -18,7 +18,16 @@ export const EMPTY_FB = {
   knowledge_score: '', confidence_score: '', ownership_score: '', learning_ability_score: '',
   decision_making_score: '', leadership_score: '', integrity_score: '', culture_fit_score: '',
   strengths: '', concerns: '', notes: '',
+  // Completion metadata (Complete-Interview form).
+  attendance: 'Present', duration: '', remarks: '',
 }
+
+// Attendance recorded when an interview is completed.
+export const ATTENDANCE_OPTIONS = [
+  { key: 'Present', color: '#10b981' },
+  { key: 'Absent',  color: '#ef4444' },
+  { key: 'No Show', color: '#f59e0b' },
+]
 
 // Enterprise "evaluate, don't decide" model — the recruiter rates the interview; the
 // system maps the outcome to the pipeline step (Next Round / Offer / Hold / Reject).

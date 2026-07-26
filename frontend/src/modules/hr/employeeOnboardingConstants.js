@@ -40,8 +40,15 @@ export const TASK_STATUS = {
   'In Progress': { color: '#3b82f6', bg: 'rgba(59,130,246,0.14)' },
   'Completed':   { color: '#10b981', bg: 'rgba(16,185,129,0.14)' },
   'Rejected':    { color: '#ef4444', bg: 'rgba(239,68,68,0.1)' },
+  'Skipped':     { color: '#94a3b8', bg: 'rgba(148,163,184,0.14)' },
 }
-export const TASK_STATUSES = ['Pending', 'In Progress', 'Completed', 'Rejected']
+export const TASK_STATUSES = ['Pending', 'In Progress', 'Completed', 'Rejected', 'Skipped']
+
+// Asset allocation lifecycle (Phase 4 adds "Lost").
+export const ASSET_STATUSES = ['Allocated', 'Issued', 'Returned', 'Lost', 'Pending']
+
+// Background verification lifecycle.
+export const BGV_STATUSES = ['Pending', 'In Progress', 'Verified', 'Rejected']
 
 // Task categories shown as sub-groups in the Orientation / Training / Checklist tabs.
 export const TASK_CATEGORIES = [

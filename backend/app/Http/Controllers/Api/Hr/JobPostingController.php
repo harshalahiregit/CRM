@@ -102,6 +102,8 @@ class JobPostingController extends Controller
     /* POST /api/hr/jobs */
     public function store(StoreJobPostingRequest $request)
     {
+        abort_unless($request->user()->canManageHrQueue(), 403, 'You are not authorised to create job postings');
+
         $job = $this->jobPostingService->create($request->validated(), $request->user());
 
         return response()->json($job, 201);

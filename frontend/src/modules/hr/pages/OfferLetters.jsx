@@ -7,9 +7,12 @@ import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 import GenerateOfferDrawer from '@/modules/hr/components/GenerateOfferDrawer'
 
 const STATUS_COLORS = {
+  Draft: '#94a3b8', 'Pending Approval': '#f59e0b', Approved: '#06b6d4',
   Generated: '#94a3b8', Sent: '#a78bfa', Viewed: '#8b5cf6', Accepted: '#10b981',
-  Declined: '#f87171', Rejected: '#f87171', Expired: '#f59e0b', Completed: '#0d9488',
+  Declined: '#f87171', Rejected: '#f87171', Expired: '#f59e0b', Withdrawn: '#6b7280', Completed: '#0d9488',
 }
+// Statuses at which an offer may still be withdrawn/revised (mirrors HrOffer::PRE_ACCEPTANCE).
+const PRE_ACCEPTANCE = ['Draft', 'Pending Approval', 'Approved', 'Generated', 'Sent', 'Viewed', 'Expired']
 const STATUS_S = s => { const c = STATUS_COLORS[s] || '#fbbf24'; return { c, bg: `${c}1f` } }
 const fmtCTC = v => v ? '₹'+Number(v).toLocaleString('en-IN') : '—'
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) : '—'
@@ -30,6 +33,9 @@ export default function OfferLetters() {
   const [toast, setToast]         = useState(null)
   const [rejectModal, setRejectModal] = useState({ open:false, id:null, reason:'' })
   const [buckets, setBuckets]     = useState(null)
+  const [history, setHistory]     = useState({ open:false, offer:null, revisions:[] })
+  const [reviseOffer, setReviseOffer] = useState(null)  // offer being revised (reuses the offer drawer)
+  const openRevise = (offer) => { setReviseOffer(offer); setGenFor(null); setShowModal(true) }
 
   const showToast = (msg, type='success') => { setToast({msg,type}); setTimeout(()=>setToast(null),3000) }
 
@@ -63,6 +69,32 @@ export default function OfferLetters() {
     if (v === null) return
     try { patchOffer(id, await hrApi.offers.regenerate(id, v || undefined)); showToast('Offer regenerated — send the new link') }
     catch (e) { showToast(e.response?.data?.message || 'Failed', 'error') }
+  }
+  // ── Lifecycle actions (Phase 3) ──────────────────────────────────────────
+  const handleSubmitApproval = async (id) => {
+    try { patchOffer(id, await hrApi.offers.submitForApproval(id)); showToast('Submitted for approval') }
+    catch (e) { showToast(e.response?.data?.message || 'Failed', 'error') }
+  }
+  const handleApprove = async (id) => {
+    try { patchOffer(id, await hrApi.offers.approve(id)); showToast('Offer approved — ready to send') }
+    catch (e) { showToast(e.response?.data?.message || 'Failed', 'error') }
+  }
+  const handleWithdraw = async (id) => {
+    const reason = window.prompt('Reason for withdrawing this offer? (required)')
+    if (reason === null) return
+    if (!reason.trim()) return showToast('A reason is required to withdraw.', 'error')
+    try { patchOffer(id, await hrApi.offers.withdraw(id, reason.trim())); showToast('Offer withdrawn') }
+    catch (e) { showToast(e.response?.data?.message || 'Failed', 'error') }
+  }
+  const handleExtend = async (id) => {
+    const v = window.prompt('New validity date (YYYY-MM-DD), or leave blank for +7 days:')
+    if (v === null) return
+    try { patchOffer(id, await hrApi.offers.extend(id, v || undefined)); showToast('Offer validity extended') }
+    catch (e) { showToast(e.response?.data?.message || 'Failed', 'error') }
+  }
+  const openHistory = async (offer) => {
+    try { const revs = await hrApi.offers.revisions(offer.id); setHistory({ open: true, offer, revisions: revs }) }
+    catch { showToast('Could not load history', 'error') }
   }
 
   // Approved-onboarding candidates without an offer letter yet — one click generates it.
@@ -235,13 +267,19 @@ export default function OfferLetters() {
                   <div className="px-3 py-2 rounded-xl" style={{ background:'var(--bg-input)' }}><p className="text-[10px]" style={{ color:'var(--text-muted)' }}>Offered CTC</p><p className="text-sm font-black mt-0.5" style={{ color:'var(--text-h)' }}>{fmtCTC(offer.offered_ctc)}</p></div>
                   <div className="px-3 py-2 rounded-xl" style={{ background:'var(--bg-input)' }}><p className="text-[10px]" style={{ color:'var(--text-muted)' }}>Joining Date</p><p className="text-xs font-bold mt-0.5" style={{ color:'var(--text-h)' }}>{fmtDate(offer.joining_date)}</p></div>
                 </div>
-                <div className="flex gap-2 mt-auto">
-                  {offer.status==='Generated' && <button onClick={()=>handleSend(offer.id)} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold text-white" style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)' }}><Send size={11}/> Send Offer</button>}
+                <div className="flex flex-wrap gap-2 mt-auto">
+                  {(offer.status==='Draft' || offer.status==='Generated') && (
+                    <button onClick={()=>handleSubmitApproval(offer.id)} className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-[11px] font-bold" style={{ background:'rgba(245,158,11,0.12)', color:'#f59e0b', border:'1px solid rgba(245,158,11,0.3)' }}>Submit for Approval</button>
+                  )}
+                  {offer.status==='Pending Approval' && (
+                    <button onClick={()=>handleApprove(offer.id)} className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-[11px] font-bold text-white" style={{ background:'linear-gradient(135deg,#06b6d4,#0891b2)' }}>Approve</button>
+                  )}
+                  {['Generated','Approved'].includes(offer.status) && <button onClick={()=>handleSend(offer.id)} className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-bold text-white" style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)' }}><Send size={11}/> Send Offer</button>}
 
                   {/* Sent / Viewed / Accepted → the candidate acts on the secure portal */}
                   {offer.access_token && ['Sent','Viewed','Accepted'].includes(offer.status) && (
-                    <div className="flex-1 flex gap-1.5">
-                      <button onClick={()=>openPortal(offer.access_token)} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[11px] font-bold text-white" style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)' }}><ExternalLink size={11}/> Offer Portal</button>
+                    <div className="flex gap-1.5">
+                      <button onClick={()=>openPortal(offer.access_token)} className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-[11px] font-bold text-white" style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)' }}><ExternalLink size={11}/> Offer Portal</button>
                       <button onClick={()=>copyLink(offer.access_token)} title="Copy link" className="px-2.5 py-2 rounded-xl text-[11px] font-semibold" style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}><Copy size={12}/></button>
                     </div>
                   )}
@@ -250,14 +288,32 @@ export default function OfferLetters() {
                     <button onClick={()=>handleConfirmJoining(offer.id)} className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-[11px] font-bold text-white" style={{ background:'linear-gradient(135deg,#10b981,#059669)' }}><UserCheck size={12}/> Confirm Joining</button>
                   )}
 
+                  {offer.status==='Expired' && (
+                    <button onClick={()=>handleExtend(offer.id)} className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-[11px] font-bold" style={{ background:'rgba(245,158,11,0.12)', color:'#f59e0b', border:'1px solid rgba(245,158,11,0.3)' }}>Extend</button>
+                  )}
                   {['Declined','Rejected','Expired'].includes(offer.status) && (
-                    <button onClick={()=>handleRegenerate(offer.id)} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[11px] font-bold" style={{ background:'rgba(124,58,237,0.1)', color:'#a78bfa', border:'1px solid rgba(124,58,237,0.2)' }}><RefreshCw size={11}/> Regenerate Offer</button>
+                    <button onClick={()=>handleRegenerate(offer.id)} className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-[11px] font-bold" style={{ background:'rgba(124,58,237,0.1)', color:'#a78bfa', border:'1px solid rgba(124,58,237,0.2)' }}><RefreshCw size={11}/> Regenerate</button>
                   )}
 
+                  {/* Revise + Withdraw — available before the candidate accepts */}
+                  {PRE_ACCEPTANCE.includes(offer.status) && (
+                    <>
+                      <button onClick={()=>openRevise(offer)} title="Revise offer" className="py-2 px-2.5 rounded-xl text-[11px] font-bold" style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}>Revise</button>
+                      <button onClick={()=>handleWithdraw(offer.id)} title="Withdraw offer" className="py-2 px-2.5 rounded-xl text-[11px] font-bold" style={{ background:'rgba(239,68,68,0.08)', color:'#f87171', border:'1px solid rgba(239,68,68,0.2)' }}>Withdraw</button>
+                    </>
+                  )}
+
+                  {offer.status==='Withdrawn' && (
+                    <div className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[11px] font-bold" style={{ background:'rgba(107,114,128,0.12)', color:'#6b7280', border:'1px solid rgba(107,114,128,0.25)' }}>Withdrawn{offer.withdraw_reason ? ` · ${offer.withdraw_reason.slice(0,32)}` : ''}</div>
+                  )}
                   {offer.status==='Completed' && (
                     <div className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[11px] font-bold" style={{ background:'rgba(13,148,136,0.1)', color:'#0d9488', border:'1px solid rgba(13,148,136,0.2)' }}>
                       <UserCheck size={12}/> Joined{offer.joining_confirmed_at ? ` · ${fmtDate(offer.joining_confirmed_at)}` : ''}
                     </div>
+                  )}
+
+                  {offer.version > 1 && (
+                    <button onClick={()=>openHistory(offer)} title="Revision history" className="py-2 px-2.5 rounded-xl text-[10px] font-bold" style={{ background:'var(--bg-input)', color:'#a78bfa', border:'1px solid var(--border)' }}>v{offer.version} · History</button>
                   )}
                 </div>
               </div>
@@ -267,16 +323,44 @@ export default function OfferLetters() {
         </div>
       )}
 
-      {/* The ONE offer form — also mounted by the candidate workspace */}
+      {/* The ONE offer form — also mounted by the candidate workspace and reused for Revise */}
       <GenerateOfferDrawer
         open={showModal}
         eligible={readyForOffer}
         candidateId={genFor?.candidateId ?? null}
         candidateName={genFor?.candidateName || ''}
-        onClose={() => { setShowModal(false); setGenFor(null) }}
+        reviseOffer={reviseOffer}
+        onClose={() => { setShowModal(false); setGenFor(null); setReviseOffer(null) }}
         onCreated={(offer) => { setOffers(prev => [offer, ...prev]); setGenFor(null) }}
+        onRevised={(offer) => { patchOffer(offer.id, offer); setReviseOffer(null) }}
         showToast={showToast}
       />
+
+      {/* Offer revision history (immutable) */}
+      {history.open && (
+        <div className="modal-backdrop" onClick={()=>setHistory({open:false,offer:null,revisions:[]})}>
+          <div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()} style={{ maxHeight:'85vh', overflowY:'auto' }}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>Offer Revision History</h2>
+              <button onClick={()=>setHistory({open:false,offer:null,revisions:[]})} style={{ color:'var(--text-muted)' }}><X size={18}/></button>
+            </div>
+            <p className="text-xs mb-4" style={{ color:'var(--text-muted)' }}>Current version: <b style={{ color:'var(--text-h)' }}>v{history.offer?.version}</b> · {history.revisions.length} prior version(s) preserved.</p>
+            <div className="space-y-2">
+              {history.revisions.length === 0 && <p className="text-sm" style={{ color:'var(--text-muted)' }}>No prior versions.</p>}
+              {history.revisions.map(r => (
+                <div key={r.id} className="px-3 py-2.5 rounded-xl" style={{ background:'var(--bg-input)', border:'1px solid var(--border)' }}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold" style={{ color:'#a78bfa' }}>Version {r.version}</span>
+                    <span className="text-[10px]" style={{ color:'var(--text-muted)' }}>{fmtDate(r.created_at)}{r.revised_by_name ? ` · ${r.revised_by_name}` : ''}</span>
+                  </div>
+                  <p className="text-[11px] mt-1" style={{ color:'var(--text-h)' }}>{r.snapshot?.position} · {fmtCTC(r.snapshot?.offered_ctc)} · status {r.snapshot?.status}</p>
+                  {r.revision_reason && <p className="text-[11px] mt-0.5" style={{ color:'var(--text-muted)' }}>Reason: {r.revision_reason}</p>}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
       {/* Offer Reject Reason Modal */}
       {rejectModal.open && (
         <div className="modal-backdrop" onClick={()=>setRejectModal({open:false,id:null,reason:''})}>

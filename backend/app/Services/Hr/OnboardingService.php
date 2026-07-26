@@ -502,6 +502,7 @@ class OnboardingService
             $employee = $this->employeeService->create([
                 'candidate_id'           => $onboarding->candidate_id,
                 'onboarding_id'          => $onboarding->id,
+                'project_id'             => $candidate?->project_id,   // STEP 7: carry the Project forward from the candidate
                 'name'                   => $onboarding->candidate_name,
                 'email'                  => $candidate?->email,
                 'phone'                  => $candidate?->phone,

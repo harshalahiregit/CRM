@@ -20,14 +20,18 @@ class HrInterviewRound extends Model
         'knowledge_score','confidence_score','ownership_score','learning_ability_score',
         'decision_making_score','leadership_score','integrity_score','culture_fit_score',
         'strengths','concerns',
+        // Completion metadata (Complete-Interview form).
+        'attendance','duration','remarks','completed_at','completed_by','cancellation_reason',
         'email_sent_candidate','email_sent_interviewer','whatsapp_sent','calendar_event_created',
         'reminder_minutes',
     ];
 
     protected $casts = [
         'scheduled_at'            => 'datetime',
+        'completed_at'            => 'datetime',
         'interviewers'            => 'array',
         'rating'                  => 'integer',
+        'duration'                => 'integer',
         'email_sent_candidate'    => 'boolean',
         'email_sent_interviewer'  => 'boolean',
         'whatsapp_sent'           => 'boolean',
@@ -42,5 +46,10 @@ class HrInterviewRound extends Model
     public function interviewer()
     {
         return $this->belongsTo(User::class, 'interviewer_id');
+    }
+
+    public function completedBy()
+    {
+        return $this->belongsTo(User::class, 'completed_by');
     }
 }

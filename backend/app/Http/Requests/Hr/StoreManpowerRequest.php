@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Hr;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreManpowerRequest extends FormRequest
 {
@@ -23,6 +24,9 @@ class StoreManpowerRequest extends FormRequest
             // Extended hiring information
             'business_unit'       => 'nullable|string|max:150',
             'project'             => 'nullable|string|max:150',
+            // Project integration (existing Projects module). Tenant-scoped; NOT gated to
+            // active status, so an inactive/archived project on an existing record still saves.
+            'project_id'          => ['nullable', 'integer', Rule::exists('projects', 'id')->where('tenant_id', $this->user()->tenant_id)],
             'location'            => 'nullable|string|max:150',
             'employee_level'      => 'nullable|string|max:60',
             'experience_required' => 'nullable|string|max:100',

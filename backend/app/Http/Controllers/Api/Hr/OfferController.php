@@ -30,6 +30,8 @@ class OfferController extends Controller
 
     public function store(StoreOfferRequest $request)
     {
+        $this->assertCanManage($request);
+
         $offer = $this->offerService->create($request->validated(), $request->user()->tenant_id);
 
         return response()->json($offer, 201);
@@ -45,6 +47,7 @@ class OfferController extends Controller
     public function send(Request $request, HrOffer $offer)
     {
         $this->assertTenant($request, $offer);
+        $this->assertCanManage($request);
 
         $updated = $this->offerService->send($offer);
 
@@ -54,8 +57,9 @@ class OfferController extends Controller
     public function updateStatus(UpdateOfferStatusRequest $request, HrOffer $offer)
     {
         $this->assertTenant($request, $offer);
+        $this->assertCanManage($request);
 
-        $updated = $this->offerService->updateStatus($offer, $request->validated('status'), $request->validated('rejection_reason'));
+        $updated = $this->offerService->updateStatus($offer, $request->validated('status'), $request->validated('rejection_reason'), $request->user());
 
         return response()->json($updated);
     }
@@ -80,11 +84,81 @@ class OfferController extends Controller
         return response()->json($this->offerService->regenerate($offer, $data['validity_date'] ?? null)->load('candidate'));
     }
 
-    public function destroy(Request $request, HrOffer $offer)
+    /** Draft/Generated → Pending Approval. */
+    public function submitForApproval(Request $request, HrOffer $offer)
+    {
+        $this->assertTenant($request, $offer);
+        $this->assertCanManage($request);
+
+        return response()->json($this->offerService->submitForApproval($offer)->load('candidate'));
+    }
+
+    /** Pending Approval → Approved. */
+    public function approve(Request $request, HrOffer $offer)
+    {
+        $this->assertTenant($request, $offer);
+        $this->assertCanManage($request);
+
+        return response()->json($this->offerService->approve($offer, $request->user())->load('candidate'));
+    }
+
+    /** Withdraw before acceptance (reason mandatory). */
+    public function withdraw(Request $request, HrOffer $offer)
+    {
+        $this->assertTenant($request, $offer);
+        $this->assertCanManage($request);
+
+        $data = $request->validate(['reason' => 'required|string|max:1000']);
+
+        return response()->json($this->offerService->withdraw($offer, $data['reason'], $request->user())->load('candidate'));
+    }
+
+    /** Revise a pre-acceptance offer (snapshots the current version to history). */
+    public function revise(Request $request, HrOffer $offer)
+    {
+        $this->assertTenant($request, $offer);
+        $this->assertCanManage($request);
+
+        $data = $request->validate([
+            'revision_reason'  => 'required|string|max:1000',
+            'position'         => 'nullable|string',
+            'department'       => 'nullable|string',
+            'offered_ctc'      => 'nullable|numeric|min:0',
+            'salary_structure_id' => 'nullable|integer|exists:hr_salary_structures,id',
+            'joining_date'     => 'nullable|date',
+            'probation_period' => 'nullable|string',
+            'notice_period'    => 'nullable|string',
+            'validity_date'    => 'nullable|date',
+        ]);
+
+        return response()->json($this->offerService->revise($offer, $data, $data['revision_reason'], $request->user())->load('candidate'));
+    }
+
+    /** Extend validity of a sent/expired offer. */
+    public function extend(Request $request, HrOffer $offer)
+    {
+        $this->assertTenant($request, $offer);
+        $this->assertCanManage($request);
+
+        $data = $request->validate(['validity_date' => 'nullable|date']);
+
+        return response()->json($this->offerService->extend($offer, $data['validity_date'] ?? null)->load('candidate'));
+    }
+
+    /** Immutable revision history for an offer. */
+    public function revisions(Request $request, HrOffer $offer)
     {
         $this->assertTenant($request, $offer);
 
-        $this->offerService->destroy($offer);
+        return response()->json($offer->revisions()->get());
+    }
+
+    public function destroy(Request $request, HrOffer $offer)
+    {
+        $this->assertTenant($request, $offer);
+        $this->assertCanManage($request);
+
+        $this->offerService->destroy($offer, $request->user());
 
         return response()->json(['message' => 'Deleted']);
     }

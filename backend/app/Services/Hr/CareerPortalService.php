@@ -108,6 +108,7 @@ class CareerPortalService
             $candidate = HrCandidate::create([
                 'tenant_id'        => $tenant->id,           // hard-scoped to the portal's tenant
                 'job_posting_id'   => $job->id,
+                'project_id'       => $job->project_id,       // STEP 6: inherit Project from the Job Posting
                 'name'             => $data['name'],
                 'email'            => $data['email'],
                 'phone'            => $data['phone'],
@@ -216,11 +217,23 @@ class CareerPortalService
     }
 
     /**
+     * Require the offer's out-of-band secure token (48-char access_token from the offer
+     * email) for any portal offer action — email alone must never be sufficient.
+     * Matched in constant time to avoid timing oracles.
+     */
+    private function assertOfferToken($offer, ?string $token): void
+    {
+        if (! $token || ! $offer->access_token || ! hash_equals((string) $offer->access_token, (string) $token)) {
+            throw new BusinessException('A valid secure offer link is required. Please use the link that was sent to your email.', 403);
+        }
+    }
+
+    /**
      * Candidate accepts or declines their offer from the portal. Reuses
      * OfferService::updateStatus so the candidate stage / decision update
      * exactly as they would from the HR side.
      */
-    public function respondToOffer(Tenant $tenant, int $jobId, string $email, string $action, ?string $reason): array
+    public function respondToOffer(Tenant $tenant, int $jobId, string $email, string $action, ?string $reason, ?string $token = null): array
     {
         $candidate = $this->candidateRepository->findApplicationForJob($email, null, $jobId, $tenant->id);
         $offer     = $candidate?->offer;
@@ -228,6 +241,10 @@ class CareerPortalService
         if (! $offer) {
             throw new BusinessException('No offer found for this application.', 404);
         }
+        // Security: an email address is a weak secret. Require the secure offer token
+        // delivered out-of-band (the offer email / portal link), matched in constant time,
+        // so only the real candidate — not anyone who guesses the email — can respond.
+        $this->assertOfferToken($offer, $token);
         if ($offer->status !== 'Sent') {
             throw new BusinessException('This offer can no longer be updated.', 422);
         }
@@ -244,7 +261,7 @@ class CareerPortalService
     }
 
     /** Resolve the candidate's offer letter file for download (portal-safe). */
-    public function offerLetter(Tenant $tenant, int $jobId, string $email): array
+    public function offerLetter(Tenant $tenant, int $jobId, string $email, ?string $token = null): array
     {
         $candidate = $this->candidateRepository->findApplicationForJob($email, null, $jobId, $tenant->id);
         $offer     = $candidate?->offer;
@@ -252,6 +269,8 @@ class CareerPortalService
         if (! $offer || empty($offer->letter_path) || ! in_array($offer->status, ['Sent', 'Accepted', 'Rejected'], true)) {
             throw new BusinessException('Offer letter is not available.', 404);
         }
+        // Same out-of-band token requirement as respondToOffer — the letter contains CTC.
+        $this->assertOfferToken($offer, $token);
 
         $disk = Storage::disk('local')->exists($offer->letter_path) ? 'local'
             : (Storage::disk('public')->exists($offer->letter_path) ? 'public' : null);

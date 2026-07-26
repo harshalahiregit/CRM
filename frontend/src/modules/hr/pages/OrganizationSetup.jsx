@@ -5,6 +5,7 @@ import {
   Plus, Pencil, Trash2, X, Users, AlertTriangle,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+import { refreshMasterData } from '@/modules/hr/useMasterData'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 
 const ACCENT = '#7C3AED'
@@ -194,7 +195,7 @@ function MasterTab({ tabKey, options, onChanged, showToast }) {
       if (editing) await api.update(editing, form)
       else await api.create(form)
       showToast(`${cfg.singular} ${editing ? 'updated' : 'created'}`)
-      setModal(null); load(); onChanged()
+      setModal(null); load(); onChanged(); refreshMasterData()   // every Recruitment dropdown re-reads the masters
     } catch (e) {
       showToast(e.response?.data?.message || 'Save failed', 'error')
     } finally { setSaving(false) }
@@ -204,7 +205,7 @@ function MasterTab({ tabKey, options, onChanged, showToast }) {
     try {
       await api.delete(confirm.id)
       showToast(`${cfg.singular} deleted`)
-      setConfirm(null); load(); onChanged()
+      setConfirm(null); load(); onChanged(); refreshMasterData()   // every Recruitment dropdown re-reads the masters
     } catch (e) {
       showToast(e.response?.data?.message || 'Delete failed', 'error')
       setConfirm(null)

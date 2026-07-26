@@ -21,6 +21,20 @@ const fmtTime = dt => dt ? new Date(dt).toLocaleString('en-IN', { dateStyle: 'me
 const statusStyle = s => ({ color: INTERVIEW_STATUS_COLORS[s] || '#6b7280', bg: `${INTERVIEW_STATUS_COLORS[s] || '#6b7280'}20` })
 const resultStyle = r => ({ color: INTERVIEW_RESULT_COLORS[r] || '#6b7280', bg: `${INTERVIEW_RESULT_COLORS[r] || '#6b7280'}20` })
 
+// Delivery-status pill for the interview card (feature 4): shows `label` in an
+// emerald "done" style when `ok`, otherwise `pending` in a muted style.
+const NotifChip = ({ ok, label, pending }) => (
+  <span
+    className="text-[10px] font-bold px-2 py-0.5 rounded-lg inline-flex items-center gap-1"
+    style={ok
+      ? { background: 'rgba(16,185,129,0.15)', color: '#10b981' }
+      : { background: 'var(--bg-input)', color: 'var(--text-muted)' }}
+  >
+    <span className="w-1.5 h-1.5 rounded-full" style={{ background: ok ? '#10b981' : 'var(--text-muted)' }} />
+    {ok ? label : pending}
+  </span>
+)
+
 
 export default function Interviews() {
   const { isDark } = useTheme()
@@ -166,10 +180,11 @@ export default function Interviews() {
     } catch (e) { setEmailModal(m => ({ ...m, sending: false })); showToast(e.response?.data?.message || 'Failed to send', 'error') }
   }
   const cancelInterview = async (iv) => {
-    const reason = window.prompt('Cancel this interview? Optional reason:')
+    const reason = window.prompt('Cancel this interview? Reason (required):')
     if (reason === null) return
-    try { const u = await hrApi.interviews.cancel(iv.id, reason || null); patch(iv.id, u); refreshStats(); showToast('Interview cancelled') }
-    catch { showToast('Failed', 'error') }
+    if (!reason.trim()) return showToast('A reason is required to cancel an interview.', 'error')
+    try { const u = await hrApi.interviews.cancel(iv.id, reason.trim()); patch(iv.id, u); refreshStats(); showToast('Interview cancelled') }
+    catch (e) { showToast(e.response?.data?.message || 'Failed', 'error') }
   }
   const removeInterview = async (iv) => {
     if (!window.confirm('Delete this interview permanently?')) return

@@ -5,6 +5,7 @@ import {
   Plus, Pencil, X, Power, Search, UserPlus, Sparkles, Users, Award, Wallet,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+import { useMasterData, withInactive } from '@/modules/hr/useMasterData'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 
 const GRAD = 'linear-gradient(135deg,#7C3AED,#5b21b6)'
@@ -162,6 +163,10 @@ function Kpis({ showToast }) {
 function Goals({ employees, showToast }) {
   const [rows, setRows] = useState([]); const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(null); const [assign, setAssign] = useState(null); const [saving, setSaving] = useState(false)
+  // Goal targeting reuses Org Setup masters (no hardcoded/free-text dept/designation).
+  const { masters } = useMasterData()
+  const deptOptions  = (f) => withInactive((masters.departments  || []).map(d => d.name), f?.department)
+  const desigOptions = (f) => withInactive((masters.designations || []).map(d => d.name), f?.designation)
   const load = useCallback(() => { setLoading(true); hrApi.performance.goals.list().then(setRows).catch(()=>showToast('Failed to load goals','error')).finally(()=>setLoading(false)) }, [showToast])
   useEffect(() => { load() }, [load])
   const EMPTY = { title:'', description:'', department:'', designation:'', weightage:'', target:'', due_date:'', status:'Active' }
@@ -200,8 +205,16 @@ function Goals({ employees, showToast }) {
           <div className="flex items-center justify-between mb-4"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{modal.editing?'Edit Goal':'Add Goal'}</h2><button onClick={()=>setModal(null)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2"><label className="label">Title *</label><input className="input-3d text-sm" value={modal.form.title} onChange={e=>setModal(m=>({...m,form:{...m.form,title:e.target.value}}))}/></div>
-            <div><label className="label">Department</label><input className="input-3d text-sm" value={modal.form.department} onChange={e=>setModal(m=>({...m,form:{...m.form,department:e.target.value}}))}/></div>
-            <div><label className="label">Designation</label><input className="input-3d text-sm" value={modal.form.designation} onChange={e=>setModal(m=>({...m,form:{...m.form,designation:e.target.value}}))}/></div>
+            <div><label className="label">Department</label>
+              <select className="input-3d text-sm" value={modal.form.department} onChange={e=>setModal(m=>({...m,form:{...m.form,department:e.target.value}}))}>
+                <option value="">All / Select…</option>{deptOptions(modal.form).map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+            <div><label className="label">Designation</label>
+              <select className="input-3d text-sm" value={modal.form.designation} onChange={e=>setModal(m=>({...m,form:{...m.form,designation:e.target.value}}))}>
+                <option value="">All / Select…</option>{desigOptions(modal.form).map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
             <div><label className="label">Weightage %</label><input type="number" className="input-3d text-sm" value={modal.form.weightage} onChange={e=>setModal(m=>({...m,form:{...m.form,weightage:e.target.value}}))}/></div>
             <div><label className="label">Due Date</label><input type="date" className="input-3d text-sm" value={modal.form.due_date} onChange={e=>setModal(m=>({...m,form:{...m.form,due_date:e.target.value}}))}/></div>
             <div className="col-span-2"><label className="label">Target</label><input className="input-3d text-sm" value={modal.form.target} onChange={e=>setModal(m=>({...m,form:{...m.form,target:e.target.value}}))}/></div>

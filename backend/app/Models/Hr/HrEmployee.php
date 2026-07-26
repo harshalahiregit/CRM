@@ -16,6 +16,7 @@ class HrEmployee extends Model
         'name','email','phone','dob','gender','address','department','designation',
         'department_id','designation_id','grade_id','job_role_id',
         'reporting_manager_name','reporting_manager_id',
+        'location','shift','official_email','project_id',
         'joining_date','probation_end_date','confirmation_date','status',
     ];
 
@@ -34,6 +35,12 @@ class HrEmployee extends Model
     public function onboarding()
     {
         return $this->belongsTo(HrOnboarding::class, 'onboarding_id');
+    }
+
+    /** Assigned Project (existing Projects module) — carried from the candidate. */
+    public function project()
+    {
+        return $this->belongsTo(\App\Models\Project\Project::class, 'project_id');
     }
 
     /** Exit Interview (SPK-1) — one per employee; answers only, never a copy of this record. */

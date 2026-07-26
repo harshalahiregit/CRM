@@ -87,7 +87,7 @@ class EmployeeService
     {
         $employee->loadMissing([
             'candidate.jobPosting', 'candidate.assignedRecruiter', 'candidate.offer', 'candidate.auditLogs',
-            'onboarding.documents', 'auditLogs',
+            'onboarding.documents', 'auditLogs', 'project:id,name,status',
         ]);
 
         $candidate  = $employee->candidate;
@@ -97,6 +97,15 @@ class EmployeeService
 
         return [
             'employee'    => $employee,
+            // STEP 7: Assigned Project, resolved through the relationship (no duplicate text).
+            // Project Manager is the project's creator; location has no column on projects.
+            'assigned_project' => $employee->project ? [
+                'id'              => $employee->project->id,
+                'name'            => $employee->project->name,
+                'status'          => $employee->project->status,
+                'project_manager' => optional($employee->project->creator)->name,
+                'location'        => null,
+            ] : null,
             'recruitment' => [
                 'reference'    => $candidate ? 'CAND-'.str_pad((string) $candidate->id, 4, '0', STR_PAD_LEFT) : null,
                 'applied_job'  => optional($candidate?->jobPosting)->title,

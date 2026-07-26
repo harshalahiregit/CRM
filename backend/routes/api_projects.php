@@ -21,6 +21,7 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('projects')->gro
 
     // Static segments BEFORE /{project} so they aren't captured as a project id.
     Route::get('/meta',                [ProjectController::class, 'meta']);
+    Route::get('/options',             [ProjectController::class, 'options']);
     Route::get('/staff',               [ProjectController::class, 'staff']);
     Route::get('/customers',           [ProjectController::class, 'customers']);
 

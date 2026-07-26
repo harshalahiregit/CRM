@@ -30,6 +30,8 @@ class HrOffer extends Model
         // Offer portal (Sprint 2)
         'access_token','generated_at','viewed_at','declined_at','expired_at','joining_confirmed_at',
         'accepted_ip','accepted_device','accepted_browser','accepted_name','accepted_signature','clarification','clarification_at','pre_joining',
+        // Lifecycle: approval / withdraw / versioning.
+        'submitted_for_approval_at','approved_by','approved_at','withdrawn_at','withdraw_reason','version',
     ];
 
     protected $casts = [
@@ -43,10 +45,36 @@ class HrOffer extends Model
         'expired_at'           => 'datetime',
         'joining_confirmed_at' => 'datetime',
         'clarification_at'     => 'datetime',
+        'submitted_for_approval_at' => 'datetime',
+        'approved_at'          => 'datetime',
+        'withdrawn_at'         => 'datetime',
+        'version'              => 'integer',
         'offered_ctc'          => 'decimal:2',
         'pre_joining'          => 'array',
         'salary_breakdown'     => 'array',
     ];
+
+    /**
+     * Offer lifecycle state machine (no-skip). `status` is a free string in the DB;
+     * this map is the single source of truth for legal transitions. `Generated` is
+     * the legacy "ready to send" state and is treated like `Approved`.
+     */
+    public const TRANSITIONS = [
+        'Draft'            => ['Pending Approval', 'Approved', 'Withdrawn'],
+        'Pending Approval' => ['Approved', 'Draft', 'Withdrawn'],
+        'Approved'         => ['Sent', 'Withdrawn'],
+        'Generated'        => ['Sent', 'Pending Approval', 'Withdrawn'],
+        'Sent'             => ['Viewed', 'Accepted', 'Declined', 'Expired', 'Withdrawn'],
+        'Viewed'           => ['Accepted', 'Declined', 'Expired', 'Withdrawn'],
+        'Accepted'         => ['Completed'],
+        'Declined'         => [],
+        'Expired'          => ['Sent', 'Approved'],
+        'Withdrawn'        => [],
+        'Completed'        => [],
+    ];
+
+    /** Statuses at which an offer may still be withdrawn or revised (before acceptance). */
+    public const PRE_ACCEPTANCE = ['Draft', 'Pending Approval', 'Approved', 'Generated', 'Sent', 'Viewed', 'Expired'];
 
     public function candidate()
     {
@@ -56,6 +84,12 @@ class HrOffer extends Model
     public function salaryStructure()
     {
         return $this->belongsTo(\App\Models\Hr\HrSalaryStructure::class, 'salary_structure_id');
+    }
+
+    /** Immutable version history — every superseded revision, newest first. */
+    public function revisions()
+    {
+        return $this->hasMany(HrOfferRevision::class, 'offer_id')->orderByDesc('version');
     }
 
     /** Past its validity date and not yet resolved. */
