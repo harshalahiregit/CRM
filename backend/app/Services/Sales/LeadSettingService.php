@@ -122,7 +122,7 @@ class LeadSettingService
         $goal = LeadGoal::create([...$data, 'tenant_id' => $tenantId]);
         Log::channel('sales')->info('Lead goal created', ['goal_id' => $goal->id, 'tenant_id' => $tenantId]);
 
-        return $goal->load('user:id,name');
+        return $goal->fresh()->load('user:id,name');
     }
 
     public function updateGoal(LeadGoal $goal, array $data, int $tenantId): LeadGoal

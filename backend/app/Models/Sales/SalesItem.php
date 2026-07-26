@@ -16,6 +16,7 @@ class SalesItem extends Model
     protected $fillable = [
         'tenant_id', 'name', 'description', 'long_description',
         'rate', 'unit', 'tax_rate', 'tax_rate_2', 'category',
+        'hsn_sac_code', 'hsn_sac_type',
     ];
 
     protected $casts = [

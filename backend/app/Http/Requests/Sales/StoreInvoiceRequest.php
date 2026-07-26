@@ -21,6 +21,8 @@ class StoreInvoiceRequest extends FormRequest
             'currency'      => 'nullable|string|size:3',
             'sale_agent'    => 'nullable|exists:users,id',
             'discount_type' => 'nullable|in:none,before_tax,after_tax',
+            'discount_mode' => 'nullable|in:fixed,percent',
+            'discount_value'=> 'nullable|numeric|min:0',
             'recurring'     => 'nullable|boolean',
             'recur_interval'=> 'nullable|string',
             'recur_type'    => 'nullable|string',

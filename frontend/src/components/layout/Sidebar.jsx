@@ -1,23 +1,33 @@
 import {
-  LayoutDashboard, Users, Briefcase, CheckSquare,
-  FolderOpen, Receipt, Truck, LifeBuoy,
-  BarChart2, Settings, ChevronLeft, ChevronRight,
-  LogOut, User, Moon, Sun, Sparkles, Zap, Package,
-  UserCheck, CalendarDays, FileText, Rocket, Building2,
-  ClipboardList, ChevronDown, Shield, UserCog,
-  IndianRupee, FileSignature, CreditCard, FileX,
-  ShoppingBag, UserPlus, ShoppingCart, ScanLine, Boxes, Undo2, Wallet, Award, GraduationCap, ShieldCheck, Bell
+  LayoutDashboard, Users, Briefcase, CheckSquare, FolderOpen, Receipt, Truck, LifeBuoy,
+  BarChart2, Settings, ChevronLeft, ChevronRight, LogOut, User, Moon, Sun, Sparkles, Zap,
+  Package, UserCheck, CalendarDays, FileText, Rocket, Building2, ClipboardList,
+  ChevronDown, Shield, UserCog, IndianRupee, FileSignature, CreditCard, FileX, ShoppingBag,
+  UserPlus, Link2, RefreshCw, LayoutTemplate, Globe, TrendingUp, Landmark, BookText, Scale,
+  ArrowLeftRight, BookOpen, Boxes, PackagePlus, PackageMinus, Warehouse, History,
+  BarChart3, Activity, Layers3, ScanLine, ClipboardCheck, ShoppingCart, Hourglass, Wrench,
+  CalendarRange, Handshake, Factory, Undo2, Wallet, Award, GraduationCap, ShieldCheck, Bell
 } from 'lucide-react'
 import { NavLink, useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/context/AuthContext'
 import { useTheme } from '@/context/ThemeContext'
 import { isModuleInstalled } from '@/modules/registry'
+import { helpdeskApi } from '@/services/helpdeskApi'
 import { useState, useEffect } from 'react'
 import clsx from 'clsx'
+import { leadApi } from '@/services/leadApi'
+
+// NOTE: 'Contacts' and 'Deals' were removed — both were dead "Coming Soon"
+// links. Contacts are the existing Customer module's contacts, and there is no
+// separate Deal entity by design (leads are the pipeline, same as the old CRM).
+// Portal roles never reach the staff ticket queue, so don't poll the badge for them.
+const EXTERNAL_ROLES = ['client', 'vendor', 'third_party_vendor']
 
 const NAV_ITEMS = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/app/dashboard' },
-  { label: 'Deals', icon: Briefcase, path: '/app/deals' },
+  { label: 'Tasks', icon: CheckSquare, path: '/app/tasks' },
+  { label: 'Projects', icon: FolderOpen, path: '/app/projects' },
   { label: 'Invoices', icon: Receipt, path: '/app/invoices' },
   { label: 'Vendors', icon: Truck, path: '/app/vendors' },
   { label: 'Reports', icon: BarChart2, path: '/app/reports' },
@@ -56,16 +66,84 @@ const HR_RECORDS_ITEMS = [
 // Flat list of every HR leaf — used only for the collapsed icon rail.
 const HR_ALL_LEAVES = [HR_DASHBOARD, ...HR_RECRUITMENT_ITEMS, HR_EMPLOYEES, ...HR_RECORDS_ITEMS]
 
+// Grouped so the ~17 sales micro-modules stay scannable instead of rendering
+// as one long flat list. A muted mini-header is emitted whenever `group`
+// changes (see the Sales render loop below).
 const SALES_SUB_ITEMS = [
-  { label: 'Sales Dashboard', path: '/app/sales/dashboard', icon: LayoutDashboard },
-  { label: 'Leads', path: '/app/sales/leads', icon: UserPlus },
-  { label: 'Proposals', path: '/app/sales/proposals', icon: FileSignature },
-  { label: 'Estimates', path: '/app/sales/estimates', icon: ClipboardList },
-  { label: 'Invoices', path: '/app/sales/invoices', icon: Receipt },
-  { label: 'Delivery Notes', path: '/app/sales/delivery-notes', icon: Truck },
-  { label: 'Payments', path: '/app/sales/payments', icon: CreditCard },
-  { label: 'Credit Notes', path: '/app/sales/credit-notes', icon: FileX },
-  { label: 'Items', path: '/app/sales/items', icon: ShoppingBag },
+  { group: 'Pipeline',        label: 'Sales Dashboard', path: '/app/sales/dashboard', icon: LayoutDashboard },
+  { group: 'Pipeline',        label: 'Leads', path: '/app/sales/leads', icon: UserPlus },
+  { group: 'Pipeline',        label: 'Tasks', path: '/app/sales/tasks', icon: CheckSquare },
+  { group: 'Pipeline',        label: 'Forecast', path: '/app/sales/forecast', icon: TrendingUp },
+
+  { group: 'Documents',       label: 'Proposals', path: '/app/sales/proposals', icon: FileSignature },
+  { group: 'Documents',       label: 'Proposal Templates', path: '/app/sales/proposal-templates', icon: LayoutTemplate },
+  { group: 'Documents',       label: 'Estimates', path: '/app/sales/estimates', icon: ClipboardList },
+  { group: 'Documents',       label: 'Proforma Invoices', path: '/app/sales/proforma-invoices', icon: ClipboardList },
+  { group: 'Documents',       label: 'Tax Invoices', path: '/app/sales/invoices', icon: Receipt },
+  { group: 'Documents',       label: 'Delivery Notes', path: '/app/sales/delivery-notes', icon: Truck },
+  { group: 'Documents',       label: 'Credit Notes', path: '/app/sales/credit-notes', icon: FileX },
+
+  { group: 'Billing',         label: 'Payments', path: '/app/sales/payments', icon: CreditCard },
+  { group: 'Billing',         label: 'Payment Links', path: '/app/sales/payment-links', icon: Link2 },
+  { group: 'Billing',         label: 'Retainer Invoices', path: '/app/sales/retainer-invoices', icon: RefreshCw },
+  { group: 'Billing',         label: 'Commission', path: '/app/sales/commission', icon: IndianRupee },
+
+  { group: 'Catalog & Setup', label: 'Items', path: '/app/sales/items', icon: ShoppingBag },
+  { group: 'Catalog & Setup', label: 'Contracts', path: '/app/sales/contracts', icon: FileSignature },
+  { group: 'Catalog & Setup', label: 'Web-to-Lead', path: '/app/sales/web-to-lead', icon: Globe },
+]
+
+const ACCOUNTS_SUB_ITEMS = [
+  { label: 'Dashboard',       path: '/app/accounts/dashboard',       icon: LayoutDashboard },
+  { label: 'Chart of Accounts', path: '/app/accounts/chart-of-accounts', icon: Landmark },
+  { label: 'Vouchers',        path: '/app/accounts/vouchers',        icon: BookText },
+  { label: 'Registers',       path: '/app/accounts/registers',       icon: BookOpen },
+  { label: 'Bills',           path: '/app/accounts/bills',           icon: Receipt },
+  { label: 'Banking',         path: '/app/accounts/banking',         icon: CreditCard },
+  { label: 'Cheques',         path: '/app/accounts/cheques',         icon: FileText },
+  { label: 'Transfer Funds',  path: '/app/accounts/transfer',        icon: ArrowLeftRight },
+  { label: 'Budgets',         path: '/app/accounts/budgets',         icon: BarChart2 },
+  { label: 'Reports',         path: '/app/accounts/reports',         icon: Scale },
+  { label: 'Settings',        path: '/app/accounts/settings',        icon: Settings },
+]
+
+const HELPDESK_SUB_ITEMS = [
+  { label: 'Analytics', path: '/app/helpdesk/analytics', icon: BarChart2 },
+  { label: 'Tickets', path: '/app/helpdesk/tickets', icon: LifeBuoy },
+  { label: 'Knowledge Base', path: '/app/helpdesk/knowledge-base', icon: FileText },
+  { label: 'KB Admin', path: '/app/helpdesk/kb-admin', icon: FileText },
+  { label: 'Widget', path: '/app/helpdesk/widget', icon: Package },
+]
+
+// Inventory OS — mirrors the blueprint's left-nav parent + its sub-pages.
+const INVENTORY_SUB_ITEMS = [
+  { label: 'Inventory Dashboard', path: '/app/inventory', icon: LayoutDashboard, end: true },
+  // High in the list on purpose: on a warehouse floor this is the first thing
+  // someone reaches for, not a tool buried under reports.
+  { label: 'Scan', path: '/app/inventory/scan', icon: ScanLine },
+  { label: 'Items', path: '/app/inventory/products', icon: Package },
+  { label: 'Receiving voucher', path: '/app/inventory/vouchers/receipt', icon: PackagePlus },
+  { label: 'Delivery voucher', path: '/app/inventory/vouchers/delivery', icon: PackageMinus },
+  { label: 'Pick, pack & ship', path: '/app/inventory/fulfilment', icon: Truck },
+  // Next to the daily work, not under Reports: a count is something people DO.
+  { label: 'Physical counts', path: '/app/inventory/counts', icon: ClipboardCheck },
+  { label: 'Internal delivery note', path: '/app/inventory/vouchers/internal', icon: ArrowLeftRight },
+  // Right under the note it comes from — the consignment is what happens next.
+  { label: 'Consignments', path: '/app/inventory/transfers', icon: Truck },
+  { label: 'Loss & adjustment', path: '/app/inventory/vouchers/loss_adjustment', icon: Scale },
+  { label: 'Warehouse', path: '/app/inventory/warehouses', icon: Warehouse },
+  { label: 'Vendors', path: '/app/inventory/vendors', icon: Truck },
+  { label: 'Purchase orders', path: '/app/inventory/purchase-orders', icon: ShoppingCart },
+  { label: 'Vendor-managed', path: '/app/inventory/vmi', icon: Handshake },
+  { label: 'Traceability', path: '/app/inventory/traceability', icon: Layers3 },
+  { label: 'Inventory history', path: '/app/inventory/history', icon: History },
+  { label: 'Analytics', path: '/app/inventory/analytics', icon: Activity },
+  { label: 'Dead stock', path: '/app/inventory/dead-stock', icon: Hourglass },
+  { label: 'Assets', path: '/app/inventory/assets', icon: Wrench },
+  { label: 'Rentals', path: '/app/inventory/rentals', icon: CalendarRange },
+  { label: 'Manufacturing', path: '/app/inventory/manufacturing', icon: Factory },
+  { label: 'Report', path: '/app/inventory/reports', icon: BarChart3 },
+  { label: 'Settings', path: '/app/inventory/settings', icon: Settings },
 ]
 
 const PURCHASE_SUB_ITEMS = [
@@ -102,13 +180,45 @@ export default function Sidebar({ collapsed, onToggle }) {
   const [recruitExpanded, setRecruitExpanded] = useState(true)
   const [hrRecordsExpanded, setHrRecordsExpanded] = useState(true)
   const [salesExpanded, setSalesExpanded] = useState(true)
-  const [purchaseExpanded, setPurchaseExpanded] = useState(true)
+  const [accountsExpanded, setAccountsExpanded] = useState(true)
+  const [helpdeskExpanded, setHelpdeskExpanded] = useState(true)
+  const [inventoryExpanded, setInventoryExpanded] = useState(true)
   const [tpvExpanded, setTpvExpanded] = useState(true)
+  const [purchaseExpanded, setPurchaseExpanded] = useState(true)
   const hrInstalled = isModuleInstalled('hr')
   // Admin/staff see Dashboard + Kickoff; a TPV (vendor) login sees Onboarding + Workforce.
   const tpvItems = ['third_party_vendor', 'vendor'].includes(user?.role)
     ? TPV_VENDOR_ITEMS
     : TPV_ADMIN_ITEMS
+  const [activeLeadsCount, setActiveLeadsCount] = useState(null)
+
+  useEffect(() => {
+    leadApi.summary().then(s => setActiveLeadsCount(s.active)).catch(() => {})
+  }, [])
+
+  // REQ-04-lite: unseen-ticket badge. Polls every 30s; staff-only (portal roles
+  // get a 403, so skip the request entirely). Errors leave the badge hidden.
+  const isInternal = !!user && !EXTERNAL_ROLES.includes(user.role)
+  const { data: unseen } = useQuery({
+    queryKey: ['helpdesk-unseen-count'],
+    queryFn: () => helpdeskApi.tickets.unseenCount(),
+    enabled: isInternal,
+    refetchInterval: 30000,
+    refetchIntervalInBackground: false,
+    staleTime: 15000,
+    retry: false,
+  })
+  const unseenCount = unseen?.count ?? 0
+  // Open / closed counts for the Tickets row — "O6 C5" style, colour-coded.
+  const { data: statusCounts } = useQuery({
+    queryKey: ['helpdesk-status-counts'],
+    queryFn: () => helpdeskApi.tickets.statusCounts(),
+    enabled: isInternal,
+    refetchInterval: 30000,
+    refetchIntervalInBackground: false,
+    staleTime: 15000,
+    retry: false,
+  })
 
   const handleLogout = async () => { await logout(); navigate('/auth/login') }
 
@@ -311,6 +421,51 @@ export default function Sidebar({ collapsed, onToggle }) {
           </div>
         )}
 
+        {/* ── Customers (standalone) ── */}
+        <div className="mt-2">
+          {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>Customers</p>}
+          <NavLink to="/app/customers">
+            {({ isActive }) => (
+              <div title={collapsed ? 'Customers' : ''} className={clsx('nav-3d mb-0.5', isActive && 'nav-3d-active')} style={{ justifyContent: collapsed ? 'center' : undefined }}>
+                <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: isActive ? 'rgba(255,255,255,0.15)' : 'rgba(124,58,237,0.15)' }}>
+                  <Building2 size={13} style={{ color: isActive ? '#fff' : '#a78bfa' }} />
+                </div>
+                {!collapsed && <span className="truncate text-sm font-semibold flex-1 text-left">Customer Directory</span>}
+                {isActive && !collapsed && <div className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: '#c4b5fd' }} />}
+              </div>
+            )}
+          </NavLink>
+        </div>
+
+        {/* ── Accounts Module sub-nav ── */}
+        <div className="mt-2">
+          {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>Accounts & Finance</p>}
+          <button
+            onClick={() => setAccountsExpanded(e => !e)}
+            title={collapsed ? 'Accounts & Finance' : ''}
+            className="nav-3d mb-0.5 w-full"
+            style={{ justifyContent: collapsed ? 'center' : undefined, color: '#a78bfa' }}
+          >
+            <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.15)' }}>
+              <Landmark size={13} style={{ color: '#a78bfa' }} />
+            </div>
+            {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Accounts & Finance</span><ChevronDown size={13} className={clsx('transition-transform duration-200', accountsExpanded && 'rotate-180')} /></>}
+          </button>
+          {(accountsExpanded || collapsed) && ACCOUNTS_SUB_ITEMS.map(({ label, path, icon: Icon }) => (
+            <NavLink key={path} to={path}>
+              {({ isActive }) => (
+                <div title={collapsed ? label : ''} className={clsx('nav-3d mb-0.5', isActive && 'nav-3d-active')} style={{ justifyContent: collapsed ? 'center' : undefined, paddingLeft: collapsed ? undefined : '28px' }}>
+                  <div className="flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: isActive ? 'rgba(255,255,255,0.15)' : 'rgba(124,58,237,0.06)' }}>
+                    <Icon size={12} />
+                  </div>
+                  {!collapsed && <span className="truncate text-xs">{label}</span>}
+                  {isActive && !collapsed && <div className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: '#c4b5fd' }} />}
+                </div>
+              )}
+            </NavLink>
+          ))}
+        </div>
+
         {/* ── Sales Module sub-nav ── */}
         <div className="mt-2">
           {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>Sales & Revenue</p>}
@@ -325,15 +480,108 @@ export default function Sidebar({ collapsed, onToggle }) {
             </div>
             {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Sales & Revenue</span><ChevronDown size={13} className={clsx('transition-transform duration-200', salesExpanded && 'rotate-180')} /></>}
           </button>
-          {(salesExpanded || collapsed) && SALES_SUB_ITEMS.map(({ label, path, icon: Icon }) => (
-            <NavLink key={path} to={path}>
+          {(salesExpanded || collapsed) && SALES_SUB_ITEMS.map(({ group, label, path, icon: Icon }, i) => (
+            <div key={path}>
+            {/* Mini group header — only when the group changes, and never in the collapsed icon rail */}
+            {!collapsed && group && group !== SALES_SUB_ITEMS[i - 1]?.group && (
+              <p className="label-caps px-5 mt-2 mb-1" style={{ paddingLeft: '28px', fontSize: '9px', opacity: 0.75 }}>{group}</p>
+            )}
+            <NavLink to={path}>
               {({ isActive }) => (
                 <div title={collapsed ? label : ''} className={clsx('nav-3d mb-0.5', isActive && 'nav-3d-active')} style={{ justifyContent: collapsed ? 'center' : undefined, paddingLeft: collapsed ? undefined : '28px' }}>
                   <div className="flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: isActive ? 'rgba(255,255,255,0.15)' : 'rgba(124,58,237,0.06)' }}>
                     <Icon size={12} />
                   </div>
                   {!collapsed && <span className="truncate text-xs">{label}</span>}
-                  {isActive && !collapsed && <div className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: '#c4b5fd' }} />}
+                  {!collapsed && label === 'Leads' && activeLeadsCount > 0 && (
+                    <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: isActive ? 'rgba(255,255,255,0.2)' : 'rgba(124,58,237,0.15)', color: isActive ? '#fff' : '#a78bfa' }}>
+                      {activeLeadsCount}
+                    </span>
+                  )}
+                  {isActive && !collapsed && label !== 'Leads' && <div className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: '#c4b5fd' }} />}
+                </div>
+              )}
+            </NavLink>
+            </div>
+          ))}
+        </div>
+
+        {/* ── Helpdesk Module sub-nav ── */}
+        <div className="mt-2">
+          {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#22d3ee' }}>Helpdesk & Support</p>}
+          <button
+            onClick={() => setHelpdeskExpanded(e => !e)}
+            title={collapsed ? 'Helpdesk & Support' : ''}
+            className="nav-3d mb-0.5 w-full"
+            style={{ justifyContent: collapsed ? 'center' : undefined, color: '#22d3ee' }}
+          >
+            <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(6,182,212,0.15)' }}>
+              <LifeBuoy size={13} style={{ color: '#22d3ee' }} />
+            </div>
+            {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Helpdesk & Support</span><ChevronDown size={13} className={clsx('transition-transform duration-200', helpdeskExpanded && 'rotate-180')} /></>}
+          </button>
+          {(helpdeskExpanded || collapsed) && HELPDESK_SUB_ITEMS.map(({ label, path, icon: Icon }) => {
+            // The Tickets row shows Open / Closed counts (colour-coded) plus a
+            // small "new" dot when there are unseen tickets.
+            const isTickets = label === 'Tickets'
+            const openN = statusCounts?.open ?? 0
+            const closedN = statusCounts?.closed ?? 0
+            const showCounts = isTickets && (openN > 0 || closedN > 0)
+            const showDot = isTickets && unseenCount > 0
+            return (
+            <NavLink key={path} to={path}>
+              {({ isActive }) => (
+                <div title={collapsed ? label : ''} className={clsx('nav-3d mb-0.5', isActive && 'nav-3d-active')} style={{ justifyContent: collapsed ? 'center' : undefined, paddingLeft: collapsed ? undefined : '28px' }}>
+                  <div className="relative flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: isActive ? 'rgba(255,255,255,0.15)' : 'rgba(6,182,212,0.06)' }}>
+                    <Icon size={12} />
+                    {/* Collapsed rail: a bare dot stands in for the counts. */}
+                    {showDot && collapsed && (
+                      <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full" style={{ background: 'var(--color-danger-500)', border: '1px solid var(--bg-card)' }} />
+                    )}
+                  </div>
+                  {!collapsed && <span className="truncate text-xs">{label}</span>}
+                  {isTickets && !collapsed && showCounts && (
+                    <span className="ml-auto flex items-center gap-1">
+                      {showDot && <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--color-danger-500)' }} title={`${unseenCount} new`} />}
+                      <span className="text-[10px] font-bold rounded-md px-1.5 py-0.5" title={`${openN} open`}
+                        style={{ background: 'rgba(34,211,238,0.16)', color: '#22d3ee' }}>O{openN}</span>
+                      <span className="text-[10px] font-bold rounded-md px-1.5 py-0.5" title={`${closedN} closed`}
+                        style={{ background: 'rgba(16,185,129,0.16)', color: '#10b981' }}>C{closedN}</span>
+                    </span>
+                  )}
+                  {isActive && !collapsed && !showCounts && <div className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: '#67e8f9' }} />}
+                </div>
+              )}
+            </NavLink>
+            )
+          })}
+        </div>
+
+        {/* ── Inventory Module sub-nav ── */}
+        <div className="mt-2">
+          {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#10b981' }}>Inventory</p>}
+          <button
+            onClick={() => setInventoryExpanded(e => !e)}
+            title={collapsed ? 'Inventory' : ''}
+            className="nav-3d mb-0.5 w-full"
+            style={{ justifyContent: collapsed ? 'center' : undefined, color: '#10b981' }}
+          >
+            <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(16,185,129,0.15)' }}>
+              <Boxes size={13} style={{ color: '#10b981' }} />
+            </div>
+            {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Inventory</span><ChevronDown size={13} className={clsx('transition-transform duration-200', inventoryExpanded && 'rotate-180')} /></>}
+          </button>
+          {(inventoryExpanded || collapsed) && INVENTORY_SUB_ITEMS.map(({ label, path, icon: Icon, end }) => (
+            // `end` on the dashboard row — without it /app/inventory stays
+            // highlighted while you're on any of its child pages.
+            <NavLink key={path} to={path} end={end}>
+              {({ isActive }) => (
+                <div title={collapsed ? label : ''} className={clsx('nav-3d mb-0.5', isActive && 'nav-3d-active')} style={{ justifyContent: collapsed ? 'center' : undefined, paddingLeft: collapsed ? undefined : '28px' }}>
+                  <div className="flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: isActive ? 'rgba(255,255,255,0.15)' : 'rgba(16,185,129,0.06)' }}>
+                    <Icon size={12} />
+                  </div>
+                  {!collapsed && <span className="truncate text-xs">{label}</span>}
+                  {isActive && !collapsed && <div className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: '#6ee7b7' }} />}
                 </div>
               )}
             </NavLink>

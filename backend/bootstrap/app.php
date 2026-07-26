@@ -59,11 +59,13 @@ return Application::configure(basePath: dirname(__DIR__))
                     ], $e->status);
                 }
 
-                // An invalid/expired token must return 401 (not 500) so the frontend
-                // interceptor can redirect to login. AuthenticationException has no
-                // getStatusCode(), so it would otherwise fall through to 500.
+                // Auth failures must return 401 (not the generic 500) so the
+                // frontend's axios interceptor can catch it and redirect to login.
                 if ($e instanceof \Illuminate\Auth\AuthenticationException) {
-                    return response()->json(['status' => 'error', 'message' => 'Unauthenticated'], 401);
+                    return response()->json([
+                        'status'  => 'error',
+                        'message' => 'Unauthenticated.',
+                    ], 401);
                 }
 
                 $status = $e instanceof BusinessException

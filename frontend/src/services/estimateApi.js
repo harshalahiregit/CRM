@@ -7,6 +7,9 @@ const handleErr = (err) => {
 }
 
 export const estimateApi = {
+  convertToProforma: (id) =>
+    api.post(`/sales/estimates/${id}/convert-to-proforma`).then(r => r.data).catch(handleErr),
+
   list: (params = {}) =>
     api.get('/sales/estimates', { params }).then(r => r.data).catch(handleErr),
 
@@ -27,6 +30,9 @@ export const estimateApi = {
 
   convertToInvoice: (id, data = {}) =>
     api.post(`/sales/estimates/${id}/convert-to-invoice`, data).then(r => r.data).catch(handleErr),
+
+  recordPayment: (id, data) =>
+    api.post(`/sales/estimates/${id}/payments`, data).then(r => r.data).catch(handleErr),
 }
 
 export default estimateApi

@@ -97,17 +97,25 @@ return [
             'replace_placeholders' => true,
         ],
 
-        'vendor' => [
+        'customer' => [
             'driver' => 'daily',
-            'path' => storage_path('logs/vendor.log'),
+            'path' => storage_path('logs/customer.log'),
             'level' => env('LOG_LEVEL', 'debug'),
             'days' => env('LOG_DAILY_DAYS', 14),
             'replace_placeholders' => true,
         ],
 
-        'purchase' => [
+        'accounts' => [
             'driver' => 'daily',
-            'path' => storage_path('logs/purchase.log'),
+            'path' => storage_path('logs/accounts.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'days' => env('LOG_DAILY_DAYS', 14),
+            'replace_placeholders' => true,
+        ],
+
+        'vendor' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/vendor.log'),
             'level' => env('LOG_LEVEL', 'debug'),
             'days' => env('LOG_DAILY_DAYS', 14),
             'replace_placeholders' => true,
@@ -124,6 +132,14 @@ return [
         'compliance' => [
             'driver' => 'daily',
             'path' => storage_path('logs/compliance.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'days' => env('LOG_DAILY_DAYS', 14),
+            'replace_placeholders' => true,
+        ],
+
+        'purchase' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/purchase.log'),
             'level' => env('LOG_LEVEL', 'debug'),
             'days' => env('LOG_DAILY_DAYS', 14),
             'replace_placeholders' => true,

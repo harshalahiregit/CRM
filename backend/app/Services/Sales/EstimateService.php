@@ -2,11 +2,14 @@
 
 namespace App\Services\Sales;
 
+use App\Exceptions\BusinessException;
 use App\Exceptions\UnauthorizedTenantException;
 use App\Models\Sales\Estimate;
 use App\Models\Sales\SalesInvoice;
 use App\Models\Sales\SalesLineItem;
+use App\Models\Sales\SalesPayment;
 use App\Repositories\Sales\EstimateRepository;
+use App\Support\HtmlSanitizer;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -16,14 +19,17 @@ class EstimateService
     {
     }
 
-    public function list(int $tenantId, ?string $status)
+    public function list(int $tenantId, ?string $status, ?string $type = null)
     {
-        return $this->estimateRepository->filtered($tenantId, $status);
+        return $this->estimateRepository->filtered($tenantId, $status, $type);
     }
 
     public function create(array $data, array $lineItems, int $tenantId, int $userId): Estimate
     {
         return DB::transaction(function () use ($data, $lineItems, $tenantId, $userId) {
+            if (isset($data['terms'])) {
+                $data['terms'] = HtmlSanitizer::clean($data['terms']); // rich text
+            }
             $estimate = Estimate::create([
                 ...$data,
                 'tenant_id'  => $tenantId,
@@ -51,6 +57,9 @@ class EstimateService
         $this->assertTenant($estimate, $tenantId);
 
         return DB::transaction(function () use ($estimate, $data, $lineItems, $hasLineItems, $tenantId) {
+            if (isset($data['terms'])) {
+                $data['terms'] = HtmlSanitizer::clean($data['terms']); // rich text
+            }
             $estimate->update($data);
 
             if ($hasLineItems) {
@@ -79,9 +88,45 @@ class EstimateService
         return $estimate->fresh();
     }
 
+    /** Early-stage Estimate → Proforma Invoice (clone + link). */
+    public function convertToProforma(Estimate $estimate, int $tenantId, int $userId): Estimate
+    {
+        $this->assertTenant($estimate, $tenantId);
+        if ($estimate->estimate_type !== 'estimate') {
+            throw new \App\Exceptions\BusinessException('Only estimates can be converted to proforma invoices.', 422);
+        }
+
+        return DB::transaction(function () use ($estimate, $tenantId, $userId) {
+            $proforma = $estimate->replicate([
+                'reference', 'status', 'sent_at', 'converted_invoice_id',
+                'payment_received', 'payment_amount', 'payment_date',
+            ]);
+            $proforma->estimate_type = 'proforma';
+            $proforma->status = 'Draft';
+            $proforma->created_by = $userId;
+            $proforma->save();
+
+            foreach ($estimate->lineItems as $li) {
+                $copy = $li->replicate();
+                $copy->lineable_id = $proforma->id;
+                $copy->save();
+            }
+            $proforma->load('lineItems')->recalcTotals();
+
+            Log::channel('sales')->info('Estimate converted to proforma', [
+                'estimate_id' => $estimate->id, 'proforma_id' => $proforma->id, 'tenant_id' => $tenantId,
+            ]);
+
+            return $proforma->fresh()->load('lineItems');
+        });
+    }
+
     public function convertToInvoice(Estimate $estimate, ?string $dueDate, int $tenantId, int $userId): SalesInvoice
     {
         $this->assertTenant($estimate, $tenantId);
+        if ($estimate->estimate_type === 'estimate') {
+            throw new \App\Exceptions\BusinessException('Convert the estimate to a proforma invoice first — only proforma invoices become tax invoices.', 422);
+        }
 
         return DB::transaction(function () use ($estimate, $dueDate, $tenantId, $userId) {
             $invoice = SalesInvoice::create([
@@ -119,14 +164,61 @@ class EstimateService
             }
 
             $invoice->recalcTotals();
-            $estimate->update(['status' => 'Accepted']);
+
+            // Carry over any payment already recorded against the proforma
+            // invoice (Master Plan V2 §B4: "Convert to Tax Invoice action
+            // with payment data carried over").
+            if ($estimate->payment_received && $estimate->payment_amount > 0) {
+                SalesPayment::create([
+                    'tenant_id'      => $tenantId,
+                    'invoice_id'     => $invoice->id,
+                    'date'           => $estimate->payment_date ?? now()->toDateString(),
+                    'amount'         => min($estimate->payment_amount, $invoice->total),
+                    'mode'           => 'Carried over from Proforma Invoice',
+                    'note'           => "Payment carried over from {$estimate->reference}",
+                    'created_by'     => $userId,
+                ]);
+                $invoice->recalcBalance();
+            }
+
+            $estimate->update([
+                'status' => 'Accepted',
+                'converted_invoice_id' => $invoice->id,
+            ]);
 
             Log::channel('sales')->info('Estimate converted to invoice', [
                 'estimate_id' => $estimate->id, 'invoice_id' => $invoice->id, 'tenant_id' => $tenantId,
             ]);
 
-            return $invoice;
+            return $invoice->fresh();
         });
+    }
+
+    /**
+     * Record a payment against a proforma invoice (estimate) directly —
+     * distinct from SalesPayment, which tracks payments against a Tax
+     * Invoice. Master Plan V2 §B4: "Add payment recording against
+     * proforma invoice" + "PAID badge".
+     */
+    public function recordPayment(Estimate $estimate, array $data, int $tenantId): Estimate
+    {
+        $this->assertTenant($estimate, $tenantId);
+
+        if ((float) $data['amount'] > (float) $estimate->total) {
+            throw new BusinessException('Payment amount exceeds the proforma invoice total.', 422);
+        }
+
+        $estimate->update([
+            'payment_received' => true,
+            'payment_amount'   => $data['amount'],
+            'payment_date'     => $data['date'] ?? now()->toDateString(),
+        ]);
+
+        Log::channel('sales')->info('Proforma invoice payment recorded', [
+            'estimate_id' => $estimate->id, 'tenant_id' => $tenantId, 'amount' => $data['amount'],
+        ]);
+
+        return $estimate->fresh();
     }
 
     private function assertTenant(Estimate $estimate, int $tenantId): void
@@ -150,11 +242,14 @@ class EstimateService
                 'item_id'       => $item['item_id'] ?? null,
                 'item_name'     => $item['item_name'],
                 'description'   => $item['description'] ?? null,
+                'hsn_sac_code'  => $item['hsn_sac_code'] ?? null,
                 'qty'           => $item['qty'],
                 'unit'          => $item['unit'] ?? 'pcs',
                 'rate'          => $item['rate'],
-                'tax'           => $item['tax'] ?? 0,
-                'discount'      => $item['discount'] ?? 0,
+                'tax'           => $taxInfo['tax'],
+                'taxes'         => $taxInfo['taxes'],
+                'discount'      => $item['discount'],
+                'discount_mode' => $item['discount_mode'] ?? 'fixed',
                 'total'         => SalesLineItem::computeTotal($item),
                 'sort_order'    => $idx,
             ]);

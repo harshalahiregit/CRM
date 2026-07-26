@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  ArrowLeft, Send, Copy, Receipt, Trash2, FileText,
+  ArrowLeft, Send, Receipt, Trash2, FileText,
   CheckCircle, XCircle, Download, X, User, Calendar,
-  DollarSign, Tag
+  DollarSign, Tag, CreditCard
 } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
 import StatusBadge from '../components/StatusBadge'
 import ActivityTimeline from '../components/ActivityTimeline'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 
 const fmt     = v => '₹' + Number(v || 0).toLocaleString('en-IN')
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
@@ -23,18 +24,23 @@ export default function EstimateDetail() {
   const [toast, setToast]         = useState(null)
   const [showConvert, setShowConvert] = useState(false)
   const [converting, setConverting]  = useState(false)
+  const [showPayDrawer, setShowPayDrawer] = useState(false)
+  const [payAmount, setPayAmount] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type })
     setTimeout(() => setToast(null), 3500)
   }
 
+  const reload = () => salesApi.estimates.get(id).then(setEstimate)
+
   useEffect(() => {
     salesApi.estimates.get(id).then(e => { setEstimate(e); setLoading(false) })
   }, [id])
 
   if (loading) return (
-    <div className="space-y-4 animate-[tiltIn_0.35s_ease_forwards]">
+    <div className="space-y-4 animate-[tiltIn_0.35s_ease]">
       {[1, 2, 3].map(i => <div key={i} className="skeleton h-28 rounded-2xl" style={{ background: 'var(--border)' }} />)}
     </div>
   )
@@ -46,10 +52,9 @@ export default function EstimateDetail() {
     </div>
   )
 
-  // Totals from line items (if present), fallback to stored amount
-  const subtotal = estimate.items?.reduce((s, r) => s + (r.qty * r.rate), 0) ?? estimate.amount ?? 0
-  const taxTotal = estimate.items?.reduce((s, r) => s + ((r.qty * r.rate) * (r.tax / 100)), 0) ?? 0
-  const grandTotal = subtotal + taxTotal
+  const subtotal = Number(estimate.subtotal || 0)
+  const taxTotal = Number(estimate.tax_total || 0)
+  const grandTotal = Number(estimate.total || 0)
 
   const isEditable = !['Accepted', 'Declined', 'Expired'].includes(estimate.status)
 
@@ -64,14 +69,47 @@ export default function EstimateDetail() {
   const handleConvertToInvoice = async () => {
     setConverting(true)
     try {
-      await salesApi.estimates.convertToInvoice(estimate.id)
-      showToast('Estimate converted to Invoice successfully!')
+      const { invoice_number } = await salesApi.estimates.convertToInvoice(estimate.id)
+      showToast(`Converted to Tax Invoice ${invoice_number}!`)
       setTimeout(() => navigate('/app/sales/invoices'), 1500)
-    } catch {
-      showToast('Conversion failed. Try again.', 'error')
+    } catch (e) {
+      showToast(e.message || 'Conversion failed. Try again.', 'error')
     } finally {
       setConverting(false)
       setShowConvert(false)
+    }
+  }
+
+  const handleRecordPayment = async () => {
+    if (!payAmount) return showToast('Amount required', 'error')
+    try {
+      await salesApi.estimates.recordPayment(estimate.id, { amount: payAmount })
+      showToast('Payment recorded!')
+      setShowPayDrawer(false)
+      setPayAmount('')
+      reload()
+    } catch (e) {
+      showToast(e.message || 'Failed to record payment', 'error')
+    }
+  }
+
+  const handleStatusChange = async (status) => {
+    try {
+      await salesApi.estimates.update(estimate.id, { status })
+      showToast(`Status updated to ${status}!`)
+      reload()
+    } catch (e) {
+      showToast(e.message || 'Failed to update status', 'error')
+    }
+  }
+
+  const handleDelete = async () => {
+    try {
+      await salesApi.estimates.delete(estimate.id)
+      showToast('Proforma invoice deleted')
+      setTimeout(() => navigate('/app/sales/estimates'), 800)
+    } catch (e) {
+      showToast(e.message || 'Failed to delete', 'error')
     }
   }
 
@@ -83,7 +121,7 @@ export default function EstimateDetail() {
           {toast.msg}
         </div>
       )}
-      <div className="space-y-6 animate-[tiltIn_0.35s_ease_forwards]">
+      <div className="space-y-6 animate-[tiltIn_0.35s_ease]">
 
         {/* Top bar */}
         <div className="flex items-center justify-between flex-wrap gap-3">
@@ -96,9 +134,12 @@ export default function EstimateDetail() {
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <p className="font-black text-base" style={{ color: 'var(--text-h)' }}>
-                  EST-{String(estimate.id).padStart(3, '0')}
+                  {estimate.reference}
                 </p>
                 <StatusBadge status={estimate.status} size="lg" />
+                {estimate.payment_received && (
+                  <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold" style={{ background: 'rgba(16,185,129,0.15)', color: '#10b981' }}>PAID</span>
+                )}
               </div>
               <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
                 {estimate.client} · Valid until {fmtDate(estimate.valid_until)}
@@ -113,13 +154,20 @@ export default function EstimateDetail() {
                 onClick={() => setShowConvert(true)}
                 className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-all hover:scale-[1.02]"
                 style={{ background: 'linear-gradient(135deg,#10b981,#059669)', boxShadow: '0 4px 14px rgba(16,185,129,0.35)' }}>
-                <Receipt size={14} /> Convert to Invoice
+                <Receipt size={14} /> Convert to Tax Invoice
+              </button>
+            )}
+            {!estimate.payment_received && (
+              <button
+                onClick={() => setShowPayDrawer(true)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all hover:scale-[1.02]"
+                style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.25)', color: '#10b981' }}>
+                <CreditCard size={13} /> Record Payment
               </button>
             )}
             {[
-              { icon: Send,     label: 'Send',      action: () => showToast('Estimate sent to customer!') },
+              { icon: Send,     label: 'Send',      action: () => showToast('Proforma Invoice sent to customer!') },
               { icon: Download, label: 'PDF',        action: () => showToast('PDF ready!') },
-              { icon: Copy,     label: 'Duplicate',  action: () => showToast('Duplicated!') },
             ].map(a => (
               <button key={a.label} onClick={a.action}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all hover:scale-[1.02]"
@@ -127,7 +175,7 @@ export default function EstimateDetail() {
                 <a.icon size={13} /> {a.label}
               </button>
             ))}
-            <button className="p-2 rounded-xl transition-colors hover:bg-[rgba(239,68,68,0.08)]"
+            <button onClick={() => setConfirmDelete(true)} className="p-2 rounded-xl transition-colors hover:bg-[rgba(239,68,68,0.08)]"
               style={{ border: '1px solid rgba(239,68,68,0.2)' }}>
               <Trash2 size={14} style={{ color: '#f87171' }} />
             </button>
@@ -141,18 +189,18 @@ export default function EstimateDetail() {
             <div>
               <p className="text-xs font-semibold" style={{ color: '#a78bfa' }}>Awaiting Customer Response</p>
               <p className="text-sm font-bold mt-0.5" style={{ color: 'var(--text-h)' }}>
-                This estimate is pending acceptance. Total: {fmt(grandTotal)}
+                This proforma invoice is pending acceptance. Total: {fmt(grandTotal)}
               </p>
             </div>
             <div className="flex gap-2">
               <button
-                onClick={() => showToast('Status updated to Accepted!')}
+                onClick={() => handleStatusChange('Accepted')}
                 className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white"
                 style={{ background: 'linear-gradient(135deg,#10b981,#059669)' }}>
                 <CheckCircle size={13} /> Mark Accepted
               </button>
               <button
-                onClick={() => showToast('Status updated to Declined!')}
+                onClick={() => handleStatusChange('Declined')}
                 className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold"
                 style={{ background: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' }}>
                 <XCircle size={13} /> Mark Declined
@@ -166,8 +214,8 @@ export default function EstimateDetail() {
             style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.2)' }}>
             <span className="text-lg">⏰</span>
             <div>
-              <p className="text-xs font-semibold" style={{ color: '#fbbf24' }}>Estimate Expired</p>
-              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>This estimate expired on {fmtDate(estimate.valid_until)}. Duplicate it to create a fresh one.</p>
+              <p className="text-xs font-semibold" style={{ color: '#fbbf24' }}>Proforma Invoice Expired</p>
+              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>This proforma invoice expired on {fmtDate(estimate.valid_until)}.</p>
             </div>
           </div>
         )}
@@ -186,9 +234,9 @@ export default function EstimateDetail() {
                     style={{ background: 'linear-gradient(145deg,#9f67ff,#7C3AED)', boxShadow: '0 6px 18px rgba(124,58,237,0.4)' }}>
                     <FileText size={18} className="text-white" />
                   </div>
-                  <p className="text-xl font-black" style={{ color: 'var(--text-h)' }}>Estimate</p>
+                  <p className="text-xl font-black" style={{ color: 'var(--text-h)' }}>Proforma Invoice</p>
                   <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                    EST-{String(estimate.id).padStart(3, '0')}
+                    {estimate.reference}
                   </p>
                 </div>
                 <div className="text-right">
@@ -234,29 +282,29 @@ export default function EstimateDetail() {
               )}
 
               {/* Line Items */}
-              {estimate.items && estimate.items.length > 0 ? (
+              {estimate.line_items && estimate.line_items.length > 0 ? (
                 <div className="mb-6">
                   <p className="label-caps mb-3">Line Items</p>
                   <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
                     <table className="w-full text-xs">
                       <thead>
                         <tr style={{ background: 'var(--bg-input)', borderBottom: '1px solid var(--border)' }}>
-                          {['#', 'Item', 'Description', 'Qty', 'Rate', 'Tax', 'Amount'].map(h => (
+                          {['#', 'Item', 'Description', 'HSN/SAC', 'Qty', 'Rate', 'Tax', 'Amount'].map(h => (
                             <th key={h} className="px-4 py-2.5 text-left label-caps">{h}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
-                        {estimate.items.map((item, i) => {
-                          const lineAmt = (item.qty * item.rate)
-                          const lineTotal = lineAmt + (lineAmt * item.tax / 100)
+                        {estimate.line_items.map((item, i) => {
+                          const lineTotal = Number(item.total || 0)
                           return (
-                            <tr key={i} style={{ borderBottom: i < estimate.items.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                            <tr key={i} style={{ borderBottom: i < estimate.line_items.length - 1 ? '1px solid var(--border)' : 'none' }}>
                               <td className="px-4 py-3 text-[10px]" style={{ color: 'var(--text-muted)' }}>{i + 1}</td>
-                              <td className="px-4 py-3 font-semibold" style={{ color: 'var(--text-h)' }}>{item.name || item.item_name}</td>
+                              <td className="px-4 py-3 font-semibold" style={{ color: 'var(--text-h)' }}>{item.item_name}</td>
                               <td className="px-4 py-3 max-w-[180px]" style={{ color: 'var(--text-muted)' }}>
                                 <span className="truncate block">{item.description || '—'}</span>
                               </td>
+                              <td className="px-4 py-3" style={{ color: 'var(--text-muted)' }}>{item.hsn_sac_code || '—'}</td>
                               <td className="px-4 py-3" style={{ color: 'var(--text-muted)' }}>{item.qty}</td>
                               <td className="px-4 py-3" style={{ color: 'var(--text-muted)' }}>{fmt(item.rate)}</td>
                               <td className="px-4 py-3" style={{ color: 'var(--text-muted)' }}>{item.tax}%</td>
@@ -287,7 +335,7 @@ export default function EstimateDetail() {
               ) : (
                 <div className="mb-6 py-8 rounded-2xl text-center" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
                   <p className="text-sm font-semibold" style={{ color: 'var(--text-muted)' }}>No line items added yet</p>
-                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Total: {fmt(estimate.amount || 0)}</p>
+                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Total: {fmt(estimate.total || 0)}</p>
                 </div>
               )}
 
@@ -314,10 +362,10 @@ export default function EstimateDetail() {
 
             {/* Summary card */}
             <div className="card-3d" style={{ padding: '20px' }}>
-              <h3 className="font-bold text-sm mb-4" style={{ color: 'var(--text-h)' }}>Estimate Summary</h3>
+              <h3 className="font-bold text-sm mb-4" style={{ color: 'var(--text-h)' }}>Proforma Invoice Summary</h3>
               <div className="space-y-3 text-xs">
                 {[
-                  { label: 'Reference', value: `EST-${String(estimate.id).padStart(3, '0')}` },
+                  { label: 'Reference', value: estimate.reference },
                   { label: 'Customer', value: estimate.client },
                   { label: 'Status', value: <StatusBadge status={estimate.status} /> },
                   { label: 'Total', value: fmt(grandTotal) },
@@ -369,11 +417,11 @@ export default function EstimateDetail() {
                     <Receipt size={14} className="text-white" />
                   </div>
                   <h2 className="font-black text-lg" style={{ color: 'var(--text-h)', letterSpacing: '-0.02em' }}>
-                    Convert to Invoice
+                    Convert to Tax Invoice
                   </h2>
                 </div>
                 <p className="text-xs mt-1 ml-[42px]" style={{ color: 'var(--text-muted)' }}>
-                  This will create a new Invoice from this estimate
+                  This will create a new Tax Invoice from this proforma invoice
                 </p>
               </div>
               <button onClick={() => setShowConvert(false)}
@@ -384,15 +432,15 @@ export default function EstimateDetail() {
             </div>
             <div className="drawer-body">
               <div className="p-4 rounded-2xl" style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)' }}>
-                <p className="text-xs font-bold mb-1" style={{ color: '#10b981' }}>EST-{String(estimate.id).padStart(3, '0')}</p>
+                <p className="text-xs font-bold mb-1" style={{ color: '#10b981' }}>{estimate.reference}</p>
                 <p className="text-sm font-bold" style={{ color: 'var(--text-h)' }}>{estimate.subject || estimate.client}</p>
                 <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Total: {fmt(grandTotal)} · Customer: {estimate.client}</p>
               </div>
               <div className="p-4 rounded-2xl" style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.2)' }}>
                 <p className="text-xs font-semibold mb-1" style={{ color: '#fbbf24' }}>⚠️ What happens next</p>
                 <ul className="text-xs space-y-1" style={{ color: 'var(--text-muted)' }}>
-                  <li>• A new Invoice will be created with all line items from this estimate</li>
-                  <li>• The estimate status will remain unchanged</li>
+                  <li>• A new Tax Invoice will be created with all line items from this proforma invoice</li>
+                  {estimate.payment_received && <li>• Your recorded payment of {fmt(estimate.payment_amount)} will carry over to the new invoice</li>}
                   <li>• You can edit the invoice before sending to the customer</li>
                 </ul>
               </div>
@@ -406,11 +454,56 @@ export default function EstimateDetail() {
               <button onClick={handleConvertToInvoice} disabled={converting}
                 className="flex-[2] py-3 rounded-2xl text-sm font-bold text-white transition-all hover:scale-[1.01] disabled:opacity-60"
                 style={{ background: 'linear-gradient(135deg,#10b981,#059669)', boxShadow: '0 6px 20px rgba(16,185,129,0.4)' }}>
-                {converting ? 'Converting…' : 'Yes, Convert to Invoice'}
+                {converting ? 'Converting…' : 'Yes, Convert to Tax Invoice'}
               </button>
             </div>
           </div>
         </>
+      )}
+
+      {/* ── Record Payment Drawer ── */}
+      {showPayDrawer && (
+        <>
+          <div className="drawer-backdrop" onClick={() => setShowPayDrawer(false)} />
+          <div className="drawer-panel" style={{ width: 'min(420px, 95vw)' }}>
+            <div className="drawer-header">
+              <h2 className="font-black text-lg" style={{ color: 'var(--text-h)' }}>Record Payment</h2>
+              <button onClick={() => setShowPayDrawer(false)} className="btn-icon">
+                <X size={16} style={{ color: 'var(--text-muted)' }} />
+              </button>
+            </div>
+            <div className="drawer-body">
+              <div>
+                <label className="label">Amount *</label>
+                <input type="number" className="input-3d text-sm" placeholder={`Max: ${grandTotal}`}
+                  value={payAmount} onChange={e => setPayAmount(e.target.value)} />
+              </div>
+            </div>
+            <div className="drawer-footer">
+              <button onClick={() => setShowPayDrawer(false)}
+                className="flex-1 py-3 rounded-2xl text-sm font-semibold"
+                style={{ background: 'var(--bg-input)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+                Cancel
+              </button>
+              <button onClick={handleRecordPayment}
+                className="flex-[2] py-3 rounded-2xl text-sm font-bold text-white transition-all hover:scale-[1.01]"
+                style={{ background: 'linear-gradient(135deg,#10b981,#059669)', boxShadow: '0 6px 20px rgba(16,185,129,0.4)' }}>
+                Record Payment
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Delete this proforma invoice?"
+          message={`This will permanently delete ${estimate.reference}. This cannot be undone.`}
+          confirmLabel="Delete"
+          tone="danger"
+          onConfirm={handleDelete}
+          onCancel={() => setConfirmDelete(false)}
+        />
       )}
     </>
   )

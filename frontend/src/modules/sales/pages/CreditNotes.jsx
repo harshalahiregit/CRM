@@ -1,16 +1,22 @@
 import { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Plus, Trash2, X, MoreVertical, Ban, ArrowRightLeft, Receipt, Tag } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
+import { useClientOptions } from '@/hooks/useClientOptions'
 import StatusBadge from '../components/StatusBadge'
+import RowMenu from '../components/RowMenu'
+import RichTextEditor from '@/components/ui/RichTextEditor'
 
 const fmt = v => '₹' + Number(v||0).toLocaleString('en-IN')
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) : '—'
 const STATUSES = ['Open','Closed','Void']
-const EMPTY = { client:'', invoice_number:'', amount:'', discount_type:'none', adminnote:'', clientnote:'', terms:'', reason:'', tags:'' }
+const EMPTY = { client_id:'', invoice_number:'', amount:'', discount_type:'none', adminnote:'', clientnote:'', terms:'', reason:'', tags:'' }
 const EMPTY_REFUND = { amount:'', mode:'Bank Transfer', reference:'', note:'' }
 const PAY_MODES = ['Bank Transfer','Cash','Cheque','Stripe','Razorpay','PayPal','UPI']
 
 export default function CreditNotes() {
+  const clientOptions = useClientOptions()
+  const [searchParams] = useSearchParams()
   const [data, setData]         = useState([])
   const [loading, setLoading]   = useState(true)
   const [filter, setFilter]     = useState('All')
@@ -31,9 +37,25 @@ export default function CreditNotes() {
   }
   useEffect(()=>{ load() },[filter])
 
+  // Preselect the customer + open the create drawer when arriving from the
+  // customer profile (?client_id=…&new=1).
+  useEffect(() => {
+    if (searchParams.get('new') === '1') {
+      setForm(p => ({ ...p, client_id: searchParams.get('client_id') || '' }))
+      setShowDrawer(true)
+    }
+  }, [searchParams])
+
   const handleCreate = async () => {
-    if(!form.client||!form.amount) return showToast('Client & amount required','error')
-    await salesApi.creditNotes.create(form)
+    if(!form.client_id||!form.amount) return showToast('Customer & amount required','error')
+    // The credit-note total is derived from line items — map the entered amount
+    // to a single line so it persists.
+    await salesApi.creditNotes.create({
+      ...form,
+      client_id: Number(form.client_id),
+      date: new Date().toISOString().split('T')[0], // backend requires date
+      line_items: [{ item_name: form.reason || 'Credit', qty: 1, rate: Number(form.amount), tax: 0, discount: 0 }],
+    })
     showToast('Credit note created!'); setShowDrawer(false); setForm(EMPTY); load()
   }
   const handleRefund = async () => {
@@ -52,7 +74,7 @@ export default function CreditNotes() {
   return (
     <>
       {toast && <div className="fixed top-5 right-5 z-[9999] px-5 py-3 rounded-2xl text-sm font-semibold text-white shadow-2xl" style={{background:toast.type==='success'?'linear-gradient(135deg,#10b981,#059669)':'linear-gradient(135deg,#f87171,#ef4444)'}}>{toast.msg}</div>}
-      <div className="space-y-6 animate-[tiltIn_0.35s_ease_forwards]" onClick={()=>setOpenMenu(null)}>
+      <div className="space-y-6 animate-[tiltIn_0.35s_ease]" onClick={()=>setOpenMenu(null)}>
 
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
@@ -112,29 +134,23 @@ export default function CreditNotes() {
                     <td className="py-3.5 px-4 whitespace-nowrap" style={{color:'var(--text-muted)'}}>{fmtDate(cn.date)}</td>
                     <td className="py-3.5 px-4 max-w-[180px]" style={{color:'var(--text-muted)'}}><span className="truncate block">{cn.reason||'—'}</span></td>
                     <td className="py-3.5 px-4"><StatusBadge status={cn.status}/></td>
-                    <td className="py-3.5 px-4 relative" onClick={e=>e.stopPropagation()}>
-                      <button onClick={()=>setOpenMenu(openMenu===cn.id?null:cn.id)} className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-[rgba(124,58,237,0.08)] transition-colors">
-                        <MoreVertical size={14} style={{color:'var(--text-muted)'}}/>
-                      </button>
-                      {openMenu===cn.id && (
-                        <div className="absolute right-2 top-10 z-50 rounded-2xl shadow-2xl py-1.5 min-w-[180px] overflow-hidden"
-                          style={{background:'var(--bg-card)',border:'1px solid var(--border-purple)',boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
-                          {[
-                            {icon:ArrowRightLeft, label:'Apply to Invoice', action:()=>showToast('Applied to invoice!')},
-                            {icon:Receipt, label:'Create Refund', action:()=>{setSelectedCN(cn);setShowRefund(true)}},
-                            {icon:Ban, label:'Mark Void', action:()=>showToast('Marked void!')},
-                            {icon:Trash2, label:'Delete', action:()=>showToast('Deleted!','error'), danger:true},
-                          ].map(a=>(
-                            <button key={a.label} onClick={()=>{a.action();setOpenMenu(null)}}
-                              className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-medium transition-colors"
-                              onMouseEnter={e=>e.currentTarget.style.background=a.danger?'rgba(239,68,68,0.06)':'rgba(124,58,237,0.06)'}
-                              onMouseLeave={e=>e.currentTarget.style.background='transparent'}
-                              style={{color:a.danger?'#f87171':'var(--text-h)'}}>
-                              <a.icon size={13}/>{a.label}
-                            </button>
-                          ))}
-                        </div>
-                      )}
+                    <td className="py-3.5 px-4" onClick={e=>e.stopPropagation()}>
+                      <RowMenu width={188}>
+                        {[
+                          {icon:ArrowRightLeft, label:'Apply to Invoice', action:()=>showToast('Applied to invoice!')},
+                          {icon:Receipt, label:'Create Refund', action:()=>{setSelectedCN(cn);setShowRefund(true)}},
+                          {icon:Ban, label:'Mark Void', action:()=>showToast('Marked void!')},
+                          {icon:Trash2, label:'Delete', action:()=>showToast('Deleted!','error'), danger:true},
+                        ].map(a=>(
+                          <button key={a.label} onClick={()=>a.action()}
+                            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-colors"
+                            onMouseEnter={e=>e.currentTarget.style.background=a.danger?'rgba(239,68,68,0.06)':'rgba(124,58,237,0.06)'}
+                            onMouseLeave={e=>e.currentTarget.style.background='transparent'}
+                            style={{color:a.danger?'#f87171':'var(--text-h)'}}>
+                            <a.icon size={13}/>{a.label}
+                          </button>
+                        ))}
+                      </RowMenu>
                     </td>
                   </tr>
                 ))}
@@ -166,9 +182,9 @@ export default function CreditNotes() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="label">Customer *</label>
-                      <select className="input-3d text-sm" value={form.client} onChange={e => sf('client', e.target.value)}>
+                      <select className="input-3d text-sm" value={form.client_id} onChange={e => sf('client_id', e.target.value)}>
                         <option value="">Select customer…</option>
-                        {salesApi.clients.map(c => <option key={c} value={c}>{c}</option>)}
+                        {clientOptions.map(c => <option key={c.id} value={c.id}>{c.company}</option>)}
                       </select>
                     </div>
                     <div>
@@ -215,7 +231,7 @@ export default function CreditNotes() {
                   </div>
                   <div>
                     <label className="label">Terms</label>
-                    <textarea className="input-3d text-sm resize-none" rows={2} placeholder="Terms and conditions…" value={form.terms} onChange={e => sf('terms', e.target.value)} />
+                    <RichTextEditor value={form.terms} onChange={v => sf('terms', v)} placeholder="Terms and conditions…" minHeight={120} />
                   </div>
                   <div>
                     <label className="label"><Tag size={10} className="inline mr-1" />Tags</label>

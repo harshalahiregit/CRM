@@ -113,7 +113,7 @@ class CareerPortalService
                 'phone'            => $data['phone'],
                 'location'         => $data['location'] ?? null,
                 'current_company'  => $data['current_company'] ?? null,
-                'experience_years' => $data['experience_years'] ?? null,
+                'experience_years' => $data['experience_years'] ?? 0,   // column is NOT NULL default 0
                 'skills'           => $this->normalizeSkills($data['skills'] ?? null),
                 'current_ctc'      => $data['current_ctc'] ?? null,
                 'expected_ctc'     => $data['expected_ctc'] ?? null,

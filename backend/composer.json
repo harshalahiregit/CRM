@@ -11,6 +11,7 @@
         "laravel/framework": "^12.0",
         "laravel/sanctum": "^4.3",
         "laravel/tinker": "^2.10.1",
+        "openspout/openspout": "^5.3",
         "smalot/pdfparser": "^2.12",
         "twilio/sdk": "^8.11"
     },

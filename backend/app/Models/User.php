@@ -16,7 +16,7 @@ class User extends Authenticatable
         'tenant_id', 'external_company_id', 'name', 'email', 'password',
         'role', 'internal_role', 'department', 'status',
         'vendor_type', 'tpv_type', 'access_expires_at',
-        'phone', 'company', 'designation', 'avatar', 'meta',
+        'phone', 'company', 'designation', 'avatar', 'meta', 'emails_enabled',
         'last_login_at', 'last_login_ip',
     ];
 
@@ -30,6 +30,7 @@ class User extends Authenticatable
             'last_login_at'     => 'datetime',
             'password'          => 'hashed',
             'meta'              => 'array',
+            'emails_enabled'    => 'boolean',
         ];
     }
 

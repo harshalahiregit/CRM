@@ -66,6 +66,13 @@ class DatabaseSeeder extends Seeder
             'company'   => 'Acme Corp',
         ]);
 
+        // Helpdesk module demo data (owner: Shivam)
+        $this->call(HelpdeskSeeder::class);
+
+        // Projects + Tasks demo data (owner: Shivam) — runs AFTER Helpdesk so its
+        // integration step can link real seeded tickets to projects/tasks.
+        $this->call(ProjectTaskSeeder::class);
+
         $this->command->info('✅ Demo data seeded successfully!');
         $this->command->info('');
         $this->command->info('Demo credentials:');

@@ -1,14 +1,16 @@
-import { Search, Menu, X, User, LogOut, Settings, Moon, Sun, Sparkles, Command } from 'lucide-react'
+import { Search, Bell, Menu, X, User, LogOut, Settings, Moon, Sun, Sparkles, Command, Eye, EyeOff } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { useTheme } from '@/context/ThemeContext'
-import NotificationBell from '@/components/notifications/NotificationBell'
+import { useMoneyVisibility } from '@/context/MoneyVisibilityContext'
+import NotificationBell from './NotificationBell'
 import clsx from 'clsx'
 
 export default function Header({ sidebarCollapsed, mobileMenuOpen, onMobileMenuToggle, sidebarW = 260 }) {
   const { user, logout } = useAuth()
   const { isDark, toggleTheme } = useTheme()
+  const { moneyHidden, toggleMoney } = useMoneyVisibility()
   const navigate = useNavigate()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [searchOpen,   setSearchOpen]   = useState(false)
@@ -21,14 +23,9 @@ export default function Header({ sidebarCollapsed, mobileMenuOpen, onMobileMenuT
     return () => document.removeEventListener('mousedown', h)
   }, [])
 
-  useEffect(() => {
-    const h = (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); setSearchOpen(true) }
-      if (e.key === 'Escape') setSearchOpen(false)
-    }
-    window.addEventListener('keydown', h)
-    return () => window.removeEventListener('keydown', h)
-  }, [])
+  // ⌘K is owned by the global CommandPalette (Phase 7d). The header search box
+  // just opens it via a custom event, so there is a single working palette.
+  const openPalette = () => window.dispatchEvent(new CustomEvent('open-command-palette'))
 
   const handleLogout = async () => { await logout(); navigate('/auth/login') }
   const initials = user?.name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || 'U'
@@ -62,7 +59,7 @@ export default function Header({ sidebarCollapsed, mobileMenuOpen, onMobileMenuT
 
         {/* Search bar (desktop) — 3D inset look */}
         <button
-          onClick={() => setSearchOpen(true)}
+          onClick={openPalette}
           className="hidden md:flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm min-w-[220px] transition-all duration-200"
           style={{
             background: 'var(--bg-input)',
@@ -88,11 +85,28 @@ export default function Header({ sidebarCollapsed, mobileMenuOpen, onMobileMenuT
         </button>
 
         {/* Mobile search */}
-        <button onClick={() => setSearchOpen(true)} className="btn-icon md:hidden" aria-label="Search">
+        <button onClick={openPalette} className="btn-icon md:hidden" aria-label="Search">
           <Search size={20} />
         </button>
 
         <div className="flex-1" />
+
+        {/* Hide-amounts toggle — global money visibility (accounts, customer, everywhere) */}
+        <button
+          onClick={toggleMoney}
+          className="hidden md:flex w-9 h-9 rounded-xl items-center justify-center transition-all duration-200"
+          style={{
+            background: moneyHidden ? 'linear-gradient(135deg,rgba(124,58,237,0.15),rgba(91,33,182,0.08))' : 'var(--bg-input)',
+            border: `1px solid ${moneyHidden ? 'rgba(124,58,237,0.25)' : 'var(--border)'}`,
+            color: moneyHidden ? '#a78bfa' : 'var(--text-muted)',
+          }}
+          aria-label={moneyHidden ? 'Show amounts' : 'Hide amounts'}
+          title={moneyHidden ? 'Amounts hidden — click to show' : 'Hide all amounts'}
+          onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.08)'}
+          onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+        >
+          {moneyHidden ? <EyeOff size={16} /> : <Eye size={16} />}
+        </button>
 
         {/* Theme toggle — 3D pill */}
         <button
@@ -111,8 +125,8 @@ export default function Header({ sidebarCollapsed, mobileMenuOpen, onMobileMenuT
           {isDark ? <Sun size={16} /> : <Moon size={16} />}
         </button>
 
-        {/* Notifications — Central Notification Engine bell */}
-        <NotificationBell />
+        {/* Notifications — real bell, badge only when something is unread */}
+        <NotificationBell isDark={isDark} />
 
         {/* User avatar menu */}
         <div className="relative" ref={menuRef}>

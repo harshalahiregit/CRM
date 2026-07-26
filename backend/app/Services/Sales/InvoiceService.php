@@ -4,17 +4,23 @@ namespace App\Services\Sales;
 
 use App\Exceptions\BusinessException;
 use App\Exceptions\UnauthorizedTenantException;
+use App\Models\Sales\PaymentReminder;
 use App\Models\Sales\SalesInvoice;
 use App\Models\Sales\SalesLineItem;
 use App\Models\Sales\SalesPayment;
 use App\Repositories\Sales\InvoiceRepository;
+use App\Services\Sales\CommissionService;
+use App\Support\HtmlSanitizer;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class InvoiceService
 {
-    public function __construct(private InvoiceRepository $invoiceRepository)
-    {
+    public function __construct(
+        private InvoiceRepository $invoiceRepository,
+        private CommissionService $commissionService,
+    ) {
     }
 
     public function list(int $tenantId, array $filters)
@@ -30,6 +36,9 @@ class InvoiceService
     public function create(array $data, int $tenantId, int $userId): SalesInvoice
     {
         return DB::transaction(function () use ($data, $tenantId, $userId) {
+            if (isset($data['terms'])) {
+                $data['terms'] = HtmlSanitizer::clean($data['terms']); // rich text
+            }
             $lineItems = $data['line_items'] ?? [];
             unset($data['line_items']);
 
@@ -65,6 +74,9 @@ class InvoiceService
         $this->assertBelongsToTenant($invoice, $tenantId);
 
         return DB::transaction(function () use ($invoice, $data, $tenantId) {
+            if (isset($data['terms'])) {
+                $data['terms'] = HtmlSanitizer::clean($data['terms']); // rich text
+            }
             $hasLineItems = array_key_exists('line_items', $data);
             $lineItems = $data['line_items'] ?? [];
             unset($data['line_items']);
@@ -130,6 +142,9 @@ class InvoiceService
         }
 
         return DB::transaction(function () use ($invoice, $data, $tenantId, $userId) {
+            if (isset($data['terms'])) {
+                $data['terms'] = HtmlSanitizer::clean($data['terms']); // rich text
+            }
             $payment = SalesPayment::create([
                 'tenant_id'      => $tenantId,
                 'invoice_id'     => $invoice->id,
@@ -139,9 +154,17 @@ class InvoiceService
                 'transaction_id' => $data['transaction_id'] ?? null,
                 'note'           => $data['note'] ?? null,
                 'created_by'     => $userId,
+                'tds_amount'     => $data['tds_amount'] ?? 0,
+                'tds_section'    => $data['tds_section'] ?? null,
+                'tds_percentage' => $data['tds_percentage'] ?? 0,
+                'payment_type'   => $data['payment_type'] ?? 'received',
             ]);
 
             $invoice->recalcBalance();
+
+            // Generate commission entries when the invoice becomes fully paid.
+            // Idempotent (unique rule+source), so repeated partial payments are safe.
+            $this->commissionService->computeForInvoice($invoice->fresh());
 
             Log::channel('sales')->info('Payment recorded', [
                 'invoice_id' => $invoice->id,
@@ -158,6 +181,79 @@ class InvoiceService
                 'paid'           => $invoice->paid,
             ];
         });
+    }
+
+    public function generatePublicLink(SalesInvoice $invoice, int $tenantId, ?int $expiryDays = 30): SalesInvoice
+    {
+        $this->assertBelongsToTenant($invoice, $tenantId);
+
+        $invoice->update([
+            'public_link_token'  => Str::random(48),
+            'public_link_expiry' => $expiryDays ? now()->addDays($expiryDays) : null,
+        ]);
+
+        Log::channel('sales')->info('Invoice public link generated', [
+            'invoice_id' => $invoice->id,
+            'tenant_id'  => $tenantId,
+            'expires_at' => $invoice->public_link_expiry,
+        ]);
+
+        return $invoice->fresh();
+    }
+
+    /**
+     * Manual trigger for a payment reminder. Records the reminder in the
+     * audit trail (payment_reminders table) and marks it sent. Does not
+     * dispatch an actual email — Sales has no Mailable/SMTP wiring yet,
+     * and automated/scheduled reminders are explicitly deferred per the
+     * Sales Master Plan V2. This gives ops a real, queryable record of
+     * "a reminder was manually triggered for this invoice, by whom, when".
+     */
+    public function sendPaymentReminder(SalesInvoice $invoice, int $tenantId): PaymentReminder
+    {
+        $this->assertBelongsToTenant($invoice, $tenantId);
+
+        $reminder = PaymentReminder::create([
+            'tenant_id'      => $tenantId,
+            'invoice_id'     => $invoice->id,
+            'reminder_type'  => 'on_due',
+            'days_offset'    => 0,
+            'scheduled_for'  => now(),
+            'sent_at'        => now(),
+            'email_to'       => null,
+            'status'         => 'sent',
+        ]);
+
+        Log::channel('sales')->info('Payment reminder manually triggered', [
+            'invoice_id' => $invoice->id,
+            'tenant_id'  => $tenantId,
+            'reminder_id'=> $reminder->id,
+        ]);
+
+        return $reminder;
+    }
+
+    /**
+     * Manual trigger for a post-payment feedback request. Marks the flag
+     * on the invoice; does not dispatch an actual email (same rationale
+     * as sendPaymentReminder above).
+     */
+    public function sendFeedbackRequest(SalesInvoice $invoice, int $tenantId): SalesInvoice
+    {
+        $this->assertBelongsToTenant($invoice, $tenantId);
+
+        if ($invoice->balance > 0) {
+            throw new BusinessException('Cannot request feedback on an invoice that is not fully paid.', 422);
+        }
+
+        $invoice->update(['feedback_email_sent' => true]);
+
+        Log::channel('sales')->info('Feedback request marked sent', [
+            'invoice_id' => $invoice->id,
+            'tenant_id'  => $tenantId,
+        ]);
+
+        return $invoice->fresh();
     }
 
     /* ── Helpers ─────────────────────────────────── */
@@ -181,11 +277,14 @@ class InvoiceService
                 'item_id'       => $item['item_id'] ?? null,
                 'item_name'     => $item['item_name'],
                 'description'   => $item['description'] ?? null,
+                'hsn_sac_code'  => $item['hsn_sac_code'] ?? null,
                 'qty'           => $item['qty'],
                 'unit'          => $item['unit'] ?? 'pcs',
                 'rate'          => $item['rate'],
-                'tax'           => $item['tax'] ?? 0,
-                'discount'      => $item['discount'] ?? 0,
+                'tax'           => $taxInfo['tax'],
+                'taxes'         => $taxInfo['taxes'],
+                'discount'      => $item['discount'],
+                'discount_mode' => $item['discount_mode'] ?? 'fixed',
                 'total'         => SalesLineItem::computeTotal($item),
                 'sort_order'    => $idx,
             ]);

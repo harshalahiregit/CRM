@@ -9,11 +9,16 @@ use App\Models\Sales\CreditNoteApplication;
 use App\Models\Sales\CreditNoteRefund;
 use App\Models\Sales\SalesInvoice;
 use App\Models\Sales\SalesLineItem;
+use App\Support\HtmlSanitizer;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class CreditNoteService
 {
+    public function __construct(private CommissionService $commissionService)
+    {
+    }
+
     public function list(int $tenantId, array $filters): mixed
     {
         $query = CreditNote::forTenant($tenantId)->with('lineItems');
@@ -31,6 +36,9 @@ class CreditNoteService
     public function create(array $data, int $tenantId, int $userId): CreditNote
     {
         return DB::transaction(function () use ($data, $tenantId, $userId) {
+            if (isset($data['terms'])) {
+                $data['terms'] = HtmlSanitizer::clean($data['terms']); // rich text
+            }
             $cn = CreditNote::create([
                 ...$data,
                 'tenant_id'  => $tenantId,
@@ -112,6 +120,10 @@ class CreditNoteService
             $creditNote->recalcRemaining();
             $invoice->recalcBalance();
 
+            // An invoice can reach 'Paid' via credit application too — same
+            // idempotent commission hook as the payment path.
+            $this->commissionService->computeForInvoice($invoice->fresh());
+
             Log::channel('sales')->info('Credit note applied to invoice', [
                 'credit_note_id' => $creditNote->id,
                 'invoice_id'     => $invoice->id,
@@ -146,6 +158,9 @@ class CreditNoteService
         }
 
         return DB::transaction(function () use ($creditNote, $data, $amount, $userId, $tenantId) {
+            if (isset($data['terms'])) {
+                $data['terms'] = HtmlSanitizer::clean($data['terms']); // rich text
+            }
             CreditNoteRefund::create([
                 'credit_note_id' => $creditNote->id,
                 'amount'         => $amount,
@@ -197,8 +212,10 @@ class CreditNoteService
                 'qty'           => $item['qty'],
                 'unit'          => $item['unit'] ?? 'pcs',
                 'rate'          => $item['rate'],
-                'tax'           => $item['tax'] ?? 0,
-                'discount'      => $item['discount'] ?? 0,
+                'tax'           => $taxInfo['tax'],
+                'taxes'         => $taxInfo['taxes'],
+                'discount'      => $item['discount'],
+                'discount_mode' => $item['discount_mode'] ?? 'fixed',
                 'total'         => $lineTotal,
                 'sort_order'    => $idx,
             ]);

@@ -47,6 +47,15 @@ class AuthService
             ]);
         }
 
+        // Track last login; company logins also get an audit-based login history.
+        $ip = request()->ip();
+        $user->forceFill(['last_login_at' => now(), 'last_login_ip' => $ip])->saveQuietly();
+        if ($user->role === 'company') {
+            app(\App\Services\AuditLogService::class)->record($user, 'Signed in', $user, null, [
+                'ip' => $ip, 'device' => request()->userAgent(), 'login' => true,
+            ]);
+        }
+
         Log::channel('auth')->info('User logged in', ['user_id' => $user->id, 'tenant_id' => $user->tenant_id]);
 
         return [

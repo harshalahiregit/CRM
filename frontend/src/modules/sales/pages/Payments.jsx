@@ -33,6 +33,7 @@ export default function Payments() {
   const [showDrawer, setShowDrawer] = useState(false)
   const [toast, setToast]         = useState(null)
   const [form, setForm]           = useState(EMPTY_FORM)
+  const [invoices, setInvoices]   = useState([])
 
   const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000) }
   const sf = (k, v) => setForm(p => ({ ...p, [k]: v }))
@@ -43,14 +44,24 @@ export default function Payments() {
       .then(d => { setData(d); setLoading(false) })
   }
   useEffect(() => { load() }, [filterMode])
+  // Payments are recorded against a real invoice — load the list for the picker.
+  useEffect(() => { salesApi.invoices.list().then(d => setInvoices(Array.isArray(d) ? d : (d?.data || []))).catch(() => {}) }, [])
 
   const handleRecord = async () => {
     if (!form.amount || !form.invoiceid) return showToast('Invoice & amount are required', 'error')
-    await salesApi.payments.record(form)
-    showToast('Payment recorded successfully!')
-    setShowDrawer(false)
-    setForm(EMPTY_FORM)
-    load()
+    try {
+      await salesApi.invoices.recordPayment(form.invoiceid, {
+        amount: Number(form.amount),
+        date: form.date,
+        mode: form.paymentmode,
+        transaction_id: form.transactionid || null,
+        note: form.note || null,
+      })
+      showToast('Payment recorded successfully!')
+      setShowDrawer(false)
+      setForm(EMPTY_FORM)
+      load()
+    } catch (e) { showToast(e.message, 'error') }
   }
 
   const filtered = search
@@ -68,7 +79,7 @@ export default function Payments() {
           {toast.msg}
         </div>
       )}
-      <div className="space-y-6 animate-[tiltIn_0.35s_ease_forwards]">
+      <div className="space-y-6 animate-[tiltIn_0.35s_ease]">
 
         {/* Header */}
         <div className="flex items-center justify-between flex-wrap gap-3">
@@ -236,9 +247,15 @@ export default function Payments() {
                 <div className="space-y-4">
 
                   <div>
-                    <label className="label">Invoice # *</label>
-                    <input className="input-3d text-sm" placeholder="e.g. INV-2026-001"
-                      value={form.invoiceid} onChange={e => sf('invoiceid', e.target.value)} />
+                    <label className="label">Invoice *</label>
+                    <select className="input-3d text-sm" value={form.invoiceid} onChange={e => sf('invoiceid', e.target.value)}>
+                      <option value="">Select an invoice…</option>
+                      {invoices.filter(inv => Number(inv.balance) > 0).map(inv => (
+                        <option key={inv.id} value={inv.id}>
+                          {inv.number} — {inv.client?.company || inv.client_name || 'Customer'} (bal {fmt(inv.balance)})
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">

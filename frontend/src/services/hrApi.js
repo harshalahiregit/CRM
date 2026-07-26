@@ -4,6 +4,7 @@
  */
 
 import axios from 'axios'
+import { getToken, clearAuth } from '@/lib/authStorage'
 
 const BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api'
 
@@ -11,7 +12,7 @@ const BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api'
 const api = axios.create({ baseURL: BASE })
 
 api.interceptors.request.use(cfg => {
-  const token = localStorage.getItem('crm_token') // ✅ FIXED: was 'auth_token'
+  const token = getToken() // reads local- or sessionStorage (remember-me aware)
   if (token) cfg.headers.Authorization = `Bearer ${token}`
   return cfg
 })
@@ -20,9 +21,7 @@ api.interceptors.response.use(
   res => res,
   err => {
     if (err.response?.status === 401) {
-      localStorage.removeItem('crm_token') // ✅ FIXED: was 'auth_token'
-      localStorage.removeItem('crm_user')
-      localStorage.removeItem('crm_tenant')
+      clearAuth()
       window.location.href = '/auth/login'
     }
     return Promise.reject(err)
