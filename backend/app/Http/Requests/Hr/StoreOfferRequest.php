@@ -18,6 +18,7 @@ class StoreOfferRequest extends FormRequest
             'position'         => 'required|string',
             'department'       => 'required|string',
             'offered_ctc'      => 'required|numeric|min:0',
+            'salary_structure_id' => 'nullable|integer|exists:hr_salary_structures,id',
             'joining_date'     => 'required|date',
             'probation_period' => 'nullable|string',
             'notice_period'    => 'nullable|string',

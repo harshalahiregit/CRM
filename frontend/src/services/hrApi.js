@@ -311,6 +311,17 @@ export const hrApi = {
         setTimeout(() => URL.revokeObjectURL(url), 1500)
       }),
     },
+    // Enterprise Salary Reports (Phase 2) — read-only over structures/snapshots/revisions.
+    salaryReports: {
+      meta:    ()                     => api.get('/hr/payroll/salary-reports/meta').then(r => r.data),
+      summary: (params = {})          => api.get('/hr/payroll/salary-reports/summary', { params }).then(r => r.data),
+      get:     (report, params = {})  => api.get(`/hr/payroll/salary-reports/${report}`, { params }).then(r => r.data),
+      export:  (report, format, params = {}) => api.get(`/hr/payroll/salary-reports/${report}/export`, { params: { ...params, format }, responseType: 'blob' }).then(r => {
+        const url = URL.createObjectURL(r.data)
+        const a = document.createElement('a'); a.href = url; a.download = `salary-${report}-report.${format === 'pdf' ? 'pdf' : 'csv'}`; a.click()
+        setTimeout(() => URL.revokeObjectURL(url), 1500)
+      }),
+    },
   },
 
   // ── Performance Management System (PMS) ─────────────────────────────────
@@ -343,7 +354,7 @@ export const hrApi = {
     promotions: {
       list:      (params = {}) => api.get('/hr/performance/promotions', { params }).then(r => r.data),
       generate:  (employeeId)  => api.post('/hr/performance/promotions/generate', { employee_id: employeeId }).then(r => r.data),
-      setStatus: (id, status, recommended_designation) => api.patch(`/hr/performance/promotions/${id}/status`, { status, recommended_designation }).then(r => r.data),
+      setStatus: (id, status, recommended_designation, salary_structure_id = null) => api.patch(`/hr/performance/promotions/${id}/status`, { status, recommended_designation, salary_structure_id }).then(r => r.data),
     },
     increments: {
       list:      (params = {}) => api.get('/hr/performance/increments', { params }).then(r => r.data),

@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\Hr\OrganizationController;
 use App\Http\Controllers\Api\Hr\SalaryComponentController;
 use App\Http\Controllers\Api\Hr\SalaryStructureController;
 use App\Http\Controllers\Api\Hr\EmployeeSalaryController;
+use App\Http\Controllers\Api\Hr\SalaryReportController;
 use App\Http\Controllers\Api\Hr\PayrollRunController;
 use App\Http\Controllers\Api\Hr\PayslipController;
 use App\Http\Controllers\Api\Hr\PayrollReportController;
@@ -236,6 +237,12 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::get('/payroll/reports/components',  [PayrollReportController::class, 'components']);
     Route::get('/payroll/reports/trends',      [PayrollReportController::class, 'trends']);
     Route::get('/payroll/reports/export',      [PayrollReportController::class, 'export']);
+
+    // Enterprise Salary Reports (Phase 2) — read-only over structures/snapshots/revisions.
+    Route::get('/payroll/salary-reports/meta',              [SalaryReportController::class, 'meta']);
+    Route::get('/payroll/salary-reports/summary',           [SalaryReportController::class, 'summary']);
+    Route::get('/payroll/salary-reports/{report}/export',   [SalaryReportController::class, 'export']);
+    Route::get('/payroll/salary-reports/{report}',          [SalaryReportController::class, 'show']);
 
     // Attendance
     Route::get('/attendance/stats',          [AttendanceController::class, 'stats']);

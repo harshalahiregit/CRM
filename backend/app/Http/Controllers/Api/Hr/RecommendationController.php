@@ -36,9 +36,10 @@ class RecommendationController extends Controller
         $data = $request->validate([
             'status' => 'required|string',
             'recommended_designation' => 'nullable|string|max:120',
+            'salary_structure_id' => 'nullable|integer|exists:hr_salary_structures,id',
         ]);
 
-        return response()->json($this->service->updatePromotionStatus($id, $data['status'], $this->tenant($request), $request->user(), $data['recommended_designation'] ?? null));
+        return response()->json($this->service->updatePromotionStatus($id, $data['status'], $this->tenant($request), $request->user(), $data['recommended_designation'] ?? null, $data['salary_structure_id'] ?? null));
     }
 
     /* ── Increment ── */

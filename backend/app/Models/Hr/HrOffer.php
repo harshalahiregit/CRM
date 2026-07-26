@@ -24,6 +24,7 @@ class HrOffer extends Model
 
     protected $fillable = [
         'candidate_id','tenant_id','position','department','offered_ctc',
+        'salary_structure_id','salary_breakdown',
         'joining_date','probation_period','notice_period','validity_date',
         'status','letter_path','sent_at','accepted_at','rejection_reason',
         // Offer portal (Sprint 2)
@@ -44,11 +45,17 @@ class HrOffer extends Model
         'clarification_at'     => 'datetime',
         'offered_ctc'          => 'decimal:2',
         'pre_joining'          => 'array',
+        'salary_breakdown'     => 'array',
     ];
 
     public function candidate()
     {
         return $this->belongsTo(HrCandidate::class, 'candidate_id');
+    }
+
+    public function salaryStructure()
+    {
+        return $this->belongsTo(\App\Models\Hr\HrSalaryStructure::class, 'salary_structure_id');
     }
 
     /** Past its validity date and not yet resolved. */

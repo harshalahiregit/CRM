@@ -3,8 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { AlertCircle, CheckCircle2, Clock, ArrowRight } from 'lucide-react'
 import Drawer from '@/components/ui/Drawer'
 import { hrApi } from '@/services/hrApi'
+import SalarySheet from '@/modules/hr/components/SalarySheet'
 
-const EMPTY_FORM = { candidate_id: '', position: '', department: '', offered_ctc: '', joining_date: '', probation_period: '3 months', notice_period: '1 month', validity_date: '' }
+const EMPTY_FORM = { candidate_id: '', position: '', department: '', offered_ctc: '', salary_structure_id: '', joining_date: '', probation_period: '3 months', notice_period: '1 month', validity_date: '' }
 
 /**
  * Generate Offer — the ONE offer-creation form in the product.
@@ -27,6 +28,8 @@ export default function GenerateOfferDrawer({
   const navigate = useNavigate()
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
+  const [structures, setStructures] = useState([])
+  const [preview, setPreview] = useState(null)   // { name, breakdown } when a structure is linked
 
   const fixed = candidateId != null
   const match = fixed ? eligible.find(o => Number(o.candidate_id) === Number(candidateId)) : null
@@ -34,6 +37,7 @@ export default function GenerateOfferDrawer({
 
   useEffect(() => {
     if (!open) return
+    setPreview(null)
     const src = match || null
     setForm({
       ...EMPTY_FORM,
@@ -41,11 +45,23 @@ export default function GenerateOfferDrawer({
       position: src?.position || '',
       department: src?.department || '',
     })
+    // Active salary structures the recruiter can base the offer on (Salary Engine).
+    hrApi.payroll.salaryStructures.list({ status: 'Active' }).then(r => setStructures(r.data || [])).catch(() => setStructures([]))
   }, [open, candidateId, match, fixed])
 
   if (!open) return null
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }))
+
+  // Linking a structure derives the CTC + freezes the breakup on the letter.
+  const selectStructure = async (id) => {
+    if (!id) { setPreview(null); setForm(f => ({ ...f, salary_structure_id: '' })); return }
+    try {
+      const s = await hrApi.payroll.salaryStructures.get(id)
+      setPreview({ name: s.name, breakdown: s.breakdown })
+      setForm(f => ({ ...f, salary_structure_id: id, offered_ctc: String(s.breakdown?.ctc?.yearly ?? f.offered_ctc) }))
+    } catch { showToast?.('Failed to load structure', 'error') }
+  }
 
   const create = async () => {
     if (!form.candidate_id || !form.offered_ctc || !form.joining_date) {
@@ -166,10 +182,31 @@ export default function GenerateOfferDrawer({
           <div><label className="label">Position</label><input className="input-3d text-sm" value={form.position} onChange={set('position')} /></div>
           <div><label className="label">Department</label><input className="input-3d text-sm" value={form.department} onChange={set('department')} /></div>
         </div>
+
+        {/* Salary Engine: optionally base the offer on a Salary Structure. */}
+        <div>
+          <label className="label">Salary Structure <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional — derives CTC + breakup)</span></label>
+          <select className="input-3d text-sm" value={form.salary_structure_id} onChange={e => selectStructure(e.target.value)}>
+            <option value="">Manual CTC (no structure)</option>
+            {structures.map(s => <option key={s.id} value={s.id}>{s.name}{s.code ? ` (${s.code})` : ''} — ₹{Number(s.totals?.ctc || 0).toLocaleString('en-IN')}/mo</option>)}
+          </select>
+        </div>
+
         <div className="grid grid-cols-2 gap-3">
-          <div><label className="label">Offered CTC (₹) *</label><input type="number" className="input-3d text-sm" placeholder="800000" value={form.offered_ctc} onChange={set('offered_ctc')} /></div>
+          <div>
+            <label className="label">Offered CTC (₹) * {form.salary_structure_id && <span style={{ color: '#a78bfa', fontWeight: 400 }}>· from structure</span>}</label>
+            <input type="number" className="input-3d text-sm" placeholder="800000" value={form.offered_ctc} onChange={set('offered_ctc')} readOnly={!!form.salary_structure_id} style={form.salary_structure_id ? { opacity: 0.7 } : undefined} />
+          </div>
           <div><label className="label">Joining Date *</label><input type="date" className="input-3d text-sm" value={form.joining_date} onChange={set('joining_date')} /></div>
         </div>
+
+        {preview && (
+          <div>
+            <label className="label">Salary Breakup Preview</label>
+            <SalarySheet breakdown={preview.breakdown} structureName={preview.name} />
+            <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>This breakup is frozen onto the offer letter at generation.</p>
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-3">
           <div><label className="label">Probation Period</label><select className="input-3d text-sm" value={form.probation_period} onChange={set('probation_period')}><option>3 months</option><option>6 months</option><option>None</option></select></div>
           <div><label className="label">Notice Period</label><select className="input-3d text-sm" value={form.notice_period} onChange={set('notice_period')}><option>1 month</option><option>2 months</option><option>3 months</option></select></div>

@@ -29,7 +29,32 @@ class OfferService
         private OnboardingService $onboardingService,
         private EmployeeOnboardingService $employeeOnboardingService,
         private NotificationService $notifications,
+        private SalaryStructureService $salaryStructures,
     ) {
+    }
+
+    /**
+     * If the offer is linked to a Salary Structure, derive the CTC from it and freeze
+     * the enterprise breakdown snapshot onto the offer (so the letter never changes if
+     * the structure is later edited). No structure → returns $data unchanged, so manual
+     * offers behave exactly as before.
+     */
+    private function applySalaryStructure(array $data, int $tenantId): array
+    {
+        if (empty($data['salary_structure_id'])) {
+            $data['salary_breakdown'] = null;
+
+            return $data;
+        }
+
+        // Reuses the central engine + validates tenant ownership (404 if not this tenant).
+        $structure = $this->salaryStructures->show((int) $data['salary_structure_id'], $tenantId);
+        $bd = $structure['breakdown'];
+
+        $data['offered_ctc']     = $bd['ctc']['yearly'];   // annual CTC from the structure is authoritative
+        $data['salary_breakdown'] = $bd;
+
+        return $data;
     }
 
     public function list(int $tenantId, array $filters): Collection
@@ -67,6 +92,9 @@ class OfferService
         if (! $onboarding || ! $onboarding->isApproved()) {
             throw new BusinessException('Onboarding verification must be approved before generating an offer for this candidate.', 422);
         }
+
+        // Salary Engine: derive CTC + freeze the breakup when a structure is linked.
+        $data = $this->applySalaryStructure($data, $tenantId);
 
         $offer = HrOffer::create([
             ...$data,
@@ -153,6 +181,7 @@ class OfferService
             'position'         => $offer->position,
             'department'       => $offer->department,
             'offered_ctc'      => $offer->offered_ctc,
+            'salary_breakdown' => $offer->salary_breakdown,
             'joining_date'     => optional($offer->joining_date)->toDateString(),
             'probation_period' => $offer->probation_period,
             'notice_period'    => $offer->notice_period,

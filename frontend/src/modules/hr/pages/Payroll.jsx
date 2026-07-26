@@ -7,6 +7,7 @@ import {
 import { hrApi } from '@/services/hrApi'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 import PayrollReports from './PayrollReports'
+import SalaryReports from './SalaryReports'
 import SalarySheet from '../components/SalarySheet'
 
 const GRAD = 'linear-gradient(135deg,#7C3AED,#5b21b6)'
@@ -25,6 +26,7 @@ const TABS = [
   { key:'processing', label:'Payroll Processing', icon:PlayCircle,  ready:true },
   { key:'payslips',   label:'Payslips',          icon:ReceiptText, ready:true },
   { key:'reports',    label:'Payroll Reports',   icon:BarChart3,   ready:true },
+  { key:'salary-reports', label:'Salary Reports', icon:FileText,   ready:true },
 ]
 
 export default function Payroll() {
@@ -70,6 +72,7 @@ export default function Payroll() {
         : tab === 'processing' ? <PayrollProcessing showToast={showToast} />
         : tab === 'payslips' ? <Payslips showToast={showToast} />
         : tab === 'reports' ? <PayrollReports showToast={showToast} />
+        : tab === 'salary-reports' ? <SalaryReports showToast={showToast} />
         : (
           <div className="card-3d flex flex-col items-center justify-center text-center" style={{ padding:'56px 20px' }}>
             <div className="rounded-2xl flex items-center justify-center mb-3" style={{ width:60, height:60, background:'rgba(124,58,237,0.1)' }}><current.icon size={26} style={{ color:'#a78bfa' }}/></div>

@@ -348,10 +348,19 @@ function Recommendations({ kind, employees, showToast }) {
   const api = isPromo ? hrApi.performance.promotions : hrApi.performance.increments
   const [rows, setRows] = useState([]); const [loading, setLoading] = useState(true)
   const [gen, setGen] = useState(''); const [busy, setBusy] = useState(false)
+  const [structures, setStructures] = useState([]); const [pick, setPick] = useState({})   // promotion → optional new structure per row
   const load = useCallback(() => { setLoading(true); api.list().then(setRows).catch(()=>showToast('Failed to load','error')).finally(()=>setLoading(false)) }, [kind])  // eslint-disable-line
   useEffect(() => { load() }, [load])
+  // Salary Engine: a promotion may optionally assign a new active salary structure.
+  useEffect(() => { if (isPromo) hrApi.payroll.salaryStructures.list({ status:'Active' }).then(r=>setStructures(r.data||[])).catch(()=>{}) }, [isPromo])
   const generate = async () => { if (!gen) return showToast('Select an employee','error'); setBusy(true); try { await api.generate(Number(gen)); showToast('Recommendation generated'); setGen(''); load() } catch (e) { showToast(e.response?.data?.message||'Failed','error') } finally { setBusy(false) } }
-  const decide = async (r, status) => { try { await api.setStatus(r.id, status); showToast(status); load() } catch { showToast('Failed','error') } }
+  const decide = async (r, status) => {
+    try {
+      if (isPromo) { const sid = pick[r.id]; await api.setStatus(r.id, status, r.recommended_designation || null, sid ? Number(sid) : null); showToast(status === 'Approved' && sid ? 'Approved — new salary structure assigned' : status) }
+      else { await api.setStatus(r.id, status); showToast(status === 'Approved' ? 'Approved — salary revision applied' : status) }
+      load()
+    } catch (e) { showToast(e.response?.data?.message || 'Failed','error') }
+  }
 
   return (
     <div className="space-y-4">
@@ -383,7 +392,10 @@ function Recommendations({ kind, employees, showToast }) {
                   </>}
                   <td className="px-3 py-2.5 text-[11px] max-w-[220px]" style={{ color:'var(--text-muted)' }}>{r.reason}</td>
                   <td className="px-3 py-2.5"><span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:st.bg, color:st.c }}>{status}</span></td>
-                  <td className="px-3 py-2.5">{status==='Pending' && <div className="flex gap-1.5 justify-end">
+                  <td className="px-3 py-2.5">{status==='Pending' && <div className="flex gap-1.5 justify-end items-center">
+                    {isPromo && <select value={pick[r.id]||''} onChange={e=>setPick(p=>({...p,[r.id]:e.target.value}))} className="input-3d text-[11px]" style={{ padding:'4px 6px', maxWidth:150 }} title="Optionally assign a new salary structure on approval">
+                      <option value="">No new structure</option>{structures.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>}
                     <button onClick={()=>decide(r,'Approved')} className="text-[11px] font-bold px-2.5 py-1 rounded-lg" style={{ background:'rgba(16,185,129,0.12)', color:'#10b981' }}>Approve</button>
                     <button onClick={()=>decide(r,'Rejected')} className="text-[11px] font-bold px-2.5 py-1 rounded-lg" style={{ background:'rgba(239,68,68,0.1)', color:'#f87171' }}>Reject</button>
                   </div>}</td>

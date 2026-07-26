@@ -142,6 +142,100 @@ class EmployeeSalaryService
     }
 
     /**
+     * Apply a performance increment as a salary revision (Phase 2 integration). Scales
+     * the current active snapshot up by the increment — a percentage, or an absolute
+     * annual amount — keeping the same structure. Archives the old row and appends a
+     * new active revision + ledger entry; history is never modified. Returns null if
+     * the employee has no active salary to increment. Additive: assign() is untouched.
+     */
+    public function applyIncrement(int $employeeId, array $opts, int $tenantId, ?User $actor = null): ?array
+    {
+        $this->assertEmployee($employeeId, $tenantId);
+        $current = $this->repo->currentActive($employeeId, $tenantId);
+        if (! $current) {
+            return null; // no base salary — nothing to increment
+        }
+
+        $effectiveFrom = $opts['effective_from'] ?? now()->toDateString();
+        $reason = $opts['reason'] ?? 'Performance increment';
+
+        $currentAnnual = (float) $current->annual_ctc;
+        if (! empty($opts['percentage'])) {
+            $factor = 1 + ((float) $opts['percentage']) / 100;
+        } elseif (! empty($opts['amount']) && $currentAnnual > 0) {
+            $factor = ($currentAnnual + (float) $opts['amount']) / $currentAnnual;
+        } else {
+            $factor = 1.0;
+        }
+        if ($factor <= 1.0) {
+            return null; // a zero/negative increment produces no revision
+        }
+
+        $scale = fn ($v) => round((float) $v * $factor, 2);
+        $snapshot = [
+            'monthly_ctc'      => $scale($current->monthly_ctc),
+            'annual_ctc'       => $scale($current->annual_ctc),
+            'gross_salary'     => $scale($current->gross_salary),
+            'total_benefits'   => $scale($current->total_benefits),
+            'total_deductions' => $scale($current->total_deductions),
+            'net_salary'       => $scale($current->net_salary),
+        ];
+
+        DB::transaction(function () use ($current, $employeeId, $tenantId, $snapshot, $effectiveFrom, $reason, $actor) {
+            $endDate = Carbon::parse($effectiveFrom)->subDay();
+            $current->update([
+                'status'       => HrEmployeeSalary::INACTIVE,
+                'effective_to' => $current->effective_from && $endDate->lt($current->effective_from) ? $current->effective_from : $endDate,
+                'updated_by'   => $actor?->id,
+            ]);
+            $current->recordAudit('Salary Deactivated', $actor, 'Superseded by an increment');
+
+            $revisionNo = (int) HrEmployeeSalary::where('tenant_id', $tenantId)
+                ->where('employee_id', $employeeId)->max('revision_no') + 1;
+
+            $salary = HrEmployeeSalary::create([
+                'tenant_id'          => $tenantId,
+                'employee_id'        => $employeeId,
+                'salary_structure_id'=> $current->salary_structure_id,   // same structure, higher CTC
+                'effective_from'     => $effectiveFrom,
+                'effective_to'       => null,
+                'revision_no'        => $revisionNo,
+                'reason'             => $reason,
+                'assigned_by'        => $actor?->id,
+                'status'             => HrEmployeeSalary::ACTIVE,
+                'created_by'         => $actor?->id,
+                'updated_by'         => $actor?->id,
+                ...$snapshot,
+            ]);
+            $salary->recordAudit('Salary Revised', $actor, null, ['type' => 'increment', 'revision_no' => $revisionNo, 'monthly_ctc' => $snapshot['monthly_ctc']]);
+
+            HrSalaryRevision::create([
+                'tenant_id'                 => $tenantId,
+                'employee_id'               => $employeeId,
+                'employee_salary_id'        => $salary->id,
+                'from_structure_id'         => $current->salary_structure_id,
+                'to_structure_id'           => $current->salary_structure_id,
+                'revision_no'               => $revisionNo,
+                'effective_from'            => $effectiveFrom,
+                'reason'                    => $reason,
+                'previous_monthly_ctc'      => $current->monthly_ctc,
+                'previous_annual_ctc'       => $current->annual_ctc,
+                'previous_net_salary'       => $current->net_salary,
+                'new_monthly_ctc'           => $snapshot['monthly_ctc'],
+                'new_annual_ctc'            => $snapshot['annual_ctc'],
+                'new_gross_salary'          => $snapshot['gross_salary'],
+                'new_employer_contribution' => $snapshot['total_benefits'],
+                'new_total_deduction'       => $snapshot['total_deductions'],
+                'new_net_salary'            => $snapshot['net_salary'],
+                'changed_by'                => $actor?->id,
+            ]);
+            $this->log('Increment applied as salary revision', $tenantId, $salary->id);
+        });
+
+        return $this->forEmployee($employeeId, $tenantId);
+    }
+
+    /**
      * Update an existing salary row (effective dates, and/or re-point to another
      * structure which re-snapshots). Only this row is touched — other history rows
      * are never modified.
