@@ -5,15 +5,15 @@ namespace App\Models\Purchase;
 use App\Models\Traits\Auditable;
 use App\Models\Traits\BelongsToTenant;
 use App\Models\User;
-use App\Models\Vendor\Vendor;
+use App\Models\Purchase\PurchaseVendor;
 use App\Support\Purchase\PurchaseOnboardingStatus as Status;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
- * Workflow state for the 6-step Purchase-vendor onboarding wizard. Vendor
- * profile and documents live on the shared Vendor master — this tracks only
- * progress. Procurement-side mirror of TpvOnboarding, deliberately separate.
+ * Workflow state for the 6-step Purchase-vendor onboarding wizard. Belongs to a
+ * PurchaseVendor (purchase_vendor_id); profile lives on this record's JSON and
+ * documents in purchase_documents. Fully Purchase-owned and independent.
  */
 class PurchaseOnboarding extends Model
 {
@@ -22,7 +22,7 @@ class PurchaseOnboarding extends Model
     protected $table = 'purchase_onboardings';
 
     protected $fillable = [
-        'tenant_id', 'vendor_id', 'created_by', 'kickoff_meeting_id', 'current_step', 'profile',
+        'tenant_id', 'purchase_vendor_id', 'created_by', 'kickoff_meeting_id', 'current_step', 'profile',
         'status', 'submitted_at', 'approved_at', 'approved_by', 'remarks', 'work_start_letter_path',
         'registration_number', 'hold_reason',
         'kickoff_pdf_path', 'acknowledged', 'acknowledged_by', 'acknowledged_at', 'acknowledged_ip', 'acknowledged_browser', 'acknowledged_device',
@@ -47,7 +47,7 @@ class PurchaseOnboarding extends Model
 
     public function vendor()
     {
-        return $this->belongsTo(Vendor::class, 'vendor_id');
+        return $this->belongsTo(PurchaseVendor::class, 'purchase_vendor_id');
     }
 
     public function approver()
@@ -57,13 +57,13 @@ class PurchaseOnboarding extends Model
 
     public function kickoffMeeting()
     {
-        return $this->belongsTo(\App\Models\Shared\KickoffMeeting::class, 'kickoff_meeting_id');
+        return $this->belongsTo(\App\Models\Purchase\PurchaseKickoffMeeting::class, 'kickoff_meeting_id');
     }
 
-    /** The shared kickoff engine attaches meetings polymorphically. */
+    /** Purchase kickoff meetings for this onboarding (Purchase-owned engine). */
     public function kickoffMeetings()
     {
-        return $this->morphMany(\App\Models\Shared\KickoffMeeting::class, 'kickoffable');
+        return $this->hasMany(\App\Models\Purchase\PurchaseKickoffMeeting::class, 'purchase_onboarding_id');
     }
 
     /* ── Helpers ────────────────────────────────────────────────────────── */
@@ -81,8 +81,9 @@ class PurchaseOnboarding extends Model
     /** Doc types still missing or not yet approved for this vendor. */
     public function outstandingDocuments(): array
     {
-        $required = \App\Models\Vendor\VendorDocument::requiredFor($this->vendor->vendor_type ?? 'standard');
-        $approved = $this->vendor->documents()
+        $required = \App\Models\Purchase\PurchaseDocument::requiredFor($this->vendor->vendor_type ?? 'standard');
+        $approved = \App\Models\Purchase\PurchaseDocument::forTenant($this->tenant_id)
+            ->where('purchase_vendor_id', $this->purchase_vendor_id)
             ->where('status', 'Approved')
             ->pluck('type')
             ->all();

@@ -3,38 +3,39 @@
 namespace App\Http\Controllers\Api\Purchase;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Vendor\ResubmitVendorDocumentRequest;
-use App\Http\Requests\Vendor\ReviewVendorDocumentRequest;
-use App\Http\Requests\Vendor\UploadVendorDocumentRequest;
-use App\Models\Vendor\Vendor;
-use App\Models\Vendor\VendorDocument;
-use App\Models\Vendor\VendorDocumentVersion;
-use App\Services\Vendor\VendorDocumentService;
-use App\Services\Vendor\VendorDocumentVersionService;
+use App\Http\Requests\Purchase\ResubmitPurchaseDocumentRequest;
+use App\Http\Requests\Purchase\ReviewPurchaseDocumentRequest;
+use App\Http\Requests\Purchase\UploadPurchaseDocumentRequest;
+use App\Models\Purchase\PurchaseDocument;
+use App\Models\Purchase\PurchaseDocumentVersion;
+use App\Models\Purchase\PurchaseVendor;
+use App\Services\Purchase\PurchaseDocumentService;
+use App\Services\Purchase\PurchaseDocumentVersionService;
 use Illuminate\Http\Request;
 
 /**
- * Purchase-vendor statutory documents. Reuses the SHARED VendorDocumentService /
- * VendorDocument engine unchanged (private disk, versioning) — only the route
- * surface is Purchase-scoped. Hardened: every method is tenant-guarded AND
- * engagement-guarded (the vendor must be a Purchase vendor), returning 404.
+ * Purchase-vendor statutory documents. Backed by the Purchase-owned document
+ * engine (purchase_documents / purchase_document_versions, private `purchase_docs`
+ * disk) — fully independent of the shared Vendor Master docs and of TPV. Every
+ * method is tenant-guarded AND engagement-guarded (the vendor must be a Purchase
+ * vendor), returning 404.
  */
 class PurchaseVendorDocumentController extends Controller
 {
     public function __construct(
-        private VendorDocumentService $documentService,
-        private VendorDocumentVersionService $versionService,
+        private PurchaseDocumentService $documentService,
+        private PurchaseDocumentVersionService $versionService,
     ) {
     }
 
-    public function checklist(Request $request, Vendor $vendor)
+    public function checklist(Request $request, PurchaseVendor $vendor)
     {
         $this->assertVendor($request, $vendor);
 
         return response()->json($this->documentService->checklist($vendor));
     }
 
-    public function upload(UploadVendorDocumentRequest $request, Vendor $vendor)
+    public function upload(UploadPurchaseDocumentRequest $request, PurchaseVendor $vendor)
     {
         $this->assertVendor($request, $vendor);
 
@@ -43,7 +44,7 @@ class PurchaseVendorDocumentController extends Controller
         return response()->json($doc, 201);
     }
 
-    public function download(Request $request, VendorDocument $document)
+    public function download(Request $request, PurchaseDocument $document)
     {
         $this->assertDocument($request, $document);
 
@@ -55,14 +56,14 @@ class PurchaseVendorDocumentController extends Controller
         ]);
     }
 
-    public function resubmit(ResubmitVendorDocumentRequest $request, VendorDocument $document)
+    public function resubmit(ResubmitPurchaseDocumentRequest $request, PurchaseDocument $document)
     {
         $this->assertDocument($request, $document);
 
         return response()->json($this->documentService->resubmit($document, $request->file('file'), $request->user()));
     }
 
-    public function destroy(Request $request, VendorDocument $document)
+    public function destroy(Request $request, PurchaseDocument $document)
     {
         $this->assertDocument($request, $document);
 
@@ -71,17 +72,17 @@ class PurchaseVendorDocumentController extends Controller
         return response()->json(['message' => 'Deleted']);
     }
 
-    public function versions(Request $request, VendorDocument $document)
+    public function versions(Request $request, PurchaseDocument $document)
     {
         $this->assertDocument($request, $document);
 
         return response()->json($document->versions()->orderByDesc('version_no')->get());
     }
 
-    public function downloadVersion(Request $request, VendorDocument $document, VendorDocumentVersion $version)
+    public function downloadVersion(Request $request, PurchaseDocument $document, PurchaseDocumentVersion $version)
     {
         $this->assertDocument($request, $document);
-        abort_unless((int) $version->vendor_document_id === (int) $document->id, 404, 'Version not found');
+        abort_unless((int) $version->purchase_document_id === (int) $document->id, 404, 'Version not found');
 
         $file = $this->versionService->resolveDownload($version, $request->user());
 
@@ -91,7 +92,7 @@ class PurchaseVendorDocumentController extends Controller
         ]);
     }
 
-    public function restoreVersion(Request $request, VendorDocument $document, VendorDocumentVersion $version)
+    public function restoreVersion(Request $request, PurchaseDocument $document, PurchaseDocumentVersion $version)
     {
         $this->assertDocument($request, $document);
 
@@ -99,7 +100,7 @@ class PurchaseVendorDocumentController extends Controller
     }
 
     /** Admin approve/reject a document (route group is role:admin). */
-    public function review(ReviewVendorDocumentRequest $request, VendorDocument $document)
+    public function review(ReviewPurchaseDocumentRequest $request, PurchaseDocument $document)
     {
         $this->assertDocument($request, $document);
 
@@ -113,17 +114,15 @@ class PurchaseVendorDocumentController extends Controller
         return response()->json($doc);
     }
 
-    /* ── Guards: tenant + Purchase engagement, 404 on any miss ──────────── */
+    /* ── Guards: tenant-scoped, 404 on any miss ─────────────────────────── */
 
-    private function assertVendor(Request $request, Vendor $vendor): void
+    private function assertVendor(Request $request, PurchaseVendor $vendor): void
     {
-        abort_unless((int) $vendor->tenant_id === (int) $request->user()->tenant_id, 404, 'Vendor not found');
-        abort_unless($vendor->hasEngagement('purchase'), 404, 'Vendor not found');
+        abort_unless((int) $vendor->tenant_id === (int) $request->user()->tenant_id, 404, 'Purchase vendor not found');
     }
 
-    private function assertDocument(Request $request, VendorDocument $document): void
+    private function assertDocument(Request $request, PurchaseDocument $document): void
     {
         abort_unless((int) $document->tenant_id === (int) $request->user()->tenant_id, 404, 'Document not found');
-        abort_unless($document->vendor && $document->vendor->hasEngagement('purchase'), 404, 'Document not found');
     }
 }

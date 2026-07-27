@@ -51,12 +51,12 @@ class PurchaseCreditApplicationService
         }
         // The rule that makes netting sound accounting rather than a way to move
         // money between unrelated vendors.
-        if ((int) $dn->vendor_id !== (int) $invoice->vendor_id) {
+        if ((int) $dn->purchase_vendor_id !== (int) $invoice->purchase_vendor_id) {
             throw new BusinessException(
                 'A debit note can only be applied to an invoice from the same vendor.'
             );
         }
-        if (! $dn->vendor_id) {
+        if (! $dn->purchase_vendor_id) {
             throw new BusinessException('This debit note has no vendor, so it cannot be netted against an invoice.');
         }
 
@@ -162,12 +162,12 @@ class PurchaseCreditApplicationService
      */
     public function applicableInvoices(PurchaseDebitNote $dn): array
     {
-        if (! $dn->vendor_id) {
+        if (! $dn->purchase_vendor_id) {
             return [];
         }
 
         return PurchaseInvoice::forTenant($dn->tenant_id)
-            ->where('vendor_id', $dn->vendor_id)
+            ->where('purchase_vendor_id', $dn->purchase_vendor_id)
             ->payable()
             ->where('balance', '>', 0)
             ->orderBy('due_date')

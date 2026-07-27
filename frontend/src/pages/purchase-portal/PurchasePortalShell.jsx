@@ -4,18 +4,17 @@ import {
   LayoutDashboard, ClipboardList, FileText, ShieldCheck, CalendarDays,
   LogOut, Building2, Sun, Moon, Bell, User, HelpCircle, Menu,
 } from 'lucide-react'
-import { useAuth } from '@/context/AuthContext'
 import { purchasePortalApi } from '@/services/purchasePortalApi'
+import { purchaseVendorAuthApi } from '@/services/purchaseVendorAuthApi'
 import { KIT3D_STYLE } from '@/components/ui/kit3d'
 import '@/pages/vendor-portal/portal.css'
 
 /**
- * Purchase Vendor Portal chrome — the procurement mirror of VendorPortalShell.
- * Reuses the same portal.css. A purchase vendor (role `vendor`) sees only their
+ * Purchase Vendor Portal chrome — independent of the shared/TPV portal. Reuses
+ * only the generic portal.css. The authenticated PurchaseVendor sees only their
  * own onboarding, documents, approval status and kickoff.
  */
 export default function PurchasePortalShell() {
-  const { user, logout } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [vendor, setVendor] = useState(null)
@@ -29,7 +28,7 @@ export default function PurchasePortalShell() {
   }, [theme])
   useEffect(() => { setSidebarOpen(false) }, [location.pathname])
 
-  const doLogout = async () => { try { await logout() } finally { navigate('/auth/login') } }
+  const doLogout = async () => { try { await purchaseVendorAuthApi.logout() } finally { navigate('/purchase-portal/login') } }
 
   const nav = [
     { to: '/purchase-portal/dashboard',  label: 'Dashboard',  icon: LayoutDashboard },
@@ -39,7 +38,7 @@ export default function PurchasePortalShell() {
     { to: '/purchase-portal/kickoff',    label: 'Kickoff',    icon: CalendarDays },
   ]
   const pageTitle = nav.slice().reverse().find(n => location.pathname.startsWith(n.to))?.label ?? 'Portal'
-  const initials = (vendor?.company_name || user?.name || 'PV').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()
+  const initials = (vendor?.company_name || 'PV').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()
 
   return (
     <div className="portal-root">
@@ -51,7 +50,7 @@ export default function PurchasePortalShell() {
           <div className="portal-sidebar-logo"><Building2 size={18} color="#fff" /></div>
           <div style={{ minWidth: 0 }}>
             <div className="portal-sidebar-title">Purchase Vendor Portal</div>
-            <div className="portal-sidebar-subtitle">{vendor?.company_name || user?.name || 'Signed in'}</div>
+            <div className="portal-sidebar-subtitle">{vendor?.company_name || 'Signed in'}</div>
           </div>
         </div>
 
@@ -82,7 +81,7 @@ export default function PurchasePortalShell() {
             <button onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} className="portal-icon-btn" title="Toggle theme">{theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}</button>
             <div className="portal-user-chip">
               <div className="portal-avatar">{initials}</div>
-              <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-h)', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{vendor?.company_name || user?.name || 'Account'}</span>
+              <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-h)', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{vendor?.company_name || 'Account'}</span>
             </div>
             <button onClick={doLogout} className="portal-icon-btn" title="Sign out" style={{ color: '#f87171' }}><LogOut size={16} /></button>
           </div>

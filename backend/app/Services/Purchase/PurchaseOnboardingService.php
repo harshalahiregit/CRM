@@ -4,38 +4,40 @@ namespace App\Services\Purchase;
 
 use App\Exceptions\BusinessException;
 use App\Models\Purchase\PurchaseOnboarding;
+use App\Models\Purchase\PurchaseVendor;
 use App\Models\User;
-use App\Models\Vendor\Vendor;
-use App\Services\Vendor\VendorDocumentService;
+use App\Services\Purchase\PurchaseApprovalService;
+use App\Services\Purchase\PurchaseDocumentService;
+use App\Support\Purchase\PurchaseApprovalStage;
 use App\Support\Purchase\PurchaseOnboardingStatus as Status;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Purchase-vendor onboarding — the procurement mirror of TpvOnboardingService,
- * over the shared Vendor master (engagement 'purchase'). Reuses the shared
- * VendorDocumentService for the document checklist. Deliberately never touches
- * TpvOnboarding / VendorService::approve(), so TPV behaviour is unaffected and
- * no tpv_onboardings row is created for a purchase vendor.
+ * Purchase-vendor onboarding — over the Purchase Vendor master (PurchaseVendor)
+ * only. Uses the Purchase-owned PurchaseDocumentService for the document
+ * checklist and PurchaseApprovalService for the approval chain. Fully independent
+ * of TPV and of the shared Vendor architecture.
  */
 class PurchaseOnboardingService
 {
     public function __construct(
-        private VendorDocumentService $documentService,
+        private PurchaseDocumentService $documentService,
         private PurchaseRegistrationNumberService $registrationNumbers,
+        private PurchaseApprovalService $approvals,
     ) {
     }
 
     public function list(int $tenantId, array $filters): Collection
     {
         $query = PurchaseOnboarding::forTenant($tenantId)
-            ->with(['vendor:id,vendor_code,company_name,vendor_type,status']);
+            ->with(['vendor:id,purchase_vendor_code,company_name,vendor_type,status']);
 
         if (! empty($filters['status']) && $filters['status'] !== 'All') {
             $query->where('status', $filters['status']);
         }
-        if (! empty($filters['vendor_id'])) {
-            $query->where('vendor_id', $filters['vendor_id']);
+        if (! empty($filters['purchase_vendor_id'])) {
+            $query->where('purchase_vendor_id', $filters['purchase_vendor_id']);
         }
 
         return $query->latest()->get();
@@ -45,33 +47,29 @@ class PurchaseOnboardingService
     public function create(array $data, User $actor): PurchaseOnboarding
     {
         $tenantId = $actor->tenant_id;
-        $vendor = Vendor::forTenant($tenantId)->find($data['vendor_id']);
+        $vendor = PurchaseVendor::forTenant($tenantId)->find($data['purchase_vendor_id']);
 
         if (! $vendor) {
-            throw new BusinessException('Vendor not found.', 404);
+            throw new BusinessException('Purchase vendor not found.', 404);
         }
 
-        $existing = PurchaseOnboarding::forTenant($tenantId)->where('vendor_id', $vendor->id)->first();
+        $existing = PurchaseOnboarding::forTenant($tenantId)->where('purchase_vendor_id', $vendor->id)->first();
         if ($existing) {
             return $existing->fresh(['vendor']);
         }
 
         $onboarding = PurchaseOnboarding::create([
-            'vendor_id'    => $vendor->id,
-            'tenant_id'    => $tenantId,
-            'created_by'   => $actor->id,
-            'current_step' => 1,
-            'status'       => Status::IN_PROGRESS,
+            'purchase_vendor_id' => $vendor->id,
+            'tenant_id'          => $tenantId,
+            'created_by'         => $actor->id,
+            'current_step'       => 1,
+            'status'             => Status::IN_PROGRESS,
         ]);
 
-        // Tag the vendor as engaged for Purchase without disturbing an existing
-        // TPV engagement — one vendor can be both.
-        $vendor->update(['engagements' => array_values(array_unique([...($vendor->engagements ?? []), 'purchase']))]);
-
-        $onboarding->recordAudit('Purchase Onboarding Started', $actor, null, ['vendor_code' => $vendor->vendor_code]);
+        $onboarding->recordAudit('Purchase Onboarding Started', $actor, null, ['purchase_vendor_code' => $vendor->purchase_vendor_code]);
 
         Log::channel('purchase')->info('Purchase onboarding started', [
-            'onboarding_id' => $onboarding->id, 'vendor_id' => $vendor->id, 'tenant_id' => $tenantId,
+            'onboarding_id' => $onboarding->id, 'purchase_vendor_id' => $vendor->id, 'tenant_id' => $tenantId,
         ]);
 
         return $onboarding->fresh(['vendor']);
@@ -137,21 +135,8 @@ class PurchaseOnboardingService
             $vendor->update($vendorPatch);
         }
 
-        $bank = array_filter([
-            'account_holder' => $profile['bank_account_holder'] ?? null,
-            'bank_name'      => $profile['bank_name'] ?? null,
-            'account_number' => $profile['bank_account_number'] ?? null,
-            'ifsc'           => isset($profile['bank_ifsc']) ? strtoupper((string) $profile['bank_ifsc']) : null,
-            'branch'         => $profile['bank_branch'] ?? null,
-            'account_type'   => $profile['bank_account_type'] ?? null,
-        ], fn ($v) => $v !== null && $v !== '');
-
-        if ($bank !== []) {
-            \App\Models\Vendor\VendorBankAccount::updateOrCreate(
-                ['tenant_id' => $onboarding->tenant_id, 'vendor_id' => $vendor->id],
-                $bank,
-            );
-        }
+        // Bank details are retained on the onboarding profile JSON (Purchase-owned);
+        // Purchase does not write to the shared vendor_bank_accounts table.
     }
 
     /** Per-step completion + document checklist (the wizard's live state). */
@@ -166,9 +151,20 @@ class PurchaseOnboardingService
         $allApproved = $checklist['complete'];
         $submitted   = in_array($onboarding->status, [Status::SUBMITTED, Status::UNDER_REVIEW, Status::APPROVED], true);
 
+        // Category drives whether the vendor needs the Workforce step; the portal
+        // renders the flow from this (never hardcoded on the frontend).
+        $cfg = \App\Support\Purchase\PurchaseVendorCategoryConfig::resolve($onboarding->vendor->category ?? null);
+        $workforce = $cfg['requires_workforce'] && $onboarding->vendor
+            ? app(\App\Services\Purchase\PurchaseWorkforceService::class)->summary($onboarding->vendor)
+            : null;
+
         return [
-            'current_step' => $onboarding->current_step,
-            'documents'    => $checklist,
+            'current_step'       => $onboarding->current_step,
+            'documents'          => $checklist,
+            'category'           => $cfg['category'],
+            'requires_workforce' => $cfg['requires_workforce'],
+            'onboarding_steps'   => $cfg['onboarding_steps'],
+            'workforce'          => $workforce,
             'steps' => [
                 ['step' => 1, 'key' => 'kickoff',      'label' => 'Kickoff MOM',     'complete' => (bool) $onboarding->acknowledged, 'detail' => $onboarding->acknowledged ? 'Acknowledged' : 'Awaiting acknowledgement'],
                 ['step' => 2, 'key' => 'profile',      'label' => 'Company Profile', 'complete' => $profileDone, 'detail' => $profileDone ? 'Saved' : 'Pending'],
@@ -192,7 +188,7 @@ class PurchaseOnboardingService
 
         $outstanding = $onboarding->outstandingDocuments();
         if ($outstanding !== []) {
-            $labels = array_map(fn ($t) => \App\Models\Vendor\VendorDocument::typeLabel($t), $outstanding);
+            $labels = array_map(fn ($t) => \App\Models\Purchase\PurchaseDocument::typeLabel($t), $outstanding);
             throw new BusinessException('Outstanding documents: '.implode(', ', $labels));
         }
 
@@ -235,14 +231,17 @@ class PurchaseOnboardingService
             'registration_number' => $registrationNumber,
         ]);
 
-        // Activate the vendor for procurement. Purchase-specific: this does NOT
-        // route through VendorService::approve() (which is TPV-flavoured).
+        // Activate the Purchase vendor for procurement (Purchase-owned entity).
         $onboarding->vendor->update([
-            'status'              => \App\Support\Vendor\VendorStatus::ACTIVE,
+            'status'              => \App\Support\Purchase\PurchaseVendorStatus::ACTIVE,
             'approved_at'         => now(),
             'approved_by'         => $actor->id,
             'registration_number' => $onboarding->vendor->registration_number ?: $registrationNumber,
         ]);
+
+        // Record the full five-stage chain in the Purchase-owned approval engine
+        // (Registration → Document → Commercial → Purchase → Final Activation).
+        $this->approvals->approveAll($onboarding, $actor, $remarks);
 
         $onboarding->recordAudit('Onboarding Approved', $actor, $remarks, [
             'to' => Status::APPROVED, 'registration_number' => $registrationNumber,
@@ -261,6 +260,8 @@ class PurchaseOnboardingService
     public function reject(PurchaseOnboarding $onboarding, User $actor, string $remarks): PurchaseOnboarding
     {
         $onboarding->update(['status' => Status::REJECTED, 'remarks' => $remarks]);
+        // Record the rejection at the Final Activation stage of the Purchase-owned chain.
+        $this->approvals->rejectAt($onboarding, PurchaseApprovalStage::ACTIVATION, $actor, $remarks);
         $onboarding->recordAudit('Onboarding Rejected', $actor, $remarks, ['to' => Status::REJECTED]);
         $this->notify($onboarding, Status::REJECTED, $remarks);
 
@@ -317,21 +318,20 @@ class PurchaseOnboardingService
         ];
     }
 
-    /* ── Step 1 — kickoff (reuses the shared KickoffMeeting engine) ─────── */
+    /* ── Step 1 — kickoff (Purchase-owned kickoff engine) ───────────────── */
 
-    /** The kickoff meeting attached to this onboarding's vendor, if any. */
-    public function resolveKickoffMeeting(PurchaseOnboarding $onboarding): ?\App\Models\Shared\KickoffMeeting
+    /** The Purchase kickoff meeting attached to this onboarding's vendor, if any. */
+    public function resolveKickoffMeeting(PurchaseOnboarding $onboarding): ?\App\Models\Purchase\PurchaseKickoffMeeting
     {
         if ($onboarding->kickoff_meeting_id) {
-            $m = \App\Models\Shared\KickoffMeeting::forTenant($onboarding->tenant_id)->find($onboarding->kickoff_meeting_id);
+            $m = \App\Models\Purchase\PurchaseKickoffMeeting::forTenant($onboarding->tenant_id)->find($onboarding->kickoff_meeting_id);
             if ($m) {
                 return $m;
             }
         }
 
-        return \App\Models\Shared\KickoffMeeting::forTenant($onboarding->tenant_id)
-            ->whereIn('kickoffable_type', [\App\Models\Vendor\Vendor::class, 'vendor'])
-            ->where('kickoffable_id', $onboarding->vendor_id)
+        return \App\Models\Purchase\PurchaseKickoffMeeting::forTenant($onboarding->tenant_id)
+            ->where('purchase_vendor_id', $onboarding->purchase_vendor_id)
             ->latest()
             ->first();
     }

@@ -15,7 +15,7 @@ class UpdatePurchaseInvoiceRequest extends FormRequest
     {
         return [
             'title'              => 'nullable|string',
-            'vendor_id'          => 'nullable|integer|exists:vendors,id',
+            'purchase_vendor_id'          => 'nullable|integer|exists:purchase_vendors,id',
             'vendor_invoice_ref' => 'nullable|string',
             'invoice_date'       => 'nullable|date',
             'due_date'           => 'nullable|date',

@@ -1,12 +1,10 @@
 /**
- * Purchase Vendor Portal API — the procurement mirror of the TPV portalApi
- * self-service section. Every endpoint resolves the vendor from the token
- * server-side; there is no vendor id to pass. Hits /portal/purchase/*.
- *
- * Shapes mirror portalApi so the SAME reused components (TpvOnboardings,
- * TpvOnboardingWizard, TpvVendorContacts) work by swapping only this client.
+ * Purchase Vendor Portal API — hits /portal/purchase/*. Every endpoint resolves
+ * the vendor from the Purchase-vendor token server-side; there is no vendor id to
+ * pass. Uses the dedicated Purchase-vendor axios instance (its own token),
+ * completely independent of the shared user/vendor auth.
  */
-import api from '@/lib/api'
+import api from '@/lib/purchaseVendorApi'
 
 const upload = (url, formData) =>
   api.post(url, formData, { headers: { 'Content-Type': undefined } }).then(r => r.data)
@@ -14,9 +12,9 @@ const upload = (url, formData) =>
 export const purchasePortalApi = {
   me: () => api.get('/portal/purchase/me').then(r => r.data),
 
-  // ── Onboarding — mirrors portalApi.onboarding shape ─────────────────────
-  // list() wraps the single-record response in an array so TpvOnboardings
-  // renders unchanged; stats() is derived client-side from the record.
+  // ── Onboarding (the vendor's own record) ────────────────────────────────
+  // list() wraps the single-record response in an array for list-style
+  // rendering; stats() is derived client-side from the record.
   onboarding: {
     list: async () => {
       const r = await api.get('/portal/purchase/onboarding')

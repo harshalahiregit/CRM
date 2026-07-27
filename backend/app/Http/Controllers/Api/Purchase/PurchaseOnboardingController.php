@@ -11,7 +11,7 @@ use App\Support\UserAgentInfo;
 use Illuminate\Http\Request;
 
 /**
- * Purchase-vendor onboarding — the procurement mirror of TpvOnboardingController.
+ * Purchase-vendor onboarding — Purchase-owned staff surface (PurchaseVendor).
  * Every route-model-bound method is tenant-guarded (404). Approve/reject/hold are
  * admin-only (route group). No TPV controller/service is touched.
  */
@@ -29,7 +29,7 @@ class PurchaseOnboardingController extends Controller
     public function index(Request $request)
     {
         return response()->json(
-            $this->service->list($request->user()->tenant_id, $request->only(['status', 'vendor_id']))
+            $this->service->list($request->user()->tenant_id, $request->only(['status', 'purchase_vendor_id']))
         );
     }
 
@@ -95,7 +95,7 @@ class PurchaseOnboardingController extends Controller
         return response()->json(['message' => 'Deleted']);
     }
 
-    /* ── Step 1 — kickoff (reuses the shared kickoff MOM engine) ─────────── */
+    /* ── Step 1 — kickoff (Purchase-owned kickoff engine) ───────────────── */
 
     public function kickoffPdf(Request $request, PurchaseOnboarding $onboarding)
     {
@@ -104,23 +104,22 @@ class PurchaseOnboardingController extends Controller
         $meeting = $this->service->resolveKickoffMeeting($onboarding);
         abort_unless($meeting, 404, 'Kickoff MOM not available yet.');
 
-        if (! $meeting->mom_path) {
+        $kickoff = app(\App\Services\Purchase\PurchaseKickoffService::class);
+        $file = $kickoff->currentMomFile($meeting);
+        if (! $file) {
             try {
-                app(\App\Services\Shared\KickoffMeetingService::class)->generateMom($meeting, $request->user());
-                $meeting->refresh();
+                $meeting = $kickoff->generateMom($meeting, $request->user());
+                $file = $kickoff->currentMomFile($meeting);
             } catch (\Throwable $e) {
                 abort(404, 'Kickoff MOM not available yet.');
             }
         }
-        abort_unless(
-            $meeting->mom_path && \Illuminate\Support\Facades\Storage::disk('kickoff_docs')->exists($meeting->mom_path),
-            404, 'Kickoff MOM not available yet.'
-        );
+        abort_unless($file, 404, 'Kickoff MOM not available yet.');
 
-        return \Illuminate\Support\Facades\Storage::disk('kickoff_docs')->download(
-            $meeting->mom_path, 'kickoff-mom.pdf',
-            ['Content-Type' => 'application/pdf', 'Content-Disposition' => 'inline; filename="kickoff-mom.pdf"']
-        );
+        return response()->download($file['path'], 'kickoff-mom.pdf', [
+            'Content-Type'        => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="kickoff-mom.pdf"',
+        ]);
     }
 
     public function acceptKickoff(Request $request, PurchaseOnboarding $onboarding)

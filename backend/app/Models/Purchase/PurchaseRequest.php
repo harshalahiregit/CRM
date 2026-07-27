@@ -5,7 +5,7 @@ namespace App\Models\Purchase;
 use App\Models\Traits\Auditable;
 use App\Models\Traits\BelongsToTenant;
 use App\Models\User;
-use App\Models\Vendor\Vendor;
+use App\Models\Purchase\PurchaseVendor;
 use App\Support\Purchase\PurchaseRequestStatus as Status;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -17,7 +17,7 @@ class PurchaseRequest extends Model
     protected $table = 'purchase_requests';
 
     protected $fillable = [
-        'tenant_id','pr_number','title','department','vendor_id','requested_by',
+        'tenant_id','pr_number','title','department','purchase_vendor_id','requested_by',
         'required_by','priority','justification','currency',
         'subtotal','tax_total','total',
         'status','submitted_at','approved_at','approved_by','remarks',
@@ -39,12 +39,21 @@ class PurchaseRequest extends Model
     {
         static::creating(function (PurchaseRequest $pr) {
             if (empty($pr->pr_number)) {
-                $year  = date('Y');
-                $count = static::withTrashed()
-                               ->where('tenant_id', $pr->tenant_id)
-                               ->whereYear('created_at', $year)
-                               ->count() + 1;
-                $pr->pr_number = 'PR-'.$year.'-'.str_pad((string) $count, 3, '0', STR_PAD_LEFT);
+                // Settings-driven once configured; original format until then.
+                $pr->pr_number = \App\Support\Purchase\PurchaseNumbering::next(
+                    (int) $pr->tenant_id,
+                    'pur_request_prefix',
+                    'next_pr_number',
+                    function () use ($pr) {
+                        $year  = date('Y');
+                        $count = static::withTrashed()
+                                       ->where('tenant_id', $pr->tenant_id)
+                                       ->whereYear('created_at', $year)
+                                       ->count() + 1;
+
+                        return 'PR-'.$year.'-'.str_pad((string) $count, 3, '0', STR_PAD_LEFT);
+                    },
+                );
             }
         });
     }
@@ -59,7 +68,7 @@ class PurchaseRequest extends Model
     /** Suggested vendor — the unified vendor master, shared with TPV. */
     public function vendor()
     {
-        return $this->belongsTo(Vendor::class, 'vendor_id');
+        return $this->belongsTo(PurchaseVendor::class, 'purchase_vendor_id');
     }
 
     public function requester()

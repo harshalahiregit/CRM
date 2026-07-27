@@ -45,7 +45,7 @@ class PurchaseCatalogController extends Controller
     {
         $this->assertTenant($request, $catalogItem);
 
-        return response()->json($catalogItem->load(['preferredVendor:id,vendor_code,company_name', 'creator:id,name', 'auditLogs']));
+        return response()->json($catalogItem->load(['preferredVendor:id,purchase_vendor_code,company_name', 'creator:id,name', 'auditLogs']));
     }
 
     public function update(UpdateCatalogItemRequest $request, PurchaseCatalogItem $catalogItem)

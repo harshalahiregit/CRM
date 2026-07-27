@@ -18,7 +18,7 @@ class PurchaseContractController extends Controller
     public function index(Request $request)
     {
         return response()->json(
-            $this->contractService->list($request->user()->tenant_id, $request->only(['status', 'type', 'vendor_id', 'search']))
+            $this->contractService->list($request->user()->tenant_id, $request->only(['status', 'type', 'purchase_vendor_id', 'search']))
         );
     }
 
@@ -30,9 +30,9 @@ class PurchaseContractController extends Controller
     /** Active rate contracts for a vendor — for a PO's contract picker. */
     public function referenceable(Request $request)
     {
-        $data = $request->validate(['vendor_id' => 'required|integer']);
+        $data = $request->validate(['purchase_vendor_id' => 'required|integer']);
 
-        return response()->json($this->contractService->referenceableForVendor($request->user()->tenant_id, (int) $data['vendor_id']));
+        return response()->json($this->contractService->referenceableForVendor($request->user()->tenant_id, (int) $data['purchase_vendor_id']));
     }
 
     public function store(StorePurchaseContractRequest $request)

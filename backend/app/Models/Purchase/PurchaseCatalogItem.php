@@ -5,7 +5,7 @@ namespace App\Models\Purchase;
 use App\Models\Traits\Auditable;
 use App\Models\Traits\BelongsToTenant;
 use App\Models\User;
-use App\Models\Vendor\Vendor;
+use App\Models\Purchase\PurchaseVendor;
 use App\Support\Purchase\PurchaseCatalogStatus as Status;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -23,7 +23,7 @@ class PurchaseCatalogItem extends Model
 
     protected $fillable = [
         'tenant_id','sku','name','category','description','uom',
-        'default_rate','default_tax','hsn_code','preferred_vendor_id','created_by','status','notes',
+        'default_rate','default_tax','hsn_code','preferred_purchase_vendor_id','created_by','status','notes',
     ];
 
     protected $casts = [
@@ -47,7 +47,7 @@ class PurchaseCatalogItem extends Model
 
     public function preferredVendor()
     {
-        return $this->belongsTo(Vendor::class, 'preferred_vendor_id');
+        return $this->belongsTo(PurchaseVendor::class, 'preferred_purchase_vendor_id');
     }
 
     public function creator()

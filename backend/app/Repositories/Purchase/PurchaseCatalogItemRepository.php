@@ -12,7 +12,7 @@ class PurchaseCatalogItemRepository extends BaseRepository
     public function filtered(int $tenantId, array $filters)
     {
         $query = PurchaseCatalogItem::forTenant($tenantId)
-            ->with(['preferredVendor:id,vendor_code,company_name']);
+            ->with(['preferredVendor:id,purchase_vendor_code,company_name']);
 
         if (! empty($filters['status']) && $filters['status'] !== 'All') {
             $query->where('status', $filters['status']);

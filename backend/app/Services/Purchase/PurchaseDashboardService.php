@@ -106,16 +106,16 @@ class PurchaseDashboardService
     {
         return PurchaseInvoice::forTenant($tenantId)
             ->where('status', '!=', InvStatus::CANCELLED)
-            ->whereNotNull('vendor_id')
-            ->selectRaw('vendor_id, SUM(total) as spend, COUNT(*) as invoices')
-            ->groupBy('vendor_id')
+            ->whereNotNull('purchase_vendor_id')
+            ->selectRaw('purchase_vendor_id, SUM(total) as spend, COUNT(*) as invoices')
+            ->groupBy('purchase_vendor_id')
             ->orderByDesc('spend')
             ->limit(5)
-            ->with('vendor:id,company_name,vendor_code')
+            ->with('vendor:id,company_name,purchase_vendor_code')
             ->get()
             ->map(fn ($r) => [
                 'name'     => $r->vendor?->company_name ?? 'Unknown',
-                'code'     => $r->vendor?->vendor_code,
+                'code'     => $r->vendor?->purchase_vendor_code,
                 'spend'    => (float) $r->spend,
                 'invoices' => (int) $r->invoices,
             ])->all();

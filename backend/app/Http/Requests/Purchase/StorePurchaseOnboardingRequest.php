@@ -15,7 +15,7 @@ class StorePurchaseOnboardingRequest extends FormRequest
     {
         return [
             // Tenant ownership is enforced in the service.
-            'vendor_id' => 'required|integer|exists:vendors,id',
+            'purchase_vendor_id' => 'required|integer|exists:purchase_vendors,id',
         ];
     }
 }

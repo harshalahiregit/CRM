@@ -3,7 +3,7 @@
 namespace App\Models\Purchase;
 
 use App\Models\Traits\BelongsToTenant;
-use App\Models\Vendor\Vendor;
+use App\Models\Purchase\PurchaseVendor;
 use App\Support\Purchase\RfqVendorStatus as Status;
 use Illuminate\Database\Eloquent\Model;
 
@@ -18,7 +18,7 @@ class PurchaseRfqVendor extends Model
     protected $table = 'purchase_rfq_vendors';
 
     protected $fillable = [
-        'tenant_id','purchase_rfq_id','vendor_id','invite_token','status','responded_at',
+        'tenant_id','purchase_rfq_id','purchase_vendor_id','invite_token','status','responded_at',
     ];
 
     protected $casts = [
@@ -37,7 +37,7 @@ class PurchaseRfqVendor extends Model
 
     public function vendor()
     {
-        return $this->belongsTo(Vendor::class, 'vendor_id');
+        return $this->belongsTo(PurchaseVendor::class, 'purchase_vendor_id');
     }
 
     public function getStatusLabelAttribute(): string

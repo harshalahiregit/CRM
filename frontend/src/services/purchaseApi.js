@@ -1,6 +1,6 @@
 /**
  * Purchase Module API Service
- * All HTTP calls to /api/purchase/* and the shared /api/vendors/* master.
+ * All HTTP calls to /api/purchase/* (incl. the Purchase-owned /api/purchase/vendors).
  * Mirrors the structure of services/hrApi.js.
  */
 
@@ -31,6 +31,7 @@ export const purchaseApi = {
     recordQuote: (rfqId, data) => api.post(`/purchase/rfqs/${rfqId}/quotations`, data).then(r => r.data),
   },
   quotations: {
+    list:      (params = {}) => api.get('/purchase/quotations', { params }).then(r => r.data),
     get:       (id)       => api.get(`/purchase/quotations/${id}`).then(r => r.data),
     update:    (id, data) => api.put(`/purchase/quotations/${id}`, data).then(r => r.data),
     shortlist: (id, on = true) => api.post(`/purchase/quotations/${id}/shortlist`, { on }).then(r => r.data),
@@ -145,18 +146,96 @@ export const purchaseApi = {
     reverseCredit:      (id, appId) => api.delete(`/purchase/debit-notes/${id}/applications/${appId}`).then(r => r.data),
   },
 
-  // ── Vendor master (shared with TPV) — Purchase engagement ───────────
-  // Uses the shared /vendors endpoints, always scoped to engagement 'purchase'.
-  // Mirrors tpvApi.vendors so the shared TPV vendor components work unchanged.
+  // ── Purchase Vendor master — the Purchase-owned entity (/purchase/vendors) ─
+  // Fully independent of the shared /vendors table and of TPV.
   vendors: {
-    list:      (params = {}) => api.get('/vendors', { params: { engagement: 'purchase', ...params } }).then(r => r.data),
-    stats:     ()            => api.get('/vendors/stats', { params: { engagement: 'purchase' } }).then(r => r.data),
-    get:       (id)          => api.get(`/vendors/${id}`).then(r => r.data),
-    create:    (data)        => api.post('/vendors', { ...data, engagements: ['purchase'] }).then(r => r.data),
-    update:    (id, data)    => api.put(`/vendors/${id}`, data).then(r => r.data),
-    setStatus: (id, status)  => api.patch(`/vendors/${id}/status`, { status }).then(r => r.data),
-    sendEmail: (id, data)    => api.post(`/vendors/${id}/email`, data).then(r => r.data),
-    delete:    (id)          => api.delete(`/vendors/${id}`).then(r => r.data),
+    list:      (params = {}) => api.get('/purchase/vendors', { params }).then(r => r.data),
+    stats:     ()            => api.get('/purchase/vendors/stats').then(r => r.data),
+    get:       (id)          => api.get(`/purchase/vendors/${id}`).then(r => r.data),
+    create:    (data)        => api.post('/purchase/vendors', data).then(r => r.data),
+    update:    (id, data)    => api.put(`/purchase/vendors/${id}`, data).then(r => r.data),
+    setStatus: (id, status)  => api.patch(`/purchase/vendors/${id}/status`, { status }).then(r => r.data),
+    approve:   (id)          => api.post(`/purchase/vendors/${id}/approve`).then(r => r.data),   // admin-only
+    delete:    (id)          => api.delete(`/purchase/vendors/${id}`).then(r => r.data),
+  },
+
+  // ── Settings — module config (key/value) + the vendor-category master ───
+  settings: {
+    get:    ()      => api.get('/purchase/settings').then(r => r.data),
+    update: (data)  => api.put('/purchase/settings', data).then(r => r.data),   // admin-only
+  },
+  vendorCategories: {
+    list:   ()          => api.get('/purchase/vendor-categories').then(r => r.data),
+    create: (data)      => api.post('/purchase/vendor-categories', data).then(r => r.data),
+    update: (id, data)  => api.put(`/purchase/vendor-categories/${id}`, data).then(r => r.data),
+    delete: (id)        => api.delete(`/purchase/vendor-categories/${id}`).then(r => r.data),
+  },
+
+  // ── Reports — read-only aggregations, all accept { period } ─────────────
+  reports: {
+    itemCost:     (params = {}) => api.get('/purchase/reports/item-cost', { params }).then(r => r.data),
+    poVoucher:    (params = {}) => api.get('/purchase/reports/po-voucher', { params }).then(r => r.data),
+    orders:       (params = {}) => api.get('/purchase/reports/orders', { params }).then(r => r.data),
+    invoices:     (params = {}) => api.get('/purchase/reports/invoices', { params }).then(r => r.data),
+    statsByCount: (params = {}) => api.get('/purchase/reports/stats-by-count', { params }).then(r => r.data),
+    statsByCost:  (params = {}) => api.get('/purchase/reports/stats-by-cost', { params }).then(r => r.data),
+  },
+
+  // ── Order Returns — goods returned to a vendor (Draft → Issued → Completed) ─
+  // A separate document from debit notes: own OR-#### series + line discounts.
+  orderReturns: {
+    list:     (params = {}) => api.get('/purchase/order-returns', { params }).then(r => r.data),
+    stats:    ()            => api.get('/purchase/order-returns/stats').then(r => r.data),
+    get:      (id)          => api.get(`/purchase/order-returns/${id}`).then(r => r.data),
+    create:   (data)        => api.post('/purchase/order-returns', data).then(r => r.data),
+    update:   (id, data)    => api.put(`/purchase/order-returns/${id}`, data).then(r => r.data),
+    delete:   (id)          => api.delete(`/purchase/order-returns/${id}`).then(r => r.data),
+    issue:    (id)          => api.post(`/purchase/order-returns/${id}/issue`).then(r => r.data),
+    complete: (id)          => api.post(`/purchase/order-returns/${id}/complete`).then(r => r.data),
+    cancel:   (id, remarks = '') => api.post(`/purchase/order-returns/${id}/cancel`, { remarks }).then(r => r.data),
+  },
+
+  // ── Vendor Items — Purchase Vendor ↔ Inventory Item mapping ───────────
+  // Purchase owns the mapping only; item groups/items come from Inventory APIs.
+  vendorItems: {
+    list:   (params = {}) => api.get('/purchase/vendor-items', { params }).then(r => r.data),
+    stats:  ()            => api.get('/purchase/vendor-items/stats').then(r => r.data),
+    get:    (id)          => api.get(`/purchase/vendor-items/${id}`).then(r => r.data),
+    create: (data)        => api.post('/purchase/vendor-items', data).then(r => r.data),
+    update: (id, data)    => api.put(`/purchase/vendor-items/${id}`, data).then(r => r.data),
+    delete: (id)          => api.delete(`/purchase/vendor-items/${id}`).then(r => r.data),
+  },
+
+  // ── Vendor approval chain (/purchase/onboarding/{id}/approvals) ─────────
+  approvals: {
+    chain:   (onboardingId)                 => api.get(`/purchase/onboarding/${onboardingId}/approvals`).then(r => r.data),
+    approve: (onboardingId, stage, remarks = '') => api.post(`/purchase/onboarding/${onboardingId}/approvals/${stage}/approve`, { remarks }).then(r => r.data),
+    reject:  (onboardingId, stage, remarks)      => api.post(`/purchase/onboarding/${onboardingId}/approvals/${stage}/reject`, { remarks }).then(r => r.data),
+  },
+
+  // ── Kickoff meetings (Purchase-owned engine, /purchase/kickoff) ─────────
+  // Independent of the shared/TPV kickoff engine — hits only /api/purchase/kickoff.
+  kickoff: {
+    list:   (params = {}) => api.get('/purchase/kickoff', { params }).then(r => r.data),
+    stats:  ()            => api.get('/purchase/kickoff/stats').then(r => r.data),
+    get:    (id)          => api.get(`/purchase/kickoff/${id}`).then(r => r.data),
+    create: (data)        => api.post('/purchase/kickoff', data).then(r => r.data),
+    update: (id, data)    => api.put(`/purchase/kickoff/${id}`, data).then(r => r.data),
+    transition: (id, data) => api.post(`/purchase/kickoff/${id}/transition`, data).then(r => r.data),
+    // Post-meeting attendance — [{ id, attended }]. Audit-logged server-side.
+    attendance: (id, rows) => api.patch(`/purchase/kickoff/${id}/attendance`, { rows }).then(r => r.data),
+    // Manual reminder — email is a real send; whatsapp/sms are queued stubs.
+    remind: (id)          => api.post(`/purchase/kickoff/${id}/remind`).then(r => r.data),
+    generateMom: (id)     => api.post(`/purchase/kickoff/${id}/mom/generate`).then(r => r.data),
+    uploadMom: (id, file) => {
+      const fd = new FormData()
+      fd.append('file', file)
+      return upload(`/purchase/kickoff/${id}/mom`, fd)
+    },
+    // Stored MOM PDF as a blob for inline view / download.
+    momBlob: (id) => api.get(`/purchase/kickoff/${id}/mom`, { responseType: 'blob' }).then(r => r.data),
+    publish: (id)         => api.post(`/purchase/kickoff/${id}/publish`).then(r => r.data),
+    remove:  (id)         => api.delete(`/purchase/kickoff/${id}`).then(r => r.data),
   },
 
   // ── Purchase onboarding — the 6-step wizard (/purchase/onboarding) ───
@@ -190,6 +269,7 @@ export const purchaseApi = {
     create:    (vendorId, data)        => api.post(`/purchase/vendors/${vendorId}/contacts`, data).then(r => r.data),
     update:    (vendorId, id, data)    => api.put(`/purchase/vendors/${vendorId}/contacts/${id}`, data).then(r => r.data),
     setStatus: (vendorId, id, status)  => api.patch(`/purchase/vendors/${vendorId}/contacts/${id}/status`, { status }).then(r => r.data),
+    delete:    (vendorId, id)          => api.delete(`/purchase/vendors/${vendorId}/contacts/${id}`).then(r => r.data),
   },
 
   // ── Approval actions (admin) — the onboarding decision endpoints ────

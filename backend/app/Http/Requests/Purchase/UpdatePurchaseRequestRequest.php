@@ -16,7 +16,7 @@ class UpdatePurchaseRequestRequest extends FormRequest
         return [
             'title'         => 'sometimes|required|string',
             'department'    => 'nullable|string',
-            'vendor_id'     => 'nullable|integer|exists:vendors,id',
+            'purchase_vendor_id'     => 'nullable|integer|exists:purchase_vendors,id',
             'required_by'   => 'nullable|date',
             'priority'      => 'nullable|in:Low,Normal,High,Urgent',
             'justification' => 'nullable|string',

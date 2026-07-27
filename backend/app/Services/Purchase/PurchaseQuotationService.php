@@ -41,8 +41,8 @@ class PurchaseQuotationService
             throw new BusinessException("Quotes can only be recorded on a Sent or Under Review RFQ; this one is {$rfq->status_label}.");
         }
 
-        $vendorId = (int) ($data['vendor_id'] ?? 0);
-        $invited  = $rfq->rfqVendors()->where('vendor_id', $vendorId)->first();
+        $vendorId = (int) ($data['purchase_vendor_id'] ?? 0);
+        $invited  = $rfq->rfqVendors()->where('purchase_vendor_id', $vendorId)->first();
         if (! $invited) {
             throw new BusinessException('That vendor is not on this RFQ’s recipient list.');
         }
@@ -56,7 +56,7 @@ class PurchaseQuotationService
             $quotation = PurchaseQuotation::create([
                 'tenant_id'       => $rfq->tenant_id,
                 'purchase_rfq_id' => $rfq->id,
-                'vendor_id'       => $vendorId,
+                'purchase_vendor_id'       => $vendorId,
                 'created_by'      => $actor->id,
                 'currency'        => $data['currency'] ?? $rfq->currency,
                 'status'          => Status::RECEIVED,
@@ -91,7 +91,7 @@ class PurchaseQuotationService
         $this->guardMutable($quotation);
 
         $items = $data['items'] ?? null;
-        unset($data['items'], $data['vendor_id']);   // vendor is fixed once recorded
+        unset($data['items'], $data['purchase_vendor_id']);   // vendor is fixed once recorded
 
         DB::transaction(function () use ($quotation, $data, $items) {
             $quotation->update($data);
@@ -160,7 +160,7 @@ class PurchaseQuotationService
 
             $rfq->update(['status' => RfqStatus::AWARDED]);
             $rfq->recordAudit('RFQ Awarded', $actor, null, [
-                'quotation' => $quotation->quotation_number, 'vendor_id' => $quotation->vendor_id, 'po_number' => $po->po_number,
+                'quotation' => $quotation->quotation_number, 'purchase_vendor_id' => $quotation->purchase_vendor_id, 'po_number' => $po->po_number,
             ]);
             $quotation->recordAudit('Quotation Awarded', $actor, null, ['po_number' => $po->po_number]);
 

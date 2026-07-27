@@ -7,7 +7,7 @@ use App\Models\Purchase\PurchaseDebitNote;
 use App\Models\Purchase\PurchaseDebitRefund;
 use App\Models\Purchase\PurchaseOrder;
 use App\Models\User;
-use App\Models\Vendor\Vendor;
+use App\Models\Purchase\PurchaseVendor;
 use App\Repositories\Purchase\PurchaseDebitNoteRepository;
 use App\Support\Purchase\PurchaseDebitNoteStatus as Status;
 use Illuminate\Database\Eloquent\Collection;
@@ -31,7 +31,7 @@ class PurchaseDebitNoteService
         unset($data['items']);
 
         $tenantId = $actor->tenant_id;
-        $this->assertVendorEngageable($data['vendor_id'] ?? null, $tenantId);
+        $this->assertVendorEngageable($data['purchase_vendor_id'] ?? null, $tenantId);
         $po = $this->resolveOrder($data['purchase_order_id'] ?? null, $tenantId);
 
         $dn = DB::transaction(function () use ($data, $items, $tenantId, $actor, $po) {
@@ -67,7 +67,7 @@ class PurchaseDebitNoteService
         $items = $data['items'] ?? null;
         unset($data['items']);
 
-        $this->assertVendorEngageable($data['vendor_id'] ?? null, $dn->tenant_id);
+        $this->assertVendorEngageable($data['purchase_vendor_id'] ?? null, $dn->tenant_id);
         $po = $this->resolveOrder($data['purchase_order_id'] ?? $dn->purchase_order_id, $dn->tenant_id);
 
         DB::transaction(function () use ($dn, $data, $items, $po) {
@@ -331,12 +331,12 @@ class PurchaseDebitNoteService
             return;
         }
 
-        $vendor = Vendor::forTenant($tenantId)->find($vendorId);
+        $vendor = PurchaseVendor::forTenant($tenantId)->find($vendorId);
         if (! $vendor) {
             throw new BusinessException('Vendor not found.', 404);
         }
         if (! $vendor->isEngageable()) {
-            throw new BusinessException("Vendor {$vendor->vendor_code} is {$vendor->status_label} and cannot be transacted with.");
+            throw new BusinessException("Vendor {$vendor->purchase_vendor_code} is {$vendor->status_label} and cannot be transacted with.");
         }
     }
 }

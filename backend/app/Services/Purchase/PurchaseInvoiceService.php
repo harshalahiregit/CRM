@@ -7,7 +7,7 @@ use App\Models\Purchase\PurchaseInvoice;
 use App\Models\Purchase\PurchaseInvoicePayment;
 use App\Models\Purchase\PurchaseOrder;
 use App\Models\User;
-use App\Models\Vendor\Vendor;
+use App\Models\Purchase\PurchaseVendor;
 use App\Repositories\Purchase\PurchaseInvoiceRepository;
 use App\Support\Purchase\PurchaseInvoiceStatus as Status;
 use Illuminate\Database\Eloquent\Collection;
@@ -33,7 +33,7 @@ class PurchaseInvoiceService
         unset($data['items']);
 
         $tenantId = $actor->tenant_id;
-        $this->assertVendorEngageable($data['vendor_id'] ?? null, $tenantId);
+        $this->assertVendorEngageable($data['purchase_vendor_id'] ?? null, $tenantId);
 
         $invoice = DB::transaction(function () use ($data, $items, $tenantId, $actor) {
             $invoice = PurchaseInvoice::create([
@@ -68,7 +68,7 @@ class PurchaseInvoiceService
             $invoice = PurchaseInvoice::create([
                 'tenant_id'         => $po->tenant_id,
                 'purchase_order_id' => $po->id,
-                'vendor_id'         => $po->vendor_id,
+                'purchase_vendor_id'         => $po->purchase_vendor_id,
                 'created_by'        => $actor->id,
                 'title'             => $po->title,
                 'vendor_invoice_ref' => $data['vendor_invoice_ref'] ?? null,
@@ -120,7 +120,7 @@ class PurchaseInvoiceService
         $items = $data['items'] ?? null;
         unset($data['items']);
 
-        $this->assertVendorEngageable($data['vendor_id'] ?? null, $invoice->tenant_id);
+        $this->assertVendorEngageable($data['purchase_vendor_id'] ?? null, $invoice->tenant_id);
 
         DB::transaction(function () use ($invoice, $data, $items) {
             $invoice->update($data);
@@ -147,10 +147,10 @@ class PurchaseInvoiceService
         if ($invoice->status !== Status::DRAFT) {
             throw new BusinessException('Only a Draft invoice can be approved.');
         }
-        if (! $invoice->vendor_id) {
+        if (! $invoice->purchase_vendor_id) {
             throw new BusinessException('Select a vendor before approving the invoice.');
         }
-        $this->assertVendorEngageable($invoice->vendor_id, $invoice->tenant_id);
+        $this->assertVendorEngageable($invoice->purchase_vendor_id, $invoice->tenant_id);
         if ($invoice->items()->count() === 0) {
             throw new BusinessException('Add at least one line item before approving.');
         }
@@ -318,13 +318,13 @@ class PurchaseInvoiceService
             return;
         }
 
-        $vendor = Vendor::forTenant($tenantId)->find($vendorId);
+        $vendor = PurchaseVendor::forTenant($tenantId)->find($vendorId);
 
         if (! $vendor) {
             throw new BusinessException('Vendor not found.', 404);
         }
         if (! $vendor->isEngageable()) {
-            throw new BusinessException("Vendor {$vendor->vendor_code} is {$vendor->status_label} and cannot be transacted with.");
+            throw new BusinessException("Vendor {$vendor->purchase_vendor_code} is {$vendor->status_label} and cannot be transacted with.");
         }
     }
 }

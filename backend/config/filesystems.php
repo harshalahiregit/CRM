@@ -71,6 +71,24 @@ return [
             'throw'      => false,
         ],
 
+        // ── Purchase-vendor statutory documents — private, served via controller.
+        // Purchase owns its document store separately from vendor_docs/TPV. ──
+        'purchase_docs' => [
+            'driver'     => 'local',
+            'root'       => storage_path('app/private/purchase/documents'),
+            'visibility' => 'private',
+            'throw'      => false,
+        ],
+
+        // ── Purchase kickoff MOM PDFs — private, Purchase-owned (separate from the
+        // shared `kickoff_docs` disk used by the TPV/shared kickoff engine). ──
+        'purchase_kickoff_docs' => [
+            'driver'     => 'local',
+            'root'       => storage_path('app/private/purchase/kickoff'),
+            'visibility' => 'private',
+            'throw'      => false,
+        ],
+
         // Submission selfies and approval signatures. Private: these are images
         // of people, captured in the field, and must never be web-reachable.
         'compliance_media' => [

@@ -5,7 +5,7 @@ namespace App\Services\Purchase;
 use App\Exceptions\BusinessException;
 use App\Models\Purchase\PurchaseContract;
 use App\Models\User;
-use App\Models\Vendor\Vendor;
+use App\Models\Purchase\PurchaseVendor;
 use App\Repositories\Purchase\PurchaseContractRepository;
 use App\Support\Purchase\PurchaseContractStatus as Status;
 use App\Support\Purchase\PurchaseContractType as Type;
@@ -35,7 +35,7 @@ class PurchaseContractService
         $items = $data['items'] ?? [];
         unset($data['items']);
         $tenantId = $actor->tenant_id;
-        $this->assertVendorEngageable($data['vendor_id'] ?? null, $tenantId);
+        $this->assertVendorEngageable($data['purchase_vendor_id'] ?? null, $tenantId);
 
         $contract = DB::transaction(function () use ($data, $items, $tenantId, $actor) {
             $contract = PurchaseContract::create([
@@ -69,7 +69,7 @@ class PurchaseContractService
 
         $items = $data['items'] ?? null;
         unset($data['items']);
-        $this->assertVendorEngageable($data['vendor_id'] ?? null, $contract->tenant_id);
+        $this->assertVendorEngageable($data['purchase_vendor_id'] ?? null, $contract->tenant_id);
 
         DB::transaction(function () use ($contract, $data, $items) {
             $contract->update($data);
@@ -105,7 +105,7 @@ class PurchaseContractService
             throw new BusinessException("A {$contract->status_label} contract cannot be activated.");
         }
         $this->assertActivationShape($contract);
-        $this->assertVendorEngageable($contract->vendor_id, $contract->tenant_id);
+        $this->assertVendorEngageable($contract->purchase_vendor_id, $contract->tenant_id);
 
         $contract->update(['status' => Status::ACTIVE, 'approved_at' => now(), 'approved_by' => $actor->id]);
         $contract->recordAudit('Contract Activated', $actor, null, ['from' => Status::UNDER_REVIEW, 'to' => Status::ACTIVE]);
@@ -175,7 +175,7 @@ class PurchaseContractService
     public function referenceableForVendor(int $tenantId, int $vendorId): array
     {
         return PurchaseContract::forTenant($tenantId)
-            ->where('vendor_id', $vendorId)
+            ->where('purchase_vendor_id', $vendorId)
             ->referenceable()
             ->with('items')
             ->get()->all();
@@ -401,12 +401,12 @@ class PurchaseContractService
         if (! $vendorId) {
             return;
         }
-        $vendor = Vendor::forTenant($tenantId)->find($vendorId);
+        $vendor = PurchaseVendor::forTenant($tenantId)->find($vendorId);
         if (! $vendor) {
             throw new BusinessException('Vendor not found.', 404);
         }
         if (! $vendor->isEngageable()) {
-            throw new BusinessException("Vendor {$vendor->vendor_code} is {$vendor->status_label} and cannot hold a contract.");
+            throw new BusinessException("Vendor {$vendor->purchase_vendor_code} is {$vendor->status_label} and cannot hold a contract.");
         }
     }
 }
