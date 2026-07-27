@@ -24,7 +24,7 @@ class ClientExpenseController extends AbstractClientRecordController
             'date'         => 'nullable|date',
             'payment_mode' => 'nullable|string|max:100',
             'billable'     => 'nullable|boolean',
-            'project_id'   => 'nullable|integer',
+            'project_id'   => ['nullable', 'integer', \Illuminate\Validation\Rule::exists('projects', 'id')->where('tenant_id', $request->user()->tenant_id)],
             'note'         => 'nullable|string',
         ];
     }

@@ -15,7 +15,7 @@ class StoreInvoiceRequest extends FormRequest
     {
         return [
             'client_id'     => 'nullable|integer',
-            'project_id'    => 'nullable|integer',
+            'project_id'    => ['nullable', 'integer', \Illuminate\Validation\Rule::exists('projects', 'id')->where('tenant_id', $this->user()->tenant_id)],
             'date'          => 'required|date',
             'due_date'      => 'required|date',
             'currency'      => 'nullable|string|size:3',

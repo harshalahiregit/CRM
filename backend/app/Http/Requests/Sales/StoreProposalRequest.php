@@ -20,7 +20,7 @@ class StoreProposalRequest extends FormRequest
             'rel_type'      => 'nullable|in:lead,customer',
             'rel_id'        => 'nullable|integer',
             'contact_id'    => 'nullable|integer',
-            'project_id'    => 'nullable|integer',
+            'project_id'    => ['nullable', 'integer', \Illuminate\Validation\Rule::exists('projects', 'id')->where('tenant_id', $this->user()->tenant_id)],
             'date'          => 'required|date',
             'open_till'     => 'nullable|date',
             'currency'      => 'nullable|string|size:3',

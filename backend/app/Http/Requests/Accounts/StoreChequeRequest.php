@@ -24,7 +24,7 @@ class StoreChequeRequest extends FormRequest
             // Structured payee/payer link (seam for the future Vendor / TPV / Customer directory).
             'party_type'       => ['nullable', 'in:customer,vendor,tpv'],
             'party_id'         => ['nullable', 'integer'],
-            'project_id'       => ['nullable', 'integer'],
+            'project_id'       => ['nullable', 'integer', \Illuminate\Validation\Rule::exists('projects', 'id')->where('tenant_id', $this->user()->tenant_id)],
             'amount'           => ['required', 'numeric', 'min:0'],
             'is_account_payee' => ['nullable', 'boolean'],
             'is_pdc'           => ['nullable', 'boolean'],

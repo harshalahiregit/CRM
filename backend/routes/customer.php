@@ -57,9 +57,15 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('customers')->gr
     Route::post('/expense-categories',                       [ExpenseCategoryController::class, 'store']);
     Route::put('/expense-categories/{expenseCategory}',      [ExpenseCategoryController::class, 'update']);
     Route::delete('/expense-categories/{expenseCategory}',   [ExpenseCategoryController::class, 'destroy']);
-    // Projects module doesn't exist yet — honest empty list so the
-    // Billable→Project dropdown is wired for the day it ships.
-    Route::get('/projects-stub', fn () => response()->json([]));
+    // Billable → Project picker on client expenses. Backed by the real Projects
+    // module via ProjectDirectoryContract (this was an empty stub while that
+    // module didn't exist). Pass ?customer_id= to scope to one client's projects.
+    Route::get('/projects-stub', function (\Illuminate\Http\Request $request, \App\Contracts\ProjectDirectoryContract $projects) {
+        return response()->json($projects->listProjects(
+            $request->user()->tenant_id,
+            $request->filled('customer_id') ? (int) $request->query('customer_id') : null,
+        ));
+    });
 
     // Map picker: address search (static — must stay above /{client})
     Route::get('/geocode', [ClientController::class, 'geocode']);

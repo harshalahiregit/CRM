@@ -16,7 +16,7 @@ class StoreEstimateRequest extends FormRequest
         return [
             'subject'       => 'required|string|max:255',
             'client_id'     => 'nullable|integer',
-            'project_id'    => 'nullable|integer',
+            'project_id'    => ['nullable', 'integer', \Illuminate\Validation\Rule::exists('projects', 'id')->where('tenant_id', $this->user()->tenant_id)],
             'date'          => 'required|date',
             'valid_until'   => 'nullable|date',
             'currency'      => 'nullable|string|size:3',

@@ -2,8 +2,10 @@
 
 namespace App\Providers;
 
+use App\Contracts\ProjectDirectoryContract;
 use App\Services\Customer\CustomerDirectoryService;
 use App\Services\Helpdesk\Contracts\CustomerServiceContract;
+use App\Services\Integration\ProjectDirectoryService;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -17,6 +19,11 @@ class AppServiceProvider extends ServiceProvider
         // contract. Now backed by the real Customer module; MockCustomerService
         // is retained only as a reference/testing fallback.
         $this->app->bind(CustomerServiceContract::class, CustomerDirectoryService::class);
+        // Reverse direction: Customer / Sales / Accounts resolve projects through
+        // this contract so they never query the Projects module's tables. Backs
+        // the "billable → project" picker on expenses and the project link on
+        // cheques and vendor bills.
+        $this->app->bind(ProjectDirectoryContract::class, ProjectDirectoryService::class);
         // SlaService caches each tenant's SLA targets + paused/closed status sets
         // for the life of the request. That cache is what stops compute() from
         // querying once per ticket — a 31-ticket list costs 2 config queries
