@@ -8,6 +8,7 @@ import {
 import { salesApi } from '@/services/salesApi'
 import { leadApi } from '@/services/leadApi'
 import { useLeadGoals } from '@/hooks/useLeadGoals'
+import RaiseTicketButton from '@/components/RaiseTicketButton'
 
 const fmt = (v) => '₹' + Number(v).toLocaleString('en-IN')
 
@@ -57,12 +58,15 @@ export default function SalesDashboard() {
 
   return (
     <div className="space-y-6 animate-[tiltIn_0.35s_ease]">
-      <div>
-        <p className="label-caps mb-1">Sales & Revenue</p>
-        <h1 className="font-black" style={{ fontSize: 'clamp(1.4rem,2.5vw,1.9rem)', color: 'var(--text-h)', letterSpacing: '-0.02em' }}>
-          Sales <span className="text-gradient">Overview</span>
-        </h1>
-        <p className="text-sm mt-0.5" style={{ color: 'var(--text-muted)' }}>Revenue tracking · real-time insights</p>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <p className="label-caps mb-1">Sales & Revenue</p>
+          <h1 className="font-black" style={{ fontSize: 'clamp(1.4rem,2.5vw,1.9rem)', color: 'var(--text-h)', letterSpacing: '-0.02em' }}>
+            Sales <span className="text-gradient">Overview</span>
+          </h1>
+          <p className="text-sm mt-0.5" style={{ color: 'var(--text-muted)' }}>Revenue tracking · real-time insights</p>
+        </div>
+        <RaiseTicketButton source="sales" />
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

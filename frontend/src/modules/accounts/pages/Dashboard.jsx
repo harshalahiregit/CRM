@@ -9,6 +9,7 @@ import {
 import { accountsApi } from '@/services/accountsApi'
 import { fmtDate } from '@/modules/accounts/format'
 import { useMoneyFmt, MoneyToggle } from '@/components/ui/Money'
+import RaiseTicketButton from '@/components/RaiseTicketButton'
 
 /* ── Tiny inline SVG chart helpers ─────────────────────────────────────── */
 
@@ -221,6 +222,7 @@ export default function Dashboard() {
           <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Live from the ledger — all figures derived from posted vouchers</p>
         </div>
         <div className="flex items-center gap-2">
+          <RaiseTicketButton source="accounts" style={{ padding: '8px 14px', borderRadius: 12 }} />
           <CurrencyBadge currency={baseCurrency} />
           <FYSelector fy={fy} setFy={setFy} />
           <MoneyToggle />

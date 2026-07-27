@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { hrApi } from '@/services/hrApi'
 import { statusColor, statusLabel, canApproveL1, canApproveL2 } from '../constants'
 import NotificationWidget from '@/modules/notifications/NotificationWidget'
+import RaiseTicketButton from '@/components/RaiseTicketButton'
 import {
   Users, Briefcase, Calendar, FileText, TrendingUp, ClipboardList, Layers, Send, Rocket, PlayCircle, Lock,
   CheckCircle, XCircle, Clock, Bell, Mail, MessageCircle, ArrowRight, Timer, AlertCircle
@@ -101,12 +102,15 @@ export default function HRDashboard() {
 
   return (
     <div className="space-y-6 animate-[tiltIn_0.35s_ease_forwards]">
-      <div>
-        <p className="label-caps mb-1">HR & Recruitment</p>
-        <h1 className="font-black" style={{ fontSize:'clamp(1.4rem,2.5vw,1.9rem)', color:'var(--text-h)', letterSpacing:'-0.02em' }}>
-          Recruitment <span className="text-gradient">Overview</span>
-        </h1>
-        <p className="text-sm mt-0.5" style={{ color:'var(--text-muted)' }}>Live dashboard · updated in real-time</p>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <p className="label-caps mb-1">HR & Recruitment</p>
+          <h1 className="font-black" style={{ fontSize:'clamp(1.4rem,2.5vw,1.9rem)', color:'var(--text-h)', letterSpacing:'-0.02em' }}>
+            Recruitment <span className="text-gradient">Overview</span>
+          </h1>
+          <p className="text-sm mt-0.5" style={{ color:'var(--text-muted)' }}>Live dashboard · updated in real-time</p>
+        </div>
+        <RaiseTicketButton source="hr" />
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

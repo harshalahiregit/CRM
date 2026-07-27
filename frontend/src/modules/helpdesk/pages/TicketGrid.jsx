@@ -6,15 +6,23 @@ import {
   Download, Columns3, Rows3, AlignJustify, ArrowUp, ArrowDown, ChevronsUpDown,
   Trash2, UserCheck, AlertCircle, Check, Sparkles, RotateCcw,
   FolderKanban, ListChecks, Boxes,
+  Users, Landmark, ShoppingCart, HardHat, ShieldCheck, TrendingUp, Contact,
 } from 'lucide-react'
 
 // Where a ticket was raised from → a small origin badge in the Subject cell, so
 // the queue shows at a glance that a ticket came in from another module. 'widget'
 // keeps its existing inline badge; 'internal' shows nothing.
 const SOURCE_BADGE = {
-  project:   { icon: FolderKanban, label: 'project' },
-  task:      { icon: ListChecks,   label: 'task' },
-  inventory: { icon: Boxes,        label: 'inventory' },
+  project:    { icon: FolderKanban, label: 'project' },
+  task:       { icon: ListChecks,   label: 'task' },
+  inventory:  { icon: Boxes,        label: 'inventory' },
+  hr:         { icon: Users,        label: 'hr' },
+  accounts:   { icon: Landmark,     label: 'accounts' },
+  purchase:   { icon: ShoppingCart, label: 'purchase' },
+  tpv:        { icon: HardHat,      label: 'tpv' },
+  compliance: { icon: ShieldCheck,  label: 'compliance' },
+  sales:      { icon: TrendingUp,   label: 'sales' },
+  customer:   { icon: Contact,      label: 'customer' },
 }
 import { helpdeskApi } from '@/services/helpdeskApi'
 import { useAuth } from '@/context/AuthContext'

@@ -7,6 +7,7 @@ import {
 import { purchaseApi } from '@/services/purchaseApi'
 import { pinvStatusCfg, fmtMoney, fmtMoneyShort, fmtDate } from '../constants'
 import { KIT3D_STYLE as PURCHASE_STYLE, StatusBadge as StatusPill } from '@/components/ui/kit3d'
+import RaiseTicketButton from '@/components/RaiseTicketButton'
 
 // ── Validated palette (see dataviz validator run) ────────────────────────────
 // Categorical hues carry direct labels/legends throughout, so identity is never
@@ -49,9 +50,12 @@ export default function PurchaseDashboard() {
           <h1 style={{ color: 'var(--text-h)', fontSize: 24, fontWeight: 900, margin: '2px 0 0', letterSpacing: '-0.02em' }}>Purchase Overview</h1>
           <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: '4px 0 0' }}>Requests → Orders → Receipts → Invoices, unified.</p>
         </div>
-        <button onClick={load} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13 }}>
-          <RefreshCw size={14} /> Refresh
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <RaiseTicketButton source="purchase" />
+          <button onClick={load} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13 }}>
+            <RefreshCw size={14} /> Refresh
+          </button>
+        </div>
       </div>
 
       {/* KPI tiles */}
