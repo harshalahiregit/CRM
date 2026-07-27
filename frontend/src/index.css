@@ -392,8 +392,23 @@ select {
 }
 select:hover { border-color: rgba(124,58,237,0.45); }
 select:focus { border-color: rgba(124,58,237,0.6); }
-/* Keep the option list readable in dark mode. */
-select option { background: var(--bg-input); color: var(--text-h); }
+/* Keep the option list readable in dark mode.
+   A native <option>/<optgroup> list is painted by the OS in its own layer, with
+   NO page background behind it — so a translucent colour (--bg-input is
+   rgba(255,255,255,0.04) in dark mode) falls through to the system default,
+   which is white. Near-white dark-mode text on that is invisible, which is
+   exactly the "menu items disappear in dark mode" bug. Both must therefore use
+   an OPAQUE colour: --bg-card (#1c1c2e dark / #ffffff light). */
+select option,
+select optgroup {
+  background-color: var(--bg-card);
+  color: var(--text-h);
+}
+/* Group headers read as headers; their children must not inherit the weight. */
+select optgroup { font-weight: 700; }
+select optgroup option { font-weight: 400; }
+/* A disabled/placeholder option should still be legible, just de-emphasised. */
+select option:disabled { color: var(--text-muted); }
 .input-3d:focus {
   border-color: rgba(124,58,237,0.5);
   background: rgba(124,58,237,0.06);
