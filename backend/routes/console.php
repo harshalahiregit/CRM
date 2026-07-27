@@ -50,6 +50,37 @@ Schedule::command('helpdesk:check-sla')
     ->withoutOverlapping()
     ->runInBackground();
 
+// Temporary TPV expiry reminders (7d/3d/1d/6h) + lapsed-window expiry — hourly.
+Schedule::command('tpv:temporary-access-reminders')
+    ->hourly()
+    ->withoutOverlapping()
+    ->runInBackground();
+
+// Onboarding approval SLA escalations — hourly.
+Schedule::command('tpv:approval-escalations')
+    ->hourly()
+    ->withoutOverlapping()
+    ->runInBackground();
+
+// Central Notification Engine — generate HR reminders + escalations (daily).
+Schedule::command('notifications:remind')
+    ->dailyAt('07:00')
+    ->withoutOverlapping()
+    ->runInBackground();
+
+// Central Notification Engine — deliver queued emails/notifications (every 5 min).
+Schedule::command('notifications:process-queue')
+    ->everyFiveMinutes()
+    ->withoutOverlapping()
+    ->runInBackground();
+
+// HR: expire offers past their validity window (hourly). Reuses OfferService::expireIfDue;
+// previously offers only expired lazily when the candidate opened the portal.
+Schedule::command('offers:expire-due')
+    ->hourly()
+    ->withoutOverlapping()
+    ->runInBackground();
+
 // Inventory: the daily expiry digest.
 // Once a day at 07:00, not every fifteen minutes: expiry moves at the speed of
 // the calendar, so a batch that enters the alert window overnight is equally

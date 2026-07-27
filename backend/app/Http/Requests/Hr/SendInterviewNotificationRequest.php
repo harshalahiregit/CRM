@@ -14,7 +14,10 @@ class SendInterviewNotificationRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'type' => 'required|in:email_candidate,email_interviewer,whatsapp,calendar',
+            'type'    => 'required|in:email_candidate,email_interviewer,whatsapp,calendar',
+            // Optional edited email content from the preview popup (feature 6).
+            'subject' => 'nullable|string|max:255',
+            'body'    => 'nullable|string',
         ];
     }
 }

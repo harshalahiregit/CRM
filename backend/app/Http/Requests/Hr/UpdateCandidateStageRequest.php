@@ -14,7 +14,17 @@ class UpdateCandidateStageRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'stage' => 'required|in:Applied,Screening,Assessment,Interview,Offer,Hired,Rejected',
+            // Manual "Move Stage" is only allowed between the pre-selection stages.
+            // Offer & Hired are driven by the recruitment workflow (onboarding
+            // approval → Offer, offer acceptance → Hired) and are rejected here.
+            'stage' => 'required|in:Applied,Screening,Assessment,Interview',
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'stage.in' => 'Offer and Hired stages are managed automatically by the recruitment workflow.',
         ];
     }
 }

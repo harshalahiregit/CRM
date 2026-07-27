@@ -11,7 +11,8 @@ class CandidateRepository extends BaseRepository
 
     public function filtered(int $tenantId, array $filters)
     {
-        $query = HrCandidate::with('jobPosting')->where('tenant_id', $tenantId);
+        $query = HrCandidate::with(['jobPosting', 'assignedRecruiter:id,name,internal_role'])
+            ->where('tenant_id', $tenantId);
 
         if (! empty($filters['stage']) && $filters['stage'] !== 'All') {
             $query->where('stage', $filters['stage']);
@@ -39,5 +40,41 @@ class CandidateRepository extends BaseRepository
             ->where('job_posting_id', $jobPostingId)
             ->where('tenant_id', $tenantId)
             ->exists();
+    }
+
+    /**
+     * Has this person already applied to this job (by email OR phone)? Used to
+     * block duplicate Career Portal applications. Tenant-scoped.
+     */
+    public function existsForJobByEmailOrPhone(?string $email, ?string $phone, int $jobPostingId, int $tenantId): bool
+    {
+        return HrCandidate::where('tenant_id', $tenantId)
+            ->where('job_posting_id', $jobPostingId)
+            ->where(function ($q) use ($email, $phone) {
+                if ($email) {
+                    $q->where('email', $email);
+                }
+                if ($phone) {
+                    $q->orWhere('phone', $phone);
+                }
+            })
+            ->exists();
+    }
+
+    /** Find this person's application for a job (email OR phone), tenant-scoped. */
+    public function findApplicationForJob(?string $email, ?string $phone, int $jobPostingId, int $tenantId): ?HrCandidate
+    {
+        return HrCandidate::where('tenant_id', $tenantId)
+            ->where('job_posting_id', $jobPostingId)
+            ->where(function ($q) use ($email, $phone) {
+                if ($email) {
+                    $q->where('email', $email);
+                }
+                if ($phone) {
+                    $q->orWhere('phone', $phone);
+                }
+            })
+            ->latest('id')
+            ->first();
     }
 }

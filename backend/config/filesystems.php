@@ -55,6 +55,74 @@ return [
             'throw'      => false,
         ],
 
+        // ── HR Candidate Documents — private, served via controller ───────
+        'hr_documents' => [
+            'driver'     => 'local',
+            'root'       => storage_path('app/private/hr/documents'),
+            'visibility' => 'private',
+            'throw'      => false,
+        ],
+
+        // ── Vendor / TPV statutory documents — private, served via controller ─
+        'vendor_docs' => [
+            'driver'     => 'local',
+            'root'       => storage_path('app/private/vendor/documents'),
+            'visibility' => 'private',
+            'throw'      => false,
+        ],
+
+        // ── Purchase-vendor statutory documents — private, served via controller.
+        // Purchase owns its document store separately from vendor_docs/TPV. ──
+        'purchase_docs' => [
+            'driver'     => 'local',
+            'root'       => storage_path('app/private/purchase/documents'),
+            'visibility' => 'private',
+            'throw'      => false,
+        ],
+
+        // ── Purchase kickoff MOM PDFs — private, Purchase-owned (separate from the
+        // shared `kickoff_docs` disk used by the TPV/shared kickoff engine). ──
+        'purchase_kickoff_docs' => [
+            'driver'     => 'local',
+            'root'       => storage_path('app/private/purchase/kickoff'),
+            'visibility' => 'private',
+            'throw'      => false,
+        ],
+
+        // Submission selfies and approval signatures. Private: these are images
+        // of people, captured in the field, and must never be web-reachable.
+        'compliance_media' => [
+            'driver'     => 'local',
+            'root'       => storage_path('app/private/compliance/media'),
+            'visibility' => 'private',
+            'throw'      => false,
+        ],
+
+        // Uploaded Minutes-of-Meeting documents for kickoff meetings.
+        'kickoff_docs' => [
+            'driver'     => 'local',
+            'root'       => storage_path('app/private/kickoff/documents'),
+            'visibility' => 'private',
+            'throw'      => false,
+        ],
+
+        // Generated TPV onboarding Kickoff PDFs (Step 1). Private, served via
+        // controller. Distinct from the shared kickoff-meeting MoM store above.
+        'tpv_kickoff' => [
+            'driver'     => 'local',
+            'root'       => storage_path('app/private/tpv/kickoff'),
+            'visibility' => 'private',
+            'throw'      => false,
+        ],
+
+        // Signed contract / MSA documents. Private — commercial agreements.
+        'contract_docs' => [
+            'driver'     => 'local',
+            'root'       => storage_path('app/private/contracts'),
+            'visibility' => 'private',
+            'throw'      => false,
+        ],
+
         's3' => [
             'driver' => 's3',
             'key' => env('AWS_ACCESS_KEY_ID'),

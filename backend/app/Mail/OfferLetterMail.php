@@ -17,13 +17,17 @@ class OfferLetterMail extends Mailable
     public $offer;
     public $candidate;
 
+    /** Secure offer-portal link (nullable for legacy sends). */
+    public $portalLink;
+
     /**
      * Create a new message instance.
      */
-    public function __construct(HrOffer $offer)
+    public function __construct(HrOffer $offer, ?string $portalLink = null)
     {
         $this->offer = $offer;
         $this->candidate = $offer->candidate;
+        $this->portalLink = $portalLink;
     }
 
     /**

@@ -15,12 +15,16 @@ class OnboardingWelcomeMail extends Mailable
 
     public $onboarding;
 
+    /** Public onboarding portal link (nullable for the legacy HR-checklist flow). */
+    public $portalLink;
+
     /**
      * Create a new message instance.
      */
-    public function __construct(HrOnboarding $onboarding)
+    public function __construct(HrOnboarding $onboarding, ?string $portalLink = null)
     {
         $this->onboarding = $onboarding;
+        $this->portalLink = $portalLink;
     }
 
     /**
@@ -29,7 +33,7 @@ class OnboardingWelcomeMail extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: 'Welcome to ' . config('app.name') . ' - Onboarding Started',
+            subject: '🎉 Congratulations! You have been selected at ' . config('app.name'),
         );
     }
 

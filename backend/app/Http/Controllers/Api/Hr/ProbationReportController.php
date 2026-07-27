@@ -1,0 +1,100 @@
+<?php
+
+namespace App\Http\Controllers\Api\Hr;
+
+use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
+use App\Services\Hr\ProbationReportService;
+use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use Symfony\Component\HttpFoundation\StreamedResponse;
+
+/**
+ * Probation Reports & Analytics (Probation Phase 6) — read-only, tenant-scoped,
+ * HR-permission gated. Export reuses the Payroll/Leave/Exit pattern: streamDownload
+ * CSV + the shared pdf.payroll_report Blade. No duplicate export logic, no new tables.
+ */
+class ProbationReportController extends Controller
+{
+    public function __construct(private ProbationReportService $service)
+    {
+    }
+
+    public function dashboard(Request $request)
+    {
+        $this->gate($request);
+        $this->audit($request, 'Probation Report Viewed');
+
+        return response()->json($this->service->dashboard($this->tenant($request)));
+    }
+
+    public function employees(Request $request)     { $this->gate($request); return response()->json($this->service->employees($this->tenant($request), $this->filters($request))); }
+    public function departments(Request $request)   { $this->gate($request); return response()->json($this->service->departments($this->tenant($request), $this->filters($request))); }
+    public function policies(Request $request)       { $this->gate($request); return response()->json($this->service->policies($this->tenant($request), $this->filters($request))); }
+    public function reviews(Request $request)         { $this->gate($request); return response()->json($this->service->reviews($this->tenant($request))); }
+    public function extensions(Request $request)     { $this->gate($request); return response()->json($this->service->extensions($this->tenant($request), $this->filters($request))); }
+    public function confirmations(Request $request)  { $this->gate($request); return response()->json($this->service->confirmations($this->tenant($request), $this->filters($request))); }
+    public function trends(Request $request)          { $this->gate($request); return response()->json($this->service->trends($this->tenant($request), $this->filters($request))); }
+    public function filterOptions(Request $request)  { $this->gate($request); return response()->json($this->service->filterOptions($this->tenant($request))); }
+
+    public function export(Request $request)
+    {
+        $this->gate($request);
+        $report = $request->query('report', 'employees');
+        $format = $request->query('format', 'csv');
+        $data   = $this->service->exportRows($report, $this->tenant($request), $this->filters($request));
+        $base   = str_replace(' ', '_', strtolower($data['title']));
+
+        $this->audit($request, 'Probation Report Exported', ['report' => $report, 'format' => $format]);
+        Log::channel('hr')->info('Probation report exported', ['tenant_id' => $this->tenant($request), 'report' => $report, 'format' => $format]);
+
+        if ($format === 'pdf') {
+            return Pdf::loadView('pdf.payroll_report', ['data' => $data])->setPaper('a4', 'landscape')->download($base.'.pdf');
+        }
+
+        return $this->streamCsv($data, $base.'.csv');
+    }
+
+    private function streamCsv(array $data, string $filename): StreamedResponse
+    {
+        return response()->streamDownload(function () use ($data) {
+            $out = fopen('php://output', 'w');
+            fputcsv($out, $data['headers']);
+            foreach ($data['rows'] as $row) {
+                fputcsv($out, $row);
+            }
+            fclose($out);
+        }, $filename, ['Content-Type' => 'text/csv']);
+    }
+
+    private function audit(Request $request, string $action, array $metadata = []): void
+    {
+        $actor = $request->user();
+        AuditLog::create([
+            'tenant_id' => $this->tenant($request), 'auditable_type' => 'ProbationReport', 'auditable_id' => 0,
+            'action' => $action, 'actor_id' => $actor?->id, 'actor_name' => $actor?->name,
+            'actor_role' => $actor ? ($actor->internal_role ?: $actor->role) : null, 'metadata' => $metadata ?: null,
+        ]);
+    }
+
+    private function filters(Request $request): array
+    {
+        return array_filter([
+            'year' => $request->query('year'), 'month' => $request->query('month'),
+            'employee_id' => $request->query('employee_id'), 'department' => $request->query('department'),
+            'designation' => $request->query('designation'), 'policy_id' => $request->query('policy_id'),
+            'status' => $request->query('status'),
+        ], fn ($v) => $v !== null && $v !== '' && $v !== 'All');
+    }
+
+    private function tenant(Request $request): int
+    {
+        return (int) $request->user()->tenant_id;
+    }
+
+    private function gate(Request $request): void
+    {
+        abort_unless($request->user()->canManageHrQueue(), 403, 'You are not authorised to view probation reports');
+    }
+}

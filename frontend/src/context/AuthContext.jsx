@@ -15,7 +15,7 @@ export function AuthProvider({ children }) {
   const login = useCallback(async ({ email, password, role, remember }) => {
     setLoading(true)
     try {
-      const { data } = await api.post('/auth/login', { email, password, role })
+      const { data } = await api.post('/auth/login', { email, password, role, remember: !!remember })
       const { access_token, user: u, tenant: t } = data.data
 
       // "Remember me" → localStorage (persists); otherwise sessionStorage (this tab only).

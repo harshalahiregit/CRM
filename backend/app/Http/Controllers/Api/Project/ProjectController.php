@@ -58,6 +58,16 @@ class ProjectController extends Controller
         ], 'Project settings catalog');
     }
 
+    /**
+     * Lightweight ACTIVE-project list for cross-module dropdowns (reused by HR
+     * Recruitment). Minimal fields only — no duplicate project logic. Any authed
+     * staff member may read it (same trust level as the settings catalog).
+     */
+    public function options(Request $request)
+    {
+        return $this->success($this->projects->options($request->user()->tenant_id), 'Active project options');
+    }
+
     public function index(Request $request)
     {
         $filters = $request->only(['status', 'customer_id', 'search', 'member', 'tag']);

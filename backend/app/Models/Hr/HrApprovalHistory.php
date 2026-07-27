@@ -13,7 +13,7 @@ class HrApprovalHistory extends Model
     protected $table = 'hr_approval_history';
 
     protected $fillable = [
-        'request_id', 'level', 'action', 'actor_id',
+        'tenant_id', 'request_id', 'level', 'action', 'actor_id',
         'remarks', 'old_values', 'new_values',
     ];
 

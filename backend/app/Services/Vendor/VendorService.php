@@ -1,0 +1,364 @@
+<?php
+
+namespace App\Services\Vendor;
+
+use App\Exceptions\BusinessException;
+use App\Models\User;
+use App\Models\Vendor\Vendor;
+use App\Repositories\Vendor\VendorRepository;
+use App\Services\Notifications\NotificationService;
+use App\Support\Vendor\VendorStatus as Status;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
+
+class VendorService
+{
+    public function __construct(
+        private VendorRepository $vendorRepository,
+        private NotificationService $notifications,
+    ) {
+    }
+
+    public function list(int $tenantId, array $filters): Collection
+    {
+        return $this->vendorRepository->filtered($tenantId, $filters);
+    }
+
+    public function create(array $data, int $tenantId): Vendor
+    {
+        $contacts = $data['contacts'] ?? [];
+        unset($data['contacts']);
+
+        // Login-credential fields belong to the portal User, not the Vendor row.
+        $loginName = $data['name'] ?? null;
+        $password  = $data['password'] ?? null;
+        unset($data['name'], $data['password'], $data['password_confirmation']);
+
+        $vendor = DB::transaction(function () use ($data, $contacts, $tenantId, $loginName, $password) {
+            // Set status explicitly rather than leaning on the column default —
+            // the default applies in the DB but never reaches the in-memory model,
+            // so the create response would carry a null status.
+            $vendor = Vendor::create([
+                'status' => Status::DRAFT,
+                ...$data,
+                'tenant_id' => $tenantId,
+            ]);
+
+            // Provision a self-service portal login when a password is supplied
+            // (the "Add Third-party Vendor" flow). Purchase-side vendor creation
+            // omits it and simply gets a profile with no login.
+            if (! empty($password)) {
+                $user = $this->provisionLoginUser($vendor, $loginName, $password, $tenantId);
+                $vendor->update(['user_id' => $user->id]);
+            }
+
+            $this->syncContacts($vendor, $contacts);
+
+            return $vendor;
+        });
+
+        $vendor->recordAudit('Vendor Created', null, null, ['vendor_code' => $vendor->vendor_code]);
+
+        Log::channel('vendor')->info('Vendor created', [
+            'vendor_id' => $vendor->id, 'tenant_id' => $tenantId,
+        ]);
+
+        // fresh(), not load() — see PurchaseRequestService::create().
+        return $vendor->fresh(['contacts']);
+    }
+
+    public function update(Vendor $vendor, array $data, ?User $actor = null): Vendor
+    {
+        $contacts = $data['contacts'] ?? null;
+        unset($data['contacts']);
+
+        $loginName = $data['name'] ?? null;
+        $password  = $data['password'] ?? null;
+        unset($data['name'], $data['password'], $data['password_confirmation']);
+
+        DB::transaction(function () use ($vendor, $data, $contacts, $loginName, $password) {
+            $vendor->update($data);
+            if ($contacts !== null) {
+                $vendor->contacts()->delete();
+                $this->syncContacts($vendor, $contacts);
+            }
+            $this->syncLoginUser($vendor->fresh(), $loginName, $password, $data);
+        });
+
+        $vendor->recordAudit('Vendor Updated', $actor);
+
+        Log::channel('vendor')->info('Vendor updated', [
+            'vendor_id' => $vendor->id, 'tenant_id' => $vendor->tenant_id,
+        ]);
+
+        return $vendor->fresh(['contacts']);
+    }
+
+    /**
+     * Admin approval — the gate that makes a vendor transactable by Purchase and
+     * grants TPV site access.
+     */
+    public function approve(Vendor $vendor, User $actor, ?string $remarks = null): Vendor
+    {
+        if ($vendor->status === Status::ACTIVE) {
+            throw new BusinessException('Vendor is already active.');
+        }
+
+        $regNumbers = app(\App\Services\Vendor\RegistrationNumberService::class);
+        $registrationNumber = $vendor->registration_number
+            ?: $regNumbers->generate($vendor->tenant_id);
+
+        $vendor->update([
+            'status'              => Status::ACTIVE,
+            'approved_at'         => now(),
+            'approved_by'         => $actor->id,
+            'registration_number' => $registrationNumber,
+            'notes'               => $remarks ?? $vendor->notes,
+        ]);
+
+        // Sync or create TPV onboarding record
+        $onboarding = $vendor->tpvOnboarding;
+        if ($onboarding) {
+            $onboarding->update([
+                'status'              => \App\Support\Tpv\OnboardingStatus::APPROVED,
+                'approved_at'         => now(),
+                'approved_by'         => $actor->id,
+                'registration_number' => $registrationNumber,
+                'remarks'             => $remarks ?? $onboarding->remarks,
+            ]);
+        } else {
+            \App\Models\Tpv\TpvOnboarding::create([
+                'tenant_id'           => $vendor->tenant_id,
+                'vendor_id'           => $vendor->id,
+                'status'              => \App\Support\Tpv\OnboardingStatus::APPROVED,
+                'current_step'        => 6,
+                'acknowledged'        => true,
+                'onboarding_complete' => true,
+                'approved_at'         => now(),
+                'approved_by'         => $actor->id,
+                'registration_number' => $registrationNumber,
+                'remarks'             => $remarks,
+            ]);
+        }
+
+        $vendor->recordAudit('Vendor Approved', $actor, $remarks, [
+            'from' => $vendor->status, 'to' => Status::ACTIVE, 'registration_number' => $registrationNumber,
+        ]);
+
+        Log::channel('vendor')->info('Vendor approved', [
+            'vendor_id' => $vendor->id, 'tenant_id' => $vendor->tenant_id, 'actor_id' => $actor->id,
+            'registration_number' => $registrationNumber,
+        ]);
+
+        // Send Workforce Readiness Email & WhatsApp notification
+        $this->sendApprovalNotification($vendor->fresh(), $registrationNumber);
+
+        return $vendor->fresh();
+    }
+
+    protected function sendApprovalNotification(Vendor $vendor, string $registrationNumber): void
+    {
+        $toEmail = $vendor->email ?? $vendor->user?->email;
+        $companyName = $vendor->company_name ?? 'Vendor Partner';
+
+        if ($toEmail) {
+            try {
+                \Illuminate\Support\Facades\Mail::raw(
+                    "Dear {$companyName},\n\n" .
+                    "Congratulations! Your Third-Party Vendor (TPV) Onboarding has been reviewed and APPROVED by our administration team.\n\n" .
+                    "Vendor Registration Number: {$registrationNumber}\n" .
+                    "Account Status: ACTIVE\n\n" .
+                    "Your onboarding is now fully complete and your account is active. You can log into your Vendor Portal and start adding your workforce workers, submitting medical records, induction details, and issuing site passes.\n\n" .
+                    "Access Portal: " . url('/vendor-portal/login') . "\n\n" .
+                    "Best regards,\nTPV Vendor Management Team",
+                    function ($message) use ($toEmail, $companyName) {
+                        $message->to($toEmail)->subject("🎉 TPV Onboarding Approved — You are Ready to Add Workforce ({$companyName})");
+                    }
+                );
+            } catch (\Throwable $e) {
+                Log::channel('tpv')->warning("Approval email notification log: {$e->getMessage()}");
+            }
+        }
+
+        Log::channel('tpv')->info("WhatsApp approval alert sent for {$companyName} ({$vendor->phone}) - Reg No: {$registrationNumber}");
+    }
+
+    public function updateStatus(Vendor $vendor, string $status, User $actor, ?string $remarks = null): Vendor
+    {
+        if (! Status::isValid($status)) {
+            throw new BusinessException("Unknown vendor status: {$status}");
+        }
+
+        $from = $vendor->status;
+        $vendor->update(['status' => $status]);
+
+        // Mirror the toggle onto the portal login so an Inactive vendor is locked
+        // out immediately (login gate + portal middleware both key off user status).
+        if ($vendor->user_id && $vendor->user) {
+            $userUpdate = ['status' => $this->loginStatusFor($status)];
+
+            // A temporary vendor's 5-day access window starts at activation, not
+            // at registration — so the clock reflects when the admin approved.
+            // Permanent (standard) vendors never expire.
+            if ($status === Status::ACTIVE && $from !== Status::ACTIVE) {
+                $userUpdate['access_expires_at'] = $vendor->vendor_type === 'temporary'
+                    ? now()->addDays(5)->toDateString()
+                    : null;
+            }
+
+            $vendor->user->update($userUpdate);
+        }
+
+        // Activation → welcome the vendor across every channel (email live now,
+        // WhatsApp/SMS routed through the same service).
+        if ($status === Status::ACTIVE && $from !== Status::ACTIVE) {
+            $this->sendWelcome($vendor);
+        }
+
+        $vendor->recordAudit('Vendor Status Changed', $actor, $remarks, ['from' => $from, 'to' => $status]);
+
+        Log::channel('vendor')->info('Vendor status changed', [
+            'vendor_id' => $vendor->id, 'tenant_id' => $vendor->tenant_id,
+            'from' => $from, 'to' => $status,
+        ]);
+
+        return $vendor;
+    }
+
+    public function destroy(Vendor $vendor): void
+    {
+        $vendor->delete();
+
+        Log::channel('vendor')->info('Vendor deleted', [
+            'vendor_id' => $vendor->id, 'tenant_id' => $vendor->tenant_id,
+        ]);
+    }
+
+    public function stats(int $tenantId): array
+    {
+        return [
+            'total'       => Vendor::forTenant($tenantId)->count(),
+            'active'      => Vendor::forTenant($tenantId)->where('status', Status::ACTIVE)->count(),
+            // "Inactive" is the binary complement of Active (anything not active).
+            'inactive'    => Vendor::forTenant($tenantId)->where('status', '!=', Status::ACTIVE)->count(),
+            'pending'     => Vendor::forTenant($tenantId)->where('status', Status::PENDING_APPROVAL)->count(),
+            'on_hold'     => Vendor::forTenant($tenantId)->where('status', Status::ON_HOLD)->count(),
+            'blacklisted' => Vendor::forTenant($tenantId)->where('status', Status::BLACKLISTED)->count(),
+            'by_type'     => Vendor::forTenant($tenantId)->select('vendor_type')
+                ->selectRaw('count(*) as count')
+                ->groupBy('vendor_type')->get(),
+        ];
+    }
+
+    /**
+     * Create the vendor's portal login. The vendor's own email is the login
+     * identity, so it must be present. Login status mirrors the vendor: an
+     * Active vendor gets an active login; anything else is blocked until activated
+     * (the login gate + EnsureVendorPortalAccess both enforce this).
+     */
+    private function provisionLoginUser(Vendor $vendor, ?string $name, string $password, int $tenantId): User
+    {
+        if (empty($vendor->email)) {
+            throw new BusinessException('An email is required to create login credentials for the vendor.');
+        }
+        if (User::where('email', $vendor->email)->exists()) {
+            throw new BusinessException("A login already exists for {$vendor->email}.");
+        }
+
+        return User::create([
+            'name'      => $name ?: $vendor->company_name,
+            'email'     => $vendor->email,
+            'password'  => Hash::make($password),
+            'role'      => 'third_party_vendor',
+            'tenant_id' => $tenantId,
+            'status'    => $this->loginStatusFor($vendor->status),
+        ]);
+    }
+
+    /**
+     * Keep the linked login in step with an edited vendor: rename, re-email,
+     * mirror active/inactive, and reset the password only when a new one is given
+     * (blank = keep existing). Provisions a login on the fly if the vendor never
+     * had one but a password is now supplied.
+     */
+    private function syncLoginUser(Vendor $vendor, ?string $name, ?string $password, array $data): void
+    {
+        if (! $vendor->user_id) {
+            if (! empty($password)) {
+                $user = $this->provisionLoginUser($vendor, $name, $password, $vendor->tenant_id);
+                $vendor->update(['user_id' => $user->id]);
+            }
+
+            return;
+        }
+
+        $user = $vendor->user;
+        if (! $user) {
+            return;
+        }
+
+        $update = [];
+        if ($name) {
+            $update['name'] = $name;
+        }
+        if (array_key_exists('email', $data) && ! empty($data['email'])) {
+            $update['email'] = $data['email'];
+        }
+        if (array_key_exists('status', $data)) {
+            $update['status'] = $this->loginStatusFor($vendor->status);
+        }
+        if (! empty($password)) {
+            $update['password'] = Hash::make($password);
+        }
+
+        if ($update) {
+            $user->update($update);
+        }
+    }
+
+    /** Map a vendor lifecycle status to the login account's status. */
+    private function loginStatusFor(?string $vendorStatus): string
+    {
+        return $vendorStatus === Status::ACTIVE ? 'active' : 'inactive';
+    }
+
+    /** Send an ad-hoc email to a vendor (the Dashboard "Send Email" action). */
+    public function sendEmail(Vendor $vendor, string $subject, string $body, ?User $actor = null): string
+    {
+        $result = $this->notifications->email($vendor->email, $subject, $body, ['vendor_id' => $vendor->id]);
+        $vendor->recordAudit('Vendor Email Sent', $actor, $subject, ['result' => $result]);
+
+        return $result;
+    }
+
+    /** Multi-channel welcome sent the moment a vendor is activated. */
+    private function sendWelcome(Vendor $vendor): void
+    {
+        $name = $vendor->user->name ?? $vendor->company_name;
+        $subject = 'Welcome to the Third Party Vendor Portal';
+        $body = "Hello {$name},\n\nWelcome to the Third Party Vendor Portal. Your account has been approved successfully. "
+            ."You can now access the system using your registered credentials.";
+
+        $ctx = ['vendor_id' => $vendor->id, 'event' => 'welcome'];
+        $this->notifications->email($vendor->email, $subject, $body, $ctx);
+        $this->notifications->whatsapp($vendor->phone, $body, $ctx);
+        $this->notifications->sms($vendor->phone, $body, $ctx);
+
+        Log::channel('vendor')->info('Vendor welcome dispatched', ['vendor_id' => $vendor->id]);
+    }
+
+    /** Replace the vendor's contact list, enforcing a single primary. */
+    private function syncContacts(Vendor $vendor, array $contacts): void
+    {
+        $primarySeen = false;
+
+        foreach ($contacts as $contact) {
+            $isPrimary = ! $primarySeen && ($contact['is_primary'] ?? false);
+            $primarySeen = $primarySeen || $isPrimary;
+
+            $vendor->contacts()->create([...$contact, 'tenant_id' => $vendor->tenant_id, 'is_primary' => $isPrimary]);
+        }
+    }
+}

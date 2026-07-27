@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { X, Check, Building2, IndianRupee, SlidersHorizontal, LayoutGrid, ShieldCheck } from 'lucide-react'
 import { projectApi, PROJECT_STATUS, BILLING_TYPES, PROJECT_ACCENT } from '@/services/projectApi'
+import { refreshMasterData } from '@/modules/hr/useMasterData'
 import { tagApi } from '@/services/tagApi'
 import Select from '@/components/ui/Select'
 import SearchPicker from '@/components/ui/SearchPicker'
@@ -97,6 +98,7 @@ export default function ProjectFormDrawer({ open, onClose, project = null, onSav
       qc.invalidateQueries({ queryKey: ['projects'] })
       qc.invalidateQueries({ queryKey: ['tags', 'project'] })
       if (editing) qc.invalidateQueries({ queryKey: ['project', String(project.id)] })
+      refreshMasterData()   // keep HR Recruitment project dropdowns in sync
       onSaved?.()
       onClose?.()
     },

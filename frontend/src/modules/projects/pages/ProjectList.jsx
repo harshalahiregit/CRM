@@ -5,6 +5,7 @@ import {
   FolderKanban, Plus, Search, X, Pin, PinOff, Pencil, Copy, Trash2, Users, Eye, Download,
 } from 'lucide-react'
 import { projectApi, PROJECT_STATUS, PROJECT_ACCENT } from '@/services/projectApi'
+import { refreshMasterData } from '@/modules/hr/useMasterData'
 import { tagApi } from '@/services/tagApi'
 import { exportCsv, stampedName } from '@/lib/exportCsv'
 import { useAuth } from '@/context/AuthContext'
@@ -80,7 +81,7 @@ export default function ProjectList() {
   })
   const remove = useMutation({
     mutationFn: (id) => projectApi.remove(id),
-    onSuccess: () => { setConfirmDelete(null); refresh() },
+    onSuccess: () => { setConfirmDelete(null); refresh(); refreshMasterData() },
     onError: onErr,
   })
 

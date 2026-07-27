@@ -4,6 +4,7 @@ import Sidebar from './Sidebar'
 import Header from './Header'
 import MobileBottomNav from './MobileBottomNav'
 import CommandPalette from '@/components/CommandPalette'
+import IdleTimeoutWarning from '@/components/common/IdleTimeoutWarning'
 import clsx from 'clsx'
 import { useTheme } from '@/context/ThemeContext'
 
@@ -68,6 +69,8 @@ export default function AppShell() {
 
       {/* Global Ctrl/Cmd+K command palette (Phase 7d) */}
       <CommandPalette />
+      {/* Idle-timeout warning (session management) */}
+      <IdleTimeoutWarning />
     </div>
   )
 }

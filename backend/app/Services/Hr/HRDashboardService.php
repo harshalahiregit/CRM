@@ -8,7 +8,9 @@ use App\Models\Hr\HrInterviewRound;
 use App\Models\Hr\HrJobPosting;
 use App\Models\Hr\HrManpowerRequest;
 use App\Models\Hr\HrOffer;
+use App\Models\Hr\HrOnboarding;
 use App\Models\User;
+use App\Support\Hr\ManpowerRequestStatus as Status;
 use Carbon\Carbon;
 
 class HRDashboardService
@@ -34,6 +36,13 @@ class HRDashboardService
             ->selectRaw('AVG(julianday(updated_at) - julianday(created_at)) as avg_days')
             ->value('avg_days');
         $timeToHire = $timeToHire ? round($timeToHire, 1) : 0;
+
+        // ── Hiring KPIs (Phase 3) ────────────────────────────────────────────
+        $totalHired        = HrCandidate::where('tenant_id', $tenantId)->where('stage', 'Hired')->count();
+        $offersSent        = HrOffer::where('tenant_id', $tenantId)->whereNotNull('sent_at')->count();
+        $offersAccepted    = HrOffer::where('tenant_id', $tenantId)->whereIn('status', ['Accepted', 'Completed'])->count();
+        $acceptancePct     = $offersSent > 0 ? (int) round($offersAccepted / $offersSent * 100) : 0;
+        $pendingInterviews = HrInterviewRound::where('tenant_id', $tenantId)->where('status', 'Scheduled')->count();
 
         // Hiring trend (last 6 months)
         // SQLite compatible: use strftime() instead of DATE_FORMAT()
@@ -81,15 +90,31 @@ class HRDashboardService
                 'interviewer' => $iv->interviewer_name,
             ]);
 
-        // Pending approvals (for hiring managers)
+        // ── Recruitment workflow metrics (Manpower Request pipeline) ─────────
+        $mrBase = fn () => HrManpowerRequest::where('tenant_id', $tenantId);
+        $manpower = [
+            'total_requests'   => $mrBase()->count(),
+            'l1_pending'       => $mrBase()->where('status', Status::L1_PENDING)->count(),
+            'l2_pending'       => $mrBase()->where('status', Status::L2_PENDING)->count(),
+            'ready_for_hr'     => $mrBase()->where('status', Status::READY_FOR_HR)->count(),
+            'converted_to_jd'  => $mrBase()->where('status', Status::CONVERTED_TO_JD)->count(),
+            'posted_jobs'      => $mrBase()->where('status', Status::JOB_POSTED)->count(),
+            'active_hiring'    => $mrBase()->where('status', Status::HIRING_IN_PROGRESS)->count(),
+            'closed_positions' => $mrBase()->where('status', Status::CLOSED)->count(),
+        ];
+
+        // ── Recruitment onboarding → offer → joining KPIs (auto-derived) ─────
+        $recruitmentKpis = $this->recruitmentKpis($tenantId, $today);
+
+        // Pending approvals awaiting the current user's action (L1 and/or L2)
         $pendingApprovals = 0;
-        if ($user->isHiringManager() || $user->isAdmin()) {
-            $pendingApprovals = HrManpowerRequest::where('tenant_id', $tenantId)
-                ->where('status', 'Pending')
-                ->when($user->isHiringManager(), function ($q) use ($user) {
-                    $q->where('assigned_manager_id', $user->id);
-                })
+        if ($user->canApproveL1()) {
+            $pendingApprovals += $mrBase()->where('status', Status::L1_PENDING)
+                ->when($user->isHiringManager(), fn ($q) => $q->where('assigned_manager_id', $user->id))
                 ->count();
+        }
+        if ($user->canApproveL2()) {
+            $pendingApprovals += $mrBase()->where('status', Status::L2_PENDING)->count();
         }
 
         return [
@@ -104,12 +129,81 @@ class HRDashboardService
                 'sources_count'     => $sources,
                 'time_to_hire_days' => $timeToHire,
                 'pending_approvals' => $pendingApprovals,
+                // Phase 3 hiring KPIs
+                'total_hired'        => $totalHired,
+                'offers_sent'        => $offersSent,
+                'offers_accepted'    => $offersAccepted,
+                'acceptance_pct'     => $acceptancePct,
+                'pending_interviews' => $pendingInterviews,
             ],
+            'recruitment_kpis' => $recruitmentKpis,
+            'manpower'         => $manpower,
             'pipeline'         => $pipeline,
             'source_breakdown' => $sourceBreakdown,
             'recent_requests'  => $recentRequests,
             'today_interviews' => $todayIV,
             'hiring_trend'     => $hiringTrend,
+        ];
+    }
+
+    /**
+     * Recruitment workflow KPIs, all derived from the live onboarding / offer /
+     * employee state (no stored counters). Tenant-scoped throughout.
+     */
+    private function recruitmentKpis(int $tenantId, Carbon $today): array
+    {
+        // Onboarding-stage counts (waiting on candidate vs waiting on HR, and
+        // how many are actually ready for approval — mandatory docs verified).
+        $onboardings = HrOnboarding::where('tenant_id', $tenantId)
+            ->whereIn('verification_status', ['Pending', 'Submitted'])
+            ->with(['candidate:id,experience_years', 'documents:id,onboarding_id,type,status'])
+            ->get();
+
+        $baseMandatory = ['aadhaar', 'pan', 'resume', 'photo', 'address_proof', 'educational_certificate'];
+        $waitingForCandidate = 0;
+        $waitingForHr = 0;
+        $readyForApproval = 0;
+
+        foreach ($onboardings as $onb) {
+            if ($onb->verification_status === 'Pending') {
+                $waitingForCandidate++;
+
+                continue;
+            }
+            $waitingForHr++;                                 // Submitted → HR must verify
+            $required = $baseMandatory;
+            if ((float) ($onb->candidate?->experience_years ?? 0) > 0) {
+                $required[] = 'experience_document';
+            }
+            $verified = $onb->documents->where('status', 'Verified')->pluck('type')->all();
+            if (! array_diff($required, $verified) && $onb->background_verified) {
+                $readyForApproval++;
+            }
+        }
+
+        // Offer-stage counts. Employee creation is decoupled: an accepted offer
+        // is "waiting to join" until HR confirms joining (joining_confirmed_at).
+        $offerBase = fn () => HrOffer::where('tenant_id', $tenantId);
+        $offerPending  = $offerBase()->whereIn('status', ['Generated', 'Sent', 'Viewed'])->count();
+        $offerAccepted = $offerBase()->where('status', 'Accepted')->whereNull('joining_confirmed_at')->count();
+        $joiningThisWeek = $offerBase()->where('status', 'Accepted')->whereNull('joining_confirmed_at')
+            ->whereNotNull('joining_date')
+            ->whereBetween('joining_date', [$today->toDateString(), $today->copy()->addDays(7)->toDateString()])
+            ->count();
+        // Joining day has arrived/passed but the employee record isn't created yet.
+        $employeeCreationPending = $offerBase()->where('status', 'Accepted')->whereNull('joining_confirmed_at')
+            ->whereNotNull('joining_date')
+            ->whereDate('joining_date', '<=', $today->toDateString())
+            ->count();
+
+        return [
+            'waiting_for_candidate'     => $waitingForCandidate,
+            'waiting_for_hr'            => $waitingForHr,
+            'ready_for_approval'        => $readyForApproval,
+            'offer_pending'             => $offerPending,
+            'offer_accepted'            => $offerAccepted,
+            'joining_this_week'         => $joiningThisWeek,
+            'employee_creation_pending' => $employeeCreationPending,
         ];
     }
 }

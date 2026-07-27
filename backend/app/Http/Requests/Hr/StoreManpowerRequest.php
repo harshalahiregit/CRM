@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Hr;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreManpowerRequest extends FormRequest
 {
@@ -14,14 +15,55 @@ class StoreManpowerRequest extends FormRequest
     public function rules(): array
     {
         return [
+            // Core
             'department'          => 'required|string|max:100',
             'position_title'      => 'required|string|max:200',
-            'number_of_posts'     => 'required|integer|min:1',
-            'priority'            => 'required|in:Low,Medium,High',
+            'number_of_posts'     => 'required|integer|min:1|max:1000',
+            'priority'            => 'required|in:Low,Medium,High,Critical',
             'job_type'            => 'required|in:Full-time,Part-time,Contract,Internship',
-            'required_by_date'    => 'nullable|date',
+            // Extended hiring information
+            'business_unit'       => 'nullable|string|max:150',
+            'project'             => 'nullable|string|max:150',
+            // Project integration (existing Projects module). Tenant-scoped; NOT gated to
+            // active status, so an inactive/archived project on an existing record still saves.
+            'project_id'          => ['nullable', 'integer', Rule::exists('projects', 'id')->where('tenant_id', $this->user()->tenant_id)],
+            'location'            => 'nullable|string|max:150',
+            'employee_level'      => 'nullable|string|max:60',
+            'experience_required' => 'nullable|string|max:100',
+            'education'           => 'nullable|string|max:150',
+            'criticality'         => 'nullable|in:Low,Medium,High,Business Critical',
+            'salary_min'          => 'nullable|numeric|min:0',
+            'salary_max'          => 'nullable|numeric|min:0|gte:salary_min',
+            'required_skills'     => 'nullable|array',
+            'required_skills.*'   => 'string|max:60',
+            'preferred_skills'    => 'nullable|array',
+            'preferred_skills.*'  => 'string|max:60',
+            'job_description'     => 'nullable|string',
             'justification'       => 'nullable|string',
+            // Business rule (SPK-1): a request cannot be needed in the past.
+            'required_by_date'    => 'nullable|date|after_or_equal:today',
+            'target_joining_date' => 'nullable|date',
             'assigned_manager_id' => 'nullable|exists:users,id',
+            // Enterprise fields (SPK-1) — all optional, backward compatible.
+            'hiring_manager_id'      => 'nullable|exists:hr_employees,id',
+            'work_mode'              => 'nullable|in:Onsite,Remote,Hybrid',
+            'shift'                  => 'nullable|in:Day,Night,Rotational,Flexible',
+            'budget'                 => 'nullable|numeric|min:0',
+            'certifications'         => 'nullable|array',
+            'certifications.*'       => 'string|max:100',
+            'hiring_reason'          => 'nullable|in:New Position,Replacement,Expansion,Contract',
+            // Replacement employee only makes sense for a replacement hire.
+            'replacement_employee_id' => 'nullable|required_if:hiring_reason,Replacement|exists:hr_employees,id',
+            'cost_center'            => 'nullable|string|max:100',
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'required_by_date.after_or_equal'  => 'Required By date cannot be earlier than today.',
+            'salary_max.gte'                   => 'Salary Max cannot be less than Salary Min.',
+            'replacement_employee_id.required_if' => 'Select the employee being replaced.',
         ];
     }
 }

@@ -35,23 +35,14 @@ class CustomerDirectoryService implements CustomerServiceContract
         return Client::forTenant($tenantId)->whereKey($customerId)->exists();
     }
 
-    /**
-     * Every customer visible to the tenant, for the "pick a customer" pickers.
-     * Eager-loads the primary contact so the list costs two queries rather than
-     * one per row, and returns the same lightweight shape as getCustomer().
-     */
     public function listCustomers(int $tenantId): array
     {
-        return Client::forTenant($tenantId)
-            ->with('primaryContact')
-            ->orderBy('company')
-            ->get()
+        return Client::forTenant($tenantId)->with('primaryContact')->orderBy('company')->get()
             ->map(fn (Client $client) => [
                 'id'      => $client->id,
                 'name'    => $client->company,
                 'email'   => $client->primaryContact?->email,
                 'company' => $client->company,
-            ])
-            ->all();
+            ])->all();
     }
 }

@@ -73,6 +73,9 @@ class DatabaseSeeder extends Seeder
         // integration step can link real seeded tickets to projects/tasks.
         $this->call(ProjectTaskSeeder::class);
 
+        // Inventory catalog + stock ledger demo data (owner: Shivam).
+        $this->call(InventorySeeder::class);
+
         $this->command->info('✅ Demo data seeded successfully!');
         $this->command->info('');
         $this->command->info('Demo credentials:');

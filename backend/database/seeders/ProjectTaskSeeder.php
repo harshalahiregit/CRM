@@ -51,13 +51,68 @@ class ProjectTaskSeeder extends Seeder
         $staff = User::where('tenant_id', $this->tenantId)
             ->whereIn('role', ['staff', 'admin'])->pluck('id')->all();
 
+        // Advanced Status Manager defaults. The create_status_lookup_tables
+        // migration seeds these for tenants that exist AT MIGRATION TIME, but a
+        // fresh `migrate:fresh --seed` runs migrations first (zero tenants) and
+        // creates the demo tenant afterwards — so it would otherwise start with
+        // empty task/project status lists and a blank status dropdown on every
+        // Task/Project detail page. Seed them here for the demo tenant.
+        $this->seedStatuses();
+
         $this->reset();
 
+        // (statuses seeded above, before reset — see seedStatuses())
         [$projectIds, $milestonesByProject] = $this->seedProjects($staff);
         $this->seedTasks($projectIds, $milestonesByProject, $staff);
         $this->seedIntegration($projectIds, $staff);
 
         $this->recomputeAndReport($projectIds);
+    }
+
+    /**
+     * Seed the Advanced Status Manager defaults for the tenant (task + project),
+     * mirroring create_status_lookup_tables. Idempotent: skips a list that
+     * already has rows, so re-seeding never duplicates or clobbers custom edits.
+     * is_system = true — these keys are the enum the module validates against.
+     */
+    private function seedStatuses(): void
+    {
+        $now = now();
+
+        $sets = [
+            'task_statuses' => [
+                ['not_started', 'Not Started', '#64748b', 1, false],
+                ['in_progress', 'In Progress', '#3b82f6', 2, false],
+                ['testing', 'Testing', '#0284c7', 3, false],
+                ['awaiting_feedback', 'Awaiting Feedback', '#84cc16', 4, false],
+                ['complete', 'Complete', '#22c55e', 100, true],
+            ],
+            'project_statuses' => [
+                ['not_started', 'Not Started', '#475569', 1, false],
+                ['in_progress', 'In Progress', '#2563eb', 2, false],
+                ['on_hold', 'On Hold', '#f97316', 3, false],
+                ['cancelled', 'Cancelled', '#94a3b8', 4, true],
+                ['finished', 'Finished', '#16a34a', 100, true],
+            ],
+        ];
+
+        foreach ($sets as $table => $rows) {
+            if (! Schema::hasTable($table)) {
+                continue;
+            }
+            if (DB::table($table)->where('tenant_id', $this->tenantId)->exists()) {
+                continue;   // already seeded (by the migration or a prior run)
+            }
+            DB::table($table)->insert(array_map(fn ($r) => [
+                'tenant_id' => $this->tenantId, 'key' => $r[0], 'name' => $r[1], 'color' => $r[2],
+                'order' => $r[3], 'is_closed_status' => $r[4],
+                'is_system' => true, 'is_default_filter' => false,
+                'can_be_changed_to' => null, 'hidden_for' => null,
+                'created_at' => $now, 'updated_at' => $now,
+            ], $rows));
+        }
+
+        $this->command->info('  ↳ Advanced Status Manager: task + project defaults ensured.');
     }
 
     /** Reproducibility: wipe only this module's rows for the tenant, children first. */

@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests\Hr;
 
+use App\Support\Hr\JobPostingStatus;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class UpdateJobPostingStatusRequest extends FormRequest
 {
@@ -14,7 +16,7 @@ class UpdateJobPostingStatusRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'status' => 'required|in:Active,Draft,Closed',
+            'status' => ['required', Rule::in(JobPostingStatus::ALL)],
         ];
     }
 }

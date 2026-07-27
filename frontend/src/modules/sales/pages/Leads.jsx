@@ -270,7 +270,7 @@ export default function Leads() {
       {showDrawer && (
         <>
           <div className="drawer-backdrop" onClick={()=>setShowDrawer(false)}/>
-          <div className="drawer-panel" style={{width:'min(580px,95vw)'}}>
+          <div className="drawer-panel" style={{width:'min(820px,95vw)'}}>
             <div className="drawer-header">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{background:'linear-gradient(135deg,#9f67ff,#7C3AED)',boxShadow:'0 4px 12px rgba(124,58,237,0.4)'}}><UserPlus size={14} className="text-white"/></div>

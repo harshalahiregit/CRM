@@ -16,7 +16,8 @@ class LoginRequest extends FormRequest
         return [
             'email'    => 'required|email',
             'password' => 'required|string',
-            'role'     => 'required|in:admin,staff,vendor,third_party_vendor,client',
+            'role'     => 'required|in:admin,staff,vendor,third_party_vendor,client,company',
+            'remember' => 'nullable|boolean',
         ];
     }
 }

@@ -20,6 +20,9 @@ class ResumeController extends Controller
      */
     public function upload(UploadResumeRequest $request, HrCandidate $candidate)
     {
+        $this->assertTenant($request, $candidate);
+        $this->assertCanManage($request);
+
         $result = $this->resumeService->upload($candidate, $request->user()->tenant_id, $request->file('resume'));
 
         return response()->json($result);
@@ -31,6 +34,9 @@ class ResumeController extends Controller
      */
     public function download(Request $request, HrCandidate $candidate)
     {
+        $this->assertTenant($request, $candidate);
+        $this->assertCanManage($request);
+
         $file = $this->resumeService->resolveDownload($candidate, $request->user()->tenant_id);
 
         return response()->download($file['path'], $file['filename'], [
@@ -45,8 +51,21 @@ class ResumeController extends Controller
      */
     public function delete(Request $request, HrCandidate $candidate)
     {
+        $this->assertTenant($request, $candidate);
+        $this->assertCanManage($request);
+
         $this->resumeService->delete($candidate, $request->user()->tenant_id);
 
         return response()->json(['success' => true, 'message' => 'Resume deleted.']);
+    }
+
+    private function assertTenant(Request $request, HrCandidate $candidate): void
+    {
+        abort_unless((int) $candidate->tenant_id === (int) $request->user()->tenant_id, 404, 'Candidate not found');
+    }
+
+    private function assertCanManage(Request $request): void
+    {
+        abort_unless($request->user()->canManageHrQueue(), 403, 'You are not authorised to manage resumes');
     }
 }
