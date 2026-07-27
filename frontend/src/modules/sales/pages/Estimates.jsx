@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
 import { useClientOptions } from '@/hooks/useClientOptions'
+import { useProjectOptions } from '@/hooks/useProjectOptions'
 import StatusBadge from '../components/StatusBadge'
 import RowMenu from '../components/RowMenu'
 import LineItemsTable from '../components/LineItemsTable'
@@ -43,6 +44,7 @@ export default function Estimates({ docType = 'proforma' }) {
   const DOC_LABEL_PLURAL = isEstimate ? 'Estimates' : 'Proforma Invoices'
   const navigate = useNavigate()
   const clientOptions = useClientOptions()
+  const projectOptions = useProjectOptions()
   const [data, setData]         = useState([])
   const [loading, setLoading]   = useState(true)
   const [filter, setFilter]     = useState('All')
@@ -77,7 +79,7 @@ export default function Estimates({ docType = 'proforma' }) {
 
   const handleCreate = async () => {
     if (!form.subject || !form.client_id) return showToast('Subject & customer required', 'error')
-    await salesApi.estimates.create({ estimate_type: docType, ...form, client_id: Number(form.client_id) })
+    await salesApi.estimates.create({ estimate_type: docType, ...form, client_id: Number(form.client_id), project_id: form.project_id ? Number(form.project_id) : null })
     showToast(`${DOC_LABEL} created!`)
     setShowDrawer(false)
     setForm(EMPTY_FORM)
@@ -384,7 +386,10 @@ export default function Estimates({ docType = 'proforma' }) {
                     </div>
                     <div>
                       <label className="label">Link to Project</label>
-                      <input className="input-3d text-sm" placeholder="Project name (optional)" value={form.project_id} onChange={e => sf('project_id', e.target.value)} />
+                      <select className="input-3d text-sm" value={form.project_id} onChange={e => sf('project_id', e.target.value)}>
+                        <option value="">No project</option>
+                        {projectOptions.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">

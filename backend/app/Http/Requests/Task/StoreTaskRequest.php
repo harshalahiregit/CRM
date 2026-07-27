@@ -13,6 +13,20 @@ class StoreTaskRequest extends FormRequest
         return true;
     }
 
+    /**
+     * Quick-create paths from other modules (e.g. Sales "Add task" on a contract,
+     * Customer "convert note to task") send just a name + rel link and no dates.
+     * Default start_date to today so those integrations work, matching how
+     * StoreSubtaskRequest already treats an omitted start_date. An explicit value
+     * is still validated by the rule below.
+     */
+    protected function prepareForValidation(): void
+    {
+        if (! $this->filled('start_date')) {
+            $this->merge(['start_date' => now()->toDateString()]);
+        }
+    }
+
     public function rules(): array
     {
         $tenantId = $this->user()->tenant_id;

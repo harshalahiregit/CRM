@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { helpdeskApi } from '@/services/helpdeskApi'
 import {
   ArrowLeft, Flame, Thermometer, Snowflake, Building2, Mail, Phone, Globe,
   MapPin, User, Tag, XCircle, RotateCcw, Trash2, TrendingUp, Plus, FileText,
@@ -185,11 +186,7 @@ export default function LeadDetail() {
                 }))} />
               </div>
             )}
-            {tab === 'support' && (
-              <div className="card-3d" style={{ padding: '20px' }}>
-                <EmptyState icon={LifeBuoy} title="Support Tickets" description="Linked support tickets will appear here once the Helpdesk module ships." />
-              </div>
-            )}
+            {tab === 'support' && <LeadSupportTab lead={lead} />}
             {tab === 'templates' && (
               <div className="card-3d" style={{ padding: '20px' }}>
                 <EmptyState icon={LayoutTemplate} title="Templates" description="Email and document templates for this lead will appear here." />
@@ -439,6 +436,83 @@ function QuestionnairesTab({ lead }) {
           </div>
         </div>
       ))}
+    </div>
+  )
+}
+
+/**
+ * Support tab — real Helpdesk integration (owner of Helpdesk: Shivam).
+ * A lead's support history is its converted customer's tickets: once the lead
+ * has a linked customer (client_id), we list that customer's tickets and let the
+ * rep raise a new one, both via helpdeskApi. Before conversion there's no
+ * customer to attach a ticket to, so we prompt to convert first.
+ */
+function LeadSupportTab({ lead }) {
+  const toast = useToast()
+  const customerId = lead.client_id || lead.customer_id || null
+  const [rows, setRows] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [subject, setSubject] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const load = () => {
+    if (!customerId) return
+    setLoading(true)
+    helpdeskApi.tickets.list({ customer_id: customerId })
+      .then(r => setRows(Array.isArray(r) ? r : (r?.data ?? [])))
+      .catch(() => setRows([]))
+      .finally(() => setLoading(false))
+  }
+  useEffect(load, [customerId])
+
+  const raise = async () => {
+    if (!subject.trim()) return toast.error('Subject required')
+    setSaving(true)
+    try {
+      await helpdeskApi.tickets.create({ subject: subject.trim(), customer_id: Number(customerId) })
+      toast.success('Ticket raised')
+      setSubject(''); load()
+    } catch (e) { toast.error(e.message || 'Failed to raise ticket') }
+    finally { setSaving(false) }
+  }
+
+  if (!customerId) {
+    return (
+      <div className="card-3d" style={{ padding: '20px' }}>
+        <EmptyState icon={LifeBuoy} title="No linked customer yet"
+          description="Convert this lead to a customer to track its support tickets here." />
+      </div>
+    )
+  }
+
+  return (
+    <div className="card-3d" style={{ padding: '20px' }}>
+      <div className="flex items-center gap-2 mb-4">
+        <input className="input-3d text-sm flex-1" placeholder="New ticket subject…"
+          value={subject} onChange={e => setSubject(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && raise()} />
+        <button onClick={raise} disabled={saving}
+          className="px-3 py-2 rounded-xl text-sm font-bold text-white shrink-0"
+          style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)', opacity: saving ? 0.7 : 1 }}>
+          Raise ticket
+        </button>
+      </div>
+      {loading ? (
+        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Loading tickets…</p>
+      ) : rows.length === 0 ? (
+        <EmptyState icon={LifeBuoy} title="No support tickets" description="No tickets are linked to this customer yet." />
+      ) : (
+        <div className="space-y-2">
+          {rows.map(t => (
+            <div key={t.id} className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl"
+              style={{ border: '1px solid var(--border)', background: 'var(--bg-card)' }}>
+              <span className="text-sm truncate" style={{ color: 'var(--text-h)' }}>#{t.id} · {t.subject}</span>
+              <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg shrink-0"
+                style={{ background: 'var(--bg-input)', color: 'var(--text-muted)' }}>{t.status}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

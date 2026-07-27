@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Plus, Send, CreditCard, Trash2, X, MoreVertical, Bell, RefreshCw, Tag, User } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
 import { useClientOptions } from '@/hooks/useClientOptions'
+import { useProjectOptions } from '@/hooks/useProjectOptions'
 import StatusBadge from '../components/StatusBadge'
 import LineItemsTable from '../components/LineItemsTable'
 import RowMenu from '../components/RowMenu'
@@ -31,6 +32,7 @@ const EMPTY_PAY = { amount:'', date: new Date().toISOString().split('T')[0], mod
 export default function Invoices() {
   const navigate = useNavigate()
   const clientOptions = useClientOptions()
+  const projectOptions = useProjectOptions()
   const [data, setData]         = useState([])
   const [loading, setLoading]   = useState(true)
   const [filter, setFilter]     = useState('All')
@@ -68,7 +70,7 @@ export default function Invoices() {
 
   const handleCreate = async () => {
     if(!form.client_id) return showToast('Customer required','error')
-    await salesApi.invoices.create({...form, client_id: Number(form.client_id)})
+    await salesApi.invoices.create({...form, client_id: Number(form.client_id), project_id: form.project_id ? Number(form.project_id) : null})
     showToast('Invoice created!'); setShowDrawer(false); setForm(EMPTY); load()
   }
   const handlePay = async () => {
@@ -259,7 +261,10 @@ export default function Invoices() {
                     </div>
                     <div>
                       <label className="label">Link to Project</label>
-                      <input className="input-3d text-sm" placeholder="Project (optional)" value={form.project_id} onChange={e => sf('project_id', e.target.value)} />
+                      <select className="input-3d text-sm" value={form.project_id} onChange={e => sf('project_id', e.target.value)}>
+                        <option value="">No project</option>
+                        {projectOptions.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
