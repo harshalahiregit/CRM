@@ -8,6 +8,7 @@ import {
 import { salesApi } from '@/services/salesApi'
 import { leadApi } from '@/services/leadApi'
 import { useClientOptions } from '@/hooks/useClientOptions'
+import { useProjectOptions } from '@/hooks/useProjectOptions'
 import StatusBadge from '../components/StatusBadge'
 import LineItemsTable from '../components/LineItemsTable'
 import RowMenu from '../components/RowMenu'
@@ -35,6 +36,7 @@ export default function Proposals() {
   const navigate = useNavigate()
   const toast_ = useToast()
   const clientOptions = useClientOptions()
+  const projectOptions = useProjectOptions()
   const [leadOptions, setLeadOptions] = useState([])
   const [searchParams] = useSearchParams()
   const [data, setData]       = useState([])
@@ -85,7 +87,7 @@ export default function Proposals() {
 
   const handleCreate = async () => {
     if (!form.subject || !form.rel_id) return showToast('Subject & recipient required', 'error')
-    await salesApi.proposals.create({ ...form, rel_id: Number(form.rel_id) })
+    await salesApi.proposals.create({ ...form, rel_id: Number(form.rel_id), project_id: form.project_id ? Number(form.project_id) : null })
     showToast('Proposal created!')
     setShowDrawer(false)
     setForm(EMPTY_FORM)
@@ -344,9 +346,18 @@ export default function Proposals() {
                       </select>
                     </div>
                   </div>
-                  <div>
-                    <label className="label">Proposal To (Recipient Name)</label>
-                    <input className="input-3d text-sm" placeholder="Contact person name" value={form.proposal_to} onChange={e => sf('proposal_to', e.target.value)} />
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="label">Proposal To (Recipient Name)</label>
+                      <input className="input-3d text-sm" placeholder="Contact person name" value={form.proposal_to} onChange={e => sf('proposal_to', e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="label">Link to Project</label>
+                      <select className="input-3d text-sm" value={form.project_id} onChange={e => sf('project_id', e.target.value)}>
+                        <option value="">No project</option>
+                        {projectOptions.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                    </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
