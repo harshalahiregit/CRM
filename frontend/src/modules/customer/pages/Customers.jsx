@@ -15,6 +15,7 @@ import StepperNav from '../components/StepperNav'
 import AdminOrderPicker from '../components/AdminOrderPicker'
 import { CURRENCIES, LANGUAGES } from '../components/customerFormConstants'
 import ContactPermissions, { DEFAULT_PERMISSIONS, DEFAULT_NOTIFICATIONS, permissionsFromLegacy } from '../components/ContactPermissions'
+import RaiseTicketButton from '@/components/RaiseTicketButton'
 
 // Meeting 1.1 order: create is a guided 4-step flow (steps 1–3 mandatory,
 // Custom Fields optional). Editing keeps free tab navigation over the same
@@ -318,6 +319,7 @@ export default function Customers() {
                 </div>
               )}
             </div>
+            <RaiseTicketButton source="customer" style={{ padding: '10px 18px', borderRadius: 16 }} />
             <button onClick={() => setFieldsMgr(true)} title="Manage custom fields"
               className="flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-semibold transition-all hover:scale-[1.02]"
               style={{ background: 'var(--bg-input)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>

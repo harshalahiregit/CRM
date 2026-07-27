@@ -7,6 +7,7 @@ import {
 import { tpvApi } from '@/services/tpvApi'
 import { severityCfg, obStatusCfg, STRIKE_LIMIT, fmtDateTime } from '../constants'
 import { KIT3D_STYLE as TPV_STYLE } from '@/components/ui/kit3d'
+import RaiseTicketButton from '@/components/RaiseTicketButton'
 
 // ── Palette ─────────────────────────────────────────────────────────────────
 // Colour is load-bearing in exactly ONE chart here — the gate-activity grouped
@@ -57,9 +58,12 @@ export default function TpvDashboard() {
           <h1 style={{ color: 'var(--text-h)', fontSize: 24, fontWeight: 900, margin: '2px 0 0', letterSpacing: '-0.02em' }}>Vendor Overview</h1>
           <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: '4px 0 0' }}>Onboarding → Workforce → Badge → Gate → Strikes, unified.</p>
         </div>
-        <button onClick={load} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13 }}>
-          <RefreshCw size={14} /> Refresh
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <RaiseTicketButton source="tpv" />
+          <button onClick={load} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13 }}>
+            <RefreshCw size={14} /> Refresh
+          </button>
+        </div>
       </div>
 
       {/* KPI tiles */}

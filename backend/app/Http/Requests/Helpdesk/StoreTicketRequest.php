@@ -38,7 +38,10 @@ class StoreTicketRequest extends FormRequest
             // Where the ticket was raised from, so the grid can badge its origin
             // module. Agent-composed tickets omit it (default 'internal'); the
             // "Raise Ticket" button in each module stamps its own value.
-            'source'          => ['nullable', 'string', Rule::in(['internal', 'project', 'task', 'inventory'])],
+            'source'          => ['nullable', 'string', Rule::in([
+                'internal', 'project', 'task', 'inventory',
+                'hr', 'accounts', 'purchase', 'tpv', 'compliance', 'sales', 'customer',
+            ])],
         ];
     }
 }

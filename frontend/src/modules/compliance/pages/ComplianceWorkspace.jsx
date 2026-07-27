@@ -11,6 +11,7 @@ import {
 } from '../constants'
 import { KIT3D_STYLE, Overlay, ModalFooter, Field, TextInput, SelectInput, labelStyle } from '@/components/ui/kit3d'
 import { useAuth } from '@/context/AuthContext'
+import RaiseTicketButton from '@/components/RaiseTicketButton'
 
 /**
  * The compliance workspace — checklist ledger and template library.
@@ -27,10 +28,13 @@ export default function ComplianceWorkspace() {
     <div style={{ padding: 24, minHeight: '100vh', background: 'var(--bg-global)' }}>
       <style>{KIT3D_STYLE}</style>
 
-      <div style={{ marginBottom: 18 }}>
-        <p className="label-caps" style={{ color: '#a78bfa', margin: 0, fontSize: 11, fontWeight: 800, letterSpacing: '0.08em' }}>HSSE &amp; ASSURANCE</p>
-        <h1 style={{ color: 'var(--text-h)', fontSize: 24, fontWeight: 900, margin: '2px 0 0', letterSpacing: '-0.02em' }}>Compliance</h1>
-        <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: '4px 0 0' }}>Scored checklists, issued against any record and signed off by two tiers.</p>
+      <div style={{ marginBottom: 18, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <p className="label-caps" style={{ color: '#a78bfa', margin: 0, fontSize: 11, fontWeight: 800, letterSpacing: '0.08em' }}>HSSE &amp; ASSURANCE</p>
+          <h1 style={{ color: 'var(--text-h)', fontSize: 24, fontWeight: 900, margin: '2px 0 0', letterSpacing: '-0.02em' }}>Compliance</h1>
+          <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: '4px 0 0' }}>Scored checklists, issued against any record and signed off by two tiers.</p>
+        </div>
+        <RaiseTicketButton source="compliance" />
       </div>
 
       {/* Tabs */}
