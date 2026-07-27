@@ -178,6 +178,13 @@ export const hrApi = {
     updateStatus:  (id, payload) => api.patch(`/hr/offers/${id}/status`, typeof payload === 'string' ? { status: payload } : payload).then(r => r.data),
     confirmJoining:(id)          => api.patch(`/hr/offers/${id}/confirm-joining`).then(r => r.data),
     regenerate:    (id, validity) => api.patch(`/hr/offers/${id}/regenerate`, { validity_date: validity }).then(r => r.data),
+    // Lifecycle: approval · withdraw · revise · extend · history
+    submitForApproval:(id)       => api.patch(`/hr/offers/${id}/submit-approval`).then(r => r.data),
+    approve:       (id)          => api.patch(`/hr/offers/${id}/approve`).then(r => r.data),
+    withdraw:      (id, reason)  => api.patch(`/hr/offers/${id}/withdraw`, { reason }).then(r => r.data),
+    revise:        (id, payload) => api.patch(`/hr/offers/${id}/revise`, payload).then(r => r.data),
+    extend:        (id, validity) => api.patch(`/hr/offers/${id}/extend`, { validity_date: validity }).then(r => r.data),
+    revisions:     (id)          => api.get(`/hr/offers/${id}/revisions`).then(r => r.data),
     delete:        (id)          => api.delete(`/hr/offers/${id}`).then(r => r.data),
     // Public candidate offer-portal link built from the stored token.
     portalUrl:     (token)       => `${window.location.origin}/offer/${token}`,
@@ -217,6 +224,9 @@ export const hrApi = {
   },
 
   // ── Organization Setup — Department / Designation / Grade / Role masters ──
+  // ONE shared master-data feed for every Recruitment dropdown (single source of truth).
+  masterData: ()           => api.get('/hr/master-data').then(r => r.data),
+
   organization: {
     overview:  ()          => api.get('/hr/organization/overview').then(r => r.data),
     options:   ()          => api.get('/hr/organization/options').then(r => r.data),
@@ -310,6 +320,17 @@ export const hrApi = {
         setTimeout(() => URL.revokeObjectURL(url), 1500)
       }),
     },
+    // Enterprise Salary Reports (Phase 2) — read-only over structures/snapshots/revisions.
+    salaryReports: {
+      meta:    ()                     => api.get('/hr/payroll/salary-reports/meta').then(r => r.data),
+      summary: (params = {})          => api.get('/hr/payroll/salary-reports/summary', { params }).then(r => r.data),
+      get:     (report, params = {})  => api.get(`/hr/payroll/salary-reports/${report}`, { params }).then(r => r.data),
+      export:  (report, format, params = {}) => api.get(`/hr/payroll/salary-reports/${report}/export`, { params: { ...params, format }, responseType: 'blob' }).then(r => {
+        const url = URL.createObjectURL(r.data)
+        const a = document.createElement('a'); a.href = url; a.download = `salary-${report}-report.${format === 'pdf' ? 'pdf' : 'csv'}`; a.click()
+        setTimeout(() => URL.revokeObjectURL(url), 1500)
+      }),
+    },
   },
 
   // ── Performance Management System (PMS) ─────────────────────────────────
@@ -342,7 +363,7 @@ export const hrApi = {
     promotions: {
       list:      (params = {}) => api.get('/hr/performance/promotions', { params }).then(r => r.data),
       generate:  (employeeId)  => api.post('/hr/performance/promotions/generate', { employee_id: employeeId }).then(r => r.data),
-      setStatus: (id, status, recommended_designation) => api.patch(`/hr/performance/promotions/${id}/status`, { status, recommended_designation }).then(r => r.data),
+      setStatus: (id, status, recommended_designation, salary_structure_id = null) => api.patch(`/hr/performance/promotions/${id}/status`, { status, recommended_designation, salary_structure_id }).then(r => r.data),
     },
     increments: {
       list:      (params = {}) => api.get('/hr/performance/increments', { params }).then(r => r.data),
@@ -753,6 +774,11 @@ export const hrApi = {
     verifySection:     (id, section, status, remarks) => api.patch(`/employee-onboarding/${id}/section/${section}/verify`, { status, remarks }).then(r => r.data),
     setStage:          (id, stage)    => api.patch(`/employee-onboarding/${id}/stage`, { stage }).then(r => r.data),
     updateTask:        (id, taskId, data) => api.patch(`/employee-onboarding/${id}/tasks/${taskId}`, data).then(r => r.data),
+    // Phase 4: background verification · approvals · activation
+    backgroundVerification: (id, data) => api.patch(`/employee-onboarding/${id}/background-verification`, data).then(r => r.data),
+    hrApprove:         (id, remarks)  => api.patch(`/employee-onboarding/${id}/hr-approve`, { remarks }).then(r => r.data),
+    managerApprove:    (id, remarks)  => api.patch(`/employee-onboarding/${id}/manager-approve`, { remarks }).then(r => r.data),
+    confirmJoining:    (id)           => api.patch(`/employee-onboarding/${id}/confirm-joining`).then(r => r.data),
     addEducation:      (id, data)     => api.post(`/employee-onboarding/${id}/education`, data).then(r => r.data),
     updateEducation:   (id, rid, data) => api.put(`/employee-onboarding/${id}/education/${rid}`, data).then(r => r.data),
     deleteEducation:   (id, rid)      => api.delete(`/employee-onboarding/${id}/education/${rid}`).then(r => r.data),

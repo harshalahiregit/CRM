@@ -226,15 +226,11 @@ function TrackingCard({ app, slug, jobId, email, accent, onChange }) {
             {fmtCTC(offer.offered_ctc) && <Info label="Offered CTC" value={fmtCTC(offer.offered_ctc)} />}
             {offer.joining_date && <Info label="Joining Date" value={fmtDate(offer.joining_date)} />}
           </div>
-          <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
-            {offer.can_download && (
-              <a href={careersApi.offerLetterUrl(slug, jobId, email)} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 16px', borderRadius: 9, background: '#fff', border: '1px solid #a7f3d0', color: '#047857', textDecoration: 'none', fontWeight: 700, fontSize: 13 }}><Download size={14} /> Download Offer</a>
-            )}
-            {offer.can_respond && (
-              <>
-                <button onClick={() => respond('accept')} disabled={busy} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 9, background: '#059669', color: '#fff', border: 'none', cursor: busy ? 'not-allowed' : 'pointer', fontWeight: 700, fontSize: 13 }}><CheckCircle2 size={14} /> Accept</button>
-                <button onClick={() => respond('decline')} disabled={busy} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 9, background: '#fff', border: '1px solid #fecaca', color: '#b91c1c', cursor: busy ? 'not-allowed' : 'pointer', fontWeight: 700, fontSize: 13 }}><X size={14} /> Decline</button>
-              </>
+          <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+            {(offer.can_respond || offer.can_download) && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: '#047857', fontWeight: 600, lineHeight: 1.5 }}>
+                <FileText size={14} /> To view, download and respond to your offer securely, please use the private offer link we emailed to you.
+              </span>
             )}
             {offer.status === 'Accepted' && <span style={{ color: '#047857', fontWeight: 700, fontSize: 13 }}>🎉 You accepted this offer.</span>}
             {offer.status === 'Rejected' && <span style={{ color: '#b91c1c', fontWeight: 700, fontSize: 13 }}>You declined this offer.</span>}

@@ -14,7 +14,7 @@ class HrJobPosting extends Model
     protected $table = 'hr_job_postings';
 
     protected $fillable = [
-        'tenant_id','manpower_request_id','campaign_number','title','department','location','job_type','posting_type','work_mode',
+        'tenant_id','manpower_request_id','project_id','campaign_number','title','department','location','job_type','posting_type','work_mode',
         'description','requirements','jd_source','ai_jd_meta','salary_from','salary_to',
         'number_of_openings','closing_date','published_at','status','sources','applicant_count','external_job_ids',
         'on_career_portal','career_published_at','screening_questions',
@@ -46,6 +46,12 @@ class HrJobPosting extends Model
     public function manpowerRequest()
     {
         return $this->belongsTo(HrManpowerRequest::class, 'manpower_request_id');
+    }
+
+    /** The Project this posting belongs to (carried from the Manpower Request). */
+    public function project()
+    {
+        return $this->belongsTo(\App\Models\Project\Project::class, 'project_id');
     }
 
     public function tenant()

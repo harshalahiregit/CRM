@@ -14,7 +14,7 @@ class UpdatePurchaseDebitNoteRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'vendor_id'         => 'nullable|integer|exists:vendors,id',
+            'purchase_vendor_id'         => 'nullable|integer|exists:purchase_vendors,id',
             'purchase_order_id' => 'nullable|integer|exists:purchase_orders,id',
             'debit_date'        => 'nullable|date',
             'reason'            => 'nullable|string',

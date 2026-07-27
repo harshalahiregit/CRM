@@ -181,13 +181,28 @@ export default function HRDashboard() {
           shadow="#8b5cf6" 
         />
         
-        <KPI 
-          label="Rejected" 
-          value={kpis.rejected || 0} 
-          icon={XCircle} 
-          gradient="linear-gradient(145deg,#f87171,#dc2626)" 
-          shadow="#dc2626" 
+        <KPI
+          label="Rejected"
+          value={kpis.rejected || 0}
+          icon={XCircle}
+          gradient="linear-gradient(145deg,#f87171,#dc2626)"
+          shadow="#dc2626"
         />
+      </div>
+
+      {/* ── Hiring KPIs (Phase 3) ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <KPI label="Total Hired" value={kpis.total_hired || 0} icon={CheckCircle}
+          gradient="linear-gradient(145deg,#34d399,#059669)" shadow="#059669" sub="All time"
+          onClick={()=>navigate('/app/hr/employees')} />
+        <KPI label="Offers Sent" value={kpis.offers_sent || 0} icon={FileText}
+          gradient="linear-gradient(145deg,#a78bfa,#7C3AED)" shadow="#7C3AED"
+          onClick={()=>navigate('/app/hr/offers')} />
+        <KPI label="Acceptance %" value={`${kpis.acceptance_pct || 0}%`} icon={Timer}
+          gradient="linear-gradient(145deg,#34d399,#10B981)" shadow="#10b981" sub={`${kpis.offers_accepted || 0} accepted`} />
+        <KPI label="Pending Interviews" value={kpis.pending_interviews || 0} icon={Calendar}
+          gradient="linear-gradient(145deg,#fcd34d,#F59E0B)" shadow="#f59e0b"
+          onClick={()=>navigate('/app/hr/interviews')} />
       </div>
 
       {/* ── Recruitment Pipeline KPIs — onboarding → offer → joining ── */}

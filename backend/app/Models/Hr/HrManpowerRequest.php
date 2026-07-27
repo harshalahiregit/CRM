@@ -17,7 +17,7 @@ class HrManpowerRequest extends Model
     protected $fillable = [
         'tenant_id', 'requested_by', 'assigned_manager_id',
         // Extended hiring information
-        'business_unit', 'department', 'project', 'location',
+        'business_unit', 'department', 'project', 'project_id', 'location',
         'position_title', 'employee_level', 'experience_required', 'education',
         'number_of_posts', 'job_type', 'priority', 'criticality',
         'salary_min', 'salary_max', 'required_skills', 'preferred_skills',
@@ -94,6 +94,16 @@ class HrManpowerRequest extends Model
     public function approvalHistory()
     {
         return $this->hasMany(HrApprovalHistory::class, 'request_id')->latest();
+    }
+
+    /**
+     * The Project this requisition belongs to (existing Projects module — no new table).
+     * Named `projectRef` (not `project`) to avoid colliding with the legacy free-text
+     * `project` string column, mirroring the departmentRef/designationRef convention.
+     */
+    public function projectRef()
+    {
+        return $this->belongsTo(\App\Models\Project\Project::class, 'project_id');
     }
 
     /* ── Helpers ────────────────────────────────────────────────────────── */

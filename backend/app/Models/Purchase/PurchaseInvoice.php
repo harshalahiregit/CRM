@@ -5,7 +5,7 @@ namespace App\Models\Purchase;
 use App\Models\Traits\Auditable;
 use App\Models\Traits\BelongsToTenant;
 use App\Models\User;
-use App\Models\Vendor\Vendor;
+use App\Models\Purchase\PurchaseVendor;
 use App\Support\Purchase\PurchaseInvoiceStatus as Status;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -17,7 +17,7 @@ class PurchaseInvoice extends Model
     protected $table = 'purchase_invoices';
 
     protected $fillable = [
-        'tenant_id','invoice_number','purchase_order_id','vendor_id','created_by',
+        'tenant_id','invoice_number','purchase_order_id','purchase_vendor_id','created_by',
         'title','vendor_invoice_ref','invoice_date','due_date','currency',
         'subtotal','tax_total','total','amount_paid','amount_credited','balance',
         'status','match_verdict','approved_at','approved_by','terms','notes',
@@ -42,12 +42,23 @@ class PurchaseInvoice extends Model
     {
         static::creating(function (PurchaseInvoice $inv) {
             if (empty($inv->invoice_number)) {
+                // Invoices have a prefix setting but no next-number field on the
+                // Settings screen, so the sequence stays the yearly counter.
                 $year  = date('Y');
                 $count = static::withTrashed()
                                ->where('tenant_id', $inv->tenant_id)
                                ->whereYear('created_at', $year)
                                ->count() + 1;
-                $inv->invoice_number = 'PINV-'.$year.'-'.str_pad((string) $count, 3, '0', STR_PAD_LEFT);
+                $seq = str_pad((string) $count, 3, '0', STR_PAD_LEFT);
+
+                $settings = app(\App\Services\Purchase\PurchaseSettingService::class);
+                $prefix = $settings->isConfigured((int) $inv->tenant_id, 'pur_inv_prefix')
+                    ? trim((string) $settings->get((int) $inv->tenant_id, 'pur_inv_prefix'))
+                    : '';
+
+                $inv->invoice_number = $prefix !== ''
+                    ? $prefix.$year.'-'.$seq
+                    : 'PINV-'.$year.'-'.$seq;
             }
         });
     }
@@ -72,7 +83,7 @@ class PurchaseInvoice extends Model
 
     public function vendor()
     {
-        return $this->belongsTo(Vendor::class, 'vendor_id');
+        return $this->belongsTo(PurchaseVendor::class, 'purchase_vendor_id');
     }
 
     public function purchaseOrder()

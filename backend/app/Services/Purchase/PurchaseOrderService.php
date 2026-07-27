@@ -7,7 +7,7 @@ use App\Models\Purchase\PurchaseOrder;
 use App\Models\Purchase\PurchaseQuotation;
 use App\Models\Purchase\PurchaseRequest;
 use App\Models\User;
-use App\Models\Vendor\Vendor;
+use App\Models\Purchase\PurchaseVendor;
 use App\Repositories\Purchase\PurchaseOrderRepository;
 use App\Support\Purchase\PurchaseOrderStatus as Status;
 use App\Support\Purchase\PurchaseRequestStatus;
@@ -35,7 +35,7 @@ class PurchaseOrderService
         unset($data['items']);
 
         $tenantId = $actor->tenant_id;
-        $this->assertVendorEngageable($data['vendor_id'] ?? null, $tenantId);
+        $this->assertVendorEngageable($data['purchase_vendor_id'] ?? null, $tenantId);
 
         $po = DB::transaction(function () use ($data, $items, $tenantId, $actor) {
             $po = PurchaseOrder::create([
@@ -74,7 +74,7 @@ class PurchaseOrderService
             $po = PurchaseOrder::create([
                 'tenant_id'           => $pr->tenant_id,
                 'purchase_request_id' => $pr->id,
-                'vendor_id'           => $pr->vendor_id,
+                'purchase_vendor_id'           => $pr->purchase_vendor_id,
                 'created_by'          => $actor->id,
                 'title'               => $pr->title,
                 'department'          => $pr->department,
@@ -102,7 +102,7 @@ class PurchaseOrderService
             // the ceiling at issue. Rates are preserved from the PR (already pulled);
             // we only re-resolve which contract to charge against.
             if ($pr->items->contains(fn ($it) => $it->contract_rate_applied)) {
-                $resolution = $this->contractService->resolveDocumentContract($pr->tenant_id, $pr->vendor_id, $pr->items->toArray());
+                $resolution = $this->contractService->resolveDocumentContract($pr->tenant_id, $pr->purchase_vendor_id, $pr->items->toArray());
                 if (! empty($resolution['contract'])) {
                     $po->purchase_contract_id = $resolution['contract']->id;
                     $po->saveQuietly();
@@ -141,7 +141,7 @@ class PurchaseOrderService
             'tenant_id'             => $quotation->tenant_id,
             'purchase_request_id'   => $quotation->rfq?->purchase_request_id,
             'purchase_quotation_id' => $quotation->id,
-            'vendor_id'             => $quotation->vendor_id,
+            'purchase_vendor_id'             => $quotation->purchase_vendor_id,
             'created_by'            => $actor->id,
             'title'                 => $quotation->rfq?->title ?? 'Order from quotation',
             'department'            => $quotation->rfq?->department,
@@ -183,7 +183,7 @@ class PurchaseOrderService
         $items = $data['items'] ?? null;
         unset($data['items']);
 
-        $this->assertVendorEngageable($data['vendor_id'] ?? null, $po->tenant_id);
+        $this->assertVendorEngageable($data['purchase_vendor_id'] ?? null, $po->tenant_id);
 
         DB::transaction(function () use ($po, $data, $items) {
             $po->update($data);
@@ -210,11 +210,11 @@ class PurchaseOrderService
         if ($po->status !== Status::DRAFT) {
             throw new BusinessException('Only a Draft purchase order can be issued.');
         }
-        if (! $po->vendor_id) {
+        if (! $po->purchase_vendor_id) {
             throw new BusinessException('Select a vendor before issuing the purchase order.');
         }
         // Re-check at issue time — the vendor may have been put on hold since draft.
-        $this->assertVendorEngageable($po->vendor_id, $po->tenant_id);
+        $this->assertVendorEngageable($po->purchase_vendor_id, $po->tenant_id);
         if ($po->items()->count() === 0) {
             throw new BusinessException('Add at least one line item before issuing.');
         }
@@ -324,7 +324,7 @@ class PurchaseOrderService
     private function applyLines(PurchaseOrder $po, array $items): void
     {
         $tenantId = $po->tenant_id;
-        $resolution = $this->contractService->resolveDocumentContract($tenantId, $po->vendor_id, $items);
+        $resolution = $this->contractService->resolveDocumentContract($tenantId, $po->purchase_vendor_id, $items);
         $rateMap  = $resolution['rate_map'] ?? [];
         $contract = $resolution['contract'] ?? null;
         $contractUsed = false;
@@ -396,13 +396,13 @@ class PurchaseOrderService
             return;
         }
 
-        $vendor = Vendor::forTenant($tenantId)->find($vendorId);
+        $vendor = PurchaseVendor::forTenant($tenantId)->find($vendorId);
 
         if (! $vendor) {
             throw new BusinessException('Vendor not found.', 404);
         }
         if (! $vendor->isEngageable()) {
-            throw new BusinessException("Vendor {$vendor->vendor_code} is {$vendor->status_label} and cannot be transacted with.");
+            throw new BusinessException("Vendor {$vendor->purchase_vendor_code} is {$vendor->status_label} and cannot be transacted with.");
         }
     }
 }

@@ -22,8 +22,10 @@ use Illuminate\Support\Facades\Log;
  */
 class RecommendationService
 {
-    public function __construct(private PerformanceRepository $repo)
-    {
+    public function __construct(
+        private PerformanceRepository $repo,
+        private EmployeeSalaryService $employeeSalaries,
+    ) {
     }
 
     /* ── Promotion ────────────────────────────────────────── */
@@ -63,7 +65,7 @@ class RecommendationService
         return $this->presentPromotion($rec->fresh('employee'));
     }
 
-    public function updatePromotionStatus(int $id, string $status, int $tenantId, ?User $actor = null, ?string $recommendedDesignation = null): array
+    public function updatePromotionStatus(int $id, string $status, int $tenantId, ?User $actor = null, ?string $recommendedDesignation = null, ?int $salaryStructureId = null): array
     {
         if (! in_array($status, HrPromotionRecommendation::STATUSES, true)) {
             throw new BusinessException('Invalid status.');
@@ -72,11 +74,24 @@ class RecommendationService
         if (! $rec) {
             throw new BusinessException('Promotion recommendation not found', 404);
         }
+        $wasApproved = $rec->status === 'Approved';
         $rec->update(array_filter([
             'status' => $status,
             'recommended_designation' => $recommendedDesignation,
         ], fn ($v) => $v !== null));
         $rec->recordAudit('Promotion '.$status, $actor);
+
+        // Salary Engine: a promotion may optionally assign a new Salary Structure, which
+        // creates a salary revision via the standard assignment path. Only on the first
+        // transition into Approved, so re-approving never re-assigns.
+        if ($status === 'Approved' && ! $wasApproved && $salaryStructureId) {
+            $this->employeeSalaries->assign($rec->employee_id, [
+                'salary_structure_id' => $salaryStructureId,
+                'effective_from'      => now()->toDateString(),
+                'reason'              => 'Promotion'.($recommendedDesignation ? ' to '.$recommendedDesignation : ''),
+            ], $tenantId, $actor);
+            $rec->recordAudit('Promotion Salary Structure Assigned', $actor, null, ['salary_structure_id' => $salaryStructureId]);
+        }
 
         return $this->presentPromotion($rec->fresh('employee'));
     }
@@ -135,8 +150,23 @@ class RecommendationService
         if (! $rec) {
             throw new BusinessException('Increment recommendation not found', 404);
         }
+        $wasApproved = $rec->approval_status === 'Approved';
         $rec->update(['approval_status' => $status]);
         $rec->recordAudit('Increment '.$status, $actor);
+
+        // Salary Engine: approving an increment creates a salary revision automatically
+        // (scales the current CTC — same structure). Idempotent: only on the first
+        // transition into Approved, so re-approving never stacks revisions.
+        if ($status === 'Approved' && ! $wasApproved) {
+            $applied = $this->employeeSalaries->applyIncrement($rec->employee_id, [
+                'percentage' => (float) $rec->suggested_percentage,
+                'amount'     => (float) $rec->suggested_amount,
+                'reason'     => 'Performance increment ('.rtrim(rtrim((string) $rec->suggested_percentage, '0'), '.').'%)',
+            ], $tenantId, $actor);
+            if ($applied) {
+                $rec->recordAudit('Increment Applied to Salary', $actor, null, ['percentage' => (float) $rec->suggested_percentage]);
+            }
+        }
 
         return $this->presentIncrement($rec->fresh('employee'));
     }

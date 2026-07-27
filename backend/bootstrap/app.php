@@ -31,6 +31,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'role' => \App\Http\Middleware\EnsureUserHasRole::class,
             'vendor.portal' => \App\Http\Middleware\EnsureVendorPortalAccess::class,
+            'purchase.vendor.portal' => \App\Http\Middleware\EnsurePurchaseVendorPortalAccess::class,
             'company.portal' => \App\Http\Middleware\EnsureCompanyPortalAccess::class,
             'temp.access' => \App\Http\Middleware\EnsureTemporaryAccessNotExpired::class,
         ]);

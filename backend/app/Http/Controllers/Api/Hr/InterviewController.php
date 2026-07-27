@@ -80,7 +80,8 @@ class InterviewController extends Controller
         $this->assertTenant($request, $interviewRound);
         $this->assertCanManage($request);
 
-        $updated = $this->interviewService->cancel($interviewRound, $request->input('reason'));
+        $validated = $request->validate(['reason' => 'required|string|max:2000']);
+        $updated = $this->interviewService->cancel($interviewRound, $validated['reason']);
 
         return response()->json($updated);
     }

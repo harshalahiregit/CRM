@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\Hr\OrganizationController;
 use App\Http\Controllers\Api\Hr\SalaryComponentController;
 use App\Http\Controllers\Api\Hr\SalaryStructureController;
 use App\Http\Controllers\Api\Hr\EmployeeSalaryController;
+use App\Http\Controllers\Api\Hr\SalaryReportController;
 use App\Http\Controllers\Api\Hr\PayrollRunController;
 use App\Http\Controllers\Api\Hr\PayslipController;
 use App\Http\Controllers\Api\Hr\PayrollReportController;
@@ -136,6 +137,13 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::patch('/offers/{offer}/status',          [OfferController::class, 'updateStatus']);
     Route::patch('/offers/{offer}/confirm-joining', [OfferController::class, 'confirmJoining']);
     Route::patch('/offers/{offer}/regenerate',      [OfferController::class, 'regenerate']);
+    // Lifecycle: approval · withdraw · revise · extend · history
+    Route::patch('/offers/{offer}/submit-approval', [OfferController::class, 'submitForApproval']);
+    Route::patch('/offers/{offer}/approve',         [OfferController::class, 'approve']);
+    Route::patch('/offers/{offer}/withdraw',        [OfferController::class, 'withdraw']);
+    Route::patch('/offers/{offer}/revise',          [OfferController::class, 'revise']);
+    Route::patch('/offers/{offer}/extend',          [OfferController::class, 'extend']);
+    Route::get('/offers/{offer}/revisions',         [OfferController::class, 'revisions']);
     Route::delete('/offers/{offer}',                [OfferController::class, 'destroy']);
 
     // Onboarding
@@ -166,6 +174,8 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     // ── Organization Setup — Department / Designation / Grade / Role masters ──
     Route::get('/organization/overview',  [OrganizationController::class, 'overview']);
     Route::get('/organization/options',   [OrganizationController::class, 'options']);
+    // ONE shared master-data feed consumed by every Recruitment dropdown.
+    Route::get('/master-data',            [OrganizationController::class, 'masterData']);
     Route::get('/organization/hierarchy', [OrganizationController::class, 'hierarchy']);
 
     Route::get('/departments',          [OrganizationController::class, 'departments']);
@@ -236,6 +246,12 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::get('/payroll/reports/components',  [PayrollReportController::class, 'components']);
     Route::get('/payroll/reports/trends',      [PayrollReportController::class, 'trends']);
     Route::get('/payroll/reports/export',      [PayrollReportController::class, 'export']);
+
+    // Enterprise Salary Reports (Phase 2) — read-only over structures/snapshots/revisions.
+    Route::get('/payroll/salary-reports/meta',              [SalaryReportController::class, 'meta']);
+    Route::get('/payroll/salary-reports/summary',           [SalaryReportController::class, 'summary']);
+    Route::get('/payroll/salary-reports/{report}/export',   [SalaryReportController::class, 'export']);
+    Route::get('/payroll/salary-reports/{report}',          [SalaryReportController::class, 'show']);
 
     // Attendance
     Route::get('/attendance/stats',          [AttendanceController::class, 'stats']);

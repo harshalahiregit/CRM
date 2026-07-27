@@ -14,7 +14,7 @@ class UpdateOfferStatusRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'status'           => 'required|in:Generated,Sent,Accepted,Rejected',
+            'status'           => 'required|in:Draft,Pending Approval,Approved,Generated,Sent,Viewed,Accepted,Declined,Rejected,Expired,Withdrawn,Completed',
             'rejection_reason' => 'nullable|string|max:500',
         ];
     }

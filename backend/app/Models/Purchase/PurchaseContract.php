@@ -5,7 +5,7 @@ namespace App\Models\Purchase;
 use App\Models\Traits\Auditable;
 use App\Models\Traits\BelongsToTenant;
 use App\Models\User;
-use App\Models\Vendor\Vendor;
+use App\Models\Purchase\PurchaseVendor;
 use App\Support\Purchase\PurchaseContractStatus as Status;
 use App\Support\Purchase\PurchaseContractType as Type;
 use Illuminate\Database\Eloquent\Model;
@@ -22,7 +22,7 @@ class PurchaseContract extends Model
     protected $table = 'purchase_contracts';
 
     protected $fillable = [
-        'tenant_id','contract_number','title','type','vendor_id','created_by',
+        'tenant_id','contract_number','title','type','purchase_vendor_id','created_by',
         'currency','start_date','end_date','spend_ceiling','consumed_amount',
         'status','terms','document_path','approved_at','approved_by','notes',
     ];
@@ -56,7 +56,7 @@ class PurchaseContract extends Model
 
     public function vendor()
     {
-        return $this->belongsTo(Vendor::class, 'vendor_id');
+        return $this->belongsTo(PurchaseVendor::class, 'purchase_vendor_id');
     }
 
     public function creator()

@@ -82,10 +82,11 @@ export default function CandidateInterviewWorkspace({
 
   const cancelInterview = async (iv) => {
     // eslint-disable-next-line no-alert
-    const reason = window.prompt('Reason for cancelling this interview?')
+    const reason = window.prompt('Reason for cancelling this interview? (required)')
     if (reason == null) return
+    if (!reason.trim()) return showToast?.('A reason is required to cancel an interview.', 'error')
     setBusy(true)
-    try { await hrApi.interviews.cancel(iv.id, reason || 'Cancelled by HR'); showToast?.('Interview cancelled'); refresh() }
+    try { await hrApi.interviews.cancel(iv.id, reason.trim()); showToast?.('Interview cancelled'); refresh() }
     catch (e) { showToast?.(e.response?.data?.message || 'Could not cancel', 'error') }
     finally { setBusy(false) }
   }
@@ -99,13 +100,13 @@ export default function CandidateInterviewWorkspace({
     <div className="space-y-4">
       {/* ── 1. NEXT ACTION — one recommendation, one button ── */}
       <div className="card-3d" style={{ padding: 18 }}>
-        <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div className="flex items-center justify-start gap-4 flex-wrap">
           <div className="min-w-0">
             <p className="text-[9px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Next Action</p>
             <p className="text-sm font-black mt-1" style={{ color: 'var(--text-h)' }}>{next.label}</p>
             {next.hint && <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>{next.hint}</p>}
           </div>
-          {canManage && next.key !== 'hold' && (
+          {next.key !== 'hold' && (
             <button onClick={runNext} disabled={busy}
               className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white flex-shrink-0"
               style={{ background: tone.bg, boxShadow: `0 4px 14px ${tone.shadow}` }}>

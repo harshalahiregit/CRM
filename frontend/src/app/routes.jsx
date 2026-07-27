@@ -200,6 +200,32 @@ const PurchaseRfqDetail = lazy(() => import('@/modules/purchase/pages/PurchaseRf
 const PurchaseContracts = lazy(() => import('@/modules/purchase/pages/PurchaseContracts'))
 const PurchaseContractDetail = lazy(() => import('@/modules/purchase/pages/PurchaseContractDetail'))
 const PurchaseCatalog = lazy(() => import('@/modules/purchase/pages/PurchaseCatalog'))
+const PurchaseVendorItems = lazy(() => import('@/modules/purchase/pages/PurchaseVendorItems'))
+const PurchaseOrderReturns = lazy(() => import('@/modules/purchase/pages/PurchaseOrderReturns'))
+const PurchaseReports = lazy(() => import('@/modules/purchase/pages/PurchaseReports'))
+const PurchaseSettings = lazy(() => import('@/modules/purchase/pages/PurchaseSettings'))
+// Purchase Vendor admin — Purchase-owned pages (no TPV components).
+const PurchaseVendors = lazy(() => import('@/modules/purchase/pages/PurchaseVendors'))
+const PurchaseVendorDetailLayout = lazy(() => import('@/modules/purchase/pages/vendor-detail/PurchaseVendorDetailLayout'))
+const PurchaseVendorOnboardings = lazy(() => import('@/modules/purchase/pages/PurchaseVendorOnboardings'))
+const PurchaseVendorOnboardingWizard = lazy(() => import('@/modules/purchase/pages/PurchaseVendorOnboardingWizard'))
+// Purchase Kickoff — Purchase-owned pages on /api/purchase/kickoff (no TPV/shared reuse).
+const PurchaseKickoffMeetings = lazy(() => import('@/modules/purchase/pages/PurchaseKickoffMeetings'))
+const PurchaseKickoffCreate = lazy(() => import('@/modules/purchase/pages/PurchaseKickoffCreate'))
+const PurchaseKickoffDetail = lazy(() => import('@/modules/purchase/pages/PurchaseKickoffDetail'))
+
+// Purchase Vendor Portal (lazy) — independent PurchaseVendor auth.
+const PurchasePortalShell = lazy(() => import('@/pages/purchase-portal/PurchasePortalShell'))
+const PurchasePortalDashboard = lazy(() => import('@/pages/purchase-portal/PurchasePortalDashboard'))
+const PurchasePortalOnboarding = lazy(() => import('@/pages/purchase-portal/PurchasePortalOnboarding'))
+const PurchasePortalDocuments = lazy(() => import('@/pages/purchase-portal/PurchasePortalDocuments'))
+const PurchasePortalApproval = lazy(() => import('@/pages/purchase-portal/PurchasePortalApproval'))
+const PurchasePortalKickoff = lazy(() => import('@/pages/purchase-portal/PurchasePortalKickoff'))
+const PurchaseVendorLogin = lazy(() => import('@/pages/purchase-portal/PurchaseVendorLogin'))
+const PurchaseVendorRegister = lazy(() => import('@/pages/purchase-portal/PurchaseVendorRegister'))
+const PurchaseVendorForgotPassword = lazy(() => import('@/pages/purchase-portal/PurchaseVendorForgotPassword'))
+const PurchaseVendorResetPassword = lazy(() => import('@/pages/purchase-portal/PurchaseVendorResetPassword'))
+const PurchaseVendorPortalGuard = lazy(() => import('@/pages/purchase-portal/PurchaseVendorPortalGuard'))
 
 // TPV Module (lazy) — pages land here as they're built
 const TPVLayout = lazy(() => import('@/modules/tpv/TPVLayout'))
@@ -286,7 +312,8 @@ function RootRedirect() {
   const { isAuthenticated, user } = useAuth()
   if (!isAuthenticated) return <Navigate to="/auth/login" replace />
   const role = user?.role
-  if (role === 'vendor' || role === 'third_party_vendor') return <Navigate to="/vendor-portal/dashboard" replace />
+  if (role === 'third_party_vendor') return <Navigate to="/vendor-portal/dashboard" replace />
+  if (role === 'vendor') return <Navigate to="/purchase-portal/dashboard" replace />
   if (role === 'company') return <Navigate to="/company-portal/dashboard" replace />
   return <Navigate to="/app/dashboard" replace />
 }
@@ -466,12 +493,25 @@ export default function AppRoutes() {
           <Route path="contracts" element={<S><PurchaseContracts /></S>} />
           <Route path="contracts/:id" element={<S><PurchaseContractDetail /></S>} />
           <Route path="catalog" element={<S><PurchaseCatalog /></S>} />
+          {/* Purchase Vendors — Purchase-owned pages on /api/purchase/* (no TPV). */}
+          <Route path="vendors" element={<S><PurchaseVendors /></S>} />
+          {/* Vendor Detail workspace — persistent left sidebar + deep-linkable nested tabs */}
+          <Route path="vendors/:id/*" element={<S><PurchaseVendorDetailLayout /></S>} />
+          <Route path="onboarding" element={<S><PurchaseVendorOnboardings /></S>} />
+          <Route path="onboarding/:id" element={<S><PurchaseVendorOnboardingWizard /></S>} />
+          {/* Kickoff Meetings — Purchase-owned pages on /api/purchase/kickoff (no TPV reuse) */}
+          <Route path="kickoff" element={<S><PurchaseKickoffMeetings /></S>} />
+          <Route path="kickoff/new" element={<S><PurchaseKickoffCreate /></S>} />
+          <Route path="kickoff/:id" element={<S><PurchaseKickoffDetail /></S>} />
           {/* Sidebar tabs pending dedicated pages — placeholders keep nav intact */}
-          <Route path="vendors" element={<ComingSoon name="Purchase Vendors" />} />
-          <Route path="vendor-items" element={<ComingSoon name="Vendor Items" />} />
-          <Route path="order-returns" element={<ComingSoon name="Order Returns" />} />
-          <Route path="reports" element={<ComingSoon name="Purchase Reports" />} />
-          <Route path="settings" element={<ComingSoon name="Purchase Settings" />} />
+          {/* Vendor Items — Purchase Vendor ↔ Inventory Item mapping */}
+          <Route path="vendor-items" element={<S><PurchaseVendorItems /></S>} />
+          {/* Order Returns — goods returned to a Purchase Vendor (OR-####) */}
+          <Route path="order-returns" element={<S><PurchaseOrderReturns /></S>} />
+          {/* Reports — read-only Purchase aggregations (tables + charts) */}
+          <Route path="reports" element={<S><PurchaseReports /></S>} />
+          {/* Settings — Purchase-owned config + vendor-category master */}
+          <Route path="settings" element={<S><PurchaseSettings /></S>} />
         </Route>
 
         {/* TPV MODULE */}
@@ -604,6 +644,26 @@ export default function AppRoutes() {
         <Route path="documents"         element={<S><PortalDocuments /></S>} />
         <Route path="orders/:id"        element={<S><PortalOrderDetail /></S>} />
         <Route path="invoices/:id"      element={<S><PortalInvoiceDetail /></S>} />
+      </Route>
+
+      {/* Purchase Vendor Portal — auth (public, independent PurchaseVendor login) */}
+      <Route path="/purchase-portal/login"           element={<S><PurchaseVendorLogin /></S>} />
+      <Route path="/purchase-portal/register"        element={<S><PurchaseVendorRegister /></S>} />
+      <Route path="/purchase-portal/forgot-password" element={<S><PurchaseVendorForgotPassword /></S>} />
+      <Route path="/purchase-portal/reset-password"  element={<S><PurchaseVendorResetPassword /></S>} />
+
+      {/* Purchase Vendor Portal — authenticated (PurchaseVendor token only). Data
+          scoped server-side from the token; no vendor id in any URL. Independent
+          of the shared user/vendor/TPV portal. */}
+      <Route path="/purchase-portal" element={
+        <PurchaseVendorPortalGuard><S><PurchasePortalShell /></S></PurchaseVendorPortalGuard>
+      }>
+        <Route index element={<Navigate to="dashboard" replace />} />
+        <Route path="dashboard"  element={<S><PurchasePortalDashboard /></S>} />
+        <Route path="onboarding" element={<S><PurchasePortalOnboarding /></S>} />
+        <Route path="documents"  element={<S><PurchasePortalDocuments /></S>} />
+        <Route path="approval"   element={<S><PurchasePortalApproval /></S>} />
+        <Route path="kickoff"    element={<S><PurchasePortalKickoff /></S>} />
       </Route>
 
       {/* External Company Portal — company accounts only. Sprint 1: Dashboard live;

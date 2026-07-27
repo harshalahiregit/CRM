@@ -7,6 +7,7 @@ import {
   Sparkles, Plug, ShieldCheck, Wallet,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+import { useMasterData, withInactive } from '@/modules/hr/useMasterData'
 import { offerPortalApi } from '@/services/offerPortalApi'
 import AuditTimeline from '@/components/ui/AuditTimeline'
 import EmployeeNotifications from '@/modules/notifications/EmployeeNotifications'
@@ -295,6 +296,7 @@ export default function EmployeeProfile() {
               <Field k="Department" v={e.department}/>
               <Field k="Designation" v={e.designation}/>
               <Field k="Reporting Manager" v={e.reporting_manager_name}/>
+              <Field k="Assigned Project" v={data.assigned_project?.name || e.project?.name}/>
               <Field k="Joining Date" v={fmtDate(e.joining_date)}/>
               <Field k="Probation Status" v={prob.label}/>
               <Field k="Confirmation Date" v={fmtDate(e.confirmation_date)}/>
@@ -1009,6 +1011,12 @@ function EditModal({ employee, onClose, onSaved, showToast }) {
   const F = ['name','email','phone','department','designation','reporting_manager_name','joining_date','probation_end_date','confirmation_date','status']
   const [form, setForm] = useState(Object.fromEntries(F.map(k=>[k, employee[k] ?? (k==='status'?'Active':'')])))
   const [saving, setSaving] = useState(false)
+  // Department / Designation / Reporting Manager from Org Setup master data (single
+  // source, active-only). No hardcoded lists; saved-but-inactive values stay marked.
+  const { masters } = useMasterData()
+  const deptOptions    = withInactive((masters.departments  || []).map(d => d.name), form.department)
+  const desigOptions   = withInactive((masters.designations || []).map(d => d.name), form.designation)
+  const managerOptions = withInactive((masters.managers     || []).map(m => m.name), form.reporting_manager_name)
   const save = async () => {
     setSaving(true)
     try { await hrApi.employees.update(employee.id, form); showToast('Employee updated'); onSaved() }
@@ -1028,13 +1036,21 @@ function EditModal({ employee, onClose, onSaved, showToast }) {
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Department</label>
               <select className="input-3d text-sm" value={form.department} onChange={e=>set('department',e.target.value)}>
-                <option value="">Select...</option>{['Engineering','Sales','HR','Operations','Finance','Product','Marketing'].map(d=><option key={d}>{d}</option>)}
+                <option value="">Select...</option>{deptOptions.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
-            <div><label className="label">Designation</label><input className="input-3d text-sm" value={form.designation} onChange={e=>set('designation',e.target.value)}/></div>
+            <div><label className="label">Designation</label>
+              <select className="input-3d text-sm" value={form.designation} onChange={e=>set('designation',e.target.value)}>
+                <option value="">Select...</option>{desigOptions.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div><label className="label">Reporting Manager</label><input className="input-3d text-sm" value={form.reporting_manager_name||''} onChange={e=>set('reporting_manager_name',e.target.value)}/></div>
+            <div><label className="label">Reporting Manager</label>
+              <select className="input-3d text-sm" value={form.reporting_manager_name||''} onChange={e=>set('reporting_manager_name',e.target.value)}>
+                <option value="">Select…</option>{managerOptions.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
             <div><label className="label">Status</label><select className="input-3d text-sm" value={form.status} onChange={e=>set('status',e.target.value)}>{['Active','On Leave','Inactive'].map(s=><option key={s}>{s}</option>)}</select></div>
           </div>
           <div className="grid grid-cols-2 gap-3">

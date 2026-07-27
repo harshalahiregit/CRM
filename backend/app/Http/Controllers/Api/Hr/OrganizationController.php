@@ -30,6 +30,16 @@ class OrganizationController extends Controller
         return response()->json($this->org->options($this->tenant($request)));
     }
 
+    /**
+     * ONE shared master-data feed for every Recruitment dropdown — departments,
+     * designations, grades, roles, shifts, business_units, employee_levels, managers,
+     * locations. Read-only (tenant-scoped); reuses the Organization Setup masters.
+     */
+    public function masterData(Request $request)
+    {
+        return response()->json($this->org->masterData($this->tenant($request)));
+    }
+
     public function hierarchy(Request $request)
     {
         return response()->json($this->org->hierarchy($this->tenant($request)));

@@ -12,7 +12,7 @@ class PurchaseContractRepository extends BaseRepository
     public function filtered(int $tenantId, array $filters)
     {
         $query = PurchaseContract::forTenant($tenantId)
-            ->with(['vendor:id,vendor_code,company_name', 'creator:id,name'])
+            ->with(['vendor:id,purchase_vendor_code,company_name', 'creator:id,name'])
             ->withCount('items');
 
         if (! empty($filters['status']) && $filters['status'] !== 'All') {
@@ -21,8 +21,8 @@ class PurchaseContractRepository extends BaseRepository
         if (! empty($filters['type']) && $filters['type'] !== 'All') {
             $query->where('type', $filters['type']);
         }
-        if (! empty($filters['vendor_id'])) {
-            $query->where('vendor_id', $filters['vendor_id']);
+        if (! empty($filters['purchase_vendor_id'])) {
+            $query->where('purchase_vendor_id', $filters['purchase_vendor_id']);
         }
         if (! empty($filters['search'])) {
             $s = $filters['search'];

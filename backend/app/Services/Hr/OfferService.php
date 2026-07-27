@@ -8,6 +8,7 @@ use App\Models\Hr\HrCandidate;
 use App\Models\Hr\HrEmployee;
 use App\Models\Hr\HrEmployeeOnboarding;
 use App\Models\Hr\HrOffer;
+use App\Models\Hr\HrOfferRevision;
 use App\Models\User;
 use App\Services\Notifications\NotificationService;
 use App\Services\WhatsAppService;
@@ -29,7 +30,32 @@ class OfferService
         private OnboardingService $onboardingService,
         private EmployeeOnboardingService $employeeOnboardingService,
         private NotificationService $notifications,
+        private SalaryStructureService $salaryStructures,
     ) {
+    }
+
+    /**
+     * If the offer is linked to a Salary Structure, derive the CTC from it and freeze
+     * the enterprise breakdown snapshot onto the offer (so the letter never changes if
+     * the structure is later edited). No structure → returns $data unchanged, so manual
+     * offers behave exactly as before.
+     */
+    private function applySalaryStructure(array $data, int $tenantId): array
+    {
+        if (empty($data['salary_structure_id'])) {
+            $data['salary_breakdown'] = null;
+
+            return $data;
+        }
+
+        // Reuses the central engine + validates tenant ownership (404 if not this tenant).
+        $structure = $this->salaryStructures->show((int) $data['salary_structure_id'], $tenantId);
+        $bd = $structure['breakdown'];
+
+        $data['offered_ctc']     = $bd['ctc']['yearly'];   // annual CTC from the structure is authoritative
+        $data['salary_breakdown'] = $bd;
+
+        return $data;
     }
 
     public function list(int $tenantId, array $filters): Collection
@@ -68,6 +94,9 @@ class OfferService
             throw new BusinessException('Onboarding verification must be approved before generating an offer for this candidate.', 422);
         }
 
+        // Salary Engine: derive CTC + freeze the breakup when a structure is linked.
+        $data = $this->applySalaryStructure($data, $tenantId);
+
         $offer = HrOffer::create([
             ...$data,
             'tenant_id'    => $tenantId,
@@ -98,14 +127,25 @@ class OfferService
     /** Send the offer: Email + WhatsApp + notification with the secure portal link. */
     public function send(HrOffer $offer): HrOffer
     {
+        // No-skip: an offer must be Approved/Generated (ready) — or already Sent/Viewed/
+        // Expired (a re-send) — before it can go out. Draft / Pending Approval are blocked.
+        if (! in_array($offer->status, ['Approved', 'Generated', 'Sent', 'Viewed', 'Expired'], true)) {
+            throw new BusinessException('This offer must be approved before it can be sent.', 422);
+        }
+
         if (empty($offer->access_token)) {
             $offer->update(['access_token' => Str::random(48)]);
         }
 
-        $offer->update(['status' => 'Sent', 'sent_at' => now()]);
+        $offer->update(['status' => 'Sent', 'sent_at' => now(), 'expired_at' => null]);
 
         $link = $this->portalLink($offer);
         $candidate = $offer->candidate;
+
+        // Offer Sent → keep the candidate on the Offer stage (idempotent; mirrors create()).
+        if ($candidate && ! in_array($candidate->stage, ['Offer', 'Hired'], true)) {
+            HrCandidate::where('id', $candidate->id)->update(['stage' => 'Offer']);
+        }
 
         if ($candidate && $candidate->email) {
             try {
@@ -153,12 +193,15 @@ class OfferService
             'position'         => $offer->position,
             'department'       => $offer->department,
             'offered_ctc'      => $offer->offered_ctc,
+            'salary_breakdown' => $offer->salary_breakdown,
             'joining_date'     => optional($offer->joining_date)->toDateString(),
             'probation_period' => $offer->probation_period,
             'notice_period'    => $offer->notice_period,
             'valid_until'      => optional($offer->validity_date)->toDateString(),
             'status'           => $offer->status,
             'is_expired'       => $offer->status === 'Expired',
+            'is_withdrawn'     => $offer->status === 'Withdrawn',
+            'withdraw_reason'  => $offer->withdraw_reason,
             'can_respond'      => in_array($offer->status, ['Sent', 'Viewed'], true),
             'can_download'     => true,
             'accepted_at'      => optional($offer->accepted_at)->toIso8601String(),
@@ -234,6 +277,10 @@ class OfferService
             $offer->candidate->recordAudit('Offer Declined', null, $reason);
         }
 
+        $this->notifyHr($offer->candidate, 'Offer declined — '.($offer->candidate->name ?? 'Candidate'),
+            ($offer->candidate->name ?? 'The candidate').' has declined the offer for '.$offer->position.'.'
+            .($reason ? ' Reason: '.$reason : ''), ['offer_id' => $offer->id, 'event' => 'offer_declined']);
+
         Log::channel('hr')->info('Offer declined', ['offer_id' => $offer->id, 'tenant_id' => $offer->tenant_id]);
 
         return $offer->fresh('candidate');
@@ -255,6 +302,9 @@ class OfferService
         if ($offer->isPastValidity()) {
             $offer->update(['status' => 'Expired', 'expired_at' => now()]);
             optional($offer->candidate)->recordAudit('Offer Expired');
+            $this->notifyHr($offer->candidate, 'Offer expired — '.optional($offer->candidate)->name,
+                'The offer for '.$offer->position.' has passed its validity date and is now Expired. You can Extend or Resend it.',
+                ['offer_id' => $offer->id, 'event' => 'offer_expired']);
             Log::channel('hr')->info('Offer auto-expired', ['offer_id' => $offer->id, 'tenant_id' => $offer->tenant_id]);
         }
     }
@@ -283,6 +333,154 @@ class OfferService
 
         optional($offer->candidate)->recordAudit('Offer Regenerated');
         Log::channel('hr')->info('Offer regenerated', ['offer_id' => $offer->id, 'tenant_id' => $offer->tenant_id]);
+
+        return $offer->fresh('candidate');
+    }
+
+    /* ─────────────── Lifecycle: approval · withdraw · revise · extend ─────── */
+
+    /** No-skip guard using HrOffer::TRANSITIONS. Same-state is an idempotent no-op. */
+    private function assertTransition(HrOffer $offer, string $to): void
+    {
+        $from = $offer->status;
+        if ($from === $to) {
+            return;
+        }
+        if (! in_array($to, HrOffer::TRANSITIONS[$from] ?? [], true)) {
+            throw new BusinessException("An offer cannot move from \"{$from}\" to \"{$to}\".", 422);
+        }
+    }
+
+    /** Draft/Generated → Pending Approval. */
+    public function submitForApproval(HrOffer $offer): HrOffer
+    {
+        $this->assertTransition($offer, 'Pending Approval');
+        $offer->update(['status' => 'Pending Approval', 'submitted_for_approval_at' => now()]);
+        optional($offer->candidate)->recordAudit('Offer Submitted for Approval');
+        Log::channel('hr')->info('Offer submitted for approval', ['offer_id' => $offer->id]);
+
+        return $offer->fresh('candidate');
+    }
+
+    /** Pending Approval → Approved (records the approver). */
+    public function approve(HrOffer $offer, ?User $actor = null): HrOffer
+    {
+        $this->assertTransition($offer, 'Approved');
+        $offer->update(['status' => 'Approved', 'approved_by' => optional($actor)->id ?? auth()->id(), 'approved_at' => now()]);
+        optional($offer->candidate)->recordAudit('Offer Approved', $actor);
+        Log::channel('hr')->info('Offer approved', ['offer_id' => $offer->id]);
+
+        return $offer->fresh('candidate');
+    }
+
+    /** Withdraw an offer before acceptance. Reason is mandatory; candidate + HR notified. */
+    public function withdraw(HrOffer $offer, ?string $reason, ?User $actor = null): HrOffer
+    {
+        $reason = trim((string) $reason);
+        if ($reason === '') {
+            throw new BusinessException('A reason is required to withdraw an offer.', 422);
+        }
+        if (! in_array($offer->status, HrOffer::PRE_ACCEPTANCE, true)) {
+            throw new BusinessException('Only an offer that has not been accepted can be withdrawn.', 422);
+        }
+
+        $offer->update(['status' => 'Withdrawn', 'withdrawn_at' => now(), 'withdraw_reason' => $reason]);
+        optional($offer->candidate)->recordAudit('Offer Withdrawn', $actor, $reason);
+
+        $this->whatsApp($offer, 'Update on your offer: it has been withdrawn by HR. Please contact us for details.');
+        $this->notifyHr($offer->candidate, 'Offer withdrawn — '.optional($offer->candidate)->name,
+            'The offer for '.$offer->position.' has been withdrawn. Reason: '.$reason,
+            ['offer_id' => $offer->id, 'event' => 'offer_withdrawn']);
+
+        Log::channel('hr')->info('Offer withdrawn', ['offer_id' => $offer->id, 'tenant_id' => $offer->tenant_id]);
+
+        return $offer->fresh('candidate');
+    }
+
+    /**
+     * Revise an offer before acceptance. The current version is snapshotted immutably
+     * into hr_offer_revisions (values + a preserved copy of its PDF), then the new
+     * values are applied, the version bumped, the PDF re-rendered, and the offer reset
+     * to Draft so it must be re-approved before the candidate sees the latest version.
+     */
+    public function revise(HrOffer $offer, array $data, ?string $reason, ?User $actor = null): HrOffer
+    {
+        if (! in_array($offer->status, HrOffer::PRE_ACCEPTANCE, true)) {
+            throw new BusinessException('An offer can only be revised before it is accepted.', 422);
+        }
+        $reason = trim((string) $reason);
+        if ($reason === '') {
+            throw new BusinessException('A revision reason is required.', 422);
+        }
+
+        // 1. Preserve the outgoing version — snapshot values + copy its PDF to a versioned path.
+        $preservedPdf = null;
+        if ($offer->letter_path && Storage::disk(self::DOC_DISK)->exists($offer->letter_path)) {
+            $preservedPdf = "hr/documents/offers/tenant_{$offer->tenant_id}/offer_{$offer->id}_v{$offer->version}.pdf";
+            Storage::disk(self::DOC_DISK)->copy($offer->letter_path, $preservedPdf);
+        }
+        HrOfferRevision::create([
+            'offer_id'        => $offer->id,
+            'tenant_id'       => $offer->tenant_id,
+            'version'         => $offer->version,
+            'snapshot'        => $offer->only([
+                'position', 'department', 'offered_ctc', 'salary_structure_id', 'salary_breakdown',
+                'joining_date', 'probation_period', 'notice_period', 'validity_date', 'status',
+            ]),
+            'letter_path'     => $preservedPdf,
+            'revised_by'      => optional($actor)->id ?? auth()->id(),
+            'revised_by_name' => optional($actor)->name ?? optional(auth()->user())->name,
+            'revision_reason' => $reason,
+        ]);
+
+        // 2. Apply the new values (reuse the salary-structure freeze), bump version, reset to Draft.
+        $data = $this->applySalaryStructure($data, $offer->tenant_id);
+        $changes = array_intersect_key($data, array_flip([
+            'position', 'department', 'offered_ctc', 'salary_structure_id', 'salary_breakdown',
+            'joining_date', 'probation_period', 'notice_period', 'validity_date',
+        ]));
+        $offer->update(array_merge($changes, [
+            'status'                    => 'Draft',
+            'version'                   => $offer->version + 1,
+            'sent_at'                   => null, 'viewed_at' => null, 'declined_at' => null, 'expired_at' => null,
+            'submitted_for_approval_at' => null, 'approved_by' => null, 'approved_at' => null,
+            'access_token'              => $offer->access_token ?: Str::random(48),
+        ]));
+
+        // 3. Re-render the letter for the new version (the old PDF is preserved on the revision).
+        try {
+            $offer->update(['letter_path' => $this->renderLetter($offer->fresh('candidate'))]);
+        } catch (\Throwable $e) {
+            Log::channel('hr')->error('Revised offer letter PDF failed', ['offer_id' => $offer->id, 'error' => $e->getMessage()]);
+
+            throw new BusinessException('The revised offer letter could not be generated. Please try again.', 500);
+        }
+
+        optional($offer->candidate)->recordAudit('Offer Revised (v'.$offer->version.')', $actor, $reason, ['version' => $offer->version]);
+        Log::channel('hr')->info('Offer revised', ['offer_id' => $offer->id, 'version' => $offer->version]);
+
+        return $offer->fresh('candidate');
+    }
+
+    /** Extend the validity of a Sent/Viewed/Expired offer (re-opens an expired one to Sent). */
+    public function extend(HrOffer $offer, ?string $validityDate): HrOffer
+    {
+        if (! in_array($offer->status, ['Expired', 'Sent', 'Viewed'], true)) {
+            throw new BusinessException('Only a sent or expired offer can be extended.', 422);
+        }
+
+        $newValidity = $validityDate ?: now()->addDays(7)->toDateString();
+        $wasExpired  = $offer->status === 'Expired';
+        $offer->update([
+            'validity_date' => $newValidity,
+            'status'        => $wasExpired ? 'Sent' : $offer->status,
+            'expired_at'    => null,
+            'sent_at'       => $offer->sent_at ?: now(),
+        ]);
+
+        optional($offer->candidate)->recordAudit('Offer Extended', null, null, ['valid_until' => $newValidity]);
+        $this->whatsApp($offer, '⏳ Your offer validity has been extended. View & respond: '.$this->portalLink($offer));
+        Log::channel('hr')->info('Offer extended', ['offer_id' => $offer->id, 'valid_until' => $newValidity]);
 
         return $offer->fresh('candidate');
     }
@@ -475,7 +673,7 @@ class OfferService
 
     /* ─────────────── HR-side status override (kept for compatibility) ─────── */
 
-    public function updateStatus(HrOffer $offer, string $status, ?string $rejectionReason): HrOffer
+    public function updateStatus(HrOffer $offer, string $status, ?string $rejectionReason, ?User $actor = null): HrOffer
     {
         if ($status === 'Accepted') {
             return $this->accept($offer, []);
@@ -484,13 +682,23 @@ class OfferService
             return $this->decline($offer, $rejectionReason);
         }
 
+        // Any other status must be a LEGAL transition and is audited — this closes the
+        // previous free-form branch that could force an offer to any state with no trail.
+        $this->assertTransition($offer, $status);
         $offer->update(['status' => $status]);
+        optional($offer->candidate)->recordAudit('Offer status → '.$status, $actor);
 
         return $offer;
     }
 
-    public function destroy(HrOffer $offer): void
+    public function destroy(HrOffer $offer, ?User $actor = null): void
     {
+        // Audit on the candidate BEFORE deleting — the offer's own logs go with it, but
+        // the candidate timeline must retain the record of the deletion.
+        optional($offer->candidate)->recordAudit('Offer Deleted', $actor, null, array_filter([
+            'position' => $offer->position, 'status' => $offer->status,
+        ]));
+
         $offer->delete();
 
         Log::channel('hr')->info('Offer deleted', ['offer_id' => $offer->id, 'tenant_id' => $offer->tenant_id]);

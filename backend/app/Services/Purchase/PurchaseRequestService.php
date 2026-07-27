@@ -5,7 +5,7 @@ namespace App\Services\Purchase;
 use App\Exceptions\BusinessException;
 use App\Models\Purchase\PurchaseRequest;
 use App\Models\User;
-use App\Models\Vendor\Vendor;
+use App\Models\Purchase\PurchaseVendor;
 use App\Repositories\Purchase\PurchaseRequestRepository;
 use App\Support\Purchase\PurchaseRequestStatus as Status;
 use Illuminate\Database\Eloquent\Collection;
@@ -32,7 +32,7 @@ class PurchaseRequestService
         unset($data['items']);
 
         $tenantId = $actor->tenant_id;
-        $this->assertVendorEngageable($data['vendor_id'] ?? null, $tenantId);
+        $this->assertVendorEngageable($data['purchase_vendor_id'] ?? null, $tenantId);
 
         $pr = DB::transaction(function () use ($data, $items, $tenantId, $actor) {
             $pr = PurchaseRequest::create([
@@ -68,7 +68,7 @@ class PurchaseRequestService
         $items = $data['items'] ?? null;
         unset($data['items']);
 
-        $this->assertVendorEngageable($data['vendor_id'] ?? null, $pr->tenant_id);
+        $this->assertVendorEngageable($data['purchase_vendor_id'] ?? null, $pr->tenant_id);
 
         DB::transaction(function () use ($pr, $data, $items) {
             $pr->update($data);
@@ -179,7 +179,7 @@ class PurchaseRequestService
     private function syncItems(PurchaseRequest $pr, array $items): void
     {
         $tenantId = $pr->tenant_id;
-        $resolution = $this->contractService->resolveDocumentContract($tenantId, $pr->vendor_id, $items);
+        $resolution = $this->contractService->resolveDocumentContract($tenantId, $pr->purchase_vendor_id, $items);
         $rateMap = $resolution['rate_map'] ?? [];
 
         foreach ($items as $i => $item) {
@@ -227,13 +227,13 @@ class PurchaseRequestService
             return;
         }
 
-        $vendor = Vendor::forTenant($tenantId)->find($vendorId);
+        $vendor = PurchaseVendor::forTenant($tenantId)->find($vendorId);
 
         if (! $vendor) {
             throw new BusinessException('Vendor not found.', 404);
         }
         if (! $vendor->isEngageable()) {
-            throw new BusinessException("Vendor {$vendor->vendor_code} is {$vendor->status_label} and cannot be transacted with.");
+            throw new BusinessException("Vendor {$vendor->purchase_vendor_code} is {$vendor->status_label} and cannot be transacted with.");
         }
     }
 }

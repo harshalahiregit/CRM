@@ -37,8 +37,8 @@ class PurchaseRfqController extends Controller
         $this->assertTenant($request, $rfq);
 
         return response()->json($rfq->load([
-            'items', 'rfqVendors.vendor:id,vendor_code,company_name', 'creator:id,name',
-            'quotations.vendor:id,vendor_code,company_name', 'quotations.items', 'auditLogs',
+            'items', 'rfqVendors.vendor:id,purchase_vendor_code,company_name', 'creator:id,name',
+            'quotations.vendor:id,purchase_vendor_code,company_name', 'quotations.items', 'auditLogs',
         ]));
     }
 

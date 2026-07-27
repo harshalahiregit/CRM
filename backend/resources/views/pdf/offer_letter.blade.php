@@ -93,6 +93,36 @@
     @endif
 </table>
 
+@if (!empty($offer->salary_breakdown))
+    @php $bd = $offer->salary_breakdown; @endphp
+    <h1>Salary Structure</h1>
+    <table class="kv">
+        <tr>
+            <td class="k">Component</td>
+            <td class="k" style="width:24%; text-align:right">Monthly</td>
+            <td class="k" style="width:24%; text-align:right">Annual</td>
+        </tr>
+        @foreach ($bd['earnings'] ?? [] as $e)
+            <tr><td>{{ $e['name'] }}</td><td style="text-align:right">{{ $money($e['monthly']) }}</td><td style="text-align:right">{{ $money($e['yearly']) }}</td></tr>
+        @endforeach
+        <tr><td class="k">Gross Salary</td><td class="k" style="text-align:right">{{ $money($bd['gross_salary']['monthly']) }}</td><td class="k" style="text-align:right">{{ $money($bd['gross_salary']['yearly']) }}</td></tr>
+        @if (!empty($bd['employer']))
+            @foreach ($bd['employer'] as $e)
+                <tr><td>{{ $e['name'] }} <span class="muted">(employer)</span></td><td style="text-align:right">{{ $money($e['monthly']) }}</td><td style="text-align:right">{{ $money($e['yearly']) }}</td></tr>
+            @endforeach
+            <tr><td class="k">Employer Contribution</td><td class="k" style="text-align:right">{{ $money($bd['employer_contribution']['monthly']) }}</td><td class="k" style="text-align:right">{{ $money($bd['employer_contribution']['yearly']) }}</td></tr>
+        @endif
+        <tr><td class="k">Cost to Company (CTC)</td><td class="k" style="text-align:right">{{ $money($bd['ctc']['monthly']) }}</td><td class="k" style="text-align:right">{{ $money($bd['ctc']['yearly']) }}</td></tr>
+        @if (!empty($bd['deductions']))
+            @foreach ($bd['deductions'] as $e)
+                <tr><td>{{ $e['name'] }}</td><td style="text-align:right">{{ $money($e['monthly']) }}</td><td style="text-align:right">{{ $money($e['yearly']) }}</td></tr>
+            @endforeach
+            <tr><td class="k">Total Deduction</td><td class="k" style="text-align:right">{{ $money($bd['total_deduction']['monthly']) }}</td><td class="k" style="text-align:right">{{ $money($bd['total_deduction']['yearly']) }}</td></tr>
+        @endif
+        <tr><td class="k">Net Salary (In Hand)</td><td class="k" style="text-align:right">{{ $money($bd['net_salary']['monthly']) }}</td><td class="k" style="text-align:right">{{ $money($bd['net_salary']['yearly']) }}</td></tr>
+    </table>
+@endif
+
 <h1>Terms &amp; Conditions</h1>
 <ol>
     <li>Your appointment is subject to verification of the documents and information submitted by you.</li>

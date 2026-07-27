@@ -16,7 +16,7 @@ class ManpowerRequestRepository extends BaseRepository
         // The list stays lean — the full audit timeline is loaded only when a
         // single request is opened (see controller show()).
         $query = HrManpowerRequest::where('tenant_id', $user->tenant_id)
-            ->with(['requester', 'assignedManager', 'l1Approver', 'l2Approver', 'jobPosting']);
+            ->with(['requester', 'assignedManager', 'l1Approver', 'l2Approver', 'jobPosting', 'projectRef:id,name,status']);
 
         if ($user->isHiringManager()) {
             $query->where('assigned_manager_id', $user->id);

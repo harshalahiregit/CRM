@@ -172,6 +172,43 @@ class ProjectService
             : $decorated;
     }
 
+    /**
+     * Lightweight ACTIVE-project list for cross-module dropdowns (HR Recruitment
+     * reuses this — no duplicate project store, no new table). Closed projects
+     * (finished/cancelled) are excluded so they never appear in a NEW selection;
+     * existing records keep their saved project through project_id regardless.
+     *
+     * The projects table has no code/location columns, so project_code is derived
+     * from the id and location is null — shaped here (never persisted) so consumers
+     * get a stable contract without a schema change. project_manager is the creator;
+     * client_name resolves through the customer module (single query per client).
+     */
+    public function options(int $tenantId): array
+    {
+        $projects = Project::where('tenant_id', $tenantId)
+            ->whereNotIn('status', ['finished', 'cancelled'])
+            ->with('creator:id,name')
+            ->orderBy('name')
+            ->get(['id', 'name', 'status', 'customer_id', 'created_by']);
+
+        // Resolve each distinct client once — customer lives in another module.
+        $clientNames = [];
+        foreach ($projects->pluck('customer_id')->filter()->unique() as $cid) {
+            $clientNames[(int) $cid] = $this->customers->getCustomer((int) $cid, $tenantId)['name'] ?? null;
+        }
+
+        return $projects->map(fn (Project $p) => [
+            'id'              => $p->id,
+            'name'            => $p->name,
+            'project_code'    => 'PRJ-'.str_pad((string) $p->id, 4, '0', STR_PAD_LEFT),
+            'client_name'     => $p->customer_id ? ($clientNames[(int) $p->customer_id] ?? null) : null,
+            'project_manager' => $p->creator?->name,
+            'location'        => null,   // no column on projects (mapped, not stored)
+            'status'          => $p->status,
+            'is_active'       => true,   // filtered to active above
+        ])->values()->all();
+    }
+
     public function show(int $id, int $tenantId, ?int $userId = null): Project
     {
         $project = $this->find($id, $tenantId);

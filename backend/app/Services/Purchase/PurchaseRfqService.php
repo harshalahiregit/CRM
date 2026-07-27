@@ -5,7 +5,7 @@ namespace App\Services\Purchase;
 use App\Exceptions\BusinessException;
 use App\Models\Purchase\PurchaseRfq;
 use App\Models\User;
-use App\Models\Vendor\Vendor;
+use App\Models\Purchase\PurchaseVendor;
 use App\Repositories\Purchase\PurchaseRfqRepository;
 use App\Support\Purchase\PurchaseQuotationStatus as QuoteStatus;
 use App\Support\Purchase\PurchaseRfqStatus as Status;
@@ -138,7 +138,7 @@ class PurchaseRfqService
         $rfq->loadMissing([
             'items',
             'quotations' => fn ($q) => $q->whereIn('status', [QuoteStatus::RECEIVED, QuoteStatus::SHORTLISTED, QuoteStatus::AWARDED])
-                                          ->with(['vendor:id,vendor_code,company_name', 'items']),
+                                          ->with(['vendor:id,purchase_vendor_code,company_name', 'items']),
         ]);
 
         $quotes = $rfq->quotations;
@@ -180,7 +180,7 @@ class PurchaseRfqService
             'rfq' => ['id' => $rfq->id, 'rfq_number' => $rfq->rfq_number, 'title' => $rfq->title, 'currency' => $rfq->currency],
             'quotations' => $quotes->map(fn ($q) => [
                 'id' => $q->id, 'quotation_number' => $q->quotation_number,
-                'vendor' => $q->vendor?->company_name, 'vendor_code' => $q->vendor?->vendor_code,
+                'vendor' => $q->vendor?->company_name, 'vendor_code' => $q->vendor?->purchase_vendor_code,
                 'total' => (float) $q->total, 'status' => $q->status, 'valid_until' => $q->valid_until,
             ])->all(),
             'rows' => $rows,
@@ -228,16 +228,16 @@ class PurchaseRfqService
     private function syncVendors(PurchaseRfq $rfq, array $vendorIds, int $tenantId): void
     {
         foreach (array_unique($vendorIds) as $vendorId) {
-            $vendor = Vendor::forTenant($tenantId)->find($vendorId);
+            $vendor = PurchaseVendor::forTenant($tenantId)->find($vendorId);
             if (! $vendor) {
                 throw new BusinessException("Vendor #{$vendorId} not found.", 404);
             }
             if (! $vendor->isEngageable()) {
-                throw new BusinessException("Vendor {$vendor->vendor_code} is {$vendor->status_label} and cannot be invited.");
+                throw new BusinessException("Vendor {$vendor->purchase_vendor_code} is {$vendor->status_label} and cannot be invited.");
             }
             $rfq->rfqVendors()->create([
                 'tenant_id' => $tenantId,
-                'vendor_id' => $vendorId,
+                'purchase_vendor_id' => $vendorId,
                 'status'    => RfqVendorStatus::INVITED,
             ]);
         }

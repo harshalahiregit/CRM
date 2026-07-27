@@ -37,6 +37,13 @@ class HRDashboardService
             ->value('avg_days');
         $timeToHire = $timeToHire ? round($timeToHire, 1) : 0;
 
+        // ── Hiring KPIs (Phase 3) ────────────────────────────────────────────
+        $totalHired        = HrCandidate::where('tenant_id', $tenantId)->where('stage', 'Hired')->count();
+        $offersSent        = HrOffer::where('tenant_id', $tenantId)->whereNotNull('sent_at')->count();
+        $offersAccepted    = HrOffer::where('tenant_id', $tenantId)->whereIn('status', ['Accepted', 'Completed'])->count();
+        $acceptancePct     = $offersSent > 0 ? (int) round($offersAccepted / $offersSent * 100) : 0;
+        $pendingInterviews = HrInterviewRound::where('tenant_id', $tenantId)->where('status', 'Scheduled')->count();
+
         // Hiring trend (last 6 months)
         // SQLite compatible: use strftime() instead of DATE_FORMAT()
         $hiringTrend = HrCandidate::where('tenant_id', $tenantId)
@@ -122,6 +129,12 @@ class HRDashboardService
                 'sources_count'     => $sources,
                 'time_to_hire_days' => $timeToHire,
                 'pending_approvals' => $pendingApprovals,
+                // Phase 3 hiring KPIs
+                'total_hired'        => $totalHired,
+                'offers_sent'        => $offersSent,
+                'offers_accepted'    => $offersAccepted,
+                'acceptance_pct'     => $acceptancePct,
+                'pending_interviews' => $pendingInterviews,
             ],
             'recruitment_kpis' => $recruitmentKpis,
             'manpower'         => $manpower,

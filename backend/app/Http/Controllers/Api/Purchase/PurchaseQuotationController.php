@@ -19,7 +19,7 @@ class PurchaseQuotationController extends Controller
     public function index(Request $request)
     {
         return response()->json(
-            $this->quotationService->list($request->user()->tenant_id, $request->only(['purchase_rfq_id', 'status', 'vendor_id']))
+            $this->quotationService->list($request->user()->tenant_id, $request->only(['purchase_rfq_id', 'status', 'purchase_vendor_id']))
         );
     }
 

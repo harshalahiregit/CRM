@@ -65,7 +65,7 @@ class ManpowerRequestController extends Controller
     {
         $this->assertTenant($request, $manpowerRequest);
 
-        $manpowerRequest->load(['requester', 'assignedManager', 'l1Approver', 'l2Approver', 'jobPosting', 'auditLogs.actor']);
+        $manpowerRequest->load(['requester', 'assignedManager', 'l1Approver', 'l2Approver', 'jobPosting', 'projectRef:id,name,status', 'auditLogs.actor']);
 
         // Standard JD (SPK-1), auto-filled from this requisition. Built here rather
         // than in the browser so "Post Job" and "Convert to JD" emit identical text
@@ -264,6 +264,8 @@ class ManpowerRequestController extends Controller
     /* PUT /api/hr/manpower-requests/{id} */
     public function update(UpdateManpowerRequest $request, HrManpowerRequest $manpowerRequest)
     {
+        $this->assertCanMutate($request, $manpowerRequest);
+
         $result = $this->manpowerRequestService->update($manpowerRequest, $request->validated(), $request->user());
 
         return $this->success($result, 'Updated successfully');
@@ -272,6 +274,8 @@ class ManpowerRequestController extends Controller
     /* DELETE /api/hr/manpower-requests/{id} */
     public function destroy(Request $request, HrManpowerRequest $manpowerRequest)
     {
+        $this->assertCanMutate($request, $manpowerRequest);
+
         $this->manpowerRequestService->destroy($manpowerRequest, $request->user());
 
         return $this->success(null, 'Deleted successfully');
@@ -353,6 +357,9 @@ class ManpowerRequestController extends Controller
     /* PATCH /api/hr/manpower-requests/{id}/assign-manager */
     public function assignManager(AssignManpowerManagerRequest $request, HrManpowerRequest $manpowerRequest)
     {
+        $this->assertTenant($request, $manpowerRequest);
+        abort_unless($request->user()->canManageHrQueue(), 403, 'You are not authorised to assign a manager');
+
         $result = $this->manpowerRequestService->assignManager($manpowerRequest, $request->validated('manager_id'), $request->user());
 
         return $this->success($result, 'Manager assigned');
@@ -365,5 +372,16 @@ class ManpowerRequestController extends Controller
     private function assertTenant(Request $request, HrManpowerRequest $manpowerRequest): void
     {
         abort_unless((int) $manpowerRequest->tenant_id === (int) $request->user()->tenant_id, 404, 'Request not found');
+    }
+
+    /** A requisition may be edited or deleted by its own requester or an HR-queue manager. */
+    private function assertCanMutate(Request $request, HrManpowerRequest $manpowerRequest): void
+    {
+        $this->assertTenant($request, $manpowerRequest);
+        abort_unless(
+            $request->user()->canManageHrQueue() || (int) $manpowerRequest->requested_by === (int) $request->user()->id,
+            403,
+            'You are not authorised to modify this request'
+        );
     }
 }

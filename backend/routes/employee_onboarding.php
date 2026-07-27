@@ -57,4 +57,12 @@ Route::middleware('auth:sanctum')->prefix('employee-onboarding')->group(function
 
     // Progress tracker stage
     Route::patch('/{onboarding}/stage',             [EmployeeOnboardingController::class, 'setStage']);
+
+    // Background Verification (Phase 4)
+    Route::patch('/{onboarding}/background-verification', [EmployeeOnboardingController::class, 'saveBackgroundVerification']);
+
+    // Approvals + Activation (Phase 4)
+    Route::patch('/{onboarding}/hr-approve',        [EmployeeOnboardingController::class, 'hrApprove']);
+    Route::patch('/{onboarding}/manager-approve',   [EmployeeOnboardingController::class, 'managerApprove']);
+    Route::patch('/{onboarding}/confirm-joining',   [EmployeeOnboardingController::class, 'confirmJoining']);
 });

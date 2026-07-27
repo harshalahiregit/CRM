@@ -288,6 +288,7 @@ class ManpowerRequestService
             $jd = HrJobPosting::create([
                 'tenant_id'           => $manpowerRequest->tenant_id,
                 'manpower_request_id' => $manpowerRequest->id,
+                'project_id'          => $manpowerRequest->project_id,   // carry the Project forward (no duplicate mapping)
                 'jd_source'           => $jdSource,
                 'ai_jd_meta'          => $aiMeta,
                 'title'               => $overrides['title']        ?? $manpowerRequest->position_title,

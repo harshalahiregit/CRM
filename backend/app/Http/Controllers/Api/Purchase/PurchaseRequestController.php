@@ -20,7 +20,7 @@ class PurchaseRequestController extends Controller
         return response()->json(
             $this->purchaseRequestService->list(
                 $request->user()->tenant_id,
-                $request->only(['status', 'department', 'priority', 'vendor_id', 'required_by', 'search'])
+                $request->only(['status', 'department', 'priority', 'purchase_vendor_id', 'required_by', 'search'])
             )
         );
     }

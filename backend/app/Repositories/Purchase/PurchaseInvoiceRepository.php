@@ -12,13 +12,13 @@ class PurchaseInvoiceRepository extends BaseRepository
     public function filtered(int $tenantId, array $filters)
     {
         $query = PurchaseInvoice::forTenant($tenantId)
-            ->with(['vendor:id,vendor_code,company_name', 'creator:id,name', 'purchaseOrder:id,po_number']);
+            ->with(['vendor:id,purchase_vendor_code,company_name', 'creator:id,name', 'purchaseOrder:id,po_number']);
 
         if (! empty($filters['status']) && $filters['status'] !== 'All') {
             $query->where('status', $filters['status']);
         }
-        if (! empty($filters['vendor_id'])) {
-            $query->where('vendor_id', $filters['vendor_id']);
+        if (! empty($filters['purchase_vendor_id'])) {
+            $query->where('purchase_vendor_id', $filters['purchase_vendor_id']);
         }
         if (! empty($filters['overdue'])) {
             // Outstanding balance, past due, still open.

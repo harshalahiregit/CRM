@@ -37,6 +37,10 @@ class RecordInterviewFeedbackRequest extends FormRequest
             'culture_fit_score'     => 'nullable|integer|min:0|max:10',
             'strengths'             => 'nullable|string|max:2000',
             'concerns'              => 'nullable|string|max:2000',
+            // Completion metadata (Complete-Interview form).
+            'attendance'            => 'nullable|in:Present,Absent,No Show',
+            'duration'              => 'nullable|integer|min:0|max:1440',
+            'remarks'               => 'nullable|string|max:2000',
         ];
     }
 }

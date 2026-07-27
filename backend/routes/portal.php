@@ -1,6 +1,11 @@
 <?php
 
+use App\Http\Controllers\Api\Portal\PurchasePortalCommerceController;
+use App\Http\Controllers\Api\Portal\PurchasePortalContactController;
+use App\Http\Controllers\Api\Portal\PurchasePortalController;
+use App\Http\Controllers\Api\Portal\PurchasePortalWorkforceController;
 use App\Http\Controllers\Api\Portal\VendorPortalController;
+use App\Http\Controllers\Api\Purchase\PurchaseVendorAuthController;
 use Illuminate\Support\Facades\Route;
 
 // ── Vendor Self-Service Portal ──────────────────────────────────────────
@@ -73,4 +78,78 @@ Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access'])->prefix('por
     Route::get('/gate-log',                               [VendorPortalController::class, 'gateLog']);
     Route::get('/attendance',                             [VendorPortalController::class, 'attendance']);
     Route::get('/strikes',                                [VendorPortalController::class, 'strikes']);
+});
+
+// ── Purchase Vendor Portal — auth (public) ──────────────────────────────
+// Completely independent of the shared vendor auth: registers/logs in a
+// PurchaseVendor identity only (Sanctum token, tokenable = purchase_vendors).
+Route::prefix('purchase-vendor')->group(function () {
+    Route::post('/register',        [PurchaseVendorAuthController::class, 'register'])->middleware('throttle:10,1');
+    Route::post('/verify-email',    [PurchaseVendorAuthController::class, 'verifyEmail']);
+    Route::post('/login',           [PurchaseVendorAuthController::class, 'login'])->middleware('throttle:20,1');
+    Route::post('/forgot-password', [PurchaseVendorAuthController::class, 'forgotPassword'])->middleware('throttle:10,1');
+    Route::post('/reset-password',  [PurchaseVendorAuthController::class, 'resetPassword'])->middleware('throttle:10,1');
+});
+
+// ── Purchase Vendor Portal — authenticated (Sanctum + PurchaseVendor only) ─
+// The purchase.vendor.portal middleware requires the token subject to BE a
+// PurchaseVendor, isolating this portal from the shared vendor / TPV portal.
+// URLs are unchanged (/api/portal/purchase/*).
+Route::middleware(['auth:sanctum', 'purchase.vendor.portal'])->prefix('portal/purchase')->group(function () {
+    Route::post('/logout',                            [PurchaseVendorAuthController::class, 'logout']);
+    Route::get('/dashboard',                          [PurchasePortalController::class, 'dashboard']);
+    Route::get('/me',                                 [PurchasePortalController::class, 'me']);
+    Route::put('/profile',                            [PurchasePortalController::class, 'updateProfile']);
+
+    Route::get('/onboarding',                         [PurchasePortalController::class, 'onboarding']);
+    Route::get('/onboarding/{onboarding}',            [PurchasePortalController::class, 'onboardingShow']);
+    Route::get('/onboarding/{onboarding}/progress',   [PurchasePortalController::class, 'onboardingProgress']);
+    Route::get('/onboarding/{onboarding}/kickoff',        [PurchasePortalController::class, 'onboardingKickoffPdf']);
+    Route::post('/onboarding/{onboarding}/kickoff/accept',[PurchasePortalController::class, 'onboardingAcceptKickoff']);
+    Route::post('/onboarding/{onboarding}/kickoff/log',   [PurchasePortalController::class, 'onboardingLogKickoffEvent']);
+    Route::post('/onboarding/{onboarding}/profile',   [PurchasePortalController::class, 'saveProfile']);
+    Route::patch('/onboarding/{onboarding}/step',     [PurchasePortalController::class, 'setStep']);
+    Route::post('/onboarding/{onboarding}/submit',    [PurchasePortalController::class, 'submitOnboarding']);
+
+    Route::get('/documents',                          [PurchasePortalController::class, 'documents']);
+    Route::post('/documents',                         [PurchasePortalController::class, 'uploadDocument']);
+    Route::post('/documents/{document}/resubmit',     [PurchasePortalController::class, 'resubmitDocument']);
+    Route::get('/documents/{document}/download',      [PurchasePortalController::class, 'downloadDocument']);
+
+    Route::get('/kickoff',                            [PurchasePortalController::class, 'kickoff']);
+    Route::post('/kickoff/accept',                    [PurchasePortalController::class, 'acceptKickoff']);
+
+    // ── Contacts (own vendor only) ──────────────────────────────────────
+    Route::get('/contacts',                           [PurchasePortalContactController::class, 'index']);
+    Route::post('/contacts',                          [PurchasePortalContactController::class, 'store']);
+    Route::get('/contacts/{contact}',                 [PurchasePortalContactController::class, 'show']);
+    Route::put('/contacts/{contact}',                 [PurchasePortalContactController::class, 'update']);
+    Route::patch('/contacts/{contact}/status',        [PurchasePortalContactController::class, 'setStatus']);
+    Route::delete('/contacts/{contact}',              [PurchasePortalContactController::class, 'destroy']);
+
+    // ── Workforce (own vendor only; workers + medical/training/induction) ─
+    Route::get('/workers',                            [PurchasePortalWorkforceController::class, 'index']);
+    Route::get('/workers/summary',                    [PurchasePortalWorkforceController::class, 'summary']);
+    Route::post('/workers',                           [PurchasePortalWorkforceController::class, 'store']);
+    Route::get('/workers/{worker}',                   [PurchasePortalWorkforceController::class, 'show']);
+    Route::put('/workers/{worker}',                   [PurchasePortalWorkforceController::class, 'update']);
+    Route::delete('/workers/{worker}',                [PurchasePortalWorkforceController::class, 'destroy']);
+    Route::get('/workers/{worker}/readiness',         [PurchasePortalWorkforceController::class, 'readiness']);
+    Route::post('/workers/{worker}/documents',        [PurchasePortalWorkforceController::class, 'uploadDocument']);
+    Route::post('/workers/{worker}/medical',          [PurchasePortalWorkforceController::class, 'saveMedical']);
+    Route::post('/workers/{worker}/training',         [PurchasePortalWorkforceController::class, 'saveTraining']);
+    Route::post('/workers/{worker}/induction',        [PurchasePortalWorkforceController::class, 'saveInduction']);
+
+    // ── Commercial (own vendor only; read-only) ─────────────────────────
+    Route::get('/orders',                             [PurchasePortalCommerceController::class, 'orders']);
+    Route::get('/orders/{id}',                        [PurchasePortalCommerceController::class, 'order']);
+    Route::get('/quotations',                         [PurchasePortalCommerceController::class, 'quotations']);
+    Route::get('/quotations/{id}',                    [PurchasePortalCommerceController::class, 'quotation']);
+    Route::get('/contracts',                          [PurchasePortalCommerceController::class, 'contracts']);
+    Route::get('/contracts/{id}',                     [PurchasePortalCommerceController::class, 'contract']);
+    Route::get('/invoices',                           [PurchasePortalCommerceController::class, 'invoices']);
+    Route::get('/invoices/{id}',                      [PurchasePortalCommerceController::class, 'invoice']);
+    Route::get('/debit-notes',                        [PurchasePortalCommerceController::class, 'debitNotes']);
+    Route::get('/debit-notes/{id}',                   [PurchasePortalCommerceController::class, 'debitNote']);
+    Route::get('/payments',                           [PurchasePortalCommerceController::class, 'payments']);
 });

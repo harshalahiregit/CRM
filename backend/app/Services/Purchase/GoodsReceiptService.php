@@ -39,7 +39,7 @@ class GoodsReceiptService
             $grn = GoodsReceipt::create([
                 'tenant_id'         => $po->tenant_id,
                 'purchase_order_id' => $po->id,
-                'vendor_id'         => $po->vendor_id,
+                'purchase_vendor_id'         => $po->purchase_vendor_id,
                 'received_by'       => $actor->id,
                 'received_date'     => $data['received_date'] ?? now()->toDateString(),
                 'delivery_note_ref' => $data['delivery_note_ref'] ?? null,

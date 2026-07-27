@@ -22,7 +22,7 @@ class UpdateCatalogItemRequest extends FormRequest
             'default_rate'        => 'nullable|numeric|min:0',
             'default_tax'         => 'nullable|numeric|min:0|max:100',
             'hsn_code'            => 'nullable|string|max:40',
-            'preferred_vendor_id' => 'nullable|integer',
+            'preferred_purchase_vendor_id' => 'nullable|integer',
             'notes'               => 'nullable|string|max:2000',
         ];
     }

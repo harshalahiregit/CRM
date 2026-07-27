@@ -11,6 +11,7 @@ const fmtCTC = (v) => v == null ? '—' : `₹${Number(v).toLocaleString('en-IN'
 const STATUS = (s) => ({
   Generated: { c: '#64748b', bg: '#f1f5f9' }, Sent: { c: '#2563eb', bg: '#eff6ff' }, Viewed: { c: '#7c3aed', bg: '#f5f3ff' },
   Accepted: { c: '#059669', bg: '#ecfdf5' }, Declined: { c: '#dc2626', bg: '#fef2f2' }, Expired: { c: '#b45309', bg: '#fffbeb' },
+  Withdrawn: { c: '#4b5563', bg: '#f3f4f6' },
 }[s] || { c: '#64748b', bg: '#f1f5f9' })
 
 /**
@@ -89,6 +90,7 @@ export default function OfferPortal({ token: tokenProp, embedded = false }) {
         {/* Status-specific */}
         {offer.status === 'Expired' && <Banner icon={<Clock size={16} />} color="#b45309" bg="#fffbeb">This offer has expired. Please contact HR for a fresh offer.</Banner>}
         {offer.status === 'Declined' && <Banner icon={<XCircle size={16} />} color="#dc2626" bg="#fef2f2">You have declined this offer.</Banner>}
+        {offer.status === 'Withdrawn' && <Banner icon={<XCircle size={16} />} color="#4b5563" bg="#f3f4f6">This offer has been withdrawn by HR.{offer.withdraw_reason ? ` Reason: ${offer.withdraw_reason}` : ''} Please contact HR for details.</Banner>}
         {offer.clarification && offer.status !== 'Accepted' && <Banner icon={<HelpCircle size={16} />} color="#2563eb" bg="#eff6ff">Clarification requested — HR will get back to you.</Banner>}
 
         {/* Actions */}

@@ -165,10 +165,19 @@ class InterviewService
 
     public function recordFeedback(HrInterviewRound $interviewRound, array $input): HrInterviewRound
     {
+        // Immutability: a terminally-completed round can never be overwritten. The one
+        // exception is an "On Hold" round, which the existing design deliberately keeps
+        // reversible (resume / re-evaluate), so editing a hold is still allowed.
+        if ($interviewRound->status === 'Completed' && $interviewRound->result !== 'On Hold') {
+            throw new BusinessException('This interview is already completed and cannot be modified.', 422);
+        }
+
+        $status = $input['status'] ?? 'Completed';
+
         $data = [
             'result' => $input['result'],
             'notes'  => $input['notes'] ?? $interviewRound->notes,
-            'status' => $input['status'] ?? 'Completed',
+            'status' => $status,
         ];
 
         foreach ([
@@ -178,6 +187,8 @@ class InterviewService
             'knowledge_score', 'confidence_score', 'ownership_score', 'learning_ability_score',
             'decision_making_score', 'leadership_score', 'integrity_score', 'culture_fit_score',
             'strengths', 'concerns',
+            // Completion metadata (Complete-Interview form): attendance / duration / remarks.
+            'attendance', 'duration', 'remarks',
         ] as $field) {
             if (array_key_exists($field, $input) && $input[$field] !== null && $input[$field] !== '') {
                 $data[$field] = $input[$field];
@@ -189,6 +200,12 @@ class InterviewService
         $p = $input['problem_solving_score'] ?? $interviewRound->problem_solving_score ?? 0;
         if ($t || $c || $p) {
             $data['overall_score'] = round((($t + $c + $p) / 3) * 10, 2);
+        }
+
+        // Stamp who closed the round and when, whenever it lands as Completed.
+        if ($status === 'Completed') {
+            $data['completed_at'] = now();
+            $data['completed_by'] = auth()->id();
         }
 
         $interviewRound->update($data);
@@ -218,6 +235,12 @@ class InterviewService
     /** Reschedule / edit an interview round. */
     public function reschedule(HrInterviewRound $interviewRound, array $input): HrInterviewRound
     {
+        // A completed interview is immutable and cannot be edited/rescheduled. An
+        // "On Hold" round stays resumable (that is how a hold is un-paused).
+        if ($interviewRound->status === 'Completed' && $interviewRound->result !== 'On Hold') {
+            throw new BusinessException('A completed interview cannot be edited or rescheduled.', 422);
+        }
+
         $changes = array_intersect_key($input, array_flip([
             'round_name', 'mode', 'interviewer_name', 'interviewers',
             'scheduled_at', 'meet_link', 'venue', 'reminder_minutes',
@@ -248,7 +271,18 @@ class InterviewService
 
     public function cancel(HrInterviewRound $interviewRound, ?string $reason = null): HrInterviewRound
     {
-        $interviewRound->update(['status' => 'Cancelled']);
+        // A completed interview is final — it cannot be cancelled after the fact.
+        if ($interviewRound->status === 'Completed') {
+            throw new BusinessException('A completed interview cannot be cancelled.', 422);
+        }
+
+        // Cancelling always requires a reason; it is persisted AND audited.
+        $reason = trim((string) $reason);
+        if ($reason === '') {
+            throw new BusinessException('A reason is required to cancel an interview.', 422);
+        }
+
+        $interviewRound->update(['status' => 'Cancelled', 'cancellation_reason' => $reason]);
 
         $interviewRound->recordAudit('Cancelled', null, $reason);
         optional($interviewRound->candidate)->recordAudit('Interview cancelled: '.$interviewRound->round_name, null, $reason);
@@ -292,9 +326,18 @@ class InterviewService
             } elseif ($result === 'Passed') {
                 // Selected: congratulations + candidate onboarding starts BEFORE the offer.
                 $this->onboardingService->startForCandidate($candidate);
-            } elseif ($result === 'Next Round'
-                && in_array($candidate->stage, ['Applied', 'Screening', 'Assessment'], true)) {
-                $this->candidateService->updateStage($candidate, 'Interview');
+            } elseif ($result === 'On Hold') {
+                // Hold pauses the pipeline: mark the candidate On Hold (final_decision='Hold'),
+                // keeping them in the Interview stage. Reversible — resuming re-opens the round.
+                $this->candidateService->updateDecision($candidate, 'Hold');
+            } elseif ($result === 'Next Round') {
+                // Progressing again clears any stale Hold decision.
+                if ($candidate->final_decision === 'Hold') {
+                    $this->candidateService->updateDecision($candidate, 'Pending');
+                }
+                if (in_array($candidate->stage, ['Applied', 'Screening', 'Assessment'], true)) {
+                    $this->candidateService->updateStage($candidate, 'Interview');
+                }
             }
         } catch (\Throwable $e) {
             // Do NOT swallow: the feedback itself is saved, but the recruiter must be

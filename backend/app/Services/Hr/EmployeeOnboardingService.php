@@ -3,6 +3,7 @@
 namespace App\Services\Hr;
 
 use App\Exceptions\BusinessException;
+use App\Models\Hr\HrBackgroundVerification;
 use App\Models\Hr\HrEmployee;
 use App\Models\Hr\HrEmployeeOnboarding;
 use App\Models\Hr\HrEmployeeOnboardingTask;
@@ -254,12 +255,34 @@ class EmployeeOnboardingService
     }
 
     /* ─────────────────────────────────── Show (workspace payload) ─────────────────────────────────── */
+    /**
+     * Portal-safe projection of show() for the PUBLIC candidate onboarding portal.
+     * Strips internal HR-only data — the audit trail (with actor identities), the
+     * background-verification record, HR owner / approver stamps, the generated
+     * official email and the employee's activation status — which must never reach a
+     * token holder. The editable form sections themselves are unchanged.
+     */
+    public function portalForm(HrEmployeeOnboarding $onboarding): array
+    {
+        $full = $this->show($onboarding);
+
+        unset($full['audit_logs'], $full['background_verification']);
+        foreach (['hr_owner_id', 'hr_approved_at', 'manager_approved_at'] as $k) {
+            unset($full['onboarding'][$k]);
+        }
+        foreach (['hr_owner_id', 'official_email', 'employee_status'] as $k) {
+            unset($full['overview'][$k]);
+        }
+
+        return $full;
+    }
+
     public function show(HrEmployeeOnboarding $onboarding, string $scope = OnboardingAbility::HR): array
     {
         $onboarding->load([
             'employee', 'profile', 'education', 'experience', 'family', 'assets',
             'tasks', 'documents', 'sectionStatuses', 'auditLogs.actor',
-            'references', 'orientationFeedback',
+            'references', 'orientationFeedback', 'backgroundVerification',
         ]);
 
         $emp = $onboarding->employee;
@@ -300,7 +323,13 @@ class EmployeeOnboardingService
                 'status'         => Status::label($onboarding->status),
                 'progress'       => $onboarding->progress_percent,
                 'current_step'   => Stage::label($onboarding->current_stage),
+                // Phase 4 assignment + activation fields.
+                'location'       => $emp?->location,
+                'shift'          => $emp?->shift,
+                'official_email' => $emp?->official_email,
+                'employee_status' => $emp?->status,
             ],
+            'background_verification' => $onboarding->backgroundVerification,
             'tracker' => [
                 'steps'        => Stage::steps(),
                 'current'      => $onboarding->current_stage,
@@ -492,7 +521,142 @@ class EmployeeOnboardingService
         return $o;
     }
 
+    /* ─────────────────────────────── Background Verification (Phase 4) ─────────────────────── */
+    public function saveBackgroundVerification(HrEmployeeOnboarding $o, array $data, ?User $user): HrBackgroundVerification
+    {
+        $bgv = $o->backgroundVerification ?: new HrBackgroundVerification(['onboarding_id' => $o->id]);
+        $bgv->fill(array_intersect_key($data, array_flip(['vendor', 'reference_number', 'status', 'remarks', 'completed_date'])));
+        $bgv->onboarding_id = $o->id;
+        $bgv->tenant_id     = $o->tenant_id;
+        $bgv->employee_id   = $o->employee_id;
+        $bgv->updated_by    = optional($user)->id;
+        if (($data['status'] ?? null) === 'Verified' && empty($bgv->completed_date)) {
+            $bgv->completed_date = now()->toDateString();
+        }
+        $bgv->save();
+
+        $o->recordAudit('Background Verification: '.$bgv->status, $user, $data['remarks'] ?? null, [
+            'vendor' => $bgv->vendor, 'reference_number' => $bgv->reference_number,
+        ], $this->actorLabel($user));
+
+        if (in_array($bgv->status, ['Verified', 'Rejected'], true)) {
+            $this->notifyHr($o, 'Background verification '.$bgv->status.' — '.optional($o->employee)->name,
+                'BGV for '.optional($o->employee)->name.' is '.$bgv->status.'. Vendor: '.($bgv->vendor ?: 'n/a')
+                .', Ref: '.($bgv->reference_number ?: 'n/a').'.', ['event' => 'bgv_'.strtolower(str_replace(' ', '_', $bgv->status))]);
+        }
+
+        return $bgv;
+    }
+
+    /* ─────────────────────────────── Approvals + Activation (Phase 4) ──────────────────────── */
+    public function hrApprove(HrEmployeeOnboarding $o, User $user, ?string $remarks): HrEmployeeOnboarding
+    {
+        $o->hr_approved_by = $user->id;
+        $o->hr_approved_at = now();
+        $o->hr_remarks     = $remarks;
+        $this->advanceIfBehind($o, Stage::HR_APPROVAL);
+        $o->save();
+        $o->recordAudit('HR Approved Onboarding', $user, $remarks, [], $this->actorLabel($user));
+
+        return $o;
+    }
+
+    public function managerApprove(HrEmployeeOnboarding $o, User $user, ?string $remarks): HrEmployeeOnboarding
+    {
+        $o->manager_approved_by = $user->id;
+        $o->manager_approved_at = now();
+        $o->manager_remarks     = $remarks;
+        $this->advanceIfBehind($o, Stage::MANAGER_APPROVAL);
+        $o->save();
+        $o->recordAudit('Manager Approved Onboarding', $user, $remarks, [], $this->actorLabel($user));
+
+        return $o;
+    }
+
+    /**
+     * Final joining confirmation — provisions the official company email, activates the
+     * employee, and closes the onboarding (Completed). The Employee already exists (created
+     * on joining-confirmation from the offer); this is the "Employee Activated" step.
+     */
+    public function confirmJoining(HrEmployeeOnboarding $o, User $user): HrEmployeeOnboarding
+    {
+        $employee = $o->employee;
+        if (! $employee) {
+            throw new BusinessException('This onboarding has no linked employee to activate.', 422);
+        }
+
+        if (empty($employee->official_email)) {
+            $employee->official_email = $this->officialEmailFor($employee);
+        }
+        $employee->status = 'Active';
+        $employee->save();
+
+        if (! $o->hr_approved_at)      { $o->hr_approved_by = $user->id; $o->hr_approved_at = now(); }
+        if (! $o->manager_approved_at) { $o->manager_approved_by = $user->id; $o->manager_approved_at = now(); }
+        $o->current_stage    = Stage::COMPLETED;
+        $o->progress_percent = Stage::progress(Stage::COMPLETED);
+        $o->status           = Status::COMPLETED;
+        $o->completed_at     = $o->completed_at ?: now();
+        $o->save();
+
+        $o->recordAudit('Employee Activated', $user, null, [
+            'employee_code'  => $employee->employee_code,
+            'official_email' => $employee->official_email,
+        ], $this->actorLabel($user));
+
+        $this->notifyHr($o, 'Employee activated — '.$employee->name,
+            $employee->name.' ('.$employee->employee_code.') is now Active. Official email: '.$employee->official_email.'.',
+            ['event' => 'joining_confirmed']);
+
+        return $o->fresh(['employee']);
+    }
+
     /* ─────────────────────────────────── Internal helpers ─────────────────────────────────── */
+
+    /** Advance the tracker forward to $stage only if it's currently behind it. */
+    private function advanceIfBehind(HrEmployeeOnboarding $o, string $stage): void
+    {
+        if (Stage::index($o->current_stage) < Stage::index($stage)) {
+            $o->current_stage    = $stage;
+            $o->progress_percent = Stage::progress($stage);
+            $o->status           = $this->deriveStatus($stage);
+        }
+    }
+
+    /** Generate a unique company email from the employee name + tenant domain. */
+    private function officialEmailFor(HrEmployee $employee): string
+    {
+        $domain = config('hr.official_email_domain');
+        if (! $domain) {
+            $tenant = \App\Models\Tenant::find($employee->tenant_id);
+            $domain = ($tenant && $tenant->subdomain ? $tenant->subdomain : 'company').'.com';
+        }
+        $parts = array_values(array_filter(preg_split('/\s+/', trim(strtolower((string) ($employee->name ?? 'employee'))))));
+        $local = preg_replace('/[^a-z0-9.]/', '', implode('.', array_filter([$parts[0] ?? 'employee', count($parts) > 1 ? end($parts) : ''])));
+        $local = trim($local, '.') ?: 'employee';
+
+        $email = $local.'@'.$domain;
+        $i = 1;
+        while (HrEmployee::where('official_email', $email)->where('id', '!=', $employee->id)->exists()) {
+            $email = $local.($i++).'@'.$domain;
+        }
+
+        return $email;
+    }
+
+    /** Best-effort HR email — never breaks the transaction. */
+    private function notifyHr(HrEmployeeOnboarding $o, string $subject, string $body, array $ctx = []): void
+    {
+        try {
+            $to = optional(User::where('tenant_id', $o->tenant_id)->whereIn('role', ['admin', 'hr'])->first())->email;
+            if ($to) {
+                $this->notifications->email($to, $subject, $body, $ctx + ['onboarding_id' => $o->id]);
+            }
+        } catch (\Throwable $e) {
+            Log::channel('hr')->warning('Onboarding HR notification failed', ['error' => $e->getMessage()] + $ctx);
+        }
+    }
+
     private function deriveStatus(string $stage): string
     {
         return match ($stage) {

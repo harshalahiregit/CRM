@@ -85,21 +85,22 @@ class CareerPortalController extends Controller
             'email'  => 'required|email',
             'action' => 'required|in:accept,decline',
             'reason' => 'nullable|string|max:500',
+            'token'  => 'required|string',   // secure offer token from the emailed link
         ]);
 
         $tenant = $this->careerPortalService->tenant($tenantSlug);
 
         return response()->json(
-            $this->careerPortalService->respondToOffer($tenant, $jobId, $data['email'], $data['action'], $data['reason'] ?? null)
+            $this->careerPortalService->respondToOffer($tenant, $jobId, $data['email'], $data['action'], $data['reason'] ?? null, $data['token'])
         );
     }
 
     /* GET /api/careers/{tenantSlug}/jobs/{jobId}/offer/letter — download offer */
     public function offerLetter(Request $request, string $tenantSlug, int $jobId)
     {
-        $data   = $request->validate(['email' => 'required|email']);
+        $data   = $request->validate(['email' => 'required|email', 'token' => 'required|string']);
         $tenant = $this->careerPortalService->tenant($tenantSlug);
-        $file   = $this->careerPortalService->offerLetter($tenant, $jobId, $data['email']);
+        $file   = $this->careerPortalService->offerLetter($tenant, $jobId, $data['email'], $data['token']);
 
         return response()->download($file['path'], $file['filename']);
     }

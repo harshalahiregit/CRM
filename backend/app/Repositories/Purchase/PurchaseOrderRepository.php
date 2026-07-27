@@ -12,7 +12,7 @@ class PurchaseOrderRepository extends BaseRepository
     public function filtered(int $tenantId, array $filters)
     {
         $query = PurchaseOrder::forTenant($tenantId)
-            ->with(['items', 'vendor:id,vendor_code,company_name', 'creator:id,name']);
+            ->with(['items', 'vendor:id,purchase_vendor_code,company_name', 'creator:id,name']);
 
         if (! empty($filters['status']) && $filters['status'] !== 'All') {
             $query->where('status', $filters['status']);
@@ -20,8 +20,8 @@ class PurchaseOrderRepository extends BaseRepository
         if (! empty($filters['department']) && $filters['department'] !== 'All') {
             $query->where('department', $filters['department']);
         }
-        if (! empty($filters['vendor_id'])) {
-            $query->where('vendor_id', $filters['vendor_id']);
+        if (! empty($filters['purchase_vendor_id'])) {
+            $query->where('purchase_vendor_id', $filters['purchase_vendor_id']);
         }
         if (! empty($filters['expected_by'])) {
             $query->whereDate('expected_delivery_date', '<=', $filters['expected_by']);

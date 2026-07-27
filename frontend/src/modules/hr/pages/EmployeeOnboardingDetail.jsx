@@ -10,7 +10,7 @@ import OnboardingVerificationPanel from '@/modules/hr/components/OnboardingVerif
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 import AuditTimeline from '@/components/ui/AuditTimeline'
 import {
-  ONB_STAGES, onbStatusCfg, TASK_STATUS, TASK_STATUSES, TASK_CATEGORIES, fmtDate, fmtDateTime,
+  ONB_STAGES, onbStatusCfg, TASK_STATUS, TASK_STATUSES, TASK_CATEGORIES, BGV_STATUSES, fmtDate, fmtDateTime,
 } from '@/modules/hr/employeeOnboardingConstants'
 
 const unwrap = r => r?.data ?? r
@@ -62,7 +62,7 @@ const CHILD = {
   education: [['degree', 'Degree'], ['specialization', 'Specialization'], ['institution', 'Institution'], ['board_university', 'Board / University'], ['year_of_passing', 'Year'], ['percentage_grade', '% / Grade']],
   experience: [['company_name', 'Company'], ['designation', 'Designation'], ['from_date', 'From', 'date'], ['to_date', 'To', 'date'], ['last_ctc', 'Last CTC', 'number'], ['reason_for_leaving', 'Reason for Leaving']],
   family: [['member_name', 'Name'], ['relationship', 'Relationship'], ['dob', 'DOB', 'date'], ['occupation', 'Occupation'], ['contact', 'Contact'], ['is_dependent', 'Dependent', 'checkbox'], ['is_nominee', 'Nominee', 'checkbox']],
-  assets: [['asset_type', 'Asset Type'], ['asset_tag_serial', 'Tag / Serial'], ['issued_date', 'Issued', 'date'], ['condition', 'Condition'], ['returned_date', 'Returned', 'date'], ['status', 'Status'], ['remarks', 'Remarks']],
+  assets: [['asset_type', 'Asset Type', 'select', ['Laptop', 'Desktop', 'Mobile', 'SIM', 'Access Card', 'Software License', 'Accessories']], ['asset_tag_serial', 'Tag / Serial'], ['issued_date', 'Issued', 'date'], ['condition', 'Condition'], ['returned_date', 'Returned', 'date'], ['status', 'Status', 'select', ['Allocated', 'Issued', 'Returned', 'Lost', 'Pending']], ['remarks', 'Remarks']],
 }
 
 export default function EmployeeOnboardingDetail() {
@@ -144,7 +144,7 @@ export default function EmployeeOnboardingDetail() {
         {tab === 'training' && <TasksTab id={id} tasks={pickTasks(d.tasks, ['Training'])} reload={load} toast={showToast} editable={ab.training?.edit} />}
         {tab === 'checklist' && <TasksTab id={id} tasks={pickTasks(d.tasks, ['IT_Setup', 'HR_Checklist', 'Manager_Checklist'])} reload={load} toast={showToast} editable={ab.checklist?.edit} grouped />}
         {tab === 'verification' && <OnboardingVerificationPanel id={id} data={d} reload={load} toast={showToast} />}
-        {tab === 'approvals' && <ApprovalsTab o={o} />}
+        {tab === 'approvals' && <ApprovalsTab o={o} ov={ov} bgv={d.background_verification} id={id} reload={load} showToast={showToast} />}
         {tab === 'timeline' && <AuditTimeline entries={d.audit_logs} newestFirst />}
         {tab === 'activity' && <ActivityTab logs={d.audit_logs} />}
       </div>
@@ -371,21 +371,59 @@ function DocumentsTab({ docs = [] }) {
   )
 }
 
-/* ── Approvals (Sprint 1: read-only summary) ── */
-function ApprovalsTab({ o }) {
+/* ── Approvals: Background Verification · HR/Manager sign-off · Activation (Phase 4) ── */
+function ApprovalsTab({ o, ov = {}, bgv, id, reload, showToast }) {
+  const [form, setForm] = useState({
+    vendor: bgv?.vendor || '', reference_number: bgv?.reference_number || '',
+    status: bgv?.status || 'Pending', remarks: bgv?.remarks || '',
+    completed_date: bgv?.completed_date ? String(bgv.completed_date).slice(0, 10) : '',
+  })
+  const [busy, setBusy] = useState(false)
+  const sectionTitle = { fontSize: 12, fontWeight: 800, color: 'var(--text-h)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 10 }
+  const btn = (bg, color, border) => ({ padding: '9px 14px', borderRadius: 9, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', background: bg, color, border: border || 'none', opacity: busy ? 0.6 : 1 })
+
+  const act = async (fn, ok) => { setBusy(true); try { await fn(); showToast(ok); reload() } catch (e) { showToast(e.response?.data?.message || 'Failed', 'error') } finally { setBusy(false) } }
+
   const row = (label, at) => (
     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 14px', borderRadius: 9, background: 'var(--bg-input)' }}>
       <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-h)' }}>{label}</span>
       <span style={{ fontSize: 12, fontWeight: 700, color: at ? '#10b981' : '#f59e0b' }}>{at ? `Approved · ${fmtDateTime(at)}` : 'Pending'}</span>
     </div>
   )
+  const isActive = ov.employee_status === 'Active'
+
   return (
-    <div>
-      <p style={{ fontSize: 12, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 14 }}><Info size={13} /> Approval actions (HR & Manager sign-off → Employee Active) arrive in Sprint 2.</p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {row('HR Approval', o.hr_approved_at)}
-        {row('Manager Approval', o.manager_approved_at)}
-        {row('Onboarding Completed', o.completed_at)}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      {/* Background Verification */}
+      <div>
+        <p style={sectionTitle}>Background Verification</p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div><label style={lbl}>Vendor</label><input style={inputStyle} value={form.vendor} onChange={e => setForm(f => ({ ...f, vendor: e.target.value }))} /></div>
+          <div><label style={lbl}>Reference Number</label><input style={inputStyle} value={form.reference_number} onChange={e => setForm(f => ({ ...f, reference_number: e.target.value }))} /></div>
+          <div><label style={lbl}>Status</label><select style={inputStyle} value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>{BGV_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
+          <div><label style={lbl}>Completed Date</label><input type="date" style={inputStyle} value={form.completed_date} onChange={e => setForm(f => ({ ...f, completed_date: e.target.value }))} /></div>
+          <div style={{ gridColumn: '1 / -1' }}><label style={lbl}>Remarks</label><textarea rows={2} style={{ ...inputStyle, resize: 'none' }} value={form.remarks} onChange={e => setForm(f => ({ ...f, remarks: e.target.value }))} /></div>
+        </div>
+        <button disabled={busy} onClick={() => act(() => hrApi.employeeOnboarding.backgroundVerification(id, form), 'Background verification saved')} style={{ ...btn('linear-gradient(135deg,#7C3AED,#5b21b6)', '#fff'), marginTop: 10 }}>Save Background Verification</button>
+      </div>
+
+      {/* Approvals + Activation */}
+      <div>
+        <p style={sectionTitle}>Approvals &amp; Activation</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {row('HR Approval', o.hr_approved_at)}
+          {row('Manager Approval', o.manager_approved_at)}
+          {row('Onboarding Completed', o.completed_at)}
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+          {!o.hr_approved_at && <button disabled={busy} onClick={() => act(() => hrApi.employeeOnboarding.hrApprove(id, ''), 'HR approved')} style={btn('rgba(124,58,237,0.1)', '#a78bfa', '1px solid rgba(124,58,237,0.25)')}>HR Approve</button>}
+          {!o.manager_approved_at && <button disabled={busy} onClick={() => act(() => hrApi.employeeOnboarding.managerApprove(id, ''), 'Manager approved')} style={btn('rgba(34,211,238,0.1)', '#22d3ee', '1px solid rgba(34,211,238,0.25)')}>Manager Approve</button>}
+          {!isActive && <button disabled={busy} onClick={() => act(() => hrApi.employeeOnboarding.confirmJoining(id), 'Employee activated')} style={btn('linear-gradient(135deg,#10b981,#059669)', '#fff')}>Confirm Joining · Activate Employee</button>}
+          {isActive && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 14px', borderRadius: 9, fontSize: 12.5, fontWeight: 700, background: 'rgba(16,185,129,0.12)', color: '#10b981' }}><BadgeCheck size={14} /> Employee Active</span>}
+        </div>
+        {(ov.official_email || ov.employee_status) && (
+          <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 10 }}>Official email: <b style={{ color: 'var(--text-h)' }}>{ov.official_email || '— (generated on activation)'}</b> · Employee status: <b style={{ color: isActive ? '#10b981' : '#f59e0b' }}>{ov.employee_status || '—'}</b></p>
+        )}
       </div>
     </div>
   )

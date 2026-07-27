@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Hr;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class UpdateManpowerRequest extends FormRequest
 {
@@ -21,6 +22,7 @@ class UpdateManpowerRequest extends FormRequest
             'job_type'            => 'sometimes|in:Full-time,Part-time,Contract,Internship',
             'business_unit'       => 'nullable|string|max:150',
             'project'             => 'nullable|string|max:150',
+            'project_id'          => ['nullable', 'integer', Rule::exists('projects', 'id')->where('tenant_id', $this->user()->tenant_id)],
             'location'            => 'nullable|string|max:150',
             'employee_level'      => 'nullable|string|max:60',
             'experience_required' => 'nullable|string|max:100',

@@ -1,13 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useParams, useNavigate, useLocation } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, RefreshCw, Upload, RotateCcw, Eye, Trash2, CheckCircle, XCircle, PauseCircle,
   ShieldCheck, FileText, ClipboardList, UserCheck, Rocket, Send, Loader,
   AlertTriangle, Check, CornerUpLeft, CalendarDays, Clock, MapPin, Users, ArrowRight, Plus,
   Download, Printer, ZoomIn, ZoomOut, History, Info, HelpCircle, ChevronRight,
 } from 'lucide-react'
-import { tpvApi } from '@/services/tpvApi'
-import { portalApi } from '@/services/portalApi'
+import { useVendorModule } from '@/modules/tpv/useVendorModule'
 import { kickoffApi } from '@/services/kickoffApi'
 import { koStatusCfg, koModeLabel, fmtDateTime } from '@/modules/shared/kickoffConstants'
 import { useAuth } from '@/context/AuthContext'
@@ -74,14 +73,14 @@ function validateProfile(f, acctConfirm) {
 export default function TpvOnboardingWizard() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const location = useLocation()
   const { user } = useAuth()
-  const admin  = canApproveTpv(user)
-  const manage = canManageTpv(user)
-  // Portal vendors use portalApi and navigate within /vendor-portal/*
-  const isPortal = location.pathname.startsWith('/vendor-portal') || user?.role === 'third_party_vendor' || user?.role === 'vendor'
-  const api = isPortal ? portalApi : tpvApi
-  const backHref = isPortal ? '/vendor-portal/onboarding' : '/app/tpv/onboarding'
+  const cfg = useVendorModule()
+  const admin  = cfg.canApprove(user)
+  const manage = cfg.canManage(user)
+  // Data source + routing resolved from the module context (TPV / Purchase / portals).
+  const isPortal = cfg.portal
+  const api = cfg.api
+  const backHref = cfg.onboardingListPath
 
   const [onboarding, setOnboarding] = useState(null)
   const [progress, setProgress]     = useState(null)
@@ -175,7 +174,7 @@ export default function TpvOnboardingWizard() {
         {active === 3 && <StepDocuments checklist={progress.documents} vendorId={vendor.id} onboarding={onboarding} editable={editable} manage={manage} admin={false} onChanged={refresh} onBack={() => goStep(2)} onContinue={() => goStep(4)} api={api} user={user} />}
         {active === 4 && <StepDocuments checklist={progress.documents} vendorId={vendor.id} editable={editable} manage={manage} admin={admin} reviewMode onChanged={refresh} onContinue={() => goStep(5)} api={api} />}
         {active === 5 && <StepConfirmation onboarding={onboarding} progress={progress} editable={editable} onSaved={refresh} onBack={() => goStep(4)} onContinue={() => goStep(6)} onSubmitted={refresh} api={api} />}
-        {active === 6 && <StepSubmission onboarding={onboarding} vendor={vendor} admin={admin} onChanged={refresh} onBack={() => goStep(5)} api={api} user={user} />}
+        {active === 6 && <StepSubmission onboarding={onboarding} vendor={vendor} admin={admin} onChanged={refresh} onBack={() => goStep(5)} api={api} user={user} engagement={cfg.engagement} />}
       </div>
 
       {/* Audit */}
@@ -254,7 +253,7 @@ const Panel = ({ title, sub, children, actions }) => (
 function StepKickoff({ onboarding, editable, onAcknowledged, onContinue, api }) {
   const navigate = useNavigate()
   const { user } = useAuth()
-  const isPortal = user?.role === 'third_party_vendor'
+  const isPortal = user?.role === 'third_party_vendor' || user?.role === 'vendor'
   const [meeting, setMeeting] = useState(null)
   const [loading, setLoad] = useState(true)
   const [scheduling, setScheduling] = useState(false)
@@ -2142,7 +2141,7 @@ function StepConfirmation({ onboarding, progress, editable, onSaved, onBack, onC
 }
 
 // ── Step 6 — Admin approval panel ────────────────────────────────────────────
-function StepSubmission({ onboarding, vendor, admin, onChanged, onBack, api, user }) {
+function StepSubmission({ onboarding, vendor, admin, onChanged, onBack, api, user, engagement = 'tpv' }) {
   const navigate = useNavigate()
   const [modal, setModal]     = useState(null)  // 'approve' | 'reject' | 'hold' | 'resubmit'
   const [remarks, setRemarks] = useState('')
@@ -2243,7 +2242,7 @@ function StepSubmission({ onboarding, vendor, admin, onChanged, onBack, api, use
             </div>
             <div>
               <span style={{ fontSize: 11, fontWeight: 800, color: '#047857', display: 'block', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Vendor Code</span>
-              <strong style={{ fontSize: 13.5, color: '#065f46' }}>{vendor?.vendor_code || onboarding.vendor?.vendor_code || `TPV-${onboarding.vendor_id}`}</strong>
+              <strong style={{ fontSize: 13.5, color: '#065f46' }}>{vendor?.vendor_code || onboarding.vendor?.vendor_code || `#${onboarding.vendor_id}`}</strong>
             </div>
             <div>
               <span style={{ fontSize: 11, fontWeight: 800, color: '#047857', display: 'block', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Approved Date</span>
@@ -2261,7 +2260,8 @@ function StepSubmission({ onboarding, vendor, admin, onChanged, onBack, api, use
             </div>
           </div>
 
-          {/* 🚀 START WORKFORCE CTA BUTTON */}
+          {/* 🚀 START WORKFORCE CTA BUTTON — TPV-only (purchase vendors have no workforce) */}
+          {engagement === 'tpv' && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, paddingTop: 10, borderTop: '1px dashed #6ee7b7' }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: '#065f46' }}>
               Your account is active and verified. You are ready to start onboarding site workers.
@@ -2282,6 +2282,7 @@ function StepSubmission({ onboarding, vendor, admin, onChanged, onBack, api, use
               <Rocket size={18} /> Start Workforce
             </button>
           </div>
+          )}
         </div>
       )}
 

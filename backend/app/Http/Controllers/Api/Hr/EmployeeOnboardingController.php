@@ -221,7 +221,7 @@ class EmployeeOnboardingController extends Controller
         abort_unless((int) $task->onboarding_id === (int) $onboarding->id, 404);
 
         $data = $request->validate([
-            'status'           => 'nullable|in:Pending,In Progress,Completed,Rejected',
+            'status'           => 'nullable|in:Pending,In Progress,Completed,Rejected,Skipped',
             'assigned_to'      => 'nullable|integer|exists:users,id',
             'assigned_to_name' => 'nullable|string|max:150',
             'due_date'         => 'nullable|date',
@@ -241,6 +241,53 @@ class EmployeeOnboardingController extends Controller
         $this->service->setStage($onboarding, $data['stage'], $request->user());
 
         return $this->success($this->service->show($onboarding, $this->scope($request)), 'Stage updated');
+    }
+
+    /* ── Background Verification (Phase 4) ── */
+    public function saveBackgroundVerification(Request $request, HrEmployeeOnboarding $onboarding)
+    {
+        $this->assertCanManage($request);
+        $this->assertTenant($request, $onboarding);
+        $data = $request->validate([
+            'vendor'           => 'nullable|string|max:150',
+            'reference_number' => 'nullable|string|max:120',
+            'status'           => 'required|in:Pending,In Progress,Verified,Rejected',
+            'remarks'          => 'nullable|string|max:2000',
+            'completed_date'   => 'nullable|date',
+        ]);
+        $this->service->saveBackgroundVerification($onboarding, $data, $request->user());
+
+        return $this->success($this->service->show($onboarding, $this->scope($request)), 'Background verification updated');
+    }
+
+    /* ── Approvals + Activation (Phase 4) ── */
+    public function hrApprove(Request $request, HrEmployeeOnboarding $onboarding)
+    {
+        $this->assertCanManage($request);
+        $this->assertTenant($request, $onboarding);
+        $data = $request->validate(['remarks' => 'nullable|string|max:2000']);
+        $this->service->hrApprove($onboarding, $request->user(), $data['remarks'] ?? null);
+
+        return $this->success($this->service->show($onboarding, $this->scope($request)), 'HR approved');
+    }
+
+    public function managerApprove(Request $request, HrEmployeeOnboarding $onboarding)
+    {
+        $this->assertCanManage($request);
+        $this->assertTenant($request, $onboarding);
+        $data = $request->validate(['remarks' => 'nullable|string|max:2000']);
+        $this->service->managerApprove($onboarding, $request->user(), $data['remarks'] ?? null);
+
+        return $this->success($this->service->show($onboarding, $this->scope($request)), 'Manager approved');
+    }
+
+    public function confirmJoining(Request $request, HrEmployeeOnboarding $onboarding)
+    {
+        $this->assertCanManage($request);
+        $this->assertTenant($request, $onboarding);
+        $this->service->confirmJoining($onboarding, $request->user());
+
+        return $this->success($this->service->show($onboarding, $this->scope($request)), 'Employee activated');
     }
 
     /* ── Shared child helpers ── */

@@ -5,7 +5,7 @@ namespace App\Models\Purchase;
 use App\Models\Traits\Auditable;
 use App\Models\Traits\BelongsToTenant;
 use App\Models\User;
-use App\Models\Vendor\Vendor;
+use App\Models\Purchase\PurchaseVendor;
 use App\Support\Purchase\GoodsReceiptStatus as Status;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -17,7 +17,7 @@ class GoodsReceipt extends Model
     protected $table = 'goods_receipts';
 
     protected $fillable = [
-        'tenant_id','grn_number','purchase_order_id','vendor_id','received_by',
+        'tenant_id','grn_number','purchase_order_id','purchase_vendor_id','received_by',
         'received_date','delivery_note_ref','status','notes','confirmed_at',
     ];
 
@@ -57,7 +57,7 @@ class GoodsReceipt extends Model
 
     public function vendor()
     {
-        return $this->belongsTo(Vendor::class, 'vendor_id');
+        return $this->belongsTo(PurchaseVendor::class, 'purchase_vendor_id');
     }
 
     public function receiver()

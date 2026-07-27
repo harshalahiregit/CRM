@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useTheme } from '@/context/ThemeContext'
 import { Search, Building2, Plus, X, LayoutGrid, List, Eye, Pencil } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+import { useMasterData, withInactive } from '@/modules/hr/useMasterData'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 
 const DEPT_COLORS = { Engineering:'#3b82f6', Sales:'#10b981', HR:'#7C3AED', Operations:'#f59e0b', Product:'#ec4899', Marketing:'#f97316', Finance:'#6366f1' }
@@ -47,6 +48,16 @@ const OnboardingBadge = ({ status, progress, bar = false }) => {
 export default function Employees() {
   const { isDark } = useTheme()
   const navigate = useNavigate()
+  // Department / Designation / Reporting Manager all come from Org Setup master data
+  // (single source of truth, active-only). No hardcoded lists; a saved-but-inactive
+  // value stays visible and marked via withInactive().
+  const { masters } = useMasterData()
+  const deptNames    = (masters.departments  || []).map(d => d.name)
+  const desigNames   = (masters.designations || []).map(d => d.name)
+  const managerNames = (masters.managers     || []).map(m => m.name)
+  const deptOptions    = (f) => withInactive(deptNames,    f?.department)
+  const desigOptions   = (f) => withInactive(desigNames,   f?.designation)
+  const managerOptions = (f) => withInactive(managerNames, f?.reporting_manager_name)
   const [employees, setEmployees] = useState([])
   const [optionsList, setOptionsList] = useState([])   // unfiltered — powers filter dropdowns
   const [stats, setStats]         = useState({ total:0, active:0, on_leave:0, by_dept:[] })
@@ -300,13 +311,23 @@ export default function Employees() {
                 <div><label className="label">Department *</label>
                   <select className="input-3d text-sm" value={form.department} onChange={e=>setForm({...form,department:e.target.value})}>
                     <option value="">Select...</option>
-                    {['Engineering','Sales','HR','Operations','Finance','Product','Marketing'].map(d=><option key={d}>{d}</option>)}
+                    {deptOptions(form).map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                 </div>
-                <div><label className="label">Designation *</label><input className="input-3d text-sm" value={form.designation} onChange={e=>setForm({...form,designation:e.target.value})}/></div>
+                <div><label className="label">Designation *</label>
+                  <select className="input-3d text-sm" value={form.designation} onChange={e=>setForm({...form,designation:e.target.value})}>
+                    <option value="">Select...</option>
+                    {desigOptions(form).map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="label">Reporting Manager</label><input className="input-3d text-sm" value={form.reporting_manager_name||''} onChange={e=>setForm({...form,reporting_manager_name:e.target.value})}/></div>
+                <div><label className="label">Reporting Manager</label>
+                  <select className="input-3d text-sm" value={form.reporting_manager_name||''} onChange={e=>setForm({...form,reporting_manager_name:e.target.value})}>
+                    <option value="">Select…</option>
+                    {managerOptions(form).map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </div>
                 <div><label className="label">Joining Date *</label><input type="date" className="input-3d text-sm" value={form.joining_date||''} onChange={e=>setForm({...form,joining_date:e.target.value})}/></div>
               </div>
               <div className="grid grid-cols-2 gap-3">

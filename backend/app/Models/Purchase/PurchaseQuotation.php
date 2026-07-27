@@ -5,7 +5,7 @@ namespace App\Models\Purchase;
 use App\Models\Traits\Auditable;
 use App\Models\Traits\BelongsToTenant;
 use App\Models\User;
-use App\Models\Vendor\Vendor;
+use App\Models\Purchase\PurchaseVendor;
 use App\Support\Purchase\PurchaseQuotationStatus as Status;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -20,7 +20,7 @@ class PurchaseQuotation extends Model
     protected $table = 'purchase_quotations';
 
     protected $fillable = [
-        'tenant_id','purchase_rfq_id','vendor_id','created_by','quotation_number',
+        'tenant_id','purchase_rfq_id','purchase_vendor_id','created_by','quotation_number',
         'currency','subtotal','tax_total','total','status','valid_until','received_at','notes',
     ];
 
@@ -58,7 +58,7 @@ class PurchaseQuotation extends Model
 
     public function vendor()
     {
-        return $this->belongsTo(Vendor::class, 'vendor_id');
+        return $this->belongsTo(PurchaseVendor::class, 'purchase_vendor_id');
     }
 
     public function creator()

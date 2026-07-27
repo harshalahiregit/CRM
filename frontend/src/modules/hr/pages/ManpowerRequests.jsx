@@ -7,6 +7,7 @@ import {
   Sparkles, Loader2, TrendingUp,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+import { useMasterData } from '@/modules/hr/useMasterData'
 import { useAuth } from '@/context/AuthContext'
 import AuditTimeline from '@/components/ui/AuditTimeline'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
@@ -18,7 +19,7 @@ import {
 } from '../constants'
 
 const EMPTY_FORM = {
-  business_unit: '', department: '', project: '', location: '', hiring_manager_id: '',
+  business_unit: '', department: '', project: '', project_id: '', location: '', hiring_manager_id: '',
   position_title: '', employee_level: '', job_type: 'Full-time', work_mode: '', shift: '',
   number_of_posts: 1, experience_required: '', required_by_date: '', target_joining_date: '',
   salary_min: '', salary_max: '', budget: '', required_skills: '', preferred_skills: '',
@@ -230,7 +231,7 @@ export default function ManpowerRequests() {
 
   const filtered = requests.filter(r => {
     const q = search.toLowerCase()
-    const matchSearch = !q || r.position_title?.toLowerCase().includes(q) || r.department?.toLowerCase().includes(q) || r.project?.toLowerCase().includes(q)
+    const matchSearch = !q || r.position_title?.toLowerCase().includes(q) || r.department?.toLowerCase().includes(q) || (r.project_ref?.name || r.project || '').toLowerCase().includes(q)
     // filterStatus is either a single status (status dropdown) or a 4-step stage
     // key (header pipeline). Both are matched here — purely presentational.
     const matchStatus = filterStatus === 'All'
@@ -468,7 +469,7 @@ export default function ManpowerRequests() {
                   <div style={{ display: 'flex', gap: 14, color: 'var(--text-muted)', fontSize: 12, marginBottom: 10, flexWrap: 'wrap' }}>
                     <span>🏢 {req.department}</span>
                     {req.business_unit && <span>🏬 {req.business_unit}</span>}
-                    {req.project && <span>📁 {req.project}</span>}
+                    {(req.project_ref?.name || req.project) && <span>📁 {req.project_ref?.name || req.project}</span>}
                     {req.location && <span>📍 {req.location}</span>}
                     <span>👥 {req.number_of_posts} post{req.number_of_posts > 1 ? 's' : ''}</span>
                     {(req.salary_min || req.salary_max) && <span>💰 {req.salary_min || '—'}–{req.salary_max || '—'}</span>}
@@ -590,28 +591,37 @@ function RequestFormModal({ form, setForm, editingId, saving, requestedBy, onClo
   const set = (k) => (e) => setForm(p => ({ ...p, [k]: e.target.value }))
   const setV = (k) => (v) => setForm(p => ({ ...p, [k]: v }))
 
-  // Lookups — all loaded from the database (projects + business units, departments,
-  // hiring managers). Nothing hardcoded.
-  const [projects, setProjects] = useState([])
-  const [opts, setOpts] = useState({ business_units: [], departments: [], departments_by_bu: {}, hiring_managers: [] })
-  const [loading, setLoading] = useState(true)
-  useEffect(() => {
-    Promise.all([hrApi.manpower.projects(), hrApi.manpower.formOptions()])
-      .then(([p, o]) => {
-        setProjects(Array.isArray(p?.data ?? p) ? (p.data ?? p) : [])
-        setOpts(o?.data ?? o ?? {})
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [])
+  // Masters — the SINGLE source of truth (Organization Setup). Nothing hardcoded here.
+  const { masters, loading } = useMasterData()
 
-  // Department options filter by the chosen Business Unit (from real history);
-  // fall back to all departments when the BU has no recorded departments.
-  const deptOptions = (form.business_unit && opts.departments_by_bu?.[form.business_unit]?.length)
-    ? opts.departments_by_bu[form.business_unit]
-    : opts.departments
-  const managers = opts.hiring_managers || []
+  // Live master lists — Department / Business Unit / Hiring Manager / Employee Level / Shift.
+  const deptOptions = (masters.departments || []).map(d => d.name)
+  const managers = masters.managers || []
   const managerName = (id) => managers.find(m => String(m.id) === String(id))?.name || ''
+
+  // Projects come from the ONE cached master payload — the Project module is the source
+  // of truth (no duplicate fetch, no new endpoint). masterData returns ACTIVE projects
+  // only, so inactive ones never appear in a NEW selection; a saved-but-now-inactive
+  // project is re-added below so existing records still display it correctly.
+  const activeProjects = masters.projects || []
+  const savedProjectName = form.project_ref?.name || form.project || ''
+  const selectedInList = activeProjects.some(p => String(p.id) === String(form.project_id))
+  const projectOptions = (form.project_id && !selectedInList && savedProjectName)
+    ? [{ id: form.project_id, name: savedProjectName, status: 'inactive' }, ...activeProjects]
+    : activeProjects
+
+  // Selecting a project auto-fills empty Location / Business Unit from the project
+  // (never overwrites a manual edit) and drops the legacy free-text name so the project
+  // is stored ONLY via project_id.
+  const onProjectChange = (val) => setForm(p => {
+    const proj = activeProjects.find(x => String(x.id) === String(val))
+    const next = { ...p, project_id: val, project: '' }
+    if (proj) {
+      if (!next.location && proj.location) next.location = proj.location
+      if (!next.business_unit && proj.business_unit) next.business_unit = proj.business_unit
+    }
+    return next
+  })
   const today = new Date().toISOString().slice(0, 10)
   const isReplacement = form.hiring_reason === 'Replacement'
 
@@ -622,11 +632,11 @@ function RequestFormModal({ form, setForm, editingId, saving, requestedBy, onClo
 
       {/* ── Section 1 — Basic Information ── */}
       <Section n={1} title="Basic Information">
-        <Field label="Business Unit"><SearchableSelect value={form.business_unit} onChange={setV('business_unit')} options={opts.business_units || []} loading={loading} placeholder="Select business unit…" emptyText="No business units yet" allowCreate /></Field>
+        <Field label="Business Unit"><SearchableSelect value={form.business_unit} onChange={setV('business_unit')} options={masters.business_units || []} loading={loading} placeholder="Select business unit…" emptyText="No business units yet" allowCreate /></Field>
         <Field label="Department *"><SearchableSelect value={form.department} onChange={setV('department')} options={deptOptions || []} loading={loading} placeholder="Select department…" emptyText="No departments yet" allowCreate /></Field>
-        <Field label="Project"><SearchableSelect value={form.project} onChange={setV('project')} options={projects} loading={loading} placeholder="Select or search project…" emptyText="No Projects Found" allowCreate /></Field>
-        <Field label="Project Location"><TextInput value={form.location} onChange={set('location')} placeholder="e.g. Pune" /></Field>
-        <Field label="Hiring Manager"><SelectInput value={form.hiring_manager_id} onChange={set('hiring_manager_id')} options={[['', 'Select manager…'], ...managers.map(m => [String(m.id), m.label])]} pairs /></Field>
+        <Field label="Project"><SelectInput value={form.project_id ?? ''} onChange={(e) => onProjectChange(e.target.value)} options={[['', loading ? 'Loading projects…' : (projectOptions.length ? 'Select project…' : 'No active projects')], ...projectOptions.map(p => [String(p.id), p.name + (['finished', 'cancelled', 'inactive'].includes(p.status) ? ' (inactive)' : '')])]} pairs /></Field>
+        <Field label="Project Location"><SearchableSelect value={form.location} onChange={setV('location')} options={masters.locations || []} loading={loading} placeholder="Select or type location…" emptyText="No locations yet" allowCreate /></Field>
+        <Field label="Hiring Manager"><SelectInput value={form.hiring_manager_id} onChange={set('hiring_manager_id')} options={[['', 'Select manager…'], ...managers.map(m => [String(m.id), m.employee_code ? `${m.name} · ${m.employee_code}` : m.name])]} pairs /></Field>
         <ReadOnly label="Request Date" value={editingId ? undefined : today} />
         <ReadOnly label="Requested By" value={requestedBy || 'Current user'} />
       </Section>
@@ -634,10 +644,10 @@ function RequestFormModal({ form, setForm, editingId, saving, requestedBy, onClo
       {/* ── Section 2 — Position Details ── */}
       <Section n={2} title="Position Details">
         <Field label="Job Title *"><TextInput value={form.position_title} onChange={set('position_title')} placeholder="e.g. Senior Developer" /></Field>
-        <Field label="Employee Level"><SelectInput value={form.employee_level} onChange={set('employee_level')} options={['', ...EMPLOYEE_LEVELS]} /></Field>
+        <Field label="Employee Level"><SelectInput value={form.employee_level} onChange={set('employee_level')} options={['', ...(masters.employee_levels || [])]} /></Field>
         <Field label="Employment Type"><SelectInput value={form.job_type} onChange={set('job_type')} options={EMPLOYMENT_TYPES} /></Field>
         <Field label="Work Mode"><SelectInput value={form.work_mode} onChange={set('work_mode')} options={['', ...WORK_MODES]} /></Field>
-        <Field label="Shift"><SelectInput value={form.shift} onChange={set('shift')} options={['', ...SHIFTS]} /></Field>
+        <Field label="Shift"><SelectInput value={form.shift} onChange={set('shift')} options={['', ...(masters.shifts || [])]} /></Field>
         <Field label="No. of Positions *"><TextInput type="number" min="1" value={form.number_of_posts} onChange={set('number_of_posts')} /></Field>
         <Field label="Experience Required"><TextInput value={form.experience_required} onChange={set('experience_required')} placeholder="e.g. 3-5 years" /></Field>
         <Field label="Required By Date"><TextInput type="date" min={today} value={form.required_by_date} onChange={set('required_by_date')} /></Field>
@@ -1090,7 +1100,7 @@ function ConvertModal({ convertModal, setConvertModal, actionLoading, onClose, o
 // ── Detail modal ─────────────────────────────────────────────────────────────
 function DetailModal({ request, onClose }) {
   const rows = [
-    ['Business Unit', request.business_unit], ['Department', request.department], ['Project', request.project],
+    ['Business Unit', request.business_unit], ['Department', request.department], ['Project', request.project_ref?.name || request.project],
     ['Location', request.location], ['Job Title', request.position_title], ['Employee Level', request.employee_level],
     ['Employment Type', request.job_type], ['Experience', request.experience_required], ['Positions', request.number_of_posts],
     ['Priority', request.priority], ['Salary', (request.salary_min || request.salary_max) ? `${request.salary_min || '—'} – ${request.salary_max || '—'}` : null],
@@ -1189,7 +1199,7 @@ const MP_COLS = [
   { key: 'id',        label: 'MR ID',       get: r => r.id },
   { key: 'title',     label: 'Job Title',   get: r => (r.position_title || '').toLowerCase() },
   { key: 'dept',      label: 'Department',  get: r => (r.department || '').toLowerCase() },
-  { key: 'project',   label: 'Project',     get: r => (r.project || '').toLowerCase() },
+  { key: 'project',   label: 'Project',     get: r => (r.project_ref?.name || r.project || '').toLowerCase() },
   { key: 'positions', label: 'Positions',   get: r => Number(r.number_of_posts || 0) },
   { key: 'salary',    label: 'Salary',      get: r => Number(r.salary_max || r.salary_min || 0) },
   { key: 'reqby',     label: 'Required By', get: r => r.required_by_date || '' },
@@ -1269,7 +1279,7 @@ function ManpowerListView({ rows, onView, onEdit, isOwner, openAction, openConve
                     </span>
                   </td>
                   <td style={{ ...mpTd, color: 'var(--text-muted)' }}>{r.department || '—'}</td>
-                  <td style={{ ...mpTd, color: 'var(--text-muted)' }}>{r.project || '—'}</td>
+                  <td style={{ ...mpTd, color: 'var(--text-muted)' }}>{r.project_ref?.name || r.project || '—'}</td>
                   <td style={{ ...mpTd, textAlign: 'center', fontWeight: 700 }}>{r.number_of_posts ?? '—'}</td>
                   <td style={{ ...mpTd, color: 'var(--text-muted)' }}>{mpMoney(r.salary_min, r.salary_max)}</td>
                   <td style={{ ...mpTd, color: 'var(--text-muted)' }}>{r.required_by_date ? new Date(r.required_by_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</td>

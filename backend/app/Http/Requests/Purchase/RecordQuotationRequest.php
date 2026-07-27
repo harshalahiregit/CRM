@@ -19,7 +19,7 @@ class RecordQuotationRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'vendor_id'   => 'required|integer',
+            'purchase_vendor_id'   => 'required|integer',
             'currency'    => 'nullable|string|max:8',
             'valid_until' => 'nullable|date',
             'notes'       => 'nullable|string|max:2000',

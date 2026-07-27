@@ -12,7 +12,7 @@ class PurchaseQuotationRepository extends BaseRepository
     public function filtered(int $tenantId, array $filters)
     {
         $query = PurchaseQuotation::forTenant($tenantId)
-            ->with(['vendor:id,vendor_code,company_name', 'rfq:id,rfq_number,title'])
+            ->with(['vendor:id,purchase_vendor_code,company_name', 'rfq:id,rfq_number,title'])
             ->withCount('items');
 
         if (! empty($filters['purchase_rfq_id'])) {
@@ -21,8 +21,8 @@ class PurchaseQuotationRepository extends BaseRepository
         if (! empty($filters['status']) && $filters['status'] !== 'All') {
             $query->where('status', $filters['status']);
         }
-        if (! empty($filters['vendor_id'])) {
-            $query->where('vendor_id', $filters['vendor_id']);
+        if (! empty($filters['purchase_vendor_id'])) {
+            $query->where('purchase_vendor_id', $filters['purchase_vendor_id']);
         }
 
         return $query->latest()->get();

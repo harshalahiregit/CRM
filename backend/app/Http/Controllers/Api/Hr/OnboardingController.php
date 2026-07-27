@@ -30,6 +30,8 @@ class OnboardingController extends Controller
 
     public function store(StoreOnboardingRequest $request)
     {
+        $this->assertCanManage($request);
+
         $record = $this->onboardingService->create($request->validated(), $request->user()->tenant_id);
 
         return response()->json($record, 201);
@@ -130,6 +132,7 @@ class OnboardingController extends Controller
     public function toggleStep(Request $request, HrOnboarding $onboarding)
     {
         $this->assertTenant($request, $onboarding);
+        $this->assertCanManage($request);
 
         if ($request->has('checklist')) {
             return response()->json($this->onboardingService->toggleChecklist($onboarding, $request->input('checklist')));
@@ -145,6 +148,7 @@ class OnboardingController extends Controller
     public function destroy(Request $request, HrOnboarding $onboarding)
     {
         $this->assertTenant($request, $onboarding);
+        $this->assertCanManage($request);
 
         $this->onboardingService->destroy($onboarding);
 

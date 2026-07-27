@@ -17,7 +17,7 @@ class StorePurchaseContractRequest extends FormRequest
         return [
             'title'         => 'required|string|max:200',
             'type'          => 'required|string|in:'.implode(',', PurchaseContractType::ALL),
-            'vendor_id'     => 'required|integer',
+            'purchase_vendor_id'     => 'required|integer',
             'currency'      => 'nullable|string|max:8',
             'start_date'    => 'nullable|date',
             'end_date'      => 'nullable|date',

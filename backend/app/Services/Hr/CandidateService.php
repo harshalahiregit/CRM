@@ -46,6 +46,12 @@ class CandidateService
         $data['ai_score']     = $aiData['score'];
         $data['ai_breakdown'] = $aiData['breakdown'];
 
+        // STEP 6: the candidate inherits the Project from its Job Posting — never a
+        // manual selection. Any client-supplied project_id is ignored.
+        $data['project_id'] = ! empty($data['job_posting_id'])
+            ? HrJobPosting::where('id', $data['job_posting_id'])->value('project_id')
+            : null;
+
         $candidate = HrCandidate::create($data);
 
         if ($candidate->job_posting_id) {
@@ -73,12 +79,19 @@ class CandidateService
         return $candidate;
     }
 
+    /** Fields the generic update endpoint may never set — they are tenant/pipeline
+     *  controlled and were previously mass-assignable via PUT /candidates/{id}. */
+    private const UPDATE_PROTECTED = [
+        'id', 'tenant_id', 'job_posting_id', 'project_id', 'stage', 'final_decision',
+        'ai_score', 'applied_at', 'assigned_recruiter_id', 'created_at', 'updated_at',
+    ];
+
     public function update(HrCandidate $candidate, array $data): HrCandidate
     {
-        // Guard the general update endpoint too: Offer/Hired can't be set manually.
-        if (isset($data['stage']) && in_array($data['stage'], self::SYSTEM_CONTROLLED_STAGES, true) && $data['stage'] !== $candidate->stage) {
-            throw new BusinessException('Offer and Hired stages are managed automatically by the recruitment workflow.', 422);
-        }
+        // Mass-assignment protection: strip tenant/pipeline/scoring keys so the generic
+        // editor can never move a candidate to another tenant, jump the stage, or forge
+        // the AI score. Stage moves go through updateStage(); decisions via updateDecision().
+        $data = array_diff_key($data, array_flip(self::UPDATE_PROTECTED));
 
         $candidate->update($data);
 
@@ -179,6 +192,14 @@ class CandidateService
 
     public function updateDecision(HrCandidate $candidate, string $decision): HrCandidate
     {
+        // 'Selected' promotes the candidate to Hired — legal only once they have reached
+        // the Offer stage (an offer exists / was accepted). This blocks the decision
+        // endpoint from jumping an early-pipeline candidate straight to Hired, while the
+        // legitimate confirm-joining flow (candidate already at Offer) passes cleanly.
+        if ($decision === 'Selected' && ! in_array($candidate->stage, ['Offer', 'Hired'], true)) {
+            throw new BusinessException('A candidate can only be marked Selected/Hired after an offer has been made.', 422);
+        }
+
         $oldStage = $candidate->stage;
         $candidate->update(['final_decision' => $decision]);
 
@@ -687,6 +708,7 @@ class CandidateService
         $candidate->loadMissing([
             'jobPosting.manpowerRequest.requester', 'jobPosting.manpowerRequest.l1Approver', 'jobPosting.manpowerRequest.l2Approver',
             'interviewRounds', 'offer', 'onboarding', 'assignedRecruiter',
+            'project:id,name,status',   // display project via the project_id relation (never a stored name)
         ]);
 
         $job      = $candidate->jobPosting;
@@ -754,6 +776,8 @@ class CandidateService
                 'reference'       => 'CAND-'.str_pad((string) $candidate->id, 4, '0', STR_PAD_LEFT),
                 'applied_job'     => $job?->title,
                 'department'      => $job?->department ?? $mr?->department,
+                // Project resolved through the project_id relation (candidate → job → MR chain).
+                'project'         => $candidate->project ? ['id' => $candidate->project->id, 'name' => $candidate->project->name, 'status' => $candidate->project->status] : null,
                 'current_stage'   => $candidate->stage,
                 'current_status'  => $employee ? 'Joined' : ($offer?->accepted_at ? 'Offer Accepted' : ($offer ? 'Offer '.$offer->status : ($onb ? 'Onboarding '.($onb->verification_status ?? 'In Progress') : ($candidate->final_decision ?: 'In Progress')))),
                 'recruiter'       => $recruiter,

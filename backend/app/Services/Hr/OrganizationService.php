@@ -328,6 +328,67 @@ class OrganizationService
         ];
     }
 
+    /** Enum masters that have no dedicated table — defined ONCE here (single source). */
+    public const SHIFTS = ['Day', 'Night', 'Rotational', 'Flexible'];
+
+    public const EMPLOYEE_LEVELS = ['Intern', 'Junior', 'Mid-level', 'Senior', 'Lead', 'Manager', 'Director'];
+
+    /**
+     * ONE shared master-data payload for EVERY Recruitment dropdown (GET /hr/master-data).
+     * Reuses the exact active-only masters as options() — Departments / Designations /
+     * Grades / Roles / Employees — and adds the enum + derived sets. Single source of
+     * truth: nothing is hardcoded per Recruitment page.
+     */
+    public function masterData(int $tenantId): array
+    {
+        $base = $this->options($tenantId);
+
+        return [
+            'departments'     => $base['departments'],
+            'designations'    => $base['designations'],
+            'grades'          => $base['grades'],
+            'roles'           => $base['roles'],
+            // Employees are the pool for Hiring Managers, Reporting Managers and Interviewers.
+            'managers'        => $base['employees'],
+            // No master table for these — derived from real tenant data, deduped.
+            'business_units'  => $this->distinctValues(\App\Models\Hr\HrManpowerRequest::class, 'business_unit', $tenantId),
+            'locations'       => $this->distinctLocations($tenantId),
+            // Projects reuse the Project module's OWN service (single source of truth,
+            // active-only). No duplicate project store; included here so every HR
+            // dropdown reads it from the one cached master payload.
+            'projects'        => app(\App\Services\Project\ProjectService::class)->options($tenantId),
+            // Fixed enums with no table — defined once above.
+            'shifts'          => self::SHIFTS,
+            'employee_levels' => self::EMPLOYEE_LEVELS,
+        ];
+    }
+
+    /** Distinct non-empty values of a column for a tenant (used for derived masters). */
+    private function distinctValues(string $modelClass, string $column, int $tenantId): array
+    {
+        return $modelClass::where('tenant_id', $tenantId)
+            ->whereNotNull($column)->where($column, '!=', '')
+            ->distinct()->orderBy($column)->pluck($column)->values()->all();
+    }
+
+    /** Locations aggregated across the recruitment chain (MR + Job Posting + Employee). */
+    private function distinctLocations(int $tenantId): array
+    {
+        $sources = [
+            [\App\Models\Hr\HrManpowerRequest::class, 'location'],
+            [\App\Models\Hr\HrJobPosting::class, 'location'],
+            [HrEmployee::class, 'location'],
+        ];
+        $values = collect();
+        foreach ($sources as [$model, $column]) {
+            $values = $values->merge(
+                $model::where('tenant_id', $tenantId)->whereNotNull($column)->where($column, '!=', '')->distinct()->pluck($column)
+            );
+        }
+
+        return $values->filter()->unique()->sort()->values()->all();
+    }
+
     /** Flat master lists for dropdowns elsewhere (employee forms, letters, PMS…). */
     public function options(int $tenantId): array
     {

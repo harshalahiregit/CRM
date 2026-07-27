@@ -5,6 +5,7 @@ import {
   Plus, Pencil, X, Power, Search, UserPlus, Sparkles, Users, Award, Wallet,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+import { useMasterData, withInactive } from '@/modules/hr/useMasterData'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 
 const GRAD = 'linear-gradient(135deg,#7C3AED,#5b21b6)'
@@ -162,6 +163,10 @@ function Kpis({ showToast }) {
 function Goals({ employees, showToast }) {
   const [rows, setRows] = useState([]); const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(null); const [assign, setAssign] = useState(null); const [saving, setSaving] = useState(false)
+  // Goal targeting reuses Org Setup masters (no hardcoded/free-text dept/designation).
+  const { masters } = useMasterData()
+  const deptOptions  = (f) => withInactive((masters.departments  || []).map(d => d.name), f?.department)
+  const desigOptions = (f) => withInactive((masters.designations || []).map(d => d.name), f?.designation)
   const load = useCallback(() => { setLoading(true); hrApi.performance.goals.list().then(setRows).catch(()=>showToast('Failed to load goals','error')).finally(()=>setLoading(false)) }, [showToast])
   useEffect(() => { load() }, [load])
   const EMPTY = { title:'', description:'', department:'', designation:'', weightage:'', target:'', due_date:'', status:'Active' }
@@ -200,8 +205,16 @@ function Goals({ employees, showToast }) {
           <div className="flex items-center justify-between mb-4"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{modal.editing?'Edit Goal':'Add Goal'}</h2><button onClick={()=>setModal(null)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2"><label className="label">Title *</label><input className="input-3d text-sm" value={modal.form.title} onChange={e=>setModal(m=>({...m,form:{...m.form,title:e.target.value}}))}/></div>
-            <div><label className="label">Department</label><input className="input-3d text-sm" value={modal.form.department} onChange={e=>setModal(m=>({...m,form:{...m.form,department:e.target.value}}))}/></div>
-            <div><label className="label">Designation</label><input className="input-3d text-sm" value={modal.form.designation} onChange={e=>setModal(m=>({...m,form:{...m.form,designation:e.target.value}}))}/></div>
+            <div><label className="label">Department</label>
+              <select className="input-3d text-sm" value={modal.form.department} onChange={e=>setModal(m=>({...m,form:{...m.form,department:e.target.value}}))}>
+                <option value="">All / Select…</option>{deptOptions(modal.form).map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+            <div><label className="label">Designation</label>
+              <select className="input-3d text-sm" value={modal.form.designation} onChange={e=>setModal(m=>({...m,form:{...m.form,designation:e.target.value}}))}>
+                <option value="">All / Select…</option>{desigOptions(modal.form).map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
             <div><label className="label">Weightage %</label><input type="number" className="input-3d text-sm" value={modal.form.weightage} onChange={e=>setModal(m=>({...m,form:{...m.form,weightage:e.target.value}}))}/></div>
             <div><label className="label">Due Date</label><input type="date" className="input-3d text-sm" value={modal.form.due_date} onChange={e=>setModal(m=>({...m,form:{...m.form,due_date:e.target.value}}))}/></div>
             <div className="col-span-2"><label className="label">Target</label><input className="input-3d text-sm" value={modal.form.target} onChange={e=>setModal(m=>({...m,form:{...m.form,target:e.target.value}}))}/></div>
@@ -348,10 +361,19 @@ function Recommendations({ kind, employees, showToast }) {
   const api = isPromo ? hrApi.performance.promotions : hrApi.performance.increments
   const [rows, setRows] = useState([]); const [loading, setLoading] = useState(true)
   const [gen, setGen] = useState(''); const [busy, setBusy] = useState(false)
+  const [structures, setStructures] = useState([]); const [pick, setPick] = useState({})   // promotion → optional new structure per row
   const load = useCallback(() => { setLoading(true); api.list().then(setRows).catch(()=>showToast('Failed to load','error')).finally(()=>setLoading(false)) }, [kind])  // eslint-disable-line
   useEffect(() => { load() }, [load])
+  // Salary Engine: a promotion may optionally assign a new active salary structure.
+  useEffect(() => { if (isPromo) hrApi.payroll.salaryStructures.list({ status:'Active' }).then(r=>setStructures(r.data||[])).catch(()=>{}) }, [isPromo])
   const generate = async () => { if (!gen) return showToast('Select an employee','error'); setBusy(true); try { await api.generate(Number(gen)); showToast('Recommendation generated'); setGen(''); load() } catch (e) { showToast(e.response?.data?.message||'Failed','error') } finally { setBusy(false) } }
-  const decide = async (r, status) => { try { await api.setStatus(r.id, status); showToast(status); load() } catch { showToast('Failed','error') } }
+  const decide = async (r, status) => {
+    try {
+      if (isPromo) { const sid = pick[r.id]; await api.setStatus(r.id, status, r.recommended_designation || null, sid ? Number(sid) : null); showToast(status === 'Approved' && sid ? 'Approved — new salary structure assigned' : status) }
+      else { await api.setStatus(r.id, status); showToast(status === 'Approved' ? 'Approved — salary revision applied' : status) }
+      load()
+    } catch (e) { showToast(e.response?.data?.message || 'Failed','error') }
+  }
 
   return (
     <div className="space-y-4">
@@ -383,7 +405,10 @@ function Recommendations({ kind, employees, showToast }) {
                   </>}
                   <td className="px-3 py-2.5 text-[11px] max-w-[220px]" style={{ color:'var(--text-muted)' }}>{r.reason}</td>
                   <td className="px-3 py-2.5"><span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:st.bg, color:st.c }}>{status}</span></td>
-                  <td className="px-3 py-2.5">{status==='Pending' && <div className="flex gap-1.5 justify-end">
+                  <td className="px-3 py-2.5">{status==='Pending' && <div className="flex gap-1.5 justify-end items-center">
+                    {isPromo && <select value={pick[r.id]||''} onChange={e=>setPick(p=>({...p,[r.id]:e.target.value}))} className="input-3d text-[11px]" style={{ padding:'4px 6px', maxWidth:150 }} title="Optionally assign a new salary structure on approval">
+                      <option value="">No new structure</option>{structures.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>}
                     <button onClick={()=>decide(r,'Approved')} className="text-[11px] font-bold px-2.5 py-1 rounded-lg" style={{ background:'rgba(16,185,129,0.12)', color:'#10b981' }}>Approve</button>
                     <button onClick={()=>decide(r,'Rejected')} className="text-[11px] font-bold px-2.5 py-1 rounded-lg" style={{ background:'rgba(239,68,68,0.1)', color:'#f87171' }}>Reject</button>
                   </div>}</td>

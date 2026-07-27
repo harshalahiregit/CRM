@@ -58,7 +58,7 @@ class OnboardingPortalController extends Controller
         // marks the section Submitted, leaving HR verification untouched.
         $record = $this->formService->saveSection($this->formRecord($onboarding), $section, $request->all(), null);
 
-        return response()->json(['success' => true, 'form' => $this->formService->show($record)]);
+        return response()->json(['success' => true, 'form' => $this->formService->portalForm($record)]);
     }
 
     /* POST /api/onboarding/{token}/form/{collection} — education | experience | references */
@@ -73,7 +73,7 @@ class OnboardingPortalController extends Controller
         $record = $this->formRecord($onboarding);
         $this->formService->{$method}($record, $request->except(['id']), null, $request->input('id'));
 
-        return response()->json(['success' => true, 'form' => $this->formService->show($record->fresh())]);
+        return response()->json(['success' => true, 'form' => $this->formService->portalForm($record->fresh())]);
     }
 
     /* DELETE /api/onboarding/{token}/form/{collection}/{id} */
@@ -86,7 +86,7 @@ class OnboardingPortalController extends Controller
         $record = $this->formRecord($onboarding);
         $this->formService->deleteChild($record, $collection, $id, null);
 
-        return response()->json(['success' => true, 'form' => $this->formService->show($record->fresh())]);
+        return response()->json(['success' => true, 'form' => $this->formService->portalForm($record->fresh())]);
     }
 
     /* GET /api/onboarding/{token} — full portal dashboard */
@@ -96,7 +96,7 @@ class OnboardingPortalController extends Controller
 
         return response()->json(array_merge(
             $this->onboardingService->portalDashboard($onboarding),
-            ['form' => $this->formService->show($this->formRecord($onboarding))],
+            ['form' => $this->formService->portalForm($this->formRecord($onboarding))],
         ));
     }
 

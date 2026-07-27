@@ -10,6 +10,17 @@ use App\Http\Controllers\Api\Purchase\PurchaseCatalogController;
 use App\Http\Controllers\Api\Purchase\PurchaseContractController;
 use App\Http\Controllers\Api\Purchase\PurchaseQuotationController;
 use App\Http\Controllers\Api\Purchase\PurchaseRfqController;
+use App\Http\Controllers\Api\Purchase\PurchaseOnboardingController;
+use App\Http\Controllers\Api\Purchase\PurchaseVendorDocumentController;
+use App\Http\Controllers\Api\Purchase\PurchaseContactController;
+use App\Http\Controllers\Api\Purchase\PurchaseKickoffController;
+use App\Http\Controllers\Api\Purchase\PurchaseApprovalController;
+use App\Http\Controllers\Api\Purchase\PurchaseVendorController;
+use App\Http\Controllers\Api\Purchase\PurchaseVendorItemController;
+use App\Http\Controllers\Api\Purchase\PurchaseOrderReturnController;
+use App\Http\Controllers\Api\Purchase\PurchaseReportController;
+use App\Http\Controllers\Api\Purchase\PurchaseSettingController;
+use App\Http\Controllers\Api\Purchase\PurchaseVendorCategoryController;
 use Illuminate\Support\Facades\Route;
 
 // ── Purchase & Procurement Module (Sanctum + role:admin,staff) ──────────
@@ -22,6 +33,19 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
 
     // Unified procure-to-pay dashboard (read-only aggregation)
     Route::get('/dashboard', [PurchaseDashboardController::class, 'index']);
+
+    // ── Settings (read) — the module's key/value config + category master ──
+    // Writes live in the role:admin group below: config is an admin concern.
+    Route::get('/settings',           [PurchaseSettingController::class, 'index']);
+    Route::get('/vendor-categories',  [PurchaseVendorCategoryController::class, 'index']);
+
+    // ── Reports (read-only aggregations, ?period=…) ────────────────────────
+    Route::get('/reports/item-cost',      [PurchaseReportController::class, 'itemCost']);
+    Route::get('/reports/po-voucher',     [PurchaseReportController::class, 'poVoucher']);
+    Route::get('/reports/orders',         [PurchaseReportController::class, 'orders']);
+    Route::get('/reports/invoices',       [PurchaseReportController::class, 'invoices']);
+    Route::get('/reports/stats-by-count', [PurchaseReportController::class, 'statsByCount']);
+    Route::get('/reports/stats-by-cost',  [PurchaseReportController::class, 'statsByCost']);
 
     // Purchase Requests — Draft → Submitted → Approved → Converted to PO
     Route::get('/requests/stats',                    [PurchaseRequestController::class, 'stats']);
@@ -119,10 +143,100 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::put('/catalog/{catalogItem}',          [PurchaseCatalogController::class, 'update']);
     Route::post('/catalog/{catalogItem}/status',  [PurchaseCatalogController::class, 'setStatus']);
     Route::delete('/catalog/{catalogItem}',       [PurchaseCatalogController::class, 'destroy']); // Draft only
+
+    // ── Purchase Vendor master (Purchase-owned entity: purchase_vendors) ───
+    // Independent Purchase Vendor master (purchase_vendors / purchase_vendor_id).
+    Route::get('/vendors/stats',                     [PurchaseVendorController::class, 'stats']);
+    Route::get('/vendors',                           [PurchaseVendorController::class, 'index']);
+    Route::post('/vendors',                          [PurchaseVendorController::class, 'store']);
+    Route::get('/vendors/{purchaseVendor}',          [PurchaseVendorController::class, 'show'])->whereNumber('purchaseVendor');
+    Route::put('/vendors/{purchaseVendor}',          [PurchaseVendorController::class, 'update'])->whereNumber('purchaseVendor');
+    Route::patch('/vendors/{purchaseVendor}/status', [PurchaseVendorController::class, 'updateStatus'])->whereNumber('purchaseVendor');
+    Route::delete('/vendors/{purchaseVendor}',       [PurchaseVendorController::class, 'destroy'])->whereNumber('purchaseVendor');
+
+    // ── Vendor Items — Purchase Vendor ↔ Inventory Item mapping ────────────
+    // Purchase owns the LINK only; inventory_products stays the Item Master and
+    // is joined read-only. Item groups/items themselves come from Inventory APIs.
+    Route::get('/vendor-items/stats',        [PurchaseVendorItemController::class, 'stats']);
+    Route::get('/vendor-items',              [PurchaseVendorItemController::class, 'index']);
+    Route::post('/vendor-items',             [PurchaseVendorItemController::class, 'store']);
+    Route::get('/vendor-items/{vendorItem}', [PurchaseVendorItemController::class, 'show'])->whereNumber('vendorItem');
+    Route::put('/vendor-items/{vendorItem}', [PurchaseVendorItemController::class, 'update'])->whereNumber('vendorItem');
+    Route::delete('/vendor-items/{vendorItem}', [PurchaseVendorItemController::class, 'destroy'])->whereNumber('vendorItem');
+
+    // ── Order Returns — goods returned to a Purchase Vendor (OR-####) ──────
+    // A separate document from debit notes: own number series + line discounts.
+    Route::get('/order-returns/stats',          [PurchaseOrderReturnController::class, 'stats']);
+    Route::get('/order-returns',                [PurchaseOrderReturnController::class, 'index']);
+    Route::post('/order-returns',               [PurchaseOrderReturnController::class, 'store']);
+    Route::get('/order-returns/{orderReturn}',  [PurchaseOrderReturnController::class, 'show'])->whereNumber('orderReturn');
+    Route::put('/order-returns/{orderReturn}',  [PurchaseOrderReturnController::class, 'update'])->whereNumber('orderReturn');
+    Route::delete('/order-returns/{orderReturn}', [PurchaseOrderReturnController::class, 'destroy'])->whereNumber('orderReturn');
+    // Lifecycle: Draft → Issued → Completed, or Cancelled.
+    Route::post('/order-returns/{orderReturn}/issue',    [PurchaseOrderReturnController::class, 'issue'])->whereNumber('orderReturn');
+    Route::post('/order-returns/{orderReturn}/complete', [PurchaseOrderReturnController::class, 'complete'])->whereNumber('orderReturn');
+    Route::post('/order-returns/{orderReturn}/cancel',   [PurchaseOrderReturnController::class, 'cancel'])->whereNumber('orderReturn');
+
+    // ── Vendor onboarding (6-step wizard) ──────────────────────────────────
+    Route::get('/onboarding/stats',                  [PurchaseOnboardingController::class, 'stats']);
+    Route::get('/onboarding',                        [PurchaseOnboardingController::class, 'index']);
+    Route::post('/onboarding',                       [PurchaseOnboardingController::class, 'store']);
+    Route::get('/onboarding/{onboarding}',           [PurchaseOnboardingController::class, 'show']);
+    Route::get('/onboarding/{onboarding}/progress',  [PurchaseOnboardingController::class, 'progress']);
+    Route::post('/onboarding/{onboarding}/profile',  [PurchaseOnboardingController::class, 'saveProfile']);
+    Route::patch('/onboarding/{onboarding}/step',    [PurchaseOnboardingController::class, 'setStep']);
+    Route::post('/onboarding/{onboarding}/submit',   [PurchaseOnboardingController::class, 'submit']);
+    Route::delete('/onboarding/{onboarding}',        [PurchaseOnboardingController::class, 'destroy']);
+    // Step 1 — kickoff MOM PDF / acknowledgement (Purchase-owned kickoff engine).
+    Route::get('/onboarding/{onboarding}/kickoff',        [PurchaseOnboardingController::class, 'kickoffPdf']);
+    Route::post('/onboarding/{onboarding}/kickoff/accept',[PurchaseOnboardingController::class, 'acceptKickoff']);
+    Route::post('/onboarding/{onboarding}/kickoff/log',   [PurchaseOnboardingController::class, 'logKickoffEvent']);
+    // Approval chain (read) — Registration → Document → Commercial → Purchase → Activation.
+    Route::get('/onboarding/{onboarding}/approvals',      [PurchaseApprovalController::class, 'index']);
+
+    // ── Kickoff meetings (Purchase-owned engine: purchase_kickoff_* tables) ─
+    Route::get('/kickoff/stats',                   [PurchaseKickoffController::class, 'stats']);
+    Route::get('/kickoff',                         [PurchaseKickoffController::class, 'index']);
+    Route::post('/kickoff',                        [PurchaseKickoffController::class, 'store']);
+    Route::get('/kickoff/{kickoff}',               [PurchaseKickoffController::class, 'show']);
+    Route::put('/kickoff/{kickoff}',               [PurchaseKickoffController::class, 'update']);
+    Route::post('/kickoff/{kickoff}/transition',   [PurchaseKickoffController::class, 'transition']);
+    Route::patch('/kickoff/{kickoff}/attendance',  [PurchaseKickoffController::class, 'attendance']);
+    Route::post('/kickoff/{kickoff}/remind',       [PurchaseKickoffController::class, 'remind']);
+    Route::post('/kickoff/{kickoff}/mom',          [PurchaseKickoffController::class, 'uploadMom']);
+    Route::post('/kickoff/{kickoff}/mom/generate', [PurchaseKickoffController::class, 'generateMom']);
+    Route::get('/kickoff/{kickoff}/mom',           [PurchaseKickoffController::class, 'momFile']);
+    Route::post('/kickoff/{kickoff}/publish',      [PurchaseKickoffController::class, 'publish']);
+    Route::delete('/kickoff/{kickoff}',            [PurchaseKickoffController::class, 'destroy']);
+
+    // ── Vendor contacts (Purchase-owned engine: purchase_contacts) ─────────
+    Route::get('/vendors/{vendor}/contacts',                    [PurchaseContactController::class, 'index']);
+    Route::post('/vendors/{vendor}/contacts',                   [PurchaseContactController::class, 'store']);
+    Route::get('/vendors/{vendor}/contacts/{contact}',         [PurchaseContactController::class, 'show']);
+    Route::put('/vendors/{vendor}/contacts/{contact}',         [PurchaseContactController::class, 'update']);
+    Route::patch('/vendors/{vendor}/contacts/{contact}/status',[PurchaseContactController::class, 'setStatus']);
+    Route::delete('/vendors/{vendor}/contacts/{contact}',      [PurchaseContactController::class, 'destroy']);
+
+    // ── Vendor documents (Purchase-owned engine: purchase_documents) ─────
+    // Purchase-scoped surface over the SAME model/service. Review is admin, below.
+    Route::get('/vendors/{vendor}/documents',                       [PurchaseVendorDocumentController::class, 'checklist']);
+    Route::post('/vendors/{vendor}/documents',                      [PurchaseVendorDocumentController::class, 'upload']);
+    Route::get('/documents/{document}/download',                    [PurchaseVendorDocumentController::class, 'download']);
+    Route::post('/documents/{document}/resubmit',                   [PurchaseVendorDocumentController::class, 'resubmit']);
+    Route::delete('/documents/{document}',                          [PurchaseVendorDocumentController::class, 'destroy']);
+    Route::get('/documents/{document}/versions',                    [PurchaseVendorDocumentController::class, 'versions']);
+    Route::get('/documents/{document}/versions/{version}/download', [PurchaseVendorDocumentController::class, 'downloadVersion']);
+    Route::post('/documents/{document}/versions/{version}/restore', [PurchaseVendorDocumentController::class, 'restoreVersion']);
 });
 
 // Approval authority is admin-only — a requester must not approve their own PR.
 Route::middleware(['auth:sanctum', 'role:admin'])->prefix('purchase')->group(function () {
+
+    // ── Settings writes — module configuration is an admin concern ─────────
+    Route::put('/settings', [PurchaseSettingController::class, 'update']);
+    Route::post('/vendor-categories',                    [PurchaseVendorCategoryController::class, 'store']);
+    Route::put('/vendor-categories/{vendorCategory}',    [PurchaseVendorCategoryController::class, 'update'])->whereNumber('vendorCategory');
+    Route::delete('/vendor-categories/{vendorCategory}', [PurchaseVendorCategoryController::class, 'destroy'])->whereNumber('vendorCategory');
 
     Route::post('/requests/{purchaseRequest}/approve', [PurchaseRequestController::class, 'approve']);
     Route::post('/requests/{purchaseRequest}/reject',  [PurchaseRequestController::class, 'reject']);
@@ -155,4 +269,20 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('purchase')->group(fun
     // admin authority.
     Route::post('/contracts/{contract}/activate',  [PurchaseContractController::class, 'activate']);
     Route::post('/contracts/{contract}/terminate', [PurchaseContractController::class, 'terminate']);
+
+    // Vendor onboarding decisions — a requester must not approve their own vendor.
+    Route::post('/onboarding/{onboarding}/approve',  [PurchaseOnboardingController::class, 'approve']);
+    Route::post('/onboarding/{onboarding}/reject',   [PurchaseOnboardingController::class, 'reject']);
+    Route::post('/onboarding/{onboarding}/hold',     [PurchaseOnboardingController::class, 'hold']);
+    Route::post('/onboarding/{onboarding}/release',  [PurchaseOnboardingController::class, 'release']);
+    Route::post('/onboarding/{onboarding}/resubmit', [PurchaseOnboardingController::class, 'requestResubmit']);
+    // Per-stage approval decisions (Purchase-owned approval chain).
+    Route::post('/onboarding/{onboarding}/approvals/{stage}/approve', [PurchaseApprovalController::class, 'approve']);
+    Route::post('/onboarding/{onboarding}/approvals/{stage}/reject',  [PurchaseApprovalController::class, 'reject']);
+
+    // Purchase Vendor activation (admin authority).
+    Route::post('/vendors/{purchaseVendor}/approve', [PurchaseVendorController::class, 'approve'])->whereNumber('purchaseVendor');
+
+    // Admin approve/reject a purchase vendor's statutory document.
+    Route::post('/documents/{document}/review',      [PurchaseVendorDocumentController::class, 'review']);
 });

@@ -17,7 +17,7 @@ class StorePurchaseRequestRequest extends FormRequest
             'title'         => 'required|string',
             'department'    => 'nullable|string',
             // Tenant ownership + Active status are enforced in the service, not here.
-            'vendor_id'     => 'nullable|integer|exists:vendors,id',
+            'purchase_vendor_id'     => 'nullable|integer|exists:purchase_vendors,id',
             'required_by'   => 'nullable|date',
             'priority'      => 'nullable|in:Low,Normal,High,Urgent',
             'justification' => 'nullable|string',

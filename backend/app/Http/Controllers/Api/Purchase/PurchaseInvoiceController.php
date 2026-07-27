@@ -26,7 +26,7 @@ class PurchaseInvoiceController extends Controller
         return response()->json(
             $this->purchaseInvoiceService->list(
                 $request->user()->tenant_id,
-                $request->only(['status', 'vendor_id', 'overdue', 'search'])
+                $request->only(['status', 'purchase_vendor_id', 'overdue', 'search'])
             )
         );
     }

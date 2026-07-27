@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft, CalendarDays, Clock, MapPin, Users, Plus, Trash2,
   AlertTriangle, ChevronRight, Laptop, Building2, CheckCircle2,
@@ -79,9 +79,29 @@ export default function KickoffMeetingCreate() {
   const [vendors, setVendors]   = useState([])
   const [contacts, setContacts] = useState([])   // vendor contacts for participant picker
 
+  // Optional ?vendor=<id> prefill — lets callers (e.g. Purchase Vendors) open this
+  // page pre-scoped to a specific vendor. Backward compatible: no param → unchanged.
+  const [searchParams] = useSearchParams()
+  const preVendorId = searchParams.get('vendor')
+
   useEffect(() => {
-    tpvApi.vendors.list().then(r => setVendors(r?.data ?? r)).catch(() => {})
-  }, [])
+    tpvApi.vendors.list().then(r => {
+      const list = r?.data ?? r ?? []
+      // A vendor passed via ?vendor= may not be in the (TPV-filtered) picker — fetch
+      // it from the shared master and merge so it can be selected.
+      if (preVendorId && !list.some(v => String(v.id) === String(preVendorId))) {
+        tpvApi.vendors.get(preVendorId)
+          .then(res => { const v = res?.data ?? res; setVendors(v?.id ? [v, ...list] : list) })
+          .catch(() => setVendors(list))
+      } else {
+        setVendors(list)
+      }
+    }).catch(() => {})
+    if (preVendorId) {
+      setForm(f => ({ ...f, subject_id: preVendorId }))
+      tpvApi.contacts.list(preVendorId).then(r => setContacts(r?.data ?? r)).catch(() => {})
+    }
+  }, [preVendorId])
 
   // ── form state ──────────────────────────────────────────────────────────
   const [form, setForm] = useState({

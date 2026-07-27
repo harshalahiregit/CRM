@@ -21,7 +21,7 @@ class PurchaseOrderController extends Controller
         return response()->json(
             $this->purchaseOrderService->list(
                 $request->user()->tenant_id,
-                $request->only(['status', 'department', 'vendor_id', 'expected_by', 'search'])
+                $request->only(['status', 'department', 'purchase_vendor_id', 'expected_by', 'search'])
             )
         );
     }

@@ -84,6 +84,11 @@ class HrEmployeeOnboarding extends Model
         return $this->hasMany(HrEmployeeOnboardingAsset::class, 'onboarding_id');
     }
 
+    public function backgroundVerification()
+    {
+        return $this->hasOne(HrBackgroundVerification::class, 'onboarding_id');
+    }
+
     public function tasks()
     {
         return $this->hasMany(HrEmployeeOnboardingTask::class, 'onboarding_id')->orderBy('sort_order');

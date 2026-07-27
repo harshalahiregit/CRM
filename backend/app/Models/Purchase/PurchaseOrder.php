@@ -5,7 +5,7 @@ namespace App\Models\Purchase;
 use App\Models\Traits\Auditable;
 use App\Models\Traits\BelongsToTenant;
 use App\Models\User;
-use App\Models\Vendor\Vendor;
+use App\Models\Purchase\PurchaseVendor;
 use App\Support\Purchase\PurchaseOrderStatus as Status;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -17,7 +17,7 @@ class PurchaseOrder extends Model
     protected $table = 'purchase_orders';
 
     protected $fillable = [
-        'tenant_id','po_number','purchase_request_id','purchase_quotation_id','purchase_contract_id','vendor_id','created_by',
+        'tenant_id','po_number','purchase_request_id','purchase_quotation_id','purchase_contract_id','purchase_vendor_id','created_by',
         'title','department','order_date','expected_delivery_date','currency',
         'subtotal','tax_total','total',
         'status','issued_at','issued_by','terms','notes',
@@ -39,12 +39,22 @@ class PurchaseOrder extends Model
     {
         static::creating(function (PurchaseOrder $po) {
             if (empty($po->po_number)) {
-                $year  = date('Y');
-                $count = static::withTrashed()
-                               ->where('tenant_id', $po->tenant_id)
-                               ->whereYear('created_at', $year)
-                               ->count() + 1;
-                $po->po_number = 'PO-'.$year.'-'.str_pad((string) $count, 3, '0', STR_PAD_LEFT);
+                // Uses the Settings prefix/next-number once configured; otherwise
+                // keeps this module's original PO-YYYY-NNN format untouched.
+                $po->po_number = \App\Support\Purchase\PurchaseNumbering::next(
+                    (int) $po->tenant_id,
+                    'pur_order_prefix',
+                    'next_po_number',
+                    function () use ($po) {
+                        $year  = date('Y');
+                        $count = static::withTrashed()
+                                       ->where('tenant_id', $po->tenant_id)
+                                       ->whereYear('created_at', $year)
+                                       ->count() + 1;
+
+                        return 'PO-'.$year.'-'.str_pad((string) $count, 3, '0', STR_PAD_LEFT);
+                    },
+                );
             }
         });
     }
@@ -58,7 +68,7 @@ class PurchaseOrder extends Model
 
     public function vendor()
     {
-        return $this->belongsTo(Vendor::class, 'vendor_id');
+        return $this->belongsTo(PurchaseVendor::class, 'purchase_vendor_id');
     }
 
     /** The approved Purchase Request this PO was converted from, if any. */

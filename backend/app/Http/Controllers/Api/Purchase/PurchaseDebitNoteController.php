@@ -27,7 +27,7 @@ class PurchaseDebitNoteController extends Controller
         return response()->json(
             $this->debitNoteService->list(
                 $request->user()->tenant_id,
-                $request->only(['status', 'vendor_id', 'search'])
+                $request->only(['status', 'purchase_vendor_id', 'search'])
             )
         );
     }
