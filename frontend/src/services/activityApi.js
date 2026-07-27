@@ -1,10 +1,6 @@
 // Unified sales activity timeline — /api/sales/activities
 import api from '@/lib/api'
-
-const handleErr = (err) => {
-  const msg = err?.response?.data?.error || err?.response?.data?.message || 'Something went wrong'
-  throw new Error(msg)
-}
+import { handleErr } from '@/services/apiError'
 
 export const activityApi = {
   // subjectType is a short key: lead | proposal | estimate | invoice | credit_note | contract | task | customer

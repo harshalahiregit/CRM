@@ -2,11 +2,8 @@
 // Attaching tags to a record is done on that record's own endpoint (tags: [...]),
 // so this only covers listing and managing the tag vocabulary itself.
 import api from '@/lib/api'
+import { handleErr } from '@/services/apiError'
 
-const handleErr = (err) => {
-  const msg = err?.response?.data?.message || err?.response?.data?.error || 'Something went wrong'
-  throw new Error(msg)
-}
 const unwrap = (r) => r.data?.data ?? r.data
 
 export const tagApi = {

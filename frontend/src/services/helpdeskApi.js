@@ -2,11 +2,7 @@
 // Mirrors the per-resource service pattern (itemApi, leadApi). The backend wraps
 // responses in { status, message, data }, so every call unwraps `.data.data`.
 import api from '@/lib/api'
-
-const handleErr = (err) => {
-  const msg = err?.response?.data?.message || err?.response?.data?.error || 'Something went wrong'
-  throw new Error(msg)
-}
+import { handleErr } from '@/services/apiError'
 
 // Unwrap the ApiResponse envelope down to its `data` payload.
 const unwrap = (r) => r.data?.data ?? r.data

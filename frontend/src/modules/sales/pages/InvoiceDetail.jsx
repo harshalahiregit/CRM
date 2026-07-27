@@ -4,6 +4,7 @@ import { ArrowLeft, Send, Copy, Receipt, Trash2, ClipboardList, CheckCircle, XCi
 import { salesApi } from '@/services/salesApi'
 import StatusBadge from '../components/StatusBadge'
 import ActivityTimeline from '../components/ActivityTimeline'
+import { useToast } from '@/hooks/useToast'
 
 const fmt = (v) => '₹' + Number(v || 0).toLocaleString('en-IN')
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
@@ -13,7 +14,6 @@ export default function InvoiceDetail() {
   const navigate = useNavigate()
   const [invoice, setInvoice] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [toast, setToast] = useState(null)
   const [showPayModal, setShowPayModal]       = useState(false)
   const [showCreditDrawer, setShowCreditDrawer] = useState(false)
   const [creditNotes, setCreditNotes]         = useState([])
@@ -30,7 +30,11 @@ export default function InvoiceDetail() {
   })
   const [showTds, setShowTds] = useState(false)
 
-  const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000) }
+  // Routed through the shared Toast so every module notifies identically
+  // (and error toasts get the per-field validation detail + tip).
+  const toast = useToast()
+  const showToast = (msg, type = 'success') =>
+    type === 'error' ? toast.error(msg) : type === 'info' ? toast.info(msg) : toast.success(msg)
 
   useEffect(() => {
     salesApi.invoices.get(id).then(inv => { setInvoice(inv); setLoading(false) })
@@ -113,7 +117,6 @@ export default function InvoiceDetail() {
 
   return (
     <>
-      {toast && <div className="fixed top-5 right-5 z-[9999] px-5 py-3 rounded-2xl text-sm font-semibold text-white shadow-2xl" style={{ background: toast.type === 'success' ? 'linear-gradient(135deg,#10b981,#059669)' : 'linear-gradient(135deg,#f87171,#ef4444)' }}>{toast.msg}</div>}
       <div className="space-y-6 animate-[tiltIn_0.35s_ease]">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">

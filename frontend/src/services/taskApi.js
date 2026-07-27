@@ -1,14 +1,7 @@
 // Tasks — /api/tasks/* (owner: Shivam)
 import api from '@/lib/api'
+import { handleErr } from '@/services/apiError'
 
-const handleErr = (err) => {
-  const data = err?.response?.data
-  // Surface the specific field error (e.g. "File too large") instead of the
-  // generic "Validation failed", so the real reason reaches the user.
-  const fieldErr = data?.errors && Object.values(data.errors)?.[0]?.[0]
-  const msg = fieldErr || data?.message || data?.error || 'Something went wrong'
-  throw new Error(msg)
-}
 const unwrap = (r) => r.data?.data ?? r.data
 
 export const taskApi = {

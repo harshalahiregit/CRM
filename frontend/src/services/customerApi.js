@@ -1,10 +1,6 @@
 // Customer / Clients module — /api/customers/*
 import api from '@/lib/api'
-
-const handleErr = (err) => {
-  const msg = err?.response?.data?.message || err?.response?.data?.error || 'Something went wrong'
-  throw new Error(msg)
-}
+import { handleErr } from '@/services/apiError'
 
 // CRUD factory for simple per-customer record resources (/customers/{id}/{resource}).
 const crud = (resource) => ({

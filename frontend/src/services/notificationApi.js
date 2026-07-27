@@ -1,10 +1,7 @@
 // In-app notifications — the header bell. Scoped to the authenticated user.
 import api from '@/lib/api'
+import { handleErr } from '@/services/apiError'
 
-const handleErr = (err) => {
-  const msg = err?.response?.data?.message || err?.message || 'Request failed'
-  throw new Error(msg)
-}
 const unwrap = (r) => r.data?.data ?? r.data
 
 export const notificationApi = {

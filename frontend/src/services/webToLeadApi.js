@@ -3,11 +3,7 @@
 // auth token, so they use a bare axios instance (not @/lib/api).
 import axios from 'axios'
 import api from '@/lib/api'
-
-const handleErr = (err) => {
-  const msg = err?.response?.data?.error || err?.response?.data?.message || 'Something went wrong'
-  throw new Error(msg)
-}
+import { handleErr } from '@/services/apiError'
 
 const BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api'
 const publicClient = axios.create({ baseURL: BASE, headers: { 'Content-Type': 'application/json', Accept: 'application/json' } })

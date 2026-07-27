@@ -11,6 +11,7 @@ import StatusBadge from '../components/StatusBadge'
 import ActivityTimeline from '../components/ActivityTimeline'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import ProposalSubmitModal from '../components/ProposalSubmitModal'
+import { useToast } from '@/hooks/useToast'
 
 const fmt     = v => '₹' + Number(v || 0).toLocaleString('en-IN')
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
@@ -27,7 +28,6 @@ export default function ProposalDetail() {
   const navigate = useNavigate()
   const [proposal, setProposal]       = useState(null)
   const [loading, setLoading]         = useState(true)
-  const [toast, setToast]             = useState(null)
   const [showPortal, setShowPortal]   = useState(false)
   const [copied, setCopied]           = useState(false)
   const [comments, setComments]       = useState(MOCK_COMMENTS)
@@ -38,10 +38,11 @@ export default function ProposalDetail() {
   const [emailModal, setEmailModal] = useState(false)
   const [templateModal, setTemplateModal] = useState(false)
 
-  const showToast = (msg, type = 'success') => {
-    setToast({ msg, type })
-    setTimeout(() => setToast(null), 3500)
-  }
+  // Routed through the shared Toast so every module notifies identically
+  // (and error toasts get the per-field validation detail + tip).
+  const toast = useToast()
+  const showToast = (msg, type = 'success') =>
+    type === 'error' ? toast.error(msg) : type === 'info' ? toast.info(msg) : toast.success(msg)
 
   const reload = () => salesApi.proposals.get(id).then(setProposal)
 
@@ -180,12 +181,6 @@ export default function ProposalDetail() {
 
   return (
     <>
-      {toast && (
-        <div className="fixed top-5 right-5 z-[9999] px-5 py-3 rounded-2xl text-sm font-semibold text-white shadow-2xl"
-          style={{ background: toast.type === 'success' ? 'linear-gradient(135deg,#10b981,#059669)' : 'linear-gradient(135deg,#f87171,#ef4444)' }}>
-          {toast.msg}
-        </div>
-      )}
       <div className="space-y-6 animate-[tiltIn_0.35s_ease]">
 
         {/* Top bar */}

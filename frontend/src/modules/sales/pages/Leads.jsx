@@ -8,6 +8,7 @@ import {
   Eye, Trash2, XCircle, RotateCcw, TrendingUp, Users, Target, DollarSign,
   LayoutGrid, List, ChevronDown
 } from 'lucide-react'
+import { useToast } from '@/hooks/useToast'
 
 const TEMP_ICON = { Hot: Flame, Warm: Thermometer, Cold: Snowflake }
 const TEMP_COLOR = { Hot: '#ef4444', Warm: '#f59e0b', Cold: '#3b82f6' }
@@ -23,14 +24,17 @@ export default function Leads() {
   const [kanban, setKanban] = useState([])
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
-  const [toast, setToast] = useState(null)
   const [showDrawer, setShowDrawer] = useState(false)
   const [openMenu, setOpenMenu] = useState(null)
   const [menuPos, setMenuPos] = useState(null)  // fixed-position anchor for the row menu so it escapes the table's overflow
   const [selected, setSelected] = useState([])
   const [form, setForm] = useState({ name:'', email:'', phone:'', company:'', title:'', website:'', pan:'', gst:'', industry:'', campaign:'', priority:'medium', expected_close_date:'', description:'', lead_value:'', source_id:'', status_id:'', assigned_to:'', tags:'', address:'', city:'', state:'', country:'', zip:'', referral_type:'none', referral_value:'', referral_contact:'' })
 
-  const showToast = (msg, type='success') => { setToast({msg,type}); setTimeout(()=>setToast(null),3000) }
+  // Routed through the shared Toast so every module notifies identically
+  // (and error toasts get the per-field validation detail + tip).
+  const toast = useToast()
+  const showToast = (msg, type = 'success') =>
+    type === 'error' ? toast.error(msg) : type === 'info' ? toast.info(msg) : toast.success(msg)
   const sf = (k,v) => setForm(p=>({...p,[k]:v}))
 
   const load = useCallback(async () => {
@@ -107,7 +111,6 @@ export default function Leads() {
 
   return (
     <>
-      {toast && <div className="fixed top-5 right-5 z-[9999] px-5 py-3 rounded-2xl text-sm font-semibold text-white shadow-2xl" style={{background:toast.type==='success'?'linear-gradient(135deg,#10b981,#059669)':'linear-gradient(135deg,#f87171,#ef4444)'}}>{toast.msg}</div>}
 
       <div className="space-y-6 animate-[tiltIn_0.35s_ease]" onClick={()=>setOpenMenu(null)}>
 

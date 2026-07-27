@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Plus, Send, Trash2, X, Search, Filter } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
+import { useToast } from '@/hooks/useToast'
 
 const fmt  = v => '₹' + Number(v || 0).toLocaleString('en-IN')
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
@@ -31,11 +32,14 @@ export default function Payments() {
   const [filterMode, setFilterMode] = useState('All')
   const [search, setSearch]       = useState('')
   const [showDrawer, setShowDrawer] = useState(false)
-  const [toast, setToast]         = useState(null)
   const [form, setForm]           = useState(EMPTY_FORM)
   const [invoices, setInvoices]   = useState([])
 
-  const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000) }
+  // Routed through the shared Toast so every module notifies identically
+  // (and error toasts get the per-field validation detail + tip).
+  const toast = useToast()
+  const showToast = (msg, type = 'success') =>
+    type === 'error' ? toast.error(msg) : type === 'info' ? toast.info(msg) : toast.success(msg)
   const sf = (k, v) => setForm(p => ({ ...p, [k]: v }))
 
   const load = () => {
@@ -73,12 +77,6 @@ export default function Payments() {
 
   return (
     <>
-      {toast && (
-        <div className="fixed top-5 right-5 z-[9999] flex items-center gap-2.5 px-5 py-3 rounded-2xl text-sm font-semibold text-white shadow-2xl animate-[slideDown_0.3s_ease]"
-          style={{ background: toast.type === 'success' ? 'linear-gradient(135deg,#10b981,#059669)' : 'linear-gradient(135deg,#f87171,#ef4444)' }}>
-          {toast.msg}
-        </div>
-      )}
       <div className="space-y-6 animate-[tiltIn_0.35s_ease]">
 
         {/* Header */}

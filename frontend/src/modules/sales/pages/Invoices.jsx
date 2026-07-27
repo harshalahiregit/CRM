@@ -8,6 +8,7 @@ import LineItemsTable from '../components/LineItemsTable'
 import RowMenu from '../components/RowMenu'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import RichTextEditor from '@/components/ui/RichTextEditor'
+import { useToast } from '@/hooks/useToast'
 
 const fmt = v => '₹' + Number(v||0).toLocaleString('en-IN')
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) : '—'
@@ -37,14 +38,17 @@ export default function Invoices() {
   const [showDrawer, setShowDrawer] = useState(false)
   const [showPayModal, setShowPayModal] = useState(false)
   const [selectedInv, setSelectedInv] = useState(null)
-  const [toast, setToast]       = useState(null)
   const [openMenu, setOpenMenu] = useState(null)
   const [form, setForm]         = useState(EMPTY)
   const [payForm, setPayForm]   = useState(EMPTY_PAY)
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [showTds, setShowTds]   = useState(false)
 
-  const showToast = (msg,type='success') => { setToast({msg,type}); setTimeout(()=>setToast(null),3000) }
+  // Routed through the shared Toast so every module notifies identically
+  // (and error toasts get the per-field validation detail + tip).
+  const toast = useToast()
+  const showToast = (msg, type = 'success') =>
+    type === 'error' ? toast.error(msg) : type === 'info' ? toast.info(msg) : toast.success(msg)
   const sf = (k,v) => setForm(p=>({...p,[k]:v}))
   const toggleMode = (m) => sf('allowed_modes', form.allowed_modes.includes(m) ? form.allowed_modes.filter(x=>x!==m) : [...form.allowed_modes,m])
 
@@ -115,7 +119,6 @@ export default function Invoices() {
 
   return (
     <>
-      {toast && <div className="fixed top-5 right-5 z-[9999] px-5 py-3 rounded-2xl text-sm font-semibold text-white shadow-2xl animate-[slideDown_0.3s_ease]" style={{background:toast.type==='success'?'linear-gradient(135deg,#10b981,#059669)':'linear-gradient(135deg,#f87171,#ef4444)'}}>{toast.msg}</div>}
       <div className="space-y-6 animate-[tiltIn_0.35s_ease]" onClick={()=>setOpenMenu(null)}>
 
       {/* Header */}

@@ -1,10 +1,6 @@
 // Accounts module — /api/accounts/*
 import api from '@/lib/api'
-
-const handleErr = (err) => {
-  const msg = err?.response?.data?.message || err?.response?.data?.error || 'Something went wrong'
-  throw new Error(msg)
-}
+import { handleErr } from '@/services/apiError'
 
 export const accountsApi = {
   // First-run setup
@@ -19,7 +15,6 @@ export const accountsApi = {
     statement: (ledgerId, params = {}) => api.get(`/accounts/registers/${ledgerId}`, { params }).then(r => r.data).catch(handleErr),
   },
 
-
   // Vendor Bills
   bills: {
     list:    (params = {}) => api.get('/accounts/bills', { params }).then(r => r.data).catch(handleErr),
@@ -30,7 +25,6 @@ export const accountsApi = {
     recur:   (id)         => api.post(`/accounts/bills/${id}/recur`).then(r => r.data).catch(handleErr),
     remove:  (id)         => api.delete(`/accounts/bills/${id}`).then(r => r.data).catch(handleErr),
   },
-
 
   // Chart of accounts — groups
   groups: {

@@ -1,10 +1,7 @@
 // Advanced Status Manager — /api/statuses/{type} (type = task | project).
 import api from '@/lib/api'
+import { handleErr } from '@/services/apiError'
 
-const handleErr = (err) => {
-  const msg = err?.response?.data?.message || err?.response?.data?.error || 'Something went wrong'
-  throw new Error(msg)
-}
 const unwrap = (r) => r.data?.data ?? r.data
 
 export const statusApi = {

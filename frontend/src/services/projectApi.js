@@ -1,11 +1,8 @@
 // Projects — /api/projects/* (owner: Shivam)
 // Backend wraps responses in { status, message, data }; we unwrap to `data`.
 import api from '@/lib/api'
+import { handleErr } from '@/services/apiError'
 
-const handleErr = (err) => {
-  const msg = err?.response?.data?.message || err?.response?.data?.error || 'Something went wrong'
-  throw new Error(msg)
-}
 const unwrap = (r) => r.data?.data ?? r.data
 
 export const projectApi = {

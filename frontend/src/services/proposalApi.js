@@ -1,10 +1,6 @@
 // Proposal CRUD — /api/sales/proposals/*
 import api from '@/lib/api'
-
-const handleErr = (err) => {
-  const msg = err?.response?.data?.error || err?.response?.data?.message || 'Something went wrong'
-  throw new Error(msg)
-}
+import { handleErr } from '@/services/apiError'
 
 export const proposalApi = {
   list: (params = {}) =>
