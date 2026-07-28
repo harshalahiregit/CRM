@@ -43,7 +43,22 @@ class VendorController extends Controller
             $relations[] = 'purchaseOnboarding';
         }
 
-        return response()->json($vendor->load($relations));
+        $vendor->load($relations);
+        // Vendor Detail dashboard: last activation e-mail, full notification
+        // timeline and portal login stats. All read from existing stores.
+        $vendor->setAttribute('last_notification', $this->vendorService->lastNotification($vendor));
+        $vendor->setAttribute('notification_timeline', $this->vendorService->notificationTimeline($vendor));
+        $vendor->setAttribute('login_stats', $this->vendorService->loginStats($vendor));
+
+        return response()->json($vendor);
+    }
+
+    /** Resend the activation e-mail. Active vendors only; every send is logged. */
+    public function resendActivation(Request $request, Vendor $vendor)
+    {
+        $this->assertTenant($request, $vendor);
+
+        return response()->json($this->vendorService->resendActivationEmail($vendor, $request->user()));
     }
 
     public function update(Request $request, Vendor $vendor, UpdateVendorRequest $updateRequest)

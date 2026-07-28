@@ -58,6 +58,11 @@ class PurchaseDocumentService
                 'document_id'   => $doc?->id,
                 'original_name' => $doc?->original_name,
                 'remarks'       => $doc?->remarks,
+                // Provenance for the admin read-only view: who supplied it, when
+                // it arrived, and who reviewed it. The vendor is always the
+                // uploader — admins never upload on their behalf.
+                'uploaded_at'   => optional($doc?->created_at)->toIso8601String(),
+                'reviewed_by'   => $doc?->reviewer?->name,
                 'reviewed_at'   => optional($doc?->reviewed_at)->toIso8601String(),
                 'expires_at'    => optional($doc?->expires_at)->toDateString(),
             ];

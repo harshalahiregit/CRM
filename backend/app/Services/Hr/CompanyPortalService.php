@@ -4,6 +4,7 @@ namespace App\Services\Hr;
 
 use App\Exceptions\BusinessException;
 use App\Models\AuditLog;
+use App\Models\Hr\AirCandidateScore;
 use App\Models\Hr\HrCandidate;
 use App\Models\Hr\HrCandidateSubmission;
 use App\Models\Hr\HrEmployee;
@@ -280,8 +281,8 @@ class CompanyPortalService
             'experience_years' => $c?->experience_years,
             'location'        => $c?->location,
             'expected_ctc'    => $c?->expected_ctc,
-            'ai_score'        => $c?->ai_score,
-            'recommendation'  => $this->recommendation($c?->ai_score),
+            'ai_score'        => $c?->publishedAiScore(),
+            'recommendation'  => $this->storedRecommendation($c),
             'skills'          => $c?->skills ?? [],
             'stage'           => $c?->stage,
             'status'          => $s->status,
@@ -291,33 +292,40 @@ class CompanyPortalService
         ];
     }
 
-    private function recommendation($score): string
+    /**
+     * The engine's recommendation for a LIST row.
+     *
+     * Lists read the mirrored ai_breakdown rather than calling payloadFor() per row,
+     * which would be N+1. It is still the engine's own label -- no threshold is
+     * re-derived here. The 85/70/50 vocabulary that used to live in this class is
+     * gone; there is one vocabulary, produced by RecommendationEngine.
+     */
+    private function storedRecommendation(?HrCandidate $candidate): ?string
     {
-        $s = (float) $score;
+        if (! $candidate) {
+            return null;
+        }
 
-        return $s >= 85 ? 'Strongly Recommended' : ($s >= 70 ? 'Recommended' : ($s >= 50 ? 'Consider' : 'Not Recommended'));
+        $breakdown = $candidate->ai_breakdown;
+        if (is_string($breakdown)) {
+            $breakdown = json_decode($breakdown, true) ?: [];
+        }
+
+        return is_array($breakdown) ? ($breakdown['recommendation'] ?? null) : null;
     }
 
-    /** Normalised AI evaluation (reuses candidate ai_score + ai_breakdown; no re-evaluation). */
+    /**
+     * The client portal's AI panel — the SAME payload the HR side consumes.
+     *
+     * This used to flatten ai_breakdown into its own hand-picked keys
+     * (skill_match / experience_match / overall_fit / question_score), two of which
+     * nothing ever wrote, so those bars were permanently blank. It now returns the
+     * engine's payload verbatim: one contract, and a new dimension appears here
+     * automatically instead of needing a key added.
+     */
     public function aiEvaluation(HrCandidate $c): array
     {
-        $b = $c->ai_breakdown;
-        if (is_string($b)) {
-            $b = json_decode($b, true) ?: [];
-        }
-        $b = is_array($b) ? $b : [];
-
-        return [
-            'overall_score'   => $c->ai_score,
-            'recommendation'  => $this->recommendation($c->ai_score),
-            'skill_match'     => $b['skills_match'] ?? null,
-            'experience_match' => $b['exp_match'] ?? null,
-            'location_match'  => $b['location_match'] ?? null,
-            'education_match' => $b['education'] ?? null,
-            'overall_fit'     => $b['overall_fit'] ?? null,
-            'question_score'  => $b['question_score'] ?? null,
-            'reasons'         => $b['reasons'] ?? null,
-        ];
+        return AirCandidateScore::payloadFor($c);
     }
 
     /** Full candidate workspace — reuses candidate data, AI, journey, interviews, offer, onboarding. */

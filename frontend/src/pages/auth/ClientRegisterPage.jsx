@@ -50,7 +50,7 @@ export default function ClientRegisterPage() {
   const [apiError, setApiError] = useState('')
 
   const {
-    register, handleSubmit,
+    register, handleSubmit, setError,
     formState: { errors, isSubmitting },
   } = useForm({ resolver: zodResolver(schema) })
 
@@ -63,6 +63,17 @@ export default function ClientRegisterPage() {
       })
       navigate('/auth/login', { state: { message: 'Registration submitted! Awaiting admin approval.' } })
     } catch (err) {
+      // The zod schema catches shape errors up-front; a 422 is the server's own
+      // rules (e.g. email already taken). Surface those on the fields too,
+      // instead of only in the banner.
+      const fieldErrors = err.response?.data?.errors
+      if (err.response?.status === 422 && fieldErrors) {
+        Object.entries(fieldErrors).forEach(([field, messages]) => {
+          setError(field, { type: 'server', message: Array.isArray(messages) ? messages[0] : String(messages) })
+        })
+        setApiError('Please correct the highlighted fields and try again.')
+        return
+      }
       setApiError(err.response?.data?.message || 'Registration failed. Please try again.')
     }
   }

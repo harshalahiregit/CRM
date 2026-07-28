@@ -49,8 +49,20 @@ class PurchasePortalController extends Controller
     {
         $vendor = $this->purchaseVendor($request);
         $vendor->loadMissing(['contacts']);
+        // Drives the one-time post-activation welcome banner. Persisted
+        // server-side, so dismissing it on one device dismisses it everywhere.
+        $vendor->setAttribute('show_welcome_banner', $vendor->shouldShowWelcomeBanner());
 
         return response()->json(['vendor' => $vendor]);
+    }
+
+    /** Dismiss the welcome banner permanently for this vendor. */
+    public function dismissWelcomeBanner(Request $request)
+    {
+        $vendor = $this->purchaseVendor($request);
+        $vendor->dismissWelcomeBanner();
+
+        return response()->json(['dismissed' => true]);
     }
 
     /** Rich dashboard for the caller's own Purchase vendor. */

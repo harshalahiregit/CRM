@@ -23,6 +23,13 @@ use Illuminate\Support\Str;
  */
 class TpvAccessService
 {
+    /**
+     * Days of access granted when a temporary vendor is activated without an
+     * explicit validity_days on the record. Only a fallback — a per-vendor
+     * validity_days always wins.
+     */
+    public const DEFAULT_VALIDITY_DAYS = 5;
+
     public function __construct(
         private NotificationService $notifications,
         private RegistrationNumberService $registrationNumbers,
@@ -85,6 +92,49 @@ class TpvAccessService
 
             return ['vendor' => $vendor->fresh(), 'credentials_sent' => true];
         });
+    }
+
+    /**
+     * Open a temporary vendor's access window at activation.
+     *
+     * The counterpart to createTemporary() for vendors that reached Active by
+     * another route (self-registration, or an admin activating an existing
+     * record) and therefore never had a window opened. Expiry maths lives here
+     * with the rest of the TPV access lifecycle — it is not recomputed
+     * elsewhere.
+     *
+     * Idempotent and conservative: a permanent vendor is untouched, and an
+     * already-open window is preserved so re-activation can never silently
+     * extend access. Returns true when a window was actually opened.
+     */
+    public function beginAccessWindow(Vendor $vendor): bool
+    {
+        if (! $vendor->isTemporary() || $vendor->access_expires_at !== null) {
+            return false;
+        }
+
+        $start   = now();
+        $days    = (int) ($vendor->validity_days ?: 0);
+        $days    = $days > 0 ? $days : self::DEFAULT_VALIDITY_DAYS;
+        $expires = $start->copy()->addDays($days);
+
+        $vendor->forceFill([
+            'access_start_at'   => $start,
+            'access_expires_at' => $expires,
+            'access_status'     => Access::ACTIVE,
+            'validity_days'     => $days,
+        ])->save();
+
+        // Mirror onto the login the same way the rest of this service does, so
+        // the existing login gate sees the window too.
+        $vendor->user?->update(['access_expires_at' => $expires->toDateString()]);
+
+        Log::channel('vendor')->info('TPV access window opened at activation', [
+            'vendor_id' => $vendor->id, 'validity_days' => $days,
+            'access_expires_at' => $expires->toIso8601String(),
+        ]);
+
+        return true;
     }
 
     /** Extend / reset the access window (with a mandatory reason). */

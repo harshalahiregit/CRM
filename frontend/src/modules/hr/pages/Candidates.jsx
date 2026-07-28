@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { Plus, Search, X, Linkedin, Loader2, Upload, FileText, Briefcase, Clock, CalendarDays, IndianRupee, UserCircle2, Hash } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 import { HrLoading } from '@/components/ui/HrState'
-import { formatCTC } from '@/modules/hr/constants'
+import { formatCTC, candidateScore } from '@/modules/hr/constants'
 import CandidateQuickActions from '@/modules/hr/components/CandidateQuickActions'
 
 const STAGES = ['Applied','Screening','Assessment','Interview','Offer','Hired','Rejected']
@@ -130,7 +130,8 @@ export default function Candidates() {
   //   • Offer / Hired   — system-controlled, never a manual drop target.
   //   • Rejected        — allowed from any stage.
   //   • backward / skip — blocked (forward, one step at a time).
-  //   • Assessment      — requires a completed AI screening (ai_score > 0).
+  //   • Assessment      — requires the AI screening to have RUN. A withheld
+  //                       (low-confidence) score still counts as screened.
   const STAGE_ORDER = { Applied: 0, Screening: 1, Assessment: 2, Interview: 3, Offer: 4, Hired: 5, Rejected: 6 }
   const dropCheck = (c, toStage) => {
     if (!c || c.stage === toStage) return { ok: false, reason: null }
@@ -146,7 +147,7 @@ export default function Candidates() {
       const next = Object.keys(STAGE_ORDER).find(k => STAGE_ORDER[k] === from + 1)
       return { ok: false, reason: `Move to ${next} first — stages cannot be skipped.` }
     }
-    if (toStage === 'Assessment' && !(Number(c.ai_score) > 0)) {
+    if (toStage === 'Assessment' && !candidateScore(c).isScreened) {
       return { ok: false, reason: 'AI screening has not completed for this candidate yet — no AI score on record.' }
     }
     return { ok: true, reason: null }
@@ -318,7 +319,7 @@ export default function Candidates() {
                           <p className="text-xs font-bold truncate" style={{ color:'var(--text-h)' }}>{c.name}</p>
                           <p className="text-[9px] font-mono flex items-center gap-0.5" style={{ color:'var(--text-muted)' }}><Hash size={8}/>CAND-{String(c.id).padStart(4,'0')}</p>
                         </div>
-                        {c.ai_score ? <span className="text-[10px] font-black flex-shrink-0" style={{ color:'#a78bfa' }}>AI {c.ai_score}%</span> : null}
+                        {(() => { const ai = candidateScore(c); return ai.isScored ? <span className="text-[10px] font-black flex-shrink-0" style={{ color: ai.style.color }} title={ai.recommendation || undefined}>AI {ai.display}</span> : null })()}
                         <div onClick={e=>e.stopPropagation()}><CandidateQuickActions candidate={c} recruiters={recruiters} onChanged={p=>patchCandidate(c.id,p)} onToast={showToast}/></div>
                       </div>
                       {/* applied job */}
@@ -380,7 +381,9 @@ export default function Candidates() {
                     <td className="px-3 py-3"><span className="text-[10px] font-bold px-2 py-0.5 rounded-lg whitespace-nowrap" style={{ background:`${sc}15`, color:sc }}>{c.stage}</span></td>
                     <td className="px-3 py-3 text-[11px] whitespace-nowrap" style={{ color:'var(--text-muted)' }}>{fmtDate(c.applied_at||c.created_at)||'—'}</td>
                     <td className="px-3 py-3 text-[11px] whitespace-nowrap" style={{ color:c.assigned_recruiter?'#34d399':'var(--text-muted)' }}>{c.assigned_recruiter?.name||'Unassigned'}</td>
-                    <td className="px-3 py-3 font-black text-sm whitespace-nowrap" style={{ color:'#a78bfa' }}>{c.ai_score ? `${c.ai_score}%` : '—'}</td>
+                    {/* `!= null`, not truthiness: an honest 0% is a score, and an unscored
+                        candidate must read as — rather than as a bad one. */}
+                    <td className="px-3 py-3 font-black text-sm whitespace-nowrap">{(() => { const ai = candidateScore(c); return <span style={{ color: ai.isScored ? ai.style.color : 'var(--text-muted)' }} title={ai.recommendation || undefined}>{ai.display}</span> })()}</td>
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-1">
                         <button onClick={()=>navigate(`/app/hr/candidates/${c.id}`)} className="px-3 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap" style={{ background:'rgba(124,58,237,0.12)', color:'#a78bfa' }}>View</button>

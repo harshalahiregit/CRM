@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, NavLink, Routes, Route, Navigate } from 'react-router-dom'
-import { ArrowLeft, Building2, CheckCircle2, ChevronDown, ChevronRight } from 'lucide-react'
+import { ArrowLeft, Building2, CheckCircle2, ChevronDown, ChevronRight, Mail } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
 import { VENDOR_NAV_GROUPS, VENDOR_NAV_ITEMS } from './vendorDetailNav'
 import { TAB_ELEMENTS, ComingSoonTab } from './vendorDetailTabs'
 import { VendorWorkspaceContext } from './vendorWorkspaceContext'
+import PurchaseRegistrationBadge from '@/modules/purchase/components/PurchaseRegistrationBadge'
+import TemporaryVendorValidityBadge from '@/modules/purchase/components/TemporaryVendorValidityBadge'
 
 /**
  * Purchase Vendor Detail workspace — persistent left-sidebar layout for a single
@@ -14,6 +16,7 @@ import { VendorWorkspaceContext } from './vendorWorkspaceContext'
  * PurchaseVendor via purchaseApi only — never Vendor, never TPV.
  */
 const STATUS_COLORS = { Active: '#10b981', Pending_Approval: '#f59e0b', Draft: '#6b7280', On_Hold: '#f59e0b', Rejected: '#ef4444', Blacklisted: '#991b1b', Inactive: '#6b7280' }
+const NOTIF_COLORS = { sent: '#10b981', failed: '#ef4444', skipped: '#94a3b8', queued: '#0ea5e9' }
 
 export default function PurchaseVendorDetailLayout() {
   const { id } = useParams()
@@ -22,6 +25,9 @@ export default function PurchaseVendorDetailLayout() {
   const [onboarding, setOnboarding] = useState(null)
   const [loading, setLoading] = useState(true)
   const [collapsed, setCollapsed] = useState({})
+  const [resending, setResending] = useState(false)
+  const [notice, setNotice] = useState(null)
+  const [showTimeline, setShowTimeline] = useState(false)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -38,6 +44,20 @@ export default function PurchaseVendorDetailLayout() {
   useEffect(() => { load() }, [load])
 
   const activate = async () => { try { await purchaseApi.vendors.approve(id); load() } catch { /* noop */ } }
+
+  // Manual resend. Every attempt is logged server-side; the panel below reflects it.
+  const resendActivation = async () => {
+    setResending(true); setNotice(null)
+    try {
+      const r = await purchaseApi.vendors.resendActivation(id)
+      setNotice(r?.status === 'sent'
+        ? { ok: true, text: `Activation email sent to ${r.recipient}.` }
+        : { ok: false, text: 'Could not send the activation email. It has been logged — try again.' })
+      load()
+    } catch (e) {
+      setNotice({ ok: false, text: e?.response?.data?.message || 'Could not send the activation email.' })
+    } finally { setResending(false) }
+  }
   const toggle = (title) => setCollapsed((c) => ({ ...c, [title]: !c[title] }))
 
   if (loading) return <div style={{ padding: 24, color: 'var(--text-muted)' }}>Loading vendor…</div>
@@ -59,6 +79,10 @@ export default function PurchaseVendorDetailLayout() {
               <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '.05em', color: '#a78bfa', textTransform: 'uppercase' }}>#{vendor.purchase_vendor_code}</div>
               <h1 style={{ fontSize: 20, fontWeight: 900, color: 'var(--text-h)', margin: '1px 0 4px' }}>{vendor.company_name}</h1>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                {/* Registration type — the stored choice, never inferred */}
+                <PurchaseRegistrationBadge type={vendor.registration_type} label={vendor.registration_type_label} />
+                {/* Remaining access — countdown for temporary, "Permanent" otherwise */}
+                <TemporaryVendorValidityBadge countdown={vendor.validity_countdown} showLabel />
                 <span style={{ ...pill, color: statusColor, borderColor: statusColor + '55' }}>{vendor.status_label || vendor.status}</span>
                 {vendor.category && <span style={{ ...pill, color: 'var(--text-muted)' }}>{vendor.category}</span>}
                 {onboarding && <span style={{ ...pill, color: '#7C3AED', borderColor: 'rgba(124,58,237,0.35)' }}>Onboarding: {onboarding.status_label || onboarding.status}</span>}
@@ -66,12 +90,58 @@ export default function PurchaseVendorDetailLayout() {
             </div>
           </div>
           {/* Quick actions */}
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             {vendor.status !== 'Active' && (
               <button onClick={activate} style={{ ...actBtn, color: '#10b981', borderColor: 'rgba(16,185,129,0.4)' }}><CheckCircle2 size={14} /> Activate</button>
             )}
+            {/* Resend is offered only once the account is Active. */}
+            {vendor.status === 'Active' && (
+              <button onClick={resendActivation} disabled={resending} style={actBtn} title="Send the activation email again">
+                <Mail size={14} /> {resending ? 'Sending…' : 'Resend Activation Email'}
+              </button>
+            )}
           </div>
         </div>
+      </div>
+
+      {/* Activation & access panel: last email, login stats, full timeline */}
+      <div className="card-3d" style={{ padding: '14px 16px', marginBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <Mail size={14} style={{ color: 'var(--text-muted)' }} />
+          {notice && <span style={{ fontSize: 12.5, fontWeight: 700, color: notice.ok ? '#10b981' : '#ef4444' }}>{notice.text}</span>}
+          {vendor.last_notification ? (
+            <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
+              Last activation email:&nbsp;
+              <strong style={{ color: NOTIF_COLORS[vendor.last_notification.status] || 'var(--text-h)' }}>{vendor.last_notification.status}</strong>
+              {vendor.last_notification.sent_at && <> · {new Date(vendor.last_notification.sent_at).toLocaleString()}</>}
+              {vendor.last_notification.recipient && <> · {vendor.last_notification.recipient}</>}
+            </span>
+          ) : <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>No activation email sent yet.</span>}
+
+          <span style={{ marginLeft: 'auto', fontSize: 12.5, color: 'var(--text-muted)' }}>
+            Last login: <strong style={{ color: 'var(--text-h)' }}>{vendor.login_stats?.last_login_at ? new Date(vendor.login_stats.last_login_at).toLocaleString() : 'never'}</strong>
+            {' '}· Logins: <strong style={{ color: 'var(--text-h)' }}>{vendor.login_stats?.login_count ?? 0}</strong>
+          </span>
+          {vendor.notification_timeline?.length > 0 && (
+            <button onClick={() => setShowTimeline(t => !t)} style={{ ...actBtn, padding: '5px 10px', fontSize: 12 }}>
+              {showTimeline ? 'Hide' : 'Timeline'} ({vendor.notification_timeline.length})
+            </button>
+          )}
+        </div>
+
+        {showTimeline && (
+          <div style={{ marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+            {vendor.notification_timeline.map(n => (
+              <div key={n.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', fontSize: 12.5, borderBottom: '1px solid var(--border)' }}>
+                <span style={{ width: 8, height: 8, borderRadius: 999, background: NOTIF_COLORS[n.status] || '#94a3b8', flexShrink: 0 }} />
+                <span style={{ color: NOTIF_COLORS[n.status] || 'var(--text-h)', fontWeight: 800, minWidth: 62 }}>{n.status}</span>
+                <span style={{ color: 'var(--text-h)' }}>{n.type.replace(/_/g, ' ')}</span>
+                <span style={{ color: 'var(--text-muted)' }}>· {n.channel} · {n.recipient}</span>
+                <span style={{ marginLeft: 'auto', color: 'var(--text-muted)' }}>{new Date(n.sent_at || n.created_at).toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Two-pane: sidebar + content */}

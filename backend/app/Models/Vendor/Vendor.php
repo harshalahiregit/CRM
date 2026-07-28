@@ -6,6 +6,7 @@ use App\Models\Tpv\TpvOnboarding;
 use App\Models\Traits\Auditable;
 use App\Models\Traits\BelongsToTenant;
 use App\Models\User;
+use App\Support\Tpv\TpvRegistrationType as RegistrationType;
 use App\Support\Vendor\VendorStatus as Status;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -22,7 +23,7 @@ class Vendor extends Model
 
     protected $fillable = [
         'tenant_id','user_id','account_manager_id','vendor_code','company_name','legal_name',
-        'vendor_type','engagements','email','phone','website','category',
+        'vendor_type','registration_type','engagements','email','phone','website','category',
         'registration_number','gst_number','pan_number',
         'address','city','state','country','pincode',
         'status','approved_at','approved_by','notes',
@@ -42,9 +43,13 @@ class Vendor extends Model
         'converted_to_permanent_at' => 'datetime',
         'validity_days'             => 'integer',
         'access_reminders_sent'     => 'array',
+        'first_login_at'            => 'datetime',
+        'last_login_at'             => 'datetime',
+        'login_count'               => 'integer',
+        'welcome_banner_dismissed_at' => 'datetime',
     ];
 
-    protected $appends = ['status_label'];
+    protected $appends = ['status_label', 'registration_type_label', 'validity_countdown'];
 
     /* ── Code auto-generation ─────────────────────── */
     protected static function booted(): void
@@ -119,6 +124,57 @@ class Vendor extends Model
     public function getStatusLabelAttribute(): string
     {
         return Status::label($this->status);
+    }
+
+    /**
+     * The registration type this TPV was created with, as a display label.
+     * Falls back to Long-Term TPV for rows predating the column.
+     */
+    public function getRegistrationTypeLabelAttribute(): string
+    {
+        return RegistrationType::label($this->registration_type);
+    }
+
+    /**
+     * Remaining-validity payload for the UI countdown.
+     *
+     * Reuses this model's EXISTING expiry logic — isTemporary(),
+     * access_expires_at and isAccessExpired() (which already honours a
+     * force-expired or converted access_status). No second calculation is
+     * introduced; the generic helper only formats those facts.
+     */
+    public function getValidityCountdownAttribute(): array
+    {
+        return \App\Support\ValidityCountdown::build(
+            $this->isTemporary(),
+            $this->access_expires_at,
+            $this->isTemporary() ? $this->isAccessExpired() : null,
+            $this->isAccessStarted(),
+        );
+    }
+
+    /**
+     * Has the temporary window actually begun? TPV's own answer: the vendor must
+     * be Active AND carry an activation timestamp — access_start_at (stamped by
+     * the TPV access service) or, failing that, approved_at. An Inactive/Draft
+     * vendor has not started its clock; it is awaiting activation, not expired.
+     * Never derived from created_at.
+     */
+    public function isAccessStarted(): bool
+    {
+        return $this->status === Status::ACTIVE
+            && ($this->access_start_at !== null || $this->approved_at !== null);
+    }
+
+    /** Show the post-activation welcome banner until the vendor dismisses it. */
+    public function shouldShowWelcomeBanner(): bool
+    {
+        return $this->status === Status::ACTIVE && $this->welcome_banner_dismissed_at === null;
+    }
+
+    public function dismissWelcomeBanner(): void
+    {
+        $this->forceFill(['welcome_banner_dismissed_at' => now()])->saveQuietly();
     }
 
     public function isEngageable(): bool

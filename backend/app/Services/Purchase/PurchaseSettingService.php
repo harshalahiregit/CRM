@@ -56,6 +56,11 @@ class PurchaseSettingService
         // ── Order Return ─────────────────────────────────────────────────
         'pur_order_return_number_prefix' => 'OReturn',
         'next_pur_order_return_number'   => 1,
+
+        // ── Temporary vendor access ──────────────────────────────────────
+        // Days of portal access a Temporary Vendor gets, counted from the
+        // moment an admin activates them (never from registration).
+        'temporary_vendor_validity_days' => 5,
     ];
 
     /** Keys whose values are booleans (so the API round-trips real bools). */
@@ -67,7 +72,7 @@ class PurchaseSettingService
 
     private const INT_KEYS = [
         'next_po_number', 'next_pr_number', 'pur_invoice_auto_operations_hour',
-        'next_pur_order_return_number',
+        'next_pur_order_return_number', 'temporary_vendor_validity_days',
     ];
 
     /** Every setting for a tenant: stored values layered over the defaults. */

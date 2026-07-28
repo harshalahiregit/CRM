@@ -4,6 +4,7 @@ namespace App\Services\Hr;
 
 use App\Exceptions\BusinessException;
 use App\Exceptions\UnauthorizedTenantException;
+use App\Jobs\Hr\RecalculateCandidateScore;
 use App\Models\Hr\HrCandidate;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
@@ -32,6 +33,14 @@ class ResumeService
         $candidate->update(['resume_path' => $path]);
 
         Log::channel('hr')->info('Resume uploaded', ['candidate_id' => $candidate->id, 'tenant_id' => $candidate->tenant_id]);
+
+        // ResumeDimension still returns null (no parser exists), so this will not move
+        // the score today. It is wired anyway because resume_path is a scoring input:
+        // when a parser lands, every upload already triggers a re-score. No fake
+        // resume signal is introduced in the meantime.
+        RecalculateCandidateScore::dispatch(
+            $candidate->id, $candidate->tenant_id, RecalculateCandidateScore::TRIGGER_RESUME_UPLOADED
+        );
 
         return [
             'success'     => true,
@@ -72,6 +81,10 @@ class ResumeService
         $candidate->update(['resume_path' => null]);
 
         Log::channel('hr')->info('Resume deleted', ['candidate_id' => $candidate->id, 'tenant_id' => $candidate->tenant_id]);
+
+        RecalculateCandidateScore::dispatch(
+            $candidate->id, $candidate->tenant_id, RecalculateCandidateScore::TRIGGER_RESUME_DELETED
+        );
     }
 
     private function assertBelongsToTenant(HrCandidate $candidate, int $tenantId): void

@@ -102,6 +102,9 @@ export const hrApi = {
   candidates: {
     list:          (params = {}) => api.get('/hr/candidates', { params }).then(r => r.data),
     get:           (id)          => api.get(`/hr/candidates/${id}`).then(r => r.data),
+    // The single AI score endpoint. Every surface reads this shape; no page
+    // derives a band, a colour threshold or a confidence figure of its own.
+    score:         (id)          => api.get(`/hr/candidates/${id}/score`).then(r => r.data),
     journey:       (id)          => api.get(`/hr/candidates/${id}/journey`).then(r => r.data),
     communications:  (id)        => api.get(`/hr/candidates/${id}/communications`).then(r => r.data),
     commPreview:     (id, channel, event) => api.get(`/hr/candidates/${id}/communication-preview`, { params: { channel, event } }).then(r => r.data),

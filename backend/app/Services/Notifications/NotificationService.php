@@ -42,6 +42,37 @@ class NotificationService
     }
 
     /**
+     * Send a pre-rendered HTML e-mail (e.g. a Blade template). Same contract as
+     * email(): never throws, returns 'sent'|'skipped'|'failed'. Kept separate
+     * from email() because that one escapes its body for plain-text callers.
+     */
+    public function emailHtml(?string $to, string $subject, string $html, array $context = [], ?string $text = null): string
+    {
+        if (! $to) {
+            Log::channel('hr')->warning('Notification skipped: no recipient', ['subject' => $subject] + $context);
+
+            return 'skipped';
+        }
+
+        try {
+            // multipart/alternative when a text part is supplied, so clients that
+            // refuse HTML (and screen readers) still get readable content.
+            Mail::send([], [], function ($m) use ($to, $subject, $html, $text) {
+                $m->to($to)->subject($subject)->html($html);
+                if ($text !== null && $text !== '') {
+                    $m->text($text);
+                }
+            });
+
+            return 'sent';
+        } catch (\Throwable $e) {
+            Log::channel('hr')->warning('Notification email failed', ['subject' => $subject, 'error' => $e->getMessage()] + $context);
+
+            return 'failed';
+        }
+    }
+
+    /**
      * WhatsApp channel. Stubbed until a provider (e.g. WhatsAppService/Meta Cloud
      * API) is wired — records intent so the multi-channel flow is complete and the
      * provider drops in here without touching callers. Returns 'queued'|'skipped'.

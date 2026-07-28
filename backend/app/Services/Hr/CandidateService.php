@@ -3,6 +3,7 @@
 namespace App\Services\Hr;
 
 use App\Exceptions\BusinessException;
+use App\Jobs\Hr\RecalculateCandidateScore;
 use App\Models\Hr\HrCandidate;
 use App\Models\Hr\HrEmployee;
 use App\Models\Hr\HrJobPosting;
@@ -42,9 +43,9 @@ class CandidateService
             }
         }
 
-        $aiData = $this->computeAiScore($data);
-        $data['ai_score']     = $aiData['score'];
-        $data['ai_breakdown'] = $aiData['breakdown'];
+        // No score is computed here. A client-supplied ai_score is stripped so the
+        // record starts unscored and the engine is the only thing that fills it in.
+        unset($data['ai_score'], $data['ai_breakdown']);
 
         // STEP 6: the candidate inherits the Project from its Job Posting — never a
         // manual selection. Any client-supplied project_id is ignored.
@@ -76,8 +77,24 @@ class CandidateService
 
         Log::channel('hr')->info('Candidate created', ['candidate_id' => $candidate->id, 'tenant_id' => $tenantId]);
 
+        // Queued, never inline: ten dimension evaluations do not belong on the request
+        // thread of a create. The candidate is simply unscored until the worker runs.
+        RecalculateCandidateScore::dispatch(
+            $candidate->id, $tenantId, RecalculateCandidateScore::TRIGGER_CANDIDATE_CREATED
+        );
+
         return $candidate;
     }
+
+    /**
+     * Candidate columns the scoring engine reads. A change to any of these
+     * invalidates the stored score; anything else (phone, notes, WhatsApp opt-in)
+     * leaves it valid. Keep in step with the Dimensions/ classes.
+     */
+    private const SCORING_INPUTS = [
+        'skills', 'experience_years', 'education', 'location',
+        'expected_ctc', 'notice_period', 'resume_path', 'screening_answers',
+    ];
 
     /** Fields the generic update endpoint may never set — they are tenant/pipeline
      *  controlled and were previously mass-assignable via PUT /candidates/{id}. */
@@ -94,6 +111,15 @@ class CandidateService
         $data = array_diff_key($data, array_flip(self::UPDATE_PROTECTED));
 
         $candidate->update($data);
+
+        // Re-score only when an input the engine actually reads has moved. Editing a
+        // phone number must not queue ten dimension evaluations; editing skills must.
+        // wasChanged() is asked AFTER the save, so a no-op write dispatches nothing.
+        if ($candidate->wasChanged(self::SCORING_INPUTS)) {
+            RecalculateCandidateScore::dispatch(
+                $candidate->id, $candidate->tenant_id, RecalculateCandidateScore::TRIGGER_CANDIDATE_UPDATED
+            );
+        }
 
         Log::channel('hr')->info('Candidate updated', ['candidate_id' => $candidate->id, 'tenant_id' => $candidate->tenant_id]);
 
@@ -126,9 +152,13 @@ class CandidateService
         }
 
         // Entry conditions for the stage being moved INTO.
-        if ($stage === 'Assessment' && ! ((float) ($candidate->ai_score ?? 0) > 0)) {
+        // Gate on whether the engine RAN, not on the number it published. A
+        // low-confidence outcome ("Insufficient Data") is a completed screening --
+        // gating on ai_score > 0 stalled those candidates over a data-coverage
+        // problem rather than anything about the candidate.
+        if ($stage === 'Assessment' && ! $candidate->hasAiScreening()) {
             throw new BusinessException(
-                'AI screening has not completed for this candidate yet — no AI score on record.', 422
+                'AI screening has not run for this candidate yet.', 422
             );
         }
     }
@@ -270,331 +300,15 @@ class CandidateService
             ->get(['id', 'name', 'role', 'internal_role']);
     }
 
-    // ── AI Score Calculator ─────────────────────────────────────────────
-    private function computeAiScore(array $data): array
-    {
-        $skills    = $data['skills'] ?? [];
-        $expYears  = (float) ($data['experience_years'] ?? 0);
-        $location  = $data['location'] ?? '';
-        $job       = isset($data['job_posting_id'])
-            ? HrJobPosting::find($data['job_posting_id'])
-            : null;
+    // -- AI scoring ------------------------------------------------------
+    // Scoring lives in CandidateScoringEngine and is persisted by ScoreRecorder.
+    // The six heuristics that used to sit here (computeAiScore, evaluateApplication,
+    // scoreEducation, scoreScreeningAnswers, skillReason, educationReason) are gone:
+    // two of them wrote hr_candidates.ai_score with different weights, so the same
+    // candidate scored differently depending on whether HR typed them in or they
+    // applied through the career portal. This service now only DISPATCHES a
+    // recalculation; it never computes a score.
 
-        $skillScore = 50; // base
-        if ($job && $job->requirements && ! empty($skills)) {
-            $reqs    = strtolower($job->requirements);
-            $matched = 0;
-            foreach ($skills as $skill) {
-                if (str_contains($reqs, strtolower($skill))) {
-                    $matched++;
-                }
-            }
-            $skillScore = min(100, ($matched / max(count($skills), 1)) * 100);
-        } elseif (! empty($skills)) {
-            $skillScore = min(100, count($skills) * 12);
-        }
-
-        $expScore = match (true) {
-            $expYears >= 6 => 100,
-            $expYears >= 4 => 85,
-            $expYears >= 2 => 65,
-            $expYears >= 1 => 45,
-            default        => 25,
-        };
-
-        $locationScore = 60;
-        if ($job && $job->location && $location) {
-            $locationScore = str_contains(
-                strtolower($job->location),
-                strtolower(explode(',', $location)[0])
-            ) ? 100 : 40;
-            if (str_contains(strtolower($job->location), 'remote') ||
-                str_contains(strtolower($job->job_type ?? ''), 'remote')) {
-                $locationScore = 90;
-            }
-        }
-
-        $educationScore = 70;
-        $overallFit     = ($skillScore + $expScore) / 2;
-
-        $total = ($skillScore * 0.40) + ($expScore * 0.30) + ($locationScore * 0.10)
-               + ($educationScore * 0.10) + ($overallFit * 0.10);
-
-        $total = min(100, max(0, round($total)));
-
-        return [
-            'score'     => $total,
-            'breakdown' => [
-                'skills_match'   => round($skillScore),
-                'exp_match'      => round($expScore),
-                'location_match' => round($locationScore),
-                'education'      => $educationScore,
-                'overall_fit'    => round($overallFit),
-            ],
-        ];
-    }
-
-    /**
-     * SPK-1: full application AI evaluation (reuses computeAiScore for skills/exp).
-     * Adds Resume, JD and Question match with explained strengths / weaknesses and
-     * a Proceed / Hold / Reject recommendation. Persisted into ai_score +
-     * ai_breakdown (existing columns) — no new scoring engine, no duplicate data.
-     */
-    public function evaluateApplication(HrCandidate $candidate, array $answers = []): HrCandidate
-    {
-        $candidate->loadMissing('jobPosting');
-        $job = $candidate->jobPosting;
-
-        $base = $this->computeAiScore([
-            'skills'           => $candidate->skills ?? [],
-            'experience_years' => $candidate->experience_years,
-            'location'         => $candidate->location,
-            'job_posting_id'   => $candidate->job_posting_id,
-        ])['breakdown'];
-
-        $skillMatch = (int) $base['skills_match'];
-
-        // Resume match — a present resume + relevant skills/experience signal.
-        $resumeMatch = (int) round(
-            ($candidate->resume_path ? 55 : 20)
-            + min(30, ($skillMatch / 100) * 30)
-            + min(15, (float) ($candidate->experience_years ?? 0) * 3)
-        );
-
-        // JD match — how well the candidate's skills overlap the JD text.
-        $jdText = strtolower(trim(($job->description ?? '').' '.($job->requirements ?? '')));
-        $skills = $candidate->skills ?? [];
-        $jdMatch = 60;
-        $jdHits = 0;
-        if ($jdText && $skills) {
-            foreach ($skills as $s) {
-                if ($s && str_contains($jdText, strtolower($s))) {
-                    $jdHits++;
-                }
-            }
-            $jdMatch = (int) round(min(100, 45 + ($jdHits / max(count($skills), 1)) * 55));
-        }
-
-        // Question match — answered mandatory questions + Yes/No positivity.
-        $questions = $job?->screening_questions ?? [];
-        $questionMatch = $this->scoreScreeningAnswers($questions, $answers);
-
-        // Education match — candidate education vs the requisition's education
-        // requirement (reuses hr_manpower_requests.education).
-        $educationMatch = $this->scoreEducation($candidate, $job);
-
-        $overall = (int) round(
-            $resumeMatch * 0.30 + $jdMatch * 0.25 + $questionMatch * 0.20 + $skillMatch * 0.25
-        );
-        $overall = max(0, min(100, $overall));
-
-        // ── Explained strengths / weaknesses ─────────────────────────────────
-        $strengths = [];
-        $weaknesses = [];
-        if ($resumeMatch >= 70) { $strengths[] = 'Resume is a strong fit for the role'; } else { $weaknesses[] = 'Resume shows limited alignment with the role'; }
-        if ($jdMatch >= 70) { $strengths[] = 'Skills overlap well with the job description'; } else { $weaknesses[] = 'Few skills match the job description keywords'; }
-        if ($skillMatch >= 70) { $strengths[] = 'Skill set matches the requirements'; } elseif ($skillMatch < 50) { $weaknesses[] = 'Skill set is below the requirement bar'; }
-        if (($candidate->experience_years ?? 0) >= 4) { $strengths[] = ((float) $candidate->experience_years).' years of relevant experience'; } elseif (($candidate->experience_years ?? 0) < 1) { $weaknesses[] = 'Limited professional experience'; }
-        if ($questions && $questionMatch >= 80) { $strengths[] = 'Answered screening questions strongly'; } elseif ($questions && $questionMatch < 50) { $weaknesses[] = 'Weak / incomplete screening answers'; }
-        if ($educationMatch >= 80) { $strengths[] = 'Education meets the requisition requirement'; } elseif ($educationMatch < 50) { $weaknesses[] = 'Education does not clearly match the requirement'; }
-
-        // A candidate with no skills AND no experience on file must never surface as
-        // recommended. The heuristic gives baseline credit for unscored dimensions
-        // (skills default to 50, and a job with no screening questions scores 100),
-        // which can add up to a passing overall on an empty profile. That is absence
-        // of evidence, not evidence of fit — so it is held for a human to look at.
-        $noEvidence = empty($skills) && (float) ($candidate->experience_years ?? 0) <= 0;
-
-        // SPK-1 recommendation bands. "Recommended with Training" is the case that
-        // matters: a candidate strong enough overall but carrying a skill gap that
-        // training can close — previously indistinguishable from a plain Proceed.
-        [$recommendation, $recommendationReason] = match (true) {
-            $noEvidence => [
-                'Hold',
-                'No skills or experience recorded — too little information to score this candidate. Review the resume before deciding.',
-            ],
-            $overall >= 60 && $skillMatch < 60 => [
-                'Recommended with Training',
-                sprintf('Overall match is %d%%, but skills match only %d%% — a capable hire once the skill gap is closed.', $overall, $skillMatch),
-            ],
-            $overall >= 60 => [
-                'Recommended',
-                sprintf('Overall match is %d%% with a %d%% skills match — meets the bar on both.', $overall, $skillMatch),
-            ],
-            $overall >= 50 => [
-                'Hold',
-                sprintf('Overall match is %d%% — borderline; compare against other applicants before deciding.', $overall),
-            ],
-            default => [
-                'Reject',
-                sprintf('Overall match is %d%%, below the 50%% bar for this role.', $overall),
-            ],
-        };
-
-        // SPK-1: explain WHY each score came out the way it did. Built from the same
-        // inputs the scores use, so the wording can never drift from the numbers.
-        $expYears    = (float) ($candidate->experience_years ?? 0);
-        $skillCount  = count($skills);
-        $answered    = count(array_filter($answers, fn ($a) => $a !== null && $a !== ''));
-        $reasons = [
-            'resume_match' => $candidate->resume_path
-                ? sprintf('Resume on file, %d%% skill match and %s year(s) experience.', $skillMatch, rtrim(rtrim(number_format($expYears, 1), '0'), '.'))
-                : 'No resume uploaded — scored on skills and experience only.',
-            'jd_match' => ! $jdText
-                ? 'The job description has no text to compare against — neutral score.'
-                : (! $skillCount
-                    ? 'No skills listed on the candidate — neutral score.'
-                    : sprintf('%d of %d listed skill(s) appear in the job description.', $jdHits, $skillCount)),
-            'skill_match'     => $this->skillReason($candidate, $job, $skills),
-            'education_match' => $this->educationReason($candidate, $job, $educationMatch),
-            'question_match'  => $questions
-                ? sprintf('Answered %d of %d screening question(s).', $answered, count($questions))
-                : 'No screening questions configured on this job — full credit by default.',
-            'exp_match' => $expYears > 0
-                ? sprintf('%s year(s) of experience against the role requirement.', rtrim(rtrim(number_format($expYears, 1), '0'), '.'))
-                : 'No experience recorded on the candidate.',
-            'overall' => sprintf(
-                'Weighted: Resume 30%% (%d) + JD 25%% (%d) + Questions 20%% (%d) + Skills 25%% (%d).',
-                $resumeMatch, $jdMatch, $questionMatch, $skillMatch
-            ),
-        ];
-
-        $breakdown = array_merge($base, [
-            'resume_match'   => $resumeMatch,
-            'jd_match'       => $jdMatch,
-            'question_match' => $questionMatch,
-            'skill_match'    => $skillMatch,
-            'education_match' => $educationMatch,
-            'overall'        => $overall,
-            'strengths'      => array_values($strengths),
-            'weaknesses'     => array_values($weaknesses),
-            'recommendation'        => $recommendation,
-            'recommendation_reason' => $recommendationReason,
-            'reasons'               => $reasons,
-        ]);
-
-        $candidate->update([
-            'ai_score'          => $overall,
-            'ai_breakdown'      => $breakdown,
-            'screening_answers' => $answers ?: $candidate->screening_answers,
-        ]);
-
-        return $candidate;
-    }
-
-    /**
-     * Education match — compares the candidate's education entries against the
-     * requisition's education requirement (hr_manpower_requests.education), with
-     * a neutral score when there is nothing to compare against.
-     */
-    /**
-     * Plain-English reason for the skills score, mirroring the branches in
-     * computeAiScore() — which of the three paths produced the number.
-     */
-    private function skillReason(HrCandidate $candidate, $job, array $skills): string
-    {
-        if (empty($skills)) {
-            return 'No skills listed on the candidate — scored at the 50% baseline.';
-        }
-        if (! $job || ! $job->requirements) {
-            return sprintf('This job lists no requirements to match against — scored on %d listed skill(s).', count($skills));
-        }
-
-        $reqs = strtolower($job->requirements);
-        $matched = [];
-        foreach ($skills as $s) {
-            if ($s && str_contains($reqs, strtolower($s))) {
-                $matched[] = $s;
-            }
-        }
-
-        return $matched
-            ? sprintf('%d of %d skill(s) matched the job requirements: %s.', count($matched), count($skills), implode(', ', $matched))
-            : sprintf('None of the %d listed skill(s) appear in the job requirements.', count($skills));
-    }
-
-    /**
-     * Plain-English reason for the education score. Reads the same two fields
-     * scoreEducation() reads, so the explanation always matches the number.
-     */
-    private function educationReason(HrCandidate $candidate, $job, int $score): string
-    {
-        $required = trim((string) ($job?->manpowerRequest?->education ?? ''));
-        $hasEdu = ! empty(array_filter($candidate->education ?? []));
-
-        if ($required === '') {
-            return $hasEdu
-                ? 'The requisition states no education requirement — credited for education on file.'
-                : 'The requisition states no education requirement — neutral score.';
-        }
-        if (! $hasEdu) {
-            return sprintf('The requisition requires "%s" but the candidate listed no education.', $required);
-        }
-
-        return sprintf('Matched the candidate\'s education against the requirement "%s" (%d%%).', $required, $score);
-    }
-
-    private function scoreEducation(HrCandidate $candidate, $job): int
-    {
-        $required = strtolower(trim((string) ($job?->manpowerRequest?->education ?? '')));
-
-        $candidateEdu = collect($candidate->education ?? [])
-            ->map(fn ($e) => is_array($e)
-                ? implode(' ', array_filter([$e['degree'] ?? null, $e['institution'] ?? null, $e['field'] ?? null]))
-                : (string) $e)
-            ->implode(' ');
-        $candidateEdu = strtolower(trim($candidateEdu));
-
-        if ($required === '') {
-            return $candidateEdu === '' ? 70 : 80;   // no requirement stated → neutral / slight credit
-        }
-        if ($candidateEdu === '') {
-            return 40;                               // requirement exists, candidate gave nothing
-        }
-
-        // Token overlap between the requirement and the candidate's education.
-        $tokens = array_values(array_filter(
-            preg_split('/[^a-z0-9+]+/', $required) ?: [],
-            fn ($t) => strlen($t) > 2
-        ));
-        if (! $tokens) {
-            return 70;
-        }
-        $hits = 0;
-        foreach ($tokens as $t) {
-            if (str_contains($candidateEdu, $t)) {
-                $hits++;
-            }
-        }
-
-        return (int) round(min(100, 40 + ($hits / count($tokens)) * 60));
-    }
-
-    /** Score screening answers: mandatory answered + Yes/No positivity. */
-    private function scoreScreeningAnswers(array $questions, array $answers): int
-    {
-        if (empty($questions)) {
-            return 100; // no gate configured → not a differentiator
-        }
-        $byId = collect($answers)->keyBy('question_id');
-        $total = 0;
-        $earned = 0;
-        foreach ($questions as $q) {
-            $total++;
-            $a = $byId->get($q['id'] ?? null);
-            $val = is_array($a) ? ($a['value'] ?? null) : null;
-            $answered = $val !== null && $val !== '' && $val !== [];
-            if (! $answered) {
-                continue;
-            }
-            $earned += 1;
-            if (($q['type'] ?? '') === 'yes_no' && strtolower((string) (is_array($val) ? implode('', $val) : $val)) === 'yes') {
-                $earned += 0.2; // small bonus for a positive gate answer
-            }
-        }
-
-        return (int) round(min(100, ($earned / max($total, 1)) * 100));
-    }
 
     // ── LinkedIn Profile Extractor ─────────────────────────────────────
     public function linkedinParse(string $url): array
@@ -739,7 +453,7 @@ class CandidateService
         $stages[] = $stage('mr_approved', 'Manpower Approved', (bool) $mrApproved, $mr?->l2_approved_at ?? $mr?->approved_at ?? $mr?->l1_approved_at, $mr?->l2Approver?->name ?? $mr?->l1Approver?->name, $mr ? ['type' => 'manpower', 'id' => $mr->id] : null);
         $stages[] = $stage('job_posted', 'Job Posted', (bool) $job, $job?->published_at ?? $job?->created_at, $recruiter, $job ? ['type' => 'job', 'id' => $job->id] : null);
         $stages[] = $stage('applied', 'Candidate Applied', true, $candidate->applied_at ?? $candidate->created_at, $candidate->source, ['type' => 'candidate', 'id' => $candidate->id]);
-        $stages[] = $stage('ai_screening', 'AI Screening Completed', (float) $candidate->ai_score > 0, $candidate->applied_at ?? $candidate->created_at, 'AI Screening'.($candidate->ai_score ? ' · '.$candidate->ai_score.'%' : ''), ['type' => 'candidate', 'id' => $candidate->id]);
+        $stages[] = $stage('ai_screening', 'AI Screening Completed', $candidate->hasAiScreening(), $candidate->applied_at ?? $candidate->created_at, 'AI Screening'.($candidate->isScored() ? ' · '.$candidate->ai_score.'%' : ($candidate->hasAiScreening() ? ' · Insufficient data' : '')), ['type' => 'candidate', 'id' => $candidate->id]);
 
         foreach ($rounds as $r) {
             $stages[] = $stage('interview_'.$r->id, 'Interview: '.$r->round_name, $r->status === 'Completed', $r->scheduled_at, $r->interviewer_name, ['type' => 'interview', 'id' => $r->id]);
@@ -763,7 +477,7 @@ class CandidateService
         $onbPct = ! $onb ? 0 : ($onb->verification_status === 'Approved' ? 100 : ($onb->submitted_at ? 60 : ($onb->invited_at ? 30 : 0)));
         $offerPct = ! $offer ? 0 : (in_array($offer->status, ['Accepted', 'Completed'], true) ? 100 : ($offer->sent_at || in_array($offer->status, ['Sent', 'Viewed'], true) ? 66 : 33));
         $progress = [
-            'application' => min(100, ($candidate->applied_at || $candidate->created_at ? 50 : 0) + ((float) $candidate->ai_score > 0 ? 50 : 0)),
+            'application' => min(100, ($candidate->applied_at || $candidate->created_at ? 50 : 0) + ($candidate->hasAiScreening() ? 50 : 0)),
             'interview'   => $rounds->count() ? (int) round($roundsDone / $rounds->count() * 100) : ($selected ? 100 : 0),
             'onboarding'  => $onbPct,
             'offer'       => $offerPct,
@@ -781,7 +495,7 @@ class CandidateService
                 'current_stage'   => $candidate->stage,
                 'current_status'  => $employee ? 'Joined' : ($offer?->accepted_at ? 'Offer Accepted' : ($offer ? 'Offer '.$offer->status : ($onb ? 'Onboarding '.($onb->verification_status ?? 'In Progress') : ($candidate->final_decision ?: 'In Progress')))),
                 'recruiter'       => $recruiter,
-                'ai_score'        => $candidate->ai_score,
+                'ai_score'        => $candidate->publishedAiScore(),
                 'interview_score' => $interviewScore,
                 'interview_count' => $rounds->count(),
                 'applied_at'      => optional($candidate->applied_at ?? $candidate->created_at)->toIso8601String(),

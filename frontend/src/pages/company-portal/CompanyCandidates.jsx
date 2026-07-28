@@ -4,6 +4,7 @@ import {
   ChevronLeft, ChevronRight, Users, MapPin, Briefcase, Building2, Check, ThumbsDown, Clock, Layers,
 } from 'lucide-react'
 import { companyPortalApi } from '@/services/companyPortalApi'
+import { aiRecommendationStyle } from '@/modules/hr/constants'
 
 const unwrap = r => r?.data ?? r
 const SUB_STATUS = {
@@ -14,7 +15,9 @@ const SUB_STATUS = {
   'Need More Profiles': { c: '#a78bfa', bg: 'rgba(124,58,237,0.14)' },
   Hold: { c: '#64748b', bg: 'rgba(100,116,139,0.14)' },
 }
-const REC_COLOR = { 'Strongly Recommended': '#10b981', Recommended: '#3b82f6', Consider: '#f59e0b', 'Not Recommended': '#ef4444' }
+// Recommendation colours come from the single shared map, keyed on
+// RecommendationEngine's vocabulary. A local map here was the fifth copy in the
+// codebase and still listed 'Strongly Recommended', which no longer exists.
 const money = v => v ? `₹${(v / 100000).toFixed(1)}L` : '—'
 const initials = n => (n || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
 const ACTIONS = [
@@ -86,7 +89,7 @@ export default function CompanyCandidates({ requestId, showToast }) {
                       <td style={{ padding: '10px 12px', color: 'var(--text-muted)' }}>{c.experience_years ? `${c.experience_years}y` : '—'}</td>
                       <td style={{ padding: '10px 12px', color: 'var(--text-muted)' }}>{c.location || '—'}</td>
                       <td style={{ padding: '10px 12px', color: '#a78bfa', fontWeight: 800 }}>{c.ai_score ?? '—'}</td>
-                      <td style={{ padding: '10px 12px', color: REC_COLOR[c.recommendation] || 'var(--text-muted)', fontWeight: 600 }}>{c.recommendation}</td>
+                      <td style={{ padding: '10px 12px', color: aiRecommendationStyle(c.recommendation).color, fontWeight: 600 }}>{c.recommendation}</td>
                       <td style={{ padding: '10px 12px', color: 'var(--text-muted)' }}>{c.stage}</td>
                       <td style={{ padding: '10px 12px' }}><span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 8, background: st.bg, color: st.c }}>{c.status}</span></td>
                     </tr>
@@ -132,7 +135,7 @@ function CandidateCard({ c, onOpen }) {
       </div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 }}>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 800, color: '#a78bfa' }}><Star size={13} fill="#a78bfa" /> AI {c.ai_score ?? '—'}</span>
-        <span style={{ fontSize: 11, fontWeight: 700, color: REC_COLOR[c.recommendation] || 'var(--text-muted)' }}>{c.recommendation}</span>
+        <span style={{ fontSize: 11, fontWeight: 700, color: aiRecommendationStyle(c.recommendation).color }}>{c.recommendation}</span>
       </div>
     </div>
   )
@@ -241,15 +244,20 @@ function CandidateWorkspace({ requestId, sid, onClose, onChanged, showToast }) {
                   <div style={{ width: 64, height: 64, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', background: 'rgba(124,58,237,0.12)', border: '2px solid #7C3AED' }}>
                     <span style={{ fontSize: 20, fontWeight: 900, color: '#a78bfa' }}>{d.ai.overall_score ?? '—'}</span>
                   </div>
-                  <div><p style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>AI Recommendation</p><p style={{ fontSize: 15, fontWeight: 800, color: REC_COLOR[d.ai.recommendation] || 'var(--text-h)' }}>{d.ai.recommendation}</p></div>
+                  <div><p style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>AI Recommendation</p><p style={{ fontSize: 15, fontWeight: 800, color: aiRecommendationStyle(d.ai.recommendation).color }}>{d.ai.recommendation}</p></div>
                 </div>
-                <Bar label="Skill Match" value={d.ai.skill_match} />
-                <Bar label="Experience Match" value={d.ai.experience_match} />
-                <Bar label="Education Match" value={d.ai.education_match} />
-                <Bar label="Location Match" value={d.ai.location_match} />
-                <Bar label="Overall Fit" value={d.ai.overall_fit} />
-                {d.ai.question_score != null && <Bar label="Question Score" value={d.ai.question_score} />}
-                {d.ai.reasons && <p style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 10 }}>{d.ai.reasons}</p>}
+                {/* One loop over the engine's dimensions. The old fixed list included
+                    two keys nothing ever wrote (overall_fit, question_score), so those
+                    bars were permanently blank. */}
+                {(d.ai.dimensions || []).filter(x => x.score != null).map(x => (
+                  <Bar key={x.key} label={x.name} value={x.score} />
+                ))}
+                {d.ai.confidence != null && (
+                  <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>
+                    Based on {d.ai.confidence}% of the scoring weight.
+                  </p>
+                )}
+                {d.ai.summary && <p style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 10 }}>{d.ai.summary}</p>}
               </div>
             )}
             {tab === 'journey' && <Steps items={d.journey} />}

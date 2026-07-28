@@ -4,10 +4,14 @@ namespace App\Services\Auth;
 
 use App\Exceptions\BusinessException;
 use App\Models\Hr\HrExternalCompany;
+use App\Models\Purchase\PurchaseVendor;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Models\Vendor\Vendor;
+use App\Services\Purchase\PurchaseVendorService;
 use App\Support\AgencyContext;
+use App\Support\Purchase\PurchaseRegistrationType;
+use App\Support\Purchase\PurchaseVendorStatus;
 use App\Support\Vendor\VendorStatus;
 use App\Support\Hr\CompanyAccountStatus;
 use App\Support\Hr\CompanyType;
@@ -56,6 +60,10 @@ class AuthService
             ]);
         }
 
+        // TPV keeps its own sign-in counters on the vendor row (no-ops for every
+        // other role). Purchase tracks its portal separately on purchase_vendors.
+        app(\App\Services\Tpv\TpvLoginTracker::class)->record($user);
+
         Log::channel('auth')->info('User logged in', ['user_id' => $user->id, 'tenant_id' => $user->tenant_id]);
 
         return [
@@ -102,7 +110,19 @@ class AuthService
         ];
     }
 
+    /**
+     * Vendor self-registration. Creates the login User *and* — in the same
+     * transaction — the Purchase-owned PurchaseVendor record, so the vendor
+     * lands in Purchase → Vendors immediately (Draft, awaiting activation),
+     * exactly like the TPV flow. Purchase owns purchase_vendors; no shared
+     * Vendor row and no staging table is involved.
+     */
     public function registerVendor(array $data): User
+    {
+        return DB::transaction(fn () => $this->createVendorAccount($data));
+    }
+
+    private function createVendorAccount(array $data): User
     {
         $user = User::create([
             'name'              => trim($data['first_name'].' '.$data['last_name']),
@@ -129,9 +149,63 @@ class AuthService
             ],
         ]);
 
+        $this->createPurchaseVendorFor($user, $data);
+
         Log::channel('auth')->info('Vendor registered, pending approval', ['user_id' => $user->id]);
 
         return $user;
+    }
+
+    /**
+     * Mirror the registration into the Purchase module's own vendor master so
+     * the record shows up in Purchase → Vendors straight away — the same way a
+     * TPV registration lands in the TPV list.
+     *
+     * Purchase-owned end to end: purchase_vendors only, the Purchase code
+     * generator, the Purchase registration-type enum. No shared Vendor row, no
+     * staging/pending table, and nothing from TPV.
+     */
+    private function createPurchaseVendorFor(User $user, array $data): void
+    {
+        $tenantId = AgencyContext::tenantId();
+
+        // Idempotent: never mint a second record for the same tenant + email.
+        if (PurchaseVendor::withTrashed()->where('tenant_id', $tenantId)->where('email', $user->email)->exists()) {
+            return;
+        }
+
+        $vendor = PurchaseVendor::create([
+            'tenant_id'            => $tenantId,
+            'user_id'              => $user->id,
+            'purchase_vendor_code' => app(PurchaseVendorService::class)->nextVendorCode($tenantId),
+            'company_name'         => $data['company_name'],
+            'email'                => $user->email,
+            'phone'                => $data['phone'] ?? null,
+            'website'              => $data['website'] ?? null,
+            'category'             => $data['category'] ?? null,
+            'address'              => $data['address'] ?? null,
+            'city'                 => $data['city'] ?? null,
+            'state'                => $data['state'] ?? null,
+            'country'              => $data['country'] ?? null,
+            'pincode'              => $data['pincode'] ?? null,
+            'vendor_type'          => $data['vendor_type'] === 'temporary' ? 'temporary' : 'standard',
+            // The chooser's selection, stored verbatim — never inferred later.
+            'registration_type'    => PurchaseRegistrationType::normalize($data['vendor_type'] ?? null),
+            // Awaiting admin activation: Draft is the status Purchase already
+            // uses for "created but not yet transactable".
+            'status'               => PurchaseVendorStatus::DRAFT,
+            // Registered, but the portal stays shut until an admin activates —
+            // provision() flips this to 'active' on approval.
+            'portal_status'        => 'Registered',
+            // Same credentials, so after activation they sign into the Purchase
+            // portal as this very PurchaseVendor (no second account).
+            'password'             => Hash::make($data['password']),
+        ]);
+
+        Log::channel('purchase')->info('Purchase vendor created from self-registration', [
+            'purchase_vendor_id' => $vendor->id, 'user_id' => $user->id,
+            'registration_type'  => $vendor->registration_type,
+        ]);
     }
 
     public function registerTPV(array $data): User
@@ -170,6 +244,9 @@ class AuthService
             'user_id'     => $user->id,
             'company_name'=> $data['username'] ?? $user->name,
             'vendor_type' => $data['tpv_type'] === 'temporary' ? 'temporary' : 'standard',
+            // The registration choice is stored verbatim, so it is never
+            // re-derived from vendor_type / is_temporary later on.
+            'registration_type' => \App\Support\Tpv\TpvRegistrationType::normalize($data['tpv_type'] ?? null),
             'engagements' => ['tpv'],
             'email'       => $user->email,
             'phone'       => $data['phone'] ?? null,

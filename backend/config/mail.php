@@ -115,4 +115,20 @@ return [
         'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'Laravel')),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Branding
+    |--------------------------------------------------------------------------
+    | Absolute URL of the logo shown in transactional email headers. Left null,
+    | templates fall back to rendering the company name as text — so mail is
+    | never broken by a missing image.
+    */
+    'logo_url' => env('MAIL_LOGO_URL'),
+
+    /*
+    | Address shown to recipients as the support contact. Falls back to the
+    | from-address when unset.
+    */
+    'support_address' => env('MAIL_SUPPORT_ADDRESS', env('MAIL_FROM_ADDRESS')),
+
 ];

@@ -1,11 +1,20 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { purchaseVendorAuthApi } from '@/services/purchaseVendorAuthApi'
 import { AuthShell, lbl, inp, primaryBtn, linkStyle, errStyle } from './PurchaseVendorLogin'
 
-/** Purchase Vendor self-registration — creates ONLY a PurchaseVendor. */
+/**
+ * Purchase Vendor self-registration — creates ONLY a PurchaseVendor.
+ * The account type chosen upstream (?type=standard|temporary) is carried through
+ * and stored on the record, so it survives approval → activation → portal.
+ */
 export default function PurchaseVendorRegister() {
-  const [form, setForm] = useState({ tenant_id: '', company_name: '', email: '', phone: '', password: '', password_confirmation: '' })
+  const [params] = useSearchParams()
+  const initialType = params.get('type') === 'temporary' ? 'temporary_vendor' : 'standard_vendor'
+  const [form, setForm] = useState({
+    tenant_id: '', company_name: '', email: '', phone: '', password: '', password_confirmation: '',
+    registration_type: initialType,
+  })
   const [err, setErr] = useState('')
   const [done, setDone] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -30,6 +39,13 @@ export default function PurchaseVendorRegister() {
       <form onSubmit={submit} style={{ display: 'grid', gap: 10 }}>
         <div><label style={lbl}>Tenant ID</label><input value={form.tenant_id} onChange={set('tenant_id')} style={inp} required /></div>
         <div><label style={lbl}>Company Name</label><input value={form.company_name} onChange={set('company_name')} style={inp} required /></div>
+        <div>
+          <label style={lbl}>Registration Type</label>
+          <select value={form.registration_type} onChange={set('registration_type')} style={{ ...inp, cursor: 'pointer' }}>
+            <option value="standard_vendor">Standard Vendor</option>
+            <option value="temporary_vendor">Temporary Vendor</option>
+          </select>
+        </div>
         <div><label style={lbl}>Email</label><input type="email" value={form.email} onChange={set('email')} style={inp} required /></div>
         <div><label style={lbl}>Phone</label><input value={form.phone} onChange={set('phone')} style={inp} /></div>
         <div><label style={lbl}>Password</label><input type="password" value={form.password} onChange={set('password')} style={inp} required /></div>

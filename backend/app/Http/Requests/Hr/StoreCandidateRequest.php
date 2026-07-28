@@ -31,7 +31,8 @@ class StoreCandidateRequest extends FormRequest
             'job_posting_id'   => 'nullable|exists:hr_job_postings,id',
             'linkedin_url'     => 'nullable|url',
             'skills'           => 'nullable|array',
-            'ai_score'         => 'nullable|integer|min:0|max:100',
+            // 'ai_score' is intentionally NOT accepted: it is produced by
+            // CandidateScoringEngine and must never be settable by a client.
             'notes'            => 'nullable|string',
         ];
     }

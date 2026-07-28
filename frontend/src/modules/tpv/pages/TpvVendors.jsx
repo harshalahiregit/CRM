@@ -6,6 +6,8 @@ import {
 import { useAuth } from '@/context/AuthContext'
 import { fmtDate } from '../constants'
 import { useVendorModule } from '../useVendorModule'
+import TpvRegistrationBadge from '../components/TpvRegistrationBadge'
+import TemporaryTpvValidityBadge from '../components/TemporaryTpvValidityBadge'
 import {
   KIT3D_STYLE, inputStyle, labelStyle, Overlay, ModalFooter, Field, TextInput, SelectInput,
 } from '@/components/ui/kit3d'
@@ -109,8 +111,8 @@ export default function TpvVendors() {
         <div className="pr-glass" style={{ padding: 0, borderRadius: 16, overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
-              <thead><tr>{['ID', 'Vendor Name', 'Company', 'Phone', 'Email', 'Status', 'Date Created', 'Options'].map((h, i) => (
-                <th key={h} style={{ textAlign: i === 7 ? 'right' : 'left', padding: '11px 14px', fontSize: 10, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid var(--border)' }}>{h}</th>
+              <thead><tr>{['ID', 'Vendor Name', 'Company', 'Type', 'Remaining Validity', 'Phone', 'Email', 'Status', 'Date Created', 'Options'].map((h, i) => (
+                <th key={h} style={{ textAlign: i === 9 ? 'right' : 'left', padding: '11px 14px', fontSize: 10, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid var(--border)' }}>{h}</th>
               ))}</tr></thead>
               <tbody>
                 {filtered.map(v => (
@@ -118,6 +120,8 @@ export default function TpvVendors() {
                     <td style={{ padding: '10px 14px', fontSize: 12.5, fontWeight: 700, color: '#a78bfa' }}>#{v.id}</td>
                     <td style={{ padding: '10px 14px', fontSize: 12.5, color: 'var(--text-h)', fontWeight: 600 }}>{v.user?.name || '—'}</td>
                     <td style={{ padding: '10px 14px', fontSize: 12.5, color: 'var(--text-h)' }}>{v.company_name}</td>
+                    <td style={{ padding: '10px 14px' }}><TpvRegistrationBadge type={v.registration_type} label={v.registration_type_label} /></td>
+                    <td style={{ padding: '10px 14px' }}><TemporaryTpvValidityBadge countdown={v.validity_countdown} compact /></td>
                     <td style={{ padding: '10px 14px', fontSize: 12.5, color: 'var(--text-muted)' }}>{v.phone || '—'}</td>
                     <td style={{ padding: '10px 14px', fontSize: 12.5, color: 'var(--text-muted)' }}>{v.email || '—'}</td>
                     <td style={{ padding: '10px 14px' }}>

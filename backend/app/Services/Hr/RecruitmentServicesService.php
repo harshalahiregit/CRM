@@ -315,7 +315,10 @@ class RecruitmentServicesService
         return HrCandidate::whereIn('job_posting_id', $jobPostingIds)
             ->when($already->isNotEmpty(), fn ($q) => $q->whereNotIn('id', $already))
             ->orderByDesc('ai_score')
-            ->get(['id', 'name', 'stage', 'experience_years', 'current_company', 'location', 'ai_score', 'skills', 'final_decision']);
+            ->get(['id', 'name', 'stage', 'experience_years', 'current_company', 'location', 'ai_score', 'ai_breakdown', 'skills', 'final_decision'])
+            // Suppress pre-engine literals: only a score the AIR engine produced
+            // may be shown, or this list contradicts the candidate's own profile.
+            ->each(fn ($c) => $c->setAttribute('ai_score', $c->publishedAiScore()));
     }
 
     /** Recruiter delivers one or more existing candidates to the client. */

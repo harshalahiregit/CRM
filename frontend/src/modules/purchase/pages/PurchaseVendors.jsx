@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { Building2, Plus, Search, RefreshCw, CheckCircle2, Eye, CalendarDays } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
 import PurchaseVendorForm, { validatePurchaseVendor } from '@/modules/purchase/components/PurchaseVendorForm'
+import PurchaseRegistrationBadge from '@/modules/purchase/components/PurchaseRegistrationBadge'
+import TemporaryVendorValidityBadge from '@/modules/purchase/components/TemporaryVendorValidityBadge'
 import { PV_DEFAULTS } from '@/modules/purchase/components/purchaseVendorFormConstants'
 
 /**
@@ -79,7 +81,7 @@ export default function PurchaseVendors() {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ background: 'var(--bg-input)' }}>
-              {['Code', 'Company', 'Email', 'Type', 'Status', ''].map((h) => <th key={h} style={th}>{h}</th>)}
+              {['Code', 'Company', 'Email', 'Type', 'Remaining Validity', 'Status', ''].map((h) => <th key={h} style={th}>{h}</th>)}
             </tr>
           </thead>
           <tbody>
@@ -90,7 +92,8 @@ export default function PurchaseVendors() {
                   <td style={td}>{v.purchase_vendor_code}</td>
                   <td style={{ ...td, fontWeight: 700, color: 'var(--text-h)' }}>{v.company_name}</td>
                   <td style={td}>{v.email || '—'}</td>
-                  <td style={td}>{v.vendor_type}</td>
+                  <td style={td}><PurchaseRegistrationBadge type={v.registration_type} label={v.registration_type_label} /></td>
+                  <td style={td}><TemporaryVendorValidityBadge countdown={v.validity_countdown} compact /></td>
                   <td style={td}><span style={{ fontSize: 11, fontWeight: 700, color: STATUS_COLORS[v.status] || '#6b7280' }}>{v.status_label || v.status}</span></td>
                   <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                     {v.status !== 'Active' && <button onClick={() => activate(v.id)} style={{ ...miniBtn, color: '#10b981' }}><CheckCircle2 size={13} /> Activate</button>}

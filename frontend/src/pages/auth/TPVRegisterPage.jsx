@@ -11,7 +11,7 @@ const inputCls = `w-full px-3 py-2.5 rounded-lg text-sm outline-none transition-
 
 const selectCls = `${inputCls} cursor-pointer`
 
-function Field({ label, required, children }) {
+function Field({ label, required, children, error }) {
   return (
     <div>
       <label className="block text-[11px] font-semibold uppercase tracking-wider mb-1"
@@ -19,6 +19,9 @@ function Field({ label, required, children }) {
         {label}{required && <span className="text-red-400 ml-0.5">*</span>}
       </label>
       {children}
+      {/* Field-level message — covers both client rules and 422s mapped back
+          from the API, so the user is told exactly what to fix. */}
+      {error && <p className="mt-1 text-[11px] text-red-400">{error.message}</p>}
     </div>
   )
 }
@@ -34,7 +37,7 @@ export default function TPVRegisterPage() {
   const [apiError, setApiError] = useState('')
   const navigate = useNavigate()
 
-  const { register, handleSubmit, formState: { isSubmitting } } = useForm()
+  const { register, handleSubmit, setError, getValues, formState: { errors, isSubmitting } } = useForm()
 
   const onSubmit = async (data) => {
     setApiError('')
@@ -45,8 +48,33 @@ export default function TPVRegisterPage() {
       })
       navigate('/auth/pending-approval')
     } catch (err) {
+      // A 422 carries per-field reasons (e.g. email/username already taken).
+      // Map them onto the fields instead of dropping them — otherwise the user
+      // only sees "Registration failed" with no idea what to change.
+      const fieldErrors = err.response?.data?.errors
+      if (err.response?.status === 422 && fieldErrors) {
+        Object.entries(fieldErrors).forEach(([field, messages]) => {
+          setError(field, { type: 'server', message: Array.isArray(messages) ? messages[0] : String(messages) })
+        })
+        setApiError('Please correct the highlighted fields and try again.')
+        return
+      }
       setApiError(err.response?.data?.message || 'Registration failed. Please try again.')
     }
+  }
+
+  // Client-side rules mirror TPVRegisterRequest exactly — they catch mistakes
+  // before the round-trip; they never replace the server's validation.
+  const RULES = {
+    first_name: { required: 'First name is required.', minLength: { value: 2, message: 'At least 2 characters.' } },
+    last_name:  { required: 'Last name is required.' },
+    email:      { required: 'Email is required.', pattern: { value: /^\S+@\S+\.\S+$/, message: 'Enter a valid email address.' } },
+    username:   { required: 'Username is required.' },
+    password:   { required: 'Password is required.', minLength: { value: 8, message: 'At least 8 characters.' } },
+    password_confirmation: {
+      required: 'Please confirm your password.',
+      validate: (v) => v === getValues('password') || 'Passwords do not match.',
+    },
   }
 
   return (
@@ -150,16 +178,16 @@ export default function TPVRegisterPage() {
               <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Account User Information</p>
 
               <div className="grid grid-cols-2 gap-3">
-                <Field label="First Name" required>
-                  <input {...register('first_name')} placeholder="First name" className={inputCls} />
+                <Field label="First Name" required error={errors.first_name}>
+                  <input {...register('first_name', RULES.first_name)} placeholder="First name" className={inputCls} />
                 </Field>
-                <Field label="Last Name" required>
-                  <input {...register('last_name')} placeholder="Last name" className={inputCls} />
+                <Field label="Last Name" required error={errors.last_name}>
+                  <input {...register('last_name', RULES.last_name)} placeholder="Last name" className={inputCls} />
                 </Field>
               </div>
 
-              <Field label="Email Address" required>
-                <input {...register('email')} type="email"
+              <Field label="Email Address" required error={errors.email}>
+                <input {...register('email', RULES.email)} type="email"
                        placeholder="developers@nexforeconsulting.com" className={inputCls} />
               </Field>
 
@@ -176,9 +204,9 @@ export default function TPVRegisterPage() {
               </Field>
 
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Password" required>
+                <Field label="Password" required error={errors.password}>
                   <div className="relative">
-                    <input {...register('password')} type={showPw ? 'text' : 'password'}
+                    <input {...register('password', RULES.password)} type={showPw ? 'text' : 'password'}
                            placeholder="••••••••" className={inputCls} />
                     <button type="button" onClick={() => setShowPw(v => !v)}
                             className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
@@ -186,9 +214,9 @@ export default function TPVRegisterPage() {
                     </button>
                   </div>
                 </Field>
-                <Field label="Repeat Password" required>
+                <Field label="Repeat Password" required error={errors.password_confirmation}>
                   <div className="relative">
-                    <input {...register('password_confirmation')} type={showRpw ? 'text' : 'password'}
+                    <input {...register('password_confirmation', RULES.password_confirmation)} type={showRpw ? 'text' : 'password'}
                            placeholder="Repeat password" className={inputCls} />
                     <button type="button" onClick={() => setShowRpw(v => !v)}
                             className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
@@ -204,8 +232,8 @@ export default function TPVRegisterPage() {
                  style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
               <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Contact / Address Info</p>
 
-              <Field label="Username" required>
-                <input {...register('username')} placeholder="@username" className={inputCls} />
+              <Field label="Username" required error={errors.username}>
+                <input {...register('username', RULES.username)} placeholder="@username" className={inputCls} />
               </Field>
 
               <Field label="VAT Number">

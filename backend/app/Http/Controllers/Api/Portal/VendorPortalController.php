@@ -55,6 +55,18 @@ class VendorPortalController extends Controller
     }
 
     /** The caller's own vendor profile + headline account state. */
+    /** Dismiss the post-activation welcome banner permanently for this vendor. */
+    public function dismissWelcomeBanner(Request $request)
+    {
+        $vendor = $this->portalVendor($request);
+        if (! $vendor) {
+            return response()->json(['status' => 'error', 'message' => 'Vendor profile not found'], 404);
+        }
+        $vendor->dismissWelcomeBanner();
+
+        return response()->json(['dismissed' => true]);
+    }
+
     public function me(Request $request)
     {
         try {
@@ -63,6 +75,9 @@ class VendorPortalController extends Controller
                 return response()->json(['status' => 'error', 'message' => 'Vendor profile not found'], 404);
             }
             $vendor->loadMissing(['contacts', 'accountManager:id,name,email']);
+            // Drives the one-time post-activation welcome banner. Persisted
+            // server-side, so dismissing it on one device dismisses it everywhere.
+            $vendor->setAttribute('show_welcome_banner', $vendor->shouldShowWelcomeBanner());
 
             $openOrders = 0;
             $unpaidInvoices = 0;

@@ -23,8 +23,13 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class EnsureVendorPortalAccess
 {
-    /** Roles that own a vendor profile — Purchase-side and TPV-side logins. */
-    private const PORTAL_ROLES = ['vendor', 'third_party_vendor'];
+    /**
+     * Roles that own a shared `vendors` profile. TPV only: a Purchase Vendor is a
+     * PurchaseVendor identity with its own login, token and gate
+     * (EnsurePurchaseVendorPortalAccess) and never holds a User session, so the
+     * 'vendor' role has no business here.
+     */
+    private const PORTAL_ROLES = ['third_party_vendor'];
 
     public function handle(Request $request, Closure $next): Response
     {

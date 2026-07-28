@@ -38,7 +38,23 @@ export default function VendorRegisterPage() {
   const [apiError, setApiError]  = useState('')
   const navigate = useNavigate()
 
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm()
+  const { register, handleSubmit, setError, getValues, formState: { errors, isSubmitting } } = useForm()
+
+  // Mirrors VendorRegisterRequest exactly — catches mistakes before the
+  // round-trip without replacing the server's validation.
+  const RULES = {
+    company_name: { required: 'Company name is required.', minLength: { value: 2, message: 'At least 2 characters.' } },
+    category:     { required: 'Please select a category.' },
+    first_name:   { required: 'First name is required.', minLength: { value: 2, message: 'At least 2 characters.' } },
+    last_name:    { required: 'Last name is required.' },
+    email:        { required: 'Email is required.', pattern: { value: /^\S+@\S+\.\S+$/, message: 'Enter a valid email address.' } },
+    password:     { required: 'Password is required.', minLength: { value: 8, message: 'At least 8 characters.' } },
+    password_confirmation: {
+      required: 'Please confirm your password.',
+      validate: (v) => v === getValues('password') || 'Passwords do not match.',
+    },
+    terms:        { required: 'Please accept the terms to continue.' },
+  }
 
   const onSubmit = async (data) => {
     setApiError('')
@@ -50,6 +66,16 @@ export default function VendorRegisterPage() {
       })
       navigate('/auth/pending-approval')
     } catch (err) {
+      // A 422 carries per-field reasons (e.g. email already taken). Map them
+      // onto the fields instead of dropping them.
+      const fieldErrors = err.response?.data?.errors
+      if (err.response?.status === 422 && fieldErrors) {
+        Object.entries(fieldErrors).forEach(([field, messages]) => {
+          setError(field, { type: 'server', message: Array.isArray(messages) ? messages[0] : String(messages) })
+        })
+        setApiError('Please correct the highlighted fields and try again.')
+        return
+      }
       setApiError(err.response?.data?.message || 'Registration failed. Please try again.')
     }
   }
@@ -164,13 +190,13 @@ export default function VendorRegisterPage() {
                  style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
               <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-3">Company Information</p>
 
-              <Field label="Company Name" required>
-                <input {...register('company_name', { required: true })} placeholder="Enter registered company name"
+              <Field label="Company Name" required error={errors.company_name?.message}>
+                <input {...register('company_name', RULES.company_name)} placeholder="Enter registered company name"
                        className={inputCls} />
               </Field>
 
-              <Field label="Category" required>
-                <select {...register('category', { required: true })} className={selectCls}>
+              <Field label="Category" required error={errors.category?.message}>
+                <select {...register('category', RULES.category)} className={selectCls}>
                   <option value="">Nature of Business</option>
                   {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
@@ -244,11 +270,11 @@ export default function VendorRegisterPage() {
               <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-3">Primary Contact Information</p>
 
               <div className="grid grid-cols-2 gap-3">
-                <Field label="First Name" required>
-                  <input {...register('first_name', { required: true })} placeholder="First name" className={inputCls} />
+                <Field label="First Name" required error={errors.first_name?.message}>
+                  <input {...register('first_name', RULES.first_name)} placeholder="First name" className={inputCls} />
                 </Field>
-                <Field label="Last Name" required>
-                  <input {...register('last_name', { required: true })} placeholder="Last name" className={inputCls} />
+                <Field label="Last Name" required error={errors.last_name?.message}>
+                  <input {...register('last_name', RULES.last_name)} placeholder="Last name" className={inputCls} />
                 </Field>
               </div>
 
@@ -256,8 +282,8 @@ export default function VendorRegisterPage() {
                 <input {...register('designation')} placeholder="e.g. Procurement Manager" className={inputCls} />
               </Field>
 
-              <Field label="Email Address" required>
-                <input {...register('email', { required: true })} type="email"
+              <Field label="Email Address" required error={errors.email?.message}>
+                <input {...register('email', RULES.email)} type="email"
                        placeholder="developers@nexforeconsulting.com" className={inputCls} />
               </Field>
 
@@ -272,9 +298,9 @@ export default function VendorRegisterPage() {
               </Field>
 
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Password" required>
+                <Field label="Password" required error={errors.password?.message}>
                   <div className="relative">
-                    <input {...register('password', { required: true })} type={showPw ? 'text' : 'password'}
+                    <input {...register('password', RULES.password)} type={showPw ? 'text' : 'password'}
                            placeholder="••••••••" className={inputCls} />
                     <button type="button" onClick={() => setShowPw(v => !v)}
                             className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200">
@@ -282,9 +308,9 @@ export default function VendorRegisterPage() {
                     </button>
                   </div>
                 </Field>
-                <Field label="Confirm Password" required>
+                <Field label="Confirm Password" required error={errors.password_confirmation?.message}>
                   <div className="relative">
-                    <input {...register('password_confirmation')} type={showCpw ? 'text' : 'password'}
+                    <input {...register('password_confirmation', RULES.password_confirmation)} type={showCpw ? 'text' : 'password'}
                            placeholder="Repeat password" className={inputCls} />
                     <button type="button" onClick={() => setShowCpw(v => !v)}
                             className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200">
@@ -305,7 +331,7 @@ export default function VendorRegisterPage() {
                           pt-5 border-t border-slate-700/50">
             <div className="space-y-1">
               <label className="flex items-center gap-2.5 cursor-pointer">
-                <input type="checkbox" {...register('terms', { required: true })}
+                <input type="checkbox" {...register('terms', RULES.terms)}
                        className="w-4 h-4 rounded accent-blue-500" />
                 <span className="text-sm text-slate-300">
                   I agree to the{' '}
@@ -315,7 +341,7 @@ export default function VendorRegisterPage() {
               </label>
               <p className="text-xs text-slate-500 pl-6.5">
                 Already have an account?{' '}
-                <Link to="/auth/login" className="text-blue-400 hover:underline">Login</Link>
+                <Link to="/purchase-portal/login" className="text-blue-400 hover:underline">Login</Link>
               </p>
             </div>
 

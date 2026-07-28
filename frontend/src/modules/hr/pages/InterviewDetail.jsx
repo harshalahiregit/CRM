@@ -9,7 +9,7 @@ import AuditTimeline from '@/components/ui/AuditTimeline'
 import { HrLoading } from '@/components/ui/HrState'
 import {
   roundColor, RECOMMENDATION_COLORS, INTERVIEW_STATUS_COLORS, INTERVIEW_RESULT_COLORS,
-  canManageHrQueue, aiBand,
+  canManageHrQueue, candidateScore,
 } from '@/modules/hr/constants'
 
 const currentUser = () => { try { return JSON.parse(localStorage.getItem('crm_user') || 'null') } catch { return null } }
@@ -133,7 +133,10 @@ export default function InterviewDetail() {
                 <p className="text-[11px] font-mono mt-0.5" style={{ color: 'var(--text-muted)' }}>CAND-{String(cand.id).padStart(4, '0')}</p>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-3 mt-3">
                   <Field label="Job Applied">{cand.job_posting?.title || 'General'}</Field>
-                  <Field label="AI Score">{cand.ai_score != null ? <span style={{ color: aiBand(cand.ai_score).color, fontWeight: 800 }}>{cand.ai_score}%</span> : '—'}</Field>
+                  {/* Score AND verdict come from the engine; this file derives neither. */}
+                  <Field label="AI Score">{(() => { const ai = candidateScore(cand); return ai.isScored
+                    ? <span style={{ color: ai.style.color, fontWeight: 800 }}>{ai.display}{ai.recommendation ? ` · ${ai.recommendation}` : ''}</span>
+                    : <span style={{ color: 'var(--text-muted)' }}>Not scored</span> })()}</Field>
                   <Field label="Current Stage">{cand.stage || '—'}</Field>
                   <Field label="Recruiter">{cand.assigned_recruiter?.name || 'Unassigned'}</Field>
                 </div>

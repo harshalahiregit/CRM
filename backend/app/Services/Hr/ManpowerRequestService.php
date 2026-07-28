@@ -3,6 +3,7 @@
 namespace App\Services\Hr;
 
 use App\Exceptions\BusinessException;
+use App\Jobs\Hr\RecalculateCandidateScore;
 use App\Exceptions\UnauthorizedTenantException;
 use App\Models\Hr\HrJobPosting;
 use App\Models\Hr\HrManpowerRequest;
@@ -431,6 +432,15 @@ class ManpowerRequestService
         });
     }
 
+    /**
+     * Requisition columns the scoring engine reads, via the posting's
+     * manpowerRequest relation. Keep in step with the Dimensions/ classes.
+     */
+    private const SCORING_INPUTS = [
+        'required_skills', 'preferred_skills', 'experience_required', 'education',
+        'salary_min', 'salary_max', 'location', 'work_mode', 'target_joining_date',
+    ];
+
     public function update(HrManpowerRequest $manpowerRequest, array $data, User $user): HrManpowerRequest
     {
         $this->assertTenant($manpowerRequest, $user);
@@ -440,6 +450,23 @@ class ManpowerRequestService
         }
 
         $manpowerRequest->update($data);
+
+        // The requisition is the AUTHORITATIVE source for four dimensions (Skills,
+        // Experience, Education, Salary), so a change here invalidates the scores of
+        // anyone already applied to the posting it produced.
+        //
+        // Today this is a no-op: the guard above only admits Draft/Rejected requests,
+        // and neither status ever carries a job_posting_id, so there are no applicants
+        // yet. It is wired regardless -- if that guard is ever relaxed, stale scores
+        // must not become the silent default. Hence the explicit posting check.
+        if ($manpowerRequest->wasChanged(self::SCORING_INPUTS)) {
+            $posting = $manpowerRequest->jobPosting;
+            if ($posting && $posting->tenant_id === $manpowerRequest->tenant_id) {
+                app(JobPostingService::class)->rescoreApplicants(
+                    $posting, RecalculateCandidateScore::TRIGGER_JOB_UPDATED
+                );
+            }
+        }
 
         Log::channel('hr')->info('Manpower request updated', ['request_id' => $manpowerRequest->id, 'tenant_id' => $manpowerRequest->tenant_id]);
 

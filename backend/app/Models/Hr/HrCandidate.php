@@ -40,6 +40,47 @@ class HrCandidate extends Model
         'whatsapp_opt_in'  => 'boolean',
     ];
 
+    /**
+     * Has the AI engine actually run for this candidate?
+     *
+     * This is the correct gate for "AI screening completed" — NOT `ai_score > 0`.
+     * The engine withholds a numeric score when confidence is below the configured
+     * floor, so a legitimately screened candidate can carry a null ai_score with a
+     * recommendation of "Insufficient Data". Gating on the number stalled those
+     * candidates in the pipeline for a reason that has nothing to do with them.
+     *
+     * Reads the mirror rather than querying air_candidate_scores, so list rendering
+     * stays free of N+1. ScoreRecorder stamps `engine` on every recording.
+     */
+    public function hasAiScreening(): bool
+    {
+        $breakdown = $this->ai_breakdown;
+
+        return is_array($breakdown) && ! empty($breakdown['engine']);
+    }
+
+    /** Did the engine publish a score? Null means withheld or never run — never zero. */
+    public function isScored(): bool
+    {
+        return $this->publishedAiScore() !== null;
+    }
+
+    /**
+     * The score, but ONLY if the AIR engine produced it.
+     *
+     * Rows written before the engine existed (seeded literals, or the removed
+     * heuristics) still carry an ai_score with no `engine` stamp and no
+     * air_candidate_scores row. Serving that number would make a list show "87%"
+     * beside a detail page reporting "not scored" — the list-vs-detail disagreement
+     * this engine was built to end. Every payload must read through here.
+     */
+    public function publishedAiScore(): ?int
+    {
+        return $this->hasAiScreening() && $this->ai_score !== null
+            ? (int) $this->ai_score
+            : null;
+    }
+
     public function jobPosting()
     {
         return $this->belongsTo(HrJobPosting::class, 'job_posting_id');

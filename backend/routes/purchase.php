@@ -282,6 +282,8 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('purchase')->group(fun
 
     // Purchase Vendor activation (admin authority).
     Route::post('/vendors/{purchaseVendor}/approve', [PurchaseVendorController::class, 'approve'])->whereNumber('purchaseVendor');
+    // Manual resend of the activation e-mail (admin authority, like activation).
+    Route::post('/vendors/{purchaseVendor}/resend-activation', [PurchaseVendorController::class, 'resendActivation'])->whereNumber('purchaseVendor');
 
     // Admin approve/reject a purchase vendor's statutory document.
     Route::post('/documents/{document}/review',      [PurchaseVendorDocumentController::class, 'review']);

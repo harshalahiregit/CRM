@@ -88,6 +88,7 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::get('/candidates/recruiters',                [CandidateController::class, 'recruiters']);
     Route::post('/candidates',                          [CandidateController::class, 'store']);
     Route::post('/candidates/linkedin-parse',           [CandidateController::class, 'linkedinParse']);
+    Route::get('/candidates/{candidate}/score',         [CandidateController::class, 'score']);
     Route::get('/candidates/{candidate}/journey',       [CandidateController::class, 'journey']);
     Route::get('/candidates/{candidate}/communications', [CandidateController::class, 'communications']);
     Route::get('/candidates/{candidate}/communication-preview', [CandidateController::class, 'communicationPreview']);

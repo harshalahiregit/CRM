@@ -69,14 +69,8 @@ class TestEmailSystem extends Command
             'stage' => 'Applied',
             'job_posting_id' => $jobPosting->id,
             'skills' => json_encode(['PHP', 'Laravel', 'MySQL', 'Vue.js']),
-            'ai_score' => 85,
-            'ai_breakdown' => json_encode([
-                'skills_match' => 90,
-                'exp_match' => 85,
-                'location_match' => 80,
-                'education' => 75,
-                'overall_fit' => 87,
-            ]),
+            // No ai_score literal: only CandidateScoringEngine may produce one, and
+            // this command exists to test e-mail delivery, not scoring.
             'tenant_id' => 1,
         ]);
 

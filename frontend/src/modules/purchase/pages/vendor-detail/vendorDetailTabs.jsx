@@ -3,12 +3,12 @@ import { useNavigate } from 'react-router-dom'
 import { Save, ExternalLink, ClipboardList, Rocket, Inbox } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
 import PurchaseVendorForm, { validatePurchaseVendor } from '@/modules/purchase/components/PurchaseVendorForm'
-import PurchaseVendorDocuments from '@/modules/purchase/components/PurchaseVendorDocuments'
+import PurchaseVendorDocumentsReadOnly from '@/modules/purchase/components/PurchaseVendorDocumentsReadOnly'
 import PurchaseVendorContacts from '@/modules/purchase/components/PurchaseVendorContacts'
 import { useVendorWorkspace } from './vendorWorkspaceContext'
 import {
   fmtMoney, fmtDate,
-  poStatusCfg, pinvStatusCfg, contractStatusCfg, dnStatusCfg, quoteStatusCfg,
+  poStatusCfg, pinvStatusCfg, contractStatusCfg, dnStatusCfg, quoteStatusCfg, contractTypeLabel,
 } from '@/modules/purchase/constants'
 
 /**
@@ -55,7 +55,7 @@ function VendorScopedList({ title, fetcher, columns, statusCfg, moduleLabel, mod
     <div className="card-3d" style={card}>
       <TabHead title={title} count={rows?.length} actionLabel={moduleLabel ? `Open in ${moduleLabel}` : null} onAction={() => navigate(modulePath)} />
       {rows === null ? <div style={{ color: 'var(--text-muted)' }}>Loading…</div>
-        : rows.length === 0 ? <Empty text={`No ${title.toLowerCase()} for this vendor yet.`} />
+        : rows.length === 0 ? <Empty text={`No ${title}`} />
           : (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -128,13 +128,6 @@ export function ContactsTab() {
 export function OnboardingTab() {
   const { vendor, onboarding } = useVendorWorkspace()
   const navigate = useNavigate()
-  const docApi = {
-    checklist: () => purchaseApi.documents.checklist(vendor.id),
-    upload: (_, type, file) => purchaseApi.documents.upload(vendor.id, type, file),
-    resubmit: purchaseApi.documents.resubmit,
-    review: purchaseApi.documents.review,
-    open: purchaseApi.documents.open,
-  }
   return (
     <div style={{ display: 'grid', gap: 16 }}>
       <div className="card-3d" style={card}>
@@ -147,7 +140,7 @@ export function OnboardingTab() {
       </div>
       <div className="card-3d" style={card}>
         <h3 style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-h)', margin: '0 0 12px', textTransform: 'uppercase', letterSpacing: '.03em' }}>Documents</h3>
-        <PurchaseVendorDocuments api={docApi} manage admin />
+        <PurchaseVendorDocumentsReadOnly vendorId={vendor.id} />
       </div>
     </div>
   )
@@ -171,16 +164,79 @@ export function QuotationsTab() {
     ]} />
 }
 
+/**
+ * Contracts — reads the existing Purchase Contracts module
+ * (purchase_contracts, vendor-scoped by purchase_vendor_id). Read-only: view
+ * and download only, no create/edit/delete/upload — editing stays in the
+ * Contracts module itself.
+ *
+ * Note: the Sales/CRM contract tables (sales_contracts, client_contracts) are
+ * keyed by client_id and hold no vendor reference, so they are not a source
+ * for a vendor's contracts.
+ */
 export function ContractsTab() {
-  return <VendorScopedList
-    title="Contracts" moduleLabel="Contracts" modulePath="/app/purchase/contracts"
-    fetcher={(vid) => purchaseApi.contracts.list({ purchase_vendor_id: vid })}
-    statusCfg={contractStatusCfg}
-    columns={[
-      { header: 'Reference', cell: refOf, strong: true },
-      { header: 'Title', cell: (r) => r.title || '—' },
-      { header: 'Ends', cell: (r) => fmtDate(r.end_date) },
-    ]} />
+  const { vendor } = useVendorWorkspace()
+  const navigate = useNavigate()
+  const [rows, setRows] = useState(null)
+  const [err, setErr] = useState(null)
+
+  useEffect(() => {
+    let alive = true
+    purchaseApi.contracts.list({ purchase_vendor_id: vendor.id })
+      .then((r) => { if (alive) setRows(Array.isArray(r) ? r : (r?.data ?? [])) })
+      .catch(() => { if (alive) setRows([]) })
+    return () => { alive = false }
+  }, [vendor.id])
+
+  const download = async (row) => {
+    setErr(null)
+    try { window.open(await purchaseApi.contracts.download(row.id), '_blank', 'noopener') }
+    catch { setErr('No signed document is attached to this contract.') }
+  }
+
+  const cols = [
+    { header: 'Contract No', cell: (r) => r.contract_number || `#${r.id}`, strong: true },
+    { header: 'Title', cell: (r) => r.title || '—' },
+    { header: 'Type', cell: (r) => contractTypeLabel(r.type) },
+    { header: 'Start', cell: (r) => fmtDate(r.start_date) },
+    { header: 'End', cell: (r) => fmtDate(r.end_date) },
+    { header: 'Ceiling', cell: (r) => fmtMoney(r.spend_ceiling, r.currency), num: true },
+    { header: 'Owner', cell: (r) => r.creator?.name || '—' },
+    { header: 'Created', cell: (r) => fmtDate(r.created_at) },
+  ]
+
+  return (
+    <div className="card-3d" style={card}>
+      <TabHead title="Contracts" count={rows?.length} actionLabel="Open in Contracts" onAction={() => navigate('/app/purchase/contracts')} />
+      {err && <p style={{ color: '#ef4444', fontSize: 12.5, margin: '0 0 10px' }}>{err}</p>}
+      {rows === null ? <div style={{ color: 'var(--text-muted)' }}>Loading…</div>
+        : rows.length === 0 ? <Empty text="No Contracts" />
+          : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead><tr style={{ background: 'var(--bg-input)' }}>
+                  {cols.map((c) => <th key={c.header} style={{ ...th, textAlign: c.num ? 'right' : 'left' }}>{c.header}</th>)}
+                  <th style={th}>Status</th><th style={th} />
+                </tr></thead>
+                <tbody>
+                  {rows.map((r) => (
+                    <tr key={r.id} style={{ borderTop: '1px solid var(--border)' }}>
+                      {cols.map((c) => (
+                        <td key={c.header} style={{ ...td, textAlign: c.num ? 'right' : 'left', ...(c.strong ? { color: 'var(--text-h)', fontWeight: 700 } : {}) }}>{c.cell(r)}</td>
+                      ))}
+                      <td style={td}><Badge cfg={contractStatusCfg(r.status)} /></td>
+                      <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        <button onClick={() => navigate(`/app/purchase/contracts/${r.id}`)} style={linkBtn}>View</button>
+                        {r.document_path && <button onClick={() => download(r)} style={{ ...linkBtn, marginLeft: 6 }}>Download</button>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+    </div>
+  )
 }
 
 export function OrdersTab() {

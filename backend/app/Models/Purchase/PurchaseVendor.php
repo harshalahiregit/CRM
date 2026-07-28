@@ -5,6 +5,7 @@ namespace App\Models\Purchase;
 use App\Models\Traits\Auditable;
 use App\Models\Traits\BelongsToTenant;
 use App\Models\User;
+use App\Support\Purchase\PurchaseRegistrationType as RegistrationType;
 use App\Support\Purchase\PurchaseVendorStatus as Status;
 use Illuminate\Auth\Authenticatable as AuthenticatableTrait;
 use Illuminate\Contracts\Auth\Authenticatable as AuthenticatableContract;
@@ -30,7 +31,7 @@ class PurchaseVendor extends Model implements AuthenticatableContract
 
     protected $fillable = [
         'tenant_id', 'user_id', 'account_manager_id',
-        'purchase_vendor_code', 'company_name', 'legal_name', 'vendor_type',
+        'purchase_vendor_code', 'company_name', 'legal_name', 'vendor_type', 'registration_type',
         'email', 'phone', 'website', 'category',
         'registration_number', 'gst_number', 'pan_number',
         // Vendor-master profile/financial fields (Purchase-owned)
@@ -52,6 +53,9 @@ class PurchaseVendor extends Model implements AuthenticatableContract
         'email_verified_at'         => 'datetime',
         'password_reset_expires_at' => 'datetime',
         'last_login_at'             => 'datetime',
+        'first_login_at'            => 'datetime',
+        'login_count'               => 'integer',
+        'welcome_banner_dismissed_at' => 'datetime',
     ];
 
     /** Credentials/tokens are never disclosed in payloads. */
@@ -60,7 +64,7 @@ class PurchaseVendor extends Model implements AuthenticatableContract
         'email_verification_token', 'password_reset_token',
     ];
 
-    protected $appends = ['status_label'];
+    protected $appends = ['status_label', 'registration_type_label', 'validity_countdown'];
 
     /* ── Portal auth helpers ────────────────────────────────────────────── */
 
@@ -74,9 +78,29 @@ class PurchaseVendor extends Model implements AuthenticatableContract
         return $this->email_verified_at !== null;
     }
 
+    /**
+     * Record a successful portal sign-in. first_login_at is stamped once and
+     * never overwritten, so "has this vendor ever signed in?" stays answerable.
+     */
     public function markLoggedIn(?string $ip): void
     {
-        $this->forceFill(['last_login_at' => now(), 'last_login_ip' => $ip])->saveQuietly();
+        $this->forceFill([
+            'last_login_at'  => now(),
+            'last_login_ip'  => $ip,
+            'first_login_at' => $this->first_login_at ?? now(),
+            'login_count'    => (int) ($this->login_count ?? 0) + 1,
+        ])->saveQuietly();
+    }
+
+    /** Show the post-activation welcome banner until the vendor dismisses it. */
+    public function shouldShowWelcomeBanner(): bool
+    {
+        return $this->status === Status::ACTIVE && $this->welcome_banner_dismissed_at === null;
+    }
+
+    public function dismissWelcomeBanner(): void
+    {
+        $this->forceFill(['welcome_banner_dismissed_at' => now()])->saveQuietly();
     }
 
     /* ── Relationships ──────────────────────────────────────────────────── */
@@ -113,9 +137,64 @@ class PurchaseVendor extends Model implements AuthenticatableContract
         return Status::label($this->status);
     }
 
+    /**
+     * The registration type this vendor was created with, as a display label.
+     * Falls back to Standard Vendor for rows predating the column.
+     */
+    public function getRegistrationTypeLabelAttribute(): string
+    {
+        return RegistrationType::label($this->registration_type);
+    }
+
     public function isActive(): bool
     {
         return $this->status === Status::ACTIVE;
+    }
+
+    /**
+     * Is this a time-boxed account? Purchase's own answer, taken from the stored
+     * registration type (with the legacy vendor_type as a fallback for rows that
+     * predate it). Nothing here consults TPV.
+     */
+    public function isTemporary(): bool
+    {
+        return $this->registration_type === RegistrationType::TEMPORARY
+            || (! $this->registration_type && $this->vendor_type === 'temporary');
+    }
+
+    /** Has a temporary account's access window closed? Purchase-owned. */
+    public function isAccessExpired(): bool
+    {
+        if (! $this->isTemporary() || ! $this->access_expires_at) {
+            return false;
+        }
+
+        return $this->access_expires_at->getTimestamp() <= now()->getTimestamp();
+    }
+
+    /**
+     * Remaining-validity payload for the UI countdown. Built from this model's
+     * own access_expires_at; the generic helper only formats it.
+     */
+    public function getValidityCountdownAttribute(): array
+    {
+        return \App\Support\ValidityCountdown::build(
+            $this->isTemporary(),
+            $this->access_expires_at,
+            $this->isTemporary() ? $this->isAccessExpired() : null,
+            $this->isAccessStarted(),
+        );
+    }
+
+    /**
+     * Has the temporary window actually begun? Purchase's own answer: the
+     * account must be Active AND carry an activation timestamp (approved_at).
+     * A Draft/Registered vendor has not started its clock — it is awaiting
+     * activation, not expired. Never derived from created_at.
+     */
+    public function isAccessStarted(): bool
+    {
+        return $this->status === Status::ACTIVE && $this->approved_at !== null;
     }
 
     /** May this vendor be transacted with (PR/PO/invoice/contract)? */

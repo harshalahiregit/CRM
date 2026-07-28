@@ -5,6 +5,7 @@ namespace App\Services\Purchase;
 use App\Exceptions\BusinessException;
 use App\Models\Purchase\PurchaseVendor;
 use App\Models\User;
+use App\Support\Purchase\PurchaseRegistrationType as RegistrationType;
 use App\Support\Purchase\PurchaseVendorStatus as Status;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
@@ -29,15 +30,18 @@ class PurchaseVendorPortalAuthService
             throw new BusinessException('An account with this email already exists.', 422);
         }
 
-        $seq  = PurchaseVendor::withTrashed()->where('tenant_id', $data['tenant_id'])->count() + 1;
-
         $vendor = PurchaseVendor::create([
             'tenant_id'                => $data['tenant_id'],
-            'purchase_vendor_code'     => 'PV-'.str_pad((string) $seq, 4, '0', STR_PAD_LEFT),
+            // One shared generator for every creation path — no duplicate codes.
+            'purchase_vendor_code'     => app(PurchaseVendorService::class)->nextVendorCode((int) $data['tenant_id']),
             'company_name'             => $data['company_name'],
             'email'                    => $data['email'],
             'phone'                    => $data['phone'] ?? null,
             'password'                 => Hash::make($data['password']),
+            // Store the registration choice verbatim so it survives approval,
+            // activation, login and onboarding without ever being re-derived.
+            'vendor_type'              => ($data['registration_type'] ?? null) === RegistrationType::TEMPORARY ? 'temporary' : 'standard',
+            'registration_type'        => RegistrationType::normalize($data['registration_type'] ?? null),
             'status'                   => Status::DRAFT,
             'portal_status'            => 'inactive',
             'email_verification_token' => Str::random(48),

@@ -16,6 +16,9 @@ class PurchaseDocumentRepository extends BaseRepository
     {
         return PurchaseDocument::forTenant($vendor->tenant_id)
             ->where('purchase_vendor_id', $vendor->id)
+            // Reviewer name is shown on the admin read-only checklist; load it
+            // once rather than per row.
+            ->with('reviewer:id,name')
             ->latest()
             ->get();
     }

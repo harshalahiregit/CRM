@@ -9,7 +9,10 @@ import { useAuth } from '@/context/AuthContext'
 const ROLES = [
   { value: 'admin',               label: 'Admin',                icon: '🛡️' },
   { value: 'staff',               label: 'Staff / Employee',     icon: '👔' },
-  { value: 'vendor',              label: 'Vendor',               icon: '🏭' },
+  // Purchase Vendors are deliberately absent: they are a PurchaseVendor identity,
+  // not a User, and sign in at /purchase-portal/login. A User token could never
+  // pass EnsurePurchaseVendorPortalAccess, so this door only ever produced the
+  // "pending admin approval" error.
   { value: 'third_party_vendor',  label: 'Third-Party Vendor',   icon: '🤝' },
   { value: 'client',              label: 'Client / Customer',    icon: '👤' },
   { value: 'company',             label: 'Company',              icon: '🏢' },
@@ -61,7 +64,6 @@ export default function LoginPage() {
     if (result.success) {
       if (result.role === 'company') navigate('/company-portal/dashboard', { replace: true })
       else if (result.role === 'third_party_vendor') navigate('/vendor-portal/dashboard', { replace: true })
-      else if (result.role === 'vendor') navigate('/purchase-portal/dashboard', { replace: true })
       else navigate(from, { replace: true })
     } else {
       setApiError(result.message)

@@ -253,7 +253,9 @@ const Panel = ({ title, sub, children, actions }) => (
 function StepKickoff({ onboarding, editable, onAcknowledged, onContinue, api }) {
   const navigate = useNavigate()
   const { user } = useAuth()
-  const isPortal = user?.role === 'third_party_vendor' || user?.role === 'vendor'
+  // TPV wizard: the portal viewer is a third_party_vendor User. A Purchase Vendor
+  // has no User session and uses the Purchase portal's own onboarding pages.
+  const isPortal = user?.role === 'third_party_vendor'
   const [meeting, setMeeting] = useState(null)
   const [loading, setLoad] = useState(true)
   const [scheduling, setScheduling] = useState(false)

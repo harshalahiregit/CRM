@@ -21,7 +21,15 @@ class AuditLogService
      */
     public function record(Model $auditable, string $action, ?User $actor = null, ?string $comment = null, array $metadata = [], ?string $actorLabel = null): AuditLog
     {
-        $actor = $actor ?: (auth()->check() ? auth()->user() : null);
+        // The fallback must yield a User or nothing. On the Purchase Vendor portal the
+        // authenticated identity is a PurchaseVendor, and adopting it here wrote its id
+        // into actor_id — a users reference pointing at an unrelated row (or none).
+        // A non-User caller is expected to pass $actorLabel, which the snapshot columns
+        // below use instead, so the trail stays attributed without a bogus FK.
+        if (! $actor) {
+            $fallback = auth()->check() ? auth()->user() : null;
+            $actor = $fallback instanceof User ? $fallback : null;
+        }
 
         // Tenant is taken from the record itself (row-level isolation), falling
         // back to the actor's tenant — never crosses tenant boundaries.

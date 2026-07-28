@@ -8,6 +8,7 @@ use App\Http\Requests\Hr\LinkedinParseRequest;
 use App\Http\Requests\Hr\StoreCandidateRequest;
 use App\Http\Requests\Hr\UpdateCandidateDecisionRequest;
 use App\Http\Requests\Hr\UpdateCandidateStageRequest;
+use App\Models\Hr\AirCandidateScore;
 use App\Models\Hr\HrCandidate;
 use App\Services\Hr\CandidateService;
 use App\Services\Hr\CommunicationService;
@@ -54,6 +55,23 @@ class CandidateController extends Controller
                 'auditLogs.actor',
             ])
         );
+    }
+
+    /**
+     * The single AI score endpoint. Every surface that shows a score, a band or a
+     * confidence figure reads THIS -- there are no thresholds or labels in the
+     * frontend any more.
+     *
+     * Serves the stored AIR row rather than re-scoring: scoring happens on the queue
+     * via RecalculateCandidateScore, so a page load must never trigger a computation.
+     * A candidate with no row yet is "not scored", which is a real state (the
+     * confidence floor withholds thin scores) and not an error.
+     */
+    public function score(Request $request, HrCandidate $candidate)
+    {
+        $this->assertTenant($request, $candidate);
+
+        return response()->json(AirCandidateScore::payloadFor($candidate));
     }
 
     /** Complete recruitment journey for one candidate (read-only aggregation). */

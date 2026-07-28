@@ -146,12 +146,72 @@ export const computeOnboardingChecklist = (r, offer = null) => {
   }
 }
 
-// Common AI-match bands (shared between card and profile).
-export const aiBand = (score = 0) =>
-  score >= 90 ? { label: 'Highly Recommended', color: '#10b981', bg: 'rgba(16,185,129,0.12)' }
-  : score >= 70 ? { label: 'Recommended',       color: '#a78bfa', bg: 'rgba(124,58,237,0.12)' }
-  : score >= 50 ? { label: 'Consider',          color: '#fbbf24', bg: 'rgba(245,158,11,0.12)' }
-  :               { label: 'Not Recommended',   color: '#f87171', bg: 'rgba(239,68,68,0.1)' }
+// ── AI job-fit presentation ────────────────────────────────────────────────
+// aiBand() lived here and derived a label from the score with its own thresholds
+// (90/70/50). It was one of four competing vocabularies, which is why an 87% could
+// read "Recommended" on one page and "Strongly Recommended" on another. The verdict
+// is now decided once, by the backend RecommendationEngine, and shipped with the
+// score. All that remains on this side is colour, which is presentation.
+//
+// Keys are RecommendationEngine's vocabulary. Anything unrecognised falls through
+// to the neutral style rather than being scored into a band locally.
+export const AI_NEUTRAL_STYLE = { color: 'var(--text-muted)', bg: 'var(--bg-input)' }
+
+export const AI_RECOMMENDATION_STYLE = {
+  'Highly Recommended': { color: '#10b981', bg: 'rgba(16,185,129,0.12)' },
+  'Recommended':        { color: '#a78bfa', bg: 'rgba(124,58,237,0.12)' },
+  'Consider':           { color: '#fbbf24', bg: 'rgba(245,158,11,0.12)' },
+  'Not Recommended':    { color: '#f87171', bg: 'rgba(239,68,68,0.10)' },
+  'Insufficient Data':  AI_NEUTRAL_STYLE,
+}
+
+export const aiRecommendationStyle = (recommendation) =>
+  AI_RECOMMENDATION_STYLE[recommendation] || AI_NEUTRAL_STYLE
+
+// Bar colour per dimension, keyed on the engine's dimension keys. Presentation
+// only — the score, the label and the reason all arrive from the backend.
+export const AI_DIMENSION_COLOR = {
+  skills: '#fbbf24', experience: '#f97316', jd: '#60a5fa', interview: '#c084fc',
+  education: '#22d3ee', location: '#34d399', salary: '#4ade80',
+  notice: '#f472b6', screening: '#38bdf8', resume: '#a78bfa',
+}
+export const aiDimensionColor = (key) => AI_DIMENSION_COLOR[key] || '#a78bfa'
+
+/**
+ * The engine's verdict for a candidate from a LIST payload, where calling the score
+ * endpoint per row would be N+1. ScoreRecorder mirrors the score, confidence and
+ * recommendation onto hr_candidates.ai_breakdown, so this is a pure read — no
+ * arithmetic and no thresholds.
+ *
+ * `score === null` is a real state, not missing data: the confidence floor withholds
+ * a score built on too little evidence. It must render as "—", never as 0%.
+ */
+export const candidateScore = (c) => {
+  const breakdown = (c && c.ai_breakdown) || {}
+  const score = c?.ai_score ?? null
+  const recommendation = breakdown.recommendation ?? null
+
+  // The engine RAN (even if it withheld a number). This, not the score, is what
+  // "AI screening completed" means -- mirrors HrCandidate::hasAiScreening().
+  const isScreened = !!breakdown.engine
+
+  // A score is only real if the ENGINE produced it. Rows carrying a pre-engine
+  // ai_score (seeded or written by the removed heuristics) have no `engine` stamp
+  // and no air_candidate_scores row, so the detail page correctly reports them as
+  // unscored. Without this check a list would show "87%" beside a profile saying
+  // "Not scored" — the exact list-vs-detail disagreement this engine exists to end.
+  const isScored = isScreened && score !== null
+
+  return {
+    isScreened,
+    isScored,
+    score: isScored ? score : null,
+    confidence: breakdown.confidence ?? null,
+    recommendation,
+    style: aiRecommendationStyle(recommendation),
+    display: isScored ? `${score}%` : '—',
+  }
+}
 
 // Compact INR money formatter for CTC display (accepts lakh-style numbers).
 export const formatCTC = (v) => {

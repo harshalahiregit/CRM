@@ -3,6 +3,7 @@
 namespace App\Services\Hr;
 
 use App\Exceptions\BusinessException;
+use App\Jobs\Hr\RecalculateCandidateScore;
 use App\Models\Hr\HrCandidate;
 use App\Models\Hr\HrJobPosting;
 use App\Models\Tenant;
@@ -125,19 +126,24 @@ class CareerPortalService
                 'stage'            => 'Applied',
                 'final_decision'   => 'Pending',
                 'applied_at'       => now(),
+                // Persisted here, with the rest of the application. These used to be
+                // written as a side effect of evaluateApplication(); with scoring moved
+                // out they must be saved explicitly, or the applicant's answers are lost
+                // and ScreeningDimension has nothing to read.
+                'screening_answers' => $answers ?: null,
             ]);
 
             if ($resume) {
                 $this->resumeService->upload($candidate, $tenant->id, $resume);
             }
 
-            // SPK-1: run the AI application evaluation (resume/JD/question/skill
-            // match + explained recommendation). Best-effort — never blocks apply.
-            try {
-                $this->candidateService->evaluateApplication($candidate->fresh('jobPosting'), $answers);
-            } catch (\Throwable $e) {
-                Log::channel('hr')->warning('Application AI evaluation failed', ['candidate_id' => $candidate->id, 'error' => $e->getMessage()]);
-            }
+            // Scoring is queued, not computed here. The portal previously ran its own
+            // formula inline, which is why a career-portal applicant and an
+            // HR-entered candidate could not be compared. afterCommit so the worker
+            // cannot read the row before this transaction lands.
+            RecalculateCandidateScore::dispatch(
+                $candidate->id, $tenant->id, RecalculateCandidateScore::TRIGGER_APPLICATION
+            )->afterCommit();
 
             // Surface the application on the job's activity timeline (system actor).
             $job->recordAudit('New Application', null, $candidate->name.' applied via Career Portal', ['candidate_id' => $candidate->id]);

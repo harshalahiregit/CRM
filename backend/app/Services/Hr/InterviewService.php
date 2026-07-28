@@ -4,6 +4,7 @@ namespace App\Services\Hr;
 
 use App\Exceptions\BusinessException;
 use App\Models\Hr\HrCandidate;
+use App\Jobs\Hr\RecalculateCandidateScore;
 use App\Models\Hr\HrInterviewRound;
 use App\Notifications\WhatsApp\InterviewScheduledNotification;
 use App\Support\Hr\InterviewSequence;
@@ -228,6 +229,17 @@ class InterviewService
         $this->applyOutcomeToCandidate($interviewRound);
 
         Log::channel('hr')->info('Interview feedback recorded', ['interview_round_id' => $interviewRound->id, 'tenant_id' => $interviewRound->tenant_id, 'result' => $input['result']]);
+
+        // Interview feedback is a scoring input (InterviewDimension). Keyed off THIS
+        // business event, not completed_at -- that column is NULL on every existing
+        // round, so keying off it would silently never fire.
+        if ($interviewRound->candidate_id) {
+            RecalculateCandidateScore::dispatch(
+                $interviewRound->candidate_id,
+                $interviewRound->tenant_id,
+                RecalculateCandidateScore::TRIGGER_INTERVIEW_COMPLETED
+            );
+        }
 
         return $interviewRound->fresh()->load('candidate');
     }

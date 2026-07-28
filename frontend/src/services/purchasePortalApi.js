@@ -10,6 +10,9 @@ const upload = (url, formData) =>
   api.post(url, formData, { headers: { 'Content-Type': undefined } }).then(r => r.data)
 
 export const purchasePortalApi = {
+  // Persist the welcome-banner dismissal server-side (never localStorage).
+  dismissWelcomeBanner: () => pvApi.post('/portal/purchase/welcome/dismiss').then(r => r.data),
+
   me: () => api.get('/portal/purchase/me').then(r => r.data),
 
   // ── Onboarding (the vendor's own record) ────────────────────────────────

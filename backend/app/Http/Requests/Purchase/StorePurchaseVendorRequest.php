@@ -19,6 +19,7 @@ class StorePurchaseVendorRequest extends FormRequest
             'company_name'        => 'required|string|max:200',
             'legal_name'          => 'nullable|string|max:200',
             'vendor_type'         => 'nullable|in:standard,temporary',
+            'registration_type'   => ['nullable', Rule::in(\App\Support\Purchase\PurchaseRegistrationType::ALL)],
             'email'               => 'nullable|email|max:150',
             // Format-validated optional fields (§8)
             'phone'               => ['nullable', 'string', 'max:30', 'regex:/^[0-9+\-()\s]{6,30}$/'],

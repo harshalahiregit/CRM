@@ -23,6 +23,8 @@ use Illuminate\Support\Facades\Route;
 // ->middleware() replaces the first and silently drops auth:sanctum.
 Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access'])->prefix('portal')->group(function () {
     Route::get('/me',                    [VendorPortalController::class, 'me']);
+    // One-time post-activation welcome banner (dismissal persisted server-side).
+    Route::post('/welcome/dismiss',      [VendorPortalController::class, 'dismissWelcomeBanner']);
     Route::get('/onboarding',            [VendorPortalController::class, 'onboarding']);
 
     // Compliance documents — the portal's write actions. Ownership on resubmit/
@@ -99,6 +101,8 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal'])->prefix('portal/pu
     Route::post('/logout',                            [PurchaseVendorAuthController::class, 'logout']);
     Route::get('/dashboard',                          [PurchasePortalController::class, 'dashboard']);
     Route::get('/me',                                 [PurchasePortalController::class, 'me']);
+    // One-time post-activation welcome banner (dismissal persisted server-side).
+    Route::post('/welcome/dismiss',                   [PurchasePortalController::class, 'dismissWelcomeBanner']);
     Route::put('/profile',                            [PurchasePortalController::class, 'updateProfile']);
 
     Route::get('/onboarding',                         [PurchasePortalController::class, 'onboarding']);

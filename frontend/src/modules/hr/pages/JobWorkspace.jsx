@@ -12,7 +12,7 @@ import AuditTimeline from '@/components/ui/AuditTimeline'
 import {
   jobStatusColor, jobStatusLabel, PRIORITY_COLORS, STAGE_COLORS, DECISION_COLORS,
   INTERVIEW_STATUS_COLORS, INTERVIEW_RESULT_COLORS, canManageHrQueue,
-  CANDIDATE_STAGES, aiBand,
+  CANDIDATE_STAGES, candidateScore,
 } from '../constants'
 
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
@@ -494,7 +494,7 @@ const APP_COLS = [
   { key: 'name',      label: 'Candidate',  get: c => (c.name || '').toLowerCase() },
   { key: 'applied',   label: 'Applied',    get: c => c.applied_at || c.created_at || '' },
   { key: 'source',    label: 'Source',     get: c => (c.source || '').toLowerCase() },
-  { key: 'ai',        label: 'AI Score',   get: c => Number(c.ai_score ?? -1) },
+  { key: 'ai',        label: 'AI Score',   get: c => Number(candidateScore(c).score ?? -1) },
   { key: 'stage',     label: 'Stage',      get: c => (c.stage || '').toLowerCase() },
   { key: 'status',    label: 'Status',     get: c => (c.final_decision || '').toLowerCase() },
   { key: 'recruiter', label: 'Recruiter',  get: c => (c.assigned_recruiter?.name || '').toLowerCase() },
@@ -580,9 +580,11 @@ function ApplicationsTab({ candidates, navigate }) {
                 <td style={{ ...wTd, fontWeight: 700, color: 'var(--text-h)' }}>{c.name}</td>
                 <td style={{ ...wTd, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{fmtDate(c.applied_at || c.created_at)}</td>
                 <td style={{ ...wTd, color: 'var(--text-muted)' }}>{c.source || '—'}</td>
-                <td style={wTd}>{c.ai_score != null
-                  ? <span style={{ fontWeight: 800, color: aiBand(c.ai_score).color }}>{c.ai_score}%</span>
-                  : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
+                {/* Read through candidateScore(): a raw c.ai_score would still show a
+                    pre-engine literal that the detail page reports as unscored. */}
+                <td style={wTd}>{(() => { const ai = candidateScore(c); return ai.isScored
+                  ? <span style={{ fontWeight: 800, color: ai.style.color }} title={ai.recommendation || undefined}>{ai.display}</span>
+                  : <span style={{ color: 'var(--text-muted)' }}>—</span> })()}</td>
                 <td style={wTd}><Badge color={STAGE_COLORS[c.stage] || '#6b7280'}>{c.stage}</Badge></td>
                 <td style={wTd}>{c.final_decision && c.final_decision !== 'Pending'
                   ? <Badge color={DECISION_COLORS[c.final_decision] || '#6b7280'}>{c.final_decision}</Badge>
@@ -614,7 +616,7 @@ function ApplicationsTab({ candidates, navigate }) {
               ['Source', quick.source || '—'],
               ['Stage', quick.stage || '—'],
               ['Status', quick.final_decision || 'Pending'],
-              ['AI Score', quick.ai_score != null ? `${quick.ai_score}%` : '—'],
+              ['AI Score', candidateScore(quick).display],
               ['Experience', quick.experience_years != null ? `${quick.experience_years} yrs` : '—'],
               ['Recruiter', quick.assigned_recruiter?.name || '—'],
               ['Rounds', String((quick.interview_rounds || []).length)],
@@ -650,7 +652,7 @@ const pipelineBucket = (c) => {
   if (c.final_decision === 'Selected') return 'Selected'
   if ((c.interview_rounds || []).length) return 'Interview'
   if (c.stage === 'Screening' || c.stage === 'Assessment') return 'Screening'
-  if (!(Number(c.ai_score) > 0)) return 'AI Screening'        // applied but not yet scored
+  if (!candidateScore(c).isScreened) return 'AI Screening'    // the engine has not run yet
   return 'Applied'
 }
 
@@ -689,9 +691,9 @@ function PipelineTab({ candidates, navigate }) {
                       </span>
                       <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-h)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
                     </div>
-                    {c.ai_score != null && (
-                      <div style={{ fontSize: 9.5, fontWeight: 700, marginTop: 4, color: aiBand(c.ai_score).color }}>AI {c.ai_score}%</div>
-                    )}
+                    {(() => { const ai = candidateScore(c); return ai.isScored && (
+                      <div style={{ fontSize: 9.5, fontWeight: 700, marginTop: 4, color: ai.style.color }} title={ai.recommendation || undefined}>AI {ai.display}</div>
+                    ) })()}
                   </div>
                 ))}
               </div>

@@ -50,7 +50,8 @@ class User extends Authenticatable
     public function isStaff():            bool { return $this->role === 'staff'; }
     public function isHRExecutive():      bool { return $this->role === 'staff' && $this->internal_role === 'hr_executive'; }
     public function isHiringManager():    bool { return $this->role === 'staff' && $this->internal_role === 'hiring_manager'; }
-    public function isVendor():           bool { return $this->role === 'vendor'; }
+    // No isVendor(): a Purchase Vendor is a PurchaseVendor, never a User. The helper
+    // had no callers and only invited User-based checks on a separate identity.
     public function isThirdPartyVendor(): bool { return $this->role === 'third_party_vendor'; }
     public function isClient():           bool { return $this->role === 'client'; }
     public function isActive():           bool { return $this->status === 'active'; }

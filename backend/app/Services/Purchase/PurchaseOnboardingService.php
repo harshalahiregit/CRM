@@ -43,8 +43,42 @@ class PurchaseOnboardingService
         return $query->latest()->get();
     }
 
+    /**
+     * The six wizard methods below are reachable from BOTH sides of the module:
+     * an admin (a User) and the vendor itself from the portal, where the
+     * authenticated identity is a PurchaseVendor — the portal issues a token whose
+     * tokenable is purchase_vendors, so `$request->user()` is never a User there.
+     *
+     * These two helpers normalise whichever arrives. `created_by`/`approved_by` are
+     * users.id columns, so a PurchaseVendor must resolve to NULL rather than write
+     * its own id into a user reference; the audit trail keeps the vendor visible
+     * through recordAudit()'s $actorLabel instead of losing the actor entirely.
+     *
+     * The admin-only transitions (approve/reject/hold/release/requestResubmit) stay
+     * typed `User` on purpose — a vendor may never invoke them, and the type is the
+     * guard that says so.
+     */
+    private function actorUser(User|PurchaseVendor|null $actor): ?User
+    {
+        return $actor instanceof User ? $actor : null;
+    }
+
+    /**
+     * Display name for the audit trail. Null for a User — AuditLogService already
+     * snapshots `$actor->name` in that case and the label must not override it.
+     * A PurchaseVendor signs as its company, since it has no `name` column.
+     */
+    private function actorLabel(User|PurchaseVendor|null $actor): ?string
+    {
+        if (! $actor instanceof PurchaseVendor) {
+            return null;
+        }
+
+        return trim(($actor->company_name ?: 'Vendor').' (Vendor Portal)');
+    }
+
     /** Start the 6-step wizard for a purchase vendor. One onboarding per vendor. */
-    public function create(array $data, User $actor): PurchaseOnboarding
+    public function create(array $data, User|PurchaseVendor $actor): PurchaseOnboarding
     {
         $tenantId = $actor->tenant_id;
         $vendor = PurchaseVendor::forTenant($tenantId)->find($data['purchase_vendor_id']);
@@ -61,12 +95,13 @@ class PurchaseOnboardingService
         $onboarding = PurchaseOnboarding::create([
             'purchase_vendor_id' => $vendor->id,
             'tenant_id'          => $tenantId,
-            'created_by'         => $actor->id,
+            'created_by'         => $this->actorUser($actor)?->id,
             'current_step'       => 1,
             'status'             => Status::IN_PROGRESS,
         ]);
 
-        $onboarding->recordAudit('Purchase Onboarding Started', $actor, null, ['purchase_vendor_code' => $vendor->purchase_vendor_code]);
+        $onboarding->recordAudit('Purchase Onboarding Started', $this->actorUser($actor), null,
+            ['purchase_vendor_code' => $vendor->purchase_vendor_code], $this->actorLabel($actor));
 
         Log::channel('purchase')->info('Purchase onboarding started', [
             'onboarding_id' => $onboarding->id, 'purchase_vendor_id' => $vendor->id, 'tenant_id' => $tenantId,
@@ -75,7 +110,7 @@ class PurchaseOnboardingService
         return $onboarding->fresh(['vendor']);
     }
 
-    public function setStep(PurchaseOnboarding $onboarding, int $step, User $actor): PurchaseOnboarding
+    public function setStep(PurchaseOnboarding $onboarding, int $step, User|PurchaseVendor $actor): PurchaseOnboarding
     {
         if (! $onboarding->isEditable()) {
             throw new BusinessException('This onboarding is no longer editable.');
@@ -85,13 +120,14 @@ class PurchaseOnboardingService
         }
 
         $onboarding->update(['current_step' => $step]);
-        $onboarding->recordAudit('Onboarding Step Changed', $actor, null, ['step' => $step]);
+        $onboarding->recordAudit('Onboarding Step Changed', $this->actorUser($actor), null,
+            ['step' => $step], $this->actorLabel($actor));
 
         return $onboarding;
     }
 
     /** Step 2 — persist the company/contact profile and mirror to the vendor. */
-    public function saveProfile(PurchaseOnboarding $onboarding, array $profile, User $actor): PurchaseOnboarding
+    public function saveProfile(PurchaseOnboarding $onboarding, array $profile, User|PurchaseVendor $actor): PurchaseOnboarding
     {
         if (! $onboarding->isEditable()) {
             throw new BusinessException('This onboarding is no longer editable.');
@@ -105,7 +141,7 @@ class PurchaseOnboardingService
         ]);
 
         $this->mirrorProfileToVendor($onboarding, $merged);
-        $onboarding->recordAudit('Profile Saved', $actor);
+        $onboarding->recordAudit('Profile Saved', $this->actorUser($actor), null, [], $this->actorLabel($actor));
 
         Log::channel('purchase')->info('Purchase onboarding profile saved', [
             'onboarding_id' => $onboarding->id, 'tenant_id' => $onboarding->tenant_id,
@@ -177,7 +213,7 @@ class PurchaseOnboardingService
     }
 
     /** Step 5 → 6. Blocked until every required document is Approved. */
-    public function submit(PurchaseOnboarding $onboarding, User $actor, array $meta = []): PurchaseOnboarding
+    public function submit(PurchaseOnboarding $onboarding, User|PurchaseVendor $actor, array $meta = []): PurchaseOnboarding
     {
         if (! $onboarding->isEditable()) {
             throw new BusinessException('This onboarding has already been submitted.');
@@ -204,7 +240,8 @@ class PurchaseOnboardingService
             'completed_device'        => $meta['device'] ?? null,
         ]);
 
-        $onboarding->recordAudit('Onboarding Submitted', $actor, null, ['to' => Status::SUBMITTED]);
+        $onboarding->recordAudit('Onboarding Submitted', $this->actorUser($actor), null,
+            ['to' => Status::SUBMITTED], $this->actorLabel($actor));
 
         Log::channel('purchase')->info('Purchase onboarding submitted', [
             'onboarding_id' => $onboarding->id, 'tenant_id' => $onboarding->tenant_id,
@@ -337,7 +374,7 @@ class PurchaseOnboardingService
     }
 
     /** Record the vendor's acknowledgement of the kickoff MOM (idempotent). */
-    public function acknowledgeKickoff(PurchaseOnboarding $onboarding, User $actor, array $meta): PurchaseOnboarding
+    public function acknowledgeKickoff(PurchaseOnboarding $onboarding, User|PurchaseVendor $actor, array $meta): PurchaseOnboarding
     {
         if (! $onboarding->isEditable()) {
             throw new BusinessException('This onboarding is no longer editable.');
@@ -347,7 +384,9 @@ class PurchaseOnboardingService
             throw new BusinessException('Kickoff meeting is not completed or MOM has not been sent yet.');
         }
 
-        $byName = $actor->name ?? $onboarding->vendor?->company_name ?? 'Vendor Representative';
+        // A PurchaseVendor has no `name` column — it signs as its company.
+        $byName = ($actor instanceof User ? $actor->name : $actor->company_name)
+            ?: ($onboarding->vendor?->company_name ?: 'Vendor Representative');
         if (! $meeting->acknowledged_at) {
             $meeting->update([
                 'acknowledged_at'      => now(),
@@ -365,20 +404,21 @@ class PurchaseOnboardingService
                 'status'          => $onboarding->status === Status::DRAFT ? Status::IN_PROGRESS : $onboarding->status,
                 'current_step'    => max($onboarding->current_step, 2),
             ]);
-            $onboarding->recordAudit('Kickoff MOM Accepted', $actor, null, $meta);
+            $onboarding->recordAudit('Kickoff MOM Accepted', $this->actorUser($actor), null,
+                $meta, $this->actorLabel($actor));
         }
 
         return $onboarding->fresh(['vendor']);
     }
 
     /** Audit a Kickoff PDF interaction (viewed / downloaded / printed). */
-    public function logKickoffEvent(PurchaseOnboarding $onboarding, string $event, User $actor, array $meta = []): void
+    public function logKickoffEvent(PurchaseOnboarding $onboarding, string $event, User|PurchaseVendor $actor, array $meta = []): void
     {
         $action = ['viewed' => 'Kickoff PDF Viewed', 'downloaded' => 'Kickoff PDF Downloaded', 'printed' => 'Kickoff PDF Printed'][$event] ?? null;
         if ($action === null) {
             throw new BusinessException('Unknown kickoff event.');
         }
-        $onboarding->recordAudit($action, $actor, null, $meta);
+        $onboarding->recordAudit($action, $this->actorUser($actor), null, $meta, $this->actorLabel($actor));
     }
 
     /** Best-effort status email to the vendor (procurement-flavoured copy). */

@@ -19,6 +19,8 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('vendors')->grou
     Route::get('/{vendor}',                 [VendorController::class, 'show']);
     Route::put('/{vendor}',                 [VendorController::class, 'update']);
     Route::patch('/{vendor}/status',        [VendorController::class, 'updateStatus']);
+    // Manual resend of the activation e-mail (Active vendors only).
+    Route::post('/{vendor}/resend-activation', [VendorController::class, 'resendActivation']);
     Route::post('/{vendor}/email',          [VendorController::class, 'sendEmail']);
     Route::delete('/{vendor}',              [VendorController::class, 'destroy']);
 });

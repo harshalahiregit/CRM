@@ -170,6 +170,7 @@ export const tpvApi = {
   vendors: {
     list:      (params = {}) => api.get('/vendors', { params: { engagement: 'tpv', ...params } }).then(r => r.data),
     get:       (id)          => api.get(`/vendors/${id}`).then(r => r.data),
+    resendActivation: (id)   => api.post(`/vendors/${id}/resend-activation`).then(r => r.data),
     create:    (data)        => api.post('/vendors', data).then(r => r.data),
     update:    (id, data)    => api.put(`/vendors/${id}`, data).then(r => r.data),
     approve:   (id, remarks = '') => api.post(`/vendors/${id}/approve`, { remarks }).then(r => r.data),

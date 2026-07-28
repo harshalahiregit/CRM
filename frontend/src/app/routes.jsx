@@ -313,7 +313,8 @@ function RootRedirect() {
   if (!isAuthenticated) return <Navigate to="/auth/login" replace />
   const role = user?.role
   if (role === 'third_party_vendor') return <Navigate to="/vendor-portal/dashboard" replace />
-  if (role === 'vendor') return <Navigate to="/purchase-portal/dashboard" replace />
+  // No 'vendor' branch: a Purchase Vendor is never a User session. They sign in at
+  // /purchase-portal/login and hold a PurchaseVendor token under its own storage key.
   if (role === 'company') return <Navigate to="/company-portal/dashboard" replace />
   return <Navigate to="/app/dashboard" replace />
 }

@@ -43,7 +43,22 @@ class PurchaseVendorController extends Controller
     {
         $this->assertTenant($request, $purchaseVendor);
 
-        return response()->json($this->vendors->find($purchaseVendor->id, $request->user()->tenant_id));
+        $vendor = $this->vendors->find($purchaseVendor->id, $request->user()->tenant_id);
+        // Vendor Detail dashboard: last activation e-mail, full notification
+        // timeline and portal login stats. All read from existing stores.
+        $vendor->setAttribute('last_notification', $this->vendors->lastNotification($purchaseVendor));
+        $vendor->setAttribute('notification_timeline', $this->vendors->notificationTimeline($purchaseVendor));
+        $vendor->setAttribute('login_stats', $this->vendors->loginStats($purchaseVendor));
+
+        return response()->json($vendor);
+    }
+
+    /** Resend the activation e-mail. Active vendors only; every send is logged. */
+    public function resendActivation(Request $request, PurchaseVendor $purchaseVendor)
+    {
+        $this->assertTenant($request, $purchaseVendor);
+
+        return response()->json($this->vendors->resendActivationEmail($purchaseVendor, $request->user()));
     }
 
     public function update(UpdatePurchaseVendorRequest $request, PurchaseVendor $purchaseVendor)

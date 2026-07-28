@@ -2,11 +2,40 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft, Building2, User, Phone, Loader2, ShieldCheck, CheckCircle, XCircle, PauseCircle, CornerUpLeft, Clock, AlertTriangle,
-  Briefcase, IndianRupee, ClipboardCheck, BarChart3, ChevronDown, ChevronRight,
+  Briefcase, IndianRupee, ClipboardCheck, BarChart3, ChevronDown, ChevronRight, Mail,
 } from 'lucide-react'
+
+const NOTIF_COLORS = { sent: '#10b981', failed: '#ef4444', skipped: '#94a3b8', queued: '#0ea5e9' }
+
+/**
+ * What an empty tab should say, based on an audit of what actually exists.
+ *
+ *  · Listed here  → the owning module EXISTS; the vendor simply has no rows.
+ *  · Not listed   → no such module in this system, so the default
+ *                   "This module is not available." is the truthful message.
+ *
+ * Verified against the schema: tpv_workers / tpv_worker_medicals /
+ * tpv_worker_inductions / tpv_worker_ppe_issues / tpv_gate_scans /
+ * tpv_safety_strikes exist. PTW, Incidents, Visitors, Pre Alert, Package,
+ * Survey, Training, Risk/Award/Penalty/Feedback/Referral have NO backing table.
+ * Projects / Tasks / Expenses / Tickets exist generically but carry no vendor
+ * link, so they cannot be filtered to this vendor.
+ */
+const TAB_EMPTY_REASON = {
+  Medical:    'No Medical Records',
+  Workforce:  'No Workforce Records',
+  'Gate Log': 'No Gate Records',
+  Strikes:    'No Safety Strikes',
+  Projects:   'Projects are not linked to vendors in this system.',
+  Tasks:      'Tasks are not linked to vendors in this system.',
+  Expenses:   'Expenses are not linked to vendors in this system.',
+  Ticket:     'Tickets are not linked to vendors in this system.',
+}
 import { useAuth } from '@/context/AuthContext'
 import { obStatusCfg } from '@/modules/tpv/constants'
 import { useVendorModule } from '@/modules/tpv/useVendorModule'
+import TpvRegistrationBadge from '@/modules/tpv/components/TpvRegistrationBadge'
+import TemporaryTpvValidityBadge from '@/modules/tpv/components/TemporaryTpvValidityBadge'
 import { KIT3D_STYLE, Overlay, ModalFooter } from '@/components/ui/kit3d'
 import ComingSoonSection from '@/modules/tpv/components/ComingSoonSection'
 import TpvVendorContacts from '@/modules/tpv/components/TpvVendorContacts'
@@ -42,6 +71,9 @@ export default function TpvVendorDetail() {
   const [decisionModal, setDecisionModal] = useState(null) // 'approve' | 'reject' | 'hold' | 'resubmit'
   const [remarks, setRemarks] = useState('')
   const [decisionBusy, setDecisionBusy] = useState(false)
+  const [resending, setResending] = useState(false)
+  const [notice, setNotice] = useState(null)
+  const [showTimeline, setShowTimeline] = useState(false)
 
   // Slug ↔ label lookup so the ?tab= query param survives reloads and drives history.
   const bySlug = useMemo(() => {
@@ -56,6 +88,20 @@ export default function TpvVendorDetail() {
     next.set('tab', slugify(label))
     setParams(next) // pushes history — Back/Forward move between sections, no reload
   }, [params, setParams])
+
+  // Manual resend. Every attempt is logged server-side; the line below reflects it.
+  const resendActivation = async () => {
+    setResending(true); setNotice(null)
+    try {
+      const r = await cfg.api.vendors.resendActivation(id)
+      setNotice(r?.status === 'sent'
+        ? { ok: true, text: `Activation email sent to ${r.recipient}.` }
+        : { ok: false, text: 'Could not send the activation email. It has been logged — try again.' })
+      load()
+    } catch (e) {
+      setNotice({ ok: false, text: e?.response?.data?.message || 'Could not send the activation email.' })
+    } finally { setResending(false) }
+  }
 
   const load = useCallback(() => {
     setLoad(true)
@@ -122,7 +168,13 @@ export default function TpvVendorDetail() {
             <p className="label-caps" style={{ color: '#a78bfa', margin: 0, fontSize: 11, fontWeight: 800 }}>{v.vendor_code || `${cfg.codePrefix}-${v.id}`}</p>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 2 }}>
               <h1 style={{ color: 'var(--text-h)', fontSize: 22, fontWeight: 900, margin: 0, letterSpacing: '-0.02em' }}>{v.company_name}</h1>
-              
+
+              {/* Badge 0: Registration type — the stored choice, never inferred */}
+              <TpvRegistrationBadge type={v.registration_type} label={v.registration_type_label} size="md" />
+
+              {/* Remaining access — countdown for temporary, "Permanent" otherwise */}
+              <TemporaryTpvValidityBadge countdown={v.validity_countdown} showLabel />
+
               {/* Badge 1: Vendor Account Status (Controls Portal Login) */}
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 12px', borderRadius: 999, background: isActive ? 'rgba(16,185,129,0.14)' : 'rgba(239,68,68,0.12)', color: isActive ? '#10b981' : '#ef4444', fontSize: 11.5, fontWeight: 800, border: `1px solid ${isActive ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}` }}>
                 <span style={{ fontSize: 10, opacity: 0.7, textTransform: 'uppercase' }}>Vendor Account:</span>
@@ -136,6 +188,47 @@ export default function TpvVendorDetail() {
               </div>
             </div>
             <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: '4px 0 0' }}>{v.user?.name ? `Login: ${v.user.name} · ` : ''}{v.email || 'No email'}</p>
+
+            {/* Activation notification: resend (Active only) + last-send status */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 8 }}>
+              {isActive && (
+                <button onClick={resendActivation} disabled={resending}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-h)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                  <Mail size={13} /> {resending ? 'Sending…' : 'Resend Activation Email'}
+                </button>
+              )}
+              {notice && <span style={{ fontSize: 12, fontWeight: 700, color: notice.ok ? '#10b981' : '#ef4444' }}>{notice.text}</span>}
+              {v.last_notification && (
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                  Last activation email: <strong style={{ color: NOTIF_COLORS[v.last_notification.status] || 'var(--text-h)' }}>{v.last_notification.status}</strong>
+                  {v.last_notification.sent_at && <> · {new Date(v.last_notification.sent_at).toLocaleString()}</>}
+                </span>
+              )}
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                · Last login: <strong style={{ color: 'var(--text-h)' }}>{v.login_stats?.last_login_at ? new Date(v.login_stats.last_login_at).toLocaleString() : 'never'}</strong>
+                {' '}· Logins: <strong style={{ color: 'var(--text-h)' }}>{v.login_stats?.login_count ?? 0}</strong>
+              </span>
+              {v.notification_timeline?.length > 0 && (
+                <button onClick={() => setShowTimeline(t => !t)} style={{ padding: '4px 10px', borderRadius: 7, background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
+                  {showTimeline ? 'Hide' : 'Timeline'} ({v.notification_timeline.length})
+                </button>
+              )}
+            </div>
+
+            {/* Notification timeline — chronological, straight from tpv_notification_logs */}
+            {showTimeline && (
+              <div style={{ marginTop: 10, borderTop: '1px solid var(--border)', paddingTop: 8, maxWidth: 760 }}>
+                {v.notification_timeline.map(n => (
+                  <div key={n.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '5px 0', fontSize: 12, borderBottom: '1px solid var(--border)' }}>
+                    <span style={{ width: 8, height: 8, borderRadius: 999, background: NOTIF_COLORS[n.status] || '#94a3b8', flexShrink: 0 }} />
+                    <span style={{ color: NOTIF_COLORS[n.status] || 'var(--text-h)', fontWeight: 800, minWidth: 58 }}>{n.status}</span>
+                    <span style={{ color: 'var(--text-h)' }}>{n.type.replace(/_/g, ' ')}</span>
+                    <span style={{ color: 'var(--text-muted)' }}>· {n.channel} · {n.recipient}</span>
+                    <span style={{ marginLeft: 'auto', color: 'var(--text-muted)' }}>{new Date(n.sent_at || n.created_at).toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -314,9 +407,13 @@ function SectionContent({ tab, v, isActive, manage, api, moduleName }) {
       // The Contact tab is now purely the master contact list (vendor-scoped CRUD).
       return <TpvVendorContacts vendorId={v.id} vendor={v} manage={manage} api={api} />
     case 'Documents':
-      return <TpvVendorDocuments vendorId={v.id} vendor={v} manage={manage} api={api} moduleName={moduleName} />
+      // Read-only: the vendor uploads through the portal during onboarding.
+      // Admin reviews (approve/reject) and views/downloads — never uploads.
+      return <TpvVendorDocuments vendorId={v.id} vendor={v} manage={false} api={api} moduleName={moduleName} />
     default:
-      return <ComingSoonSection name={tab} />
+      // Honest copy: distinguish "module exists, no rows for this vendor" from
+      // "no such module in this system". See TAB_EMPTY_REASON.
+      return <ComingSoonSection name={tab} reason={TAB_EMPTY_REASON[tab]} />
   }
 }
 

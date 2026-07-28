@@ -28,6 +28,8 @@ class PurchaseVendorAuthController extends Controller
             'email'        => 'required|email|max:150',
             'phone'        => 'nullable|string|max:30',
             'password'     => 'required|string|min:8|confirmed',
+            // The account type chosen on the registration screen, stored as-is.
+            'registration_type' => ['nullable', Rule::in(\App\Support\Purchase\PurchaseRegistrationType::ALL)],
         ]);
 
         $vendor = $this->auth->register($data);

@@ -7,17 +7,20 @@ use App\Models\User;
 use App\Models\Vendor\Vendor;
 use App\Repositories\Vendor\VendorRepository;
 use App\Services\Notifications\NotificationService;
+use App\Services\Tpv\TpvActivationNotifier;
 use App\Support\Vendor\VendorStatus as Status;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class VendorService
 {
     public function __construct(
         private VendorRepository $vendorRepository,
         private NotificationService $notifications,
+        private TpvActivationNotifier $activationNotifier,
     ) {
     }
 
@@ -211,9 +214,16 @@ class VendorService
             $vendor->user->update($userUpdate);
         }
 
-        // Activation → welcome the vendor across every channel (email live now,
-        // WhatsApp/SMS routed through the same service).
         if ($status === Status::ACTIVE && $from !== Status::ACTIVE) {
+            // A temporary vendor's access window opens at activation, not at
+            // registration. Delegated to the TPV access service so expiry maths
+            // stays in one place; it no-ops for permanent vendors and for a
+            // window that is already open.
+            app(\App\Services\Tpv\TpvAccessService::class)->beginAccessWindow($vendor);
+            $vendor->refresh();
+
+            // Activation → welcome the vendor across every channel (email live
+            // now, WhatsApp/SMS routed through the same service).
             $this->sendWelcome($vendor);
         }
 
@@ -334,19 +344,101 @@ class VendorService
     }
 
     /** Multi-channel welcome sent the moment a vendor is activated. */
+    /**
+     * Activation notice. Delegates to the TPV notifier so the send is logged in
+     * tpv_notification_logs, happens after commit and can never fire twice — a
+     * refresh, an edit, or a re-activation attempt all no-op.
+     */
     private function sendWelcome(Vendor $vendor): void
     {
-        $name = $vendor->user->name ?? $vendor->company_name;
-        $subject = 'Welcome to the Third Party Vendor Portal';
-        $body = "Hello {$name},\n\nWelcome to the Third Party Vendor Portal. Your account has been approved successfully. "
-            ."You can now access the system using your registered credentials.";
+        $this->activationNotifier->onActivated($vendor, $this->provisionPortalLogin($vendor));
+    }
 
-        $ctx = ['vendor_id' => $vendor->id, 'event' => 'welcome'];
-        $this->notifications->email($vendor->email, $subject, $body, $ctx);
-        $this->notifications->whatsapp($vendor->phone, $body, $ctx);
-        $this->notifications->sms($vendor->phone, $body, $ctx);
+    /**
+     * Give an admin-created TPV a portal login at activation time.
+     *
+     * Returns the plaintext temporary password ONLY when this call creates the
+     * login — that is the one moment it can be disclosed. If the vendor already
+     * has a login (an admin typed a password when creating them, or they
+     * self-registered and chose their own) this returns null and the activation
+     * e-mail carries no password, which is the correct behaviour for both.
+     *
+     * Never blocks activation: a provisioning failure is reported and swallowed.
+     */
+    private function provisionPortalLogin(Vendor $vendor): ?string
+    {
+        if ($vendor->user_id || ! $vendor->email) {
+            return null;
+        }
 
-        Log::channel('vendor')->info('Vendor welcome dispatched', ['vendor_id' => $vendor->id]);
+        try {
+            // Someone may already own this e-mail as a login; don't collide.
+            if (User::where('email', $vendor->email)->exists()) {
+                return null;
+            }
+
+            $plain = Str::password(12);
+            $user  = $this->provisionLoginUser($vendor, $vendor->company_name, $plain, $vendor->tenant_id);
+            $vendor->forceFill(['user_id' => $user->id])->saveQuietly();
+
+            Log::channel('vendor')->info('TPV portal login provisioned at activation', [
+                'vendor_id' => $vendor->id, 'user_id' => $user->id,
+            ]);
+
+            return $plain;
+        } catch (\Throwable $e) {
+            report($e);
+
+            return null;
+        }
+    }
+
+    /** Admin-triggered resend of the activation e-mail (Active vendors only). */
+    public function resendActivationEmail(Vendor $vendor, User $actor): array
+    {
+        if ($vendor->status !== Status::ACTIVE) {
+            throw new BusinessException('Only an active vendor can be sent the activation e-mail.');
+        }
+
+        $log = $this->activationNotifier->resend($vendor);
+        $vendor->recordAudit('Activation Email Resent', $actor, null, ['status' => $log->status]);
+
+        return ['status' => $log->status, 'sent_at' => $log->sent_at, 'recipient' => $log->recipient];
+    }
+
+    /**
+     * Chronological notification history for the Vendor Detail timeline.
+     * Reuses tpv_notification_logs — no second store.
+     */
+    public function notificationTimeline(Vendor $vendor, int $limit = 50): array
+    {
+        return \App\Models\Tpv\TpvNotificationLog::forTenant($vendor->tenant_id)
+            ->where('vendor_id', $vendor->id)
+            ->orderByDesc('id')
+            ->limit($limit)
+            ->get(['id', 'type', 'channel', 'subject', 'recipient', 'status', 'sent_at', 'response', 'created_at'])
+            ->all();
+    }
+
+    /** Login stats for the Vendor Detail dashboard (TPV portal only). */
+    public function loginStats(Vendor $vendor): array
+    {
+        return [
+            'first_login_at' => $vendor->first_login_at,
+            'last_login_at'  => $vendor->last_login_at,
+            'login_count'    => (int) ($vendor->login_count ?? 0),
+        ];
+    }
+
+    /** Last notification for the Vendor Detail dashboard. */
+    public function lastNotification(Vendor $vendor): ?array
+    {
+        $log = $this->activationNotifier->latestFor($vendor);
+
+        return $log ? [
+            'type' => $log->type, 'channel' => $log->channel, 'status' => $log->status,
+            'sent_at' => $log->sent_at, 'recipient' => $log->recipient, 'subject' => $log->subject,
+        ] : null;
     }
 
     /** Replace the vendor's contact list, enforcing a single primary. */

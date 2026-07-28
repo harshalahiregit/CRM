@@ -3,6 +3,7 @@
 namespace App\Services\Hr;
 
 use App\Exceptions\BusinessException;
+use App\Jobs\Hr\RecalculateCandidateScore;
 use App\Exceptions\UnauthorizedTenantException;
 use App\Models\Hr\HrCandidate;
 use App\Models\Hr\HrJobPosting;
@@ -12,6 +13,7 @@ use App\Support\Hr\JobPostingStatus as Status;
 use App\Support\Hr\ManpowerRequestStatus;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -93,7 +95,66 @@ class JobPostingService
 
         Log::channel('hr')->info('Job posting updated', ['job_posting_id' => $jobPosting->id, 'tenant_id' => $jobPosting->tenant_id]);
 
+        // Every applicant was scored against the OLD requirement text. If the
+        // requirement moved, their scores are stale.
+        if ($jobPosting->wasChanged(self::SCORING_INPUTS)) {
+            $this->rescoreApplicants($jobPosting, RecalculateCandidateScore::TRIGGER_JOB_UPDATED);
+        }
+
         return $jobPosting->fresh();
+    }
+
+    /**
+     * Job-posting columns the scoring engine reads.
+     *
+     * The requisition-side inputs (required_skills, preferred_skills,
+     * experience_required, education, salary_min/max) live on hr_manpower_requests;
+     * ManpowerRequestService::update() dispatches the same fan-out for those.
+     */
+    private const SCORING_INPUTS = [
+        'requirements', 'description', 'location', 'work_mode',
+        'job_type', 'salary_from', 'salary_to', 'screening_questions', 'department',
+    ];
+
+    /**
+     * Fan out a re-score across a posting's applicants.
+     *
+     * Batched and queued, in chunks: a popular posting can carry hundreds of
+     * applicants, and ten dimension evaluations each is not something to run on the
+     * request thread of a job edit. Only ids are selected, and the tenant is applied
+     * explicitly -- HR models carry no global scope.
+     */
+    public function rescoreApplicants(HrJobPosting $jobPosting, string $trigger): ?string
+    {
+        $jobs = [];
+
+        HrCandidate::query()
+            ->where('tenant_id', $jobPosting->tenant_id)
+            ->where('job_posting_id', $jobPosting->id)
+            ->select('id')
+            ->chunkById(500, function ($chunk) use ($jobPosting, $trigger, &$jobs) {
+                foreach ($chunk as $candidate) {
+                    $jobs[] = new RecalculateCandidateScore(
+                        $candidate->id, $jobPosting->tenant_id, $trigger, $jobPosting->id
+                    );
+                }
+            });
+
+        if ($jobs === []) {
+            return null;
+        }
+
+        $batch = Bus::batch($jobs)
+            ->name('air-rescore-job-'.$jobPosting->id)
+            ->allowFailures()   // one bad candidate must not abort the rest
+            ->dispatch();
+
+        Log::channel('hr')->info('Queued AI re-score for job applicants', [
+            'job_posting_id' => $jobPosting->id, 'tenant_id' => $jobPosting->tenant_id,
+            'candidates' => count($jobs), 'trigger' => $trigger, 'batch_id' => $batch->id,
+        ]);
+
+        return $batch->id;
     }
 
     /* ── Lifecycle actions (role-gated + audited) ───────────────────────── */

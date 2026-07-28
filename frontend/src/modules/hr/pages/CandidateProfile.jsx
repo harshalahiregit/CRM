@@ -13,7 +13,7 @@ import GenerateOfferDrawer from '@/modules/hr/components/GenerateOfferDrawer'
 import AuditTimeline from '@/components/ui/AuditTimeline'
 import { HrLoading } from '@/components/ui/HrState'
 import CandidateQuickActions from '@/modules/hr/components/CandidateQuickActions'
-import { formatCTC, DOCUMENT_TYPES, documentTypeLabel, aiBand, canManageHrQueue, ONBOARDING_DOC_ITEMS, ONBOARDING_DOC_LABELS, computeOnboardingChecklist } from '@/modules/hr/constants'
+import { formatCTC, DOCUMENT_TYPES, documentTypeLabel, aiRecommendationStyle, aiDimensionColor, candidateScore, canManageHrQueue, ONBOARDING_DOC_ITEMS, ONBOARDING_DOC_LABELS, computeOnboardingChecklist } from '@/modules/hr/constants'
 
 const resultColor = r => r==='Passed'?{c:'#10b981',bg:'rgba(16,185,129,0.12)'}:r==='Pending'?{c:'#f59e0b',bg:'rgba(245,158,11,0.12)'}:{c:'#f87171',bg:'rgba(239,68,68,0.1)'}
 const DECISION_COLORS = { Selected:{c:'#10b981',bg:'rgba(16,185,129,0.1)'}, Hold:{c:'#fbbf24',bg:'rgba(245,158,11,0.1)'}, Rejected:{c:'#f87171',bg:'rgba(239,68,68,0.1)'} }
@@ -24,15 +24,11 @@ const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN',{day:'2-digit',m
 // Stage duration (SPK-1). 0 days is a same-day transition, not "no time".
 const fmtDuration = (d) => d === 0 ? 'same day' : d === 1 ? '1 day' : `${d} days`
 
-// SPK-1 recommendation bands. `Proceed` is the pre-band value and is kept so
-// candidates scored before this change still render correctly.
-const REC_STYLE = {
-  'Recommended':               { c:'#10b981', bg:'rgba(16,185,129,0.12)' },
-  'Recommended with Training': { c:'#38bdf8', bg:'rgba(56,189,248,0.12)' },
-  'Hold':                      { c:'#fbbf24', bg:'rgba(245,158,11,0.12)' },
-  'Reject':                    { c:'#f87171', bg:'rgba(239,68,68,0.1)'   },
-  'Proceed':                   { c:'#10b981', bg:'rgba(16,185,129,0.12)' },
-}
+// REC_STYLE lived here: a fifth set of labels (Proceed / Hold / Reject /
+// Recommended with Training) that did not even share a vocabulary with aiBand()
+// rendered directly above it, so one card could show two different verdicts for the
+// same candidate. Styling now comes from aiRecommendationStyle(), keyed on the ONE
+// vocabulary the backend RecommendationEngine produces.
 
 // `reason` (SPK-1) explains WHY the score came out this way — supplied by the
 // heuristic in CandidateService, shown under the bar rather than in a tooltip so
@@ -109,6 +105,8 @@ export default function CandidateProfile() {
   const [offerDrawer, setOfferDrawer]       = useState(false)
   const [recruiters, setRecruiters]         = useState([])
   const [journey, setJourney]               = useState(null)
+  const [aiScore, setAiScore]               = useState(null)
+  const [aiLoading, setAiLoading]           = useState(false)
   const [expandedStage, setExpandedStage]   = useState(null)  // journey stage key (SPK-1)
   const [journeyLoading, setJourneyLoading] = useState(false)
   // Notes
@@ -133,6 +131,14 @@ export default function CandidateProfile() {
 
   const loadCandidate = useCallback(async () => {
     if (!id) { setCandidate(null); setLoading(false); return }
+    // This workspace stays mounted when :id changes (Previous/Next only swaps the
+    // param), so the previous candidate's data must be cleared and `loading`
+    // re-armed. Without this the outgoing candidate's AI score, breakdown and
+    // recommendation render under the incoming candidate's name and URL.
+    setLoading(true)
+    setCandidate(null)
+    setNotes([])
+    setDocuments([])
     try {
       const data = await hrApi.candidates.get(id)
       setCandidate(data)
@@ -161,8 +167,22 @@ export default function CandidateProfile() {
   // mount so the header, Smart Action Panel, badges and summary always have data.
   useEffect(() => {
     if (!id) return
+    // Clear first: the summary panel renders on `journey` being truthy, so a
+    // stale object would show the previous candidate's AI and interview scores.
+    setJourney(null)
     setJourneyLoading(true)
     hrApi.candidates.journey(id).then(setJourney).catch(() => {}).finally(() => setJourneyLoading(false))
+  }, [id])
+
+  // AI job-fit score — the one endpoint. Everything shown below (overall,
+  // confidence, recommendation, per-dimension scores and their reasons) comes from
+  // this payload; this page computes no part of it. Cleared on :id change for the
+  // same reason as `journey` — the workspace stays mounted between candidates.
+  useEffect(() => {
+    if (!id) return
+    setAiScore(null)
+    setAiLoading(true)
+    hrApi.candidates.score(id).then(setAiScore).catch(() => {}).finally(() => setAiLoading(false))
   }, [id])
 
   // Click a journey stage → open the underlying record (reuses existing pages).
@@ -301,12 +321,25 @@ export default function CandidateProfile() {
   )
 
   const c = candidate
-  const aiScore = c.ai_score || 0
-  const band    = aiBand(aiScore)
-  const aiBreak = c.ai_breakdown || {}
+  // The engine's verdict, straight from GET /candidates/{id}/score. This page
+  // derives nothing: no thresholds, no band arithmetic, no colour rules keyed off
+  // a number. `overall_score === null` is a real state — the backend withholds a
+  // score built on too little evidence — so it must render as "—", never as 0%.
+  const ai       = aiScore || {}
+  const isScored = ai.is_scored === true && ai.overall_score != null
+  const aiValue  = isScored ? ai.overall_score : null
+  const band     = {
+    label: ai.recommendation || (aiLoading ? 'Loading…' : 'Not scored'),
+    ...aiRecommendationStyle(ai.recommendation),
+  }
+
   // Per-score explanations (SPK-1). Absent on candidates scored before this
   // change — the bars simply render without a reason line.
-  const aiReasons = aiBreak.reasons || {}
+  // Scored vs not-measured, split once. `score === null` means the dimension had no
+  // input — never a zero, so it must not render as a 0% bar.
+  const allDimensions = Array.isArray(ai.dimensions) ? ai.dimensions : []
+  const aiDimensions  = allDimensions.filter(d => d.score !== null && d.score !== undefined)
+  const aiUnmeasured  = allDimensions.filter(d => d.score === null || d.score === undefined)
   const skills  = Array.isArray(c.skills) ? c.skills : []
   const rounds  = c.interview_rounds || []
   const ctcC = formatCTC(c.current_ctc), ctcE = formatCTC(c.expected_ctc)
@@ -404,8 +437,9 @@ export default function CandidateProfile() {
             </div>
           </div>
           <div className="flex-shrink-0 text-center px-4 py-3 rounded-2xl" style={{ background:band.bg, border:`1px solid ${band.color}40` }}>
-            <p className="text-3xl font-black" style={{ color:band.color }}>{aiScore}%</p>
+            <p className="text-3xl font-black" style={{ color:band.color }}>{isScored ? `${aiValue}%` : '—'}</p>
             <p className="text-[10px] font-bold mt-0.5" style={{ color:band.color }}>AI Match</p>
+            {ai.confidence != null && <p className="text-[9px] mt-0.5" style={{ color:'var(--text-muted)' }}>{ai.confidence}% confidence</p>}
           </div>
         </div>
         {/* Key facts */}
@@ -644,47 +678,57 @@ export default function CandidateProfile() {
             <div className="card-3d" style={{ padding:'20px' }}>
               <div className="flex items-center gap-2 mb-4"><Brain size={16} style={{ color:'#a78bfa' }}/><h3 className="font-bold text-sm" style={{ color:'var(--text-h)' }}>AI Assessment</h3></div>
               <div className="text-center py-3 rounded-2xl mb-4" style={{ background:band.bg }}>
-                <p className="text-3xl font-black" style={{ color:band.color }}>{aiScore}%</p>
+                <p className="text-3xl font-black" style={{ color:band.color }}>{isScored ? `${aiValue}%` : '—'}</p>
                 <p className="text-xs font-bold mt-1" style={{ color:band.color }}>{band.label}</p>
+                {ai.confidence != null && <p className="text-[10px] mt-0.5" style={{ color:'var(--text-muted)' }}>Based on {ai.confidence}% of the scoring weight</p>}
               </div>
-              {Object.keys(aiBreak).length>0 && (
+              {allDimensions.length>0 && (
                 <div className="space-y-3">
-                  {/* SPK-1 application evaluation — resume / JD / question / skill */}
-                  {aiBreak.resume_match   !== undefined && <ScoreBar label="Resume Match"   value={aiBreak.resume_match}   color="#a78bfa" reason={aiReasons.resume_match}/>}
-                  {aiBreak.jd_match       !== undefined && <ScoreBar label="JD Match"        value={aiBreak.jd_match}       color="#60a5fa" reason={aiReasons.jd_match}/>}
-                  {aiBreak.question_match !== undefined && <ScoreBar label="Question Match"  value={aiBreak.question_match} color="#34d399" reason={aiReasons.question_match}/>}
-                  {(aiBreak.skill_match ?? aiBreak.skills_match) !== undefined && <ScoreBar label="Skills Match" value={aiBreak.skill_match ?? aiBreak.skills_match} color="#fbbf24" reason={aiReasons.skill_match}/>}
-                  {aiBreak.exp_match      !== undefined && <ScoreBar label="Experience Match" value={aiBreak.exp_match}   color="#f97316" reason={aiReasons.exp_match}/>}
-                  {aiBreak.education_match !== undefined && <ScoreBar label="Education Match" value={aiBreak.education_match} color="#22d3ee" reason={aiReasons.education_match}/>}
-                  {aiBreak.location_match !== undefined && aiBreak.resume_match === undefined && <ScoreBar label="Location Fit" value={aiBreak.location_match} color="#34d399"/>}
+                  {/* Straight from score.dimensions: name, score and reason are the
+                      engine's own. Unscored dimensions are listed rather than hidden,
+                      so it is visible WHY confidence is what it is. */}
+                  {aiDimensions.map(d => (
+                    <ScoreBar key={d.key} label={d.name} value={d.score} color={aiDimensionColor(d.key)} reason={d.reason}/>
+                  ))}
+                  {aiUnmeasured.length > 0 && (
+                    <p className="text-[10px] leading-snug" style={{ color:'var(--text-muted)' }}>
+                      Not measured: {aiUnmeasured.map(d => d.name).join(', ')}.
+                    </p>
+                  )}
                 </div>
               )}
 
               {/* Strengths / Weaknesses / Recommendation — explain the score */}
-              {(aiBreak.strengths?.length || aiBreak.weaknesses?.length || aiBreak.recommendation) && (
+              {(ai.strengths?.length || ai.weaknesses?.length || ai.recommendation) && (
                 <div className="mt-4 pt-3 space-y-3" style={{ borderTop:'1px solid var(--border)' }}>
-                  {aiBreak.strengths?.length > 0 && (
+                  {ai.strengths?.length > 0 && (
                     <div>
                       <p className="text-[11px] font-bold mb-1.5" style={{ color:'#10b981' }}>✓ Strengths</p>
-                      <ul className="space-y-1">{aiBreak.strengths.map((s,i)=><li key={i} className="text-[11px] flex items-start gap-1.5" style={{ color:'var(--text-muted)' }}><span style={{ color:'#10b981' }}>•</span> {s}</li>)}</ul>
+                      <ul className="space-y-1">{ai.strengths.map((s,i)=><li key={i} className="text-[11px] flex items-start gap-1.5" style={{ color:'var(--text-muted)' }}><span style={{ color:'#10b981' }}>•</span> {s}</li>)}</ul>
                     </div>
                   )}
-                  {aiBreak.weaknesses?.length > 0 && (
+                  {ai.weaknesses?.length > 0 && (
                     <div>
                       <p className="text-[11px] font-bold mb-1.5" style={{ color:'#f87171' }}>△ Weaknesses</p>
-                      <ul className="space-y-1">{aiBreak.weaknesses.map((s,i)=><li key={i} className="text-[11px] flex items-start gap-1.5" style={{ color:'var(--text-muted)' }}><span style={{ color:'#f87171' }}>•</span> {s}</li>)}</ul>
+                      <ul className="space-y-1">{ai.weaknesses.map((s,i)=><li key={i} className="text-[11px] flex items-start gap-1.5" style={{ color:'var(--text-muted)' }}><span style={{ color:'#f87171' }}>•</span> {s}</li>)}</ul>
                     </div>
                   )}
-                  {aiBreak.recommendation && (() => {
-                    const rc = REC_STYLE[aiBreak.recommendation] || { c:'var(--text-muted)', bg:'var(--bg-input)' }
+                  {ai.recommendation && (() => {
+                    // The label itself is already shown above as band.label. Repeating
+                    // it here is what used to produce two DIFFERENT verdicts in one
+                    // card; now there is one vocabulary, so only the basis is added.
+                    const rc = aiRecommendationStyle(ai.recommendation)
                     return (
                       <div className="text-center py-2.5 px-3 rounded-xl" style={{ background:rc.bg }}>
-                        <p className="text-[10px] font-semibold" style={{ color:'var(--text-muted)' }}>AI Recommendation</p>
-                        <p className="font-black text-base" style={{ color:rc.c }}>{aiBreak.recommendation}</p>
-                        {/* Every recommendation states its own basis (SPK-1) */}
-                        {aiBreak.recommendation_reason && (
-                          <p className="text-[10px] mt-1.5 leading-snug" style={{ color:'var(--text-muted)' }}>{aiBreak.recommendation_reason}</p>
+                        <p className="text-[10px] font-semibold" style={{ color:'var(--text-muted)' }}>Why this recommendation</p>
+                        {ai.summary && (
+                          <p className="text-[10px] mt-1.5 leading-snug" style={{ color:'var(--text-muted)' }}>{ai.summary}</p>
                         )}
+                        {ai.risk_flags?.length ? (
+                          <ul className="mt-2 space-y-0.5">{ai.risk_flags.map((f,i)=>(
+                            <li key={i} className="text-[10px]" style={{ color:'#fbbf24' }}>⚠ {f.label}: {f.detail}</li>
+                          ))}</ul>
+                        ) : null}
                       </div>
                     )
                   })()}
@@ -727,7 +771,7 @@ export default function CandidateProfile() {
                   ['Department', journey.summary.department],
                   ['Current Stage', journey.summary.current_stage],
                   ['Recruiter', journey.summary.recruiter],
-                  ['Overall AI Score', journey.summary.ai_score != null ? `${journey.summary.ai_score}%` : '—'],
+                  ['Overall AI Score', journey.summary.ai_score != null ? `${journey.summary.ai_score}%` : '—'],  // backend already suppresses pre-engine literals
                   ['Interview Score', journey.summary.interview_score != null ? `${journey.summary.interview_score}%` : '—'],
                   ['Offer Status', journey.summary.offer_status],
                   ['Joining Status', journey.summary.joining_status],
@@ -871,28 +915,35 @@ export default function CandidateProfile() {
       {/* ── AI EVALUATION (reuses the loaded ai_breakdown) ── */}
       {activeTab==='overview' && (
         <div className="card-3d" style={{ padding:'22px' }}>
-          <div className="flex items-center gap-2 mb-4"><Brain size={16} style={{ color:'#a78bfa' }}/><h3 className="font-bold text-sm" style={{ color:'var(--text-h)' }}>AI Evaluation</h3>{c.ai_score != null && <span className="ml-auto text-xl font-black" style={{ color:band.color }}>{c.ai_score}%</span>}</div>
-          {c.ai_score == null ? <p className="text-xs" style={{ color:'var(--text-muted)' }}>This candidate has not been scored yet.</p> : (
+          <div className="flex items-center gap-2 mb-4"><Brain size={16} style={{ color:'#a78bfa' }}/><h3 className="font-bold text-sm" style={{ color:'var(--text-h)' }}>AI Evaluation</h3>{isScored && <span className="ml-auto text-xl font-black" style={{ color:band.color }}>{aiValue}%</span>}</div>
+          {!isScored ? (
+            <p className="text-xs" style={{ color:'var(--text-muted)' }}>
+              {aiLoading ? 'Loading…' : (ai.summary || 'This candidate has not been scored yet.')}
+            </p>
+          ) : (
             <>
               <div className="space-y-3">
-                {aiBreak.resume_match   !== undefined && <ScoreBar label="Resume Match"    value={aiBreak.resume_match}   color="#a78bfa" reason={aiReasons.resume_match}/>}
-                {aiBreak.jd_match       !== undefined && <ScoreBar label="JD Match"        value={aiBreak.jd_match}       color="#60a5fa" reason={aiReasons.jd_match}/>}
-                {(aiBreak.skill_match ?? aiBreak.skills_match) !== undefined && <ScoreBar label="Skills Match" value={aiBreak.skill_match ?? aiBreak.skills_match} color="#fbbf24" reason={aiReasons.skill_match}/>}
-                {aiBreak.education_match !== undefined && <ScoreBar label="Education Match" value={aiBreak.education_match} color="#22d3ee" reason={aiReasons.education_match}/>}
-                {aiBreak.exp_match      !== undefined && <ScoreBar label="Experience Match" value={aiBreak.exp_match}     color="#f97316" reason={aiReasons.exp_match}/>}
-                {aiBreak.question_match !== undefined && <ScoreBar label="Question Match"  value={aiBreak.question_match} color="#34d399" reason={aiReasons.question_match}/>}
+                {aiDimensions.map(d => (
+                  <ScoreBar key={d.key} label={d.name} value={d.score} color={aiDimensionColor(d.key)} reason={d.reason}/>
+                ))}
+                {aiUnmeasured.length > 0 && (
+                  <p className="text-[10px] leading-snug" style={{ color:'var(--text-muted)' }}>
+                    Not measured: {aiUnmeasured.map(d => d.name).join(', ')}.
+                  </p>
+                )}
               </div>
-              {(aiBreak.strengths?.length || aiBreak.weaknesses?.length) && (
+              {(ai.strengths?.length || ai.weaknesses?.length) && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                  {aiBreak.strengths?.length ? <div><p className="text-[10px] font-bold uppercase mb-1" style={{ color:'#10b981' }}>Strengths</p><ul className="space-y-1">{aiBreak.strengths.map((s,i)=><li key={i} className="text-[11px] flex items-start gap-1.5" style={{ color:'var(--text-muted)' }}><span style={{ color:'#10b981' }}>•</span> {s}</li>)}</ul></div> : null}
-                  {aiBreak.weaknesses?.length ? <div><p className="text-[10px] font-bold uppercase mb-1" style={{ color:'#f87171' }}>Weaknesses</p><ul className="space-y-1">{aiBreak.weaknesses.map((s,i)=><li key={i} className="text-[11px] flex items-start gap-1.5" style={{ color:'var(--text-muted)' }}><span style={{ color:'#f87171' }}>•</span> {s}</li>)}</ul></div> : null}
+                  {ai.strengths?.length ? <div><p className="text-[10px] font-bold uppercase mb-1" style={{ color:'#10b981' }}>Strengths</p><ul className="space-y-1">{ai.strengths.map((s,i)=><li key={i} className="text-[11px] flex items-start gap-1.5" style={{ color:'var(--text-muted)' }}><span style={{ color:'#10b981' }}>•</span> {s}</li>)}</ul></div> : null}
+                  {ai.weaknesses?.length ? <div><p className="text-[10px] font-bold uppercase mb-1" style={{ color:'#f87171' }}>Weaknesses</p><ul className="space-y-1">{ai.weaknesses.map((s,i)=><li key={i} className="text-[11px] flex items-start gap-1.5" style={{ color:'var(--text-muted)' }}><span style={{ color:'#f87171' }}>•</span> {s}</li>)}</ul></div> : null}
                 </div>
               )}
-              {aiBreak.recommendation && (() => { const rc = REC_STYLE[aiBreak.recommendation] || { c:'var(--text-muted)', bg:'var(--bg-input)' }; return (
+              {ai.recommendation && (() => { const rc = aiRecommendationStyle(ai.recommendation); return (
                 <div className="text-center py-2.5 px-3 rounded-xl mt-4" style={{ background:rc.bg }}>
                   <p className="text-[10px] font-semibold" style={{ color:'var(--text-muted)' }}>AI Recommendation</p>
-                  <p className="font-black text-base" style={{ color:rc.c }}>{aiBreak.recommendation}</p>
-                  {aiBreak.recommendation_reason && <p className="text-[10px] mt-1.5 leading-snug" style={{ color:'var(--text-muted)' }}>{aiBreak.recommendation_reason}</p>}
+                  <p className="font-black text-base" style={{ color:rc.c }}>{ai.recommendation}</p>
+                  {ai.summary && <p className="text-[10px] mt-1.5 leading-snug" style={{ color:'var(--text-muted)' }}>{ai.summary}</p>}
+                  {ai.confidence != null && <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>{ai.confidence}% confidence</p>}
                 </div>
               )})()}
             </>
@@ -1471,15 +1522,20 @@ function StageDetails({ stage, candidate, rounds }) {
 
   // ── Application / AI screening ──
   if (stage.key === 'applied' || stage.key === 'ai_screening') {
-    const b = candidate.ai_breakdown || {}
+    // candidateScore() applies the same engine-stamp guard as the lists, so this
+    // panel cannot disagree with the score shown at the top of the page. `Basis` now
+    // reads the engine's summary — recommendation_reason is not part of the contract.
+    const ai = candidateScore(candidate)
+    const b  = candidate.ai_breakdown || {}
     return (
       <div>
         <DetailRow k="Source" v={candidate.source} />
         <DetailRow k="Applied" v={fmt(candidate.applied_at || candidate.created_at)} />
-        <DetailRow k="AI Score" v={candidate.ai_score != null ? `${candidate.ai_score}%` : null} />
-        <DetailRow k="Recommendation" v={b.recommendation} />
-        <DetailRow k="Basis" v={b.recommendation_reason} />
-        {candidate.ai_score == null && <Empty>This candidate has not been scored yet.</Empty>}
+        <DetailRow k="AI Score" v={ai.isScored ? ai.display : null} />
+        <DetailRow k="Recommendation" v={ai.recommendation} />
+        <DetailRow k="Confidence" v={ai.confidence != null ? `${ai.confidence}%` : null} />
+        <DetailRow k="Basis" v={b.summary} />
+        {!ai.isScreened && <Empty>This candidate has not been scored yet.</Empty>}
       </div>
     )
   }

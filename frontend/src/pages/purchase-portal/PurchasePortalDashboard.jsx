@@ -2,10 +2,12 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Building2, ClipboardList, FileText, ShieldCheck, CalendarDays, ChevronRight,
-  Hash, Tag, Activity, FileWarning, CalendarClock,
+  Hash, Tag, Activity, FileWarning, CalendarClock, Clock,
 } from 'lucide-react'
 import { purchasePortalApi } from '@/services/purchasePortalApi'
 import { KIT3D_STYLE, StatusBadge as StatusPill } from '@/components/ui/kit3d'
+import PurchaseRegistrationBadge from '@/modules/purchase/components/PurchaseRegistrationBadge'
+import TemporaryVendorValidityBadge from '@/modules/purchase/components/TemporaryVendorValidityBadge'
 
 const onbCfg = (s) => ({
   In_Progress:  { label: 'In Progress',  color: '#0ea5e9', bg: 'rgba(14,165,233,0.15)' },
@@ -25,9 +27,22 @@ export default function PurchasePortalDashboard() {
   const [progress, setProgress] = useState(null)
   const [checklist, setChecklist] = useState(null)
   const [kickoff, setKickoff] = useState(null)
+  const [showWelcome, setShowWelcome] = useState(false)
+  const [dismissing, setDismissing] = useState(false)
+
+  // Hide immediately, then persist. If the call fails the banner returns on the
+  // next load — better than pretending a dismissal we never stored.
+  const dismissWelcome = async () => {
+    setDismissing(true)
+    try { await purchasePortalApi.dismissWelcomeBanner(); setShowWelcome(false) }
+    catch { /* leave it visible */ }
+    finally { setDismissing(false) }
+  }
 
   useEffect(() => {
-    purchasePortalApi.me().then(d => setVendor(d?.vendor ?? null)).catch(() => {})
+    purchasePortalApi.me()
+      .then(d => { setVendor(d?.vendor ?? null); setShowWelcome(!!d?.vendor?.show_welcome_banner) })
+      .catch(() => {})
     purchasePortalApi.onboarding.self().then(d => { setOnb(d?.onboarding ?? null); setProgress(d?.progress ?? null) }).catch(() => {})
     purchasePortalApi.documents.checklist().then(d => setChecklist(d ?? null)).catch(() => {})
     purchasePortalApi.kickoff.get().then(d => setKickoff(d?.meeting ?? null)).catch(() => {})
@@ -74,13 +89,55 @@ export default function PurchasePortalDashboard() {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <h1 style={{ color: 'var(--text-h)', fontSize: 21, fontWeight: 800, margin: 0 }}>{vendor?.company_name || 'Vendor'}</h1>
+            <PurchaseRegistrationBadge type={vendor?.registration_type} label={vendor?.registration_type_label} />
+            {/* Portal header card: remaining access (temporary only) */}
+            <TemporaryVendorValidityBadge countdown={vendor?.validity_countdown} showLabel />
             <StatusPill cfg={onbCfg(onb?.status)} />
           </div>
           <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: '5px 0 0' }}>
+            Registration Type: <strong style={{ color: 'var(--text-h)' }}>{vendor?.registration_type_label || 'Standard Vendor'}</strong>
+          </p>
+          <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: '3px 0 0' }}>
             {vendorCode}{onb?.registration_number ? ` · Reg. ${onb.registration_number}` : ''} · Onboarding {pct}% complete
           </p>
         </div>
       </div>
+
+      {/* One-time post-activation welcome banner. The flag comes from the server
+          and the dismissal is persisted there, so it cannot reappear elsewhere. */}
+      {showWelcome && (
+        <div className="pr-glass" style={{ padding: '18px 22px', borderRadius: 16, marginBottom: 18, display: 'flex', alignItems: 'flex-start', gap: 14, border: '1px solid rgba(16,185,129,0.35)', background: 'rgba(16,185,129,0.08)' }}>
+          <div style={{ fontSize: 26, lineHeight: 1 }}>🎉</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-h)' }}>Welcome!</div>
+            <p style={{ fontSize: 13.5, color: 'var(--text-muted)', margin: '4px 0 0', lineHeight: 1.6 }}>
+              Your account has been activated successfully. You can now access all available portal features.
+            </p>
+          </div>
+          <button onClick={dismissWelcome} disabled={dismissing}
+            style={{ padding: '7px 14px', borderRadius: 8, background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-h)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
+            {dismissing ? 'Dismissing…' : 'Dismiss'}
+          </button>
+        </div>
+      )}
+
+      {/* Temporary Access card — only for time-boxed accounts */}
+      {vendor?.validity_countdown?.is_temporary && (
+        <div className="pr-glass" style={{ padding: '16px 20px', borderRadius: 16, marginBottom: 18, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+          <Clock size={20} style={{ color: '#f97316' }} />
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.05em' }}>Temporary Access</div>
+            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 3 }}>
+              Remaining: <TemporaryVendorValidityBadge countdown={vendor.validity_countdown} />
+            </div>
+          </div>
+          {vendor.validity_countdown.expires_at && (
+            <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--text-muted)' }}>
+              Expires {new Date(vendor.validity_countdown.expires_at).toLocaleString()}
+            </span>
+          )}
+        </div>
+      )}
 
       {/* KPI grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 14, marginBottom: 18 }}>

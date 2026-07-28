@@ -29,7 +29,9 @@ export function useVendorModule() {
   const { user } = useAuth()
   const role = user?.role
 
-  const isPurchasePortal = pathname.startsWith('/purchase-portal') || role === 'vendor'
+  // A Purchase Vendor holds a PurchaseVendor token, never a User session, so there
+  // is no `role` to test — the portal is identified by its path alone.
+  const isPurchasePortal = pathname.startsWith('/purchase-portal')
   const isTpvPortal      = pathname.startsWith('/vendor-portal') || role === 'third_party_vendor'
   const isPurchase       = pathname.startsWith('/app/purchase')
 

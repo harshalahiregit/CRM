@@ -64,6 +64,12 @@ export const purchaseApi = {
     returnToDraft: (id)    => api.post(`/purchase/contracts/${id}/return`).then(r => r.data),
     activate: (id)         => api.post(`/purchase/contracts/${id}/activate`).then(r => r.data),   // admin-only
     terminate: (id, reason = '') => api.post(`/purchase/contracts/${id}/terminate`, { reason }).then(r => r.data), // admin-only
+    // Wires the existing GET /purchase/contracts/{id}/download route — the
+    // signed contract file. Read-only; no new endpoint was added for it.
+    download: async (id) => {
+      const res = await api.get(`/purchase/contracts/${id}/download`, { responseType: 'blob' })
+      return URL.createObjectURL(res.data)
+    },
     uploadDocument: (id, file) => {
       const fd = new FormData(); fd.append('document', file)
       return api.post(`/purchase/contracts/${id}/document`, fd, { headers: { 'Content-Type': undefined } }).then(r => r.data)
@@ -156,6 +162,7 @@ export const purchaseApi = {
     update:    (id, data)    => api.put(`/purchase/vendors/${id}`, data).then(r => r.data),
     setStatus: (id, status)  => api.patch(`/purchase/vendors/${id}/status`, { status }).then(r => r.data),
     approve:   (id)          => api.post(`/purchase/vendors/${id}/approve`).then(r => r.data),   // admin-only
+    resendActivation: (id)   => api.post(`/purchase/vendors/${id}/resend-activation`).then(r => r.data), // admin-only
     delete:    (id)          => api.delete(`/purchase/vendors/${id}`).then(r => r.data),
   },
 

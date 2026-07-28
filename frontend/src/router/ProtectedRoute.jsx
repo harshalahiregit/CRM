@@ -18,7 +18,9 @@ export function ProtectedRoute({ children, roles = [] }) {
 
 // Resolve the post-login home for a given role.
 function homeFor(role) {
-  if (role === 'vendor' || role === 'third_party_vendor') return '/vendor-portal/dashboard'
+  // TPV only. A Purchase Vendor never reaches here — it holds a PurchaseVendor
+  // token, not a User session, and lands via PurchaseVendorPortalGuard instead.
+  if (role === 'third_party_vendor') return '/vendor-portal/dashboard'
   if (role === 'company') return '/company-portal/dashboard'
   return '/app/dashboard'
 }
