@@ -29,8 +29,15 @@ use Illuminate\Support\Str;
 
 class TaskService
 {
-    /** Portal-only roles — never staff, so never assignees/followers (matches Helpdesk). */
+    /** Portal-only roles — excluded from staff pickers, @mentions and reminders. */
     private const EXTERNAL_ROLES = ['client', 'vendor', 'third_party_vendor'];
+
+    /**
+     * Roles that may NOT be assigned/followed. Vendors and third-party vendors
+     * ARE allowed (work can be delegated to them; they see it on their portal
+     * dashboard) — only customers (`client`) are blocked.
+     */
+    private const NON_ASSIGNABLE_ROLES = ['client'];
 
     /** Human labels for the stored status keys — used in notification copy. */
     private const STATUS_LABELS = [
@@ -524,10 +531,10 @@ class TaskService
         $userIds = array_values(array_unique(array_map('intval', $userIds)));
 
         $valid = User::where('tenant_id', $tenantId)->whereIn('id', $userIds)
-            ->whereNotIn('role', self::EXTERNAL_ROLES)
+            ->whereNotIn('role', self::NON_ASSIGNABLE_ROLES)
             ->pluck('id')->all();
         if (count($valid) !== count($userIds)) {
-            throw new BusinessException('One or more users are not staff in this workspace.', 422);
+            throw new BusinessException('One or more selected people cannot be assigned in this workspace.', 422);
         }
 
         // Who is newly added — captured inside the transaction, notified after it
@@ -1204,9 +1211,9 @@ class TaskService
         }
         if ($action === 'assign') {
             $ok = User::where('tenant_id', $tenantId)->whereKey((int) $value)
-                ->whereNotIn('role', self::EXTERNAL_ROLES)->exists();
+                ->whereNotIn('role', self::NON_ASSIGNABLE_ROLES)->exists();
             if (! $ok) {
-                throw new BusinessException('That person is not staff in this workspace.', 422);
+                throw new BusinessException('That person cannot be assigned in this workspace.', 422);
             }
         }
 

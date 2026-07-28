@@ -136,7 +136,9 @@ export default function ProjectDetail() {
             <h1 className="text-xl font-black" style={{ color: 'var(--text-h)' }}>{project.name}</h1>
           </div>
           <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-            {project.customer?.name || 'No customer'} · created by {project.creator?.name || '—'}
+            {(project.link_type === 'vendor' || project.link_type === 'tpv')
+              ? `${project.link_type === 'tpv' ? 'TPV' : 'Vendor'}: ${project.vendor?.name || '—'}`
+              : (project.customer?.name || 'No customer')} · created by {project.creator?.name || '—'}
           </p>
           {project.tags?.length > 0 && <div className="mt-2"><TagChips tags={project.tags} max={6} size="md" /></div>}
         </div>
@@ -270,7 +272,8 @@ function Overview({ project, prog, onRecalc, busy }) {
           <h2 className="font-bold text-xs mb-3" style={{ color: 'var(--text-h)' }}>Project info</h2>
           <dl className="space-y-2">
             <Row label="Project #" value={`#${project.id}`} />
-            <Row label="Customer" value={project.customer?.name || '—'} />
+            <Row label={project.link_type === 'tpv' ? 'Third-party vendor' : project.link_type === 'vendor' ? 'Vendor' : 'Customer'}
+              value={(project.link_type === 'vendor' || project.link_type === 'tpv') ? (project.vendor?.name || '—') : (project.customer?.name || '—')} />
             <Row label="Billing type" value={(project.billing_type || '').replace('_', ' ')} />
             <Row label={project.billing_type === 'fixed' ? 'Total rate' : 'Rate / hour'}
               value={project.billing_type === 'fixed' ? money(project.project_cost) : money(project.rate_per_hour)} />

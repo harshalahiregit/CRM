@@ -69,18 +69,14 @@ class PurchaseOrderService
         }
 
         return DB::transaction(function () use ($d, $tenantId, $userId, $vendorId) {
-            $po = PurchaseOrder::create([
+            $po = PurchaseOrder::create(array_merge([
                 'tenant_id'     => $tenantId,
                 'vendor_id'     => $vendorId,
-                'warehouse_id'  => $d['warehouse_id'] ?? null,
                 'status'        => 'draft',
                 'source'        => $d['source'] ?? 'manual',
-                'currency'      => $d['currency'] ?? null,
                 'order_date'    => $d['order_date'] ?? now()->toDateString(),
-                'expected_date' => $d['expected_date'] ?? null,
-                'notes'         => $d['notes'] ?? null,
                 'created_by'    => $userId,
-            ]);
+            ], $this->headerFields($d)));
             $po->code = 'PO-'.str_pad((string) $po->id, 6, '0', STR_PAD_LEFT);
             $po->save();
 
@@ -91,6 +87,18 @@ class PurchaseOrderService
         });
     }
 
+    /** The header attributes a caller may set, pulled from the request payload. */
+    private function headerFields(array $d): array
+    {
+        return array_intersect_key($d, array_flip([
+            'description', 'warehouse_id', 'type', 'tags', 'currency',
+            'order_date', 'expected_date', 'delivery_date',
+            'discount_type', 'discount_mode', 'discount_value', 'shipping_fee',
+            'notes', 'vendor_note', 'terms',
+            'ship_address', 'ship_city', 'ship_state', 'ship_zip', 'ship_country',
+        ]));
+    }
+
     public function update(int $id, array $d, int $tenantId): PurchaseOrder
     {
         $po = PurchaseOrder::forTenant($tenantId)->findOrFail($id);
@@ -99,9 +107,7 @@ class PurchaseOrderService
         }
 
         return DB::transaction(function () use ($po, $d) {
-            $po->fill(array_intersect_key($d, array_flip([
-                'warehouse_id', 'currency', 'order_date', 'expected_date', 'notes',
-            ])));
+            $po->fill($this->headerFields($d));
             if (! empty($d['vendor_id'])) {
                 $po->vendor_id = (int) $d['vendor_id'];
             }
@@ -128,8 +134,10 @@ class PurchaseOrderService
             }
             $price = (float) ($l['unit_price'] ?? 0);
             $tax = (float) ($l['tax_rate'] ?? 0);
+            $disc = min(100, max(0, (float) ($l['discount_pct'] ?? 0)));
             $net = $qty * $price;
-            $lineTotal = $net + ($net * $tax / 100);
+            $netAfterDisc = $net - ($net * $disc / 100);
+            $lineTotal = $netAfterDisc + ($netAfterDisc * $tax / 100);
 
             PurchaseOrderLine::create([
                 'tenant_id'         => $po->tenant_id,
@@ -140,12 +148,20 @@ class PurchaseOrderService
                 'received_qty'      => 0,
                 'unit_price'        => $price,
                 'tax_rate'          => $tax,
+                'discount_pct'      => $disc,
                 'line_total'        => round($lineTotal, 2),
             ]);
         }
     }
 
-    /** Roll the line totals up onto the header. */
+    /**
+     * Roll the line totals up onto the header, then apply the order-level
+     * discount and shipping fee.
+     *
+     * Line discounts fold into each line's net before tax. The order discount
+     * sits on top: a percentage bites the subtotal (before_tax) or the taxed
+     * figure (after_tax); a flat amount is taken as-is. Shipping is added last.
+     */
     private function recalc(PurchaseOrder $po): void
     {
         $lines = $po->lines()->get();
@@ -153,12 +169,30 @@ class PurchaseOrderService
         $tax = 0.0;
         foreach ($lines as $l) {
             $net = (float) $l->qty * (float) $l->unit_price;
+            $net -= $net * (float) $l->discount_pct / 100;
             $subtotal += $net;
             $tax += $net * (float) $l->tax_rate / 100;
         }
+
+        $mode = $po->discount_mode;
+        $value = (float) $po->discount_value;
+        $discountAmount = 0.0;
+        if ($value > 0) {
+            if ($mode === 'percent') {
+                $base = $po->discount_type === 'after_tax' ? ($subtotal + $tax) : $subtotal;
+                $discountAmount = $base * min(100, $value) / 100;
+            } elseif ($mode === 'amount') {
+                $discountAmount = $value;
+            }
+        }
+        $shipping = max(0, (float) $po->shipping_fee);
+
+        $total = max(0, $subtotal + $tax - $discountAmount + $shipping);
+
         $po->subtotal = round($subtotal, 2);
         $po->tax_total = round($tax, 2);
-        $po->total = round($subtotal + $tax, 2);
+        $po->discount_amount = round($discountAmount, 2);
+        $po->total = round($total, 2);
         $po->save();
     }
 

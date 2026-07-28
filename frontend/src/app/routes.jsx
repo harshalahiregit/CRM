@@ -72,6 +72,7 @@ const StaffManagement = lazy(() => import('@/pages/admin/StaffManagementPage'))
 // Sales Module (lazy)
 const SalesLayout = lazy(() => import('@/modules/sales/SalesLayout'))
 const SalesDashboard = lazy(() => import('@/modules/sales/pages/SalesDashboard'))
+const SalesTasks = lazy(() => import('@/modules/sales/pages/SalesTasks'))
 const Proposals = lazy(() => import('@/modules/sales/pages/Proposals'))
 const Estimates = lazy(() => import('@/modules/sales/pages/Estimates'))
 const SalesInvoices = lazy(() => import('@/modules/sales/pages/Invoices'))
@@ -420,9 +421,9 @@ export default function AppRoutes() {
           <Route path="proposal-templates" element={<S><ProposalTemplates /></S>} />
           <Route path="proposal-templates/new" element={<S><ProposalTemplateEditor /></S>} />
           <Route path="proposal-templates/:id/edit" element={<S><ProposalTemplateEditor /></S>} />
-          {/* Sales Tasks retired — the Tasks module (owner: Shivam) is now the single
-              Tasks feature; sales tasks are tasks with rel_type=customer/contract. */}
-          <Route path="tasks" element={<Navigate to="/app/tasks" replace />} />
+          {/* Sales-scoped lens on the Tasks module (owner: Shivam): shows only
+              tasks with rel_type=customer/contract, never the whole task list. */}
+          <Route path="tasks" element={<S><SalesTasks /></S>} />
           <Route path="contracts" element={<S><Contracts /></S>} />
           <Route path="contracts/:id" element={<S><ContractDetail /></S>} />
           <Route path="web-to-lead" element={<S><WebToLeadForms /></S>} />

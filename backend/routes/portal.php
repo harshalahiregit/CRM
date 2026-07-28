@@ -5,8 +5,20 @@ use App\Http\Controllers\Api\Portal\PurchasePortalContactController;
 use App\Http\Controllers\Api\Portal\PurchasePortalController;
 use App\Http\Controllers\Api\Portal\PurchasePortalWorkforceController;
 use App\Http\Controllers\Api\Portal\VendorPortalController;
+use App\Http\Controllers\Api\Portal\VendorWorkController;
 use App\Http\Controllers\Api\Purchase\PurchaseVendorAuthController;
 use Illuminate\Support\Facades\Route;
+
+// ── Vendor "My Work" ────────────────────────────────────────────────────
+// The projects/tasks/tickets a vendor or TPV has been assigned. Gated on ROLE
+// only (not vendor.portal, which needs a vendor-master profile) because the
+// subject is the logged-in User — everything is filtered to $request->user().
+Route::middleware(['auth:sanctum', 'role:vendor,third_party_vendor'])->prefix('portal/my-work')->group(function () {
+    Route::get('/summary',  [VendorWorkController::class, 'summary']);
+    Route::get('/projects', [VendorWorkController::class, 'projects']);
+    Route::get('/tasks',    [VendorWorkController::class, 'tasks']);
+    Route::get('/tickets',  [VendorWorkController::class, 'tickets']);
+});
 
 // ── Vendor Self-Service Portal ──────────────────────────────────────────
 // A vendor/third_party_vendor login sees ONLY its own records. The subject is

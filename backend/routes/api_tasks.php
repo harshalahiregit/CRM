@@ -26,6 +26,7 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tasks')->group(
     Route::get('/billable',                 [TaskController::class, 'billable']);
     Route::get('/stats',                    [TaskController::class, 'stats']);
     Route::get('/staff',                    [TaskStaffController::class, 'index']);
+    Route::get('/vendors',                  [TaskStaffController::class, 'vendors']);
     Route::post('/reorder',                 [TaskController::class, 'reorder']);
     Route::post('/bulk',                    [TaskController::class, 'bulk']);
     Route::patch('/checklist/{item}/toggle', [TaskChecklistController::class, 'toggle']);

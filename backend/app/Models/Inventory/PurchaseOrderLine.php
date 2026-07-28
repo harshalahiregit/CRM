@@ -14,7 +14,7 @@ class PurchaseOrderLine extends Model
 
     protected $fillable = [
         'tenant_id', 'purchase_order_id', 'product_id', 'description',
-        'qty', 'received_qty', 'unit_price', 'tax_rate', 'line_total',
+        'qty', 'received_qty', 'unit_price', 'tax_rate', 'discount_pct', 'line_total',
     ];
 
     protected $casts = [
@@ -22,6 +22,7 @@ class PurchaseOrderLine extends Model
         'received_qty' => 'decimal:3',
         'unit_price'   => 'decimal:2',
         'tax_rate'     => 'decimal:2',
+        'discount_pct' => 'decimal:2',
         'line_total'   => 'decimal:2',
     ];
 

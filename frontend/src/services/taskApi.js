@@ -14,6 +14,8 @@ export const taskApi = {
   // Persists a kanban column order after a drag; also applies cross-column moves.
   reorder: (status, ordered_ids) => api.post('/tasks/reorder', { status, ordered_ids }).then(unwrap).catch(handleErr),
   staff: () => api.get('/tasks/staff').then(unwrap).catch(handleErr),
+  // Assignable vendor / third-party-vendor logins (type = 'vendor' | 'tpv').
+  vendors: (type = 'vendor') => api.get('/tasks/vendors', { params: { type } }).then(unwrap).catch(handleErr),
   stats: () => api.get('/tasks/stats').then(unwrap).catch(handleErr),
   // One request for N tasks — not N parallel single-item calls.
   bulk: (action, task_ids, value = null) => api.post('/tasks/bulk', { action, task_ids, value }).then(unwrap).catch(handleErr),

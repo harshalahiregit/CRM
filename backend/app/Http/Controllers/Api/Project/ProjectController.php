@@ -159,6 +159,17 @@ class ProjectController extends Controller
         return $this->success($this->projects->listCustomers($request->user()->tenant_id), 'Customers retrieved');
     }
 
+    /**
+     * Vendors / third-party vendors for the "who is this project for?" picker.
+     * `?type=vendor` (purchase-side) or `?type=tpv` (third-party), default vendor.
+     */
+    public function vendors(Request $request)
+    {
+        $type = $request->query('type') === 'tpv' ? 'tpv' : 'vendor';
+
+        return $this->success($this->projects->listVendors($request->user()->tenant_id, $type), 'Vendors retrieved');
+    }
+
     /** Assignable staff for the member picker — mirrors /tasks/staff. */
     public function staff(Request $request)
     {

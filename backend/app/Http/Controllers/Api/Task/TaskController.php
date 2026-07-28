@@ -42,7 +42,7 @@ class TaskController extends Controller
     public function index(Request $request)
     {
         $filters = $request->only([
-            'rel_type', 'rel_id', 'status', 'priority', 'assignee', 'search', 'tag',
+            'rel_type', 'rel_types', 'rel_id', 'status', 'priority', 'assignee', 'search', 'tag',
             // Off by default: subtasks are work inside a task, not rows beside it.
             'include_subtasks',
         ]);

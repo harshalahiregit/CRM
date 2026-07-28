@@ -16,15 +16,19 @@ use Illuminate\Validation\Rules\Exists;
  */
 final class TenantRules
 {
-    /** Portal roles can never be an assignee — they aren't staff. */
-    private const EXTERNAL_ROLES = ['client', 'vendor', 'third_party_vendor'];
+    /**
+     * Roles that may NOT hold a ticket. Vendors & third-party vendors CAN be
+     * assigned (work delegated to them shows on their portal dashboard); only a
+     * customer (`client`) can never be an assignee.
+     */
+    private const NON_ASSIGNABLE_ROLES = ['client'];
 
-    /** A user who exists in THIS tenant and is internal staff. */
+    /** A user in THIS tenant who may be assigned a ticket (staff, vendor or TPV). */
     public static function assignableUser(int $tenantId): Exists
     {
         return Rule::exists('users', 'id')
             ->where('tenant_id', $tenantId)
-            ->whereNotIn('role', self::EXTERNAL_ROLES);
+            ->whereNotIn('role', self::NON_ASSIGNABLE_ROLES);
     }
 
     /** A department belonging to THIS tenant. */

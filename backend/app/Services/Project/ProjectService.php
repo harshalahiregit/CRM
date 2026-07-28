@@ -7,6 +7,7 @@ use App\Models\Project\Project;
 use App\Models\Project\ProjectFile;
 use App\Models\Project\ProjectMilestone;
 use App\Models\User;
+use App\Models\Vendor\Vendor;
 use App\Repositories\Project\ProjectRepository;
 use App\Services\Helpdesk\Contracts\CustomerServiceContract;
 use App\Services\Helpdesk\Mocks\MockCustomerService;
@@ -221,9 +222,7 @@ class ProjectService
 
     public function create(array $data, int $tenantId, int $userId): Project
     {
-        if (! empty($data['customer_id']) && ! $this->customers->exists((int) $data['customer_id'], $tenantId)) {
-            throw new BusinessException('The selected customer does not exist.', 422);
-        }
+        $data = $this->normalizeLink($data, $tenantId);
 
         // Members and tags aren't columns — pull them out before the insert.
         $members = $data['member_ids'] ?? [];
@@ -259,10 +258,7 @@ class ProjectService
     {
         $project = $this->find($id, $tenantId);
 
-        if (array_key_exists('customer_id', $data) && ! empty($data['customer_id'])
-            && ! $this->customers->exists((int) $data['customer_id'], $tenantId)) {
-            throw new BusinessException('The selected customer does not exist.', 422);
-        }
+        $data = $this->normalizeLink($data, $tenantId);
 
         $members = $data['member_ids'] ?? null;
         $tags = $data['tags'] ?? null;
@@ -629,6 +625,87 @@ class ProjectService
         return array_values(array_filter($this->customers->listCustomers($tenantId)));
     }
 
+    /** The user role behind each vendor link type. */
+    private const LINK_ROLE = ['vendor' => 'vendor', 'tpv' => 'third_party_vendor'];
+
+    /**
+     * Vendor / third-party-vendor roster for the "who is this project for?"
+     * picker. Vendors & TPVs are portal-login Users (roles vendor /
+     * third_party_vendor); `type` = 'vendor' | 'tpv' picks the role. Their
+     * vendor-master company name (if any) is shown alongside the login name.
+     */
+    public function listVendors(int $tenantId, string $type): array
+    {
+        $role = self::LINK_ROLE[$type] ?? 'vendor';
+
+        $users = User::where('tenant_id', $tenantId)
+            ->where('role', $role)
+            ->where('status', 'active')
+            ->orderBy('name')
+            ->get(['id', 'name', 'email']);
+
+        // Enrich with the vendor master company name where the login is linked.
+        $companies = Vendor::forTenant($tenantId)
+            ->whereIn('user_id', $users->pluck('id'))
+            ->pluck('company_name', 'user_id');
+
+        return $users->map(fn (User $u) => [
+            'id'      => $u->id,
+            'name'    => $u->name,
+            'email'   => $u->email,
+            'company' => $companies[$u->id] ?? null,
+        ])->values()->all();
+    }
+
+    /**
+     * Normalise the customer / vendor link on a payload: a project is for exactly
+     * one party. Validates the chosen id, sets link_type, and nulls the other
+     * columns so stale links can't linger.
+     */
+    private function normalizeLink(array $data, int $tenantId): array
+    {
+        // Nothing about the link was submitted — leave the row as-is.
+        if (! array_key_exists('customer_id', $data)
+            && ! array_key_exists('vendor_user_id', $data)
+            && ! array_key_exists('link_type', $data)) {
+            return $data;
+        }
+
+        $type = $data['link_type'] ?? null;
+        $customerId = (int) ($data['customer_id'] ?? 0);
+        $vendorUserId = (int) ($data['vendor_user_id'] ?? 0);
+
+        // Infer the type when the client sent only an id.
+        if (! $type) {
+            $type = $vendorUserId ? 'vendor' : ($customerId ? 'customer' : null);
+        }
+
+        if ($type === 'customer' && $customerId) {
+            if (! $this->customers->exists($customerId, $tenantId)) {
+                throw new BusinessException('The selected customer does not exist.', 422);
+            }
+            $data['customer_id'] = $customerId;
+            $data['vendor_user_id'] = null;
+            $data['link_type'] = 'customer';
+        } elseif (in_array($type, ['vendor', 'tpv'], true) && $vendorUserId) {
+            $role = self::LINK_ROLE[$type];
+            $exists = User::where('tenant_id', $tenantId)->where('role', $role)->whereKey($vendorUserId)->exists();
+            if (! $exists) {
+                throw new BusinessException('The selected '.($type === 'tpv' ? 'third-party vendor' : 'vendor').' does not exist.', 422);
+            }
+            $data['vendor_user_id'] = $vendorUserId;
+            $data['customer_id'] = null;
+            $data['link_type'] = $type;
+        } else {
+            // Explicitly cleared — no party linked.
+            $data['customer_id'] = null;
+            $data['vendor_user_id'] = null;
+            $data['link_type'] = null;
+        }
+
+        return $data;
+    }
+
     /* ── Notes ──────────────────────────────────────────────────── */
 
     public function listNotes(int $projectId, int $tenantId): Collection
@@ -745,6 +822,19 @@ class ProjectService
             'customer',
             $project->customer_id ? $this->customers->getCustomer((int) $project->customer_id, $tenantId) : null,
         );
+
+        // A vendor / TPV-linked project carries the vendor party instead. Shaped
+        // like the customer payload ({ id, name }) so the UI reads either the same.
+        // The link is the portal-login user; enrich with the vendor company name.
+        $vendor = null;
+        if ($project->vendor_user_id) {
+            $u = User::where('tenant_id', $tenantId)->find($project->vendor_user_id, ['id', 'name', 'email']);
+            if ($u) {
+                $company = Vendor::forTenant($tenantId)->where('user_id', $u->id)->value('company_name');
+                $vendor = ['id' => $u->id, 'name' => $company ?: $u->name, 'contact' => $u->name, 'email' => $u->email];
+            }
+        }
+        $project->setAttribute('vendor', $vendor);
 
         return $project;
     }

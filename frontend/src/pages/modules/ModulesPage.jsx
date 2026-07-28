@@ -38,6 +38,10 @@ export default function ModulesPage() {
     const matchCat = category === 'All' || m.category === category
     return matchSearch && matchCat
   })
+  // Installed (selected) modules float to the FRONT of the grid instead of
+  // sitting in fixed catalog order — the one you picked jumps to the top. Array
+  // sort is stable, so within each group the original catalog order is kept.
+  .sort((a, b) => (installed.includes(a.id) ? 0 : 1) - (installed.includes(b.id) ? 0 : 1))
 
   const installedModules = ALL_MODULES.filter(m => installed.includes(m.id))
 

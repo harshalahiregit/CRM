@@ -20,8 +20,17 @@ import TagInput from '@/components/ui/TagInput'
  */
 
 const today = () => new Date().toISOString().split('T')[0]
+// A project is raised for one party: a customer, a vendor, or a third-party
+// vendor. link_type drives which picker/id is used.
+const LINK_TYPES = [
+  { key: 'customer', label: 'Customer' },
+  { key: 'vendor',   label: 'Vendor' },
+  { key: 'tpv',      label: 'Third-party vendor' },
+]
+
 const EMPTY = {
-  name: '', description: '', status: 'not_started', customer_id: '',
+  name: '', description: '', status: 'not_started',
+  link_type: 'customer', customer_id: '', vendor_user_id: '',
   billing_type: 'fixed', project_cost: '', rate_per_hour: '',
   start_date: today(), deadline: '', estimated_hours: '',
   progress: 0, progress_from_tasks: true,
@@ -52,7 +61,9 @@ export default function ProjectFormDrawer({ open, onClose, project = null, onSav
           ...EMPTY, ...project,
           start_date: project.start_date ? String(project.start_date).split('T')[0] : today(),
           deadline: project.deadline ? String(project.deadline).split('T')[0] : '',
+          link_type: project.link_type || (project.vendor_user_id ? 'vendor' : 'customer'),
           customer_id: project.customer_id ?? '',
+          vendor_user_id: project.vendor_user_id ?? '',
           project_cost: project.project_cost ?? '',
           rate_per_hour: project.rate_per_hour ?? '',
           estimated_hours: project.estimated_hours ?? '',
@@ -77,17 +88,40 @@ export default function ProjectFormDrawer({ open, onClose, project = null, onSav
   }, [form.visible_tabs, meta])
 
   const { data: staff = [] } = useQuery({ queryKey: ['project-staff'], queryFn: projectApi.staff, enabled: open })
+  // Party lists — each loads lazily the first time its picker is opened.
+  const partyOpen = picker === 'party'
   const { data: customers = [], isLoading: cLoading } = useQuery({
-    queryKey: ['project-customers'], queryFn: projectApi.customers, enabled: picker === 'customer',
+    queryKey: ['project-customers'], queryFn: projectApi.customers, enabled: partyOpen && form.link_type === 'customer',
+  })
+  const { data: vendors = [], isLoading: vLoading } = useQuery({
+    queryKey: ['project-parties', 'vendor'], queryFn: () => projectApi.vendors('vendor'), enabled: partyOpen && form.link_type === 'vendor',
+  })
+  const { data: tpvs = [], isLoading: tLoading } = useQuery({
+    queryKey: ['project-parties', 'tpv'], queryFn: () => projectApi.vendors('tpv'), enabled: partyOpen && form.link_type === 'tpv',
   })
   const { data: tagSuggestions = [] } = useQuery({ queryKey: ['tags', 'project'], queryFn: () => tagApi.list('project'), enabled: open })
 
   const staffById = useMemo(() => Object.fromEntries(staff.map(s => [s.id, s])), [staff])
-  const customerName = useMemo(() => {
-    if (!form.customer_id) return ''
-    const hit = customers.find(c => String(c.id) === String(form.customer_id))
-    return hit?.name || project?.customer?.name || `Customer #${form.customer_id}`
-  }, [form.customer_id, customers, project])
+
+  // What the current link type points at: its list, loading flag, id field, and
+  // resolved display name (falling back to whatever the saved project carried).
+  const party = useMemo(() => {
+    if (form.link_type === 'vendor') return { list: vendors, loading: vLoading, idKey: 'vendor_user_id', label: 'vendor', placeholder: 'Choose vendor…' }
+    if (form.link_type === 'tpv')    return { list: tpvs,    loading: tLoading, idKey: 'vendor_user_id', label: 'third-party vendor', placeholder: 'Choose third-party vendor…' }
+    return { list: customers, loading: cLoading, idKey: 'customer_id', label: 'customer', placeholder: 'Choose customer…' }
+  }, [form.link_type, customers, cLoading, vendors, vLoading, tpvs, tLoading])
+
+  const partyId = form[party.idKey]
+  const partyName = useMemo(() => {
+    if (!partyId) return ''
+    const hit = party.list.find(x => String(x.id) === String(partyId))
+    return hit?.name
+      || project?.customer?.name || project?.vendor?.name
+      || `#${partyId}`
+  }, [partyId, party.list, project])
+
+  // Switching link type clears the other party's id so only one is ever set.
+  const setLinkType = (t) => setForm(p => ({ ...p, link_type: t, customer_id: '', vendor_user_id: '' }))
 
   const toggleTab = (key) => setForm(p => ({ ...p, visible_tabs: { ...effectiveTabs, [key]: !effectiveTabs[key] } }))
   const togglePerm = (key) => setForm(p => ({ ...p, customer_permissions: { ...p.customer_permissions, [key]: !p.customer_permissions?.[key] } }))
@@ -116,10 +150,10 @@ export default function ProjectFormDrawer({ open, onClose, project = null, onSav
     if (p.progress_from_tasks) delete p.progress
     // Persist the resolved tab bag (so a never-touched new project still saves its defaults).
     p.visible_tabs = effectiveTabs
-    ;['customer_id', 'deadline', 'project_cost', 'rate_per_hour', 'estimated_hours'].forEach(k => {
+    ;['customer_id', 'vendor_user_id', 'deadline', 'project_cost', 'rate_per_hour', 'estimated_hours'].forEach(k => {
       if (p[k] === '' || p[k] === null) delete p[k]
     })
-    delete p.members; delete p.milestones; delete p.customer; delete p.creator
+    delete p.members; delete p.milestones; delete p.customer; delete p.vendor; delete p.creator
     delete p.is_pinned; delete p.id; delete p.tenant_id
     save.mutate(p)
   }
@@ -165,13 +199,31 @@ export default function ProjectFormDrawer({ open, onClose, project = null, onSav
             <input value={form.name} onChange={e => sf('name', e.target.value)} className={INPUT} style={INPUT_S} autoFocus />
           </Field>
 
-          <Field label="Customer">
-            <button type="button" onClick={() => setPicker('customer')}
+          <Field label="This project is for">
+            {/* Party type — a project can be raised for a customer, a vendor, or
+                a third-party vendor. The chosen party sees it on their dashboard. */}
+            <div className="flex items-center gap-1 mb-2">
+              {LINK_TYPES.map(lt => {
+                const on = form.link_type === lt.key
+                return (
+                  <button type="button" key={lt.key} onClick={() => setLinkType(lt.key)}
+                    className="flex-1 px-2 py-1.5 rounded-lg text-[11px] font-bold transition-colors"
+                    style={{
+                      background: on ? `color-mix(in srgb, ${PROJECT_ACCENT} 13%, transparent)` : 'var(--bg-input)',
+                      color: on ? PROJECT_ACCENT : 'var(--text-muted)',
+                      border: `1px solid ${on ? PROJECT_ACCENT : 'var(--border)'}`,
+                    }}>
+                    {lt.label}
+                  </button>
+                )
+              })}
+            </div>
+            <button type="button" onClick={() => setPicker('party')}
               className="w-full flex items-center gap-2 rounded-xl text-left"
               style={{ ...INPUT_S, padding: '9px 12px', fontSize: 13 }}>
               <Building2 size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-              <span className="truncate" style={{ color: customerName ? 'var(--text-h)' : 'var(--text-muted)' }}>
-                {customerName || 'Choose customer…'}
+              <span className="truncate" style={{ color: partyName ? 'var(--text-h)' : 'var(--text-muted)' }}>
+                {partyName || party.placeholder}
               </span>
             </button>
           </Field>
@@ -328,11 +380,11 @@ export default function ProjectFormDrawer({ open, onClose, project = null, onSav
       </form>
 
       <SearchPicker
-        open={picker === 'customer'} onClose={() => setPicker(null)}
-        onPick={it => sf('customer_id', it ? it.id : '')}
-        items={customers.map(c => ({ id: c.id, label: c.name, sublabel: c.email }))}
-        loading={cLoading} title="Choose a customer" subtitle="Search by name — you don't need the id."
-        emptyText="No customers found." accent={PROJECT_ACCENT} allowClear
+        open={picker === 'party'} onClose={() => setPicker(null)}
+        onPick={it => sf(party.idKey, it ? it.id : '')}
+        items={party.list.map(x => ({ id: x.id, label: x.name, sublabel: x.company || x.email }))}
+        loading={party.loading} title={`Choose a ${party.label}`} subtitle="Search by name — you don't need the id."
+        emptyText={`No ${party.label}s found.`} accent={PROJECT_ACCENT} allowClear
       />
       <SearchPicker
         open={picker === 'member'} onClose={() => setPicker(null)}

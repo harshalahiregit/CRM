@@ -23,6 +23,8 @@ export const projectApi = {
   staff: () => api.get('/projects/staff').then(unwrap).catch(handleErr),
   // Resolved through CustomerServiceContract — replaces typing a raw customer id.
   customers: () => api.get('/projects/customers').then(unwrap).catch(handleErr),
+  // Vendor / third-party-vendor portal logins a project can be raised for.
+  vendors: (type = 'vendor') => api.get('/projects/vendors', { params: { type } }).then(unwrap).catch(handleErr),
 
   // Step 2 (members / milestones / files)
   members: (id, user_ids) => api.post(`/projects/${id}/members`, { user_ids }).then(unwrap).catch(handleErr),

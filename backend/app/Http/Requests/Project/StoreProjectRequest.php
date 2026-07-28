@@ -23,6 +23,10 @@ class StoreProjectRequest extends FormRequest
             'description'         => 'nullable|string',
             'status'              => ['nullable', Rule::in($statusKeys)],
             'customer_id'         => 'nullable|integer|min:1',
+            // A project is raised for a customer, a vendor, or a third-party vendor.
+            // vendor_user_id is the vendor's/TPV's portal-login user id.
+            'vendor_user_id'      => 'nullable|integer|min:1',
+            'link_type'           => 'nullable|in:customer,vendor,tpv',
             'billing_type'        => 'nullable|in:fixed,project_hours,task_hours',
             'project_cost'        => 'nullable|numeric|min:0',
             'rate_per_hour'       => 'nullable|numeric|min:0',
