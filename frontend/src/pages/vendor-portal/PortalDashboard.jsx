@@ -21,9 +21,10 @@ export default function PortalDashboard() {
   const { user } = useAuth()
   const isTPV = user?.role === 'third_party_vendor'
   const [data, setData] = useState({ me: null, onboarding: null, orders: [], invoices: [] })
+  const [work, setWork] = useState({ summary: {}, projects: [], tasks: [], tickets: [] })
   const [loading, setLoad] = useState(true)
 
-  // ── DATA FETCHING (unchanged) ──────────────────────────────────────────
+  // ── DATA FETCHING ──────────────────────────────────────────────────────
   const load = () => {
     setLoad(true)
     const calls = [
@@ -31,13 +32,24 @@ export default function PortalDashboard() {
       portalApi.onboarding.list().catch(() => []),
       isTPV ? Promise.resolve([]) : portalApi.orders().catch(() => []),
       isTPV ? Promise.resolve([]) : portalApi.invoices().catch(() => []),
+      // "My Work" — assigned projects/tasks/tickets (role-gated, always available).
+      portalApi.myWork.summary().catch(() => ({})),
+      portalApi.myWork.projects().catch(() => []),
+      portalApi.myWork.tasks().catch(() => []),
+      portalApi.myWork.tickets().catch(() => []),
     ]
-    Promise.all(calls).then(([me, obList, orders, invoices]) => {
+    Promise.all(calls).then(([me, obList, orders, invoices, wSummary, wProjects, wTasks, wTickets]) => {
       setData({
         me,
         onboarding: obList[0] ?? null,
         orders: orders?.data ?? orders ?? [],
         invoices: invoices?.data ?? invoices ?? [],
+      })
+      setWork({
+        summary:  wSummary || {},
+        projects: Array.isArray(wProjects) ? wProjects : [],
+        tasks:    Array.isArray(wTasks) ? wTasks : [],
+        tickets:  Array.isArray(wTickets) ? wTickets : [],
       })
       setLoad(false)
     })
@@ -170,6 +182,59 @@ export default function PortalDashboard() {
             </div>
           )
         })}
+      </div>
+
+      {/* ── My Work — projects / tasks / tickets assigned to this vendor ── */}
+      <div className="portal-card portal-card-padded" style={{ marginBottom: 24 }}>
+        <div className="portal-card-header">
+          <div className="portal-card-icon" style={{ background: 'rgba(124,58,237,0.1)' }}>
+            <ClipboardList size={16} style={{ color: '#7C3AED' }} />
+          </div>
+          <div>
+            <div className="portal-card-title">My Work</div>
+            <div className="portal-card-sub">
+              {work.summary.projects || 0} project{(work.summary.projects || 0) !== 1 ? 's' : ''} ·{' '}
+              {work.summary.tasks || 0} task{(work.summary.tasks || 0) !== 1 ? 's' : ''} ·{' '}
+              {work.summary.tickets || 0} ticket{(work.summary.tickets || 0) !== 1 ? 's' : ''} assigned to you
+            </div>
+          </div>
+        </div>
+
+        <div className="portal-dash-grid" style={{ marginTop: 4 }}>
+          {/* Projects */}
+          <WorkColumn icon={Building2} color="#7C3AED" title="Projects" items={work.projects} empty="No projects assigned."
+            render={p => (
+              <>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-h)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{p.role}{p.deadline ? ` · due ${p.deadline}` : ''}</div>
+                </div>
+                <span style={{ fontSize: 11.5, fontWeight: 800, color: '#7C3AED', flexShrink: 0 }}>{p.progress}%</span>
+              </>
+            )} />
+          {/* Tasks */}
+          <WorkColumn icon={ClipboardList} color="#0ea5e9" title="Tasks" items={work.tasks} empty="No tasks assigned."
+            render={t => (
+              <>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-h)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{t.project ? `${t.project} · ` : ''}{t.priority}{t.due_date ? ` · due ${t.due_date}` : ''}</div>
+                </div>
+                <WorkPill text={t.status} />
+              </>
+            )} />
+          {/* Tickets */}
+          <WorkColumn icon={MessageSquare} color="#f59e0b" title="Tickets" items={work.tickets} empty="No tickets assigned."
+            render={t => (
+              <>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-h)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>#{t.id} {t.subject}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{t.priority}</div>
+                </div>
+                <WorkPill text={t.status} />
+              </>
+            )} />
+        </div>
       </div>
 
       {/* ── Onboarding progress card (full-width, when present) ────────── */}
@@ -471,6 +536,42 @@ function StatusPillInline({ cfg }) {
       whiteSpace: 'nowrap',
     }}>
       {cfg.label}
+    </span>
+  )
+}
+
+/** One column of the "My Work" grid — a titled list with a soft empty state. */
+function WorkColumn({ icon: Icon, color, title, items, empty, render }) {
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <span style={{ width: 26, height: 26, borderRadius: 8, background: `${color}18`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Icon size={14} style={{ color }} />
+        </span>
+        <span style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text-h)' }}>{title}</span>
+        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginLeft: 'auto' }}>{items.length}</span>
+      </div>
+      {items.length === 0 ? (
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '14px 8px', textAlign: 'center' }}>{empty}</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {items.slice(0, 6).map((it, i) => (
+            <div key={it.id ?? i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 11px', borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+              {render(it)}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** A neutral status chip for a work item. */
+function WorkPill({ text }) {
+  if (!text) return null
+  return (
+    <span style={{ padding: '3px 9px', borderRadius: 999, background: 'rgba(124,58,237,0.12)', color: '#a78bfa', fontSize: 10.5, fontWeight: 800, whiteSpace: 'nowrap', textTransform: 'capitalize', flexShrink: 0 }}>
+      {String(text).replace(/_/g, ' ')}
     </span>
   )
 }

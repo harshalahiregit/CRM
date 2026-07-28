@@ -51,6 +51,15 @@ class TaskRepository extends BaseRepository
                 $query->where($col, $filters[$col]);
             }
         }
+        // Multi-type scope, e.g. the Sales module's Tasks view asks for
+        // rel_types=customer,contract so it shows only its own tasks.
+        if (! empty($filters['rel_types'])) {
+            $types = is_array($filters['rel_types']) ? $filters['rel_types'] : explode(',', (string) $filters['rel_types']);
+            $types = array_filter(array_map('trim', $types));
+            if ($types) {
+                $query->whereIn('rel_type', $types);
+            }
+        }
         if (! empty($filters['rel_id'])) {
             $query->where('rel_id', $filters['rel_id']);
         }

@@ -32,4 +32,21 @@ class HelpdeskAgentController extends Controller
 
         return $this->success($agents, 'Agents retrieved');
     }
+
+    /**
+     * Assignable vendors / third-party vendors for the ticket assignee picker.
+     * `?type=vendor` → role vendor, `?type=tpv` → third_party_vendor.
+     */
+    public function vendors(Request $request)
+    {
+        $role = $request->query('type') === 'tpv' ? 'third_party_vendor' : 'vendor';
+
+        $vendors = User::where('tenant_id', $request->user()->tenant_id)
+            ->where('status', 'active')
+            ->where('role', $role)
+            ->orderBy('name')
+            ->get(['id', 'name', 'email', 'role']);
+
+        return $this->success($vendors, 'Vendors retrieved');
+    }
 }

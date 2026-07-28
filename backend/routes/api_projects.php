@@ -24,6 +24,7 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('projects')->gro
     Route::get('/options',             [ProjectController::class, 'options']);
     Route::get('/staff',               [ProjectController::class, 'staff']);
     Route::get('/customers',           [ProjectController::class, 'customers']);
+    Route::get('/vendors',             [ProjectController::class, 'vendors']);
 
     // Milestone update/delete are keyed by milestone id (not nested) — declare
     // BEFORE /{project} so "milestones" isn't captured as a project id.

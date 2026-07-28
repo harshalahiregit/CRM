@@ -71,6 +71,7 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('helpdesk')->gro
 
     // ── Assignable people in this tenant (assignee / task pickers) ──
     Route::get('/agents', [HelpdeskAgentController::class, 'index']);
+    Route::get('/agents/vendors', [HelpdeskAgentController::class, 'vendors']);
 
     // ── Support settings: priorities / statuses / departments (Phase 1) ──
     // GET is readable by any authed user (ticket form needs the lists); writes

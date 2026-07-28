@@ -90,6 +90,16 @@ export default function TaskFormDrawer({ open, onClose, task = null, defaults = 
   const sf = (k, v) => setForm(p => ({ ...p, [k]: v }))
 
   const { data: staff = [] } = useQuery({ queryKey: ['task-staff'], queryFn: taskApi.staff, enabled: open })
+  // Vendors & TPVs are also assignable — work delegated to them shows on their
+  // portal dashboard. They go into the same assignee_ids array.
+  const { data: vendors = [] } = useQuery({ queryKey: ['task-vendors', 'vendor'], queryFn: () => taskApi.vendors('vendor'), enabled: open })
+  const { data: tpvs = [] } = useQuery({ queryKey: ['task-vendors', 'tpv'], queryFn: () => taskApi.vendors('tpv'), enabled: open })
+  // Merged directory so a chip resolves a name whatever kind of person it is.
+  const people = useMemo(() => [...staff, ...vendors, ...tpvs], [staff, vendors, tpvs])
+  const idSet = (list) => new Set(list.map(x => x.id))
+  const staffIds = useMemo(() => idSet(staff), [staff])
+  const vendorIds = useMemo(() => idSet(vendors), [vendors])
+  const tpvIds = useMemo(() => idSet(tpvs), [tpvs])
   const { data: tagSuggestions = [] } = useQuery({ queryKey: ['tags', 'task'], queryFn: () => tagApi.list('task'), enabled: open })
   const { data: templates = [] } = useQuery({ queryKey: ['task-templates'], queryFn: taskApi.templates, enabled: open })
   const { data: projects = [], isLoading: pLoading } = useQuery({
@@ -312,25 +322,32 @@ export default function TaskFormDrawer({ open, onClose, task = null, defaults = 
 
           <Divider />
 
-          {/* People + vendor placeholders */}
+          {/* People — staff, vendors and third-party vendors can all be assigned.
+              All three feed the same assignee_ids; chips are split by who each id is. */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Assignees">
-              <PeopleChips ids={form.assignee_ids} staff={staff} addLabel="Assign"
+            <Field label="Assignees (staff)">
+              <PeopleChips ids={form.assignee_ids.filter(i => staffIds.has(i))} staff={people} addLabel="Assign"
                 onRemove={id => sf('assignee_ids', form.assignee_ids.filter(i => i !== id))}
                 onAdd={() => setPicker('assignee')} />
             </Field>
-            <DisabledField label="Select ThirdPartyVendors" />
-            <DisabledField label="Select Contacts" />
-            <DisabledField label="Select Purchase Vendors" />
-            <DisabledField label="Purchase Vendor Contacts" />
             <Field label="Followers">
-              <PeopleChips ids={form.follower_ids} staff={staff} addLabel="Follow"
+              <PeopleChips ids={form.follower_ids} staff={people} addLabel="Follow"
                 onRemove={id => sf('follower_ids', form.follower_ids.filter(i => i !== id))}
                 onAdd={() => setPicker('follower')} />
             </Field>
+            <Field label="Vendors">
+              <PeopleChips ids={form.assignee_ids.filter(i => vendorIds.has(i))} staff={people} addLabel="Add vendor"
+                onRemove={id => sf('assignee_ids', form.assignee_ids.filter(i => i !== id))}
+                onAdd={() => setPicker('vendor')} />
+            </Field>
+            <Field label="Third-party vendors">
+              <PeopleChips ids={form.assignee_ids.filter(i => tpvIds.has(i))} staff={people} addLabel="Add TPV"
+                onRemove={id => sf('assignee_ids', form.assignee_ids.filter(i => i !== id))}
+                onAdd={() => setPicker('tpv')} />
+            </Field>
           </div>
           <p className="text-[11px] -mt-2" style={{ color: 'var(--text-muted)' }}>
-            Vendor &amp; purchase modules aren’t set up in this workspace yet — those fields stay disabled.
+            Vendors &amp; third-party vendors see tasks assigned to them on their portal dashboard.
           </p>
 
           {!editing && templates.length > 0 && (
@@ -391,7 +408,19 @@ export default function TaskFormDrawer({ open, onClose, task = null, defaults = 
         open={picker === 'assignee'} onClose={() => setPicker(null)}
         onPick={it => it && !form.assignee_ids.includes(it.id) && sf('assignee_ids', [...form.assignee_ids, it.id])}
         items={staff.filter(s => !form.assignee_ids.includes(s.id)).map(s => ({ id: s.id, label: s.name, sublabel: s.role }))}
-        title="Assign to" subtitle="Only staff can be assigned." emptyText="Everyone is already assigned." accent={TASK_ACCENT}
+        title="Assign to" subtitle="Staff member doing the work." emptyText="Everyone is already assigned." accent={TASK_ACCENT}
+      />
+      <SearchPicker
+        open={picker === 'vendor'} onClose={() => setPicker(null)}
+        onPick={it => it && !form.assignee_ids.includes(it.id) && sf('assignee_ids', [...form.assignee_ids, it.id])}
+        items={vendors.filter(s => !form.assignee_ids.includes(s.id)).map(s => ({ id: s.id, label: s.name, sublabel: s.email }))}
+        title="Assign a vendor" subtitle="They'll see it on their vendor portal." emptyText="No vendors available." accent={TASK_ACCENT}
+      />
+      <SearchPicker
+        open={picker === 'tpv'} onClose={() => setPicker(null)}
+        onPick={it => it && !form.assignee_ids.includes(it.id) && sf('assignee_ids', [...form.assignee_ids, it.id])}
+        items={tpvs.filter(s => !form.assignee_ids.includes(s.id)).map(s => ({ id: s.id, label: s.name, sublabel: s.email }))}
+        title="Assign a third-party vendor" subtitle="They'll see it on their portal." emptyText="No third-party vendors available." accent={TASK_ACCENT}
       />
       <SearchPicker
         open={picker === 'follower'} onClose={() => setPicker(null)}

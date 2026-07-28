@@ -35,6 +35,9 @@ export const helpdeskApi = {
   // have to type a raw user id.
   agents: () =>
     api.get('/helpdesk/agents').then(unwrap).catch(handleErr),
+  // Assignable vendor / third-party-vendor logins (type = 'vendor' | 'tpv').
+  agentVendors: (type = 'vendor') =>
+    api.get('/helpdesk/agents/vendors', { params: { type } }).then(unwrap).catch(handleErr),
 
   // Embeddable widget settings (admin)
   widget: {

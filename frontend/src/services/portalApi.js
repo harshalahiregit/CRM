@@ -19,6 +19,16 @@ const upload = (url, formData) =>
 export const portalApi = {
   me:         () => api.get('/portal/me').then(r => r.data),
 
+  // ── My Work — projects/tasks/tickets assigned to this vendor / TPV ──────
+  // Role-gated (not vendor.portal), so it works even before a vendor-master
+  // profile exists. Returns the unwrapped payload.
+  myWork: {
+    summary:  () => api.get('/portal/my-work/summary').then(r => r.data?.data ?? r.data),
+    projects: () => api.get('/portal/my-work/projects').then(r => r.data?.data ?? r.data),
+    tasks:    () => api.get('/portal/my-work/tasks').then(r => r.data?.data ?? r.data),
+    tickets:  () => api.get('/portal/my-work/tickets').then(r => r.data?.data ?? r.data),
+  },
+
   // ── Onboarding — mirrors tpvApi.onboarding shape ───────────────────────
   // list() wraps the single-record response in an array so TpvOnboardings
   // renders without modification. stats() is derived client-side from the record.

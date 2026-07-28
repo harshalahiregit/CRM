@@ -177,6 +177,13 @@ export default function TicketThread() {
   const { data: agents = [] } = useQuery({
     queryKey: ['helpdesk-agents'], queryFn: helpdeskApi.agents,
   })
+  // Vendors & TPVs can also hold a ticket — they see it on their portal.
+  const { data: vendorAgents = [] } = useQuery({
+    queryKey: ['helpdesk-agent-vendors', 'vendor'], queryFn: () => helpdeskApi.agentVendors('vendor'),
+  })
+  const { data: tpvAgents = [] } = useQuery({
+    queryKey: ['helpdesk-agent-vendors', 'tpv'], queryFn: () => helpdeskApi.agentVendors('tpv'),
+  })
   const { data: projectList = [], isLoading: projectsLoading } = useQuery({
     queryKey: ['projects-picker'], queryFn: () => projectApi.list(), enabled: projectPickerOpen,
   })
@@ -343,7 +350,7 @@ export default function TicketThread() {
     onMutate: async (agentId) => {
       await queryClient.cancelQueries({ queryKey: ticketKey })
       const prev = queryClient.getQueryData(ticketKey)
-      const agent = agents.find(a => String(a.id) === String(agentId))
+      const agent = [...agents, ...vendorAgents, ...tpvAgents].find(a => String(a.id) === String(agentId))
       queryClient.setQueryData(ticketKey, (o) => (o ? { ...o, assigned_to: agentId, assignee: agent || null } : o))
       return { prev }
     },
@@ -528,7 +535,12 @@ export default function TicketThread() {
               <Select
                 value={ticket.assigned_to ?? ''}
                 onChange={v => assignMut.mutate(v === '' ? null : Number(v))}
-                options={[{ value: '', label: 'Unassigned' }, ...agents.map(a => ({ value: a.id, label: a.name }))]}
+                options={[
+                  { value: '', label: 'Unassigned' },
+                  ...agents.map(a => ({ value: a.id, label: a.name })),
+                  ...vendorAgents.map(a => ({ value: a.id, label: `Vendor · ${a.name}` })),
+                  ...tpvAgents.map(a => ({ value: a.id, label: `TPV · ${a.name}` })),
+                ]}
                 placeholder="Assign…"
                 size="sm"
                 className="w-36"
@@ -1013,7 +1025,12 @@ export default function TicketThread() {
                   <Select
                     value={row.assigned_to ?? ''}
                     onChange={v => setTaskRows(rows => rows.map((r, j) => j === i ? { ...r, assigned_to: v } : r))}
-                    options={[{ value: '', label: 'Unassigned' }, ...agents.map(a => ({ value: a.id, label: a.name }))]}
+                    options={[
+                  { value: '', label: 'Unassigned' },
+                  ...agents.map(a => ({ value: a.id, label: a.name })),
+                  ...vendorAgents.map(a => ({ value: a.id, label: `Vendor · ${a.name}` })),
+                  ...tpvAgents.map(a => ({ value: a.id, label: `TPV · ${a.name}` })),
+                ]}
                     placeholder="Unassigned"
                     size="sm"
                     className="w-36 shrink-0"

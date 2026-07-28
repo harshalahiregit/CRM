@@ -1,11 +1,13 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ShoppingCart, Plus, Search, Check, X, Trash2, Zap, Send, PackageCheck, Ban, ChevronLeft } from 'lucide-react'
+import { ShoppingCart, Plus, Search, Check, X, Trash2, Zap, Send, PackageCheck, Ban, ChevronLeft, FileText, Truck } from 'lucide-react'
 import { inventoryApi, INV_ACCENT } from '@/services/inventoryApi'
 import { useAuth } from '@/context/AuthContext'
 import Select from '@/components/ui/Select'
 
 const INP = { width: '100%', padding: '8px 10px', fontSize: 13, borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)', outline: 'none' }
+const LBL = { display: 'block', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4, color: 'var(--text-muted)' }
+const CURRENCIES = ['INR', 'USD', 'EUR', 'GBP', 'AED']
 
 const STATUS_COLORS = {
   draft: '#94A3B8', submitted: '#F59E0B', approved: '#3B82F6',
@@ -154,13 +156,19 @@ function PODetail({ id, onBack, isAdmin }) {
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase" style={{ background: `color-mix(in srgb, ${STATUS_COLORS[po.status]} 16%, transparent)`, color: STATUS_COLORS[po.status] }}>{po.status}</span>
               {po.source === 'auto' && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: `color-mix(in srgb, ${INV_ACCENT} 16%, transparent)`, color: INV_ACCENT }}>AUTO</span>}
             </div>
+            {po.description && <p className="text-sm font-semibold mt-1" style={{ color: 'var(--text-body)' }}>{po.description}</p>}
             <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
               {po.vendor?.name}{po.warehouse ? ` → ${po.warehouse.name}` : ''}{po.expected_date ? ` · expected ${po.expected_date}` : ''}
+              {po.type ? ` · ${po.type.toUpperCase()}` : ''}{po.tags ? ` · ${po.tags}` : ''}
             </p>
           </div>
           <div className="text-right">
-            <div className="text-lg font-black tabular-nums" style={{ color: 'var(--text-h)' }}>{money(po.total)}</div>
-            <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>subtotal {money(po.subtotal)} + tax {money(po.tax_total)}</div>
+            <div className="text-lg font-black tabular-nums" style={{ color: 'var(--text-h)' }}>{po.currency ? `${po.currency} ` : ''}{money(po.total)}</div>
+            <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              subtotal {money(po.subtotal)} + tax {money(po.tax_total)}
+              {Number(po.discount_amount) > 0 ? ` – disc ${money(po.discount_amount)}` : ''}
+              {Number(po.shipping_fee) > 0 ? ` + ship ${money(po.shipping_fee)}` : ''}
+            </div>
           </div>
         </div>
 
@@ -178,7 +186,7 @@ function PODetail({ id, onBack, isAdmin }) {
         <table className="w-full text-sm" style={{ borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border)' }}>
-              {['Item', 'Qty', 'Received', 'Unit price', 'Tax %', 'Line total', canReceive ? 'Receive' : ''].map((h, i) => (
+              {['Item', 'Qty', 'Received', 'Unit price', 'Tax %', 'Disc %', 'Line total', canReceive ? 'Receive' : ''].map((h, i) => (
                 <th key={i} className="text-left px-3 py-2.5 text-[11px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}>{h}</th>
               ))}
             </tr>
@@ -193,6 +201,7 @@ function PODetail({ id, onBack, isAdmin }) {
                   <td className="px-3 py-2.5 tabular-nums" style={{ color: 'var(--text-body)' }}>{Number(l.received_qty)}</td>
                   <td className="px-3 py-2.5 tabular-nums" style={{ color: 'var(--text-body)' }}>{money(l.unit_price)}</td>
                   <td className="px-3 py-2.5 tabular-nums" style={{ color: 'var(--text-body)' }}>{Number(l.tax_rate)}</td>
+                  <td className="px-3 py-2.5 tabular-nums" style={{ color: 'var(--text-body)' }}>{Number(l.discount_pct || 0)}</td>
                   <td className="px-3 py-2.5 tabular-nums" style={{ color: 'var(--text-body)' }}>{money(l.line_total)}</td>
                   {canReceive && (
                     <td className="px-3 py-2.5">
@@ -221,28 +230,75 @@ function PODetail({ id, onBack, isAdmin }) {
 }
 
 /* ── Create form ──────────────────────────────────────────────── */
+const EMPTY_LINE = { product_id: '', description: '', qty: '', unit_price: '', tax_rate: '', discount_pct: '' }
+
 function POCreate({ onBack }) {
-  const [vendorId, setVendorId] = useState('')
-  const [notes, setNotes] = useState('')
-  const [expected, setExpected] = useState('')
-  const [lines, setLines] = useState([{ product_id: '', description: '', qty: '', unit_price: '', tax_rate: '' }])
+  const [tab, setTab] = useState('general')
+  const [form, setForm] = useState({
+    description: '', vendor_id: '', order_date: new Date().toISOString().slice(0, 10),
+    warehouse_id: '', expected_date: '', delivery_date: '', currency: '', type: '', tags: '',
+    discount_type: 'before_tax', discount_mode: 'percent', discount_value: '', shipping_fee: '',
+    vendor_note: '', terms: '',
+    ship_address: '', ship_city: '', ship_state: '', ship_zip: '', ship_country: '',
+  })
+  const [lines, setLines] = useState([{ ...EMPTY_LINE }])
   const [err, setErr] = useState('')
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const { data: vendors = [] } = useQuery({ queryKey: ['inv-vendors-all'], queryFn: () => inventoryApi.vendors.list({ status: 'active' }) })
   const { data: products = [] } = useQuery({ queryKey: ['inv-products-lookup'], queryFn: () => inventoryApi.products.list({ per_page: 1000 }) })
+  const { data: warehouses = [] } = useQuery({ queryKey: ['inv-warehouses-all'], queryFn: inventoryApi.warehouses.list })
   const productList = Array.isArray(products) ? products : (products?.data || [])
+  const warehouseList = Array.isArray(warehouses) ? warehouses : (warehouses?.data || [])
+
+  // Live totals — mirror the server's recalc() exactly so the figure shown is
+  // the figure saved (line discounts → tax → order discount → shipping).
+  const t = useMemo(() => {
+    let subtotal = 0, tax = 0
+    for (const l of lines) {
+      const qty = Number(l.qty) || 0, price = Number(l.unit_price) || 0
+      const disc = Math.min(100, Math.max(0, Number(l.discount_pct) || 0))
+      let net = qty * price; net -= net * disc / 100
+      subtotal += net; tax += net * (Number(l.tax_rate) || 0) / 100
+    }
+    const val = Number(form.discount_value) || 0
+    let discountAmount = 0
+    if (val > 0) {
+      if (form.discount_mode === 'percent') {
+        const base = form.discount_type === 'after_tax' ? subtotal + tax : subtotal
+        discountAmount = base * Math.min(100, val) / 100
+      } else discountAmount = val
+    }
+    const shipping = Math.max(0, Number(form.shipping_fee) || 0)
+    return { subtotal, tax, discountAmount, shipping, total: Math.max(0, subtotal + tax - discountAmount + shipping) }
+  }, [lines, form.discount_value, form.discount_mode, form.discount_type, form.shipping_fee])
+
+  const lineTotal = (l) => {
+    const qty = Number(l.qty) || 0, price = Number(l.unit_price) || 0
+    const disc = Math.min(100, Math.max(0, Number(l.discount_pct) || 0))
+    const net = qty * price * (1 - disc / 100)
+    return net + net * (Number(l.tax_rate) || 0) / 100
+  }
 
   const create = useMutation({
     mutationFn: () => inventoryApi.purchaseOrders.create({
-      vendor_id: Number(vendorId),
-      expected_date: expected || null,
-      notes: notes || null,
+      ...form,
+      vendor_id: Number(form.vendor_id),
+      warehouse_id: form.warehouse_id ? Number(form.warehouse_id) : null,
+      type: form.type || null,
+      currency: form.currency || null,
+      order_date: form.order_date || null,
+      expected_date: form.expected_date || null,
+      delivery_date: form.delivery_date || null,
+      discount_value: Number(form.discount_value) || 0,
+      shipping_fee: Number(form.shipping_fee) || 0,
       lines: lines.filter(l => Number(l.qty) > 0).map(l => ({
         product_id: l.product_id ? Number(l.product_id) : null,
         description: l.description || null,
         qty: Number(l.qty),
         unit_price: Number(l.unit_price || 0),
         tax_rate: Number(l.tax_rate || 0),
+        discount_pct: Number(l.discount_pct || 0),
       })),
     }),
     onSuccess: (po) => onBack(po.id),
@@ -250,47 +306,155 @@ function POCreate({ onBack }) {
   })
 
   const setLine = (i, k, v) => setLines(ls => ls.map((l, j) => j === i ? { ...l, [k]: v } : l))
-  const addLine = () => setLines(ls => [...ls, { product_id: '', description: '', qty: '', unit_price: '', tax_rate: '' }])
+  const addLine = () => setLines(ls => [...ls, { ...EMPTY_LINE }])
   const removeLine = (i) => setLines(ls => ls.filter((_, j) => j !== i))
+
+  const TAB = (key, label, Icon) => (
+    <button onClick={() => setTab(key)}
+      className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl transition-colors"
+      style={tab === key
+        ? { background: `color-mix(in srgb, ${INV_ACCENT} 13%, transparent)`, color: INV_ACCENT }
+        : { color: 'var(--text-muted)' }}>
+      <Icon size={13} /> {label}
+    </button>
+  )
 
   return (
     <div className="space-y-4 animate-fade-in">
       <button onClick={() => onBack(null)} className="flex items-center gap-1 text-xs font-bold" style={{ color: 'var(--text-muted)' }}><ChevronLeft size={14} /> Cancel</button>
       <h2 className="text-lg font-black" style={{ color: 'var(--text-h)' }}>New purchase order</h2>
 
-      <div className="rounded-2xl p-4 space-y-3" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-purple)' }}>
-        <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))' }}>
-          <label className="block">
-            <span className="block text-[10px] font-bold uppercase tracking-wide mb-1" style={{ color: 'var(--text-muted)' }}>Vendor *</span>
-            <Select size="sm" value={vendorId} onChange={setVendorId} placeholder="Choose a vendor…" searchable options={vendors.map(v => ({ value: String(v.id), label: v.name }))} />
-          </label>
-          <label className="block">
-            <span className="block text-[10px] font-bold uppercase tracking-wide mb-1" style={{ color: 'var(--text-muted)' }}>Expected date</span>
-            <input type="date" value={expected} onChange={e => setExpected(e.target.value)} style={INP} />
-          </label>
-          <label className="block">
-            <span className="block text-[10px] font-bold uppercase tracking-wide mb-1" style={{ color: 'var(--text-muted)' }}>Notes</span>
-            <input value={notes} onChange={e => setNotes(e.target.value)} style={INP} />
-          </label>
-        </div>
+      <div className="flex items-center gap-1">{TAB('general', 'General', FileText)}{TAB('shipping', 'Shipping', Truck)}</div>
 
-        <div className="space-y-2">
-          <span className="block text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Lines</span>
+      <div className="rounded-2xl p-4 space-y-4" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-purple)' }}>
+        {tab === 'general' ? (
+          <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))' }}>
+            <label className="block" style={{ gridColumn: '1 / -1' }}>
+              <span style={LBL}>Purchase order description *</span>
+              <input value={form.description} onChange={e => set('description', e.target.value)} placeholder="What is this order for?" style={INP} />
+            </label>
+            <label className="block">
+              <span style={LBL}>PO number</span>
+              <input value="Assigned on save" disabled style={{ ...INP, opacity: 0.6, cursor: 'not-allowed' }} />
+            </label>
+            <label className="block">
+              <span style={LBL}>Vendor *</span>
+              <Select size="sm" value={form.vendor_id} onChange={v => set('vendor_id', v)} placeholder="Choose a vendor…" searchable options={vendors.map(v => ({ value: String(v.id), label: v.name }))} />
+            </label>
+            <label className="block">
+              <span style={LBL}>Order date *</span>
+              <input type="date" value={form.order_date} onChange={e => set('order_date', e.target.value)} style={INP} />
+            </label>
+            <label className="block">
+              <span style={LBL}>Deliver to warehouse</span>
+              <Select size="sm" value={form.warehouse_id} onChange={v => set('warehouse_id', v)} placeholder="— none —" options={[{ value: '', label: '— none —' }, ...warehouseList.map(w => ({ value: String(w.id), label: w.name }))]} />
+            </label>
+            <label className="block">
+              <span style={LBL}>Expected date</span>
+              <input type="date" value={form.expected_date} onChange={e => set('expected_date', e.target.value)} style={INP} />
+            </label>
+            <label className="block">
+              <span style={LBL}>Delivery date</span>
+              <input type="date" value={form.delivery_date} onChange={e => set('delivery_date', e.target.value)} style={INP} />
+            </label>
+            <label className="block">
+              <span style={LBL}>Currency</span>
+              <Select size="sm" value={form.currency} onChange={v => set('currency', v)} placeholder="Base currency" options={[{ value: '', label: 'Base currency' }, ...CURRENCIES.map(c => ({ value: c, label: c }))]} />
+            </label>
+            <label className="block">
+              <span style={LBL}>Type</span>
+              <Select size="sm" value={form.type} onChange={v => set('type', v)} placeholder="— none —" options={[{ value: '', label: '— none —' }, { value: 'capex', label: 'CAPEX' }, { value: 'opex', label: 'OPEX' }]} />
+            </label>
+            <label className="block">
+              <span style={LBL}>Tags</span>
+              <input value={form.tags} onChange={e => set('tags', e.target.value)} placeholder="comma, separated" style={INP} />
+            </label>
+          </div>
+        ) : (
+          <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))' }}>
+            <label className="block" style={{ gridColumn: '1 / -1' }}>
+              <span style={LBL}>Ship-to address</span>
+              <input value={form.ship_address} onChange={e => set('ship_address', e.target.value)} placeholder="Street address" style={INP} />
+            </label>
+            <label className="block"><span style={LBL}>City</span><input value={form.ship_city} onChange={e => set('ship_city', e.target.value)} style={INP} /></label>
+            <label className="block"><span style={LBL}>State</span><input value={form.ship_state} onChange={e => set('ship_state', e.target.value)} style={INP} /></label>
+            <label className="block"><span style={LBL}>Zip code</span><input value={form.ship_zip} onChange={e => set('ship_zip', e.target.value)} style={INP} /></label>
+            <label className="block"><span style={LBL}>Country</span><input value={form.ship_country} onChange={e => set('ship_country', e.target.value)} style={INP} /></label>
+          </div>
+        )}
+
+        {/* ── Line items (shared across tabs) ── */}
+        <div className="space-y-2 pt-1" style={{ borderTop: '1px solid var(--border)' }}>
+          <span style={{ ...LBL, marginTop: 12 }}>Items</span>
+          <div className="hidden md:grid gap-2 text-[10px] font-bold uppercase" style={{ gridTemplateColumns: '2.4fr 0.9fr 1fr 0.9fr 0.9fr 1fr auto', color: 'var(--text-muted)' }}>
+            <span>Item</span><span>Qty</span><span>Unit price</span><span>Tax %</span><span>Disc %</span><span className="text-right">Line total</span><span></span>
+          </div>
           {lines.map((l, i) => (
-            <div key={i} className="grid gap-2 items-center" style={{ gridTemplateColumns: '2fr 1fr 1fr 1fr auto' }}>
+            <div key={i} className="grid gap-2 items-center" style={{ gridTemplateColumns: '2.4fr 0.9fr 1fr 0.9fr 0.9fr 1fr auto' }}>
               <Select size="sm" value={l.product_id} onChange={(v) => { const p = productList.find(x => String(x.id) === String(v)); setLine(i, 'product_id', v); if (p) { setLine(i, 'description', p.name); setLine(i, 'unit_price', p.cost_price ?? ''); setLine(i, 'tax_rate', p.gst_rate ?? '') } }} placeholder="Item…" searchable options={productList.map(p => ({ value: String(p.id), label: `${p.name}${p.sku ? ` (${p.sku})` : ''}` }))} />
               <input type="number" min="0" placeholder="Qty" value={l.qty} onChange={e => setLine(i, 'qty', e.target.value)} style={INP} />
-              <input type="number" min="0" placeholder="Unit price" value={l.unit_price} onChange={e => setLine(i, 'unit_price', e.target.value)} style={INP} />
-              <input type="number" min="0" placeholder="Tax %" value={l.tax_rate} onChange={e => setLine(i, 'tax_rate', e.target.value)} style={INP} />
+              <input type="number" min="0" placeholder="Price" value={l.unit_price} onChange={e => setLine(i, 'unit_price', e.target.value)} style={INP} />
+              <input type="number" min="0" placeholder="Tax" value={l.tax_rate} onChange={e => setLine(i, 'tax_rate', e.target.value)} style={INP} />
+              <input type="number" min="0" max="100" placeholder="Disc" value={l.discount_pct} onChange={e => setLine(i, 'discount_pct', e.target.value)} style={INP} />
+              <span className="text-right text-xs font-semibold tabular-nums" style={{ color: 'var(--text-h)' }}>{money(lineTotal(l))}</span>
               <button onClick={() => removeLine(i)} className="hover:opacity-60" title="Remove"><Trash2 size={14} style={{ color: 'var(--color-danger-500)' }} /></button>
             </div>
           ))}
           <button onClick={addLine} className="flex items-center gap-1 text-xs font-bold" style={{ color: INV_ACCENT }}><Plus size={13} /> Add line</button>
         </div>
 
+        {/* ── Discount / shipping / totals ── */}
+        <div className="grid gap-4 pt-3 md:grid-cols-2" style={{ borderTop: '1px solid var(--border)' }}>
+          <div className="space-y-3">
+            <div className="grid gap-2" style={{ gridTemplateColumns: '1fr 1fr' }}>
+              <label className="block">
+                <span style={LBL}>Discount applies</span>
+                <Select size="sm" value={form.discount_type} onChange={v => set('discount_type', v)} options={[{ value: 'before_tax', label: 'Before tax' }, { value: 'after_tax', label: 'After tax' }]} />
+              </label>
+              <label className="block">
+                <span style={LBL}>Discount</span>
+                <div className="flex gap-1.5">
+                  <input type="number" min="0" value={form.discount_value} onChange={e => set('discount_value', e.target.value)} placeholder="0" style={INP} />
+                  <div style={{ width: 96 }}>
+                    <Select size="sm" value={form.discount_mode} onChange={v => set('discount_mode', v)} options={[{ value: 'percent', label: '%' }, { value: 'amount', label: 'Amount' }]} />
+                  </div>
+                </div>
+              </label>
+            </div>
+            <label className="block" style={{ maxWidth: 200 }}>
+              <span style={LBL}>Shipping fee</span>
+              <input type="number" min="0" value={form.shipping_fee} onChange={e => set('shipping_fee', e.target.value)} placeholder="0.00" style={INP} />
+            </label>
+          </div>
+
+          <div className="rounded-xl p-3 space-y-1.5 self-start" style={{ background: 'var(--bg-input)' }}>
+            {[['Subtotal', t.subtotal], ['Tax', t.tax], ['Discount', -t.discountAmount], ['Shipping', t.shipping]].map(([k, v]) => (
+              <div key={k} className="flex items-center justify-between text-xs" style={{ color: 'var(--text-body)' }}>
+                <span>{k}</span><span className="tabular-nums">{v < 0 ? `– ${money(-v)}` : money(v)}</span>
+              </div>
+            ))}
+            <div className="flex items-center justify-between pt-1.5 mt-1" style={{ borderTop: '1px solid var(--border)' }}>
+              <span className="text-xs font-bold" style={{ color: 'var(--text-h)' }}>Grand total</span>
+              <span className="text-sm font-black tabular-nums" style={{ color: INV_ACCENT }}>{money(t.total)}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Footer notes ── */}
+        <div className="grid gap-3 pt-3 md:grid-cols-2" style={{ borderTop: '1px solid var(--border)' }}>
+          <label className="block">
+            <span style={LBL}>Vendor note</span>
+            <textarea value={form.vendor_note} onChange={e => set('vendor_note', e.target.value)} placeholder="A note to the vendor…" style={{ ...INP, minHeight: 72, resize: 'vertical' }} />
+          </label>
+          <label className="block">
+            <span style={LBL}>Terms &amp; conditions</span>
+            <textarea value={form.terms} onChange={e => set('terms', e.target.value)} placeholder="Payment terms, warranty, delivery conditions…" style={{ ...INP, minHeight: 72, resize: 'vertical' }} />
+          </label>
+        </div>
+
         {err && <p className="text-[11px]" style={{ color: 'var(--color-danger-500)' }}>{err}</p>}
-        <div className="flex gap-2">
-          <button disabled={!vendorId || create.isPending} onClick={() => create.mutate()} className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl disabled:opacity-40" style={{ background: INV_ACCENT, color: '#fff' }}>
+        <div className="flex gap-2 pt-1">
+          <button disabled={!form.vendor_id || !form.description.trim() || create.isPending} onClick={() => create.mutate()} className="flex items-center gap-1.5 text-xs font-bold px-4 py-2 rounded-xl disabled:opacity-40" style={{ background: INV_ACCENT, color: '#fff' }}>
             <Check size={13} /> {create.isPending ? 'Creating…' : 'Create purchase order'}
           </button>
           <button onClick={() => onBack(null)} className="text-xs font-bold px-3 py-2 rounded-xl" style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}>Cancel</button>

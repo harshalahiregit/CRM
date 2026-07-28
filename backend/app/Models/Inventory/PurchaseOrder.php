@@ -15,19 +15,26 @@ class PurchaseOrder extends Model
     protected $table = 'inventory_purchase_orders';
 
     protected $fillable = [
-        'tenant_id', 'code', 'vendor_id', 'warehouse_id', 'status', 'source',
-        'currency', 'order_date', 'expected_date', 'subtotal', 'tax_total',
-        'total', 'notes', 'created_by', 'approved_by', 'approved_at', 'sent_at',
+        'tenant_id', 'code', 'description', 'vendor_id', 'warehouse_id', 'status', 'source',
+        'type', 'tags', 'currency', 'order_date', 'expected_date', 'delivery_date',
+        'subtotal', 'tax_total', 'discount_type', 'discount_mode', 'discount_value',
+        'discount_amount', 'shipping_fee', 'total', 'notes', 'vendor_note', 'terms',
+        'ship_address', 'ship_city', 'ship_state', 'ship_zip', 'ship_country',
+        'created_by', 'approved_by', 'approved_at', 'sent_at',
     ];
 
     protected $casts = [
-        'order_date'    => 'date',
-        'expected_date' => 'date',
-        'approved_at'   => 'datetime',
-        'sent_at'       => 'datetime',
-        'subtotal'      => 'decimal:2',
-        'tax_total'     => 'decimal:2',
-        'total'         => 'decimal:2',
+        'order_date'      => 'date',
+        'expected_date'   => 'date',
+        'delivery_date'   => 'date',
+        'approved_at'     => 'datetime',
+        'sent_at'         => 'datetime',
+        'subtotal'        => 'decimal:2',
+        'tax_total'       => 'decimal:2',
+        'discount_value'  => 'decimal:2',
+        'discount_amount' => 'decimal:2',
+        'shipping_fee'    => 'decimal:2',
+        'total'           => 'decimal:2',
     ];
 
     public function vendor() { return $this->belongsTo(Vendor::class, 'vendor_id'); }

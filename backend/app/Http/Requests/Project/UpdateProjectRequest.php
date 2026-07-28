@@ -24,6 +24,8 @@ class UpdateProjectRequest extends FormRequest
             'description'         => 'nullable|string',
             'status'              => ['sometimes', Rule::in($statusKeys)],
             'customer_id'         => 'nullable|integer|min:1',
+            'vendor_user_id'      => 'nullable|integer|min:1',
+            'link_type'           => 'nullable|in:customer,vendor,tpv',
             'billing_type'        => 'sometimes|in:fixed,project_hours,task_hours',
             'project_cost'        => 'nullable|numeric|min:0',
             'rate_per_hour'       => 'nullable|numeric|min:0',

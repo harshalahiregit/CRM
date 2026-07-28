@@ -29,19 +29,21 @@ const CONFIG_TABS = [
   { key: 'reset',         label: 'Reset data' },
 ]
 
+/** The left-nav is split into two named groups so ~15 destinations read as a
+ *  short menu instead of one overflowing tab strip. */
+const NAV_GROUPS = [
+  { label: 'Master data',   items: SETTING_TABS.map(t => ({ ...t, kindOf: 'lookup' })) },
+  { label: 'Configuration', items: CONFIG_TABS.map(t => ({ ...t, kindOf: 'config' })) },
+]
+
 export default function InventorySettings() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
   const [tab, setTab] = useState({ ...SETTING_TABS[0], kindOf: 'lookup' })
 
-  const TABS = [
-    ...SETTING_TABS.map(t => ({ ...t, kindOf: 'lookup' })),
-    ...CONFIG_TABS.map(t => ({ ...t, kindOf: 'config' })),
-  ]
-
   return (
-    <div className="max-w-4xl">
-      <header className="flex flex-wrap items-center gap-2 mb-4">
+    <div className="max-w-5xl">
+      <header className="flex flex-wrap items-center gap-2 mb-5">
         <span className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
           style={{ background: `color-mix(in srgb, ${INV_ACCENT} 14%, transparent)` }}>
           <Settings2 size={17} style={{ color: INV_ACCENT }} />
@@ -55,27 +57,43 @@ export default function InventorySettings() {
         )}
       </header>
 
-      <div className="flex items-center gap-1 mb-4 overflow-x-auto" style={{ borderBottom: '1px solid var(--border)' }}>
-        {TABS.map(t => (
-          <button key={t.key} onClick={() => setTab(t)}
-            className="px-3 py-2 text-xs font-bold whitespace-nowrap transition-colors"
-            style={{
-              color: tab.key === t.key ? INV_ACCENT : 'var(--text-muted)',
-              borderBottom: `2px solid ${tab.key === t.key ? INV_ACCENT : 'transparent'}`,
-              marginBottom: -1,
-            }}>
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <div className="flex flex-col md:flex-row gap-5">
+        {/* Grouped nav — a vertical menu on desktop, a horizontal scroll strip on
+            phones. Replaces the single overflowing tab bar. */}
+        <nav className="flex md:flex-col gap-1 md:w-52 shrink-0 overflow-x-auto md:overflow-visible pb-1 md:pb-0"
+          style={{ scrollbarWidth: 'none' }}>
+          {NAV_GROUPS.map(g => (
+            <div key={g.label} className="flex md:block gap-1">
+              <p className="hidden md:block text-[10px] font-black uppercase tracking-wider px-2.5 mt-4 mb-1.5 first:mt-0"
+                style={{ color: 'var(--text-muted)' }}>{g.label}</p>
+              {g.items.map(t => {
+                const on = tab.key === t.key
+                return (
+                  <button key={t.key} onClick={() => setTab(t)}
+                    className={`flex items-center text-xs font-semibold whitespace-nowrap rounded-xl transition-colors text-left md:w-full ${on ? '' : 'hover:bg-[var(--bg-input)]'}`}
+                    style={{
+                      padding: '8px 12px',
+                      color: on ? INV_ACCENT : 'var(--text-muted)',
+                      ...(on ? { background: `color-mix(in srgb, ${INV_ACCENT} 13%, transparent)` } : {}),
+                    }}>
+                    {t.label}
+                  </button>
+                )
+              })}
+            </div>
+          ))}
+        </nav>
 
-      {tab.kindOf === 'lookup'
-        ? <LookupTab key={tab.key} tab={tab} isAdmin={isAdmin} />
-        : tab.key === 'custom_fields'
-          ? <CustomFieldsTab isAdmin={isAdmin} />
-          : tab.key === 'reset'
-            ? <ResetTab isAdmin={isAdmin} />
-            : <ConfigTab key={tab.key} which={tab.key} isAdmin={isAdmin} />}
+        <div className="flex-1 min-w-0">
+          {tab.kindOf === 'lookup'
+            ? <LookupTab key={tab.key} tab={tab} isAdmin={isAdmin} />
+            : tab.key === 'custom_fields'
+              ? <CustomFieldsTab isAdmin={isAdmin} />
+              : tab.key === 'reset'
+                ? <ResetTab isAdmin={isAdmin} />
+                : <ConfigTab key={tab.key} which={tab.key} isAdmin={isAdmin} />}
+        </div>
+      </div>
     </div>
   )
 }

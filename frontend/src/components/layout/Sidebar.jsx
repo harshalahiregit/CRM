@@ -6,7 +6,7 @@ import {
   UserPlus, Link2, RefreshCw, LayoutTemplate, Globe, TrendingUp, Landmark, BookText, Scale,
   ArrowLeftRight, BookOpen, Boxes, PackagePlus, PackageMinus, Warehouse, History,
   BarChart3, Activity, Layers3, ScanLine, ClipboardCheck, ShoppingCart, Hourglass, Wrench,
-  CalendarRange, Handshake, Factory, Undo2, Wallet, Award, GraduationCap, ShieldCheck, Bell
+  CalendarRange, Handshake, Factory, Undo2, Wallet, Award, GraduationCap, ShieldCheck, Bell, Search, X
 } from 'lucide-react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -32,6 +32,24 @@ const NAV_ITEMS = [
   { label: 'Vendors', icon: Truck, path: '/app/vendors' },
   { label: 'Reports', icon: BarChart2, path: '/app/reports' },
   { label: 'Settings', icon: Settings, path: '/app/settings' },
+]
+
+// The modules the sidebar search jumps to — the top-level module landing pages,
+// searched by name. Keywords widen matches (e.g. "stock" → Inventory).
+const MODULE_SEARCH = [
+  { label: 'Modules',    path: '/app/modules',          icon: Package,         kw: 'marketplace install' },
+  { label: 'Dashboard',  path: '/app/dashboard',        icon: LayoutDashboard, kw: 'home' },
+  { label: 'Tasks',      path: '/app/tasks',            icon: CheckSquare,     kw: 'todo' },
+  { label: 'Projects',   path: '/app/projects',         icon: FolderOpen,      kw: '' },
+  { label: 'Helpdesk',   path: '/app/helpdesk/tickets', icon: LifeBuoy,        kw: 'tickets support' },
+  { label: 'Inventory',  path: '/app/inventory',        icon: Boxes,           kw: 'stock warehouse items' },
+  { label: 'Sales',      path: '/app/sales/dashboard',  icon: TrendingUp,      kw: 'revenue leads' },
+  { label: 'Accounts',   path: '/app/accounts',         icon: Landmark,        kw: 'finance ledger' },
+  { label: 'HR',         path: '/app/hr/dashboard',     icon: Users,           kw: 'recruitment employees payroll' },
+  { label: 'Purchase',   path: '/app/purchase/dashboard', icon: ShoppingCart,  kw: 'procurement orders' },
+  { label: 'TPV',        path: '/app/tpv/dashboard',    icon: UserCheck,       kw: 'third party vendor workforce' },
+  { label: 'Customers',  path: '/app/customers',        icon: Building2,       kw: 'clients' },
+  { label: 'Compliance', path: '/app/tpv/compliance',   icon: ShieldCheck,     kw: 'hsse checklists' },
 ]
 
 // ── HRMS sidebar structure (paths/APIs/permissions unchanged) ──
@@ -191,6 +209,10 @@ export default function Sidebar({ collapsed, onToggle }) {
     ? TPV_VENDOR_ITEMS
     : TPV_ADMIN_ITEMS
   const [activeLeadsCount, setActiveLeadsCount] = useState(null)
+  const [moduleQuery, setModuleQuery] = useState('')
+  const q = moduleQuery.trim().toLowerCase()
+  const moduleResults = q ? MODULE_SEARCH.filter(m => (m.label + ' ' + m.kw).toLowerCase().includes(q)) : []
+  const goModule = (path) => { setModuleQuery(''); navigate(path) }
 
   useEffect(() => {
     leadApi.summary().then(s => setActiveLeadsCount(s.active)).catch(() => {})
@@ -300,6 +322,51 @@ export default function Sidebar({ collapsed, onToggle }) {
 
       {/* ── Navigation ─────────────────────────────────────── */}
       <nav className="flex-1 py-3 overflow-y-auto scrollbar-hide">
+        {/* Module search — jumps straight to a module by name. Distinct from the
+            header's ⌘K palette (which searches records); this one is modules only. */}
+        {collapsed ? (
+          <button onClick={() => navigate('/app/modules')} title="Search modules" className="nav-3d mb-2 w-full" style={{ justifyContent: 'center' }}>
+            <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.06)' }}>
+              <Search size={14} />
+            </div>
+          </button>
+        ) : (
+          <div className="px-3 mb-2 relative">
+            <div className="relative">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
+              <input
+                value={moduleQuery}
+                onChange={e => setModuleQuery(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && moduleResults[0]) goModule(moduleResults[0].path); if (e.key === 'Escape') setModuleQuery('') }}
+                placeholder="Search modules…"
+                className="w-full text-sm rounded-xl outline-none"
+                style={{ padding: '8px 26px 8px 30px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }}
+              />
+              {moduleQuery && (
+                <button onClick={() => setModuleQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2" aria-label="Clear">
+                  <X size={13} style={{ color: 'var(--text-muted)' }} />
+                </button>
+              )}
+            </div>
+            {q && (
+              <div className="mt-1 rounded-xl overflow-hidden" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card-3d)' }}>
+                {moduleResults.length === 0 ? (
+                  <p className="text-xs px-3 py-3" style={{ color: 'var(--text-muted)' }}>No modules match “{moduleQuery}”.</p>
+                ) : moduleResults.map(m => {
+                  const Icon = m.icon
+                  return (
+                    <button key={m.path} onClick={() => goModule(m.path)}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-[rgba(124,58,237,0.08)]">
+                      <Icon size={14} style={{ color: '#a78bfa' }} />
+                      <span className="text-sm" style={{ color: 'var(--text-h)' }}>{m.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Section label */}
         {!collapsed && <p className="label-caps px-5 mb-2">Main Menu</p>}
 
