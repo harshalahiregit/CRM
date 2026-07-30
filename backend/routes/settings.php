@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\Settings\CompanySettingController;
+use App\Http\Controllers\Api\Settings\DocumentNumberingController;
 use App\Http\Controllers\Api\Settings\FormatSettingController;
 use App\Http\Controllers\Api\Settings\GeneralSettingController;
 use App\Http\Controllers\Api\Settings\MailSettingController;
@@ -26,9 +27,18 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('settings')->group(fun
     // Generic settings groups — Upload / Security / Notification preferences.
     // One controller + one registry; add a group by registering it + the constraint.
     Route::get('/group/{group}', [SettingsGroupController::class, 'show'])
-        ->where('group', 'localization|currency|upload|security|notifications');
+        ->where('group', 'localization|currency|numbering|upload|security|notifications');
     Route::put('/group/{group}', [SettingsGroupController::class, 'update'])
-        ->where('group', 'localization|currency|upload|security|notifications');
+        ->where('group', 'localization|currency|numbering|upload|security|notifications');
+
+    // Document Numbering Engine — the single source of truth for document numbers.
+    // `validate` is declared before `{type}` so it is never captured as a type.
+    Route::get('/numbering',                    [DocumentNumberingController::class, 'index']);
+    Route::post('/numbering/validate',          [DocumentNumberingController::class, 'validateConfig']);
+    Route::get('/numbering/{type}',             [DocumentNumberingController::class, 'show']);
+    Route::put('/numbering/{type}',             [DocumentNumberingController::class, 'update']);
+    Route::post('/numbering/{type}/preview',    [DocumentNumberingController::class, 'preview']);
+    Route::post('/numbering/{type}/reset',      [DocumentNumberingController::class, 'reset']);
 
     // Email / SMTP (per-tenant outgoing mail)
     Route::get('/mail',       [MailSettingController::class, 'show']);

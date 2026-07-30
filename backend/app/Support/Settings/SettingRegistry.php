@@ -57,6 +57,16 @@ final class SettingRegistry
                 'grouping'            => ['cast' => 'string', 'default' => 'indian', 'rules' => ['nullable', 'string', 'in:indian,western']],
             ],
 
+            // ── Increment E: Document numbering (global knobs only; the
+            // per-document-type configuration lives in document_number_configs) ──
+            'numbering' => [
+                'fy_start_month'       => ['cast' => 'int',    'default' => 4,       'rules' => ['nullable', 'integer', 'min:1', 'max:12']],
+                'fy_format'            => ['cast' => 'string', 'default' => 'short', 'rules' => ['nullable', 'string', 'in:short,long']],
+                'default_minimum_digits' => ['cast' => 'int',  'default' => 4,       'rules' => ['nullable', 'integer', 'min:1', 'max:12']],
+                // Global kill-switch for the per-type decrement_on_delete flag.
+                'allow_decrement_on_delete' => ['cast' => 'bool', 'default' => false, 'rules' => ['nullable', 'boolean']],
+            ],
+
             // ── Increment D: Upload ──────────────────────────────────────
             'upload' => [
                 'max_upload_mb'        => ['cast' => 'int',    'default' => 10, 'rules' => ['nullable', 'integer', 'min:1', 'max:1024']],
