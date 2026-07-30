@@ -18,6 +18,16 @@ export const settingsApi = {
       api.post(`/settings/numbering/${type}/reset`, startingNumber ? { starting_number: startingNumber } : {}).then(r => r.data).catch(handleErr),
     validate: (data) => api.post('/settings/numbering/validate', data).then(r => r.data).catch(handleErr),
   },
+  // Email Templates — content only; sending stays with the SMTP settings above.
+  emailTemplates: {
+    list:     (params = {}) => api.get('/settings/email-templates', { params }).then(r => r.data).catch(handleErr),
+    get:      (key) => api.get(`/settings/email-templates/${key}`).then(r => r.data).catch(handleErr),
+    update:   (key, data) => api.put(`/settings/email-templates/${key}`, data).then(r => r.data).catch(handleErr),
+    // Preview renders with sample data — it never sends an email.
+    preview:  (key, draft = {}) => api.post(`/settings/email-templates/${key}/preview`, { draft }).then(r => r.data).catch(handleErr),
+    restore:  (key) => api.post(`/settings/email-templates/${key}/restore`).then(r => r.data).catch(handleErr),
+    validate: (data) => api.post('/settings/email-templates/validate', data).then(r => r.data).catch(handleErr),
+  },
   // Generic settings groups — Upload / Security / Notification preferences.
   group: {
     get: (group) => api.get(`/settings/group/${group}`).then(r => r.data).catch(handleErr),

@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\Settings\CompanySettingController;
 use App\Http\Controllers\Api\Settings\DocumentNumberingController;
+use App\Http\Controllers\Api\Settings\EmailTemplateController;
 use App\Http\Controllers\Api\Settings\FormatSettingController;
 use App\Http\Controllers\Api\Settings\GeneralSettingController;
 use App\Http\Controllers\Api\Settings\MailSettingController;
@@ -39,6 +40,16 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('settings')->group(fun
     Route::put('/numbering/{type}',             [DocumentNumberingController::class, 'update']);
     Route::post('/numbering/{type}/preview',    [DocumentNumberingController::class, 'preview']);
     Route::post('/numbering/{type}/reset',      [DocumentNumberingController::class, 'reset']);
+
+    // Email Templates — the single source of truth for outgoing email content.
+    // `validate` is declared before `{key}` so it is never captured as a key.
+    // Template keys contain dots (e.g. auth.welcome), hence the explicit `where`.
+    Route::get('/email-templates',                  [EmailTemplateController::class, 'index']);
+    Route::post('/email-templates/validate',        [EmailTemplateController::class, 'validateTemplate']);
+    Route::get('/email-templates/{key}',            [EmailTemplateController::class, 'show'])->where('key', '[A-Za-z0-9_.\-]+');
+    Route::put('/email-templates/{key}',            [EmailTemplateController::class, 'update'])->where('key', '[A-Za-z0-9_.\-]+');
+    Route::post('/email-templates/{key}/preview',   [EmailTemplateController::class, 'preview'])->where('key', '[A-Za-z0-9_.\-]+');
+    Route::post('/email-templates/{key}/restore',   [EmailTemplateController::class, 'restore'])->where('key', '[A-Za-z0-9_.\-]+');
 
     // Email / SMTP (per-tenant outgoing mail)
     Route::get('/mail',       [MailSettingController::class, 'show']);

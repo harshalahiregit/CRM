@@ -97,6 +97,7 @@ class HtmlSanitizer
 
     private static function walk(DOMNode $node): void
     {
+        $unwrapped = false;
         $children = iterator_to_array($node->childNodes);
         foreach ($children as $child) {
             if (! ($child instanceof DOMElement)) {
@@ -136,11 +137,21 @@ class HtmlSanitizer
                     $node->insertBefore($child->firstChild, $child);
                 }
                 $node->removeChild($child);
+                $unwrapped = true;
                 continue;
             }
 
             self::filterAttributes($child, $tag);
             self::walk($child);
+        }
+
+        // Hoisted children were inserted AFTER the snapshot above was taken, so this
+        // pass never inspected them — which previously let anything nested inside an
+        // unknown tag escape every filter (e.g. <h1><script>… survived verbatim,
+        // because h1 is not in ALLOWED_TAGS). Re-scan until nothing new is hoisted;
+        // each re-scan strictly removes at least one element, so this terminates.
+        if ($unwrapped) {
+            self::walk($node);
         }
     }
 

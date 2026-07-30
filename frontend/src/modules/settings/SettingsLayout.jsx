@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { Mail, SlidersHorizontal, IndianRupee, Tags, Building2, Network, Palette, UploadCloud, ShieldCheck, Bell, Globe, Coins, Hash } from 'lucide-react'
+import { Mail, MailOpen, SlidersHorizontal, IndianRupee, Tags, Building2, Network, Palette, UploadCloud, ShieldCheck, Bell, Globe, Coins, Hash } from 'lucide-react'
 
 // Section registry — new settings pages plug in here (tax rates, expense
 // categories, company/finance land with their tracks).
@@ -9,6 +9,7 @@ const SECTIONS = [
   { label: 'Currency & Numbers', path: 'currency', icon: Coins, ready: true },
   { label: 'Document Numbering', path: 'numbering', icon: Hash, ready: true },
   { label: 'Email / SMTP', path: 'mail', icon: Mail, ready: true },
+  { label: 'Email Templates', path: 'email-templates', icon: MailOpen, ready: true },
   { label: 'Custom Fields', path: 'custom-fields', icon: SlidersHorizontal, ready: true },
   { label: 'Company & Finance', path: 'company', icon: Building2, ready: true },
   { label: 'Tax Rates', path: 'tax-rates', icon: IndianRupee, ready: true },

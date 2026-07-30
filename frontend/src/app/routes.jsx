@@ -103,6 +103,7 @@ const GeneralBrandingSettings = lazy(() => import('@/modules/settings/pages/Gene
 const LocalizationSettings = lazy(() => import('@/modules/settings/pages/LocalizationSettings'))
 const CurrencySettings = lazy(() => import('@/modules/settings/pages/CurrencySettings'))
 const DocumentNumberingSettings = lazy(() => import('@/modules/settings/pages/DocumentNumberingSettings'))
+const EmailTemplatesSettings = lazy(() => import('@/modules/settings/pages/EmailTemplatesSettings'))
 const UploadSettings = lazy(() => import('@/modules/settings/pages/UploadSettings'))
 const SecuritySettings = lazy(() => import('@/modules/settings/pages/SecuritySettings'))
 const NotificationPreferences = lazy(() => import('@/modules/settings/pages/NotificationPreferences'))
@@ -612,6 +613,7 @@ export default function AppRoutes() {
           <Route path="localization" element={<S><LocalizationSettings /></S>} />
           <Route path="currency" element={<S><CurrencySettings /></S>} />
           <Route path="numbering" element={<S><DocumentNumberingSettings /></S>} />
+          <Route path="email-templates" element={<S><EmailTemplatesSettings /></S>} />
           <Route path="upload" element={<S><UploadSettings /></S>} />
           <Route path="security" element={<S><SecuritySettings /></S>} />
           <Route path="notification-preferences" element={<S><NotificationPreferences /></S>} />
