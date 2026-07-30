@@ -3,6 +3,10 @@ import api from '@/lib/api'
 import { handleErr } from '@/services/apiError'
 
 export const settingsApi = {
+  general: {
+    get: () => api.get('/settings/general').then(r => r.data).catch(handleErr),
+    update: (data) => api.put('/settings/general', data).then(r => r.data).catch(handleErr),
+  },
   mail: {
     get: () => api.get('/settings/mail').then(r => r.data).catch(handleErr),
     update: (data) => api.put('/settings/mail', data).then(r => r.data).catch(handleErr),

@@ -99,6 +99,7 @@ const WebToLeadForms = lazy(() => import('@/modules/sales/pages/WebToLeadForms')
 const Forecast = lazy(() => import('@/modules/sales/pages/Forecast'))
 const Commission = lazy(() => import('@/modules/sales/pages/Commission'))
 const SettingsLayout = lazy(() => import('@/modules/settings/SettingsLayout'))
+const GeneralBrandingSettings = lazy(() => import('@/modules/settings/pages/GeneralBrandingSettings'))
 const MailSettings = lazy(() => import('@/modules/settings/pages/MailSettings'))
 const CustomFieldsSettings = lazy(() => import('@/modules/settings/pages/CustomFieldsSettings'))
 const CompanyFinanceSettings = lazy(() => import('@/modules/settings/pages/CompanyFinanceSettings'))
@@ -594,7 +595,8 @@ export default function AppRoutes() {
         <Route path="tickets" element={<ComingSoon name="Tickets" />} />
         <Route path="reports/*" element={<ComingSoon name="Reports" />} />
         <Route path="settings" element={<S><SettingsLayout /></S>}>
-          <Route index element={<Navigate to="mail" replace />} />
+          <Route index element={<Navigate to="general" replace />} />
+          <Route path="general" element={<S><GeneralBrandingSettings /></S>} />
           <Route path="mail" element={<S><MailSettings /></S>} />
           <Route path="custom-fields" element={<S><CustomFieldsSettings /></S>} />
           <Route path="company" element={<S><CompanyFinanceSettings /></S>} />
