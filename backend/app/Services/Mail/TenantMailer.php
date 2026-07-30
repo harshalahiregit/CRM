@@ -84,15 +84,50 @@ class TenantMailer
 
         config(['mail.mailers.tenant' => [
             'transport'  => 'smtp',
+            // Laravel 12 builds the transport from `scheme` first and only derives
+            // an implicit-TLS scheme from `encryption` when encryption==='tls' AND
+            // port===465 — so an 'ssl' setting (Hostinger's SSL/465) would silently
+            // fall back to plaintext 'smtp' and fail. We set `scheme` explicitly so
+            // ssl→smtps (implicit TLS) and tls→STARTTLS map correctly on any port.
+            'scheme'     => self::smtpScheme($settings->encryption, $settings->port),
             'host'       => $settings->host,
             'port'       => $settings->port,
             'username'   => $settings->username,
             'password'   => $settings->password,
             'encryption' => $settings->encryption === 'none' ? null : $settings->encryption,
             'timeout'    => 15,
+            // Symfony reads this from the transport options and, when false,
+            // skips both peer and hostname checks. Needed for panel-managed
+            // mail servers whose certificate is self-signed or issued for a
+            // different hostname — otherwise STARTTLS fails outright.
+            'verify_peer' => (bool) ($settings->verify_peer ?? true),
         ]]);
 
         return 'tenant';
+    }
+
+    /**
+     * Map the stored encryption choice to a Symfony/Laravel SMTP transport scheme.
+     *
+     *   ssl        → smtps  (implicit TLS, e.g. Hostinger port 465)
+     *   tls + 465  → smtps  (some hosts run implicit TLS on 465)
+     *   tls (587…) → smtp   (opportunistic STARTTLS)
+     *   none/other → smtp
+     *
+     * Public + static so it can be unit-tested directly.
+     */
+    public static function smtpScheme(?string $encryption, ?int $port): string
+    {
+        $enc = strtolower((string) $encryption);
+
+        if ($enc === 'ssl') {
+            return 'smtps';
+        }
+        if ($enc === 'tls') {
+            return (int) $port === 465 ? 'smtps' : 'smtp';
+        }
+
+        return 'smtp';
     }
 
     /**
