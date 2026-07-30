@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\Settings\CompanySettingController;
 use App\Http\Controllers\Api\Settings\GeneralSettingController;
 use App\Http\Controllers\Api\Settings\MailSettingController;
+use App\Http\Controllers\Api\Settings\SettingsGroupController;
 use Illuminate\Support\Facades\Route;
 
 // ── Workspace Settings (admin-only) ─────────────────────────────────────
@@ -13,6 +14,13 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('settings')->group(fun
     // General & Branding (generic tenant settings store)
     Route::get('/general', [GeneralSettingController::class, 'show']);
     Route::put('/general', [GeneralSettingController::class, 'update']);
+
+    // Generic settings groups — Upload / Security / Notification preferences.
+    // One controller + one registry; add a group by registering it + the constraint.
+    Route::get('/group/{group}', [SettingsGroupController::class, 'show'])
+        ->where('group', 'upload|security|notifications');
+    Route::put('/group/{group}', [SettingsGroupController::class, 'update'])
+        ->where('group', 'upload|security|notifications');
 
     // Email / SMTP (per-tenant outgoing mail)
     Route::get('/mail',       [MailSettingController::class, 'show']);

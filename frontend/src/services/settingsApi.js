@@ -7,6 +7,11 @@ export const settingsApi = {
     get: () => api.get('/settings/general').then(r => r.data).catch(handleErr),
     update: (data) => api.put('/settings/general', data).then(r => r.data).catch(handleErr),
   },
+  // Generic settings groups — Upload / Security / Notification preferences.
+  group: {
+    get: (group) => api.get(`/settings/group/${group}`).then(r => r.data).catch(handleErr),
+    update: (group, values) => api.put(`/settings/group/${group}`, { values }).then(r => r.data).catch(handleErr),
+  },
   mail: {
     get: () => api.get('/settings/mail').then(r => r.data).catch(handleErr),
     update: (data) => api.put('/settings/mail', data).then(r => r.data).catch(handleErr),
