@@ -35,6 +35,28 @@ final class SettingRegistry
                 'primary_color' => ['cast' => 'string', 'default' => '#7C3AED', 'rules' => ['nullable', 'string', 'max:20']],
             ],
 
+            // ── Increment C: Localization ────────────────────────────────
+            'localization' => [
+                'language'       => ['cast' => 'string', 'default' => 'en',           'rules' => ['nullable', 'string', 'max:10']],
+                'locale'         => ['cast' => 'string', 'default' => 'en_IN',        'rules' => ['nullable', 'string', 'max:20']],
+                'timezone'       => ['cast' => 'string', 'default' => 'Asia/Kolkata', 'rules' => ['nullable', 'string', 'max:64', 'timezone']],
+                'date_format'    => ['cast' => 'string', 'default' => 'd/m/Y',        'rules' => ['nullable', 'string', 'in:d/m/Y,m/d/Y,Y-m-d,d-m-Y,d M Y,M d Y']],
+                'time_format'    => ['cast' => 'string', 'default' => '12',           'rules' => ['nullable', 'string', 'in:12,24']],
+                'week_start_day' => ['cast' => 'int',    'default' => 1,              'rules' => ['nullable', 'integer', 'min:0', 'max:6']],
+            ],
+
+            // ── Increment C: Currency & number format ────────────────────
+            'currency' => [
+                'code'                => ['cast' => 'string', 'default' => 'INR', 'rules' => ['nullable', 'string', 'size:3']],
+                'symbol'              => ['cast' => 'string', 'default' => '₹',   'rules' => ['nullable', 'string', 'max:8']],
+                'symbol_position'     => ['cast' => 'string', 'default' => 'before', 'rules' => ['nullable', 'string', 'in:before,after,before_space,after_space']],
+                'decimal_places'      => ['cast' => 'int',    'default' => 2,     'rules' => ['nullable', 'integer', 'min:0', 'max:6']],
+                'decimal_separator'   => ['cast' => 'string', 'default' => '.',   'rules' => ['nullable', 'string', 'max:1']],
+                'thousands_separator' => ['cast' => 'string', 'default' => ',',   'rules' => ['nullable', 'string', 'max:1']],
+                'negative_format'     => ['cast' => 'string', 'default' => 'minus', 'rules' => ['nullable', 'string', 'in:minus,parentheses']],
+                'grouping'            => ['cast' => 'string', 'default' => 'indian', 'rules' => ['nullable', 'string', 'in:indian,western']],
+            ],
+
             // ── Increment D: Upload ──────────────────────────────────────
             'upload' => [
                 'max_upload_mb'        => ['cast' => 'int',    'default' => 10, 'rules' => ['nullable', 'integer', 'min:1', 'max:1024']],

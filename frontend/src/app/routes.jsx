@@ -100,6 +100,8 @@ const Forecast = lazy(() => import('@/modules/sales/pages/Forecast'))
 const Commission = lazy(() => import('@/modules/sales/pages/Commission'))
 const SettingsLayout = lazy(() => import('@/modules/settings/SettingsLayout'))
 const GeneralBrandingSettings = lazy(() => import('@/modules/settings/pages/GeneralBrandingSettings'))
+const LocalizationSettings = lazy(() => import('@/modules/settings/pages/LocalizationSettings'))
+const CurrencySettings = lazy(() => import('@/modules/settings/pages/CurrencySettings'))
 const UploadSettings = lazy(() => import('@/modules/settings/pages/UploadSettings'))
 const SecuritySettings = lazy(() => import('@/modules/settings/pages/SecuritySettings'))
 const NotificationPreferences = lazy(() => import('@/modules/settings/pages/NotificationPreferences'))
@@ -606,6 +608,8 @@ export default function AppRoutes() {
           <Route path="tax-rates" element={<S><TaxRatesSettings /></S>} />
           <Route path="expense-categories" element={<S><ExpenseCategoriesSettings /></S>} />
           <Route path="account-groups" element={<S><AccountGroupsSettings /></S>} />
+          <Route path="localization" element={<S><LocalizationSettings /></S>} />
+          <Route path="currency" element={<S><CurrencySettings /></S>} />
           <Route path="upload" element={<S><UploadSettings /></S>} />
           <Route path="security" element={<S><SecuritySettings /></S>} />
           <Route path="notification-preferences" element={<S><NotificationPreferences /></S>} />
