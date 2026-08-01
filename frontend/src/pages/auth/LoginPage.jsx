@@ -5,14 +5,19 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Eye, EyeOff, ChevronDown, Shield, Zap, Globe, Lock, CheckCircle, User, Star } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
+import { purchaseVendorAuthApi } from '@/services/purchaseVendorAuthApi'
 
+/**
+ * A Purchase Vendor is a PurchaseVendor record, not a User, so it cannot go
+ * through the shared /api/auth/login — a User token would never pass
+ * EnsurePurchaseVendorPortalAccess. The option below is therefore marked
+ * `purchaseVendor` and submitted against /api/purchase-vendor/login instead,
+ * storing its token under the portal's own key. Same door, different lock.
+ */
 const ROLES = [
   { value: 'admin',               label: 'Admin',                icon: '🛡️' },
   { value: 'staff',               label: 'Staff / Employee',     icon: '👔' },
-  // Purchase Vendors are deliberately absent: they are a PurchaseVendor identity,
-  // not a User, and sign in at /purchase-portal/login. A User token could never
-  // pass EnsurePurchaseVendorPortalAccess, so this door only ever produced the
-  // "pending admin approval" error.
+  { value: 'purchase_vendor',     label: 'Purchase Vendor',      icon: '📦', purchaseVendor: true },
   { value: 'third_party_vendor',  label: 'Third-Party Vendor',   icon: '🤝' },
   { value: 'client',              label: 'Client / Customer',    icon: '👤' },
   { value: 'company',             label: 'Company',              icon: '🏢' },
@@ -57,9 +62,23 @@ export default function LoginPage() {
 
   const watchedRole = watch('role')
   const selectedRoleObj = ROLES.find(r => r.value === watchedRole)
+  const isPurchaseVendor = Boolean(selectedRoleObj?.purchaseVendor)
 
   const onSubmit = async (values) => {
     setApiError('')
+
+    // Purchase Vendors authenticate against their own endpoint and carry a
+    // PurchaseVendor token, so they never touch the shared User login.
+    if (selectedRoleObj?.purchaseVendor) {
+      try {
+        await purchaseVendorAuthApi.login(values.email, values.password)
+        navigate('/purchase-portal/dashboard', { replace: true })
+      } catch (e) {
+        setApiError(e?.response?.data?.message || 'Invalid credentials.')
+      }
+      return
+    }
+
     const result = await login(values)
     if (result.success) {
       if (result.role === 'company') navigate('/company-portal/dashboard', { replace: true })
@@ -270,11 +289,15 @@ export default function LoginPage() {
 
         {/* Links */}
         <div className="flex items-center justify-between mt-4">
-          <Link to="/auth/forgot-password" className="flex items-center gap-1.5 text-xs transition-colors" style={{ color: '#8b85a8' }}
+          {/* A Purchase Vendor registers and resets against its own portal —
+              the shared pages create a User, which is the wrong identity. */}
+          <Link to={isPurchaseVendor ? '/purchase-portal/forgot-password' : '/auth/forgot-password'}
+            className="flex items-center gap-1.5 text-xs transition-colors" style={{ color: '#8b85a8' }}
             onMouseEnter={e=>e.currentTarget.style.color='#edeaf8'} onMouseLeave={e=>e.currentTarget.style.color='#8b85a8'}>
             <Lock size={12} /> Forgot Password?
           </Link>
-          <Link to="/auth/register" className="flex items-center gap-1.5 text-xs font-semibold transition-colors" style={{ color: '#a78bfa' }}
+          <Link to={isPurchaseVendor ? '/purchase-portal/register' : '/auth/register'}
+            className="flex items-center gap-1.5 text-xs font-semibold transition-colors" style={{ color: '#a78bfa' }}
             onMouseEnter={e=>e.currentTarget.style.color='#c4b5fd'} onMouseLeave={e=>e.currentTarget.style.color='#a78bfa'}>
             <Star size={12} /> Register here →
           </Link>
