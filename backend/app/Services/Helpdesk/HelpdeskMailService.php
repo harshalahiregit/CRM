@@ -5,6 +5,7 @@ namespace App\Services\Helpdesk;
 use App\Mail\Helpdesk\TicketAssignedMail;
 use App\Mail\Helpdesk\TicketReceivedMail;
 use App\Mail\Helpdesk\TicketReplyMail;
+use App\Mail\Helpdesk\TicketStatusUpdateMail;
 use App\Models\Helpdesk\Ticket;
 use App\Models\Helpdesk\TicketReply;
 use App\Models\User;
@@ -69,6 +70,17 @@ class HelpdeskMailService
 
         $this->safely(fn () => Mail::to($to['email'])->send(new TicketReplyMail($ticket, $reply, $to['name'], $agentName)),
             "reply email for ticket #{$ticket->id}");
+    }
+
+    public function sendStatusUpdate(Ticket $ticket, string $oldStatus, string $newStatus): void
+    {
+        $to = $this->recipientFor($ticket);
+        if (! $to) {
+            return;
+        }
+
+        $this->safely(fn () => Mail::to($to['email'])->send(new TicketStatusUpdateMail($ticket, $to['name'], $oldStatus, $newStatus)),
+            "status-update email for ticket #{$ticket->id}");
     }
 
     public function sendAssignment(Ticket $ticket, ?int $userId): void

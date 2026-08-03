@@ -14,10 +14,10 @@ class Ticket extends Model
 
     protected $fillable = [
         'tenant_id', 'subject', 'description', 'status', 'priority',
-        'assigned_to', 'created_by', 'customer_id', 'department_id', 'project_id', 'due_date', 'source',
+        'assigned_to', 'created_by', 'customer_id', 'department_id', 'service_id', 'project_id', 'due_date', 'source',
         'requester_name', 'requester_email',
         'merged_into_id', 'ai_summary', 'ai_summary_at', 'email_token',
-        'first_responded_at', 'resolved_at', 'sla_paused_at', 'sla_paused_seconds',
+        'first_responded_at', 'resolved_at', 'last_reply_at', 'sla_paused_at', 'sla_paused_seconds',
     ];
 
     protected static function booted(): void
@@ -62,6 +62,7 @@ class Ticket extends Model
         'ai_summary_at'      => 'datetime',
         'first_responded_at' => 'datetime',
         'resolved_at'        => 'datetime',
+        'last_reply_at'      => 'datetime',
         'sla_paused_at'      => 'datetime',
         'sla_paused_seconds' => 'integer',
     ];
@@ -105,6 +106,11 @@ class Ticket extends Model
     public function tags()
     {
         return $this->belongsToMany(TicketTag::class, 'ticket_tag_pivot', 'ticket_id', 'tag_id')->withTimestamps();
+    }
+
+    public function service()
+    {
+        return $this->belongsTo(TicketService::class, 'service_id');
     }
 
     // NOTE: no customer() relation — customers belong to Zafar's module. Resolve

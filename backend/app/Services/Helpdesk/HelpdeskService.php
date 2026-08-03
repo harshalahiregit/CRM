@@ -327,7 +327,7 @@ class HelpdeskService
     public function showTicket(int $ticketId, int $tenantId, ?int $userId = null, ?string $role = null): Ticket
     {
         $ticket = $this->findTicket($ticketId, $tenantId);
-        $ticket->load(['assignee:id,name,email', 'replies.attachments', 'feedback']);
+        $ticket->load(['assignee:id,name,email', 'service:id,name', 'replies.attachments', 'feedback']);
 
         if ($userId !== null && $role !== null) {
             $ticket->setAttribute('can_delete', $this->isTicketManager($ticket, $userId, $role));
@@ -368,6 +368,7 @@ class HelpdeskService
             // ticket landed with no department — breaking department routing and
             // the Dept column. Fall back to the configured default when unset.
             'department_id'   => $data['department_id'] ?? $this->defaultDepartmentId($tenantId),
+            'service_id'      => $data['service_id'] ?? null,
             'due_date'        => $data['due_date'] ?? null,
             'source'          => $data['source'] ?? 'internal',
             'requester_name'  => $data['requester_name'] ?? null,
@@ -551,7 +552,7 @@ class HelpdeskService
         // the caller got a 200 and the old department back.
         $ticket->fill(array_intersect_key($data, array_flip([
             'subject', 'description', 'status', 'priority',
-            'assigned_to', 'customer_id', 'department_id', 'due_date',
+            'assigned_to', 'customer_id', 'department_id', 'service_id', 'due_date',
         ])));
         $ticket->save();
 
@@ -570,6 +571,7 @@ class HelpdeskService
             // here too, or editing a ticket's status would silently skip both.
             $this->notifyRaiser($ticket, 'ticket.status', "Ticket #{$ticket->id} is now {$ticket->status}", $ticket->subject);
             $this->notifyManagers($ticket, 'ticket.status', "Ticket #{$ticket->id} → {$ticket->status}", $ticket->subject, excludeUserId: $this->raiserUserId($ticket));
+            $this->mail->sendStatusUpdate($ticket, $oldStatus, $ticket->status);
         }
 
         // Likewise, being handed a ticket through the edit form told the new
@@ -630,6 +632,7 @@ class HelpdeskService
             // the ticket is themselves a manager/admin, notifyRaiser already told them
             // — without this they'd get the same status change twice.
             $this->notifyManagers($ticket, 'ticket.status', "Ticket #{$ticket->id} → {$status}", $ticket->subject, excludeUserId: $this->raiserUserId($ticket));
+            $this->mail->sendStatusUpdate($ticket, $was, $status);
         }
 
         return $ticket->fresh('assignee');
@@ -672,6 +675,9 @@ class HelpdeskService
                     'file_name' => $file['file_name'],
                 ]);
             }
+
+            // Stamp the last-reply time so the queue can show it (any sender).
+            $ticket->update(['last_reply_at' => now()]);
 
             // First staff reply stops the first-response SLA clock.
             if ($data['sender_type'] !== 'client') {
@@ -994,6 +1000,35 @@ class HelpdeskService
      * ticket status='merged' and point merged_into_id at the survivor so visiting
      * it can redirect. Idempotent-ish: a ticket already merged can't be re-merged.
      */
+    /**
+     * Other tickets from the SAME requester — matched by requester email or the
+     * linked customer, newest first, excluding this one. Auto (no manual linking).
+     */
+    public function sameRequesterTickets(int $ticketId, int $tenantId, int $limit = 10): Collection
+    {
+        $ticket = $this->findTicket($ticketId, $tenantId);
+        $email = $ticket->requester_email ? mb_strtolower(trim($ticket->requester_email)) : null;
+        $customerId = $ticket->customer_id ? (int) $ticket->customer_id : null;
+
+        if (! $email && ! $customerId) {
+            return new Collection();
+        }
+
+        return Ticket::forTenant($tenantId)
+            ->where('id', '!=', $ticket->id)
+            ->where(function ($q) use ($email, $customerId) {
+                if ($email) {
+                    $q->whereRaw('LOWER(requester_email) = ?', [$email]);
+                }
+                if ($customerId) {
+                    $q->orWhere('customer_id', $customerId);
+                }
+            })
+            ->latest()
+            ->limit($limit)
+            ->get(['id', 'subject', 'status', 'priority', 'created_at']);
+    }
+
     public function mergeTicket(int $survivorId, int $mergeTicketId, int $tenantId): Ticket
     {
         if ($survivorId === $mergeTicketId) {

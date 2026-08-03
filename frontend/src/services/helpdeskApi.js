@@ -128,6 +128,10 @@ export const helpdeskApi = {
     addReminder: (id, data) => api.post(`/helpdesk/tickets/${id}/reminders`, data).then(unwrap).catch(handleErr),
     reminderDone: (reminderId) => api.patch(`/helpdesk/reminders/${reminderId}/done`).then(unwrap).catch(handleErr),
     related: (id) => api.get(`/helpdesk/tickets/${id}/related`).then(unwrap).catch(handleErr),
+    // Auto-listed tickets from the same requester (email/customer match).
+    sameRequester: (id) => api.get(`/helpdesk/tickets/${id}/same-requester`).then(unwrap).catch(handleErr),
+    // Public single-ticket view — {id}-{token}; no auth, the token is the key.
+    publicView: (ref) => api.get(`/helpdesk/public/tickets/${ref}`).then(unwrap).catch(handleErr),
     addRelated: (id, related_ticket_id) => api.post(`/helpdesk/tickets/${id}/related`, { related_ticket_id }).then(unwrap).catch(handleErr),
     removeRelated: (id, relatedId) => api.delete(`/helpdesk/tickets/${id}/related/${relatedId}`).then(unwrap).catch(handleErr),
 

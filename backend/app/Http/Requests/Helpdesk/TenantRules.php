@@ -36,4 +36,10 @@ final class TenantRules
     {
         return Rule::exists('ticket_departments', 'id')->where('tenant_id', $tenantId);
     }
+
+    /** A service belonging to THIS tenant. */
+    public static function service(int $tenantId): Exists
+    {
+        return Rule::exists('ticket_services', 'id')->where('tenant_id', $tenantId);
+    }
 }

@@ -7,7 +7,7 @@ import 'react-quill/dist/quill.snow.css'
 import {
   Paperclip, Send, X, ListTodo, FolderKanban, GitMerge,
   Plus, Trash2, Sparkles, RefreshCw, ArrowLeft, AlertCircle,
-  MessageSquare, Activity, StickyNote, CheckCircle2, User,
+  MessageSquare, Activity, StickyNote, CheckCircle2, User, Bookmark, BookOpen,
 } from 'lucide-react'
 import { helpdeskApi } from '@/services/helpdeskApi'
 import { useAuth } from '@/context/AuthContext'
@@ -163,6 +163,27 @@ export default function TicketThread() {
   const [tasksOpen, setTasksOpen] = useState(false)
   const [tab, setTab] = useState('conversation') // 'conversation' | 'activity'
   const [composerMode, setComposerMode] = useState('reply') // 'reply' | 'note'
+  const [replyTip, setReplyTip] = useState('')   // transient feedback for save-as-canned
+
+  // Save the current reply body as a reusable canned response.
+  const saveAsCanned = async () => {
+    if (!message.trim()) return
+    const title = window.prompt('Save this reply as a canned response.\nGive it a title:')
+    if (!title?.trim()) return
+    try {
+      await helpdeskApi.cannedResponses.create({ title: title.trim(), content: message })
+      setReplyTip('Saved as canned ✓'); setTimeout(() => setReplyTip(''), 2500)
+    } catch (e) {
+      setReplyTip(e?.message || 'Could not save'); setTimeout(() => setReplyTip(''), 3000)
+    }
+  }
+
+  // Hand the reply off to the KB editor (which needs a subcategory) prefilled.
+  const convertToKb = () => {
+    if (!message.trim()) return
+    navigate('/app/helpdesk/kb-admin', { state: { draftArticle: { title: ticket?.subject || '', content: message } } })
+  }
+
   // Searchable pop-ups — these replace window.prompt('…enter an id').
   const [projectPickerOpen, setProjectPickerOpen] = useState(false)
   const [mergePickerOpen, setMergePickerOpen] = useState(false)
@@ -884,6 +905,17 @@ export default function TicketThread() {
                           <input type="file" multiple className="hidden" onChange={e => setFiles(prev => [...prev, ...Array.from(e.target.files)])} />
                         </label>
                         <CannedResponsePicker onInsert={txt => setMessage(m => m ? `${m}\n\n${txt}` : txt)} />
+                        <button type="button" onClick={saveAsCanned} disabled={!message.trim()}
+                          className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer hover:opacity-70 transition-opacity disabled:opacity-40"
+                          style={{ color: 'var(--text-muted)' }} title="Save this reply as a canned response">
+                          <Bookmark size={14} /> Save as canned
+                        </button>
+                        <button type="button" onClick={convertToKb} disabled={!message.trim()}
+                          className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer hover:opacity-70 transition-opacity disabled:opacity-40"
+                          style={{ color: 'var(--text-muted)' }} title="Turn this reply into a knowledge base article">
+                          <BookOpen size={14} /> To KB
+                        </button>
+                        {replyTip && <span className="text-[11px] font-semibold" style={{ color: 'var(--color-success-500)' }}>{replyTip}</span>}
                       </>
                     ) : (
                       <span className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: 'var(--color-warning-500)' }}><StickyNote size={13} /> Internal note</span>

@@ -26,6 +26,44 @@ class PublicHelpdeskController extends Controller
     ) {
     }
 
+    /* ── Public single-ticket view (no login) ──────────────────────────
+     * The requester follows a link carrying {id}-{token}; the unforgeable
+     * email_token is the credential (same token used for email threading), so no
+     * session is needed and only that one ticket is exposed. Returns the ticket
+     * plus its reply thread — read-only. A bad/mismatched token 404s. */
+    public function viewTicket(string $ref)
+    {
+        [$id, $token] = array_pad(explode('-', $ref, 2), 2, null);
+        $ticket = \App\Models\Helpdesk\Ticket::query()
+            ->where('id', (int) $id)
+            ->where('email_token', (string) $token)
+            ->first();
+
+        abort_unless($ticket && $token, 404, 'Ticket not found.');
+
+        $replies = $ticket->replies()->with('attachments:id,ticket_reply_id,file_name')->get()
+            ->map(fn ($r) => [
+                'id'          => $r->id,
+                'sender_type' => $r->sender_type,
+                'message'     => $r->message,
+                'created_at'  => $r->created_at,
+                'attachments' => $r->attachments->map(fn ($a) => ['file_name' => $a->file_name])->all(),
+            ]);
+
+        return $this->success([
+            'ticket' => [
+                'id'         => $ticket->id,
+                'subject'    => $ticket->subject,
+                'description'=> $ticket->description,
+                'status'     => $ticket->status,
+                'priority'   => $ticket->priority,
+                'created_at' => $ticket->created_at,
+                'requester_name' => $ticket->requester_name,
+            ],
+            'replies' => $replies,
+        ], 'Ticket retrieved');
+    }
+
     /* ── Widget ticket submission (rate-limited + honeypot) ────── */
     public function submitTicket(PublicTicketRequest $request, string $key)
     {

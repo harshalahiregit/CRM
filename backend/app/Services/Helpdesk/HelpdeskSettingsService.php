@@ -6,6 +6,7 @@ use App\Exceptions\BusinessException;
 use App\Models\Helpdesk\HelpdeskSetting;
 use App\Models\Helpdesk\TicketDepartment;
 use App\Models\Helpdesk\TicketPriority;
+use App\Models\Helpdesk\TicketService;
 use App\Models\Helpdesk\TicketStatus;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -44,6 +45,13 @@ class HelpdeskSettingsService
         ['name' => 'General',   'description' => 'General support requests', 'order' => 0],
         ['name' => 'Billing',   'description' => 'Payments and invoices',    'order' => 1],
         ['name' => 'Technical', 'description' => 'Product and technical issues', 'order' => 2],
+    ];
+
+    private const DEFAULT_SERVICES = [
+        ['name' => 'Website',  'order' => 0],
+        ['name' => 'Software', 'order' => 1],
+        ['name' => 'Hardware', 'order' => 2],
+        ['name' => 'Other',    'order' => 3],
     ];
 
     public function __construct(private \App\Services\NotificationService $notifications)
@@ -121,6 +129,7 @@ class HelpdeskSettingsService
             'priorities'  => TicketPriority::forTenant($tenantId)->orderBy('order')->get(),
             'statuses'    => TicketStatus::forTenant($tenantId)->orderBy('order')->get(),
             'departments' => $this->departmentsWithAgents($tenantId),
+            'services'    => TicketService::forTenant($tenantId)->orderBy('order')->get(),
             'settings'    => $this->settings($tenantId),
         ];
     }
@@ -198,6 +207,14 @@ class HelpdeskSettingsService
                     );
                 }
             }
+            if (! TicketService::forTenant($tenantId)->exists()) {
+                foreach (self::DEFAULT_SERVICES as $row) {
+                    TicketService::firstOrCreate(
+                        ['tenant_id' => $tenantId, 'name' => $row['name']],
+                        [...$row, 'tenant_id' => $tenantId]
+                    );
+                }
+            }
             $this->settings($tenantId); // creates the settings row if missing
         });
     }
@@ -245,6 +262,7 @@ class HelpdeskSettingsService
         'priorities'  => TicketPriority::class,
         'statuses'    => TicketStatus::class,
         'departments' => TicketDepartment::class,
+        'services'    => TicketService::class,
     ];
 
     private function modelFor(string $type): string

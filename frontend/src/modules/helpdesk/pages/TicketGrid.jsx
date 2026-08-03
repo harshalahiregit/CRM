@@ -58,6 +58,8 @@ const slaSort = (t) => {
 }
 
 const ALL_COLS = [
+  { key: 'sn',         label: 'S.N',       sort: () => 0 },   // positional; rendered from row index
+  { key: 'ticket',     label: 'Ticket #',  sort: t => t.id },
   { key: 'priority',   label: 'Priority',  always: true,  sort: t => PRI_RANK[t.priority] ?? 9 },
   { key: 'sla',        label: 'SLA',       sort: slaSort },
   { key: 'subject',    label: 'Subject',   always: true,  sort: t => (t.subject || '').toLowerCase() },
@@ -65,6 +67,7 @@ const ALL_COLS = [
   { key: 'department', label: 'Dept',      sort: t => t.department_id ?? 999 },
   { key: 'status',     label: 'Status',    always: true,  sort: t => (t.status || '').toLowerCase() },
   { key: 'assignee',   label: 'Assignee',  sort: t => (t.assignee?.name || '~').toLowerCase() },
+  { key: 'last_reply', label: 'Last reply', sort: t => new Date(t.last_reply_at || 0).getTime() },
   { key: 'updated',    label: 'Updated',   sort: t => new Date(t.updated_at || t.created_at || 0).getTime() },
 ]
 
@@ -403,7 +406,7 @@ export default function TicketGrid() {
                 </td></tr>
               )}
 
-              {!isLoading && rows.map(t => {
+              {!isLoading && rows.map((t, rowIdx) => {
                 const isSel = selected.has(t.id)
                 const sColor = statusColor(t.status)
                 return (
@@ -432,6 +435,8 @@ export default function TicketGrid() {
                     {cols.map(c => (
                       <td key={c.key} style={{ padding: rowPad, fontSize: 13, color: 'var(--text-body)', whiteSpace: c.key === 'subject' ? 'normal' : 'nowrap' }}
                         onClick={c.key === 'status' ? e => e.stopPropagation() : undefined}>
+                        {c.key === 'sn' && <span style={{ color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums' }}>{rowIdx + 1}</span>}
+                        {c.key === 'ticket' && <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--text-h)' }}>#{t.id}</span>}
                         {c.key === 'priority' && <SLABadge priority={t.priority} showSla={false} />}
                         {c.key === 'sla' && <SlaTimer sla={t.sla} compact />}
                         {c.key === 'subject' && (
@@ -492,6 +497,7 @@ export default function TicketGrid() {
                             <span className="text-xs" style={{ color: t.assignee?.name ? 'var(--text-body)' : 'var(--text-muted)' }}>{t.assignee?.name || 'Unassigned'}</span>
                           </span>
                         )}
+                        {c.key === 'last_reply' && <span style={{ color: 'var(--text-muted)' }}>{t.last_reply_at ? fmtAgo(t.last_reply_at) : '—'}</span>}
                         {c.key === 'updated' && <span style={{ color: 'var(--text-muted)' }}>{fmtAgo(t.updated_at || t.created_at)}</span>}
                       </td>
                     ))}
