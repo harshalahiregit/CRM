@@ -27,6 +27,8 @@ class TaskConfigService
         'notify_due'        => true,   // due soon / overdue
         'email_enabled'     => true,   // send the above by email as well as in-app
         'alert_email_extra' => null,   // optional shared inbox copied on everything
+        'hide_rates'        => true,   // hide the rate/billing fields on the task form (doc: hidden by default)
+        'require_milestone' => false,  // force a milestone on tasks linked to a project
     ];
 
     public function all(int $tenantId): array

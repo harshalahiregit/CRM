@@ -21,7 +21,8 @@ use DOMNode;
 class HtmlSanitizer
 {
     private const ALLOWED_TAGS = [
-        'p', 'br', 'b', 'strong', 'i', 'em', 'u', 'h2', 'h3',
+        'p', 'br', 'b', 'strong', 'i', 'em', 'u', 's', 'strike', 'h2', 'h3',
+        'blockquote', 'pre', 'code',
         'ul', 'ol', 'li', 'a', 'table', 'thead', 'tbody', 'tr', 'th', 'td',
         'img', 'div', 'span', 'figure', 'figcaption',
         'audio', 'video', 'source', 'iframe',

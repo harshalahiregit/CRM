@@ -77,6 +77,22 @@ class TaskController extends Controller
         return $this->success(null, 'Task deleted');
     }
 
+    /** Soft-deleted tasks the caller can recover (admin sees all; staff their own). */
+    public function trash(Request $request)
+    {
+        return $this->success(
+            $this->tasks->trashed($request->user()->tenant_id, $request->user()->id, $this->isAdmin($request)),
+            'Trash retrieved'
+        );
+    }
+
+    /** Put a soft-deleted task (and its soft-deleted subtree) back. */
+    public function restore(Request $request, int $task)
+    {
+        $this->tasks->restore($task, $request->user()->tenant_id, $request->user()->id, $this->isAdmin($request));
+        return $this->success(null, 'Task restored');
+    }
+
     public function updateStatus(UpdateTaskStatusRequest $request, int $task)
     {
         $this->guard($request, $task);

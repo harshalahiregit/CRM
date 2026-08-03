@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
 import ReactQuill from 'react-quill'
 import 'react-quill/dist/quill.snow.css'
+import { RICH_MODULES, RICH_FORMATS } from '@/lib/quillConfig'
 import {
   ArrowLeft, Users, Eye, CheckSquare, Square, MessageSquare, Play, StopCircle,
   Clock, Pencil, Trash2, ExternalLink, Send, Plus, Copy, RefreshCw, BookmarkPlus, ListPlus,
@@ -12,27 +13,23 @@ import SubtaskTree from '../components/SubtaskTree'
 import RaiseTicketModal from '../../helpdesk/components/RaiseTicketModal'
 import { taskApi, TASK_STATUS, TASK_PRIORITY, TASK_ACCENT, relLabel, fmtDuration } from '@/services/taskApi'
 import Select from '@/components/ui/Select'
-import SearchPicker, { ConfirmModal, InputModal } from '@/components/ui/SearchPicker'
+import SearchPicker, { InputModal } from '@/components/ui/SearchPicker'
 import { useAuth } from '@/context/AuthContext'
 import { useStatuses, statusOptions } from '@/hooks/useStatuses'
 import TaskFormDrawer, { PeopleChips } from '../components/TaskFormDrawer'
 import { FilesCard, RemindersCard } from '../components/TaskExtras'
 
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
+const initials = (name) => name ? name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : '–'
 
 // Rich-text comment composer — mirrors the helpdesk reply editor (TicketThread's
 // REPLY_MODULES/REPLY_FORMATS), trimmed to what a task comment needs. The value is
 // HTML, sanitized server-side (TaskService::addComment → HtmlSanitizer::clean)
 // before it is stored or rendered.
-const COMMENT_MODULES = {
-  toolbar: [
-    ['bold', 'italic', 'underline'],
-    [{ list: 'ordered' }, { list: 'bullet' }],
-    ['link', 'code-block'],
-    ['clean'],
-  ],
-}
-const COMMENT_FORMATS = ['bold', 'italic', 'underline', 'list', 'bullet', 'link', 'code-block']
+// Full "notepad" toolbar for the description + comment editors, shared with the
+// create form so every task editor offers the same options.
+const COMMENT_MODULES = RICH_MODULES
+const COMMENT_FORMATS = RICH_FORMATS
 
 // Quill never leaves its editor truly empty — an untouched editor still holds
 // `<p><br></p>`. Treat that (and any tag-only/whitespace-only HTML) as blank so a
@@ -74,6 +71,9 @@ const COMMENT_EDITOR_CSS = `
   .task-comment-html code{background:rgba(148,163,184,0.18);padding:.1rem .3rem;border-radius:4px;font-size:.9em}
   .task-comment-html pre{background:var(--bg-global);border:1px solid var(--border);border-radius:8px;padding:.5rem .7rem;overflow-x:auto;white-space:pre-wrap}
   .task-comment-html blockquote{border-left:3px solid var(--color-primary-500);margin:.4rem 0;padding:.2rem .8rem;opacity:.9}
+  .task-comment-html img{max-width:100%;height:auto;border-radius:8px;margin:.3rem 0}
+  .task-comment-html h2{font-size:1.15rem;font-weight:800;margin:.5rem 0 .3rem}
+  .task-comment-html h3{font-size:1.02rem;font-weight:700;margin:.4rem 0 .3rem}
 `
 
 export default function TaskDetail({ idProp = null, onClose = null }) {
@@ -93,12 +93,24 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
   const { data: task, isLoading, isError, error } = useQuery({ queryKey: ['task', id], queryFn: () => taskApi.get(id) })
   const { data: time } = useQuery({ queryKey: ['task-time', id], queryFn: () => taskApi.totalTime(id) })
   const { data: staff = [] } = useQuery({ queryKey: ['task-staff'], queryFn: taskApi.staff })
+  // Vendors & TPVs can own a checklist item too (all are Users) — pull them so a
+  // line can be handed to anyone, and so a chip resolves whoever it is.
+  const { data: vendors = [] } = useQuery({ queryKey: ['task-vendors', 'vendor'], queryFn: () => taskApi.vendors('vendor') })
+  const { data: tpvs = [] } = useQuery({ queryKey: ['task-vendors', 'tpv'], queryFn: () => taskApi.vendors('tpv') })
+  const people = useMemo(() => [...staff, ...vendors, ...tpvs], [staff, vendors, tpvs])
+  const peopleById = useMemo(() => Object.fromEntries(people.map(p => [p.id, p])), [people])
+  // Split one assignee list into staff / vendors / TPVs for display (they all live
+  // in the same task_assignees pivot — only their role tells them apart).
+  const staffIds = useMemo(() => new Set(staff.map(s => s.id)), [staff])
+  const vendorIds = useMemo(() => new Set(vendors.map(v => v.id)), [vendors])
+  const tpvIds = useMemo(() => new Set(tpvs.map(t => t.id)), [tpvs])
   const { map: statusMap, list: statusList } = useStatuses('task')
 
   const [editing, setEditing] = useState(false)
   const [raising, setRaising] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [picker, setPicker] = useState(null)      // 'assignee' | 'follower' | 'template'
+  const [assignItemId, setAssignItemId] = useState(null)  // checklist item being (re)assigned
   const [savingTpl, setSavingTpl] = useState(false)
   const [newItem, setNewItem] = useState('')
   const [newSubtask, setNewSubtask] = useState('')
@@ -119,6 +131,8 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
   const syncFollow  = useMutation(mut((ids) => taskApi.followers(id, ids)))
   const addItem     = useMutation(mut((desc) => taskApi.addChecklist(id, desc)))
   const toggleItem  = useMutation(mut((iid) => taskApi.toggleChecklist(iid)))
+  // (Re)assign a single checklist line to a person, or clear it (userId = null).
+  const assignItem  = useMutation(mut(({ itemId, userId }) => taskApi.updateChecklistItem(itemId, { assigned_to: userId })))
   // Subtasks. Every write invalidates the tree AND the task itself, because
   // ticking a leaf five levels down changes the bar at the top of this modal.
   const afterTree = () => { invalidate(); qc.invalidateQueries({ queryKey: ['task-tree', id] }) }
@@ -356,7 +370,7 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
             </Card>
 
             <Card
-              title={`Checklist & subtasks${total ? ` · ${done}/${total}` : ''}`}
+              title={`Subtasks & checklist${total ? ` · ${done}/${total}` : ''}`}
               icon={CheckSquare}
               action={checklist.some(c => c.finished) && (
                 <button onClick={() => setHideCompleted(v => !v)}
@@ -373,24 +387,47 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
                 </div>
               )}
 
-              {/* Subtasks first — they're real work with owners and deadlines, so
-                  they outrank the loose ticks underneath them. */}
-              {subtasks.length > 0 && (
-                <div className="mb-2.5 pb-2.5" style={{ borderBottom: checklist.length ? '1px solid var(--border)' : 'none' }}>
-                  <SubtaskTree
-                    nodes={subtasks}
-                    busyId={toggleSubtask.isPending ? toggleSubtask.variables?.nodeId : null}
-                    onToggle={(n) => toggleSubtask.mutate({ nodeId: n.id, next: n.is_done ? 'in_progress' : 'complete' })}
-                    onAddChild={(parentId, name) => addSubtask.mutate({ parentId, name })}
-                    onOpen={(tid) => navigate(`/app/tasks/${tid}`)}
-                  />
+              {/* ── SUBTASKS — its own clearly-labelled section so users can see
+                  it exists. A subtask is a real task with its own owner + deadline;
+                  open it to assign staff / vendor / TPV. ── */}
+              <div className="rounded-xl p-3 mb-3" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <GitBranch size={14} style={{ color: TASK_ACCENT }} />
+                  <span className="text-xs font-bold" style={{ color: 'var(--text-h)' }}>Subtasks</span>
+                  {subtasks.length > 0 && (
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: 'var(--bg-card)', color: 'var(--text-muted)' }}>{subtasks.length}</span>
+                  )}
                 </div>
-              )}
+                {subtasks.length > 0 && (
+                  <div className="mb-2">
+                    <SubtaskTree
+                      nodes={subtasks}
+                      busyId={toggleSubtask.isPending ? toggleSubtask.variables?.nodeId : null}
+                      onToggle={(n) => toggleSubtask.mutate({ nodeId: n.id, next: n.is_done ? 'in_progress' : 'complete' })}
+                      onAddChild={(parentId, name) => addSubtask.mutate({ parentId, name })}
+                      onOpen={(tid) => navigate(`/app/tasks/${tid}`)}
+                    />
+                  </div>
+                )}
+                <InlineAdd value={newSubtask} onChange={setNewSubtask} placeholder="+ Add a subtask…"
+                  onSubmit={() => { const t = newSubtask.trim(); if (t) { addSubtask.mutate({ parentId: id, name: t }); setNewSubtask('') } }}
+                  icon={Plus} />
+                <p className="text-[10px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                  A subtask is a smaller task with its own owner &amp; deadline — <b>click it to open</b> and assign a staff member, vendor or third-party vendor.
+                </p>
+              </div>
 
+              {/* ── CHECKLIST — quick ticks; each line can be handed to a person. ── */}
+              <div className="flex items-center gap-1.5 mb-2">
+                <CheckSquare size={14} style={{ color: TASK_ACCENT }} />
+                <span className="text-xs font-bold" style={{ color: 'var(--text-h)' }}>Checklist</span>
+              </div>
               <ul className="space-y-1.5 mb-3">
-                {visibleChecklist.map(c => (
-                  <li key={c.id}>
-                    <button onClick={() => toggleItem.mutate(c.id)} className="flex items-start gap-2 text-left w-full group">
+                {visibleChecklist.map(c => {
+                  const owner = c.assignee?.name || peopleById[c.assigned_to]?.name
+                  return (
+                  <li key={c.id} className="flex items-center gap-2 group">
+                    <button onClick={() => toggleItem.mutate(c.id)} className="flex items-start gap-2 text-left flex-1 min-w-0">
                       {c.finished
                         ? <CheckSquare size={14} className="mt-0.5 shrink-0" style={{ color: 'var(--color-success-500)' }} />
                         : <Square size={14} className="mt-0.5 shrink-0" style={{ color: 'var(--text-muted)' }} />}
@@ -398,27 +435,28 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
                         {c.description}
                       </span>
                     </button>
+                    <button onClick={() => setAssignItemId(c.id)}
+                      className="flex items-center gap-1 text-[10px] font-semibold px-1.5 py-1 rounded-lg shrink-0 transition-opacity"
+                      title={owner ? `Assigned to ${owner} — click to change` : 'Assign this item'}
+                      style={owner
+                        ? { background: `color-mix(in srgb, ${TASK_ACCENT} 14%, transparent)`, color: TASK_ACCENT }
+                        : { border: '1px dashed var(--border)', color: 'var(--text-muted)', opacity: 0.75 }}>
+                      {owner
+                        ? <><span className="w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold" style={{ background: TASK_ACCENT, color: '#fff' }}>{initials(owner)}</span>{owner.split(' ')[0]}</>
+                        : <><Users size={11} /> Assign</>}
+                    </button>
                   </li>
-                ))}
-                {checklist.length === 0 && subtasks.length === 0 && (
-                  <li className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                    Nothing here yet. Add a quick tick below, or a subtask if it needs its own owner and deadline.
-                  </li>
+                )})}
+                {checklist.length === 0 && (
+                  <li className="text-xs" style={{ color: 'var(--text-muted)' }}>No checklist items yet — add a quick tick below.</li>
                 )}
                 {checklist.length > 0 && visibleChecklist.length === 0 && (
                   <li className="text-xs" style={{ color: 'var(--text-muted)' }}>All items completed — nothing to show.</li>
                 )}
               </ul>
 
-              {/* Two ways to add, side by side, because they are genuinely
-                  different things: a tick is a reminder, a subtask is work you
-                  can hand to somebody with a date on it. */}
-              <InlineAdd value={newItem} onChange={setNewItem} placeholder="Add checklist item…"
+              <InlineAdd value={newItem} onChange={setNewItem} placeholder="+ Add checklist item…"
                 onSubmit={() => { const t = newItem.trim(); if (t) { addItem.mutate(t); setNewItem('') } }} icon={Plus} />
-              <div className="mt-1.5">
-                <InlineAdd value={newSubtask} onChange={setNewSubtask} placeholder="Add subtask (its own owner & deadline)…"
-                  onSubmit={() => { const t = newSubtask.trim(); if (t) { addSubtask.mutate({ parentId: id, name: t }); setNewSubtask('') } }}
-                  icon={GitBranch} /></div>
 
               <div className="flex items-center gap-2 mt-2.5 pt-2.5" style={{ borderTop: '1px solid var(--border)' }}>
                 <button onClick={() => setPicker('template')} className="flex items-center gap-1 text-[10px] font-bold"
@@ -555,17 +593,30 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
             </Card>
 
             <Card title="People" icon={Users}>
-              <p className="text-[10px] font-bold uppercase tracking-wide mb-1.5" style={{ color: 'var(--text-muted)' }}>Assignees</p>
-              <PeopleChips ids={assigneeIds} staff={staff} addLabel="Assign"
+              <p className="text-[10px] font-bold uppercase tracking-wide mb-1.5" style={{ color: 'var(--text-muted)' }}>Assignees (staff)</p>
+              <PeopleChips ids={assigneeIds.filter(i => staffIds.has(i))} staff={people} addLabel="Assign"
                 onAdd={() => setPicker('assignee')}
+                onRemove={uid => syncAssign.mutate(assigneeIds.filter(i => i !== uid))} />
+
+              <p className="text-[10px] font-bold uppercase tracking-wide mt-4 mb-1.5" style={{ color: 'var(--text-muted)' }}>Vendors</p>
+              <PeopleChips ids={assigneeIds.filter(i => vendorIds.has(i))} staff={people} addLabel="Add vendor"
+                onAdd={() => setPicker('vendor')}
+                onRemove={uid => syncAssign.mutate(assigneeIds.filter(i => i !== uid))} />
+
+              <p className="text-[10px] font-bold uppercase tracking-wide mt-4 mb-1.5" style={{ color: 'var(--text-muted)' }}>Third-party vendors</p>
+              <PeopleChips ids={assigneeIds.filter(i => tpvIds.has(i))} staff={people} addLabel="Add TPV"
+                onAdd={() => setPicker('tpv')}
                 onRemove={uid => syncAssign.mutate(assigneeIds.filter(i => i !== uid))} />
 
               <p className="text-[10px] font-bold uppercase tracking-wide mt-4 mb-1.5" style={{ color: 'var(--text-muted)' }}>
                 <Eye size={10} className="inline mr-1" />Followers
               </p>
-              <PeopleChips ids={followerIds} staff={staff} addLabel="Follow"
+              <PeopleChips ids={followerIds} staff={people} addLabel="Follow"
                 onAdd={() => setPicker('follower')}
                 onRemove={uid => syncFollow.mutate(followerIds.filter(i => i !== uid))} />
+              <p className="text-[10px] mt-3" style={{ color: 'var(--text-muted)' }}>
+                Vendors &amp; third-party vendors see tasks assigned to them on their portal dashboard.
+              </p>
             </Card>
 
             <RemindersCard taskId={id} staff={staff} currentUserId={user?.id} />
@@ -582,15 +633,26 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
         defaultSubject={`[Task] ${task.name}`}
         defaultDescription={link ? `Raised from ${link}.` : ''} />
 
-      <ConfirmModal open={confirmDelete} onClose={() => setConfirmDelete(false)} onConfirm={() => remove.mutate()}
-        title="Delete this task?" message={`“${task.name}” will be removed from the board. This can't be undone from the UI.`}
-        confirmLabel="Delete" danger />
+      <DeleteTaskModal open={confirmDelete} onClose={() => setConfirmDelete(false)} onConfirm={() => remove.mutate()}
+        taskName={task.name} link={link} subtaskCount={subtasks.length} busy={remove.isPending} />
 
       <SearchPicker
         open={picker === 'assignee'} onClose={() => setPicker(null)}
         onPick={it => it && syncAssign.mutate([...new Set([...assigneeIds, it.id])])}
         items={staff.filter(s => !assigneeIds.includes(s.id)).map(s => ({ id: s.id, label: s.name, sublabel: s.role }))}
         title="Assign to" subtitle="They'll get a notification." emptyText="Everyone is already assigned." accent={TASK_ACCENT}
+      />
+      <SearchPicker
+        open={picker === 'vendor'} onClose={() => setPicker(null)}
+        onPick={it => it && syncAssign.mutate([...new Set([...assigneeIds, it.id])])}
+        items={vendors.filter(v => !assigneeIds.includes(v.id)).map(v => ({ id: v.id, label: v.name, sublabel: v.email }))}
+        title="Assign a vendor" subtitle="They'll see it on their vendor portal." emptyText="No vendors available." accent={TASK_ACCENT}
+      />
+      <SearchPicker
+        open={picker === 'tpv'} onClose={() => setPicker(null)}
+        onPick={it => it && syncAssign.mutate([...new Set([...assigneeIds, it.id])])}
+        items={tpvs.filter(t => !assigneeIds.includes(t.id)).map(t => ({ id: t.id, label: t.name, sublabel: t.email }))}
+        title="Assign a third-party vendor" subtitle="They'll see it on their portal." emptyText="No third-party vendors available." accent={TASK_ACCENT}
       />
       <SearchPicker
         open={picker === 'follower'} onClose={() => setPicker(null)}
@@ -613,6 +675,68 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
         subtitle={`Reuse these ${checklist.length} items on any task.`}
         placeholder="e.g. Code Review Checklist" submitLabel="Save" accent={TASK_ACCENT}
       />
+      <SearchPicker
+        open={assignItemId !== null} onClose={() => setAssignItemId(null)}
+        onPick={it => { assignItem.mutate({ itemId: assignItemId, userId: it ? it.id : null }); setAssignItemId(null) }}
+        items={people.map(p => ({ id: p.id, label: p.name, sublabel: p.role || p.email }))}
+        title="Assign this item" subtitle="Hand this line to a staff member, vendor or third-party vendor."
+        emptyText="No people available." accent={TASK_ACCENT} allowClear
+      />
+    </div>
+  )
+}
+
+/* ── Delete confirmation ──────────────────────────────────────── */
+
+/**
+ * A type-"delete"-to-confirm guard for a destructive action, showing what else
+ * goes with the task (its link and its subtree) so the delete is never a surprise.
+ * The task soft-deletes, so it can still be recovered from Tasks → Trash.
+ */
+function DeleteTaskModal({ open, onClose, onConfirm, taskName, link, subtaskCount = 0, busy }) {
+  const [text, setText] = useState('')
+  useEffect(() => { if (open) setText('') }, [open])
+  if (!open) return null
+  const ok = text.trim().toLowerCase() === 'delete'
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4" style={{ background: 'rgba(15,23,42,0.55)' }} onClick={onClose}>
+      <div className="w-full rounded-2xl p-5" style={{ maxWidth: 440, background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card-3d)' }} onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-2 mb-2">
+          <Trash2 size={16} style={{ color: 'var(--color-danger-500)' }} />
+          <h3 className="font-black text-sm" style={{ color: 'var(--text-h)' }}>Delete this task?</h3>
+        </div>
+        <p className="text-xs mb-3" style={{ color: 'var(--text-body)' }}>
+          <span className="font-bold">“{taskName}”</span> will be removed from the board.
+        </p>
+
+        <div className="rounded-xl p-3 mb-3 space-y-1" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+          <p className="text-[11px] font-bold mb-1" style={{ color: 'var(--text-muted)' }}>What this affects</p>
+          {link
+            ? <p className="text-xs" style={{ color: 'var(--text-body)' }}>• Linked to <span className="font-semibold">{link}</span></p>
+            : <p className="text-xs" style={{ color: 'var(--text-body)' }}>• Standalone task (no linked record)</p>}
+          {subtaskCount > 0 && (
+            <p className="text-xs" style={{ color: 'var(--color-danger-500)' }}>• {subtaskCount} subtask{subtaskCount === 1 ? '' : 's'} (and anything nested under them) will be deleted too</p>
+          )}
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>• Recoverable afterwards from Tasks → Trash</p>
+        </div>
+
+        <label className="block text-[11px] font-bold mb-1.5" style={{ color: 'var(--text-body)' }}>
+          Type <span style={{ color: 'var(--color-danger-500)' }}>delete</span> to confirm
+        </label>
+        <input value={text} onChange={e => setText(e.target.value)} autoFocus placeholder="delete"
+          onKeyDown={e => { if (e.key === 'Enter' && ok && !busy) onConfirm() }}
+          className="w-full rounded-xl outline-none mb-3" style={{ padding: '10px 12px', fontSize: 14, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }} />
+
+        <div className="flex items-center justify-end gap-2">
+          <button onClick={onClose} className="text-xs font-semibold px-4 py-2 rounded-xl" style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}>Cancel</button>
+          <button onClick={onConfirm} disabled={!ok || busy}
+            className="text-xs font-bold px-4 py-2 rounded-xl disabled:opacity-40"
+            style={{ background: 'var(--color-danger-500)', color: '#fff' }}>
+            {busy ? 'Deleting…' : 'Delete task'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

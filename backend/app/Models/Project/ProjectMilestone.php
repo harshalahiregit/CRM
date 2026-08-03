@@ -11,14 +11,15 @@ class ProjectMilestone extends Model
 
     protected $fillable = [
         'tenant_id', 'project_id', 'name', 'description', 'due_date',
-        'start_date', 'color', 'order', 'hide_from_customer',
+        'start_date', 'color', 'order', 'hide_from_customer', 'show_description_to_customer',
     ];
 
     protected $casts = [
-        'due_date'           => 'date',
-        'start_date'         => 'date',
-        'order'              => 'integer',
-        'hide_from_customer' => 'boolean',
+        'due_date'                     => 'date',
+        'start_date'                   => 'date',
+        'order'                        => 'integer',
+        'hide_from_customer'           => 'boolean',
+        'show_description_to_customer' => 'boolean',
     ];
 
     public function project()
