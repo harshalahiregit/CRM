@@ -13,7 +13,7 @@ class TicketRepository extends BaseRepository
     /** Filtered, tenant-scoped ticket list for the grid. */
     public function filtered(int $tenantId, array $filters, ?array $visibility = null): Collection
     {
-        $query = Ticket::forTenant($tenantId)->with('assignee:id,name,email');
+        $query = Ticket::forTenant($tenantId)->with('assignee:id,name,email', 'service:id,name');
 
         // Access barrier: a non-manager agent only sees tickets assigned to them,
         // unassigned tickets (claimable), or tickets in a department they manage.

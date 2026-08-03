@@ -155,6 +155,7 @@ const TicketThread = lazy(() => import('@/modules/helpdesk/components/TicketThre
 // Public (no-auth) Helpdesk pages
 const PublicArticle = lazy(() => import('@/modules/helpdesk/public/PublicArticle'))
 const PublicKb = lazy(() => import('@/modules/helpdesk/public/PublicKb'))
+const PublicTicketView = lazy(() => import('@/modules/helpdesk/public/PublicTicketView'))
 
 // Projects Module (lazy)
 const ProjectList = lazy(() => import('@/modules/projects/pages/ProjectList'))
@@ -608,6 +609,7 @@ export default function AppRoutes() {
       {/* Public Helpdesk (no auth): shareable KB article + tenant help center */}
       <Route path="/kb/a/:slug" element={<S><PublicArticle /></S>} />
       <Route path="/kb/:key" element={<S><PublicKb /></S>} />
+      <Route path="/ticket/:ref" element={<S><PublicTicketView /></S>} />
 
       {/* Public Web-to-Lead form (no auth) */}
       <Route path="/f/:token" element={<S><PublicLeadForm /></S>} />

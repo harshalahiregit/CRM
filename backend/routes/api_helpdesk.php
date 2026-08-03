@@ -41,6 +41,8 @@ Route::post('/helpdesk/public/inbound-email', [PublicHelpdeskController::class, 
 Route::get('/helpdesk/public/widget/{key}/kb', [PublicHelpdeskController::class, 'kbTree']);
 Route::get('/helpdesk/public/widget/{key}/kb/search', [PublicHelpdeskController::class, 'kbSearch']);
 Route::get('/helpdesk/public/kb/articles/{slug}', [PublicHelpdeskController::class, 'article']);
+// Public single-ticket view — {id}-{token}; the token is the credential (no login).
+Route::get('/helpdesk/public/tickets/{ref}', [PublicHelpdeskController::class, 'viewTicket'])->middleware('throttle:60,1');
 Route::patch('/helpdesk/public/kb/articles/{slug}/vote', [PublicHelpdeskController::class, 'vote'])
     ->middleware('throttle:30,1');
 // Public star rating + optional comment (REQ-11) — same throttle as the vote.
@@ -79,10 +81,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('helpdesk')->gro
     // before /{id} so they aren't captured as ids.
     Route::get('/settings',                     [HelpdeskSettingsController::class, 'index']);
     Route::put('/settings/general',             [HelpdeskSettingsController::class, 'updateSettings']);
-    Route::post('/settings/{type}',             [HelpdeskSettingsController::class, 'storeItem'])->where('type', 'priorities|statuses|departments');
-    Route::patch('/settings/{type}/reorder',    [HelpdeskSettingsController::class, 'reorder'])->where('type', 'priorities|statuses|departments');
-    Route::put('/settings/{type}/{id}',         [HelpdeskSettingsController::class, 'updateItem'])->where(['type' => 'priorities|statuses|departments', 'id' => '[0-9]+']);
-    Route::delete('/settings/{type}/{id}',      [HelpdeskSettingsController::class, 'destroyItem'])->where(['type' => 'priorities|statuses|departments', 'id' => '[0-9]+']);
+    Route::post('/settings/{type}',             [HelpdeskSettingsController::class, 'storeItem'])->where('type', 'priorities|statuses|departments|services');
+    Route::patch('/settings/{type}/reorder',    [HelpdeskSettingsController::class, 'reorder'])->where('type', 'priorities|statuses|departments|services');
+    Route::put('/settings/{type}/{id}',         [HelpdeskSettingsController::class, 'updateItem'])->where(['type' => 'priorities|statuses|departments|services', 'id' => '[0-9]+']);
+    Route::delete('/settings/{type}/{id}',      [HelpdeskSettingsController::class, 'destroyItem'])->where(['type' => 'priorities|statuses|departments|services', 'id' => '[0-9]+']);
 
     // ── Embeddable widget settings (admin) ──────────────────────
     Route::get('/widget',         [HelpdeskWidgetController::class, 'show']);
@@ -120,6 +122,7 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('helpdesk')->gro
     Route::post('/tickets/{ticket}/reminders', [TicketCollaborationController::class, 'storeReminder']);
     Route::patch('/reminders/{reminder}/done', [TicketCollaborationController::class, 'reminderDone']);
     Route::get('/tickets/{ticket}/related',    [TicketCollaborationController::class, 'related']);
+    Route::get('/tickets/{ticket}/same-requester', [TicketCollaborationController::class, 'sameRequester']);
     Route::post('/tickets/{ticket}/related',   [TicketCollaborationController::class, 'storeRelated']);
     Route::delete('/tickets/{ticket}/related/{relatedId}', [TicketCollaborationController::class, 'destroyRelated']);
 

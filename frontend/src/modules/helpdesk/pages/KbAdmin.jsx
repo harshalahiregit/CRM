@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import ReactQuill from 'react-quill'
 import 'react-quill/dist/quill.snow.css'
@@ -166,6 +167,18 @@ function KbManager() {
   const publicUrl = article?.public_slug ? `${location.origin}/kb/a/${article.public_slug}` : null
 
   const startNew = (tpl) => { setArticle({ ...EMPTY_ARTICLE, subcategory_id: selSub, content: tpl.content }); setTplOpen(false) }
+
+  // "Convert reply to KB" from a ticket lands here with the reply prefilled — open
+  // the editor with its title/content; the author just picks a sub-category & saves.
+  const routerLocation = useLocation()
+  useEffect(() => {
+    const draft = routerLocation.state?.draftArticle
+    if (draft) {
+      setArticle({ ...EMPTY_ARTICLE, title: draft.title || '', content: draft.content || '', subcategory_id: selSub })
+      window.history.replaceState({}, '')   // consume it so a refresh doesn't re-open
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routerLocation.state])
 
   // Every sub-category across all categories, labelled "Category › Sub" so the
   // editor's picker is unambiguous when names repeat.
