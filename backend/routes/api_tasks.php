@@ -30,6 +30,11 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tasks')->group(
     Route::post('/reorder',                 [TaskController::class, 'reorder']);
     Route::post('/bulk',                    [TaskController::class, 'bulk']);
     Route::patch('/checklist/{item}/toggle', [TaskChecklistController::class, 'toggle']);
+    // Edit / (re)assign a single checklist item.
+    Route::patch('/checklist/{item}',        [TaskChecklistController::class, 'update']);
+    // Trash: list soft-deleted tasks and put one back. Before /{task} so "trash"
+    // isn't captured as a task id.
+    Route::get('/trash',                    [TaskController::class, 'trash']);
 
     // Notification / email switches (read: any staff, write: admin).
     Route::get('/settings',  [TaskConfigController::class, 'index']);
@@ -45,6 +50,7 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tasks')->group(
     Route::get('/{task}',           [TaskController::class, 'show']);
     Route::put('/{task}',           [TaskController::class, 'update']);
     Route::delete('/{task}',        [TaskController::class, 'destroy']);
+    Route::post('/{task}/restore',  [TaskController::class, 'restore']);
     Route::patch('/{task}/status',  [TaskController::class, 'updateStatus']);
     Route::post('/{task}/copy',     [TaskController::class, 'copy']);
 

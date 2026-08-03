@@ -33,6 +33,10 @@ class StoreTaskRequest extends FormRequest
         // Statuses are tenant-configurable (Advanced Status Manager), so the
         // allowed values come from the lookup table, not a literal list.
         $statusKeys = app(StatusService::class)->keys('task', $tenantId);
+        // The doc asks for milestone to be mandatory *while creating* a project
+        // task — but only when the workspace has switched that on, so standalone
+        // and non-project workspaces are unaffected.
+        $requireMilestone = app(\App\Services\Task\TaskConfigService::class)->on($tenantId, 'require_milestone');
 
         return [
             'name'              => 'required|string|max:255',
@@ -46,10 +50,15 @@ class StoreTaskRequest extends FormRequest
             // which required_unless treated as "no match" and so demanded a rel_id.
             'rel_id'            => 'nullable|integer|min:1|required_if:rel_type,project,ticket,customer,contract',
             // Tenant-scoped: a bare exists: lets one workspace attach to another's milestone.
-            'milestone_id'      => ['nullable', 'integer', Rule::exists('project_milestones', 'id')->where('tenant_id', $tenantId)],
+            'milestone_id'      => [
+                $requireMilestone ? 'required_if:rel_type,project' : 'nullable',
+                'integer',
+                Rule::exists('project_milestones', 'id')->where('tenant_id', $tenantId),
+            ],
             'billable'          => 'nullable|boolean',
             'billed'            => 'nullable|boolean',
             'hourly_rate'       => 'nullable|numeric|min:0',
+            'rate_unit'         => 'nullable|in:hourly,daily,monthly,fixed',
             'is_public'         => 'nullable|boolean',
             'visible_to_client' => 'nullable|boolean',
             'kanban_order'      => 'nullable|integer|min:0',

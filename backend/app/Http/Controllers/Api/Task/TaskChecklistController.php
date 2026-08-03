@@ -26,7 +26,26 @@ class TaskChecklistController extends Controller
     public function store(StoreChecklistItemRequest $request, int $task)
     {
         $this->guardTask($request, $task);
-        return $this->success($this->tasks->addChecklistItem($task, $request->validated('description'), $request->user()->tenant_id), 'Item added', 201);
+        return $this->success(
+            $this->tasks->addChecklistItem(
+                $task,
+                $request->validated('description'),
+                $request->user()->tenant_id,
+                $request->validated('assigned_to'),
+            ),
+            'Item added',
+            201,
+        );
+    }
+
+    /** Edit an item's text and/or reassign it to a person. */
+    public function update(Request $request, int $item)
+    {
+        $data = $request->validate([
+            'description' => 'sometimes|required|string|max:500',
+            'assigned_to' => 'nullable|integer|exists:users,id',
+        ]);
+        return $this->success($this->tasks->updateChecklistItem($item, $data, $request->user()->tenant_id), 'Item updated');
     }
 
     public function toggle(Request $request, int $item)

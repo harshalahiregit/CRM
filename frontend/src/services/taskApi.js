@@ -24,7 +24,10 @@ export const taskApi = {
   assignees: (id, user_ids) => api.post(`/tasks/${id}/assignees`, { user_ids }).then(unwrap).catch(handleErr),
   followers: (id, user_ids) => api.post(`/tasks/${id}/followers`, { user_ids }).then(unwrap).catch(handleErr),
   checklist: (id) => api.get(`/tasks/${id}/checklist`).then(unwrap).catch(handleErr),
-  addChecklist: (id, description) => api.post(`/tasks/${id}/checklist`, { description }).then(unwrap).catch(handleErr),
+  // A checklist item can carry an owner (staff / vendor / TPV) at create time.
+  addChecklist: (id, description, assigned_to = null) => api.post(`/tasks/${id}/checklist`, { description, assigned_to }).then(unwrap).catch(handleErr),
+  // Edit an item in place — used to (re)assign it or fix its text.
+  updateChecklistItem: (itemId, data) => api.patch(`/tasks/checklist/${itemId}`, data).then(unwrap).catch(handleErr),
   toggleChecklist: (itemId) => api.patch(`/tasks/checklist/${itemId}/toggle`).then(unwrap).catch(handleErr),
   // Subtasks — the recursive tree. `tree` returns every level in one response
   // (the server carries root_id, so depth costs nothing), each node with its own
@@ -56,6 +59,10 @@ export const taskApi = {
   billable: (params = {}) => api.get('/tasks/billable', { params }).then(unwrap).catch(handleErr),
 
   copy: (id, opts = {}) => api.post(`/tasks/${id}/copy`, opts).then(unwrap).catch(handleErr),
+
+  // Trash — soft-deleted tasks and putting one back.
+  trash: () => api.get('/tasks/trash').then(unwrap).catch(handleErr),
+  restore: (id) => api.post(`/tasks/${id}/restore`).then(unwrap).catch(handleErr),
 
   // Attachments — files live on a private disk; downloads are authenticated,
   // so they're fetched as a blob rather than linked to directly.
@@ -94,6 +101,15 @@ export const RECURRING_TYPES = [
   { value: 'day', label: 'Day' }, { value: 'week', label: 'Week' },
   { value: 'month', label: 'Month' }, { value: 'year', label: 'Year' },
 ]
+
+// How a task's rate is charged. 'fixed' is a one-off price, the rest are per-unit.
+export const RATE_UNITS = [
+  { value: 'hourly',  label: 'Per hour' },
+  { value: 'daily',   label: 'Per day' },
+  { value: 'monthly', label: 'Per month' },
+  { value: 'fixed',   label: 'Fixed price' },
+]
+export const rateUnitLabel = (u) => (RATE_UNITS.find(r => r.value === u)?.label) || 'Per hour'
 
 /** Checklist completion for the TASK PROGRESS column. Null when there's no checklist. */
 export const taskProgress = (t) => {

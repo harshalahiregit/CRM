@@ -21,6 +21,7 @@ class UpdateMilestoneRequest extends FormRequest
             'color'              => 'nullable|string|max:9',
             'order'              => 'nullable|integer|min:0',
             'hide_from_customer' => 'nullable|boolean',
+            'show_description_to_customer' => 'nullable|boolean',
         ];
     }
 }

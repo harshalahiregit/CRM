@@ -4,9 +4,10 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft, RefreshCw, Plus, Users, Flag, Paperclip, Trash2, ListTodo, LifeBuoy,
   Pencil, Copy, Pin, PinOff, MoreHorizontal, Download, Upload, ExternalLink, Check, FileText,
-  Play, Search, Clock, GitBranch,
+  Play, Search, Clock, GitBranch, X,
 } from 'lucide-react'
 import { projectApi, PROJECT_STATUS, PROJECT_ACCENT } from '@/services/projectApi'
+import { guardedClose } from '@/lib/confirmClose'
 import { useAuth } from '@/context/AuthContext'
 import { useStatuses, statusOptions } from '@/hooks/useStatuses'
 import { taskApi, TASK_PRIORITY, TASK_ACCENT } from '@/services/taskApi'
@@ -20,7 +21,6 @@ import { DiscussionsTab } from '../components/ProjectDiscussions'
 import ProjectInvoiceModal from '../components/ProjectInvoiceModal'
 import ProjectGantt from '../components/ProjectGantt'
 import TaskFormDrawer from '../../tasks/components/TaskFormDrawer'
-import TaskDetailModal from '../../tasks/components/TaskDetailModal'
 import RaiseTicketModal from '../../helpdesk/components/RaiseTicketModal'
 
 /**
@@ -335,7 +335,6 @@ function TasksTab({ projectId, navigate, onNewTask }) {
   const { list: taskStatusList, map: taskStatusMap } = useStatuses('task')
   const [q, setQ] = useState('')
   const [pageSize, setPageSize] = useState(25)
-  const [openTaskId, setOpenTaskId] = useState(null)
 
   // Same rule as the main board: a project's task list is its jobs, not every
   // step inside them. Subtasks are one toggle away, never in the way.
@@ -440,7 +439,7 @@ function TasksTab({ projectId, navigate, onNewTask }) {
                         <GitBranch size={9} /> {t.parent.name}
                       </span>
                     )}
-                    <button onClick={() => setOpenTaskId(t.id)} className="text-left font-semibold text-xs hover:underline" style={{ color: 'var(--text-h)' }}>{t.name}</button>
+                    <button onClick={() => navigate(`/app/tasks/${t.id}`)} className="text-left font-semibold text-xs hover:underline" style={{ color: 'var(--text-h)' }}>{t.name}</button>
                     <div className="mt-1">
                       <button onClick={() => startTimer.mutate(t.id)} disabled={startTimer.isPending}
                         className="inline-flex items-center gap-1 text-[10px] font-bold disabled:opacity-40" style={{ color: PROJECT_ACCENT }}>
@@ -490,9 +489,6 @@ function TasksTab({ projectId, navigate, onNewTask }) {
           </tbody>
         </table>
       </div>
-
-      <TaskDetailModal taskId={openTaskId} open={!!openTaskId}
-        onClose={() => { setOpenTaskId(null); qc.invalidateQueries({ queryKey: taskKey }) }} />
     </div>
   )
 }
@@ -500,10 +496,10 @@ function TasksTab({ projectId, navigate, onNewTask }) {
 /* ── Milestones tab ───────────────────────────────────────────── */
 
 function MilestonesTab({ project, onChange, onErr, canManage = true }) {
-  const [ms, setMs] = useState({ name: '', due_date: '' })
-  const add = useMutation({
-    mutationFn: (data) => projectApi.createMilestone(project.id, data),
-    onSuccess: () => { setMs({ name: '', due_date: '' }); onChange() }, onError: onErr,
+  const [formFor, setFormFor] = useState(null)   // null = closed | 'new' | milestone object
+  const save = useMutation({
+    mutationFn: ({ mid, data }) => (mid ? projectApi.updateMilestone(mid, data) : projectApi.createMilestone(project.id, data)),
+    onSuccess: () => { setFormFor(null); onChange() }, onError: onErr,
   })
   const del = useMutation({ mutationFn: (mid) => projectApi.deleteMilestone(mid), onSuccess: onChange, onError: onErr })
 
@@ -511,39 +507,130 @@ function MilestonesTab({ project, onChange, onErr, canManage = true }) {
 
   return (
     <section className="rounded-2xl p-4" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-      <h2 className="font-bold text-xs mb-3 flex items-center gap-1.5" style={{ color: 'var(--text-h)' }}>
-        <Flag size={14} style={{ color: PROJECT_ACCENT }} /> Milestones
-      </h2>
-      <ul className="space-y-1.5 mb-3">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="font-bold text-xs flex items-center gap-1.5" style={{ color: 'var(--text-h)' }}>
+          <Flag size={14} style={{ color: PROJECT_ACCENT }} /> Milestones
+        </h2>
+        {canManage && (
+          <button onClick={() => setFormFor('new')} className="flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-lg"
+            style={{ background: PROJECT_ACCENT, color: '#fff' }}>
+            <Plus size={12} /> New milestone
+          </button>
+        )}
+      </div>
+      <ul className="space-y-1.5">
         {milestones.map(m => (
-          <li key={m.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg" style={{ background: 'var(--bg-input)' }}>
+          <li key={m.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg group" style={{ background: 'var(--bg-input)' }}>
             <span className="w-2 h-2 rounded-full shrink-0" style={{ background: m.color || PROJECT_ACCENT }} />
             <span className="flex-1 text-xs truncate" style={{ color: 'var(--text-h)' }}>{m.name}</span>
             <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{fmtDate(m.due_date)}</span>
             {canManage && (
-              <button onClick={() => del.mutate(m.id)} className="hover:opacity-60" aria-label={`Delete ${m.name}`}>
-                <Trash2 size={11} style={{ color: 'var(--color-danger-500)' }} />
-              </button>
+              <>
+                <button onClick={() => setFormFor(m)} className="hover:opacity-60" aria-label={`Edit ${m.name}`}>
+                  <Pencil size={11} style={{ color: 'var(--text-muted)' }} />
+                </button>
+                <button onClick={() => del.mutate(m.id)} className="hover:opacity-60" aria-label={`Delete ${m.name}`}>
+                  <Trash2 size={11} style={{ color: 'var(--color-danger-500)' }} />
+                </button>
+              </>
             )}
           </li>
         ))}
         {milestones.length === 0 && <li className="text-xs" style={{ color: 'var(--text-muted)' }}>No milestones yet.</li>}
       </ul>
-      {canManage && (
-      <form onSubmit={e => { e.preventDefault(); if (ms.name && ms.due_date) add.mutate(ms) }} className="flex gap-2">
-        <input value={ms.name} onChange={e => setMs({ ...ms, name: e.target.value })} placeholder="Milestone name"
-          className="flex-1 rounded-lg outline-none"
-          style={{ padding: '7px 10px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }} />
-        <input type="date" value={ms.due_date} onChange={e => setMs({ ...ms, due_date: e.target.value })}
-          className="rounded-lg outline-none"
-          style={{ padding: '7px 10px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }} />
-        <button type="submit" disabled={!ms.name || !ms.due_date || add.isPending}
-          className="px-3 rounded-lg disabled:opacity-40" style={{ background: PROJECT_ACCENT, color: '#fff' }} aria-label="Add milestone">
-          <Plus size={13} />
-        </button>
-      </form>
+
+      {formFor && (
+        <MilestoneFormModal
+          milestone={formFor === 'new' ? null : formFor}
+          busy={save.isPending}
+          onClose={() => setFormFor(null)}
+          onSubmit={(data) => save.mutate({ mid: formFor === 'new' ? null : formFor.id, data })}
+        />
       )}
     </section>
+  )
+}
+
+/**
+ * Full milestone form — a field-for-field copy of the old system's "New Milestone"
+ * popup: Name, Start/Due dates, Description, the two customer-visibility switches,
+ * and Order. Doubles as the edit form when a milestone is passed in.
+ */
+function MilestoneFormModal({ milestone, onClose, onSubmit, busy }) {
+  const todayStr = new Date().toISOString().split('T')[0]
+  const [f, setF] = useState({
+    name: milestone?.name || '',
+    start_date: milestone?.start_date ? String(milestone.start_date).split('T')[0] : todayStr,
+    due_date: milestone?.due_date ? String(milestone.due_date).split('T')[0] : '',
+    description: milestone?.description || '',
+    show_description_to_customer: !!milestone?.show_description_to_customer,
+    hide_from_customer: !!milestone?.hide_from_customer,
+    order: milestone?.order ?? 1,
+  })
+  const snapRef = useRef(null)
+  if (snapRef.current === null) snapRef.current = JSON.stringify(f)
+  const requestClose = () => guardedClose(onClose, JSON.stringify(f) !== snapRef.current)
+  const set = (k, v) => setF(p => ({ ...p, [k]: v }))
+  const ok = f.name.trim() && f.start_date && f.due_date
+  const submit = (e) => { e.preventDefault(); if (ok && !busy) onSubmit(f) }
+
+  const LBL = { display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-body)', marginBottom: 5 }
+  const INP = { width: '100%', padding: '9px 12px', borderRadius: 8, fontSize: 13.5, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)', outline: 'none' }
+  const req = <span style={{ color: 'var(--color-danger-500)' }}>*</span>
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 overflow-y-auto" style={{ background: 'rgba(15,23,42,0.55)' }} onClick={requestClose}>
+      <form onSubmit={submit} onClick={e => e.stopPropagation()}
+        className="w-full rounded-2xl my-6" style={{ maxWidth: 520, background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card-3d)' }}>
+        <header className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: '1px solid var(--border)' }}>
+          <h3 className="font-black text-sm" style={{ color: 'var(--text-h)' }}>{milestone ? 'Edit Milestone' : 'New Milestone'}</h3>
+          <button type="button" onClick={requestClose} className="hover:opacity-70"><X size={17} style={{ color: 'var(--text-muted)' }} /></button>
+        </header>
+
+        <div className="px-5 py-4 space-y-3.5">
+          <div>
+            <label style={LBL}>{req} Name</label>
+            <input autoFocus value={f.name} onChange={e => set('name', e.target.value)} style={INP} placeholder="Milestone name" />
+          </div>
+          <div>
+            <label style={LBL}>{req} Start Date</label>
+            <input type="date" value={f.start_date} onChange={e => set('start_date', e.target.value)} style={INP} />
+          </div>
+          <div>
+            <label style={LBL}>{req} Due date</label>
+            <input type="date" value={f.due_date} onChange={e => set('due_date', e.target.value)} style={INP} />
+          </div>
+          <div>
+            <label style={LBL}>Description</label>
+            <textarea value={f.description} onChange={e => set('description', e.target.value)} rows={4}
+              style={{ ...INP, resize: 'vertical', minHeight: 90 }} placeholder="Optional" />
+          </div>
+          <label className="flex items-center gap-2 text-xs" style={{ color: 'var(--text-body)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={f.show_description_to_customer} onChange={e => set('show_description_to_customer', e.target.checked)}
+              style={{ accentColor: PROJECT_ACCENT, width: 15, height: 15 }} />
+            Show description to customer
+          </label>
+          <label className="flex items-center gap-2 text-xs" style={{ color: 'var(--text-body)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={f.hide_from_customer} onChange={e => set('hide_from_customer', e.target.checked)}
+              style={{ accentColor: PROJECT_ACCENT, width: 15, height: 15 }} />
+            Hide from customer
+          </label>
+          <div>
+            <label style={LBL}>Order</label>
+            <input type="number" min="0" value={f.order} onChange={e => set('order', Number(e.target.value) || 0)} style={INP} />
+          </div>
+        </div>
+
+        <footer className="flex items-center justify-end gap-2 px-5 py-3.5" style={{ borderTop: '1px solid var(--border)' }}>
+          <button type="button" onClick={requestClose} className="text-sm font-semibold px-4 py-2 rounded-xl"
+            style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}>Close</button>
+          <button type="submit" disabled={!ok || busy} className="text-sm font-bold px-5 py-2 rounded-xl disabled:opacity-40"
+            style={{ background: PROJECT_ACCENT, color: '#fff' }}>
+            {busy ? 'Saving…' : 'Submit'}
+          </button>
+        </footer>
+      </form>
+    </div>
   )
 }
 

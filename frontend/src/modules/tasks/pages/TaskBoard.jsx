@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ListTodo, Plus, LayoutGrid, List, Search, X, SlidersHorizontal, Download,
-  Play, StopCircle, Pencil, Trash2, MessageSquare, Paperclip, CheckSquare, GitBranch,
+  Play, StopCircle, Pencil, Trash2, MessageSquare, Paperclip, CheckSquare, GitBranch, RotateCcw,
 } from 'lucide-react'
 import { taskApi, TASK_STATUS, TASK_PRIORITY, TASK_ACCENT, relLabel, taskProgress } from '@/services/taskApi'
 import { exportCsv, stampedName } from '@/lib/exportCsv'
@@ -14,7 +14,6 @@ import { ConfirmModal } from '@/components/ui/SearchPicker'
 import TaskFormDrawer from '../components/TaskFormDrawer'
 import TaskKpiCards from '../components/TaskKpiCards'
 import TaskBulkBar from '../components/TaskBulkBar'
-import TaskDetailModal from '../components/TaskDetailModal'
 
 /**
  * Task board — kanban + list.
@@ -45,7 +44,10 @@ export default function TaskBoard() {
   const [page, setPage] = useState(1)
   const [kpi, setKpi] = useState(null)     // 'active' | 'overdue' | 'today' | 'mine' | 'completed'
   const [confirmDelete, setConfirmDelete] = useState(null)
-  const [openTaskId, setOpenTaskId] = useState(null)
+  const [showTrash, setShowTrash] = useState(false)
+  // Open a task the SAME way a subtask opens — navigate to its page inside the app
+  // layout, so the sidebar/nav stay put (no full-viewport takeover).
+  const openTask = (tid) => navigate(`/app/tasks/${tid}`)
 
   // Filters — the backend already supported all of these; none had a UI.
   const [search, setSearch] = useState('')
@@ -191,6 +193,12 @@ export default function TaskBoard() {
             <Download size={13} /> Export
           </button>
 
+          <button onClick={() => setShowTrash(true)} title="Recover deleted tasks"
+            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl"
+            style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+            <Trash2 size={13} /> Trash
+          </button>
+
           <button onClick={() => { setEditing(null); setShowForm(true) }}
             className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl"
             style={{ background: TASK_ACCENT, color: '#fff' }}>
@@ -212,11 +220,11 @@ export default function TaskBoard() {
 
       {isLoading && <div className="rounded-2xl animate-pulse" style={{ height: 240, background: 'var(--bg-card)' }} />}
 
-      {!isLoading && view === 'kanban' && <Kanban tasks={tasks} qc={qc} onOpen={setOpenTaskId} />}
+      {!isLoading && view === 'kanban' && <Kanban tasks={tasks} qc={qc} onOpen={openTask} />}
       {!isLoading && view === 'list' && (
         <>
           <TaskTable
-            tasks={paged} onOpen={setOpenTaskId} staff={staff}
+            tasks={paged} onOpen={openTask} staff={staff}
             selected={selected} setSelected={setSelected}
             onEdit={t => { setEditing(t); setShowForm(true) }}
             onDelete={t => setConfirmDelete(t)}
@@ -238,8 +246,65 @@ export default function TaskBoard() {
         title="Delete this task?" message={`“${confirmDelete?.name}” will be removed from the board.`}
         confirmLabel="Delete" danger />
 
-      <TaskDetailModal taskId={openTaskId} open={!!openTaskId}
-        onClose={() => { setOpenTaskId(null); qc.invalidateQueries({ queryKey: ['tasks'] }) }} />
+      <TrashModal open={showTrash} onClose={() => setShowTrash(false)} qc={qc} />
+    </div>
+  )
+}
+
+/* ── Trash (recover deleted tasks) ────────────────────────────── */
+
+function TrashModal({ open, onClose, qc }) {
+  const { data: rows = [], isLoading } = useQuery({
+    queryKey: ['task-trash'], queryFn: taskApi.trash, enabled: open,
+  })
+  const restore = useMutation({
+    mutationFn: (id) => taskApi.restore(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['task-trash'] })
+      qc.invalidateQueries({ queryKey: ['tasks'] })
+      qc.invalidateQueries({ queryKey: ['task-stats'] })
+    },
+  })
+  if (!open) return null
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" style={{ background: 'rgba(15,23,42,0.55)' }} onClick={onClose}>
+      <div className="w-full rounded-2xl overflow-hidden flex flex-col" style={{ maxWidth: 520, maxHeight: '80vh', background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card-3d)' }} onClick={e => e.stopPropagation()}>
+        <header className="flex items-center gap-2 px-5 py-3.5 shrink-0" style={{ borderBottom: '1px solid var(--border)' }}>
+          <Trash2 size={15} style={{ color: TASK_ACCENT }} />
+          <h3 className="font-black text-sm" style={{ color: 'var(--text-h)' }}>Trash</h3>
+          <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Recover a deleted task</span>
+          <button onClick={onClose} className="ml-auto hover:opacity-70"><X size={17} style={{ color: 'var(--text-muted)' }} /></button>
+        </header>
+
+        <div className="overflow-y-auto p-3" style={{ flex: 1 }}>
+          {isLoading && <p className="text-xs p-3" style={{ color: 'var(--text-muted)' }}>Loading…</p>}
+          {!isLoading && rows.length === 0 && (
+            <div className="text-center py-10">
+              <Trash2 size={26} style={{ color: 'var(--text-muted)', opacity: 0.4, margin: '0 auto 8px' }} />
+              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Trash is empty.</p>
+            </div>
+          )}
+          <ul className="space-y-1.5">
+            {rows.map(t => (
+              <li key={t.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold truncate" style={{ color: 'var(--text-h)' }}>{t.name}</p>
+                  <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                    Deleted {t.deleted_at ? new Date(t.deleted_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : ''}
+                    {t.rel_type && t.rel_type !== 'standalone' ? ` · ${t.rel_type}` : ''}
+                  </p>
+                </div>
+                <button onClick={() => restore.mutate(t.id)} disabled={restore.isPending && restore.variables === t.id}
+                  className="flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-lg shrink-0 disabled:opacity-40"
+                  style={{ background: `color-mix(in srgb, ${TASK_ACCENT} 14%, transparent)`, color: TASK_ACCENT }}>
+                  <RotateCcw size={12} /> Restore
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
     </div>
   )
 }

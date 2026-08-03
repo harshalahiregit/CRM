@@ -3,6 +3,7 @@
 namespace App\Models\Task;
 
 use App\Models\Traits\BelongsToTenant;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 
 class TaskChecklistItem extends Model
@@ -21,5 +22,11 @@ class TaskChecklistItem extends Model
     public function task()
     {
         return $this->belongsTo(Task::class);
+    }
+
+    /** Who this single item is on — a staff member, vendor, or TPV (all are Users). */
+    public function assignee()
+    {
+        return $this->belongsTo(User::class, 'assigned_to');
     }
 }

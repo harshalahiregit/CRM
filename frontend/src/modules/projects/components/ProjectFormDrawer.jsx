@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { guardedClose } from '@/lib/confirmClose'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { X, Check, Building2, IndianRupee, SlidersHorizontal, LayoutGrid, ShieldCheck } from 'lucide-react'
 import { projectApi, PROJECT_STATUS, BILLING_TYPES, PROJECT_ACCENT } from '@/services/projectApi'
@@ -53,10 +54,12 @@ export default function ProjectFormDrawer({ open, onClose, project = null, onSav
 
   const { data: meta } = useQuery({ queryKey: ['project-meta'], queryFn: projectApi.meta, enabled: open, staleTime: 5 * 60_000 })
 
+  const snapshotRef = useRef('')
+
   useEffect(() => {
     if (!open) return
     setErr(''); setTab('project')
-    setForm(editing
+    const init = editing
       ? {
           ...EMPTY, ...project,
           start_date: project.start_date ? String(project.start_date).split('T')[0] : today(),
@@ -75,10 +78,13 @@ export default function ProjectFormDrawer({ open, onClose, project = null, onSav
           send_created_email: !!project.send_created_email,
           contacts_notification: project.contacts_notification || 'all',
         }
-      : EMPTY)
+      : EMPTY
+    setForm(init)
+    snapshotRef.current = JSON.stringify(init)
   }, [open, project, editing]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const sf = (k, v) => setForm(p => ({ ...p, [k]: v }))
+  const requestClose = () => guardedClose(onClose, snapshotRef.current && JSON.stringify(form) !== snapshotRef.current)
 
   // Default the visible-tabs bag from meta the first time it loads (new projects
   // start with every working tab on). Editing keeps whatever the project stored.
@@ -166,7 +172,7 @@ export default function ProjectFormDrawer({ open, onClose, project = null, onSav
 
   return (
     <div className="fixed inset-0 z-[55] flex items-start justify-center p-3 sm:p-6 overflow-y-auto"
-      style={{ background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(2px)' }} onClick={onClose}>
+      style={{ background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(2px)' }} onClick={requestClose}>
       <form onSubmit={submit} onClick={e => e.stopPropagation()}
         className="w-full rounded-2xl overflow-hidden my-2 flex flex-col"
         style={{ maxWidth: 640, background: 'var(--bg-global)', boxShadow: '0 24px 70px rgba(0,0,0,0.45)', maxHeight: '94vh' }}>
@@ -174,7 +180,7 @@ export default function ProjectFormDrawer({ open, onClose, project = null, onSav
         <header className="shrink-0" style={{ background: 'var(--bg-global)', borderBottom: '1px solid var(--border)' }}>
           <div className="flex items-center justify-between px-5 py-4">
             <h2 className="font-bold" style={{ color: 'var(--text-h)', fontSize: 15 }}>{editing ? 'Edit Project' : 'New Project'}</h2>
-            <button type="button" onClick={onClose} aria-label="Close"><X size={17} style={{ color: 'var(--text-muted)' }} /></button>
+            <button type="button" onClick={requestClose} aria-label="Close"><X size={17} style={{ color: 'var(--text-muted)' }} /></button>
           </div>
           {/* Tab switcher */}
           <div className="flex items-center gap-1 px-5 -mb-px">

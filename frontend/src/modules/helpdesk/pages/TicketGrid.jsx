@@ -1,5 +1,6 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { guardedClose } from '@/lib/confirmClose'
 import { useNavigate } from 'react-router-dom'
 import {
   Search, Plus, X, Inbox, Clock, CheckCircle2, Circle, User, Zap,
@@ -562,17 +563,20 @@ function NewTicketModal({ settings, onClose, onCreated }) {
     mutationFn: () => { const p = { ...form }; Object.keys(p).forEach(k => p[k] === '' && delete p[k]); return helpdeskApi.tickets.create(p) },
     onSuccess: (t) => onCreated(t.id),
   })
+  const snapRef = useRef(null)
+  if (snapRef.current === null) snapRef.current = JSON.stringify(form)
+  const requestClose = () => guardedClose(onClose, JSON.stringify(form) !== snapRef.current)
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
   const LBL = { display: 'block', fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 5 }
   // People the admin assigned to the chosen department (the ticket routes to them).
   const deptAgents = (settings?.departments || []).find(d => String(d.id) === String(form.department_id))?.managers || []
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-start justify-center bg-black/50" style={{ paddingTop: '8vh' }} onClick={onClose}>
+    <div className="fixed inset-0 z-[70] flex items-start justify-center bg-black/50" style={{ paddingTop: '8vh' }} onClick={requestClose}>
       <div className="w-full max-w-[500px] rounded-2xl" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card-3d)', padding: 24, maxHeight: '85vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-5">
           <h2 className="font-black text-base" style={{ color: 'var(--text-h)' }}>New Ticket</h2>
-          <button onClick={onClose} className="hover:opacity-70"><X size={18} style={{ color: 'var(--text-muted)' }} /></button>
+          <button onClick={requestClose} className="hover:opacity-70"><X size={18} style={{ color: 'var(--text-muted)' }} /></button>
         </div>
         <div className="space-y-3.5">
           <div><label style={LBL}>Subject *</label><input style={inp} value={form.subject} onChange={e => set('subject', e.target.value)} placeholder="What's the issue?" /></div>
@@ -629,7 +633,7 @@ function NewTicketModal({ settings, onClose, onCreated }) {
           </div>
           {create.isError && <div className="flex items-center gap-2 p-3 rounded-xl text-sm" style={{ background: 'rgba(239,68,68,0.08)', color: 'var(--color-danger-500)', border: '1px solid rgba(239,68,68,0.2)' }}><AlertCircle size={14} />{create.error?.message}</div>}
           <div className="flex items-center justify-end gap-2 pt-1">
-            <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-semibold hover:opacity-80" style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}>Cancel</button>
+            <button onClick={requestClose} className="px-4 py-2 rounded-xl text-sm font-semibold hover:opacity-80" style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}>Cancel</button>
             <button disabled={!form.subject.trim() || create.isPending} onClick={() => create.mutate()} className="px-5 py-2 rounded-xl text-sm font-bold disabled:opacity-50" style={{ background: `linear-gradient(135deg,var(--color-support-400),var(--color-support-600))`, color: '#fff' }}>{create.isPending ? 'Creating…' : 'Create Ticket'}</button>
           </div>
         </div>

@@ -17,7 +17,7 @@ class Task extends Model
         'tenant_id', 'parent_id', 'root_id', 'depth',
         'name', 'description', 'priority', 'status',
         'start_date', 'due_date', 'date_finished', 'rel_type', 'rel_id',
-        'milestone_id', 'billable', 'billed', 'hourly_rate',
+        'milestone_id', 'billable', 'billed', 'hourly_rate', 'rate_unit',
         'is_public', 'visible_to_client', 'kanban_order', 'created_by',
         'recurring', 'recurring_type', 'repeat_every', 'cycles', 'total_cycles',
         'last_recurring_date', 'is_recurring_from', 'deadline_notified',

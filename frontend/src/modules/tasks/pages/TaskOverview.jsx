@@ -167,6 +167,12 @@ function NotificationSettings() {
     { key: 'email_enabled',    label: 'Send these by email too', hint: 'Off keeps every in-app bell working while nothing leaves the building' },
   ]
 
+  // Task-form behaviour (not notifications) — kept in the same settings store.
+  const FORM_FIELDS = [
+    { key: 'hide_rates',        label: 'Hide rate & billing fields', hint: 'Removes the rate, rate-unit and billable options from the task form' },
+    { key: 'require_milestone', label: 'Require a milestone', hint: 'Force a milestone to be chosen when a task is linked to a project' },
+  ]
+
   return (
     <section className="rounded-2xl p-4 mt-4" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
       <div className="flex items-center gap-2 mb-1">
@@ -203,6 +209,25 @@ function NotificationSettings() {
           <input type="text" disabled={!isAdmin} value={value('alert_email_extra') ?? ''} placeholder="pm@company.com"
             onChange={e => set('alert_email_extra', e.target.value === '' ? null : e.target.value)}
             className="rounded-lg outline-none" style={{ width: 200, padding: '7px 10px', fontSize: 12.5, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }} />
+        </div>
+
+        {/* Task-form behaviour */}
+        <div className="pt-3 mt-1" style={{ borderTop: '1px solid var(--border)' }}>
+          <h3 className="text-xs font-bold mb-2" style={{ color: 'var(--text-h)' }}>Task form</h3>
+          {FORM_FIELDS.map(f => (
+            <div key={f.key} className="flex flex-wrap items-center gap-3 mb-2">
+              <div className="flex-1" style={{ minWidth: 220 }}>
+                <label className="block text-xs font-bold" style={{ color: 'var(--text-h)' }}>{f.label}</label>
+                <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>{f.hint}</p>
+              </div>
+              <label className="flex items-center gap-2 text-xs" style={{ width: 110, color: 'var(--text-body)', cursor: isAdmin ? 'pointer' : 'default' }}>
+                <input type="checkbox" disabled={!isAdmin} checked={Boolean(value(f.key))}
+                  onChange={e => set(f.key, e.target.checked)}
+                  style={{ accentColor: TASK_ACCENT, width: 15, height: 15 }} />
+                {value(f.key) ? 'On' : 'Off'}
+              </label>
+            </div>
+          ))}
         </div>
       </div>
 

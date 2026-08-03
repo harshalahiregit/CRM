@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { guardedClose } from '@/lib/confirmClose'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { X, LifeBuoy, AlertCircle, CheckCircle2, ArrowRight, Users, Check } from 'lucide-react'
@@ -25,13 +26,18 @@ export default function RaiseTicketModal({ open, onClose, projectId = null, sour
 
   const { data: settings } = useQuery({ queryKey: ['helpdesk-settings'], queryFn: helpdeskApi.settings.all, enabled: open })
 
+  const snapshotRef = useRef('')
   useEffect(() => {
     if (!open) return
     setCreated(null)
-    setForm({ subject: defaultSubject, description: defaultDescription, priority: 'medium', department_id: '', assigned_to: '', requester_name: '', requester_email: '' })
+    const init = { subject: defaultSubject, description: defaultDescription, priority: 'medium', department_id: '', assigned_to: '', requester_name: '', requester_email: '' }
+    setForm(init)
+    snapshotRef.current = JSON.stringify(init)
   }, [open, defaultSubject, defaultDescription])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+  // Only guard while still filling the form — once created, closing is harmless.
+  const requestClose = () => guardedClose(onClose, !created && snapshotRef.current && JSON.stringify(form) !== snapshotRef.current)
 
   // The people the admin assigned to the chosen department. Picking a department
   // is what routes the ticket to them (they're notified and can see it); showing
@@ -65,7 +71,7 @@ export default function RaiseTicketModal({ open, onClose, projectId = null, sour
   const departments = settings?.departments || []
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-start justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }} onClick={onClose}>
+    <div className="fixed inset-0 z-[70] flex items-start justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }} onClick={requestClose}>
       <div className="w-full max-w-[500px] rounded-2xl mt-[8vh] max-h-[85vh] overflow-y-auto"
         style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card-3d)', padding: 24 }} onClick={e => e.stopPropagation()}>
 
@@ -73,7 +79,7 @@ export default function RaiseTicketModal({ open, onClose, projectId = null, sour
           <h2 className="font-black text-base flex items-center gap-2" style={{ color: 'var(--text-h)' }}>
             <LifeBuoy size={17} style={{ color: SUPPORT }} /> Raise a Ticket
           </h2>
-          <button onClick={onClose} className="hover:opacity-70"><X size={18} style={{ color: 'var(--text-muted)' }} /></button>
+          <button onClick={requestClose} className="hover:opacity-70"><X size={18} style={{ color: 'var(--text-muted)' }} /></button>
         </div>
 
         {created ? (
@@ -155,7 +161,7 @@ export default function RaiseTicketModal({ open, onClose, projectId = null, sour
             )}
 
             <div className="flex items-center justify-end gap-2 pt-1">
-              <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-semibold" style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}>Cancel</button>
+              <button onClick={requestClose} className="px-4 py-2 rounded-xl text-sm font-semibold" style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}>Cancel</button>
               <button disabled={!form.subject.trim() || create.isPending} onClick={() => create.mutate()}
                 className="px-5 py-2 rounded-xl text-sm font-bold disabled:opacity-50" style={{ background: SUPPORT, color: '#fff' }}>
                 {create.isPending ? 'Raising…' : 'Raise Ticket'}
