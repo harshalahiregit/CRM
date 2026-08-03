@@ -44,6 +44,8 @@ class StoreProjectRequest extends FormRequest
             // keys are dropped by the service against config/projects.php.
             'visible_tabs'          => 'nullable|array',
             'customer_permissions'  => 'nullable|array',
+            'vendor_permissions'    => 'nullable|array',
+            'tpv_permissions'       => 'nullable|array',
             // Project Settings (Tab 2) + the Tab-1 "send created email" checkbox.
             'hide_tasks_on_main'    => 'nullable|boolean',
             'send_created_email'    => 'nullable|boolean',

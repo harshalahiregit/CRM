@@ -16,7 +16,7 @@ class Project extends Model
         'tenant_id', 'name', 'description', 'status', 'customer_id', 'vendor_user_id', 'link_type',
         'billing_type', 'project_cost', 'rate_per_hour', 'start_date', 'deadline',
         'progress', 'progress_from_tasks', 'estimated_hours', 'created_by', 'date_finished',
-        'pinned_by', 'visible_tabs', 'customer_permissions', 'deadline_notified',
+        'pinned_by', 'visible_tabs', 'customer_permissions', 'vendor_permissions', 'tpv_permissions', 'deadline_notified',
         'hide_tasks_on_main', 'send_created_email', 'contacts_notification',
     ];
 
@@ -32,6 +32,8 @@ class Project extends Model
         'pinned_by'            => 'array',
         'visible_tabs'         => 'array',
         'customer_permissions' => 'array',
+        'vendor_permissions'   => 'array',
+        'tpv_permissions'      => 'array',
         'deadline_notified'    => 'boolean',
         'hide_tasks_on_main'   => 'boolean',
         'send_created_email'   => 'boolean',

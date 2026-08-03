@@ -100,9 +100,11 @@ class ProjectService
             $data['visible_tabs'] = collect($data['visible_tabs'])
                 ->only(self::tabKeys())->map(fn ($v) => (bool) $v)->all();
         }
-        if (array_key_exists('customer_permissions', $data) && is_array($data['customer_permissions'])) {
-            $data['customer_permissions'] = collect($data['customer_permissions'])
-                ->only(self::permissionKeys())->map(fn ($v) => (bool) $v)->all();
+        foreach (['customer_permissions', 'vendor_permissions', 'tpv_permissions'] as $bag) {
+            if (array_key_exists($bag, $data) && is_array($data[$bag])) {
+                $data[$bag] = collect($data[$bag])
+                    ->only(self::permissionKeys())->map(fn ($v) => (bool) $v)->all();
+            }
         }
 
         return $data;
@@ -214,6 +216,7 @@ class ProjectService
     {
         $project = $this->find($id, $tenantId);
         $project->load(['creator:id,name', 'members.user:id,name,email', 'milestones']);
+        $this->attachMilestoneProgress($project->milestones, $project->id, $tenantId);
         $project->setAttribute('tags', $this->tags->tagsFor('project', $project->id, $tenantId));
         $project->setAttribute('is_pinned', $userId ? in_array($userId, array_map('intval', $project->pinned_by ?? []), true) : false);
 
@@ -538,7 +541,45 @@ class ProjectService
 
     public function listMilestones(int $projectId, int $tenantId): Collection
     {
-        return $this->find($projectId, $tenantId)->milestones()->get();
+        $milestones = $this->find($projectId, $tenantId)->milestones()->get();
+        $this->attachMilestoneProgress($milestones, $projectId, $tenantId);
+
+        return $milestones;
+    }
+
+    /**
+     * Give each milestone its own completion — done / total of the project tasks
+     * pinned to it (status = the tenant's "closed" task key). One grouped query for
+     * the whole set, so the Milestones tab and Gantt can show a real per-milestone
+     * bar instead of only the project-wide task percentage.
+     */
+    private function attachMilestoneProgress(Collection $milestones, int $projectId, int $tenantId): void
+    {
+        if ($milestones->isEmpty() || ! Schema::hasTable('tasks') || ! Schema::hasColumn('tasks', 'milestone_id')) {
+            $milestones->each(fn ($m) => $m->setAttribute('progress', ['total' => 0, 'done' => 0, 'percent' => 0]));
+
+            return;
+        }
+
+        $closed = $this->statuses->closedKey('task', $tenantId) ?? 'complete';
+        $rows = DB::table('tasks')
+            ->where('tenant_id', $tenantId)
+            ->where('rel_type', 'project')->where('rel_id', $projectId)
+            ->whereNull('deleted_at')->whereNotNull('milestone_id')
+            ->selectRaw('milestone_id, COUNT(*) AS total, SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS done', [$closed])
+            ->groupBy('milestone_id')
+            ->get()->keyBy('milestone_id');
+
+        $milestones->each(function ($m) use ($rows) {
+            $r = $rows->get($m->id);
+            $total = $r ? (int) $r->total : 0;
+            $done = $r ? (int) $r->done : 0;
+            $m->setAttribute('progress', [
+                'total'   => $total,
+                'done'    => $done,
+                'percent' => $total > 0 ? (int) round($done / $total * 100) : 0,
+            ]);
+        });
     }
 
     public function createMilestone(int $projectId, array $data, int $tenantId): ProjectMilestone
@@ -710,7 +751,8 @@ class ProjectService
 
     public function listNotes(int $projectId, int $tenantId): Collection
     {
-        return $this->find($projectId, $tenantId)->notes()->with('author:id,name')->get();
+        return $this->find($projectId, $tenantId)->notes()
+            ->with('author:id,name', 'assignee:id,name', 'attachments')->get();
     }
 
     public function addNote(int $projectId, array $data, int $tenantId, int $userId): \App\Models\Project\ProjectNote
@@ -718,11 +760,39 @@ class ProjectService
         $project = $this->find($projectId, $tenantId);
         $note = $project->notes()->create([
             'tenant_id' => $tenantId, 'title' => $data['title'],
-            'content' => $data['content'] ?? null, 'created_by' => $userId,
+            // Notes are now rich-text ("notepad"), so sanitize the HTML before storing.
+            'content' => isset($data['content']) && $data['content'] !== null ? \App\Support\HtmlSanitizer::clean($data['content']) : null,
+            'assigned_to' => $data['assigned_to'] ?? null,
+            'remind_at' => $data['remind_at'] ?? null,
+            'created_by' => $userId,
         ]);
         $this->logActivity($project, 'note_added', "Note added: {$data['title']}", $userId);
 
-        return $note->load('author:id,name');
+        return $note->load('author:id,name', 'assignee:id,name', 'attachments');
+    }
+
+    public function updateNote(int $noteId, int $projectId, array $data, int $tenantId): \App\Models\Project\ProjectNote
+    {
+        $note = \App\Models\Project\ProjectNote::forTenant($tenantId)->where('project_id', $projectId)->find($noteId);
+        if (! $note) {
+            throw new BusinessException('Note not found.', 404);
+        }
+        if (array_key_exists('title', $data)) {
+            $note->title = $data['title'];
+        }
+        if (array_key_exists('content', $data)) {
+            $note->content = $data['content'] !== null ? \App\Support\HtmlSanitizer::clean($data['content']) : null;
+        }
+        if (array_key_exists('assigned_to', $data)) {
+            $note->assigned_to = $data['assigned_to'];
+        }
+        if (array_key_exists('remind_at', $data)) {
+            $note->remind_at = $data['remind_at'];
+            $note->reminded = false; // a new/changed reminder should fire again
+        }
+        $note->save();
+
+        return $note->load('author:id,name', 'assignee:id,name', 'attachments');
     }
 
     public function deleteNote(int $noteId, int $projectId, int $tenantId): void
@@ -732,6 +802,102 @@ class ProjectService
             throw new BusinessException('Note not found.', 404);
         }
         $note->delete();
+    }
+
+    public function addNoteAttachment(int $noteId, int $projectId, $file, int $tenantId, int $userId): \App\Models\Project\ProjectNoteAttachment
+    {
+        $note = \App\Models\Project\ProjectNote::forTenant($tenantId)->where('project_id', $projectId)->find($noteId);
+        if (! $note) {
+            throw new BusinessException('Note not found.', 404);
+        }
+        $path = $file->store("project-notes/{$projectId}", 'local');
+
+        return $note->attachments()->create([
+            'tenant_id'     => $tenantId,
+            'original_name' => $file->getClientOriginalName(),
+            'path'          => $path,
+            'size'          => $file->getSize(),
+            'mime'          => $file->getClientMimeType(),
+            'uploaded_by'   => $userId,
+        ]);
+    }
+
+    public function deleteNoteAttachment(int $attachmentId, int $projectId, int $tenantId): void
+    {
+        $att = \App\Models\Project\ProjectNoteAttachment::forTenant($tenantId)
+            ->whereHas('note', fn ($q) => $q->where('project_id', $projectId))
+            ->find($attachmentId);
+        if (! $att) {
+            throw new BusinessException('Attachment not found.', 404);
+        }
+        \Illuminate\Support\Facades\Storage::disk('local')->delete($att->path);
+        $att->delete();
+    }
+
+    public function noteAttachment(int $attachmentId, int $projectId, int $tenantId): \App\Models\Project\ProjectNoteAttachment
+    {
+        $att = \App\Models\Project\ProjectNoteAttachment::forTenant($tenantId)
+            ->whereHas('note', fn ($q) => $q->where('project_id', $projectId))
+            ->find($attachmentId);
+        if (! $att) {
+            throw new BusinessException('Attachment not found.', 404);
+        }
+
+        return $att;
+    }
+
+    /* ── Expenses tab ──────────────────────────────────────────── */
+
+    public function listExpenses(int $projectId, int $tenantId): array
+    {
+        $rows = \App\Models\Project\ProjectExpense::forTenant($tenantId)
+            ->where('project_id', $projectId)
+            ->with('creator:id,name')
+            ->orderByDesc('expense_date')->orderByDesc('id')
+            ->get();
+
+        return [
+            'rows'  => $rows,
+            'total' => round((float) $rows->sum('amount'), 2),
+        ];
+    }
+
+    public function addExpense(int $projectId, array $data, int $tenantId, int $userId): \App\Models\Project\ProjectExpense
+    {
+        $this->find($projectId, $tenantId); // authorise/scope
+
+        return \App\Models\Project\ProjectExpense::create([
+            'tenant_id'    => $tenantId,
+            'project_id'   => $projectId,
+            'title'        => $data['title'],
+            'category'     => $data['category'] ?? null,
+            'amount'       => $data['amount'] ?? 0,
+            'expense_date' => $data['expense_date'],
+            'note'         => $data['note'] ?? null,
+            'billable'     => $data['billable'] ?? false,
+            'created_by'   => $userId,
+        ])->load('creator:id,name');
+    }
+
+    public function updateExpense(int $expenseId, int $projectId, array $data, int $tenantId): \App\Models\Project\ProjectExpense
+    {
+        $exp = \App\Models\Project\ProjectExpense::forTenant($tenantId)->where('project_id', $projectId)->find($expenseId);
+        if (! $exp) {
+            throw new BusinessException('Expense not found.', 404);
+        }
+        $exp->fill(array_intersect_key($data, array_flip(['title', 'category', 'amount', 'expense_date', 'note', 'billable'])));
+        $exp->save();
+
+        return $exp->load('creator:id,name');
+    }
+
+    public function deleteExpense(int $expenseId, int $projectId, int $tenantId): void
+    {
+        $exp = \App\Models\Project\ProjectExpense::forTenant($tenantId)->where('project_id', $projectId)->find($expenseId);
+        if (! $exp) {
+            throw new BusinessException('Expense not found.', 404);
+        }
+        $exp->delete();
     }
 
     /* ── Activity ───────────────────────────────────────────────── */
