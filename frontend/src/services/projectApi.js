@@ -55,9 +55,28 @@ export const projectApi = {
   // Notes / Activity / Timesheets tabs
   notes: (id) => api.get(`/projects/${id}/notes`).then(unwrap).catch(handleErr),
   addNote: (id, data) => api.post(`/projects/${id}/notes`, data).then(unwrap).catch(handleErr),
+  updateNote: (id, noteId, data) => api.put(`/projects/${id}/notes/${noteId}`, data).then(unwrap).catch(handleErr),
   deleteNote: (id, noteId) => api.delete(`/projects/${id}/notes/${noteId}`).then(unwrap).catch(handleErr),
+  // Note attachments
+  addNoteAttachment: (id, noteId, file) => {
+    const fd = new FormData(); fd.append('file', file)
+    return api.post(`/projects/${id}/notes/${noteId}/attachments`, fd, { headers: { 'Content-Type': 'multipart/form-data' } }).then(unwrap).catch(handleErr)
+  },
+  deleteNoteAttachment: (id, attId) => api.delete(`/projects/${id}/note-attachments/${attId}`).then(unwrap).catch(handleErr),
+  downloadNoteAttachment: async (id, attId, filename) => {
+    const res = await api.get(`/projects/${id}/note-attachments/${attId}/download`, { responseType: 'blob' }).catch(handleErr)
+    const url = URL.createObjectURL(res.data)
+    const a = document.createElement('a'); a.href = url; a.download = filename || 'download'
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url)
+  },
   activity: (id) => api.get(`/projects/${id}/activity`).then(unwrap).catch(handleErr),
   timesheets: (id) => api.get(`/projects/${id}/timesheets`).then(unwrap).catch(handleErr),
+
+  // Expenses tab — returns { rows, total }
+  expenses: (id) => api.get(`/projects/${id}/expenses`).then(unwrap).catch(handleErr),
+  addExpense: (id, data) => api.post(`/projects/${id}/expenses`, data).then(unwrap).catch(handleErr),
+  updateExpense: (id, eid, data) => api.put(`/projects/${id}/expenses/${eid}`, data).then(unwrap).catch(handleErr),
+  deleteExpense: (id, eid) => api.delete(`/projects/${id}/expenses/${eid}`).then(unwrap).catch(handleErr),
 
   // Meeting tab — returns { meetings, counters: { total, completed, pending } }
   meetings: (id) => api.get(`/projects/${id}/meetings`).then(unwrap).catch(handleErr),
