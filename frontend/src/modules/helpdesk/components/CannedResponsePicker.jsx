@@ -50,7 +50,7 @@ export default function CannedResponsePicker({ onInsert }) {
                     <span className="text-sm font-bold" style={{ color: 'var(--text-h)' }}>{cr.title}</span>
                     {cr.shortcut && <span className="text-[10px] font-mono px-1.5 py-0.5 rounded" style={{ background: 'color-mix(in srgb, var(--color-support-500) 12%, transparent)', color: 'var(--color-support-500)' }}>{cr.shortcut}</span>}
                   </div>
-                  <p className="text-xs line-clamp-2" style={{ color: 'var(--text-muted)' }}>{cr.content}</p>
+                  <p className="text-xs line-clamp-2" style={{ color: 'var(--text-muted)' }}>{String(cr.content || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/\s+/g, ' ').trim()}</p>
                 </button>
               ))}
             </div>
