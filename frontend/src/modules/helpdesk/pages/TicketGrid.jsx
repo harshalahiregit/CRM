@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   Search, Plus, X, Inbox, Clock, CheckCircle2, Circle, User, Zap,
   Download, Columns3, Rows3, AlignJustify, ArrowUp, ArrowDown, ChevronsUpDown,
-  Trash2, UserCheck, AlertCircle, Check, Sparkles, RotateCcw,
+  Trash2, UserCheck, AlertCircle, Check, Sparkles, RotateCcw, Link2,
   FolderKanban, ListChecks, Boxes,
   Users, Landmark, ShoppingCart, HardHat, ShieldCheck, TrendingUp, Contact,
 } from 'lucide-react'
@@ -97,6 +97,16 @@ export default function TicketGrid() {
   const [colMenu, setColMenu] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)   // bulk-delete guard
   const [bulkErr, setBulkErr] = useState('')
+  const [copiedId, setCopiedId] = useState(null)              // "public link" copied flash, per row
+
+  // Copy a ticket's customer-facing link (/ticket/{id}-{token}) without opening
+  // the row. email_token is the no-login credential — same ref the emails thread on.
+  const copyPublicLink = (e, t) => {
+    e.stopPropagation()
+    if (!t?.email_token) return
+    navigator.clipboard?.writeText(`${window.location.origin}/ticket/${t.id}-${t.email_token}`)
+    setCopiedId(t.id); setTimeout(() => setCopiedId(c => (c === t.id ? null : c)), 1600)
+  }
 
   useEffect(() => { localStorage.setItem('hd-grid-density', JSON.stringify(density)) }, [density])
   useEffect(() => { localStorage.setItem('hd-grid-hidden', JSON.stringify([...hidden])) }, [hidden])
@@ -437,7 +447,19 @@ export default function TicketGrid() {
                       <td key={c.key} style={{ padding: rowPad, fontSize: 13, color: 'var(--text-body)', whiteSpace: c.key === 'subject' ? 'normal' : 'nowrap' }}
                         onClick={c.key === 'status' ? e => e.stopPropagation() : undefined}>
                         {c.key === 'sn' && <span style={{ color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums' }}>{rowIdx + 1}</span>}
-                        {c.key === 'ticket' && <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--text-h)' }}>#{t.id}</span>}
+                        {c.key === 'ticket' && (
+                          <span className="inline-flex items-center gap-1.5">
+                            <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--text-h)' }}>#{t.id}</span>
+                            {t.email_token && (
+                              <button type="button" onClick={e => copyPublicLink(e, t)}
+                                title={copiedId === t.id ? 'Public link copied' : 'Copy public link'}
+                                className="opacity-50 hover:opacity-100 transition-opacity"
+                                style={{ color: copiedId === t.id ? 'var(--color-success-500)' : 'var(--text-muted)' }}>
+                                {copiedId === t.id ? <Check size={13} /> : <Link2 size={13} />}
+                              </button>
+                            )}
+                          </span>
+                        )}
                         {c.key === 'priority' && <SLABadge priority={t.priority} showSla={false} />}
                         {c.key === 'sla' && <SlaTimer sla={t.sla} compact />}
                         {c.key === 'subject' && (
