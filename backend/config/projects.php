@@ -80,6 +80,44 @@ return [
         ['key' => 'view_team_members',        'label' => 'View team members'],
     ],
 
+    // Vendor-portal permission toggles — a vendor supplies goods/services to the
+    // project, so their portal is about their own tasks, deliverables, and the
+    // purchase/billing side, NOT the customer's finance overview. Stored in the
+    // project's vendor_permissions bag; honoured by the vendor portal.
+    'vendor_permissions' => [
+        ['key' => 'view_assigned_tasks',   'label' => 'View tasks assigned to them'],
+        ['key' => 'update_task_status',    'label' => 'Update status on their tasks'],
+        ['key' => 'comment_tasks',         'label' => 'Comment on their tasks'],
+        ['key' => 'view_task_attachments', 'label' => 'View task attachments'],
+        ['key' => 'upload_deliverables',   'label' => 'Upload deliverables / attachments'],
+        ['key' => 'view_milestones',       'label' => 'View milestones'],
+        ['key' => 'view_files',            'label' => 'View shared project files'],
+        ['key' => 'upload_files',          'label' => 'Upload files'],
+        ['key' => 'view_purchase_orders',  'label' => 'View purchase orders / requests'],
+        ['key' => 'submit_invoices',       'label' => 'Submit invoices / bills'],
+        ['key' => 'view_payment_status',   'label' => 'View payment & PO status'],
+        ['key' => 'open_discussions',      'label' => 'Open discussions'],
+        ['key' => 'view_meetings',         'label' => 'View meetings'],
+    ],
+
+    // Third-party-vendor permission toggles — a TPV is typically a sub-contractor
+    // with a narrower remit than a vendor: their own work, deliverables and the
+    // scope they need, without the purchase/billing surface. Stored in
+    // tpv_permissions; honoured by the TPV portal.
+    'tpv_permissions' => [
+        ['key' => 'view_assigned_tasks',   'label' => 'View tasks assigned to them'],
+        ['key' => 'update_task_status',    'label' => 'Update status on their tasks'],
+        ['key' => 'comment_tasks',         'label' => 'Comment on their tasks'],
+        ['key' => 'view_task_attachments', 'label' => 'View task attachments'],
+        ['key' => 'upload_deliverables',   'label' => 'Upload deliverables / attachments'],
+        ['key' => 'view_scope',            'label' => 'View project scope / overview'],
+        ['key' => 'view_milestones',       'label' => 'View milestones'],
+        ['key' => 'view_files',            'label' => 'View shared project files'],
+        ['key' => 'upload_files',          'label' => 'Upload files'],
+        ['key' => 'view_meetings',         'label' => 'View meetings'],
+        ['key' => 'open_discussions',      'label' => 'Open discussions'],
+    ],
+
     // "Send Contacts Notifications" (A2, required select).
     'contacts_notification' => [
         ['key' => 'all',      'label' => 'All contacts with notifications enabled'],

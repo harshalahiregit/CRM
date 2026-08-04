@@ -178,7 +178,15 @@ export default function ProjectFormDrawer({ open, onClose, project = null, onSav
   if (!open) return null
   const busy = save.isPending
   const tabs = meta?.tabs || []
-  const perms = meta?.customer_permissions || []
+  // Each party has its OWN relevant permission catalog — a vendor/TPV portal is
+  // about their tasks/deliverables (and, for a vendor, purchase/billing), not the
+  // customer's finance overview. Swaps catalog with the Customer/Vendor/TPV sub-tab.
+  const PERM_CATALOG = {
+    customer: meta?.customer_permissions || [],
+    vendor:   meta?.vendor_permissions || [],
+    tpv:      meta?.tpv_permissions || [],
+  }
+  const perms = PERM_CATALOG[permParty] || []
   const notifModes = meta?.contacts_notification || []
   // The settings that follow are about whoever the project is linked to — so the
   // labels and helper text adapt to a Customer, a Vendor, or a Third-party vendor.
