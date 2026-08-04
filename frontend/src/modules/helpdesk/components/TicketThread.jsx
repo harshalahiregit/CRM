@@ -8,6 +8,7 @@ import {
   Paperclip, Send, X, ListTodo, FolderKanban, GitMerge,
   Plus, Trash2, Sparkles, RefreshCw, ArrowLeft, AlertCircle,
   MessageSquare, Activity, StickyNote, CheckCircle2, User, Bookmark, BookOpen,
+  Link2, Check,
 } from 'lucide-react'
 import { helpdeskApi } from '@/services/helpdeskApi'
 import { useAuth } from '@/context/AuthContext'
@@ -15,6 +16,8 @@ import TicketIntelligencePanel from './TicketIntelligencePanel'
 import TicketTimeline from './TicketTimeline'
 import KnowledgeSuggestions from './KnowledgeSuggestions'
 import CannedResponsePicker from './CannedResponsePicker'
+import InsertKbLinkPicker from './InsertKbLinkPicker'
+import { RICH_MODULES, RICH_FORMATS } from '@/lib/quillConfig'
 import Select from './ui/Select'
 import SearchPicker from './ui/SearchPicker'
 import { projectApi } from '@/services/projectApi'
@@ -92,19 +95,13 @@ const STATUS_COLOR = {
   closed:        { color: '#10b981', bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.25)' },
 }
 
-// Rich-text reply composer — mirrors the KB article editor's Quill setup, trimmed
-// to what a support reply needs: bold/italic/underline, ordered + bullet lists,
-// link, code block and inline image embed. The value is HTML (sanitized on the
-// server before it is stored or emailed).
-const REPLY_MODULES = {
-  toolbar: [
-    ['bold', 'italic', 'underline'],
-    [{ list: 'ordered' }, { list: 'bullet' }],
-    ['link', 'code-block', 'image'],
-    ['clean'],
-  ],
-}
-const REPLY_FORMATS = ['bold', 'italic', 'underline', 'list', 'bullet', 'link', 'code-block', 'image']
+// Rich-text reply composer — full "notepad" toolbar (image12): size, colour +
+// highlight, alignment, headings, lists, quote/code, link and inline image. Shared
+// with the tasks/projects note editors via quillConfig, which registers STYLE
+// attributors so the formatting survives the server-side HtmlSanitizer (which
+// strips class attributes). The value is HTML, sanitized on store/email.
+const REPLY_MODULES = RICH_MODULES
+const REPLY_FORMATS = RICH_FORMATS
 
 // Quill never leaves its editor truly empty — an untouched editor still holds
 // `<p><br></p>`. Treat that (and any tag-only/whitespace-only HTML) as blank so a
@@ -164,14 +161,40 @@ export default function TicketThread() {
   const [tab, setTab] = useState('conversation') // 'conversation' | 'activity'
   const [composerMode, setComposerMode] = useState('reply') // 'reply' | 'note'
   const [replyTip, setReplyTip] = useState('')   // transient feedback for save-as-canned
+  const [linkCopied, setLinkCopied] = useState(false) // "public link" copied flash
 
-  // Save the current reply body as a reusable canned response.
-  const saveAsCanned = async () => {
-    if (!message.trim()) return
-    const title = window.prompt('Save this reply as a canned response.\nGive it a title:')
-    if (!title?.trim()) return
+  // Reply-panel toggles from image12. Both are sticky per-agent (localStorage) so
+  // the choice carries across tickets. "Return to list" defaults ON to match the
+  // reference; "assign to me" defaults OFF so a reply never silently steals a
+  // ticket unless the agent asks for it.
+  const [assignToMe, setAssignToMe] = useState(() => localStorage.getItem('hd.reply.assignToMe') === '1')
+  const [returnToList, setReturnToList] = useState(() => localStorage.getItem('hd.reply.returnToList') !== '0')
+  const toggleAssignToMe = (v) => { setAssignToMe(v); localStorage.setItem('hd.reply.assignToMe', v ? '1' : '0') }
+  const toggleReturnToList = (v) => { setReturnToList(v); localStorage.setItem('hd.reply.returnToList', v ? '1' : '0') }
+
+  // Save the current reply body as a reusable canned response. Opens a small modal
+  // that mirrors the KB-Admin "New reply" form (image13): Title, Category, Shortcut
+  // and the reply text — so a quick-save from the composer captures the same fields
+  // the full manager does, not just a title.
+  const [cannedModal, setCannedModal] = useState(false)
+  const [cannedForm, setCannedForm] = useState({ title: '', category: '', shortcut: '' })
+  const saveAsCanned = () => {
+    if (isComposerEmpty(message)) return
+    setCannedForm({ title: ticket?.subject || '', category: '', shortcut: '' })
+    setCannedModal(true)
+  }
+  const submitCanned = async () => {
+    const title = cannedForm.title.trim()
+    if (!title) return
     try {
-      await helpdeskApi.cannedResponses.create({ title: title.trim(), content: message })
+      await helpdeskApi.cannedResponses.create({
+        title,
+        category: cannedForm.category.trim() || null,
+        shortcut: cannedForm.shortcut.trim() || null,
+        content: message,
+      })
+      queryClient.invalidateQueries({ queryKey: ['canned-responses'] })
+      setCannedModal(false)
       setReplyTip('Saved as canned ✓'); setTimeout(() => setReplyTip(''), 2500)
     } catch (e) {
       setReplyTip(e?.message || 'Could not save'); setTimeout(() => setReplyTip(''), 3000)
@@ -255,6 +278,18 @@ export default function TicketThread() {
     queryFn: () => helpdeskApi.tickets.get(id),
     enabled: !!id,
   })
+
+  // Customer-facing view of THIS ticket: /ticket/{id}-{token}. The email_token is
+  // the credential (no login) — same ref the threaded emails use. Staff copy it to
+  // share a read-only link with the requester (image12 "view public link").
+  const publicTicketUrl = ticket?.id && ticket?.email_token
+    ? `${window.location.origin}/ticket/${ticket.id}-${ticket.email_token}`
+    : null
+  const copyPublicLink = () => {
+    if (!publicTicketUrl) return
+    navigator.clipboard?.writeText(publicTicketUrl)
+    setLinkCopied(true); setTimeout(() => setLinkCopied(false), 1600)
+  }
 
   // A converted task inherits the ticket's own deadline, priority and assignee —
   // an agent breaking a ticket into tasks is scheduling against the ticket's date,
@@ -413,6 +448,19 @@ export default function TicketThread() {
       if (ctx?.prev) queryClient.setQueryData(repliesKey, ctx.prev)
       if (ctx?.sent) setMessage(ctx.sent) // don't lose the agent's text
     },
+    // Post-send image12 toggles. Assign-to-me runs first (best-effort — a failed
+    // assign must never block the return-to-list navigation), then, if asked, we
+    // drop back to the ticket list.
+    onSuccess: async (_data, vars) => {
+      if (vars?.assignMe && user?.id && String(ticket?.assigned_to) !== String(user.id)) {
+        try {
+          await helpdeskApi.tickets.assign(id, user.id)
+          queryClient.invalidateQueries({ queryKey: ticketKey })
+          queryClient.invalidateQueries({ queryKey: ['helpdesk-tickets'] })
+        } catch (_) { /* best-effort */ }
+      }
+      if (vars?.goBack) navigate('/app/helpdesk/tickets')
+    },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: repliesKey })
       queryClient.invalidateQueries({ queryKey: ticketKey })
@@ -451,7 +499,7 @@ export default function TicketThread() {
     } else {
       if (isComposerEmpty(message)) return
       // Send the Quill HTML verbatim as `message`; the server sanitizes on store.
-      postReply.mutate({ resolve, text: message, ccVal: cc, fileList: files })
+      postReply.mutate({ resolve, text: message, ccVal: cc, fileList: files, assignMe: assignToMe, goBack: returnToList })
     }
   }
 
@@ -602,6 +650,16 @@ export default function TicketThread() {
               border="var(--border)"
               onClick={() => setMergePickerOpen(true)}
             />
+            {publicTicketUrl && (
+              <ActionBtn
+                icon={linkCopied ? Check : Link2}
+                label={linkCopied ? 'Copied ✓' : 'Public link'}
+                color="#10b981"
+                bg="rgba(16,185,129,0.1)"
+                border="rgba(16,185,129,0.2)"
+                onClick={copyPublicLink}
+              />
+            )}
           </div>
         )}
       </header>
@@ -895,6 +953,20 @@ export default function TicketThread() {
                   </>
                 )}
 
+                {/* Post-send options (image12) — reply mode only */}
+                {composerMode === 'reply' && (
+                  <div className="flex flex-wrap items-center gap-4 px-4 py-2.5" style={{ borderTop: '1px solid var(--border)' }}>
+                    <label className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer select-none" style={{ color: 'var(--text-muted)' }}>
+                      <input type="checkbox" checked={assignToMe} onChange={e => toggleAssignToMe(e.target.checked)} style={{ accentColor: 'var(--color-support-500)' }} />
+                      Assign this ticket to me automatically
+                    </label>
+                    <label className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer select-none" style={{ color: 'var(--text-muted)' }}>
+                      <input type="checkbox" checked={returnToList} onChange={e => toggleReturnToList(e.target.checked)} style={{ accentColor: 'var(--color-support-500)' }} />
+                      Return to ticket list after response is submitted
+                    </label>
+                  </div>
+                )}
+
                 {/* Toolbar */}
                 <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: '1px solid var(--border)', background: composerMode === 'note' ? 'transparent' : 'var(--bg-input)' }}>
                   <div className="flex items-center gap-4">
@@ -905,6 +977,7 @@ export default function TicketThread() {
                           <input type="file" multiple className="hidden" onChange={e => setFiles(prev => [...prev, ...Array.from(e.target.files)])} />
                         </label>
                         <CannedResponsePicker onInsert={txt => setMessage(m => m ? `${m}\n\n${txt}` : txt)} />
+                        <InsertKbLinkPicker onInsert={html => setMessage(m => m ? `${m} ${html}` : html)} />
                         <button type="button" onClick={saveAsCanned} disabled={!message.trim()}
                           className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer hover:opacity-70 transition-opacity disabled:opacity-40"
                           style={{ color: 'var(--text-muted)' }} title="Save this reply as a canned response">
@@ -991,6 +1064,49 @@ export default function TicketThread() {
         emptyText="No other tickets to merge."
         accent="var(--color-warning-500)"
       />
+
+      {/* Save-as-canned modal (image13's "New reply" form: title/category/shortcut) */}
+      {cannedModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setCannedModal(false)}>
+          <div className="w-full max-w-md rounded-2xl p-6" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card-3d)' }} onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: 'rgba(34,211,238,0.12)' }}>
+                <Bookmark size={15} style={{ color: '#22d3ee' }} />
+              </div>
+              <h2 className="font-bold" style={{ color: 'var(--text-h)' }}>Save as canned response</h2>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Title</label>
+                <input autoFocus value={cannedForm.title} onChange={e => setCannedForm(f => ({ ...f, title: e.target.value }))}
+                  className="w-full mt-1 px-3 py-2 rounded-lg text-sm outline-none" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }} placeholder="e.g. Feedback" />
+              </div>
+              <div className="flex gap-3">
+                <div className="flex-1">
+                  <label className="text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Category</label>
+                  <input value={cannedForm.category} onChange={e => setCannedForm(f => ({ ...f, category: e.target.value }))}
+                    className="w-full mt-1 px-3 py-2 rounded-lg text-sm outline-none" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }} placeholder="General" />
+                </div>
+                <div className="flex-1">
+                  <label className="text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Shortcut</label>
+                  <input value={cannedForm.shortcut} onChange={e => setCannedForm(f => ({ ...f, shortcut: e.target.value }))}
+                    className="w-full mt-1 px-3 py-2 rounded-lg text-sm outline-none font-mono" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }} placeholder="/feedback" />
+                </div>
+              </div>
+              <div>
+                <label className="text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Reply text</label>
+                <div className="w-full mt-1 px-3 py-2 rounded-lg text-xs max-h-28 overflow-y-auto reply-html" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-body)' }}
+                  dangerouslySetInnerHTML={{ __html: message }} />
+              </div>
+            </div>
+            <div className="flex items-center gap-2 mt-5">
+              <button type="button" onClick={submitCanned} disabled={!cannedForm.title.trim()}
+                className="text-xs font-bold px-4 py-2 rounded-xl disabled:opacity-40" style={{ background: 'linear-gradient(135deg,#22d3ee,#0891b2)', color: '#fff' }}>Save reply</button>
+              <button type="button" onClick={() => setCannedModal(false)} className="text-xs font-bold px-3 py-2 rounded-xl" style={{ color: 'var(--text-muted)' }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Convert-to-tasks modal */}
       {tasksOpen && (
