@@ -543,7 +543,9 @@ function getImageUrl(url) {
   if (url.startsWith('data:') || url.startsWith('http://') || url.startsWith('https://')) {
     return url
   }
-  const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
+  // Same env var as every other caller (VITE_API_BASE_URL was a typo and always
+  // fell back to localhost, which broke this link on any deployed domain).
+  const baseUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api'
   const cleanBase = baseUrl.replace(/\/api\/?$/, '')
   return `${cleanBase}${url.startsWith('/') ? '' : '/'}${url}`
 }

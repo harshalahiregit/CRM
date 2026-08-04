@@ -24,7 +24,8 @@ class HrLeaveApplication extends Model
     public const CANCELLED = 'Cancelled';
 
     protected $fillable = [
-        'tenant_id', 'employee_id', 'leave_type_id', 'leave_policy_id', 'employee_leave_balance_id',
+        'tenant_id', 'employee_id', 'sangoetrack_leave_id',
+        'leave_type_id', 'leave_policy_id', 'employee_leave_balance_id',
         'from_date', 'to_date', 'days', 'half_day', 'reason', 'attachment_path',
         'status', 'applied_at', 'decided_by', 'decided_at', 'decision_remarks',
         'created_by', 'updated_by',

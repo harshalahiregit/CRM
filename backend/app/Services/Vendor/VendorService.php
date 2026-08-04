@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use App\Support\Tpv\TpvRegistrationType;
 use Illuminate\Support\Str;
 
 class VendorService
@@ -47,14 +48,29 @@ class VendorService
                 'status' => Status::DRAFT,
                 ...$data,
                 'tenant_id' => $tenantId,
+                // Store the Permanent/Temporary choice verbatim so it is never
+                // re-derived later. Self-registration already did this; admin
+                // creation did not, leaving the Type badge blank on the listing.
+                'registration_type' => \App\Support\Tpv\TpvRegistrationType::normalize(
+                    $data['registration_type'] ?? $data['vendor_type'] ?? null
+                ),
             ]);
 
-            // Provision a self-service portal login when a password is supplied
-            // (the "Add Third-party Vendor" flow). Purchase-side vendor creation
-            // omits it and simply gets a profile with no login.
-            if (! empty($password)) {
-                $user = $this->provisionLoginUser($vendor, $loginName, $password, $tenantId);
+            // A vendor with an email ALWAYS gets a portal login. Previously the
+            // login was only created when the admin happened to type a password, so
+            // "Add Third-party Vendor" silently produced a vendor that looked
+            // complete but could never sign in — the credentials step was missing
+            // with no error. When no password is given we mint one and hand it back
+            // so the admin can pass it on, mirroring PurchaseVendorPortalAuthService.
+            if (! empty($vendor->email)) {
+                $plain = $password ?: Str::password(12);
+                $user = $this->provisionLoginUser($vendor, $loginName, $plain, $tenantId);
                 $vendor->update(['user_id' => $user->id]);
+
+                // Surfaced on the create response only; never persisted in clear.
+                if (empty($password)) {
+                    $vendor->setAttribute('generated_password', $plain);
+                }
             }
 
             $this->syncContacts($vendor, $contacts);
@@ -69,7 +85,17 @@ class VendorService
         ]);
 
         // fresh(), not load() — see PurchaseRequestService::create().
-        return $vendor->fresh(['contacts']);
+        $result = $vendor->fresh(['contacts']);
+
+        // fresh() re-reads from the DB and would drop the generated password, which
+        // exists only in memory (it is never stored in clear). Carry it across so the
+        // admin sees the credential they must pass on — this is the only moment it
+        // can be shown.
+        if ($vendor->getAttribute('generated_password')) {
+            $result->setAttribute('generated_password', $vendor->getAttribute('generated_password'));
+        }
+
+        return $result;
     }
 
     public function update(Vendor $vendor, array $data, ?User $actor = null): Vendor
@@ -256,9 +282,19 @@ class VendorService
             'pending'     => Vendor::forTenant($tenantId)->where('status', Status::PENDING_APPROVAL)->count(),
             'on_hold'     => Vendor::forTenant($tenantId)->where('status', Status::ON_HOLD)->count(),
             'blacklisted' => Vendor::forTenant($tenantId)->where('status', Status::BLACKLISTED)->count(),
-            'by_type'     => Vendor::forTenant($tenantId)->select('vendor_type')
-                ->selectRaw('count(*) as count')
-                ->groupBy('vendor_type')->get(),
+            // Identical rule to PurchaseVendorRepository::stats() — registration_type
+            // is the source of truth, vendor_type only a fallback for legacy rows.
+            // The old by_type grouping returned raw vendor_type values (including the
+            // legacy 'Company'), which no dashboard could turn into a straight
+            // Permanent/Temporary count.
+            'permanent' => Vendor::forTenant($tenantId)->where(fn ($q) => $q
+                ->where('registration_type', TpvRegistrationType::LONG_TERM)
+                ->orWhere(fn ($w) => $w->whereNull('registration_type')->where('vendor_type', '!=', 'temporary'))
+            )->count(),
+            'temporary' => Vendor::forTenant($tenantId)->where(fn ($q) => $q
+                ->where('registration_type', TpvRegistrationType::TEMPORARY)
+                ->orWhere(fn ($w) => $w->whereNull('registration_type')->where('vendor_type', 'temporary'))
+            )->count(),
         ];
     }
 

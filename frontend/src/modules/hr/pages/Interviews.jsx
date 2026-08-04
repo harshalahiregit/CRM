@@ -6,6 +6,7 @@ import {
   History, ChevronDown, ChevronRight, Trash2, Edit3, Loader2, Link2, LayoutGrid, List, Eye, Rocket,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+import { useMasterData } from '@/modules/hr/useMasterData'
 import AuditTimeline from '@/components/ui/AuditTimeline'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 import StarRating from '@/modules/hr/components/StarRating'
@@ -49,7 +50,10 @@ export default function Interviews() {
   const [stats, setStats]           = useState({ today: 0, upcoming: 0, completed: 0, pending_feedback: 0 })
   const [candidates, setCandidates] = useState([])
   const [loading, setLoading]       = useState(true)
+  const { masters } = useMasterData()
   const [tab, setTab]               = useState('All')
+  // #3 — hiring manager, resolved server-side through candidate → job → requisition.
+  const [mgrF, setMgrF]             = useState('All')
   const [toast, setToast]           = useState(null)
   const [saving, setSaving]         = useState(false)
   const [sched, setSched]           = useState(null) // { mode, interview, candidateId, defaultRound }
@@ -69,14 +73,14 @@ export default function Interviews() {
       // Always load the full set; the status tabs filter client-side so the
       // "Awaiting Scheduling" view can see every candidate's real round state.
       const [ivs, st, cands] = await Promise.all([
-        hrApi.interviews.list({}),
+        hrApi.interviews.list(mgrF !== 'All' ? { hiring_manager_id: mgrF } : {}),
         hrApi.interviews.stats(),
         hrApi.candidates.list(),
       ])
       setInterviews(ivs); setStats(st); setCandidates(cands)
     } catch { showToast('Failed to load interviews', 'error') }
     finally { setLoading(false) }
-  }, [])
+  }, [mgrF])
 
   useEffect(() => { fetchData() }, [fetchData])
 
@@ -267,10 +271,15 @@ export default function Interviews() {
         </div>
       )}
 
-      <div className="flex gap-2 flex-wrap">
+      <div className="flex gap-2 flex-wrap items-center">
         {QUEUE_TABS.map(t => (
           <button key={t} onClick={() => setTab(t)} className="px-3 py-1.5 rounded-xl text-xs font-bold transition-all" style={{ background: tab === t ? 'linear-gradient(135deg,#7C3AED,#5b21b6)' : 'var(--bg-input)', color: tab === t ? '#fff' : 'var(--text-muted)', border: `1px solid ${tab === t ? 'transparent' : 'var(--border)'}` }}>{t}</button>
         ))}
+        {/* #3 — server-side, so the status tabs above still filter the result. */}
+        <select className="input-3d text-xs ml-auto" style={{ maxWidth: 210 }} value={mgrF} onChange={e => setMgrF(e.target.value)}>
+          <option value="All">All Hiring Managers</option>
+          {(masters.managers || []).map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+        </select>
       </div>
 
       {loading ? <HrLoading label="Loading interviews…" /> : view === 'list' ? (

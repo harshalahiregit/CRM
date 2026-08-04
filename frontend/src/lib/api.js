@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { getToken, clearAuth } from '@/lib/authStorage'
+import { isSessionFailure } from '@/lib/sessionFailure'
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api',
@@ -19,12 +20,16 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-// ── Response interceptor: handle 401 globally ───────────────────────
+// ── Response interceptor: end the session only when it has actually ended ──
+//
+// #45 — this used to sign the user out on ANY 401, so a single endpoint that
+// answered a permission problem with 401 instead of 403 logged them out. A 403
+// never reaches here, and a 401 that is not auth-shaped is passed to the caller
+// to display.
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
-      // Token expired or invalid — clear both stores and redirect
+    if (isSessionFailure(error, !!getToken())) {
       clearAuth()
       if (!window.location.pathname.startsWith('/auth')) {
         window.location.href = '/auth/login'

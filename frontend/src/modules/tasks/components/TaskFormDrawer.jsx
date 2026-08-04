@@ -3,7 +3,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   X, Check, CheckCircle2, Link2, IndianRupee, Paperclip, ChevronDown, Flag, ListPlus,
 } from 'lucide-react'
-import { taskApi, TASK_PRIORITY, TASK_ACCENT, REL_TYPES, fmtBytes } from '@/services/taskApi'
+import { tpvApi } from '@/services/tpvApi'
+import { purchaseApi } from '@/services/purchaseApi'
+import { taskApi, TASK_PRIORITY, TASK_ACCENT, REL_TYPES, REL_TYPE_LABEL, fmtBytes } from '@/services/taskApi'
 import Select from '@/components/ui/Select'
 import SearchPicker from '@/components/ui/SearchPicker'
 import TagInput from '@/components/ui/TagInput'
@@ -111,6 +113,17 @@ export default function TaskFormDrawer({ open, onClose, task = null, defaults = 
   const { data: customers = [], isLoading: cLoading } = useQuery({
     queryKey: ['project-customers'], queryFn: projectApi.customers, enabled: open && form.rel_type === 'customer',
   })
+  // Vendor relation sources. Each module has its own list endpoint; a task links to
+  // the vendor RECORD, not to a user account -- which is what lets a Purchase Vendor
+  // (who has no User) carry tasks at all.
+  const { data: tpvVendorList = [], isLoading: tvLoading } = useQuery({
+    queryKey: ['task-rel-tpv-vendors'], queryFn: () => tpvApi.vendors.list(),
+    enabled: open && form.rel_type === 'tpv_vendor',
+  })
+  const { data: purchaseVendorList = [], isLoading: pvLoading } = useQuery({
+    queryKey: ['task-rel-purchase-vendors'], queryFn: () => purchaseApi.vendors.list(),
+    enabled: open && form.rel_type === 'purchase_vendor',
+  })
   // Milestones belong to the linked project — only load once one is chosen.
   const { data: milestones = [] } = useQuery({
     queryKey: ['project-milestones', form.rel_id], queryFn: () => projectApi.milestones(form.rel_id),
@@ -123,8 +136,10 @@ export default function TaskFormDrawer({ open, onClose, task = null, defaults = 
     if (form.rel_type === 'project') return rows(projects).map(p => ({ id: p.id, label: p.name, sublabel: p.status }))
     if (form.rel_type === 'ticket') return rows(tickets).map(t => ({ id: t.id, label: t.subject, sublabel: `#${t.id} · ${t.status}` }))
     if (form.rel_type === 'customer') return rows(customers).map(c => ({ id: c.id, label: c.name, sublabel: c.company || '' }))
+    if (form.rel_type === 'tpv_vendor') return rows(tpvVendorList).map(v => ({ id: v.id, label: v.company_name || v.name, sublabel: [v.vendor_code, v.status].filter(Boolean).join(' · ') }))
+    if (form.rel_type === 'purchase_vendor') return rows(purchaseVendorList).map(v => ({ id: v.id, label: v.company_name || v.name, sublabel: [v.purchase_vendor_code, v.status].filter(Boolean).join(' · ') }))
     return []
-  }, [form.rel_type, projects, tickets, customers])
+  }, [form.rel_type, projects, tickets, customers, tpvVendorList, purchaseVendorList])
 
   const relName = useMemo(() => {
     if (form.rel_type === 'standalone' || !form.rel_id) return ''
@@ -302,11 +317,11 @@ export default function TaskFormDrawer({ open, onClose, task = null, defaults = 
 
           {form.rel_type !== 'standalone' && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label={form.rel_type}>
+              <Field label={REL_TYPE_LABEL[form.rel_type] || form.rel_type}>
                 <button type="button" onClick={() => setPicker('rel')} className="w-full flex items-center gap-2 rounded-xl text-left" style={{ ...INPUT_S }}>
                   <Link2 size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
                   <span className="truncate" style={{ color: relName ? 'var(--text-h)' : 'var(--text-muted)' }}>
-                    {relName || `Choose ${form.rel_type}…`}
+                    {relName || `Choose ${(REL_TYPE_LABEL[form.rel_type] || form.rel_type).toLowerCase()}…`}
                   </span>
                 </button>
               </Field>
@@ -400,9 +415,9 @@ export default function TaskFormDrawer({ open, onClose, task = null, defaults = 
       <SearchPicker
         open={picker === 'rel'} onClose={() => setPicker(null)}
         onPick={it => sf('rel_id', it ? it.id : '')}
-        items={relItems} loading={pLoading || tLoading || cLoading}
-        title={`Link to a ${form.rel_type}`} subtitle="Search by name — you don't need the id."
-        emptyText={`No ${form.rel_type}s found.`} accent={TASK_ACCENT} allowClear
+        items={relItems} loading={pLoading || tLoading || cLoading || tvLoading || pvLoading}
+        title={`Link to a ${(REL_TYPE_LABEL[form.rel_type] || form.rel_type).toLowerCase()}`} subtitle="Search by name — you don't need the id."
+        emptyText={`No ${(REL_TYPE_LABEL[form.rel_type] || form.rel_type).toLowerCase()}s found.`} accent={TASK_ACCENT} allowClear
       />
       <SearchPicker
         open={picker === 'assignee'} onClose={() => setPicker(null)}

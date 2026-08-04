@@ -30,7 +30,10 @@ class ManpowerRequestController extends Controller
     /* GET /api/hr/manpower-requests */
     public function index(Request $request)
     {
-        $results = $this->manpowerRequestService->list($request->user(), $request->only(['status', 'department']));
+        $filters = $request->only(['status', 'department', 'designation', 'designation_id', 'hiring_manager_id']);
+        $filters['designation_name'] = \App\Support\Hr\DesignationFilter::resolve($filters, $request->user()->tenant_id);
+
+        $results = $this->manpowerRequestService->list($request->user(), $filters);
 
         return $this->success($results);
     }
@@ -40,7 +43,9 @@ class ManpowerRequestController extends Controller
     {
         $results = $this->manpowerRequestService->list(
             $request->user(),
-            ['scope' => 'hr_queue'] + $request->only(['department'])
+            ['scope' => 'hr_queue', 'designation_name' => \App\Support\Hr\DesignationFilter::resolve(
+                $request->only(['designation', 'designation_id']), $request->user()->tenant_id
+            )] + $request->only(['department'])
         );
 
         return $this->success($results);
@@ -124,6 +129,17 @@ class ManpowerRequestController extends Controller
         $result = $this->manpowerRequestService->sendBack($manpowerRequest, $request->user(), $request->validated('remarks'));
 
         return $this->success($result, 'Sent back to the requester for revision');
+    }
+
+    /* POST /api/hr/manpower-requests/{id}/reconsider — #7, approve after rejection.
+       Reuses RejectManpowerRequest because it enforces exactly what is needed here:
+       mandatory remarks. Reversing a colleague's rejection without a reason on
+       record is the one thing this action must not allow. */
+    public function reconsider(RejectManpowerRequest $request, HrManpowerRequest $manpowerRequest)
+    {
+        $result = $this->manpowerRequestService->reconsider($manpowerRequest, $request->user(), $request->validated('remarks'));
+
+        return $this->success($result, 'Rejection reversed and the request approved at that level');
     }
 
     /* POST /api/hr/manpower-requests/{id}/convert-to-jd */

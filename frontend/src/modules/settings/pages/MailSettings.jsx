@@ -4,7 +4,7 @@ import { settingsApi } from '@/services/settingsApi'
 import { useToast } from '@/hooks/useToast'
 import { useAuth } from '@/context/AuthContext'
 
-const BLANK = { host: '', port: 587, username: '', password: '', encryption: 'tls', from_name: '', from_email: '', reply_to: '', enabled: false }
+const BLANK = { host: '', port: 587, username: '', password: '', encryption: 'tls', from_name: '', from_email: '', reply_to: '', enabled: false, verify_peer: true }
 
 export default function MailSettings() {
   const toast = useToast()
@@ -78,6 +78,22 @@ export default function MailSettings() {
           <div><label className="label">From Name</label><input className="input-3d text-sm" placeholder="MLA Consulting" value={form.from_name || ''} onChange={e => sf('from_name', e.target.value)} /></div>
           <div><label className="label">From Email</label><input className="input-3d text-sm" placeholder="crm@yourcompany.in" value={form.from_email || ''} onChange={e => sf('from_email', e.target.value)} /></div>
           <div><label className="label">Reply-To (optional)</label><input className="input-3d text-sm" value={form.reply_to || ''} onChange={e => sf('reply_to', e.target.value)} /></div>
+        </div>
+
+        {/* Panel-managed mail servers (Plesk/cPanel) commonly present a self-signed
+            or mismatched certificate, which makes STARTTLS fail no matter which
+            hostname is used. Unticking this skips that check. */}
+        <div className="mt-4">
+          <label className="flex items-start gap-2 text-xs cursor-pointer" style={{ color: 'var(--text-muted)' }}>
+            <input type="checkbox" className="mt-0.5" checked={form.verify_peer !== false}
+              onChange={e => sf('verify_peer', e.target.checked)} />
+            <span>
+              <span className="font-bold" style={{ color: 'var(--text-h)' }}>Verify TLS certificate</span>
+              <br />
+              Untick if you get <em>"certificate verify failed"</em> — common on Plesk/cPanel mail servers
+              with a self-signed certificate. The connection stays encrypted; only the identity check is skipped.
+            </span>
+          </label>
         </div>
 
         <div className="flex justify-end mt-5">

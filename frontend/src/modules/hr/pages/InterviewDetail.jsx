@@ -5,6 +5,8 @@ import {
   Link2, FileText, Eye, Download, History, ExternalLink,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+import WorkflowProgress from '@/components/ui/WorkflowProgress'
+import InterviewQuestionPanel from '../components/InterviewQuestionPanel'
 import AuditTimeline from '@/components/ui/AuditTimeline'
 import { HrLoading } from '@/components/ui/HrState'
 import {
@@ -106,6 +108,14 @@ export default function InterviewDetail() {
 
   return (
     <div className="space-y-5 animate-[tiltIn_0.35s_ease_forwards]">
+      {/* #14 — the same pipeline the candidate profile shows, from the round. */}
+      <div className="card-3d" style={{ padding:'14px 16px' }}>
+        <WorkflowProgress kind="interview" record={iv} />
+      </div>
+
+      {/* #10 — what was asked in this round and how it scored. */}
+      <InterviewQuestionPanel roundId={iv.id} manageHr={canManage} readOnly={iv.status === 'Cancelled'} showToast={showToast} />
+
       {toast && <div className="fixed top-5 right-5 z-[9999] px-5 py-3 rounded-2xl text-sm font-semibold text-white shadow-2xl" style={{ background: toast.type === 'success' ? 'linear-gradient(135deg,#10b981,#059669)' : 'linear-gradient(135deg,#f87171,#ef4444)' }}>{toast.msg}</div>}
 
       <button onClick={() => navigate('/app/hr/interviews')} className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>

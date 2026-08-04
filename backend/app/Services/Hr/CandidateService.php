@@ -47,6 +47,9 @@ class CandidateService
         // record starts unscored and the engine is the only thing that fills it in.
         unset($data['ai_score'], $data['ai_breakdown']);
 
+        // #15 — resolve the REFERENCE before the row is written.
+        $data = $this->resolveReference($data, $tenantId);
+
         // STEP 6: the candidate inherits the Project from its Job Posting — never a
         // manual selection. Any client-supplied project_id is ignored.
         $data['project_id'] = ! empty($data['job_posting_id'])
@@ -103,12 +106,107 @@ class CandidateService
         'ai_score', 'applied_at', 'assigned_recruiter_id', 'created_at', 'updated_at',
     ];
 
+    /**
+     * #15 — "Reference source/person (where available)".
+     *
+     * AUTO-POPULATED, not retyped. When the referrer is one of our employees the
+     * name is read from their record, so the stored reference can never drift
+     * from the employee it points at (a renamed employee stays correct). A
+     * referrer from outside the company keeps their typed name and no id.
+     *
+     * Also fills `source` when the reference makes it obvious and the caller did
+     * not say: a candidate who was referred came from a referral, and leaving
+     * that blank would lose the one fact the sourcing report is built on.
+     */
+    private function resolveReference(array $data, int $tenantId): array
+    {
+        $employeeId = $data['referred_by_id'] ?? null;
+
+        if ($employeeId) {
+            // Tenant-scoped: an id from another tenant must not resolve, and must
+            // not silently attach a foreign employee to this candidate.
+            $employee = HrEmployee::where('tenant_id', $tenantId)->find($employeeId);
+
+            if (! $employee) {
+                throw new BusinessException('The referring employee was not found.', 422);
+            }
+
+            $data['referred_by_id']   = $employee->id;
+            $data['referred_by_name'] = $employee->name;
+        } elseif (! empty($data['referred_by_name'])) {
+            // External referrer — a name with nobody to link it to.
+            $data['referred_by_id']   = null;
+            $data['referred_by_name'] = trim($data['referred_by_name']);
+        }
+
+        // Only for an EMPLOYEE referral, and only when the caller said nothing.
+        // 'Employee Referral' is the existing source vocabulary — inventing a
+        // 'Referral' value here would create a second spelling that the sourcing
+        // report then has to know about. An external referrer has no obvious
+        // source, so nothing is guessed.
+        if (blank($data['source'] ?? null) && ! empty($data['referred_by_id'])) {
+            $data['source'] = 'Employee Referral';
+        }
+
+        return $data;
+    }
+
+    /**
+     * #15 — link a referrer NAME (read off a resume) to a real employee.
+     *
+     * The counterpart to resolveReference(), which goes id → name. This goes name
+     * → id, and is deliberately far stricter: only ONE exact, tenant-scoped match
+     * links. Two employees called "Anil Kumar" means the CV did not say which, so
+     * the name stays unlinked. A wrong referral attribution is worse than none —
+     * referral bonuses are paid on it.
+     */
+    public function linkReferrerByName(HrCandidate $candidate, string $name): bool
+    {
+        $name = trim($name);
+
+        if ($name === '' || $candidate->referred_by_id) {
+            return false;
+        }
+
+        $matches = HrEmployee::where('tenant_id', $candidate->tenant_id)
+            ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
+            ->limit(2)
+            ->get(['id', 'name']);
+
+        if ($matches->count() !== 1) {
+            return false;
+        }
+
+        $candidate->update([
+            'referred_by_id'   => $matches[0]->id,
+            'referred_by_name' => $matches[0]->name,
+            // Same rule as resolveReference(): an employee referral IS the source,
+            // reusing the existing 'Employee Referral' spelling so sourcing reports
+            // do not gain a second synonym.
+            //
+            // Promoted ONLY from 'Direct' — the column's DB default, i.e. "nobody
+            // said". Any other value is a channel a recruiter actually chose, and a
+            // regex reading a CV does not get to overrule that.
+            'source' => in_array($candidate->source, [null, '', 'Direct'], true)
+                ? 'Employee Referral'
+                : $candidate->source,
+        ]);
+
+        return true;
+    }
+
     public function update(HrCandidate $candidate, array $data): HrCandidate
     {
         // Mass-assignment protection: strip tenant/pipeline/scoring keys so the generic
         // editor can never move a candidate to another tenant, jump the stage, or forge
         // the AI score. Stage moves go through updateStage(); decisions via updateDecision().
         $data = array_diff_key($data, array_flip(self::UPDATE_PROTECTED));
+
+        // #15 — the same resolution on edit, so a reference changed here is
+        // validated and re-derived rather than trusted from the client.
+        if (array_key_exists('referred_by_id', $data) || array_key_exists('referred_by_name', $data)) {
+            $data = $this->resolveReference($data, (int) $candidate->tenant_id);
+        }
 
         $candidate->update($data);
 
@@ -350,14 +448,20 @@ class CandidateService
             'headline'        => '',
             'location'        => '',
             'current_company' => '',
+            // #15 — present designation and department, derived from the headline.
+            'current_designation' => null,
+            'current_department'  => null,
             'skills'          => [],
             'profile_url'     => $url,
         ];
 
         if (preg_match('/<meta property="og:title" content="([^"]+)"/i', $html, $m)) {
-            $ogTitle   = html_entity_decode($m[1]);
-            $parts     = explode(' | ', $ogTitle);
-            $nameTitle = $parts[0] ?? '';
+            $ogTitle = html_entity_decode($m[1]);
+            // Strip only the trailing " | LinkedIn" suffix. Splitting on the FIRST
+            // " | " (as this did) truncated every headline that contains a pipe —
+            // "Engineering Manager | Data Platform" arrived as "Engineering
+            // Manager", losing the department along with it.
+            $nameTitle = trim(preg_replace('/\s*\|\s*LinkedIn\s*$/i', '', $ogTitle));
             if (str_contains($nameTitle, ' - ')) {
                 [$name, $rest] = explode(' - ', $nameTitle, 2);
                 $data['name'] = trim($name);
@@ -388,7 +492,181 @@ class CandidateService
             }
         }
 
+        // #15 — DESIGNATION and DEPT out of the headline this parser already has.
+        // No second fetch and no second parser: the headline was being extracted
+        // and then discarded because there was nowhere to put it.
+        [$data['current_designation'], $data['current_department']] = $this->splitHeadline($data['headline']);
+
         return $data;
+    }
+
+    /**
+     * A LinkedIn headline into designation + department.
+     *
+     * Headlines are written by people, not a schema, but they converge on a small
+     * set of shapes:
+     *
+     *     "Senior Engineer, Platform Engineering"   → designation, department
+     *     "Engineering Manager | Data Platform"     → designation, department
+     *     "VP – Marketing"                          → designation, department
+     *     "Senior Software Engineer"                → designation only
+     *
+     * The first segment is the designation; a SECOND segment is only treated as a
+     * department when it reads like one. Anything else (a tagline, a list of
+     * skills, "ex-Google") leaves the department blank rather than filling the
+     * field with noise a recruiter then has to clear.
+     *
+     * @return array{0: ?string, 1: ?string}
+     */
+    /**
+     * #15 — DEPT and REFERENCE from an uploaded resume.
+     *
+     * The second source the LinkedIn parse cannot provide: a public profile
+     * rarely states a department and never states who referred someone, but a CV
+     * routinely carries both. Reuses the SAME field vocabulary as the LinkedIn
+     * path so a caller never has to know which source filled a value.
+     *
+     * Everything is optional and label-anchored — nothing is guessed from
+     * position in the document. A CV that does not name a department yields no
+     * department, rather than the first noun that happened to follow the job
+     * title.
+     *
+     * @return array{current_designation: ?string, current_department: ?string,
+     *               current_company: ?string, referred_by_name: ?string,
+     *               professional_references: array}
+     */
+    public function parseResumeText(?string $text): array
+    {
+        $empty = [
+            'current_designation'     => null,
+            'current_department'      => null,
+            'current_company'         => null,
+            'referred_by_name'        => null,
+            'professional_references' => [],
+        ];
+
+        if (blank($text)) {
+            return $empty;
+        }
+
+        return [
+            'current_designation' => $this->labelled($text, ['designation', 'job title', 'current role', 'position']),
+            'current_department'  => $this->labelled($text, ['department', 'dept', 'division', 'business unit', 'function']),
+            'current_company'     => $this->labelled($text, ['current company', 'company', 'employer', 'organisation', 'organization']),
+            'referred_by_name'    => $this->labelled($text, ['referred by', 'reference by', 'referral', 'referred through']),
+            'professional_references' => $this->referenceBlock($text),
+        ];
+    }
+
+    /**
+     * The value after "Label:" (or "Label -") on one line.
+     *
+     * Bounded to a short single-line value: a CV's "Department: Platform
+     * Engineering" is one phrase, and anything long enough to be a sentence is a
+     * paragraph that happened to start with the word, not a field.
+     */
+    private function labelled(string $text, array $labels): ?string
+    {
+        foreach ($labels as $label) {
+            $pattern = '/^[^\S\n]*'.preg_quote($label, '/').'[^\S\n]*[:\-–—][^\S\n]*(.+)$/imu';
+
+            if (preg_match($pattern, $text, $m)) {
+                $value = trim($m[1], " \t.,;|");
+
+                // Reject a run-on line: a real field value is short.
+                if ($value !== '' && mb_strlen($value) <= 80 && str_word_count($value) <= 8) {
+                    return $value;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Names under a "References" heading.
+     *
+     * Deliberately conservative: only lines that follow the heading, stop at the
+     * next blank-line gap, and look like a person plus a contact detail. "Available
+     * on request" — by far the most common content of that section — yields
+     * nothing, which is correct.
+     */
+    private function referenceBlock(string $text): array
+    {
+        if (! preg_match('/^[^\S\n]*(?:professional[^\S\n]+)?references?[^\S\n]*:?[^\S\n]*$/imu', $text, $m, PREG_OFFSET_CAPTURE)) {
+            return [];
+        }
+
+        $after = mb_substr($text, (int) $m[0][1] + mb_strlen($m[0][0]), 600);
+        $out   = [];
+
+        foreach (preg_split('/\R/u', $after) as $line) {
+            $line = trim($line);
+
+            if ($line === '') {
+                if ($out !== []) {
+                    break;      // blank line ends the block
+                }
+                continue;
+            }
+
+            if (preg_match('/available\s+on\s+request/i', $line)) {
+                break;
+            }
+
+            // A usable reference names someone AND says how to reach them.
+            $hasContact = preg_match('/[\w.+-]+@[\w-]+\.\w+/', $line) || preg_match('/\+?\d[\d\s\-()]{7,}/', $line);
+
+            if ($hasContact && mb_strlen($line) <= 160) {
+                $out[] = $line;
+            }
+
+            if (count($out) >= 5) {
+                break;
+            }
+        }
+
+        return $out;
+    }
+
+    private function splitHeadline(?string $headline): array
+    {
+        $headline = trim((string) $headline);
+
+        if ($headline === '') {
+            return [null, null];
+        }
+
+        // Split on the separators headlines actually use. En/em dashes are
+        // included because "VP – Marketing" is far more common than "VP - Marketing".
+        $parts = preg_split('/\s*[|,–—]\s*|\s+-\s+/u', $headline, 3, PREG_SPLIT_NO_EMPTY) ?: [];
+        $designation = trim($parts[0] ?? '') ?: null;
+        $second = trim($parts[1] ?? '');
+
+        // A department is a short noun phrase. Length alone is not enough —
+        // "Helping startups scale their engineering teams faster" is under 60
+        // characters and contains "engineering", so it would otherwise pass the
+        // keyword check below and land in the field as a department.
+        if ($second === '' || mb_strlen($second) > 40 || str_word_count($second) > 4) {
+            return [$designation, null];
+        }
+
+        // "ex-Google", "he/him", "MBA" and similar are not departments.
+        if (preg_match('/^(ex|he|she|they|formerly|open to|hiring|building)\b/i', $second)) {
+            return [$designation, null];
+        }
+
+        // A department reads either as a known function or as "<something> Team/
+        // Department/Division/Group/Function/Practice".
+        $known = 'engineering|technology|it|product|design|marketing|sales|finance|accounts|'
+               .'hr|human resources|people|operations|ops|legal|compliance|procurement|'
+               .'supply chain|logistics|support|customer success|research|r&d|data|analytics|'
+               .'security|quality|qa|manufacturing|production|admin|administration';
+
+        $looksLikeDepartment = preg_match('/\b(team|department|dept|division|group|function|practice)\b/i', $second)
+            || preg_match('/\b('.$known.')\b/i', $second);
+
+        return [$designation, $looksLikeDepartment ? $second : null];
     }
 
     private function linkedinFallback(string $url): array
@@ -404,6 +682,10 @@ class CandidateService
                 'headline'        => '',
                 'location'        => '',
                 'current_company' => '',
+                // #15 — same keys as a successful parse, so the caller never has
+                // to branch on which path produced the payload.
+                'current_designation' => null,
+                'current_department'  => null,
                 'skills'          => [],
                 'profile_url'     => $url,
             ],

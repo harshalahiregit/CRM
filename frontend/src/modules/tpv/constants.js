@@ -97,15 +97,8 @@ export const fitnessCfg = (s) => FITNESS_CONFIG[s] || { label: 'Not recorded', c
 // Screening bands are derived server-side from the score (bandForScore).
 export const BAND_COLORS = { Low: '#10b981', Moderate: '#f59e0b', High: '#ef4444' }
 
-// ── PPE — App\Support\Tpv\TpvPpeItem ─────────────────────────────────────────
-// MANDATORY mirrors the backend gate: helmet + safety shoes before any badge.
-export const PPE_MANDATORY = ['helmet', 'safety_shoes']
-export const PPE_ITEMS = [
-  ['helmet', 'Safety Helmet'], ['safety_shoes', 'Safety Shoes'], ['hi_vis_vest', 'Hi-Vis Vest'],
-  ['gloves', 'Hand Gloves'], ['safety_goggles', 'Safety Goggles'], ['ear_plugs', 'Ear Plugs'],
-  ['full_harness', 'Full-Body Harness'], ['face_shield', 'Face Shield'], ['respirator', 'Respirator / Mask'],
-]
-export const ppeLabel = (i) => (PPE_ITEMS.find(([v]) => v === i) || [i, i])[1]
+// PPE items are Inventory products now, not a fixed list here. The catalogue,
+// its labels and its stock all come from the PPE endpoints.
 
 export const SKILL_CATEGORIES = [
   ['Skilled', 'Skilled'], ['Semi_Skilled', 'Semi-Skilled'], ['Unskilled', 'Unskilled'], ['Supervisor', 'Supervisor'],

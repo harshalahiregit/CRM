@@ -11,6 +11,11 @@ use Illuminate\Support\Facades\Schema;
  * during migration are no longer read by any code and are dropped here (with
  * their indexes). The two integrity uniques are recreated on the Purchase FK.
  * Touches only Purchase tables (+ goods_receipts); no TPV/HR/shared table.
+ *
+ * Driver-portable: index and foreign-key discovery goes through Schema's own
+ * introspection rather than sqlite_master, so this runs on SQLite and MySQL
+ * alike. MySQL also refuses to drop a column while a foreign key still
+ * references it, so constraints come off before the column does.
  */
 return new class extends Migration {
     /** table => legacy column to drop. */
@@ -50,16 +55,13 @@ return new class extends Migration {
                 continue;
             }
 
-            // Drop every index that references the LEGACY column (by name),
-            // without touching the Purchase-owned equivalent's indexes.
-            $purchaseEquiv = $column === 'preferred_vendor_id' ? 'preferred_purchase_vendor_id' : 'purchase_vendor_id';
-            $indexes = DB::select(
-                "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = ? AND name LIKE ? AND name NOT LIKE ?",
-                [$table, '%'.$column.'%', '%'.$purchaseEquiv.'%'],
-            );
-            foreach ($indexes as $idx) {
-                DB::statement('DROP INDEX IF EXISTS "'.$idx->name.'"');
-            }
+            // MySQL will not drop a column that a foreign key still references.
+            $this->dropForeignKeysOn($table, $column);
+
+            // Then any index that covers the legacy column. Matching on the
+            // index's actual columns (not its name) means an index on the
+            // Purchase-owned equivalent is never caught by accident.
+            $this->dropIndexesOn($table, $column);
 
             Schema::table($table, fn (Blueprint $t) => $t->dropColumn($column));
         }
@@ -69,10 +71,66 @@ return new class extends Migration {
             if (! Schema::hasTable($table)) {
                 continue;
             }
+            foreach ($cols as $c) {
+                if (! Schema::hasColumn($table, $c)) {
+                    continue 2;
+                }
+            }
             $hasDup = DB::table($table)->select($cols)->groupBy($cols)->havingRaw('COUNT(*) > 1')->exists();
             if (! $hasDup) {
                 try { Schema::table($table, fn (Blueprint $t) => $t->unique($cols)); } catch (\Throwable $e) { /* index may already exist */ }
             }
+        }
+    }
+
+    /** Drop every foreign key on $table whose local columns include $column. */
+    private function dropForeignKeysOn(string $table, string $column): void
+    {
+        try {
+            $keys = Schema::getForeignKeys($table);
+        } catch (\Throwable $e) {
+            return;   // driver cannot introspect FKs — nothing to unhook
+        }
+
+        foreach ($keys as $fk) {
+            $cols = array_map('strtolower', $fk['columns'] ?? []);
+            if (! in_array(strtolower($column), $cols, true)) {
+                continue;
+            }
+            $name = $fk['name'] ?? null;
+            if (! $name) {
+                continue;
+            }
+            try {
+                Schema::table($table, fn (Blueprint $t) => $t->dropForeign($name));
+            } catch (\Throwable $e) { /* already gone */ }
+        }
+    }
+
+    /** Drop every non-primary index on $table that covers $column. */
+    private function dropIndexesOn(string $table, string $column): void
+    {
+        try {
+            $indexes = Schema::getIndexes($table);
+        } catch (\Throwable $e) {
+            return;
+        }
+
+        foreach ($indexes as $idx) {
+            if (! empty($idx['primary'])) {
+                continue;   // never touch the primary key
+            }
+            $cols = array_map('strtolower', $idx['columns'] ?? []);
+            if (! in_array(strtolower($column), $cols, true)) {
+                continue;
+            }
+            $name = $idx['name'] ?? null;
+            if (! $name) {
+                continue;
+            }
+            try {
+                Schema::table($table, fn (Blueprint $t) => $t->dropIndex($name));
+            } catch (\Throwable $e) { /* already gone */ }
         }
     }
 

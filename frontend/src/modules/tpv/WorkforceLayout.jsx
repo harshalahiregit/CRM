@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
-import { LayoutDashboard, Users, ScanLine, CalendarCheck, ShieldAlert } from 'lucide-react'
+import { LayoutDashboard, Users, ScanLine, CalendarCheck, ShieldAlert, HardHat } from 'lucide-react'
 import ModuleShell from '@/components/layout/ModuleShell'
 import { tpvApi } from '@/services/tpvApi'
 
@@ -24,6 +24,7 @@ export default function WorkforceLayout() {
   const items = [
     { label: 'Dashboard',      path: `${base}/dashboard`,  icon: LayoutDashboard },
     { label: 'Workers',        path: `${base}/workers`,    icon: Users },
+    { label: 'PPE',            path: `${base}/ppe`,        icon: HardHat },
     { label: 'Gate Log',       path: `${base}/gate-log`,   icon: ScanLine },
     { label: 'Attendance',     path: `${base}/attendance`, icon: CalendarCheck },
     { label: 'Safety Strikes', path: `${base}/strikes`,    icon: ShieldAlert },

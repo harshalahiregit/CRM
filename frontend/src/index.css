@@ -593,6 +593,11 @@ html.light .header-3d {
     border-top: 1px solid var(--border);
     background: rgba(124,58,237,0.03);
   }
+  /* The footer is itself a flex container, so a button-row wrapper inside it
+     shrinks to content and any flex-1 on its buttons has nothing to divide —
+     the buttons collapse to text width and the labels overflow. Stretching the
+     wrapper fixes every drawer at once instead of per-file. */
+  .drawer-footer > * { width: 100%; }
 
   /* TABLE */
   .table-wrapper { @apply w-full overflow-x-auto rounded-2xl; }
@@ -788,6 +793,7 @@ html.light .header-3d {
 @keyframes glowPulse { 0%,100%{opacity:0.6;transform:scale(1)} 50%{opacity:1;transform:scale(1.05)} }
 @keyframes float     { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
 @keyframes swipePulse{ 0%,100%{transform:translateX(0)} 50%{transform:translateX(4px)} }
+@keyframes spin      { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
 @keyframes spin3d    { from{transform:rotateY(0deg)} to{transform:rotateY(360deg)} }
 @keyframes tiltIn    { from{transform:perspective(600px) rotateX(8deg);opacity:0} to{transform:perspective(600px) rotateX(0);opacity:1} }
 @keyframes slideInRight { from{transform:translateX(100%);opacity:0} to{transform:translateX(0);opacity:1} }

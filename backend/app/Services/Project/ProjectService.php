@@ -636,6 +636,36 @@ class ProjectService
      */
     public function listVendors(int $tenantId, string $type): array
     {
+        // Record-backed rosters. 'purchase_vendor' has no User at all, so it can
+        // only ever be listed from its own table; 'tpv_vendor' is listed from the
+        // vendor master so the picker shows companies, not login names.
+        if ($type === 'purchase_vendor') {
+            return \App\Models\Purchase\PurchaseVendor::forTenant($tenantId)
+                ->orderBy('company_name')
+                ->get(['id', 'company_name', 'purchase_vendor_code', 'status', 'email'])
+                ->map(fn ($v) => [
+                    'id'      => $v->id,
+                    'name'    => $v->company_name,
+                    'email'   => $v->email,
+                    'company' => $v->purchase_vendor_code,
+                    'status'  => $v->status,
+                ])->values()->all();
+        }
+
+        if ($type === 'tpv_vendor') {
+            return Vendor::forTenant($tenantId)
+                ->orderBy('company_name')
+                ->get(['id', 'company_name', 'vendor_code', 'status', 'email'])
+                ->map(fn ($v) => [
+                    'id'      => $v->id,
+                    'name'    => $v->company_name,
+                    'email'   => $v->email,
+                    'company' => $v->vendor_code,
+                    'status'  => $v->status,
+                ])->values()->all();
+        }
+
+        // Legacy user-backed rosters ('vendor' / 'tpv') kept for existing rows.
         $role = self::LINK_ROLE[$type] ?? 'vendor';
 
         $users = User::where('tenant_id', $tenantId)
@@ -667,6 +697,7 @@ class ProjectService
         // Nothing about the link was submitted — leave the row as-is.
         if (! array_key_exists('customer_id', $data)
             && ! array_key_exists('vendor_user_id', $data)
+            && ! array_key_exists('vendor_id', $data)
             && ! array_key_exists('link_type', $data)) {
             return $data;
         }
@@ -674,10 +705,37 @@ class ProjectService
         $type = $data['link_type'] ?? null;
         $customerId = (int) ($data['customer_id'] ?? 0);
         $vendorUserId = (int) ($data['vendor_user_id'] ?? 0);
+        $vendorId = (int) ($data['vendor_id'] ?? 0);
 
         // Infer the type when the client sent only an id.
         if (! $type) {
             $type = $vendorUserId ? 'vendor' : ($customerId ? 'customer' : null);
+        }
+
+        // Record-backed vendor links. The id is a vendors.id / purchase_vendors.id,
+        // NOT a users.id -- a Purchase Vendor has no user to point at.
+        if (in_array($type, ['tpv_vendor', 'purchase_vendor'], true) && $vendorId) {
+            if ($type === 'tpv_vendor') {
+                $exists = Vendor::forTenant($tenantId)->whereKey($vendorId)->exists();
+                $label = 'third-party vendor';
+                // TPV vendors usually own a portal login; carry it so the existing
+                // vendor-portal queries (which read vendor_user_id) keep working.
+                $data['vendor_user_id'] = Vendor::forTenant($tenantId)->whereKey($vendorId)->value('user_id');
+            } else {
+                $exists = \App\Models\Purchase\PurchaseVendor::forTenant($tenantId)->whereKey($vendorId)->exists();
+                $label = 'purchase vendor';
+                $data['vendor_user_id'] = null;   // never a User
+            }
+
+            if (! $exists) {
+                throw new BusinessException("The selected {$label} does not exist.", 422);
+            }
+
+            $data['vendor_id']   = $vendorId;
+            $data['customer_id'] = null;
+            $data['link_type']   = $type;
+
+            return $data;
         }
 
         if ($type === 'customer' && $customerId) {
@@ -686,6 +744,7 @@ class ProjectService
             }
             $data['customer_id'] = $customerId;
             $data['vendor_user_id'] = null;
+            $data['vendor_id'] = null;
             $data['link_type'] = 'customer';
         } elseif (in_array($type, ['vendor', 'tpv'], true) && $vendorUserId) {
             $role = self::LINK_ROLE[$type];
@@ -695,11 +754,13 @@ class ProjectService
             }
             $data['vendor_user_id'] = $vendorUserId;
             $data['customer_id'] = null;
+            $data['vendor_id'] = null;
             $data['link_type'] = $type;
         } else {
             // Explicitly cleared — no party linked.
             $data['customer_id'] = null;
             $data['vendor_user_id'] = null;
+            $data['vendor_id'] = null;
             $data['link_type'] = null;
         }
 

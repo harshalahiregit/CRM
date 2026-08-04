@@ -1,14 +1,19 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import { useTheme } from '@/context/ThemeContext'
 import {
   Wallet, Coins, Search, Plus, Pencil, X, Power, Lock, Sparkles, Layers, Users, PlayCircle, ReceiptText,
   Trash2, IndianRupee, Eye, Calendar, CheckCircle2, Ban, Plug, Download, FileText, BarChart3, Copy, History,
+  Scale, AlertTriangle, Receipt, Landmark,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 import PayrollReports from './PayrollReports'
 import SalaryReports from './SalaryReports'
+import StatutorySettings from './StatutorySettings'
+import TaxDeclarations from './TaxDeclarations'
 import SalarySheet from '../components/SalarySheet'
+import VariableEarnings from '../components/VariableEarnings'
 
 const GRAD = 'linear-gradient(135deg,#7C3AED,#5b21b6)'
 // 'Benefit' retained for backward compatibility (legacy employer contribution).
@@ -23,6 +28,11 @@ const TABS = [
   { key:'components', label:'Salary Components', icon:Coins,       ready:true },
   { key:'structures', label:'Salary Structures', icon:Layers,      ready:true },
   { key:'employee',   label:'Employee Salary',   icon:Users,       ready:true },
+  { key:'statutory',  label:'Statutory Rules',   icon:Scale,       ready:true },
+  { key:'declarations', label:'Tax Declarations', icon:Receipt,    ready:true },
+  // #31 — commissions/incentives sit beside the salary masters they draw their
+  // component from, and before processing, which is what collects them.
+  { key:'variable',   label:'Commissions',       icon:Landmark,    ready:true },
   { key:'processing', label:'Payroll Processing', icon:PlayCircle,  ready:true },
   { key:'payslips',   label:'Payslips',          icon:ReceiptText, ready:true },
   { key:'reports',    label:'Payroll Reports',   icon:BarChart3,   ready:true },
@@ -69,6 +79,9 @@ export default function Payroll() {
       {tab === 'components' ? <SalaryComponents showToast={showToast} />
         : tab === 'structures' ? <SalaryStructures showToast={showToast} />
         : tab === 'employee' ? <EmployeeSalary showToast={showToast} />
+        : tab === 'statutory' ? <StatutorySettings showToast={showToast} />
+        : tab === 'declarations' ? <TaxDeclarations showToast={showToast} />
+        : tab === 'variable' ? <VariableEarnings showToast={showToast} />
         : tab === 'processing' ? <PayrollProcessing showToast={showToast} />
         : tab === 'payslips' ? <Payslips showToast={showToast} />
         : tab === 'reports' ? <PayrollReports showToast={showToast} />
@@ -195,7 +208,7 @@ function SalaryComponents({ showToast }) {
         : (
           <div className="card-3d overflow-x-auto" style={{ padding:'6px' }}>
             <table className="w-full text-sm" style={{ minWidth:760 }}>
-              <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{['Component','Code','Type','Calculation','Value','Status','Actions'].map(h=><th key={h} className={`text-left px-3 py-3 label-caps whitespace-nowrap ${h==='Actions'?'text-right':''}`}>{h}</th>)}</tr></thead>
+              <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{['Component','Code','Type','Statutory','Calculation','Value','Status','Actions'].map(h=><th key={h} className={`text-left px-3 py-3 label-caps whitespace-nowrap ${h==='Actions'?'text-right':''}`}>{h}</th>)}</tr></thead>
               <tbody>
                 {rows.map(r => {
                   const tc = TYPE_C[r.type] || { c:'var(--text-muted)', bg:'var(--bg-input)' }
@@ -204,6 +217,16 @@ function SalaryComponents({ showToast }) {
                       <td className="px-3 py-2.5 font-bold" style={{ color:'var(--text-h)' }}>{r.name}</td>
                       <td className="px-3 py-2.5 font-mono font-bold" style={{ color:'#a78bfa' }}>{r.code}</td>
                       <td className="px-3 py-2.5"><span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:tc.bg, color:tc.c }}>{r.type}</span></td>
+                      {/* These flags decide which wage base each statutory calculation
+                          uses, so they belong in the list — not buried in the modal. */}
+                      <td className="px-3 py-2.5">
+                        <div className="flex gap-1 flex-wrap">
+                          {[['taxable','TAX'],['pf_applicable','PF'],['esic_applicable','ESIC']].filter(([k])=>r[k]).map(([k,lbl])=>(
+                            <span key={k} className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background:'rgba(124,58,237,0.12)', color:'#a78bfa' }}>{lbl}</span>
+                          ))}
+                          {!r.taxable && !r.pf_applicable && !r.esic_applicable && <span className="text-[10px]" style={{ color:'var(--text-muted)' }}>—</span>}
+                        </div>
+                      </td>
                       <td className="px-3 py-2.5" style={{ color:'var(--text-muted)' }}>{r.calculation_type}</td>
                       <td className="px-3 py-2.5 font-semibold" style={{ color:'var(--text-h)' }}>{r.calculation_type==='Percentage' ? `${Number(r.percentage_value)}% of ${r.based_on||'Basic'}` : r.calculation_type==='Formula' ? <span className="font-mono text-[11px]" style={{ color:'#a78bfa' }}>{r.formula}</span> : r.calculation_type==='Manual' ? <span style={{ color:'var(--text-muted)' }}>Manual</span> : money(r.amount_value)}</td>
                       <td className="px-3 py-2.5"><span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={r.is_active?{background:'rgba(16,185,129,0.12)',color:'#10b981'}:{background:'var(--bg-input)',color:'var(--text-muted)'}}>{r.is_active?'Active':'Inactive'}</span></td>
@@ -259,7 +282,11 @@ function SalaryComponents({ showToast }) {
               ) : (
                 <div className="col-span-2 text-[11px] px-3 py-2 rounded-lg" style={{ background:'var(--bg-input)', color:'var(--text-muted)' }}>Manual — the amount is entered per structure / employee.</div>
               )}
-              {/* Statutory flags + ordering */}
+              {/* Statutory flags + ordering. These are live: each flag decides whether
+                  this component's amount counts toward that statutory wage base. */}
+              <div className="col-span-2 text-[10px] px-1" style={{ color:'var(--text-muted)' }}>
+                Taxable feeds TDS · PF Applicable feeds the PF wage base · ESIC Applicable feeds the ESIC wage base.
+              </div>
               <div className="col-span-2 flex flex-wrap items-center gap-4 px-1">
                 {[['taxable','Taxable'],['pf_applicable','PF Applicable'],['esic_applicable','ESIC Applicable']].map(([k,lbl])=>(
                   <label key={k} className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer" style={{ color:'var(--text-muted)' }}>
@@ -995,27 +1022,256 @@ function RunSummaryModal({ run, onClose }) {
           </div>
         )}
 
+        <StatutoryRollup s={run.statutory} />
+        <VariableEarningsRollup r={run.variable_earnings} />
+        <LoanRecoveryRollup r={run.loan_recovery} runId={run.id} />
+
         {/* Records */}
         <p className="text-[11px] font-bold uppercase mb-2" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Employee Records</p>
         <div className="overflow-x-auto rounded-xl" style={{ border:'1px solid var(--border)' }}>
-          <table className="w-full text-sm" style={{ minWidth:720 }}>
-            <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{['Employee','Gross','Benefits','Deductions','Net','Payable Days','Attendance'].map(h=><th key={h} className="text-left px-3 py-2.5 label-caps whitespace-nowrap">{h}</th>)}</tr></thead>
+          <table className="w-full text-sm" style={{ minWidth:820 }}>
+            <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{['Employee','Gross','Statutory','Deductions','Loan','Net','Net Payable','Payable Days',''].map((h,i)=><th key={i} className="text-left px-3 py-2.5 label-caps whitespace-nowrap">{h}</th>)}</tr></thead>
             <tbody>
-              {(run.records||[]).map(r => (
-                <tr key={r.id} style={{ borderBottom:'1px solid var(--border)' }}>
-                  <td className="px-3 py-2.5"><span className="font-semibold" style={{ color:'var(--text-h)' }}>{r.employee_name}</span> <span className="text-[10px] font-mono" style={{ color:'#a78bfa' }}>{r.employee_code}</span></td>
-                  <td className="px-3 py-2.5" style={{ color:'#10b981' }}>{inr(r.gross_salary)}</td>
-                  <td className="px-3 py-2.5" style={{ color:'#3b82f6' }}>{inr(r.total_benefits)}</td>
-                  <td className="px-3 py-2.5" style={{ color:'#f87171' }}>{inr(r.total_deductions)}</td>
-                  <td className="px-3 py-2.5 font-black" style={{ color:'var(--text-h)' }}>{inr(r.net_salary)}</td>
-                  <td className="px-3 py-2.5" style={{ color:'var(--text-muted)' }}>{r.payable_days ?? '—'}</td>
-                  <td className="px-3 py-2.5 text-[10px]" style={{ color:'var(--text-muted)' }}>{r.attendance_source}</td>
-                </tr>
-              ))}
+              {(run.records||[]).map(r => <RecordRow key={r.id} r={r} />)}
             </tbody>
           </table>
         </div>
       </div>
+    </div>
+  )
+}
+
+/**
+ * Run-level statutory rollup.
+ *
+ * Employer cost sits apart from the deduction total on purpose — it is a company
+ * expense, not money withheld from anyone's pay, and merging the two would
+ * overstate what employees were charged.
+ */
+function StatutoryRollup({ s }) {
+  if (!s) return null
+  const items = [
+    ['PF (Employee)', s.pf_employee], ['ESIC (Employee)', s.esic_employee],
+    ['Professional Tax', s.pt_amount], ['TDS', s.tds_amount],
+    // #30 — employee shares only; the employer premium is in employer_cost below.
+    ...(s.wcp_employee > 0 ? [["WCP (Employee)", s.wcp_employee]] : []),
+    ...(s.mediclaim_employee > 0 ? [['Mediclaim (Employee)', s.mediclaim_employee]] : []),
+  ]
+  const anything = s.total_deductions > 0 || s.employer_cost > 0
+
+  return (
+    <div className="rounded-xl p-3 mb-4" style={{ background:'var(--bg-input)', border:'1px solid var(--border)' }}>
+      <div className="flex items-center gap-2 mb-2">
+        <Scale size={13} style={{ color:'#a78bfa' }}/>
+        <p className="text-[11px] font-bold uppercase" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Statutory</p>
+      </div>
+
+      {!anything ? (
+        <p className="text-[11px]" style={{ color:'var(--text-muted)' }}>
+          No statutory rules are configured, so nothing was deducted. Configure them under <b>Statutory Rules</b>.
+        </p>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+            {items.map(([l, v]) => (
+              <div key={l}><p className="text-sm font-black" style={{ color:'#f87171' }}>{inr(v)}</p><p className="text-[10px]" style={{ color:'var(--text-muted)' }}>{l}</p></div>
+            ))}
+            <div><p className="text-sm font-black" style={{ color:'#3b82f6' }}>{inr(s.employer_cost)}</p><p className="text-[10px]" style={{ color:'var(--text-muted)' }}>Employer cost (not deducted)</p></div>
+          </div>
+          <p className="text-[11px] mt-2 pt-2" style={{ color:'var(--text-muted)', borderTop:'1px solid var(--border)' }}>
+            Total withheld from employees: <b style={{ color:'#f87171' }}>{inr(s.total_deductions)}</b>
+          </p>
+        </>
+      )}
+
+      {s.unresolved_work_state > 0 && (
+        <div className="flex items-start gap-1.5 mt-2 pt-2" style={{ borderTop:'1px solid var(--border)' }}>
+          <AlertTriangle size={12} style={{ color:'#fbbf24', flexShrink:0, marginTop:1 }}/>
+          <p className="text-[11px]" style={{ color:'#fbbf24' }}>
+            {s.unresolved_work_state} employee(s) have no work state, so Professional Tax could not be determined for them.
+            Set it on the employee record, or set a company work state.
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * #31 — commissions and incentives this run paid out.
+ *
+ * Its own block, and deliberately worded as an ADDITION: unlike every other
+ * figure on this modal it increases what reaches the bank rather than reducing it.
+ */
+function VariableEarningsRollup({ r }) {
+  if (!r || !r.employees_count) return null
+
+  return (
+    <div className="rounded-xl p-3 mb-4" style={{ background:'var(--bg-input)', border:'1px solid var(--border)' }}>
+      <div className="flex items-center gap-2 mb-2">
+        <Landmark size={13} style={{ color:'#10b981' }}/>
+        <p className="text-[11px] font-bold uppercase" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Commissions &amp; Incentives</p>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <p className="text-sm font-black" style={{ color:'#10b981' }}>{inr(r.total_paid)}</p>
+          <p className="text-[10px]" style={{ color:'var(--text-muted)' }}>Paid this run</p>
+        </div>
+        <div>
+          <p className="text-sm font-black" style={{ color:'var(--text-h)' }}>{r.employees_count}</p>
+          <p className="text-[10px]" style={{ color:'var(--text-muted)' }}>Employee(s) paid</p>
+        </div>
+      </div>
+      <p className="text-[11px] mt-2 pt-2" style={{ color:'var(--text-muted)', borderTop:'1px solid var(--border)' }}>
+        Added <i>on top of</i> the salary structure and taxed with it — included in each employee's <b>Net Payable</b>.
+      </p>
+    </div>
+  )
+}
+
+/**
+ * #38 — what this run recovered against employee loans and advances.
+ *
+ * Deliberately its own block rather than a line inside Statutory: a loan
+ * instalment is repayment of money the company already advanced, not a statutory
+ * withholding, and folding it into that rollup would misstate both.
+ *
+ * Read-only. The figure is summed from `loan_deduction` on the frozen records —
+ * payroll already wrote it, and nothing here recalculates a paisa.
+ */
+function LoanRecoveryRollup({ r, runId }) {
+  // A tenant with no loans should not see an empty card claiming zero recovery.
+  if (!r || !r.employees_count) return null
+
+  return (
+    <div className="rounded-xl p-3 mb-4" style={{ background:'var(--bg-input)', border:'1px solid var(--border)' }}>
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="flex items-center gap-2">
+          <Landmark size={13} style={{ color:'#f59e0b' }}/>
+          <p className="text-[11px] font-bold uppercase" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Loan Recovery</p>
+        </div>
+        <Link to={`/app/hr/loans?run=${runId}`} className="text-[10px] font-bold" style={{ color:'#a78bfa' }}>
+          Open Loans
+        </Link>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <p className="text-sm font-black" style={{ color:'#f59e0b' }}>{inr(r.total_recovered)}</p>
+          <p className="text-[10px]" style={{ color:'var(--text-muted)' }}>Recovered this run</p>
+        </div>
+        <div>
+          <p className="text-sm font-black" style={{ color:'var(--text-h)' }}>{r.employees_count}</p>
+          <p className="text-[10px]" style={{ color:'var(--text-muted)' }}>Employee(s) with an instalment</p>
+        </div>
+      </div>
+      <p className="text-[11px] mt-2 pt-2" style={{ color:'var(--text-muted)', borderTop:'1px solid var(--border)' }}>
+        Recovered <i>on top of</i> Total Deduction above, which covers the salary structure only.
+        The per-employee <b>Net Payable</b> column is the figure after statutory and loan.
+      </p>
+    </div>
+  )
+}
+
+/** One record row; expands to the frozen component + statutory breakup. */
+function RecordRow({ r }) {
+  const [open, setOpen] = useState(false)
+  const [lines, setLines] = useState(null)
+  const st = r.statutory
+
+  const toggle = async () => {
+    setOpen(o => !o)
+    if (lines === null) {
+      try { setLines(await hrApi.payroll.runs.recordLines(r.id)) } catch { setLines([]) }
+    }
+  }
+
+  return (
+    <>
+      <tr style={{ borderBottom:'1px solid var(--border)' }}>
+        <td className="px-3 py-2.5">
+          <span className="font-semibold" style={{ color:'var(--text-h)' }}>{r.employee_name}</span>{' '}
+          <span className="text-[10px] font-mono" style={{ color:'#a78bfa' }}>{r.employee_code}</span>
+          {st?.work_state && <span className="ml-1.5 text-[10px]" style={{ color:'var(--text-muted)' }}>· {st.work_state}</span>}
+        </td>
+        <td className="px-3 py-2.5" style={{ color:'#10b981' }}>{inr(r.gross_salary)}</td>
+        <td className="px-3 py-2.5" style={{ color:'#f87171' }}>{inr(st?.total_deductions)}</td>
+        <td className="px-3 py-2.5" style={{ color:'#f87171' }}>{inr(r.total_deductions)}</td>
+        {/* #38 — the instalment payroll actually collected. Dashed when there is
+            no loan, so a blank cell never reads as an unrecovered one. */}
+        <td className="px-3 py-2.5" style={{ color: r.loan_deduction > 0 ? '#f59e0b' : 'var(--text-muted)' }}>
+          {r.loan_deduction > 0 ? inr(r.loan_deduction) : '—'}
+        </td>
+        <td className="px-3 py-2.5" style={{ color:'var(--text-muted)' }}>{inr(r.net_salary)}</td>
+        <td className="px-3 py-2.5 font-black" style={{ color:'var(--text-h)' }}>{inr(r.net_payable)}</td>
+        <td className="px-3 py-2.5" style={{ color:'var(--text-muted)' }}>{r.payable_days ?? '—'}</td>
+        <td className="px-3 py-2.5 text-right">
+          <button onClick={toggle} className="text-[10px] font-bold px-2 py-1 rounded-lg" style={{ background:'rgba(124,58,237,0.1)', color:'#a78bfa' }}>
+            {open ? 'Hide' : 'Breakup'}
+          </button>
+        </td>
+      </tr>
+      {open && (
+        <tr style={{ borderBottom:'1px solid var(--border)' }}>
+          <td colSpan={9} className="px-3 py-3" style={{ background:'var(--bg-input)' }}>
+            <RecordBreakup lines={lines} statutory={st} />
+          </td>
+        </tr>
+      )}
+    </>
+  )
+}
+
+/** Earnings vs deductions, plus WHY each statutory figure is what it is. */
+function RecordBreakup({ lines, statutory }) {
+  if (lines === null) return <p className="text-[11px]" style={{ color:'var(--text-muted)' }}>Loading breakup…</p>
+  if (!lines.length) return <p className="text-[11px]" style={{ color:'var(--text-muted)' }}>No component breakdown was frozen against this record.</p>
+
+  const earnings   = lines.filter(l => l.type === 'Earning')
+  const deductions = lines.filter(l => l.type === 'Deduction')
+  // Only reasons worth reading — a null reason means the figure computed normally.
+  const reasons = Object.entries(statutory?.meta || {})
+    .filter(([k, v]) => typeof v === 'string' && v && !['state'].includes(k))
+
+  const Col = ({ title, rows, color }) => (
+    <div>
+      <p className="text-[10px] font-bold uppercase mb-1.5" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>{title}</p>
+      {rows.length === 0 ? <p className="text-[11px]" style={{ color:'var(--text-muted)' }}>None</p> : rows.map((l, i) => (
+        <div key={i} className="flex items-center justify-between gap-3 py-0.5">
+          <span className="text-[11px] flex items-center gap-1.5" style={{ color:'var(--text-muted)' }}>
+            {l.name}
+            {l.source === 'statutory' && <span className="px-1 py-px rounded text-[9px] font-bold" style={{ background:'rgba(124,58,237,0.15)', color:'#a78bfa' }}>STATUTORY</span>}
+          </span>
+          <span className="text-[11px] font-bold" style={{ color }}>{inr(l.amount)}</span>
+        </div>
+      ))}
+    </div>
+  )
+
+  return (
+    <div className="space-y-3">
+      <div className="grid md:grid-cols-2 gap-5">
+        <Col title="Earnings" rows={earnings} color="#10b981" />
+        <Col title="Deductions" rows={deductions} color="#f87171" />
+      </div>
+
+      {statutory && (statutory.pf_employer > 0 || statutory.esic_employer > 0) && (
+        <p className="text-[11px] pt-2" style={{ color:'var(--text-muted)', borderTop:'1px solid var(--border)' }}>
+          Employer contribution (company cost, not deducted): PF {inr(statutory.pf_employer)}
+          {statutory.eps_employer > 0 && <> · of which EPS {inr(statutory.eps_employer)}</>}
+          {statutory.esic_employer > 0 && <> · ESIC {inr(statutory.esic_employer)}</>}
+        </p>
+      )}
+
+      {reasons.length > 0 && (
+        <div className="pt-2" style={{ borderTop:'1px solid var(--border)' }}>
+          <p className="text-[10px] font-bold uppercase mb-1" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Why</p>
+          {reasons.map(([k, v]) => (
+            <p key={k} className="text-[11px]" style={{ color:'var(--text-muted)' }}>
+              <b style={{ color:'var(--text-h)' }}>{k.toUpperCase()}:</b> {v}
+            </p>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

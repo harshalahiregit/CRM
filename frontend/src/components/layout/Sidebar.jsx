@@ -4,9 +4,10 @@ import {
   Package, UserCheck, CalendarDays, FileText, Rocket, Building2, ClipboardList,
   ChevronDown, Shield, UserCog, IndianRupee, FileSignature, CreditCard, FileX, ShoppingBag,
   UserPlus, Link2, RefreshCw, LayoutTemplate, Globe, TrendingUp, Landmark, BookText, Scale,
-  ArrowLeftRight, BookOpen, Boxes, PackagePlus, PackageMinus, Warehouse, History,
+  ArrowLeftRight, BookOpen, Boxes, PackagePlus, PackageMinus, Warehouse, History, Network, FileQuestion,
   BarChart3, Activity, Layers3, ScanLine, ClipboardCheck, ShoppingCart, Hourglass, Wrench,
-  CalendarRange, Handshake, Factory, Undo2, Wallet, Award, GraduationCap, ShieldCheck, Bell, Search, X
+  CalendarRange, Handshake, Factory, Undo2, Wallet, Award, GraduationCap, ShieldCheck, Bell, Search, X,
+  Settings2
 } from 'lucide-react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -72,6 +73,10 @@ const HR_RECRUITMENT_ITEMS = [
 
 const HR_RECORDS_ITEMS = [
   { label: 'Organization Setup', path: '/app/hr/organization-setup', icon: Boxes },
+  { label: 'Organization Chart', path: '/app/hr/org-chart', icon: Network },
+  { label: 'Interview Questions', path: '/app/hr/interview-questions', icon: FileQuestion },
+  { label: 'HR Operations', path: '/app/hr/operations', icon: Settings2 },
+  { label: 'Employee Surveys', path: '/app/hr/surveys', icon: ClipboardList },
   { label: 'Payroll', path: '/app/hr/payroll', icon: Wallet },
   { label: 'Performance', path: '/app/hr/performance', icon: Award },
   { label: 'Leave Management', path: '/app/hr/leave-management', icon: CalendarDays },
@@ -165,6 +170,7 @@ const INVENTORY_SUB_ITEMS = [
 ]
 
 const PURCHASE_SUB_ITEMS = [
+  { label: 'Dashboard',        path: '/app/purchase/dashboard',     icon: LayoutDashboard },
   { label: 'Items',            path: '/app/purchase/catalog',       icon: Package },
   { label: 'Vendors',          path: '/app/purchase/vendors',       icon: Truck },
   { label: 'Vendor-Items',     path: '/app/purchase/vendor-items',  icon: Boxes },

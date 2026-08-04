@@ -18,7 +18,7 @@ class OfferController extends Controller
     public function index(Request $request)
     {
         return response()->json(
-            $this->offerService->list($request->user()->tenant_id, $request->only(['status', 'view']))
+            $this->offerService->list($request->user()->tenant_id, $request->only(['status', 'view', 'hiring_manager_id']))
         );
     }
 

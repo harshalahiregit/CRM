@@ -59,6 +59,10 @@ class TpvAccessService
                 'email'                => $data['email'],
                 'phone'                => $data['phone'] ?? null,
                 'vendor_type'          => 'temporary',
+                // Stamp the registration type too. Without it this defaulted to
+                // long_term_tpv, so a vendor created through the TEMPORARY flow was
+                // counted as Permanent everywhere that reads registration_type.
+                'registration_type'    => \App\Support\Tpv\TpvRegistrationType::TEMPORARY,
                 'engagements'          => ['tpv'],
                 'status'               => VendorStatus::INACTIVE,
                 'is_temporary'         => true,

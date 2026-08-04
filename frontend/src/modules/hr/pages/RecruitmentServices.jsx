@@ -20,7 +20,12 @@ const REQ_STATUS = {
   Converted:     { c: '#a78bfa', bg: 'rgba(124,58,237,0.14)' },
 }
 const statusLabel = s => (s || '').replace(/_/g, ' ')
-const money = (a, b) => (!a && !b) ? '—' : `₹${a ? (a / 100000).toFixed(1) : '0'}–${b ? (b / 100000).toFixed(1) : '0'}L`
+// #2 — per-month, matching the manpower request the figures come from.
+const money = (a, b) => {
+  if (!a && !b) return '—'
+  const L = n => n >= 100000 ? `₹${(n / 100000).toFixed(1)}L` : `₹${Number(n).toLocaleString('en-IN')}`
+  return `${L(a || 0)}–${L(b || 0)}/mo`
+}
 
 const inputStyle = { width: '100%', padding: '9px 12px', background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-h)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }
 const label = { display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }
@@ -325,8 +330,8 @@ export default function RecruitmentServices() {
             <Field l="Priority"><select value={requestModal.form.priority || 'Medium'} onChange={e => setRequestModal(m => ({ ...m, form: { ...m.form, priority: e.target.value } }))} style={{ ...inputStyle, cursor: 'pointer' }}>{PRIORITIES.map(t => <option key={t}>{t}</option>)}</select></Field>
             <Field l="Experience"><input value={requestModal.form.experience_required || ''} onChange={e => setRequestModal(m => ({ ...m, form: { ...m.form, experience_required: e.target.value } }))} style={inputStyle} placeholder="e.g. 3-5 years" /></Field>
             <Field l="Location"><input value={requestModal.form.location || ''} onChange={e => setRequestModal(m => ({ ...m, form: { ...m.form, location: e.target.value } }))} style={inputStyle} /></Field>
-            <Field l="Salary Min"><input type="number" value={requestModal.form.salary_min || ''} onChange={e => setRequestModal(m => ({ ...m, form: { ...m.form, salary_min: e.target.value } }))} style={inputStyle} /></Field>
-            <Field l="Salary Max"><input type="number" value={requestModal.form.salary_max || ''} onChange={e => setRequestModal(m => ({ ...m, form: { ...m.form, salary_max: e.target.value } }))} style={inputStyle} /></Field>
+            <Field l="Salary Min (Per Month)"><input type="number" value={requestModal.form.salary_min || ''} onChange={e => setRequestModal(m => ({ ...m, form: { ...m.form, salary_min: e.target.value } }))} style={inputStyle} /></Field>
+            <Field l="Salary Max (Per Month)"><input type="number" value={requestModal.form.salary_max || ''} onChange={e => setRequestModal(m => ({ ...m, form: { ...m.form, salary_max: e.target.value } }))} style={inputStyle} /></Field>
             <Field l="Required Skills (comma-separated)" full><input value={requestModal.form.required_skills || ''} onChange={e => setRequestModal(m => ({ ...m, form: { ...m.form, required_skills: e.target.value } }))} style={inputStyle} placeholder="e.g. AutoCAD, Surveying" /></Field>
             <Field l="Job Description" full><textarea rows={3} value={requestModal.form.job_description || ''} onChange={e => setRequestModal(m => ({ ...m, form: { ...m.form, job_description: e.target.value } }))} style={{ ...inputStyle, resize: 'vertical' }} /></Field>
           </div>

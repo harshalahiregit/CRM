@@ -67,6 +67,31 @@ final class SettingRegistry
                 'allow_decrement_on_delete' => ['cast' => 'bool', 'default' => false, 'rules' => ['nullable', 'boolean']],
             ],
 
+            // ── Payroll: company-wide statutory defaults ─────────────────
+            // The fallback work state for employees whose own is blank — a
+            // single-state company sets it once instead of on every record.
+            // Empty by default: nothing is assumed about where anyone works.
+            'payroll' => [
+                'default_work_state' => ['cast' => 'string', 'default' => null, 'rules' => ['nullable', 'string', 'max:80']],
+                // The month the tax year starts in. Separate from `numbering.fy_start_month`
+                // on purpose: a tenant may number documents on one cycle and be taxed on another.
+                'fy_start_month'     => ['cast' => 'int', 'default' => 4, 'rules' => ['nullable', 'integer', 'min:1', 'max:12']],
+
+                // Loan affordability, as a % of the employee's monthly NET salary.
+                // These are company policy, not law, so they carry real defaults
+                // rather than the "unconfigured = do nothing" rule the statutory
+                // module follows — an unguarded loan module is the worse default.
+                //   ≤ warn        → fine
+                //   warn..max     → allowed, with a warning
+                //   > max         → blocked
+                'loan_emi_warn_percent' => ['cast' => 'float', 'default' => 40, 'rules' => ['nullable', 'numeric', 'min:0', 'max:100']],
+                'loan_emi_max_percent'  => ['cast' => 'float', 'default' => 50, 'rules' => ['nullable', 'numeric', 'min:0', 'max:100']],
+                // On by default: the loan module is new, so there is no legacy
+                // behaviour to preserve, and an unguarded EMI is the worse default.
+                // A tenant that wants advisory-only checks turns this off.
+                'loan_enforce_eligibility' => ['cast' => 'bool', 'default' => true, 'rules' => ['nullable', 'boolean']],
+            ],
+
             // ── Increment D: Upload ──────────────────────────────────────
             'upload' => [
                 'max_upload_mb'        => ['cast' => 'int',    'default' => 10, 'rules' => ['nullable', 'integer', 'min:1', 'max:1024']],

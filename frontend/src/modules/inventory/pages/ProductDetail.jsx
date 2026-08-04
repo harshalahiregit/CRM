@@ -3,9 +3,10 @@ import { useQuery } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Pencil, ArrowLeftRight, ClipboardCheck, Warehouse, History,
-  AlertTriangle, Barcode, Package,
+  AlertTriangle, Barcode, Package, HardHat,
 } from 'lucide-react'
 import { inventoryApi, INV_ACCENT, MOVEMENT_META, fmtQty, money } from '@/services/inventoryApi'
+import { tpvApi } from '@/services/tpvApi'
 import ProductFormModal from '../components/ProductFormModal'
 import StockMoveModal from '../components/StockMoveModal'
 
@@ -141,6 +142,9 @@ export default function ProductDetail() {
         </section>
       </div>
 
+      {/* The other half of the PPE integration: who is holding this item. */}
+      {product.category?.name === 'PPE' && <PpeHolders productId={product.id} />}
+
       {/* Ledger */}
       <section className="rounded-2xl p-4 mt-4" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
         <h2 className="font-bold text-xs mb-3 flex items-center gap-1.5" style={{ color: 'var(--text-h)' }}>
@@ -198,6 +202,71 @@ export default function ProductDetail() {
       <ProductFormModal open={editing} onClose={() => setEditing(false)} product={product} />
       <StockMoveModal open={Boolean(stockModal)} mode={stockModal || 'move'} product={product} onClose={() => setStockModal(null)} />
     </div>
+  )
+}
+
+/**
+ * Everyone currently holding this PPE item.
+ *
+ * The Inventory→PPE direction of the integration: the ledger above says stock
+ * left, this says who has it. Both read the same issue records.
+ */
+function PpeHolders({ productId }) {
+  const navigate = useNavigate()
+  const [open, setOpen] = useState(false)
+
+  const { data: holders = [], isLoading } = useQuery({
+    queryKey: ['ppe-holders', productId],
+    queryFn: () => tpvApi.ppe.holders(productId),
+    enabled: open,
+    staleTime: 0,
+  })
+
+  return (
+    <section className="rounded-2xl p-4 mt-4" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <h2 className="font-bold text-xs flex items-center gap-1.5" style={{ color: 'var(--text-h)' }}>
+          <HardHat size={14} style={{ color: INV_ACCENT }} /> Workers using this PPE
+        </h2>
+        <button onClick={() => setOpen(v => !v)} className="text-[11px] font-bold px-3 py-1.5 rounded-lg"
+          style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }}>
+          {open ? 'Hide' : 'View workers using this PPE'}
+        </button>
+      </div>
+
+      {open && (
+        isLoading ? (
+          <p className="text-xs py-5 text-center" style={{ color: 'var(--text-muted)' }}>Loading holders…</p>
+        ) : holders.length === 0 ? (
+          <p className="text-xs py-5 text-center" style={{ color: 'var(--text-muted)' }}>Nobody is currently holding this item.</p>
+        ) : (
+          <div className="overflow-x-auto mt-3">
+            <table className="w-full text-xs" style={{ minWidth: 520 }}>
+              <thead>
+                <tr className="text-left text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>
+                  {['Worker', 'Vendor', 'Assigned qty', 'Issue date', 'Status'].map(h => <th key={h} className="px-2 py-2 font-bold">{h}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {holders.map(h => (
+                  <tr key={h.issue_id} className="cursor-pointer hover:opacity-80"
+                      onClick={() => navigate(h.worker_url)} style={{ borderBottom: '1px solid var(--border)' }}>
+                    <td className="px-2 py-2 font-bold" style={{ color: INV_ACCENT }}>{h.worker || '—'}</td>
+                    <td className="px-2 py-2" style={{ color: 'var(--text-body)' }}>{h.vendor || '—'}</td>
+                    <td className="px-2 py-2 tabular-nums" style={{ color: 'var(--text-h)' }}>{fmtQty(h.qty)}</td>
+                    <td className="px-2 py-2" style={{ color: 'var(--text-muted)' }}>{h.issue_date || '—'}</td>
+                    <td className="px-2 py-2">
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                        style={{ background: 'color-mix(in srgb, #fab219 16%, transparent)', color: '#fab219' }}>Issued</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      )}
+    </section>
   )
 }
 

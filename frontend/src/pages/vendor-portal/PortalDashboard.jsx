@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
+import RegistrationStatusCard from '@/components/vendor/RegistrationStatusCard'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ShoppingBag, FileText, Wallet, Rocket, CheckCircle2, Clock, ArrowRight, HardHat,
-  RefreshCw, TrendingUp, Users, ClipboardList, HelpCircle, ChevronRight,
+  RefreshCw, TrendingUp, Users, UserCheck, ClipboardList, HelpCircle, ChevronRight,
   AlertTriangle, BarChart3, PhoneCall, Building2, MessageSquare, ExternalLink,
 } from 'lucide-react'
 import { portalApi } from '@/services/portalApi'
@@ -20,7 +21,7 @@ export default function PortalDashboard() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const isTPV = user?.role === 'third_party_vendor'
-  const [data, setData] = useState({ me: null, onboarding: null, orders: [], invoices: [] })
+  const [data, setData] = useState({ me: null, onboarding: null, workerStats: {}, documents: null, orders: [], invoices: [] })
   const [work, setWork] = useState({ summary: {}, projects: [], tasks: [], tickets: [] })
   const [loading, setLoad] = useState(true)
 
@@ -30,6 +31,8 @@ export default function PortalDashboard() {
     const calls = [
       portalApi.me().catch(() => null),
       portalApi.onboarding.list().catch(() => []),
+      portalApi.workers.stats().catch(() => ({})),
+      portalApi.documents.checklist().catch(() => null),
       isTPV ? Promise.resolve([]) : portalApi.orders().catch(() => []),
       isTPV ? Promise.resolve([]) : portalApi.invoices().catch(() => []),
       // "My Work" — assigned projects/tasks/tickets (role-gated, always available).
@@ -38,10 +41,12 @@ export default function PortalDashboard() {
       portalApi.myWork.tasks().catch(() => []),
       portalApi.myWork.tickets().catch(() => []),
     ]
-    Promise.all(calls).then(([me, obList, orders, invoices, wSummary, wProjects, wTasks, wTickets]) => {
+    Promise.all(calls).then(([me, obList, wkStats, docs, orders, invoices, wSummary, wProjects, wTasks, wTickets]) => {
       setData({
         me,
         onboarding: obList[0] ?? null,
+        workerStats: wkStats || {},
+        documents: docs,
         orders: orders?.data ?? orders ?? [],
         invoices: invoices?.data ?? invoices ?? [],
       })
@@ -73,12 +78,27 @@ export default function PortalDashboard() {
     : (onboarding?.status === 'Approved' ? 100 : Math.round(((onboarding?.current_step || 1) / 6) * 100))
 
   // ── STAT CARDS ─────────────────────────────────────────────────────────
+  // Operational, not procedural. The old cards reported where an ADMIN workflow had
+  // got to (onboarding step, progress %, status) — none of which is something the
+  // vendor acts on. These are their day-to-day numbers instead. Document counts come
+  // from the same checklist the Documents page renders.
+  const docRows = Array.isArray(data.documents?.documents) ? data.documents.documents
+    : (Array.isArray(data.documents) ? data.documents : [])
+  const wk = data.workerStats || {}
+  const expiringDocs = docRows.filter(d => {
+    if (!d.expiry_date) return false
+    const days = (new Date(d.expiry_date) - new Date()) / 86400000
+    return days >= 0 && days <= 30
+  }).length
+  const docIssues = docRows.filter(d => ['Rejected', 'Resubmit', 'Resubmit Required'].includes(d.status)).length
+
   const statCards = isTPV
     ? [
-        { label: 'Onboarding Step',  value: onboarding?.current_step ?? '—', color: '#7C3AED', bg: 'rgba(124,58,237,0.1)', icon: ClipboardList },
-        { label: 'Progress',         value: `${obPct}%`,                      color: '#0ea5e9', bg: 'rgba(14,165,233,0.1)', icon: TrendingUp },
-        { label: 'Status',           value: onboarding?.status ?? 'Pending',  color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', icon: AlertTriangle },
-        { label: 'Workforce Status', value: vendorStatus ?? 'Pending',        color: '#10b981', bg: 'rgba(16,185,129,0.1)', icon: Users },
+        { label: 'Total Workers',       value: wk.total ?? 0,   color: '#7C3AED', bg: 'rgba(124,58,237,0.1)', icon: Users },
+        { label: 'Active Workers',      value: wk.active ?? 0,  color: '#10b981', bg: 'rgba(16,185,129,0.1)', icon: UserCheck },
+        { label: 'Pending Verification', value: wk.pending ?? 0, color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', icon: Clock },
+        { label: 'Expiring Documents',  value: expiringDocs,    color: '#0ea5e9', bg: 'rgba(14,165,233,0.1)', icon: FileText },
+        { label: 'Open Compliance Issues', value: docIssues,    color: '#ef4444', bg: 'rgba(239,68,68,0.1)', icon: AlertTriangle },
       ]
     : [
         { label: 'Active Orders',    value: summary.open_orders ?? 0,           color: '#0ea5e9', bg: 'rgba(14,165,233,0.1)', icon: ShoppingBag },
@@ -87,10 +107,27 @@ export default function PortalDashboard() {
         { label: 'Total Vendors',    value: 1,                                  color: '#7C3AED', bg: 'rgba(124,58,237,0.1)', icon: Building2 },
       ]
 
+  // Read-only registration status. Derived from the onboarding record the portal
+  // already loads — no new endpoint, and nothing here is actionable.
+  const regSteps = useMemo(() => {
+    const ob = onboarding
+    const step = ob?.current_step ?? 0
+    const approved = ob?.status === 'Approved'
+    const at = (n) => ({ done: approved || step > n, current: !approved && step === n })
+    return [
+      { key: 'company',    label: 'Company Details Completed', ...at(2) },
+      { key: 'documents',  label: 'Documents Verified',        ...at(3) },
+      { key: 'workforce',  label: 'Workforce Approved',        ...at(4) },
+      { key: 'compliance', label: 'Compliance Approved',       ...at(5) },
+      { key: 'activated',  label: 'Account Activated',         done: vendorStatus === 'Active', current: approved && vendorStatus !== 'Active' },
+    ]
+  }, [onboarding, vendorStatus])
+
   // ── QUICK ACTIONS ──────────────────────────────────────────────────────
   const quickActions = isTPV
     ? [
-        { label: 'Continue Onboarding',    icon: Rocket,       color: '#7C3AED', action: () => onboarding && navigate(`/vendor-portal/onboarding/${onboarding.id}`) },
+        // 'Continue Onboarding' removed: progressing an onboarding is an admin
+        // action. The read-only status card below reports where it stands.
         ...(vendorStatus === 'Active' ? [
           { label: 'Open Workforce',        icon: HardHat,      color: '#10b981', action: () => navigate('/vendor-portal/workforce/dashboard') },
           { label: 'View Workers',          icon: Users,        color: '#0ea5e9', action: () => navigate('/vendor-portal/workforce/workers') },
@@ -200,6 +237,12 @@ export default function PortalDashboard() {
           </div>
         </div>
 
+        {/* Read-only registration status — replaces the actionable onboarding
+            widgets. Information only; the admin owns the decisions. */}
+        <div style={{ marginTop: 4, marginBottom: 16 }}>
+          <RegistrationStatusCard steps={regSteps} />
+        </div>
+
         <div className="portal-dash-grid" style={{ marginTop: 4 }}>
           {/* Projects */}
           <WorkColumn icon={Building2} color="#7C3AED" title="Projects" items={work.projects} empty="No projects assigned."
@@ -253,13 +296,11 @@ export default function PortalDashboard() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <StatusPillInline cfg={obStatusCfg(onboarding.status)} />
               <button
-                onClick={() => isTPV
-                  ? navigate(`/vendor-portal/onboarding/${onboarding.id}`)
-                  : navigate('/vendor-portal/documents')}
+                onClick={() => navigate('/vendor-portal/documents')}
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '8px 16px', borderRadius: 10, background: 'linear-gradient(135deg,#7C3AED,#6d28d9)', color: '#fff', fontWeight: 700, border: 'none', cursor: 'pointer', fontSize: 13, boxShadow: '0 6px 18px -4px rgba(124,58,237,.55)' }}
               >
-                {isTPV ? <Rocket size={14} /> : <FileText size={14} />}
-                {isTPV ? 'Continue' : 'Manage Docs'}
+                <FileText size={14} />
+                Manage Docs
                 <ArrowRight size={14} />
               </button>
             </div>
@@ -310,10 +351,9 @@ export default function PortalDashboard() {
 
           {isTPV ? (
             onboarding ? (
-              <div
-                className="portal-ob-row"
-                onClick={() => navigate(`/vendor-portal/onboarding/${onboarding.id}`)}
-              >
+              // Inert: status display only. Progressing the onboarding is an admin
+              // action, so this row no longer navigates anywhere.
+              <div className="portal-ob-row" style={{ cursor: 'default' }}>
                 <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(124,58,237,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <Rocket size={16} style={{ color: '#7C3AED' }} />
                 </div>

@@ -1,18 +1,28 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Wrench, Plus, Search, Check, X, Trash2, Pencil, ChevronLeft, UserCircle, CalendarClock } from 'lucide-react'
 import { inventoryApi, INV_ACCENT } from '@/services/inventoryApi'
+import { hrApi } from '@/services/hrApi'
 import { useAuth } from '@/context/AuthContext'
 import Select from '@/components/ui/Select'
 
 const INP = { width: '100%', padding: '8px 10px', fontSize: 13, borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)', outline: 'none' }
 const money = (n) => n == null ? '—' : Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-const STATUS = { in_service: '#10B981', maintenance: '#F59E0B', idle: '#94A3B8', retired: '#64748B', cancelled: '#EF4444', lost: '#EF4444' }
-const STATUS_OPTS = ['in_service', 'maintenance', 'idle', 'retired', 'lost']
+const STATUS = { in_service: '#10B981', maintenance: '#F59E0B', idle: '#94A3B8', reserved: '#2a78d6', damaged: '#ec835a', retired: '#64748B', cancelled: '#EF4444', lost: '#EF4444' }
+const STATUS_OPTS = ['in_service', 'maintenance', 'idle', 'reserved', 'damaged', 'retired', 'lost']
 const EVENT_TYPES = ['service', 'repair', 'inspection', 'note']
+
+/** Employees are HR records; assets are Inventory records. This is the one link. */
+const useEmployees = () => useQuery({
+  queryKey: ['inv-hr-employees'],
+  queryFn: () => hrApi.employees.list({ per_page: 500 }),
+  staleTime: 1000 * 60 * 5,
+}).data || []
 
 export default function InventoryAssets() {
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
   const [search, setSearch] = useState('')
@@ -77,7 +87,14 @@ export default function InventoryAssets() {
               return (
                 <tr key={a.id} className="cursor-pointer hover:opacity-80" style={{ borderBottom: '1px solid var(--border)' }} onClick={() => setOpenId(a.id)}>
                   <td className="px-3 py-2.5" style={{ color: 'var(--text-h)' }}>{a.name}<span className="block text-[10px]" style={{ color: 'var(--text-muted)' }}>{[a.code, a.category, a.serial_no].filter(Boolean).join(' · ')}</span></td>
-                  <td className="px-3 py-2.5" style={{ color: 'var(--text-body)' }}>{a.assignee?.name || '—'}</td>
+                  <td className="px-3 py-2.5" style={{ color: 'var(--text-body)' }} onClick={e => a.employee && e.stopPropagation()}>
+                    {a.employee ? (
+                      <button onClick={() => navigate(`/app/hr/employees/${a.employee.id}`)} className="text-left hover:underline" style={{ color: INV_ACCENT }}>
+                        {a.employee.name}
+                        {a.employee.employee_code && <span className="block text-[10px]" style={{ color: 'var(--text-muted)' }}>{a.employee.employee_code}</span>}
+                      </button>
+                    ) : (a.assignee?.name || '—')}
+                  </td>
                   <td className="px-3 py-2.5" style={{ color: overdue ? 'var(--color-danger-500)' : 'var(--text-body)' }}>{a.next_service_due || '—'}{overdue ? ' ⚠' : ''}</td>
                   <td className="px-3 py-2.5"><span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: `color-mix(in srgb, ${STATUS[a.status]} 16%, transparent)`, color: STATUS[a.status] }}>{a.status?.replace('_', ' ')}</span></td>
                   <td className="px-3 py-2.5 text-right" onClick={e => e.stopPropagation()}>
@@ -149,12 +166,21 @@ function AssetModal({ asset, staff, onClose, onSaved }) {
 
 function AssetDetail({ id, staff, onBack }) {
   const qc = useQueryClient()
+  const navigate = useNavigate()
+  const employees = useEmployees()
   const [err, setErr] = useState('')
   const [ev, setEv] = useState({ type: 'service', description: '', cost: '', vendor: '', next_due: '' })
   const { data: a, isLoading } = useQuery({ queryKey: ['inv-asset', id], queryFn: () => inventoryApi.assets.get(id) })
   const invalidate = () => { qc.invalidateQueries({ queryKey: ['inv-asset', id] }); qc.invalidateQueries({ queryKey: ['inv-assets'] }) }
 
   const assign = useMutation({ mutationFn: (uid) => inventoryApi.assets.assign(id, uid || null), onSuccess: invalidate, onError: (e) => setErr(e?.message || 'Failed.') })
+  // Employee assignment goes through the lifecycle endpoint so status, holder and
+  // history move together — the same path the HR profile reads back.
+  const assignEmployee = useMutation({
+    mutationFn: (eid) => inventoryApi.assets.lifecycle(id, { action: eid ? 'assign' : 'return', employee_id: eid ? Number(eid) : null }),
+    onSuccess: invalidate,
+    onError: (e) => setErr(e?.message || 'Failed.'),
+  })
   const setStatus = useMutation({ mutationFn: (s) => inventoryApi.assets.setStatus(id, s), onSuccess: invalidate, onError: (e) => setErr(e?.message || 'Failed.') })
   const addEvent = useMutation({
     mutationFn: () => inventoryApi.assets.addEvent(id, { ...ev, cost: ev.cost === '' ? null : Number(ev.cost), next_due: ev.next_due || null }),
@@ -179,10 +205,22 @@ function AssetDetail({ id, staff, onBack }) {
               <Select size="sm" value={a.status} onChange={(v) => setStatus.mutate(v)} options={STATUS_OPTS.map(s => ({ value: s, label: s.replace('_', ' '), dot: STATUS[s] }))} />
             </div>
             <div style={{ width: 170 }}>
-              <Select size="sm" value={String(a.assigned_to || '')} onChange={(v) => assign.mutate(v)} placeholder="Assign to…" options={[{ value: '', label: 'Unassigned' }, ...staff.map(s => ({ value: String(s.id), label: s.name }))]} />
+              <Select size="sm" value={String(a.assigned_to || '')} onChange={(v) => assign.mutate(v)} placeholder="Assign to user…" options={[{ value: '', label: 'Unassigned' }, ...staff.map(s => ({ value: String(s.id), label: s.name }))]} />
+            </div>
+            {/* Assigning to an employee is what makes the asset appear on their HR profile. */}
+            <div style={{ width: 190 }}>
+              <Select size="sm" value={String(a.assigned_employee_id || '')} onChange={(v) => assignEmployee.mutate(v)} placeholder="Assign to employee…"
+                options={[{ value: '', label: 'No employee' }, ...employees.map(s => ({ value: String(s.id), label: s.employee_code ? `${s.name} · ${s.employee_code}` : s.name }))]} />
             </div>
           </div>
         </div>
+
+        {a.employee && (
+          <button onClick={() => navigate(`/app/hr/employees/${a.employee.id}`)}
+            className="mt-3 inline-flex items-center gap-1.5 text-[11px] font-bold hover:underline" style={{ color: INV_ACCENT }}>
+            <UserCircle size={13} /> View {a.employee.name} in HR
+          </button>
+        )}
         <div className="grid gap-3 mt-3 text-xs" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))', color: 'var(--text-body)' }}>
           <div><span className="block text-[10px] uppercase" style={{ color: 'var(--text-muted)' }}>Cost</span>{money(a.purchase_cost)}</div>
           <div><span className="block text-[10px] uppercase" style={{ color: 'var(--text-muted)' }}>Purchased</span>{a.purchase_date || '—'}</div>

@@ -22,15 +22,19 @@ import TagInput from '@/components/ui/TagInput'
 const today = () => new Date().toISOString().split('T')[0]
 // A project is raised for one party: a customer, a vendor, or a third-party
 // vendor. link_type drives which picker/id is used.
+// 'vendor' / 'tpv' listed PORTAL USERS, which cannot represent a Purchase Vendor
+// (it has no User) and, since the shared-login cleanup, listed accounts that can no
+// longer sign in. Both are now record-backed: the id stored is the vendor's own row
+// in vendors / purchase_vendors, carried in vendor_id.
 const LINK_TYPES = [
-  { key: 'customer', label: 'Customer' },
-  { key: 'vendor',   label: 'Vendor' },
-  { key: 'tpv',      label: 'Third-party vendor' },
+  { key: 'customer',        label: 'Customer' },
+  { key: 'purchase_vendor', label: 'Purchase Vendor' },
+  { key: 'tpv_vendor',      label: 'TPV Vendor' },
 ]
 
 const EMPTY = {
   name: '', description: '', status: 'not_started',
-  link_type: 'customer', customer_id: '', vendor_user_id: '',
+  link_type: 'customer', customer_id: '', vendor_user_id: '', vendor_id: '',
   billing_type: 'fixed', project_cost: '', rate_per_hour: '',
   start_date: today(), deadline: '', estimated_hours: '',
   progress: 0, progress_from_tasks: true,
@@ -61,9 +65,11 @@ export default function ProjectFormDrawer({ open, onClose, project = null, onSav
           ...EMPTY, ...project,
           start_date: project.start_date ? String(project.start_date).split('T')[0] : today(),
           deadline: project.deadline ? String(project.deadline).split('T')[0] : '',
-          link_type: project.link_type || (project.vendor_user_id ? 'vendor' : 'customer'),
+          link_type: ({ vendor: 'purchase_vendor', tpv: 'tpv_vendor' }[project.link_type] || project.link_type)
+            || (project.vendor_user_id ? 'tpv_vendor' : 'customer'),
           customer_id: project.customer_id ?? '',
           vendor_user_id: project.vendor_user_id ?? '',
+          vendor_id: project.vendor_id ?? '',
           project_cost: project.project_cost ?? '',
           rate_per_hour: project.rate_per_hour ?? '',
           estimated_hours: project.estimated_hours ?? '',
@@ -93,11 +99,13 @@ export default function ProjectFormDrawer({ open, onClose, project = null, onSav
   const { data: customers = [], isLoading: cLoading } = useQuery({
     queryKey: ['project-customers'], queryFn: projectApi.customers, enabled: partyOpen && form.link_type === 'customer',
   })
-  const { data: vendors = [], isLoading: vLoading } = useQuery({
-    queryKey: ['project-parties', 'vendor'], queryFn: () => projectApi.vendors('vendor'), enabled: partyOpen && form.link_type === 'vendor',
+  const { data: purchaseVendors = [], isLoading: vLoading } = useQuery({
+    queryKey: ['project-parties', 'purchase_vendor'], queryFn: () => projectApi.vendors('purchase_vendor'),
+    enabled: partyOpen && form.link_type === 'purchase_vendor',
   })
-  const { data: tpvs = [], isLoading: tLoading } = useQuery({
-    queryKey: ['project-parties', 'tpv'], queryFn: () => projectApi.vendors('tpv'), enabled: partyOpen && form.link_type === 'tpv',
+  const { data: tpvVendors = [], isLoading: tLoading } = useQuery({
+    queryKey: ['project-parties', 'tpv_vendor'], queryFn: () => projectApi.vendors('tpv_vendor'),
+    enabled: partyOpen && form.link_type === 'tpv_vendor',
   })
   const { data: tagSuggestions = [] } = useQuery({ queryKey: ['tags', 'project'], queryFn: () => tagApi.list('project'), enabled: open })
 
@@ -106,10 +114,11 @@ export default function ProjectFormDrawer({ open, onClose, project = null, onSav
   // What the current link type points at: its list, loading flag, id field, and
   // resolved display name (falling back to whatever the saved project carried).
   const party = useMemo(() => {
-    if (form.link_type === 'vendor') return { list: vendors, loading: vLoading, idKey: 'vendor_user_id', label: 'vendor', placeholder: 'Choose vendor…' }
-    if (form.link_type === 'tpv')    return { list: tpvs,    loading: tLoading, idKey: 'vendor_user_id', label: 'third-party vendor', placeholder: 'Choose third-party vendor…' }
+    // Both vendor types write vendor_id (the RECORD id), never vendor_user_id.
+    if (form.link_type === 'purchase_vendor') return { list: purchaseVendors, loading: vLoading, idKey: 'vendor_id', label: 'purchase vendor', placeholder: 'Choose purchase vendor…' }
+    if (form.link_type === 'tpv_vendor')      return { list: tpvVendors,      loading: tLoading, idKey: 'vendor_id', label: 'TPV vendor', placeholder: 'Choose TPV vendor…' }
     return { list: customers, loading: cLoading, idKey: 'customer_id', label: 'customer', placeholder: 'Choose customer…' }
-  }, [form.link_type, customers, cLoading, vendors, vLoading, tpvs, tLoading])
+  }, [form.link_type, customers, cLoading, purchaseVendors, vLoading, tpvVendors, tLoading])
 
   const partyId = form[party.idKey]
   const partyName = useMemo(() => {

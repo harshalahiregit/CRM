@@ -14,13 +14,14 @@ class TenantMailSetting extends Model
 
     protected $fillable = [
         'tenant_id', 'host', 'port', 'username', 'password',
-        'encryption', 'from_name', 'from_email', 'reply_to', 'enabled',
+        'encryption', 'from_name', 'from_email', 'reply_to', 'enabled', 'verify_peer',
     ];
 
     protected $casts = [
         'password' => 'encrypted',
-        'enabled'  => 'boolean',
-        'port'     => 'integer',
+        'enabled'     => 'boolean',
+        'verify_peer' => 'boolean',
+        'port'        => 'integer',
     ];
 
     // Never expose the password; the API returns has_password instead and an

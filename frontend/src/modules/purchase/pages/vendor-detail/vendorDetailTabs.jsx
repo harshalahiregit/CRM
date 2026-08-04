@@ -6,6 +6,7 @@ import PurchaseVendorForm, { validatePurchaseVendor } from '@/modules/purchase/c
 import PurchaseVendorDocumentsReadOnly from '@/modules/purchase/components/PurchaseVendorDocumentsReadOnly'
 import PurchaseVendorContacts from '@/modules/purchase/components/PurchaseVendorContacts'
 import { useVendorWorkspace } from './vendorWorkspaceContext'
+import VendorTasksPanel from '@/components/vendor/VendorTasksPanel'
 import {
   fmtMoney, fmtDate,
   poStatusCfg, pinvStatusCfg, contractStatusCfg, dnStatusCfg, quoteStatusCfg, contractTypeLabel,
@@ -291,6 +292,28 @@ export function ComingSoonTab({ label }) {
 
 /* ── Route element map — key (URL segment) → element ──────────────────────── */
 
+
+/**
+ * Tasks raised against this Purchase vendor (tasks.rel_type='purchase_vendor').
+ *
+ * A Purchase Vendor has no User account, so it can never be a task ASSIGNEE — the
+ * relation link is the only way a task can belong to one. Read-only here; the link
+ * is set in the Task module's "Related To" field.
+ */
+function TasksTab() {
+  const { vendor } = useVendorWorkspace()
+  if (!vendor?.id) return null
+
+  return (
+    <VendorTasksPanel
+      queryKey={['purchase-vendor-tasks', vendor.id]}
+      fetcher={() => purchaseApi.vendors.tasks(vendor.id)}
+      accent="#7C3AED"
+      emptyHint={'Open the Task module, create a task and set “Related To” → “Purchase Vendor” → this vendor.'}
+    />
+  )
+}
+
 export const TAB_ELEMENTS = {
   profile: <ProfileTab />,
   contacts: <ContactsTab />,
@@ -300,6 +323,7 @@ export const TAB_ELEMENTS = {
   'purchase-orders': <OrdersTab />,
   'purchase-invoices': <InvoicesTab />,
   'debit-notes': <DebitNotesTab />,
+  tasks: <TasksTab />,
 }
 
 const primaryBtn = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 8, background: '#7C3AED', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 700 }

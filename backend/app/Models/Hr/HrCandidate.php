@@ -15,7 +15,15 @@ class HrCandidate extends Model
 
     protected $fillable = [
         'tenant_id','job_posting_id','project_id','name','email','phone','dob','location','address',
-        'current_company','experience_years','source','stage',
+        // #15 — present employment. `current_designation`/`current_department`
+        // MUST be listed: create() silently discards any key not whitelisted, so
+        // an omission would leave every auto-fetched value on the floor.
+        'current_company','current_designation','current_department',
+        // #15 — the REFERENCE: who sent this candidate to us. `source` says how
+        // they arrived; these say who. Both must be whitelisted or create()
+        // discards them without a word.
+        'referred_by_id','referred_by_name',
+        'experience_years','source','stage',
         'education','certifications','languages','professional_references',
         'linkedin_url','linkedin_data','resume_path','ai_score','ai_breakdown','screening_answers',
         'skills','notes','final_decision','whatsapp_opt_in','whatsapp_number',
@@ -79,6 +87,16 @@ class HrCandidate extends Model
         return $this->hasAiScreening() && $this->ai_score !== null
             ? (int) $this->ai_score
             : null;
+    }
+
+    /**
+     * #15 — the employee who referred this candidate, where the referrer is one
+     * of ours. An external referrer has no row here and lives in
+     * `referred_by_name` instead.
+     */
+    public function referredBy()
+    {
+        return $this->belongsTo(HrEmployee::class, 'referred_by_id');
     }
 
     public function jobPosting()

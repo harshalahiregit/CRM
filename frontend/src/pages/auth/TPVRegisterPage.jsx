@@ -236,8 +236,8 @@ export default function TPVRegisterPage() {
                 <input {...register('username', RULES.username)} placeholder="@username" className={inputCls} />
               </Field>
 
-              <Field label="VAT Number">
-                <input {...register('vat_number')} placeholder="VAT / GST number" className={inputCls} />
+              <Field label="GST No">
+                <input {...register('gst_number')} placeholder="GST number" className={inputCls} />
               </Field>
 
               <Field label="Phone">

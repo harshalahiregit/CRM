@@ -89,20 +89,6 @@ class TpvWorkerController extends Controller
         return response()->json($this->workerService->saveInduction($worker, $request->validated(), $request->user()));
     }
 
-    public function issuePpe(IssueWorkerPpeRequest $request, TpvWorker $worker)
-    {
-        $this->assertTenant($request, $worker);
-
-        return response()->json($this->workerService->issuePpe($worker, $request->validated(), $request->user()));
-    }
-
-    public function removePpe(Request $request, TpvWorker $worker, TpvWorkerPpeIssue $ppeIssue)
-    {
-        $this->assertTenant($request, $worker);
-
-        return response()->json($this->workerService->removePpe($worker, $ppeIssue, $request->user()));
-    }
-
     /** Step 5 — issue the entry badge (admin). Returns the QR token once. */
     public function activate(Request $request, TpvWorker $worker)
     {
@@ -315,98 +301,31 @@ class TpvWorkerController extends Controller
         return response()->json(['status' => 'success', 'message' => 'Induction details saved successfully.']);
     }
 
-    public function getPpeInventory(Request $request)
-    {
-        $defaultItems = [
-            ['commodity_id' => 1, 'name' => 'Safety Helmet', 'available_qty' => 150, 'min_qty' => 10, 'total_issued' => 45],
-            ['commodity_id' => 2, 'name' => 'Safety Shoes', 'available_qty' => 200, 'min_qty' => 15, 'total_issued' => 60],
-            ['commodity_id' => 3, 'name' => 'High-Visibility Reflective Vest', 'available_qty' => 300, 'min_qty' => 20, 'total_issued' => 90],
-            ['commodity_id' => 4, 'name' => 'Full Body Safety Harness', 'available_qty' => 85, 'min_qty' => 5, 'total_issued' => 12],
-            ['commodity_id' => 5, 'name' => 'Cut-Resistant Gloves', 'available_qty' => 400, 'min_qty' => 25, 'total_issued' => 110],
-            ['commodity_id' => 6, 'name' => 'Safety Goggles', 'available_qty' => 250, 'min_qty' => 15, 'total_issued' => 30],
-            ['commodity_id' => 7, 'name' => 'Ear Plugs / Defenders', 'available_qty' => 500, 'min_qty' => 30, 'total_issued' => 150],
-        ];
-
-        $stock = \Cache::get('tpv_ppe_inventory', $defaultItems);
-        return response()->json(['items' => array_values($stock)]);
-    }
-
-    public function updatePpeStock(Request $request)
-    {
-        $data = $request->validate([
-            'commodity_id'  => 'required|integer',
-            'available_qty' => 'required|integer|min:0',
-        ]);
-
-        $defaultItems = [
-            1 => ['commodity_id' => 1, 'name' => 'Safety Helmet', 'available_qty' => 150, 'min_qty' => 10, 'total_issued' => 45],
-            2 => ['commodity_id' => 2, 'name' => 'Safety Shoes', 'available_qty' => 200, 'min_qty' => 15, 'total_issued' => 60],
-            3 => ['commodity_id' => 3, 'name' => 'High-Visibility Reflective Vest', 'available_qty' => 300, 'min_qty' => 20, 'total_issued' => 90],
-            4 => ['commodity_id' => 4, 'name' => 'Full Body Safety Harness', 'available_qty' => 85, 'min_qty' => 5, 'total_issued' => 12],
-            5 => ['commodity_id' => 5, 'name' => 'Cut-Resistant Gloves', 'available_qty' => 400, 'min_qty' => 25, 'total_issued' => 110],
-            6 => ['commodity_id' => 6, 'name' => 'Safety Goggles', 'available_qty' => 250, 'min_qty' => 15, 'total_issued' => 30],
-            7 => ['commodity_id' => 7, 'name' => 'Ear Plugs / Defenders', 'available_qty' => 500, 'min_qty' => 30, 'total_issued' => 150],
-        ];
-
-        $stock = \Cache::get('tpv_ppe_inventory_map', $defaultItems);
-        $cid = (int) $data['commodity_id'];
-        if (isset($stock[$cid])) {
-            $stock[$cid]['available_qty'] = (int) $data['available_qty'];
-        }
-        \Cache::put('tpv_ppe_inventory_map', $stock, now()->addDays(30));
-        \Cache::put('tpv_ppe_inventory', array_values($stock), now()->addDays(30));
-
-        return response()->json(['status' => 'success', 'message' => 'Stock updated', 'items' => array_values($stock)]);
-    }
-
+    /**
+     * Record a deliberate skip of the PPE step.
+     *
+     * Issuing is NOT done here. This method used to keep its own stock map in the
+     * cache ('tpv_ppe_inventory_map', seeded with hardcoded quantities) and
+     * decrement it — a second PPE inventory that no purchase or receipt ever
+     * touched. Issue and return now go through PpeInventoryService, which moves
+     * real Inventory stock and sets `ppe_status` from the issues themselves.
+     */
     public function markPpe(Request $request, TpvWorker $worker)
     {
         $this->assertTenant($request, $worker);
-        $data = $request->all();
 
-        if (($data['ppe_status'] ?? '') === 'skip') {
-            $worker->update(['ppe_status' => 2, 'ppe_items' => null]);
-            return response()->json(['status' => 'success', 'message' => 'PPE skipped.']);
-        }
-
-        $items = $data['ppe_items'] ?? [];
-        $itemsStr = is_array($items) ? implode(',', $items) : (string) $items;
-        $quantities = $data['quantities'] ?? [];
-
-        // Decrement stock inventory in cache/database
-        $defaultItems = [
-            1 => ['commodity_id' => 1, 'name' => 'Safety Helmet', 'available_qty' => 150, 'min_qty' => 10, 'total_issued' => 45],
-            2 => ['commodity_id' => 2, 'name' => 'Safety Shoes', 'available_qty' => 200, 'min_qty' => 15, 'total_issued' => 60],
-            3 => ['commodity_id' => 3, 'name' => 'High-Visibility Reflective Vest', 'available_qty' => 300, 'min_qty' => 20, 'total_issued' => 90],
-            4 => ['commodity_id' => 4, 'name' => 'Full Body Safety Harness', 'available_qty' => 85, 'min_qty' => 5, 'total_issued' => 12],
-            5 => ['commodity_id' => 5, 'name' => 'Cut-Resistant Gloves', 'available_qty' => 400, 'min_qty' => 25, 'total_issued' => 110],
-            6 => ['commodity_id' => 6, 'name' => 'Safety Goggles', 'available_qty' => 250, 'min_qty' => 15, 'total_issued' => 30],
-            7 => ['commodity_id' => 7, 'name' => 'Ear Plugs / Defenders', 'available_qty' => 500, 'min_qty' => 30, 'total_issued' => 150],
-        ];
-
-        $stock = \Cache::get('tpv_ppe_inventory_map', $defaultItems);
-
-        foreach ($quantities as $cid => $qty) {
-            $cidInt = (int) $cid;
-            $qtyInt = (int) $qty;
-            if (isset($stock[$cidInt])) {
-                $stock[$cidInt]['available_qty'] = max(0, $stock[$cidInt]['available_qty'] - $qtyInt);
-                $stock[$cidInt]['total_issued'] += $qtyInt;
-            }
-        }
-
-        \Cache::put('tpv_ppe_inventory_map', $stock, now()->addDays(30));
-        \Cache::put('tpv_ppe_inventory', array_values($stock), now()->addDays(30));
-
-        $worker->update([
-            'ppe_status'    => 1,
-            'ppe_items'     => $itemsStr,
-            'ppe_issued_to' => $data['ppe_issued_to'] ?? 'vendor',
-            'ppe_remarks'   => $data['ppe_remarks'] ?? null,
-            'ppe_issued_at' => now(),
+        $data = $request->validate([
+            'ppe_status'  => 'required|in:skip',
+            'ppe_remarks' => 'nullable|string|max:500',
         ]);
 
-        return response()->json(['status' => 'success', 'message' => 'PPE kit issued successfully and stock updated.']);
+        $worker->update([
+            'ppe_status'  => 2,
+            'ppe_items'   => null,
+            'ppe_remarks' => $data['ppe_remarks'] ?? null,
+        ]);
+
+        return response()->json(['status' => 'success', 'message' => 'PPE skipped.']);
     }
 
     public function markCardStatus(Request $request, TpvWorker $worker)

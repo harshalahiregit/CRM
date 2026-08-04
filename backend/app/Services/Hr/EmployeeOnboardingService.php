@@ -280,7 +280,7 @@ class EmployeeOnboardingService
     public function show(HrEmployeeOnboarding $onboarding, string $scope = OnboardingAbility::HR): array
     {
         $onboarding->load([
-            'employee', 'profile', 'education', 'experience', 'family', 'assets',
+            'employee', 'profile', 'education', 'experience', 'family',
             'tasks', 'documents', 'sectionStatuses', 'auditLogs.actor',
             'references', 'orientationFeedback', 'backgroundVerification',
         ]);
@@ -340,7 +340,8 @@ class EmployeeOnboardingService
             'education'       => $onboarding->education,
             'experience'      => $onboarding->experience,
             'family'          => $onboarding->family,
-            'assets'          => $onboarding->assets,
+            // Read from the Inventory register — HR holds no asset rows.
+            'assets'          => $this->assetsFor($onboarding),
             'references'          => $onboarding->references,
             'orientation_feedback' => $onboarding->orientationFeedback,
             'tasks'           => $tasksByCat,
@@ -459,18 +460,31 @@ class EmployeeOnboardingService
         return $row;
     }
 
-    public function saveAsset(HrEmployeeOnboarding $o, array $data, ?User $user, ?int $id = null)
+    /**
+     * An asset was assigned to this employee in Inventory — advance the stage.
+     *
+     * HR used to keep its own asset rows here (saveAsset). It does not any more:
+     * Inventory owns the register, and this only moves the onboarding workflow
+     * along when Inventory reports an assignment. See AdvanceOnboardingAssetStage.
+     */
+    public function recordAssetAllocated(HrEmployeeOnboarding $o, ?int $actorId = null): void
     {
-        $row = $id ? $o->assets()->findOrFail($id) : $o->assets()->make();
-        $row->fill($data);
-        $row->onboarding_id = $o->id;
-        $row->tenant_id = $o->tenant_id;
-        $row->save();
-        $this->markSection($o, 'assets', $user);
-        $o->recordAudit($id ? 'Asset updated' : 'Asset allocated', $user, $data['asset_type'] ?? null, [], $this->actorLabel($user));
-        $this->touchStage($o, 'assets');
+        $user = $actorId ? User::find($actorId) : null;
 
-        return $row;
+        $this->markSection($o, 'assets', $user);
+        $o->recordAudit('Asset allocated in Inventory', $user, null, [], $this->actorLabel($user));
+        $this->touchStage($o, 'assets');
+    }
+
+    /** The employee's assets, read from the Inventory register. HR stores none. */
+    public function assetsFor(HrEmployeeOnboarding $o)
+    {
+        if (! $o->employee_id) {
+            return collect();
+        }
+
+        return app(\App\Services\Inventory\AssetService::class)
+            ->forEmployee((int) $o->employee_id, (int) $o->tenant_id);
     }
 
     public function deleteChild(HrEmployeeOnboarding $o, string $relation, int $id, ?User $user): void

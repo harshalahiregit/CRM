@@ -34,6 +34,9 @@ export default function ExitInterview() {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy]       = useState(false)
   const [toast, setToast]     = useState(null)
+  // #44 — the template for this exit, and the answers given against it.
+  const [questionnaire, setQuestionnaire] = useState(null)
+  const [answers, setAnswers] = useState({})
 
   const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000) }
 
@@ -51,6 +54,14 @@ export default function ExitInterview() {
         exit_date: r.record?.exit_date?.slice(0, 10) || '',
         rating: r.record?.rating || 0,
       }))
+      // #44 — the questionnaire that applies to this exit, if the tenant has
+      // defined any. Null is a normal answer and simply leaves the fixed form
+      // below as the whole interview.
+      const template = await hrApi.exit.questionnaires.resolve(r.record?.exit_type_id).catch(() => null)
+      setQuestionnaire(template)
+      if (template) {
+        setAnswers(Object.fromEntries((r.record?.answers || []).map(a => [a.question_id, a])))
+      }
     } catch (e) { showToast(e.response?.data?.message || 'Failed to load exit interview', 'error') }
     finally { setLoading(false) }
   }, [id])
@@ -60,7 +71,15 @@ export default function ExitInterview() {
     if (submit && !form.rating) return showToast('Please rate your overall experience before submitting', 'error')
     setBusy(true)
     try {
-      const saved = await hrApi.employees.saveExitInterview(id, { ...form, rating: form.rating || null, submit })
+      const saved = await hrApi.employees.saveExitInterview(id, {
+        ...form, rating: form.rating || null, submit,
+        // #44 — sent only when a template applies, so an interview on the
+        // original fixed form posts exactly the payload it always did.
+        ...(questionnaire ? {
+          questionnaire_id: questionnaire.id,
+          answers: questionnaire.questions.map(q => ({ question_id: q.id, ...(answers[q.id] || {}) })),
+        } : {}),
+      })
       setRecord(saved)
       showToast(submit ? 'Exit interview submitted' : 'Draft saved')
     } catch (e) { showToast(e.response?.data?.message || 'Failed to save', 'error') }
@@ -135,6 +154,27 @@ export default function ExitInterview() {
         </div>
       </div>
 
+      {/* #44 — the templated questionnaire for this exit, when one is defined.
+          It appears ABOVE the standard feedback block because it is the form HR
+          chose for this kind of exit; the block below stays as the common core. */}
+      {questionnaire && (
+        <div className="card-3d" style={{ padding: '18px' }}>
+          <div className="mb-4">
+            <h3 className="font-bold text-sm" style={{ color: 'var(--text-h)' }}>{questionnaire.name}</h3>
+            {questionnaire.description && (
+              <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>{questionnaire.description}</p>
+            )}
+          </div>
+          <div className="space-y-4">
+            {questionnaire.questions.map(q => (
+              <TemplatedQuestion key={q.id} q={q} disabled={submitted}
+                value={answers[q.id] || {}}
+                onChange={patch => setAnswers(a => ({ ...a, [q.id]: { ...(a[q.id] || {}), ...patch } }))} />
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Questions */}
       <div className="card-3d" style={{ padding: '18px' }}>
         <h3 className="font-bold text-sm mb-4" style={{ color: 'var(--text-h)' }}>Your Feedback</h3>
@@ -178,6 +218,99 @@ export default function ExitInterview() {
           Submitted on {record?.submitted_at ? new Date(record.submitted_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : '—'}. This form is now read-only.
         </p>
       )}
+    </div>
+  )
+}
+
+/**
+ * #44 — one templated question, rendered by its type.
+ *
+ * Each type writes to its own key on the answer, matching the typed columns the
+ * API stores them in: a rating that arrives as text cannot be averaged, and
+ * averaging exit ratings is the point of exit reporting.
+ */
+function TemplatedQuestion({ q, value, onChange, disabled }) {
+  const label = (
+    <label className="label">
+      {q.question_text}{q.is_required && <span style={{ color: '#f87171' }}> *</span>}
+    </label>
+  )
+
+  if (q.question_type === 'rating') {
+    const max = q.rating_max || 5
+    return (
+      <div>
+        {label}
+        <div className="flex items-center gap-1.5 mt-1">
+          {Array.from({ length: max }, (_, i) => i + 1).map(n => (
+            <button key={n} type="button" disabled={disabled}
+              onClick={() => onChange({ answer_rating: n })}
+              className="rounded-lg text-xs font-bold"
+              style={{ width: 34, height: 34,
+                       background: value.answer_rating >= n ? 'linear-gradient(135deg,#7C3AED,#5b21b6)' : 'var(--bg-input)',
+                       color: value.answer_rating >= n ? '#fff' : 'var(--text-muted)',
+                       border: '1px solid var(--border)', cursor: disabled ? 'default' : 'pointer' }}>
+              {n}
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  if (q.question_type === 'boolean') {
+    return (
+      <div>
+        {label}
+        <div className="flex items-center gap-2 mt-1">
+          {[['Yes', true], ['No', false]].map(([text, val]) => (
+            <button key={text} type="button" disabled={disabled}
+              onClick={() => onChange({ answer_boolean: val })}
+              className="px-4 py-1.5 rounded-xl text-xs font-bold"
+              style={{ background: value.answer_boolean === val ? 'linear-gradient(135deg,#7C3AED,#5b21b6)' : 'var(--bg-input)',
+                       color: value.answer_boolean === val ? '#fff' : 'var(--text-muted)',
+                       border: '1px solid var(--border)', cursor: disabled ? 'default' : 'pointer' }}>
+              {text}
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  if (q.question_type === 'single_choice' || q.question_type === 'multiple_choice') {
+    const multiple = q.question_type === 'multiple_choice'
+    const selected = value.answer_options || []
+    const toggle = (opt) => {
+      if (disabled) return
+      onChange({ answer_options: multiple
+        ? (selected.includes(opt) ? selected.filter(o => o !== opt) : [...selected, opt])
+        : [opt] })
+    }
+    return (
+      <div>
+        {label}
+        <div className="flex flex-wrap gap-2 mt-1">
+          {(q.options || []).map(opt => (
+            <button key={opt} type="button" disabled={disabled} onClick={() => toggle(opt)}
+              className="px-3 py-1.5 rounded-xl text-xs font-semibold"
+              style={{ background: selected.includes(opt) ? 'linear-gradient(135deg,#7C3AED,#5b21b6)' : 'var(--bg-input)',
+                       color: selected.includes(opt) ? '#fff' : 'var(--text-muted)',
+                       border: '1px solid var(--border)', cursor: disabled ? 'default' : 'pointer' }}>
+              {opt}
+            </button>
+          ))}
+        </div>
+        {multiple && <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>Choose as many as apply.</p>}
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      {label}
+      <textarea className="input-3d text-sm" rows={2} disabled={disabled}
+        value={value.answer_text || ''} onChange={e => onChange({ answer_text: e.target.value })} />
     </div>
   )
 }

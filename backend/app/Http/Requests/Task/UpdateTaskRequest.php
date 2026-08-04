@@ -26,8 +26,8 @@ class UpdateTaskRequest extends FormRequest
             'status'            => ['sometimes', Rule::in($statusKeys)],
             'start_date'        => 'sometimes|required|date',
             'due_date'          => 'nullable|date',
-            'rel_type'          => 'sometimes|in:project,ticket,customer,contract,standalone',
-            'rel_id'            => 'nullable|integer|min:1|required_if:rel_type,project,ticket,customer,contract',
+            'rel_type'          => 'sometimes|in:project,ticket,customer,contract,tpv_vendor,purchase_vendor,standalone',
+            'rel_id'            => 'nullable|integer|min:1|required_if:rel_type,project,ticket,customer,contract,tpv_vendor,purchase_vendor',
             // Tenant-scoped: a bare exists: lets one workspace attach to another's milestone.
             'milestone_id'      => ['nullable', 'integer', Rule::exists('project_milestones', 'id')->where('tenant_id', $tenantId)],
             'billable'          => 'nullable|boolean',

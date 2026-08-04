@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { isSessionFailure } from '@/lib/sessionFailure'
 
 /**
  * Dedicated axios instance for the Purchase Vendor portal. It carries the
@@ -29,7 +30,9 @@ pvApi.interceptors.request.use((config) => {
 pvApi.interceptors.response.use(
   (r) => r,
   (error) => {
-    if (error.response?.status === 401) {
+    // #45 — same rule for the Purchase vendor portal: 403 ("this area is for
+    // Purchase vendor accounts only") must not clear their token.
+    if (isSessionFailure(error, !!pvToken.get())) {
       pvToken.clear()
       if (!window.location.pathname.startsWith('/purchase-portal/login')) {
         window.location.href = '/purchase-portal/login'

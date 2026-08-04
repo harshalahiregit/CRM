@@ -28,6 +28,34 @@ Schedule::command('tasks:run-schedule')
     ->withoutOverlapping()
     ->runInBackground();
 
+// SangoeTrack: pull the current month's attendance into hr_attendance nightly.
+// The whole month is re-fetched so late punches and back-dated corrections made
+// in SangoeTrack reach us too; unchanged days are a no-op, so this is cheap.
+Schedule::command('sangoetrack:sync-attendance')
+    ->dailyAt('23:30')
+    ->withoutOverlapping()
+    ->runInBackground();
+
+// Leave runs alongside attendance. Separate commands so one failing side cannot
+// take the other down and either can be re-run on its own after a fix; the JWT
+// is cached, so the two together still cost one login.
+Schedule::command('sangoetrack:sync-leaves')
+    ->dailyAt('23:30')
+    ->withoutOverlapping()
+    ->runInBackground();
+
+// Month-end catch-up: on the 1st, re-sync the month that just closed so any
+// corrections entered after the 23:30 run on the last day are still picked up.
+Schedule::command('sangoetrack:sync-attendance --previous')
+    ->monthlyOn(1, '02:00')
+    ->withoutOverlapping()
+    ->runInBackground();
+
+Schedule::command('sangoetrack:sync-leaves --previous')
+    ->monthlyOn(1, '02:00')
+    ->withoutOverlapping()
+    ->runInBackground();
+
 // Helpdesk: fire due ticket reminders (in-app + email).
 // Every five minutes, not every minute: an agent sets these to the minute ("remind
 // me at 14:00"), so quarter-hour granularity would land a 14:01 reminder at 14:15

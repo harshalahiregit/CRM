@@ -43,5 +43,6 @@ export const PV_COUNTRIES = [
 export const PV_DEFAULTS = {
   currency: 'INR',
   language: 'System Default',
-  vendor_type: 'standard',
+  // Blank on purpose: Vendor Type is mandatory, so the admin picks it.
+  vendor_type: '',
 }

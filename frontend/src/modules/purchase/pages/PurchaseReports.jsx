@@ -7,20 +7,29 @@ import { KIT3D_STYLE as PURCHASE_STYLE, labelStyle, inputStyle } from '@/compone
 
 /**
  * Purchase → Reports. Four table reports and two chart reports over the
- * Purchase-owned tables, all filtered by Period. Read-only: nothing here writes.
+ * Purchase-owned tables. Read-only: nothing here writes.
+ *
+ * Laid out like the reference module: report links on the left, chart reports
+ * beside them, and the filter stack on the right. Which filters are shown
+ * depends on the report — the table reports run on a period, the chart reports
+ * on a year, and currency is meaningless where no money is being summed.
  *
  * Charts are inline SVG (no external chart lib). The series colour is a single
  * validated purple step per theme — light #7C3AED, dark #9575f7 — both checked
  * against their own surface rather than auto-flipped.
  */
 
+// Matches the reference picker, including its rolling windows.
 const PERIODS = [
   ['all_time', 'All Time'],
   ['this_month', 'This Month'],
   ['last_month', 'Last Month'],
-  ['this_quarter', 'This Quarter'],
   ['this_year', 'This Year'],
   ['last_year', 'Last Year'],
+  ['3', 'Last 3 Months'],
+  ['6', 'Last 6 Months'],
+  ['12', 'Last 12 Months'],
+  ['custom', 'Custom Period'],
 ]
 
 // Series colour: selected per theme, each validated against its own surface.
@@ -30,39 +39,80 @@ const CHART_STYLE = `
 :root.light .pvr-chart { --pvr-bar: #7C3AED; }
 `
 
+// `items` = the products/services multi-select; `currency` = the money filter.
+// The reference hides currency on the voucher and order-count reports, because
+// neither sums an amount.
 const TABLE_REPORTS = [
-  { key: 'item-cost',  title: 'Cost of import goods for each item', fetch: (p) => purchaseApi.reports.itemCost(p) },
-  { key: 'po-voucher', title: 'PO voucher report',                  fetch: (p) => purchaseApi.reports.poVoucher(p) },
-  { key: 'orders',     title: 'Purchase Order Report',              fetch: (p) => purchaseApi.reports.orders(p) },
-  { key: 'invoices',   title: 'Purchase Invoices Report',           fetch: (p) => purchaseApi.reports.invoices(p) },
+  { key: 'item-cost',  title: 'Cost of import goods for each item', items: true, currency: true,  fetch: (p) => purchaseApi.reports.itemCost(p) },
+  { key: 'po-voucher', title: 'PO voucher report',                                currency: false, fetch: (p) => purchaseApi.reports.poVoucher(p) },
+  { key: 'orders',     title: 'Purchase Order Report',                            currency: true,  fetch: (p) => purchaseApi.reports.orders(p) },
+  { key: 'invoices',   title: 'Purchase Invoices Report',                         currency: true,  fetch: (p) => purchaseApi.reports.invoices(p) },
 ]
 
 const CHART_REPORTS = [
-  { key: 'stats-count', title: 'Purchase statistics by number of purchase orders', measure: 'count', fetch: (p) => purchaseApi.reports.statsByCount(p) },
-  { key: 'stats-cost',  title: 'Purchase statistics by cost',                      measure: 'cost',  fetch: (p) => purchaseApi.reports.statsByCost(p) },
+  { key: 'stats-count', title: 'Purchase statistics by number of purchase orders', measure: 'count', currency: false, fetch: (p) => purchaseApi.reports.statsByCount(p) },
+  { key: 'stats-cost',  title: 'Purchase statistics by cost',                      measure: 'cost',  currency: true,  fetch: (p) => purchaseApi.reports.statsByCost(p) },
 ]
 
 export default function PurchaseReports() {
-  const [period, setPeriod] = useState('all_time')
+  const [period, setPeriod] = useState('this_month')
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
+  const [currency, setCurrency] = useState('')
+  const [year, setYear] = useState(String(new Date().getFullYear()))
+  const [items, setItems] = useState([])
   const [active, setActive] = useState('item-cost')
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [opts, setOpts] = useState({ items: [], currencies: [], years: [] })
 
   const report = useMemo(
     () => [...TABLE_REPORTS, ...CHART_REPORTS].find(r => r.key === active),
     [active],
   )
+  const isChart = Boolean(report?.measure)
+
+  // Filter vocabulary, loaded once — every option comes from a real row.
+  useEffect(() => {
+    purchaseApi.reports.filters()
+      .then(o => {
+        setOpts(o)
+        if (o.years?.length && !o.years.includes(Number(year))) setYear(String(o.years[0]))
+      })
+      .catch(() => {})
+  }, [])   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A custom range is only sent once both ends are set, matching the reference:
+  // picking a "from" enables "to", and nothing reloads until "to" is chosen.
+  const customIncomplete = !isChart && period === 'custom' && !(from && to)
 
   const load = useCallback(() => {
-    if (!report) return
+    if (!report || customIncomplete) return
     setLoading(true); setData(null)
-    report.fetch({ period })
+
+    const params = isChart
+      ? { year }
+      : { period, ...(period === 'custom' ? { from, to } : {}) }
+
+    if (report.currency && currency) params.currency = currency
+    if (report.items && items.length) params.items = items
+
+    report.fetch(params)
       .then(setData)
       .catch(() => setData({ rows: [], points: [] }))
       .finally(() => setLoading(false))
-  }, [report, period])
+  }, [report, isChart, period, from, to, currency, year, items, customIncomplete])
 
   useEffect(() => { load() }, [load])
+
+  // Switching report clears filters that do not apply to it, so a stale
+  // selection can never silently narrow the next report.
+  const pick = (key) => {
+    setActive(key)
+    setItems([])
+    const next = [...TABLE_REPORTS, ...CHART_REPORTS].find(r => r.key === key)
+    if (!next?.currency) setCurrency('')
+  }
 
   return (
     <div style={{ padding: 24, minHeight: '100vh', background: 'var(--bg-global)' }}>
@@ -76,18 +126,77 @@ export default function PurchaseReports() {
         <button onClick={load} style={ghostBtn}><RefreshCw size={14} /> Refresh</button>
       </div>
 
-      {/* Report picker + period */}
+      {/* Report links (by table · charts) + the filter stack */}
       <div className="pr-glass" style={{ padding: 20, borderRadius: 16, marginBottom: 16 }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: 26 }}>
-          <ReportList icon={Scale} heading="Report by table" items={TABLE_REPORTS} active={active} onPick={setActive} />
-          <ReportList icon={BarChart3} heading="Charts Based Report" items={CHART_REPORTS} active={active} onPick={setActive} />
-          <div>
-            <label style={labelStyle}>Period</label>
-            <select value={period} onChange={e => setPeriod(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-              {PERIODS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
-            {data?.from && (
-              <p style={{ fontSize: 11.5, color: 'var(--text-muted)', margin: '8px 0 0' }}>{fmtDate(data.from)} — {fmtDate(data.to)}</p>
+          <ReportList icon={Scale} heading="Report by table" items={TABLE_REPORTS} active={active} onPick={pick} />
+          <ReportList icon={BarChart3} heading="Charts Based Report" items={CHART_REPORTS} active={active} onPick={pick} />
+
+          <div style={{ display: 'grid', gap: 12, alignContent: 'start' }}>
+            {/* Charts run on a year; the table reports run on a period. */}
+            {isChart ? (
+              <div>
+                <label style={labelStyle}>Year</label>
+                <select value={year} onChange={e => setYear(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
+                  {(opts.years || []).map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
+            ) : (
+              <>
+                <div>
+                  <label style={labelStyle}>Period</label>
+                  <select value={period} onChange={e => { setPeriod(e.target.value); setFrom(''); setTo('') }}
+                    style={{ ...inputStyle, cursor: 'pointer' }}>
+                    {PERIODS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                </div>
+
+                {period === 'custom' && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    <div>
+                      <label style={labelStyle}>From Date</label>
+                      <input type="date" value={from} onChange={e => { setFrom(e.target.value); if (!e.target.value) setTo('') }} style={inputStyle} />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>To Date</label>
+                      {/* Disabled until a start date exists — same rule as the reference. */}
+                      <input type="date" value={to} min={from || undefined} disabled={!from}
+                        onChange={e => setTo(e.target.value)}
+                        style={{ ...inputStyle, opacity: from ? 1 : 0.5, cursor: from ? 'auto' : 'not-allowed' }} />
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Currency only where an amount is actually being summed. */}
+            {report?.currency && (opts.currencies || []).length > 0 && (
+              <div>
+                <label style={labelStyle}>Currency</label>
+                <select value={currency} onChange={e => setCurrency(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
+                  <option value="">All currencies</option>
+                  {opts.currencies.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+            )}
+
+            {/* Products / services, for the item report only. */}
+            {report?.items && (
+              <div>
+                <label style={labelStyle}>Products &amp; Services</label>
+                <select multiple value={items} size={Math.min(5, Math.max(3, (opts.items || []).length))}
+                  onChange={e => setItems([...e.target.selectedOptions].map(o => o.value))}
+                  style={{ ...inputStyle, height: 'auto', minHeight: 84 }}>
+                  {(opts.items || []).map(i => <option key={i} value={i}>{i}</option>)}
+                </select>
+                <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: '5px 0 0' }}>
+                  {items.length ? `${items.length} selected` : 'All items'}
+                </p>
+              </div>
+            )}
+
+            {!isChart && data?.from && (
+              <p style={{ fontSize: 11.5, color: 'var(--text-muted)', margin: 0 }}>{fmtDate(data.from)} — {fmtDate(data.to)}</p>
             )}
           </div>
         </div>
@@ -96,10 +205,12 @@ export default function PurchaseReports() {
       {/* Active report */}
       <div className="pr-glass" style={{ padding: 20, borderRadius: 16 }}>
         <h2 style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-h)', margin: '0 0 14px' }}>{report?.title}</h2>
-        {loading ? <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading…</p>
-          : !data ? null
-            : report.measure ? <ChartReport data={data} measure={report.measure} title={report.title} />
-              : <TableReport kind={active} data={data} />}
+        {customIncomplete
+          ? <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Choose a start and end date to run this report.</p>
+          : loading ? <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading…</p>
+            : !data ? null
+              : report.measure ? <ChartReport data={data} measure={report.measure} title={report.title} />
+                : <TableReport kind={active} data={data} />}
       </div>
     </div>
   )
@@ -133,37 +244,45 @@ function ReportList({ icon: Icon, heading, items, active, onPick }) {
 
 /* ── Table reports ───────────────────────────────────────────────────────── */
 
+// Columns mirror the reference report tables. `foot` names the totals key the
+// footer row prints under that column.
 const COLUMNS = {
   'item-cost': [
-    { label: 'Item', value: r => r.description, grow: true },
-    { label: 'Orders', value: r => r.order_count, num: true },
-    { label: 'Qty', value: r => Number(r.total_qty || 0).toLocaleString('en-IN'), num: true },
-    { label: 'Avg Rate', value: r => fmtMoney(r.avg_rate), num: true },
-    { label: 'Total Cost', value: r => fmtMoney(r.total_cost), num: true, strong: true },
+    { label: 'Product Code', value: r => r.product_code || '—' },
+    { label: 'Product Name', value: r => r.product_name, grow: true },
+    { label: 'PO Number', value: r => r.po_number },
+    { label: 'Qty', value: r => Number(r.qty || 0).toLocaleString('en-IN'), num: true },
+    { label: 'Rate', value: r => fmtMoney(r.rate), num: true },
+    { label: 'Subtotal', value: r => fmtMoney(r.subtotal), num: true, strong: true, foot: 'total' },
   ],
   'po-voucher': [
-    { label: 'PO Number', value: r => r.po_number },
-    { label: 'Vendor', value: r => r.vendor_name || '—', grow: true },
+    { label: 'Purchase Order', value: r => r.po_number },
     { label: 'Date', value: r => fmtDate(r.order_date) },
-    { label: 'Subtotal', value: r => fmtMoney(r.subtotal), num: true },
-    { label: 'Tax', value: r => fmtMoney(r.tax_total), num: true },
-    { label: 'Total', value: r => fmtMoney(r.total), num: true, strong: true },
-    { label: 'Status', value: r => r.status },
+    { label: 'Department', value: r => r.department || '—' },
+    { label: 'Vendor', value: r => r.vendor_name || '—', grow: true },
+    { label: 'Approval Status', value: r => r.status },
+    { label: 'Delivery Status', value: r => r.delivery_status },
+    { label: 'Payment Status', value: r => r.payment_status },
   ],
   orders: [
-    { label: 'Vendor', value: r => r.vendor_name || '— (unassigned)', grow: true },
-    { label: 'Code', value: r => r.vendor_code || '—' },
-    { label: 'Orders', value: r => r.order_count, num: true },
-    { label: 'Total Value', value: r => fmtMoney(r.total_value), num: true, strong: true },
+    { label: 'Purchase Order', value: r => r.po_number },
+    { label: 'Date', value: r => fmtDate(r.order_date) },
+    { label: 'Department', value: r => r.department || '—' },
+    { label: 'Vendor', value: r => r.vendor_name || '—', grow: true },
+    { label: 'Approval Status', value: r => r.status },
+    { label: 'PO Value', value: r => fmtMoney(r.po_value), num: true, foot: 'total_po' },
+    { label: 'Tax Value', value: r => fmtMoney(r.tax_value), num: true, foot: 'total_tax' },
+    { label: 'PO Value (incl. tax)', value: r => fmtMoney(r.total_value), num: true, strong: true, foot: 'total' },
   ],
   invoices: [
-    { label: 'Invoice', value: r => r.invoice_number },
-    { label: 'Vendor', value: r => r.vendor_name || '—', grow: true },
-    { label: 'Date', value: r => fmtDate(r.invoice_date) },
-    { label: 'Total', value: r => fmtMoney(r.total), num: true },
-    { label: 'Paid', value: r => fmtMoney(r.amount_paid), num: true },
-    { label: 'Balance', value: r => fmtMoney(r.balance), num: true, strong: true },
-    { label: 'Status', value: r => r.status },
+    { label: 'Invoice No', value: r => r.invoice_number },
+    { label: 'Contract', value: r => r.contract_number || '—' },
+    { label: 'Purchase Order', value: r => r.po_number || '—' },
+    { label: 'Invoice Date', value: r => fmtDate(r.invoice_date) },
+    { label: 'Payment Status', value: r => r.status },
+    { label: 'Invoice Amount', value: r => fmtMoney(r.invoice_amount), num: true },
+    { label: 'Tax Value', value: r => fmtMoney(r.tax_value), num: true },
+    { label: 'Total (incl. tax)', value: r => fmtMoney(r.total), num: true, strong: true, foot: 'total' },
   ],
 }
 
@@ -214,6 +333,22 @@ function TableReport({ kind, data }) {
               </tr>
             ))}
           </tbody>
+          {/* Totals row, as in the reference tables. */}
+          {cols.some(c => c.foot) && (
+            <tfoot>
+              <tr>
+                {cols.map((c, i) => (
+                  <td key={c.label} style={{
+                    padding: '11px 12px', fontSize: 12.5, whiteSpace: 'nowrap',
+                    textAlign: c.num ? 'right' : 'left', fontVariantNumeric: c.num ? 'tabular-nums' : 'normal',
+                    borderTop: '2px solid var(--border)', color: 'var(--text-h)', fontWeight: 800,
+                  }}>
+                    {c.foot ? fmtMoney(data[c.foot]) : (i === 0 ? 'Total' : '')}
+                  </td>
+                ))}
+              </tr>
+            </tfoot>
+          )}
         </table>
       </div>
       <p style={{ fontSize: 11.5, color: 'var(--text-muted)', margin: '10px 0 0' }}>{rows.length} row{rows.length === 1 ? '' : 's'}</p>

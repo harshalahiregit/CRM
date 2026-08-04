@@ -191,7 +191,17 @@ class Vendor extends Model
 
     public function isTemporary(): bool
     {
-        return (bool) $this->is_temporary;
+        // registration_type is the stored choice and the source of truth, exactly as
+        // PurchaseVendor::isTemporary() treats it — the two modules must answer this
+        // question the same way. The legacy signals remain as a fallback for rows
+        // written before registration_type existed: this used to read is_temporary
+        // alone, which is unset on every row created by the admin/self-registration
+        // paths, so temporary TPVs never got a countdown and never expired.
+        if ($this->registration_type) {
+            return $this->registration_type === \App\Support\Tpv\TpvRegistrationType::TEMPORARY;
+        }
+
+        return (bool) $this->is_temporary || $this->vendor_type === 'temporary';
     }
 
     /** Server-authoritative seconds remaining (never negative). */

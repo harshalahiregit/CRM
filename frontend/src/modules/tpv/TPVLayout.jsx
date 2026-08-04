@@ -1,7 +1,6 @@
 import {
-  LayoutDashboard, CalendarDays, Rocket, FileText,
-  UserCheck, CheckSquare, ScanLine, ShieldAlert, Clock, ShieldCheck
-} from 'lucide-react'
+  LayoutDashboard, CalendarDays, Rocket,
+  UserCheck, CheckSquare, ScanLine, ShieldAlert, Clock, ShieldCheck, HardHat, ClipboardList } from 'lucide-react'
 import ModuleShell from '@/components/layout/ModuleShell'
 
 // Ordered to follow the vendor lifecycle, left → right:
@@ -15,8 +14,11 @@ const TPV_NAV = [
   { label: 'Onboarding',  path: '/app/tpv/onboarding', icon: Rocket          },
   { label: 'Temporary',   path: '/app/tpv/temporary',  icon: Clock           },
   { label: 'Approvals',   path: '/app/tpv/approvals',  icon: ShieldCheck     },
-  { label: 'Documents',   path: '/app/tpv/documents',  icon: FileText        },
+  // 'Documents' removed: the module-level route was a ComingSoon placeholder that
+  // rendered nothing. Per-vendor documents live on the vendor detail sidebar.
   { label: 'Workforce',   path: '/app/tpv/workforce',  icon: UserCheck       },
+  { label: 'PPE',         path: '/app/tpv/ppe',        icon: HardHat         },
+  { label: 'PPE Matrix',  path: '/app/tpv/ppe/matrix', icon: ClipboardList   },
   { label: 'Compliance',  path: '/app/tpv/compliance', icon: CheckSquare     },
   { label: 'Gate Log',    path: '/app/tpv/gate-log',   icon: ScanLine        },
   { label: 'Strikes',     path: '/app/tpv/strikes',    icon: ShieldAlert     },

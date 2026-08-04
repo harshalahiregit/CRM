@@ -7,11 +7,13 @@ import {
   Sparkles, Loader2, TrendingUp,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+import WorkflowProgress from '@/components/ui/WorkflowProgress'
 import { useMasterData } from '@/modules/hr/useMasterData'
 import { useAuth } from '@/context/AuthContext'
 import AuditTimeline from '@/components/ui/AuditTimeline'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 import SearchableSelect from '@/modules/hr/components/SearchableSelect'
+import TagInput from '@/components/ui/TagInput'
 import {
   MR_STATUS, STATUS_CONFIG, statusColor, statusLabel, PRIORITY_COLORS,
   WORKFLOW_STEPS, EMPLOYEE_LEVELS, EMPLOYMENT_TYPES, PRIORITIES,
@@ -167,6 +169,9 @@ export default function ManpowerRequests() {
   const [loading, setLoading]   = useState(true)
   const [search, setSearch]     = useState('')
   const [filterStatus, setFilterStatus] = useState(searchParams.get('status') || 'All')
+  const [desigF, setDesigF] = useState('All')   // designation master filter
+  const [mgrF, setMgrF]     = useState('All')   // #3 — hiring manager filter
+  const { masters: listMasters } = useMasterData()
 
   const [showModal, setShowModal]     = useState(false)
   const [editingId, setEditingId]     = useState(null)
@@ -213,7 +218,14 @@ export default function ManpowerRequests() {
   const fetchAll = useCallback(async () => {
     setLoading(true)
     try {
-      const listCall = view === 'queue' ? hrApi.manpower.queue() : hrApi.manpower.list()
+      // Designation is sent as the master id; the API resolves it to position_title.
+      // #3 — hiring manager filters server-side alongside it, so the tenant/role
+      // scoping in the repository still applies to the narrowed result.
+      const params = {
+        ...(desigF !== 'All' ? { designation_id: desigF } : {}),
+        ...(mgrF !== 'All' ? { hiring_manager_id: mgrF } : {}),
+      }
+      const listCall = view === 'queue' ? hrApi.manpower.queue(params) : hrApi.manpower.list(params)
       const [listRes, statRes] = await Promise.all([listCall, hrApi.manpower.stats()])
       let rows = listRes?.data ?? listRes ?? []
       if (view === 'approvals') {
@@ -225,7 +237,7 @@ export default function ManpowerRequests() {
       setStats(statRes?.data ?? statRes ?? {})
     } catch (e) { console.error('Failed to load manpower requests', e) }
     finally { setLoading(false) }
-  }, [view, approveL1, approveL2])
+  }, [view, approveL1, approveL2, desigF, mgrF])
 
   useEffect(() => { fetchAll() }, [fetchAll])
 
@@ -318,6 +330,7 @@ export default function ManpowerRequests() {
       else if (action === 'approve-l2') await hrApi.manpower.approveL2(id, remarks)
       else if (action === 'reject-l2')  await hrApi.manpower.rejectL2(id, remarks)
       else if (action === 'send-back')  await hrApi.manpower.sendBack(id, remarks)
+      else if (action === 'reconsider') await hrApi.manpower.reconsider(id, remarks)
       else if (action === 'publish')    await hrApi.manpower.publish(id)
       else if (action === 'close')      await hrApi.manpower.close(id, remarks)
       else if (action === 'delete')     await hrApi.manpower.delete(id)
@@ -327,6 +340,10 @@ export default function ManpowerRequests() {
   }
 
   const openAction = (request, action) => { setActionModal({ request, action }); setRemarks('') }
+
+  // #7 — mirrors the server guard: L2 is tested first because when L2 rejects,
+  // l1_status still reads 'approved'.
+  const canReconsider = (r) => r.l2_status === 'rejected' ? approveL2 : approveL1
 
   // Open the details modal — show the list row immediately, then enrich it with
   // the full record (which includes the audit_logs timeline) from the API.
@@ -439,6 +456,15 @@ export default function ManpowerRequests() {
           <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search job title, department or project..." style={{ ...inputStyle, paddingLeft: 32 }} />
         </div>
+        <select value={desigF} onChange={e => setDesigF(e.target.value)} style={{ ...inputStyle, width: 'auto', cursor: 'pointer' }}>
+          <option value="All">All Designations</option>
+          {(listMasters.designations || []).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+        </select>
+        {/* #3 — "Filter option in every listing. Ex. HIRING MANAGER" */}
+        <select value={mgrF} onChange={e => setMgrF(e.target.value)} style={{ ...inputStyle, width: 'auto', cursor: 'pointer' }}>
+          <option value="All">All Hiring Managers</option>
+          {(listMasters.managers || []).map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+        </select>
         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={{ ...inputStyle, width: 'auto', cursor: 'pointer' }}>
           <option value="All">All Status</option>
           {Object.values(MR_STATUS).map(s => <option key={s} value={s}>{STATUS_CONFIG[s]?.label || s}</option>)}
@@ -472,7 +498,7 @@ export default function ManpowerRequests() {
                     {(req.project_ref?.name || req.project) && <span>📁 {req.project_ref?.name || req.project}</span>}
                     {req.location && <span>📍 {req.location}</span>}
                     <span>👥 {req.number_of_posts} post{req.number_of_posts > 1 ? 's' : ''}</span>
-                    {(req.salary_min || req.salary_max) && <span>💰 {req.salary_min || '—'}–{req.salary_max || '—'}</span>}
+                    {(req.salary_min || req.salary_max) && <span>💰 {req.salary_min || '—'}–{req.salary_max || '—'} /mo</span>}
                     {req.target_joining_date && <span>🎯 {new Date(req.target_joining_date).toLocaleDateString('en-IN')}</span>}
                     <span>👤 {req.requester?.name || 'Unknown'}</span>
                   </div>
@@ -488,8 +514,12 @@ export default function ManpowerRequests() {
 
                 {/* Actions */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0, alignItems: 'stretch' }}>
-                  {req.status === MR_STATUS.DRAFT && isOwner(req) && (
-                    <ActBtn onClick={() => openAction(req, 'submit')} icon={Send} color="#a78bfa" bg="rgba(124,58,237,0.15)">Submit</ActBtn>
+                  {/* Rejected is editable, so it must be re-submittable too —
+                      otherwise a rejection leaves the request with nowhere to go. */}
+                  {[MR_STATUS.DRAFT, MR_STATUS.REJECTED].includes(req.status) && isOwner(req) && (
+                    <ActBtn onClick={() => openAction(req, 'submit')} icon={Send} color="#a78bfa" bg="rgba(124,58,237,0.15)">
+                      {req.status === MR_STATUS.REJECTED ? 'Resubmit' : 'Submit'}
+                    </ActBtn>
                   )}
                   {req.status === MR_STATUS.L1_PENDING && approveL1 && (
                     <>
@@ -520,6 +550,11 @@ export default function ManpowerRequests() {
                   )}
                   {[MR_STATUS.JOB_POSTED, MR_STATUS.HIRING_IN_PROGRESS].includes(req.status) && manageHr && (
                     <ActBtn onClick={() => openAction(req, 'close')} icon={Lock} color="#94a3b8" bg="rgba(100,116,139,0.12)">Close</ActBtn>
+                  )}
+                  {/* #7 — only the level that rejected may reverse it: an L1
+                      approver must not undo a Management rejection. */}
+                  {req.status === MR_STATUS.REJECTED && canReconsider(req) && (
+                    <ActBtn onClick={() => openAction(req, 'reconsider')} icon={ThumbsUp} color="#10b981" bg="rgba(16,185,129,0.15)">Approve</ActBtn>
                   )}
                   {[MR_STATUS.DRAFT, MR_STATUS.REJECTED].includes(req.status) && isOwner(req) && (
                     <ActBtn onClick={() => openEdit(req)} icon={Pencil} color="var(--text-muted)" bg="var(--bg-card)" border>Edit</ActBtn>
@@ -555,6 +590,24 @@ function ActBtn({ onClick, icon: Icon, color, bg, border, children }) {
 }
 
 // ── Field helpers ────────────────────────────────────────────────────────────
+/**
+ * #4 — a skills list with an add option, on top of the shared TagInput.
+ *
+ * An ADAPTER, not a fourth tag implementation: the requisition form keeps skills
+ * as a comma-joined string (which is what openEdit writes and what `toList()`
+ * splits on save), so this converts at the boundary and leaves every other line
+ * of the form untouched.
+ */
+const SkillPicker = ({ value, onChange, suggestions, placeholder }) => (
+  <TagInput
+    value={String(value || '').split(',').map(s => s.trim()).filter(Boolean)}
+    onChange={(arr) => onChange(arr.join(', '))}
+    suggestions={suggestions}
+    placeholder={placeholder}
+    max={30}
+  />
+)
+
 const Field = ({ label, children, full }) => (
   <div style={full ? { gridColumn: '1/-1' } : undefined}>
     <label style={labelStyle}>{label}</label>
@@ -596,6 +649,20 @@ function RequestFormModal({ form, setForm, editingId, saving, requestedBy, onClo
 
   // Live master lists — Department / Business Unit / Hiring Manager / Employee Level / Shift.
   const deptOptions = (masters.departments || []).map(d => d.name)
+  // Job Title comes from the designation master for the same reason Department
+  // does: free text fragments the same role across records and breaks grouping.
+  // SearchableSelect keeps `allowCreate`, so a genuinely new role can still be
+  // typed — it just starts from the master instead of a blank box.
+  const designationOptions = (masters.designations || []).map(d => d.name)
+
+  // #4 — suggestions come from the skills already recorded on the org masters
+  // (#43 put them there), so the picker proposes the company's own vocabulary
+  // instead of leaving every requester to invent their own spelling.
+  const skillSuggestions = useMemo(() => {
+    const fromMasters = [...(masters.designations || []), ...(masters.departments || []), ...(masters.grades || [])]
+      .flatMap(m => Array.isArray(m.skills) ? m.skills : [])
+    return [...new Set(fromMasters.filter(Boolean))].sort().map(name => ({ id: name, name }))
+  }, [masters])
   const managers = masters.managers || []
   const managerName = (id) => managers.find(m => String(m.id) === String(id))?.name || ''
 
@@ -643,7 +710,7 @@ function RequestFormModal({ form, setForm, editingId, saving, requestedBy, onClo
 
       {/* ── Section 2 — Position Details ── */}
       <Section n={2} title="Position Details">
-        <Field label="Job Title *"><TextInput value={form.position_title} onChange={set('position_title')} placeholder="e.g. Senior Developer" /></Field>
+        <Field label="Job Title *"><SearchableSelect value={form.position_title} onChange={setV('position_title')} options={designationOptions} loading={loading} placeholder="Select or type a job title…" emptyText="No designations yet" allowCreate /></Field>
         <Field label="Employee Level"><SelectInput value={form.employee_level} onChange={set('employee_level')} options={['', ...(masters.employee_levels || [])]} /></Field>
         <Field label="Employment Type"><SelectInput value={form.job_type} onChange={set('job_type')} options={EMPLOYMENT_TYPES} /></Field>
         <Field label="Work Mode"><SelectInput value={form.work_mode} onChange={set('work_mode')} options={['', ...WORK_MODES]} /></Field>
@@ -656,11 +723,27 @@ function RequestFormModal({ form, setForm, editingId, saving, requestedBy, onClo
 
       {/* ── Section 3 — Compensation & Skills ── */}
       <Section n={3} title="Compensation & Skills">
-        <Field label="Salary Min"><TextInput type="number" min="0" value={form.salary_min} onChange={set('salary_min')} placeholder="e.g. 1200000" /></Field>
-        <Field label="Salary Max"><TextInput type="number" min="0" value={form.salary_max} onChange={set('salary_max')} placeholder="e.g. 1800000" /></Field>
-        <Field label="Budget (optional)"><TextInput type="number" min="0" value={form.budget} onChange={set('budget')} placeholder="Total hiring budget" /></Field>
-        <Field label="Required Skills (comma-separated)" full><TextInput value={form.required_skills} onChange={set('required_skills')} placeholder="e.g. PHP, Laravel, React" /></Field>
-        <Field label="Preferred Skills (comma-separated)" full><TextInput value={form.preferred_skills} onChange={set('preferred_skills')} placeholder="e.g. Docker, AWS — good to have" /></Field>
+        {/* #2 — the period is stated on the label because the column itself carries
+            none (plain decimal), and an unlabelled figure was being read as annual
+            by some users and monthly by others. Placeholders match the stated
+            period so the field never contradicts its own label. */}
+        <Field label="Salary Min (Per Month)"><TextInput type="number" min="0" value={form.salary_min} onChange={set('salary_min')} placeholder="e.g. 50000" /></Field>
+        <Field label="Salary Max (Per Month)"><TextInput type="number" min="0" value={form.salary_max} onChange={set('salary_max')} placeholder="e.g. 90000" /></Field>
+        <Field label="Budget (Per Month, optional)"><TextInput type="number" min="0" value={form.budget} onChange={set('budget')} placeholder="Monthly hiring budget" /></Field>
+        {/* #4 — "list of skills with add option". A tag editor rather than a
+            comma-separated box: each skill is a discrete chip that can be removed
+            without re-editing a sentence, and suggestions come from the skills
+            already on the chosen designation/department so the same skill is
+            spelled one way company-wide. The form state stays a comma-joined
+            string, so save/edit handling is untouched. */}
+        <Field label="Required Skills" full>
+          <SkillPicker value={form.required_skills} onChange={setV('required_skills')} suggestions={skillSuggestions}
+            placeholder="Type a skill and press Enter" />
+        </Field>
+        <Field label="Preferred Skills" full>
+          <SkillPicker value={form.preferred_skills} onChange={setV('preferred_skills')} suggestions={skillSuggestions}
+            placeholder="Good to have — type and press Enter" />
+        </Field>
         <Field label="Education"><TextInput value={form.education} onChange={set('education')} placeholder="e.g. B.Tech" /></Field>
         <Field label="Certifications (comma-separated)"><TextInput value={form.certifications} onChange={set('certifications')} placeholder="e.g. AWS, PMP" /></Field>
       </Section>
@@ -852,11 +935,18 @@ function PublishModal({ request, onClose, onPublished }) {
 function ActionModal({ actionModal, remarks, setRemarks, actionLoading, onClose, onConfirm }) {
   const { action, request } = actionModal
   const isReject = action.startsWith('reject')
+  const isApprove = action.startsWith('approve')
   const isSendBack = action === 'send-back'
   const isDelete = action === 'delete'
-  const needsReason = isReject || isSendBack
+  // Approvals now require a comment too — the API enforces it, so the button
+  // stays disabled until one is written rather than letting the call 422.
+  // #7 — reversing a rejection needs a reason for exactly the same reason an
+  // approval does: someone else's decision is being overridden on the record.
+  const isReconsider = action === 'reconsider'
+  const needsReason = isReject || isSendBack || isApprove || isReconsider
   const meta = {
     submit: { title: 'Submit for Approval', color: '#7C3AED' },
+    reconsider: { title: 'Approve After Rejection', color: '#10b981' },
     'approve-l1': { title: 'Approve L1 (Department Head)', color: '#10b981' },
     'reject-l1': { title: 'Reject at L1', color: '#ef4444' },
     'approve-l2': { title: 'Approve L2 (Management)', color: '#10b981' },
@@ -882,8 +972,8 @@ function ActionModal({ actionModal, remarks, setRemarks, actionLoading, onClose,
       {action === 'delete' && <InfoBox tone="danger">This permanently deletes the request. This cannot be undone.</InfoBox>}
       {showRemarks && (
         <>
-          <label style={labelStyle}>{isSendBack ? 'Reason to send back *' : needsReason ? 'Reason for Rejection *' : 'Remarks (optional)'}</label>
-          <textarea value={remarks} onChange={e => setRemarks(e.target.value)} rows={3} placeholder={isSendBack ? 'What needs to be revised?' : needsReason ? 'Enter reason...' : 'Add remarks...'}
+          <label style={labelStyle}>{isSendBack ? 'Reason to send back *' : isApprove ? 'Approval Comments *' : isReject ? 'Reason for Rejection *' : 'Remarks (optional)'}</label>
+          <textarea value={remarks} onChange={e => setRemarks(e.target.value)} rows={3} placeholder={isSendBack ? 'What needs to be revised?' : isApprove ? 'Why is this approved?' : isReject ? 'Enter reason...' : 'Add remarks...'}
             style={{ ...inputStyle, resize: 'vertical', borderColor: needsReason && !remarks ? '#ef444480' : 'var(--border)' }} />
         </>
       )}
@@ -1103,13 +1193,17 @@ function DetailModal({ request, onClose }) {
     ['Business Unit', request.business_unit], ['Department', request.department], ['Project', request.project_ref?.name || request.project],
     ['Location', request.location], ['Job Title', request.position_title], ['Employee Level', request.employee_level],
     ['Employment Type', request.job_type], ['Experience', request.experience_required], ['Positions', request.number_of_posts],
-    ['Priority', request.priority], ['Salary', (request.salary_min || request.salary_max) ? `${request.salary_min || '—'} – ${request.salary_max || '—'}` : null],
+    ['Priority', request.priority], ['Salary (Per Month)', (request.salary_min || request.salary_max) ? `${request.salary_min || '—'} – ${request.salary_max || '—'}` : null],
     ['Skills', Array.isArray(request.required_skills) ? request.required_skills.join(', ') : request.required_skills],
     ['Target Joining', request.target_joining_date && new Date(request.target_joining_date).toLocaleDateString('en-IN')],
     ['Requested By', request.requester?.name],
   ].filter(([, v]) => v !== null && v !== undefined && v !== '')
   return (
     <Overlay onClose={onClose} width={900}>
+      {/* #14 — the same pipeline every other recruitment screen shows. */}
+      <div style={{ marginBottom: 14 }}>
+        <WorkflowProgress kind="manpower" record={request} />
+      </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
         <h3 style={{ color: 'var(--text-h)', margin: 0, fontSize: 17, fontWeight: 800 }}>MR-{request.id} · {request.position_title}</h3>
         <StatusBadge status={request.status} />
@@ -1176,11 +1270,13 @@ const InfoBox = ({ tone, children }) => (
 const mpTh = { textAlign: 'left', padding: '10px 12px', fontSize: 10.5, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap', cursor: 'pointer', userSelect: 'none' }
 const mpTd = { padding: '11px 12px', borderBottom: '1px solid var(--border)', fontSize: 12.5, verticalAlign: 'middle', whiteSpace: 'nowrap' }
 const mpPage = 12
+// #2 — the period is part of the figure. Without "/mo" the same number reads as
+// a monthly salary to one person and an annual package to the next.
 const mpMoney = (min, max) => {
   const L = n => n >= 100000 ? `₹${(n / 100000).toFixed(1)}L` : `₹${Number(n).toLocaleString('en-IN')}`
   if (!min && !max) return '—'
-  if (min && max) return `${L(min)}–${L(max)}`
-  return L(min || max)
+  if (min && max) return `${L(min)}–${L(max)}/mo`
+  return `${L(min || max)}/mo`
 }
 // Human "current approval level" from the workflow status.
 const mpLevel = (s) => ({
@@ -1234,6 +1330,13 @@ function ManpowerListView({ rows, onView, onEdit, isOwner, openAction, openConve
   // Primary quick action per row — reuses the existing handlers (no new logic).
   const primary = (r) => {
     if (r.status === MR_STATUS.DRAFT && isOwner(r)) return ['Submit', () => openAction(r, 'submit'), '#a78bfa']
+    if (r.status === MR_STATUS.REJECTED && isOwner(r)) return ['Resubmit', () => openAction(r, 'submit'), '#a78bfa']
+    // #7 — deliberately BELOW Resubmit: the requester's existing route stays the
+    // primary action on their own request. This adds the approver's route, which
+    // previously left a rejected request with no action at all.
+    if (r.status === MR_STATUS.REJECTED && (r.l2_status === 'rejected' ? approveL2 : approveL1)) {
+      return ['Approve', () => openAction(r, 'reconsider'), '#10b981']
+    }
     if (r.status === MR_STATUS.L1_PENDING && approveL1) return ['L1 Approve', () => openAction(r, 'approve-l1'), '#10b981']
     if (r.status === MR_STATUS.L2_PENDING && approveL2) return ['L2 Approve', () => openAction(r, 'approve-l2'), '#10b981']
     if (r.status === MR_STATUS.READY_FOR_HR && manageHr) return ['Convert to JD', () => openConvert(r), '#6366f1']

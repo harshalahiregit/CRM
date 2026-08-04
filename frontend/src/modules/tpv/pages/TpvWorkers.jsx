@@ -3,6 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Plus, RefreshCw, Search, Eye, Trash2, HardHat, QrCode, AlertTriangle } from 'lucide-react'
 import { tpvApi } from '@/services/tpvApi'
 import { portalApi } from '@/services/portalApi'
+import MyCompanyCard from '@/components/vendor/MyCompanyCard'
 import { useAuth } from '@/context/AuthContext'
 import {
   WORKER_STATUS, WORKER_STATUS_CONFIG, workerStatusCfg, fitnessCfg,
@@ -46,6 +47,14 @@ export default function TpvWorkers() {
     : (vendorId
       ? `/app/tpv/workforce/vendor/${vendorId}/workers/${wid}`
       : `/app/tpv/workforce/${wid}`)
+
+  // The portal shows one company's people, so it needs that company's identity for
+  // the header card. Admin is cross-vendor and skips the fetch entirely.
+  const [myVendor, setMyVendor] = useState(null)
+  useEffect(() => {
+    if (!isPortal) return
+    portalApi.me().then(d => setMyVendor(d?.vendor ?? d ?? null)).catch(() => {})
+  }, [isPortal])
 
   const [rows, setRows]       = useState([])
   const [stats, setStats]     = useState({})
@@ -119,11 +128,31 @@ export default function TpvWorkers() {
     <div style={{ padding: '24px 32px' }}>
       <style>{KIT3D_STYLE}</style>
 
+      {isPortal && (
+        <MyCompanyCard
+          vendor={myVendor}
+          accent="#0ea5e9"
+          stats={[
+            { label: 'Active Workers',  value: rows.filter(r => (r.status || '').toLowerCase() === 'active').length },
+            { label: 'Pending Workers', value: rows.filter(r => (r.status || '').toLowerCase() !== 'active').length },
+            { label: 'Total',           value: rows.length },
+          ]}
+        />
+      )}
+
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <div>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 900, color: 'var(--text-h)', letterSpacing: '-0.02em' }}>Workforce Register</h1>
-          <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--text-muted)' }}>Registered personnel · 5-step statutory onboarding tracking</p>
+          {/* Titles differ by audience: the portal shows ONE company's people, so it
+              says "My Workforce". Admin sees every vendor's, so it stays a register. */}
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 900, color: 'var(--text-h)', letterSpacing: '-0.02em' }}>
+            {isPortal ? 'My Workforce' : 'Workforce Register'}
+          </h1>
+          <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--text-muted)' }}>
+            {isPortal
+              ? 'Your company’s registered personnel · medical, induction, PPE and badging'
+              : 'Registered personnel · 5-step statutory onboarding tracking'}
+          </p>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           {selectedIds.length > 0 && (
@@ -283,7 +312,7 @@ export default function TpvWorkers() {
                   <div style={{ display: 'flex', gap: 12, color: 'var(--text-muted)', fontSize: 11.5, flexWrap: 'wrap' }}>
                     {r.designation && <span>{r.designation}</span>}
                     {r.age != null && <span>{r.age} yrs</span>}
-                    {r.vendor?.company_name && <span>· {r.vendor.company_name}</span>}
+                    {!isPortal && r.vendor?.company_name && <span>· {r.vendor.company_name}</span>}
                   </div>
                   <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                     {r.medical?.fitness_status && <StatusPill cfg={fitnessCfg(r.medical.fitness_status)} />}

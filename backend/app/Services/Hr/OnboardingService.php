@@ -7,6 +7,7 @@ use App\Models\Hr\HrCandidate;
 use App\Models\Hr\HrCandidateNote;
 use App\Models\Hr\HrEmployee;
 use App\Models\Hr\HrOnboarding;
+use App\Support\Hr\HiringManagerFilter;
 use App\Models\Hr\HrOnboardingDocument;
 use App\Models\User;
 use App\Notifications\WhatsApp\OnboardingWelcomeNotification;
@@ -39,6 +40,8 @@ class OnboardingService
         if (! empty($filters['verification_status']) && $filters['verification_status'] !== 'All') {
             $query->where('verification_status', $filters['verification_status']);
         }
+        // #3 — two hops: onboarding → candidate → jobPosting → manpowerRequest.
+        HiringManagerFilter::apply($query, $filters['hiring_manager_id'] ?? null, 'candidate.jobPosting');
 
         return $query->latest()->get();
     }
@@ -511,6 +514,10 @@ class OnboardingService
                 'reporting_manager_name' => $manager,
                 'joining_date'           => $onboarding->joining_date ?? optional($offer)->joining_date,
                 'status'                 => 'Active',
+                // #36 gates the manual add-employee screen. Here the hire is
+                // already agreed, so a tenant with no probation policy must not
+                // be blocked mid-onboarding — the gap is audited instead.
+                'probation_optional'     => true,
             ], $onboarding->tenant_id);
         }
 
@@ -552,15 +559,34 @@ class OnboardingService
     public function create(array $data, int $tenantId): HrOnboarding
     {
         $data['tenant_id'] = $tenantId;
+
+        // #17 — the candidate is the source of truth for who this is. Resolved
+        // before the record is written so the stored name can never disagree with
+        // the candidate it points at, and so a caller that sends only the id gets
+        // a complete record.
+        $candidate = ! empty($data['candidate_id'])
+            ? HrCandidate::where('tenant_id', $tenantId)->find($data['candidate_id'])
+            : null;
+
+        if ($candidate) {
+            // `?? null` before the falsy check: the key is now optional on the
+            // request, so it is frequently ABSENT rather than empty.
+            $data['candidate_name'] = ($data['candidate_name'] ?? null) ?: $candidate->name;
+        } elseif (blank($data['candidate_name'] ?? null)) {
+            // Belt and braces for direct service callers, which do not go through
+            // the form request: without this the insert dies on a NOT NULL column
+            // and the caller gets a 500 instead of being told what is wrong.
+            throw new BusinessException(
+                'Onboarding must start from a candidate in this tenant — no matching candidate was found.', 422
+            );
+        }
+
         $record = HrOnboarding::create([...$data, 'status' => 'Pending']);
 
-        if (! empty($data['candidate_id'])) {
-            $candidate = HrCandidate::find($data['candidate_id']);
-            if ($candidate && $candidate->email) {
-                Mail::to($candidate->email)->send(
-                    new \App\Mail\OnboardingWelcomeMail($record)
-                );
-            }
+        if ($candidate && $candidate->email) {
+            Mail::to($candidate->email)->send(
+                new \App\Mail\OnboardingWelcomeMail($record)
+            );
         }
 
         Log::channel('hr')->info('Onboarding record created', ['onboarding_id' => $record->id, 'tenant_id' => $tenantId]);
@@ -604,6 +630,10 @@ class OnboardingService
                 'reporting_manager_name' => $onboarding->reporting_manager_name,
                 'joining_date'           => $onboarding->joining_date,
                 'status'                 => 'Active',
+                // #36 gates the manual add-employee screen. Here the hire is
+                // already agreed, so a tenant with no probation policy must not
+                // be blocked mid-onboarding — the gap is audited instead.
+                'probation_optional'     => true,
             ], $onboarding->tenant_id);
 
             Log::channel('hr')->info('Employee auto-created from completed onboarding', ['onboarding_id' => $onboarding->id, 'employee_id' => $employee->id, 'tenant_id' => $onboarding->tenant_id]);
