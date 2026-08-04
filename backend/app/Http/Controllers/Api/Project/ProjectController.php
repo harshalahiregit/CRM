@@ -49,6 +49,8 @@ class ProjectController extends Controller
             'tabs'                    => config('projects.tabs', []),
             'default_tabs'           => \App\Services\Project\ProjectService::defaultVisibleTabs(),
             'customer_permissions'   => config('projects.customer_permissions', []),
+            'vendor_permissions'     => config('projects.vendor_permissions', []),
+            'tpv_permissions'        => config('projects.tpv_permissions', []),
             'contacts_notification'  => config('projects.contacts_notification', []),
             'billing_types'          => [
                 ['key' => 'fixed',         'label' => 'Fixed Rate'],
