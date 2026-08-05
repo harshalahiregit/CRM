@@ -15,6 +15,9 @@ class StoreChecklistItemRequest extends FormRequest
     {
         return [
             'description' => 'required|string|max:500',
+            // A checklist item can be handed to a staff member, vendor or TPV —
+            // all three are Users, so a single FK covers every case.
+            'assigned_to' => 'nullable|integer|exists:users,id',
         ];
     }
 }

@@ -1,10 +1,11 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { guardedClose } from '@/lib/confirmClose'
 import { useNavigate } from 'react-router-dom'
 import {
   Search, Plus, X, Inbox, Clock, CheckCircle2, Circle, User, Zap,
   Download, Columns3, Rows3, AlignJustify, ArrowUp, ArrowDown, ChevronsUpDown,
-  Trash2, UserCheck, AlertCircle, Check, Sparkles, RotateCcw,
+  Trash2, UserCheck, AlertCircle, Check, Sparkles, RotateCcw, Link2,
   FolderKanban, ListChecks, Boxes,
   Users, Landmark, ShoppingCart, HardHat, ShieldCheck, TrendingUp, Contact,
 } from 'lucide-react'
@@ -58,6 +59,8 @@ const slaSort = (t) => {
 }
 
 const ALL_COLS = [
+  { key: 'sn',         label: 'S.N',       sort: () => 0 },   // positional; rendered from row index
+  { key: 'ticket',     label: 'Ticket #',  sort: t => t.id },
   { key: 'priority',   label: 'Priority',  always: true,  sort: t => PRI_RANK[t.priority] ?? 9 },
   { key: 'sla',        label: 'SLA',       sort: slaSort },
   { key: 'subject',    label: 'Subject',   always: true,  sort: t => (t.subject || '').toLowerCase() },
@@ -65,6 +68,7 @@ const ALL_COLS = [
   { key: 'department', label: 'Dept',      sort: t => t.department_id ?? 999 },
   { key: 'status',     label: 'Status',    always: true,  sort: t => (t.status || '').toLowerCase() },
   { key: 'assignee',   label: 'Assignee',  sort: t => (t.assignee?.name || '~').toLowerCase() },
+  { key: 'last_reply', label: 'Last reply', sort: t => new Date(t.last_reply_at || 0).getTime() },
   { key: 'updated',    label: 'Updated',   sort: t => new Date(t.updated_at || t.created_at || 0).getTime() },
 ]
 
@@ -93,6 +97,16 @@ export default function TicketGrid() {
   const [colMenu, setColMenu] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)   // bulk-delete guard
   const [bulkErr, setBulkErr] = useState('')
+  const [copiedId, setCopiedId] = useState(null)              // "public link" copied flash, per row
+
+  // Copy a ticket's customer-facing link (/ticket/{id}-{token}) without opening
+  // the row. email_token is the no-login credential — same ref the emails thread on.
+  const copyPublicLink = (e, t) => {
+    e.stopPropagation()
+    if (!t?.email_token) return
+    navigator.clipboard?.writeText(`${window.location.origin}/ticket/${t.id}-${t.email_token}`)
+    setCopiedId(t.id); setTimeout(() => setCopiedId(c => (c === t.id ? null : c)), 1600)
+  }
 
   useEffect(() => { localStorage.setItem('hd-grid-density', JSON.stringify(density)) }, [density])
   useEffect(() => { localStorage.setItem('hd-grid-hidden', JSON.stringify([...hidden])) }, [hidden])
@@ -403,7 +417,7 @@ export default function TicketGrid() {
                 </td></tr>
               )}
 
-              {!isLoading && rows.map(t => {
+              {!isLoading && rows.map((t, rowIdx) => {
                 const isSel = selected.has(t.id)
                 const sColor = statusColor(t.status)
                 return (
@@ -432,6 +446,20 @@ export default function TicketGrid() {
                     {cols.map(c => (
                       <td key={c.key} style={{ padding: rowPad, fontSize: 13, color: 'var(--text-body)', whiteSpace: c.key === 'subject' ? 'normal' : 'nowrap' }}
                         onClick={c.key === 'status' ? e => e.stopPropagation() : undefined}>
+                        {c.key === 'sn' && <span style={{ color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums' }}>{rowIdx + 1}</span>}
+                        {c.key === 'ticket' && (
+                          <span className="inline-flex items-center gap-1.5">
+                            <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--text-h)' }}>#{t.id}</span>
+                            {t.email_token && (
+                              <button type="button" onClick={e => copyPublicLink(e, t)}
+                                title={copiedId === t.id ? 'Public link copied' : 'Copy public link'}
+                                className="opacity-50 hover:opacity-100 transition-opacity"
+                                style={{ color: copiedId === t.id ? 'var(--color-success-500)' : 'var(--text-muted)' }}>
+                                {copiedId === t.id ? <Check size={13} /> : <Link2 size={13} />}
+                              </button>
+                            )}
+                          </span>
+                        )}
                         {c.key === 'priority' && <SLABadge priority={t.priority} showSla={false} />}
                         {c.key === 'sla' && <SlaTimer sla={t.sla} compact />}
                         {c.key === 'subject' && (
@@ -492,6 +520,7 @@ export default function TicketGrid() {
                             <span className="text-xs" style={{ color: t.assignee?.name ? 'var(--text-body)' : 'var(--text-muted)' }}>{t.assignee?.name || 'Unassigned'}</span>
                           </span>
                         )}
+                        {c.key === 'last_reply' && <span style={{ color: 'var(--text-muted)' }}>{t.last_reply_at ? fmtAgo(t.last_reply_at) : '—'}</span>}
                         {c.key === 'updated' && <span style={{ color: 'var(--text-muted)' }}>{fmtAgo(t.updated_at || t.created_at)}</span>}
                       </td>
                     ))}
@@ -556,17 +585,20 @@ function NewTicketModal({ settings, onClose, onCreated }) {
     mutationFn: () => { const p = { ...form }; Object.keys(p).forEach(k => p[k] === '' && delete p[k]); return helpdeskApi.tickets.create(p) },
     onSuccess: (t) => onCreated(t.id),
   })
+  const snapRef = useRef(null)
+  if (snapRef.current === null) snapRef.current = JSON.stringify(form)
+  const requestClose = () => guardedClose(onClose, JSON.stringify(form) !== snapRef.current)
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
   const LBL = { display: 'block', fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 5 }
   // People the admin assigned to the chosen department (the ticket routes to them).
   const deptAgents = (settings?.departments || []).find(d => String(d.id) === String(form.department_id))?.managers || []
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-start justify-center bg-black/50" style={{ paddingTop: '8vh' }} onClick={onClose}>
+    <div className="fixed inset-0 z-[70] flex items-start justify-center bg-black/50" style={{ paddingTop: '8vh' }} onClick={requestClose}>
       <div className="w-full max-w-[500px] rounded-2xl" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card-3d)', padding: 24, maxHeight: '85vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-5">
           <h2 className="font-black text-base" style={{ color: 'var(--text-h)' }}>New Ticket</h2>
-          <button onClick={onClose} className="hover:opacity-70"><X size={18} style={{ color: 'var(--text-muted)' }} /></button>
+          <button onClick={requestClose} className="hover:opacity-70"><X size={18} style={{ color: 'var(--text-muted)' }} /></button>
         </div>
         <div className="space-y-3.5">
           <div><label style={LBL}>Subject *</label><input style={inp} value={form.subject} onChange={e => set('subject', e.target.value)} placeholder="What's the issue?" /></div>
@@ -623,7 +655,7 @@ function NewTicketModal({ settings, onClose, onCreated }) {
           </div>
           {create.isError && <div className="flex items-center gap-2 p-3 rounded-xl text-sm" style={{ background: 'rgba(239,68,68,0.08)', color: 'var(--color-danger-500)', border: '1px solid rgba(239,68,68,0.2)' }}><AlertCircle size={14} />{create.error?.message}</div>}
           <div className="flex items-center justify-end gap-2 pt-1">
-            <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-semibold hover:opacity-80" style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}>Cancel</button>
+            <button onClick={requestClose} className="px-4 py-2 rounded-xl text-sm font-semibold hover:opacity-80" style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}>Cancel</button>
             <button disabled={!form.subject.trim() || create.isPending} onClick={() => create.mutate()} className="px-5 py-2 rounded-xl text-sm font-bold disabled:opacity-50" style={{ background: `linear-gradient(135deg,var(--color-support-400),var(--color-support-600))`, color: '#fff' }}>{create.isPending ? 'Creating…' : 'Create Ticket'}</button>
           </div>
         </div>

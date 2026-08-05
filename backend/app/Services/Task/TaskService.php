@@ -225,7 +225,7 @@ class TaskService
         $task->load([
             'creator:id,name', 'milestone:id,name',
             'assignees.user:id,name,email', 'followers.user:id,name',
-            'checklistItems', 'comments.user:id,name', 'comments.attachments', 'timers.user:id,name',
+            'checklistItems.assignee:id,name', 'comments.user:id,name', 'comments.attachments', 'timers.user:id,name',
         ]);
         $task->setAttribute('tags', $this->tags->tagsFor('task', $task->id, $tenantId));
 
@@ -287,6 +287,13 @@ class TaskService
     public function create(array $data, int $tenantId, int $userId): Task
     {
         $relType = $data['rel_type'] ?? 'standalone';
+
+        // The create form now sends the description as rich-text HTML, so it must
+        // pass the same allowlist sanitizer as the inline edit path (update()) —
+        // otherwise a hand-crafted payload would be stored raw and rendered.
+        if (array_key_exists('description', $data) && $data['description'] !== null) {
+            $data['description'] = \App\Support\HtmlSanitizer::clean($data['description']);
+        }
 
         // Customer link resolves through the contract (same mock as Helpdesk).
         if ($relType === 'customer' && ! empty($data['rel_id'])
@@ -453,6 +460,66 @@ class TaskService
     }
 
     /**
+     * Soft-deleted tasks that can be recovered. Only the TOP of each deleted branch
+     * is returned — a task's subtree is cascade-deleted with it and comes back as a
+     * unit, so listing every buried descendant separately would just be noise.
+     * Admins see the whole trash; staff see only what they created.
+     */
+    public function trashed(int $tenantId, int $userId, bool $isAdmin): Collection
+    {
+        $q = Task::forTenant($tenantId)->onlyTrashed();
+        if (! $isAdmin) {
+            $q->where('created_by', $userId);
+        }
+        $rows = $q->orderByDesc('deleted_at')
+            ->get(['id', 'name', 'parent_id', 'rel_type', 'rel_id', 'deleted_at', 'created_by']);
+
+        $trashedIds = $rows->pluck('id')->all();
+
+        return $rows
+            ->filter(fn ($t) => $t->parent_id === null || ! in_array($t->parent_id, $trashedIds, true))
+            ->values();
+    }
+
+    /**
+     * Put a soft-deleted task back, along with any descendants that were
+     * cascade-deleted with it, so the tree returns whole rather than with holes.
+     */
+    public function restore(int $id, int $tenantId, int $userId, bool $isAdmin): void
+    {
+        $task = Task::forTenant($tenantId)->onlyTrashed()->find($id);
+        if (! $task) {
+            throw new BusinessException('That task is not in the trash.', 404);
+        }
+        if (! $isAdmin && (int) $task->created_by !== $userId) {
+            throw new BusinessException('You can only restore tasks you created.', 403);
+        }
+
+        $ids = $this->trashedSubtreeIds($id, $tenantId);
+        Task::forTenant($tenantId)->onlyTrashed()->whereIn('id', $ids)->restore();
+    }
+
+    /** BFS over parent_id among trashed rows to gather a deleted branch. */
+    private function trashedSubtreeIds(int $rootId, int $tenantId): array
+    {
+        $ids = [$rootId];
+        $frontier = [$rootId];
+        while ($frontier) {
+            $children = Task::forTenant($tenantId)->onlyTrashed()
+                ->whereIn('parent_id', $frontier)
+                ->pluck('id')->map(fn ($i) => (int) $i)->all();
+            $children = array_values(array_diff($children, $ids));
+            if (! $children) {
+                break;
+            }
+            $ids = array_merge($ids, $children);
+            $frontier = $children;
+        }
+
+        return $ids;
+    }
+
+    /**
      * Persist a kanban column's order after a drag. Rewrites kanban_order to the
      * given sequence and moves any card that changed column into $status.
      * Ids not in this tenant are ignored rather than throwing — a stale board
@@ -587,15 +654,38 @@ class TaskService
 
     public function listChecklist(int $taskId, int $tenantId): Collection
     {
-        return $this->find($taskId, $tenantId)->checklistItems()->get();
+        return $this->find($taskId, $tenantId)->checklistItems()->with('assignee:id,name')->get();
     }
 
-    public function addChecklistItem(int $taskId, string $description, int $tenantId): TaskChecklistItem
+    public function addChecklistItem(int $taskId, string $description, int $tenantId, ?int $assignedTo = null): TaskChecklistItem
     {
         $task = $this->find($taskId, $tenantId);
         $order = ((int) $task->checklistItems()->max('order')) + 1;
 
-        return $task->checklistItems()->create(['tenant_id' => $tenantId, 'description' => $description, 'order' => $order])->fresh();
+        return $task->checklistItems()->create([
+            'tenant_id'   => $tenantId,
+            'description' => $description,
+            'order'       => $order,
+            'assigned_to' => $assignedTo,
+        ])->load('assignee:id,name');
+    }
+
+    /**
+     * Edit a checklist item in place — used to (re)assign it to a person or fix
+     * its text. Only the keys passed are touched, so assigning someone never
+     * clears the description and vice-versa.
+     */
+    public function updateChecklistItem(int $itemId, array $data, int $tenantId): TaskChecklistItem
+    {
+        $item = TaskChecklistItem::forTenant($tenantId)->find($itemId);
+        if (! $item) {
+            throw new BusinessException('Checklist item not found.', 404);
+        }
+
+        $item->fill(array_intersect_key($data, array_flip(['description', 'assigned_to'])));
+        $item->save();
+
+        return $item->load('assignee:id,name');
     }
 
     public function toggleChecklistItem(int $itemId, int $tenantId, int $userId): TaskChecklistItem

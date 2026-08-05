@@ -210,7 +210,39 @@ export default function TicketIntelligencePanel({ ticketId }) {
       <NotesSection ticketId={ticketId} />
       <RemindersSection ticketId={ticketId} />
       <RelatedSection ticketId={ticketId} />
+      <SameRequesterSection ticketId={ticketId} />
     </aside>
+  )
+}
+
+/* ── Other tickets from the same requester (auto) ────────── */
+function SameRequesterSection({ ticketId }) {
+  const navigate = useNavigate()
+  const { data: tickets = [] } = useQuery({
+    queryKey: ['ticket-same-requester', ticketId],
+    queryFn: () => helpdeskApi.tickets.sameRequester(ticketId),
+  })
+
+  if (!tickets.length) return null
+
+  return (
+    <Section icon={Link2} title="Other tickets from this requester" count={tickets.length} accent="#22d3ee">
+      <ul className="space-y-1.5">
+        {tickets.map(t => (
+          <li key={t.id} className="flex items-center gap-2 text-xs">
+            <button
+              onClick={() => navigate(`/app/helpdesk/tickets/${t.id}`)}
+              className="flex-1 flex items-center gap-2 text-left hover:opacity-80 transition-opacity"
+              style={{ color: 'var(--text-body)' }}
+            >
+              <span className="font-mono font-black text-[11px] px-1.5 py-0.5 rounded-lg" style={{ background: 'rgba(34,211,238,0.1)', color: '#22d3ee' }}>#{t.id}</span>
+              <span className="truncate">{t.subject}</span>
+              <span className="ml-auto text-[10px] capitalize shrink-0" style={{ color: 'var(--text-muted)' }}>{String(t.status || '').replace(/-/g, ' ')}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </Section>
   )
 }
 
@@ -292,6 +324,17 @@ function PropertiesSection({ ticketId }) {
             placeholder="— none —"
             size="sm"
             ariaLabel="Department"
+          />
+        </Field>
+
+        <Field label="Service">
+          <Select
+            value={ticket.service_id ?? ''}
+            onChange={v => update.mutate({ service_id: v ? Number(v) : null })}
+            options={[{ value: '', label: '— none —' }, ...(settings?.services || []).map(s => ({ value: s.id, label: s.name }))]}
+            placeholder="— none —"
+            size="sm"
+            ariaLabel="Service"
           />
         </Field>
       </div>

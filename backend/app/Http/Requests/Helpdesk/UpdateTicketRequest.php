@@ -26,6 +26,7 @@ class UpdateTicketRequest extends FormRequest
             'assigned_to'   => ['nullable', 'integer', TenantRules::assignableUser($tenantId)],
             'customer_id'   => 'nullable|integer|min:1',
             'department_id' => ['nullable', 'integer', TenantRules::department($tenantId)],
+            'service_id'    => ['nullable', 'integer', TenantRules::service($tenantId)],
             'due_date'      => 'nullable|date',
         ];
     }

@@ -4,9 +4,11 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft, RefreshCw, Plus, Users, Flag, Paperclip, Trash2, ListTodo, LifeBuoy,
   Pencil, Copy, Pin, PinOff, MoreHorizontal, Download, Upload, ExternalLink, Check, FileText,
-  Play, Search, Clock, GitBranch,
+  Play, Search, Clock, GitBranch, X,
 } from 'lucide-react'
 import { projectApi, PROJECT_STATUS, PROJECT_ACCENT } from '@/services/projectApi'
+import { guardedClose } from '@/lib/confirmClose'
+import { exportCsv, stampedName } from '@/lib/exportCsv'
 import { useAuth } from '@/context/AuthContext'
 import { useStatuses, statusOptions } from '@/hooks/useStatuses'
 import { taskApi, TASK_PRIORITY, TASK_ACCENT } from '@/services/taskApi'
@@ -14,13 +16,12 @@ import Select from '@/components/ui/Select'
 import SearchPicker, { ConfirmModal } from '@/components/ui/SearchPicker'
 import { TagChips } from '@/components/ui/TagInput'
 import ProjectFormDrawer from '../components/ProjectFormDrawer'
-import { TimesheetsTab, NotesTab, ActivityTab } from '../components/ProjectTabs'
+import { TimesheetsTab, NotesTab, ActivityTab, ExpensesTab, VendorTab } from '../components/ProjectTabs'
 import { MeetingsTab } from '../components/ProjectMeetings'
 import { DiscussionsTab } from '../components/ProjectDiscussions'
 import ProjectInvoiceModal from '../components/ProjectInvoiceModal'
 import ProjectGantt from '../components/ProjectGantt'
 import TaskFormDrawer from '../../tasks/components/TaskFormDrawer'
-import TaskDetailModal from '../../tasks/components/TaskDetailModal'
 import RaiseTicketModal from '../../helpdesk/components/RaiseTicketModal'
 
 /**
@@ -33,6 +34,66 @@ import RaiseTicketModal from '../../helpdesk/components/RaiseTicketModal'
  */
 
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
+
+// Export the whole project as one CSV — a summary block plus a milestones table
+// (with each milestone's own progress). Opens cleanly in Excel (UTF-8 BOM).
+function exportProjectData(p) {
+  const esc = (v) => {
+    const s = String(v ?? '')
+    const safe = /^[=+\-@]/.test(s) ? `'${s}` : s
+    return /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe
+  }
+  const row = (...cells) => cells.map(esc).join(',')
+  const party = p.customer?.name || p.vendor?.name || '—'
+  const lines = [
+    'Project',
+    row('Name', p.name),
+    row('Status', p.status),
+    row('Customer / Vendor', party),
+    row('Start date', p.start_date || '—'),
+    row('Deadline', p.deadline || '—'),
+    row('Progress %', p.progress ?? 0),
+    '',
+    'Milestones',
+    row('Name', 'Due date', 'Done', 'Total', 'Percent'),
+    ...(p.milestones || []).map(m => row(m.name, m.due_date || '—', m.progress?.done ?? 0, m.progress?.total ?? 0, `${m.progress?.percent ?? 0}%`)),
+  ]
+  const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `project-${p.id}-${String(p.name || 'data').replace(/\s+/g, '-').toLowerCase()}.csv`
+  document.body.appendChild(a); a.click(); a.remove()
+  URL.revokeObjectURL(url)
+}
+
+// "PDF" = open a formatted print view; the browser's print dialog offers Save as PDF.
+function printProjectData(p) {
+  const w = window.open('', '_blank', 'width=820,height=900')
+  if (!w) return
+  const party = p.customer?.name || p.vendor?.name || '—'
+  const ms = (p.milestones || []).map(m => `<tr><td>${m.name || ''}</td><td>${m.due_date ? String(m.due_date).split('T')[0] : '—'}</td><td>${m.progress?.done ?? 0}/${m.progress?.total ?? 0}</td><td>${m.progress?.percent ?? 0}%</td></tr>`).join('')
+  w.document.write(`<html><head><title>${p.name || 'Project'}</title><style>
+    body{font-family:system-ui,Arial,sans-serif;padding:36px;color:#111}
+    h1{font-size:22px;margin:0 0 4px} .muted{color:#666;font-size:12px}
+    table{width:100%;border-collapse:collapse;margin-top:14px;font-size:13px}
+    th,td{text-align:left;padding:7px 9px;border-bottom:1px solid #e2e8f0}
+    th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#666}
+    .kv{margin-top:12px;font-size:13px} .kv div{margin:3px 0}
+  </style></head><body>
+    <h1>${p.name || ''}</h1>
+    <div class="muted">Project report · ${new Date().toLocaleDateString('en-IN')}</div>
+    <div class="kv">
+      <div><b>Status:</b> ${p.status || '—'}</div>
+      <div><b>Customer / Vendor:</b> ${party}</div>
+      <div><b>Start:</b> ${p.start_date || '—'} &nbsp; <b>Deadline:</b> ${p.deadline || '—'}</div>
+      <div><b>Progress:</b> ${p.progress ?? 0}%</div>
+    </div>
+    <h3 style="margin-top:20px;font-size:15px">Milestones</h3>
+    <table><thead><tr><th>Name</th><th>Due</th><th>Done/Total</th><th>Percent</th></tr></thead><tbody>${ms || '<tr><td colspan=4 class="muted">No milestones</td></tr>'}</tbody></table>
+  </body></html>`)
+  w.document.close(); w.focus(); w.print()
+}
 const money = v => v != null && v !== '' ? '₹' + Number(v).toLocaleString('en-IN') : '—'
 
 const TABS = [
@@ -42,6 +103,8 @@ const TABS = [
   { key: 'gantt',      label: 'Gantt' },
   { key: 'meeting',    label: 'Meeting' },
   { key: 'timesheets', label: 'Timesheets' },
+  { key: 'expenses',   label: 'Expenses' },
+  { key: 'vendors',    label: 'Vendors / TPV' },
   { key: 'files',      label: 'Files' },
   { key: 'discussions', label: 'Discussions' },
   { key: 'notes',      label: 'Notes' },
@@ -113,7 +176,13 @@ export default function ProjectDetail() {
   // The tab bar is driven by the project's Visible-Tabs setting: only tabs the
   // project switched on are shown (Overview is always present). Projects created
   // before the setting existed have no bag → show every built tab (legacy).
-  const shownTabs = TABS.filter(t => t.key === 'overview' || !project.visible_tabs || project.visible_tabs[t.key])
+  // Newly-implemented tabs default to visible on existing projects (whose stored
+  // visible_tabs bag predates them) — shown unless the project explicitly turns
+  // them off. Older tabs keep the strict "must be enabled in the bag" rule.
+  const NEW_TABS = new Set(['expenses', 'vendors'])
+  const shownTabs = TABS.filter(t =>
+    t.key === 'overview' || !project.visible_tabs || project.visible_tabs[t.key]
+    || (NEW_TABS.has(t.key) && project.visible_tabs[t.key] === undefined))
   // The active tab lives in the URL (?group=) so a tab is linkable/bookmarkable
   // and survives a refresh. Fall back to Overview for an unknown/hidden group.
   const requested = searchParams.get('group') || 'overview'
@@ -158,6 +227,16 @@ export default function ProjectDetail() {
             className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl"
             style={{ border: '1px solid var(--border)', color: 'var(--text-body)' }}>
             <FileText size={13} /> Invoice Project
+          </button>
+          <button onClick={() => exportProjectData(project)}
+            className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl"
+            style={{ border: '1px solid var(--border)', color: 'var(--text-body)' }}>
+            <Download size={13} /> Export
+          </button>
+          <button onClick={() => printProjectData(project)}
+            className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl"
+            style={{ border: '1px solid var(--border)', color: 'var(--text-body)' }}>
+            <FileText size={13} /> PDF
           </button>
           <div style={{ minWidth: 150 }}>
             {canManage ? (
@@ -216,6 +295,8 @@ export default function ProjectDetail() {
       {tab === 'gantt' && <ProjectGantt projectId={id} milestones={project.milestones || []} />}
       {tab === 'meeting' && <MeetingsTab projectId={id} canManage={canManage} />}
       {tab === 'timesheets' && <TimesheetsTab projectId={id} />}
+      {tab === 'expenses' && <ExpensesTab projectId={id} />}
+      {tab === 'vendors' && <VendorTab project={project} />}
       {tab === 'files' && <FilesTab projectId={id} />}
       {tab === 'discussions' && <DiscussionsTab projectId={id} />}
       {tab === 'notes' && <NotesTab projectId={id} />}
@@ -335,7 +416,6 @@ function TasksTab({ projectId, navigate, onNewTask }) {
   const { list: taskStatusList, map: taskStatusMap } = useStatuses('task')
   const [q, setQ] = useState('')
   const [pageSize, setPageSize] = useState(25)
-  const [openTaskId, setOpenTaskId] = useState(null)
 
   // Same rule as the main board: a project's task list is its jobs, not every
   // step inside them. Subtasks are one toggle away, never in the way.
@@ -372,10 +452,25 @@ function TasksTab({ projectId, navigate, onNewTask }) {
       {/* Header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h2 className="font-bold text-sm" style={{ color: 'var(--text-h)' }}>Tasks Summary</h2>
-        <button onClick={onNewTask} className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl"
-          style={{ background: PROJECT_ACCENT, color: '#fff' }}>
-          <Plus size={13} /> New Task
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => exportCsv(stampedName(`project-${projectId}-tasks`), tasks, [
+            { key: 'id', label: 'ID' },
+            { key: 'name', label: 'Name' },
+            { key: 'status', label: 'Status', value: t => statusMeta(t.status).label },
+            { key: 'priority', label: 'Priority' },
+            { key: 'start_date', label: 'Start', value: t => t.start_date ? String(t.start_date).split('T')[0] : '' },
+            { key: 'due_date', label: 'Due', value: t => t.due_date ? String(t.due_date).split('T')[0] : '' },
+            { key: 'assignees', label: 'Assigned to', value: t => (t.assignees || []).map(a => a.user?.name).filter(Boolean).join('; ') },
+          ])} disabled={!tasks.length}
+            className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl disabled:opacity-40"
+            style={{ border: '1px solid var(--border)', color: 'var(--text-body)' }}>
+            <Download size={13} /> Export
+          </button>
+          <button onClick={onNewTask} className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl"
+            style={{ background: PROJECT_ACCENT, color: '#fff' }}>
+            <Plus size={13} /> New Task
+          </button>
+        </div>
       </div>
 
       {/* Status summary cards — count + "assigned to me" per configured status */}
@@ -440,7 +535,7 @@ function TasksTab({ projectId, navigate, onNewTask }) {
                         <GitBranch size={9} /> {t.parent.name}
                       </span>
                     )}
-                    <button onClick={() => setOpenTaskId(t.id)} className="text-left font-semibold text-xs hover:underline" style={{ color: 'var(--text-h)' }}>{t.name}</button>
+                    <button onClick={() => navigate(`/app/tasks/${t.id}`)} className="text-left font-semibold text-xs hover:underline" style={{ color: 'var(--text-h)' }}>{t.name}</button>
                     <div className="mt-1">
                       <button onClick={() => startTimer.mutate(t.id)} disabled={startTimer.isPending}
                         className="inline-flex items-center gap-1 text-[10px] font-bold disabled:opacity-40" style={{ color: PROJECT_ACCENT }}>
@@ -490,9 +585,6 @@ function TasksTab({ projectId, navigate, onNewTask }) {
           </tbody>
         </table>
       </div>
-
-      <TaskDetailModal taskId={openTaskId} open={!!openTaskId}
-        onClose={() => { setOpenTaskId(null); qc.invalidateQueries({ queryKey: taskKey }) }} />
     </div>
   )
 }
@@ -500,10 +592,10 @@ function TasksTab({ projectId, navigate, onNewTask }) {
 /* ── Milestones tab ───────────────────────────────────────────── */
 
 function MilestonesTab({ project, onChange, onErr, canManage = true }) {
-  const [ms, setMs] = useState({ name: '', due_date: '' })
-  const add = useMutation({
-    mutationFn: (data) => projectApi.createMilestone(project.id, data),
-    onSuccess: () => { setMs({ name: '', due_date: '' }); onChange() }, onError: onErr,
+  const [formFor, setFormFor] = useState(null)   // null = closed | 'new' | milestone object
+  const save = useMutation({
+    mutationFn: ({ mid, data }) => (mid ? projectApi.updateMilestone(mid, data) : projectApi.createMilestone(project.id, data)),
+    onSuccess: () => { setFormFor(null); onChange() }, onError: onErr,
   })
   const del = useMutation({ mutationFn: (mid) => projectApi.deleteMilestone(mid), onSuccess: onChange, onError: onErr })
 
@@ -511,39 +603,143 @@ function MilestonesTab({ project, onChange, onErr, canManage = true }) {
 
   return (
     <section className="rounded-2xl p-4" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-      <h2 className="font-bold text-xs mb-3 flex items-center gap-1.5" style={{ color: 'var(--text-h)' }}>
-        <Flag size={14} style={{ color: PROJECT_ACCENT }} /> Milestones
-      </h2>
-      <ul className="space-y-1.5 mb-3">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="font-bold text-xs flex items-center gap-1.5" style={{ color: 'var(--text-h)' }}>
+          <Flag size={14} style={{ color: PROJECT_ACCENT }} /> Milestones
+        </h2>
+        {canManage && (
+          <button onClick={() => setFormFor('new')} className="flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-lg"
+            style={{ background: PROJECT_ACCENT, color: '#fff' }}>
+            <Plus size={12} /> New milestone
+          </button>
+        )}
+      </div>
+      <ul className="space-y-1.5">
         {milestones.map(m => (
-          <li key={m.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg" style={{ background: 'var(--bg-input)' }}>
-            <span className="w-2 h-2 rounded-full shrink-0" style={{ background: m.color || PROJECT_ACCENT }} />
-            <span className="flex-1 text-xs truncate" style={{ color: 'var(--text-h)' }}>{m.name}</span>
-            <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{fmtDate(m.due_date)}</span>
-            {canManage && (
-              <button onClick={() => del.mutate(m.id)} className="hover:opacity-60" aria-label={`Delete ${m.name}`}>
-                <Trash2 size={11} style={{ color: 'var(--color-danger-500)' }} />
-              </button>
-            )}
+          <li key={m.id} className="px-2 py-2 rounded-lg group" style={{ background: 'var(--bg-input)' }}>
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full shrink-0" style={{ background: m.color || PROJECT_ACCENT }} />
+              <span className="flex-1 text-xs truncate" style={{ color: 'var(--text-h)' }}>{m.name}</span>
+              <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{fmtDate(m.due_date)}</span>
+              {canManage && (
+                <>
+                  <button onClick={() => setFormFor(m)} className="hover:opacity-60" aria-label={`Edit ${m.name}`}>
+                    <Pencil size={11} style={{ color: 'var(--text-muted)' }} />
+                  </button>
+                  <button onClick={() => del.mutate(m.id)} className="hover:opacity-60" aria-label={`Delete ${m.name}`}>
+                    <Trash2 size={11} style={{ color: 'var(--color-danger-500)' }} />
+                  </button>
+                </>
+              )}
+            </div>
+            {/* Per-milestone progress — its own tasks done / total, distinct from the
+                project-wide task bar. */}
+            <div className="flex items-center gap-2 mt-1.5 pl-4">
+              <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: 'var(--bg-card)' }}>
+                <div className="h-full rounded-full transition-all"
+                  style={{ width: `${m.progress?.percent || 0}%`, background: (m.progress?.percent || 0) === 100 ? 'var(--color-success-500)' : PROJECT_ACCENT }} />
+              </div>
+              <span className="text-[10px] tabular-nums shrink-0" style={{ color: 'var(--text-muted)' }}>
+                {m.progress?.total ? `${m.progress.done}/${m.progress.total} · ${m.progress.percent}%` : 'no tasks'}
+              </span>
+            </div>
           </li>
         ))}
         {milestones.length === 0 && <li className="text-xs" style={{ color: 'var(--text-muted)' }}>No milestones yet.</li>}
       </ul>
-      {canManage && (
-      <form onSubmit={e => { e.preventDefault(); if (ms.name && ms.due_date) add.mutate(ms) }} className="flex gap-2">
-        <input value={ms.name} onChange={e => setMs({ ...ms, name: e.target.value })} placeholder="Milestone name"
-          className="flex-1 rounded-lg outline-none"
-          style={{ padding: '7px 10px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }} />
-        <input type="date" value={ms.due_date} onChange={e => setMs({ ...ms, due_date: e.target.value })}
-          className="rounded-lg outline-none"
-          style={{ padding: '7px 10px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }} />
-        <button type="submit" disabled={!ms.name || !ms.due_date || add.isPending}
-          className="px-3 rounded-lg disabled:opacity-40" style={{ background: PROJECT_ACCENT, color: '#fff' }} aria-label="Add milestone">
-          <Plus size={13} />
-        </button>
-      </form>
+
+      {formFor && (
+        <MilestoneFormModal
+          milestone={formFor === 'new' ? null : formFor}
+          busy={save.isPending}
+          onClose={() => setFormFor(null)}
+          onSubmit={(data) => save.mutate({ mid: formFor === 'new' ? null : formFor.id, data })}
+        />
       )}
     </section>
+  )
+}
+
+/**
+ * Full milestone form — a field-for-field copy of the old system's "New Milestone"
+ * popup: Name, Start/Due dates, Description, the two customer-visibility switches,
+ * and Order. Doubles as the edit form when a milestone is passed in.
+ */
+function MilestoneFormModal({ milestone, onClose, onSubmit, busy }) {
+  const todayStr = new Date().toISOString().split('T')[0]
+  const [f, setF] = useState({
+    name: milestone?.name || '',
+    start_date: milestone?.start_date ? String(milestone.start_date).split('T')[0] : todayStr,
+    due_date: milestone?.due_date ? String(milestone.due_date).split('T')[0] : '',
+    description: milestone?.description || '',
+    show_description_to_customer: !!milestone?.show_description_to_customer,
+    hide_from_customer: !!milestone?.hide_from_customer,
+    order: milestone?.order ?? 1,
+  })
+  const snapRef = useRef(null)
+  if (snapRef.current === null) snapRef.current = JSON.stringify(f)
+  const requestClose = () => guardedClose(onClose, JSON.stringify(f) !== snapRef.current)
+  const set = (k, v) => setF(p => ({ ...p, [k]: v }))
+  const ok = f.name.trim() && f.start_date && f.due_date
+  const submit = (e) => { e.preventDefault(); if (ok && !busy) onSubmit(f) }
+
+  const LBL = { display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-body)', marginBottom: 5 }
+  const INP = { width: '100%', padding: '9px 12px', borderRadius: 8, fontSize: 13.5, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)', outline: 'none' }
+  const req = <span style={{ color: 'var(--color-danger-500)' }}>*</span>
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 overflow-y-auto" style={{ background: 'rgba(15,23,42,0.55)' }} onClick={requestClose}>
+      <form onSubmit={submit} onClick={e => e.stopPropagation()}
+        className="w-full rounded-2xl my-6" style={{ maxWidth: 520, background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card-3d)' }}>
+        <header className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: '1px solid var(--border)' }}>
+          <h3 className="font-black text-sm" style={{ color: 'var(--text-h)' }}>{milestone ? 'Edit Milestone' : 'New Milestone'}</h3>
+          <button type="button" onClick={requestClose} className="hover:opacity-70"><X size={17} style={{ color: 'var(--text-muted)' }} /></button>
+        </header>
+
+        <div className="px-5 py-4 space-y-3.5">
+          <div>
+            <label style={LBL}>{req} Name</label>
+            <input autoFocus value={f.name} onChange={e => set('name', e.target.value)} style={INP} placeholder="Milestone name" />
+          </div>
+          <div>
+            <label style={LBL}>{req} Start Date</label>
+            <input type="date" value={f.start_date} onChange={e => set('start_date', e.target.value)} style={INP} />
+          </div>
+          <div>
+            <label style={LBL}>{req} Due date</label>
+            <input type="date" value={f.due_date} onChange={e => set('due_date', e.target.value)} style={INP} />
+          </div>
+          <div>
+            <label style={LBL}>Description</label>
+            <textarea value={f.description} onChange={e => set('description', e.target.value)} rows={4}
+              style={{ ...INP, resize: 'vertical', minHeight: 90 }} placeholder="Optional" />
+          </div>
+          <label className="flex items-center gap-2 text-xs" style={{ color: 'var(--text-body)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={f.show_description_to_customer} onChange={e => set('show_description_to_customer', e.target.checked)}
+              style={{ accentColor: PROJECT_ACCENT, width: 15, height: 15 }} />
+            Show description to customer
+          </label>
+          <label className="flex items-center gap-2 text-xs" style={{ color: 'var(--text-body)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={f.hide_from_customer} onChange={e => set('hide_from_customer', e.target.checked)}
+              style={{ accentColor: PROJECT_ACCENT, width: 15, height: 15 }} />
+            Hide from customer
+          </label>
+          <div>
+            <label style={LBL}>Order</label>
+            <input type="number" min="0" value={f.order} onChange={e => set('order', Number(e.target.value) || 0)} style={INP} />
+          </div>
+        </div>
+
+        <footer className="flex items-center justify-end gap-2 px-5 py-3.5" style={{ borderTop: '1px solid var(--border)' }}>
+          <button type="button" onClick={requestClose} className="text-sm font-semibold px-4 py-2 rounded-xl"
+            style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}>Close</button>
+          <button type="submit" disabled={!ok || busy} className="text-sm font-bold px-5 py-2 rounded-xl disabled:opacity-40"
+            style={{ background: PROJECT_ACCENT, color: '#fff' }}>
+            {busy ? 'Saving…' : 'Submit'}
+          </button>
+        </footer>
+      </form>
+    </div>
   )
 }
 

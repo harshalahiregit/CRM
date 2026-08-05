@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { guardedClose } from '@/lib/confirmClose'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { X, Check, Building2, IndianRupee, SlidersHorizontal, LayoutGrid, ShieldCheck } from 'lucide-react'
 import { projectApi, PROJECT_STATUS, BILLING_TYPES, PROJECT_ACCENT } from '@/services/projectApi'
@@ -41,7 +42,9 @@ const EMPTY = {
   member_ids: [], tags: [],
   // Tab 2 — settings
   visible_tabs: null,           // {key: bool} — defaulted from meta once loaded
-  customer_permissions: {},     // {key: bool}
+  customer_permissions: {},     // {key: bool} — customer portal
+  vendor_permissions: {},       // {key: bool} — vendor portal
+  tpv_permissions: {},          // {key: bool} — third-party-vendor portal
   hide_tasks_on_main: false,
   send_created_email: false,
   contacts_notification: 'all',
@@ -51,16 +54,19 @@ export default function ProjectFormDrawer({ open, onClose, project = null, onSav
   const qc = useQueryClient()
   const editing = Boolean(project)
   const [tab, setTab] = useState('project')     // 'project' | 'settings'
+  const [permParty, setPermParty] = useState('customer')   // which portal's permissions are being edited
   const [form, setForm] = useState(EMPTY)
   const [picker, setPicker] = useState(null)    // 'customer' | 'member'
   const [err, setErr] = useState('')
 
   const { data: meta } = useQuery({ queryKey: ['project-meta'], queryFn: projectApi.meta, enabled: open, staleTime: 5 * 60_000 })
 
+  const snapshotRef = useRef('')
+
   useEffect(() => {
     if (!open) return
     setErr(''); setTab('project')
-    setForm(editing
+    const init = editing
       ? {
           ...EMPTY, ...project,
           start_date: project.start_date ? String(project.start_date).split('T')[0] : today(),
@@ -77,14 +83,19 @@ export default function ProjectFormDrawer({ open, onClose, project = null, onSav
           tags: (project.tags || []).map(t => t.name),
           visible_tabs: project.visible_tabs || null,
           customer_permissions: project.customer_permissions || {},
+          vendor_permissions: project.vendor_permissions || {},
+          tpv_permissions: project.tpv_permissions || {},
           hide_tasks_on_main: !!project.hide_tasks_on_main,
           send_created_email: !!project.send_created_email,
           contacts_notification: project.contacts_notification || 'all',
         }
-      : EMPTY)
+      : EMPTY
+    setForm(init)
+    snapshotRef.current = JSON.stringify(init)
   }, [open, project, editing]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const sf = (k, v) => setForm(p => ({ ...p, [k]: v }))
+  const requestClose = () => guardedClose(onClose, snapshotRef.current && JSON.stringify(form) !== snapshotRef.current)
 
   // Default the visible-tabs bag from meta the first time it loads (new projects
   // start with every working tab on). Editing keeps whatever the project stored.
@@ -133,7 +144,13 @@ export default function ProjectFormDrawer({ open, onClose, project = null, onSav
   const setLinkType = (t) => setForm(p => ({ ...p, link_type: t, customer_id: '', vendor_user_id: '' }))
 
   const toggleTab = (key) => setForm(p => ({ ...p, visible_tabs: { ...effectiveTabs, [key]: !effectiveTabs[key] } }))
-  const togglePerm = (key) => setForm(p => ({ ...p, customer_permissions: { ...p.customer_permissions, [key]: !p.customer_permissions?.[key] } }))
+  // Each party (customer / vendor / TPV) has its own portal-permission bag, edited
+  // under its own sub-tab in Project Settings.
+  const PERM_BAG = { customer: 'customer_permissions', vendor: 'vendor_permissions', tpv: 'tpv_permissions' }
+  const togglePerm = (key) => {
+    const bag = PERM_BAG[permParty]
+    setForm(p => ({ ...p, [bag]: { ...p[bag], [key]: !p[bag]?.[key] } }))
+  }
 
   const save = useMutation({
     mutationFn: (payload) => editing ? projectApi.update(project.id, payload) : projectApi.create(payload),
@@ -170,12 +187,24 @@ export default function ProjectFormDrawer({ open, onClose, project = null, onSav
   if (!open) return null
   const busy = save.isPending
   const tabs = meta?.tabs || []
-  const perms = meta?.customer_permissions || []
+  // Each party has its OWN relevant permission catalog — a vendor/TPV portal is
+  // about their tasks/deliverables (and, for a vendor, purchase/billing), not the
+  // customer's finance overview. Swaps catalog with the Customer/Vendor/TPV sub-tab.
+  const PERM_CATALOG = {
+    customer: meta?.customer_permissions || [],
+    vendor:   meta?.vendor_permissions || [],
+    tpv:      meta?.tpv_permissions || [],
+  }
+  const perms = PERM_CATALOG[permParty] || []
   const notifModes = meta?.contacts_notification || []
+  // The settings that follow are about whoever the project is linked to — so the
+  // labels and helper text adapt to a Customer, a Vendor, or a Third-party vendor.
+  const partyLabel = form.link_type === 'vendor' ? 'Vendor' : form.link_type === 'tpv' ? 'Third-party vendor' : 'Customer'
+  const partyLower = partyLabel.toLowerCase()
 
   return (
     <div className="fixed inset-0 z-[55] flex items-start justify-center p-3 sm:p-6 overflow-y-auto"
-      style={{ background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(2px)' }} onClick={onClose}>
+      style={{ background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(2px)' }} onClick={requestClose}>
       <form onSubmit={submit} onClick={e => e.stopPropagation()}
         className="w-full rounded-2xl overflow-hidden my-2 flex flex-col"
         style={{ maxWidth: 640, background: 'var(--bg-global)', boxShadow: '0 24px 70px rgba(0,0,0,0.45)', maxHeight: '94vh' }}>
@@ -183,7 +212,7 @@ export default function ProjectFormDrawer({ open, onClose, project = null, onSav
         <header className="shrink-0" style={{ background: 'var(--bg-global)', borderBottom: '1px solid var(--border)' }}>
           <div className="flex items-center justify-between px-5 py-4">
             <h2 className="font-bold" style={{ color: 'var(--text-h)', fontSize: 15 }}>{editing ? 'Edit Project' : 'New Project'}</h2>
-            <button type="button" onClick={onClose} aria-label="Close"><X size={17} style={{ color: 'var(--text-muted)' }} /></button>
+            <button type="button" onClick={requestClose} aria-label="Close"><X size={17} style={{ color: 'var(--text-muted)' }} /></button>
           </div>
           {/* Tab switcher */}
           <div className="flex items-center gap-1 px-5 -mb-px">
@@ -308,7 +337,7 @@ export default function ProjectFormDrawer({ open, onClose, project = null, onSav
           </div>
 
           <div className="rounded-xl p-3" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-            <Toggle label="Send project created email" hint="Email the customer's contacts when the project is created"
+            <Toggle label="Send project created email" hint={`Email the ${partyLower}'s contacts when the project is created`}
               checked={!!form.send_created_email} onChange={v => sf('send_created_email', v)} />
           </div>
         </div>
@@ -356,12 +385,35 @@ export default function ProjectFormDrawer({ open, onClose, project = null, onSav
           <div>
             <div className="flex items-center gap-1.5 mb-2">
               <ShieldCheck size={13} style={{ color: PROJECT_ACCENT }} />
-              <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-h)' }}>Customer Permissions</span>
+              <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-h)' }}>Portal permissions</span>
             </div>
+            {/* Separate settings per party — a project can involve a customer AND
+                vendors/TPVs, each with their own portal. Pick whose permissions to edit. */}
+            <div className="flex items-center gap-1 mb-2">
+              {[['customer', 'Customer'], ['vendor', 'Vendor'], ['tpv', 'TPV']].map(([key, label]) => {
+                const active = permParty === key
+                const isLinked = form.link_type === key
+                return (
+                  <button type="button" key={key} onClick={() => setPermParty(key)}
+                    className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg transition-colors"
+                    style={{
+                      background: active ? `color-mix(in srgb, ${PROJECT_ACCENT} 14%, transparent)` : 'var(--bg-input)',
+                      color: active ? PROJECT_ACCENT : 'var(--text-muted)',
+                      border: `1px solid ${active ? PROJECT_ACCENT : 'var(--border)'}`,
+                    }}>
+                    {label}{isLinked ? ' ★' : ''}
+                  </button>
+                )
+              })}
+            </div>
+            <p className="text-[10px] mb-2" style={{ color: 'var(--text-muted)' }}>
+              What the {permParty === 'tpv' ? 'third-party vendor' : permParty} can see and do on their portal for this project.
+              {form.link_type === permParty && ' (this project is linked to this party)'}
+            </p>
             <div className="rounded-xl divide-y" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
               {perms.map(pm => (
                 <div key={pm.key} className="px-3 py-2">
-                  <Toggle label={pm.label} checked={!!form.customer_permissions?.[pm.key]} onChange={() => togglePerm(pm.key)} small />
+                  <Toggle label={pm.label} checked={!!form[PERM_BAG[permParty]]?.[pm.key]} onChange={() => togglePerm(pm.key)} small />
                 </div>
               ))}
             </div>

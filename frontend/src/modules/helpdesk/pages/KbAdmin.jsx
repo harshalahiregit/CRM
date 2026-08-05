@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import ReactQuill from 'react-quill'
 import 'react-quill/dist/quill.snow.css'
@@ -10,6 +11,11 @@ import {
 import { helpdeskApi } from '@/services/helpdeskApi'
 import Select from '../components/ui/Select'
 import { InputModal, ConfirmModal } from '../components/ui/SearchPicker'
+import { RICH_MODULES, RICH_FORMATS } from '@/lib/quillConfig'
+
+// Plain-text preview of stored rich HTML (canned reply bodies) for list rows —
+// strips tags so the snippet never shows raw markup.
+const plainText = (html) => String(html || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/\s+/g, ' ').trim()
 
 /* ───────────────────────────────────────────────────────────────
    KB / Content admin — two modes: Knowledge Base + Canned Responses.
@@ -166,6 +172,18 @@ function KbManager() {
   const publicUrl = article?.public_slug ? `${location.origin}/kb/a/${article.public_slug}` : null
 
   const startNew = (tpl) => { setArticle({ ...EMPTY_ARTICLE, subcategory_id: selSub, content: tpl.content }); setTplOpen(false) }
+
+  // "Convert reply to KB" from a ticket lands here with the reply prefilled — open
+  // the editor with its title/content; the author just picks a sub-category & saves.
+  const routerLocation = useLocation()
+  useEffect(() => {
+    const draft = routerLocation.state?.draftArticle
+    if (draft) {
+      setArticle({ ...EMPTY_ARTICLE, title: draft.title || '', content: draft.content || '', subcategory_id: selSub })
+      window.history.replaceState({}, '')   // consume it so a refresh doesn't re-open
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routerLocation.state])
 
   // Every sub-category across all categories, labelled "Category › Sub" so the
   // editor's picker is unambiguous when names repeat.
@@ -473,7 +491,10 @@ function CannedManager() {
   const INP = { border: '1px solid var(--border)', color: 'var(--text-h)', background: 'var(--bg-input)' }
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
+    <div className="grid gap-5 lg:grid-cols-[340px_1fr]">
+      {/* New-reply editor gets the wide column; the saved-replies list is the
+          narrow one. Reuse the KB editor theme with a tall canned canvas. */}
+      <style>{QUILL_THEME_CSS + '.canned-quill .ql-editor{min-height:320px}'}</style>
       {/* List */}
       <div className="rounded-2xl p-5" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card)' }}>
         <div className="flex items-center justify-between mb-4">
@@ -492,7 +513,7 @@ function CannedManager() {
                       <span className="text-sm font-bold" style={{ color: 'var(--text-h)' }}>{cr.title}</span>
                       {cr.shortcut && <span className="text-[11px] font-mono px-1.5 py-0.5 rounded" style={{ background: `color-mix(in srgb, ${ACCENT} 12%, transparent)`, color: ACCENT }}>{cr.shortcut}</span>}
                     </div>
-                    <p className="text-xs line-clamp-2" style={{ color: 'var(--text-muted)' }}>{cr.content}</p>
+                    <p className="text-xs line-clamp-2" style={{ color: 'var(--text-muted)' }}>{plainText(cr.content)}</p>
                   </div>
                   <button onClick={() => setEditing(cr)} className="opacity-0 group-hover:opacity-100 hover:opacity-70" style={{ color: 'var(--text-muted)' }}><Pencil size={14} /></button>
                   <button onClick={() => remove.mutate(cr.id)} className="opacity-0 group-hover:opacity-100 hover:text-red-400" style={{ color: 'var(--text-muted)' }}><Trash2 size={14} /></button>
@@ -518,9 +539,15 @@ function CannedManager() {
               <Field label="Category"><input value={editing.category || ''} onChange={e => setEditing({ ...editing, category: e.target.value })} placeholder="General" className="w-full text-sm rounded-lg px-3 py-2 outline-none" style={INP} /></Field>
               <Field label="Shortcut"><input value={editing.shortcut || ''} onChange={e => setEditing({ ...editing, shortcut: e.target.value })} placeholder="/reset" className="w-full text-sm rounded-lg px-3 py-2 outline-none" style={INP} /></Field>
             </div>
-            <Field label="Reply text"><textarea value={editing.content} onChange={e => setEditing({ ...editing, content: e.target.value })} rows={7} placeholder="Type the reusable reply…" className="w-full text-sm rounded-lg px-3 py-2 outline-none resize-none" style={INP} /></Field>
+            <Field label="Reply text">
+              <div className="kb-editor canned-quill rounded-lg overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+                <ReactQuill theme="snow" modules={RICH_MODULES} formats={RICH_FORMATS}
+                  value={editing.content || ''} onChange={(html) => setEditing({ ...editing, content: html })}
+                  placeholder="Type the reusable reply…" />
+              </div>
+            </Field>
             <div className="flex items-center gap-2">
-              <button disabled={!editing.title.trim() || !editing.content.trim() || save.isPending} onClick={() => save.mutate(editing)} className="text-sm font-bold px-4 py-2 rounded-xl disabled:opacity-40" style={{ background: ACCENT, color: '#fff' }}>{save.isPending ? 'Saving…' : 'Save reply'}</button>
+              <button disabled={!editing.title.trim() || !plainText(editing.content) || save.isPending} onClick={() => save.mutate(editing)} className="text-sm font-bold px-4 py-2 rounded-xl disabled:opacity-40" style={{ background: ACCENT, color: '#fff' }}>{save.isPending ? 'Saving…' : 'Save reply'}</button>
               <button onClick={() => setEditing(null)} className="text-sm px-3 py-2 rounded-xl hover:opacity-70" style={{ color: 'var(--text-muted)' }}>Cancel</button>
             </div>
             {save.isError && <p className="text-xs" style={{ color: 'var(--color-danger-500)' }}>{save.error?.message}</p>}

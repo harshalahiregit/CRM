@@ -1,11 +1,15 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import ReactQuill from 'react-quill'
+import 'react-quill/dist/quill.snow.css'
+import { RICH_MODULES, RICH_FORMATS } from '@/lib/quillConfig'
 import {
   X, Check, CheckCircle2, Link2, IndianRupee, Paperclip, ChevronDown, Flag, ListPlus,
 } from 'lucide-react'
 import { tpvApi } from '@/services/tpvApi'
 import { purchaseApi } from '@/services/purchaseApi'
-import { taskApi, TASK_PRIORITY, TASK_ACCENT, REL_TYPES, REL_TYPE_LABEL, fmtBytes } from '@/services/taskApi'
+import { taskApi, TASK_PRIORITY, TASK_ACCENT, REL_TYPES, REL_TYPE_LABEL, RATE_UNITS, fmtBytes } from '@/services/taskApi'
+import { guardedClose } from '@/lib/confirmClose'
 import Select from '@/components/ui/Select'
 import SearchPicker from '@/components/ui/SearchPicker'
 import TagInput from '@/components/ui/TagInput'
@@ -28,10 +32,26 @@ import { tagApi } from '@/services/tagApi'
 
 const today = () => new Date().toISOString().split('T')[0]
 
+// Notepad-style description editor (the doc asked for rich text on create, not just
+// on the detail page). Toolbar comes from the shared quillConfig (RICH_MODULES).
+const DESC_EDITOR_CSS = `
+  .task-desc-editor{border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--bg-input)}
+  .task-desc-editor:focus-within{border-color:var(--color-primary-500);box-shadow:0 0 0 3px color-mix(in srgb,var(--color-primary-500) 18%,transparent)}
+  .task-desc-editor .ql-toolbar.ql-snow{border:0;border-bottom:1px solid var(--border);background:var(--bg-card);padding:7px 10px}
+  .task-desc-editor .ql-container.ql-snow{border:0;background:transparent;font-family:inherit;font-size:13px}
+  .task-desc-editor .ql-editor{min-height:96px;max-height:260px;overflow-y:auto;color:var(--text-h);line-height:1.6;padding:11px 13px}
+  .task-desc-editor .ql-editor.ql-blank::before{color:var(--text-muted);opacity:.6;font-style:normal;left:13px;right:13px}
+  .task-desc-editor .ql-editor a{color:var(--color-primary-500)}
+  .task-desc-editor .ql-snow .ql-stroke{stroke:var(--text-muted)}
+  .task-desc-editor .ql-snow .ql-fill{fill:var(--text-muted)}
+  .task-desc-editor .ql-snow button:hover .ql-stroke,.task-desc-editor .ql-snow button.ql-active .ql-stroke{stroke:var(--color-primary-500)}
+  .task-desc-editor .ql-snow .ql-tooltip{background:var(--bg-card);border:1px solid var(--border);color:var(--text-body);border-radius:10px;z-index:20}
+`
+
 const EMPTY = {
   name: '', description: '', priority: 'medium', status: '',
   start_date: today(), due_date: '', rel_type: 'standalone', rel_id: '', milestone_id: '',
-  billable: false, hourly_rate: '', is_public: false, visible_to_client: false,
+  billable: false, hourly_rate: '', rate_unit: 'hourly', is_public: false, visible_to_client: false,
   assignee_ids: [], follower_ids: [], tags: [], template_ids: [],
   repeat_preset: '', recurring: false, recurring_type: 'month', repeat_every: 1, cycles: 0,
 }
@@ -69,10 +89,12 @@ export default function TaskFormDrawer({ open, onClose, task = null, defaults = 
   const [err, setErr] = useState('')
   const fileInput = useRef(null)
 
+  const snapshotRef = useRef('')   // form as it was when opened — to detect edits
+
   useEffect(() => {
     if (!open) return
     setErr(''); setPendingFiles([]); setShowAttach(false)
-    setForm(editing
+    const init = editing
       ? {
           ...EMPTY, ...task,
           due_date: task.due_date ? String(task.due_date).split('T')[0] : '',
@@ -86,11 +108,21 @@ export default function TaskFormDrawer({ open, onClose, task = null, defaults = 
           template_ids: [],
           repeat_preset: presetFromTask(task),
         }
-      : { ...EMPTY, ...defaults })
+      : { ...EMPTY, ...defaults }
+    setForm(init)
+    snapshotRef.current = JSON.stringify(init)
   }, [open, task, editing]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const sf = (k, v) => setForm(p => ({ ...p, [k]: v }))
+  // Dirty = the form differs from how it opened, or files are staged. Backdrop /
+  // Close then asks before throwing typed data away.
+  const dirty = () => (snapshotRef.current && JSON.stringify(form) !== snapshotRef.current) || pendingFiles.length > 0
+  const requestClose = () => guardedClose(onClose, dirty())
 
+  // Workspace switches: hide rate fields entirely, and force a milestone on project tasks.
+  const { data: taskSettings = {} } = useQuery({ queryKey: ['task-settings'], queryFn: taskApi.settings, enabled: open })
+  const hideRates = !!taskSettings.hide_rates
+  const requireMilestone = !!taskSettings.require_milestone
   const { data: staff = [] } = useQuery({ queryKey: ['task-staff'], queryFn: taskApi.staff, enabled: open })
   // Vendors & TPVs are also assignable — work delegated to them shows on their
   // portal dashboard. They go into the same assignee_ids array.
@@ -193,6 +225,8 @@ export default function TaskFormDrawer({ open, onClose, task = null, defaults = 
     if (p.rel_type === 'standalone' || !p.rel_id) delete p.rel_id
     if (p.rel_type !== 'project' || !p.milestone_id) delete p.milestone_id
     if (!p.status) delete p.status
+    // Quill leaves "<p><br></p>" behind in an untouched editor — treat that as no description.
+    if (p.description && p.description.replace(/<[^>]*>/g, '').replace(/&nbsp;/gi, ' ').trim() === '') p.description = ''
     if (p.hourly_rate === '') delete p.hourly_rate
     if (p.due_date === '') delete p.due_date
     if (!p.recurring) { delete p.recurring_type; delete p.repeat_every; delete p.cycles }
@@ -204,10 +238,13 @@ export default function TaskFormDrawer({ open, onClose, task = null, defaults = 
   if (!open) return null
   const busy = save.isPending
   const isProject = form.rel_type === 'project'
+  // When the workspace requires a milestone, block submit until one is chosen for
+  // a project task — the same rule the server enforces, surfaced before the round-trip.
+  const missingMilestone = requireMilestone && isProject && !!form.rel_id && !form.milestone_id
 
   return (
     <div className="fixed inset-0 z-[55] flex items-start justify-center p-3 sm:p-6 overflow-y-auto"
-      style={{ background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(2px)' }} onClick={onClose}>
+      style={{ background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(2px)' }} onClick={requestClose}>
       <form onSubmit={submit} onClick={e => e.stopPropagation()}
         className="w-full rounded-2xl overflow-hidden my-2 flex flex-col"
         style={{ maxWidth: 760, background: 'var(--bg-global)', boxShadow: '0 24px 70px rgba(0,0,0,0.45)', maxHeight: '94vh' }}>
@@ -217,7 +254,7 @@ export default function TaskFormDrawer({ open, onClose, task = null, defaults = 
           style={{ background: 'linear-gradient(120deg, var(--color-primary-600), var(--color-primary-500))' }}>
           <CheckCircle2 size={20} style={{ color: '#fff' }} />
           <h2 className="font-bold text-white" style={{ fontSize: 17 }}>{editing ? 'Edit Task' : 'Add New Task'}</h2>
-          <button type="button" onClick={onClose} aria-label="Close" className="ml-auto opacity-90 hover:opacity-100">
+          <button type="button" onClick={requestClose} aria-label="Close" className="ml-auto opacity-90 hover:opacity-100">
             <X size={19} style={{ color: '#fff' }} />
           </button>
         </header>
@@ -227,7 +264,7 @@ export default function TaskFormDrawer({ open, onClose, task = null, defaults = 
           {/* Options + attach */}
           <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
             <Check label="Public" hint="Visible to all staff" checked={!!form.is_public} onChange={v => sf('is_public', v)} />
-            <Check label="Billable" hint="Time logged can be invoiced" checked={!!form.billable} onChange={v => sf('billable', v)} />
+            {!hideRates && <Check label="Billable" hint="Time logged can be invoiced" checked={!!form.billable} onChange={v => sf('billable', v)} />}
             {isProject && <Check label="Visible to Client" checked={!!form.visible_to_client} onChange={v => sf('visible_to_client', v)} />}
             <button type="button" onClick={() => setShowAttach(s => !s)}
               className="flex items-center gap-1.5 text-sm font-semibold" style={{ color: TASK_ACCENT }}>
@@ -268,13 +305,20 @@ export default function TaskFormDrawer({ open, onClose, task = null, defaults = 
             <input value={form.name} onChange={e => sf('name', e.target.value)} className={INPUT} style={INPUT_S} autoFocus placeholder="What needs doing?" />
           </Field>
 
-          <Field label="Hourly Rate">
-            <div className="relative">
-              <IndianRupee size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-              <input type="number" min="0" step="0.01" value={form.hourly_rate}
-                onChange={e => sf('hourly_rate', e.target.value)} className={INPUT} style={{ ...INPUT_S, paddingLeft: 32 }} placeholder="0" />
+          {!hideRates && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Field label="Rate">
+                <div className="relative">
+                  <IndianRupee size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                  <input type="number" min="0" step="0.01" value={form.hourly_rate}
+                    onChange={e => sf('hourly_rate', e.target.value)} className={INPUT} style={{ ...INPUT_S, paddingLeft: 32 }} placeholder="0" />
+                </div>
+              </Field>
+              <Field label="Rate unit">
+                <Select value={form.rate_unit || 'hourly'} onChange={v => sf('rate_unit', v)} options={RATE_UNITS} />
+              </Field>
             </div>
-          </Field>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="Start Date" required>
@@ -326,10 +370,13 @@ export default function TaskFormDrawer({ open, onClose, task = null, defaults = 
                 </button>
               </Field>
               {isProject && (
-                <Field label="Milestone">
+                <Field label="Milestone" required={requireMilestone}>
                   <Select value={form.milestone_id ? String(form.milestone_id) : ''} onChange={v => sf('milestone_id', v ? Number(v) : '')}
-                    placeholder={form.rel_id ? 'No milestone' : 'Pick a project first'}
-                    options={[{ value: '', label: 'No milestone' }, ...milestones.map(m => ({ value: String(m.id), label: m.name, dot: m.color }))]} />
+                    placeholder={form.rel_id ? (requireMilestone ? 'Select a milestone…' : 'No milestone') : 'Pick a project first'}
+                    options={[
+                      ...(requireMilestone ? [] : [{ value: '', label: 'No milestone' }]),
+                      ...milestones.map(m => ({ value: String(m.id), label: m.name, dot: m.color })),
+                    ]} />
                 </Field>
               )}
             </div>
@@ -390,8 +437,11 @@ export default function TaskFormDrawer({ open, onClose, task = null, defaults = 
           </Field>
 
           <Field label="Task Description">
-            <textarea value={form.description || ''} onChange={e => sf('description', e.target.value)} rows={4}
-              className={INPUT} style={{ ...INPUT_S, resize: 'vertical', minHeight: 96 }} placeholder="Add description…" />
+            <style>{DESC_EDITOR_CSS}</style>
+            <div className="task-desc-editor">
+              <ReactQuill theme="snow" modules={RICH_MODULES} formats={RICH_FORMATS}
+                value={form.description || ''} onChange={v => sf('description', v)} placeholder="Add description…" />
+            </div>
           </Field>
 
           {err && (
@@ -402,9 +452,10 @@ export default function TaskFormDrawer({ open, onClose, task = null, defaults = 
 
         {/* Footer */}
         <footer className="flex items-center justify-end gap-2 px-6 py-4 shrink-0" style={{ borderTop: '1px solid var(--border)', background: 'var(--bg-card)' }}>
-          <button type="button" onClick={onClose} className="text-sm font-semibold px-4 py-2.5 rounded-xl"
+          <button type="button" onClick={requestClose} className="text-sm font-semibold px-4 py-2.5 rounded-xl"
             style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>Close</button>
-          <button type="submit" disabled={!form.name.trim() || busy}
+          <button type="submit" disabled={!form.name.trim() || busy || missingMilestone}
+            title={missingMilestone ? 'Choose a milestone for this project task' : undefined}
             className="flex items-center gap-1.5 text-sm font-bold px-5 py-2.5 rounded-xl disabled:opacity-40"
             style={{ background: TASK_ACCENT, color: '#fff' }}>
             <Check size={16} /> {busy ? 'Saving…' : editing ? 'Save changes' : 'Submit'}

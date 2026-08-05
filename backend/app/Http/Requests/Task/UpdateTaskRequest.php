@@ -33,6 +33,7 @@ class UpdateTaskRequest extends FormRequest
             'billable'          => 'nullable|boolean',
             'billed'            => 'nullable|boolean',
             'hourly_rate'       => 'nullable|numeric|min:0',
+            'rate_unit'         => 'nullable|in:hourly,daily,monthly,fixed',
             'is_public'         => 'nullable|boolean',
             'visible_to_client' => 'nullable|boolean',
             'kanban_order'      => 'nullable|integer|min:0',

@@ -36,7 +36,7 @@ return [
         ['key' => 'checklists',        'label' => 'Checklists',        'implemented' => false],
         ['key' => 'forms',             'label' => 'Forms',             'implemented' => false],
         ['key' => 'files',             'label' => 'Files',             'implemented' => true],
-        ['key' => 'vendors',           'label' => 'Vendors',           'implemented' => false],
+        ['key' => 'vendors',           'label' => 'Vendors / TPV',     'implemented' => true],
         ['key' => 'purchase_request',  'label' => 'Purchase request',  'implemented' => false],
         ['key' => 'purchase_order',    'label' => 'Purchase order',    'implemented' => false],
         ['key' => 'purchase_contract', 'label' => 'Purchase contract', 'implemented' => false],
@@ -53,7 +53,7 @@ return [
         ['key' => 'proposals',         'label' => 'Proposals',         'implemented' => false],
         ['key' => 'estimates',         'label' => 'Estimates',         'implemented' => false],
         ['key' => 'invoices',          'label' => 'Invoices',          'implemented' => false],
-        ['key' => 'expenses',          'label' => 'Expenses',          'implemented' => false],
+        ['key' => 'expenses',          'label' => 'Expenses',          'implemented' => true],
         ['key' => 'credit_notes',      'label' => 'Credit Notes',      'implemented' => false],
         ['key' => 'subscriptions',     'label' => 'Subscriptions',     'implemented' => false],
     ],
@@ -78,6 +78,44 @@ return [
         ['key' => 'view_timesheets',          'label' => 'View timesheets'],
         ['key' => 'view_activity_log',        'label' => 'View activity log'],
         ['key' => 'view_team_members',        'label' => 'View team members'],
+    ],
+
+    // Vendor-portal permission toggles — a vendor supplies goods/services to the
+    // project, so their portal is about their own tasks, deliverables, and the
+    // purchase/billing side, NOT the customer's finance overview. Stored in the
+    // project's vendor_permissions bag; honoured by the vendor portal.
+    'vendor_permissions' => [
+        ['key' => 'view_assigned_tasks',   'label' => 'View tasks assigned to them'],
+        ['key' => 'update_task_status',    'label' => 'Update status on their tasks'],
+        ['key' => 'comment_tasks',         'label' => 'Comment on their tasks'],
+        ['key' => 'view_task_attachments', 'label' => 'View task attachments'],
+        ['key' => 'upload_deliverables',   'label' => 'Upload deliverables / attachments'],
+        ['key' => 'view_milestones',       'label' => 'View milestones'],
+        ['key' => 'view_files',            'label' => 'View shared project files'],
+        ['key' => 'upload_files',          'label' => 'Upload files'],
+        ['key' => 'view_purchase_orders',  'label' => 'View purchase orders / requests'],
+        ['key' => 'submit_invoices',       'label' => 'Submit invoices / bills'],
+        ['key' => 'view_payment_status',   'label' => 'View payment & PO status'],
+        ['key' => 'open_discussions',      'label' => 'Open discussions'],
+        ['key' => 'view_meetings',         'label' => 'View meetings'],
+    ],
+
+    // Third-party-vendor permission toggles — a TPV is typically a sub-contractor
+    // with a narrower remit than a vendor: their own work, deliverables and the
+    // scope they need, without the purchase/billing surface. Stored in
+    // tpv_permissions; honoured by the TPV portal.
+    'tpv_permissions' => [
+        ['key' => 'view_assigned_tasks',   'label' => 'View tasks assigned to them'],
+        ['key' => 'update_task_status',    'label' => 'Update status on their tasks'],
+        ['key' => 'comment_tasks',         'label' => 'Comment on their tasks'],
+        ['key' => 'view_task_attachments', 'label' => 'View task attachments'],
+        ['key' => 'upload_deliverables',   'label' => 'Upload deliverables / attachments'],
+        ['key' => 'view_scope',            'label' => 'View project scope / overview'],
+        ['key' => 'view_milestones',       'label' => 'View milestones'],
+        ['key' => 'view_files',            'label' => 'View shared project files'],
+        ['key' => 'upload_files',          'label' => 'Upload files'],
+        ['key' => 'view_meetings',         'label' => 'View meetings'],
+        ['key' => 'open_discussions',      'label' => 'Open discussions'],
     ],
 
     // "Send Contacts Notifications" (A2, required select).

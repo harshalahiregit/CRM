@@ -1,8 +1,8 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckSquare, Plus, Search, Building2, FileSignature, CircleDot } from 'lucide-react'
 import { taskApi, TASK_PRIORITY } from '@/services/taskApi'
-import TaskDetailModal from '@/modules/tasks/components/TaskDetailModal'
 import TaskFormDrawer from '@/modules/tasks/components/TaskFormDrawer'
 
 /**
@@ -21,8 +21,8 @@ const REL_META = {
 
 export default function SalesTasks() {
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const [search, setSearch] = useState('')
-  const [openTaskId, setOpenTaskId] = useState(null)
   const [creating, setCreating] = useState(false)
 
   const { data, isLoading } = useQuery({
@@ -80,7 +80,7 @@ export default function SalesTasks() {
               const Icon = meta.icon
               const prio = TASK_PRIORITY[t.priority] || {}
               return (
-                <tr key={t.id} onClick={() => setOpenTaskId(t.id)}
+                <tr key={t.id} onClick={() => navigate(`/app/tasks/${t.id}`)}
                   className="cursor-pointer transition-colors hover:bg-[rgba(124,58,237,0.05)]" style={{ borderBottom: '1px solid var(--border)' }}>
                   <td className="px-4 py-3 font-semibold" style={{ color: 'var(--text-h)' }}>{t.name}</td>
                   <td className="px-4 py-3">
@@ -105,7 +105,6 @@ export default function SalesTasks() {
         </table>
       </div>
 
-      <TaskDetailModal taskId={openTaskId} open={!!openTaskId} onClose={() => { setOpenTaskId(null); refresh() }} />
       <TaskFormDrawer open={creating} onClose={() => setCreating(false)} defaults={{ rel_type: 'customer' }} onSaved={refresh} />
     </div>
   )

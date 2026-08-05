@@ -27,6 +27,7 @@ class StoreTicketRequest extends FormRequest
             'assigned_to'   => ['nullable', 'integer', TenantRules::assignableUser($tenantId)],
             'customer_id'   => 'nullable|integer|min:1',
             'department_id' => ['nullable', 'integer', TenantRules::department($tenantId)],
+            'service_id'    => ['nullable', 'integer', TenantRules::service($tenantId)],
             'due_date'      => 'nullable|date',
             // Requester identity — used for the acknowledgment email + threaded
             // replies when the ticket is raised on someone's behalf.

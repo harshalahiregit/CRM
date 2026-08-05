@@ -69,6 +69,13 @@ Schedule::command('helpdesk:run-reminders')
     ->withoutOverlapping()
     ->runInBackground();
 
+// Projects: fire due note reminders (in-app bell). Idempotent (reminded flag),
+// so quiet no-op runs cost one indexed query.
+Schedule::command('projects:run-note-reminders')
+    ->everyFiveMinutes()
+    ->withoutOverlapping()
+    ->runInBackground();
+
 // Helpdesk: warn on at-risk / breached SLA clocks.
 // Every fifteen minutes — SLA targets are measured in hours, so a quarter-hour of
 // lag is noise against the deadline, and the alert itself is throttled to once per

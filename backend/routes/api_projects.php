@@ -45,9 +45,20 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('projects')->gro
     // Notes / Activity / Timesheets tabs
     Route::get('/{project}/notes',          [ProjectController::class, 'notes']);
     Route::post('/{project}/notes',         [ProjectController::class, 'storeNote']);
+    Route::put('/{project}/notes/{note}',   [ProjectController::class, 'updateNote']);
     Route::delete('/{project}/notes/{note}', [ProjectController::class, 'destroyNote']);
+    // Note attachments
+    Route::post('/{project}/notes/{note}/attachments',              [ProjectController::class, 'storeNoteAttachment']);
+    Route::get('/{project}/note-attachments/{attachment}/download', [ProjectController::class, 'downloadNoteAttachment']);
+    Route::delete('/{project}/note-attachments/{attachment}',       [ProjectController::class, 'destroyNoteAttachment']);
     Route::get('/{project}/activity',       [ProjectController::class, 'activity']);
     Route::get('/{project}/timesheets',     [ProjectController::class, 'timesheets']);
+
+    // Expenses tab
+    Route::get('/{project}/expenses',              [ProjectController::class, 'expenses']);
+    Route::post('/{project}/expenses',             [ProjectController::class, 'storeExpense']);
+    Route::put('/{project}/expenses/{expense}',    [ProjectController::class, 'updateExpense']);
+    Route::delete('/{project}/expenses/{expense}', [ProjectController::class, 'destroyExpense']);
 
     // Meeting tab (Kickoff meetings)
     Route::get('/{project}/meetings',              [ProjectMeetingController::class, 'index']);

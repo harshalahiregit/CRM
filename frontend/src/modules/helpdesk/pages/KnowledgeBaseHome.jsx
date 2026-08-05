@@ -6,6 +6,7 @@ import {
   BookOpen, CreditCard, Wrench, Rocket, LifeBuoy, Settings2, Users, Zap,
 } from 'lucide-react'
 import { helpdeskApi } from '@/services/helpdeskApi'
+import RaiseTicketModal from '../components/RaiseTicketModal'
 
 /* Professional, theme-aware Knowledge Base home built on the existing KB engine.
    Reading typography via .font-display headings + generous sizes. */
@@ -23,6 +24,7 @@ const readTime = (html) => Math.max(1, Math.round((html || '').replace(/<[^>]*>/
 export default function KnowledgeBaseHome() {
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
+  const [raiseOpen, setRaiseOpen] = useState(false)
 
   const { data: catsRaw = [], isLoading } = useQuery({ queryKey: ['kb-categories'], queryFn: helpdeskApi.kb.categories })
   const { data: artsRaw = [] } = useQuery({ queryKey: ['kb-articles-all'], queryFn: () => helpdeskApi.kb.articles() })
@@ -58,6 +60,11 @@ export default function KnowledgeBaseHome() {
           <p className="mt-3 text-white/80" style={{ fontSize: 17 }}>
             Search our knowledge base or browse topics below.
           </p>
+          <button onClick={() => setRaiseOpen(true)}
+            className="mt-4 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-transform hover:scale-[1.03]"
+            style={{ background: '#fff', color: 'var(--color-support-600)' }}>
+            <LifeBuoy size={15} /> Can't find it? Raise a ticket
+          </button>
 
           {/* Search + live dropdown */}
           <div className="relative mt-7 max-w-xl mx-auto text-left">
@@ -176,6 +183,8 @@ export default function KnowledgeBaseHome() {
           </>
         )}
       </div>
+
+      <RaiseTicketModal open={raiseOpen} onClose={() => setRaiseOpen(false)} source="internal" />
     </div>
   )
 }

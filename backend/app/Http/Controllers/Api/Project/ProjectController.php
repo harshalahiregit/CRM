@@ -49,6 +49,8 @@ class ProjectController extends Controller
             'tabs'                    => config('projects.tabs', []),
             'default_tabs'           => \App\Services\Project\ProjectService::defaultVisibleTabs(),
             'customer_permissions'   => config('projects.customer_permissions', []),
+            'vendor_permissions'     => config('projects.vendor_permissions', []),
+            'tpv_permissions'        => config('projects.tpv_permissions', []),
             'contacts_notification'  => config('projects.contacts_notification', []),
             'billing_types'          => [
                 ['key' => 'fixed',         'label' => 'Fixed Rate'],
@@ -193,10 +195,29 @@ class ProjectController extends Controller
     public function storeNote(Request $request, int $project)
     {
         $this->guardView($request, $project);
-        $data = $request->validate(['title' => 'required|string|max:255', 'content' => 'nullable|string|max:20000']);
+        $data = $request->validate([
+            'title'       => 'required|string|max:255',
+            'content'     => 'nullable|string|max:20000',
+            'assigned_to' => 'nullable|integer|exists:users,id',
+            'remind_at'   => 'nullable|date',
+        ]);
         $note = $this->projects->addNote($project, $data, $request->user()->tenant_id, $request->user()->id);
 
         return $this->success($note, 'Note added', 201);
+    }
+
+    public function updateNote(Request $request, int $project, int $note)
+    {
+        $this->guardView($request, $project);
+        $data = $request->validate([
+            'title'       => 'sometimes|required|string|max:255',
+            'content'     => 'nullable|string|max:20000',
+            'assigned_to' => 'nullable|integer|exists:users,id',
+            'remind_at'   => 'nullable|date',
+        ]);
+        $note = $this->projects->updateNote($note, $project, $data, $request->user()->tenant_id);
+
+        return $this->success($note, 'Note updated');
     }
 
     public function destroyNote(Request $request, int $project, int $note)
@@ -205,6 +226,77 @@ class ProjectController extends Controller
         $this->projects->deleteNote($note, $project, $request->user()->tenant_id);
 
         return $this->success(null, 'Note deleted');
+    }
+
+    public function storeNoteAttachment(Request $request, int $project, int $note)
+    {
+        $this->guardView($request, $project);
+        $request->validate(['file' => 'required|file|max:10240']);
+        $att = $this->projects->addNoteAttachment($note, $project, $request->file('file'), $request->user()->tenant_id, $request->user()->id);
+
+        return $this->success($att, 'Attachment added', 201);
+    }
+
+    public function downloadNoteAttachment(Request $request, int $project, int $attachment)
+    {
+        $this->guardView($request, $project);
+        $att = $this->projects->noteAttachment($attachment, $project, $request->user()->tenant_id);
+
+        return \Illuminate\Support\Facades\Storage::disk('local')->download($att->path, $att->original_name);
+    }
+
+    public function destroyNoteAttachment(Request $request, int $project, int $attachment)
+    {
+        $this->guardView($request, $project);
+        $this->projects->deleteNoteAttachment($attachment, $project, $request->user()->tenant_id);
+
+        return $this->success(null, 'Attachment removed');
+    }
+
+    /* ── Expenses tab ──────────────────────────────────────────── */
+
+    public function expenses(Request $request, int $project)
+    {
+        $this->guardView($request, $project);
+        return $this->success($this->projects->listExpenses($project, $request->user()->tenant_id), 'Expenses retrieved');
+    }
+
+    public function storeExpense(Request $request, int $project)
+    {
+        $this->guardView($request, $project);
+        $data = $request->validate([
+            'title'        => 'required|string|max:255',
+            'category'     => 'nullable|string|max:120',
+            'amount'       => 'required|numeric|min:0',
+            'expense_date' => 'required|date',
+            'note'         => 'nullable|string|max:2000',
+            'billable'     => 'nullable|boolean',
+        ]);
+
+        return $this->success($this->projects->addExpense($project, $data, $request->user()->tenant_id, $request->user()->id), 'Expense added', 201);
+    }
+
+    public function updateExpense(Request $request, int $project, int $expense)
+    {
+        $this->guardView($request, $project);
+        $data = $request->validate([
+            'title'        => 'sometimes|required|string|max:255',
+            'category'     => 'nullable|string|max:120',
+            'amount'       => 'sometimes|required|numeric|min:0',
+            'expense_date' => 'sometimes|required|date',
+            'note'         => 'nullable|string|max:2000',
+            'billable'     => 'nullable|boolean',
+        ]);
+
+        return $this->success($this->projects->updateExpense($expense, $project, $data, $request->user()->tenant_id), 'Expense updated');
+    }
+
+    public function destroyExpense(Request $request, int $project, int $expense)
+    {
+        $this->guardView($request, $project);
+        $this->projects->deleteExpense($expense, $project, $request->user()->tenant_id);
+
+        return $this->success(null, 'Expense deleted');
     }
 
     public function activity(Request $request, int $project)

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Flag, CircleDot, Building2, Plus, Trash2,
-  ChevronUp, ChevronDown, Check, X, Settings, Globe, BellRing
+  ChevronUp, ChevronDown, Check, X, Settings, Globe, BellRing, Wrench
 } from 'lucide-react'
 import { helpdeskApi } from '@/services/helpdeskApi'
 import Select from '../components/ui/Select'
@@ -24,7 +24,7 @@ export default function SupportSettings() {
     )
   }
 
-  const { priorities = [], statuses = [], departments = [], settings = {} } = data || {}
+  const { priorities = [], statuses = [], departments = [], services = [], settings = {} } = data || {}
 
   return (
     <div className="max-w-4xl space-y-5 animate-[tiltIn_0.35s_ease_forwards]">
@@ -77,6 +77,17 @@ export default function SupportSettings() {
         accent="#a78bfa"
         items={departments}
         withDescription
+        onChange={invalidate}
+      />
+
+      <ListManager
+        type="services"
+        title="Services"
+        description="What the ticket is about (Website, Software…) — pick one per ticket"
+        singular="service"
+        icon={Wrench}
+        accent="#10b981"
+        items={services}
         onChange={invalidate}
       />
 

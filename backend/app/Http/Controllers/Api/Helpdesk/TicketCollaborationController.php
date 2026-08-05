@@ -87,4 +87,12 @@ class TicketCollaborationController extends Controller
 
         return $this->success(null, 'Link removed');
     }
+
+    /** Auto-listed tickets from the same requester (email/customer match). */
+    public function sameRequester(Request $request, int $ticket)
+    {
+        $this->guardView($request, $ticket);
+
+        return $this->success($this->helpdesk->sameRequesterTickets($ticket, $request->user()->tenant_id), 'Same-requester tickets retrieved');
+    }
 }
