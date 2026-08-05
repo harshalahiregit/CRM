@@ -307,8 +307,12 @@ function VendorModal({ form, cfg, onClose, onDone }) {
               access window, so it must be an explicit choice — it used to be
               hardcoded from module config and the admin could never set it. */}
           <Field label="Vendor Type *">
+            {/* The empty placeholder is load-bearing. vendor_type starts as '',
+                and a <select> whose value matches no <option> renders the FIRST
+                one — so without this the field showed "Permanent" while holding
+                '', and the required check rejected a form that looked filled in. */}
             <SelectInput value={f.vendor_type} onChange={set('vendor_type')} pairs
-              options={[['standard', 'Permanent'], ['temporary', 'Temporary']]} />
+              options={[['', '— Select vendor type —'], ['standard', 'Permanent'], ['temporary', 'Temporary']]} />
           </Field>
           <Field label="Status"><SelectInput value={f.status} onChange={set('status')} pairs options={[['Active', 'Active'], ['Inactive', 'Inactive']]} /></Field>
         </div>

@@ -21,9 +21,20 @@ class KickoffAttendee extends Model
 
     protected $table = 'kickoff_attendees';
 
+    /** Attendance states. NULL means nobody has marked this attendee yet. */
+    public const PRESENT = 'Present';
+    public const LATE    = 'Late';
+    public const ABSENT  = 'Absent';
+
+    public const STATUSES = [self::PRESENT, self::LATE, self::ABSENT];
+
+    /** States that count as having turned up — the boolean projection. */
+    public const ATTENDING = [self::PRESENT, self::LATE];
+
     protected $fillable = [
         'tenant_id','kickoff_meeting_id','vendor_contact_id','user_id',
         'name','email','organisation','role','attended',
+        'attendance_status','remark',
     ];
 
     protected $casts = [

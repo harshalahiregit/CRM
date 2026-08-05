@@ -5,6 +5,7 @@ namespace App\Services\Shared;
 use App\Exceptions\BusinessException;
 use App\Models\Shared\KickoffAttendee;
 use App\Models\Shared\KickoffMeeting;
+use App\Models\Shared\KickoffMomItem;
 use App\Models\Tenant;
 use App\Models\Tpv\TpvOnboarding;
 use App\Models\User;
@@ -68,7 +69,11 @@ class KickoffMeetingService
             'scheduled_at'     => $data['scheduled_at'] ?? null,
             'duration_minutes' => $data['duration_minutes'] ?? null,
             'mode'             => $data['mode'] ?? null,
-            'location'         => $data['location'] ?? null,
+            'planned_date'     => $data['planned_date'] ?? null,
+            'city'             => $data['city'] ?? null,
+            'venue'            => $data['venue'] ?? $data['location_detail'] ?? null,
+            'address'          => $data['address'] ?? null,
+            'location'         => $this->composeLocation($data),
         ]);
 
         // Convenience back-pointer: when the subject is an onboarding, fill its
@@ -77,6 +82,10 @@ class KickoffMeetingService
 
         if (! empty($data['attendees'])) {
             $this->replaceAttendees($meeting, $data['attendees'], $actor->tenant_id);
+        }
+
+        if (array_key_exists('mom_items', $data)) {
+            $this->replaceMomItems($meeting, $data['mom_items'] ?? [], $actor->tenant_id);
         }
 
         $meeting->recordAudit('created', $actor, "Kickoff '{$meeting->title}' scheduled", [
@@ -103,11 +112,21 @@ class KickoffMeetingService
             'scheduled_at'     => $data['scheduled_at'] ?? null,
             'duration_minutes' => $data['duration_minutes'] ?? null,
             'mode'             => $data['mode'] ?? null,
-            'location'         => $data['location'] ?? null,
+            'planned_date'     => $data['planned_date'] ?? null,
+            'city'             => $data['city'] ?? null,
+            'venue'            => $data['venue'] ?? $data['location_detail'] ?? null,
+            'address'          => $data['address'] ?? null,
+            // Recomposed from whichever parts were sent, falling back to what is
+            // already stored, so editing only the city keeps the venue.
+            'location'         => $this->composeLocation($data, $meeting),
         ], fn ($v) => $v !== null));
 
         if (array_key_exists('attendees', $data)) {
             $this->replaceAttendees($meeting, $data['attendees'] ?? [], $actor->tenant_id);
+        }
+
+        if (array_key_exists('mom_items', $data)) {
+            $this->replaceMomItems($meeting, $data['mom_items'] ?? [], $actor->tenant_id);
         }
 
         $meeting->recordAudit('updated', $actor, 'Meeting details updated');
@@ -147,6 +166,14 @@ class KickoffMeetingService
         }
 
         if ($to === Status::COMPLETED) {
+            // A kickoff cannot have happened before it was scheduled to happen.
+            // Guarded here rather than only in the UI so the API is the boundary.
+            if (! $meeting->can_complete) {
+                throw new BusinessException(
+                    'This meeting is scheduled for '.$meeting->scheduled_at->format('d M Y H:i')
+                    .' — it cannot be completed until then.'
+                );
+            }
             $changes['completed_at'] = now();
             if (array_key_exists('minutes', $data)) {
                 $changes['minutes'] = $data['minutes'];
@@ -199,11 +226,21 @@ class KickoffMeetingService
             throw new BusinessException('This meeting has already been acknowledged.');
         }
 
-        $meeting->update(['ack_token' => Str::random(48)]);
+        // The token is unchanged — the existing public ack flow keeps working.
+        // The window is recorded alongside it so an expired acknowledgement is
+        // distinguishable from one that was never asked for.
+        $sentAt = now();
+        $meeting->update([
+            'ack_token'                => Str::random(48),
+            'acknowledgement_sent_at'  => $sentAt,
+            'acknowledgement_deadline' => $sentAt->copy()->addHours(KickoffMeeting::ACK_WINDOW_HOURS),
+            'acknowledgement_status'   => KickoffMeeting::ACK_PENDING,
+        ]);
 
         $this->sendMomNotifications($meeting);
 
-        $meeting->recordAudit('mom_published', $actor, 'Minutes sent to the vendor for acknowledgement');
+        $meeting->recordAudit('mom_published', $actor, 'Minutes sent to the vendor for acknowledgement'
+            .' (valid '.KickoffMeeting::ACK_WINDOW_HOURS.'h)');
 
         return $this->find($meeting->id, $actor->tenant_id);
     }
@@ -267,16 +304,34 @@ class KickoffMeetingService
         if ($meeting->acknowledged_at) {
             throw new BusinessException('These minutes have already been acknowledged.');
         }
+
+        // The window only binds meetings published after it existed; one with no
+        // deadline was never put on a clock, so it stays open.
+        if ($meeting->acknowledgement_expired) {
+            $meeting->update(['acknowledgement_status' => KickoffMeeting::ACK_EXPIRED]);
+
+            throw new BusinessException(
+                'This acknowledgement link expired on '
+                .$meeting->acknowledgement_deadline->format('d M Y H:i')
+                .'. Ask the coordinator to re-send the minutes.'
+            );
+        }
+
         if (trim((string) ($data['name'] ?? '')) === '') {
             throw new BusinessException('Please enter your name to acknowledge the minutes.');
         }
 
+        $comment = trim((string) ($data['comment'] ?? ''));
+
         $meeting->update([
-            'acknowledged_at'      => now(),
-            'acknowledged_by_name' => $data['name'],
-            'acknowledged_ip'      => $meta['ip'] ?? null,
+            'acknowledged_at'         => now(),
+            'acknowledged_by_name'    => $data['name'],
+            'acknowledged_ip'         => $meta['ip'] ?? null,
+            'acknowledgement_status'  => KickoffMeeting::ACK_ACKNOWLEDGED,
+            // Optional — acknowledging without a comment is the normal case.
+            'acknowledgement_comment' => $comment !== '' ? $comment : null,
             // Burn the token — an acknowledgement link is single-use.
-            'ack_token'            => null,
+            'ack_token'               => null,
         ]);
 
         $meeting->recordAudit('acknowledged', null, "Minutes acknowledged by {$data['name']}", [
@@ -300,9 +355,19 @@ class KickoffMeetingService
      * distinct from rebuilding the roster. Only rows that belong to this meeting
      * are touched; unknown ids are ignored rather than erroring the whole call.
      */
+    /**
+     * Mark attendance.
+     *
+     * Accepts either the original boolean `attended` or the richer
+     * `attendance_status` (Present/Late/Absent). Whichever arrives, BOTH columns
+     * are written and kept consistent — `attended` is still what the PDF, the
+     * portal and existing API consumers read, so it must never drift from the
+     * status. Late counts as having turned up.
+     */
     public function markAttendance(KickoffMeeting $meeting, array $rows, User $actor): KickoffMeeting
     {
         $present = 0;
+        $late    = 0;
         $absent  = 0;
 
         foreach ($rows as $row) {
@@ -310,14 +375,52 @@ class KickoffMeetingService
             if (! $attendee) {
                 continue;
             }
-            $attended = ! empty($row['attended']);
-            $attendee->update(['attended' => $attended]);
-            $attended ? $present++ : $absent++;
+
+            $changes = [];
+
+            if (array_key_exists('attendance_status', $row)) {
+                $status = $row['attendance_status'];
+
+                if ($status === null || $status === '') {
+                    // Explicitly un-marking: back to "not marked yet".
+                    $changes['attendance_status'] = null;
+                    $changes['attended']          = false;
+                } else {
+                    if (! in_array($status, KickoffAttendee::STATUSES, true)) {
+                        throw new BusinessException('Unknown attendance status: '.$status);
+                    }
+                    $changes['attendance_status'] = $status;
+                    $changes['attended']          = in_array($status, KickoffAttendee::ATTENDING, true);
+                }
+            } elseif (array_key_exists('attended', $row)) {
+                // Legacy boolean caller — derive a status so the two agree.
+                $attended                     = ! empty($row['attended']);
+                $changes['attended']          = $attended;
+                $changes['attendance_status'] = $attended ? KickoffAttendee::PRESENT : KickoffAttendee::ABSENT;
+            }
+
+            if (array_key_exists('remark', $row)) {
+                $changes['remark'] = $row['remark'];
+            }
+
+            if (! $changes) {
+                continue;
+            }
+
+            $attendee->update($changes);
+
+            match ($attendee->fresh()->attendance_status) {
+                KickoffAttendee::PRESENT => $present++,
+                KickoffAttendee::LATE    => $late++,
+                KickoffAttendee::ABSENT  => $absent++,
+                default           => null,
+            };
         }
 
-        $meeting->recordAudit('attendance_marked', $actor, "Attendance updated: {$present} present, {$absent} absent");
+        $meeting->recordAudit('attendance_marked', $actor, "Attendance updated: {$present} present, {$late} late, {$absent} absent");
         Log::channel('tpv')->info('Kickoff attendance marked', [
-            'meeting_id' => $meeting->id, 'actor_id' => $actor->id, 'present' => $present, 'absent' => $absent,
+            'meeting_id' => $meeting->id, 'actor_id' => $actor->id,
+            'present' => $present, 'late' => $late, 'absent' => $absent,
         ]);
 
         return $this->find($meeting->id, $actor->tenant_id);
@@ -420,6 +523,101 @@ class KickoffMeetingService
      * against the master in the same tenant, and its canonical name/email are
      * copied so the registry stays truthful even if typed differently.
      */
+    /**
+     * Build the single displayable `location` string from the structured parts.
+     *
+     * Every existing consumer — the MOM PDF, the reminder email, the portal —
+     * reads `location`. Rather than teach each of them about three new columns,
+     * the parts are composed into it on write, so old readers keep working and
+     * new ones can use the structured fields.
+     *
+     * An explicit `location` in the payload still wins: a caller that only knows
+     * about the old field (or a meeting held somewhere that isn't a city/venue)
+     * must not have its value overwritten by an empty composition.
+     */
+    private function composeLocation(array $data, ?KickoffMeeting $existing = null): ?string
+    {
+        if (array_key_exists('location', $data) && trim((string) $data['location']) !== '') {
+            return $data['location'];
+        }
+
+        // `location_detail` is what the existing Kickoff form calls the venue.
+        if (! array_key_exists('venue', $data) && array_key_exists('location_detail', $data)) {
+            $data['venue'] = $data['location_detail'];
+        }
+
+        $parts = [];
+        foreach (['venue', 'address', 'city'] as $part) {
+            $value = array_key_exists($part, $data) ? $data[$part] : $existing?->{$part};
+            $value = trim((string) $value);
+            if ($value !== '') {
+                $parts[] = $value;
+            }
+        }
+
+        // Nothing structured supplied — leave whatever is already there alone.
+        return $parts ? implode(', ', $parts) : ($data['location'] ?? null);
+    }
+
+    /**
+     * Replace the meeting's itemised minutes.
+     *
+     * Wholesale replace rather than diff: the form posts the full list every
+     * time, an item has no identity outside its meeting, and reconciling by
+     * index would silently re-point a responsible person when a row is deleted.
+     *
+     * responsible_attendee_id is validated against THIS meeting's attendees, so
+     * an item cannot be assigned to somebody who was never in the room — or to
+     * an attendee belonging to another tenant's meeting.
+     */
+    private function replaceMomItems(KickoffMeeting $meeting, array $items, int $tenantId): void
+    {
+        $meeting->momItems()->delete();
+
+        $validAttendeeIds = $meeting->attendees()->pluck('id')->all();
+        $order            = 0;
+
+        foreach ($items as $item) {
+            $description = trim((string) ($item['description'] ?? ''));
+
+            // An item with no description is an empty row the user left behind.
+            if ($description === '') {
+                continue;
+            }
+
+            $responsible = $item['responsible_attendee_id'] ?? null;
+            if ($responsible !== null && ! in_array((int) $responsible, $validAttendeeIds, true)) {
+                $responsible = null;
+            }
+
+            // The existing form posts `responsible` as a comma-separated list of
+            // typed names. Where a name matches an attendee we resolve it to the
+            // link; anything left over is kept verbatim rather than discarded.
+            $names = trim((string) ($item['responsible'] ?? $item['responsible_names'] ?? ''));
+
+            if ($responsible === null && $names !== '') {
+                $first = trim(explode(',', $names)[0]);
+                $match = $meeting->attendees->first(
+                    fn ($a) => strcasecmp(trim((string) $a->name), $first) === 0
+                );
+                $responsible = $match?->id;
+            }
+
+            KickoffMomItem::create([
+                'tenant_id'               => $tenantId,
+                'kickoff_meeting_id'      => $meeting->id,
+                'description'             => $description,
+                'responsible_attendee_id' => $responsible,
+                'responsible_names'       => $names !== '' ? $names : null,
+                // `remarks` is what the existing form sends.
+                'remark'                  => $item['remark'] ?? $item['remarks'] ?? null,
+                'notes'                   => $item['notes'] ?? null,
+                'target_date'             => $item['target_date'] ?? null,
+                'sort_order'              => $order++,
+            ]);
+        }
+    }
+
     private function replaceAttendees(KickoffMeeting $meeting, array $attendees, int $tenantId): void
     {
         $meeting->attendees()->delete();

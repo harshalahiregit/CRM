@@ -58,7 +58,7 @@ export const portalApi = {
     submit:          (id, data={}) => api.post(`/portal/onboarding/${id}/submit`, data).then(r => r.data),
     // Step 1 — Kickoff PDF
     kickoffPdf:      (id)          => api.get(`/portal/onboarding/${id}/kickoff`, { responseType: 'blob' }).then(r => r.data),
-    acceptKickoff:   (id)          => api.post(`/portal/onboarding/${id}/kickoff/accept`).then(r => r.data),
+    acceptKickoff:   (id, comment) => api.post(`/portal/onboarding/${id}/kickoff/accept`, comment ? { comment } : {}).then(r => r.data),
     logKickoffEvent: (id, event)   => api.post(`/portal/onboarding/${id}/kickoff/log`, { event }).then(r => r.data),
     // Admin-only — vendors cannot create, approve or delete onboardings
     create:          ()   => Promise.reject(new Error('Not available in vendor portal')),

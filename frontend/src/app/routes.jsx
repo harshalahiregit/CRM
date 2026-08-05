@@ -546,6 +546,10 @@ export default function AppRoutes() {
           <Route path="view/:id" element={<S><TpvVendorDetail /></S>} />
           <Route path="kickoff" element={<S><KickoffMeetings /></S>} />
           <Route path="kickoff/new" element={<S><KickoffMeetingCreate /></S>} />
+          {/* Edit reuses the CREATE page rather than a second form — it is the
+              only screen with participants, MOM items, mode and venue. Declared
+              before :id so "edit" is never captured as a meeting id. */}
+          <Route path="kickoff/:id/edit" element={<S><KickoffMeetingCreate /></S>} />
           <Route path="kickoff/:id" element={<S><KickoffMeetingDetail /></S>} />
           <Route path="onboarding" element={<S><TpvOnboardings /></S>} />
           <Route path="onboarding/:id" element={<S><TpvOnboardingWizard /></S>} />

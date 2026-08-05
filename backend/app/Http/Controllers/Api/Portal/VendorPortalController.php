@@ -208,11 +208,15 @@ class VendorPortalController extends Controller
     {
         $this->assertOwned($request, $onboarding, 'Onboarding');
 
-        $ua = UserAgentInfo::parse($request->userAgent());
+        // Optional — every existing caller posts an empty body, and must keep
+        // working unchanged.
+        $data = $request->validate(['comment' => 'nullable|string|max:5000']);
+        $ua   = UserAgentInfo::parse($request->userAgent());
 
         return response()->json(
             $this->onboardingService->acknowledgeKickoff($onboarding, $request->user(), [
                 'ip' => $request->ip(), 'browser' => $ua['browser'], 'device' => $ua['device'],
+                'comment' => $data['comment'] ?? null,
             ])
         );
     }

@@ -56,7 +56,11 @@ class PublicKickoffController extends Controller
     public function acknowledge(Request $request, string $token)
     {
         $meeting = $this->kickoffService->resolveByToken($token);
-        $data    = $request->validate(['name' => 'required|string|max:120']);
+        $data    = $request->validate([
+            'name'    => 'required|string|max:120',
+            // Optional response, same field the portal flow stores.
+            'comment' => 'nullable|string|max:5000',
+        ]);
 
         $this->kickoffService->acknowledge($meeting, $data, ['ip' => $request->ip()]);
 
