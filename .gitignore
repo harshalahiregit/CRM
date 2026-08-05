@@ -10,3 +10,10 @@ frontend/vite.config.js.timestamp-*.mjs
 # Snapshots produced by `git archive` — derivable from any commit, so keeping one
 # in history would only bloat the repo with something git can already rebuild.
 *.zip
+
+# Database dumps. A production dump of this app carries salaries, PAN/Aadhaar,
+# bank details and candidate resumes — it must never reach a shared remote, and
+# once committed it cannot be removed without rewriting history.
+*.sql
+*.sql.gz
+*.dump
