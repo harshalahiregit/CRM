@@ -172,6 +172,43 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
   // costs nothing here and there's no per-level fetching to orchestrate.
   const { data: subtree } = useQuery({ queryKey: ['task-tree', id], queryFn: () => taskApi.tree(id) })
 
+  // ── Vendor link ──────────────────────────────────────────────────────────
+  // These three MUST sit above the isLoading/isError returns below. They used to
+  // live further down, next to the markup that uses them, which meant the first
+  // render (task still loading) bailed out before reaching them and the next one
+  // ran three extra hooks — "Rendered more hooks than during the previous
+  // render". It only reproduced on a cold load: with the task already in the
+  // React Query cache, isLoading is false on the very first render and the count
+  // never changes, which is why a refresh appeared to fix it.
+  //
+  // None of them depend on `task`, so hoisting them changes no behaviour.
+  // `isVendorLinked` DOES read task.rel_type, so it stays below the guard.
+  //
+  // 'vendor-link', not 'vendor': master added an ASSIGN-a-vendor picker on the
+  // same key while this branch added the LINK-a-vendor one. Sharing a key opened
+  // both modals at once — they are different actions (assignee pivot vs the
+  // task's rel_type/rel_id), so they get different keys.
+  const vendorPickerOpen = picker === 'vendor-link'
+  // Lists load only while the picker is open, so opening a task never fetches
+  // two vendor rosters.
+  const { data: pvList = [], isLoading: pvLoading } = useQuery({
+    queryKey: ['task-link-purchase-vendors'], queryFn: () => purchaseApi.vendors.list(), enabled: vendorPickerOpen,
+  })
+  const { data: tvList = [], isLoading: tvLoading } = useQuery({
+    queryKey: ['task-link-tpv-vendors'], queryFn: () => tpvApi.vendors.list(), enabled: vendorPickerOpen,
+  })
+  const vendorPickerItems = useMemo(() => {
+    const rows = (x) => (Array.isArray(x) ? x : x?.data ?? [])
+    // SearchPicker keys on `id`, but the two modules have overlapping ids — a
+    // prefixed key keeps them distinct while realId/relType carry what to save.
+    return [
+      ...rows(tvList).map(v => ({ id: `tpv-${v.id}`, realId: v.id, relType: 'tpv_vendor',
+        label: v.company_name || v.name, sublabel: `TPV · ${v.vendor_code || v.status || ''}`.trim() })),
+      ...rows(pvList).map(v => ({ id: `pur-${v.id}`, realId: v.id, relType: 'purchase_vendor',
+        label: v.company_name || v.name, sublabel: `Purchase · ${v.purchase_vendor_code || v.status || ''}`.trim() })),
+    ]
+  }, [tvList, pvList])
+
   if (isLoading) return <div className="rounded-2xl animate-pulse" style={{ height: 200, background: 'var(--bg-card)' }} />
   if (isError) {
     return (
@@ -214,28 +251,6 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
   // A task relates to ONE vendor via rel_type/rel_id. Lists load only while the
   // picker is open so opening a task never fetches two vendor rosters.
   const isVendorLinked = ['tpv_vendor', 'purchase_vendor'].includes(task.rel_type) && !!task.rel_id
-  // 'vendor-link', not 'vendor': master added an ASSIGN-a-vendor picker on the
-  // same key while this branch added the LINK-a-vendor one. Sharing a key opened
-  // both modals at once — they are different actions (assignee pivot vs the
-  // task's rel_type/rel_id), so they get different keys.
-  const vendorPickerOpen = picker === 'vendor-link'
-  const { data: pvList = [], isLoading: pvLoading } = useQuery({
-    queryKey: ['task-link-purchase-vendors'], queryFn: () => purchaseApi.vendors.list(), enabled: vendorPickerOpen,
-  })
-  const { data: tvList = [], isLoading: tvLoading } = useQuery({
-    queryKey: ['task-link-tpv-vendors'], queryFn: () => tpvApi.vendors.list(), enabled: vendorPickerOpen,
-  })
-  const vendorPickerItems = useMemo(() => {
-    const rows = (x) => (Array.isArray(x) ? x : x?.data ?? [])
-    // SearchPicker keys on `id`, but the two modules have overlapping ids — a
-    // prefixed key keeps them distinct while realId/relType carry what to save.
-    return [
-      ...rows(tvList).map(v => ({ id: `tpv-${v.id}`, realId: v.id, relType: 'tpv_vendor',
-        label: v.company_name || v.name, sublabel: `TPV · ${v.vendor_code || v.status || ''}`.trim() })),
-      ...rows(pvList).map(v => ({ id: `pur-${v.id}`, realId: v.id, relType: 'purchase_vendor',
-        label: v.company_name || v.name, sublabel: `Purchase · ${v.purchase_vendor_code || v.status || ''}`.trim() })),
-    ]
-  }, [tvList, pvList])
   const followerIds = followers.map(f => f.user_id)
 
   const submitComment = () => {
