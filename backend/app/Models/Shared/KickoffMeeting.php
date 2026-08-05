@@ -28,18 +28,38 @@ class KickoffMeeting extends Model
         'scheduled_at','duration_minutes','mode','location',
         'original_scheduled_at','delay_reason',
         'mom_path','minutes','completed_at',
+        // Structured venue. `location` above stays the single displayable string
+        // every existing consumer reads; these are the parts it is built from.
+        'city','venue','address',
+        // The date originally promised, independent of any Delayed transition.
+        'planned_date',
         'ack_token','acknowledged_at','acknowledged_by_name','acknowledged_ip',
+        // 48-hour acknowledgement window (see KickoffMeetingService::publishForAck).
+        'acknowledgement_sent_at','acknowledgement_deadline','acknowledgement_status',
+        // The vendor's free-text response captured at acknowledgement.
+        'acknowledgement_comment',
         // Online meeting fields (nullable — only set when mode = 'online')
         'meeting_platform','meeting_link','meeting_id','meeting_passcode','meeting_host_link',
     ];
 
     protected $casts = [
-        'scheduled_at'          => 'datetime',
-        'original_scheduled_at' => 'datetime',
-        'completed_at'          => 'datetime',
-        'acknowledged_at'       => 'datetime',
-        'duration_minutes'      => 'integer',
+        'scheduled_at'             => 'datetime',
+        'original_scheduled_at'    => 'datetime',
+        'completed_at'             => 'datetime',
+        'acknowledged_at'          => 'datetime',
+        'duration_minutes'         => 'integer',
+        'planned_date'             => 'date',
+        'acknowledgement_sent_at'  => 'datetime',
+        'acknowledgement_deadline' => 'datetime',
     ];
+
+    /** Acknowledgement window states. NULL = never sent for acknowledgement. */
+    public const ACK_PENDING      = 'pending';
+    public const ACK_ACKNOWLEDGED = 'acknowledged';
+    public const ACK_EXPIRED      = 'expired';
+
+    /** How long a vendor has to acknowledge published minutes. */
+    public const ACK_WINDOW_HOURS = 48;
 
     /**
      * The ack link is a bearer credential — possession lets a vendor acknowledge.
@@ -48,7 +68,10 @@ class KickoffMeeting extends Model
      */
     protected $hidden = ['ack_token'];
 
-    protected $appends = ['status_label', 'is_acknowledged', 'subject'];
+    protected $appends = [
+        'status_label', 'is_acknowledged', 'subject',
+        'acknowledgement_open', 'acknowledgement_expired', 'can_complete',
+    ];
 
     public function creator()
     {
@@ -64,6 +87,53 @@ class KickoffMeeting extends Model
     public function attendees()
     {
         return $this->hasMany(KickoffAttendee::class, 'kickoff_meeting_id');
+    }
+
+    /** Itemised minutes, in the order they were captured. */
+    public function momItems()
+    {
+        return $this->hasMany(KickoffMomItem::class, 'kickoff_meeting_id')
+            ->orderBy('sort_order')->orderBy('id');
+    }
+
+    /**
+     * Whether the acknowledgement window is still open.
+     *
+     * A meeting published before this window existed has no deadline; those stay
+     * open indefinitely rather than being retroactively expired, because nobody
+     * told that vendor they were on a clock.
+     */
+    public function getAcknowledgementOpenAttribute(): bool
+    {
+        if ($this->acknowledged_at !== null) {
+            return false;
+        }
+        if ($this->acknowledgement_sent_at === null) {
+            return false;
+        }
+
+        return $this->acknowledgement_deadline === null
+            || $this->acknowledgement_deadline->isFuture();
+    }
+
+    /** True once the window has shut without an acknowledgement. */
+    public function getAcknowledgementExpiredAttribute(): bool
+    {
+        return $this->acknowledged_at === null
+            && $this->acknowledgement_deadline !== null
+            && $this->acknowledgement_deadline->isPast();
+    }
+
+    /**
+     * Whether the meeting may be marked Completed yet.
+     *
+     * The toggle must not be available before the meeting has happened —
+     * completing a kickoff that is still in the future is a data-entry mistake,
+     * not a workflow. A meeting with no scheduled_at has nothing to wait for.
+     */
+    public function getCanCompleteAttribute(): bool
+    {
+        return $this->scheduled_at === null || $this->scheduled_at->isPast();
     }
 
     public function getStatusLabelAttribute(): string

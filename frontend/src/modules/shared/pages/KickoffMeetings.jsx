@@ -5,11 +5,10 @@ import {
   Users, AlertTriangle, ClipboardCheck, Pencil, BellRing, Eye, Download, Loader2, Mail, MessageCircle, Smartphone,
 } from 'lucide-react'
 import { kickoffApi } from '@/services/kickoffApi'
-import { tpvApi } from '@/services/tpvApi'
 import {
-  KO_STATUS, koStatusCfg, KO_MODES, koModeLabel, fmtDate, fmtDateTime,
+  KO_STATUS, koStatusCfg, koModeLabel, fmtDate, fmtDateTime,
 } from '../kickoffConstants'
-import { KIT3D_STYLE, Overlay, ModalFooter, Field, TextInput, SelectInput } from '@/components/ui/kit3d'
+import { KIT3D_STYLE, Overlay, ModalFooter } from '@/components/ui/kit3d'
 
 /**
  * Kickoff meeting registry — the shared scheduling engine's list view.
@@ -28,7 +27,6 @@ export default function KickoffMeetings() {
   const [pdfBusy, setPdfBusy] = useState(null)
 
   // Row-action modal targets — showNew removed: create navigates to full page
-  const [editFor, setEditFor]         = useState(null)
   const [attendanceFor, setAttFor]    = useState(null)
   const [reminderFor, setRemindFor]   = useState(null)
 
@@ -149,23 +147,35 @@ export default function KickoffMeetings() {
                       </td>
                       <td style={td}><Chip icon={Users}>{m.attendees_count ?? 0}</Chip></td>
                       <td style={td}>{koModeLabel(m.mode)}</td>
-                      <td style={td}>{fmtDateTime(m.scheduled_at)}</td>
+                      {/* Planned Date is the date originally promised — distinct
+                          from the meeting datetime, which has its own column. */}
+                      <td style={td}>{m.planned_date ? fmtDate(m.planned_date) : '—'}</td>
                       <td style={td}><YesNo yes={!!m.mom_path} /></td>
                       <td style={td}><span style={{ padding: '3px 10px', borderRadius: 999, background: cfg.bg, color: cfg.color, fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap' }}>{cfg.label}</span></td>
                       <td style={td}>
+                        {/* Three states now, not two: an expired 48h window is
+                            not the same as one still waiting for a reply. */}
                         {m.is_acknowledged
                           ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#10b981', fontWeight: 700 }}><CheckCircle2 size={13} /> Acknowledged</span>
-                          : <span style={{ color: 'var(--text-muted)' }}>Pending</span>}
+                          : m.acknowledgement_expired
+                            ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#ef4444', fontWeight: 700 }}><XCircle size={13} /> Expired</span>
+                            : m.acknowledgement_sent_at
+                              ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#f59e0b', fontWeight: 700 }}><Clock size={13} /> Awaiting</span>
+                              : <span style={{ color: 'var(--text-muted)' }}>Not sent</span>}
                       </td>
                       <td style={td}>{m.acknowledged_by_name || '—'}</td>
                       <td style={td}><Attn present={m.attended_count ?? 0} total={m.attendees_count ?? 0} /></td>
-                      <td style={td}>{m.completed_at ? fmtDate(m.completed_at) : '—'}</td>
+                      {/* Meeting Date = when it is/was held. */}
+                      <td style={td}>{m.scheduled_at ? fmtDateTime(m.scheduled_at) : '—'}</td>
                       <td style={td}>{fmtDate(m.created_at)}</td>
                       {/* Fixed action toolbar — not a data column */}
                       <td style={{ ...td, textAlign: 'right', position: 'sticky', right: 0, background: 'var(--bg-card)' }} onClick={e => e.stopPropagation()}>
                         <div style={{ display: 'inline-flex', gap: 4 }}>
                           <ActionBtn title="Attendance" icon={ClipboardCheck} color="#0ea5e9" onClick={() => setAttFor(m.id)} />
-                          <ActionBtn title="Edit" icon={Pencil} color="#a78bfa" onClick={() => setEditFor(m)} />
+                          {/* Opens the full create/edit form — participants, MOM
+                              items, mode and venue. The old inline modal only
+                              carried a handful of fields. */}
+                          <ActionBtn title="Edit" icon={Pencil} color="#a78bfa" onClick={() => navigate(`/app/tpv/kickoff/${m.id}/edit`)} />
                           <ActionBtn title="Reminder" icon={BellRing} color="#f59e0b" onClick={() => setRemindFor(m)} />
                           <ActionBtn title="View PDF" icon={busyView ? Loader2 : Eye} color="#10b981" spin={busyView} onClick={() => handlePdf(m, false)} />
                           <ActionBtn title="Download PDF" icon={busyDl ? Loader2 : Download} color="#7C3AED" spin={busyDl} onClick={() => handlePdf(m, true)} />
@@ -180,7 +190,6 @@ export default function KickoffMeetings() {
         </div>
       )}
 
-      {editFor && <MeetingModal meeting={editFor} onClose={() => setEditFor(null)} onDone={() => { setEditFor(null); load() }} />}
       {attendanceFor && <AttendanceModal id={attendanceFor} onClose={() => setAttFor(null)} onDone={() => { setAttFor(null); load() }} />}
       {reminderFor && <ReminderModal m={reminderFor} onClose={() => setRemindFor(null)} />}
     </div>
@@ -246,96 +255,6 @@ function EmptyState({ onNew, filter }) {
   )
 }
 
-/* ── Schedule / Edit modal ──────────────────────────────────────────────────── */
-function MeetingModal({ meeting, onClose, onDone }) {
-  const editing = !!meeting
-  const [vendors, setVendors] = useState([])
-  const [form, setForm] = useState(() => ({
-    subject_id: meeting?.subject?.id || '',
-    title: meeting?.title || '',
-    scheduled_at: toLocalInput(meeting?.scheduled_at),
-    duration_minutes: meeting?.duration_minutes || 60,
-    mode: meeting?.mode || 'onsite',
-    location: meeting?.location || '',
-    agenda: meeting?.agenda || '',
-  }))
-  const [saving, setSaving] = useState(false)
-  const [err, setErr] = useState(null)
-
-  useEffect(() => { if (!editing) tpvApi.vendors.list().then(r => setVendors(r?.data ?? r)).catch(() => {}) }, [editing])
-
-  const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }))
-
-  const save = async () => {
-    setSaving(true); setErr(null)
-    try {
-      if (editing) {
-        const payload = {
-          title: form.title || undefined,
-          scheduled_at: form.scheduled_at || undefined,
-          duration_minutes: Number(form.duration_minutes) || undefined,
-          mode: form.mode, location: form.location, agenda: form.agenda,
-        }
-        const updated = await kickoffApi.update(meeting.id, payload)
-        onDone(updated?.data ?? updated)
-      } else {
-        const payload = {
-          ...form,
-          subject_type: form.subject_id ? 'vendor' : undefined,
-          subject_id: form.subject_id || undefined,
-          duration_minutes: Number(form.duration_minutes) || undefined,
-        }
-        const created = await kickoffApi.schedule(payload)
-        onDone(created?.data ?? created)
-      }
-    } catch (e) {
-      setErr(e?.response?.data?.message || 'Could not save the meeting.')
-      setSaving(false)
-    }
-  }
-
-  return (
-    <Overlay onClose={onClose} width={760}>
-      <div style={{ padding: '20px 22px 8px' }}>
-        <h2 style={{ margin: 0, fontSize: 17, fontWeight: 900, color: 'var(--text-h)' }}>{editing ? 'Edit kickoff meeting' : 'Schedule kickoff meeting'}</h2>
-        <p style={{ margin: '3px 0 0', fontSize: 12.5, color: 'var(--text-muted)' }}>A pre-onboarding meeting with the vendor.</p>
-      </div>
-      <div style={{ padding: '10px 22px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-        {editing ? (
-          <Field label="Vendor" full>
-            <div style={{ padding: '9px 12px', borderRadius: 8, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)', fontSize: 13 }}>
-              {meeting.subject?.name || '— (not linked)'}
-            </div>
-          </Field>
-        ) : (
-          <Field label="Vendor" full>
-            <SelectInput value={form.subject_id} onChange={set('subject_id')} pairs
-              options={[['', 'Select a vendor…'], ...vendors.map(v => [v.id, v.company_name])]} />
-          </Field>
-        )}
-        <Field label="Title (optional — defaults to the vendor name)" full>
-          <TextInput value={form.title} onChange={set('title')} placeholder="Kickoff — Acme Contractors" />
-        </Field>
-        <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 12 }}>
-          <Field label="Date & time"><TextInput type="datetime-local" value={form.scheduled_at} onChange={set('scheduled_at')} /></Field>
-          <Field label="Duration (min)"><TextInput type="number" value={form.duration_minutes} onChange={set('duration_minutes')} /></Field>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.6fr', gap: 12 }}>
-          <Field label="Mode"><SelectInput value={form.mode} onChange={set('mode')} options={KO_MODES} pairs /></Field>
-          <Field label={form.mode === 'online' ? 'Meeting link' : 'Location'}>
-            <TextInput value={form.location} onChange={set('location')} placeholder={form.mode === 'online' ? 'https://…' : 'Site office, Gate 1'} />
-          </Field>
-        </div>
-        <Field label="Agenda" full>
-          <TextInput value={form.agenda} onChange={set('agenda')} placeholder="HSSE induction, scope walk, document checklist" />
-        </Field>
-        {err && <ModalError>{err}</ModalError>}
-      </div>
-      <ModalFooter onClose={onClose} onConfirm={save} loading={saving} confirmLabel={editing ? 'Save changes' : 'Schedule'} color="#7C3AED" />
-    </Overlay>
-  )
-}
-
 /* ── Attendance modal ───────────────────────────────────────────────────────── */
 function AttendanceModal({ id, onClose, onDone }) {
   const [rows, setRows] = useState(null)
@@ -347,22 +266,42 @@ function AttendanceModal({ id, onClose, onDone }) {
     kickoffApi.get(id).then(d => {
       const m = d?.data ?? d
       setTitle(m.title)
-      setRows((m.attendees || []).map(a => ({ id: a.id, name: a.name, role: a.role, organisation: a.organisation, attended: !!a.attended })))
+      setRows((m.attendees || []).map(a => ({
+        id: a.id, name: a.name, role: a.role, organisation: a.organisation,
+        // attendance_status is the truth; fall back to the legacy boolean for
+        // meetings marked before the three-state column existed. null is a real
+        // value here — "not marked yet" — so it must survive the round trip.
+        attendance_status: a.attendance_status ?? (a.attended ? 'Present' : null),
+        remark: a.remark ?? '',
+      })))
     }).catch(() => setErr('Could not load the attendee list.'))
   }, [id])
 
-  const setAttended = (aid, val) => setRows(rs => rs.map(r => (r.id === aid ? { ...r, attended: val } : r)))
+  const setStatus = (aid, val) =>
+    // Clicking the active button clears it, back to "not marked yet".
+    setRows(rs => rs.map(r => (r.id === aid ? { ...r, attendance_status: r.attendance_status === val ? null : val } : r)))
 
-  const save = async () => {
+  const setRemark = (aid, val) => setRows(rs => rs.map(r => (r.id === aid ? { ...r, remark: val } : r)))
+
+  const save = async ({ notify = false } = {}) => {
     setSaving(true); setErr(null)
     try {
-      await kickoffApi.markAttendance(id, rows.map(r => ({ id: r.id, attended: r.attended })))
+      await kickoffApi.markAttendance(id, rows.map(r => ({
+        id: r.id,
+        attendance_status: r.attendance_status,
+        remark: r.remark || null,
+      })))
+      // The summary is the existing reminder mail — one endpoint, no new
+      // notification path — sent after the save so it reflects what was stored.
+      if (notify) await kickoffApi.remind(id)
       onDone()
     } catch (e) {
       setErr(e?.response?.data?.message || 'Could not save attendance.')
       setSaving(false)
     }
   }
+
+  const marked = (rows || []).filter(r => r.attendance_status).length
 
   return (
     <Overlay onClose={onClose} width={560}>
@@ -378,25 +317,50 @@ function AttendanceModal({ id, onClose, onDone }) {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {rows.map(a => (
-              <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 12, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
-                <div style={{ width: 34, height: 34, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(124,58,237,0.14)', color: '#a78bfa', fontWeight: 800, fontSize: 13 }}>
-                  {(a.name || '?').charAt(0).toUpperCase()}
+              <div key={a.id} style={{ padding: '10px 12px', borderRadius: 12, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div style={{ width: 34, height: 34, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(124,58,237,0.14)', color: '#a78bfa', fontWeight: 800, fontSize: 13 }}>
+                    {(a.name || '?').charAt(0).toUpperCase()}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-h)' }}>{a.name}</div>
+                    {/* Participant type · Third Party Vendor */}
+                    <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{[a.role, a.organisation].filter(Boolean).join(' · ') || '—'}</div>
+                  </div>
+                  <div style={{ display: 'inline-flex', borderRadius: 9, overflow: 'hidden', border: '1px solid var(--border)' }}>
+                    <SegBtn active={a.attendance_status === 'Present'} color="#10b981" icon={CheckCircle2} onClick={() => setStatus(a.id, 'Present')}>Present</SegBtn>
+                    <SegBtn active={a.attendance_status === 'Late'}    color="#f59e0b" icon={Clock}        onClick={() => setStatus(a.id, 'Late')}>Late</SegBtn>
+                    <SegBtn active={a.attendance_status === 'Absent'}  color="#ef4444" icon={XCircle}      onClick={() => setStatus(a.id, 'Absent')}>Absent</SegBtn>
+                  </div>
                 </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-h)' }}>{a.name}</div>
-                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{[a.role, a.organisation].filter(Boolean).join(' · ') || '—'}</div>
-                </div>
-                <div style={{ display: 'inline-flex', borderRadius: 9, overflow: 'hidden', border: '1px solid var(--border)' }}>
-                  <SegBtn active={a.attended} color="#10b981" icon={CheckCircle2} onClick={() => setAttended(a.id, true)}>Present</SegBtn>
-                  <SegBtn active={!a.attended} color="#ef4444" icon={XCircle} onClick={() => setAttended(a.id, false)}>Absent</SegBtn>
-                </div>
+                <input
+                  value={a.remark}
+                  onChange={e => setRemark(a.id, e.target.value)}
+                  placeholder="Remark (optional) — e.g. joined 10 minutes late"
+                  maxLength={1000}
+                  style={{ marginTop: 8, width: '100%', padding: '6px 10px', fontSize: 12, borderRadius: 8,
+                    background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-body)' }}
+                />
               </div>
             ))}
           </div>
         )}
         {err && <ModalError>{err}</ModalError>}
       </div>
-      <ModalFooter onClose={onClose} onConfirm={save} loading={saving} confirmLabel="Save attendance" color="#7C3AED"
+      {/* Send Email Summary saves first, then reuses the existing reminder
+          endpoint — so the mail always reflects what was actually stored. */}
+      {rows !== null && rows.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '0 22px 4px' }}>
+          <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{marked} of {rows.length} marked</span>
+          <button onClick={() => save({ notify: true })} disabled={saving}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 12px', fontSize: 12, fontWeight: 700,
+              borderRadius: 9, cursor: saving ? 'not-allowed' : 'pointer', background: 'rgba(14,165,233,0.12)',
+              border: '1px solid rgba(14,165,233,0.4)', color: '#0ea5e9', opacity: saving ? 0.6 : 1 }}>
+            <Send size={13} /> Save &amp; email summary
+          </button>
+        </div>
+      )}
+      <ModalFooter onClose={onClose} onConfirm={() => save()} loading={saving} confirmLabel="Save attendance" color="#7C3AED"
         disabled={rows === null || rows.length === 0} />
     </Overlay>
   )

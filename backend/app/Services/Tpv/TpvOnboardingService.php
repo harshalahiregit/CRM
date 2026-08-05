@@ -3,6 +3,7 @@
 namespace App\Services\Tpv;
 
 use App\Exceptions\BusinessException;
+use App\Models\Shared\KickoffMeeting;
 use App\Models\Tpv\TpvOnboarding;
 use App\Models\User;
 use App\Models\Vendor\Vendor;
@@ -195,12 +196,19 @@ class TpvOnboardingService
 
         $byName = $actor->name ?? $onboarding->vendor?->company_name ?? 'Vendor Representative';
 
+        // The vendor's response to the minutes. Optional, and stored on the
+        // MEETING beside the other acknowledgement_* fields — the comment is
+        // feedback about the MOM, not about this onboarding record.
+        $comment = trim((string) ($meta['comment'] ?? ''));
+
         if (! $meeting->acknowledged_at) {
             $meeting->update([
-                'acknowledged_at'      => now(),
-                'acknowledged_by_name' => $byName,
-                'acknowledged_ip'      => $meta['ip'] ?? null,
-                'ack_token'            => null,
+                'acknowledged_at'         => now(),
+                'acknowledged_by_name'    => $byName,
+                'acknowledged_ip'         => $meta['ip'] ?? null,
+                'acknowledgement_status'  => KickoffMeeting::ACK_ACKNOWLEDGED,
+                'acknowledgement_comment' => $comment !== '' ? $comment : null,
+                'ack_token'               => null,
             ]);
             $meeting->recordAudit('acknowledged', $actor, 'Kickoff MOM acknowledged via Vendor Portal Step 1', [
                 'ip' => $meta['ip'] ?? null, 'browser' => $meta['browser'] ?? null, 'device' => $meta['device'] ?? null,

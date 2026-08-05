@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Shared\StoreKickoffMeetingRequest;
 use App\Http\Requests\Shared\TransitionKickoffRequest;
 use App\Http\Requests\Shared\UpdateKickoffMeetingRequest;
+use App\Models\Shared\KickoffAttendee;
 use App\Models\Shared\KickoffMeeting;
 use App\Services\Shared\KickoffMeetingService;
 use Illuminate\Http\Request;
@@ -79,10 +80,15 @@ class KickoffMeetingController extends Controller
     {
         $this->assertTenant($request, $kickoffMeeting);
 
+        // `attended` was required here; it is now optional so a caller can send
+        // attendance_status instead. At least one of the two must be present —
+        // an entry carrying neither would silently do nothing.
         $data = $request->validate([
-            'attendance'            => 'required|array|min:1',
-            'attendance.*.id'       => 'required|integer',
-            'attendance.*.attended' => 'required|boolean',
+            'attendance'                     => 'required|array|min:1',
+            'attendance.*.id'                => 'required|integer',
+            'attendance.*.attended'          => 'required_without:attendance.*.attendance_status|nullable|boolean',
+            'attendance.*.attendance_status' => 'nullable|string|in:'.implode(',', KickoffAttendee::STATUSES),
+            'attendance.*.remark'            => 'nullable|string|max:1000',
         ]);
 
         return response()->json(

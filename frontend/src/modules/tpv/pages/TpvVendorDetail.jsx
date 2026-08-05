@@ -233,42 +233,8 @@ export default function TpvVendorDetail() {
           </div>
         </div>
 
-        {/* Admin Onboarding Decision Toolbar (Modifies ONLY Onboarding Status) */}
-        {manage && (
-          <div style={{ flexShrink: 0 }}>
-            <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-muted)', margin: '0 0 7px' }}>Onboarding Decision</p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-            
-            <button
-              onClick={() => { setDecisionModal('approve'); setRemarks('') }}
-              style={{ padding: '8px 14px', borderRadius: 9, background: '#0ca30c', color: '#fff', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}
-            >
-              <ShieldCheck size={14} /> Approve Onboarding
-            </button>
-
-            <button
-              onClick={() => { setDecisionModal('hold'); setRemarks('') }}
-              style={ghostBtn}
-            >
-              <PauseCircle size={14} /> Put On Hold
-            </button>
-
-            <button
-              onClick={() => { setDecisionModal('reject'); setRemarks('') }}
-              style={{ ...ghostBtn, color: '#d03b3b', borderColor: 'color-mix(in srgb, #d03b3b 32%, transparent)' }}
-            >
-              <XCircle size={14} /> Reject
-            </button>
-
-            <button
-              onClick={() => { setDecisionModal('resubmit'); setRemarks('') }}
-              style={ghostBtn}
-            >
-              <CornerUpLeft size={14} /> Send Back
-            </button>
-            </div>
-          </div>
-        )}
+        {/* The Onboarding Decision toolbar used to sit here. It now lives with
+            the documents it is a judgement about — Compliance → Documents. */}
       </div>
 
       {/* Two-pane: left section nav + right content */}
@@ -323,7 +289,8 @@ export default function TpvVendorDetail() {
         </nav>
 
         <div style={{ flex: 1, minWidth: 0 }}>
-          <SectionContent tab={active} v={v} isActive={isActive} manage={manage} api={cfg.api} moduleName={cfg.moduleName} />
+          <SectionContent tab={active} v={v} isActive={isActive} manage={manage} api={cfg.api} moduleName={cfg.moduleName}
+          onDecision={kind => { setDecisionModal(kind); setRemarks('') }} />
         </div>
       </div>
 
@@ -370,7 +337,7 @@ export default function TpvVendorDetail() {
 }
 
 /** Routes the active section to live data or the shared placeholder. */
-function SectionContent({ tab, v, isActive, manage, api, moduleName }) {
+function SectionContent({ tab, v, isActive, manage, api, moduleName, onDecision }) {
   switch (tab) {
     case 'Overview':
       return (
@@ -432,7 +399,13 @@ function SectionContent({ tab, v, isActive, manage, api, moduleName }) {
     case 'Documents':
       // Read-only: the vendor uploads through the portal during onboarding.
       // Admin reviews (approve/reject) and views/downloads — never uploads.
-      return <TpvVendorDocuments vendorId={v.id} vendor={v} manage={false} api={api} moduleName={moduleName} />
+      // The onboarding decision sits directly above what it is a judgement about.
+      return (
+        <>
+          {manage && onDecision && <OnboardingDecisionBar onDecision={onDecision} />}
+          <TpvVendorDocuments vendorId={v.id} vendor={v} manage={false} api={api} moduleName={moduleName} />
+        </>
+      )
     default:
       // Honest copy: distinguish "module exists, no rows for this vendor" from
       // "no such module in this system". See TAB_EMPTY_REASON.
@@ -445,6 +418,40 @@ function SectionContent({ tab, v, isActive, manage, api, moduleName }) {
  * instead of a run-on sentence, and the colour is a quiet tint — status colour is
  * never the only carrier of meaning, the written label always is.
  */
+/**
+ * The approve / hold / reject / send-back toolbar.
+ *
+ * Lives with the onboarding documents rather than in the page header: the
+ * decision is a judgement ABOUT those documents, and a header button sat next
+ * to the vendor name invited approving an onboarding without having opened
+ * what was submitted. Same actions, same handler — only the placement moved.
+ */
+function OnboardingDecisionBar({ onDecision }) {
+  return (
+    <div style={{ marginBottom: 16, padding: '13px 16px', borderRadius: 12, background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+      <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-muted)', margin: '0 0 9px' }}>
+        Onboarding Decision
+      </p>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+        <button onClick={() => onDecision('approve')}
+          style={{ padding: '8px 14px', borderRadius: 9, background: '#0ca30c', color: '#fff', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <ShieldCheck size={14} /> Approve Onboarding
+        </button>
+        <button onClick={() => onDecision('hold')} style={ghostBtn}>
+          <PauseCircle size={14} /> Put On Hold
+        </button>
+        <button onClick={() => onDecision('reject')}
+          style={{ ...ghostBtn, color: '#d03b3b', borderColor: 'color-mix(in srgb, #d03b3b 32%, transparent)' }}>
+          <XCircle size={14} /> Reject
+        </button>
+        <button onClick={() => onDecision('resubmit')} style={ghostBtn}>
+          <CornerUpLeft size={14} /> Send Back
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function StatusPill({ label, value, tone }) {
   return (
     <span style={{

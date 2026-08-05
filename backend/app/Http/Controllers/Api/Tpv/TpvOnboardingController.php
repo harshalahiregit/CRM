@@ -33,11 +33,14 @@ class TpvOnboardingController extends Controller
     {
         $this->assertTenant($request, $onboarding);
 
-        $ua = UserAgentInfo::parse($request->userAgent());
+        // Optional — mirrors the portal endpoint so both doors store the same thing.
+        $data = $request->validate(['comment' => 'nullable|string|max:5000']);
+        $ua   = UserAgentInfo::parse($request->userAgent());
 
         return response()->json(
             $this->tpvOnboardingService->acknowledgeKickoff($onboarding, $request->user(), [
                 'ip' => $request->ip(), 'browser' => $ua['browser'], 'device' => $ua['device'],
+                'comment' => $data['comment'] ?? null,
             ])
         );
     }
