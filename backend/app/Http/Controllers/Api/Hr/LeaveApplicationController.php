@@ -26,6 +26,30 @@ class LeaveApplicationController extends Controller
         return response()->json($this->service->list($this->tenant($request), $request->only(['employee_id', 'leave_type_id', 'status', 'department', 'from', 'to'])));
     }
 
+    /**
+     * How many leave days a range works out to, before applying.
+     *
+     * The count depends on the employee's shift — someone whose weekly off is
+     * Tuesday gets a different answer from someone on Sat/Sun — so the breakdown
+     * says which days were excluded and why.
+     */
+    public function preview(Request $request)
+    {
+        $data = $request->validate([
+            'employee_id'   => 'required|integer',
+            'from_date'     => 'required|date',
+            'to_date'       => 'required|date',
+            'leave_type_id' => 'nullable|integer',
+            'half_day'      => 'nullable|boolean',
+        ]);
+
+        return response()->json($this->service->preview(
+            (int) $data['employee_id'], (int) $request->user()->tenant_id,
+            $data['from_date'], $data['to_date'],
+            $data['leave_type_id'] ?? null, (bool) ($data['half_day'] ?? false),
+        ));
+    }
+
     public function show(Request $request, int $id)
     {
         return response()->json($this->service->show($id, $this->tenant($request)));

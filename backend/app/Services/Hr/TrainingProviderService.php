@@ -94,6 +94,20 @@ class TrainingProviderService
             $attrs['is_active'] = (bool) $d['is_active'];
         }
 
+        // #22 — assigned explicitly, not through array_filter(): a deliberate
+        // empty list must be able to CLEAR a provider's expertise, and
+        // array_filter() would drop it as if it had never been sent.
+        if (array_key_exists('department_id', $d)) {
+            $attrs['department_id'] = $d['department_id'] ?: null;
+        }
+        foreach (['expertise', 'certifications', 'qualifications', 'skills'] as $list) {
+            if (array_key_exists($list, $d)) {
+                // Reuses the Phase A cleaner: trims, drops blanks, de-duplicates
+                // case-insensitively — the same treatment employee skills get.
+                $attrs[$list] = \App\Support\Hr\SkillMatcher::clean($d[$list] ?? []);
+            }
+        }
+
         return $attrs;
     }
 
@@ -104,6 +118,13 @@ class TrainingProviderService
             'provider_type' => $p->provider_type, 'contact_person' => $p->contact_person,
             'email' => $p->email, 'phone' => $p->phone, 'website' => $p->website,
             'description' => $p->description, 'is_active' => $p->is_active,
+            // #22
+            'department_id'   => $p->department_id,
+            'department_name' => $p->department?->name,
+            'expertise'       => $p->expertise ?: [],
+            'certifications'  => $p->certifications ?: [],
+            'qualifications'  => $p->qualifications ?: [],
+            'skills'          => $p->skills ?: [],
         ];
     }
 

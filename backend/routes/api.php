@@ -7,6 +7,7 @@ require __DIR__.'/performance.php';
 require __DIR__.'/leave.php';
 require __DIR__.'/exit.php';
 require __DIR__.'/learning.php';
+require __DIR__.'/survey.php';
 require __DIR__.'/probation.php';
 require __DIR__.'/notifications.php';
 require __DIR__.'/recruitment_services.php';

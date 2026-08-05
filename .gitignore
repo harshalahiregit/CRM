@@ -7,3 +7,6 @@ backend/.env.bak*
 graphify-out/
 docx_content.txt
 frontend/vite.config.js.timestamp-*.mjs
+# Snapshots produced by `git archive` — derivable from any commit, so keeping one
+# in history would only bloat the repo with something git can already rebuild.
+*.zip

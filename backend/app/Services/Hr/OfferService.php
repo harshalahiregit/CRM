@@ -8,6 +8,7 @@ use App\Models\Hr\HrCandidate;
 use App\Models\Hr\HrEmployee;
 use App\Models\Hr\HrEmployeeOnboarding;
 use App\Models\Hr\HrOffer;
+use App\Support\Hr\HiringManagerFilter;
 use App\Models\Hr\HrOfferRevision;
 use App\Models\User;
 use App\Services\Notifications\NotificationService;
@@ -62,6 +63,9 @@ class OfferService
     {
         $offers = HrOffer::with('candidate')
             ->whereHas('candidate', fn ($q) => $q->where('tenant_id', $tenantId));
+
+        // #3 — two hops: offer → candidate → jobPosting → manpowerRequest.
+        HiringManagerFilter::apply($offers, $filters['hiring_manager_id'] ?? null, 'candidate.jobPosting');
 
         if (! empty($filters['status']) && $filters['status'] !== 'All') {
             $offers->where('status', $filters['status']);

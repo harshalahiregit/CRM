@@ -457,20 +457,6 @@ class VendorPortalController extends Controller
         return response()->json($this->workerService->saveInduction($worker, $request->validated(), $request->user()));
     }
 
-    public function issuePpe(IssueWorkerPpeRequest $request, TpvWorker $worker)
-    {
-        $this->assertWorkerOwned($request, $worker);
-
-        return response()->json($this->workerService->issuePpe($worker, $request->validated(), $request->user()));
-    }
-
-    public function removePpe(Request $request, TpvWorker $worker, TpvWorkerPpeIssue $ppeIssue)
-    {
-        $this->assertWorkerOwned($request, $worker);
-
-        return response()->json($this->workerService->removePpe($worker, $ppeIssue, $request->user()));
-    }
-
     public function workerAttendance(Request $request, TpvWorker $worker)
     {
         $this->assertWorkerOwned($request, $worker);

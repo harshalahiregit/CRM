@@ -13,7 +13,7 @@ class Project extends Model
     use HasFactory, SoftDeletes, BelongsToTenant;
 
     protected $fillable = [
-        'tenant_id', 'name', 'description', 'status', 'customer_id', 'vendor_user_id', 'link_type',
+        'tenant_id', 'name', 'description', 'status', 'customer_id', 'vendor_user_id', 'vendor_id', 'link_type',
         'billing_type', 'project_cost', 'rate_per_hour', 'start_date', 'deadline',
         'progress', 'progress_from_tasks', 'estimated_hours', 'created_by', 'date_finished',
         'pinned_by', 'visible_tabs', 'customer_permissions', 'vendor_permissions', 'tpv_permissions', 'deadline_notified',

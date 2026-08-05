@@ -3,8 +3,10 @@ import { useNavigate } from 'react-router-dom'
 import { useTheme } from '@/context/ThemeContext'
 import { Plus, X, Check, Download, FileText, ShieldCheck, ExternalLink, Copy, Eye, Send } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+import { useMasterData } from '@/modules/hr/useMasterData'
 import { DOC_LABEL, mandatoryDocKeys, isDocMandatory } from '@/config/onboardingDocs'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
+import WorkflowProgress from '@/components/ui/WorkflowProgress'
 import { ONBOARDING_DOC_ITEMS, ONBOARDING_DOC_LABELS, computeOnboardingChecklist } from '@/modules/hr/constants'
 
 // Build the public candidate-portal URL from the token already stored in
@@ -318,10 +320,17 @@ export default function Onboarding() {
   const navigate = useNavigate()
   const [records, setRecords] = useState([])
   const [loading, setLoading] = useState(true)
+  const { masters } = useMasterData()
   const [filterS, setFilterS] = useState('All')
+  // #3 — hiring manager, resolved through candidate → job posting → requisition.
+  const [mgrF, setMgrF] = useState('All')
   const [expanded, setExpanded] = useState(null)
   const [showModal, setShowModal] = useState(false)
-  const [form, setForm] = useState({ candidate_name: '', position: '', joining_date: '', department: '' })
+  // #17 — onboarding starts FROM a candidate. The name is no longer typed; it
+  // comes from the chosen candidate, so an onboarding can never exist for
+  // somebody the candidate database has never heard of.
+  const [form, setForm] = useState({ candidate_id: '', candidate_name: '', position: '', joining_date: '', department: '' })
+  const [candidates, setCandidates] = useState([])
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState(null)
   const [approved, setApproved] = useState(null)      // { candidateName, offer } — success modal after approval
@@ -335,7 +344,10 @@ export default function Onboarding() {
   const fetchData = async () => {
     setLoading(true)
     try {
-      const params = filterS !== 'All' ? { status: filterS } : {}
+      const params = {
+        ...(filterS !== 'All' ? { status: filterS } : {}),
+        ...(mgrF !== 'All' ? { hiring_manager_id: mgrF } : {}),
+      }
       const data = await hrApi.onboarding.list(params)
       setRecords(data)
     } catch {
@@ -347,7 +359,16 @@ export default function Onboarding() {
 
   useEffect(() => {
     fetchData()
-  }, [filterS])
+  }, [filterS, mgrF])
+
+  // #17 — the candidate database is the only source for who can be onboarded.
+  // Loaded once; a failure leaves the picker empty and the modal says so rather
+  // than silently falling back to free-text entry.
+  useEffect(() => {
+    hrApi.candidates.list()
+      .then(r => setCandidates(Array.isArray(r) ? r : (r?.data ?? [])))
+      .catch(() => setCandidates([]))
+  }, [])
 
   // Open / copy the candidate onboarding portal using the existing token.
   const openPortal = (token) => window.open(portalUrl(token), '_blank', 'noopener,noreferrer')
@@ -383,16 +404,17 @@ export default function Onboarding() {
     }
   }
 
+  // #17 — a candidate is now the first thing required, not a typed name.
   const handleCreate = async () => {
-    if (!form.candidate_name || !form.position || !form.joining_date) {
-      return showToast('Name, position and date required', 'error')
+    if (!form.candidate_id || !form.position || !form.joining_date) {
+      return showToast('Candidate, position and joining date are required', 'error')
     }
     setSaving(true)
     try {
       const rec = await hrApi.onboarding.start(form)
       setRecords(prev => [rec, ...prev])
       setShowModal(false)
-      setForm({ candidate_name: '', position: '', joining_date: '', department: '' })
+      setForm({ candidate_id: '', candidate_name: '', position: '', joining_date: '', department: '' })
       showToast('Onboarding started!')
     } catch (e) {
       showToast(e.response?.data?.message || 'Failed', 'error')
@@ -523,7 +545,7 @@ export default function Onboarding() {
         </div>
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex gap-2 items-center flex-wrap">
         {['All', 'In Progress', 'Completed', 'Pending'].map(f => (
           <button
             key={f}
@@ -538,6 +560,11 @@ export default function Onboarding() {
             {f}
           </button>
         ))}
+        {/* #3 — hiring manager, applied server-side. */}
+        <select className="input-3d text-xs ml-auto" style={{ maxWidth: 210 }} value={mgrF} onChange={e => setMgrF(e.target.value)}>
+          <option value="All">All Hiring Managers</option>
+          {(masters.managers || []).map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+        </select>
       </div>
 
       {loading ? (
@@ -622,6 +649,12 @@ export default function Onboarding() {
 
                 {expanded === r.id && (
                   <>
+                    {/* #14 — where this hire has reached, shown on the record
+                        rather than the list header so it tracks one person. */}
+                    <div className="mt-4 rounded-xl px-3 py-2.5" style={{ background:'var(--bg-input)', border:'1px solid var(--border)' }}>
+                      <WorkflowProgress kind="onboarding" record={r} />
+                    </div>
+
                     <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-2.5">
                       {STEPS.map(s => {
                         const isDone = getStepDone(r, s.key)
@@ -681,14 +714,37 @@ export default function Onboarding() {
                     </button>
                   </div>
                   <div className="space-y-3">
+                    {/* #17 — chosen from the candidate database, never typed.
+                        Position and department prefill from the candidate's job
+                        posting so the onboarding matches what they applied for. */}
                     <div>
-                      <label className="label">Candidate Name *</label>
-                      <input
+                      <label className="label">Candidate *</label>
+                      <select
                         className="input-3d text-sm"
-                        placeholder="Full name"
-                        value={form.candidate_name}
-                        onChange={e => setForm({ ...form, candidate_name: e.target.value })}
-                      />
+                        value={form.candidate_id}
+                        onChange={e => {
+                          const c = candidates.find(x => String(x.id) === e.target.value)
+                          setForm(f => ({
+                            ...f,
+                            candidate_id: e.target.value,
+                            candidate_name: c?.name || '',
+                            position: f.position || c?.job_posting?.title || c?.position_applied || '',
+                            department: f.department || c?.job_posting?.department || '',
+                          }))
+                        }}
+                      >
+                        <option value="">Select a candidate…</option>
+                        {candidates.map(c => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}{c.email ? ` — ${c.email}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                      {candidates.length === 0 && (
+                        <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                          No candidates are ready to onboard yet. Add them in the Candidates pipeline first.
+                        </p>
+                      )}
                     </div>
                     <div>
                       <label className="label">Position *</label>

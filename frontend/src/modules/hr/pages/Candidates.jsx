@@ -3,6 +3,7 @@ import { useTheme } from '@/context/ThemeContext'
 import { useNavigate } from 'react-router-dom'
 import { Plus, Search, X, Linkedin, Loader2, Upload, FileText, Briefcase, Clock, CalendarDays, IndianRupee, UserCircle2, Hash } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+import { useMasterData } from '@/modules/hr/useMasterData'
 import { HrLoading } from '@/components/ui/HrState'
 import { formatCTC, candidateScore } from '@/modules/hr/constants'
 import CandidateQuickActions from '@/modules/hr/components/CandidateQuickActions'
@@ -13,7 +14,13 @@ const SOURCE_COLORS = { LinkedIn:'#0077b5', Naukri:'#f97316', 'Career Page':'#7C
 const initials = n => (n||'').split(' ').slice(0,2).map(x=>x[0]).join('').toUpperCase()
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }) : null
 
-const EMPTY_FORM = { name:'', email:'', phone:'', dob:'', location:'', address:'', current_company:'', experience_years:'', source:'LinkedIn', stage:'Applied', job_posting_id:'', linkedin_url:'', skills:[], certifications:[], languages:[], notes:'' }
+const EMPTY_FORM = { name:'', email:'', phone:'', dob:'', location:'', address:'', current_company:'',
+  // #15 — present designation/department and references, auto-filled where the
+  // profile provides them.
+  current_designation:'', current_department:'', professional_references:[],
+  // #15 — the reference: an employee id, or a free-text external name.
+  referred_by_id:'', referred_by_name:'',
+  experience_years:'', source:'LinkedIn', stage:'Applied', job_posting_id:'', linkedin_url:'', skills:[], certifications:[], languages:[], notes:'' }
 
 export default function Candidates() {
   const { isDark } = useTheme()
@@ -28,6 +35,11 @@ export default function Candidates() {
   const [saving, setSaving]       = useState(false)
   const [toast, setToast]         = useState(null)
   const [stageF, setStageF]       = useState('All')
+  const [desigF, setDesigF]       = useState('All')   // designation master filter
+  const { masters } = useMasterData()                 // shared session-cached masters
+  // #3 — hiring manager, inherited from the job posting the candidate applied to.
+  const [mgrF, setMgrF] = useState('All')
+  const [employees, setEmployees] = useState([])
   const [search, setSearch]       = useState('')
   // LinkedIn extractor
   const [liUrl, setLiUrl]         = useState('')
@@ -50,15 +62,20 @@ export default function Candidates() {
     try {
       const params = {}
       if (stageF !== 'All') params.stage = stageF
+      // Sent as the master id; the API resolves it to the stored job-posting title.
+      if (desigF !== 'All') params.designation_id = desigF
       if (search) params.search = search
+      if (mgrF !== 'All') params.hiring_manager_id = mgrF
       const [cands, jbs] = await Promise.all([hrApi.candidates.list(params), hrApi.jobs.list()])
       setCands(cands); setJobs(jbs)
     } catch { showToast('Failed to load candidates','error') }
     finally { setLoading(false) }
-  }, [stageF, search])
+  }, [stageF, desigF, search, mgrF])
 
   // Assignable recruiters — fetched once, shared by every quick-actions menu.
   useEffect(() => { hrApi.candidates.recruiters().then(setRecruiters).catch(() => {}) }, [])
+  // #15 — the employee master backs the "referred by" picker. Reused, not a new endpoint.
+  useEffect(() => { hrApi.employees.list().then(r => setEmployees(Array.isArray(r) ? r : (r?.data ?? []))).catch(() => setEmployees([])) }, [])
 
   // Merge a quick-action result into the candidate in local state.
   const patchCandidate = (id, partial) => setCands(prev => prev.map(c => c.id === id ? { ...c, ...partial } : c))
@@ -72,12 +89,18 @@ export default function Candidates() {
     try {
       const res = await hrApi.candidates.linkedinParse(liUrl)
       if (res.success) {
+        // #15 — designation, department and skills were being parsed and then
+        // thrown away here. Everything the parser returns is now applied, and
+        // only where the recruiter has not already typed something.
         setForm(prev => ({
           ...prev,
-          name:            res.data.name || prev.name,
-          current_company: res.data.current_company || prev.current_company,
-          location:        res.data.location || prev.location,
-          linkedin_url:    liUrl,
+          name:                res.data.name || prev.name,
+          current_company:     res.data.current_company || prev.current_company,
+          current_designation: res.data.current_designation || prev.current_designation,
+          current_department:  res.data.current_department || prev.current_department,
+          location:            res.data.location || prev.location,
+          skills:              prev.skills?.length ? prev.skills : (res.data.skills || []),
+          linkedin_url:        liUrl,
         }))
         setLiNote(res.note || (res.source === 'scraped' ? '✅ Profile extracted successfully!' : '⚠️ '+res.note))
       }
@@ -251,10 +274,23 @@ export default function Candidates() {
         })}
       </div>
 
-      {/* Search */}
-      <div className="relative max-w-sm">
-        <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color:'var(--text-muted)' }}/>
-        <input className="input-3d pl-9 text-sm" placeholder="Search candidates..." value={search} onChange={e=>setSearch(e.target.value)}/>
+      {/* Search + Designation filter */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative max-w-sm flex-1 min-w-[200px]">
+          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color:'var(--text-muted)' }}/>
+          <input className="input-3d pl-9 text-sm" placeholder="Search candidates..." value={search} onChange={e=>setSearch(e.target.value)}/>
+        </div>
+        <select className="input-3d text-sm" style={{ maxWidth: 220 }} value={desigF} onChange={e=>setDesigF(e.target.value)}>
+          <option value="All">All Designations</option>
+          {(masters.designations || []).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+        </select>
+        <select className="input-3d text-sm" style={{ maxWidth: 220 }} value={mgrF} onChange={e=>setMgrF(e.target.value)}>
+          <option value="All">All Hiring Managers</option>
+          {(masters.managers || []).map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+        </select>
+        {(desigF !== 'All' || mgrF !== 'All') && (
+          <button onClick={()=>{ setDesigF('All'); setMgrF('All') }} className="text-xs font-bold" style={{ color:'var(--text-muted)', background:'none', border:'none', cursor:'pointer' }}>Clear</button>
+        )}
       </div>
 
       {loading ? (
@@ -436,6 +472,50 @@ export default function Candidates() {
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="label">Current Company</label><input className="input-3d text-sm" value={form.current_company} onChange={e=>setForm({...form,current_company:e.target.value})}/></div>
                 <div><label className="label">Experience (yrs)</label><input type="number" step="0.5" className="input-3d text-sm" value={form.experience_years} onChange={e=>setForm({...form,experience_years:e.target.value})}/></div>
+              </div>
+              {/* #15 — present designation and department. Auto-filled from the
+                  LinkedIn parse above and editable, because a headline is written
+                  by a person and does not always split cleanly. */}
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="label">Current Designation</label><input className="input-3d text-sm" placeholder="e.g. Senior Engineer" value={form.current_designation} onChange={e=>setForm({...form,current_designation:e.target.value})}/></div>
+                <div><label className="label">Current Department</label><input className="input-3d text-sm" placeholder="e.g. Platform Engineering" value={form.current_department} onChange={e=>setForm({...form,current_department:e.target.value})}/></div>
+              </div>
+              {/* #15 — REFERENCE. professional_references already existed on the
+                  model and was captured nowhere; one per line keeps it simple. */}
+              {/* #15 — the REFERENCE: who sent this candidate to us. Picked from
+                  the employee master so it resolves to a real person; the name is
+                  then filled in server-side and stays correct if they are renamed.
+                  Shown for referral sources, where a referrer actually exists. */}
+              {/Referral|Internal Portal|Walk-in|Direct/i.test(form.source || '') && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="label">Referred By (employee)</label>
+                    <select className="input-3d text-sm" value={form.referred_by_id}
+                      onChange={e=>setForm({...form, referred_by_id: e.target.value, referred_by_name: e.target.value ? '' : form.referred_by_name})}>
+                      <option value="">Not an employee referral</option>
+                      {employees.map(emp => (
+                        <option key={emp.id} value={emp.id}>{emp.name}{emp.employee_code ? ` · ${emp.employee_code}` : ''}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label">Or referred by (external)</label>
+                    <input className="input-3d text-sm" placeholder="Name of the person who referred them"
+                      disabled={!!form.referred_by_id}
+                      value={form.referred_by_name}
+                      onChange={e=>setForm({...form, referred_by_name: e.target.value})}/>
+                  </div>
+                </div>
+              )}
+              <div>
+                <label className="label">References</label>
+                <textarea rows={2} className="input-3d text-sm resize-none"
+                  placeholder="One per line — name, relationship, contact"
+                  value={(form.professional_references || []).join('\n')}
+                  onChange={e=>setForm({...form, professional_references: e.target.value.split('\n').map(s=>s.trim()).filter(Boolean)})}/>
+                <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
+                  Background-check references — separate from who referred them above.
+                </p>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>

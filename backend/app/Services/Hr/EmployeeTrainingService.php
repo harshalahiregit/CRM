@@ -67,6 +67,12 @@ class EmployeeTrainingService
             throw new BusinessException("Session capacity ({$session->capacity}) is full.");
         }
 
+        // #23 — assigning the SAME programme again is retraining. Derived from the
+        // assignment history rather than asked for, so it can never be wrong: the
+        // count IS the number of prior assignments.
+        $prior = $this->repo->priorAssignments($employee->id, (int) $session->training_program_id, $tenantId);
+        $attempt = $prior->count() + 1;
+
         $assignment = HrEmployeeTraining::create([
             'tenant_id'           => $tenantId,
             'employee_id'         => $employee->id,
@@ -78,13 +84,60 @@ class EmployeeTrainingService
             'status'              => HrEmployeeTraining::ASSIGNED,
             'remarks'             => $data['remarks'] ?? null,
             'completion_percentage' => 0,
+            'attempt_number'      => $attempt,
+            'is_retraining'       => $attempt > 1,
+            'previous_training_id' => $prior->first()?->id,
+            'retraining_reason'   => $attempt > 1 ? ($data['retraining_reason'] ?? null) : null,
             'created_by'          => $actor?->id,
             'updated_by'          => $actor?->id,
         ]);
-        $assignment->recordAudit('Training Assigned', $actor, $data['remarks'] ?? null, ['employee' => $employee->name, 'session' => $session->title]);
-        $this->log('Training assigned', $tenantId, $assignment->id);
+
+        $assignment->recordAudit(
+            $attempt > 1 ? 'Retraining Assigned' : 'Training Assigned',
+            $actor, $data['retraining_reason'] ?? $data['remarks'] ?? null,
+            ['employee' => $employee->name, 'session' => $session->title, 'attempt' => $attempt]
+        );
+        $this->log($attempt > 1 ? 'Retraining assigned' : 'Training assigned', $tenantId, $assignment->id);
 
         return $this->present($this->find($assignment->id, $tenantId), true);
+    }
+
+    /**
+     * #23 — every attempt an employee has made at one programme, oldest first.
+     *
+     * Reads the SAME hr_employee_trainings rows the assignment list does; there is
+     * no separate retraining store to fall out of step with it.
+     */
+    public function retrainingHistory(int $employeeId, int $programId, int $tenantId): array
+    {
+        $this->employee($employeeId, $tenantId);   // tenant guard
+
+        $rows = $this->repo->priorAssignments($employeeId, $programId, $tenantId, newestFirst: false);
+
+        return [
+            'employee_id'      => $employeeId,
+            'program_id'       => $programId,
+            'total_attempts'   => $rows->count(),
+            'retraining_count' => max(0, $rows->count() - 1),
+            'attempts' => $rows->map(fn ($r) => [
+                'id'             => $r->id,
+                'attempt_number' => (int) $r->attempt_number,
+                'is_retraining'  => (bool) $r->is_retraining,
+                'session'        => $r->session?->title,
+                'status'         => $r->status,
+                'assigned_at'    => optional($r->assigned_at)->toIso8601String(),
+                'completed_at'   => optional($r->completed_at)->toIso8601String(),
+                'reason'         => $r->retraining_reason,
+            ])->all(),
+        ];
+    }
+
+    /** #23 — every programme this employee has repeated, with the count. */
+    public function retrainingSummary(int $employeeId, int $tenantId): array
+    {
+        $this->employee($employeeId, $tenantId);
+
+        return $this->repo->retrainingSummary($employeeId, $tenantId);
     }
 
     /* ── Status transitions ───────────────────────────────── */
@@ -172,6 +225,11 @@ class EmployeeTrainingService
             'assigned_at' => optional($a->assigned_at)->toIso8601String(),
             'due_date' => optional($a->due_date)->toDateString(),
             'status' => $a->status,
+            // #23 — which go at this programme this is.
+            'attempt_number' => (int) $a->attempt_number,
+            'is_retraining' => (bool) $a->is_retraining,
+            'retraining_reason' => $a->retraining_reason,
+            'previous_training_id' => $a->previous_training_id,
             'completion_percentage' => (int) $a->completion_percentage,
             'remarks' => $a->remarks,
             'started_at' => optional($a->started_at)->toIso8601String(),

@@ -34,22 +34,31 @@ class ScoreRecorder
                 ->first();
 
             // History first — capture what the score WAS before it is overwritten.
-            AirPredictionHistory::create([
-                'tenant_id'               => $candidate->tenant_id,
-                'candidate_id'            => $candidate->id,
-                'job_id'                  => $jobId,
-                'previous_score'          => $existing?->overall_score,
-                'new_score'               => $result->overallScore,
-                'previous_recommendation' => $existing?->recommendation,
-                'new_recommendation'      => $result->recommendation,
-                'confidence_level'        => $result->confidence,
-                'trigger'                 => $trigger,
-                // The forecast columns from the original AIR migration: filled so an
-                // outcome can be compared back later, accuracy left null until then.
-                'predicted_score'          => $result->overallScore,
-                'predicted_recommendation' => $result->recommendation,
-                'prediction_date'          => now(),
-            ]);
+            //
+            // Only when there IS a score. An "Insufficient Data" result (a candidate
+            // with no job posting to match against) predicts nothing, and
+            // `air_prediction_history.predicted_score` is NOT NULL — so writing one
+            // threw a constraint violation and turned "add a walk-in candidate"
+            // into a 500. Coercing the null to 0 would be worse: a fabricated 0%
+            // prediction would then be compared against the real outcome later.
+            if ($result->overallScore !== null) {
+                AirPredictionHistory::create([
+                    'tenant_id'               => $candidate->tenant_id,
+                    'candidate_id'            => $candidate->id,
+                    'job_id'                  => $jobId,
+                    'previous_score'          => $existing?->overall_score,
+                    'new_score'               => $result->overallScore,
+                    'previous_recommendation' => $existing?->recommendation,
+                    'new_recommendation'      => $result->recommendation,
+                    'confidence_level'        => $result->confidence,
+                    'trigger'                 => $trigger,
+                    // The forecast columns from the original AIR migration: filled so an
+                    // outcome can be compared back later, accuracy left null until then.
+                    'predicted_score'          => $result->overallScore,
+                    'predicted_recommendation' => $result->recommendation,
+                    'prediction_date'          => now(),
+                ]);
+            }
 
             $score = $existing ?: new AirCandidateScore([
                 'candidate_id' => $candidate->id,

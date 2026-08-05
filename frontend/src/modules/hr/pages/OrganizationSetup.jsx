@@ -7,6 +7,10 @@ import {
 import { hrApi } from '@/services/hrApi'
 import { refreshMasterData } from '@/modules/hr/useMasterData'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
+// #3 — the org master endpoints take no filter params, so these narrow the
+// loaded rows in memory rather than growing a server contract for master lists
+// that are small by nature.
+import ListFilter, { applyListFilter } from '@/components/ui/ListFilter'
 
 const ACCENT = '#7C3AED'
 const GRAD = 'linear-gradient(135deg,#7C3AED,#5b21b6)'
@@ -29,6 +33,8 @@ const MASTERS = {
       { key: 'code', label: 'Code', type: 'text', placeholder: 'e.g. ENG' },
       { key: 'head_employee_id', label: 'Department Head', type: 'select', optsFrom: 'employees' },
       { key: 'description', label: 'Description', type: 'textarea', full: true },
+      { key: 'skills', label: 'Expected Skills', type: 'skills', full: true,
+        hint: 'Compared against each employee’s own skills to score their fit for this position.' },
     ],
   },
   designations: {
@@ -45,6 +51,8 @@ const MASTERS = {
       { key: 'code', label: 'Code', type: 'text', placeholder: 'e.g. SE-2' },
       { key: 'grade_id', label: 'Grade', type: 'select', optsFrom: 'grades' },
       { key: 'description', label: 'Description', type: 'textarea', full: true },
+      { key: 'skills', label: 'Expected Skills', type: 'skills', full: true,
+        hint: 'Compared against each employee’s own skills to score their fit for this position.' },
     ],
   },
   grades: {
@@ -61,6 +69,8 @@ const MASTERS = {
       { key: 'code', label: 'Code', type: 'text', placeholder: 'e.g. G3' },
       { key: 'level', label: 'Seniority Level (1 = junior)', type: 'number' },
       { key: 'description', label: 'Description', type: 'textarea', full: true },
+      { key: 'skills', label: 'Expected Skills', type: 'skills', full: true,
+        hint: 'Compared against each employee’s own skills to score their fit for this position.' },
     ],
   },
   roles: {
@@ -75,6 +85,8 @@ const MASTERS = {
       { key: 'name', label: 'Name', type: 'text', required: true, placeholder: 'e.g. Team Lead' },
       { key: 'code', label: 'Code', type: 'text', placeholder: 'e.g. TL' },
       { key: 'description', label: 'Description', type: 'textarea', full: true },
+      { key: 'skills', label: 'Expected Skills', type: 'skills', full: true,
+        hint: 'Compared against each employee’s own skills to score their fit for this position.' },
     ],
   },
 }
@@ -178,12 +190,24 @@ function MasterTab({ tabKey, options, onChanged, showToast }) {
 
   useEffect(() => { load() }, [load])
 
-  const emptyForm = useMemo(() => Object.fromEntries(cfg.fields.map(f => [f.key, ''])), [cfg])
+  // #3 — searched across whichever columns this master actually shows, so the
+  // same bar works for departments, designations, grades and roles without a
+  // per-master field list to keep in step.
+  const [search, setSearch] = useState('')
+  const [statusF, setStatusF] = useState('All')
+  useEffect(() => { setSearch(''); setStatusF('All') }, [tabKey])   // a tab change is a new list
+  const shown = applyListFilter(rows, {
+    search,
+    fields: cfg.columns.map(c => c.key),
+    matchers: [[statusF, (r, v) => (r.is_active === false ? 'Inactive' : 'Active') === v]],
+  })
+
+  const emptyForm = useMemo(() => Object.fromEntries(cfg.fields.map(f => [f.key, f.type === 'skills' ? [] : ''])), [cfg])
 
   const openCreate = () => setModal({ editing: null, form: { ...emptyForm } })
   const openEdit = (row) => setModal({
     editing: row.id,
-    form: Object.fromEntries(cfg.fields.map(f => [f.key, row[f.key] ?? ''])),
+    form: Object.fromEntries(cfg.fields.map(f => [f.key, row[f.key] ?? (f.type === 'skills' ? [] : '')])),
   })
 
   const save = async () => {
@@ -216,14 +240,19 @@ function MasterTab({ tabKey, options, onChanged, showToast }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background: GRAD, boxShadow: '0 4px 14px rgba(124,58,237,0.4)' }}>
-          <Plus size={15} /> Add {cfg.singular}
-        </button>
-      </div>
+      <ListFilter
+        search={search} setSearch={setSearch} placeholder={`Search ${cfg.label.toLowerCase()}…`}
+        selects={[{ key:'status', label:'Status', value:statusF, onChange:setStatusF, options:['All','Active','Inactive'] }]}
+        onClear={()=>{ setSearch(''); setStatusF('All') }}
+        right={
+          <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background: GRAD, boxShadow: '0 4px 14px rgba(124,58,237,0.4)' }}>
+            <Plus size={15} /> Add {cfg.singular}
+          </button>
+        }
+      />
 
       {loading ? <HrLoading label={`Loading ${cfg.label.toLowerCase()}…`} />
-        : rows.length === 0 ? <HrEmpty icon={cfg.icon} title={`No ${cfg.label.toLowerCase()} yet`} hint={`Create your first ${cfg.singular.toLowerCase()} to start structuring the organization.`} />
+        : shown.length === 0 ? <HrEmpty icon={cfg.icon} title={rows.length ? `No matching ${cfg.label.toLowerCase()}` : `No ${cfg.label.toLowerCase()} yet`} hint={rows.length ? 'Nothing matches these filters.' : `Create your first ${cfg.singular.toLowerCase()} to start structuring the organization.`} />
         : (
           <div className="card-3d overflow-x-auto" style={{ padding: '6px' }}>
             <table className="w-full text-sm" style={{ minWidth: 640 }}>
@@ -235,7 +264,7 @@ function MasterTab({ tabKey, options, onChanged, showToast }) {
                 </tr>
               </thead>
               <tbody>
-                {rows.map(row => (
+                {shown.map(row => (
                   <tr key={row.id} style={{ borderBottom: '1px solid var(--border)' }}>
                     {cfg.columns.map(c => (
                       <td key={c.key} className="px-3 py-2.5">
@@ -282,6 +311,12 @@ function MasterTab({ tabKey, options, onChanged, showToast }) {
                       <option value="">— None —</option>
                       {optsFor(f.optsFrom).map(o => <option key={o.id} value={o.id}>{o.name}{o.employee_code ? ` (${o.employee_code})` : ''}</option>)}
                     </select>
+                  ) : f.type === 'skills' ? (
+                    <SkillTagInput
+                      value={modal.form[f.key] || []}
+                      onChange={v => setModal(m => ({ ...m, form: { ...m.form, [f.key]: v } }))}
+                      hint={f.hint}
+                    />
                   ) : (
                     <input type={f.type === 'number' ? 'number' : 'text'} className="input-3d text-sm" placeholder={f.placeholder || ''} value={modal.form[f.key] ?? ''} onChange={e => setModal(m => ({ ...m, form: { ...m.form, [f.key]: e.target.value } }))} />
                   )}
@@ -383,6 +418,56 @@ function HierarchyView({ showToast }) {
           <div className="space-y-1.5">{data.unassigned.map(e => <Member key={e.id} e={e} />)}</div>
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * Review comment #43 — the skill list attached to a department / designation /
+ * grade / role.
+ *
+ * A plain tag editor: type a skill, press Enter or comma. Kept deliberately dumb —
+ * the canonical vocabulary lives nowhere yet, and inventing a skills master here
+ * would be a feature nobody asked for.
+ */
+function SkillTagInput({ value, onChange, hint }) {
+  const [draft, setDraft] = useState('')
+  const skills = Array.isArray(value) ? value : []
+
+  const add = () => {
+    const next = draft.trim()
+    if (!next) return
+    // Case-insensitive de-dup, matching how the backend compares them.
+    if (!skills.some(s => s.toLowerCase() === next.toLowerCase())) onChange([...skills, next])
+    setDraft('')
+  }
+
+  return (
+    <div>
+      <div className="flex flex-wrap gap-1.5 mb-2">
+        {skills.length === 0 && <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>None set — no fit score is produced.</span>}
+        {skills.map(s => (
+          <span key={s} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-semibold"
+            style={{ background: 'rgba(124,58,237,0.12)', color: '#a78bfa' }}>
+            {s}
+            <button onClick={() => onChange(skills.filter(x => x !== s))} style={{ lineHeight: 1 }}>
+              <X size={11} />
+            </button>
+          </span>
+        ))}
+      </div>
+      <input
+        className="input-3d text-sm"
+        placeholder="Type a skill and press Enter"
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); add() }
+          if (e.key === 'Backspace' && !draft && skills.length) onChange(skills.slice(0, -1))
+        }}
+        onBlur={add}
+      />
+      {hint && <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>{hint}</p>}
     </div>
   )
 }

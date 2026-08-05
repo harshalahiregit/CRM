@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Portal;
 
 use App\Http\Controllers\Controller;
+use App\Support\Task\VendorTaskLink;
 use App\Http\Requests\Purchase\ResubmitPurchaseDocumentRequest;
 use App\Http\Requests\Purchase\SavePurchaseOnboardingProfileRequest;
 use App\Http\Requests\Purchase\UpdatePurchasePortalProfileRequest;
@@ -57,6 +58,24 @@ class PurchasePortalController extends Controller
     }
 
     /** Dismiss the welcome banner permanently for this vendor. */
+    /**
+     * Tasks raised against this Purchase vendor.
+     *
+     * The ambient identity is a PurchaseVendor, never a User, so there is no
+     * assignee row to match on -- the link is tasks.rel_type='purchase_vendor'.
+     * That is why this endpoint exists here rather than reusing the shared
+     * "My Work" portal, which is gated on a User role.
+     */
+    public function tasks(Request $request)
+    {
+        $vendor = $this->purchaseVendor($request);
+
+        return response()->json([
+            'summary' => VendorTaskLink::summary(VendorTaskLink::PURCHASE, $vendor->id, (int) $vendor->tenant_id),
+            'tasks'   => VendorTaskLink::forVendor(VendorTaskLink::PURCHASE, $vendor->id, (int) $vendor->tenant_id),
+        ]);
+    }
+
     public function dismissWelcomeBanner(Request $request)
     {
         $vendor = $this->purchaseVendor($request);
@@ -348,7 +367,11 @@ class PurchasePortalController extends Controller
     private function purchaseVendor(Request $request): PurchaseVendor
     {
         $vendor = $request->user();
-        abort_unless($vendor instanceof PurchaseVendor, 401, 'Unauthenticated');
+        // #45 — 403, not 401: an authenticated identity of the WRONG TYPE is a
+        // permission failure, and a 401 here would clear the caller's session.
+        // EnsurePurchaseVendorPortalAccess already answers this case with 403;
+        // this is the same answer for the defence-in-depth check.
+        abort_unless($vendor instanceof PurchaseVendor, 403, 'This area is for Purchase vendor accounts only.');
 
         return $vendor;
     }

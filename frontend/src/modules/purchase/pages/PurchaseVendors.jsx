@@ -64,7 +64,9 @@ export default function PurchaseVendors() {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(130px,1fr))', gap: 12, marginBottom: 16 }}>
-        {[['Total', stats.total], ['Active', stats.active], ['Pending', stats.pending], ['Draft', stats.draft]].map(([k, v]) => (
+        {/* Permanent + Temporary sum to Total: both derive from registration_type,
+            so no vendor is counted twice or missed. */}
+        {[['Total', stats.total], ['Permanent', stats.permanent], ['Temporary', stats.temporary], ['Active', stats.active], ['Pending', stats.pending], ['Draft', stats.draft]].map(([k, v]) => (
           <div key={k} className="card-3d" style={{ padding: 14 }}>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>{k}</div>
             <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--text-h)' }}>{v ?? 0}</div>

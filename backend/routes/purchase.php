@@ -40,6 +40,7 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::get('/vendor-categories',  [PurchaseVendorCategoryController::class, 'index']);
 
     // ── Reports (read-only aggregations, ?period=…) ────────────────────────
+    Route::get('/reports/filters',        [PurchaseReportController::class, 'filters']);
     Route::get('/reports/item-cost',      [PurchaseReportController::class, 'itemCost']);
     Route::get('/reports/po-voucher',     [PurchaseReportController::class, 'poVoucher']);
     Route::get('/reports/orders',         [PurchaseReportController::class, 'orders']);
@@ -150,6 +151,7 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::get('/vendors',                           [PurchaseVendorController::class, 'index']);
     Route::post('/vendors',                          [PurchaseVendorController::class, 'store']);
     Route::get('/vendors/{purchaseVendor}',          [PurchaseVendorController::class, 'show'])->whereNumber('purchaseVendor');
+    Route::get('/vendors/{purchaseVendor}/tasks',    [PurchaseVendorController::class, 'tasks'])->whereNumber('purchaseVendor');
     Route::put('/vendors/{purchaseVendor}',          [PurchaseVendorController::class, 'update'])->whereNumber('purchaseVendor');
     Route::patch('/vendors/{purchaseVendor}/status', [PurchaseVendorController::class, 'updateStatus'])->whereNumber('purchaseVendor');
     Route::delete('/vendors/{purchaseVendor}',       [PurchaseVendorController::class, 'destroy'])->whereNumber('purchaseVendor');

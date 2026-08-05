@@ -7,6 +7,7 @@ use App\Http\Requests\Vendor\StoreVendorRequest;
 use App\Http\Requests\Vendor\UpdateVendorRequest;
 use App\Models\Vendor\Vendor;
 use App\Services\Vendor\VendorService;
+use App\Support\Task\VendorTaskLink;
 use Illuminate\Http\Request;
 
 class VendorController extends Controller
@@ -30,6 +31,29 @@ class VendorController extends Controller
         $vendor = $this->vendorService->create($request->validated(), $request->user()->tenant_id);
 
         return response()->json($vendor, 201);
+    }
+
+    /**
+     * Tasks linked to this TPV vendor (tasks.rel_type = 'tpv_vendor').
+     *
+     * Read-only. Tasks are created and edited in the Task module; this endpoint
+     * only surfaces them on the vendor's Tasks tab.
+     */
+    public function tasks(Request $request, Vendor $vendor)
+    {
+        $this->assertTenant($request, $vendor);
+        $tenantId = (int) $request->user()->tenant_id;
+
+        // A TPV signs in as a User, so work delegated to that login belongs on this
+        // tab too -- not only tasks raised against the vendor as an organisation.
+        $portalUserId = $vendor->user_id
+            ?: ($vendor->email ? \App\Models\User::where('tenant_id', $tenantId)
+                ->where('email', $vendor->email)->value('id') : null);
+
+        return response()->json([
+            'summary' => VendorTaskLink::summary(VendorTaskLink::TPV, $vendor->id, $tenantId, $portalUserId),
+            'tasks'   => VendorTaskLink::forVendor(VendorTaskLink::TPV, $vendor->id, $tenantId, $portalUserId),
+        ]);
     }
 
     public function show(Request $request, Vendor $vendor)

@@ -45,9 +45,24 @@ class EmployeeTrainingController extends Controller
             'training_session_id' => 'required|integer',
             'due_date'            => 'nullable|date',
             'remarks'             => 'nullable|string',
+            // #23 — recorded only when this turns out to be a repeat assignment.
+            // The attempt number itself is derived, never accepted from the client.
+            'retraining_reason'   => 'nullable|string|max:500',
         ]);
 
         return response()->json($this->service->assign($data, $this->tenant($request), $request->user()), 201);
+    }
+
+    /** #23 — every attempt this employee has made at one programme. */
+    public function retrainingHistory(Request $request, int $employee, int $program)
+    {
+        return response()->json($this->service->retrainingHistory($employee, $program, $this->tenant($request)));
+    }
+
+    /** #23 — every programme this employee has repeated, with counts. */
+    public function retrainingSummary(Request $request, int $employee)
+    {
+        return response()->json(['data' => $this->service->retrainingSummary($employee, $this->tenant($request))]);
     }
 
     public function start(Request $request, int $id)

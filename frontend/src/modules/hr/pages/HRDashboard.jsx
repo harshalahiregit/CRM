@@ -145,84 +145,14 @@ export default function HRDashboard() {
         />
       </div>
       
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KPI 
-          label="Hired This Month" 
-          value={kpis.hired_this_month || 0} 
-          icon={CheckCircle} 
-          gradient="linear-gradient(145deg,#34d399,#059669)" 
-          shadow="#059669" 
-        />
-        
-        {/* ⭐ NEW: Time to Hire */}
-        <KPI 
-          label="Time to Hire" 
-          value={kpis.time_to_hire_days ? `${kpis.time_to_hire_days} days` : 'N/A'} 
-          icon={Timer} 
-          gradient="linear-gradient(145deg,#818cf8,#6366f1)" 
-          shadow="#6366f1"
-          sub="Average"
-        />
-        
-        {/* ⭐ NEW: Pending Approvals (Manager only) */}
-        {isManager && kpis.pending_approvals > 0 && (
-          <KPI 
-            label="Pending Approvals" 
-            value={kpis.pending_approvals} 
-            icon={AlertCircle} 
-            gradient="linear-gradient(145deg,#fb923c,#f97316)" 
-            shadow="#f97316"
-            sub="Awaiting your action"
-            onClick={() => navigate('/app/hr/manpower-requests')}
-          />
-        )}
-        
-        <KPI 
-          label="Pending Feedback" 
-          value={kpis.pending_feedback || 0} 
-          icon={Clock} 
-          gradient="linear-gradient(145deg,#a78bfa,#8b5cf6)" 
-          shadow="#8b5cf6" 
-        />
-        
-        <KPI
-          label="Rejected"
-          value={kpis.rejected || 0}
-          icon={XCircle}
-          gradient="linear-gradient(145deg,#f87171,#dc2626)"
-          shadow="#dc2626"
-        />
-      </div>
+      {/* ── #27 — sections now run in process order: requisition → job pipeline →
+             offer/onboarding → outcomes. Previously the END of the funnel
+             (Onboarding & Offer) was rendered BEFORE its START (Recruitment
+             Workflow), and three unlabelled KPI grids were stacked between the
+             header and any of it. Every tile is kept; only the sequence and the
+             grouping headings change. ── */}
 
-      {/* ── Hiring KPIs (Phase 3) ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KPI label="Total Hired" value={kpis.total_hired || 0} icon={CheckCircle}
-          gradient="linear-gradient(145deg,#34d399,#059669)" shadow="#059669" sub="All time"
-          onClick={()=>navigate('/app/hr/employees')} />
-        <KPI label="Offers Sent" value={kpis.offers_sent || 0} icon={FileText}
-          gradient="linear-gradient(145deg,#a78bfa,#7C3AED)" shadow="#7C3AED"
-          onClick={()=>navigate('/app/hr/offers')} />
-        <KPI label="Acceptance %" value={`${kpis.acceptance_pct || 0}%`} icon={Timer}
-          gradient="linear-gradient(145deg,#34d399,#10B981)" shadow="#10b981" sub={`${kpis.offers_accepted || 0} accepted`} />
-        <KPI label="Pending Interviews" value={kpis.pending_interviews || 0} icon={Calendar}
-          gradient="linear-gradient(145deg,#fcd34d,#F59E0B)" shadow="#f59e0b"
-          onClick={()=>navigate('/app/hr/interviews')} />
-      </div>
-
-      {/* ── Recruitment Pipeline KPIs — onboarding → offer → joining ── */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="font-bold text-base" style={{ color:'var(--text-h)' }}>Onboarding &amp; Offer Pipeline</h2>
-          <button onClick={()=>navigate('/app/hr/onboarding')} className="text-xs font-semibold flex items-center gap-1" style={{ color:'#a78bfa' }}>Onboarding tracker <ArrowRight size={11}/></button>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-          {recruitmentStats.map(s => (
-            <MiniStat key={s.label} label={s.label} value={s.value} icon={s.icon} color={s.color} onClick={()=>navigate(s.to)} />
-          ))}
-        </div>
-      </div>
-
-      {/* ── Recruitment Workflow — Manpower Request pipeline (8 metrics) ── */}
+      {/* 1 — Recruitment Workflow: where a hire actually begins. */}
       <div>
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-bold text-base" style={{ color:'var(--text-h)' }}>Recruitment Workflow</h2>
@@ -236,6 +166,7 @@ export default function HRDashboard() {
         </div>
       </div>
 
+      {/* 2 — the candidate funnel that the workflow above feeds. */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <div className="card-3d lg:col-span-2" style={{ padding:'24px' }}>
           <div className="flex items-center justify-between mb-5">
@@ -287,6 +218,54 @@ export default function HRDashboard() {
               <p className="text-sm text-center py-8" style={{ color: 'var(--text-muted)' }}>No source data available</p>
             )}
           </div>
+        </div>
+      </div>
+
+      {/* 3 — Onboarding & Offer: the END of the funnel, so it follows it. */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-bold text-base" style={{ color:'var(--text-h)' }}>Onboarding &amp; Offer Pipeline</h2>
+          <button onClick={()=>navigate('/app/hr/onboarding')} className="text-xs font-semibold flex items-center gap-1" style={{ color:'#a78bfa' }}>Onboarding tracker <ArrowRight size={11}/></button>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+          {recruitmentStats.map(s => (
+            <MiniStat key={s.label} label={s.label} value={s.value} icon={s.icon} color={s.color} onClick={()=>navigate(s.to)} />
+          ))}
+        </div>
+      </div>
+
+      {/* 4 — Hiring Performance: the two previously unlabelled KPI grids, merged
+             under one heading and placed after the pipeline they measure. Merging
+             also fixes a ragged row — "Pending Approvals" is conditional, so the
+             old five-tile block wrapped unevenly in a four-column grid. */}
+      <div>
+        <h2 className="font-bold text-base mb-3" style={{ color:'var(--text-h)' }}>Hiring Performance</h2>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <KPI label="Hired This Month" value={kpis.hired_this_month || 0} icon={CheckCircle}
+            gradient="linear-gradient(145deg,#34d399,#059669)" shadow="#059669" />
+          <KPI label="Total Hired" value={kpis.total_hired || 0} icon={CheckCircle}
+            gradient="linear-gradient(145deg,#34d399,#059669)" shadow="#059669" sub="All time"
+            onClick={()=>navigate('/app/hr/employees')} />
+          <KPI label="Time to Hire" value={kpis.time_to_hire_days ? `${kpis.time_to_hire_days} days` : 'N/A'} icon={Timer}
+            gradient="linear-gradient(145deg,#818cf8,#6366f1)" shadow="#6366f1" sub="Average" />
+          <KPI label="Acceptance %" value={`${kpis.acceptance_pct || 0}%`} icon={Timer}
+            gradient="linear-gradient(145deg,#34d399,#10B981)" shadow="#10b981" sub={`${kpis.offers_accepted || 0} accepted`} />
+          <KPI label="Offers Sent" value={kpis.offers_sent || 0} icon={FileText}
+            gradient="linear-gradient(145deg,#a78bfa,#7C3AED)" shadow="#7C3AED"
+            onClick={()=>navigate('/app/hr/offers')} />
+          <KPI label="Pending Interviews" value={kpis.pending_interviews || 0} icon={Calendar}
+            gradient="linear-gradient(145deg,#fcd34d,#F59E0B)" shadow="#f59e0b"
+            onClick={()=>navigate('/app/hr/interviews')} />
+          <KPI label="Pending Feedback" value={kpis.pending_feedback || 0} icon={Clock}
+            gradient="linear-gradient(145deg,#a78bfa,#8b5cf6)" shadow="#8b5cf6" />
+          <KPI label="Rejected" value={kpis.rejected || 0} icon={XCircle}
+            gradient="linear-gradient(145deg,#f87171,#dc2626)" shadow="#dc2626" />
+          {/* Manager-only, and last so its presence never reflows the tiles above. */}
+          {isManager && kpis.pending_approvals > 0 && (
+            <KPI label="Pending Approvals" value={kpis.pending_approvals} icon={AlertCircle}
+              gradient="linear-gradient(145deg,#fb923c,#f97316)" shadow="#f97316" sub="Awaiting your action"
+              onClick={() => navigate('/app/hr/manpower-requests')} />
+          )}
         </div>
       </div>
 

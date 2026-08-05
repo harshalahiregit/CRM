@@ -119,11 +119,9 @@ export const tpvApi = {
     markMedical:     (id, data) => api.post(`/tpv/workers/${id}/mark-medical`, data).then(r => r.data),
     saveInduction:   (id, data) => api.post(`/tpv/workers/${id}/induction`, data).then(r => r.data),
     markInduction:   (id, data) => api.post(`/tpv/workers/${id}/mark-induction`, data).then(r => r.data),
-    getPpeInventory: ()         => api.get('/tpv/workers/ppe-inventory').then(r => r.data),
-    updatePpeStock:  (data)       => api.post('/tpv/workers/ppe-stock', data).then(r => r.data),
-    issuePpe:        (id, data) => api.post(`/tpv/workers/${id}/ppe`, data).then(r => r.data),
-    markPpe:         (id, data) => api.post(`/tpv/workers/${id}/mark-ppe`, data).then(r => r.data),
-    removePpe:       (id, ppeId) => api.delete(`/tpv/workers/${id}/ppe/${ppeId}`).then(r => r.data),
+    // Issuing/returning PPE lives on `ppe` below (it moves Inventory stock).
+    // This only records a deliberate skip of the step.
+    skipPpe:         (id, data = {}) => api.post(`/tpv/workers/${id}/mark-ppe`, { ...data, ppe_status: 'skip' }).then(r => r.data),
     markCardStatus:  (id, card_status) => api.post(`/tpv/workers/${id}/mark-card-status`, { card_status }).then(r => r.data),
     markPunch:       (id, punch_count, punch_reason) => api.post(`/tpv/workers/${id}/mark-punch`, { punch_count, punch_reason }).then(r => r.data),
     decide:          (id, status, remarks = '') => api.post(`/tpv/workers/${id}/decide`, { status, remarks }).then(r => r.data),
@@ -170,6 +168,8 @@ export const tpvApi = {
   vendors: {
     list:      (params = {}) => api.get('/vendors', { params: { engagement: 'tpv', ...params } }).then(r => r.data),
     get:       (id)          => api.get(`/vendors/${id}`).then(r => r.data),
+    tasks:     (id)          => api.get(`/tpv/vendors/${id}/tasks`).then(r => r.data),
+    stats:     ()            => api.get('/vendors/stats').then(r => r.data),
     resendActivation: (id)   => api.post(`/vendors/${id}/resend-activation`).then(r => r.data),
     create:    (data)        => api.post('/vendors', data).then(r => r.data),
     update:    (id, data)    => api.put(`/vendors/${id}`, data).then(r => r.data),
@@ -178,6 +178,26 @@ export const tpvApi = {
     sendEmail: (id, data)    => api.post(`/vendors/${id}/email`, data).then(r => r.data),
     delete:    (id)          => api.delete(`/vendors/${id}`).then(r => r.data),
   },
+  // ── PPE — served from INVENTORY (single source of truth) ────────────
+  ppe: {
+    catalogue:   ()               => api.get('/tpv/ppe').then(r => r.data),
+    summary:     ()               => api.get('/tpv/ppe/summary').then(r => r.data),
+    forWorker:   (workerId)       => api.get(`/tpv/ppe/workers/${workerId}`).then(r => r.data),
+    issue:       (workerId, data) => api.post(`/tpv/ppe/workers/${workerId}/issue`, data).then(r => r.data),
+    returnIssue: (issueId, data)  => api.post(`/tpv/ppe/issues/${issueId}/return`, data).then(r => r.data),
+    holders:     (productId)      => api.get(`/tpv/ppe/item/${productId}/holders`).then(r => r.data),
+    // Private file: fetched as a blob so the bearer token is sent.
+    imageBlob:   (productId)      => api.get(`/tpv/ppe/item/${productId}/image`, { responseType: 'blob' }).then(r => URL.createObjectURL(r.data)),
+
+    // ── Requirement matrix: role → required PPE (admin-configurable) ──
+    requirements:       ()          => api.get('/tpv/ppe/requirements').then(r => r.data),
+    addRequirement:     (data)      => api.post('/tpv/ppe/requirements', data).then(r => r.data),
+    updateRequirement:  (id, data)  => api.put(`/tpv/ppe/requirements/${id}`, data).then(r => r.data),
+    deleteRequirement:  (id)        => api.delete(`/tpv/ppe/requirements/${id}`).then(r => r.data),
+    compliance:         ()          => api.get('/tpv/ppe/compliance').then(r => r.data),
+    workerCompliance:   (workerId)  => api.get(`/tpv/ppe/compliance/workers/${workerId}`).then(r => r.data),
+  },
+
 }
 
 export default tpvApi

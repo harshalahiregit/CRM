@@ -9,6 +9,7 @@ import {
 import { hrApi } from '@/services/hrApi'
 import { useAuth } from '@/context/AuthContext'
 import AuditTimeline from '@/components/ui/AuditTimeline'
+import WorkflowProgress from '@/components/ui/WorkflowProgress'
 import {
   jobStatusColor, jobStatusLabel, PRIORITY_COLORS, STAGE_COLORS, DECISION_COLORS,
   INTERVIEW_STATUS_COLORS, INTERVIEW_RESULT_COLORS, canManageHrQueue,
@@ -17,7 +18,13 @@ import {
 
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 const fmtDateTime = (d) => d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'
-const fmtSalary = (f, t) => (!f && !t) ? '—' : `₹${f ? (f / 100000).toFixed(1) : '0'}–${t ? (t / 100000).toFixed(1) : '0'}L`
+// #2 — these come straight from the manpower request's per-month figures, so the
+// period is shown. Below ₹1L the plain rupee amount reads better than "0.5L".
+const fmtSalary = (f, t) => {
+  if (!f && !t) return '—'
+  const L = n => n >= 100000 ? `₹${(n / 100000).toFixed(1)}L` : `₹${Number(n).toLocaleString('en-IN')}`
+  return `${L(f || 0)}–${L(t || 0)}/mo`
+}
 
 // SPK-1 Recruitment Workspace tabs — everything about one job on one screen.
 const TABS = [
@@ -61,6 +68,17 @@ export default function JobWorkspace() {
   }
   const unpublishChannel = async (key) => {
     try { await hrApi.jobs.unpublishFrom(id, key); load() } catch (e) { alert(e?.response?.data?.message || 'Action failed') }
+  }
+
+  // #13 — reconcile one channel's status. The reload is what surfaces the result;
+  // a status that came back unchanged should look like nothing happened, because
+  // nothing did.
+  const [syncing, setSyncing] = useState(null)
+  const syncChannel = async (key) => {
+    setSyncing(key)
+    try { await hrApi.jobs.syncChannel(id, key); await load() }
+    catch (e) { alert(e?.response?.data?.message || 'Sync failed') }
+    finally { setSyncing(null) }
   }
 
   if (loading) return <div style={{ padding: 40, color: 'var(--text-muted)' }}>Loading workspace…</div>
@@ -136,7 +154,7 @@ export default function JobWorkspace() {
 
       {/* Tab content */}
       <div className="card-3d" style={{ padding: 22 }}>
-        {tab === 'overview'     && <Overview job={job} mr={mr} fullyApproved={fullyApproved} manageHr={manageHr} channels={channels} onPublish={publishSelected} onUnpublish={unpublishChannel} p={p} />}
+        {tab === 'overview'     && <Overview job={job} mr={mr} fullyApproved={fullyApproved} manageHr={manageHr} channels={channels} onPublish={publishSelected} onUnpublish={unpublishChannel} onSync={syncChannel} syncing={syncing} p={p} />}
         {tab === 'jd'           && <JobDescription job={job} />}
         {tab === 'applications' && <ApplicationsTab candidates={candidates} navigate={navigate} />}
         {tab === 'pipeline'     && <PipelineTab candidates={candidates} navigate={navigate} />}
@@ -162,14 +180,16 @@ const KV = ({ rows }) => (
 )
 
 // ── Overview ─────────────────────────────────────────────────────────────────
-function Overview({ job, mr, fullyApproved, manageHr, channels, onPublish, onUnpublish, p }) {
+function Overview({ job, mr, fullyApproved, manageHr, channels, onPublish, onUnpublish, onSync, syncing, p }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+      {/* #14 — where this job sits in the nine-phase hiring pipeline. */}
+      <WorkflowProgress kind="job" record={job} />
       {/* Recruitment analytics + the existing hiring funnel, both on Overview so
           the workspace answers "how is this job doing?" without a tab change. */}
       <Analytics p={p || {}} />
       <HiringProgress p={p || {}} />
-      <PublishChannels job={job} channels={channels} manageHr={manageHr} onPublish={onPublish} onUnpublish={onUnpublish} />
+      <PublishChannels job={job} channels={channels} manageHr={manageHr} onPublish={onPublish} onUnpublish={onUnpublish} onSync={onSync} syncing={syncing} />
       {/* Request source */}
       <div>
         <Label>Request Source</Label>
@@ -221,7 +241,7 @@ function Overview({ job, mr, fullyApproved, manageHr, channels, onPublish, onUnp
         <KV rows={[
           ['Employment Type', job.job_type], ['Posting Type', job.posting_type],
           ['Openings', job.number_of_openings], ['Location', job.location],
-          ['Salary Range', fmtSalary(job.salary_from, job.salary_to)],
+          ['Salary Range (Per Month)', fmtSalary(job.salary_from, job.salary_to)],
           ['Sources', (job.sources || []).join(', ')],
         ]} />
       </div>
@@ -242,10 +262,18 @@ const PUB_STATUS = {
   failed:        { label: 'Failed',        color: '#ef4444' },
   not_published: { label: 'Not Published', color: '#64748b' },
   not_connected: { label: 'Not Connected', color: '#94a3b8' },
+  // States a sync can produce (#13). Without these, the board telling us a job is
+  // gone would render as the same grey "Not Published" as never having published
+  // it — the exact confusion the sync exists to remove. `removed` is deliberately
+  // not attributed: withdrawing it ourselves and the board dropping it both land
+  // on this status, and the row cannot honestly say which.
+  removed:       { label: 'Removed',       color: '#f43f5e', hint: 'This posting is no longer on the board' },
+  expired:       { label: 'Expired',       color: '#f59e0b', hint: 'The board says this posting has expired' },
+  unknown:       { label: 'Unknown',       color: '#94a3b8', hint: 'The board replied with a status we do not recognise' },
 }
 const fmtSync = (d) => d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'
 
-function PublishChannels({ job, channels, manageHr, onPublish, onUnpublish }) {
+function PublishChannels({ job, channels, manageHr, onPublish, onUnpublish, onSync, syncing }) {
   const [selected, setSelected] = useState(new Set())
   const [copied, setCopied] = useState(null)
   const live = ['Published', 'Hiring', 'Partially_Filled'].includes(job.status)
@@ -253,17 +281,17 @@ function PublishChannels({ job, channels, manageHr, onPublish, onUnpublish }) {
 
   // Merge the channel catalog with this job's publication records.
   const catalog = (channels?.length ? channels : [
-    { key: 'careers', label: 'Career Portal', integrated: true },
+    { key: 'careers', label: 'Career Portal', integrated: true, syncable: false },
     { key: 'linkedin', label: 'LinkedIn', integrated: false }, { key: 'naukri', label: 'Naukri', integrated: false },
     { key: 'indeed', label: 'Indeed', integrated: false }, { key: 'trulytalents', label: 'TrulyTalents', integrated: false },
   ])
   const rows = catalog.map(c => {
     const pub = pubs.find(p => p.channel === c.key)
+    // Take the ledger's own word for it rather than testing three statuses and
+    // dropping the rest — anything unmapped is shown as unknown, not as blank.
     let status = 'not_published'
     if (!c.integrated) status = 'not_connected'
-    else if (pub?.status === 'published') status = 'published'
-    else if (pub?.status === 'failed') status = 'failed'
-    else if (pub?.status === 'pending') status = 'pending'
+    else if (pub?.status) status = PUB_STATUS[pub.status] ? pub.status : 'unknown'
     return { ...c, pub, status }
   })
 
@@ -297,19 +325,34 @@ function PublishChannels({ job, channels, manageHr, onPublish, onUnpublish }) {
                 {manageHr && <input type="checkbox" disabled={!canSelect} checked={selected.has(r.key)} onChange={() => toggle(r.key)} style={{ cursor: canSelect ? 'pointer' : 'not-allowed', width: 15, height: 15 }} />}
                 <span style={{ width: 26, height: 26, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `${color}18` }}><Icon size={14} style={{ color }} /></span>
                 <span style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text-h)' }}>{r.label}</span>
-                <span style={{ padding: '2px 9px', borderRadius: 8, fontSize: 10.5, fontWeight: 700, background: `${st.color}1a`, color: st.color, border: `1px solid ${st.color}40` }}>{st.label}</span>
+                <span title={st.hint || ''} style={{ padding: '2px 9px', borderRadius: 8, fontSize: 10.5, fontWeight: 700, background: `${st.color}1a`, color: st.color, border: `1px solid ${st.color}40`, cursor: st.hint ? 'help' : 'default' }}>{st.label}</span>
                 {!r.integrated && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Coming Soon</span>}
 
                 {r.status === 'published' && r.key !== 'careers' && r.pub?.external_url && (
                   <a href={r.pub.external_url} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color, textDecoration: 'none' }}>View <ExternalLink size={12} /></a>
                 )}
+
+                {/* #13 — Sync is offered only where the channel can actually answer
+                    (`syncable` from the API) and only once there is a reference to
+                    ask about. It stays available on removed/expired/unknown, which
+                    is when re-checking matters most. */}
+                {manageHr && r.syncable && r.pub?.external_ref && (
+                  <button onClick={() => onSync(r.key)} disabled={syncing === r.key}
+                    title={`Re-check this posting's status on ${r.label}`}
+                    style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 5, background: `${color}14`, border: `1px solid ${color}45`, borderRadius: 8, padding: '3px 10px', cursor: syncing === r.key ? 'wait' : 'pointer', color, fontSize: 11.5, fontWeight: 600, opacity: syncing === r.key ? 0.6 : 1 }}>
+                    <RefreshCw size={11} style={{ animation: syncing === r.key ? 'spin 1s linear infinite' : 'none' }} />
+                    {syncing === r.key ? 'Syncing…' : 'Sync'}
+                  </button>
+                )}
                 {manageHr && r.status === 'published' && (
-                  <button onClick={() => onUnpublish(r.key)} style={{ marginLeft: 'auto', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '3px 10px', cursor: 'pointer', color: '#ef4444', fontSize: 11.5, fontWeight: 600 }}>Remove</button>
+                  <button onClick={() => onUnpublish(r.key)} style={{ marginLeft: (manageHr && r.syncable && r.pub?.external_ref) ? 0 : 'auto', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '3px 10px', cursor: 'pointer', color: '#ef4444', fontSize: 11.5, fontWeight: 600 }}>Remove</button>
                 )}
               </div>
 
-              {/* Reserved per-channel fields */}
-              {(r.status === 'published' || r.status === 'failed') && (
+              {/* Reserved per-channel fields. Shown for ANY ledger row, not just
+                  published/failed — after a sync reports removed or expired, the
+                  external id and last-sync time are exactly what you need. */}
+              {r.pub && (
                 <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginTop: 8, paddingLeft: manageHr ? 61 : 36, fontSize: 11, color: 'var(--text-muted)' }}>
                   <span>External ID: <strong style={{ color: 'var(--text-h)' }}>{r.pub?.external_ref || '—'}</strong></span>
                   <span>Published: <strong style={{ color: 'var(--text-h)' }}>{fmtSync(r.pub?.published_at)}</strong></span>

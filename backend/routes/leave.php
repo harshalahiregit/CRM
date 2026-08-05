@@ -34,6 +34,8 @@ Route::middleware('auth:sanctum')->prefix('hr/leave')->group(function () {
     Route::get('/balances/{employee}',        [EmployeeLeaveBalanceController::class, 'forEmployee']);
 
     // Leave Applications (Phase 3)
+    // Static segment before /applications/{id}, or the binding swallows it.
+    Route::post('/applications/preview',       [LeaveApplicationController::class, 'preview']);
     Route::get('/applications',                [LeaveApplicationController::class, 'index']);
     Route::post('/applications',               [LeaveApplicationController::class, 'store']);
     Route::get('/applications/{id}',           [LeaveApplicationController::class, 'show']);

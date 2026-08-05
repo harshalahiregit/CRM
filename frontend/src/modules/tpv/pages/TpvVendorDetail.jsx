@@ -27,7 +27,6 @@ const TAB_EMPTY_REASON = {
   'Gate Log': 'No Gate Records',
   Strikes:    'No Safety Strikes',
   Projects:   'Projects are not linked to vendors in this system.',
-  Tasks:      'Tasks are not linked to vendors in this system.',
   Expenses:   'Expenses are not linked to vendors in this system.',
   Ticket:     'Tickets are not linked to vendors in this system.',
 }
@@ -38,6 +37,8 @@ import TpvRegistrationBadge from '@/modules/tpv/components/TpvRegistrationBadge'
 import TemporaryTpvValidityBadge from '@/modules/tpv/components/TemporaryTpvValidityBadge'
 import { KIT3D_STYLE, Overlay, ModalFooter } from '@/components/ui/kit3d'
 import ComingSoonSection from '@/modules/tpv/components/ComingSoonSection'
+import VendorTasksPanel from '@/components/vendor/VendorTasksPanel'
+import { tpvApi } from '@/services/tpvApi'
 import TpvVendorContacts from '@/modules/tpv/components/TpvVendorContacts'
 import TpvVendorDocuments from '@/modules/tpv/components/TpvVendorDocuments'
 
@@ -157,17 +158,23 @@ export default function TpvVendorDetail() {
     <div style={{ padding: 24, minHeight: '100vh', background: 'var(--bg-global)' }}>
       <style>{KIT3D_STYLE}</style>
 
-      {/* Header Banner & Admin Action Bar */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 18, flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flex: 1, minWidth: 280 }}>
+      {/* Header. One surface, three tiers: identity -> status -> meta. Previously
+          these competed as loose rows, with the decision toolbar floating beside the
+          company name and pulling the eye away from it. */}
+      <div style={{
+        background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16,
+        padding: '18px 20px', marginBottom: 18,
+        display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, flex: 1, minWidth: 300 }}>
           <button onClick={() => navigate(cfg.listPath)} style={backBtn}><ArrowLeft size={16} /></button>
           <div style={{ width: 54, height: 54, borderRadius: 16, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(124,58,237,0.14)', border: '1px solid rgba(124,58,237,0.3)' }}>
             <Building2 size={24} style={{ color: '#a78bfa' }} />
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <p className="label-caps" style={{ color: '#a78bfa', margin: 0, fontSize: 11, fontWeight: 800 }}>{v.vendor_code || `${cfg.codePrefix}-${v.id}`}</p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 2 }}>
-              <h1 style={{ color: 'var(--text-h)', fontSize: 22, fontWeight: 900, margin: 0, letterSpacing: '-0.02em' }}>{v.company_name}</h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 3 }}>
+              <h1 style={{ color: 'var(--text-h)', fontSize: 23, fontWeight: 800, margin: 0, letterSpacing: '-0.025em' }}>{v.company_name}</h1>
 
               {/* Badge 0: Registration type — the stored choice, never inferred */}
               <TpvRegistrationBadge type={v.registration_type} label={v.registration_type_label} size="md" />
@@ -176,16 +183,10 @@ export default function TpvVendorDetail() {
               <TemporaryTpvValidityBadge countdown={v.validity_countdown} showLabel />
 
               {/* Badge 1: Vendor Account Status (Controls Portal Login) */}
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 12px', borderRadius: 999, background: isActive ? 'rgba(16,185,129,0.14)' : 'rgba(239,68,68,0.12)', color: isActive ? '#10b981' : '#ef4444', fontSize: 11.5, fontWeight: 800, border: `1px solid ${isActive ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}` }}>
-                <span style={{ fontSize: 10, opacity: 0.7, textTransform: 'uppercase' }}>Vendor Account:</span>
-                <span>{v.status || 'Inactive'}</span>
-              </div>
+              <StatusPill label="Account" value={v.status || 'Inactive'} tone={isActive ? '#0ca30c' : '#d03b3b'} />
 
               {/* Badge 2: Onboarding Status (Independent TPV Workflow) */}
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 12px', borderRadius: 999, background: obCfg.bg, color: obCfg.color, fontSize: 11.5, fontWeight: 800, border: `1px solid ${obCfg.color}40` }}>
-                <span style={{ fontSize: 10, opacity: 0.7, textTransform: 'uppercase' }}>Onboarding:</span>
-                <span>{obCfg.label || obStatus}</span>
-              </div>
+              <StatusPill label="Onboarding" value={obCfg.label || obStatus} tone={obCfg.color} />
             </div>
             <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: '4px 0 0' }}>{v.user?.name ? `Login: ${v.user.name} · ` : ''}{v.email || 'No email'}</p>
 
@@ -234,43 +235,54 @@ export default function TpvVendorDetail() {
 
         {/* Admin Onboarding Decision Toolbar (Modifies ONLY Onboarding Status) */}
         {manage && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', background: 'var(--bg-card)', padding: '10px 14px', borderRadius: 12, border: '1px solid var(--border)' }}>
-            <span style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--text-muted)', marginRight: 4 }}>Onboarding Decision:</span>
+          <div style={{ flexShrink: 0 }}>
+            <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-muted)', margin: '0 0 7px' }}>Onboarding Decision</p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
             
             <button
               onClick={() => { setDecisionModal('approve'); setRemarks('') }}
-              style={{ padding: '7px 14px', borderRadius: 8, background: '#10b981', color: '#fff', border: 'none', fontSize: 12, fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, boxShadow: '0 2px 8px rgba(16,185,129,0.3)' }}
+              style={{ padding: '8px 14px', borderRadius: 9, background: '#0ca30c', color: '#fff', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}
             >
               <ShieldCheck size={14} /> Approve Onboarding
             </button>
 
             <button
               onClick={() => { setDecisionModal('hold'); setRemarks('') }}
-              style={{ padding: '7px 12px', borderRadius: 8, background: '#fffbeb', border: '1px solid #fde68a', color: '#b45309', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+              style={ghostBtn}
             >
               <PauseCircle size={14} /> Put On Hold
             </button>
 
             <button
               onClick={() => { setDecisionModal('reject'); setRemarks('') }}
-              style={{ padding: '7px 12px', borderRadius: 8, background: '#ef4444', color: '#fff', border: 'none', fontSize: 12, fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+              style={{ ...ghostBtn, color: '#d03b3b', borderColor: 'color-mix(in srgb, #d03b3b 32%, transparent)' }}
             >
               <XCircle size={14} /> Reject
             </button>
 
             <button
               onClick={() => { setDecisionModal('resubmit'); setRemarks('') }}
-              style={{ padding: '7px 12px', borderRadius: 8, background: 'var(--bg-input)', color: 'var(--text-h)', border: '1px solid var(--border)', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+              style={ghostBtn}
             >
               <CornerUpLeft size={14} /> Send Back
             </button>
+            </div>
           </div>
         )}
       </div>
 
       {/* Two-pane: left section nav + right content */}
       <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
-        <nav style={{ width: 232, flexShrink: 0, position: 'sticky', top: 16 }}>
+        {/* 35 sections across 5 groups. Sticky with no height cap meant that once
+            enough groups were expanded the nav grew past the viewport and its lower
+            entries could not be reached — the page scrolls, but a sticky element
+            does not. Cap it to the viewport and let it scroll independently.
+            scrollbarGutter keeps the items from shifting when the bar appears. */}
+        <nav style={{
+          width: 232, flexShrink: 0, position: 'sticky', top: 16,
+          maxHeight: 'calc(100vh - 32px)', overflowY: 'auto', overscrollBehavior: 'contain',
+          scrollbarGutter: 'stable', paddingRight: 2,
+        }}>
           {NAV_GROUPS.map(({ group, icon: GIcon, items }) => {
             const open = !collapsed[group]
             return (
@@ -406,6 +418,17 @@ function SectionContent({ tab, v, isActive, manage, api, moduleName }) {
     case 'Contact':
       // The Contact tab is now purely the master contact list (vendor-scoped CRUD).
       return <TpvVendorContacts vendorId={v.id} vendor={v} manage={manage} api={api} />
+    case 'Tasks':
+      // Two routes reach this tab: tasks raised against the vendor
+      // (rel_type='tpv_vendor') and tasks assigned to the vendor's portal login.
+      return (
+        <VendorTasksPanel
+          queryKey={['tpv-vendor-tasks', v.id]}
+          fetcher={() => tpvApi.vendors.tasks(v.id)}
+          accent="#0ea5e9"
+          emptyHint="Assign a task to this vendor’s login, or set a task’s “Related To” → “TPV Vendor” → this vendor."
+        />
+      )
     case 'Documents':
       // Read-only: the vendor uploads through the portal during onboarding.
       // Admin reviews (approve/reject) and views/downloads — never uploads.
@@ -415,6 +438,34 @@ function SectionContent({ tab, v, isActive, manage, api, moduleName }) {
       // "no such module in this system". See TAB_EMPTY_REASON.
       return <ComingSoonSection name={tab} reason={TAB_EMPTY_REASON[tab]} />
   }
+}
+
+/**
+ * A status pill. The label sits above the value so the two read as one unit
+ * instead of a run-on sentence, and the colour is a quiet tint — status colour is
+ * never the only carrier of meaning, the written label always is.
+ */
+function StatusPill({ label, value, tone }) {
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 6,
+      padding: '4px 11px', borderRadius: 999, whiteSpace: 'nowrap',
+      background: `color-mix(in srgb, ${tone} 11%, transparent)`,
+      border: `1px solid color-mix(in srgb, ${tone} 26%, transparent)`,
+    }}>
+      <span style={{ width: 6, height: 6, borderRadius: 999, background: tone, flexShrink: 0 }} />
+      <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>{label}</span>
+      <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-h)' }}>{value}</span>
+    </span>
+  )
+}
+
+/* Recessive action. Only ONE button in a toolbar should be filled. */
+const ghostBtn = {
+  padding: '8px 12px', borderRadius: 9, background: 'transparent',
+  border: '1px solid var(--border)', color: 'var(--text-muted)',
+  fontSize: 12, fontWeight: 700, cursor: 'pointer',
+  display: 'inline-flex', alignItems: 'center', gap: 5,
 }
 
 function Card({ icon: Icon, title, children }) {

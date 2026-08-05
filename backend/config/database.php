@@ -32,6 +32,33 @@ return [
 
     'connections' => [
 
+        /*
+        | SangoeTrack HRM — READ ONLY.
+        |
+        | The employee roster is read straight from SangoeTrack's own database
+        | rather than polled over HTTP. Nothing in this app ever writes to this
+        | connection, and no migration targets it: it is not in the migration
+        | path, so `migrate` will never touch it.
+        |
+        | The password is intentionally env-only with no fallback. A wrong or
+        | missing SANGOETRACK_DB_PASSWORD must fail loudly at connect time, not
+        | silently connect as somebody else.
+        */
+        'sangoetrack' => [
+            'driver'         => 'mysql',
+            'host'           => env('SANGOETRACK_DB_HOST', '127.0.0.1'),
+            'port'           => env('SANGOETRACK_DB_PORT', '3306'),
+            'database'       => env('SANGOETRACK_DB_DATABASE', 'admin_sangoe_track_new'),
+            'username'       => env('SANGOETRACK_DB_USERNAME', 'admin_sangoe_track_new'),
+            'password'       => env('SANGOETRACK_DB_PASSWORD'),
+            'charset'        => 'utf8mb4',
+            'collation'      => 'utf8mb4_unicode_ci',
+            'prefix'         => '',
+            'prefix_indexes' => true,
+            'strict'         => true,
+            'engine'         => null,
+        ],
+
         'sqlite' => [
             'driver'                  => 'sqlite',
             'url'                     => env('DB_URL'),

@@ -9,6 +9,7 @@ import { hrApi } from '@/services/hrApi'
 import OnboardingVerificationPanel from '@/modules/hr/components/OnboardingVerificationPanel'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 import AuditTimeline from '@/components/ui/AuditTimeline'
+import EmployeeAssetsPanel from '@/modules/hr/components/EmployeeAssetsPanel'
 import {
   ONB_STAGES, onbStatusCfg, TASK_STATUS, TASK_STATUSES, TASK_CATEGORIES, BGV_STATUSES, fmtDate, fmtDateTime,
 } from '@/modules/hr/employeeOnboardingConstants'
@@ -62,7 +63,8 @@ const CHILD = {
   education: [['degree', 'Degree'], ['specialization', 'Specialization'], ['institution', 'Institution'], ['board_university', 'Board / University'], ['year_of_passing', 'Year'], ['percentage_grade', '% / Grade']],
   experience: [['company_name', 'Company'], ['designation', 'Designation'], ['from_date', 'From', 'date'], ['to_date', 'To', 'date'], ['last_ctc', 'Last CTC', 'number'], ['reason_for_leaving', 'Reason for Leaving']],
   family: [['member_name', 'Name'], ['relationship', 'Relationship'], ['dob', 'DOB', 'date'], ['occupation', 'Occupation'], ['contact', 'Contact'], ['is_dependent', 'Dependent', 'checkbox'], ['is_nominee', 'Nominee', 'checkbox']],
-  assets: [['asset_type', 'Asset Type', 'select', ['Laptop', 'Desktop', 'Mobile', 'SIM', 'Access Card', 'Software License', 'Accessories']], ['asset_tag_serial', 'Tag / Serial'], ['issued_date', 'Issued', 'date'], ['condition', 'Condition'], ['returned_date', 'Returned', 'date'], ['status', 'Status', 'select', ['Allocated', 'Issued', 'Returned', 'Lost', 'Pending']], ['remarks', 'Remarks']],
+  // No `assets` entry: assets are Inventory records, shown read-only by
+  // OnboardingAssetsTab. HR does not create or edit them.
 }
 
 export default function EmployeeOnboardingDetail() {
@@ -139,7 +141,7 @@ export default function EmployeeOnboardingDetail() {
         {tab === 'documents' && <DocumentsTab docs={d.documents} />}
         {tab === 'bank' && <SectionForm section="bank" title="Bank Details" id={id} profile={d.profile} reload={load} toast={showToast} editable={ab.bank?.edit} />}
         {tab === 'compliance' && <SectionForm section="compliance" title="Statutory Compliance" id={id} profile={d.profile} reload={load} toast={showToast} editable={ab.compliance?.edit} />}
-        {tab === 'assets' && <ChildTab section="assets" id={id} rows={d.assets} reload={load} toast={showToast} editable={ab.assets?.edit} />}
+        {tab === 'assets' && <OnboardingAssetsTab employeeId={ov?.employee_id} />}
         {tab === 'orientation' && <TasksTab id={id} tasks={pickTasks(d.tasks, ['Orientation'])} reload={load} toast={showToast} editable={ab.orientation?.edit} />}
         {tab === 'training' && <TasksTab id={id} tasks={pickTasks(d.tasks, ['Training'])} reload={load} toast={showToast} editable={ab.training?.edit} />}
         {tab === 'checklist' && <TasksTab id={id} tasks={pickTasks(d.tasks, ['IT_Setup', 'HR_Checklist', 'Manager_Checklist'])} reload={load} toast={showToast} editable={ab.checklist?.edit} grouped />}
@@ -247,14 +249,52 @@ function SectionForm({ section, title, id, profile, reload, toast, editable }) {
   )
 }
 
-/* ── Generic 1:many child table (education/experience/family/assets) ── */
+/**
+ * Assets during onboarding — a read of the Inventory register, not an editor.
+ *
+ * HR used to add asset rows here, giving the company a second asset list. Assets
+ * are assigned in Inventory now; doing so advances this onboarding's IT & Asset
+ * Allocation stage and shows up on the employee profile automatically.
+ */
+function OnboardingAssetsTab({ employeeId }) {
+  const navigate = useNavigate()
+  const [filter, setFilter] = useState('all')
+
+  if (!employeeId) {
+    return <p className="text-xs py-8 text-center" style={{ color: 'var(--text-muted)' }}>
+      No employee record linked to this onboarding yet.
+    </p>
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+        <div>
+          <h3 className="text-sm font-bold" style={{ color: 'var(--text-h)' }}>Asset Allocation</h3>
+          <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+            Assets are assigned in Inventory. Assigning one here completes this stage.
+          </p>
+        </div>
+        <button onClick={() => navigate('/app/inventory/assets')}
+          className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl"
+          style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }}>
+          <Laptop size={13} /> Request asset assignment in Inventory
+        </button>
+      </div>
+
+      <EmployeeAssetsPanel employeeId={employeeId} filter={filter} onFilterChange={setFilter} />
+    </div>
+  )
+}
+
+/* ── Generic 1:many child table (education/experience/family) ── */
 function ChildTab({ section, id, rows = [], reload, toast, editable, titleOverride }) {
   const spec = CHILD[section]
   const [form, setForm] = useState(null) // {id?, ...}
   const [busy, setBusy] = useState(false)
   const api = hrApi.employeeOnboarding
-  const A = { education: ['addEducation', 'updateEducation', 'deleteEducation'], experience: ['addExperience', 'updateExperience', 'deleteExperience'], family: ['addFamily', 'updateFamily', 'deleteFamily'], assets: ['addAsset', 'updateAsset', 'deleteAsset'] }[section]
-  const title = titleOverride || { education: 'Education', experience: 'Employment History', family: 'Family Details', assets: 'Assets Allocation' }[section]
+  const A = { education: ['addEducation', 'updateEducation', 'deleteEducation'], experience: ['addExperience', 'updateExperience', 'deleteExperience'], family: ['addFamily', 'updateFamily', 'deleteFamily'] }[section]
+  const title = titleOverride || { education: 'Education', experience: 'Employment History', family: 'Family Details' }[section]
 
   const blank = () => { const f = {}; spec.forEach(([k, , t]) => f[k] = t === 'checkbox' ? false : ''); setForm(f) }
   const save = async () => {

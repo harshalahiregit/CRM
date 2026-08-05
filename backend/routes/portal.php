@@ -74,6 +74,16 @@ Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access'])->prefix('por
     Route::patch('/contacts/{contact}/status',            [VendorPortalController::class, 'setContactStatus']);
 
     // Workers — own vendor only (vendor_id injected server-side, never from URL)
+    // PPE catalogue + issue/return for the vendor's own workers. Stock is
+    // Inventory's; this only reads it and posts movements through the service.
+    Route::get('/ppe',                                    [\App\Http\Controllers\Api\Tpv\PpeController::class, 'catalogue']);
+    Route::get('/ppe/summary',                            [\App\Http\Controllers\Api\Tpv\PpeController::class, 'summary']);
+    Route::get('/ppe/item/{product}/image',               [\App\Http\Controllers\Api\Tpv\PpeController::class, 'image']);
+    // Read-only: a vendor must see what its own workers still need, not edit the rules.
+    Route::get('/ppe/compliance/workers/{worker}',        [\App\Http\Controllers\Api\Tpv\PpeRequirementController::class, 'worker']);
+    Route::get('/ppe/workers/{worker}',                     [\App\Http\Controllers\Api\Tpv\PpeController::class, 'worker']);
+    Route::post('/ppe/workers/{worker}/issue',              [\App\Http\Controllers\Api\Tpv\PpeController::class, 'issue']);
+    Route::post('/ppe/issues/{issue}/return',             [\App\Http\Controllers\Api\Tpv\PpeController::class, 'returnIssue']);
     Route::get('/workers/stats',                          [VendorPortalController::class, 'workerStats']);
     Route::get('/workers',                                [VendorPortalController::class, 'workers']);
     Route::post('/workers',                               [VendorPortalController::class, 'storeWorker']);
@@ -82,8 +92,6 @@ Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access'])->prefix('por
     Route::put('/workers/{worker}',                       [VendorPortalController::class, 'updateWorker']);
     Route::post('/workers/{worker}/medical',              [VendorPortalController::class, 'saveMedical']);
     Route::post('/workers/{worker}/induction',            [VendorPortalController::class, 'saveInduction']);
-    Route::post('/workers/{worker}/ppe',                  [VendorPortalController::class, 'issuePpe']);
-    Route::delete('/workers/{worker}/ppe/{ppeIssue}',     [VendorPortalController::class, 'removePpe']);
     Route::get('/workers/{worker}/attendance',            [VendorPortalController::class, 'workerAttendance']);
     Route::get('/workers/{worker}/strikes',               [VendorPortalController::class, 'workerStrikes']);
 
@@ -112,6 +120,10 @@ Route::prefix('purchase-vendor')->group(function () {
 Route::middleware(['auth:sanctum', 'purchase.vendor.portal'])->prefix('portal/purchase')->group(function () {
     Route::post('/logout',                            [PurchaseVendorAuthController::class, 'logout']);
     Route::get('/dashboard',                          [PurchasePortalController::class, 'dashboard']);
+    Route::get('/ppe',                                [\App\Http\Controllers\Api\Tpv\PpeController::class, 'catalogue']);
+    Route::get('/ppe/summary',                        [\App\Http\Controllers\Api\Tpv\PpeController::class, 'summary']);
+    Route::get('/ppe/item/{product}/image',           [\App\Http\Controllers\Api\Tpv\PpeController::class, 'image']);
+    Route::get('/tasks',                              [PurchasePortalController::class, 'tasks']);
     Route::get('/me',                                 [PurchasePortalController::class, 'me']);
     // One-time post-activation welcome banner (dismissal persisted server-side).
     Route::post('/welcome/dismiss',                   [PurchasePortalController::class, 'dismissWelcomeBanner']);

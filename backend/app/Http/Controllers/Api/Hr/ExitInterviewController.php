@@ -9,8 +9,10 @@ use Illuminate\Http\Request;
 
 class ExitInterviewController extends Controller
 {
-    public function __construct(private ExitInterviewService $service)
-    {
+    public function __construct(
+        private ExitInterviewService $service,
+        private \App\Services\Hr\ExitQuestionnaireService $questionnaires,
+    ) {
     }
 
     /** Row-level tenancy: guard route-model binding the same way the HR module does. */
@@ -38,9 +40,15 @@ class ExitInterviewController extends Controller
         $this->assertTenant($request, $employee);
         $this->assertCanManage($request);
 
+        $record = $employee->exitInterview()->first();
+
         return response()->json([
             'prefill' => $this->service->prefill($employee, $request->user()->tenant?->name),
-            'record'  => $employee->exitInterview()->first(),
+            // #44 — templated answers travel with the record, so reopening a draft
+            // shows what was already answered rather than a blank questionnaire.
+            'record'  => $record ? $record->toArray() + [
+                'answers' => $this->questionnaires->answersFor($record),
+            ] : null,
         ]);
     }
 
@@ -70,6 +78,16 @@ class ExitInterviewController extends Controller
             'would_recommend'         => 'nullable|string|max:2000',
             'rating'                  => 'nullable|integer|min:1|max:5',
             'submit'                  => 'nullable|boolean',
+            // #44 — the templated half. Absent, the fixed form above is the whole
+            // interview and nothing downstream changes.
+            'questionnaire_id'          => 'nullable|integer',
+            'answers'                   => 'nullable|array',
+            'answers.*.question_id'     => 'required_with:answers|integer',
+            'answers.*.answer_text'     => 'nullable|string|max:4000',
+            'answers.*.answer_rating'   => 'nullable|integer|min:1|max:10',
+            'answers.*.answer_boolean'  => 'nullable|boolean',
+            'answers.*.answer_options'  => 'nullable|array',
+            'answers.*.answer_options.*' => 'string|max:255',
         ]);
 
         $submit = (bool) ($data['submit'] ?? false);

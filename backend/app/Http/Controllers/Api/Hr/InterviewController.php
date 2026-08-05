@@ -21,7 +21,7 @@ class InterviewController extends Controller
     public function index(Request $request)
     {
         return response()->json(
-            $this->interviewService->list($request->user()->tenant_id, $request->only(['status', 'date', 'today', 'candidate_id', 'job_posting_id']))
+            $this->interviewService->list($request->user()->tenant_id, $request->only(['status', 'date', 'today', 'candidate_id', 'job_posting_id', 'hiring_manager_id']))
         );
     }
 

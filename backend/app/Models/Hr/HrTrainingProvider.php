@@ -15,9 +15,23 @@ class HrTrainingProvider extends Model
     protected $fillable = [
         'tenant_id', 'name', 'code', 'provider_type', 'contact_person', 'email', 'phone',
         'website', 'description', 'is_active', 'created_by', 'updated_by',
+        // #22 — department reuses the EXISTING hr_departments master; the rest are
+        // free-text lists, since no company-wide expertise or qualification master
+        // exists and inventing three would be scope nobody asked for.
+        'department_id', 'expertise', 'certifications', 'qualifications', 'skills',
     ];
 
     protected $casts = [
-        'is_active' => 'boolean',
+        'is_active'      => 'boolean',
+        'expertise'      => 'array',
+        'certifications' => 'array',
+        'qualifications' => 'array',
+        'skills'         => 'array',
     ];
+
+    /** The department this provider is aligned to — the same master employees use. */
+    public function department()
+    {
+        return $this->belongsTo(HrDepartment::class, 'department_id');
+    }
 }

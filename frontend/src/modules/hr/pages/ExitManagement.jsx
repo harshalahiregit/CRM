@@ -3,17 +3,20 @@ import { useTheme } from '@/context/ThemeContext'
 import {
   LogOut, Tag, FileText, Send, CheckSquare, ClipboardCheck, Wallet, BarChart3,
   Lock, Plus, Pencil, X, Power, Search, Eye, Paperclip, Download, Undo2, Clock,
-  PlayCircle, CheckCircle2, XCircle, MessageSquare,
+  PlayCircle, CheckCircle2, XCircle, MessageSquare, FileQuestion,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 import ExitReports from './ExitReports'
+import ExitQuestionnaires from '../components/ExitQuestionnaires'
 
 const GRAD = 'linear-gradient(135deg,#7C3AED,#5b21b6)'
 
 const TABS = [
   { key:'types',     label:'Exit Types',    icon:Tag,           ready:true },
   { key:'policies',  label:'Exit Policies', icon:FileText,      ready:true },
+  // #44 — sits with the other exit masters, before the requests that use it.
+  { key:'questionnaires', label:'Questionnaires', icon:FileQuestion, ready:true },
   { key:'requests',  label:'Exit Requests', icon:Send,          ready:true },
   { key:'approval',  label:'Exit Approval', icon:CheckSquare,   ready:true },
   { key:'clearance', label:'Clearance',     icon:ClipboardCheck,ready:true },
@@ -84,6 +87,7 @@ export default function ExitManagement() {
 
       {tab === 'types' ? <ExitTypes showToast={showToast} />
         : tab === 'policies' ? <ExitPolicies showToast={showToast} />
+        : tab === 'questionnaires' ? <ExitQuestionnaires showToast={showToast} />
         : tab === 'requests' ? <ExitRequests showToast={showToast} />
         : tab === 'approval' ? <ExitApproval showToast={showToast} />
         : tab === 'clearance' ? <ExitClearance showToast={showToast} />
@@ -983,6 +987,16 @@ function SettlementDrawer({ id, onClose, onChanged, showToast }) {
                     <Row l="Pending Salary" v={c.earnings.pending_salary} />
                     <Row l="Leave Encashment" v={c.earnings.leave_encashment} />
                     <Row l="Gratuity" v={c.earnings.gratuity} />
+                    {/* How gratuity was arrived at. `legacy_default` means no
+                        Gratuity statutory rule is configured and a formula built
+                        into the code was used — worth surfacing, not hiding. */}
+                    {c.context?.gratuity_basis && (
+                      <p className="text-[10px] pl-1 -mt-0.5" style={{ color: c.context.gratuity_basis.source === 'legacy_default' ? '#fbbf24' : 'var(--text-muted)' }}>
+                        {c.context.gratuity_basis.formula ? `${c.context.gratuity_basis.formula} · ` : ''}
+                        {c.context.gratuity_basis.eligible_years ? `${c.context.gratuity_basis.eligible_years} yr · ` : ''}
+                        {c.context.gratuity_basis.reason || 'From the configured Gratuity rule'}
+                      </p>
+                    )}
                     <Row l="Bonus" v={c.earnings.bonus} />
                     <Row l="Incentives" v={c.earnings.incentives} />
                     <Row l="Other Earnings" v={c.earnings.other_earnings} />

@@ -67,9 +67,11 @@ return new class extends Migration
 
     private function indexExists(string $table, string $index): bool
     {
+        // Driver-agnostic: PRAGMA is SQLite-only and simply throws on MySQL,
+        // which used to make every index look absent.
         try {
-            return collect(DB::select("PRAGMA index_list('{$table}')"))
-                ->contains(fn ($i) => ($i->name ?? null) === $index);
+            return collect(Schema::getIndexes($table))
+                ->contains(fn ($i) => strcasecmp($i['name'] ?? '', $index) === 0);
         } catch (\Throwable $e) {
             return false;
         }

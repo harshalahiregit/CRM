@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\Hr\TrainingCompletionController;
 use App\Http\Controllers\Api\Hr\TrainingProgramController;
 use App\Http\Controllers\Api\Hr\TrainingProviderController;
 use App\Http\Controllers\Api\Hr\TrainingQuizController;
+use App\Http\Controllers\Api\Hr\QuizController;
 use App\Http\Controllers\Api\Hr\TrainingReportController;
 use App\Http\Controllers\Api\Hr\TrainingSessionController;
 use App\Http\Controllers\Api\Hr\TrainingTypeController;
@@ -16,6 +17,30 @@ use Illuminate\Support\Facades\Route;
 
 // ── Learning & Development — Phases 1-7 (complete module). Sanctum, /hr/learning. ──
 Route::middleware('auth:sanctum')->prefix('hr/learning')->group(function () {
+
+    /*
+    |--------------------------------------------------------------------------
+    | #25 — Quiz engine: question bank, quizzes, attempts, evaluation
+    |--------------------------------------------------------------------------
+    | Separate from the legacy /quizzes score record (TrainingQuizController),
+    | which is untouched. Static segments precede {id} throughout.
+    */
+    Route::get('/quiz/meta',                    [QuizController::class, 'meta']);
+    Route::get('/quiz/questions',               [QuizController::class, 'questions']);
+    Route::post('/quiz/questions',              [QuizController::class, 'saveQuestion']);
+    Route::put('/quiz/questions/{id}',          [QuizController::class, 'saveQuestion'])->whereNumber('id');
+    Route::delete('/quiz/questions/{id}',       [QuizController::class, 'destroyQuestion'])->whereNumber('id');
+
+    Route::get('/quiz/attempts/{attemptId}',        [QuizController::class, 'result'])->whereNumber('attemptId');
+    Route::post('/quiz/attempts/{attemptId}/submit',[QuizController::class, 'submit'])->whereNumber('attemptId');
+    Route::get('/quiz/employees/{employeeId}/history', [QuizController::class, 'employeeHistory'])->whereNumber('employeeId');
+
+    Route::get('/quiz',                         [QuizController::class, 'index']);
+    Route::post('/quiz',                        [QuizController::class, 'save']);
+    Route::get('/quiz/{id}',                    [QuizController::class, 'show'])->whereNumber('id');
+    Route::put('/quiz/{id}',                    [QuizController::class, 'save'])->whereNumber('id');
+    Route::delete('/quiz/{id}',                 [QuizController::class, 'destroy'])->whereNumber('id');
+    Route::post('/quiz/{id}/start',             [QuizController::class, 'start'])->whereNumber('id');
 
     // Training Categories
     Route::get('/categories',              [TrainingCategoryController::class, 'index']);
@@ -53,6 +78,9 @@ Route::middleware('auth:sanctum')->prefix('hr/learning')->group(function () {
     // Employee Training Assignments (Phase 4)
     Route::get('/assignments',                    [EmployeeTrainingController::class, 'index']);
     Route::get('/assignments/history',            [EmployeeTrainingController::class, 'history']);
+    // #23 — retraining. Static segments precede /assignments/{id}.
+    Route::get('/assignments/retraining/{employee}',           [EmployeeTrainingController::class, 'retrainingSummary'])->whereNumber('employee');
+    Route::get('/assignments/retraining/{employee}/{program}', [EmployeeTrainingController::class, 'retrainingHistory'])->whereNumber('employee')->whereNumber('program');
     Route::get('/assignments/employee/{employee}',[EmployeeTrainingController::class, 'forEmployee'])->whereNumber('employee');
     Route::get('/assignments/{id}',               [EmployeeTrainingController::class, 'show'])->whereNumber('id');
     Route::post('/assignments',                   [EmployeeTrainingController::class, 'store']);

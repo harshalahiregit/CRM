@@ -24,9 +24,14 @@ class CandidateController extends Controller
 
     public function index(Request $request)
     {
-        return response()->json(
-            $this->candidateService->list($request->user()->tenant_id, $request->only(['stage', 'job_posting_id', 'source', 'search']))
-        );
+        $tenantId = $request->user()->tenant_id;
+        $filters  = $request->only(['stage', 'job_posting_id', 'source', 'search', 'designation', 'designation_id', 'hiring_manager_id']);
+
+        // Resolved to the stored NAME here so the repository stays free of
+        // master-data lookups. Null (absent or unknown id) means "no filter".
+        $filters['designation_name'] = \App\Support\Hr\DesignationFilter::resolve($filters, $tenantId);
+
+        return response()->json($this->candidateService->list($tenantId, $filters));
     }
 
     public function store(StoreCandidateRequest $request)

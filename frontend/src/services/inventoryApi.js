@@ -85,6 +85,9 @@ export const inventoryApi = {
     remove:    (id) => api.delete(`/inventory/assets/${id}`).then(unwrap).catch(handleErr),
     assign:    (id, assigned_to) => api.post(`/inventory/assets/${id}/assign`, { assigned_to }).then(unwrap).catch(handleErr),
     setStatus: (id, status) => api.patch(`/inventory/assets/${id}/status`, { status }).then(unwrap).catch(handleErr),
+    // assign / return / transfer / replace / maintenance / lost / damaged — status,
+    // holder and history all move in one transaction.
+    lifecycle: (id, data) => api.post(`/inventory/assets/${id}/lifecycle`, data).then(unwrap).catch(handleErr),
     addEvent:  (id, data) => api.post(`/inventory/assets/${id}/events`, data).then(unwrap).catch(handleErr),
   },
 

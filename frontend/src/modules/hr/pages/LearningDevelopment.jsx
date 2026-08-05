@@ -5,10 +5,13 @@ import {
   Presentation, ClipboardCheck, FileQuestion, MessageSquare, Award, CheckCircle2,
   LayoutDashboard, BarChart3, Lock, Plus, Pencil, X, Power, Search, Globe, Mail, Phone,
   Eye, Clock, Users, Target, MapPin, Video, PlayCircle, XCircle, ChevronLeft, ChevronRight, User,
-  Check, Download, Upload, Percent, UserCheck,
+  Check, Download, Upload, Percent, UserCheck, ListChecks,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
+import TagInput from '@/components/ui/TagInput'   // #22 — shared, not a fifth tag input
+import QuizBuilder from '../components/QuizBuilder'   // #25
+import { AssignmentQuizzes } from '../components/QuizRunner'   // #25 — sitting a quiz
 import LearningReports from './LearningReports'
 
 const GRAD = 'linear-gradient(135deg,#7C3AED,#5b21b6)'
@@ -19,26 +22,54 @@ const fmtTime = (d) => d ? new Date(d).toLocaleTimeString('en-US', { hour:'2-dig
 const fmtDT = (d) => d ? `${fmtDate(d)} · ${fmtTime(d)}` : '—'
 const toLocalInput = (iso) => { if (!iso) return ''; const d = new Date(iso); const p = n => String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}` }
 
+// Ordered to follow the training lifecycle, left → right:
+//   overview (Dashboard) → setup (Categories…Programs) → delivery (Calendar…
+//   Attendance) → evaluation (Assessment…Completion) → Reports.
+// Dashboard used to sit 13th of 14, so the module's summary was the last thing
+// anyone found; it now opens the module, and Reports closes it.
 const TABS = [
+  { key:'dashboard',  label:'Dashboard',          icon:LayoutDashboard,ready:true },
   { key:'categories', label:'Categories',        icon:FolderTree,     ready:true },
   { key:'types',      label:'Training Types',     icon:Layers,         ready:true },
   { key:'providers',  label:'Providers',          icon:Building2,      ready:true },
   { key:'programs',   label:'Programs',           icon:BookOpen,       ready:true },
+  // #25 — authoring: the question bank, and the quizzes assembled from it. The
+  // 'quiz' tab further down is a different thing — it records a SCORE against the
+  // legacy hr_training_quizzes table and is left exactly as it was.
+  { key:'quizbuilder',label:'Quiz Builder',       icon:ListChecks,     ready:true },
   { key:'calendar',   label:'Calendar',           icon:CalendarRange,  ready:true },
   { key:'sessions',   label:'Sessions',           icon:Presentation,   ready:true },
   { key:'assignment', label:'Assignment',         icon:UserPlus,       ready:true },
   { key:'attendance', label:'Attendance',         icon:UserCheck,      ready:true },
   { key:'assessment', label:'Assessment',         icon:ClipboardCheck, ready:true },
-  { key:'quiz',       label:'Quiz',               icon:FileQuestion,   ready:true },
+  { key:'quiz',       label:'Quiz Scores',        icon:FileQuestion,   ready:true },
   { key:'certificates',label:'Certificates',      icon:Award,          ready:true },
   { key:'completion', label:'Completion',         icon:CheckCircle2,   ready:true },
-  { key:'dashboard',  label:'Dashboard',          icon:LayoutDashboard,ready:true },
   { key:'reports',    label:'Reports',            icon:BarChart3,      ready:true },
+]
+
+/**
+ * Review comment #24 — "Lifecycle - present it properly".
+ *
+ * The tab ORDER already follows the lifecycle (fixed in an earlier phase), but a
+ * flat strip of fourteen equal buttons doesn't show that there IS a lifecycle —
+ * "Assignment" looks like a sibling of "Categories" rather than a later stage.
+ * These groups make the existing order legible.
+ *
+ * Presentation only: same tabs, same keys, same order, same handlers. Nothing
+ * about how a program, session or assessment behaves changes.
+ */
+const TAB_PHASES = [
+  { label:'Overview',   keys:['dashboard'] },
+  { label:'Setup',      keys:['categories', 'types', 'providers', 'programs', 'quizbuilder'] },
+  { label:'Delivery',   keys:['calendar', 'sessions', 'assignment', 'attendance'] },
+  { label:'Evaluation', keys:['assessment', 'quiz', 'certificates', 'completion'] },
+  { label:'Reports',    keys:['reports'] },
 ]
 
 export default function LearningDevelopment() {
   useTheme()
-  const [tab, setTab] = useState('categories')
+  const [tab, setTab] = useState('dashboard')
   const [toast, setToast] = useState(null)
   const showToast = (msg, type='success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000) }
   const current = TABS.find(t => t.key === tab)
@@ -56,16 +87,34 @@ export default function LearningDevelopment() {
         </div>
       </div>
 
-      <div className="flex gap-1.5 flex-wrap">
-        {TABS.map(t => {
-          const active = tab === t.key
-          return (
-            <button key={t.key} onClick={()=>setTab(t.key)} className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-bold transition-all"
-              style={{ background: active ? GRAD : 'var(--bg-input)', color: active ? '#fff' : 'var(--text-muted)', border: active ? 'none' : '1px solid var(--border)' }}>
-              <t.icon size={15}/> {t.label}{!t.ready && <Lock size={11} style={{ opacity:0.7 }}/>}
-            </button>
-          )
-        })}
+      {/* #24 — the same tabs in the same order, grouped so the training lifecycle
+          reads as stages instead of fourteen equal buttons. */}
+      <div className="flex gap-x-5 gap-y-3 flex-wrap items-start">
+        {TAB_PHASES.map((phase, i) => (
+          <div key={phase.label} className="flex items-start gap-5">
+            <div>
+              <p className="label-caps mb-1.5" style={{ fontSize:10, letterSpacing:'0.06em' }}>{phase.label}</p>
+              <div className="flex gap-1.5 flex-wrap">
+                {phase.keys.map(key => {
+                  const t = TABS.find(x => x.key === key)
+                  if (!t) return null
+                  const active = tab === t.key
+                  return (
+                    <button key={t.key} onClick={()=>setTab(t.key)} className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-bold transition-all"
+                      style={{ background: active ? GRAD : 'var(--bg-input)', color: active ? '#fff' : 'var(--text-muted)', border: active ? 'none' : '1px solid var(--border)' }}>
+                      <t.icon size={15}/> {t.label}{!t.ready && <Lock size={11} style={{ opacity:0.7 }}/>}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+            {/* Separator between phases — the arrow is what makes it read as a
+                progression rather than five unrelated groups. */}
+            {i < TAB_PHASES.length - 1 && (
+              <ChevronRight size={16} style={{ color:'var(--text-muted)', opacity:0.5, marginTop:26, flexShrink:0 }}/>
+            )}
+          </div>
+        ))}
       </div>
 
       {tab === 'categories' ? <Categories showToast={showToast} />
@@ -77,6 +126,7 @@ export default function LearningDevelopment() {
         : tab === 'assignment' ? <Assignments showToast={showToast} />
         : tab === 'attendance' ? <Attendance showToast={showToast} />
         : tab === 'assessment' ? <Assessments showToast={showToast} />
+        : tab === 'quizbuilder' ? <QuizBuilder showToast={showToast} />
         : tab === 'quiz' ? <Quizzes showToast={showToast} />
         : tab === 'certificates' ? <Certificates showToast={showToast} />
         : tab === 'completion' ? <Completion showToast={showToast} />
@@ -263,12 +313,29 @@ function Providers({ showToast }) {
   }, [statusF, typeF, search])
   useEffect(() => { load() }, [load])
 
-  const EMPTY = { name:'', code:'', provider_type:'External', contact_person:'', email:'', phone:'', website:'', description:'', is_active:true }
+  // #22 — the department list. Reuses the same organization options endpoint the
+  // Programs tab already calls; no second source of departments.
+  const [departments, setDepartments] = useState([])
+  useEffect(() => { hrApi.organization.options().then(o=>setDepartments(o.departments||[])).catch(()=>{}) }, [])
+
+  // #22 — Department, Expertise, Certifications, Qualifications and Skills. The
+  // API has accepted and returned all five since Phase B; the form simply never
+  // sent them, so every value a user typed elsewhere was invisible here. The four
+  // lists MUST default to arrays: TagInput spreads `value`, and an undefined would
+  // throw on first render.
+  const EMPTY = {
+    name:'', code:'', provider_type:'External', contact_person:'', email:'', phone:'',
+    website:'', description:'', is_active:true,
+    department_id:'', expertise:[], certifications:[], qualifications:[], skills:[],
+  }
   const save = async () => {
     const f = modal.form
     if (!f.name.trim()) return showToast('Provider name is required','error')
     setSaving(true)
-    try { modal.editing ? await hrApi.learning.providers.update(modal.editing, f) : await hrApi.learning.providers.create(f); showToast(`Provider ${modal.editing?'updated':'created'}`); setModal(null); load() }
+    // #22 — the select yields '' for "no department"; the API validates
+    // `nullable|integer`, which '' fails. Send null so "none" is expressible.
+    const payload = { ...f, department_id: f.department_id === '' ? null : f.department_id }
+    try { modal.editing ? await hrApi.learning.providers.update(modal.editing, payload) : await hrApi.learning.providers.create(payload); showToast(`Provider ${modal.editing?'updated':'created'}`); setModal(null); load() }
     catch (e) { showToast(e.response?.data?.message||'Save failed','error') } finally { setSaving(false) }
   }
   const toggle = async (r) => { try { await hrApi.learning.providers.setStatus(r.id, !r.is_active); load() } catch { showToast('Failed','error') } }
@@ -284,14 +351,33 @@ function Providers({ showToast }) {
       {loading ? <HrLoading label="Loading providers…" /> : rows.length===0 ? <HrEmpty icon={Building2} title="No training providers yet" hint="Add internal teams or external vendors (Coursera, Udemy…)." />
         : <div className="card-3d overflow-x-auto" style={{ padding:'6px' }}>
             <table className="w-full text-sm" style={{ minWidth:820 }}>
-              <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{['Provider','Type','Contact','Status','Actions'].map(h=><th key={h} className={`text-left px-3 py-3 label-caps ${h==='Actions'?'text-right':''}`}>{h}</th>)}</tr></thead>
+              {/* #22 — Department is a column, not a modal-only field: it is how a
+                  trainer is matched to a team, so it has to be visible in the list. */}
+              <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{['Provider','Type','Department','Contact','Status','Actions'].map(h=><th key={h} className={`text-left px-3 py-3 label-caps ${h==='Actions'?'text-right':''}`}>{h}</th>)}</tr></thead>
               <tbody>{rows.map(r=>(
                 <tr key={r.id} style={{ borderBottom:'1px solid var(--border)', opacity:r.is_active?1:0.55 }}>
-                  <td className="px-3 py-2.5"><span className="font-bold" style={{ color:'var(--text-h)' }}>{r.name}</span>{r.website && <a href={r.website.startsWith('http')?r.website:`https://${r.website}`} target="_blank" rel="noreferrer" className="ml-2 inline-flex" style={{ color:'#a78bfa' }}><Globe size={12}/></a>}</td>
+                  <td className="px-3 py-2.5">
+                    <span className="font-bold" style={{ color:'var(--text-h)' }}>{r.name}</span>
+                    {r.website && <a href={r.website.startsWith('http')?r.website:`https://${r.website}`} target="_blank" rel="noreferrer" className="ml-2 inline-flex" style={{ color:'#a78bfa' }}><Globe size={12}/></a>}
+                    {/* #22 — what this provider actually delivers, at a glance. */}
+                    {r.expertise?.length > 0 && (
+                      <span className="flex flex-wrap gap-1 mt-1">
+                        {r.expertise.slice(0,3).map(x=><span key={x} className="text-[9px] font-bold px-1.5 py-0.5 rounded-md" style={{ background:'rgba(124,58,237,0.1)', color:'#a78bfa' }}>{x}</span>)}
+                        {r.expertise.length>3 && <span className="text-[9px]" style={{ color:'var(--text-muted)' }}>+{r.expertise.length-3}</span>}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-3 py-2.5"><span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={r.provider_type==='Internal'?{background:'rgba(59,130,246,0.12)',color:'#3b82f6'}:{background:'rgba(124,58,237,0.1)',color:'#a78bfa'}}>{r.provider_type}</span></td>
+                  <td className="px-3 py-2.5" style={{ color:'var(--text-muted)' }}>{r.department_name || '—'}</td>
                   <td className="px-3 py-2.5" style={{ color:'var(--text-muted)' }}>{r.contact_person||'—'}{r.email && <span className="ml-2 inline-flex items-center gap-1 text-[10px]"><Mail size={10}/>{r.email}</span>}{r.phone && <span className="ml-2 inline-flex items-center gap-1 text-[10px]"><Phone size={10}/>{r.phone}</span>}</td>
                   <td className="px-3 py-2.5"><StatusPill active={r.is_active} /></td>
-                  <td className="px-3 py-2.5"><RowActions onEdit={()=>setModal({ editing:r.id, form:{ ...EMPTY, ...r } })} onToggle={()=>toggle(r)} active={r.is_active} /></td>
+                  {/* #22 — null becomes '' for the select, and the four lists fall
+                      back to [] so a provider saved before this existed still opens. */}
+                  <td className="px-3 py-2.5"><RowActions onEdit={()=>setModal({ editing:r.id, form:{ ...EMPTY, ...r,
+                    department_id: r.department_id ?? '',
+                    expertise: r.expertise||[], certifications: r.certifications||[],
+                    qualifications: r.qualifications||[], skills: r.skills||[],
+                  } })} onToggle={()=>toggle(r)} active={r.is_active} /></td>
                 </tr>
               ))}</tbody>
             </table>
@@ -308,7 +394,33 @@ function Providers({ showToast }) {
             <div><label className="label">Email</label><input className="input-3d text-sm" value={modal.form.email} onChange={e=>setModal(m=>({...m,form:{...m.form,email:e.target.value}}))}/></div>
             <div><label className="label">Phone</label><input className="input-3d text-sm" value={modal.form.phone} onChange={e=>setModal(m=>({...m,form:{...m.form,phone:e.target.value}}))}/></div>
             <div className="col-span-2"><label className="label">Website</label><input className="input-3d text-sm" value={modal.form.website} onChange={e=>setModal(m=>({...m,form:{...m.form,website:e.target.value}}))}/></div>
+            {/* #22 — Department reuses hr_departments, so a provider lines up with
+                the same org structure everything else in HR uses. */}
+            <div className="col-span-2"><label className="label">Department</label>
+              <select className="input-3d text-sm" value={modal.form.department_id}
+                onChange={e=>setModal(m=>({...m,form:{...m.form,department_id:e.target.value}}))}>
+                <option value="">— None —</option>
+                {departments.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+            </div>
             <div className="col-span-2"><label className="label">Description</label><textarea rows={2} className="input-3d text-sm resize-none" value={modal.form.description} onChange={e=>setModal(m=>({...m,form:{...m.form,description:e.target.value}}))}/></div>
+
+            {/* #22 — Expertise / Certifications / Qualifications / Skills. Free-text
+                lists on the same shared TagInput the rest of the app uses; the
+                server trims, drops blanks and de-duplicates them case-insensitively. */}
+            {[
+              ['expertise',      'Expertise',      'e.g. Safety Training',        20],
+              ['certifications', 'Certifications', 'e.g. ISO 45001',              20],
+              ['qualifications', 'Qualifications', 'e.g. Certified NEBOSH Tutor', 20],
+              ['skills',         'Skills',         'e.g. Scaffolding',            30],
+            ].map(([key, label, placeholder, max]) => (
+              <div key={key} className="col-span-2">
+                <label className="label">{label}</label>
+                <TagInput value={modal.form[key]} max={max} placeholder={placeholder}
+                  onChange={next=>setModal(m=>({...m,form:{...m.form,[key]:next}}))}/>
+              </div>
+            ))}
+
             {modal.editing && <label className="col-span-2 flex items-center gap-2 text-xs font-semibold"><input type="checkbox" checked={modal.form.is_active} onChange={e=>setModal(m=>({...m,form:{...m.form,is_active:e.target.checked}}))}/> Active</label>}
           </div>
           <div className="flex gap-3 pt-4"><button onClick={()=>setModal(null)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold" style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}>Cancel</button><button onClick={save} disabled={saving} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background:GRAD, opacity:saving?0.7:1 }}>{saving?'Saving…':'Save'}</button></div>
@@ -812,7 +924,17 @@ function Assignments({ showToast }) {
               <tbody>{rows.map(r=>(
                 <tr key={r.id} style={{ borderBottom:'1px solid var(--border)' }}>
                   <td className="px-3 py-2.5"><div className="font-bold" style={{ color:'var(--text-h)' }}>{r.employee_name}</div><div className="text-[10px] font-mono" style={{ color:'#a78bfa' }}>{r.employee_code} · {r.department||'—'}</div></td>
-                  <td className="px-3 py-2.5" style={{ color:'var(--text-h)' }}>{r.program} <span className="text-[10px] font-mono" style={{ color:'#a78bfa' }}>{r.program_code}</span></td>
+                  <td className="px-3 py-2.5" style={{ color:'var(--text-h)' }}>{r.program} <span className="text-[10px] font-mono" style={{ color:'#a78bfa' }}>{r.program_code}</span>
+                    {/* #23 — a repeat assignment must not read as a first attempt.
+                        Uses the attempt_number / is_retraining the API already sends. */}
+                    {r.is_retraining && (
+                      <span title={r.retraining_reason || 'Repeat of an earlier assignment'}
+                        className="ml-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded-md whitespace-nowrap"
+                        style={{ background:'rgba(249,115,22,0.14)', color:'#f97316' }}>
+                        Retraining #{r.attempt_number}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-3 py-2.5" style={{ color:'var(--text-muted)' }}>{r.session_title||'—'}<div className="text-[10px]">{r.trainer_name} · {fmtDate(r.session_start)}</div></td>
                   <td className="px-3 py-2.5" style={{ color:'var(--text-muted)' }}>{fmtDate(r.due_date)}</td>
                   <td className="px-3 py-2.5" style={{ minWidth:130 }}><ProgressBar pct={r.completion_percentage} /></td>
@@ -908,6 +1030,10 @@ function AssignmentDrawer({ id, onClose, onChanged, showToast }) {
                 <div key={i} className="flex gap-3"><div className="mt-1.5 rounded-full flex-shrink-0" style={{ width:8, height:8, background:'#a78bfa' }}/><div><p className="text-xs font-bold" style={{ color:'var(--text-h)' }}>{t.action}</p><p className="text-[10px]" style={{ color:'var(--text-muted)' }}>{t.actor_name||'System'} · {t.created_at?new Date(t.created_at).toLocaleString():''}</p>{t.comment && <p className="text-[11px] mt-0.5" style={{ color:'var(--text-muted)' }}>“{t.comment}”</p>}</div></div>
               ))}{(!a.timeline||!a.timeline.length) && <p className="text-xs" style={{ color:'var(--text-muted)' }}>No timeline yet.</p>}</div>
             </div>
+
+            {/* #25 — the assigned quiz. The assignment already knows the employee
+                and the programme, so neither has to be picked again. */}
+            <AssignmentQuizzes assignment={a} showToast={showToast} />
 
             {(a.status==='Assigned'||a.status==='In Progress') && (
               <div className="flex gap-2 flex-wrap">

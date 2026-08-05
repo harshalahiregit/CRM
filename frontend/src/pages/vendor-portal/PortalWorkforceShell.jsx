@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { LayoutDashboard, Users, ScanLine, CalendarCheck, ShieldAlert } from 'lucide-react'
+import { LayoutDashboard, Users, ScanLine, CalendarCheck, ShieldAlert, HardHat } from 'lucide-react'
 import ModuleShell from '@/components/layout/ModuleShell'
 import { portalApi } from '@/services/portalApi'
 
@@ -23,7 +23,10 @@ export default function PortalWorkforceShell() {
   const items = [
     { label: 'Dashboard',      path: `${base}/dashboard`,  icon: LayoutDashboard },
     { label: 'Workers',        path: `${base}/workers`,    icon: Users },
-    { label: 'Gate Log',       path: `${base}/gate-log`,   icon: ScanLine },
+    { label: 'PPE',            path: `${base}/ppe`,        icon: HardHat },
+    // Gate Log is the security desk's scan record, not a vendor task — it stays
+    // in the admin TPV module. The vendor still sees Attendance, which is the
+    // same information framed as their own workers' presence.
     { label: 'Attendance',     path: `${base}/attendance`, icon: CalendarCheck },
     { label: 'Safety Strikes', path: `${base}/strikes`,    icon: ShieldAlert },
   ]

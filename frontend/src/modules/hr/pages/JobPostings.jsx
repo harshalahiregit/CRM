@@ -40,7 +40,12 @@ const labelStyle = { display: 'block', fontSize: 11, fontWeight: 700, color: 'va
 const inputStyle = { width: '100%', padding: '9px 12px', background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-h)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }
 const miniBtn = { display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 8, background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 11.5, fontWeight: 700 }
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
-const fmtSalary = (f, t) => (!f && !t) ? null : `₹${f ? (f / 100000).toFixed(1) : '0'}–${t ? (t / 100000).toFixed(1) : '0'}L`
+// #2 — per-month figures, carried over from the manpower request.
+const fmtSalary = (f, t) => {
+  if (!f && !t) return null
+  const L = n => n >= 100000 ? `₹${(n / 100000).toFixed(1)}L` : `₹${Number(n).toLocaleString('en-IN')}`
+  return `${L(f || 0)}–${L(t || 0)}/mo`
+}
 const timeAgo = (iso) => {
   if (!iso) return null
   const s = (Date.now() - new Date(iso).getTime()) / 1000
@@ -82,6 +87,9 @@ export default function JobPostings() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch]   = useState('')
   const [filter, setFilter]   = useState('All')
+  const [desigF, setDesigF]   = useState('All')   // designation master filter
+  const [mgrF, setMgrF]       = useState('All')   // #3 — hiring manager filter
+  const { masters: listMasters } = useMasterData()
   const [busy, setBusy]       = useState(false)
   const [view, setView]       = useState(() => localStorage.getItem('hr_jobs_view') || 'card')
   const changeView = (v) => { setView(v); localStorage.setItem('hr_jobs_view', v) }
@@ -95,12 +103,18 @@ export default function JobPostings() {
   const fetchAll = useCallback(async () => {
     setLoading(true)
     try {
-      const [list, s] = await Promise.all([hrApi.jobs.list(), hrApi.jobs.stats()])
+      // Designation is sent as the master id; the API resolves it to the stored title.
+      // #3 — hiring manager resolves through the job's originating requisition.
+      const params = {
+        ...(desigF !== 'All' ? { designation_id: desigF } : {}),
+        ...(mgrF !== 'All' ? { hiring_manager_id: mgrF } : {}),
+      }
+      const [list, s] = await Promise.all([hrApi.jobs.list(params), hrApi.jobs.stats()])
       setJobs(Array.isArray(list) ? list : [])
       setStats(s || {})
     } catch (e) { console.error('Failed to load jobs', e) }
     finally { setLoading(false) }
-  }, [])
+  }, [desigF, mgrF])
   useEffect(() => { fetchAll() }, [fetchAll])
 
   // SPK-1: "Post Job" from an approved Manpower Request lands here with a prefill
@@ -229,6 +243,15 @@ export default function JobPostings() {
           <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search title, department or project..." style={{ ...inputStyle, paddingLeft: 32 }} />
         </div>
+        <select value={desigF} onChange={e => setDesigF(e.target.value)} style={{ ...inputStyle, width: 'auto', cursor: 'pointer' }}>
+          <option value="All">All Designations</option>
+          {(listMasters.designations || []).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+        </select>
+        {/* #3 — inherited from the requisition this job was raised from. */}
+        <select value={mgrF} onChange={e => setMgrF(e.target.value)} style={{ ...inputStyle, width: 'auto', cursor: 'pointer' }}>
+          <option value="All">All Hiring Managers</option>
+          {(listMasters.managers || []).map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+        </select>
         <select value={filter} onChange={e => setFilter(e.target.value)} style={{ ...inputStyle, width: 'auto', cursor: 'pointer' }}>
           <option value="All">All Status</option>
           {JOB_STATUSES.map(s => <option key={s} value={s}>{JOB_STATUS_CONFIG[s]?.label || s}</option>)}
@@ -409,6 +432,15 @@ function JobFormModal({ form, setForm, editingId, careerSlug, busy, onClose, onS
   // Keep a saved-but-now-inactive value selectable so existing records display it.
   const deptOptions = form.department && !deptSource.includes(form.department)
     ? [form.department, ...deptSource] : deptSource
+
+  // Job Title draws on the designation master for the same reason Department
+  // does — free text produced "Sr. Developer" / "Senior Developer" / "Sr Dev" as
+  // three distinct values, which no filter or report could group. A title that
+  // predates the master (or was typed before this change) is preserved and shown
+  // first, so no existing posting loses its data.
+  const desigNames  = (masters.designations || []).map(d => d.name)
+  const titleOptions = form.title && !desigNames.includes(form.title)
+    ? [form.title, ...desigNames] : desigNames
   const set = (k) => (e) => setForm(p => ({ ...p, [k]: e.target.value }))
   const toggleSource = (s) => setForm(p => ({ ...p, sources: (p.sources || []).includes(s) ? p.sources.filter(x => x !== s) : [...(p.sources || []), s] }))
   const pubUrl = publicApplyUrl(careerSlug, editingId)
@@ -462,7 +494,18 @@ function JobFormModal({ form, setForm, editingId, careerSlug, busy, onClose, onS
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-        <Field label="Job Title *"><input value={form.title} onChange={set('title')} placeholder="e.g. Senior Developer" style={inputStyle} /></Field>
+        <Field label="Job Title *">
+          {/* Falls back to free text only when no designations are configured,
+              so a fresh tenant is never blocked from creating a posting. */}
+          {titleOptions.length ? (
+            <select value={form.title} onChange={set('title')} style={{ ...inputStyle, cursor: 'pointer' }}>
+              <option value="">Select…</option>
+              {titleOptions.map(t => <option key={t}>{t}</option>)}
+            </select>
+          ) : (
+            <input value={form.title} onChange={set('title')} placeholder="e.g. Senior Developer" style={inputStyle} />
+          )}
+        </Field>
         <Field label="Department *"><select value={form.department} onChange={set('department')} style={{ ...inputStyle, cursor: 'pointer' }}><option value="">Select…</option>{deptOptions.map(d => <option key={d}>{d}</option>)}</select></Field>
         <Field label="Location *"><input value={form.location} onChange={set('location')} placeholder="e.g. Pune" style={inputStyle} /></Field>
         <Field label="Employment Type"><select value={form.job_type} onChange={set('job_type')} style={{ ...inputStyle, cursor: 'pointer' }}>{EMPLOYMENT_TYPES.map(t => <option key={t}>{t}</option>)}</select></Field>

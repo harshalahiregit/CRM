@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, ClipboardList, FileText, ShieldCheck, CalendarDays,
-  LogOut, Building2, Sun, Moon, Bell, User, HelpCircle, Menu,
+  LogOut, Building2, Sun, Moon, Bell, User, HelpCircle, Menu, HardHat,
 } from 'lucide-react'
 import { purchasePortalApi } from '@/services/purchasePortalApi'
 import { purchaseVendorAuthApi } from '@/services/purchaseVendorAuthApi'
@@ -31,11 +31,13 @@ export default function PurchasePortalShell() {
   const doLogout = async () => { try { await purchaseVendorAuthApi.logout() } finally { navigate('/purchase-portal/login') } }
 
   const nav = [
-    { to: '/purchase-portal/dashboard',  label: 'Dashboard',  icon: LayoutDashboard },
-    { to: '/purchase-portal/onboarding', label: 'Onboarding', icon: ClipboardList },
-    { to: '/purchase-portal/documents',  label: 'Documents',  icon: FileText },
-    { to: '/purchase-portal/approval',   label: 'Approval',   icon: ShieldCheck },
-    { to: '/purchase-portal/kickoff',    label: 'Kickoff',    icon: CalendarDays },
+    // Same rule as the TPV portal: Onboarding and Approval are admin workflows.
+    // The vendor uploads documents and reads its status; the decisions are the
+    // admin's. Kickoff stays — the vendor genuinely participates in it.
+    { to: '/purchase-portal/dashboard',  label: 'Dashboard',        icon: LayoutDashboard },
+    { to: '/purchase-portal/documents',  label: 'My Documents',     icon: FileText },
+    { to: '/purchase-portal/kickoff',    label: 'Kickoff Meeting',  icon: CalendarDays },
+    { to: '/purchase-portal/ppe',        label: 'PPE Stock',        icon: HardHat },
   ]
   const pageTitle = nav.slice().reverse().find(n => location.pathname.startsWith(n.to))?.label ?? 'Portal'
   const initials = (vendor?.company_name || 'PV').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()

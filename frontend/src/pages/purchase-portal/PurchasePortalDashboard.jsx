@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import RegistrationStatusCard from '@/components/vendor/RegistrationStatusCard'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Building2, ClipboardList, FileText, ShieldCheck, CalendarDays, ChevronRight,
@@ -70,12 +71,27 @@ export default function PurchasePortalDashboard() {
     { label: 'Upcoming Kickoff', value: kickoff?.scheduled_at ? fmtDateTime(kickoff.scheduled_at) : (kickoff ? cap(kickoff.status) : 'None'), icon: CalendarClock, color: '#7C3AED' },
   ]
 
+  // Onboarding and Approval shortcuts removed — both are admin workflows, and the
+  // approval status is now reported by the read-only card below rather than by a
+  // screen the vendor could mistake for something they must action.
   const tiles = [
-    { label: 'Onboarding', desc: 'Complete your onboarding steps', icon: ClipboardList, to: '/purchase-portal/onboarding' },
-    { label: 'Documents',  desc: 'Upload statutory documents',      icon: FileText,      to: '/purchase-portal/documents' },
-    { label: 'Approval',   desc: 'Track your approval status',       icon: ShieldCheck,   to: '/purchase-portal/approval' },
-    { label: 'Kickoff',    desc: 'Your kickoff meeting & MOM',       icon: CalendarDays,  to: '/purchase-portal/kickoff' },
+    { label: 'Documents',  desc: 'Upload statutory documents', icon: FileText,     to: '/purchase-portal/documents' },
+    { label: 'Kickoff',    desc: 'Your kickoff meeting & MOM', icon: CalendarDays, to: '/purchase-portal/kickoff' },
   ]
+
+  // Read-only registration status, from the onboarding progress already loaded.
+  const regSteps = useMemo(() => {
+    const step = onb?.current_step ?? 0
+    const approved = onb?.status === 'Approved'
+    const at = (n) => ({ done: approved || step > n, current: !approved && step === n })
+    return [
+      { key: 'company',    label: 'Company Details Completed', ...at(2) },
+      { key: 'documents',  label: 'Documents Verified',        ...at(3) },
+      { key: 'workforce',  label: 'Workforce Approved',        ...at(4) },
+      { key: 'compliance', label: 'Compliance Approved',       ...at(5) },
+      { key: 'activated',  label: 'Account Activated',         done: vendor?.status === 'Active', current: approved && vendor?.status !== 'Active' },
+    ]
+  }, [onb, vendor])
 
   return (
     <div style={{ padding: 24 }}>
@@ -148,6 +164,11 @@ export default function PurchasePortalDashboard() {
             <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-muted)', marginTop: 3 }}>{k.label}</div>
           </div>
         ))}
+      </div>
+
+      {/* Read-only registration status — information only. */}
+      <div style={{ marginBottom: 16 }}>
+        <RegistrationStatusCard steps={regSteps} />
       </div>
 
       {/* Nav tiles */}

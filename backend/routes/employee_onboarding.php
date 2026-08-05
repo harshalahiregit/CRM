@@ -37,9 +37,6 @@ Route::middleware('auth:sanctum')->prefix('employee-onboarding')->group(function
     Route::delete('/{onboarding}/family/{id}',      [EmployeeOnboardingController::class, 'destroyFamily']);
 
     // Assets Allocation (1:many)
-    Route::post('/{onboarding}/assets',             [EmployeeOnboardingController::class, 'storeAsset']);
-    Route::put('/{onboarding}/assets/{id}',         [EmployeeOnboardingController::class, 'updateAsset']);
-    Route::delete('/{onboarding}/assets/{id}',      [EmployeeOnboardingController::class, 'destroyAsset']);
 
     // HR verification of one section (Approve / Reject / Request Correction)
     Route::patch('/{onboarding}/section/{section}/verify', [EmployeeOnboardingController::class, 'verifySection']);

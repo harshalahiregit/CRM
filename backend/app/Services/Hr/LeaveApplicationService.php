@@ -17,12 +17,17 @@ use Illuminate\Support\Facades\Log;
  * active balance; days are computed (half-day or working days, honouring the
  * policy's weekends rule). Applications reach Submitted for HR approval (Phase 4).
  * No balance is deducted here — that happens only on approval.
+ *
+ * Non-working days come from ShiftService, not from a hardcoded Saturday/Sunday.
+ * Employees with no shift assignment still fall back to Sat/Sun, so the day count
+ * is unchanged for any tenant that has not set shifts up.
  */
 class LeaveApplicationService
 {
     public function __construct(
         private LeaveApplicationRepository $repo,
         private EmployeeLeaveBalanceRepository $balances,
+        private ShiftService $shifts,
     ) {
     }
 
@@ -59,9 +64,11 @@ class LeaveApplicationService
             throw new BusinessException('The end date cannot be before the start date.');
         }
         $halfDay = (bool) ($data['half_day'] ?? false);
-        $days = $this->computeDays($from, $to, $halfDay, (bool) ($policy->weekends_count ?? false));
+        $days = $this->computeDays($from, $to, $halfDay, (bool) ($policy->weekends_count ?? false), $employee->id, $tenantId);
         if ($days <= 0) {
-            throw new BusinessException('The selected range has no leave days.');
+            // Every day in the range is a non-working day for this employee, which
+            // is a different problem from an invalid range — say which.
+            throw new BusinessException('The selected range is entirely non-working days for this employee.');
         }
 
         $negativeAllowed = (bool) ($policy->negative_balance_allowed ?? false);
@@ -86,6 +93,83 @@ class LeaveApplicationService
         $this->log('Leave applied', $tenantId, $app->id);
 
         return $this->show($app->id, $tenantId);
+    }
+
+    /**
+     * Upsert a leave that originated in an external HRM (SangoeTrack).
+     *
+     * Deliberately not apply(): that models an employee *requesting* leave, so it
+     * hard-requires an active balance and refuses when the balance is short. A
+     * synced leave is a decision that has already been taken elsewhere — refusing
+     * it would not stop the employee being on leave, it would just hide the fact
+     * from this CRM. Missing balance is therefore reported, not fatal.
+     *
+     * Day count still comes from computeDays(), so the weekend rule stays defined
+     * in exactly one place. Status transitions are NOT applied here: approval must
+     * go through LeaveApprovalService so the balance ledger is written by the code
+     * that owns it. The caller drives that.
+     *
+     * Idempotent on (tenant_id, sangoetrack_leave_id): re-running writes nothing
+     * when the remote row has not moved.
+     *
+     * @param  array{sangoetrack_leave_id:int, leave_type_id:int, from_date:string, to_date:string, half_day?:bool, reason?:?string}  $data
+     * @return array{application:HrLeaveApplication, created:bool, changed:bool, balance_missing:bool}
+     */
+    public function syncExternal(HrEmployee $employee, array $data): array
+    {
+        $tenantId = (int) $employee->tenant_id;
+
+        $balance = $this->balances->activeByType($employee->id, (int) $data['leave_type_id'], $tenantId);
+        $balance?->loadMissing('policy');
+        $policy = $balance?->policy;
+
+        $from = Carbon::parse($data['from_date']);
+        $to   = Carbon::parse($data['to_date']);
+        if ($to->lt($from)) {
+            throw new BusinessException('Leave end date is before its start date.');
+        }
+
+        $halfDay = (bool) ($data['half_day'] ?? false);
+        $days    = $this->computeDays($from, $to, $halfDay, (bool) ($policy->weekends_count ?? false), $employee->id, $tenantId);
+
+        $app = HrLeaveApplication::where('tenant_id', $tenantId)
+            ->where('sangoetrack_leave_id', (int) $data['sangoetrack_leave_id'])
+            ->first();
+
+        $attributes = [
+            'leave_type_id'             => (int) $data['leave_type_id'],
+            'leave_policy_id'           => $balance?->leave_policy_id,
+            'employee_leave_balance_id' => $balance?->id,
+            'from_date'                 => $from->toDateString(),
+            'to_date'                   => $to->toDateString(),
+            'days'                      => $days,
+            'half_day'                  => $halfDay,
+            'reason'                    => $data['reason'] ?? null,
+        ];
+
+        if (! $app) {
+            $app = HrLeaveApplication::create($attributes + [
+                'tenant_id'            => $tenantId,
+                'employee_id'          => $employee->id,
+                'sangoetrack_leave_id' => (int) $data['sangoetrack_leave_id'],
+                'status'               => HrLeaveApplication::SUBMITTED,
+                'applied_at'           => now(),
+            ]);
+            $app->recordAudit('Leave Synced (SangoeTrack)', null, null, ['days' => $days], 'SangoeTrack');
+
+            return ['application' => $app, 'created' => true, 'changed' => true, 'balance_missing' => $balance === null];
+        }
+
+        $app->fill($attributes);
+
+        if (! $app->isDirty()) {
+            return ['application' => $app, 'created' => false, 'changed' => false, 'balance_missing' => $balance === null];
+        }
+
+        $app->save();
+        $app->recordAudit('Leave Updated (SangoeTrack)', null, null, ['days' => $days], 'SangoeTrack');
+
+        return ['application' => $app, 'created' => false, 'changed' => true, 'balance_missing' => $balance === null];
     }
 
     public function submit(int $id, int $tenantId, ?User $actor = null): array
@@ -115,19 +199,110 @@ class LeaveApplicationService
     /* ── Helpers ──────────────────────────────────────────── */
 
     /** Half day = 0.5; otherwise inclusive days, skipping weekends unless the policy counts them. */
-    private function computeDays(Carbon $from, Carbon $to, bool $halfDay, bool $weekendsCount): float
+    /**
+     * Leave days in a range, excluding the employee's non-working days.
+     *
+     * "Non-working" is resolved by ShiftService, NOT by Carbon's Saturday/Sunday.
+     * An employee on a shift gets that shift's weekly off — including alternate
+     * Saturdays and whichever leg of a rotation covers the day — so someone whose
+     * week off is Tuesday no longer loses a leave day for it.
+     *
+     * An employee with NO shift assignment falls back to Saturday/Sunday inside
+     * ShiftService::offDaysBetween(), which is exactly what this method did before,
+     * so existing tenants see no change until they assign shifts.
+     *
+     * `weekends_count` on the policy still wins: a policy that counts non-working
+     * days counts every calendar day, as it always did.
+     */
+    private function computeDays(Carbon $from, Carbon $to, bool $halfDay, bool $weekendsCount, ?int $employeeId = null, ?int $tenantId = null): float
+    {
+        return $this->dayBreakdown($from, $to, $halfDay, $weekendsCount, $employeeId, $tenantId)['days'];
+    }
+
+    /**
+     * The day count PLUS the per-day working. Callers that only need the number
+     * use computeDays(); the preview endpoint surfaces the breakdown so "why is
+     * this 3 days and not 5?" is answerable before the application is submitted.
+     *
+     * @return array{days: float, breakdown: array, excluded: int, source: string}
+     */
+    public function dayBreakdown(Carbon $from, Carbon $to, bool $halfDay, bool $weekendsCount, ?int $employeeId = null, ?int $tenantId = null): array
     {
         if ($halfDay) {
-            return 0.5;
-        }
-        $days = 0;
-        for ($d = $from->copy(); $d->lte($to); $d->addDay()) {
-            if ($weekendsCount || ! $d->isWeekend()) {
-                $days++;
-            }
+            return ['days' => 0.5, 'breakdown' => [], 'excluded' => 0, 'source' => 'half_day'];
         }
 
-        return (float) $days;
+        // No employee context (a caller written before shifts existed) keeps the
+        // original behaviour rather than silently counting differently.
+        $offDays = ($employeeId && $tenantId)
+            ? $this->shifts->offDaysBetween($employeeId, $tenantId, $from, $to)
+            : [];
+
+        $days = 0;
+        $excluded = 0;
+        $breakdown = [];
+        $source = 'default_weekend';
+
+        for ($d = $from->copy(); $d->lte($to); $d->addDay()) {
+            $key = $d->toDateString();
+            $info = $offDays[$key] ?? ['off' => $d->isWeekend(), 'source' => 'default_weekend', 'shift_name' => null];
+            $isOff = ! $weekendsCount && $info['off'];
+
+            if ($info['source'] === 'shift') {
+                $source = 'shift';
+            }
+            if ($isOff) {
+                $excluded++;
+            } else {
+                $days++;
+            }
+
+            $breakdown[] = [
+                'date'       => $key,
+                'day'        => $d->format('D'),
+                'counted'    => ! $isOff,
+                'off'        => (bool) $info['off'],
+                'reason'     => $isOff
+                    ? ($info['source'] === 'shift' ? 'Weekly off ('.$info['shift_name'].')' : 'Weekend')
+                    : null,
+                'shift_name' => $info['shift_name'],
+            ];
+        }
+
+        return ['days' => (float) $days, 'breakdown' => $breakdown, 'excluded' => $excluded, 'source' => $source];
+    }
+
+    /** Preview the day count for a range before applying. Read-only. */
+    public function preview(int $employeeId, int $tenantId, string $fromDate, string $toDate, ?int $leaveTypeId = null, bool $halfDay = false): array
+    {
+        $employee = $this->employee($employeeId, $tenantId);
+
+        $from = Carbon::parse($fromDate);
+        $to   = Carbon::parse($toDate);
+        if ($to->lt($from)) {
+            throw new BusinessException('The end date cannot be before the start date.');
+        }
+
+        // The policy's weekend rule matters to the count, so resolve it when a
+        // leave type is given — otherwise preview a plain working-day count.
+        $weekendsCount = false;
+        $policyName = null;
+        if ($leaveTypeId) {
+            $balance = $this->balances->activeByType($employee->id, $leaveTypeId, $tenantId);
+            $balance?->loadMissing('policy');
+            $weekendsCount = (bool) ($balance?->policy?->weekends_count ?? false);
+            $policyName = $balance?->policy?->name;
+        }
+
+        $result = $this->dayBreakdown($from, $to, $halfDay, $weekendsCount, $employee->id, $tenantId);
+
+        return $result + [
+            'from_date'      => $from->toDateString(),
+            'to_date'        => $to->toDateString(),
+            'total_days'     => (int) $from->diffInDays($to) + 1,
+            'weekends_count' => $weekendsCount,
+            'policy_name'    => $policyName,
+        ];
     }
 
     private function present(HrLeaveApplication $a, bool $full = false): array

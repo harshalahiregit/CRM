@@ -7,6 +7,10 @@ import {
 import { hrApi } from '@/services/hrApi'
 import { useMasterData, withInactive } from '@/modules/hr/useMasterData'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
+// #3 — the shared filter bar. KPIs and Goals filter on the server (their
+// endpoints already accept search/status/department); Reviews, Promotions and
+// Increments have no such params, so those filter in memory via applyListFilter.
+import ListFilter, { applyListFilter } from '@/components/ui/ListFilter'
 
 const GRAD = 'linear-gradient(135deg,#7C3AED,#5b21b6)'
 const inr = v => `₹${Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
@@ -80,7 +84,6 @@ function Dashboard({ showToast }) {
     { l:'Average Rating', v:d.avg_rating, c:'#8b5cf6', I:Gauge },
     { l:'Promotion Eligible', v:d.promotion_eligible, c:'#ec4899', I:TrendingUp },
   ]
-  const AI = ['Performance Summary','Promotion Insight','Skill Gap','Training Suggestion','Career Recommendation','Attrition Risk']
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
@@ -92,14 +95,21 @@ function Dashboard({ showToast }) {
         ))}
       </div>
       <div>
-        <p className="text-[11px] font-bold uppercase mb-2 flex items-center gap-1.5" style={{ color:'#a78bfa', letterSpacing:'0.04em' }}><Sparkles size={13}/> AI Performance Insights</p>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {AI.map(t => (
-            <div key={t} className="rounded-xl p-3.5 flex items-start gap-2" style={{ background:'rgba(124,58,237,0.05)', border:'1px dashed rgba(124,58,237,0.3)' }}>
-              <Sparkles size={14} style={{ color:'#a78bfa', marginTop:1, flexShrink:0 }}/>
-              <div><p className="text-xs font-bold" style={{ color:'var(--text-h)' }}>{t}</p><p className="text-[10px] mt-0.5" style={{ color:'var(--text-muted)' }}>AI Insights Coming Soon</p></div>
-            </div>
-          ))}
+        {/* #40 — the six "AI Insights Coming Soon" placeholders that stood here
+            are gone. Insights are per-EMPLOYEE and derived from that person's own
+            performance, attendance, training and skill data, so they live on the
+            employee's profile rather than as company-wide teasers with nothing
+            behind them. */}
+        <p className="text-[11px] font-bold uppercase mb-2 flex items-center gap-1.5" style={{ color:'#a78bfa', letterSpacing:'0.04em' }}><Sparkles size={13}/> Employee Insights</p>
+        <div className="rounded-xl p-3.5 flex items-start gap-2" style={{ background:'rgba(124,58,237,0.05)', border:'1px solid rgba(124,58,237,0.25)' }}>
+          <Sparkles size={14} style={{ color:'#a78bfa', marginTop:1, flexShrink:0 }}/>
+          <div>
+            <p className="text-xs font-bold" style={{ color:'var(--text-h)' }}>Overall score, strengths, improvement areas and risk factors</p>
+            <p className="text-[10px] mt-0.5" style={{ color:'var(--text-muted)' }}>
+              Open any employee&rsquo;s profile and choose <b>Performance</b> to calculate their score and generate insights.
+              Each one is backed by the record that produced it &mdash; reviews, attendance, training and skill fit.
+            </p>
+          </div>
         </div>
       </div>
     </div>
@@ -110,7 +120,13 @@ function Dashboard({ showToast }) {
 function Kpis({ showToast }) {
   const [rows, setRows] = useState([]); const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(null); const [saving, setSaving] = useState(false)
-  const load = useCallback(() => { setLoading(true); hrApi.performance.kpis.list().then(setRows).catch(()=>showToast('Failed to load KPIs','error')).finally(()=>setLoading(false)) }, [showToast])
+  // #3 — sent to the server: /hr/performance/kpis already accepts search + status.
+  const [search, setSearch] = useState(''); const [statusF, setStatusF] = useState('All')
+  const load = useCallback(() => {
+    setLoading(true)
+    const params = {}; if (search) params.search = search; if (statusF !== 'All') params.status = statusF
+    hrApi.performance.kpis.list(params).then(setRows).catch(()=>showToast('Failed to load KPIs','error')).finally(()=>setLoading(false))
+  }, [showToast, search, statusF])
   useEffect(() => { load() }, [load])
   const EMPTY = { name:'', category:'', description:'', weightage:'', rating_scale:5, is_active:true }
   const save = async () => {
@@ -122,8 +138,13 @@ function Kpis({ showToast }) {
   const toggle = async (r) => { try { await hrApi.performance.kpis.setStatus(r.id, !r.is_active); load() } catch { showToast('Failed','error') } }
   return (
     <div className="space-y-4">
-      <div className="flex justify-end"><button onClick={()=>setModal({ editing:null, form:{...EMPTY} })} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background:GRAD }}><Plus size={15}/> Add KPI</button></div>
-      {loading ? <HrLoading label="Loading KPIs…" /> : rows.length===0 ? <HrEmpty icon={Gauge} title="No KPIs yet" hint="Create measurable performance indicators (Quality, Teamwork, Productivity…)." />
+      <ListFilter
+        search={search} setSearch={setSearch} placeholder="KPI name…"
+        selects={[{ key:'status', label:'Status', value:statusF, onChange:setStatusF, options:['All','Active','Inactive'] }]}
+        onClear={()=>{ setSearch(''); setStatusF('All') }}
+        right={<button onClick={()=>setModal({ editing:null, form:{...EMPTY} })} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background:GRAD }}><Plus size={15}/> Add KPI</button>}
+      />
+      {loading ? <HrLoading label="Loading KPIs…" /> : rows.length===0 ? <HrEmpty icon={Gauge} title="No KPIs yet" hint={search||statusF!=='All' ? 'No KPIs match these filters.' : 'Create measurable performance indicators (Quality, Teamwork, Productivity…).'} />
         : <div className="card-3d overflow-x-auto" style={{ padding:'6px' }}>
             <table className="w-full text-sm" style={{ minWidth:640 }}>
               <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{['KPI','Category','Weightage','Scale','Status','Actions'].map(h=><th key={h} className={`text-left px-3 py-3 label-caps ${h==='Actions'?'text-right':''}`}>{h}</th>)}</tr></thead>
@@ -167,7 +188,16 @@ function Goals({ employees, showToast }) {
   const { masters } = useMasterData()
   const deptOptions  = (f) => withInactive((masters.departments  || []).map(d => d.name), f?.department)
   const desigOptions = (f) => withInactive((masters.designations || []).map(d => d.name), f?.designation)
-  const load = useCallback(() => { setLoading(true); hrApi.performance.goals.list().then(setRows).catch(()=>showToast('Failed to load goals','error')).finally(()=>setLoading(false)) }, [showToast])
+  // #3 — /hr/performance/goals already accepts search, status and department.
+  const [search, setSearch] = useState(''); const [statusF, setStatusF] = useState('All'); const [deptF, setDeptF] = useState('')
+  const load = useCallback(() => {
+    setLoading(true)
+    const params = {}
+    if (search) params.search = search
+    if (statusF !== 'All') params.status = statusF
+    if (deptF) params.department = deptF
+    hrApi.performance.goals.list(params).then(setRows).catch(()=>showToast('Failed to load goals','error')).finally(()=>setLoading(false))
+  }, [showToast, search, statusF, deptF])
   useEffect(() => { load() }, [load])
   const EMPTY = { title:'', description:'', department:'', designation:'', weightage:'', target:'', due_date:'', status:'Active' }
   const save = async () => {
@@ -178,8 +208,17 @@ function Goals({ employees, showToast }) {
   }
   return (
     <div className="space-y-4">
-      <div className="flex justify-end"><button onClick={()=>setModal({ editing:null, form:{...EMPTY} })} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background:GRAD }}><Plus size={15}/> Add Goal</button></div>
-      {loading ? <HrLoading label="Loading goals…" /> : rows.length===0 ? <HrEmpty icon={Target} title="No goals yet" hint="Create goals / KRAs and assign them to employees." />
+      <ListFilter
+        search={search} setSearch={setSearch} placeholder="Goal title…"
+        selects={[
+          { key:'status', label:'Status', value:statusF, onChange:setStatusF, options:['All','Active','Inactive'] },
+          { key:'dept', label:'Department', value:deptF, onChange:setDeptF,
+            options:[{ value:'', label:'All departments' }, ...(masters.departments||[]).map(d=>({ value:d.name, label:d.name }))] },
+        ]}
+        onClear={()=>{ setSearch(''); setStatusF('All'); setDeptF('') }}
+        right={<button onClick={()=>setModal({ editing:null, form:{...EMPTY} })} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background:GRAD }}><Plus size={15}/> Add Goal</button>}
+      />
+      {loading ? <HrLoading label="Loading goals…" /> : rows.length===0 ? <HrEmpty icon={Target} title="No goals yet" hint={search||statusF!=='All'||deptF ? 'No goals match these filters.' : 'Create goals / KRAs and assign them to employees.'} />
         : <div className="card-3d overflow-x-auto" style={{ padding:'6px' }}>
             <table className="w-full text-sm" style={{ minWidth:760 }}>
               <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{['Goal','Department','Weightage','Target','Due','Assigned','Actions'].map(h=><th key={h} className={`text-left px-3 py-3 label-caps ${h==='Actions'?'text-right':''}`}>{h}</th>)}</tr></thead>
@@ -274,14 +313,30 @@ function Reviews({ employees, showToast }) {
   const advance = async (r, status) => { try { await hrApi.performance.reviews.setStatus(r.id, status); showToast(`Review ${status}`); load() } catch (e) { showToast(e.response?.data?.message||'Failed','error') } }
   const NEXT = { Draft:'Submitted', Submitted:'Reviewed', Reviewed:'Approved' }
 
+  // #3 — /hr/performance/reviews takes no filter params, so this narrows the
+  // loaded set in memory rather than inventing a server contract for it.
+  const [search, setSearch] = useState(''); const [statusF, setStatusF] = useState('All'); const [typeF, setTypeF] = useState('All')
+  const shown = applyListFilter(rows, {
+    search, fields: ['employee_name', 'period_label'],
+    matchers: [[statusF, (r, v) => r.status === v], [typeF, (r, v) => r.review_type === v]],
+  })
+
   return (
     <div className="space-y-4">
-      <div className="flex justify-end"><button onClick={openCreate} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background:GRAD }}><Plus size={15}/> New Review</button></div>
-      {loading ? <HrLoading label="Loading reviews…" /> : rows.length===0 ? <HrEmpty icon={ClipboardCheck} title="No reviews yet" hint="Create a performance review with KPI ratings." />
+      <ListFilter
+        search={search} setSearch={setSearch} placeholder="Employee or period…"
+        selects={[
+          { key:'status', label:'Status', value:statusF, onChange:setStatusF, options:['All','Draft','Submitted','Reviewed','Approved'] },
+          { key:'type', label:'Type', value:typeF, onChange:setTypeF, options:['All',...REVIEW_TYPES] },
+        ]}
+        onClear={()=>{ setSearch(''); setStatusF('All'); setTypeF('All') }}
+        right={<button onClick={openCreate} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background:GRAD }}><Plus size={15}/> New Review</button>}
+      />
+      {loading ? <HrLoading label="Loading reviews…" /> : shown.length===0 ? <HrEmpty icon={ClipboardCheck} title={rows.length ? 'No matching reviews' : 'No reviews yet'} hint={rows.length ? 'No reviews match these filters.' : 'Create a performance review with KPI ratings.'} />
         : <div className="card-3d overflow-x-auto" style={{ padding:'6px' }}>
             <table className="w-full text-sm" style={{ minWidth:760 }}>
               <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{['Employee','Type','Period','Rating','Status','Actions'].map(h=><th key={h} className={`text-left px-3 py-3 label-caps ${h==='Actions'?'text-right':''}`}>{h}</th>)}</tr></thead>
-              <tbody>{rows.map(r=>{ const st = REVIEW_ST[r.status]||{}; return (
+              <tbody>{shown.map(r=>{ const st = REVIEW_ST[r.status]||{}; return (
                 <tr key={r.id} style={{ borderBottom:'1px solid var(--border)' }}>
                   <td className="px-3 py-2.5"><span className="font-bold" style={{ color:'var(--text-h)' }}>{r.employee_name}</span> <span className="text-[10px] font-mono" style={{ color:'#a78bfa' }}>{r.employee_code}</span></td>
                   <td className="px-3 py-2.5" style={{ color:'var(--text-muted)' }}>{r.review_type}</td>
@@ -375,6 +430,14 @@ function Recommendations({ kind, employees, showToast }) {
     } catch (e) { showToast(e.response?.data?.message || 'Failed','error') }
   }
 
+  // #3 — the two kinds carry the decision on different keys, so the status
+  // matcher reads whichever this kind uses rather than assuming one of them.
+  const [search, setSearch] = useState(''); const [statusF, setStatusF] = useState('All')
+  const shown = applyListFilter(rows, {
+    search, fields: ['employee_name', 'department'],
+    matchers: [[statusF, (r, v) => (isPromo ? r.status : r.approval_status) === v]],
+  })
+
   return (
     <div className="space-y-4">
       <div className="card-3d" style={{ padding:'16px' }}>
@@ -387,11 +450,18 @@ function Recommendations({ kind, employees, showToast }) {
         <p className="text-[11px] mt-2" style={{ color:'var(--text-muted)' }}>{isPromo ? 'Derived from the latest review rating and completed goals.' : 'Reads the current active salary (read-only) and the latest rating — Payroll is never modified.'}</p>
       </div>
 
-      {loading ? <HrLoading label="Loading…" /> : rows.length===0 ? <HrEmpty icon={isPromo?TrendingUp:Wallet} title={`No ${kind} yet`} hint="Generate a recommendation above." />
+      {/* #3 — in memory: neither recommendation endpoint accepts filter params. */}
+      <ListFilter
+        search={search} setSearch={setSearch} placeholder="Employee or department…"
+        selects={[{ key:'status', label:'Status', value:statusF, onChange:setStatusF, options:['All','Pending','Approved','Rejected'] }]}
+        onClear={()=>{ setSearch(''); setStatusF('All') }}
+      />
+
+      {loading ? <HrLoading label="Loading…" /> : shown.length===0 ? <HrEmpty icon={isPromo?TrendingUp:Wallet} title={rows.length ? 'No matching recommendations' : `No ${kind} yet`} hint={rows.length ? 'No recommendations match these filters.' : 'Generate a recommendation above.'} />
         : <div className="card-3d overflow-x-auto" style={{ padding:'6px' }}>
             <table className="w-full text-sm" style={{ minWidth:820 }}>
               <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{(isPromo?['Employee','Eligible','Rating','Goals','Reason','Status','Actions']:['Employee','Current CTC','Suggested %','Amount','Reason','Status','Actions']).map(h=><th key={h} className={`text-left px-3 py-3 label-caps ${h==='Actions'?'text-right':''}`}>{h}</th>)}</tr></thead>
-              <tbody>{rows.map(r=>{ const status = isPromo?r.status:r.approval_status; const st = REC_ST[status]||{}; return (
+              <tbody>{shown.map(r=>{ const status = isPromo?r.status:r.approval_status; const st = REC_ST[status]||{}; return (
                 <tr key={r.id} style={{ borderBottom:'1px solid var(--border)' }}>
                   <td className="px-3 py-2.5"><span className="font-bold" style={{ color:'var(--text-h)' }}>{r.employee_name}</span> <span className="text-[10px]" style={{ color:'var(--text-muted)' }}>{r.department}</span></td>
                   {isPromo ? <>

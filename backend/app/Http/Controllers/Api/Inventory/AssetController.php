@@ -69,11 +69,41 @@ class AssetController extends Controller
     public function assign(Request $request, int $asset)
     {
         $this->denyExternal($request);
-        $data = $request->validate(['assigned_to' => 'nullable|integer']);
+        $data = $request->validate([
+            'assigned_to' => 'nullable|integer',
+            'employee_id' => 'nullable|integer',
+        ]);
 
         return $this->success(
-            $this->assets->assign($asset, $data['assigned_to'] ?? null, $request->user()->tenant_id, $request->user()->id),
+            $this->assets->assign(
+                $asset,
+                $data['assigned_to'] ?? null,
+                $request->user()->tenant_id,
+                $request->user()->id,
+                array_key_exists('employee_id', $data) ? ['employee_id' => $data['employee_id']] : []
+            ),
             'Asset assignment updated'
+        );
+    }
+
+    /** Lifecycle actions — assign / return / transfer / replace / maintenance / lost / damaged. */
+    public function lifecycle(Request $request, int $asset)
+    {
+        $this->denyExternal($request);
+        $data = $request->validate([
+            'action'      => 'required|in:assign,return,transfer,replace,maintenance,lost,damaged',
+            'employee_id' => 'nullable|integer',
+            'user_id'     => 'nullable|integer',
+            'condition'   => 'nullable|string|max:40',
+            'description' => 'nullable|string|max:500',
+            'cost'        => 'nullable|numeric|min:0',
+            'vendor'      => 'nullable|string|max:120',
+            'next_due'    => 'nullable|date',
+        ]);
+
+        return $this->success(
+            $this->assets->lifecycle($asset, $data['action'], $data, $request->user()->tenant_id, $request->user()->id),
+            'Asset updated'
         );
     }
 

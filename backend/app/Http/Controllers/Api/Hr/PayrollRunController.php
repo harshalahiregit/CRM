@@ -52,6 +52,12 @@ class PayrollRunController extends Controller
         return response()->json($this->service->records($id, $this->tenant($request)));
     }
 
+    /** The frozen component + statutory breakdown behind one record. */
+    public function recordLines(Request $request, int $recordId)
+    {
+        return response()->json(['data' => $this->service->recordLines($recordId, $this->tenant($request))]);
+    }
+
     public function updateStatus(Request $request, int $id)
     {
         $this->assertCanManage($request);

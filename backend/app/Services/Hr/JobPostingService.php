@@ -8,6 +8,7 @@ use App\Exceptions\UnauthorizedTenantException;
 use App\Models\Hr\HrCandidate;
 use App\Models\Hr\HrJobPosting;
 use App\Models\Hr\HrManpowerRequest;
+use App\Support\Hr\HiringManagerFilter;
 use App\Models\User;
 use App\Support\Hr\JobPostingStatus as Status;
 use App\Support\Hr\ManpowerRequestStatus;
@@ -31,6 +32,15 @@ class JobPostingService
         if (! empty($filters['status']) && $filters['status'] !== 'All') {
             $query->where('status', $filters['status']);
         }
+        // Job Title is drawn from the designation master, so filtering by
+        // designation means matching that stored title.
+        if (! empty($filters['designation_name'])) {
+            $query->where('title', $filters['designation_name']);
+        }
+        // #3 — a job posting has no hiring manager of its own; it inherits the one
+        // from the requisition it came from. '' = this model owns the relation to
+        // the manpower request directly.
+        HiringManagerFilter::apply($query, $filters['hiring_manager_id'] ?? null, '');
 
         return $query->latest()->get()->each(function ($job) {
             $job->setAttribute('progress', $this->progress($job));

@@ -5,6 +5,7 @@
 
 import axios from 'axios'
 import { getToken, clearAuth } from '@/lib/authStorage'
+import { isSessionFailure } from '@/lib/sessionFailure'
 
 const BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api'
 
@@ -17,10 +18,12 @@ api.interceptors.request.use(cfg => {
   return cfg
 })
 
+// #45 — only a genuine auth failure ends the session. A permission problem
+// answered with 401 must not sign an HR user out mid-task.
 api.interceptors.response.use(
   res => res,
   err => {
-    if (err.response?.status === 401) {
+    if (isSessionFailure(err, !!getToken())) {
       clearAuth()
       window.location.href = '/auth/login'
     }
@@ -60,6 +63,9 @@ export const hrApi = {
     approveL2:       (id, remarks = '') => api.post(`/hr/manpower-requests/${id}/approve-l2`, { remarks }).then(r => r.data),
     rejectL2:        (id, remarks)      => api.post(`/hr/manpower-requests/${id}/reject-l2`, { remarks }).then(r => r.data),
     sendBack:        (id, remarks)      => api.post(`/hr/manpower-requests/${id}/send-back`, { remarks }).then(r => r.data),
+    // #7 — reverse a rejection and approve at the level that rejected it. Remarks
+    // are mandatory server-side; a rejection is never undone without a reason.
+    reconsider:      (id, remarks)      => api.post(`/hr/manpower-requests/${id}/reconsider`, { remarks }).then(r => r.data),
     // HR queue actions
     generateJd:      (id, data = {})    => api.post(`/hr/manpower-requests/${id}/generate-jd`, data).then(r => r.data),
     templateJd:      (id, template)     => api.post(`/hr/manpower-requests/${id}/template-jd`, { template }).then(r => r.data),
@@ -96,6 +102,9 @@ export const hrApi = {
     publishTo:       (id, channel)  => api.post(`/hr/jobs/${id}/publish-to`, { channel }).then(r => r.data),
     publishChannels: (id, channels) => api.post(`/hr/jobs/${id}/publish-channels`, { channels }).then(r => r.data),
     unpublishFrom:   (id, channel)  => api.delete(`/hr/jobs/${id}/publish-to/${channel}`).then(r => r.data),
+    // #13 — ask the board what it currently thinks and reconcile our ledger.
+    // Only offered where `channels()` reported syncable: true.
+    syncChannel:     (id, channel)  => api.post(`/hr/jobs/${id}/sync/${channel}`).then(r => r.data),
   },
 
   // ── Candidates ──────────────────────────────────────────────────────
@@ -126,6 +135,9 @@ export const hrApi = {
     },
     resumeUrl:     (id)          => `${BASE}/hr/candidates/${id}/resume`,
     deleteResume:  (id)          => api.delete(`/hr/candidates/${id}/resume`).then(r => r.data),
+    // #15 — re-read an already-stored resume for Dept / Designation / Present Co. /
+    // Reference. Upload does this automatically; this covers resumes uploaded before.
+    extractResume: (id)          => api.post(`/hr/candidates/${id}/resume/extract`).then(r => r.data),
     // Recruiter assignment
     recruiters:    ()            => api.get('/hr/candidates/recruiters').then(r => r.data),
     assign:        (id, recruiterId) => api.patch(`/hr/candidates/${id}/assign`, { recruiter_id: recruiterId }).then(r => r.data),
@@ -215,6 +227,25 @@ export const hrApi = {
     list:   (params = {}) => api.get('/hr/employees', { params }).then(r => Array.isArray(r.data) ? r.data : (r.data?.data ?? [])),
     listPaged: (params = {}) => api.get('/hr/employees', { params }).then(r => r.data),
     stats:  ()            => api.get('/hr/employees/stats').then(r => r.data),
+    // Work-state vocabulary for the statutory jurisdiction field. Served by the
+    // backend so the options offered and the states PT rules are keyed by are one list.
+    workStates: ()        => api.get('/hr/employees/work-states').then(r => r.data?.data ?? []),
+    // #37 — the employee's work across Projects / Tasks / Tickets / KB, with
+    // jump links. Read-only aggregation; each module still owns its own records.
+    lifecycle: (id) => api.get(`/hr/employees/${id}/lifecycle`).then(r => r.data),
+    // #38 — loan position on its own, for the Bank & Tax card. HR-gated.
+    loanSummary: (id) => api.get(`/hr/employees/${id}/loans`).then(r => r.data),
+    // #39/#40 — employee overall score and insights. HR-gated.
+    score:            (id)              => api.get(`/hr/employees/${id}/score`).then(r => r.data),
+    scorePreview:     (id)              => api.get(`/hr/employees/${id}/score/preview`).then(r => r.data),
+    recalculateScore: (id, trigger)     => api.post(`/hr/employees/${id}/score/recalculate`, { trigger }).then(r => r.data),
+    generateInsights: (id, withAi = true) => api.post(`/hr/employees/${id}/insights`, { with_ai: withAi }).then(r => r.data),
+    // #29 — the org chart, derived from reporting_manager_id on every read.
+    orgChart: (params = {}) => api.get('/hr/org-chart', { params }).then(r => r.data),
+    // #43 — the individual's skills vs what their position expects.
+    skills:        (id)        => api.get(`/hr/employees/${id}/skills`).then(r => r.data),
+    updateSkills:  (id, skills) => api.put(`/hr/employees/${id}/skills`, { skills }).then(r => r.data),
+    previewSkills: (id, target) => api.post(`/hr/employees/${id}/skills/preview`, target).then(r => r.data),
     get:    (id)          => api.get(`/hr/employees/${id}`).then(r => r.data),
     profile:(id)          => api.get(`/hr/employees/${id}/profile`).then(r => r.data),
     // Exit Interview (SPK-1) — prefill comes from the employee record itself.
@@ -224,6 +255,11 @@ export const hrApi = {
     update: (id, data)    => api.put(`/hr/employees/${id}`, data).then(r => r.data),
     delete: (id)          => api.delete(`/hr/employees/${id}`).then(r => r.data),
     attendance: (id, params = {}) => api.get(`/hr/employees/${id}/attendance`, { params }).then(r => r.data),
+
+    // Assets live in Inventory — these are read-only views onto that register.
+    assets:        (id)          => api.get(`/hr/employees/${id}/assets`).then(r => r.data),
+    assetSummary:  (id)          => api.get(`/hr/employees/${id}/assets/summary`).then(r => r.data),
+    asset:         (id, assetId) => api.get(`/hr/employees/${id}/assets/${assetId}`).then(r => r.data),
   },
 
   // ── Organization Setup — Department / Designation / Grade / Role masters ──
@@ -295,6 +331,38 @@ export const hrApi = {
       records:   (id)          => api.get(`/hr/payroll/runs/${id}/records`).then(r => r.data),
       setStatus: (id, status)  => api.patch(`/hr/payroll/runs/${id}/status`, { status }).then(r => r.data),
       generatePayslips: (id)   => api.post(`/hr/payroll/runs/${id}/generate-payslips`).then(r => r.data),
+      // Frozen component + statutory breakdown behind one processed record.
+      recordLines: (recordId)  => api.get(`/hr/payroll/records/${recordId}/lines`).then(r => r.data?.data ?? []),
+    },
+    // Statutory rule book — every rate, ceiling and slab is configured here.
+    // Nothing statutory is hardcoded in the app, so an empty rule book means
+    // zero statutory deductions (and payroll runs exactly as it did before).
+    statutory: {
+      meta:    ()             => api.get('/hr/payroll/statutory/meta').then(r => r.data),
+      list:    (params = {})  => api.get('/hr/payroll/statutory/rules', { params }).then(r => r.data?.data ?? []),
+      create:  (data)         => api.post('/hr/payroll/statutory/rules', data).then(r => r.data),
+      update:  (id, data)     => api.put(`/hr/payroll/statutory/rules/${id}`, data).then(r => r.data),
+      remove:  (id)           => api.delete(`/hr/payroll/statutory/rules/${id}`).then(r => r.data),
+      saveDefaults: (data)    => api.put('/hr/payroll/statutory/defaults', data).then(r => r.data),
+    },
+    // Investment declarations — 80C/80D/HRA claims, regime election and previous
+    // employer income. Only a VERIFIED declaration reduces tax.
+    declarations: {
+      meta:    ()             => api.get('/hr/payroll/declarations/meta').then(r => r.data),
+      list:    (params = {})  => api.get('/hr/payroll/declarations', { params }).then(r => r.data?.data ?? []),
+      get:     (id)           => api.get(`/hr/payroll/declarations/${id}`).then(r => r.data),
+      forEmployee: (employeeId, fy) => api.get(`/hr/payroll/declarations/employee/${employeeId}`, { params: fy ? { financial_year: fy } : {} }).then(r => r.data),
+      save:    (id, data)     => api.put(`/hr/payroll/declarations/${id}`, data).then(r => r.data),
+      submit:  (id)           => api.post(`/hr/payroll/declarations/${id}/submit`).then(r => r.data),
+      verify:  (id, data)     => api.post(`/hr/payroll/declarations/${id}/verify`, data).then(r => r.data),
+      reject:  (id, remarks)  => api.post(`/hr/payroll/declarations/${id}/reject`, { remarks }).then(r => r.data),
+      reopen:  (id)           => api.post(`/hr/payroll/declarations/${id}/reopen`).then(r => r.data),
+    },
+    // Form-16-READY data assembled from frozen payroll. NOT a Form 16 — that is
+    // issued from TRACES against the filed TDS return.
+    form16: {
+      get:   (employeeId, fy) => api.get(`/hr/payroll/form16/${employeeId}`, { params: fy ? { financial_year: fy } : {} }).then(r => r.data),
+      years: (employeeId)     => api.get(`/hr/payroll/form16/${employeeId}/years`).then(r => r.data?.data ?? []),
     },
     // Payroll Reports & Analytics (Phase 6) — read-only over frozen data.
     reports: {
@@ -407,6 +475,9 @@ export const hrApi = {
       submit: (id)          => api.patch(`/hr/leave/applications/${id}/submit`).then(r => r.data),
       cancel: (id)          => api.patch(`/hr/leave/applications/${id}/cancel`).then(r => r.data),
       attachmentUrl: (id)   => `${BASE}/hr/leave/applications/${id}/attachment`,
+      // Day count for a range BEFORE applying. The answer depends on the
+      // employee's shift, so the breakdown says which days were excluded and why.
+      preview: (data)       => api.post('/hr/leave/applications/preview', data).then(r => r.data),
     },
     // Leave Approval workflow (Phase 4).
     approvals: {
@@ -444,7 +515,48 @@ export const hrApi = {
   },
 
   // ── Exit / Separation Management — Phase 1 (Types + Policies) ───────────
+  // #10 — interview question bank, sets, AI generation and round integration.
+  interviewQuestions: {
+    meta:    ()            => api.get('/hr/interview-questions/meta').then(r => r.data),
+    list:    (params = {}) => api.get('/hr/interview-questions', { params }).then(r => r.data?.data ?? []),
+    save:    (id, data)    => (id ? api.put(`/hr/interview-questions/${id}`, data) : api.post('/hr/interview-questions', data)).then(r => r.data),
+    toggle:  (id)          => api.patch(`/hr/interview-questions/${id}/toggle`).then(r => r.data),
+    remove:  (id)          => api.delete(`/hr/interview-questions/${id}`).then(r => r.data),
+    // Generation returns DRAFTS only — nothing reaches the bank until saved.
+    generate:      (data)      => api.post('/hr/interview-questions/generate', data).then(r => r.data),
+    saveGenerated: (questions) => api.post('/hr/interview-questions/generated', { questions }).then(r => r.data?.data ?? []),
+
+    sets:      (params = {}) => api.get('/hr/interview-questions/sets', { params }).then(r => r.data?.data ?? []),
+    saveSet:   (id, data)    => (id ? api.put(`/hr/interview-questions/sets/${id}`, data) : api.post('/hr/interview-questions/sets', data)).then(r => r.data),
+    removeSet: (id)          => api.delete(`/hr/interview-questions/sets/${id}`).then(r => r.data),
+
+    forRound: (roundId)         => api.get(`/hr/interviews/${roundId}/questions`).then(r => r.data),
+    attach:   (roundId, data)   => api.post(`/hr/interviews/${roundId}/questions`, data).then(r => r.data),
+    evaluate: (roundId, answers) => api.post(`/hr/interviews/${roundId}/questions/evaluate`, { answers }).then(r => r.data),
+    detach:   (roundId, rqId)   => api.delete(`/hr/interviews/${roundId}/questions/${rqId}`).then(r => r.data),
+  },
+
+  // #31 — commissions and incentives. A variable earning is an amount against an
+  // existing Earning component for one period; payroll picks up approved ones.
+  variableEarnings: {
+    list:       (params = {}) => api.get('/hr/variable-earnings', { params }).then(r => r.data?.data ?? []),
+    components: ()            => api.get('/hr/variable-earnings/components').then(r => r.data?.data ?? []),
+    save:       (id, data)    => (id ? api.put(`/hr/variable-earnings/${id}`, data) : api.post('/hr/variable-earnings', data)).then(r => r.data),
+    approve:    (id)          => api.post(`/hr/variable-earnings/${id}/approve`).then(r => r.data),
+    reject:     (id, remarks) => api.post(`/hr/variable-earnings/${id}/reject`, { remarks }).then(r => r.data),
+    remove:     (id)          => api.delete(`/hr/variable-earnings/${id}`).then(r => r.data),
+  },
+
   exit: {
+    // #44 — exit questionnaire templates. `resolve` is ungated so the leaver
+    // filling in the form can read the questions they have to answer.
+    questionnaires: {
+      list:    (params = {}) => api.get('/hr/exit-questionnaires', { params }).then(r => r.data?.data ?? []),
+      get:     (id)          => api.get(`/hr/exit-questionnaires/${id}`).then(r => r.data),
+      resolve: (exitTypeId)  => api.get('/hr/exit-questionnaires/resolve', { params: { exit_type_id: exitTypeId } }).then(r => r.data),
+      save:    (id, data)    => (id ? api.put(`/hr/exit-questionnaires/${id}`, data) : api.post('/hr/exit-questionnaires', data)).then(r => r.data),
+      remove:  (id)          => api.delete(`/hr/exit-questionnaires/${id}`).then(r => r.data),
+    },
     types: {
       list:      (params = {}) => api.get('/hr/exit/types', { params }).then(r => r.data),
       create:    (data)        => api.post('/hr/exit/types', data).then(r => r.data),
@@ -713,6 +825,10 @@ export const hrApi = {
     breakEnd:   (data)        => api.post('/hr/attendance/break-end', data).then(r => r.data),
     exportUrl:  (params = {}) => `/hr/attendance/export?${new URLSearchParams(params).toString()}`,
     exportBlob: (params = {}) => api.get('/hr/attendance/export', { params, responseType: 'blob' }).then(r => r.data),
+    // #38 — the on-demand SangoeTrack pull. The route and SangoeTrackSyncController
+    // already existed and already accept employee_id/month/year; only this client
+    // binding was missing. Returns 422 when the integration is switched off.
+    syncSangoeTrack: (data = {}) => api.post('/hr/attendance/sync-sangoetrack', data).then(r => r.data),
   },
 
   // ── Recruitment Services (external-company hiring intake) ────────────────
@@ -791,9 +907,6 @@ export const hrApi = {
     addFamily:         (id, data)     => api.post(`/employee-onboarding/${id}/family`, data).then(r => r.data),
     updateFamily:      (id, rid, data) => api.put(`/employee-onboarding/${id}/family/${rid}`, data).then(r => r.data),
     deleteFamily:      (id, rid)      => api.delete(`/employee-onboarding/${id}/family/${rid}`).then(r => r.data),
-    addAsset:          (id, data)     => api.post(`/employee-onboarding/${id}/assets`, data).then(r => r.data),
-    updateAsset:       (id, rid, data) => api.put(`/employee-onboarding/${id}/assets/${rid}`, data).then(r => r.data),
-    deleteAsset:       (id, rid)      => api.delete(`/employee-onboarding/${id}/assets/${rid}`).then(r => r.data),
   },
 
   // ── Central Notification & Reminder Engine (platform foundation) ────────
@@ -832,6 +945,141 @@ export const hrApi = {
       process: ()            => api.post('/hr/notifications/queue/process').then(r => r.data),
       retry:   (id)          => api.post(`/hr/notifications/queue/${id}/retry`).then(r => r.data),
     },
+  },
+
+  /* ── HR Operations ─────────────────────────────────────────────────── */
+
+  // #25 — quiz engine: question bank, quizzes, attempts, evaluation. Separate
+  // from the legacy learning.quizzes score record, which is untouched.
+  quizEngine: {
+    meta:      ()            => api.get('/hr/learning/quiz/meta').then(r => r.data),
+    questions: (params = {}) => api.get('/hr/learning/quiz/questions', { params }).then(r => r.data?.data ?? []),
+    saveQuestion:   (id, data) => (id ? api.put(`/hr/learning/quiz/questions/${id}`, data) : api.post('/hr/learning/quiz/questions', data)).then(r => r.data),
+    removeQuestion: (id)       => api.delete(`/hr/learning/quiz/questions/${id}`).then(r => r.data),
+
+    list:   (params = {}) => api.get('/hr/learning/quiz', { params }).then(r => r.data?.data ?? []),
+    get:    (id)          => api.get(`/hr/learning/quiz/${id}`).then(r => r.data),
+    save:   (id, data)    => (id ? api.put(`/hr/learning/quiz/${id}`, data) : api.post('/hr/learning/quiz', data)).then(r => r.data),
+    remove: (id)          => api.delete(`/hr/learning/quiz/${id}`).then(r => r.data),
+
+    start:   (id, data)      => api.post(`/hr/learning/quiz/${id}/start`, data).then(r => r.data),
+    submit:  (attemptId, answers) => api.post(`/hr/learning/quiz/attempts/${attemptId}/submit`, { answers }).then(r => r.data),
+    result:  (attemptId)     => api.get(`/hr/learning/quiz/attempts/${attemptId}`).then(r => r.data),
+    history: (employeeId, params = {}) => api.get(`/hr/learning/quiz/employees/${employeeId}/history`, { params }).then(r => r.data),
+  },
+
+  // #23 — retraining, read from the existing assignment rows.
+  retraining: {
+    summary: (employeeId)            => api.get(`/hr/learning/assignments/retraining/${employeeId}`).then(r => r.data?.data ?? []),
+    history: (employeeId, programId) => api.get(`/hr/learning/assignments/retraining/${employeeId}/${programId}`).then(r => r.data),
+  },
+
+  // #26 — Employee Survey. Its own module, mirroring routes/survey.php.
+  surveys: {
+    meta:      ()             => api.get('/hr/surveys/meta').then(r => r.data),
+    dashboard: ()             => api.get('/hr/surveys/dashboard').then(r => r.data),
+    list:      (params = {})  => api.get('/hr/surveys', { params }).then(r => r.data?.data ?? []),
+    get:       (id)           => api.get(`/hr/surveys/${id}`).then(r => r.data),
+    save:      (id, data)     => (id ? api.put(`/hr/surveys/${id}`, data) : api.post('/hr/surveys', data)).then(r => r.data),
+    remove:    (id)           => api.delete(`/hr/surveys/${id}`).then(r => r.data),
+    publish:   (id)           => api.post(`/hr/surveys/${id}/publish`).then(r => r.data),
+    close:     (id)           => api.post(`/hr/surveys/${id}/close`).then(r => r.data),
+
+    categories:     (params = {}) => api.get('/hr/surveys/categories', { params }).then(r => r.data?.data ?? []),
+    saveCategory:   (id, data)    => (id ? api.put(`/hr/surveys/categories/${id}`, data) : api.post('/hr/surveys/categories', data)).then(r => r.data),
+    removeCategory: (id)          => api.delete(`/hr/surveys/categories/${id}`).then(r => r.data),
+
+    availableFor: (employeeId)      => api.get(`/hr/surveys/employees/${employeeId}/available`).then(r => r.data?.data ?? []),
+    respond:      (id, data)        => api.post(`/hr/surveys/${id}/respond`, data).then(r => r.data),
+
+    analytics: (id)              => api.get(`/hr/surveys/${id}/analytics`).then(r => r.data),
+    responses: (id, params = {}) => api.get(`/hr/surveys/${id}/responses`, { params }).then(r => r.data?.data ?? []),
+    exportUrl: (id)              => `${BASE}/hr/surveys/${id}/export`,
+  },
+
+  // #41 department transfer + #42 promotion/demotion. One endpoint family: both
+  // are the same event with a different `movement_type`.
+  movements: {
+    meta:    ()             => api.get('/hr/movements/meta').then(r => r.data),
+    list:    (params = {})  => api.get('/hr/movements', { params }).then(r => r.data?.data ?? []),
+    history: (employeeId)   => api.get(`/hr/movements/employees/${employeeId}`).then(r => r.data?.data ?? []),
+    move:    (data)         => api.post('/hr/movements', data).then(r => r.data),
+    actionRecommendation: (id, data = {}) => api.post(`/hr/movements/recommendations/${id}/action`, data).then(r => r.data),
+  },
+
+  // Shift Management. Assignment and history come from one table — history is
+  // simply the superseded assignments, so there is no separate history endpoint
+  // family to keep in step.
+  shifts: {
+    meta:      ()             => api.get('/hr/shifts/meta').then(r => r.data),
+    list:      (params = {})  => api.get('/hr/shifts', { params }).then(r => r.data?.data ?? []),
+    get:       (id)           => api.get(`/hr/shifts/${id}`).then(r => r.data),
+    create:    (data)         => api.post('/hr/shifts', data).then(r => r.data),
+    update:    (id, data)     => api.put(`/hr/shifts/${id}`, data).then(r => r.data),
+    remove:    (id)           => api.delete(`/hr/shifts/${id}`).then(r => r.data),
+
+    rotations:      ()            => api.get('/hr/shifts/rotations').then(r => r.data?.data ?? []),
+    saveRotation:   (id, data)    => (id ? api.put(`/hr/shifts/rotations/${id}`, data) : api.post('/hr/shifts/rotations', data)).then(r => r.data),
+    removeRotation: (id)          => api.delete(`/hr/shifts/rotations/${id}`).then(r => r.data),
+
+    roster:    (params = {})  => api.get('/hr/shifts/roster', { params }).then(r => r.data?.data ?? []),
+    assign:    (data)         => api.post('/hr/shifts/assign', data).then(r => r.data),
+    history:   (employeeId)   => api.get(`/hr/shifts/employees/${employeeId}/history`).then(r => r.data?.data ?? []),
+    forDate:   (employeeId, date) => api.get(`/hr/shifts/employees/${employeeId}/for-date`, { params: { date } }).then(r => r.data),
+  },
+
+  // Workplace Management — Branch → Office → Floor and seating.
+  workplace: {
+    meta:     ()             => api.get('/hr/workplace/meta').then(r => r.data),
+    tree:     ()             => api.get('/hr/workplace/tree').then(r => r.data?.data ?? []),
+
+    branches:      (params = {}) => api.get('/hr/workplace/branches', { params }).then(r => r.data?.data ?? []),
+    saveBranch:    (id, data)    => (id ? api.put(`/hr/workplace/branches/${id}`, data) : api.post('/hr/workplace/branches', data)).then(r => r.data),
+    removeBranch:  (id)          => api.delete(`/hr/workplace/branches/${id}`).then(r => r.data),
+
+    offices:       (params = {}) => api.get('/hr/workplace/offices', { params }).then(r => r.data?.data ?? []),
+    saveOffice:    (id, data)    => (id ? api.put(`/hr/workplace/offices/${id}`, data) : api.post('/hr/workplace/offices', data)).then(r => r.data),
+    removeOffice:  (id)          => api.delete(`/hr/workplace/offices/${id}`).then(r => r.data),
+
+    floors:        (params = {}) => api.get('/hr/workplace/floors', { params }).then(r => r.data?.data ?? []),
+    saveFloor:     (id, data)    => (id ? api.put(`/hr/workplace/floors/${id}`, data) : api.post('/hr/workplace/floors', data)).then(r => r.data),
+    removeFloor:   (id)          => api.delete(`/hr/workplace/floors/${id}`).then(r => r.data),
+
+    seating:  (params = {})  => api.get('/hr/workplace/seating', { params }).then(r => r.data?.data ?? []),
+    assign:   (data)         => api.post('/hr/workplace/assign', data).then(r => r.data),
+    history:  (employeeId)   => api.get(`/hr/workplace/employees/${employeeId}/history`).then(r => r.data?.data ?? []),
+  },
+
+  // Employee Loan & Salary Advance. An advance is a loan TYPE with is_advance
+  // set — the same endpoints serve both.
+  loans: {
+    meta:    ()             => api.get('/hr/loans/meta').then(r => r.data),
+    // Affordability for a proposed EMI. Read-only — called as figures are typed
+    // so the warning appears before a submit is rejected.
+    eligibility: (data)     => api.post('/hr/loans/eligibility', data).then(r => r.data),
+    stats:   ()             => api.get('/hr/loans/stats').then(r => r.data),
+    list:    (params = {})  => api.get('/hr/loans', { params }).then(r => r.data?.data ?? []),
+    get:     (id)           => api.get(`/hr/loans/${id}`).then(r => r.data),
+    save:    (id, data)     => (id ? api.put(`/hr/loans/${id}`, data) : api.post('/hr/loans', data)).then(r => r.data),
+    preview: (data)         => api.post('/hr/loans/preview', data).then(r => r.data),
+
+    types:      (params = {}) => api.get('/hr/loans/types', { params }).then(r => r.data?.data ?? []),
+    saveType:   (id, data)    => (id ? api.put(`/hr/loans/types/${id}`, data) : api.post('/hr/loans/types', data)).then(r => r.data),
+    removeType: (id)          => api.delete(`/hr/loans/types/${id}`).then(r => r.data),
+
+    submit:   (id)           => api.post(`/hr/loans/${id}/submit`).then(r => r.data),
+    approve:  (id)           => api.post(`/hr/loans/${id}/approve`).then(r => r.data),
+    reject:   (id, remarks)  => api.post(`/hr/loans/${id}/reject`, { remarks }).then(r => r.data),
+    disburse: (id, data)     => api.post(`/hr/loans/${id}/disburse`, data).then(r => r.data),
+    close:    (id, remarks)  => api.post(`/hr/loans/${id}/close`, { remarks }).then(r => r.data),
+    cancel:   (id)           => api.post(`/hr/loans/${id}/cancel`).then(r => r.data),
+    waive:    (id, installmentId, remarks) => api.post(`/hr/loans/${id}/installments/${installmentId}/waive`, { remarks }).then(r => r.data),
+
+    // #38 — loan recovery across the payroll ecosystem. Read-only: no payroll
+    // figure is touched, so viewing this cannot affect a run.
+    recovery:            (loanId)      => api.get(`/hr/loans/${loanId}/recovery`).then(r => r.data),
+    outstandingRecovery: (params = {}) => api.get('/hr/loans/recovery/outstanding', { params }).then(r => r.data?.data ?? []),
+    runRecovery:         (runId)       => api.get(`/hr/payroll/runs/${runId}/loan-recovery`).then(r => r.data),
   },
 }
 

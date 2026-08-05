@@ -2,18 +2,22 @@
 
 namespace App\Services\Hr;
 
+use App\Exceptions\BusinessException;
 use App\Models\Hr\HrEmployee;
 use App\Models\Hr\HrOnboarding;
 use App\Models\User;
 use App\Repositories\Hr\EmployeeRepository;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class EmployeeService
 {
-    public function __construct(private EmployeeRepository $employeeRepository)
-    {
+    public function __construct(
+        private EmployeeRepository $employeeRepository,
+        private EmployeeProbationService $probation,
+    ) {
     }
 
     public function list(int $tenantId, array $filters): LengthAwarePaginator
@@ -21,15 +25,77 @@ class EmployeeService
         return $this->employeeRepository->filtered($tenantId, $filters);
     }
 
-    public function create(array $data, int $tenantId): HrEmployee
+    /**
+     * Review comment #36 — "Probation must be set while adding any employee in
+     * system. Without adding process should not complete."
+     *
+     * The employee and their probation are created in ONE transaction. If the
+     * probation cannot be assigned, the employee is not created either — that is
+     * what "the process should not complete" means, and a half-created employee
+     * with no probation is precisely the state the comment is about.
+     *
+     * `probation_policy_id` is required by the request layer. The one exception is
+     * `skip_probation`, which exists for genuinely exempt hires (a re-hire already
+     * confirmed, a consultant) and is recorded on the audit trail so the exemption
+     * is visible rather than silent.
+     *
+     * The SangoeTrack bulk importer writes HrEmployee directly and is deliberately
+     * NOT routed through here: blocking an import of hundreds of existing staff on
+     * probation policy would be wrong, and those employees are not new hires.
+     */
+    public function create(array $data, int $tenantId, ?User $actor = null): HrEmployee
     {
         $data['tenant_id'] = $tenantId;
         $empCode = 'SNE-'.date('Y').'-'.str_pad(HrEmployee::where('tenant_id', $tenantId)->count() + 1, 3, '0', STR_PAD_LEFT);
 
-        $employee = HrEmployee::create([...$data, 'employee_code' => $empCode]);
+        $skipProbation    = (bool) ($data['skip_probation'] ?? false);
+        $probationOptional = (bool) ($data['probation_optional'] ?? false);
+        $probationReason  = $data['probation_skip_reason'] ?? null;
+        $probationInput   = [
+            'probation_policy_id'  => $data['probation_policy_id'] ?? null,
+            'probation_start_date' => $data['probation_start_date'] ?? null,
+            'probation_end_date'   => $data['probation_end_date'] ?? null,
+        ];
+
+        // Not columns on hr_employees — strip before create() so a future
+        // $fillable change cannot start persisting them by accident.
+        unset($data['skip_probation'], $data['probation_skip_reason'], $data['probation_optional'],
+              $data['probation_policy_id'], $data['probation_start_date']);
+
+        $employee = DB::transaction(function () use ($data, $empCode, $tenantId, $skipProbation, $probationOptional, $probationInput, $probationReason, $actor) {
+            $employee = HrEmployee::create([...$data, 'employee_code' => $empCode]);
+
+            if ($skipProbation) {
+                $employee->recordAudit('Probation Skipped', $actor, $probationReason,
+                    ['reason' => $probationReason ?: 'No reason given']);
+
+                return $employee;
+            }
+
+            try {
+                // Reuses the probation module wholesale — dates, duration from the
+                // type, review cycle and audit all stay defined in one place.
+                $this->probation->assign([
+                    'employee_id' => $employee->id,
+                ] + array_filter($probationInput, fn ($v) => $v !== null), $tenantId, $actor);
+            } catch (BusinessException $e) {
+                // `probation_optional` is passed only by the onboarding conversion.
+                // A tenant with no probation policy configured would otherwise be
+                // unable to complete ANY onboarding — a regression in a working
+                // flow, caused by a rule aimed at the manual add-employee screen.
+                // The exemption is recorded, never silent.
+                if (! $probationOptional) {
+                    throw $e;
+                }
+                $employee->recordAudit('Probation Not Assigned', $actor, $e->getMessage(),
+                    ['reason' => $e->getMessage()]);
+            }
+
+            return $employee;
+        });
 
         // Milestone that closes the recruitment → employee lifecycle timeline.
-        $employee->recordAudit('Employee Created', null, null, ['employee_code' => $employee->employee_code]);
+        $employee->recordAudit('Employee Created', $actor, null, ['employee_code' => $employee->employee_code]);
 
         Log::channel('hr')->info('Employee created', ['employee_id' => $employee->id, 'tenant_id' => $tenantId]);
 

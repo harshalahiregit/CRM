@@ -66,8 +66,23 @@ class VendorWorkController extends Controller
     {
         $user = $request->user();
 
+        // Two ways a task reaches a TPV: the vendor's User is an assignee, or the
+        // task is linked to the vendor RECORD via rel_type='tpv_vendor'. Before the
+        // rel link existed only the first was possible, so a task raised against the
+        // vendor as an organisation never appeared here.
+        $vendorId = \App\Models\Vendor\Vendor::query()
+            ->where('tenant_id', $user->tenant_id)
+            ->where(fn ($q) => $q->where('user_id', $user->id)
+                ->when($user->email, fn ($w) => $w->orWhere('email', $user->email)))
+            ->value('id');
+
         $tasks = Task::forTenant($user->tenant_id)
-            ->whereHas('assignees', fn ($q) => $q->where('user_id', $user->id))
+            ->where(function ($q) use ($user, $vendorId) {
+                $q->whereHas('assignees', fn ($a) => $a->where('user_id', $user->id));
+                if ($vendorId) {
+                    $q->orWhere(fn ($r) => $r->where('rel_type', 'tpv_vendor')->where('rel_id', $vendorId));
+                }
+            })
             ->orderByDesc('id')
             ->get(['id', 'name', 'status', 'priority', 'due_date', 'rel_type', 'rel_id']);
 

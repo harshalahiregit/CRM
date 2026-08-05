@@ -24,7 +24,7 @@ class OnboardingController extends Controller
     public function index(Request $request)
     {
         return response()->json(
-            $this->onboardingService->list($request->user()->tenant_id, $request->only(['status', 'verification_status']))
+            $this->onboardingService->list($request->user()->tenant_id, $request->only(['status', 'verification_status', 'hiring_manager_id']))
         );
     }
 

@@ -488,10 +488,79 @@ function ApplyLeave({ showToast }) {
             <label className="col-span-2 flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-xl" style={{ background:'var(--bg-input)', color:'var(--text-muted)' }}><input type="checkbox" checked={modal.half_day} onChange={e=>setModal(m=>({...m,half_day:e.target.checked}))}/> Half day (counts as 0.5)</label>
             <div className="col-span-2"><label className="label">Reason</label><textarea rows={2} className="input-3d text-sm resize-none" value={modal.reason} onChange={e=>setModal(m=>({...m,reason:e.target.value}))}/></div>
             <div className="col-span-2"><label className="label">Attachment (optional)</label><input type="file" className="text-xs" onChange={e=>setModal(m=>({...m,file:e.target.files?.[0]||null}))}/></div>
+            <div className="col-span-2"><LeaveDayPreview modal={modal} /></div>
           </div>
           <div className="flex gap-3 pt-4"><button onClick={()=>setModal(null)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold" style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}>Cancel</button><button onClick={save} disabled={saving} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background:GRAD, opacity:saving?0.7:1 }}>{saving?'Submitting…':'Submit Application'}</button></div>
         </div></div>
       )}
+    </div>
+  )
+}
+
+/**
+ * How many days the selected range actually costs.
+ *
+ * The answer depends on the employee's SHIFT, not on Saturday/Sunday — someone
+ * whose weekly off is Tuesday gets a different count from someone on a standard
+ * week. Showing the excluded days (and why) here means the number on the
+ * application is never a surprise.
+ */
+function LeaveDayPreview({ modal }) {
+  const [preview, setPreview] = useState(null)
+  const [error, setError] = useState(null)
+  const { employee_id, leave_type_id, from_date, to_date, half_day } = modal
+
+  useEffect(() => {
+    if (!employee_id || !from_date || !to_date || to_date < from_date) { setPreview(null); setError(null); return }
+    let cancelled = false
+    hrApi.leave.applications.preview({
+      employee_id: Number(employee_id), from_date, to_date,
+      leave_type_id: leave_type_id ? Number(leave_type_id) : null, half_day: !!half_day,
+    })
+      .then(r => { if (!cancelled) { setPreview(r); setError(null) } })
+      .catch(e => { if (!cancelled) { setPreview(null); setError(e?.response?.data?.message || null) } })
+    return () => { cancelled = true }
+  }, [employee_id, leave_type_id, from_date, to_date, half_day])
+
+  if (error) return <p className="text-[11px]" style={{ color:'#f87171' }}>{error}</p>
+  if (!preview) return null
+
+  const excluded = (preview.breakdown || []).filter(d => !d.counted)
+
+  return (
+    <div className="rounded-xl p-3" style={{ background:'var(--bg-input)' }}>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[11px]" style={{ color:'var(--text-muted)' }}>
+          {preview.total_days} calendar day(s)
+          {preview.excluded > 0 && <> · {preview.excluded} non-working</>}
+        </p>
+        <p className="text-sm font-black" style={{ color:'var(--text-h)' }}>
+          {preview.days} day{preview.days === 1 ? '' : 's'}
+        </p>
+      </div>
+
+      {preview.weekends_count && (
+        <p className="text-[10px] mt-1" style={{ color:'#fbbf24' }}>
+          This policy counts non-working days, so every calendar day is charged.
+        </p>
+      )}
+
+      {excluded.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-2">
+          {excluded.map(d => (
+            <span key={d.date} className="text-[10px] px-1.5 py-0.5 rounded"
+              style={{ background:'rgba(239,68,68,0.1)', color:'#f87171' }} title={d.reason}>
+              {d.day} {d.date.slice(8)} · {d.reason}
+            </span>
+          ))}
+        </div>
+      )}
+
+      <p className="text-[10px] mt-1.5" style={{ color:'var(--text-muted)' }}>
+        {preview.source === 'shift'
+          ? 'Non-working days come from this employee’s assigned shift.'
+          : 'No shift assigned — Saturday and Sunday are treated as non-working.'}
+      </p>
     </div>
   )
 }

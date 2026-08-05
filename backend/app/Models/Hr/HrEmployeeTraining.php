@@ -32,9 +32,15 @@ class HrEmployeeTraining extends Model
         'tenant_id', 'employee_id', 'training_program_id', 'training_session_id',
         'assigned_by', 'assigned_at', 'due_date', 'status', 'remarks', 'completion_percentage',
         'started_at', 'completed_at', 'created_by', 'updated_by',
+        // #23 — retraining. WITHOUT these in $fillable, create() drops them without
+        // error and every attempt lands on the column default of 1, which is
+        // indistinguishable from a correctly-computed first attempt.
+        'attempt_number', 'is_retraining', 'previous_training_id', 'retraining_reason',
     ];
 
     protected $casts = [
+        'attempt_number'        => 'integer',
+        'is_retraining'         => 'boolean',
         'assigned_at'           => 'datetime',
         'due_date'              => 'date',
         'started_at'            => 'datetime',

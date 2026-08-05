@@ -78,7 +78,7 @@ class AuthController extends Controller
     public function registerTPV(TPVRegisterRequest $request): JsonResponse
     {
         $user = $this->authService->registerTPV($request->validated() + $request->only(
-            'vat_number', 'city', 'state', 'country', 'zip', 'website'
+            'gst_number', 'city', 'state', 'country', 'zip', 'website'
         ));
 
         return $this->success([

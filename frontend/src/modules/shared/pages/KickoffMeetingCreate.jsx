@@ -4,6 +4,7 @@ import {
   ArrowLeft, CalendarDays, Clock, MapPin, Users, Plus, Trash2,
   AlertTriangle, ChevronRight, Laptop, Building2, CheckCircle2,
 } from 'lucide-react'
+import { useAuth } from '@/context/AuthContext'
 import { kickoffApi } from '@/services/kickoffApi'
 import { meetingApi } from '@/services/meetingApi'
 import { tpvApi } from '@/services/tpvApi'
@@ -74,6 +75,7 @@ function ErrBanner({ msg }) {
  */
 export default function KickoffMeetingCreate() {
   const navigate = useNavigate()
+  const { user } = useAuth()
 
   // ── data sources ────────────────────────────────────────────────────────
   const [vendors, setVendors]   = useState([])
@@ -121,6 +123,11 @@ export default function KickoffMeetingCreate() {
   const [participants, setParticipants] = useState([])  // [{ id, name, role, organisation }]
   const [momItems,     setMomItems]     = useState([])  // [{ id, description, responsible, remarks, target_date }]
 
+  // Tenant default meeting platform: prefills the picker, and an admin can
+  // point it at whatever they just chose.
+  const [defaultPlatform, setDefaultPlatform] = useState(null)
+  const [savingPlatform, setSavingPlatform]   = useState(false)
+
   const [saving, setSaving]           = useState(false)
   const [err,    setErr]              = useState(null)
   const [generatingLink, setGenLink]  = useState(false)  // post-save link generation
@@ -128,7 +135,10 @@ export default function KickoffMeetingCreate() {
   // ── Fetch tenant default platform preference on mount ────────────────────
   useEffect(() => {
     meetingApi.getDefaultPlatform().then(d => {
-      if (d?.platform) setForm(f => ({ ...f, meeting_platform: d.platform }))
+      if (d?.platform) {
+        setDefaultPlatform(d.platform)
+        setForm(f => ({ ...f, meeting_platform: d.platform }))
+      }
     }).catch(() => {})
   }, [])
 
@@ -424,6 +434,31 @@ export default function KickoffMeetingCreate() {
                     options={PLATFORM_OPTIONS}
                   />
                 </Field>
+
+                {/* Admins can make the current choice the tenant-wide default,
+                    which is what prefills this field on the next meeting. */}
+                {user?.role === 'admin' && (
+                  <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <button type="button" disabled={savingPlatform || form.meeting_platform === defaultPlatform}
+                      onClick={async () => {
+                        setSavingPlatform(true)
+                        try {
+                          await meetingApi.savePlatformSetting(form.meeting_platform)
+                          setDefaultPlatform(form.meeting_platform)
+                        } catch { /* leave the default as it was */ }
+                        finally { setSavingPlatform(false) }
+                      }}
+                      style={{
+                        padding: '6px 11px', borderRadius: 8, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
+                        background: 'transparent', border: '1px solid var(--border)',
+                        color: form.meeting_platform === defaultPlatform ? 'var(--text-muted)' : '#a78bfa',
+                        opacity: savingPlatform ? 0.6 : 1,
+                      }}>
+                      {form.meeting_platform === defaultPlatform ? 'This is the default' : 'Set as default'}
+                    </button>
+                    {savingPlatform && <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Saving…</span>}
+                  </div>
+                )}
                 <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8, padding: '10px 13px', borderRadius: 10, background: 'rgba(124,58,237,0.07)', border: '1px solid rgba(124,58,237,0.22)' }}>
                   <Laptop size={13} style={{ color: '#a78bfa', flexShrink: 0 }} />
                   <span style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.45 }}>

@@ -3,8 +3,10 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useTheme } from '@/context/ThemeContext'
 import { Plus, Send, X, Mail, AlertCircle, ExternalLink, Copy, RefreshCw, UserCheck } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+import { useMasterData } from '@/modules/hr/useMasterData'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 import GenerateOfferDrawer from '@/modules/hr/components/GenerateOfferDrawer'
+import WorkflowProgress from '@/components/ui/WorkflowProgress'
 
 const STATUS_COLORS = {
   Draft: '#94a3b8', 'Pending Approval': '#f59e0b', Approved: '#06b6d4',
@@ -24,7 +26,10 @@ export default function OfferLetters() {
   const navigate = useNavigate()
   const [offers, setOffers]       = useState([])
   const [completed, setCompleted] = useState([])
+  const { masters } = useMasterData()
   const [view, setView]           = useState('active')   // 'active' | 'completed'
+  // #3 — hiring manager, resolved through candidate → job posting → requisition.
+  const [mgrF, setMgrF]           = useState('All')
   const [candidates, setCands]    = useState([])
   const [loading, setLoading]     = useState(true)
   const [genFor, setGenFor]       = useState(null)  // { candidateId, candidateName } when fixed
@@ -41,12 +46,13 @@ export default function OfferLetters() {
 
   const fetchData = async () => {
     setLoading(true)
+    const mgr = mgrF !== 'All' ? { hiring_manager_id: mgrF } : {}
     try {
       // Offer-ready = candidates whose onboarding has been verified and APPROVED
       // (Sprint 2 gate). Offers can only be generated after onboarding approval.
       const [offs, done, approvedOnb, jb] = await Promise.all([
-        hrApi.offers.list(),                       // active offers (exclude Completed)
-        hrApi.offers.list({ view: 'history' }),    // Completed / joined offers
+        hrApi.offers.list(mgr),                            // active offers (exclude Completed)
+        hrApi.offers.list({ ...mgr, view: 'history' }),    // Completed / joined offers
         hrApi.onboarding.list({ verification_status: 'Approved' }),
         hrApi.offers.joiningBuckets().catch(() => null),
       ])
@@ -54,7 +60,7 @@ export default function OfferLetters() {
     } catch { showToast('Failed to load offers','error') }
     finally { setLoading(false) }
   }
-  useEffect(()=>{ fetchData() },[])
+  useEffect(()=>{ fetchData() },[mgrF])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const patchOffer = (id, updated) => setOffers(prev => prev.map(o => o.id === id ? updated : o))
   const openPortal = (token) => window.open(hrApi.offers.portalUrl(token), '_blank', 'noopener,noreferrer')
@@ -177,13 +183,18 @@ export default function OfferLetters() {
       </div>
 
       {/* Active / Completed view toggle */}
-      <div className="flex gap-2">
+      <div className="flex gap-2 items-center flex-wrap">
         {[{k:'active',l:`Active · ${offers.length}`},{k:'completed',l:`Completed Offers · ${completed.length}`}].map(t=>(
           <button key={t.k} onClick={()=>setView(t.k)} className="px-3 py-1.5 rounded-xl text-xs font-bold transition-all"
             style={{ background: view===t.k ? 'linear-gradient(135deg,#7C3AED,#5b21b6)' : 'var(--bg-input)', color: view===t.k ? '#fff' : 'var(--text-muted)', border:`1px solid ${view===t.k ? 'transparent' : 'var(--border)'}` }}>
             {t.l}
           </button>
         ))}
+        {/* #3 — hiring manager, applied server-side. */}
+        <select className="input-3d text-xs ml-auto" style={{ maxWidth: 210 }} value={mgrF} onChange={e => setMgrF(e.target.value)}>
+          <option value="All">All Hiring Managers</option>
+          {(masters.managers || []).map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+        </select>
       </div>
 
       {/* HR Pre-Joining — accepted offers bucketed by days-to-joining */}
@@ -262,6 +273,13 @@ export default function OfferLetters() {
                     </div>
                   </div>
                   <span className="text-[10px] font-bold px-2.5 py-1 rounded-xl" style={{ background:ss.bg, color:ss.c }}>{offer.status}</span>
+                </div>
+
+                {/* #14 — the same nine-phase pipeline every other recruitment
+                    screen shows. Compact on a card: the next action line would
+                    repeat once per offer in a grid. */}
+                <div className="mb-3">
+                  <WorkflowProgress kind="offer" record={offer} compact />
                 </div>
                 <div className="grid grid-cols-2 gap-2 mb-4">
                   <div className="px-3 py-2 rounded-xl" style={{ background:'var(--bg-input)' }}><p className="text-[10px]" style={{ color:'var(--text-muted)' }}>Offered CTC</p><p className="text-sm font-black mt-0.5" style={{ color:'var(--text-h)' }}>{fmtCTC(offer.offered_ctc)}</p></div>

@@ -17,10 +17,13 @@ class HrJobRole extends Model
     protected $table = 'hr_job_roles';
 
     protected $fillable = [
+        // #43 — expected skills for this position; compared against the employee's own.
+        'skills',
         'tenant_id', 'name', 'code', 'description', 'is_active',
     ];
 
     protected $casts = [
+        'skills' => 'array',
         'is_active' => 'boolean',
     ];
 

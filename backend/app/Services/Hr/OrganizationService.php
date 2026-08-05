@@ -41,6 +41,7 @@ class OrganizationService
                 'head_name'      => $d->head?->name,
                 'description'    => $d->description,
                 'is_active'      => $d->is_active,
+                'skills'         => $d->skills ?: [],
                 'employee_count' => $counts[$d->id] ?? 0,
             ])->all();
     }
@@ -82,13 +83,21 @@ class OrganizationService
 
     private function deptAttrs(array $data): array
     {
-        return array_filter([
+        $attrs = array_filter([
             'name'             => $data['name'] ?? null,
             'code'             => $data['code'] ?? null,
             'head_employee_id' => $data['head_employee_id'] ?? null,
             'description'      => $data['description'] ?? null,
             'is_active'        => $data['is_active'] ?? null,
         ], fn ($v) => $v !== null);
+
+        // #43 — skills are assigned explicitly: array_filter() above would drop an
+        // intentional empty list, making it impossible to clear a skill profile.
+        if (array_key_exists('skills', $data)) {
+            $attrs['skills'] = \App\Support\Hr\SkillMatcher::clean($data['skills'] ?? []);
+        }
+
+        return $attrs;
     }
 
     /*
@@ -112,6 +121,7 @@ class OrganizationService
                 'grade_name'     => $d->grade?->name,
                 'description'    => $d->description,
                 'is_active'      => $d->is_active,
+                'skills'         => $d->skills ?: [],
                 'employee_count' => $counts[$d->id] ?? 0,
             ])->all();
     }
@@ -167,6 +177,12 @@ class OrganizationService
             $attrs['grade_id'] = $data['grade_id'] ?: null;
         }
 
+        // #43 — skills are assigned explicitly: array_filter() above would drop an
+        // intentional empty list, making it impossible to clear a skill profile.
+        if (array_key_exists('skills', $data)) {
+            $attrs['skills'] = \App\Support\Hr\SkillMatcher::clean($data['skills'] ?? []);
+        }
+
         return $attrs;
     }
 
@@ -189,6 +205,7 @@ class OrganizationService
                 'level'             => $g->level,
                 'description'       => $g->description,
                 'is_active'         => $g->is_active,
+                'skills'            => $g->skills ?: [],
                 'designation_count' => $g->designations_count,
             ])->all();
     }
@@ -241,6 +258,12 @@ class OrganizationService
             $attrs['level'] = $data['level'] === '' ? null : $data['level'];
         }
 
+        // #43 — skills are assigned explicitly: array_filter() above would drop an
+        // intentional empty list, making it impossible to clear a skill profile.
+        if (array_key_exists('skills', $data)) {
+            $attrs['skills'] = \App\Support\Hr\SkillMatcher::clean($data['skills'] ?? []);
+        }
+
         return $attrs;
     }
 
@@ -262,6 +285,7 @@ class OrganizationService
                 'code'           => $r->code,
                 'description'    => $r->description,
                 'is_active'      => $r->is_active,
+                'skills'         => $r->skills ?: [],
                 'employee_count' => $counts[$r->id] ?? 0,
             ])->all();
     }
@@ -303,12 +327,20 @@ class OrganizationService
 
     private function roleAttrs(array $data): array
     {
-        return array_filter([
+        $attrs = array_filter([
             'name'        => $data['name'] ?? null,
             'code'        => $data['code'] ?? null,
             'description' => $data['description'] ?? null,
             'is_active'   => $data['is_active'] ?? null,
         ], fn ($v) => $v !== null);
+
+        // #43 — skills are assigned explicitly: array_filter() above would drop an
+        // intentional empty list, making it impossible to clear a skill profile.
+        if (array_key_exists('skills', $data)) {
+            $attrs['skills'] = \App\Support\Hr\SkillMatcher::clean($data['skills'] ?? []);
+        }
+
+        return $attrs;
     }
 
     /*
