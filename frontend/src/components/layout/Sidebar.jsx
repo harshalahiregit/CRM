@@ -9,7 +9,7 @@ import {
   CalendarRange, Handshake, Factory, Undo2, Wallet, Award, GraduationCap, ShieldCheck, Bell, Search, X,
   Settings2
 } from 'lucide-react'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/context/AuthContext'
 import { useTheme } from '@/context/ThemeContext'
@@ -51,6 +51,24 @@ const MODULE_SEARCH = [
   { label: 'TPV',        path: '/app/tpv/dashboard',    icon: UserCheck,       kw: 'third party vendor workforce' },
   { label: 'Customers',  path: '/app/customers',        icon: Building2,       kw: 'clients' },
   { label: 'Compliance', path: '/app/tpv/compliance',   icon: ShieldCheck,     kw: 'hsse checklists' },
+]
+
+// Which module the current route belongs to — used to PIN that module's header
+// at the top of the sidebar. Ordered longest-prefix-first so e.g.
+// /app/tpv/compliance resolves to Compliance, not TPV.
+const PINNED_MODULES = [
+  { base: '/app/tpv/compliance', label: 'Compliance', icon: ShieldCheck,     path: '/app/tpv/compliance' },
+  { base: '/app/dashboard',      label: 'Dashboard',  icon: LayoutDashboard, path: '/app/dashboard' },
+  { base: '/app/tasks',          label: 'Tasks',      icon: CheckSquare,     path: '/app/tasks' },
+  { base: '/app/projects',       label: 'Projects',   icon: FolderOpen,      path: '/app/projects' },
+  { base: '/app/helpdesk',       label: 'Helpdesk',   icon: LifeBuoy,        path: '/app/helpdesk/tickets' },
+  { base: '/app/inventory',      label: 'Inventory',  icon: Boxes,           path: '/app/inventory' },
+  { base: '/app/sales',          label: 'Sales',      icon: TrendingUp,      path: '/app/sales/dashboard' },
+  { base: '/app/accounts',       label: 'Accounts',   icon: Landmark,        path: '/app/accounts' },
+  { base: '/app/hr',             label: 'HR',         icon: Users,           path: '/app/hr/dashboard' },
+  { base: '/app/purchase',       label: 'Purchase',   icon: ShoppingCart,    path: '/app/purchase/dashboard' },
+  { base: '/app/tpv',            label: 'TPV',        icon: UserCheck,       path: '/app/tpv/dashboard' },
+  { base: '/app/customers',      label: 'Customers',  icon: Building2,       path: '/app/customers' },
 ]
 
 // ── HRMS sidebar structure (paths/APIs/permissions unchanged) ──
@@ -231,6 +249,9 @@ export default function Sidebar({ collapsed, onToggle }) {
     : TPV_ADMIN_ITEMS
   const [activeLeadsCount, setActiveLeadsCount] = useState(null)
   const [moduleQuery, setModuleQuery] = useState('')
+  const { pathname } = useLocation()
+  // The module the current route lives in — pinned at the top of the sidebar.
+  const activeModule = PINNED_MODULES.find(m => pathname.startsWith(m.base))
   const q = moduleQuery.trim().toLowerCase()
   // Modules first, then any sub-page whose name matches — one combined list.
   const moduleResults = q ? [
@@ -391,6 +412,25 @@ export default function Sidebar({ collapsed, onToggle }) {
           </div>
         )}
 
+      {/* Pinned "current module" — stays fixed at the top of the sidebar, above
+          the scroll, so the module you opened never moves as you scroll. */}
+      {activeModule && (
+        collapsed ? (
+          <button onClick={() => navigate(activeModule.path)} title={activeModule.label}
+            className="sb-active-module mx-auto mb-2 flex items-center justify-center w-9 h-9 rounded-xl">
+            <activeModule.icon size={15} style={{ color: '#a78bfa' }} />
+          </button>
+        ) : (
+          <button onClick={() => navigate(activeModule.path)}
+            className="sb-active-module mx-3 mb-2 flex items-center gap-2 px-3 py-2 rounded-xl"
+            style={{ width: 'calc(100% - 24px)' }}>
+            <activeModule.icon size={15} style={{ color: '#a78bfa' }} className="shrink-0" />
+            <span className="text-sm font-semibold truncate" style={{ color: 'var(--text-h)' }}>{activeModule.label}</span>
+            <span className="ml-auto text-[9px] font-black px-1.5 py-0.5 rounded shrink-0" style={{ background: 'rgba(124,58,237,0.22)', color: '#a78bfa' }}>OPEN</span>
+          </button>
+        )
+      )}
+
       {/* ── Navigation ─────────────────────────────────────── */}
       <nav className="flex-1 pb-3 overflow-y-auto scrollbar-hide">
         {/* Section label */}
@@ -451,7 +491,7 @@ export default function Sidebar({ collapsed, onToggle }) {
             <button
               onClick={() => setHrExpanded(e => !e)}
               title={collapsed ? 'HRMS' : ''}
-              className="nav-3d mb-0.5 w-full sb-sticky-head"
+              className="nav-3d mb-0.5 w-full"
               style={{ justifyContent: collapsed ? 'center' : undefined, color: '#a78bfa' }}
             >
               <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.15)' }}>
@@ -536,7 +576,7 @@ export default function Sidebar({ collapsed, onToggle }) {
           <button
             onClick={() => setAccountsExpanded(e => !e)}
             title={collapsed ? 'Accounts & Finance' : ''}
-            className="nav-3d mb-0.5 w-full sb-sticky-head"
+            className="nav-3d mb-0.5 w-full"
             style={{ justifyContent: collapsed ? 'center' : undefined, color: '#a78bfa' }}
           >
             <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.15)' }}>
@@ -565,7 +605,7 @@ export default function Sidebar({ collapsed, onToggle }) {
           <button
             onClick={() => setSalesExpanded(e => !e)}
             title={collapsed ? 'Sales & Revenue' : ''}
-            className="nav-3d mb-0.5 w-full sb-sticky-head"
+            className="nav-3d mb-0.5 w-full"
             style={{ justifyContent: collapsed ? 'center' : undefined, color: '#a78bfa' }}
           >
             <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.15)' }}>
@@ -605,7 +645,7 @@ export default function Sidebar({ collapsed, onToggle }) {
           <button
             onClick={() => setHelpdeskExpanded(e => !e)}
             title={collapsed ? 'Helpdesk & Support' : ''}
-            className="nav-3d mb-0.5 w-full sb-sticky-head"
+            className="nav-3d mb-0.5 w-full"
             style={{ justifyContent: collapsed ? 'center' : undefined, color: '#22d3ee' }}
           >
             <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(6,182,212,0.15)' }}>
@@ -656,7 +696,7 @@ export default function Sidebar({ collapsed, onToggle }) {
           <button
             onClick={() => setInventoryExpanded(e => !e)}
             title={collapsed ? 'Inventory' : ''}
-            className="nav-3d mb-0.5 w-full sb-sticky-head"
+            className="nav-3d mb-0.5 w-full"
             style={{ justifyContent: collapsed ? 'center' : undefined, color: '#10b981' }}
           >
             <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(16,185,129,0.15)' }}>
@@ -687,7 +727,7 @@ export default function Sidebar({ collapsed, onToggle }) {
           <button
             onClick={() => setPurchaseExpanded(e => !e)}
             title={collapsed ? 'Purchase' : ''}
-            className="nav-3d mb-0.5 w-full sb-sticky-head"
+            className="nav-3d mb-0.5 w-full"
             style={{ justifyContent: collapsed ? 'center' : undefined, color: '#a78bfa' }}
           >
             <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.15)' }}>
@@ -716,7 +756,7 @@ export default function Sidebar({ collapsed, onToggle }) {
           <button
             onClick={() => setTpvExpanded(e => !e)}
             title={collapsed ? 'Thirdparty Vendor' : ''}
-            className="nav-3d mb-0.5 w-full sb-sticky-head"
+            className="nav-3d mb-0.5 w-full"
             style={{ justifyContent: collapsed ? 'center' : undefined, color: '#a78bfa' }}
           >
             <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.15)' }}>
