@@ -465,7 +465,9 @@ export default function Sidebar({ collapsed, onToggle }) {
       )}
 
       {/* ── Navigation ─────────────────────────────────────── */}
-      <nav className="flex-1 pb-3 overflow-y-auto scrollbar-hide">
+      {/* min-h-0 lets this flex child shrink so its own overflow scrolls, even
+          with the fixed logo/search/pinned blocks taking space above it. */}
+      <nav className="flex-1 min-h-0 pb-3 overflow-y-auto scrollbar-hide">
         {/* Section label */}
         {!collapsed && <p className="label-caps px-5 mb-2">Main Menu</p>}
 
