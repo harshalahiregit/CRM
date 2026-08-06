@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\Shared\KickoffMeetingController;
 use App\Http\Controllers\Api\Shared\KickoffMeetingLinkController;
+use App\Http\Controllers\Api\Shared\MeetingLinkController;
 use App\Http\Controllers\Api\Shared\MeetingPlatformController;
 use App\Http\Controllers\Api\Shared\PollController;
 use App\Http\Controllers\Api\Shared\PublicKickoffController;
@@ -54,6 +55,13 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('polls')->group(
     Route::post('/{poll}/close', [PollController::class, 'close']);
     Route::delete('/{poll}',     [PollController::class, 'destroy']);
 })->where(['poll' => '[0-9]+']);
+
+// ── Ad-hoc meeting links for the message composers ──────────────────────
+// The composer's "Meeting" button mints a Zoom / Google Meet / Jitsi link to
+// drop into a message. Distinct from /kickoff (which schedules a meeting record).
+Route::middleware(['auth:sanctum', 'role:admin,staff'])->group(function () {
+    Route::post('/meeting-links', [MeetingLinkController::class, 'store']);
+});
 
 // ── Tenant default meeting platform ─────────────────────────────────────
 // Sits outside the /kickoff prefix: it is a tenant-wide preference, not a

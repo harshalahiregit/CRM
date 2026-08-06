@@ -8,7 +8,8 @@
 // when the surface can back them: emoji is always available; @-mention shows
 // when a `people` list is supplied; attach shows when an `onAttach` handler is.
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { Smile, AtSign, Paperclip, BarChart3, Plus } from 'lucide-react'
+import { Smile, AtSign, Paperclip, BarChart3, Plus, Video } from 'lucide-react'
+import { meetingLinkApi } from '@/services/meetingLinkApi'
 
 // A small, clean, work-appropriate set — enough to react without a heavy
 // emoji-library dependency (there is no Node on the live host; we keep the
@@ -71,14 +72,24 @@ function insertIntoTextarea(textareaRef, value, onChange, text) {
   if (el) requestAnimationFrame(() => { el.focus(); const pos = start + text.length; el.setSelectionRange(pos, pos) })
 }
 
+// The composer's "Meeting" menu — mirrors the reference (Zoom / Google Meet /
+// Jitsi). Keys must match MeetingLinkService::PLATFORMS on the backend.
+const MEET_PLATFORMS = [
+  { key: 'google_meet', label: 'Google Meet' },
+  { key: 'zoom', label: 'Zoom' },
+  { key: 'jitsi', label: 'Jitsi' },
+]
+
 export default function EditorActionBar({
   quillRef, textareaRef, value, onChange,
-  people = null, onAttach = null, onPoll = null, quickCreate = null,
+  people = null, onAttach = null, onPoll = null, quickCreate = null, meeting = false,
   accent = 'var(--color-primary-500)', className = '',
 }) {
   const [emojiOpen, setEmojiOpen] = useState(false)
   const [mentionOpen, setMentionOpen] = useState(false)
   const [quickOpen, setQuickOpen] = useState(false)
+  const [meetingOpen, setMeetingOpen] = useState(false)
+  const [meetingBusy, setMeetingBusy] = useState(null)
   const [q, setQ] = useState('')
 
   const filtered = useMemo(() => {
@@ -98,6 +109,31 @@ export default function EditorActionBar({
     const name = (p.name || p.label || '').replace(/\s+/g, ' ').trim()
     if (name) insert(`@${name} `)
     setMentionOpen(false); setQ('')
+  }
+
+  // Insert a URL as a real clickable link (Quill) or plain URL text (textarea).
+  const insertLink = (url) => {
+    const q2 = quillRef?.current?.getEditor?.()
+    if (q2 && !textareaRef) {
+      const range = q2.getSelection(true) || { index: q2.getLength(), length: 0 }
+      q2.insertText(range.index, url, { link: url }, 'user')
+      q2.insertText(range.index + url.length, ' ', 'user')   // unlinked trailing space
+      q2.setSelection(range.index + url.length + 1, 0, 'user')
+      q2.focus()
+    } else {
+      insert(`${url} `)
+    }
+  }
+
+  const pickMeeting = async (platform) => {
+    if (meetingBusy) return
+    setMeetingBusy(platform)
+    try {
+      const res = await meetingLinkApi.create(platform)
+      if (res?.link) insertLink(res.link)
+      setMeetingOpen(false)
+    } catch { /* handleErr already surfaced the message */ }
+    finally { setMeetingBusy(null) }
   }
 
   return (
@@ -159,6 +195,33 @@ export default function EditorActionBar({
           className={btnCls} style={{ color: 'var(--text-muted)' }} title="Attach a file" aria-label="Attach a file">
           <Paperclip size={15} />
         </button>
+      )}
+
+      {/* Meeting — Zoom / Google Meet / Jitsi link into the message */}
+      {meeting && (
+        <div className="relative">
+          <button type="button" onClick={() => { setMeetingOpen(v => !v); setEmojiOpen(false); setMentionOpen(false); setQuickOpen(false) }}
+            className={btnCls} style={{ color: meetingOpen ? accent : 'var(--text-muted)' }} title="Add a meeting link" aria-label="Add a meeting link">
+            <Video size={15} />
+          </button>
+          <Popover open={meetingOpen} onClose={() => setMeetingOpen(false)}>
+            <ul className="min-w-[150px]">
+              {MEET_PLATFORMS.map(p => (
+                <li key={p.key}>
+                  <button type="button" disabled={!!meetingBusy} onClick={() => pickMeeting(p.key)}
+                    className="w-full flex items-center gap-2 text-left text-xs font-semibold px-2 py-1.5 rounded-lg disabled:opacity-50"
+                    style={{ color: 'var(--text-body)' }}
+                    onMouseEnter={ev => ev.currentTarget.style.background = 'var(--bg-input)'}
+                    onMouseLeave={ev => ev.currentTarget.style.background = 'transparent'}>
+                    <Video size={13} style={{ color: accent }} />
+                    {p.label}
+                    {meetingBusy === p.key && <span className="ml-auto text-[10px]" style={{ color: 'var(--text-muted)' }}>…</span>}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </Popover>
+        </div>
       )}
 
       {/* Poll — only where a poll context is available */}

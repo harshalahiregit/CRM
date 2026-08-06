@@ -990,7 +990,7 @@ export default function TicketThread() {
                           <Paperclip size={14} /> Attach
                           <input type="file" multiple className="hidden" onChange={e => setFiles(prev => [...prev, ...Array.from(e.target.files)])} />
                         </label>
-                        <EditorActionBar quillRef={quillRef} people={mentionPeople} accent="var(--color-support-500)" onPoll={() => setPollOpen(true)}
+                        <EditorActionBar quillRef={quillRef} people={mentionPeople} accent="var(--color-support-500)" onPoll={() => setPollOpen(true)} meeting
                           quickCreate={[
                             { label: 'Task', icon: ListTodo, onClick: () => setQuickTaskOpen(true) },
                             { label: 'Note', icon: StickyNote, onClick: () => setComposerMode('note') },

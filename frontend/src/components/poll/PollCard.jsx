@@ -1,7 +1,7 @@
 // One poll rendered with live results. Clicking an option casts (or, for
 // single-choice, switches) the current user's vote; multi-choice toggles.
 // Results bars always show so people see the tally as they vote.
-import { Check, Lock, Trash2, Users } from 'lucide-react'
+import { Check, Lock, Trash2, Users, EyeOff } from 'lucide-react'
 
 const fmtCloses = (iso) => {
   if (!iso) return null
@@ -30,9 +30,10 @@ export default function PollCard({ poll, accent = 'var(--color-primary-500)', on
       <div className="flex items-start gap-2 mb-2">
         <div className="flex-1 min-w-0">
           <p className="text-xs font-bold break-words" style={{ color: 'var(--text-h)' }}>{poll.question}</p>
-          <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+          <p className="flex items-center gap-1 text-[10px] mt-0.5 flex-wrap" style={{ color: 'var(--text-muted)' }}>
             {poll.created_by_name || 'Someone'}
             {poll.allow_multiple && ' · multiple choice'}
+            {poll.is_anonymous && <span className="inline-flex items-center gap-0.5"> · <EyeOff size={9} /> anonymous</span>}
             {poll.closes_at && ` · ${closed ? 'closed' : 'closes'} ${fmtCloses(poll.closes_at)}`}
           </p>
         </div>
@@ -52,20 +53,26 @@ export default function PollCard({ poll, accent = 'var(--color-primary-500)', on
         {poll.options.map(opt => {
           const picked = mine.has(opt.id)
           return (
-            <button key={opt.id} onClick={() => toggle(opt.id)} disabled={closed || busy}
-              className="relative w-full text-left rounded-lg overflow-hidden disabled:cursor-default"
-              style={{ border: `1px solid ${picked ? accent : 'var(--border)'}`, background: 'var(--bg-card)' }}>
-              {/* results bar */}
-              <div className="absolute inset-y-0 left-0" style={{ width: `${opt.pct}%`, background: `color-mix(in srgb, ${accent} 16%, transparent)`, transition: 'width .3s' }} />
-              <div className="relative flex items-center gap-2 px-2.5 py-1.5">
-                <span className="flex items-center justify-center rounded-full shrink-0"
-                  style={{ width: 15, height: 15, border: `1.5px solid ${picked ? accent : 'var(--border)'}`, background: picked ? accent : 'transparent' }}>
-                  {picked && <Check size={10} style={{ color: '#fff' }} />}
-                </span>
-                <span className="flex-1 text-xs font-semibold truncate" style={{ color: 'var(--text-h)' }}>{opt.label}</span>
-                <span className="text-[11px] font-bold shrink-0" style={{ color: 'var(--text-muted)' }}>{opt.pct}% · {opt.votes}</span>
-              </div>
-            </button>
+            <div key={opt.id}>
+              <button onClick={() => toggle(opt.id)} disabled={closed || busy}
+                className="relative w-full text-left rounded-lg overflow-hidden disabled:cursor-default"
+                style={{ border: `1px solid ${picked ? accent : 'var(--border)'}`, background: 'var(--bg-card)' }}>
+                {/* results bar */}
+                <div className="absolute inset-y-0 left-0" style={{ width: `${opt.pct}%`, background: `color-mix(in srgb, ${accent} 16%, transparent)`, transition: 'width .3s' }} />
+                <div className="relative flex items-center gap-2 px-2.5 py-1.5">
+                  <span className="flex items-center justify-center rounded-full shrink-0"
+                    style={{ width: 15, height: 15, border: `1.5px solid ${picked ? accent : 'var(--border)'}`, background: picked ? accent : 'transparent' }}>
+                    {picked && <Check size={10} style={{ color: '#fff' }} />}
+                  </span>
+                  <span className="flex-1 text-xs font-semibold truncate" style={{ color: 'var(--text-h)' }}>{opt.label}</span>
+                  <span className="text-[11px] font-bold shrink-0" style={{ color: 'var(--text-muted)' }}>{opt.pct}% · {opt.votes}</span>
+                </div>
+              </button>
+              {/* Non-anonymous polls reveal who voted for each option. */}
+              {opt.voters && opt.voters.length > 0 && (
+                <p className="text-[10px] mt-0.5 px-1 truncate" style={{ color: 'var(--text-muted)' }}>{opt.voters.join(', ')}</p>
+              )}
+            </div>
           )
         })}
       </div>

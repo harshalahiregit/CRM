@@ -70,7 +70,7 @@ export function DiscussionsTab({ projectId }) {
           <textarea ref={bodyRef} value={form.body} onChange={e => setForm({ ...form, body: e.target.value })} placeholder="Start the discussion… (optional)" rows={2}
             className="w-full rounded-lg outline-none"
             style={{ padding: '8px 11px', fontSize: 12.5, background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-h)' }} />
-          <EditorActionBar textareaRef={bodyRef} value={form.body} onChange={v => setForm(f => ({ ...f, body: v }))} people={staff} accent={PROJECT_ACCENT} onPoll={() => setPollOpen(true)} />
+          <EditorActionBar textareaRef={bodyRef} value={form.body} onChange={v => setForm(f => ({ ...f, body: v }))} people={staff} accent={PROJECT_ACCENT} onPoll={() => setPollOpen(true)} meeting />
           <label className="flex items-center gap-2 text-xs cursor-pointer select-none" style={{ color: 'var(--text-body)' }}>
             <input type="checkbox" checked={form.visible_to_customer} onChange={e => setForm({ ...form, visible_to_customer: e.target.checked })} />
             Visible to customer
@@ -162,7 +162,7 @@ function Thread({ projectId, discussion, onCommented, people = [], onPoll, onQui
           <textarea ref={commentRef} value={text} onChange={e => setText(e.target.value)} placeholder="Write a comment…" rows={1}
             className="w-full rounded-lg outline-none resize-none"
             style={{ padding: '8px 11px', fontSize: 12.5, background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-h)' }} />
-          <EditorActionBar textareaRef={commentRef} value={text} onChange={setText} people={people} accent={PROJECT_ACCENT} className="mt-1" onPoll={onPoll}
+          <EditorActionBar textareaRef={commentRef} value={text} onChange={setText} people={people} accent={PROJECT_ACCENT} className="mt-1" onPoll={onPoll} meeting
             quickCreate={[
               { label: 'Task', icon: ListTodo, onClick: onQuickTask },
               { label: 'Topic', icon: MessagesSquare, onClick: onNewTopic },

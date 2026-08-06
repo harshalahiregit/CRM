@@ -18,12 +18,13 @@ class Poll extends Model
 
     protected $fillable = [
         'tenant_id', 'context_type', 'context_id',
-        'question', 'allow_multiple', 'closes_at', 'created_by',
+        'question', 'allow_multiple', 'is_anonymous', 'closes_at', 'created_by',
     ];
 
     protected $casts = [
         'context_id'     => 'integer',
         'allow_multiple' => 'boolean',
+        'is_anonymous'   => 'boolean',
         'closes_at'      => 'datetime',
     ];
 
