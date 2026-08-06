@@ -242,6 +242,7 @@ export default function Sidebar({ collapsed, onToggle }) {
   const [inventoryExpanded, setInventoryExpanded] = useState(true)
   const [tpvExpanded, setTpvExpanded] = useState(true)
   const [purchaseExpanded, setPurchaseExpanded] = useState(true)
+  const [pinOpen, setPinOpen] = useState(true)   // pinned module's sub-list open?
   const hrInstalled = isModuleInstalled('hr')
   // Admin/staff see Dashboard + Kickoff; a TPV (vendor) login sees Onboarding + Workforce.
   const tpvItems = ['third_party_vendor', 'vendor'].includes(user?.role)
@@ -434,14 +435,20 @@ export default function Sidebar({ collapsed, onToggle }) {
           </button>
         ) : (
           <div className="sb-active-module mx-3 mb-2 rounded-xl p-1.5">
-            <button onClick={() => navigate(activeModule.path)}
-              className="w-full flex items-center gap-2 px-1.5 py-1.5 rounded-lg">
-              <activeModule.icon size={15} style={{ color: '#a78bfa' }} className="shrink-0" />
-              <span className="text-sm font-semibold truncate" style={{ color: 'var(--text-h)' }}>{activeModule.label}</span>
-              <span className="ml-auto text-[9px] font-black px-1.5 py-0.5 rounded shrink-0" style={{ background: 'rgba(124,58,237,0.22)', color: '#a78bfa' }}>OPEN</span>
-            </button>
-            {activeSubItems.length > 0 && (
-              <div className="mt-1 max-h-[38vh] overflow-y-auto scrollbar-hide space-y-0.5">
+            <div className="w-full flex items-center gap-2 px-1.5 py-1.5 rounded-lg">
+              <button onClick={() => navigate(activeModule.path)} className="flex items-center gap-2 min-w-0 flex-1">
+                <activeModule.icon size={15} style={{ color: '#a78bfa' }} className="shrink-0" />
+                <span className="text-sm font-semibold truncate" style={{ color: 'var(--text-h)' }}>{activeModule.label}</span>
+                <span className="text-[9px] font-black px-1.5 py-0.5 rounded shrink-0" style={{ background: 'rgba(124,58,237,0.22)', color: '#a78bfa' }}>OPEN</span>
+              </button>
+              {activeSubItems.length > 0 && (
+                <button onClick={() => setPinOpen(o => !o)} className="shrink-0 p-0.5" aria-label={pinOpen ? 'Collapse' : 'Expand'} title={pinOpen ? 'Collapse' : 'Expand'}>
+                  <ChevronDown size={14} className={clsx('transition-transform duration-200', !pinOpen && '-rotate-90')} style={{ color: '#a78bfa' }} />
+                </button>
+              )}
+            </div>
+            {activeSubItems.length > 0 && pinOpen && (
+              <div className="mt-1 max-h-[240px] overflow-y-auto scrollbar-hide space-y-0.5">
                 {activeSubItems.map(item => {
                   const Icon = item.icon
                   return (
