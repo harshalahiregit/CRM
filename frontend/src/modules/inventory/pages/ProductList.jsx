@@ -14,6 +14,7 @@ import { ConfirmModal } from '@/components/ui/SearchPicker'
 import ProductFormModal from '../components/ProductFormModal'
 import ImportModal from '../components/ImportModal'
 import BarcodeSheet from '../components/BarcodeSheet'
+import ListControls from '@/components/ui/ListControls'
 
 /**
  * Items (blueprint §1). The scan box is first-class rather than buried:
@@ -49,6 +50,7 @@ export default function ProductList() {
   const [bulkValue, setBulkValue] = useState('')
   const [importKind, setImportKind] = useState(null)
   const [printing, setPrinting] = useState(null)    // products to print barcodes for
+  const [pageSize, setPageSize] = useState(25)       // rows shown; 0 = all
 
   // Dashboard's "Low stock" tile links here with ?filter=low.
   const lowOnly = params.get('filter') === 'low'
@@ -70,13 +72,14 @@ export default function ProductList() {
     return f
   }, [debounced, category, tag, alert, warehouse, item])
 
-  const { data: all = [], isLoading } = useQuery({ queryKey: ['inv-products', filters], queryFn: () => inventoryApi.products.list(filters) })
+  const { data: all = [], isLoading, refetch: refetchProducts } = useQuery({ queryKey: ['inv-products', filters], queryFn: () => inventoryApi.products.list(filters) })
   const { data: categories = [] } = useQuery({ queryKey: ['inv-categories'], queryFn: inventoryApi.categories.list })
   const { data: warehouses = [] } = useQuery({ queryKey: ['inv-warehouses'], queryFn: inventoryApi.warehouses.list })
   const { data: tags = [] } = useQuery({ queryKey: ['inv-tags'], queryFn: inventoryApi.products.tags })
   const { data: allItems = [] } = useQuery({ queryKey: ['inv-products', {}], queryFn: () => inventoryApi.products.list() })
 
   const products = lowOnly ? all.filter(p => p.low_stock) : all
+  const pagedProducts = pageSize === 0 ? products : products.slice(0, pageSize)
   const anyFilter = category || tag || alert || warehouse || item || debounced || lowOnly
 
   const clearFilters = () => {
@@ -172,6 +175,7 @@ export default function ProductList() {
               <ToolBtn onClick={() => setImportKind('opening-stock')}><Upload size={13} /> Import opening stock</ToolBtn>
             </>
           )}
+          <ListControls pageSize={pageSize} onPageSize={setPageSize} onRefresh={refetchProducts} accent={INV_ACCENT} />
           <ToolBtn onClick={() => exportCsv(products, 'items')} disabled={!products.length}><FileDown size={13} /> Export</ToolBtn>
           <button onClick={() => { setEditing(null); setShowForm(true) }}
             className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl"
@@ -300,7 +304,7 @@ export default function ProductList() {
                 {anyFilter ? 'No items match these filters.' : 'No items yet — add your first one.'}
               </td></tr>
             )}
-            {!isLoading && products.map(p => (
+            {!isLoading && pagedProducts.map(p => (
               <tr key={p.id} onClick={() => navigate(`/app/inventory/products/${p.id}`)} className="cursor-pointer"
                 style={{ borderBottom: '1px solid var(--border)', background: selected.has(p.id) ? 'var(--bg-input)' : 'transparent' }}
                 onMouseEnter={e => { if (!selected.has(p.id)) e.currentTarget.style.background = 'var(--bg-input)' }}

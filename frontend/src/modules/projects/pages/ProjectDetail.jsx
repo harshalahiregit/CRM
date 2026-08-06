@@ -592,24 +592,39 @@ function TasksTab({ projectId, navigate, onNewTask }) {
 /* ── Milestones tab ───────────────────────────────────────────── */
 
 // Milestone vs task progress: compare how much of a milestone's TIMELINE has
-// elapsed against how much of its WORK is actually done, and flag it. "Behind"
-// means the calendar is ahead of the tasks; "Ahead" means the tasks lead the
-// calendar. Returns null when it can't be judged (no tasks, or no dated window).
+// elapsed against how much of its WORK is done, and flag it. Always returns a
+// status when there's a due date (Overdue / Due today / Upcoming even with no
+// tasks yet); when it has tasks AND a start→due window it upgrades to the real
+// schedule-vs-work verdict (Behind / On track / Ahead) with an expected %.
 function milestoneHealth(m) {
   const total = m.progress?.total ?? 0
   const pct = m.progress?.percent ?? 0
-  if (pct >= 100) return { label: 'Complete', color: 'var(--color-success-500)' }
-  if (total === 0) return null   // nothing to measure yet
-  const due = m.due_date ? new Date(m.due_date) : null
+  const DAY = 86400000
   const now = new Date()
-  if (due && now > due) return { label: 'Overdue', color: 'var(--color-danger-500)' }
+  const due = m.due_date ? new Date(m.due_date) : null
   const start = m.start_date ? new Date(m.start_date) : null
-  if (!start || !due || due <= start) return null   // no window to compare against
-  const elapsed = Math.max(0, Math.min(100, ((now - start) / (due - start)) * 100))
-  const delta = pct - elapsed   // + = work leads calendar, − = calendar leads work
-  if (delta >= 10) return { label: 'Ahead', color: 'var(--color-success-500)', expected: Math.round(elapsed) }
-  if (delta <= -10) return { label: 'Behind', color: 'var(--color-warning-500)', expected: Math.round(elapsed) }
-  return { label: 'On track', color: 'var(--color-info-500)', expected: Math.round(elapsed) }
+
+  if (total > 0 && pct >= 100) return { label: 'Complete', color: 'var(--color-success-500)' }
+  if (due && now > due) return { label: 'Overdue', color: 'var(--color-danger-500)' }
+
+  // Has tasks and a real window → schedule-vs-work verdict.
+  if (total > 0 && start && due && due > start) {
+    const elapsed = Math.max(0, Math.min(100, ((now - start) / (due - start)) * 100))
+    const delta = pct - elapsed   // + = work leads calendar, − = calendar leads work
+    if (delta >= 10) return { label: 'Ahead', color: 'var(--color-success-500)', expected: Math.round(elapsed) }
+    if (delta <= -10) return { label: 'Behind', color: 'var(--color-warning-500)', expected: Math.round(elapsed) }
+    return { label: 'On track', color: 'var(--color-info-500)', expected: Math.round(elapsed) }
+  }
+
+  // No window (or no tasks) but a due date → at least say how the clock stands.
+  if (due) {
+    const days = Math.ceil((due - now) / DAY)
+    if (days <= 0) return { label: 'Due today', color: 'var(--color-warning-500)' }
+    if (days <= 7) return { label: `Due in ${days}d`, color: 'var(--color-warning-500)' }
+    return { label: 'Upcoming', color: 'var(--color-info-500)' }
+  }
+
+  return null   // no due date at all — nothing to say
 }
 
 function MilestonesTab({ project, onChange, onErr, canManage = true }) {
