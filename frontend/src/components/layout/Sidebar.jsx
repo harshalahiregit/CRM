@@ -345,18 +345,16 @@ export default function Sidebar({ collapsed, onToggle }) {
         )}
       </div>
 
-      {/* ── Navigation ─────────────────────────────────────── */}
-      <nav className="flex-1 py-3 overflow-y-auto scrollbar-hide">
-        {/* Module search — jumps straight to a module by name. Distinct from the
-            header's ⌘K palette (which searches records); this one is modules only. */}
-        {collapsed ? (
+      {/* Module search — sits ABOVE the scrolling nav so it's always visible and
+          the sticky module headers below can pin to the nav's top cleanly. */}
+      {collapsed ? (
           <button onClick={() => navigate('/app/modules')} title="Search modules" className="nav-3d mb-2 w-full" style={{ justifyContent: 'center' }}>
             <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.06)' }}>
               <Search size={14} />
             </div>
           </button>
         ) : (
-          <div className="px-3 mb-2 relative sticky top-0 z-30 pt-1 pb-2" style={{ background: 'var(--bg-sidebar)' }}>
+          <div className="px-3 pt-2 pb-2 relative z-30" style={{ background: 'var(--bg-sidebar)' }}>
             <div className="relative">
               <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
               <input
@@ -393,6 +391,8 @@ export default function Sidebar({ collapsed, onToggle }) {
           </div>
         )}
 
+      {/* ── Navigation ─────────────────────────────────────── */}
+      <nav className="flex-1 pb-3 overflow-y-auto scrollbar-hide">
         {/* Section label */}
         {!collapsed && <p className="label-caps px-5 mb-2">Main Menu</p>}
 
@@ -451,7 +451,7 @@ export default function Sidebar({ collapsed, onToggle }) {
             <button
               onClick={() => setHrExpanded(e => !e)}
               title={collapsed ? 'HRMS' : ''}
-              className="nav-3d mb-0.5 w-full"
+              className="nav-3d mb-0.5 w-full sb-sticky-head"
               style={{ justifyContent: collapsed ? 'center' : undefined, color: '#a78bfa' }}
             >
               <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.15)' }}>
@@ -536,7 +536,7 @@ export default function Sidebar({ collapsed, onToggle }) {
           <button
             onClick={() => setAccountsExpanded(e => !e)}
             title={collapsed ? 'Accounts & Finance' : ''}
-            className="nav-3d mb-0.5 w-full"
+            className="nav-3d mb-0.5 w-full sb-sticky-head"
             style={{ justifyContent: collapsed ? 'center' : undefined, color: '#a78bfa' }}
           >
             <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.15)' }}>
@@ -565,7 +565,7 @@ export default function Sidebar({ collapsed, onToggle }) {
           <button
             onClick={() => setSalesExpanded(e => !e)}
             title={collapsed ? 'Sales & Revenue' : ''}
-            className="nav-3d mb-0.5 w-full"
+            className="nav-3d mb-0.5 w-full sb-sticky-head"
             style={{ justifyContent: collapsed ? 'center' : undefined, color: '#a78bfa' }}
           >
             <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.15)' }}>
@@ -605,7 +605,7 @@ export default function Sidebar({ collapsed, onToggle }) {
           <button
             onClick={() => setHelpdeskExpanded(e => !e)}
             title={collapsed ? 'Helpdesk & Support' : ''}
-            className="nav-3d mb-0.5 w-full"
+            className="nav-3d mb-0.5 w-full sb-sticky-head"
             style={{ justifyContent: collapsed ? 'center' : undefined, color: '#22d3ee' }}
           >
             <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(6,182,212,0.15)' }}>
@@ -656,7 +656,7 @@ export default function Sidebar({ collapsed, onToggle }) {
           <button
             onClick={() => setInventoryExpanded(e => !e)}
             title={collapsed ? 'Inventory' : ''}
-            className="nav-3d mb-0.5 w-full"
+            className="nav-3d mb-0.5 w-full sb-sticky-head"
             style={{ justifyContent: collapsed ? 'center' : undefined, color: '#10b981' }}
           >
             <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(16,185,129,0.15)' }}>
@@ -687,7 +687,7 @@ export default function Sidebar({ collapsed, onToggle }) {
           <button
             onClick={() => setPurchaseExpanded(e => !e)}
             title={collapsed ? 'Purchase' : ''}
-            className="nav-3d mb-0.5 w-full"
+            className="nav-3d mb-0.5 w-full sb-sticky-head"
             style={{ justifyContent: collapsed ? 'center' : undefined, color: '#a78bfa' }}
           >
             <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.15)' }}>
@@ -716,7 +716,7 @@ export default function Sidebar({ collapsed, onToggle }) {
           <button
             onClick={() => setTpvExpanded(e => !e)}
             title={collapsed ? 'Thirdparty Vendor' : ''}
-            className="nav-3d mb-0.5 w-full"
+            className="nav-3d mb-0.5 w-full sb-sticky-head"
             style={{ justifyContent: collapsed ? 'center' : undefined, color: '#a78bfa' }}
           >
             <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.15)' }}>
