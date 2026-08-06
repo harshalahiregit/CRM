@@ -20,6 +20,27 @@ Quill.register(AlignStyle, true)
 Quill.register(ColorStyle, true)
 Quill.register(BackgroundStyle, true)
 
+// Quill's snow theme only labels its BUILT-IN size values (small/large/huge); our
+// px whitelist has no matching CSS, so every size option fell back to the default
+// "Normal" label (that's the "Normal ×5" dropdown). Inject the labels once, in a
+// design-token-free way, so every rich editor across the app shows real sizes.
+if (typeof document !== 'undefined' && !document.getElementById('quill-size-labels')) {
+  const el = document.createElement('style')
+  el.id = 'quill-size-labels'
+  el.textContent = [
+    // the picker's own label (collapsed state) and each item in the open list
+    ...SizeStyle.whitelist.map((v) => {
+      const n = v.replace('px', '')
+      return `.ql-snow .ql-picker.ql-size .ql-picker-label[data-value="${v}"]::before,` +
+             `.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="${v}"]::before{content:"${n}"}`
+    }),
+    // the no-value default reads "Normal" (the app's base body size)
+    `.ql-snow .ql-picker.ql-size .ql-picker-label:not([data-value])::before,` +
+    `.ql-snow .ql-picker.ql-size .ql-picker-item:not([data-value])::before{content:"Normal"}`,
+  ].join('\n')
+  document.head.appendChild(el)
+}
+
 // A full "notepad" toolbar: headings, sizes, weight/style, colour + highlight,
 // lists, alignment, quote/code, links and inline images.
 export const RICH_MODULES = {

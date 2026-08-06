@@ -45,12 +45,17 @@ const isCommentEmpty = (html) => {
 // Repaints Quill's hard-coded light skin from design tokens so the composer follows
 // light/dark, plus prose styles for rendering stored (server-sanitized) comment HTML.
 const COMMENT_EDITOR_CSS = `
-  .task-comment-editor{border:1px solid var(--border);border-radius:14px;overflow:hidden;background:var(--bg-input)}
+  /* overflow is VISIBLE (not hidden) so Quill's link-URL popup isn't clipped; the
+     toolbar carries the top rounded corners instead so the frame still looks clean. */
+  .task-comment-editor{border:1px solid var(--border);border-radius:14px;overflow:visible;background:var(--bg-input)}
   .task-comment-editor:focus-within{border-color:var(--color-primary-500);box-shadow:0 0 0 3px color-mix(in srgb,var(--color-primary-500) 18%,transparent)}
-  .task-comment-editor .ql-toolbar.ql-snow{border:0;border-bottom:1px solid var(--border);background:var(--bg-card);padding:8px 12px}
+  .task-comment-editor .ql-toolbar.ql-snow{border:0;border-bottom:1px solid var(--border);background:var(--bg-card);padding:8px 12px;border-radius:14px 14px 0 0}
   .task-comment-editor .ql-toolbar.ql-snow .ql-formats{margin-right:12px}
-  .task-comment-editor .ql-container.ql-snow{border:0;background:transparent;font-family:inherit;font-size:13px}
+  .task-comment-editor .ql-container.ql-snow{border:0;background:transparent;font-family:inherit;font-size:13px;border-radius:0 0 14px 14px}
   .task-comment-editor .ql-editor{min-height:110px;max-height:360px;overflow-y:auto;color:var(--text-h);line-height:1.6;padding:12px 14px}
+  /* The Description editor gets a taller canvas than the inline comment box. */
+  .task-comment-editor.task-desc .ql-editor{min-height:260px;max-height:560px}
+  .task-comment-editor .ql-snow .ql-tooltip{white-space:normal}
   .task-comment-editor .ql-editor p{margin-bottom:6px}
   .task-comment-editor .ql-editor.ql-blank::before{color:var(--text-muted);opacity:.6;font-style:normal;left:14px;right:14px}
   .task-comment-editor .ql-editor a{color:var(--color-primary-500)}
@@ -381,6 +386,22 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
           </div>
         </div>
 
+        {/* Additional "Related To" links — a task can relate to many things. */}
+        {Array.isArray(task.relations) && task.relations.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 mb-4 -mt-1">
+            <span className="text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>Also related to:</span>
+            {task.relations.map(r => (
+              <button key={`${r.rel_type}:${r.rel_id}`} onClick={() => r.url && navigate(r.url)}
+                className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg"
+                style={{ border: '1px solid var(--border)', background: 'var(--bg-card)', color: r.url ? TASK_ACCENT : 'var(--text-muted)', cursor: r.url ? 'pointer' : 'default' }}>
+                <Link2 size={10} />
+                <span style={{ opacity: 0.6 }}>{r.rel_type}:</span> {r.label || `#${r.rel_id}`}
+                {r.url && <ExternalLink size={9} />}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* ── Two-column body ─────────────────────────────────────── */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
           {/* LEFT (wider) */}
@@ -395,7 +416,7 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
               {editingDesc ? (
                 <div>
                   <style>{COMMENT_EDITOR_CSS}</style>
-                  <div className="task-comment-editor">
+                  <div className="task-comment-editor task-desc">
                     <ReactQuill theme="snow" modules={COMMENT_MODULES} formats={COMMENT_FORMATS}
                       value={descDraft} onChange={setDescDraft} placeholder="Describe the task…" />
                   </div>

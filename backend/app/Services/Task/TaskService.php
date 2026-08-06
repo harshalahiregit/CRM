@@ -306,11 +306,13 @@ class TaskService
             $data['status'] = now()->startOfDay()->gte($start) ? 'in_progress' : 'not_started';
         }
 
-        // People and tags are child rows, not columns — pull them out before the insert.
+        // People, tags and extra relations are child rows, not columns — pull them
+        // out before the insert.
         $assignees = $data['assignee_ids'] ?? [];
         $followers = $data['follower_ids'] ?? [];
         $tags = $data['tags'] ?? null;
-        unset($data['assignee_ids'], $data['follower_ids'], $data['tags']);
+        $relations = $data['relations'] ?? null;
+        unset($data['assignee_ids'], $data['follower_ids'], $data['tags'], $data['relations']);
 
         // Where this sits in the subtask tree. A subtask deliberately inherits
         // NOTHING from its parent except its position — not the assignees, not
@@ -340,6 +342,7 @@ class TaskService
         if ($tags !== null) {
             $this->tags->sync('task', $task->id, $tags, $tenantId);
         }
+        $this->syncRelations($task->id, $relations, $tenantId);
 
         $task = $this->decorateRelation($task->fresh('creator'), $tenantId);
         $task->setAttribute('tags', $this->tags->tagsFor('task', $task->id, $tenantId));
@@ -352,7 +355,8 @@ class TaskService
         $task = $this->find($id, $tenantId);
 
         $tags = $data['tags'] ?? null;
-        unset($data['tags']);
+        $relations = array_key_exists('relations', $data) ? ($data['relations'] ?? []) : null;
+        unset($data['tags'], $data['relations']);
 
         // The description is now edited inline with a rich-text editor, so it arrives
         // as HTML — sanitize it with the same allowlist as comments before saving.
@@ -373,6 +377,7 @@ class TaskService
         if ($tags !== null) {
             $this->tags->sync('task', $task->id, $tags, $tenantId);
         }
+        $this->syncRelations($task->id, $relations, $tenantId);
 
         $fresh = $this->decorateRelation($task->fresh('creator'), $tenantId);
         $fresh->setAttribute('tags', $this->tags->tagsFor('task', $task->id, $tenantId));
@@ -1365,6 +1370,9 @@ class TaskService
             $task->setAttribute('rel_url', $url);
         }
 
+        // Additional "Related To" links (many-per-task), each with a resolved label.
+        $task->setAttribute('relations', $this->relationsFor($task, $tenantId));
+
         return $task;
     }
 
@@ -1444,7 +1452,66 @@ class TaskService
             'purchase_vendor' => Schema::hasTable('purchase_vendors')
                 ? [\App\Models\Purchase\PurchaseVendor::forTenant($tenantId)->whereKey($relId)->value('company_name') ?? "Purchase Vendor #{$relId}", "/app/purchase/vendors/{$relId}"]
                 : [null, null],
+            // Lead lives in the Sales module; Meeting is the shared Kickoff meeting.
+            'lead' => Schema::hasTable('leads')
+                ? [\App\Models\Sales\Lead::forTenant($tenantId)->whereKey($relId)->value('name') ?? "Lead #{$relId}", "/app/sales/leads/{$relId}"]
+                : [null, null],
+            'meeting' => Schema::hasTable('kickoff_meetings')
+                ? [\App\Models\Shared\KickoffMeeting::forTenant($tenantId)->whereKey($relId)->value('title') ?? "Meeting #{$relId}", null]
+                : [null, null],
             default => [null, null],
         };
+    }
+
+    /** rel_types a task may link to (primary link + the additional relations). */
+    public const REL_TYPES = ['project', 'ticket', 'customer', 'contract', 'tpv_vendor', 'purchase_vendor', 'lead', 'meeting'];
+
+    /**
+     * Replace a task's ADDITIONAL relations with the given list. Each entry is
+     * ['rel_type' => …, 'rel_id' => …]. Passing null leaves them untouched; passing
+     * [] clears them. Unknown rel_types and the task's own primary link are skipped.
+     */
+    public function syncRelations(int $taskId, ?array $relations, int $tenantId): void
+    {
+        if ($relations === null) {
+            return;
+        }
+
+        $clean = collect($relations)
+            ->filter(fn ($r) => is_array($r) && ! empty($r['rel_id']) && in_array($r['rel_type'] ?? null, self::REL_TYPES, true))
+            ->map(fn ($r) => ['rel_type' => $r['rel_type'], 'rel_id' => (int) $r['rel_id']])
+            ->unique(fn ($r) => $r['rel_type'].':'.$r['rel_id'])
+            ->values();
+
+        \App\Models\Task\TaskRelation::where('task_id', $taskId)->delete();
+
+        if ($clean->isEmpty()) {
+            return;
+        }
+
+        $now = now();
+        \App\Models\Task\TaskRelation::insert($clean->map(fn ($r) => [
+            'tenant_id'  => $tenantId,
+            'task_id'    => $taskId,
+            'rel_type'   => $r['rel_type'],
+            'rel_id'     => $r['rel_id'],
+            'created_at' => $now,
+            'updated_at' => $now,
+        ])->all());
+    }
+
+    /** The additional relations of a task, each decorated with a label + url. */
+    public function relationsFor(Task $task, int $tenantId): array
+    {
+        return $task->relations()->get()->map(function ($r) use ($tenantId) {
+            if ($r->rel_type === 'customer') {
+                $c = $this->customers->getCustomer((int) $r->rel_id, $tenantId);
+                return ['rel_type' => $r->rel_type, 'rel_id' => (int) $r->rel_id,
+                    'label' => $c['name'] ?? $c['company'] ?? "Customer #{$r->rel_id}", 'url' => null];
+            }
+            [$label, $url] = $this->resolveRelLabel($r->rel_type, (int) $r->rel_id, $tenantId);
+            return ['rel_type' => $r->rel_type, 'rel_id' => (int) $r->rel_id,
+                'label' => $label ?? "{$r->rel_type} #{$r->rel_id}", 'url' => $url];
+        })->all();
     }
 }
