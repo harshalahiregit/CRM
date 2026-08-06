@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\Shared\KickoffMeetingController;
 use App\Http\Controllers\Api\Shared\KickoffMeetingLinkController;
 use App\Http\Controllers\Api\Shared\MeetingPlatformController;
+use App\Http\Controllers\Api\Shared\PollController;
 use App\Http\Controllers\Api\Shared\PublicKickoffController;
 use Illuminate\Support\Facades\Route;
 
@@ -41,6 +42,18 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('kickoff')->grou
     Route::post('/meetings/{kickoffMeeting}/generate-link', [KickoffMeetingLinkController::class, 'generate']);
     Route::get('/meetings/{kickoffMeeting}/link',           [KickoffMeetingLinkController::class, 'show']);
 });
+
+// ── Polls (shared: Tasks / Helpdesk / Projects) ─────────────────────────
+// One poll engine for every editor's "Poll" button. Access is NOT decided
+// here — PollService delegates to the module that owns each poll's context,
+// so staff-only is the outer guard and per-item visibility is the inner one.
+Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('polls')->group(function () {
+    Route::get('/',              [PollController::class, 'index']);   // ?context_type=&context_id=
+    Route::post('/',             [PollController::class, 'store']);
+    Route::post('/{poll}/vote',  [PollController::class, 'vote']);
+    Route::post('/{poll}/close', [PollController::class, 'close']);
+    Route::delete('/{poll}',     [PollController::class, 'destroy']);
+})->where(['poll' => '[0-9]+']);
 
 // ── Tenant default meeting platform ─────────────────────────────────────
 // Sits outside the /kickoff prefix: it is a tenant-wide preference, not a

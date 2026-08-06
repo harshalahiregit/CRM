@@ -18,6 +18,8 @@ import KnowledgeSuggestions from './KnowledgeSuggestions'
 import CannedResponsePicker from './CannedResponsePicker'
 import InsertKbLinkPicker from './InsertKbLinkPicker'
 import EditorActionBar from '@/components/editor/EditorActionBar'
+import PollList from '@/components/poll/PollList'
+import PollComposerModal from '@/components/poll/PollComposerModal'
 import { RICH_MODULES, RICH_FORMATS } from '@/lib/quillConfig'
 import Select from './ui/Select'
 import SearchPicker from './ui/SearchPicker'
@@ -211,6 +213,7 @@ export default function TicketThread() {
   // Searchable pop-ups — these replace window.prompt('…enter an id').
   const [projectPickerOpen, setProjectPickerOpen] = useState(false)
   const [mergePickerOpen, setMergePickerOpen] = useState(false)
+  const [pollOpen, setPollOpen] = useState(false)
   const textareaRef = useRef(null)
   const quillRef = useRef(null)
 
@@ -871,6 +874,11 @@ export default function TicketThread() {
               </div>
               </>)}
 
+              {/* Polls on this ticket — vote inline; create from the composer's poll button. */}
+              <div className="mb-3">
+                <PollList contextType="ticket" contextId={ticket.id} accent="var(--color-support-500)" onNew={() => setPollOpen(true)} />
+              </div>
+
               {/* Knowledge suggestions (UX Book-4: suggest → insert into reply) */}
               <KnowledgeSuggestions ticket={ticket} onInsert={(txt) => { setTab('conversation'); setMessage(m => m + txt) }} />
 
@@ -979,7 +987,7 @@ export default function TicketThread() {
                           <Paperclip size={14} /> Attach
                           <input type="file" multiple className="hidden" onChange={e => setFiles(prev => [...prev, ...Array.from(e.target.files)])} />
                         </label>
-                        <EditorActionBar quillRef={quillRef} people={mentionPeople} accent="var(--color-support-500)" />
+                        <EditorActionBar quillRef={quillRef} people={mentionPeople} accent="var(--color-support-500)" onPoll={() => setPollOpen(true)} />
                         <CannedResponsePicker onInsert={txt => setMessage(m => m ? `${m}\n\n${txt}` : txt)} />
                         <InsertKbLinkPicker onInsert={html => setMessage(m => m ? `${m} ${html}` : html)} />
                         <button type="button" onClick={saveAsCanned} disabled={!message.trim()}
@@ -1068,6 +1076,8 @@ export default function TicketThread() {
         emptyText="No other tickets to merge."
         accent="var(--color-warning-500)"
       />
+
+      {ticket && <PollComposerModal open={pollOpen} onClose={() => setPollOpen(false)} contextType="ticket" contextId={ticket.id} accent="var(--color-support-500)" />}
 
       {/* Save-as-canned modal (image13's "New reply" form: title/category/shortcut) */}
       {cannedModal && (

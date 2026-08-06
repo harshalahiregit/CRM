@@ -8,7 +8,7 @@
 // when the surface can back them: emoji is always available; @-mention shows
 // when a `people` list is supplied; attach shows when an `onAttach` handler is.
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { Smile, AtSign, Paperclip } from 'lucide-react'
+import { Smile, AtSign, Paperclip, BarChart3 } from 'lucide-react'
 
 // A small, clean, work-appropriate set — enough to react without a heavy
 // emoji-library dependency (there is no Node on the live host; we keep the
@@ -73,7 +73,7 @@ function insertIntoTextarea(textareaRef, value, onChange, text) {
 
 export default function EditorActionBar({
   quillRef, textareaRef, value, onChange,
-  people = null, onAttach = null, accent = 'var(--color-primary-500)', className = '',
+  people = null, onAttach = null, onPoll = null, accent = 'var(--color-primary-500)', className = '',
 }) {
   const [emojiOpen, setEmojiOpen] = useState(false)
   const [mentionOpen, setMentionOpen] = useState(false)
@@ -156,6 +156,14 @@ export default function EditorActionBar({
         <button type="button" onClick={onAttach}
           className={btnCls} style={{ color: 'var(--text-muted)' }} title="Attach a file" aria-label="Attach a file">
           <Paperclip size={15} />
+        </button>
+      )}
+
+      {/* Poll — only where a poll context is available */}
+      {onPoll && (
+        <button type="button" onClick={onPoll}
+          className={btnCls} style={{ color: 'var(--text-muted)' }} title="Create a poll" aria-label="Create a poll">
+          <BarChart3 size={15} />
         </button>
       )}
     </div>

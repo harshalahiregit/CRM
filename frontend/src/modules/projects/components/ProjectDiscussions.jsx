@@ -4,6 +4,8 @@ import { MessagesSquare, Plus, Send, MessageCircle, Eye, ChevronDown, ChevronRig
 import { projectApi, PROJECT_ACCENT } from '@/services/projectApi'
 import { taskApi } from '@/services/taskApi'
 import EditorActionBar from '@/components/editor/EditorActionBar'
+import PollList from '@/components/poll/PollList'
+import PollComposerModal from '@/components/poll/PollComposerModal'
 
 const fmtDateTime = d => d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'
 
@@ -17,6 +19,7 @@ export function DiscussionsTab({ projectId }) {
   const [form, setForm] = useState(EMPTY)
   const [openId, setOpenId] = useState(null)
   const [err, setErr] = useState('')
+  const [pollOpen, setPollOpen] = useState(false)
   const bodyRef = useRef(null)
 
   const { data: staff = [] } = useQuery({ queryKey: ['task-staff'], queryFn: taskApi.staff })
@@ -51,6 +54,11 @@ export function DiscussionsTab({ projectId }) {
 
       {err && <p className="text-[11px] mb-2" style={{ color: 'var(--color-danger-500)' }}>{err}</p>}
 
+      {/* Project polls — vote inline; create from a discussion composer or here. */}
+      <div className="mb-4">
+        <PollList contextType="project" contextId={projectId} accent={PROJECT_ACCENT} onNew={() => setPollOpen(true)} />
+      </div>
+
       {showForm && (
         <form onSubmit={e => { e.preventDefault(); if (form.subject.trim()) create.mutate() }}
           className="rounded-xl p-3 mb-4 space-y-2" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
@@ -60,7 +68,7 @@ export function DiscussionsTab({ projectId }) {
           <textarea ref={bodyRef} value={form.body} onChange={e => setForm({ ...form, body: e.target.value })} placeholder="Start the discussion… (optional)" rows={2}
             className="w-full rounded-lg outline-none"
             style={{ padding: '8px 11px', fontSize: 12.5, background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-h)' }} />
-          <EditorActionBar textareaRef={bodyRef} value={form.body} onChange={v => setForm(f => ({ ...f, body: v }))} people={staff} accent={PROJECT_ACCENT} />
+          <EditorActionBar textareaRef={bodyRef} value={form.body} onChange={v => setForm(f => ({ ...f, body: v }))} people={staff} accent={PROJECT_ACCENT} onPoll={() => setPollOpen(true)} />
           <label className="flex items-center gap-2 text-xs cursor-pointer select-none" style={{ color: 'var(--text-body)' }}>
             <input type="checkbox" checked={form.visible_to_customer} onChange={e => setForm({ ...form, visible_to_customer: e.target.checked })} />
             Visible to customer
@@ -94,18 +102,20 @@ export function DiscussionsTab({ projectId }) {
               </span>
             </button>
 
-            {openId === d.id && <Thread projectId={projectId} discussion={d} onCommented={bust} people={staff} />}
+            {openId === d.id && <Thread projectId={projectId} discussion={d} onCommented={bust} people={staff} onPoll={() => setPollOpen(true)} />}
           </li>
         ))}
         {discussions.length === 0 && <li className="text-xs" style={{ color: 'var(--text-muted)' }}>No discussions yet.</li>}
       </ul>
+
+      <PollComposerModal open={pollOpen} onClose={() => setPollOpen(false)} contextType="project" contextId={projectId} accent={PROJECT_ACCENT} />
     </section>
   )
 }
 
 /* ── One discussion's comment thread ──────────────────────────── */
 
-function Thread({ projectId, discussion, onCommented, people = [] }) {
+function Thread({ projectId, discussion, onCommented, people = [], onPoll }) {
   const qc = useQueryClient()
   const [text, setText] = useState('')
   const [err, setErr] = useState('')
@@ -145,7 +155,7 @@ function Thread({ projectId, discussion, onCommented, people = [] }) {
           <textarea ref={commentRef} value={text} onChange={e => setText(e.target.value)} placeholder="Write a comment…" rows={1}
             className="w-full rounded-lg outline-none resize-none"
             style={{ padding: '8px 11px', fontSize: 12.5, background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-h)' }} />
-          <EditorActionBar textareaRef={commentRef} value={text} onChange={setText} people={people} accent={PROJECT_ACCENT} className="mt-1" />
+          <EditorActionBar textareaRef={commentRef} value={text} onChange={setText} people={people} accent={PROJECT_ACCENT} className="mt-1" onPoll={onPoll} />
         </div>
         <button type="submit" disabled={!text.trim() || add.isPending}
           className="flex items-center gap-1 text-xs font-bold px-3 py-2 rounded-xl disabled:opacity-40"
