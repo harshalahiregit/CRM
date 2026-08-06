@@ -115,6 +115,7 @@ class ChequeService
                 'party_name'       => $data['party_name'] ?? null,
                 'party_type'       => $data['party_type'] ?? null,
                 'party_id'         => $data['party_id'] ?? null,
+                'party_source'     => $data['party_source'] ?? null,
                 'project_id'       => $data['project_id'] ?? null,
                 'amount'           => $data['amount'] ?? 0,
                 'is_account_payee' => $data['is_account_payee'] ?? true,
@@ -140,7 +141,7 @@ class ChequeService
         $this->assert($cheque, $tenantId);
         $before = $cheque->toArray();
         $cheque->update(array_intersect_key($data, array_flip([
-            'bank_account_id', 'cheque_no', 'cheque_date', 'party_name', 'party_type', 'party_id',
+            'bank_account_id', 'cheque_no', 'cheque_date', 'party_name', 'party_type', 'party_id', 'party_source',
             'amount', 'memo', 'pdc_due_date', 'is_account_payee', 'reference', 'project_id',
             'source_type', 'payer_bank',
         ])));
