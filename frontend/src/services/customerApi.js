@@ -71,6 +71,11 @@ export const customerApi = {
   projects: {
     list: () => api.get('/customers/projects-stub').then(r => r.data).catch(handleErr),
   },
+  // Names for the Parent Company picker: existing companies + parent names
+  // already in use. `exclude` keeps a company off its own list when editing.
+  parentCompanies: (exclude = null) =>
+    api.get('/customers/parent-companies', { params: exclude ? { exclude } : {} })
+      .then(r => r.data).catch(handleErr),
   notes: {
     list:   (id) => api.get(`/customers/${id}/notes`).then(r => r.data).catch(handleErr),
     create: (id, data) => api.post(`/customers/${id}/notes`, data).then(r => r.data).catch(handleErr),

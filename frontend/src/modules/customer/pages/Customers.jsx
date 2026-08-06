@@ -14,6 +14,7 @@ import ToggleSwitch from '../components/ToggleSwitch'
 import StepperNav from '../components/StepperNav'
 import AdminOrderPicker from '../components/AdminOrderPicker'
 import { CURRENCIES, LANGUAGES } from '../components/customerFormConstants'
+import ParentCompanyPicker from '../components/ParentCompanyPicker'
 import ContactPermissions, { DEFAULT_PERMISSIONS, DEFAULT_NOTIFICATIONS, permissionsFromLegacy } from '../components/ContactPermissions'
 import RaiseTicketButton from '@/components/RaiseTicketButton'
 
@@ -460,7 +461,7 @@ export default function Customers() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div><label className="label">Website</label><input className="input-3d text-sm" value={form.website} onChange={e => sf('website', e.target.value)} /></div>
-                    <div><label className="label">Parent Company</label><input className="input-3d text-sm" placeholder="e.g. UBCPL Group" value={form.parent_company} onChange={e => sf('parent_company', e.target.value)} /></div>
+                    <div><label className="label">Parent Company</label><ParentCompanyPicker value={form.parent_company} onChange={v => sf('parent_company', v)} /></div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div><label className="label">Opening Balance</label><input type="number" className="input-3d text-sm" placeholder="0.00" value={form.opening_balance} onChange={e => sf('opening_balance', e.target.value)} /></div>

@@ -313,6 +313,43 @@ class ClientService
             ->get();
     }
 
+    /**
+     * Names offered by the "Parent Company" picker.
+     *
+     * Two sources, because a parent is usually another customer in the workspace
+     * but doesn't have to be — a holding company may exist only as a label on
+     * its subsidiaries. So we union:
+     *   1. every client's company name (the common case), and
+     *   2. distinct parent_company values already saved that aren't clients,
+     *      so a name typed once is reusable and spelling stays consistent.
+     *
+     * parent_company remains free text: it is exported/imported by name in the
+     * CSV round-trip, and existing rows must keep resolving. Callers may still
+     * submit a brand-new name, which is what "add a new one" means here.
+     *
+     * @return array<int, string>
+     */
+    public function parentCompanyOptions(int $tenantId, ?int $excludeClientId = null): array
+    {
+        $companies = Client::forTenant($tenantId)
+            ->when($excludeClientId, fn ($q) => $q->whereKeyNot($excludeClientId))
+            ->whereNotNull('company')->where('company', '!=', '')
+            ->pluck('company');
+
+        $parents = Client::forTenant($tenantId)
+            ->whereNotNull('parent_company')->where('parent_company', '!=', '')
+            ->distinct()
+            ->pluck('parent_company');
+
+        return $companies->concat($parents)
+            ->map(fn ($n) => trim((string) $n))
+            ->filter()
+            ->unique(fn ($n) => mb_strtolower($n))   // one entry per name, case-insensitively
+            ->sort(fn ($a, $b) => strcasecmp($a, $b))
+            ->values()
+            ->all();
+    }
+
     public function syncAdmins(Client $client, array $userIds, int $tenantId): Collection
     {
         $this->assertTenant($client, $tenantId);

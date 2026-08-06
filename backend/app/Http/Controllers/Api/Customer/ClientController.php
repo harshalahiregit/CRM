@@ -138,6 +138,20 @@ class ClientController extends Controller
         return response()->json($this->clients->assignableStaff($request->user()->tenant_id));
     }
 
+    /**
+     * Suggestions for the "Parent Company" picker: every company already in the
+     * workspace, plus any parent name previously typed that isn't itself a
+     * client (groups that exist only as a label). `exclude` drops the record
+     * being edited so a company can't be made its own parent.
+     */
+    public function parentCompanyOptions(Request $request)
+    {
+        return response()->json($this->clients->parentCompanyOptions(
+            $request->user()->tenant_id,
+            $request->filled('exclude') ? (int) $request->query('exclude') : null,
+        ));
+    }
+
     public function syncAdmins(Client $client, Request $request)
     {
         $data = $request->validate(['user_ids' => 'array', 'user_ids.*' => 'integer']);

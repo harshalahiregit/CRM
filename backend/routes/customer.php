@@ -47,6 +47,9 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('customers')->gr
     // must stay ABOVE the /{client} wildcard routes)
     Route::get('/assignable-staff', [ClientController::class, 'assignableStaff']);
 
+    // Parent Company picker options (static — must stay above /{client}).
+    Route::get('/parent-companies', [ClientController::class, 'parentCompanyOptions']);
+
     // Clients CRUD
     Route::get('/',            [ClientController::class, 'index']);
     Route::post('/',           [ClientController::class, 'store']);
