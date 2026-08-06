@@ -1,11 +1,12 @@
 import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { MessagesSquare, Plus, Send, MessageCircle, Eye, ChevronDown, ChevronRight, X } from 'lucide-react'
+import { MessagesSquare, Plus, Send, MessageCircle, Eye, ChevronDown, ChevronRight, X, ListTodo } from 'lucide-react'
 import { projectApi, PROJECT_ACCENT } from '@/services/projectApi'
 import { taskApi } from '@/services/taskApi'
 import EditorActionBar from '@/components/editor/EditorActionBar'
 import PollList from '@/components/poll/PollList'
 import PollComposerModal from '@/components/poll/PollComposerModal'
+import QuickTaskModal from '@/components/task/QuickTaskModal'
 
 const fmtDateTime = d => d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'
 
@@ -20,6 +21,7 @@ export function DiscussionsTab({ projectId }) {
   const [openId, setOpenId] = useState(null)
   const [err, setErr] = useState('')
   const [pollOpen, setPollOpen] = useState(false)
+  const [quickTaskOpen, setQuickTaskOpen] = useState(false)
   const bodyRef = useRef(null)
 
   const { data: staff = [] } = useQuery({ queryKey: ['task-staff'], queryFn: taskApi.staff })
@@ -102,20 +104,25 @@ export function DiscussionsTab({ projectId }) {
               </span>
             </button>
 
-            {openId === d.id && <Thread projectId={projectId} discussion={d} onCommented={bust} people={staff} onPoll={() => setPollOpen(true)} />}
+            {openId === d.id && <Thread projectId={projectId} discussion={d} onCommented={bust} people={staff}
+              onPoll={() => setPollOpen(true)} onQuickTask={() => setQuickTaskOpen(true)} onNewTopic={() => { setShowForm(true); setErr('') }} />}
           </li>
         ))}
         {discussions.length === 0 && <li className="text-xs" style={{ color: 'var(--text-muted)' }}>No discussions yet.</li>}
       </ul>
 
       <PollComposerModal open={pollOpen} onClose={() => setPollOpen(false)} contextType="project" contextId={projectId} accent={PROJECT_ACCENT} />
+
+      <QuickTaskModal open={quickTaskOpen} onClose={() => setQuickTaskOpen(false)} accent={PROJECT_ACCENT}
+        title="New task (linked to this project)" placeholder="Task name…"
+        onSubmit={(name) => taskApi.create({ name, rel_type: 'project', rel_id: projectId })} />
     </section>
   )
 }
 
 /* ── One discussion's comment thread ──────────────────────────── */
 
-function Thread({ projectId, discussion, onCommented, people = [], onPoll }) {
+function Thread({ projectId, discussion, onCommented, people = [], onPoll, onQuickTask, onNewTopic }) {
   const qc = useQueryClient()
   const [text, setText] = useState('')
   const [err, setErr] = useState('')
@@ -155,7 +162,11 @@ function Thread({ projectId, discussion, onCommented, people = [], onPoll }) {
           <textarea ref={commentRef} value={text} onChange={e => setText(e.target.value)} placeholder="Write a comment…" rows={1}
             className="w-full rounded-lg outline-none resize-none"
             style={{ padding: '8px 11px', fontSize: 12.5, background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-h)' }} />
-          <EditorActionBar textareaRef={commentRef} value={text} onChange={setText} people={people} accent={PROJECT_ACCENT} className="mt-1" onPoll={onPoll} />
+          <EditorActionBar textareaRef={commentRef} value={text} onChange={setText} people={people} accent={PROJECT_ACCENT} className="mt-1" onPoll={onPoll}
+            quickCreate={[
+              { label: 'Task', icon: ListTodo, onClick: onQuickTask },
+              { label: 'Topic', icon: MessagesSquare, onClick: onNewTopic },
+            ]} />
         </div>
         <button type="submit" disabled={!text.trim() || add.isPending}
           className="flex items-center gap-1 text-xs font-bold px-3 py-2 rounded-xl disabled:opacity-40"

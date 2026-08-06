@@ -8,7 +8,7 @@
 // when the surface can back them: emoji is always available; @-mention shows
 // when a `people` list is supplied; attach shows when an `onAttach` handler is.
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { Smile, AtSign, Paperclip, BarChart3 } from 'lucide-react'
+import { Smile, AtSign, Paperclip, BarChart3, Plus } from 'lucide-react'
 
 // A small, clean, work-appropriate set — enough to react without a heavy
 // emoji-library dependency (there is no Node on the live host; we keep the
@@ -73,10 +73,12 @@ function insertIntoTextarea(textareaRef, value, onChange, text) {
 
 export default function EditorActionBar({
   quillRef, textareaRef, value, onChange,
-  people = null, onAttach = null, onPoll = null, accent = 'var(--color-primary-500)', className = '',
+  people = null, onAttach = null, onPoll = null, quickCreate = null,
+  accent = 'var(--color-primary-500)', className = '',
 }) {
   const [emojiOpen, setEmojiOpen] = useState(false)
   const [mentionOpen, setMentionOpen] = useState(false)
+  const [quickOpen, setQuickOpen] = useState(false)
   const [q, setQ] = useState('')
 
   const filtered = useMemo(() => {
@@ -165,6 +167,32 @@ export default function EditorActionBar({
           className={btnCls} style={{ color: 'var(--text-muted)' }} title="Create a poll" aria-label="Create a poll">
           <BarChart3 size={15} />
         </button>
+      )}
+
+      {/* Quick-create "+" — context-linked Task / Note / Topic actions */}
+      {quickCreate && quickCreate.length > 0 && (
+        <div className="relative">
+          <button type="button" onClick={() => { setQuickOpen(v => !v); setEmojiOpen(false); setMentionOpen(false) }}
+            className={btnCls} style={{ color: quickOpen ? accent : 'var(--text-muted)' }} title="Create" aria-label="Quick create">
+            <Plus size={15} />
+          </button>
+          <Popover open={quickOpen} onClose={() => setQuickOpen(false)}>
+            <ul className="min-w-[160px]">
+              {quickCreate.map((item, i) => (
+                <li key={i}>
+                  <button type="button" onClick={() => { setQuickOpen(false); item.onClick?.() }}
+                    className="w-full flex items-center gap-2 text-left text-xs font-semibold px-2 py-1.5 rounded-lg"
+                    style={{ color: 'var(--text-body)' }}
+                    onMouseEnter={ev => ev.currentTarget.style.background = 'var(--bg-input)'}
+                    onMouseLeave={ev => ev.currentTarget.style.background = 'transparent'}>
+                    {item.icon && <item.icon size={14} style={{ color: accent }} />}
+                    {item.label}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </Popover>
+        </div>
       )}
     </div>
   )
