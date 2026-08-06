@@ -17,6 +17,9 @@ export const taskApi = {
   // Assignable vendor / third-party-vendor logins (type = 'vendor' | 'tpv').
   vendors: (type = 'vendor') => api.get('/tasks/vendors', { params: { type } }).then(unwrap).catch(handleErr),
   stats: () => api.get('/tasks/stats').then(unwrap).catch(handleErr),
+  // "Related To" pickers for the new Lead + Meeting types (cross-module reads).
+  relLeads: () => api.get('/sales/leads').then(unwrap).catch(handleErr),
+  relMeetings: () => api.get('/kickoff/meetings').then(unwrap).catch(handleErr),
   // One request for N tasks — not N parallel single-item calls.
   bulk: (action, task_ids, value = null) => api.post('/tasks/bulk', { action, task_ids, value }).then(unwrap).catch(handleErr),
 
@@ -152,7 +155,13 @@ export const REL_TYPES = [
   // they are two distinct relation types -- never a single merged "vendor".
   { value: 'tpv_vendor',      label: 'TPV Vendor' },
   { value: 'purchase_vendor', label: 'Purchase Vendor' },
+  { value: 'lead',            label: 'Lead' },
+  { value: 'meeting',         label: 'Meeting' },
 ]
+
+// Types selectable as an ADDITIONAL relation (a task can relate to many things).
+// Standalone is excluded — it means "no link", which only makes sense as the primary.
+export const EXTRA_REL_TYPES = REL_TYPES.filter(r => r.value !== 'standalone')
 
 // Human label for a rel_type, used where the raw key would leak into the UI.
 export const REL_TYPE_LABEL = Object.fromEntries(REL_TYPES.map(r => [r.value, r.label]))
