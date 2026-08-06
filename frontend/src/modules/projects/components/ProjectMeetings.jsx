@@ -1,9 +1,17 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { CalendarClock, Plus, Trash2, Check, Users, Mail, X } from 'lucide-react'
+import { CalendarClock, Plus, Trash2, Check, Users, Mail, X, Video, Link2, AtSign, ExternalLink } from 'lucide-react'
 import { projectApi, PROJECT_ACCENT } from '@/services/projectApi'
+import { taskApi } from '@/services/taskApi'
+import { meetingLinkApi } from '@/services/meetingLinkApi'
 import { ConfirmModal } from '@/components/ui/SearchPicker'
 import Select from '@/components/ui/Select'
+
+const MEET_PLATFORMS = [
+  { key: 'google_meet', label: 'Google Meet' },
+  { key: 'zoom', label: 'Zoom' },
+  { key: 'jitsi', label: 'Jitsi' },
+]
 
 const fmtDateTime = d => d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'
 
@@ -15,7 +23,7 @@ const MODE_OPTIONS = [
 
 const MODE_LABEL = { online: 'Online', offline: 'Offline', hybrid: 'Hybrid' }
 
-const EMPTY = { title: '', mode: 'online', participants: '', planned_date: '', meeting_date: '', notes: '' }
+const EMPTY = { title: '', mode: 'online', meeting_link: '', participants: '', planned_date: '', meeting_date: '', notes: '' }
 
 /* ── Meeting (Kickoff) tab ────────────────────────────────────── */
 
@@ -25,7 +33,11 @@ export function MeetingsTab({ projectId, canManage = false }) {
   const [form, setForm] = useState(EMPTY)
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [err, setErr] = useState('')
+  const [linkMenu, setLinkMenu] = useState(false)
+  const [linkBusy, setLinkBusy] = useState(null)
+  const [tagMenu, setTagMenu] = useState(false)
 
+  const { data: staff = [] } = useQuery({ queryKey: ['task-staff'], queryFn: taskApi.staff })
   const { data, isLoading } = useQuery({ queryKey: ['project-meetings', projectId], queryFn: () => projectApi.meetings(projectId) })
   const meetings = data?.meetings || []
   const counters = data?.counters || { total: 0, completed: 0, pending: 0 }
@@ -36,6 +48,7 @@ export function MeetingsTab({ projectId, canManage = false }) {
     mutationFn: () => projectApi.createMeeting(projectId, {
       title: form.title.trim(),
       mode: form.mode,
+      meeting_link: form.meeting_link.trim() || null,
       participants: form.participants.trim() || null,
       planned_date: form.planned_date || null,
       meeting_date: form.meeting_date || null,
@@ -44,6 +57,28 @@ export function MeetingsTab({ projectId, canManage = false }) {
     onSuccess: () => { setForm(EMPTY); setShowForm(false); setErr(''); bust() },
     onError: onErr,
   })
+
+  // Generate a real Zoom / Google Meet / Jitsi link into the form.
+  const genLink = async (platform) => {
+    if (linkBusy) return
+    setLinkBusy(platform)
+    try {
+      const res = await meetingLinkApi.create(platform, form.title.trim() || 'Project meeting')
+      if (res?.link) setForm(f => ({ ...f, meeting_link: res.link }))
+      setLinkMenu(false)
+    } catch (e) { onErr(e) }
+    finally { setLinkBusy(null) }
+  }
+
+  // Tag a person into the participants list (comma-separated names).
+  const tagPerson = (name) => {
+    setForm(f => {
+      const existing = f.participants.split(',').map(s => s.trim()).filter(Boolean)
+      if (existing.includes(name)) return f
+      return { ...f, participants: [...existing, name].join(', ') }
+    })
+    setTagMenu(false)
+  }
   const patch = useMutation({ mutationFn: ({ mid, data }) => projectApi.updateMeeting(projectId, mid, data), onSuccess: () => { setErr(''); bust() }, onError: onErr })
   const del = useMutation({ mutationFn: (mid) => projectApi.deleteMeeting(projectId, mid), onSuccess: () => { setConfirmDelete(null); bust() }, onError: onErr })
 
@@ -83,8 +118,32 @@ export function MeetingsTab({ projectId, canManage = false }) {
               <Select value={form.mode} onChange={v => setForm({ ...form, mode: v })} options={MODE_OPTIONS} size="sm" ariaLabel="Meeting mode" />
             </div>
             <div>
-              <Label>Participants</Label>
-              <input value={form.participants} onChange={e => setForm({ ...form, participants: e.target.value })} placeholder="Comma-separated names"
+              <div className="flex items-center justify-between">
+                <Label>Participants</Label>
+                <div className="relative">
+                  <button type="button" onClick={() => { setTagMenu(v => !v); setLinkMenu(false) }}
+                    className="flex items-center gap-0.5 text-[10px] font-bold mb-1" style={{ color: PROJECT_ACCENT }}>
+                    <AtSign size={11} /> Tag
+                  </button>
+                  {tagMenu && (
+                    <div className="absolute right-0 top-full z-30 mt-1 w-52 rounded-xl p-1 max-h-56 overflow-y-auto"
+                      style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card)' }}>
+                      {staff.length === 0 && <p className="text-[11px] px-2 py-1.5" style={{ color: 'var(--text-muted)' }}>No people.</p>}
+                      {staff.map(s => (
+                        <button key={s.id} type="button" onClick={() => tagPerson(s.name)}
+                          className="w-full text-left text-xs px-2 py-1.5 rounded-lg hover:opacity-90"
+                          style={{ color: 'var(--text-body)' }}
+                          onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-input)'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                          <span className="font-semibold">{s.name}</span>
+                          {s.role && <span className="ml-1" style={{ color: 'var(--text-muted)' }}>· {s.role}</span>}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <input value={form.participants} onChange={e => setForm({ ...form, participants: e.target.value })} placeholder="Comma-separated names — or use Tag"
                 className="w-full rounded-lg outline-none"
                 style={{ padding: '7px 10px', fontSize: 12, background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-h)' }} />
             </div>
@@ -99,6 +158,43 @@ export function MeetingsTab({ projectId, canManage = false }) {
               <input type="datetime-local" value={form.meeting_date} onChange={e => setForm({ ...form, meeting_date: e.target.value })}
                 className="w-full rounded-lg outline-none"
                 style={{ padding: '7px 10px', fontSize: 12, background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-h)' }} />
+            </div>
+          </div>
+          {/* Online meeting link — generate a real Zoom / Meet / Jitsi link or paste one. */}
+          <div>
+            <Label>Meeting link</Label>
+            <div className="flex items-center gap-2">
+              <input value={form.meeting_link} onChange={e => setForm({ ...form, meeting_link: e.target.value })} placeholder="https://…  or click Generate"
+                className="flex-1 rounded-lg outline-none"
+                style={{ padding: '7px 10px', fontSize: 12, background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-h)' }} />
+              {form.meeting_link && (
+                <a href={form.meeting_link} target="_blank" rel="noreferrer" title="Open link"
+                  className="shrink-0 p-1.5 rounded-lg" style={{ color: PROJECT_ACCENT, border: '1px solid var(--border)' }}>
+                  <ExternalLink size={13} />
+                </a>
+              )}
+              <div className="relative shrink-0">
+                <button type="button" onClick={() => { setLinkMenu(v => !v); setTagMenu(false) }}
+                  className="flex items-center gap-1 text-xs font-bold px-2.5 py-2 rounded-lg"
+                  style={{ background: 'color-mix(in srgb, ' + PROJECT_ACCENT + ' 14%, transparent)', color: PROJECT_ACCENT }}>
+                  <Video size={13} /> Generate
+                </button>
+                {linkMenu && (
+                  <div className="absolute right-0 top-full z-30 mt-1 w-40 rounded-xl p-1"
+                    style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card)' }}>
+                    {MEET_PLATFORMS.map(p => (
+                      <button key={p.key} type="button" disabled={!!linkBusy} onClick={() => genLink(p.key)}
+                        className="w-full flex items-center gap-2 text-left text-xs font-semibold px-2 py-1.5 rounded-lg disabled:opacity-50"
+                        style={{ color: 'var(--text-body)' }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-input)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                        <Video size={13} style={{ color: PROJECT_ACCENT }} /> {p.label}
+                        {linkBusy === p.key && <span className="ml-auto text-[10px]" style={{ color: 'var(--text-muted)' }}>…</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
           <textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Notes (optional)" rows={2}
@@ -131,6 +227,12 @@ export function MeetingsTab({ projectId, canManage = false }) {
                 <tr key={m.id} style={{ borderBottom: '1px solid var(--border)' }}>
                   <td className="px-2 py-2" style={{ color: 'var(--text-h)' }}>
                     <span className="font-semibold">{m.title}</span>
+                    {m.meeting_link && (
+                      <a href={m.meeting_link} target="_blank" rel="noreferrer"
+                        className="flex items-center gap-1 text-[10px] font-bold mt-0.5" style={{ color: PROJECT_ACCENT }}>
+                        <Video size={10} /> Join meeting <ExternalLink size={9} />
+                      </a>
+                    )}
                     {m.notes && <span className="block text-[10px] mt-0.5 whitespace-pre-wrap break-words" style={{ color: 'var(--text-muted)' }}>{m.notes}</span>}
                   </td>
                   <td className="px-2 py-2 capitalize" style={{ color: 'var(--text-muted)' }}>{MODE_LABEL[m.mode] || m.mode}</td>
