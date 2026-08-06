@@ -7,7 +7,8 @@
 // so it survives the server-side HtmlSanitizer untouched. Buttons appear only
 // when the surface can back them: emoji is always available; @-mention shows
 // when a `people` list is supplied; attach shows when an `onAttach` handler is.
-import { useState, useRef, useEffect, useMemo } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { Smile, AtSign, Paperclip, BarChart3, Plus, Video } from 'lucide-react'
 import { meetingLinkApi } from '@/services/meetingLinkApi'
 import InlineMentions from './InlineMentions'
@@ -34,28 +35,47 @@ function insertIntoQuill(quillRef, text) {
   q.focus()
 }
 
-// A lightweight popover that closes on outside-click / Escape.
-function Popover({ open, onClose, children, align = 'left' }) {
+// A popover rendered in a PORTAL and positioned with `fixed` coords anchored to
+// its trigger. Portalling is what stops it being clipped by the composer's
+// `overflow-hidden` card (the reaction/emoji menus were getting cut off).
+// It opens UPWARD (the action bar sits at the bottom of a composer) and clamps
+// to the viewport so it never spills off-screen.
+function Popover({ open, onClose, anchorRef, children, width = 240 }) {
   const ref = useRef(null)
+  const [pos, setPos] = useState(null)
+
+  useLayoutEffect(() => {
+    if (!open || !anchorRef?.current) return
+    const place = () => {
+      const r = anchorRef.current.getBoundingClientRect()
+      const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8))
+      setPos({ left, bottom: window.innerHeight - r.top + 6 })
+    }
+    place()
+    window.addEventListener('resize', place)
+    window.addEventListener('scroll', place, true)
+    return () => { window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true) }
+  }, [open, anchorRef, width])
+
   useEffect(() => {
     if (!open) return
-    const onDown = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose() }
+    const onDown = (e) => {
+      if (ref.current?.contains(e.target) || anchorRef?.current?.contains(e.target)) return
+      onClose()
+    }
     const onKey = (e) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('mousedown', onDown)
     document.addEventListener('keydown', onKey)
     return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
-  }, [open, onClose])
-  if (!open) return null
-  return (
-    <div ref={ref}
-      className="absolute z-50 bottom-full mb-2 rounded-xl p-2 shadow-lg"
-      style={{
-        [align]: 0,
-        background: 'var(--bg-card)', border: '1px solid var(--border)',
-        boxShadow: 'var(--shadow-card)', minWidth: 220,
-      }}>
+  }, [open, onClose, anchorRef])
+
+  if (!open || !pos) return null
+  return createPortal(
+    <div ref={ref} className="fixed z-[80] rounded-xl p-2"
+      style={{ left: pos.left, bottom: pos.bottom, width, background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card)' }}>
       {children}
-    </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -92,6 +112,10 @@ export default function EditorActionBar({
   const [meetingOpen, setMeetingOpen] = useState(false)
   const [meetingBusy, setMeetingBusy] = useState(null)
   const [q, setQ] = useState('')
+  const emojiBtn = useRef(null)
+  const mentionBtn = useRef(null)
+  const meetingBtn = useRef(null)
+  const quickBtn = useRef(null)
 
   const filtered = useMemo(() => {
     const list = people || []
@@ -146,12 +170,12 @@ export default function EditorActionBar({
 
       {/* Emoji — always available */}
       <div className="relative">
-        <button type="button" onClick={() => { setEmojiOpen(v => !v); setMentionOpen(false) }}
+        <button ref={emojiBtn} type="button" onClick={() => { setEmojiOpen(v => !v); setMentionOpen(false) }}
           className={btnCls} style={{ color: emojiOpen ? accent : 'var(--text-muted)' }} title="Emoji" aria-label="Insert emoji">
           <Smile size={15} />
         </button>
-        <Popover open={emojiOpen} onClose={() => setEmojiOpen(false)}>
-          <div className="grid grid-cols-8 gap-0.5" style={{ maxWidth: 260 }}>
+        <Popover open={emojiOpen} onClose={() => setEmojiOpen(false)} anchorRef={emojiBtn} width={288}>
+          <div className="grid grid-cols-8 gap-0.5">
             {EMOJIS.map((e, i) => (
               <button key={i} type="button" onClick={() => pickEmoji(e)}
                 className="text-lg leading-none p-1 rounded-md hover:scale-110 transition-transform"
@@ -168,11 +192,11 @@ export default function EditorActionBar({
       {/* @-mention — only where a people list is supplied */}
       {people && (
         <div className="relative">
-          <button type="button" onClick={() => { setMentionOpen(v => !v); setEmojiOpen(false) }}
+          <button ref={mentionBtn} type="button" onClick={() => { setMentionOpen(v => !v); setEmojiOpen(false) }}
             className={btnCls} style={{ color: mentionOpen ? accent : 'var(--text-muted)' }} title="Mention someone" aria-label="Mention someone">
             <AtSign size={15} />
           </button>
-          <Popover open={mentionOpen} onClose={() => { setMentionOpen(false); setQ('') }}>
+          <Popover open={mentionOpen} onClose={() => { setMentionOpen(false); setQ('') }} anchorRef={mentionBtn} width={240}>
             <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Search people…"
               className="w-full text-xs px-2 py-1.5 rounded-lg outline-none mb-1"
               style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }} />
@@ -206,12 +230,12 @@ export default function EditorActionBar({
       {/* Meeting — Zoom / Google Meet / Jitsi link into the message */}
       {meeting && (
         <div className="relative">
-          <button type="button" onClick={() => { setMeetingOpen(v => !v); setEmojiOpen(false); setMentionOpen(false); setQuickOpen(false) }}
+          <button ref={meetingBtn} type="button" onClick={() => { setMeetingOpen(v => !v); setEmojiOpen(false); setMentionOpen(false); setQuickOpen(false) }}
             className={btnCls} style={{ color: meetingOpen ? accent : 'var(--text-muted)' }} title="Add a meeting link" aria-label="Add a meeting link">
             <Video size={15} />
           </button>
-          <Popover open={meetingOpen} onClose={() => setMeetingOpen(false)}>
-            <ul className="min-w-[150px]">
+          <Popover open={meetingOpen} onClose={() => setMeetingOpen(false)} anchorRef={meetingBtn} width={170}>
+            <ul>
               {MEET_PLATFORMS.map(p => (
                 <li key={p.key}>
                   <button type="button" disabled={!!meetingBusy} onClick={() => pickMeeting(p.key)}
@@ -241,12 +265,12 @@ export default function EditorActionBar({
       {/* Quick-create "+" — context-linked Task / Note / Topic actions */}
       {quickCreate && quickCreate.length > 0 && (
         <div className="relative">
-          <button type="button" onClick={() => { setQuickOpen(v => !v); setEmojiOpen(false); setMentionOpen(false) }}
+          <button ref={quickBtn} type="button" onClick={() => { setQuickOpen(v => !v); setEmojiOpen(false); setMentionOpen(false) }}
             className={btnCls} style={{ color: quickOpen ? accent : 'var(--text-muted)' }} title="Create" aria-label="Quick create">
             <Plus size={15} />
           </button>
-          <Popover open={quickOpen} onClose={() => setQuickOpen(false)}>
-            <ul className="min-w-[160px]">
+          <Popover open={quickOpen} onClose={() => setQuickOpen(false)} anchorRef={quickBtn} width={180}>
+            <ul>
               {quickCreate.map((item, i) => (
                 <li key={i}>
                   <button type="button" onClick={() => { setQuickOpen(false); item.onClick?.() }}
