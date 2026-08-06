@@ -26,9 +26,68 @@ class StatusService
         'project' => ['not_started', 'in_progress', 'on_hold', 'cancelled', 'finished'],
     ];
 
+    /**
+     * The system default status sets — the exact rows the create_status_lookup
+     * migration seeds. Kept here too so a tenant that never got seeded (created
+     * before the migration, or on an environment where it didn't run) can be
+     * self-healed on first read. [key, name, color, order, is_closed_status].
+     */
+    private const DEFAULTS = [
+        'task' => [
+            ['not_started',       'Not Started',       '#64748b', 1,   false],
+            ['in_progress',       'In Progress',       '#3b82f6', 2,   false],
+            ['testing',           'Testing',           '#0284c7', 3,   false],
+            ['awaiting_feedback', 'Awaiting Feedback', '#84cc16', 4,   false],
+            ['complete',          'Complete',          '#22c55e', 100, true],
+        ],
+        'project' => [
+            ['not_started', 'Not Started', '#475569', 1,   false],
+            ['in_progress', 'In Progress', '#2563eb', 2,   false],
+            ['on_hold',     'On Hold',     '#f97316', 3,   false],
+            ['cancelled',   'Cancelled',   '#94a3b8', 4,   true],
+            ['finished',    'Finished',    '#16a34a', 100, true],
+        ],
+    ];
+
     public function list(string $type, int $tenantId): Collection
     {
-        return $this->model($type)::forTenant($tenantId)->orderBy('order')->orderBy('id')->get();
+        $model = $this->model($type);
+        $rows = $model::forTenant($tenantId)->orderBy('order')->orderBy('id')->get();
+
+        // Self-heal: a tenant with zero configured statuses leaves every status
+        // dropdown empty ("No options"). Seed the system defaults the first time
+        // the list is read so the tenant always has a working, editable set. This
+        // is why the LIVE site showed "No options" while local (seeded) worked.
+        if ($rows->isEmpty()) {
+            $this->seedDefaults($type, $tenantId);
+            $rows = $model::forTenant($tenantId)->orderBy('order')->orderBy('id')->get();
+        }
+
+        return $rows;
+    }
+
+    /** Insert the system default statuses for a tenant that has none. */
+    private function seedDefaults(string $type, int $tenantId): void
+    {
+        $now = now();
+        $rows = array_map(fn ($r) => [
+            'tenant_id'         => $tenantId,
+            'key'               => $r[0],
+            'name'              => $r[1],
+            'color'             => $r[2],
+            'order'             => $r[3],
+            'is_closed_status'  => $r[4],
+            'is_system'         => true,
+            'is_default_filter' => false,
+            'can_be_changed_to' => null,
+            'hidden_for'        => null,
+            'created_at'        => $now,
+            'updated_at'        => $now,
+        ], self::DEFAULTS[$type]);
+
+        // insertOrIgnore leans on the unique (tenant_id, key) index, so two
+        // concurrent first-reads can never create duplicate rows.
+        $this->model($type)::query()->insertOrIgnore($rows);
     }
 
     /** Valid keys for validation — the dynamic replacement for `in:a,b,c`. */

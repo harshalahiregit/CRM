@@ -20,7 +20,11 @@ export function useStatuses(type) {
     staleTime: 5 * 60 * 1000,   // statuses change rarely — don't refetch on every mount
   })
 
-  if (!data) {
+  // Fall back to the built-in map when the request is still in flight (no data)
+  // OR the tenant has none configured yet (empty array). Without the length check
+  // an empty [] — a truthy value — would render a blank dropdown ("No options"),
+  // which is exactly what a not-yet-seeded live tenant hit.
+  if (!data || data.length === 0) {
     const map = FALLBACK[type] || {}
     return {
       isLoading,
