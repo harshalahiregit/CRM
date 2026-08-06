@@ -11,6 +11,7 @@ import { useAuth } from '@/context/AuthContext'
 import Select from '@/components/ui/Select'
 import { TagChips } from '@/components/ui/TagInput'
 import { ConfirmModal } from '@/components/ui/SearchPicker'
+import ListControls from '@/components/ui/ListControls'
 import TaskFormDrawer from '../components/TaskFormDrawer'
 import TaskKpiCards from '../components/TaskKpiCards'
 import TaskBulkBar from '../components/TaskBulkBar'
@@ -78,7 +79,7 @@ export default function TaskBoard() {
     return f
   }, [relType, relId, debounced, status, priority, assignee, kpi, user, showSubtasks])
 
-  const { data: rawTasks = [], isLoading } = useQuery({
+  const { data: rawTasks = [], isLoading, refetch: refetchTasks } = useQuery({
     queryKey: ['tasks', filters],
     queryFn: () => taskApi.list(filters),
     // Auto-refresh every 30s so a board left open stays current.
@@ -192,6 +193,8 @@ export default function TaskBoard() {
             style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
             <Download size={13} /> Export
           </button>
+
+          <ListControls onRefresh={refetchTasks} accent={TASK_ACCENT} />
 
           <button onClick={() => setShowTrash(true)} title="Recover deleted tasks"
             className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl"
