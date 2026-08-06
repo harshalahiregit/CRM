@@ -7,10 +7,12 @@ import { RICH_MODULES, RICH_FORMATS } from '@/lib/quillConfig'
 import {
   ArrowLeft, Users, Eye, CheckSquare, Square, MessageSquare, Play, StopCircle,
   Clock, Pencil, Trash2, ExternalLink, Send, Plus, Copy, RefreshCw, BookmarkPlus, ListPlus,
-  Lock, Globe, LifeBuoy, Info, Link2, X, EyeOff, FileText, Paperclip, Download, GitBranch, Building2,
+  Lock, Globe, LifeBuoy, Info, Link2, X, EyeOff, FileText, Paperclip, Download, GitBranch, Building2, BarChart3,
 } from 'lucide-react'
 import SubtaskTree from '../components/SubtaskTree'
 import EditorActionBar from '@/components/editor/EditorActionBar'
+import PollList from '@/components/poll/PollList'
+import PollComposerModal from '@/components/poll/PollComposerModal'
 import RaiseTicketModal from '../../helpdesk/components/RaiseTicketModal'
 import { tpvApi } from '@/services/tpvApi'
 import { purchaseApi } from '@/services/purchaseApi'
@@ -127,6 +129,7 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
   const commentFileInput = useRef(null)
   const commentQuillRef = useRef(null)
   const descQuillRef = useRef(null)
+  const [pollOpen, setPollOpen] = useState(false)
   const [actionErr, setActionErr] = useState('')
   const [hideCompleted, setHideCompleted] = useState(false)
   const [editingDesc, setEditingDesc] = useState(false)
@@ -620,7 +623,7 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
                     <Paperclip size={12} /> Attach
                   </button>
                   <input ref={commentFileInput} type="file" multiple hidden onChange={e => { stageCommentFiles(e.target.files); e.target.value = '' }} />
-                  <EditorActionBar quillRef={commentQuillRef} people={people} accent={TASK_ACCENT} />
+                  <EditorActionBar quillRef={commentQuillRef} people={people} accent={TASK_ACCENT} onPoll={() => setPollOpen(true)} />
                   <span className="text-[11px]" style={{ color: 'var(--text-muted)', opacity: 0.8 }}>
                     <span className="font-semibold">@name</span> to notify · ⌘/Ctrl+↵ to post
                   </span>
@@ -631,6 +634,10 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
                   <Send size={13} /> {addComment.isPending ? 'Posting…' : 'Comment'}
                 </button>
               </div>
+            </Card>
+
+            <Card title="Polls" icon={BarChart3}>
+              <PollList contextType="task" contextId={id} accent={TASK_ACCENT} onNew={() => setPollOpen(true)} />
             </Card>
           </div>
 
@@ -737,6 +744,8 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
 
       <DeleteTaskModal open={confirmDelete} onClose={() => setConfirmDelete(false)} onConfirm={() => remove.mutate()}
         taskName={task.name} link={link} subtaskCount={subtasks.length} busy={remove.isPending} />
+
+      <PollComposerModal open={pollOpen} onClose={() => setPollOpen(false)} contextType="task" contextId={id} accent={TASK_ACCENT} />
 
       <SearchPicker
         open={picker === 'assignee'} onClose={() => setPicker(null)}
