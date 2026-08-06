@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, ArrowRight, Check, FileText, LayoutTemplate, Printer, Download, Send } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, FileText, LayoutTemplate, Printer, Download, Send, UserPlus } from 'lucide-react'
 import { proposalApi } from '@/services/proposalApi'
 import { proposalTemplateApi } from '@/services/proposalTemplateApi'
 import { customerApi } from '@/services/customerApi'
@@ -9,6 +9,7 @@ import { useToast } from '@/hooks/useToast'
 import LineItemsTable from '../components/LineItemsTable'
 import PagesEditor from '../components/PagesEditor'
 import CoverEditor from '../components/CoverEditor'
+import ContactFormDrawer from '@/modules/customer/components/ContactFormDrawer'
 import RichTextEditor from '@/components/ui/RichTextEditor'
 import ProposalDocument from '../components/ProposalDocument'
 import ProposalSubmitModal from '../components/ProposalSubmitModal'
@@ -38,6 +39,7 @@ export default function ProposalWizard() {
   const clients = useClientOptions()
   const [templates, setTemplates] = useState([])
   const [contacts, setContacts] = useState([])
+  const [addingContact, setAddingContact] = useState(false)
   const [step, setStep] = useState(editing ? 1 : 0)
   // Launched from a customer profile? Lock that customer (Phase 1).
   const lockedClientId = params.get('client_id') || ''
@@ -158,6 +160,26 @@ export default function ProposalWizard() {
 
   if (loading) return <div className="p-6"><div className="skeleton h-40 rounded-2xl" style={{ background: 'var(--border)' }} /></div>
 
+  /**
+   * A contact created here must land in the dropdown AND be selected, otherwise
+   * the user has to find it themselves. Refetch rather than push the response so
+   * the option text matches exactly what the list endpoint returns (`name`).
+   */
+  const onContactSaved = async (saved) => {
+    try {
+      const list = await customerApi.contacts.list(form.rel_id)
+      setContacts(list)
+      const c = list.find(x => String(x.id) === String(saved?.id)) || saved
+      if (c) {
+        setForm(p => ({
+          ...p, contact_id: String(c.id),
+          proposal_to: p.proposal_to || c.name || `${c.first_name || ''} ${c.last_name || ''}`.trim(),
+          email: c.email || p.email, phone: c.phone || p.phone,
+        }))
+      }
+    } catch { /* the drawer already reported any save error */ }
+  }
+
   return (
     <div className="space-y-6 animate-[tiltIn_0.35s_ease]">
       {/* Header */}
@@ -256,7 +278,19 @@ export default function ProposalWizard() {
                 <option value="">{form.rel_id ? 'Select contact…' : 'Pick a customer first'}</option>
                 {contacts.map(c => <option key={c.id} value={c.id}>{c.name}{c.email ? ` — ${c.email}` : ''}</option>)}
               </select>
-              {form.rel_id && !contacts.length && <p className="text-[11px] mt-1" style={{ color: '#f59e0b' }}>This customer has no contacts — add one on the customer profile first.</p>}
+              {/* Add a contact without leaving the wizard — same form as the customer
+                  profile (ContactFormDrawer), so nothing is captured differently here. */}
+              {form.rel_id && (
+                <button type="button" onClick={() => setAddingContact(true)}
+                  className="flex items-center gap-1.5 mt-2 text-xs font-bold" style={{ color: 'var(--accent)' }}>
+                  <UserPlus size={13} /> New contact for this customer
+                </button>
+              )}
+              {form.rel_id && !contacts.length && (
+                <p className="text-[11px] mt-1" style={{ color: '#f59e0b' }}>
+                  This customer has no contacts yet — add one above to continue.
+                </p>
+              )}
             </div>
           </div>
           <div className="grid md:grid-cols-3 gap-4">
@@ -338,6 +372,13 @@ export default function ProposalWizard() {
           contact={selectedContact}
           onClose={() => setSubmitOpen(false)}
           onSent={() => { setSubmitOpen(false); toast.success('Proposal emailed to client'); nav(`/app/sales/proposals/${savedId}`) }}
+        />
+      )}
+      {addingContact && form.rel_id && (
+        <ContactFormDrawer
+          clientId={form.rel_id}
+          onClose={() => setAddingContact(false)}
+          onSaved={onContactSaved}
         />
       )}
     </div>
