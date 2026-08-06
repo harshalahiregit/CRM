@@ -10,6 +10,7 @@ import {
   Lock, Globe, LifeBuoy, Info, Link2, X, EyeOff, FileText, Paperclip, Download, GitBranch, Building2,
 } from 'lucide-react'
 import SubtaskTree from '../components/SubtaskTree'
+import EditorActionBar from '@/components/editor/EditorActionBar'
 import RaiseTicketModal from '../../helpdesk/components/RaiseTicketModal'
 import { tpvApi } from '@/services/tpvApi'
 import { purchaseApi } from '@/services/purchaseApi'
@@ -124,6 +125,8 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
   const [comment, setComment] = useState('')
   const [commentFiles, setCommentFiles] = useState([])
   const commentFileInput = useRef(null)
+  const commentQuillRef = useRef(null)
+  const descQuillRef = useRef(null)
   const [actionErr, setActionErr] = useState('')
   const [hideCompleted, setHideCompleted] = useState(false)
   const [editingDesc, setEditingDesc] = useState(false)
@@ -417,16 +420,19 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
                 <div>
                   <style>{COMMENT_EDITOR_CSS}</style>
                   <div className="task-comment-editor task-desc">
-                    <ReactQuill theme="snow" modules={COMMENT_MODULES} formats={COMMENT_FORMATS}
+                    <ReactQuill ref={descQuillRef} theme="snow" modules={COMMENT_MODULES} formats={COMMENT_FORMATS}
                       value={descDraft} onChange={setDescDraft} placeholder="Describe the task…" />
                   </div>
-                  <div className="flex items-center justify-end gap-2 mt-2">
+                  <div className="flex items-center justify-between gap-2 mt-2">
+                    <EditorActionBar quillRef={descQuillRef} people={people} accent={TASK_ACCENT} />
+                    <div className="flex items-center gap-2">
                     <button onClick={() => setEditingDesc(false)} className="text-xs font-semibold px-3 py-1.5 rounded-lg"
                       style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}>Cancel</button>
                     <button onClick={() => saveDesc.mutate(descDraft)} disabled={saveDesc.isPending}
                       className="text-xs font-bold px-4 py-1.5 rounded-lg disabled:opacity-40" style={{ background: TASK_ACCENT, color: '#fff' }}>
                       {saveDesc.isPending ? 'Saving…' : 'Save'}
                     </button>
+                    </div>
                   </div>
                 </div>
               ) : task.description ? (
@@ -585,6 +591,7 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
               <div className="task-comment-editor"
                 onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submitComment() } }}>
                 <ReactQuill
+                  ref={commentQuillRef}
                   theme="snow"
                   modules={COMMENT_MODULES}
                   formats={COMMENT_FORMATS}
@@ -613,6 +620,7 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
                     <Paperclip size={12} /> Attach
                   </button>
                   <input ref={commentFileInput} type="file" multiple hidden onChange={e => { stageCommentFiles(e.target.files); e.target.value = '' }} />
+                  <EditorActionBar quillRef={commentQuillRef} people={people} accent={TASK_ACCENT} />
                   <span className="text-[11px]" style={{ color: 'var(--text-muted)', opacity: 0.8 }}>
                     <span className="font-semibold">@name</span> to notify · ⌘/Ctrl+↵ to post
                   </span>

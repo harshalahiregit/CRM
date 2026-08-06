@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { MessagesSquare, Plus, Send, MessageCircle, Eye, ChevronDown, ChevronRight, X } from 'lucide-react'
 import { projectApi, PROJECT_ACCENT } from '@/services/projectApi'
+import { taskApi } from '@/services/taskApi'
+import EditorActionBar from '@/components/editor/EditorActionBar'
 
 const fmtDateTime = d => d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'
 
@@ -15,7 +17,9 @@ export function DiscussionsTab({ projectId }) {
   const [form, setForm] = useState(EMPTY)
   const [openId, setOpenId] = useState(null)
   const [err, setErr] = useState('')
+  const bodyRef = useRef(null)
 
+  const { data: staff = [] } = useQuery({ queryKey: ['task-staff'], queryFn: taskApi.staff })
   const { data: discussions = [], isLoading } = useQuery({ queryKey: ['project-discussions', projectId], queryFn: () => projectApi.discussions(projectId) })
   const bust = () => qc.invalidateQueries({ queryKey: ['project-discussions', projectId] })
   const onErr = (e) => setErr(e?.message || 'That action failed.')
@@ -53,9 +57,10 @@ export function DiscussionsTab({ projectId }) {
           <input value={form.subject} onChange={e => setForm({ ...form, subject: e.target.value })} placeholder="Subject *"
             className="w-full rounded-lg outline-none"
             style={{ padding: '8px 11px', fontSize: 13, background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-h)' }} />
-          <textarea value={form.body} onChange={e => setForm({ ...form, body: e.target.value })} placeholder="Start the discussion… (optional)" rows={2}
+          <textarea ref={bodyRef} value={form.body} onChange={e => setForm({ ...form, body: e.target.value })} placeholder="Start the discussion… (optional)" rows={2}
             className="w-full rounded-lg outline-none"
             style={{ padding: '8px 11px', fontSize: 12.5, background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-h)' }} />
+          <EditorActionBar textareaRef={bodyRef} value={form.body} onChange={v => setForm(f => ({ ...f, body: v }))} people={staff} accent={PROJECT_ACCENT} />
           <label className="flex items-center gap-2 text-xs cursor-pointer select-none" style={{ color: 'var(--text-body)' }}>
             <input type="checkbox" checked={form.visible_to_customer} onChange={e => setForm({ ...form, visible_to_customer: e.target.checked })} />
             Visible to customer
@@ -89,7 +94,7 @@ export function DiscussionsTab({ projectId }) {
               </span>
             </button>
 
-            {openId === d.id && <Thread projectId={projectId} discussion={d} onCommented={bust} />}
+            {openId === d.id && <Thread projectId={projectId} discussion={d} onCommented={bust} people={staff} />}
           </li>
         ))}
         {discussions.length === 0 && <li className="text-xs" style={{ color: 'var(--text-muted)' }}>No discussions yet.</li>}
@@ -100,10 +105,11 @@ export function DiscussionsTab({ projectId }) {
 
 /* ── One discussion's comment thread ──────────────────────────── */
 
-function Thread({ projectId, discussion, onCommented }) {
+function Thread({ projectId, discussion, onCommented, people = [] }) {
   const qc = useQueryClient()
   const [text, setText] = useState('')
   const [err, setErr] = useState('')
+  const commentRef = useRef(null)
   const key = ['project-discussion-comments', projectId, discussion.id]
 
   const { data: comments = [], isLoading } = useQuery({ queryKey: key, queryFn: () => projectApi.discussionComments(projectId, discussion.id) })
@@ -135,9 +141,12 @@ function Thread({ projectId, discussion, onCommented }) {
       {err && <p className="text-[11px] mb-1" style={{ color: 'var(--color-danger-500)' }}>{err}</p>}
 
       <form onSubmit={e => { e.preventDefault(); if (text.trim()) add.mutate() }} className="flex items-end gap-2">
-        <textarea value={text} onChange={e => setText(e.target.value)} placeholder="Write a comment…" rows={1}
-          className="flex-1 rounded-lg outline-none resize-none"
-          style={{ padding: '8px 11px', fontSize: 12.5, background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-h)' }} />
+        <div className="flex-1">
+          <textarea ref={commentRef} value={text} onChange={e => setText(e.target.value)} placeholder="Write a comment…" rows={1}
+            className="w-full rounded-lg outline-none resize-none"
+            style={{ padding: '8px 11px', fontSize: 12.5, background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-h)' }} />
+          <EditorActionBar textareaRef={commentRef} value={text} onChange={setText} people={people} accent={PROJECT_ACCENT} className="mt-1" />
+        </div>
         <button type="submit" disabled={!text.trim() || add.isPending}
           className="flex items-center gap-1 text-xs font-bold px-3 py-2 rounded-xl disabled:opacity-40"
           style={{ background: PROJECT_ACCENT, color: '#fff' }}><Send size={12} /> Post</button>
