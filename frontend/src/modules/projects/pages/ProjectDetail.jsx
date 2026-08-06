@@ -591,6 +591,42 @@ function TasksTab({ projectId, navigate, onNewTask }) {
 
 /* ── Milestones tab ───────────────────────────────────────────── */
 
+// Milestone vs task progress: compare how much of a milestone's TIMELINE has
+// elapsed against how much of its WORK is done, and flag it. Always returns a
+// status when there's a due date (Overdue / Due today / Upcoming even with no
+// tasks yet); when it has tasks AND a start→due window it upgrades to the real
+// schedule-vs-work verdict (Behind / On track / Ahead) with an expected %.
+function milestoneHealth(m) {
+  const total = m.progress?.total ?? 0
+  const pct = m.progress?.percent ?? 0
+  const DAY = 86400000
+  const now = new Date()
+  const due = m.due_date ? new Date(m.due_date) : null
+  const start = m.start_date ? new Date(m.start_date) : null
+
+  if (total > 0 && pct >= 100) return { label: 'Complete', color: 'var(--color-success-500)' }
+  if (due && now > due) return { label: 'Overdue', color: 'var(--color-danger-500)' }
+
+  // Has tasks and a real window → schedule-vs-work verdict.
+  if (total > 0 && start && due && due > start) {
+    const elapsed = Math.max(0, Math.min(100, ((now - start) / (due - start)) * 100))
+    const delta = pct - elapsed   // + = work leads calendar, − = calendar leads work
+    if (delta >= 10) return { label: 'Ahead', color: 'var(--color-success-500)', expected: Math.round(elapsed) }
+    if (delta <= -10) return { label: 'Behind', color: 'var(--color-warning-500)', expected: Math.round(elapsed) }
+    return { label: 'On track', color: 'var(--color-info-500)', expected: Math.round(elapsed) }
+  }
+
+  // No window (or no tasks) but a due date → at least say how the clock stands.
+  if (due) {
+    const days = Math.ceil((due - now) / DAY)
+    if (days <= 0) return { label: 'Due today', color: 'var(--color-warning-500)' }
+    if (days <= 7) return { label: `Due in ${days}d`, color: 'var(--color-warning-500)' }
+    return { label: 'Upcoming', color: 'var(--color-info-500)' }
+  }
+
+  return null   // no due date at all — nothing to say
+}
+
 function MilestonesTab({ project, onChange, onErr, canManage = true }) {
   const [formFor, setFormFor] = useState(null)   // null = closed | 'new' | milestone object
   const save = useMutation({
@@ -615,11 +651,20 @@ function MilestonesTab({ project, onChange, onErr, canManage = true }) {
         )}
       </div>
       <ul className="space-y-1.5">
-        {milestones.map(m => (
+        {milestones.map(m => {
+          const health = milestoneHealth(m)
+          return (
           <li key={m.id} className="px-2 py-2 rounded-lg group" style={{ background: 'var(--bg-input)' }}>
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full shrink-0" style={{ background: m.color || PROJECT_ACCENT }} />
               <span className="flex-1 text-xs truncate" style={{ color: 'var(--text-h)' }}>{m.name}</span>
+              {health && (
+                <span className="text-[9px] font-black px-1.5 py-0.5 rounded shrink-0"
+                  title={health.expected != null ? `Timeline elapsed ${health.expected}% vs work done ${m.progress?.percent ?? 0}%` : health.label}
+                  style={{ background: `color-mix(in srgb, ${health.color} 16%, transparent)`, color: health.color }}>
+                  {health.label}
+                </span>
+              )}
               <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{fmtDate(m.due_date)}</span>
               {canManage && (
                 <>
@@ -633,18 +678,25 @@ function MilestonesTab({ project, onChange, onErr, canManage = true }) {
               )}
             </div>
             {/* Per-milestone progress — its own tasks done / total, distinct from the
-                project-wide task bar. */}
+                project-wide task bar. The dashed marker is where the TIMELINE says
+                it should be (expected %), so work-vs-schedule is visible at a glance. */}
             <div className="flex items-center gap-2 mt-1.5 pl-4">
-              <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: 'var(--bg-card)' }}>
+              <div className="relative flex-1 h-1 rounded-full overflow-hidden" style={{ background: 'var(--bg-card)' }}>
                 <div className="h-full rounded-full transition-all"
                   style={{ width: `${m.progress?.percent || 0}%`, background: (m.progress?.percent || 0) === 100 ? 'var(--color-success-500)' : PROJECT_ACCENT }} />
+                {health?.expected != null && (
+                  <span className="absolute top-1/2 -translate-y-1/2" title={`Expected ${health.expected}% by now`}
+                    style={{ left: `${health.expected}%`, width: 2, height: 7, background: 'var(--text-muted)', borderRadius: 1 }} />
+                )}
               </div>
               <span className="text-[10px] tabular-nums shrink-0" style={{ color: 'var(--text-muted)' }}>
-                {m.progress?.total ? `${m.progress.done}/${m.progress.total} · ${m.progress.percent}%` : 'no tasks'}
+                {m.progress?.total
+                  ? `${m.progress.done}/${m.progress.total} · ${m.progress.percent}%${health?.expected != null ? ` (exp ${health.expected}%)` : ''}`
+                  : 'no tasks'}
               </span>
             </div>
           </li>
-        ))}
+        )})}
         {milestones.length === 0 && <li className="text-xs" style={{ color: 'var(--text-muted)' }}>No milestones yet.</li>}
       </ul>
 

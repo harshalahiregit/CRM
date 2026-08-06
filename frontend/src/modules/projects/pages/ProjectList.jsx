@@ -10,6 +10,7 @@ import { tagApi } from '@/services/tagApi'
 import { exportCsv, stampedName } from '@/lib/exportCsv'
 import { useAuth } from '@/context/AuthContext'
 import Select from '@/components/ui/Select'
+import ListControls from '@/components/ui/ListControls'
 import { ConfirmModal } from '@/components/ui/SearchPicker'
 import { TagChips } from '@/components/ui/TagInput'
 import ProjectFormDrawer from '../components/ProjectFormDrawer'
@@ -60,7 +61,7 @@ export default function ProjectList() {
     return f
   }, [debounced, status, member, tag])
 
-  const { data: projects = [], isLoading, isError, error } = useQuery({
+  const { data: projects = [], isLoading, isError, error, refetch: refetchProjects } = useQuery({
     queryKey: ['projects', filters], queryFn: () => projectApi.list(filters),
   })
   const { data: staff = [] } = useQuery({ queryKey: ['project-staff'], queryFn: projectApi.staff })
@@ -177,6 +178,7 @@ export default function ProjectList() {
             <Select size="sm" value={String(pageSize)} onChange={v => setPageSize(Number(v))}
               options={PAGE_SIZES.map(n => ({ value: String(n), label: n === 0 ? 'All' : String(n) }))} />
           </div>
+          <ListControls onRefresh={refetchProjects} accent={PROJECT_ACCENT} />
           <button onClick={doExport} disabled={!projects.length}
             className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl disabled:opacity-40"
             style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>

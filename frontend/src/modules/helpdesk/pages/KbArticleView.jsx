@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ChevronRight, ThumbsUp, ThumbsDown, ArrowLeft,
-  FileText, Check, Calendar, Clock
+  FileText, Check, Calendar, Clock, Link2, Copy
 } from 'lucide-react'
 import { helpdeskApi } from '@/services/helpdeskApi'
 
@@ -17,6 +17,14 @@ export default function KbArticleView() {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const [voted, setVoted] = useState(null)
+  const [copied, setCopied] = useState(false)
+
+  const copyPublicLink = (url) => {
+    navigator.clipboard?.writeText(url).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1800)
+    }).catch(() => {})
+  }
 
   const { data: article, isLoading, isError } = useQuery({
     queryKey: ['kb-article', id],
@@ -148,6 +156,30 @@ export default function KbArticleView() {
                 </span>
               )}
             </div>
+
+            {/* Public link — shareable URL of this article, with a copy button. */}
+            {article.public_slug ? (() => {
+              const publicUrl = `${window.location.origin}/kb/a/${article.public_slug}`
+              return (
+                <div className="flex items-center gap-2 mt-4 rounded-xl px-3 py-2"
+                  style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+                  <Link2 size={13} style={{ color: '#22d3ee' }} className="shrink-0" />
+                  <a href={publicUrl} target="_blank" rel="noreferrer"
+                    className="flex-1 text-xs font-mono truncate hover:underline" style={{ color: 'var(--text-body)' }}>
+                    {publicUrl}
+                  </a>
+                  <button onClick={() => copyPublicLink(publicUrl)}
+                    className="shrink-0 flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-lg"
+                    style={{ background: 'rgba(34,211,238,0.12)', color: '#22d3ee' }}>
+                    {copied ? <><Check size={12} /> Copied</> : <><Copy size={12} /> Copy link</>}
+                  </button>
+                </div>
+              )
+            })() : (
+              <p className="mt-3 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                Publish this article to get a shareable public link.
+              </p>
+            )}
           </div>
 
           {/* Content */}

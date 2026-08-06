@@ -31,6 +31,7 @@ import SLABadge from '../components/ui/SLABadge'
 import SlaTimer from '../components/ui/SlaTimer'
 import Select from '../components/ui/Select'
 import { ConfirmModal } from '@/components/ui/SearchPicker'
+import ListControls from '@/components/ui/ListControls'
 
 /* ───────────────────────────────────────────────────────────────
    Universal Data Grid — Ticket inbox (SDS "Nova" flagship component).
@@ -98,6 +99,7 @@ export default function TicketGrid() {
   const [confirmDelete, setConfirmDelete] = useState(false)   // bulk-delete guard
   const [bulkErr, setBulkErr] = useState('')
   const [copiedId, setCopiedId] = useState(null)              // "public link" copied flash, per row
+  const [pageSize, setPageSize] = useState(25)                // rows shown; 0 = all
 
   // Copy a ticket's customer-facing link (/ticket/{id}-{token}) without opening
   // the row. email_token is the no-login credential — same ref the emails thread on.
@@ -111,7 +113,7 @@ export default function TicketGrid() {
   useEffect(() => { localStorage.setItem('hd-grid-density', JSON.stringify(density)) }, [density])
   useEffect(() => { localStorage.setItem('hd-grid-hidden', JSON.stringify([...hidden])) }, [hidden])
 
-  const { data: raw = [], isLoading } = useQuery({ queryKey: ['helpdesk-tickets'], queryFn: () => helpdeskApi.tickets.list() })
+  const { data: raw = [], isLoading, refetch: refetchTickets } = useQuery({ queryKey: ['helpdesk-tickets'], queryFn: () => helpdeskApi.tickets.list() })
   const { data: settings } = useQuery({ queryKey: ['helpdesk-settings'], queryFn: helpdeskApi.settings.all })
   const { data: agents = [] } = useQuery({ queryKey: ['helpdesk-agents'], queryFn: helpdeskApi.agents })
   const tickets = normalize(raw)
@@ -169,6 +171,9 @@ export default function TicketGrid() {
     })
     return out
   }, [tickets, view, q, sort])
+
+  // What the table actually renders — capped by the page-size control (0 = all).
+  const pagedRows = useMemo(() => (pageSize === 0 ? rows : rows.slice(0, pageSize)), [rows, pageSize])
 
   // Selection is scoped to what's currently visible.
   const allSelected = rows.length > 0 && rows.every(t => selected.has(t.id))
@@ -306,6 +311,7 @@ export default function TicketGrid() {
             style={{ padding: '8px 12px 8px 32px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-input)', fontSize: 13.5, outline: 'none', width: 240, color: 'var(--text-h)' }} />
         </div>
         <div className="flex-1" />
+        <ListControls pageSize={pageSize} onPageSize={setPageSize} onRefresh={refetchTickets} accent={ACCENT} />
         {/* Density */}
         <div className="flex items-center rounded-lg overflow-hidden" style={{ border: '1px solid var(--border)' }}>
           {[['comfortable', Rows3], ['dense', AlignJustify]].map(([k, Icon]) => (
@@ -417,7 +423,7 @@ export default function TicketGrid() {
                 </td></tr>
               )}
 
-              {!isLoading && rows.map((t, rowIdx) => {
+              {!isLoading && pagedRows.map((t, rowIdx) => {
                 const isSel = selected.has(t.id)
                 const sColor = statusColor(t.status)
                 return (

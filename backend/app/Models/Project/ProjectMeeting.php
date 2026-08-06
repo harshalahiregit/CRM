@@ -11,7 +11,7 @@ class ProjectMeeting extends Model
     use BelongsToTenant;
 
     protected $fillable = [
-        'tenant_id', 'project_id', 'title', 'mode', 'participants',
+        'tenant_id', 'project_id', 'title', 'mode', 'meeting_link', 'participants',
         'planned_date', 'meeting_date', 'status', 'mom_sent', 'notes', 'created_by',
     ];
 
