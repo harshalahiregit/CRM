@@ -21,6 +21,8 @@ import EditorActionBar from '@/components/editor/EditorActionBar'
 import PollList from '@/components/poll/PollList'
 import PollComposerModal from '@/components/poll/PollComposerModal'
 import QuickTaskModal from '@/components/task/QuickTaskModal'
+import MessageReactions from '@/components/editor/MessageReactions'
+import { useReactions } from '@/hooks/useReactions'
 import { taskApi } from '@/services/taskApi'
 import { RICH_MODULES, RICH_FORMATS } from '@/lib/quillConfig'
 import Select from './ui/Select'
@@ -367,6 +369,10 @@ export default function TicketThread() {
     }
     return [...items, ...(Array.isArray(replies) ? replies : [])]
   }, [ticket, replies, id])
+
+  // Reactions for the real reply rows (the synthetic "original" bubble has no id).
+  const replyIds = useMemo(() => (Array.isArray(replies) ? replies : []).map(r => r.id).filter(x => typeof x === 'number'), [replies])
+  const replyReactions = useReactions('ticket_reply', replyIds)
 
   // summarize() is a POST that (re)generates the AI summary server-side, but the
   // server caches it and returns the cached copy unless refresh=true. Load it
@@ -792,7 +798,7 @@ export default function TicketThread() {
                   return (
                     <div
                       key={msg.id}
-                      className={clsx('flex flex-col max-w-[78%]', isStaff ? 'self-end items-end' : 'self-start items-start')}
+                      className={clsx('group relative flex flex-col max-w-[78%]', isStaff ? 'self-end items-end' : 'self-start items-start')}
                       style={{ opacity: msg._optimistic ? 0.55 : 1 }}
                     >
                       {/* Sender info */}
@@ -871,6 +877,12 @@ export default function TicketThread() {
                           </ul>
                         )}
                       </div>
+                      {/* Emoji reactions — real reply rows only (hover to react). */}
+                      {!msg._optimistic && !msg._original && typeof msg.id === 'number' && (
+                        <div className="w-full">
+                          <MessageReactions summary={replyReactions.summaryFor(msg.id)} onToggle={(e) => replyReactions.toggle(msg.id, e)} accent="var(--color-support-500)" />
+                        </div>
+                      )}
                     </div>
                   )
                 })}
