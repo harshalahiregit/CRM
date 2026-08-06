@@ -205,7 +205,7 @@ function AttendanceModal({ modal, date, employees, onClose, onSaved, showToast }
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop">
       <div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()} style={{ maxHeight:'90vh', overflowY:'auto' }}>
         <div className="flex items-center justify-between mb-5"><h2 className="font-black text-lg flex items-center gap-2" style={{ color:'var(--text-h)' }}><CalendarCheck size={18} style={{ color:'#a78bfa' }}/> {isCorrect ? 'Attendance Correction' : 'Mark Attendance'}</h2><button onClick={onClose} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
         <div className="space-y-3">

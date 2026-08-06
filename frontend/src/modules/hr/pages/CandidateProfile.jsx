@@ -1471,7 +1471,7 @@ function CommTab({ candidateId, canManage, showToast, onSent }) {
 
       {/* Preview + edit + send modal */}
       {modal && (
-        <div className="modal-backdrop" onClick={() => !modal.sending && setModal(null)}>
+        <div className="modal-backdrop">
           <div className="modal-box max-w-lg" onClick={e => e.stopPropagation()} style={{ maxHeight:'90vh', overflowY:'auto' }}>
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-black text-lg flex items-center gap-2" style={{ color:'var(--text-h)' }}>{modal.channel === 'email' ? <Mail size={18} style={{ color:'#a78bfa' }}/> : <MessageCircle size={18} style={{ color:'#25D366' }}/>} {modal.channel === 'email' ? 'Email' : 'WhatsApp'} Preview</h2>

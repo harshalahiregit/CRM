@@ -170,7 +170,7 @@ function ExitTypes({ showToast }) {
           </div>}
 
       {modal && (
-        <div className="modal-backdrop" onClick={()=>setModal(null)}><div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()} style={{ maxHeight:'92vh', overflowY:'auto' }}>
+        <div className="modal-backdrop"><div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()} style={{ maxHeight:'92vh', overflowY:'auto' }}>
           <div className="flex items-center justify-between mb-4"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{modal.editing?'Edit Exit Type':'Add Exit Type'}</h2><button onClick={()=>setModal(null)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Name *</label><input className="input-3d text-sm" value={modal.form.name} onChange={e=>setModal(m=>({...m,form:{...m.form,name:e.target.value}}))}/></div>
@@ -259,7 +259,7 @@ function ExitPolicies({ showToast }) {
           </div>}
 
       {modal && (
-        <div className="modal-backdrop" onClick={()=>setModal(null)}><div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:720, width:'95%', maxHeight:'92vh', overflowY:'auto' }}>
+        <div className="modal-backdrop"><div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:720, width:'95%', maxHeight:'92vh', overflowY:'auto' }}>
           <div className="flex items-center justify-between mb-4"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{modal.editing?'Edit Exit Policy':'Add Exit Policy'}</h2><button onClick={()=>setModal(null)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-3">
             <div className="col-span-2"><label className="label">Policy Name *</label><input className="input-3d text-sm" value={modal.form.name} onChange={e=>setModal(m=>({...m,form:{...m.form,name:e.target.value}}))}/></div>
@@ -411,7 +411,7 @@ function ExitRequests({ showToast }) {
 
       {/* Create / Edit modal */}
       {modal && (
-        <div className="modal-backdrop" onClick={()=>setModal(null)}><div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:760, width:'95%', maxHeight:'92vh', overflowY:'auto' }}>
+        <div className="modal-backdrop"><div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:760, width:'95%', maxHeight:'92vh', overflowY:'auto' }}>
           <div className="flex items-center justify-between mb-4"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{modal.editing?'Edit Exit Request':'New Exit Request'}</h2><button onClick={()=>setModal(null)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             <div className="col-span-2 md:col-span-1"><label className="label">Employee *</label><select className="input-3d text-sm" value={modal.form.employee_id} onChange={e=>setForm({ employee_id:e.target.value })} disabled={!!modal.editing}><option value="">Select…</option>{employees.map(e=><option key={e.id} value={e.id}>{e.name} ({e.employee_code})</option>)}</select></div>
@@ -441,7 +441,7 @@ function ExitRequests({ showToast }) {
 
       {/* Withdraw confirm */}
       {withdrawing && (
-        <div className="modal-backdrop" onClick={()=>setWithdrawing(null)}><div className="modal-box max-w-md" onClick={e=>e.stopPropagation()}>
+        <div className="modal-backdrop"><div className="modal-box max-w-md" onClick={e=>e.stopPropagation()}>
           <div className="flex items-center justify-between mb-3"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>Withdraw Exit Request</h2><button onClick={()=>setWithdrawing(null)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
           <p className="text-xs mb-3" style={{ color:'var(--text-muted)' }}>This marks the request as Withdrawn. It can no longer be edited or submitted.</p>
           <label className="label">Reason (optional)</label><textarea rows={3} className="input-3d text-sm resize-none" value={withdrawing.reason} onChange={e=>setWithdrawing(w=>({ ...w, reason:e.target.value }))}/>

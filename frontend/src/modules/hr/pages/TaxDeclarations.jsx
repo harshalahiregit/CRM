@@ -220,7 +220,7 @@ function DeclarationDrawer({ declaration, meta, onClose, onSaved, showToast }) {
   const declaredTotal = (d.items || []).reduce((a, i) => a + (Number(i.declared_amount) || 0), 0)
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop">
       <div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:840, width:'95%', maxHeight:'92vh', overflowY:'auto' }}>
         <div className="flex items-center justify-between mb-1">
           <h2 className="font-black text-lg flex items-center gap-2" style={{ color:'var(--text-h)' }}>
@@ -413,7 +413,7 @@ function Form16Drawer({ employeeId, name, onClose, showToast }) {
   )
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop">
       <div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:820, width:'95%', maxHeight:'92vh', overflowY:'auto' }}>
         <div className="flex items-center justify-between mb-1">
           <h2 className="font-black text-lg flex items-center gap-2" style={{ color:'var(--text-h)' }}>

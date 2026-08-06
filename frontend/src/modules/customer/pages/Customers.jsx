@@ -418,7 +418,7 @@ export default function Customers() {
       {/* ── Form Drawer ── */}
       {drawer && (
         <>
-          <div className="drawer-backdrop" onClick={() => setDrawer(false)} />
+          <div className="drawer-backdrop" />
           <div className="drawer-panel" style={{ width: 'min(640px, 96vw)' }}>
             <div className="drawer-header">
               <div>

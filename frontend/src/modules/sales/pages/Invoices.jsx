@@ -230,7 +230,7 @@ export default function Invoices() {
       {/* ── New Invoice Drawer ── */}
       {showDrawer && (
         <>
-          <div className="drawer-backdrop" onClick={() => setShowDrawer(false)} />
+          <div className="drawer-backdrop" />
           <div className="drawer-panel" style={{ width: 'min(1080px, 96vw)' }}>
             {/* Header */}
             <div className="drawer-header">
@@ -427,7 +427,7 @@ export default function Invoices() {
       {/* ── Record Payment Drawer ── */}
       {showPayModal && selectedInv && (
         <>
-          <div className="drawer-backdrop" onClick={() => setShowPayModal(false)} />
+          <div className="drawer-backdrop" />
           <div className="drawer-panel" style={{ width: 'min(480px, 95vw)' }}>
             <div className="drawer-header">
               <div>

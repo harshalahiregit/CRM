@@ -194,7 +194,7 @@ export default function Items() {
       {/* ── Side Drawer ── */}
       {showDrawer && (
         <>
-          <div className="drawer-backdrop" onClick={() => setShowDrawer(false)} />
+          <div className="drawer-backdrop" />
           <div className="drawer-panel" style={{ width: 'min(820px, 95vw)' }}>
             <div className="drawer-header">
               <div>

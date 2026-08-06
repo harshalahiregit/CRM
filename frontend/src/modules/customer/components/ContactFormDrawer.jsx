@@ -86,7 +86,7 @@ export default function ContactFormDrawer({ clientId, contact = null, onSaved, o
 
   return createPortal(
     <>
-      <div className="drawer-backdrop" onClick={onClose} />
+      <div className="drawer-backdrop" />
       <div className="drawer-panel" style={{ width: 'min(560px, 96vw)' }}>
         <div className="drawer-header">
           <div>

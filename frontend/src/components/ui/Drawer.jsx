@@ -7,13 +7,19 @@ import { X } from 'lucide-react'
  * bar) — otherwise a transformed/`will-change` ancestor (e.g. a `.card-3d` or
  * an `animate-fade-in` page wrapper) traps `position:fixed` to that ancestor's
  * box and the header is left un-blurred.
+ *
+ * The backdrop does NOT dismiss the drawer. These drawers are almost always
+ * data-entry forms, and a stray click on the dim area unmounted the whole thing,
+ * silently discarding everything typed with no warning and no way back. Closing
+ * is deliberate only: the X, or a Cancel button in the footer. Pass
+ * closeOnBackdrop for the rare read-only viewer where click-away is welcome.
  */
-export default function Drawer({ open, onClose, title, width = 'min(580px, 95vw)', children, footer }) {
+export default function Drawer({ open, onClose, title, width = 'min(580px, 95vw)', children, footer, closeOnBackdrop = false }) {
   if (!open) return null
 
   return createPortal(
     <>
-      <div className="drawer-backdrop" onClick={onClose} />
+      <div className="drawer-backdrop" onClick={closeOnBackdrop ? onClose : undefined} />
       <div className="drawer-panel" style={{ width }}>
         <div className="drawer-header">
           <h2 className="text-lg font-black" style={{ color: 'var(--text-h)' }}>{title}</h2>

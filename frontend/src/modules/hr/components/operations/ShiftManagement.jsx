@@ -300,7 +300,7 @@ function ShiftModal({ modal, setModal, meta, saving, onSave }) {
   }))
 
   return (
-    <div className="modal-backdrop" onClick={() => setModal(null)}>
+    <div className="modal-backdrop">
       <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth:760, width:'95%', maxHeight:'92vh', overflowY:'auto' }}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{modal.id ? 'Edit' : 'Add'} Shift</h2>
@@ -388,7 +388,7 @@ function RotationModal({ modal, setModal, shifts, saving, onSave }) {
   const steps = form.steps || []
 
   return (
-    <div className="modal-backdrop" onClick={() => setModal(null)}>
+    <div className="modal-backdrop">
       <div className="modal-box max-w-lg" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{modal.id ? 'Edit' : 'Add'} Rotation Plan</h2>
@@ -444,7 +444,7 @@ function AssignModal({ state, setState, employees, shifts, rotations, saving, on
   const set = (patch) => setState(s => ({ ...s, ...patch }))
 
   return (
-    <div className="modal-backdrop" onClick={() => setState(null)}>
+    <div className="modal-backdrop">
       <div className="modal-box max-w-md" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>Assign Shift</h2>
@@ -509,7 +509,7 @@ function HistoryDrawer({ id, name, onClose, showToast }) {
   }, [id, showToast])
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop">
       <div className="modal-box max-w-lg" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-black text-lg flex items-center gap-2" style={{ color:'var(--text-h)' }}><History size={17} style={{ color:'#a78bfa' }}/> {name}</h2>

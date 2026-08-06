@@ -256,7 +256,7 @@ function VerifyPanel({ record, onVerify, onUpdated, showToast }) {
 
       {/* Document viewer modal */}
       {viewer && (
-        <div className="modal-backdrop" onClick={closeViewer}>
+        <div className="modal-backdrop">
           <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth: 820, width: '92vw' }}>
             <div className="flex items-center justify-between mb-3">
               <p className="text-sm font-bold truncate" style={{ color: 'var(--text-h)' }}>{viewer.name}</p>
@@ -273,7 +273,7 @@ function VerifyPanel({ record, onVerify, onUpdated, showToast }) {
 
       {/* Reject-document modal (reason required, shown to candidate) */}
       {rejecting && (
-        <div className="modal-backdrop" onClick={() => setRejecting(null)}>
+        <div className="modal-backdrop">
           <div className="modal-box max-w-md" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-black text-base" style={{ color: 'var(--text-h)' }}>Reject {DOC_TYPE_LABEL[rejecting.doc.type] || rejecting.doc.type}</h2>
@@ -475,7 +475,7 @@ export default function Onboarding() {
         const offer = approved.offer
         const alreadySent = offer && offer.status && offer.status !== 'Generated'
         return (
-          <div className="modal-backdrop" onClick={() => setApproved(null)}>
+          <div className="modal-backdrop">
             <div className="modal-box max-w-md text-center" onClick={e => e.stopPropagation()}>
               <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-3" style={{ background: 'rgba(16,185,129,0.12)' }}>
                 <Check size={28} style={{ color: '#10b981' }} />
@@ -705,7 +705,7 @@ export default function Onboarding() {
           }
 
       { showModal && (
-              <div className="modal-backdrop" onClick={() => setShowModal(false)}>
+              <div className="modal-backdrop">
                 <div className="modal-box max-w-md" onClick={e => e.stopPropagation()}>
                   <div className="flex items-center justify-between mb-5">
                     <h2 className="font-black text-lg" style={{ color: 'var(--text-h)' }}>Start Onboarding</h2>

@@ -294,7 +294,7 @@ function MasterTab({ tabKey, options, onChanged, showToast }) {
 
       {/* Create / Edit modal */}
       {modal && (
-        <div className="modal-backdrop" onClick={() => setModal(null)}>
+        <div className="modal-backdrop">
           <div className="modal-box max-w-lg" onClick={e => e.stopPropagation()} style={{ maxHeight: '90vh', overflowY: 'auto' }}>
             <div className="flex items-center justify-between mb-5">
               <h2 className="font-black text-lg" style={{ color: 'var(--text-h)' }}>{modal.editing ? `Edit ${cfg.singular}` : `Add ${cfg.singular}`}</h2>
@@ -333,7 +333,7 @@ function MasterTab({ tabKey, options, onChanged, showToast }) {
 
       {/* Delete confirmation */}
       {confirm && (
-        <div className="modal-backdrop" onClick={() => setConfirm(null)}>
+        <div className="modal-backdrop">
           <div className="modal-box max-w-sm" onClick={e => e.stopPropagation()}>
             <div className="flex items-center gap-3 mb-3">
               <div className="p-2 rounded-xl" style={{ background: 'rgba(239,68,68,0.12)' }}><AlertTriangle size={20} style={{ color: '#f87171' }} /></div>

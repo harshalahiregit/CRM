@@ -278,7 +278,7 @@ export default function Proposals() {
       {/* ── Side Drawer ────────────────────────────────────────── */}
       {showDrawer && (
         <>
-          <div className="drawer-backdrop" onClick={() => setShowDrawer(false)} />
+          <div className="drawer-backdrop" />
           <div className="drawer-panel" style={{ width: 'min(1080px, 96vw)' }}>
             {/* Drawer Header */}
             <div className="drawer-header">

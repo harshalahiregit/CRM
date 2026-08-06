@@ -87,7 +87,7 @@ export default function SignatureModal({ title = 'Sign Contract', defaultName = 
 
   return createPortal(
     <>
-      <div className="drawer-backdrop" onClick={onClose} />
+      <div className="drawer-backdrop" />
       <div className="drawer-panel" style={{ width: 'min(520px, 96vw)' }}>
         <div className="drawer-header">
           <h2 className="font-black text-lg" style={{ color: 'var(--text-h)' }}>{title}</h2>

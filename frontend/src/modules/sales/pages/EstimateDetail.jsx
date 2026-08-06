@@ -402,7 +402,7 @@ export default function EstimateDetail() {
       {/* ── Convert to Invoice confirmation drawer ── */}
       {showConvert && (
         <>
-          <div className="drawer-backdrop" onClick={() => setShowConvert(false)} />
+          <div className="drawer-backdrop" />
           <div className="drawer-panel" style={{ width: 'min(460px, 95vw)' }}>
             <div className="drawer-header">
               <div>
@@ -459,7 +459,7 @@ export default function EstimateDetail() {
       {/* ── Record Payment Drawer ── */}
       {showPayDrawer && (
         <>
-          <div className="drawer-backdrop" onClick={() => setShowPayDrawer(false)} />
+          <div className="drawer-backdrop" />
           <div className="drawer-panel" style={{ width: 'min(420px, 95vw)' }}>
             <div className="drawer-header">
               <h2 className="font-black text-lg" style={{ color: 'var(--text-h)' }}>Record Payment</h2>

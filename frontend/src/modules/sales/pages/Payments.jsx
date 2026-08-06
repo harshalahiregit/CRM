@@ -216,7 +216,7 @@ export default function Payments() {
       {/* ── Record Payment Drawer ── */}
       {showDrawer && (
         <>
-          <div className="drawer-backdrop" onClick={() => setShowDrawer(false)} />
+          <div className="drawer-backdrop" />
           <div className="drawer-panel" style={{ width: 'min(720px, 95vw)' }}>
 
             {/* Header */}

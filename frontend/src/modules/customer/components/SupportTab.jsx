@@ -108,7 +108,7 @@ export default function SupportTab({ id, tickets, reload, toast }) {
 
       {drawer && createPortal(
         <>
-          <div className="drawer-backdrop" onClick={() => setDrawer(false)} />
+          <div className="drawer-backdrop" />
           <div className="drawer-panel" style={{ width: 'min(520px, 96vw)' }}>
             <div className="drawer-header">
               <div>

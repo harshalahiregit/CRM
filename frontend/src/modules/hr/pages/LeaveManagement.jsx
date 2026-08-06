@@ -142,7 +142,7 @@ function LeaveTypes({ showToast }) {
           </div>}
 
       {modal && (
-        <div className="modal-backdrop" onClick={()=>setModal(null)}><div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()} style={{ maxHeight:'92vh', overflowY:'auto' }}>
+        <div className="modal-backdrop"><div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()} style={{ maxHeight:'92vh', overflowY:'auto' }}>
           <div className="flex items-center justify-between mb-4"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{modal.editing?'Edit Leave Type':'Add Leave Type'}</h2><button onClick={()=>setModal(null)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Name *</label><input className="input-3d text-sm" value={modal.form.name} onChange={e=>setModal(m=>({...m,form:{...m.form,name:e.target.value}}))}/></div>
@@ -239,7 +239,7 @@ function LeavePolicies({ showToast }) {
           </div>}
 
       {modal && (
-        <div className="modal-backdrop" onClick={()=>setModal(null)}><div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:720, width:'95%', maxHeight:'92vh', overflowY:'auto' }}>
+        <div className="modal-backdrop"><div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:720, width:'95%', maxHeight:'92vh', overflowY:'auto' }}>
           <div className="flex items-center justify-between mb-4"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{modal.editing?'Edit Leave Policy':'Add Leave Policy'}</h2><button onClick={()=>setModal(null)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-3">
             <div className="col-span-2"><label className="label">Policy Name *</label><input className="input-3d text-sm" value={modal.form.name} onChange={e=>setModal(m=>({...m,form:{...m.form,name:e.target.value}}))}/></div>
@@ -348,7 +348,7 @@ function AssignModal({ modal, setModal, employees, policies, onDone, showToast }
     catch (e) { showToast(e.response?.data?.message||'Failed','error'); setBusy(false) }
   }
   return (
-    <div className="modal-backdrop" onClick={()=>setModal(null)}><div className="modal-box max-w-md" onClick={e=>e.stopPropagation()}>
+    <div className="modal-backdrop"><div className="modal-box max-w-md" onClick={e=>e.stopPropagation()}>
       <div className="flex items-center justify-between mb-4"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>Assign Leave Policy</h2><button onClick={()=>setModal(null)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
       <div className="space-y-3">
         <div><label className="label">Employee</label><select className="input-3d text-sm" value={modal.employee_id} onChange={e=>setModal(m=>({...m,employee_id:e.target.value}))}><option value="">Select…</option>{employees.map(e=><option key={e.id} value={e.id}>{e.name} · {e.department}</option>)}</select></div>
@@ -370,7 +370,7 @@ function AllocateModal({ modal, setModal, employees, types, onDone, showToast })
     catch (e) { showToast(e.response?.data?.message||'Failed','error'); setBusy(false) }
   }
   return (
-    <div className="modal-backdrop" onClick={()=>setModal(null)}><div className="modal-box max-w-md" onClick={e=>e.stopPropagation()}>
+    <div className="modal-backdrop"><div className="modal-box max-w-md" onClick={e=>e.stopPropagation()}>
       <div className="flex items-center justify-between mb-4"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>Allocate Leave</h2><button onClick={()=>setModal(null)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
       <div className="space-y-3">
         <div><label className="label">Employee</label><select className="input-3d text-sm" value={modal.employee_id} onChange={e=>setModal(m=>({...m,employee_id:e.target.value}))}><option value="">Select…</option>{employees.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select></div>
@@ -392,7 +392,7 @@ function AdjustModal({ modal, setModal, onDone, showToast }) {
     catch (e) { showToast(e.response?.data?.message||'Failed','error'); setBusy(false) }
   }
   return (
-    <div className="modal-backdrop" onClick={()=>setModal(null)}><div className="modal-box max-w-md" onClick={e=>e.stopPropagation()}>
+    <div className="modal-backdrop"><div className="modal-box max-w-md" onClick={e=>e.stopPropagation()}>
       <div className="flex items-center justify-between mb-1"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>Adjust Balance</h2><button onClick={()=>setModal(null)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
       <p className="text-xs mb-4" style={{ color:'var(--text-muted)' }}>{b.employee_name} · {b.leave_type} · current available <b style={{ color:'#10b981' }}>{b.available_balance}</b></p>
       <div className="space-y-3">
@@ -410,7 +410,7 @@ function HistoryModal({ balance, onClose, showToast }) {
   useEffect(() => { hrApi.leave.balances.history(balance.id).then(setData).catch(()=>showToast('Failed to load history','error')) }, [balance.id, showToast])
   const TXN_C = { Allocation:'#10b981', Adjustment:'#f59e0b', 'Carry Forward':'#3b82f6', 'Opening Balance':'#8b5cf6', Correction:'#f87171' }
   return (
-    <div className="modal-backdrop" onClick={onClose}><div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()} style={{ maxHeight:'85vh', overflowY:'auto' }}>
+    <div className="modal-backdrop"><div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()} style={{ maxHeight:'85vh', overflowY:'auto' }}>
       <div className="flex items-center justify-between mb-1"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>Leave Ledger</h2><button onClick={onClose} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
       <p className="text-xs mb-4" style={{ color:'var(--text-muted)' }}>{balance.employee_name} · {balance.leave_type} · available <b style={{ color:'#10b981' }}>{balance.available_balance}</b></p>
       {!data ? <p className="text-sm py-4" style={{ color:'var(--text-muted)' }}>Loading…</p>
@@ -478,7 +478,7 @@ function ApplyLeave({ showToast }) {
           </div>}
 
       {modal && (
-        <div className="modal-backdrop" onClick={()=>setModal(null)}><div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()} style={{ maxHeight:'92vh', overflowY:'auto' }}>
+        <div className="modal-backdrop"><div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()} style={{ maxHeight:'92vh', overflowY:'auto' }}>
           <div className="flex items-center justify-between mb-4"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>Apply Leave</h2><button onClick={()=>setModal(null)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2"><label className="label">Employee</label><select className="input-3d text-sm" value={modal.employee_id} onChange={e=>setModal(m=>({...m,employee_id:e.target.value}))}><option value="">Select…</option>{employees.map(e=><option key={e.id} value={e.id}>{e.name} · {e.department}</option>)}</select></div>
@@ -633,7 +633,7 @@ function LeaveApproval({ showToast }) {
 function ReviewDrawer({ app, onClose, onDecide }) {
   const st = APP_ST[app.status]||{}
   return (
-    <div className="modal-backdrop" onClick={onClose}><div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:640, width:'95%', maxHeight:'92vh', overflowY:'auto' }}>
+    <div className="modal-backdrop"><div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:640, width:'95%', maxHeight:'92vh', overflowY:'auto' }}>
       <div className="flex items-center justify-between mb-1"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{app.employee_name}</h2><button onClick={onClose} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
       <div className="flex items-center gap-2 mb-4"><span className="text-xs" style={{ color:'var(--text-muted)' }}>{app.employee_code} · {app.designation} · {app.department}</span><span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:st.bg, color:st.c }}>{app.status}</span></div>
       <div className="grid grid-cols-2 gap-2 mb-4">
@@ -662,7 +662,7 @@ function DecisionModal({ decision, setDecision, onDone, showToast }) {
     } catch (e) { showToast(e.response?.data?.message||'Failed','error'); setBusy(false) }
   }
   return (
-    <div className="modal-backdrop" onClick={()=>setDecision(null)}><div className="modal-box max-w-md" onClick={e=>e.stopPropagation()}>
+    <div className="modal-backdrop"><div className="modal-box max-w-md" onClick={e=>e.stopPropagation()}>
       <div className="flex items-center justify-between mb-1"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{isApprove?'Approve Leave':'Reject Leave'}</h2><button onClick={()=>setDecision(null)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
       <p className="text-xs mb-4" style={{ color:'var(--text-muted)' }}>{a.employee_name} · {a.leave_type} · {a.days} day(s){isApprove && <> — deducts from balance</>}</p>
       <div><label className="label">Remarks{isApprove?' (optional)':''}</label><textarea rows={3} className="input-3d text-sm resize-none" value={decision.remarks} onChange={e=>setDecision(d=>({...d,remarks:e.target.value}))}/></div>
@@ -781,7 +781,7 @@ function HolidayCalendar({ showToast }) {
         )}
 
       {modal && (
-        <div className="modal-backdrop" onClick={()=>setModal(null)}><div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()} style={{ maxHeight:'92vh', overflowY:'auto' }}>
+        <div className="modal-backdrop"><div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()} style={{ maxHeight:'92vh', overflowY:'auto' }}>
           <div className="flex items-center justify-between mb-4"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{modal.editing?'Edit Holiday':'Add Holiday'}</h2><button onClick={()=>setModal(null)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2"><label className="label">Title *</label><input className="input-3d text-sm" value={modal.form.title} onChange={e=>setModal(m=>({...m,form:{...m.form,title:e.target.value}}))}/></div>
