@@ -119,6 +119,13 @@ class Task extends Model
         return $this->parent_id !== null;
     }
 
+    // Additional "Related To" links (beyond the primary rel_type/rel_id). rel_id is
+    // polymorphic by rel_type — resolved to a label by TaskService.
+    public function relations()
+    {
+        return $this->hasMany(TaskRelation::class);
+    }
+
     // rel_id is polymorphic (project|ticket|customer) — resolved by the service,
     // never a hard Eloquent relation, so unbuilt modules don't break this model.
 }

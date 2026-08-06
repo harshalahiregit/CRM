@@ -257,6 +257,13 @@ h1,h2,h3,h4,h5,h6 { color: var(--text-h); font-family: 'Plus Jakarta Sans','Inte
   width: var(--sidebar-width, 260px);
 }
 
+/* The module you're currently in is pinned as a fixed header above the scrolling
+   nav, so it stays put at the top no matter how far you scroll the sidebar. */
+.sidebar-3d .sb-active-module {
+  background: rgba(124, 58, 237, 0.14);
+  border: 1px solid rgba(124, 58, 237, 0.28);
+}
+
 /* 3D Header */
 .header-3d {
   position: fixed;

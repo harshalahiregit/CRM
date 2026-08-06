@@ -4,11 +4,11 @@ import ReactQuill from 'react-quill'
 import 'react-quill/dist/quill.snow.css'
 import { RICH_MODULES, RICH_FORMATS } from '@/lib/quillConfig'
 import {
-  X, Check, CheckCircle2, Link2, IndianRupee, Paperclip, ChevronDown, Flag, ListPlus,
+  X, Check, CheckCircle2, Link2, IndianRupee, Paperclip, ChevronDown, Flag, ListPlus, Plus,
 } from 'lucide-react'
 import { tpvApi } from '@/services/tpvApi'
 import { purchaseApi } from '@/services/purchaseApi'
-import { taskApi, TASK_PRIORITY, TASK_ACCENT, REL_TYPES, REL_TYPE_LABEL, RATE_UNITS, fmtBytes } from '@/services/taskApi'
+import { taskApi, TASK_PRIORITY, TASK_ACCENT, REL_TYPES, EXTRA_REL_TYPES, REL_TYPE_LABEL, RATE_UNITS, fmtBytes } from '@/services/taskApi'
 import { guardedClose } from '@/lib/confirmClose'
 import Select from '@/components/ui/Select'
 import SearchPicker from '@/components/ui/SearchPicker'
@@ -53,6 +53,7 @@ const EMPTY = {
   start_date: today(), due_date: '', rel_type: 'standalone', rel_id: '', milestone_id: '',
   billable: false, hourly_rate: '', rate_unit: 'hourly', is_public: false, visible_to_client: false,
   assignee_ids: [], follower_ids: [], tags: [], template_ids: [],
+  relations: [],   // additional "Related To" links: [{rel_type, rel_id, label}]
   repeat_preset: '', recurring: false, recurring_type: 'month', repeat_every: 1, cycles: 0,
 }
 
@@ -83,7 +84,8 @@ export default function TaskFormDrawer({ open, onClose, task = null, defaults = 
   const qc = useQueryClient()
   const editing = Boolean(task)
   const [form, setForm] = useState(EMPTY)
-  const [picker, setPicker] = useState(null)   // 'rel' | 'assignee' | 'follower'
+  const [picker, setPicker] = useState(null)   // 'rel' | 'reladd' | 'assignee' | 'follower'
+  const [addRelType, setAddRelType] = useState('project')  // type being added in "Also related to"
   const [pendingFiles, setPendingFiles] = useState([])
   const [showAttach, setShowAttach] = useState(false)
   const [err, setErr] = useState('')
@@ -106,6 +108,7 @@ export default function TaskFormDrawer({ open, onClose, task = null, defaults = 
           follower_ids: (task.followers || []).map(f => f.user_id),
           tags: (task.tags || []).map(t => t.name),
           template_ids: [],
+          relations: (task.relations || []).map(r => ({ rel_type: r.rel_type, rel_id: r.rel_id, label: r.label })),
           repeat_preset: presetFromTask(task),
         }
       : { ...EMPTY, ...defaults }
@@ -136,26 +139,53 @@ export default function TaskFormDrawer({ open, onClose, task = null, defaults = 
   const tpvIds = useMemo(() => idSet(tpvs), [tpvs])
   const { data: tagSuggestions = [] } = useQuery({ queryKey: ['tags', 'task'], queryFn: () => tagApi.list('task'), enabled: open })
   const { data: templates = [] } = useQuery({ queryKey: ['task-templates'], queryFn: taskApi.templates, enabled: open })
+  // A relation-type's list is needed when it's the PRIMARY link or the type being
+  // added in the "Also related to" picker — load it lazily for either.
+  const relNeeds = (t) => open && (form.rel_type === t || (picker === 'reladd' && addRelType === t))
   const { data: projects = [], isLoading: pLoading } = useQuery({
-    queryKey: ['projects-picker'], queryFn: () => projectApi.list(), enabled: open && form.rel_type === 'project',
+    queryKey: ['projects-picker'], queryFn: () => projectApi.list(), enabled: relNeeds('project'),
   })
   const { data: tickets = [], isLoading: tLoading } = useQuery({
-    queryKey: ['tickets-picker'], queryFn: () => helpdeskApi.tickets.list(), enabled: open && form.rel_type === 'ticket',
+    queryKey: ['tickets-picker'], queryFn: () => helpdeskApi.tickets.list(), enabled: relNeeds('ticket'),
   })
   const { data: customers = [], isLoading: cLoading } = useQuery({
-    queryKey: ['project-customers'], queryFn: projectApi.customers, enabled: open && form.rel_type === 'customer',
+    queryKey: ['project-customers'], queryFn: projectApi.customers, enabled: relNeeds('customer'),
   })
   // Vendor relation sources. Each module has its own list endpoint; a task links to
   // the vendor RECORD, not to a user account -- which is what lets a Purchase Vendor
   // (who has no User) carry tasks at all.
   const { data: tpvVendorList = [], isLoading: tvLoading } = useQuery({
-    queryKey: ['task-rel-tpv-vendors'], queryFn: () => tpvApi.vendors.list(),
-    enabled: open && form.rel_type === 'tpv_vendor',
+    queryKey: ['task-rel-tpv-vendors'], queryFn: () => tpvApi.vendors.list(), enabled: relNeeds('tpv_vendor'),
   })
   const { data: purchaseVendorList = [], isLoading: pvLoading } = useQuery({
-    queryKey: ['task-rel-purchase-vendors'], queryFn: () => purchaseApi.vendors.list(),
-    enabled: open && form.rel_type === 'purchase_vendor',
+    queryKey: ['task-rel-purchase-vendors'], queryFn: () => purchaseApi.vendors.list(), enabled: relNeeds('purchase_vendor'),
   })
+  // New relation types (cross-module reads): Sales leads + shared Kickoff meetings.
+  const { data: leadList = [] } = useQuery({
+    queryKey: ['task-rel-leads'], queryFn: () => taskApi.relLeads(), enabled: relNeeds('lead'),
+  })
+  const { data: meetingList = [] } = useQuery({
+    queryKey: ['task-rel-meetings'], queryFn: () => taskApi.relMeetings(), enabled: relNeeds('meeting'),
+  })
+  // Editing from the LIST view: that payload has no `relations`, so fetch the full
+  // task to load them — otherwise saving would wipe the task's extra links. When
+  // editing from the detail view, `task.relations` is already present and this is off.
+  const { data: fullTask } = useQuery({
+    queryKey: ['task-relations-load', task?.id],
+    queryFn: () => taskApi.get(task.id),
+    enabled: open && editing && !!task?.id && !Array.isArray(task?.relations),
+  })
+  useEffect(() => {
+    if (!fullTask?.relations) return
+    setForm(p => {
+      const next = { ...p, relations: fullTask.relations.map(r => ({ rel_type: r.rel_type, rel_id: r.rel_id, label: r.label })) }
+      snapshotRef.current = JSON.stringify(next)   // server-loaded, so not a user "edit"
+      return next
+    })
+  }, [fullTask])   // eslint-disable-line react-hooks/exhaustive-deps
+  // Whether we can safely send `relations` (never send it while list-edit is still
+  // loading them, or the update would clear the task's existing links).
+  const relationsReady = !editing || Array.isArray(task?.relations) || !!fullTask
   // Milestones belong to the linked project — only load once one is chosen.
   const { data: milestones = [] } = useQuery({
     queryKey: ['project-milestones', form.rel_id], queryFn: () => projectApi.milestones(form.rel_id),
@@ -164,14 +194,21 @@ export default function TaskFormDrawer({ open, onClose, task = null, defaults = 
 
   const rows = (x) => (Array.isArray(x) ? x : x?.data ?? [])
 
-  const relItems = useMemo(() => {
-    if (form.rel_type === 'project') return rows(projects).map(p => ({ id: p.id, label: p.name, sublabel: p.status }))
-    if (form.rel_type === 'ticket') return rows(tickets).map(t => ({ id: t.id, label: t.subject, sublabel: `#${t.id} · ${t.status}` }))
-    if (form.rel_type === 'customer') return rows(customers).map(c => ({ id: c.id, label: c.name, sublabel: c.company || '' }))
-    if (form.rel_type === 'tpv_vendor') return rows(tpvVendorList).map(v => ({ id: v.id, label: v.company_name || v.name, sublabel: [v.vendor_code, v.status].filter(Boolean).join(' · ') }))
-    if (form.rel_type === 'purchase_vendor') return rows(purchaseVendorList).map(v => ({ id: v.id, label: v.company_name || v.name, sublabel: [v.purchase_vendor_code, v.status].filter(Boolean).join(' · ') }))
+  // Map a relation type's loaded list to picker items — shared by the primary
+  // "Related To" and the "Also related to" add picker.
+  const itemsForType = (type) => {
+    if (type === 'project') return rows(projects).map(p => ({ id: p.id, label: p.name, sublabel: p.status }))
+    if (type === 'ticket') return rows(tickets).map(t => ({ id: t.id, label: t.subject, sublabel: `#${t.id} · ${t.status}` }))
+    if (type === 'customer') return rows(customers).map(c => ({ id: c.id, label: c.name, sublabel: c.company || '' }))
+    if (type === 'tpv_vendor') return rows(tpvVendorList).map(v => ({ id: v.id, label: v.company_name || v.name, sublabel: [v.vendor_code, v.status].filter(Boolean).join(' · ') }))
+    if (type === 'purchase_vendor') return rows(purchaseVendorList).map(v => ({ id: v.id, label: v.company_name || v.name, sublabel: [v.purchase_vendor_code, v.status].filter(Boolean).join(' · ') }))
+    if (type === 'lead') return rows(leadList).map(l => ({ id: l.id, label: l.name || l.company || `Lead #${l.id}`, sublabel: [l.company, l.status].filter(Boolean).join(' · ') }))
+    if (type === 'meeting') return rows(meetingList).map(m => ({ id: m.id, label: m.title || `Meeting #${m.id}`, sublabel: [m.reference, m.status].filter(Boolean).join(' · ') }))
     return []
-  }, [form.rel_type, projects, tickets, customers, tpvVendorList, purchaseVendorList])
+  }
+  const relItems = useMemo(() => itemsForType(form.rel_type),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [form.rel_type, projects, tickets, customers, tpvVendorList, purchaseVendorList, leadList, meetingList])
 
   const relName = useMemo(() => {
     if (form.rel_type === 'standalone' || !form.rel_id) return ''
@@ -222,6 +259,10 @@ export default function TaskFormDrawer({ open, onClose, task = null, defaults = 
     setErr('')
     const p = { ...form }
     delete p.repeat_preset; delete p.template_ids
+    // Send the extra relations as bare {rel_type, rel_id} — the label is display-only.
+    // Only when they're known, so a list-edit mid-load can't wipe existing links.
+    if (relationsReady) p.relations = (form.relations || []).map(r => ({ rel_type: r.rel_type, rel_id: r.rel_id }))
+    else delete p.relations
     if (p.rel_type === 'standalone' || !p.rel_id) delete p.rel_id
     if (p.rel_type !== 'project' || !p.milestone_id) delete p.milestone_id
     if (!p.status) delete p.status
@@ -382,6 +423,32 @@ export default function TaskFormDrawer({ open, onClose, task = null, defaults = 
             </div>
           )}
 
+          {/* Also related to — a task can relate to MANY things beyond its primary
+              link. Each added item is a chip; the picker reuses every relation type. */}
+          <Field label="Also related to">
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {form.relations.map((r, i) => (
+                <span key={`${r.rel_type}:${r.rel_id}`} className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-1 rounded-lg"
+                  style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }}>
+                  <Link2 size={11} style={{ color: 'var(--text-muted)' }} />
+                  <span className="opacity-60">{REL_TYPE_LABEL[r.rel_type] || r.rel_type}:</span>
+                  <span className="truncate max-w-[160px]">{r.label || `#${r.rel_id}`}</span>
+                  <button type="button" onClick={() => setForm(p => ({ ...p, relations: p.relations.filter((_, j) => j !== i) }))}
+                    className="hover:opacity-60" aria-label="Remove"><X size={11} /></button>
+                </span>
+              ))}
+              {form.relations.length === 0 && <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>No extra links yet.</span>}
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-40"><Select value={addRelType} onChange={setAddRelType} options={EXTRA_REL_TYPES} /></div>
+              <button type="button" onClick={() => setPicker('reladd')}
+                className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl"
+                style={{ border: `1px solid ${TASK_ACCENT}`, color: TASK_ACCENT }}>
+                <Plus size={13} /> Add link
+              </button>
+            </div>
+          </Field>
+
           <Divider />
 
           {/* People — staff, vendors and third-party vendors can all be assigned.
@@ -469,6 +536,21 @@ export default function TaskFormDrawer({ open, onClose, task = null, defaults = 
         items={relItems} loading={pLoading || tLoading || cLoading || tvLoading || pvLoading}
         title={`Link to a ${(REL_TYPE_LABEL[form.rel_type] || form.rel_type).toLowerCase()}`} subtitle="Search by name — you don't need the id."
         emptyText={`No ${(REL_TYPE_LABEL[form.rel_type] || form.rel_type).toLowerCase()}s found.`} accent={TASK_ACCENT} allowClear
+      />
+      {/* "Also related to" add picker — lists the currently-selected add type. */}
+      <SearchPicker
+        open={picker === 'reladd'} onClose={() => setPicker(null)}
+        onPick={it => {
+          if (it) setForm(p => (
+            p.relations.some(r => r.rel_type === addRelType && String(r.rel_id) === String(it.id))
+              ? p
+              : { ...p, relations: [...p.relations, { rel_type: addRelType, rel_id: it.id, label: it.label }] }
+          ))
+          setPicker(null)
+        }}
+        items={itemsForType(addRelType)}
+        title={`Add a ${(REL_TYPE_LABEL[addRelType] || addRelType).toLowerCase()} link`} subtitle="Search by name — the task can link to several things."
+        emptyText={`No ${(REL_TYPE_LABEL[addRelType] || addRelType).toLowerCase()}s found.`} accent={TASK_ACCENT}
       />
       <SearchPicker
         open={picker === 'assignee'} onClose={() => setPicker(null)}

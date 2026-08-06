@@ -9,7 +9,7 @@ import {
   CalendarRange, Handshake, Factory, Undo2, Wallet, Award, GraduationCap, ShieldCheck, Bell, Search, X,
   Settings2
 } from 'lucide-react'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/context/AuthContext'
 import { useTheme } from '@/context/ThemeContext'
@@ -51,6 +51,24 @@ const MODULE_SEARCH = [
   { label: 'TPV',        path: '/app/tpv/dashboard',    icon: UserCheck,       kw: 'third party vendor workforce' },
   { label: 'Customers',  path: '/app/customers',        icon: Building2,       kw: 'clients' },
   { label: 'Compliance', path: '/app/tpv/compliance',   icon: ShieldCheck,     kw: 'hsse checklists' },
+]
+
+// Which module the current route belongs to — used to PIN that module's header
+// at the top of the sidebar. Ordered longest-prefix-first so e.g.
+// /app/tpv/compliance resolves to Compliance, not TPV.
+const PINNED_MODULES = [
+  { base: '/app/tpv/compliance', label: 'Compliance', icon: ShieldCheck,     path: '/app/tpv/compliance' },
+  { base: '/app/dashboard',      label: 'Dashboard',  icon: LayoutDashboard, path: '/app/dashboard' },
+  { base: '/app/tasks',          label: 'Tasks',      icon: CheckSquare,     path: '/app/tasks' },
+  { base: '/app/projects',       label: 'Projects',   icon: FolderOpen,      path: '/app/projects' },
+  { base: '/app/helpdesk',       label: 'Helpdesk',   icon: LifeBuoy,        path: '/app/helpdesk/tickets' },
+  { base: '/app/inventory',      label: 'Inventory',  icon: Boxes,           path: '/app/inventory' },
+  { base: '/app/sales',          label: 'Sales',      icon: TrendingUp,      path: '/app/sales/dashboard' },
+  { base: '/app/accounts',       label: 'Accounts',   icon: Landmark,        path: '/app/accounts' },
+  { base: '/app/hr',             label: 'HR',         icon: Users,           path: '/app/hr/dashboard' },
+  { base: '/app/purchase',       label: 'Purchase',   icon: ShoppingCart,    path: '/app/purchase/dashboard' },
+  { base: '/app/tpv',            label: 'TPV',        icon: UserCheck,       path: '/app/tpv/dashboard' },
+  { base: '/app/customers',      label: 'Customers',  icon: Building2,       path: '/app/customers' },
 ]
 
 // ── HRMS sidebar structure (paths/APIs/permissions unchanged) ──
@@ -196,6 +214,21 @@ const TPV_VENDOR_ITEMS = [
   { label: 'Workforce',  path: '/app/tpv/workforce',  icon: UserCheck },
 ]
 
+// Every sub-page across the modules, tagged with its parent — so the sidebar
+// search finds e.g. "Payroll", "Cheques" or "Debit Notes", not just top-level
+// module names. Built from the same lists the nav renders, so it never drifts.
+const SUBMODULE_SEARCH = [
+  ...HR_RECRUITMENT_ITEMS.map(i => ({ ...i, module: 'HR' })),
+  { ...HR_EMPLOYEES, module: 'HR' },
+  ...HR_RECORDS_ITEMS.map(i => ({ ...i, module: 'HR' })),
+  ...SALES_SUB_ITEMS.map(i => ({ ...i, module: 'Sales' })),
+  ...ACCOUNTS_SUB_ITEMS.map(i => ({ ...i, module: 'Accounts' })),
+  ...HELPDESK_SUB_ITEMS.map(i => ({ ...i, module: 'Helpdesk' })),
+  ...INVENTORY_SUB_ITEMS.map(i => ({ ...i, module: 'Inventory' })),
+  ...PURCHASE_SUB_ITEMS.map(i => ({ ...i, module: 'Purchase' })),
+  ...TPV_ADMIN_ITEMS.map(i => ({ ...i, module: 'TPV' })),
+]
+
 export default function Sidebar({ collapsed, onToggle }) {
   const { user, tenant, logout } = useAuth()
   const { isDark, toggleTheme } = useTheme()
@@ -216,8 +249,26 @@ export default function Sidebar({ collapsed, onToggle }) {
     : TPV_ADMIN_ITEMS
   const [activeLeadsCount, setActiveLeadsCount] = useState(null)
   const [moduleQuery, setModuleQuery] = useState('')
+  const { pathname } = useLocation()
+  // The module the current route lives in — pinned at the top of the sidebar.
+  const activeModule = PINNED_MODULES.find(m => pathname.startsWith(m.base))
+  // Its sub-pages, shown under the pin so you can move around the open module
+  // without scrolling. Modules that are a single page (Tasks, Customers…) have none.
+  const activeSubItems = {
+    '/app/helpdesk': HELPDESK_SUB_ITEMS,
+    '/app/inventory': INVENTORY_SUB_ITEMS,
+    '/app/sales': SALES_SUB_ITEMS,
+    '/app/accounts': ACCOUNTS_SUB_ITEMS,
+    '/app/purchase': PURCHASE_SUB_ITEMS,
+    '/app/hr': HR_ALL_LEAVES,
+    '/app/tpv': tpvItems,
+  }[activeModule?.base] || []
   const q = moduleQuery.trim().toLowerCase()
-  const moduleResults = q ? MODULE_SEARCH.filter(m => (m.label + ' ' + m.kw).toLowerCase().includes(q)) : []
+  // Modules first, then any sub-page whose name matches — one combined list.
+  const moduleResults = q ? [
+    ...MODULE_SEARCH.filter(m => (m.label + ' ' + m.kw).toLowerCase().includes(q)).map(m => ({ ...m, sub: false })),
+    ...SUBMODULE_SEARCH.filter(s => s.label.toLowerCase().includes(q)).map(s => ({ ...s, sub: true })),
+  ].slice(0, 40) : []
   const goModule = (path) => { setModuleQuery(''); navigate(path) }
 
   useEffect(() => {
@@ -326,18 +377,16 @@ export default function Sidebar({ collapsed, onToggle }) {
         )}
       </div>
 
-      {/* ── Navigation ─────────────────────────────────────── */}
-      <nav className="flex-1 py-3 overflow-y-auto scrollbar-hide">
-        {/* Module search — jumps straight to a module by name. Distinct from the
-            header's ⌘K palette (which searches records); this one is modules only. */}
-        {collapsed ? (
+      {/* Module search — sits ABOVE the scrolling nav so it's always visible and
+          the sticky module headers below can pin to the nav's top cleanly. */}
+      {collapsed ? (
           <button onClick={() => navigate('/app/modules')} title="Search modules" className="nav-3d mb-2 w-full" style={{ justifyContent: 'center' }}>
             <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.06)' }}>
               <Search size={14} />
             </div>
           </button>
         ) : (
-          <div className="px-3 mb-2 relative">
+          <div className="px-3 pt-2 pb-2 relative z-30" style={{ background: 'var(--bg-sidebar)' }}>
             <div className="relative">
               <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
               <input
@@ -355,16 +404,17 @@ export default function Sidebar({ collapsed, onToggle }) {
               )}
             </div>
             {q && (
-              <div className="mt-1 rounded-xl overflow-hidden" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card-3d)' }}>
+              <div className="mt-1 rounded-xl overflow-hidden max-h-[60vh] overflow-y-auto scrollbar-hide" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card-3d)' }}>
                 {moduleResults.length === 0 ? (
-                  <p className="text-xs px-3 py-3" style={{ color: 'var(--text-muted)' }}>No modules match “{moduleQuery}”.</p>
+                  <p className="text-xs px-3 py-3" style={{ color: 'var(--text-muted)' }}>Nothing matches “{moduleQuery}”.</p>
                 ) : moduleResults.map(m => {
                   const Icon = m.icon
                   return (
-                    <button key={m.path} onClick={() => goModule(m.path)}
+                    <button key={`${m.sub ? 'sub' : 'mod'}-${m.path}`} onClick={() => goModule(m.path)}
                       className="w-full flex items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-[rgba(124,58,237,0.08)]">
                       <Icon size={14} style={{ color: '#a78bfa' }} />
-                      <span className="text-sm" style={{ color: 'var(--text-h)' }}>{m.label}</span>
+                      <span className="text-sm truncate" style={{ color: 'var(--text-h)' }}>{m.label}</span>
+                      {m.sub && <span className="ml-auto text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0" style={{ background: 'rgba(124,58,237,0.12)', color: '#a78bfa' }}>{m.module}</span>}
                     </button>
                   )
                 })}
@@ -373,6 +423,51 @@ export default function Sidebar({ collapsed, onToggle }) {
           </div>
         )}
 
+      {/* Pinned "current module" — stays fixed at the top of the sidebar, above
+          the scroll, so the module you opened (and its pages) never move as you
+          scroll. A tall module keeps its own capped, internal scroll. */}
+      {activeModule && (
+        collapsed ? (
+          <button onClick={() => navigate(activeModule.path)} title={activeModule.label}
+            className="sb-active-module mx-auto mb-2 flex items-center justify-center w-9 h-9 rounded-xl">
+            <activeModule.icon size={15} style={{ color: '#a78bfa' }} />
+          </button>
+        ) : (
+          <div className="sb-active-module mx-3 mb-2 rounded-xl p-1.5">
+            <button onClick={() => navigate(activeModule.path)}
+              className="w-full flex items-center gap-2 px-1.5 py-1.5 rounded-lg">
+              <activeModule.icon size={15} style={{ color: '#a78bfa' }} className="shrink-0" />
+              <span className="text-sm font-semibold truncate" style={{ color: 'var(--text-h)' }}>{activeModule.label}</span>
+              <span className="ml-auto text-[9px] font-black px-1.5 py-0.5 rounded shrink-0" style={{ background: 'rgba(124,58,237,0.22)', color: '#a78bfa' }}>OPEN</span>
+            </button>
+            {activeSubItems.length > 0 && (
+              <div className="mt-1 max-h-[38vh] overflow-y-auto scrollbar-hide space-y-0.5">
+                {activeSubItems.map(item => {
+                  const Icon = item.icon
+                  return (
+                    <NavLink key={item.path} to={item.path} end={item.end}>
+                      {({ isActive }) => (
+                        <div className={clsx('nav-3d', isActive && 'nav-3d-active')} style={{ paddingLeft: '10px' }}>
+                          <div className="flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: isActive ? 'rgba(255,255,255,0.15)' : 'rgba(124,58,237,0.06)' }}>
+                            <Icon size={12} />
+                          </div>
+                          <span className="truncate text-xs">{item.label}</span>
+                          {isActive && <div className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: '#c4b5fd' }} />}
+                        </div>
+                      )}
+                    </NavLink>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )
+      )}
+
+      {/* ── Navigation ─────────────────────────────────────── */}
+      {/* min-h-0 lets this flex child shrink so its own overflow scrolls, even
+          with the fixed logo/search/pinned blocks taking space above it. */}
+      <nav className="flex-1 min-h-0 pb-3 overflow-y-auto scrollbar-hide">
         {/* Section label */}
         {!collapsed && <p className="label-caps px-5 mb-2">Main Menu</p>}
 

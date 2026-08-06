@@ -7,9 +7,15 @@ import { RICH_MODULES, RICH_FORMATS } from '@/lib/quillConfig'
 import {
   ArrowLeft, Users, Eye, CheckSquare, Square, MessageSquare, Play, StopCircle,
   Clock, Pencil, Trash2, ExternalLink, Send, Plus, Copy, RefreshCw, BookmarkPlus, ListPlus,
-  Lock, Globe, LifeBuoy, Info, Link2, X, EyeOff, FileText, Paperclip, Download, GitBranch, Building2,
+  Lock, Globe, LifeBuoy, Info, Link2, X, EyeOff, FileText, Paperclip, Download, GitBranch, Building2, BarChart3,
 } from 'lucide-react'
 import SubtaskTree from '../components/SubtaskTree'
+import EditorActionBar from '@/components/editor/EditorActionBar'
+import MessageReactions from '@/components/editor/MessageReactions'
+import { useReactions } from '@/hooks/useReactions'
+import PollList from '@/components/poll/PollList'
+import PollComposerModal from '@/components/poll/PollComposerModal'
+import QuickTaskModal from '@/components/task/QuickTaskModal'
 import RaiseTicketModal from '../../helpdesk/components/RaiseTicketModal'
 import { tpvApi } from '@/services/tpvApi'
 import { purchaseApi } from '@/services/purchaseApi'
@@ -45,12 +51,17 @@ const isCommentEmpty = (html) => {
 // Repaints Quill's hard-coded light skin from design tokens so the composer follows
 // light/dark, plus prose styles for rendering stored (server-sanitized) comment HTML.
 const COMMENT_EDITOR_CSS = `
-  .task-comment-editor{border:1px solid var(--border);border-radius:14px;overflow:hidden;background:var(--bg-input)}
+  /* overflow is VISIBLE (not hidden) so Quill's link-URL popup isn't clipped; the
+     toolbar carries the top rounded corners instead so the frame still looks clean. */
+  .task-comment-editor{border:1px solid var(--border);border-radius:14px;overflow:visible;background:var(--bg-input)}
   .task-comment-editor:focus-within{border-color:var(--color-primary-500);box-shadow:0 0 0 3px color-mix(in srgb,var(--color-primary-500) 18%,transparent)}
-  .task-comment-editor .ql-toolbar.ql-snow{border:0;border-bottom:1px solid var(--border);background:var(--bg-card);padding:8px 12px}
+  .task-comment-editor .ql-toolbar.ql-snow{border:0;border-bottom:1px solid var(--border);background:var(--bg-card);padding:8px 12px;border-radius:14px 14px 0 0}
   .task-comment-editor .ql-toolbar.ql-snow .ql-formats{margin-right:12px}
-  .task-comment-editor .ql-container.ql-snow{border:0;background:transparent;font-family:inherit;font-size:13px}
+  .task-comment-editor .ql-container.ql-snow{border:0;background:transparent;font-family:inherit;font-size:13px;border-radius:0 0 14px 14px}
   .task-comment-editor .ql-editor{min-height:110px;max-height:360px;overflow-y:auto;color:var(--text-h);line-height:1.6;padding:12px 14px}
+  /* The Description editor gets a taller canvas than the inline comment box. */
+  .task-comment-editor.task-desc .ql-editor{min-height:260px;max-height:560px}
+  .task-comment-editor .ql-snow .ql-tooltip{white-space:normal}
   .task-comment-editor .ql-editor p{margin-bottom:6px}
   .task-comment-editor .ql-editor.ql-blank::before{color:var(--text-muted);opacity:.6;font-style:normal;left:14px;right:14px}
   .task-comment-editor .ql-editor a{color:var(--color-primary-500)}
@@ -119,6 +130,10 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
   const [comment, setComment] = useState('')
   const [commentFiles, setCommentFiles] = useState([])
   const commentFileInput = useRef(null)
+  const commentQuillRef = useRef(null)
+  const descQuillRef = useRef(null)
+  const [pollOpen, setPollOpen] = useState(false)
+  const [quickTaskOpen, setQuickTaskOpen] = useState(false)
   const [actionErr, setActionErr] = useState('')
   const [hideCompleted, setHideCompleted] = useState(false)
   const [editingDesc, setEditingDesc] = useState(false)
@@ -208,6 +223,9 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
         label: v.company_name || v.name, sublabel: `Purchase · ${v.purchase_vendor_code || v.status || ''}`.trim() })),
     ]
   }, [tvList, pvList])
+
+  // Reactions for the comment thread — hook must run before the early returns.
+  const commentReactions = useReactions('task_comment', (task?.comments || []).map(c => c.id))
 
   if (isLoading) return <div className="rounded-2xl animate-pulse" style={{ height: 200, background: 'var(--bg-card)' }} />
   if (isError) {
@@ -381,6 +399,22 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
           </div>
         </div>
 
+        {/* Additional "Related To" links — a task can relate to many things. */}
+        {Array.isArray(task.relations) && task.relations.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 mb-4 -mt-1">
+            <span className="text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>Also related to:</span>
+            {task.relations.map(r => (
+              <button key={`${r.rel_type}:${r.rel_id}`} onClick={() => r.url && navigate(r.url)}
+                className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg"
+                style={{ border: '1px solid var(--border)', background: 'var(--bg-card)', color: r.url ? TASK_ACCENT : 'var(--text-muted)', cursor: r.url ? 'pointer' : 'default' }}>
+                <Link2 size={10} />
+                <span style={{ opacity: 0.6 }}>{r.rel_type}:</span> {r.label || `#${r.rel_id}`}
+                {r.url && <ExternalLink size={9} />}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* ── Two-column body ─────────────────────────────────────── */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
           {/* LEFT (wider) */}
@@ -395,17 +429,20 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
               {editingDesc ? (
                 <div>
                   <style>{COMMENT_EDITOR_CSS}</style>
-                  <div className="task-comment-editor">
-                    <ReactQuill theme="snow" modules={COMMENT_MODULES} formats={COMMENT_FORMATS}
+                  <div className="task-comment-editor task-desc">
+                    <ReactQuill ref={descQuillRef} theme="snow" modules={COMMENT_MODULES} formats={COMMENT_FORMATS}
                       value={descDraft} onChange={setDescDraft} placeholder="Describe the task…" />
                   </div>
-                  <div className="flex items-center justify-end gap-2 mt-2">
+                  <div className="flex items-center justify-between gap-2 mt-2">
+                    <EditorActionBar quillRef={descQuillRef} people={people} accent={TASK_ACCENT} meeting />
+                    <div className="flex items-center gap-2">
                     <button onClick={() => setEditingDesc(false)} className="text-xs font-semibold px-3 py-1.5 rounded-lg"
                       style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}>Cancel</button>
                     <button onClick={() => saveDesc.mutate(descDraft)} disabled={saveDesc.isPending}
                       className="text-xs font-bold px-4 py-1.5 rounded-lg disabled:opacity-40" style={{ background: TASK_ACCENT, color: '#fff' }}>
                       {saveDesc.isPending ? 'Saving…' : 'Save'}
                     </button>
+                    </div>
                   </div>
                 </div>
               ) : task.description ? (
@@ -523,7 +560,7 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
               <style>{COMMENT_EDITOR_CSS}</style>
               <ul className="space-y-3 mb-4">
                 {comments.map(c => (
-                  <li key={c.id} className="flex gap-2.5">
+                  <li key={c.id} className="group relative flex gap-2.5">
                     <span className="w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-black shrink-0"
                       style={{ background: `color-mix(in srgb, ${TASK_ACCENT} 14%, transparent)`, color: TASK_ACCENT }}>
                       {(c.user?.name || '?').slice(0, 1).toUpperCase()}
@@ -555,6 +592,7 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
                           ))}
                         </div>
                       )}
+                      <MessageReactions summary={commentReactions.summaryFor(c.id)} onToggle={(e) => commentReactions.toggle(c.id, e)} accent={TASK_ACCENT} />
                     </div>
                   </li>
                 ))}
@@ -564,6 +602,7 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
               <div className="task-comment-editor"
                 onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submitComment() } }}>
                 <ReactQuill
+                  ref={commentQuillRef}
                   theme="snow"
                   modules={COMMENT_MODULES}
                   formats={COMMENT_FORMATS}
@@ -592,6 +631,8 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
                     <Paperclip size={12} /> Attach
                   </button>
                   <input ref={commentFileInput} type="file" multiple hidden onChange={e => { stageCommentFiles(e.target.files); e.target.value = '' }} />
+                  <EditorActionBar quillRef={commentQuillRef} people={people} accent={TASK_ACCENT} onPoll={() => setPollOpen(true)} meeting
+                    quickCreate={[{ label: 'Subtask', icon: GitBranch, onClick: () => setQuickTaskOpen(true) }]} />
                   <span className="text-[11px]" style={{ color: 'var(--text-muted)', opacity: 0.8 }}>
                     <span className="font-semibold">@name</span> to notify · ⌘/Ctrl+↵ to post
                   </span>
@@ -602,6 +643,10 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
                   <Send size={13} /> {addComment.isPending ? 'Posting…' : 'Comment'}
                 </button>
               </div>
+            </Card>
+
+            <Card title="Polls" icon={BarChart3}>
+              <PollList contextType="task" contextId={id} accent={TASK_ACCENT} onNew={() => setPollOpen(true)} />
             </Card>
           </div>
 
@@ -708,6 +753,13 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
 
       <DeleteTaskModal open={confirmDelete} onClose={() => setConfirmDelete(false)} onConfirm={() => remove.mutate()}
         taskName={task.name} link={link} subtaskCount={subtasks.length} busy={remove.isPending} />
+
+      <PollComposerModal open={pollOpen} onClose={() => setPollOpen(false)} contextType="task" contextId={id} accent={TASK_ACCENT} />
+
+      <QuickTaskModal open={quickTaskOpen} onClose={() => setQuickTaskOpen(false)} accent={TASK_ACCENT}
+        title="New subtask" placeholder="Subtask name…"
+        onSubmit={(name) => taskApi.addSubtask(id, { name })}
+        onCreated={() => { qc.invalidateQueries({ queryKey: ['task-tree', id] }); qc.invalidateQueries({ queryKey: ['task', id] }) }} />
 
       <SearchPicker
         open={picker === 'assignee'} onClose={() => setPicker(null)}

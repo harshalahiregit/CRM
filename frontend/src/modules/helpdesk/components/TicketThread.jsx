@@ -17,6 +17,13 @@ import TicketTimeline from './TicketTimeline'
 import KnowledgeSuggestions from './KnowledgeSuggestions'
 import CannedResponsePicker from './CannedResponsePicker'
 import InsertKbLinkPicker from './InsertKbLinkPicker'
+import EditorActionBar from '@/components/editor/EditorActionBar'
+import PollList from '@/components/poll/PollList'
+import PollComposerModal from '@/components/poll/PollComposerModal'
+import QuickTaskModal from '@/components/task/QuickTaskModal'
+import MessageReactions from '@/components/editor/MessageReactions'
+import { useReactions } from '@/hooks/useReactions'
+import { taskApi } from '@/services/taskApi'
 import { RICH_MODULES, RICH_FORMATS } from '@/lib/quillConfig'
 import Select from './ui/Select'
 import SearchPicker from './ui/SearchPicker'
@@ -210,6 +217,8 @@ export default function TicketThread() {
   // Searchable pop-ups — these replace window.prompt('…enter an id').
   const [projectPickerOpen, setProjectPickerOpen] = useState(false)
   const [mergePickerOpen, setMergePickerOpen] = useState(false)
+  const [pollOpen, setPollOpen] = useState(false)
+  const [quickTaskOpen, setQuickTaskOpen] = useState(false)
   const textareaRef = useRef(null)
   const quillRef = useRef(null)
 
@@ -228,6 +237,8 @@ export default function TicketThread() {
   const { data: tpvAgents = [] } = useQuery({
     queryKey: ['helpdesk-agent-vendors', 'tpv'], queryFn: () => helpdeskApi.agentVendors('tpv'),
   })
+  // People the reply composer's @-mention can address (agents + vendor/TPV logins).
+  const mentionPeople = useMemo(() => [...agents, ...vendorAgents, ...tpvAgents], [agents, vendorAgents, tpvAgents])
   const { data: projectList = [], isLoading: projectsLoading } = useQuery({
     queryKey: ['projects-picker'], queryFn: () => projectApi.list(), enabled: projectPickerOpen,
   })
@@ -358,6 +369,10 @@ export default function TicketThread() {
     }
     return [...items, ...(Array.isArray(replies) ? replies : [])]
   }, [ticket, replies, id])
+
+  // Reactions for the real reply rows (the synthetic "original" bubble has no id).
+  const replyIds = useMemo(() => (Array.isArray(replies) ? replies : []).map(r => r.id).filter(x => typeof x === 'number'), [replies])
+  const replyReactions = useReactions('ticket_reply', replyIds)
 
   // summarize() is a POST that (re)generates the AI summary server-side, but the
   // server caches it and returns the cached copy unless refresh=true. Load it
@@ -783,7 +798,7 @@ export default function TicketThread() {
                   return (
                     <div
                       key={msg.id}
-                      className={clsx('flex flex-col max-w-[78%]', isStaff ? 'self-end items-end' : 'self-start items-start')}
+                      className={clsx('group relative flex flex-col max-w-[78%]', isStaff ? 'self-end items-end' : 'self-start items-start')}
                       style={{ opacity: msg._optimistic ? 0.55 : 1 }}
                     >
                       {/* Sender info */}
@@ -862,11 +877,22 @@ export default function TicketThread() {
                           </ul>
                         )}
                       </div>
+                      {/* Emoji reactions — real reply rows only (hover to react). */}
+                      {!msg._optimistic && !msg._original && typeof msg.id === 'number' && (
+                        <div className="w-full">
+                          <MessageReactions summary={replyReactions.summaryFor(msg.id)} onToggle={(e) => replyReactions.toggle(msg.id, e)} accent="var(--color-support-500)" />
+                        </div>
+                      )}
                     </div>
                   )
                 })}
               </div>
               </>)}
+
+              {/* Polls on this ticket — vote inline; create from the composer's poll button. */}
+              <div className="mb-3">
+                <PollList contextType="ticket" contextId={ticket.id} accent="var(--color-support-500)" onNew={() => setPollOpen(true)} />
+              </div>
 
               {/* Knowledge suggestions (UX Book-4: suggest → insert into reply) */}
               <KnowledgeSuggestions ticket={ticket} onInsert={(txt) => { setTab('conversation'); setMessage(m => m + txt) }} />
@@ -976,6 +1002,11 @@ export default function TicketThread() {
                           <Paperclip size={14} /> Attach
                           <input type="file" multiple className="hidden" onChange={e => setFiles(prev => [...prev, ...Array.from(e.target.files)])} />
                         </label>
+                        <EditorActionBar quillRef={quillRef} people={mentionPeople} accent="var(--color-support-500)" onPoll={() => setPollOpen(true)} meeting
+                          quickCreate={[
+                            { label: 'Task', icon: ListTodo, onClick: () => setQuickTaskOpen(true) },
+                            { label: 'Note', icon: StickyNote, onClick: () => setComposerMode('note') },
+                          ]} />
                         <CannedResponsePicker onInsert={txt => setMessage(m => m ? `${m}\n\n${txt}` : txt)} />
                         <InsertKbLinkPicker onInsert={html => setMessage(m => m ? `${m} ${html}` : html)} />
                         <button type="button" onClick={saveAsCanned} disabled={!message.trim()}
@@ -1064,6 +1095,15 @@ export default function TicketThread() {
         emptyText="No other tickets to merge."
         accent="var(--color-warning-500)"
       />
+
+      {ticket && <PollComposerModal open={pollOpen} onClose={() => setPollOpen(false)} contextType="ticket" contextId={ticket.id} accent="var(--color-support-500)" />}
+
+      {ticket && (
+        <QuickTaskModal open={quickTaskOpen} onClose={() => setQuickTaskOpen(false)} accent="var(--color-support-500)"
+          title="New task (linked to this ticket)" placeholder="Task name…"
+          onSubmit={(name) => taskApi.create({ name, rel_type: 'ticket', rel_id: ticket.id })}
+          onCreated={() => { setReplyTip('Task created & linked ✓'); setTimeout(() => setReplyTip(''), 2500) }} />
+      )}
 
       {/* Save-as-canned modal (image13's "New reply" form: title/category/shortcut) */}
       {cannedModal && (

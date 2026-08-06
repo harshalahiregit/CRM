@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import ReactQuill from 'react-quill'
 import 'react-quill/dist/quill.snow.css'
@@ -8,6 +8,7 @@ import { taskApi, fmtDuration } from '@/services/taskApi'
 import { exportCsv, stampedName } from '@/lib/exportCsv'
 import { RICH_MODULES, RICH_FORMATS } from '@/lib/quillConfig'
 import { ConfirmModal } from '@/components/ui/SearchPicker'
+import EditorActionBar from '@/components/editor/EditorActionBar'
 
 const NOTE_PAGE_SIZES = [{ value: 25, label: '25' }, { value: 50, label: '50' }, { value: 100, label: '100' }, { value: 0, label: 'All' }]
 const stripHtml = (html) => (html || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/\s+/g, ' ').trim()
@@ -111,6 +112,8 @@ export function NotesTab({ projectId }) {
   const [editId, setEditId] = useState(null)
   const [editDraft, setEditDraft] = useState({ title: '', content: '', assigned_to: '', remind_at: '' })
   const [confirmDelete, setConfirmDelete] = useState(null)
+  const newNoteQuill = useRef(null)
+  const editNoteQuill = useRef(null)
   const { data: notes = [], isLoading } = useQuery({ queryKey: ['project-notes', projectId], queryFn: () => projectApi.notes(projectId) })
   const { data: staff = [] } = useQuery({ queryKey: ['task-staff'], queryFn: taskApi.staff })
   const bust = () => qc.invalidateQueries({ queryKey: ['project-notes', projectId] })
@@ -190,8 +193,9 @@ export function NotesTab({ projectId }) {
           className="w-full rounded-lg outline-none"
           style={{ padding: '8px 11px', fontSize: 13, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }} />
         <div className="proj-note-editor">
-          <ReactQuill theme="snow" modules={RICH_MODULES} formats={RICH_FORMATS} value={content} onChange={setContent} placeholder="Write a note…" />
+          <ReactQuill ref={newNoteQuill} theme="snow" modules={RICH_MODULES} formats={RICH_FORMATS} value={content} onChange={setContent} placeholder="Write a note…" />
         </div>
+        <EditorActionBar quillRef={newNoteQuill} people={staff} accent={PROJECT_ACCENT} meeting />
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <label className="flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
             <UserPlus size={12} /> Assign
@@ -234,8 +238,9 @@ export function NotesTab({ projectId }) {
               <input value={editDraft.title} onChange={e => setEditDraft(d => ({ ...d, title: e.target.value }))} placeholder="Note title"
                 className="w-full rounded-lg outline-none mb-2" style={{ padding: '7px 10px', fontSize: 13, background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-h)' }} />
               <div className="proj-note-editor mb-2">
-                <ReactQuill theme="snow" modules={RICH_MODULES} formats={RICH_FORMATS} value={editDraft.content} onChange={v => setEditDraft(d => ({ ...d, content: v }))} />
+                <ReactQuill ref={editNoteQuill} theme="snow" modules={RICH_MODULES} formats={RICH_FORMATS} value={editDraft.content} onChange={v => setEditDraft(d => ({ ...d, content: v }))} />
               </div>
+              <EditorActionBar quillRef={editNoteQuill} people={staff} accent={PROJECT_ACCENT} className="mb-2" meeting />
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
                 <label className="flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
                   <UserPlus size={12} /> Assign
