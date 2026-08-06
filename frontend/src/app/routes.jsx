@@ -124,6 +124,7 @@ const PublicLeadForm = lazy(() => import('@/modules/sales/public/PublicLeadForm'
 // Customer Module (lazy)
 const CustomerLayout = lazy(() => import('@/modules/customer/CustomerLayout'))
 const Customers = lazy(() => import('@/modules/customer/pages/Customers'))
+const GroupReports = lazy(() => import('@/modules/customer/pages/GroupReports'))
 const CustomerDetail = lazy(() => import('@/modules/customer/pages/CustomerDetail'))
 
 // Accounts Module (lazy)
@@ -457,6 +458,7 @@ export default function AppRoutes() {
         {/* CUSTOMER MODULE */}
         <Route path="customers" element={<S><CustomerLayout /></S>}>
           <Route index element={<S><Customers /></S>} />
+          <Route path="group-reports" element={<S><GroupReports /></S>} />
           <Route path=":id" element={<S><CustomerDetail /></S>} />
         </Route>
 

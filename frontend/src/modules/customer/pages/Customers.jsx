@@ -1,9 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import {
-  Plus, Search, Edit2, Trash2, X, Upload, Download, Building2, Users,
-  UserCheck, TrendingUp, ChevronDown, FileSpreadsheet, FileText, Eye, UserCog, Sliders,
-} from 'lucide-react'
+import { Plus, Search, Edit2, Trash2, X, Upload, Download, Building2, Users, UserCheck, TrendingUp, ChevronDown, FileSpreadsheet, FileText, Eye, UserCog, Sliders, BarChart3 } from 'lucide-react'
 import { customerApi } from '@/services/customerApi'
 import { useToast } from '@/hooks/useToast'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
@@ -320,6 +317,11 @@ export default function Customers() {
                 </div>
               )}
             </div>
+            <button onClick={() => nav('/app/customers/group-reports')} title="Group-wise reports"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-semibold transition-all hover:scale-[1.02]"
+              style={{ background: 'var(--bg-input)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+              <BarChart3 size={15} /> Group Reports
+            </button>
             <RaiseTicketButton source="customer" style={{ padding: '10px 18px', borderRadius: 16 }} />
             <button onClick={() => setFieldsMgr(true)} title="Manage custom fields"
               className="flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-semibold transition-all hover:scale-[1.02]"

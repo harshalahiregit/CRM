@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\Customer\ClientController;
 use App\Http\Controllers\Api\Customer\ExpenseCategoryController;
 use App\Http\Controllers\Api\Customer\ClientExpenseController;
 use App\Http\Controllers\Api\Customer\ClientGroupController;
+use App\Http\Controllers\Api\Customer\ClientGroupReportController;
 use App\Http\Controllers\Api\Customer\ClientNoteController;
 use App\Http\Controllers\Api\Customer\ClientPackageController;
 use App\Http\Controllers\Api\Customer\ClientPreAlertController;
@@ -35,6 +36,12 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('customers')->gr
     Route::post('/groups',           [ClientGroupController::class, 'store']);
     Route::put('/groups/{group}',    [ClientGroupController::class, 'update']);
     Route::delete('/groups/{group}', [ClientGroupController::class, 'destroy']);
+
+    // Group-wise reports (static paths — must stay above /{client}).
+    Route::get('/group-reports',            [ClientGroupReportController::class, 'show']);
+    Route::get('/group-reports/comparison', [ClientGroupReportController::class, 'comparison']);
+    Route::get('/group-reports/export',     [ClientGroupReportController::class, 'export']);
+    Route::get('/group-reports/pdf',        [ClientGroupReportController::class, 'pdf']);
 
     // Custom field definitions
     Route::get('/custom-fields',                  [CustomFieldController::class, 'index']);

@@ -140,6 +140,26 @@ export const customerApi = {
   sampleUrl: (format = 'csv') =>
     `${api.defaults.baseURL}/customers/import/sample?format=${format}`,
 
+  /**
+   * Group-wise reports. Downloads go through axios with responseType blob so the
+   * Bearer token is sent — a bare <a href> would hit the API unauthenticated.
+   */
+  groupReports: {
+    show:       (params = {}) => api.get('/customers/group-reports', { params }).then(r => r.data).catch(handleErr),
+    comparison: (params = {}) => api.get('/customers/group-reports/comparison', { params }).then(r => r.data).catch(handleErr),
+    download: async (kind, params = {}) => {
+      const path = kind === 'pdf' ? '/customers/group-reports/pdf' : '/customers/group-reports/export'
+      const res = await api.get(path, { params, responseType: 'blob' })
+      const cd = res.headers?.['content-disposition'] || ''
+      const guess = cd.match(/filename="?([^";]+)"?/)?.[1]
+      const name = guess || `group-report.${kind === 'pdf' ? 'pdf' : (params.format || 'csv')}`
+      const url = URL.createObjectURL(res.data)
+      const a = document.createElement('a')
+      a.href = url; a.download = name; document.body.appendChild(a); a.click()
+      a.remove(); URL.revokeObjectURL(url)
+    },
+  },
+
   // Groups
   groups: {
     list: () => api.get('/customers/groups').then(r => r.data).catch(handleErr),
