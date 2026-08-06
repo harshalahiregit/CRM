@@ -195,7 +195,7 @@ export function NotesTab({ projectId }) {
         <div className="proj-note-editor">
           <ReactQuill ref={newNoteQuill} theme="snow" modules={RICH_MODULES} formats={RICH_FORMATS} value={content} onChange={setContent} placeholder="Write a note…" />
         </div>
-        <EditorActionBar quillRef={newNoteQuill} people={staff} accent={PROJECT_ACCENT} />
+        <EditorActionBar quillRef={newNoteQuill} people={staff} accent={PROJECT_ACCENT} meeting />
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <label className="flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
             <UserPlus size={12} /> Assign
@@ -240,7 +240,7 @@ export function NotesTab({ projectId }) {
               <div className="proj-note-editor mb-2">
                 <ReactQuill ref={editNoteQuill} theme="snow" modules={RICH_MODULES} formats={RICH_FORMATS} value={editDraft.content} onChange={v => setEditDraft(d => ({ ...d, content: v }))} />
               </div>
-              <EditorActionBar quillRef={editNoteQuill} people={staff} accent={PROJECT_ACCENT} className="mb-2" />
+              <EditorActionBar quillRef={editNoteQuill} people={staff} accent={PROJECT_ACCENT} className="mb-2" meeting />
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
                 <label className="flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
                   <UserPlus size={12} /> Assign

@@ -5,7 +5,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { X, Plus, Trash2, BarChart3 } from 'lucide-react'
 import { pollApi } from '@/services/pollApi'
 
-const EMPTY = { question: '', options: ['', ''], allow_multiple: false, closes_at: '' }
+const EMPTY = { question: '', options: ['', ''], allow_multiple: false, is_anonymous: false, closes_at: '' }
 
 export default function PollComposerModal({ open, onClose, contextType, contextId, accent = 'var(--color-primary-500)', onCreated }) {
   const qc = useQueryClient()
@@ -21,6 +21,7 @@ export default function PollComposerModal({ open, onClose, contextType, contextI
       question: form.question.trim(),
       options: form.options.map(o => o.trim()).filter(Boolean),
       allow_multiple: form.allow_multiple,
+      is_anonymous: form.is_anonymous,
       closes_at: form.closes_at || null,
     }),
     onSuccess: () => {
@@ -77,6 +78,10 @@ export default function PollComposerModal({ open, onClose, contextType, contextI
           <label className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer select-none" style={{ color: 'var(--text-muted)' }}>
             <input type="checkbox" checked={form.allow_multiple} onChange={e => setForm(f => ({ ...f, allow_multiple: e.target.checked }))} style={{ accentColor: accent }} />
             Allow multiple choices
+          </label>
+          <label className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer select-none" style={{ color: 'var(--text-muted)' }}>
+            <input type="checkbox" checked={form.is_anonymous} onChange={e => setForm(f => ({ ...f, is_anonymous: e.target.checked }))} style={{ accentColor: accent }} />
+            Anonymous
           </label>
           <label className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-muted)' }}>
             Closes

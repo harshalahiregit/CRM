@@ -80,6 +80,7 @@ class PollService
                 'context_id'     => $id,
                 'question'       => trim($data['question']),
                 'allow_multiple' => (bool) ($data['allow_multiple'] ?? false),
+                'is_anonymous'   => (bool) ($data['is_anonymous'] ?? false),
                 'closes_at'      => $data['closes_at'] ?? null,
                 'created_by'     => $user->id,
             ]);
@@ -153,20 +154,30 @@ class PollService
     /** Reduce a poll to the shape the frontend renders (counts, %, my picks). */
     private function payload(Poll $poll, User $user): array
     {
+        $anon = (bool) $poll->is_anonymous;
+
         // votes-per-option and the set of options THIS user picked, in one read.
-        $rows = PollVote::where('poll_id', $poll->id)->get(['poll_option_id', 'user_id']);
-        $perOption = $rows->groupBy('poll_option_id')->map->count();
+        // Non-anonymous polls also carry the voter's name so the card can show
+        // who backed each option; anonymous polls deliberately never load names.
+        $rows = PollVote::where('poll_id', $poll->id)
+            ->when(! $anon, fn ($q) => $q->with('voter:id,name'))
+            ->get();
+
+        $perOption = $rows->groupBy('poll_option_id');
         $voters = $rows->pluck('user_id')->unique()->count();
         $mine = $rows->where('user_id', $user->id)->pluck('poll_option_id')->map(fn ($v) => (int) $v)->all();
 
-        $options = $poll->options->map(function ($o) use ($perOption, $voters) {
-            $count = (int) ($perOption[$o->id] ?? 0);
+        $options = $poll->options->map(function ($o) use ($perOption, $voters, $anon) {
+            $optRows = $perOption[$o->id] ?? collect();
+            $count = $optRows->count();
 
             return [
-                'id'    => $o->id,
-                'label' => $o->label,
-                'votes' => $count,
-                'pct'   => $voters > 0 ? (int) round($count / $voters * 100) : 0,
+                'id'     => $o->id,
+                'label'  => $o->label,
+                'votes'  => $count,
+                'pct'    => $voters > 0 ? (int) round($count / $voters * 100) : 0,
+                // Only revealed on non-anonymous polls.
+                'voters' => $anon ? null : $optRows->map(fn ($r) => $r->voter?->name)->filter()->values()->all(),
             ];
         })->all();
 
@@ -174,6 +185,7 @@ class PollService
             'id'             => $poll->id,
             'question'       => $poll->question,
             'allow_multiple' => $poll->allow_multiple,
+            'is_anonymous'   => $anon,
             'closes_at'      => optional($poll->closes_at)->toIso8601String(),
             'is_closed'      => $poll->isClosed(),
             'created_by'     => $poll->created_by,

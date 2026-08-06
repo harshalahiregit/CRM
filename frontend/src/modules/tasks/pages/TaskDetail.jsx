@@ -429,7 +429,7 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
                       value={descDraft} onChange={setDescDraft} placeholder="Describe the task…" />
                   </div>
                   <div className="flex items-center justify-between gap-2 mt-2">
-                    <EditorActionBar quillRef={descQuillRef} people={people} accent={TASK_ACCENT} />
+                    <EditorActionBar quillRef={descQuillRef} people={people} accent={TASK_ACCENT} meeting />
                     <div className="flex items-center gap-2">
                     <button onClick={() => setEditingDesc(false)} className="text-xs font-semibold px-3 py-1.5 rounded-lg"
                       style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}>Cancel</button>
@@ -625,7 +625,7 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
                     <Paperclip size={12} /> Attach
                   </button>
                   <input ref={commentFileInput} type="file" multiple hidden onChange={e => { stageCommentFiles(e.target.files); e.target.value = '' }} />
-                  <EditorActionBar quillRef={commentQuillRef} people={people} accent={TASK_ACCENT} onPoll={() => setPollOpen(true)}
+                  <EditorActionBar quillRef={commentQuillRef} people={people} accent={TASK_ACCENT} onPoll={() => setPollOpen(true)} meeting
                     quickCreate={[{ label: 'Subtask', icon: GitBranch, onClick: () => setQuickTaskOpen(true) }]} />
                   <span className="text-[11px]" style={{ color: 'var(--text-muted)', opacity: 0.8 }}>
                     <span className="font-semibold">@name</span> to notify · ⌘/Ctrl+↵ to post

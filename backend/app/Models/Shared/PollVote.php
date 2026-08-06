@@ -3,6 +3,7 @@
 namespace App\Models\Shared;
 
 use App\Models\Traits\BelongsToTenant;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 
 /** One user's vote for one option. Unique per (option, user). */
@@ -20,5 +21,10 @@ class PollVote extends Model
     public function option()
     {
         return $this->belongsTo(PollOption::class, 'poll_option_id');
+    }
+
+    public function voter()
+    {
+        return $this->belongsTo(User::class, 'user_id');
     }
 }
