@@ -58,14 +58,39 @@ class Proposal extends Model
                 $proposal->portal_token = Str::random(40);
             }
             if (empty($proposal->reference_no) && $proposal->tenant_id) {
-                $year  = now()->format('Y');
-                $count = static::withTrashed()
-                    ->where('tenant_id', $proposal->tenant_id)
-                    ->whereYear('created_at', $year)
-                    ->count() + 1;
-                $proposal->reference_no = 'PROP-' . $year . '-' . str_pad($count, 3, '0', STR_PAD_LEFT);
+                // Central Document Numbering Engine when the tenant has switched
+                // 'proposal' on (Settings -> Document Numbering); otherwise the
+                // local allocator below, which keeps today's PROP-YYYY-NNN shape.
+                $proposal->reference_no = \App\Support\Sales\DocumentNumber::allocate(
+                    'proposal',
+                    (int) $proposal->tenant_id,
+                    fn () => static::nextLocalReference((int) $proposal->tenant_id),
+                );
             }
         });
+    }
+
+    /**
+     * PROP-YYYY-NNN from the highest reference already issued this year.
+     *
+     * Derived from MAX(reference_no), not COUNT(*): counting rows meant deleting
+     * a proposal made the next one reuse a live number, and two concurrent
+     * creates both read the same count. Reading the largest suffix keeps numbers
+     * strictly increasing and never reissues one. withTrashed() because
+     * soft-deleted rows still hold the UNIQUE index on reference_no.
+     */
+    protected static function nextLocalReference(int $tenantId): string
+    {
+        $year   = now()->format('Y');
+        $prefix = 'PROP-'.$year.'-';
+
+        $highest = static::withTrashed()
+            ->where('tenant_id', $tenantId)
+            ->where('reference_no', 'like', $prefix.'%')
+            ->selectRaw('MAX(CAST(SUBSTR(reference_no, ?) AS INTEGER)) AS seq', [strlen($prefix) + 1])
+            ->value('seq');
+
+        return $prefix.str_pad((string) (((int) $highest) + 1), 3, '0', STR_PAD_LEFT);
     }
 
     /* ── Relationships ─────────────────────── */
