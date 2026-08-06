@@ -252,6 +252,17 @@ export default function Sidebar({ collapsed, onToggle }) {
   const { pathname } = useLocation()
   // The module the current route lives in — pinned at the top of the sidebar.
   const activeModule = PINNED_MODULES.find(m => pathname.startsWith(m.base))
+  // Its sub-pages, shown under the pin so you can move around the open module
+  // without scrolling. Modules that are a single page (Tasks, Customers…) have none.
+  const activeSubItems = {
+    '/app/helpdesk': HELPDESK_SUB_ITEMS,
+    '/app/inventory': INVENTORY_SUB_ITEMS,
+    '/app/sales': SALES_SUB_ITEMS,
+    '/app/accounts': ACCOUNTS_SUB_ITEMS,
+    '/app/purchase': PURCHASE_SUB_ITEMS,
+    '/app/hr': HR_ALL_LEAVES,
+    '/app/tpv': tpvItems,
+  }[activeModule?.base] || []
   const q = moduleQuery.trim().toLowerCase()
   // Modules first, then any sub-page whose name matches — one combined list.
   const moduleResults = q ? [
@@ -413,7 +424,8 @@ export default function Sidebar({ collapsed, onToggle }) {
         )}
 
       {/* Pinned "current module" — stays fixed at the top of the sidebar, above
-          the scroll, so the module you opened never moves as you scroll. */}
+          the scroll, so the module you opened (and its pages) never move as you
+          scroll. A tall module keeps its own capped, internal scroll. */}
       {activeModule && (
         collapsed ? (
           <button onClick={() => navigate(activeModule.path)} title={activeModule.label}
@@ -421,13 +433,34 @@ export default function Sidebar({ collapsed, onToggle }) {
             <activeModule.icon size={15} style={{ color: '#a78bfa' }} />
           </button>
         ) : (
-          <button onClick={() => navigate(activeModule.path)}
-            className="sb-active-module mx-3 mb-2 flex items-center gap-2 px-3 py-2 rounded-xl"
-            style={{ width: 'calc(100% - 24px)' }}>
-            <activeModule.icon size={15} style={{ color: '#a78bfa' }} className="shrink-0" />
-            <span className="text-sm font-semibold truncate" style={{ color: 'var(--text-h)' }}>{activeModule.label}</span>
-            <span className="ml-auto text-[9px] font-black px-1.5 py-0.5 rounded shrink-0" style={{ background: 'rgba(124,58,237,0.22)', color: '#a78bfa' }}>OPEN</span>
-          </button>
+          <div className="sb-active-module mx-3 mb-2 rounded-xl p-1.5">
+            <button onClick={() => navigate(activeModule.path)}
+              className="w-full flex items-center gap-2 px-1.5 py-1.5 rounded-lg">
+              <activeModule.icon size={15} style={{ color: '#a78bfa' }} className="shrink-0" />
+              <span className="text-sm font-semibold truncate" style={{ color: 'var(--text-h)' }}>{activeModule.label}</span>
+              <span className="ml-auto text-[9px] font-black px-1.5 py-0.5 rounded shrink-0" style={{ background: 'rgba(124,58,237,0.22)', color: '#a78bfa' }}>OPEN</span>
+            </button>
+            {activeSubItems.length > 0 && (
+              <div className="mt-1 max-h-[38vh] overflow-y-auto scrollbar-hide space-y-0.5">
+                {activeSubItems.map(item => {
+                  const Icon = item.icon
+                  return (
+                    <NavLink key={item.path} to={item.path} end={item.end}>
+                      {({ isActive }) => (
+                        <div className={clsx('nav-3d', isActive && 'nav-3d-active')} style={{ paddingLeft: '10px' }}>
+                          <div className="flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: isActive ? 'rgba(255,255,255,0.15)' : 'rgba(124,58,237,0.06)' }}>
+                            <Icon size={12} />
+                          </div>
+                          <span className="truncate text-xs">{item.label}</span>
+                          {isActive && <div className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: '#c4b5fd' }} />}
+                        </div>
+                      )}
+                    </NavLink>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         )
       )}
 
