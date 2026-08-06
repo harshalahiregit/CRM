@@ -264,6 +264,9 @@ export default function Sidebar({ collapsed, onToggle }) {
     '/app/hr': HR_ALL_LEAVES,
     '/app/tpv': tpvItems,
   }[activeModule?.base] || []
+  // Which module's normal block to hide (it's shown in the pin instead). Only in
+  // the expanded sidebar — the collapsed icon rail shows no pin, so hide nothing.
+  const pinnedBase = !collapsed && activeSubItems.length > 0 ? activeModule?.base : null
   const q = moduleQuery.trim().toLowerCase()
   // Modules first, then any sub-page whose name matches — one combined list.
   const moduleResults = q ? [
@@ -424,57 +427,47 @@ export default function Sidebar({ collapsed, onToggle }) {
           </div>
         )}
 
-      {/* Pinned "current module" — stays fixed at the top of the sidebar, above
-          the scroll, so the module you opened (and its pages) never move as you
-          scroll. A tall module keeps its own capped, internal scroll. */}
-      {activeModule && (
-        collapsed ? (
-          <button onClick={() => navigate(activeModule.path)} title={activeModule.label}
-            className="sb-active-module mx-auto mb-2 flex items-center justify-center w-9 h-9 rounded-xl">
-            <activeModule.icon size={15} style={{ color: '#a78bfa' }} />
-          </button>
-        ) : (
-          <div className="sb-active-module mx-3 mb-2 rounded-xl p-1.5">
-            <div className="w-full flex items-center gap-2 px-1.5 py-1.5 rounded-lg">
+      {/* ── Navigation ─────────────────────────────────────── */}
+      {/* min-h-0 lets this flex child shrink so its own overflow scrolls, even
+          with the fixed logo/search blocks taking space above it. */}
+      <nav className="flex-1 min-h-0 pb-3 overflow-y-auto scrollbar-hide">
+        {/* Pinned open-module — its header is sticky (stays put at the top while
+            you scroll), and its sub-pages sit right under it. Both live INSIDE
+            this scroll container, so the sidebar scrolls normally and the fixed
+            footer can never squeeze the scroll area to nothing. The module's
+            duplicate further down is hidden (see the per-module guards below). */}
+        {!collapsed && activeModule && activeSubItems.length > 0 && (
+          <>
+            <div className="sb-pin-head sticky top-0 z-20 flex items-center gap-2 px-3 py-2 mb-0.5" style={{ background: 'var(--bg-sidebar)' }}>
               <button onClick={() => navigate(activeModule.path)} className="flex items-center gap-2 min-w-0 flex-1">
                 <activeModule.icon size={15} style={{ color: '#a78bfa' }} className="shrink-0" />
                 <span className="text-sm font-semibold truncate" style={{ color: 'var(--text-h)' }}>{activeModule.label}</span>
                 <span className="text-[9px] font-black px-1.5 py-0.5 rounded shrink-0" style={{ background: 'rgba(124,58,237,0.22)', color: '#a78bfa' }}>OPEN</span>
               </button>
-              {activeSubItems.length > 0 && (
-                <button onClick={() => setPinOpen(o => !o)} className="shrink-0 p-0.5" aria-label={pinOpen ? 'Collapse' : 'Expand'} title={pinOpen ? 'Collapse' : 'Expand'}>
-                  <ChevronDown size={14} className={clsx('transition-transform duration-200', !pinOpen && '-rotate-90')} style={{ color: '#a78bfa' }} />
-                </button>
-              )}
+              <button onClick={() => setPinOpen(o => !o)} className="shrink-0 p-0.5" aria-label={pinOpen ? 'Collapse' : 'Expand'} title={pinOpen ? 'Collapse' : 'Expand'}>
+                <ChevronDown size={14} className={clsx('transition-transform duration-200', !pinOpen && '-rotate-90')} style={{ color: '#a78bfa' }} />
+              </button>
             </div>
-            {activeSubItems.length > 0 && pinOpen && (
-              <div className="mt-1 max-h-[240px] overflow-y-auto scrollbar-hide space-y-0.5">
-                {activeSubItems.map(item => {
-                  const Icon = item.icon
-                  return (
-                    <NavLink key={item.path} to={item.path} end={item.end}>
-                      {({ isActive }) => (
-                        <div className={clsx('nav-3d', isActive && 'nav-3d-active')} style={{ paddingLeft: '10px' }}>
-                          <div className="flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: isActive ? 'rgba(255,255,255,0.15)' : 'rgba(124,58,237,0.06)' }}>
-                            <Icon size={12} />
-                          </div>
-                          <span className="truncate text-xs">{item.label}</span>
-                          {isActive && <div className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: '#c4b5fd' }} />}
-                        </div>
-                      )}
-                    </NavLink>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        )
-      )}
+            {pinOpen && activeSubItems.map(item => {
+              const Icon = item.icon
+              return (
+                <NavLink key={`pin-${item.path}`} to={item.path} end={item.end}>
+                  {({ isActive }) => (
+                    <div className={clsx('nav-3d mb-0.5', isActive && 'nav-3d-active')} style={{ paddingLeft: '28px' }}>
+                      <div className="flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: isActive ? 'rgba(255,255,255,0.15)' : 'rgba(124,58,237,0.06)' }}>
+                        <Icon size={12} />
+                      </div>
+                      <span className="truncate text-xs">{item.label}</span>
+                      {isActive && <div className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: '#c4b5fd' }} />}
+                    </div>
+                  )}
+                </NavLink>
+              )
+            })}
+            <div className="mx-3 my-2" style={{ borderTop: '1px solid var(--border)' }} />
+          </>
+        )}
 
-      {/* ── Navigation ─────────────────────────────────────── */}
-      {/* min-h-0 lets this flex child shrink so its own overflow scrolls, even
-          with the fixed logo/search/pinned blocks taking space above it. */}
-      <nav className="flex-1 min-h-0 pb-3 overflow-y-auto scrollbar-hide">
         {/* Section label */}
         {!collapsed && <p className="label-caps px-5 mb-2">Main Menu</p>}
 
@@ -526,7 +519,8 @@ export default function Sidebar({ collapsed, onToggle }) {
         ))}
 
         {/* ── HRMS sub-nav (when installed) ── */}
-        {hrInstalled && (
+        {/* Hidden while HR is the pinned module — it's shown in the pin above. */}
+        {hrInstalled && pinnedBase !== '/app/hr' && (
           <div className="mt-2">
             {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>HR Module</p>}
             {/* HRMS parent toggle */}
@@ -613,7 +607,7 @@ export default function Sidebar({ collapsed, onToggle }) {
         </div>
 
         {/* ── Accounts Module sub-nav ── */}
-        <div className="mt-2">
+        <div className={clsx('mt-2', pinnedBase === '/app/accounts' && 'hidden')}>
           {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>Accounts & Finance</p>}
           <button
             onClick={() => setAccountsExpanded(e => !e)}
@@ -642,7 +636,7 @@ export default function Sidebar({ collapsed, onToggle }) {
         </div>
 
         {/* ── Sales Module sub-nav ── */}
-        <div className="mt-2">
+        <div className={clsx('mt-2', pinnedBase === '/app/sales' && 'hidden')}>
           {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>Sales & Revenue</p>}
           <button
             onClick={() => setSalesExpanded(e => !e)}
@@ -682,7 +676,7 @@ export default function Sidebar({ collapsed, onToggle }) {
         </div>
 
         {/* ── Helpdesk Module sub-nav ── */}
-        <div className="mt-2">
+        <div className={clsx('mt-2', pinnedBase === '/app/helpdesk' && 'hidden')}>
           {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#22d3ee' }}>Helpdesk & Support</p>}
           <button
             onClick={() => setHelpdeskExpanded(e => !e)}
@@ -733,7 +727,7 @@ export default function Sidebar({ collapsed, onToggle }) {
         </div>
 
         {/* ── Inventory Module sub-nav ── */}
-        <div className="mt-2">
+        <div className={clsx('mt-2', pinnedBase === '/app/inventory' && 'hidden')}>
           {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#10b981' }}>Inventory</p>}
           <button
             onClick={() => setInventoryExpanded(e => !e)}
@@ -764,7 +758,7 @@ export default function Sidebar({ collapsed, onToggle }) {
         </div>
 
         {/* ── Purchase Module sub-nav ── */}
-        <div className="mt-2">
+        <div className={clsx('mt-2', pinnedBase === '/app/purchase' && 'hidden')}>
           {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>Purchase</p>}
           <button
             onClick={() => setPurchaseExpanded(e => !e)}
@@ -793,7 +787,7 @@ export default function Sidebar({ collapsed, onToggle }) {
         </div>
 
         {/* ── TPV Module sub-nav ── */}
-        <div className="mt-2">
+        <div className={clsx('mt-2', pinnedBase === '/app/tpv' && 'hidden')}>
           {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>Thirdparty Vendor</p>}
           <button
             onClick={() => setTpvExpanded(e => !e)}
