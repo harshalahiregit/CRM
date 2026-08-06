@@ -196,6 +196,21 @@ const TPV_VENDOR_ITEMS = [
   { label: 'Workforce',  path: '/app/tpv/workforce',  icon: UserCheck },
 ]
 
+// Every sub-page across the modules, tagged with its parent — so the sidebar
+// search finds e.g. "Payroll", "Cheques" or "Debit Notes", not just top-level
+// module names. Built from the same lists the nav renders, so it never drifts.
+const SUBMODULE_SEARCH = [
+  ...HR_RECRUITMENT_ITEMS.map(i => ({ ...i, module: 'HR' })),
+  { ...HR_EMPLOYEES, module: 'HR' },
+  ...HR_RECORDS_ITEMS.map(i => ({ ...i, module: 'HR' })),
+  ...SALES_SUB_ITEMS.map(i => ({ ...i, module: 'Sales' })),
+  ...ACCOUNTS_SUB_ITEMS.map(i => ({ ...i, module: 'Accounts' })),
+  ...HELPDESK_SUB_ITEMS.map(i => ({ ...i, module: 'Helpdesk' })),
+  ...INVENTORY_SUB_ITEMS.map(i => ({ ...i, module: 'Inventory' })),
+  ...PURCHASE_SUB_ITEMS.map(i => ({ ...i, module: 'Purchase' })),
+  ...TPV_ADMIN_ITEMS.map(i => ({ ...i, module: 'TPV' })),
+]
+
 export default function Sidebar({ collapsed, onToggle }) {
   const { user, tenant, logout } = useAuth()
   const { isDark, toggleTheme } = useTheme()
@@ -217,7 +232,11 @@ export default function Sidebar({ collapsed, onToggle }) {
   const [activeLeadsCount, setActiveLeadsCount] = useState(null)
   const [moduleQuery, setModuleQuery] = useState('')
   const q = moduleQuery.trim().toLowerCase()
-  const moduleResults = q ? MODULE_SEARCH.filter(m => (m.label + ' ' + m.kw).toLowerCase().includes(q)) : []
+  // Modules first, then any sub-page whose name matches — one combined list.
+  const moduleResults = q ? [
+    ...MODULE_SEARCH.filter(m => (m.label + ' ' + m.kw).toLowerCase().includes(q)).map(m => ({ ...m, sub: false })),
+    ...SUBMODULE_SEARCH.filter(s => s.label.toLowerCase().includes(q)).map(s => ({ ...s, sub: true })),
+  ].slice(0, 40) : []
   const goModule = (path) => { setModuleQuery(''); navigate(path) }
 
   useEffect(() => {
@@ -337,7 +356,7 @@ export default function Sidebar({ collapsed, onToggle }) {
             </div>
           </button>
         ) : (
-          <div className="px-3 mb-2 relative">
+          <div className="px-3 mb-2 relative sticky top-0 z-30 pt-1 pb-2" style={{ background: 'var(--bg-sidebar)' }}>
             <div className="relative">
               <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
               <input
@@ -355,16 +374,17 @@ export default function Sidebar({ collapsed, onToggle }) {
               )}
             </div>
             {q && (
-              <div className="mt-1 rounded-xl overflow-hidden" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card-3d)' }}>
+              <div className="mt-1 rounded-xl overflow-hidden max-h-[60vh] overflow-y-auto scrollbar-hide" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card-3d)' }}>
                 {moduleResults.length === 0 ? (
-                  <p className="text-xs px-3 py-3" style={{ color: 'var(--text-muted)' }}>No modules match “{moduleQuery}”.</p>
+                  <p className="text-xs px-3 py-3" style={{ color: 'var(--text-muted)' }}>Nothing matches “{moduleQuery}”.</p>
                 ) : moduleResults.map(m => {
                   const Icon = m.icon
                   return (
-                    <button key={m.path} onClick={() => goModule(m.path)}
+                    <button key={`${m.sub ? 'sub' : 'mod'}-${m.path}`} onClick={() => goModule(m.path)}
                       className="w-full flex items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-[rgba(124,58,237,0.08)]">
                       <Icon size={14} style={{ color: '#a78bfa' }} />
-                      <span className="text-sm" style={{ color: 'var(--text-h)' }}>{m.label}</span>
+                      <span className="text-sm truncate" style={{ color: 'var(--text-h)' }}>{m.label}</span>
+                      {m.sub && <span className="ml-auto text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0" style={{ background: 'rgba(124,58,237,0.12)', color: '#a78bfa' }}>{m.module}</span>}
                     </button>
                   )
                 })}
