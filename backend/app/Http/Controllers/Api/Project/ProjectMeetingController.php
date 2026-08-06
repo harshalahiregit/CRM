@@ -75,6 +75,7 @@ class ProjectMeetingController extends Controller
         $data = $request->validate([
             'title'        => 'required|string|max:255',
             'mode'         => 'nullable|in:online,offline,hybrid',
+            'meeting_link' => 'nullable|string|max:1000',
             'participants' => 'nullable|string|max:2000',
             'planned_date' => 'nullable|date',
             'meeting_date' => 'nullable|date',
@@ -104,6 +105,7 @@ class ProjectMeetingController extends Controller
         $data = $request->validate([
             'title'        => 'sometimes|required|string|max:255',
             'mode'         => 'nullable|in:online,offline,hybrid',
+            'meeting_link' => 'nullable|string|max:1000',
             'participants' => 'nullable|string|max:2000',
             'planned_date' => 'nullable|date',
             'meeting_date' => 'nullable|date',
