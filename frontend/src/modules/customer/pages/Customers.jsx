@@ -29,7 +29,7 @@ const STEPS = [
 ]
 const EDIT_TABS = STEPS.map(s => s.key)
 const EMPTY = {
-  company: '', gst_number: '', phone: '', website: '', parent_company: '', vendor_id: '',
+  company: '', gst_number: '', phone: '', website: '', parent_company: '', parent_client_id: null, vendor_id: '',
   opening_balance: '', opening_balance_date: '', show_primary_contact: false,
   default_currency: 'INR', default_language: 'English', group_ids: [],
   address: '', city: '', state: '', zip: '', country: '',
@@ -461,7 +461,8 @@ export default function Customers() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div><label className="label">Website</label><input className="input-3d text-sm" value={form.website} onChange={e => sf('website', e.target.value)} /></div>
-                    <div><label className="label">Parent Company</label><ParentCompanyPicker value={form.parent_company} onChange={v => sf('parent_company', v)} /></div>
+                    <div><label className="label">Parent Company</label><ParentCompanyPicker value={form.parent_company} parentClientId={form.parent_client_id}
+                      onChange={p => setForm(f => ({ ...f, ...p }))} /></div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div><label className="label">Opening Balance</label><input type="number" className="input-3d text-sm" placeholder="0.00" value={form.opening_balance} onChange={e => sf('opening_balance', e.target.value)} /></div>

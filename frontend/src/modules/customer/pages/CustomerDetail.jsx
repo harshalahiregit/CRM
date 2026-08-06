@@ -196,7 +196,19 @@ export default function CustomerDetail() {
             <div className="flex items-center gap-2 mt-0.5">
               <ToggleSwitch checked={client.active} onChange={toggleActive} title="Toggle active/inactive" size="sm" />
               <span className="text-[10px] font-bold" style={{ color: client.active ? '#10b981' : '#94a3b8' }}>{client.active ? 'Active' : 'Inactive'}</span>
-              {client.parent_company && <span className="text-xs ml-1" style={{ color: 'var(--text-muted)' }}>Parent: <b style={{ color: 'var(--text-h)' }}>{client.parent_company}</b></span>}
+              {client.parent_company && (
+                <span className="text-xs ml-1" style={{ color: 'var(--text-muted)' }}>Parent:{' '}
+                  {client.parent_client_id ? (
+                    // A real link now — click through to the parent's profile.
+                    <button onClick={() => nav(`/app/customers/${client.parent_client_id}`)}
+                      className="font-bold hover:underline" style={{ color: 'var(--accent)' }}>
+                      {client.parent_company}
+                    </button>
+                  ) : (
+                    <b style={{ color: 'var(--text-h)' }}>{client.parent_company}</b>
+                  )}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -309,7 +321,7 @@ function ProfileTab({ client, reload, toast }) {
     ;(client.custom_fields ?? []).forEach(f => { cf[f.id] = f.value ?? '' })
     return {
       company: client.company || '', gst_number: client.gst_number || '', phone: client.phone || '',
-      website: client.website || '', parent_company: client.parent_company || '',
+      website: client.website || '', parent_company: client.parent_company || '', parent_client_id: client.parent_client_id ?? null,
       opening_balance: client.opening_balance ?? '', opening_balance_date: client.opening_balance_date ? String(client.opening_balance_date).slice(0, 10) : '',
       default_currency: client.default_currency || 'INR', default_language: client.default_language || 'English',
       show_primary_contact: !!client.show_primary_contact,
@@ -381,7 +393,8 @@ function ProfileTab({ client, reload, toast }) {
               <div><label className="label">GST Number</label><input className="input-3d text-sm" value={form.gst_number} onChange={e => sf('gst_number', e.target.value)} /></div>
               <div><label className="label">Phone</label><input className="input-3d text-sm" value={form.phone} onChange={e => sf('phone', e.target.value)} /></div>
               <div><label className="label">Website</label><input className="input-3d text-sm" value={form.website} onChange={e => sf('website', e.target.value)} /></div>
-              <div><label className="label">Parent Company</label><ParentCompanyPicker value={form.parent_company} onChange={v => sf('parent_company', v)} excludeId={id} /></div>
+              <div><label className="label">Parent Company</label><ParentCompanyPicker value={form.parent_company} parentClientId={form.parent_client_id}
+                      onChange={p => setForm(f => ({ ...f, ...p }))} excludeId={id} /></div>
               <div><label className="label">Opening Balance</label><input type="number" className="input-3d text-sm" value={form.opening_balance} onChange={e => sf('opening_balance', e.target.value)} /></div>
               <div><label className="label">Balance as of</label><input type="date" className="input-3d text-sm" value={form.opening_balance_date} onChange={e => sf('opening_balance_date', e.target.value)} /></div>
               <div><label className="label">Currency</label><select className="input-3d text-sm" value={form.default_currency} onChange={e => sf('default_currency', e.target.value)}>{CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
