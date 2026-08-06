@@ -13,6 +13,7 @@ import SubtaskTree from '../components/SubtaskTree'
 import EditorActionBar from '@/components/editor/EditorActionBar'
 import PollList from '@/components/poll/PollList'
 import PollComposerModal from '@/components/poll/PollComposerModal'
+import QuickTaskModal from '@/components/task/QuickTaskModal'
 import RaiseTicketModal from '../../helpdesk/components/RaiseTicketModal'
 import { tpvApi } from '@/services/tpvApi'
 import { purchaseApi } from '@/services/purchaseApi'
@@ -130,6 +131,7 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
   const commentQuillRef = useRef(null)
   const descQuillRef = useRef(null)
   const [pollOpen, setPollOpen] = useState(false)
+  const [quickTaskOpen, setQuickTaskOpen] = useState(false)
   const [actionErr, setActionErr] = useState('')
   const [hideCompleted, setHideCompleted] = useState(false)
   const [editingDesc, setEditingDesc] = useState(false)
@@ -623,7 +625,8 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
                     <Paperclip size={12} /> Attach
                   </button>
                   <input ref={commentFileInput} type="file" multiple hidden onChange={e => { stageCommentFiles(e.target.files); e.target.value = '' }} />
-                  <EditorActionBar quillRef={commentQuillRef} people={people} accent={TASK_ACCENT} onPoll={() => setPollOpen(true)} />
+                  <EditorActionBar quillRef={commentQuillRef} people={people} accent={TASK_ACCENT} onPoll={() => setPollOpen(true)}
+                    quickCreate={[{ label: 'Subtask', icon: GitBranch, onClick: () => setQuickTaskOpen(true) }]} />
                   <span className="text-[11px]" style={{ color: 'var(--text-muted)', opacity: 0.8 }}>
                     <span className="font-semibold">@name</span> to notify · ⌘/Ctrl+↵ to post
                   </span>
@@ -746,6 +749,11 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
         taskName={task.name} link={link} subtaskCount={subtasks.length} busy={remove.isPending} />
 
       <PollComposerModal open={pollOpen} onClose={() => setPollOpen(false)} contextType="task" contextId={id} accent={TASK_ACCENT} />
+
+      <QuickTaskModal open={quickTaskOpen} onClose={() => setQuickTaskOpen(false)} accent={TASK_ACCENT}
+        title="New subtask" placeholder="Subtask name…"
+        onSubmit={(name) => taskApi.addSubtask(id, { name })}
+        onCreated={() => { qc.invalidateQueries({ queryKey: ['task-tree', id] }); qc.invalidateQueries({ queryKey: ['task', id] }) }} />
 
       <SearchPicker
         open={picker === 'assignee'} onClose={() => setPicker(null)}
