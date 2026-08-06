@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\Shared\MeetingLinkController;
 use App\Http\Controllers\Api\Shared\MeetingPlatformController;
 use App\Http\Controllers\Api\Shared\PollController;
 use App\Http\Controllers\Api\Shared\PublicKickoffController;
+use App\Http\Controllers\Api\Shared\ReactionController;
 use Illuminate\Support\Facades\Route;
 
 // ── PUBLIC — vendor acknowledgement of kickoff minutes ──────────────────
@@ -61,6 +62,12 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('polls')->group(
 // drop into a message. Distinct from /kickoff (which schedules a meeting record).
 Route::middleware(['auth:sanctum', 'role:admin,staff'])->group(function () {
     Route::post('/meeting-links', [MeetingLinkController::class, 'store']);
+});
+
+// ── Emoji reactions on message threads (task/ticket/project) ────────────
+Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('reactions')->group(function () {
+    Route::get('/',        [ReactionController::class, 'index']);    // ?subject_type=&subject_ids[]=
+    Route::post('/toggle', [ReactionController::class, 'toggle']);
 });
 
 // ── Tenant default meeting platform ─────────────────────────────────────

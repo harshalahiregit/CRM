@@ -10,6 +10,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { Smile, AtSign, Paperclip, BarChart3, Plus, Video } from 'lucide-react'
 import { meetingLinkApi } from '@/services/meetingLinkApi'
+import InlineMentions from './InlineMentions'
 
 // A small, clean, work-appropriate set — enough to react without a heavy
 // emoji-library dependency (there is no Node on the live host; we keep the
@@ -138,6 +139,11 @@ export default function EditorActionBar({
 
   return (
     <div className={`flex items-center gap-1 ${className}`}>
+      {/* Inline "@name" autocomplete — a live dropdown at the caret. */}
+      {people && (
+        <InlineMentions quillRef={quillRef} textareaRef={textareaRef} value={value} onChange={onChange} people={people} accent={accent} />
+      )}
+
       {/* Emoji — always available */}
       <div className="relative">
         <button type="button" onClick={() => { setEmojiOpen(v => !v); setMentionOpen(false) }}

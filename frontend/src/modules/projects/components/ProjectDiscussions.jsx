@@ -7,6 +7,8 @@ import EditorActionBar from '@/components/editor/EditorActionBar'
 import PollList from '@/components/poll/PollList'
 import PollComposerModal from '@/components/poll/PollComposerModal'
 import QuickTaskModal from '@/components/task/QuickTaskModal'
+import MessageReactions from '@/components/editor/MessageReactions'
+import { useReactions } from '@/hooks/useReactions'
 
 const fmtDateTime = d => d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'
 
@@ -130,6 +132,7 @@ function Thread({ projectId, discussion, onCommented, people = [], onPoll, onQui
   const key = ['project-discussion-comments', projectId, discussion.id]
 
   const { data: comments = [], isLoading } = useQuery({ queryKey: key, queryFn: () => projectApi.discussionComments(projectId, discussion.id) })
+  const reactions = useReactions('discussion_comment', comments.map(c => c.id))
 
   const add = useMutation({
     mutationFn: () => projectApi.addDiscussionComment(projectId, discussion.id, text.trim()),
@@ -147,9 +150,10 @@ function Thread({ projectId, discussion, onCommented, people = [], onPoll, onQui
 
       <ul className="space-y-2 py-2">
         {comments.map(c => (
-          <li key={c.id} className="rounded-lg p-2.5" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+          <li key={c.id} className="group relative rounded-lg p-2.5" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
             <p className="text-xs whitespace-pre-wrap break-words" style={{ color: 'var(--text-body)' }}>{c.content}</p>
             <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>{c.user?.name || 'Someone'} · {fmtDateTime(c.created_at)}</p>
+            <MessageReactions summary={reactions.summaryFor(c.id)} onToggle={(e) => reactions.toggle(c.id, e)} accent={PROJECT_ACCENT} />
           </li>
         ))}
         {!isLoading && comments.length === 0 && <li className="text-[11px]" style={{ color: 'var(--text-muted)' }}>No comments yet — start the conversation.</li>}

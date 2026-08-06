@@ -11,6 +11,8 @@ import {
 } from 'lucide-react'
 import SubtaskTree from '../components/SubtaskTree'
 import EditorActionBar from '@/components/editor/EditorActionBar'
+import MessageReactions from '@/components/editor/MessageReactions'
+import { useReactions } from '@/hooks/useReactions'
 import PollList from '@/components/poll/PollList'
 import PollComposerModal from '@/components/poll/PollComposerModal'
 import QuickTaskModal from '@/components/task/QuickTaskModal'
@@ -221,6 +223,9 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
         label: v.company_name || v.name, sublabel: `Purchase · ${v.purchase_vendor_code || v.status || ''}`.trim() })),
     ]
   }, [tvList, pvList])
+
+  // Reactions for the comment thread — hook must run before the early returns.
+  const commentReactions = useReactions('task_comment', (task?.comments || []).map(c => c.id))
 
   if (isLoading) return <div className="rounded-2xl animate-pulse" style={{ height: 200, background: 'var(--bg-card)' }} />
   if (isError) {
@@ -555,7 +560,7 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
               <style>{COMMENT_EDITOR_CSS}</style>
               <ul className="space-y-3 mb-4">
                 {comments.map(c => (
-                  <li key={c.id} className="flex gap-2.5">
+                  <li key={c.id} className="group relative flex gap-2.5">
                     <span className="w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-black shrink-0"
                       style={{ background: `color-mix(in srgb, ${TASK_ACCENT} 14%, transparent)`, color: TASK_ACCENT }}>
                       {(c.user?.name || '?').slice(0, 1).toUpperCase()}
@@ -587,6 +592,7 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
                           ))}
                         </div>
                       )}
+                      <MessageReactions summary={commentReactions.summaryFor(c.id)} onToggle={(e) => commentReactions.toggle(c.id, e)} accent={TASK_ACCENT} />
                     </div>
                   </li>
                 ))}
