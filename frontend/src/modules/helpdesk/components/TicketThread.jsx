@@ -17,6 +17,7 @@ import TicketTimeline from './TicketTimeline'
 import KnowledgeSuggestions from './KnowledgeSuggestions'
 import CannedResponsePicker from './CannedResponsePicker'
 import InsertKbLinkPicker from './InsertKbLinkPicker'
+import EditorActionBar from '@/components/editor/EditorActionBar'
 import { RICH_MODULES, RICH_FORMATS } from '@/lib/quillConfig'
 import Select from './ui/Select'
 import SearchPicker from './ui/SearchPicker'
@@ -228,6 +229,8 @@ export default function TicketThread() {
   const { data: tpvAgents = [] } = useQuery({
     queryKey: ['helpdesk-agent-vendors', 'tpv'], queryFn: () => helpdeskApi.agentVendors('tpv'),
   })
+  // People the reply composer's @-mention can address (agents + vendor/TPV logins).
+  const mentionPeople = useMemo(() => [...agents, ...vendorAgents, ...tpvAgents], [agents, vendorAgents, tpvAgents])
   const { data: projectList = [], isLoading: projectsLoading } = useQuery({
     queryKey: ['projects-picker'], queryFn: () => projectApi.list(), enabled: projectPickerOpen,
   })
@@ -976,6 +979,7 @@ export default function TicketThread() {
                           <Paperclip size={14} /> Attach
                           <input type="file" multiple className="hidden" onChange={e => setFiles(prev => [...prev, ...Array.from(e.target.files)])} />
                         </label>
+                        <EditorActionBar quillRef={quillRef} people={mentionPeople} accent="var(--color-support-500)" />
                         <CannedResponsePicker onInsert={txt => setMessage(m => m ? `${m}\n\n${txt}` : txt)} />
                         <InsertKbLinkPicker onInsert={html => setMessage(m => m ? `${m} ${html}` : html)} />
                         <button type="button" onClick={saveAsCanned} disabled={!message.trim()}
