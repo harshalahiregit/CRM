@@ -69,29 +69,96 @@ class ManpowerRequestService
         });
     }
 
+    /**
+     * Review comment #5 — "Skills, hiring details, job description – mandatory to fill".
+     *
+     * Enforced at SUBMIT, not at create. A Draft is by definition a work in
+     * progress: blocking the save would stop a requester from putting the request
+     * down and coming back to it, and would invalidate every draft already saved.
+     * The point at which incompleteness actually matters is when it goes to an
+     * approver, so that is where the gate sits.
+     *
+     * All missing fields are reported at once — sending someone round the loop
+     * one field at a time is its own defect.
+     */
+    private function assertCompleteForApproval(HrManpowerRequest $mr): void
+    {
+        $missing = [];
+
+        if (blank($mr->job_description)) {
+            $missing[] = 'Job description';
+        }
+        if (empty($mr->required_skills)) {
+            $missing[] = 'Required skills';
+        }
+
+        // "Hiring details" — the fields an approver needs to judge the request.
+        foreach ([
+            'hiring_manager_id'    => 'Hiring manager',
+            'employee_level'       => 'Employee level',
+            'experience_required'  => 'Experience required',
+        ] as $field => $label) {
+            if (blank($mr->{$field})) {
+                $missing[] = $label;
+            }
+        }
+
+        if ($missing !== []) {
+            throw new BusinessException(
+                'Complete these before submitting for approval: '.implode(', ', $missing).'.', 422
+            );
+        }
+    }
+
     public function submit(HrManpowerRequest $manpowerRequest, User $user): HrManpowerRequest
     {
         $this->assertTenant($manpowerRequest, $user);
 
-        if ($manpowerRequest->status !== Status::DRAFT) {
-            throw new BusinessException('Only Draft requests can be submitted', 422);
+        // Rejected requests are editable (see update()), so they must also be
+        // re-submittable — otherwise a rejection is a dead end: the requester can
+        // correct the request but has no way to send it back for approval.
+        if (! in_array($manpowerRequest->status, [Status::DRAFT, Status::REJECTED], true)) {
+            throw new BusinessException('Only Draft or Rejected requests can be submitted', 422);
         }
 
         if ($manpowerRequest->requested_by !== $user->id && ! $user->isAdmin()) {
             throw new BusinessException('Only the requester can submit this request', 403);
         }
 
-        return DB::transaction(function () use ($manpowerRequest, $user) {
-            // Record the submission (Draft → L1 Pending) exactly as before …
+        $this->assertCompleteForApproval($manpowerRequest);
+
+        $wasRejected = $manpowerRequest->status === Status::REJECTED;
+        $fromStatus  = $manpowerRequest->status;
+
+        return DB::transaction(function () use ($manpowerRequest, $user, $wasRejected, $fromStatus) {
+            // Record the submission (Draft/Rejected → L1 Pending) …
             $manpowerRequest->update([
                 'status'       => Status::L1_PENDING,
                 'l1_status'    => 'pending',
                 'submitted_at' => now(),
+
+                // A resubmission starts a clean approval cycle. Leaving the old
+                // decision behind would show the previous rejection alongside a
+                // pending request; the history log keeps the full trail.
+                // l1_status/l2_status are NOT NULL with a 'pending' default, so the
+                // reset returns them to 'pending' rather than null.
+                ...($wasRejected ? [
+                    'l1_approver_id'   => null,
+                    'l1_approved_at'   => null,
+                    'l1_remarks'       => null,
+                    'l2_status'        => 'pending',
+                    'l2_approver_id'   => null,
+                    'l2_approved_at'   => null,
+                    'l2_remarks'       => null,
+                    'rejection_reason' => null,
+                    'approved_by'      => null,
+                    'approved_at'      => null,
+                ] : []),
             ]);
 
-            $this->logHistory($manpowerRequest, 'L1', 'Submitted', $user,
-                'Submitted for approval',
-                ['status' => Status::DRAFT], ['status' => Status::L1_PENDING]);
+            $this->logHistory($manpowerRequest, 'L1', $wasRejected ? 'Resubmitted' : 'Submitted', $user,
+                $wasRejected ? 'Resubmitted for approval after rejection' : 'Submitted for approval',
+                ['status' => $fromStatus], ['status' => Status::L1_PENDING]);
 
             // … then auto-approve L1 (SPK-1): the creator no longer approves L1
             // manually. Reuses the same approval transition, so the L1-Approved
@@ -246,6 +313,71 @@ class ManpowerRequestService
             Log::channel('hr')->info('Manpower request sent back for revision', ['request_id' => $manpowerRequest->id, 'tenant_id' => $manpowerRequest->tenant_id, 'from' => $from]);
 
             return $manpowerRequest->fresh()->load(['requester', 'auditLogs.actor']);
+        });
+    }
+
+    /**
+     * Review comment #7 — "Option to 'Approve' after Rejected manpower requirement".
+     *
+     * An approver who rejects in error currently has no way back: only the
+     * requester can act on a Rejected request, and only by editing and
+     * resubmitting, which sends it through L1 again even when it was L2 that
+     * rejected it. This reverses the rejection instead.
+     *
+     * It does NOT approve the request outright. It restores the request to the
+     * pending state of the level that rejected it and then delegates to that
+     * level's existing approve method — so the two-level gate is preserved
+     * exactly: an L1 rejection reversed lands on L2 Pending, not on the HR queue.
+     * There is no second copy of the approval logic here.
+     *
+     * The resubmit path is untouched — the requester can still edit and resubmit a
+     * Rejected request, which remains the right route when the request itself
+     * needs to change.
+     */
+    public function reconsider(HrManpowerRequest $manpowerRequest, User $user, string $remarks): HrManpowerRequest
+    {
+        $this->assertTenant($manpowerRequest, $user);
+
+        if ($manpowerRequest->status !== Status::REJECTED) {
+            throw new BusinessException('Only a Rejected request can be reconsidered', 422);
+        }
+
+        // Which level rejected decides both who may reverse it and where it
+        // returns to. L2 is checked first: when L2 rejects, L1 still reads
+        // 'approved', so testing L1 first would misroute it.
+        $level = $manpowerRequest->l2_status === 'rejected' ? 'L2' : 'L1';
+
+        $this->authorize(
+            $level === 'L2' ? $user->canApproveL2() : $user->canApproveL1(),
+            "You are not authorised to reconsider a request rejected at {$level}"
+        );
+
+        return DB::transaction(function () use ($manpowerRequest, $user, $remarks, $level) {
+            $pending = $level === 'L2' ? Status::L2_PENDING : Status::L1_PENDING;
+
+            $manpowerRequest->update([
+                'status'           => $pending,
+                'rejection_reason' => null,
+                // Only the rejecting level is reset. An L2 reversal must not
+                // discard L1's genuine approval.
+                ...($level === 'L2'
+                    ? ['l2_status' => 'pending', 'l2_approver_id' => null, 'l2_approved_at' => null]
+                    : ['l1_status' => 'pending', 'l1_approver_id' => null, 'l1_approved_at' => null]),
+            ]);
+
+            $this->logHistory($manpowerRequest, $level, 'Reopened after rejection', $user, $remarks,
+                ['status' => Status::REJECTED], ['status' => $pending]);
+
+            Log::channel('hr')->info('Manpower request reopened after rejection', [
+                'request_id' => $manpowerRequest->id, 'tenant_id' => $manpowerRequest->tenant_id,
+                'level' => $level, 'approver_id' => $user->id,
+            ]);
+
+            $fresh = $manpowerRequest->fresh();
+
+            return $level === 'L2'
+                ? $this->approveL2($fresh, $user, $remarks)
+                : $this->approveL1($fresh, $user, $remarks);
         });
     }
 

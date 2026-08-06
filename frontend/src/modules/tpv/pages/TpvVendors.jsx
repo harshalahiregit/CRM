@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Plus, RefreshCw, Search, Eye, Pencil, Trash2, Users, CheckCircle, XCircle, Building2, X, Mail, CalendarDays,
+  Plus, RefreshCw, Search, Eye, Pencil, Trash2, Users, CheckCircle, XCircle, Building2, X, Mail, CalendarDays, ShieldCheck, Clock,
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { fmtDate } from '../constants'
@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/kit3d'
 
 const EMPTY_FORM = {
-  name: '', company_name: '', email: '', phone: '', gst_number: '', status: 'Active',
+  name: '', company_name: '', email: '', phone: '', gst_number: '', status: 'Active', vendor_type: '',
   password: '', password_confirmation: '',
   address: '', city: '', state: '', pincode: '',
 }
@@ -38,11 +38,20 @@ export default function TpvVendors() {
   }, [cfg.api])
   useEffect(() => { load() }, [load])
 
-  const counts = useMemo(() => {
-    const total = rows.length
-    const active = rows.filter(v => v.status === 'Active').length
-    return { total, active, inactive: total - active }
-  }, [rows])
+  // Counts come from the SERVER, not from the rows on screen. Counting loaded rows
+  // meant the figures tracked the current filter/page rather than the tenant, and it
+  // was a second definition of the same numbers — Purchase already reads its stats
+  // endpoint, and both must answer identically.
+  const [stats, setStats] = useState({})
+  useEffect(() => { cfg.api.vendors.stats?.().then(setStats).catch(() => {}) }, [rows, cfg])
+
+  const counts = useMemo(() => ({
+    total:     stats.total     ?? rows.length,
+    active:    stats.active    ?? rows.filter(v => v.status === 'Active').length,
+    inactive:  stats.inactive  ?? 0,
+    permanent: stats.permanent ?? 0,
+    temporary: stats.temporary ?? 0,
+  }), [stats, rows])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -64,6 +73,7 @@ export default function TpvVendors() {
   const openEdit = (v) => setEditing({
     id: v.id, name: v.user?.name || '', company_name: v.company_name || '', email: v.email || '',
     phone: v.phone || '', gst_number: v.gst_number || '', status: v.status === 'Active' ? 'Active' : 'Inactive',
+    vendor_type: v.vendor_type || '',   // preserved on edit, never silently reset
     password: '', password_confirmation: '',
     address: v.address || '', city: v.city || '', state: v.state || '', pincode: v.pincode || '',
   })
@@ -85,8 +95,12 @@ export default function TpvVendors() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14, marginBottom: 18 }}>
-        <Counter label="Total Vendors" value={counts.total} icon={Users} color="#a78bfa" />
+      {/* Permanent + Temporary sum to Total — both derive from registration_type,
+          so a vendor is counted exactly once. */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 14, marginBottom: 18 }}>
+        <Counter label={`Total ${cfg.moduleName}s`} value={counts.total} icon={Users} color="#a78bfa" />
+        <Counter label="Permanent" value={counts.permanent} icon={ShieldCheck} color="#0ea5e9" />
+        <Counter label="Temporary" value={counts.temporary} icon={Clock} color="#f59e0b" />
         <Counter label="Active" value={counts.active} icon={CheckCircle} color="#10b981" />
         <Counter label="Inactive" value={counts.inactive} icon={XCircle} color="#ef4444" />
       </div>
@@ -215,10 +229,12 @@ function VendorModal({ form, cfg, onClose, onDone }) {
   const [f, setF] = useState(form)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState(null)
+  const [generated, setGenerated] = useState(null)   // one-time credential handoff
   const set = (k) => (e) => setF(p => ({ ...p, [k]: e.target.value }))
 
   const save = async () => {
     if (!f.company_name.trim()) { setErr('Company is required.'); return }
+    if (!f.vendor_type) { setErr('Vendor Type is required.'); return }
     if (f.password || f.password_confirmation) {
       if (f.password.length < 6) { setErr('Password must be at least 6 characters.'); return }
       if (f.password !== f.password_confirmation) { setErr('Passwords do not match.'); return }
@@ -229,17 +245,48 @@ function VendorModal({ form, cfg, onClose, onDone }) {
       name: f.name || null, company_name: f.company_name, email: f.email || null, phone: f.phone || null,
       gst_number: f.gst_number || null, status: f.status,
       address: f.address || null, city: f.city || null, state: f.state || null, pincode: f.pincode || null,
-      vendor_type: cfg.defaultVendorType, engagements: [cfg.engagement],
+      vendor_type: f.vendor_type, engagements: [cfg.engagement],
     }
     if (f.password) { payload.password = f.password; payload.password_confirmation = f.password_confirmation }
     try {
-      if (isNew) await cfg.api.vendors.create(payload)
-      else await cfg.api.vendors.update(f.id, payload)
+      if (isNew) {
+        const created = await cfg.api.vendors.create(payload)
+        // Shown once and never again: when the admin leaves the password blank the
+        // backend mints one so the vendor always has working credentials. If it is
+        // not surfaced here it is lost, and the vendor cannot be told how to log in.
+        const pw = created?.generated_password || created?.data?.generated_password
+        if (pw) { setGenerated({ email: payload.email, password: pw }); setSaving(false); return }
+      } else {
+        await cfg.api.vendors.update(f.id, payload)
+      }
       onDone()
     } catch (e) {
       setErr(e?.response?.data?.message || Object.values(e?.response?.data?.errors || {})[0]?.[0] || 'Could not save vendor.')
       setSaving(false)
     }
+  }
+
+  // Credential handoff — replaces the form once the vendor is created, because
+  // this password is not recoverable afterwards.
+  if (generated) {
+    return (
+      <Overlay onClose={() => { setGenerated(null); onDone() }} width={520}>
+        <div style={{ padding: '22px 24px' }}>
+          <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--text-h)' }}>Vendor created · login ready</h2>
+          <p style={{ margin: '6px 0 16px', fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.55 }}>
+            No password was set, so one was generated. Copy it now — it is stored hashed and cannot be shown again.
+          </p>
+          {[['Email', generated.email], ['Password', generated.password]].map(([k, val]) => (
+            <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', marginBottom: 8, borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+              <span style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', width: 62 }}>{k}</span>
+              <code style={{ flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text-h)', wordBreak: 'break-all' }}>{val}</code>
+              <button onClick={() => navigator.clipboard?.writeText(val)} style={{ padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>Copy</button>
+            </div>
+          ))}
+          <button onClick={() => { setGenerated(null); onDone() }} style={{ marginTop: 10, width: '100%', padding: '10px', borderRadius: 10, border: 'none', background: '#7C3AED', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Done</button>
+        </div>
+      </Overlay>
+    )
   }
 
   return (
@@ -255,7 +302,18 @@ function VendorModal({ form, cfg, onClose, onDone }) {
           <Field label="Company *"><TextInput value={f.company_name} onChange={set('company_name')} placeholder="Company name" /></Field>
           <Field label="Email"><TextInput type="email" value={f.email} onChange={set('email')} placeholder="login@vendor.com" /></Field>
           <Field label="Phone"><TextInput value={f.phone} onChange={set('phone')} placeholder="Phone" /></Field>
-          <Field label="GST Number"><TextInput value={f.gst_number} onChange={set('gst_number')} placeholder="GSTIN" /></Field>
+          <Field label="GST No"><TextInput value={f.gst_number} onChange={set('gst_number')} placeholder="GSTIN" /></Field>
+          {/* Vendor Type is stored (vendors.vendor_type) and drives the temporary
+              access window, so it must be an explicit choice — it used to be
+              hardcoded from module config and the admin could never set it. */}
+          <Field label="Vendor Type *">
+            {/* The empty placeholder is load-bearing. vendor_type starts as '',
+                and a <select> whose value matches no <option> renders the FIRST
+                one — so without this the field showed "Permanent" while holding
+                '', and the required check rejected a form that looked filled in. */}
+            <SelectInput value={f.vendor_type} onChange={set('vendor_type')} pairs
+              options={[['', '— Select vendor type —'], ['standard', 'Permanent'], ['temporary', 'Temporary']]} />
+          </Field>
           <Field label="Status"><SelectInput value={f.status} onChange={set('status')} pairs options={[['Active', 'Active'], ['Inactive', 'Inactive']]} /></Field>
         </div>
 

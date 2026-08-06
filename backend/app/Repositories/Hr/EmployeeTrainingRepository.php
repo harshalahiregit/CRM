@@ -35,6 +35,47 @@ class EmployeeTrainingRepository
         return HrEmployeeTraining::where('tenant_id', $tenantId)->with([...self::EAGER, 'auditLogs'])->find($id);
     }
 
+    /**
+     * #23 — every assignment this employee already has for one programme.
+     *
+     * Newest first by default, because assign() only needs the most recent one to
+     * chain `previous_training_id`. The history endpoint asks for oldest first so
+     * the attempts read in the order they happened.
+     */
+    public function priorAssignments(int $employeeId, int $programId, int $tenantId, bool $newestFirst = true): Collection
+    {
+        return HrEmployeeTraining::where('tenant_id', $tenantId)
+            ->where('employee_id', $employeeId)
+            ->where('training_program_id', $programId)
+            ->with('session:id,title,start_at,end_at')
+            ->orderBy('assigned_at', $newestFirst ? 'desc' : 'asc')
+            ->orderBy('id', $newestFirst ? 'desc' : 'asc')
+            ->get();
+    }
+
+    /**
+     * #23 — the programmes this employee has repeated, with how many times.
+     *
+     * Grouped in the database rather than in PHP: an employee with years of
+     * training history should not have every row hydrated to count them.
+     */
+    public function retrainingSummary(int $employeeId, int $tenantId): array
+    {
+        return HrEmployeeTraining::where('hr_employee_trainings.tenant_id', $tenantId)
+            ->where('employee_id', $employeeId)
+            ->selectRaw('training_program_id, COUNT(*) as attempts, MAX(attempt_number) as latest_attempt')
+            ->groupBy('training_program_id')
+            ->having('attempts', '>', 1)
+            ->with('program:id,program_name,program_code')
+            ->get()
+            ->map(fn ($r) => [
+                'training_program_id' => $r->training_program_id,
+                'program_name'        => $r->program?->program_name,
+                'total_attempts'      => (int) $r->attempts,
+                'retraining_count'    => (int) $r->attempts - 1,
+            ])->all();
+    }
+
     public function forEmployee(int $employeeId, int $tenantId): Collection
     {
         return HrEmployeeTraining::where('tenant_id', $tenantId)

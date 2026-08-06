@@ -49,7 +49,12 @@ class TrainingRepository
     public function providers(int $tenantId, array $f): Collection
     {
         return HrTrainingProvider::where('tenant_id', $tenantId)
+            // #22 — eager loaded so the presenter can name the department without
+            // an N+1. Unconstrained on purpose: a column list here would silently
+            // return null for anything added to the presenter later.
+            ->with('department')
             ->when($this->statusSet($f), fn ($q) => $q->where('is_active', $f['status'] === 'Active'))
+            ->when(! empty($f['department_id']), fn ($q) => $q->where('department_id', (int) $f['department_id']))
             ->when(! empty($f['provider_type']) && $f['provider_type'] !== 'All', fn ($q) => $q->where('provider_type', $f['provider_type']))
             ->when(! empty($f['search']), fn ($q) => $q->where(function ($w) use ($f) {
                 $w->where('name', 'like', '%'.$f['search'].'%')->orWhere('contact_person', 'like', '%'.$f['search'].'%');

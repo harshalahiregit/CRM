@@ -6,6 +6,8 @@ import {
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
+// #3 — the workspace loads all four datasets in one call; filtering is in memory.
+import ListFilter, { applyListFilter } from '@/components/ui/ListFilter'
 
 const unwrap = r => r?.data ?? r
 const SLA_C = { green: '#10b981', yellow: '#f59e0b', red: '#ef4444' }
@@ -21,6 +23,8 @@ export default function RecruiterWorkspace() {
   const [dash, setDash] = useState({})
   const [sla, setSla] = useState([])
   const [perf, setPerf] = useState([])
+  // #3 — one search shared by the three list tabs, reset when the tab changes.
+  const [search, setSearch] = useState('')
   const [toast, setToast] = useState(null)
   const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000) }
 
@@ -39,6 +43,11 @@ export default function RecruiterWorkspace() {
     finally { setLoading(false) }
   }, [])
   useEffect(() => { load() }, [load])
+  useEffect(() => { setSearch('') }, [tab])
+
+  const shownProjects = applyListFilter(ws.assigned_projects || [], { search, fields: ['name','code','client_name','status'] })
+  const shownSla      = applyListFilter(sla,  { search, fields: ['title','company_name','status','recruiter'] })
+  const shownPerf     = applyListFilter(perf, { search, fields: ['recruiter'] })
 
   const TABS = [
     { key: 'workspace', label: 'My Workspace', icon: Briefcase },
@@ -95,11 +104,15 @@ export default function RecruiterWorkspace() {
               </div>
 
               <p style={{ ...label }}>My Assigned Projects</p>
-              {(!ws.assigned_projects || ws.assigned_projects.length === 0) ? (
-                <HrEmpty icon={Briefcase} title="No assigned projects" hint="Projects assigned to you appear here." />
+              {/* #3 */}
+              <div style={{ marginBottom: 12 }}>
+                <ListFilter search={search} setSearch={setSearch} placeholder="Project, code or client…" onClear={()=>setSearch('')} />
+              </div>
+              {shownProjects.length === 0 ? (
+                <HrEmpty icon={Briefcase} title={(ws.assigned_projects||[]).length ? 'No matching projects' : 'No assigned projects'} hint={(ws.assigned_projects||[]).length ? 'Nothing matches this search.' : 'Projects assigned to you appear here.'} />
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {ws.assigned_projects.map(p => (
+                  {shownProjects.map(p => (
                     <div key={p.id} className="card-3d" style={{ padding: 16, display: 'flex', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
                       <div style={{ flex: 1, minWidth: 200 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -146,9 +159,13 @@ export default function RecruiterWorkspace() {
                   <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><span style={{ width: 10, height: 10, borderRadius: '50%', background: SLA_C[k] }} /> {t}</span>
                 ))}
               </div>
-              {sla.length === 0 ? <HrEmpty icon={Timer} title="No active requests" hint="SLA lines appear for active hiring requests." /> : (
+              {/* #3 */}
+              <div style={{ marginBottom: 12 }}>
+                <ListFilter search={search} setSearch={setSearch} placeholder="Request, company or recruiter…" onClear={()=>setSearch('')} />
+              </div>
+              {shownSla.length === 0 ? <HrEmpty icon={Timer} title={sla.length ? 'No matching requests' : 'No active requests'} hint={sla.length ? 'Nothing matches this search.' : 'SLA lines appear for active hiring requests.'} /> : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {sla.map(r => (
+                  {shownSla.map(r => (
                     <div key={r.id} className="card-3d" style={{ padding: 16 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
                         <div>
@@ -180,8 +197,12 @@ export default function RecruiterWorkspace() {
           )}
 
           {/* ── PERFORMANCE ── */}
-          {tab === 'performance' && (
-            perf.length === 0 ? <HrEmpty icon={TrendingUp} title="No recruiters" hint="Recruiter performance appears here." /> : (
+          {tab === 'performance' && (<>
+            {/* #3 */}
+            <div style={{ marginBottom: 12 }}>
+              <ListFilter search={search} setSearch={setSearch} placeholder="Recruiter name…" onClear={()=>setSearch('')} />
+            </div>
+            {shownPerf.length === 0 ? <HrEmpty icon={TrendingUp} title={perf.length ? 'No matching recruiters' : 'No recruiters'} hint={perf.length ? 'Nothing matches this search.' : 'Recruiter performance appears here.'} /> : (
               <div className="card-3d" style={{ padding: 0, overflow: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                   <thead>
@@ -192,7 +213,7 @@ export default function RecruiterWorkspace() {
                     </tr>
                   </thead>
                   <tbody>
-                    {perf.map(p => (
+                    {shownPerf.map(p => (
                       <tr key={p.recruiter_id} style={{ borderTop: '1px solid var(--border)' }}>
                         <td style={{ padding: '11px 14px', fontWeight: 700, color: 'var(--text-h)' }}>{p.recruiter}</td>
                         <td style={{ textAlign: 'center', color: 'var(--text-h)' }}>{p.projects}</td>
@@ -206,8 +227,8 @@ export default function RecruiterWorkspace() {
                   </tbody>
                 </table>
               </div>
-            )
-          )}
+            )}
+          </>)}
         </>
       )}
     </div>

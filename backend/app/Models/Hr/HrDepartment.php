@@ -12,10 +12,13 @@ class HrDepartment extends Model
     protected $table = 'hr_departments';
 
     protected $fillable = [
+        // #43 — expected skills for this position; compared against the employee's own.
+        'skills',
         'tenant_id', 'name', 'code', 'head_employee_id', 'description', 'is_active',
     ];
 
     protected $casts = [
+        'skills' => 'array',
         'is_active' => 'boolean',
     ];
 

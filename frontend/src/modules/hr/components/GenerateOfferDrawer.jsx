@@ -4,6 +4,8 @@ import { AlertCircle, CheckCircle2, Clock, ArrowRight } from 'lucide-react'
 import Drawer from '@/components/ui/Drawer'
 import { hrApi } from '@/services/hrApi'
 import SalarySheet from '@/modules/hr/components/SalarySheet'
+import SearchableSelect from '@/modules/hr/components/SearchableSelect'
+import { useMasterData, withInactive } from '@/modules/hr/useMasterData'
 
 const EMPTY_FORM = { candidate_id: '', position: '', department: '', offered_ctc: '', salary_structure_id: '', joining_date: '', probation_period: '3 months', notice_period: '1 month', validity_date: '' }
 
@@ -66,9 +68,49 @@ export default function GenerateOfferDrawer({
     hrApi.payroll.salaryStructures.list({ status: 'Active' }).then(r => setStructures(r.data || [])).catch(() => setStructures([]))
   }, [open, candidateId, match, fixed, isRevise, reviseOffer])
 
+  // Position/Department come from the HR masters, same as every other HR form.
+  // withInactive() keeps a value that is no longer an active master selectable
+  // and marks it "· Inactive", so an existing offer never silently loses its
+  // position or department.
+  // NOTE: must stay ABOVE the `!open` early return — a hook called conditionally
+  // breaks the Rules of Hooks and throws when the drawer re-opens.
+  const { masters, loading: mastersLoading } = useMasterData()
+  const positionOptions   = withInactive((masters.designations || []).map(d => d.name), form.position)
+  const departmentOptions = withInactive((masters.departments  || []).map(d => d.name), form.department)
+
   if (!open) return null
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }))
+  // Value-setter for controls that hand back a value rather than an event.
+  const setV = (k) => (v) => setForm(f => ({ ...f, [k]: v }))
+
+  /**
+   * Fill the form from the chosen candidate.
+   *
+   * The onboarding row snapshots position/department when it is created, so a
+   * candidate who had no job posting back then is stuck on 'To Be Assigned' with
+   * a blank department. When that happens, resolve from the candidate's job
+   * posting instead — the record is already eager-loaded by the candidate
+   * endpoint, so this needs no new API.
+   */
+  const selectCandidate = async (candidateIdValue) => {
+    const o = eligible.find(x => String(x.candidate_id) === candidateIdValue)
+    const snapPosition = o?.position && o.position !== 'To Be Assigned' ? o.position : ''
+    setForm(f => ({ ...f, candidate_id: candidateIdValue, position: snapPosition, department: o?.department || '' }))
+
+    if (!candidateIdValue) return
+
+    try {
+      const c = await hrApi.candidates.get(candidateIdValue)
+      const cand = c?.data ?? c
+      setForm(f => ({
+        ...f,
+        // Only fill what the snapshot left blank — a value already on screen wins.
+        position:   f.position   || cand?.job_posting?.title      || '',
+        department: f.department || cand?.job_posting?.department || '',
+      }))
+    } catch { /* keep the snapshot values; the fields stay editable */ }
+  }
 
   // Linking a structure derives the CTC + freezes the breakup on the letter.
   const selectStructure = async (id) => {
@@ -184,9 +226,12 @@ export default function GenerateOfferDrawer({
     <Drawer
       open onClose={onClose} title={isRevise ? 'Revise Offer' : 'Generate Offer Letter'} width="min(640px, 95vw)"
       footer={(
-        <div className="flex gap-3">
-          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm font-semibold" style={{ background: 'var(--bg-input)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Cancel</button>
-          <button onClick={create} disabled={saving} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)', opacity: saving ? 0.7 : 1 }}>{saving ? (isRevise ? 'Revising…' : 'Generating…') : (isRevise ? 'Revise Offer' : 'Generate')}</button>
+        // w-full: .drawer-footer is itself a flex container, so without this the
+        // wrapper shrinks to content and flex-1 has nothing to divide — the
+        // buttons collapse to text width and the labels overflow.
+        <div className="flex gap-3 w-full">
+          <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-center whitespace-nowrap" style={{ background: 'var(--bg-input)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Cancel</button>
+          <button onClick={create} disabled={saving} className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-white text-center whitespace-nowrap" style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)', opacity: saving ? 0.7 : 1 }}>{saving ? (isRevise ? 'Revising…' : 'Generating…') : (isRevise ? 'Revise Offer' : 'Generate')}</button>
         </div>
       )}
     >
@@ -210,7 +255,7 @@ export default function GenerateOfferDrawer({
           <div>
             <label className="label">Candidate * <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(onboarding approved)</span></label>
             <select className="input-3d text-sm" value={form.candidate_id}
-              onChange={e => { const o = eligible.find(x => String(x.candidate_id) === e.target.value); setForm({ ...form, candidate_id: e.target.value, position: o?.position || '', department: o?.department || '' }) }}>
+              onChange={e => selectCandidate(e.target.value)}>
               <option value="">Select candidate...</option>
               {eligible.map(o => <option key={o.id} value={o.candidate_id}>{o.candidate_name} — {o.position}</option>)}
             </select>
@@ -218,8 +263,31 @@ export default function GenerateOfferDrawer({
         )}
 
         <div className="grid grid-cols-2 gap-3">
-          <div><label className="label">Position</label><input className="input-3d text-sm" value={form.position} onChange={set('position')} /></div>
-          <div><label className="label">Department</label><input className="input-3d text-sm" value={form.department} onChange={set('department')} /></div>
+          {/* #18 — "listing option with filter". SearchableSelect rather than a
+              bare <select>: it type-filters the list, which is what makes a
+              hundred-designation master usable. `allowCreate` keeps the previous
+              free-text fallback, so a fresh tenant with no masters — or a one-off
+              title — is still never blocked from issuing an offer. */}
+          <div>
+            <label className="label">Position</label>
+            <SearchableSelect
+              value={form.position} onChange={setV('position')}
+              options={positionOptions.map(o => o.label)}
+              loading={mastersLoading}
+              placeholder="Select or type a position…"
+              emptyText="No designations yet" allowCreate
+            />
+          </div>
+          <div>
+            <label className="label">Department</label>
+            <SearchableSelect
+              value={form.department} onChange={setV('department')}
+              options={departmentOptions.map(o => o.label)}
+              loading={mastersLoading}
+              placeholder="Select or type a department…"
+              emptyText="No departments yet" allowCreate
+            />
+          </div>
         </div>
 
         {/* Salary Engine: optionally base the offer on a Salary Structure. */}

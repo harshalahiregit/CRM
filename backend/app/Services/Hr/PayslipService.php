@@ -5,6 +5,7 @@ namespace App\Services\Hr;
 use App\Exceptions\BusinessException;
 use App\Models\Hr\HrEmployeeSalary;
 use App\Models\Hr\HrPayrollRecord;
+use App\Models\Hr\HrPayrollRecordLine;
 use App\Models\Hr\HrPayrollRun;
 use App\Models\Hr\HrPayslip;
 use App\Models\Tenant;
@@ -157,12 +158,35 @@ class PayslipService
     }
 
     /**
-     * Component breakdown captured from the salary structure at generation time.
-     * Falls back to aggregate-only lines if the structure is unavailable, so the
-     * payslip is always self-contained and frozen.
+     * Component breakdown for the payslip.
+     *
+     * Preferred source is the record's OWN frozen lines — they were captured when
+     * payroll ran and they include the statutory deductions (PF/ESIC/PT/TDS), which
+     * exist on no salary structure. Re-deriving from the structure is the fallback
+     * for records processed before those lines existed; a structure edited since
+     * would otherwise rewrite history on an already-issued payslip.
      */
     private function buildBreakdown(HrPayrollRecord $record, int $tenantId): array
     {
+        $frozen = HrPayrollRecordLine::where('tenant_id', $tenantId)
+            ->where('payroll_record_id', $record->id)
+            ->orderBy('sort_order')->get();
+
+        if ($frozen->isNotEmpty()) {
+            $earnings = $benefits = $deductions = [];
+            foreach ($frozen as $line) {
+                $row = ['name' => $line->name, 'amount' => (float) $line->amount];
+                match ($line->type) {
+                    'Earning'   => $earnings[]   = $row,
+                    'Benefit', 'Employer' => $benefits[] = $row,
+                    'Deduction' => $deductions[] = $row,
+                    default     => null,
+                };
+            }
+
+            return ['earnings' => $earnings, 'benefits' => $benefits, 'deductions' => $deductions];
+        }
+
         try {
             $salary = $record->employee_salary_id ? HrEmployeeSalary::find($record->employee_salary_id) : null;
             if ($salary && $salary->salary_structure_id) {

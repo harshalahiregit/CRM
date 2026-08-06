@@ -5,6 +5,7 @@ import { Search, Building2, Plus, X, LayoutGrid, List, Eye, Pencil } from 'lucid
 import { hrApi } from '@/services/hrApi'
 import { useMasterData, withInactive } from '@/modules/hr/useMasterData'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
+import Modal from '@/components/ui/Modal'
 
 const DEPT_COLORS = { Engineering:'#3b82f6', Sales:'#10b981', HR:'#7C3AED', Operations:'#f59e0b', Product:'#ec4899', Marketing:'#f97316', Finance:'#6366f1' }
 const STATUS_S = s => s==='Active'?{c:'#10b981',bg:'rgba(16,185,129,0.12)'}:s==='On Leave'?{c:'#f59e0b',bg:'rgba(245,158,11,0.12)'}:{c:'#f87171',bg:'rgba(239,68,68,0.1)'}
@@ -12,7 +13,12 @@ const initials = n => (n||'').split(' ').slice(0,2).map(x=>x[0]).join('').toUppe
 const fmtDate  = d => d ? new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) : '—'
 const deptColor = d => DEPT_COLORS[d]||'#7C3AED'
 
-const EMPTY_FORM = { name:'', email:'', phone:'', dob:'', gender:'', address:'', department:'', designation:'', reporting_manager_name:'', joining_date:'', probation_end_date:'', confirmation_date:'', status:'Active' }
+const EMPTY_FORM = { name:'', email:'', phone:'', dob:'', gender:'', address:'', department:'', designation:'', reporting_manager_name:'', work_state:'', joining_date:'', probation_end_date:'', confirmation_date:'', status:'Active',
+  // #36 — probation must be set when adding an employee, or the hire explicitly exempted.
+  probation_policy_id:'', skip_probation:false, probation_skip_reason:'',
+  // #29 — what this person is, and the comment's explicit "option to consider
+  // person in org. chart while entering in system".
+  worker_type:'employee', include_in_org_chart:true }
 
 // Avatar built from initials (no photo store) — consistent across card & list.
 const Avatar = ({ name, dept, size=44 }) => {
@@ -27,6 +33,19 @@ const ONB_S = (s) => ({
   In_Progress: { c:'#2563eb', bg:'rgba(37,99,235,0.12)' },
   Completed:   { c:'#059669', bg:'rgba(16,185,129,0.12)' },
 }[s] || { c:'var(--text-muted)', bg:'var(--bg-input)' })
+
+// Record origin. Only imported rows are badged — a null source means the record
+// predates import tracking, which is not the same as asserting it was manual.
+const SourceBadge = ({ source }) => {
+  if (source !== 'sangoetrack') return null
+  return (
+    <span className="text-[9.5px] font-bold px-1.5 py-0.5 rounded-md whitespace-nowrap"
+      title="Imported from SangoeTrack HRM"
+      style={{ background:'rgba(56,189,248,0.14)', color:'#38bdf8' }}>
+      via SangoeTrack
+    </span>
+  )
+}
 
 const OnboardingBadge = ({ status, progress, bar = false }) => {
   if (!status) return null
@@ -58,6 +77,10 @@ export default function Employees() {
   const deptOptions    = (f) => withInactive(deptNames,    f?.department)
   const desigOptions   = (f) => withInactive(desigNames,   f?.designation)
   const managerOptions = (f) => withInactive(managerNames, f?.reporting_manager_name)
+  // Work states come from the backend, not a hardcoded list, so the options here
+  // and the states Professional Tax rules are keyed by can never drift apart.
+  const [workStates, setWorkStates] = useState([])
+  const [probationPolicies, setProbationPolicies] = useState([])
   const [employees, setEmployees] = useState([])
   const [optionsList, setOptionsList] = useState([])   // unfiltered — powers filter dropdowns
   const [stats, setStats]         = useState({ total:0, active:0, on_leave:0, by_dept:[] })
@@ -109,6 +132,8 @@ export default function Employees() {
   useEffect(()=>{ fetchData() },[deptF, desigF, statusF, joinedFrom, search, page])
   useEffect(()=>{ setPage(1) },[deptF, desigF, statusF, joinedFrom, search])
   useEffect(()=>{ hrApi.employees.list({ per_page: 200 }).then(r => setOptionsList(Array.isArray(r) ? r : (r?.data ?? []))).catch(()=>{}) },[])
+  useEffect(()=>{ hrApi.employees.workStates().then(setWorkStates).catch(()=>{}) },[])
+  useEffect(()=>{ hrApi.probation.policies.list({ status:'Active' }).then(r=>setProbationPolicies(r?.data ?? r ?? [])).catch(()=>{}) },[])
 
   const departments = useMemo(()=>['All', ...new Set(optionsList.map(e=>e.department).filter(Boolean))], [optionsList])
   const designations = useMemo(()=>['All', ...new Set(optionsList.map(e=>e.designation).filter(Boolean))], [optionsList])
@@ -116,7 +141,12 @@ export default function Employees() {
   const openCreate = () => { setEditingId(null); setForm(EMPTY_FORM); setShowModal(true) }
   const openEdit = (emp) => {
     setEditingId(emp.id)
-    setForm({ ...EMPTY_FORM, ...Object.fromEntries(Object.keys(EMPTY_FORM).map(k=>[k, emp[k] ?? (k==='status'?'Active':'')])) })
+    // #29 — the two org-chart keys fall back to the EMPTY_FORM defaults rather
+    // than to '': an employee the list endpoint did not return them for would
+    // otherwise open with "Show on the org chart" unticked and save it off.
+    setForm({ ...EMPTY_FORM, ...Object.fromEntries(Object.keys(EMPTY_FORM).map(k=>[
+      k, emp[k] ?? (k === 'status' ? 'Active' : (k in { worker_type:1, include_in_org_chart:1 } ? EMPTY_FORM[k] : '')),
+    ])) })
     setShowModal(true)
   }
   const openProfile = (id) => navigate(`/app/hr/employees/${id}`)
@@ -243,7 +273,7 @@ export default function Employees() {
                   <tr key={emp.id} className="cursor-pointer" onClick={()=>openProfile(emp.id)} style={{ borderBottom:'1px solid var(--border)' }}
                     onMouseEnter={e=>e.currentTarget.style.background='rgba(124,58,237,0.04)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
                     <td className="px-3 py-2.5 font-mono font-bold whitespace-nowrap" style={{ color:'#a78bfa' }}>{emp.employee_code}</td>
-                    <td className="px-3 py-2.5"><div className="flex items-center gap-2.5"><Avatar name={emp.name} dept={emp.department} size={34}/><span className="font-semibold" style={{ color:'var(--text-h)' }}>{emp.name}</span></div></td>
+                    <td className="px-3 py-2.5"><div className="flex items-center gap-2.5"><Avatar name={emp.name} dept={emp.department} size={34}/><span className="font-semibold" style={{ color:'var(--text-h)' }}>{emp.name}</span><SourceBadge source={emp.source}/></div></td>
                     <td className="px-3 py-2.5"><span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:`${deptColor(emp.department)}18`, color:deptColor(emp.department) }}>{emp.department||'—'}</span></td>
                     <td className="px-3 py-2.5" style={{ color:'var(--text-muted)' }}>{emp.designation||'—'}</td>
                     <td className="px-3 py-2.5">
@@ -286,10 +316,12 @@ export default function Employees() {
         </div>
       </div>
 
-      {/* Add / Edit Employee Modal */}
-      {showModal && (
-        <div className="modal-backdrop" onClick={()=>setShowModal(false)}>
-          <div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()} style={{ maxHeight:'90vh', overflowY:'auto' }}>
+      {/* Add / Edit Employee Modal.
+          #21 — portaled to <body> via Modal. Inline, its fixed backdrop was
+          trapped by this page's permanent tiltIn transform and the popup opened
+          off-screen on a scrolled list. */}
+      <Modal open={showModal} onClose={()=>setShowModal(false)} className="max-w-lg" style={{ maxHeight:'90vh', overflowY:'auto' }}>
+          <div>
             <div className="flex items-center justify-between mb-5"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{editingId?'Edit Employee':'Add Employee'}</h2><button onClick={()=>setShowModal(false)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
             <div className="space-y-3">
               <div><label className="label">Full Name *</label><input className="input-3d text-sm" placeholder="Arjun Sharma" value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></div>
@@ -334,6 +366,63 @@ export default function Employees() {
                 <div><label className="label">Probation End Date</label><input type="date" className="input-3d text-sm" value={form.probation_end_date||''} onChange={e=>setForm({...form,probation_end_date:e.target.value})}/></div>
                 <div><label className="label">Confirmation Date</label><input type="date" className="input-3d text-sm" value={form.confirmation_date||''} onChange={e=>setForm({...form,confirmation_date:e.target.value})}/></div>
               </div>
+              {/* #36 — probation must be set when adding an employee. Shown only on
+                  create: an existing employee's probation is managed in its own module. */}
+              {!editingId && (
+                <div className="rounded-xl p-3" style={{ background:'var(--bg-input)', border:'1px solid var(--border)' }}>
+                  <p className="text-[11px] font-black mb-2" style={{ color:'var(--text-h)' }}>Probation *</p>
+                  {!form.skip_probation ? (
+                    <>
+                      <select className="input-3d text-sm" value={form.probation_policy_id||''} onChange={e=>setForm({...form,probation_policy_id:e.target.value})}>
+                        <option value="">Choose a probation policy…</option>
+                        {probationPolicies.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                      <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
+                        The probation record is created with the employee. If it cannot be created, the employee is not created either.
+                      </p>
+                    </>
+                  ) : (
+                    <input className="input-3d text-sm" placeholder="Why is this hire exempt from probation?"
+                      value={form.probation_skip_reason||''} onChange={e=>setForm({...form,probation_skip_reason:e.target.value})}/>
+                  )}
+                  <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer mt-2" style={{ color:'var(--text-muted)' }}>
+                    <input type="checkbox" checked={!!form.skip_probation} onChange={e=>setForm({...form,skip_probation:e.target.checked})}/>
+                    This hire is exempt from probation
+                  </label>
+                </div>
+              )}
+
+              {/* #29 — worker type and the org-chart opt-in, captured at entry so
+                  the chart is correct from the moment the person is added. */}
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="label">Worker Type</label>
+                  <select className="input-3d text-sm" value={form.worker_type||'employee'} onChange={e=>setForm({...form,worker_type:e.target.value})}>
+                    <option value="employee">Employee</option>
+                    <option value="consultant">Consultant</option>
+                    <option value="freelancer">Freelancer</option>
+                  </select>
+                </div>
+                <div className="flex items-end pb-2">
+                  <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer" style={{ color:'var(--text-muted)' }}>
+                    <input type="checkbox" checked={form.include_in_org_chart !== false}
+                      onChange={e=>setForm({...form,include_in_org_chart:e.target.checked})}/>
+                    Show on the org chart
+                  </label>
+                </div>
+              </div>
+
+              {/* Work State drives Professional Tax. A saved value that is not in the
+                  master list stays selectable rather than silently resetting to blank. */}
+              <div><label className="label">Work State</label>
+                <select className="input-3d text-sm" value={form.work_state||''} onChange={e=>setForm({...form,work_state:e.target.value})}>
+                  <option value="">Not set</option>
+                  {form.work_state && !workStates.some(s=>s.name===form.work_state) && <option value={form.work_state}>{form.work_state}</option>}
+                  {workStates.map(s=><option key={s.code} value={s.name}>{s.name}</option>)}
+                </select>
+                <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
+                  The state Professional Tax is levied under — not the office city. Leave blank to use the company default.
+                </p>
+              </div>
               {editingId && <div><label className="label">Status</label><select className="input-3d text-sm" value={form.status} onChange={e=>setForm({...form,status:e.target.value})}>{['Active','On Leave','Inactive'].map(s=><option key={s}>{s}</option>)}</select></div>}
               <div className="flex gap-3 pt-1">
                 <button onClick={()=>setShowModal(false)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold" style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}>Cancel</button>
@@ -341,8 +430,7 @@ export default function Employees() {
               </div>
             </div>
           </div>
-        </div>
-      )}
+      </Modal>
 
       {/* Pagination — server-driven; uses the paginator meta, no client slicing. */}
       {meta.last_page > 1 && (

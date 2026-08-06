@@ -158,6 +158,7 @@ export const purchaseApi = {
     list:      (params = {}) => api.get('/purchase/vendors', { params }).then(r => r.data),
     stats:     ()            => api.get('/purchase/vendors/stats').then(r => r.data),
     get:       (id)          => api.get(`/purchase/vendors/${id}`).then(r => r.data),
+    tasks:     (id)          => api.get(`/purchase/vendors/${id}/tasks`).then(r => r.data),
     create:    (data)        => api.post('/purchase/vendors', data).then(r => r.data),
     update:    (id, data)    => api.put(`/purchase/vendors/${id}`, data).then(r => r.data),
     setStatus: (id, status)  => api.patch(`/purchase/vendors/${id}/status`, { status }).then(r => r.data),
@@ -180,6 +181,8 @@ export const purchaseApi = {
 
   // ── Reports — read-only aggregations, all accept { period } ─────────────
   reports: {
+    // Filter vocabulary (items / currencies / years), all from real rows.
+    filters:      ()            => api.get('/purchase/reports/filters').then(r => r.data),
     itemCost:     (params = {}) => api.get('/purchase/reports/item-cost', { params }).then(r => r.data),
     poVoucher:    (params = {}) => api.get('/purchase/reports/po-voucher', { params }).then(r => r.data),
     orders:       (params = {}) => api.get('/purchase/reports/orders', { params }).then(r => r.data),

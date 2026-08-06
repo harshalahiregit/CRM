@@ -241,6 +241,7 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('inventory')->gr
     Route::put('/assets/{asset}',      [AssetController::class, 'update'])->where('asset', '[0-9]+');
     Route::delete('/assets/{asset}',   [AssetController::class, 'destroy'])->where('asset', '[0-9]+');
     Route::post('/assets/{asset}/assign', [AssetController::class, 'assign'])->where('asset', '[0-9]+');
+    Route::post('/assets/{asset}/lifecycle', [AssetController::class, 'lifecycle'])->where('asset', '[0-9]+');
     Route::patch('/assets/{asset}/status', [AssetController::class, 'setStatus'])->where('asset', '[0-9]+');
     Route::post('/assets/{asset}/events', [AssetController::class, 'addEvent'])->where('asset', '[0-9]+');
 

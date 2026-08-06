@@ -148,7 +148,14 @@ export const REL_TYPES = [
   { value: 'ticket',     label: 'Ticket' },
   { value: 'customer',   label: 'Customer' },
   { value: 'contract',   label: 'Contract' },
+  // Vendor links. TPV and Purchase are separate modules with separate tables, so
+  // they are two distinct relation types -- never a single merged "vendor".
+  { value: 'tpv_vendor',      label: 'TPV Vendor' },
+  { value: 'purchase_vendor', label: 'Purchase Vendor' },
 ]
+
+// Human label for a rel_type, used where the raw key would leak into the UI.
+export const REL_TYPE_LABEL = Object.fromEntries(REL_TYPES.map(r => [r.value, r.label]))
 
 /** Human label for a task's link, using the server-resolved rel_label. */
 export const relLabel = (t) =>

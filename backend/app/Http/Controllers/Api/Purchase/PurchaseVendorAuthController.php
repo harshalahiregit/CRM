@@ -99,7 +99,11 @@ class PurchaseVendorAuthController extends Controller
     private function vendor(Request $request): PurchaseVendor
     {
         $vendor = $request->user();
-        abort_unless($vendor instanceof PurchaseVendor, 401, 'Unauthenticated');
+        // #45 — 403, not 401: an authenticated identity of the WRONG TYPE is a
+        // permission failure, and a 401 here would clear the caller's session.
+        // EnsurePurchaseVendorPortalAccess already answers this case with 403;
+        // this is the same answer for the defence-in-depth check.
+        abort_unless($vendor instanceof PurchaseVendor, 403, 'This area is for Purchase vendor accounts only.');
 
         return $vendor;
     }

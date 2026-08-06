@@ -16,16 +16,53 @@ class HrEmployee extends Model
         'name','email','phone','dob','gender','address','department','designation',
         'department_id','designation_id','grade_id','job_role_id',
         'reporting_manager_name','reporting_manager_id',
-        'location','shift','official_email','project_id',
+        // `location` is the office/city (free text, unchanged). `work_state` is the
+        // statutory jurisdiction Professional Tax is levied under — the two are NOT
+        // interchangeable, which is why PT no longer reads `location`.
+        'location','work_state','shift','official_email','project_id',
+        // #43 — the individual's own skills, carried from the candidate on hire.
+        // Compared against the department/designation/grade/role skill profile.
+        'skills',
         'joining_date','probation_end_date','confirmation_date','status',
+        // #29 — what this person is, and whether they belong on the org chart.
+        // MUST be listed here: create() silently drops any key not whitelisted,
+        // so an omission would leave every new hire on the default.
+        'worker_type','include_in_org_chart',
+        // Record origin: 'sangoetrack' when created by the importer, 'manual' or
+        // null otherwise. Drives the "via SangoeTrack" badge on the employee list.
+        'source',
+        // SangoeTrack (track.sangoe.in) HRM link — populated by
+        // `sangoetrack:map-employees` or `sangoetrack:import-employees`.
+        'sangoetrack_user_id','sangoetrack_workspace_id','sangoetrack_synced_at',
     ];
 
+    /**
+     * #29 — the org chart shows the whole working organisation, not just people
+     * on payroll, so a consultant or freelancer is the same kind of node as an
+     * employee. The distinction is carried for labelling, not for exclusion.
+     */
+    public const WORKER_TYPES = ['employee', 'consultant', 'freelancer'];
+
     protected $casts = [
-        'joining_date'       => 'date',
-        'dob'                => 'date',
-        'probation_end_date' => 'date',
-        'confirmation_date'  => 'date',
+        'skills'               => 'array',
+        'include_in_org_chart' => 'boolean',
+        'joining_date'         => 'date',
+        'dob'                  => 'date',
+        'probation_end_date'   => 'date',
+        'confirmation_date'    => 'date',
+        'sangoetrack_user_id'  => 'integer',
+        'sangoetrack_synced_at' => 'datetime',
     ];
+
+    /**
+     * Store the canonical state name whatever spelling arrives ("mh", "MAHARASHTRA",
+     * "Orissa"). Unrecognised input — a city, a typo — is stored as NULL rather than
+     * kept as-is: a value that can never match a rule would only look configured.
+     */
+    public function setWorkStateAttribute($value): void
+    {
+        $this->attributes['work_state'] = \App\Support\Hr\WorkStates::normalize($value);
+    }
 
     public function candidate()
     {

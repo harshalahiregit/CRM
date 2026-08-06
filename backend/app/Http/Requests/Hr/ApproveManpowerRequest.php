@@ -17,7 +17,9 @@ class ApproveManpowerRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'remarks' => 'nullable|string|max:500',
+            // Mandatory, same as a rejection: an approval decision must carry a
+            // reason so the audit trail explains why, not just what.
+            'remarks' => 'required|string|max:500',
         ];
     }
 }

@@ -7,10 +7,12 @@ import { RICH_MODULES, RICH_FORMATS } from '@/lib/quillConfig'
 import {
   ArrowLeft, Users, Eye, CheckSquare, Square, MessageSquare, Play, StopCircle,
   Clock, Pencil, Trash2, ExternalLink, Send, Plus, Copy, RefreshCw, BookmarkPlus, ListPlus,
-  Lock, Globe, LifeBuoy, Info, Link2, X, EyeOff, FileText, Paperclip, Download, GitBranch,
+  Lock, Globe, LifeBuoy, Info, Link2, X, EyeOff, FileText, Paperclip, Download, GitBranch, Building2,
 } from 'lucide-react'
 import SubtaskTree from '../components/SubtaskTree'
 import RaiseTicketModal from '../../helpdesk/components/RaiseTicketModal'
+import { tpvApi } from '@/services/tpvApi'
+import { purchaseApi } from '@/services/purchaseApi'
 import { taskApi, TASK_STATUS, TASK_PRIORITY, TASK_ACCENT, relLabel, fmtDuration } from '@/services/taskApi'
 import Select from '@/components/ui/Select'
 import SearchPicker, { InputModal } from '@/components/ui/SearchPicker'
@@ -129,6 +131,9 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
   const togglePublic = useMutation(mut((next) => taskApi.update(id, { is_public: next })))
   const syncAssign  = useMutation(mut((ids) => taskApi.assignees(id, ids)))
   const syncFollow  = useMutation(mut((ids) => taskApi.followers(id, ids)))
+  // Linking a vendor is a plain task update: rel_type + rel_id. Clearing sends
+  // 'standalone' so the backend nulls rel_id rather than leaving a dangling link.
+  const setVendorLink = useMutation(mut((payload) => taskApi.update(id, payload)))
   const addItem     = useMutation(mut((desc) => taskApi.addChecklist(id, desc)))
   const toggleItem  = useMutation(mut((iid) => taskApi.toggleChecklist(iid)))
   // (Re)assign a single checklist line to a person, or clear it (userId = null).
@@ -167,6 +172,43 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
   // costs nothing here and there's no per-level fetching to orchestrate.
   const { data: subtree } = useQuery({ queryKey: ['task-tree', id], queryFn: () => taskApi.tree(id) })
 
+  // ── Vendor link ──────────────────────────────────────────────────────────
+  // These three MUST sit above the isLoading/isError returns below. They used to
+  // live further down, next to the markup that uses them, which meant the first
+  // render (task still loading) bailed out before reaching them and the next one
+  // ran three extra hooks — "Rendered more hooks than during the previous
+  // render". It only reproduced on a cold load: with the task already in the
+  // React Query cache, isLoading is false on the very first render and the count
+  // never changes, which is why a refresh appeared to fix it.
+  //
+  // None of them depend on `task`, so hoisting them changes no behaviour.
+  // `isVendorLinked` DOES read task.rel_type, so it stays below the guard.
+  //
+  // 'vendor-link', not 'vendor': master added an ASSIGN-a-vendor picker on the
+  // same key while this branch added the LINK-a-vendor one. Sharing a key opened
+  // both modals at once — they are different actions (assignee pivot vs the
+  // task's rel_type/rel_id), so they get different keys.
+  const vendorPickerOpen = picker === 'vendor-link'
+  // Lists load only while the picker is open, so opening a task never fetches
+  // two vendor rosters.
+  const { data: pvList = [], isLoading: pvLoading } = useQuery({
+    queryKey: ['task-link-purchase-vendors'], queryFn: () => purchaseApi.vendors.list(), enabled: vendorPickerOpen,
+  })
+  const { data: tvList = [], isLoading: tvLoading } = useQuery({
+    queryKey: ['task-link-tpv-vendors'], queryFn: () => tpvApi.vendors.list(), enabled: vendorPickerOpen,
+  })
+  const vendorPickerItems = useMemo(() => {
+    const rows = (x) => (Array.isArray(x) ? x : x?.data ?? [])
+    // SearchPicker keys on `id`, but the two modules have overlapping ids — a
+    // prefixed key keeps them distinct while realId/relType carry what to save.
+    return [
+      ...rows(tvList).map(v => ({ id: `tpv-${v.id}`, realId: v.id, relType: 'tpv_vendor',
+        label: v.company_name || v.name, sublabel: `TPV · ${v.vendor_code || v.status || ''}`.trim() })),
+      ...rows(pvList).map(v => ({ id: `pur-${v.id}`, realId: v.id, relType: 'purchase_vendor',
+        label: v.company_name || v.name, sublabel: `Purchase · ${v.purchase_vendor_code || v.status || ''}`.trim() })),
+    ]
+  }, [tvList, pvList])
+
   if (isLoading) return <div className="rounded-2xl animate-pulse" style={{ height: 200, background: 'var(--bg-card)' }} />
   if (isError) {
     return (
@@ -204,6 +246,11 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
 
   const isPublic = Boolean(task.is_public)
   const assigneeIds = assignees.map(a => a.user_id)
+
+  // ── Vendor link ──────────────────────────────────────────────────────────
+  // A task relates to ONE vendor via rel_type/rel_id. Lists load only while the
+  // picker is open so opening a task never fetches two vendor rosters.
+  const isVendorLinked = ['tpv_vendor', 'purchase_vendor'].includes(task.rel_type) && !!task.rel_id
   const followerIds = followers.map(f => f.user_id)
 
   const submitComment = () => {
@@ -617,6 +664,32 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
               <p className="text-[10px] mt-3" style={{ color: 'var(--text-muted)' }}>
                 Vendors &amp; third-party vendors see tasks assigned to them on their portal dashboard.
               </p>
+
+              {/* Vendor. Shown here beside the people because that is where you look
+                  for "who is this task for" -- but it is NOT an assignee list. A
+                  Purchase Vendor has no User account and can never be assigned, so
+                  the link is the task's rel_type/rel_id, and a task carries one. */}
+              <p className="text-[10px] font-bold uppercase tracking-wide mt-4 mb-1.5" style={{ color: 'var(--text-muted)' }}>
+                <Building2 size={10} className="inline mr-1" />Vendor
+              </p>
+              <div className="flex flex-wrap items-center gap-1.5 rounded-xl px-2 py-2"
+                style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', minHeight: 44 }}>
+                {isVendorLinked && (
+                  <span className="flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-lg"
+                    style={{ background: `color-mix(in srgb, ${TASK_ACCENT} 14%, transparent)`, color: TASK_ACCENT }}>
+                    {task.rel_label || `#${task.rel_id}`}
+                    <span style={{ opacity: 0.65 }}>· {task.rel_type === 'tpv_vendor' ? 'TPV' : 'Purchase'}</span>
+                    <button type="button" aria-label="Unlink vendor"
+                      onClick={() => setVendorLink.mutate({ rel_type: 'standalone', rel_id: null })} className="hover:opacity-60">
+                      <X size={12} />
+                    </button>
+                  </span>
+                )}
+                <button type="button" onClick={() => setPicker('vendor-link')} className="text-xs font-bold px-2 py-1 rounded-lg"
+                  style={{ border: '1px dashed var(--border)', color: 'var(--text-muted)' }}>
+                  + {isVendorLinked ? 'Change' : 'Link vendor'}
+                </button>
+              </div>
             </Card>
 
             <RemindersCard taskId={id} staff={staff} currentUserId={user?.id} />
@@ -660,6 +733,14 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
         items={staff.filter(s => !followerIds.includes(s.id)).map(s => ({ id: s.id, label: s.name, sublabel: s.role }))}
         title="Add follower" subtitle="Followers get updates but aren't doing the work."
         emptyText="Everyone is already following." accent={TASK_ACCENT}
+      />
+      <SearchPicker
+        open={picker === 'vendor-link'} onClose={() => setPicker(null)}
+        onPick={it => it && setVendorLink.mutate({ rel_type: it.relType, rel_id: it.realId })}
+        items={vendorPickerItems}
+        loading={pvLoading || tvLoading}
+        title="Link a vendor" subtitle="TPV and Purchase vendors. The task shows on that vendor's Tasks tab."
+        emptyText="No vendors found." accent={TASK_ACCENT} allowClear
       />
       <SearchPicker
         open={picker === 'template'} onClose={() => setPicker(null)}

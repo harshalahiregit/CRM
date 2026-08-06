@@ -208,11 +208,15 @@ class VendorPortalController extends Controller
     {
         $this->assertOwned($request, $onboarding, 'Onboarding');
 
-        $ua = UserAgentInfo::parse($request->userAgent());
+        // Optional — every existing caller posts an empty body, and must keep
+        // working unchanged.
+        $data = $request->validate(['comment' => 'nullable|string|max:5000']);
+        $ua   = UserAgentInfo::parse($request->userAgent());
 
         return response()->json(
             $this->onboardingService->acknowledgeKickoff($onboarding, $request->user(), [
                 'ip' => $request->ip(), 'browser' => $ua['browser'], 'device' => $ua['device'],
+                'comment' => $data['comment'] ?? null,
             ])
         );
     }
@@ -455,20 +459,6 @@ class VendorPortalController extends Controller
         $this->assertWorkerOwned($request, $worker);
 
         return response()->json($this->workerService->saveInduction($worker, $request->validated(), $request->user()));
-    }
-
-    public function issuePpe(IssueWorkerPpeRequest $request, TpvWorker $worker)
-    {
-        $this->assertWorkerOwned($request, $worker);
-
-        return response()->json($this->workerService->issuePpe($worker, $request->validated(), $request->user()));
-    }
-
-    public function removePpe(Request $request, TpvWorker $worker, TpvWorkerPpeIssue $ppeIssue)
-    {
-        $this->assertWorkerOwned($request, $worker);
-
-        return response()->json($this->workerService->removePpe($worker, $ppeIssue, $request->user()));
     }
 
     public function workerAttendance(Request $request, TpvWorker $worker)

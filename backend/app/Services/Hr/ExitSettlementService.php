@@ -9,6 +9,8 @@ use App\Models\Hr\HrExitSettlement;
 use App\Models\User;
 use App\Repositories\Hr\EmployeeSalaryRepository;
 use App\Repositories\Hr\SettlementRepository;
+use App\Services\Hr\Statutory\GratuityCalculator;
+use App\Services\Hr\Statutory\StatutoryRuleResolver;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 
@@ -35,7 +37,55 @@ class ExitSettlementService
         private SettlementRepository $repo,
         private EmployeeSalaryRepository $salaries,
         private SalaryStructureService $structures,
+        private GratuityCalculator $gratuity,
+        private StatutoryRuleResolver $statutoryRules,
     ) {
+    }
+
+    /**
+     * Gratuity payable on exit.
+     *
+     * The exit POLICY decides whether gratuity applies at all; the statutory rule
+     * decides the formula — days per year, the month divisor, the minimum service
+     * and the ceiling. Before this, the formula was hardcoded here as
+     * `15/26 * basic * floor(years)` with a bare `>= 5` gate and NO ceiling, which
+     * meant a long-serving senior employee could be settled above the statutory cap.
+     *
+     * The legacy formula is retained as a fallback for tenants who have not yet
+     * configured a Gratuity rule, so no existing settlement changes value on
+     * upgrade. It is flagged in the snapshot rather than applied quietly — a legal
+     * figure living in code is a defect, not a default.
+     */
+    private function gratuityFor($policy, float $basicMonthly, int $tenureMonths, int $tenantId, $asOf): array
+    {
+        if (! $policy || ! $policy->gratuity_applicable) {
+            return ['amount' => 0.0, 'source' => null, 'eligible_years' => 0,
+                    'reason' => 'The exit policy does not provide for gratuity'];
+        }
+
+        $config = $this->statutoryRules->resolve('gratuity', $tenantId, $asOf ? Carbon::parse($asOf) : null);
+
+        if ($config && ! empty($config['days_per_year']) && ! empty($config['month_days'])) {
+            $result = $this->gratuity->settlement($basicMonthly, $tenureMonths, $config);
+
+            return ['amount' => $result['amount'], 'source' => 'statutory_rule',
+                    'eligible_years' => $result['eligible_years'], 'reason' => $result['reason'],
+                    'formula' => "{$config['days_per_year']}/{$config['month_days']} days"
+                                 .(isset($config['max_amount']) ? ", capped at {$config['max_amount']}" : ', uncapped'),
+            ];
+        }
+
+        // Legacy fallback — identical to the pre-configuration behaviour.
+        $years = intdiv($tenureMonths, 12);
+        $amount = $years >= 5 ? round(15 / 26 * $basicMonthly * $years, 2) : 0.0;
+
+        return [
+            'amount' => $amount, 'source' => 'legacy_default', 'eligible_years' => $years,
+            'reason' => $years >= 5
+                ? 'Computed with the built-in legacy formula — configure a Gratuity statutory rule to control it'
+                : 'Service below the 5-year minimum (legacy default)',
+            'formula' => '15/26 days, uncapped (legacy)',
+        ];
     }
 
     public function queue(int $tenantId, array $f, ?User $actor = null): array
@@ -169,15 +219,16 @@ class ExitSettlementService
             $leaveEncashment = round($leaveDays * $perDayBasic, 2);
         }
 
-        // --- Gratuity (only if the policy enables it and tenure ≥ 5 years) ---
+        // --- Gratuity: policy decides WHETHER, the statutory rule decides HOW MUCH ---
         $tenureYears = 0.0;
-        $gratuity = 0.0;
+        $tenureMonths = 0;
         if ($employee?->joining_date && $lastWorking) {
-            $tenureYears = round(Carbon::parse($employee->joining_date)->floatDiffInYears($lastWorking), 1);
+            $joined = Carbon::parse($employee->joining_date);
+            $tenureYears  = round($joined->floatDiffInYears($lastWorking), 1);
+            $tenureMonths = (int) $joined->diffInMonths($lastWorking);
         }
-        if ($policy && $policy->gratuity_applicable && $tenureYears >= 5) {
-            $gratuity = round(15 / 26 * $basicMonthly * floor($tenureYears), 2);
-        }
+        $gratuityResult = $this->gratuityFor($policy, $basicMonthly, $tenureMonths, $tenantId, $lastWorking);
+        $gratuity = $gratuityResult['amount'];
 
         // --- Discretionary HR inputs (default 0, never negative) ---
         $num = fn ($k) => round(max(0.0, (float) ($inputs[$k] ?? 0)), 2);
@@ -202,6 +253,11 @@ class ExitSettlementService
                 'last_working_date' => optional($lastWorking)->toDateString(),
                 'notice_days'     => $exit?->notice_days,
                 'tenure_years'    => $tenureYears,
+                'tenure_months'   => $tenureMonths,
+                // How gratuity was arrived at, frozen with the settlement. `source`
+                // is 'statutory_rule' or 'legacy_default' — the latter is a prompt
+                // to configure the rule, not a silent success.
+                'gratuity_basis'  => $gratuityResult,
                 'leave_days'      => $leaveDays,
                 'policy_name'     => $policy?->name,
                 'policy_flags'    => [

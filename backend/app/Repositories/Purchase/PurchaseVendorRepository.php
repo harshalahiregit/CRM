@@ -3,6 +3,7 @@
 namespace App\Repositories\Purchase;
 
 use App\Models\Purchase\PurchaseVendor;
+use App\Support\Purchase\PurchaseRegistrationType as RegistrationType;
 use App\Repositories\BaseRepository;
 use App\Support\Purchase\PurchaseVendorStatus as Status;
 use Illuminate\Database\Eloquent\Collection;
@@ -57,6 +58,19 @@ class PurchaseVendorRepository extends BaseRepository
             'on_hold'  => $base()->where('status', Status::ON_HOLD)->count(),
             'rejected' => $base()->where('status', Status::REJECTED)->count(),
             'draft'    => $base()->where('status', Status::DRAFT)->count(),
+
+            // Registration type is the source of truth (the stored choice, never
+            // re-derived). vendor_type is only a fallback for rows written before
+            // it existed — counting on vendor_type alone double-counts the legacy
+            // 'Company' value and disagrees with what the vendor's own badge shows.
+            'permanent' => $base()->where(fn ($q) => $q
+                ->where('registration_type', RegistrationType::STANDARD)
+                ->orWhere(fn ($w) => $w->whereNull('registration_type')->where('vendor_type', '!=', 'temporary'))
+            )->count(),
+            'temporary' => $base()->where(fn ($q) => $q
+                ->where('registration_type', RegistrationType::TEMPORARY)
+                ->orWhere(fn ($w) => $w->whereNull('registration_type')->where('vendor_type', 'temporary'))
+            )->count(),
         ];
     }
 }

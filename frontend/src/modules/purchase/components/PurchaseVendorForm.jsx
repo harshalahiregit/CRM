@@ -21,6 +21,7 @@ export function validatePurchaseVendor(v) {
   if (!v.company_name?.trim()) return 'Company is required.'
   if (!v.category?.trim()) return 'Vendor Category is required.'
   if (!v.currency?.trim()) return 'Currency is required.'
+  if (!v.vendor_type?.trim()) return 'Vendor Type is required.'
   if (v.website && !/^(https?:\/\/)?([\w-]+\.)+[\w-]{2,}(\/\S*)?$/i.test(v.website)) return 'Website format looks invalid.'
   if (v.phone && !/^[0-9+\-()\s]{6,30}$/.test(v.phone)) return 'Phone format looks invalid.'
   if (v.gst_number && !/^[0-9A-Za-z]{1,20}$/.test(v.gst_number)) return 'GST number format looks invalid.'
@@ -109,8 +110,18 @@ export default function PurchaseVendorForm({ value, onChange, mode = 'create' })
         <Field label="Balance As Of">
           <input type="date" value={(v.balance_as_of || '').slice(0, 10)} onChange={set('balance_as_of')} style={inputStyle} />
         </Field>
-        <Field label="GST Number">
+        <Field label="GST No">
           <input value={v.gst_number || ''} onChange={set('gst_number')} placeholder="15-char GSTIN" style={inputStyle} />
+        </Field>
+        {/* Vendor Type drives the temporary access window, so it is an explicit
+            choice rather than a silent default the admin never sees. Same values
+            and labels as the TPV form, so the two modules stay consistent. */}
+        <Field label="Vendor Type *">
+          <select value={v.vendor_type || ''} onChange={set('vendor_type')} style={inputStyle}>
+            <option value="">Select…</option>
+            <option value="standard">Permanent</option>
+            <option value="temporary">Temporary</option>
+          </select>
         </Field>
         <Field label="Phone">
           <input value={v.phone || ''} onChange={set('phone')} placeholder="+91 …" style={inputStyle} />

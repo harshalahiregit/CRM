@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams, useParams } from 'react-router-dom'
 import {
   ArrowLeft, CalendarDays, Clock, MapPin, Users, Plus, Trash2,
-  AlertTriangle, ChevronRight, Laptop, Building2, CheckCircle2,
+  AlertTriangle, ChevronRight, Laptop, Building2, CheckCircle2, Send, Download,
 } from 'lucide-react'
+import { useAuth } from '@/context/AuthContext'
 import { kickoffApi } from '@/services/kickoffApi'
 import { meetingApi } from '@/services/meetingApi'
 import { tpvApi } from '@/services/tpvApi'
@@ -74,6 +75,7 @@ function ErrBanner({ msg }) {
  */
 export default function KickoffMeetingCreate() {
   const navigate = useNavigate()
+  const { user } = useAuth()
 
   // ── data sources ────────────────────────────────────────────────────────
   const [vendors, setVendors]   = useState([])
@@ -121,6 +123,86 @@ export default function KickoffMeetingCreate() {
   const [participants, setParticipants] = useState([])  // [{ id, name, role, organisation }]
   const [momItems,     setMomItems]     = useState([])  // [{ id, description, responsible, remarks, target_date }]
 
+  // ── edit mode ───────────────────────────────────────────────────────────
+  // /kickoff/:id/edit renders this same page. There is deliberately no second
+  // form: this is the only screen carrying participants, MOM items, meeting
+  // mode and the split venue fields, so a separate edit form would immediately
+  // drift from it.
+  const { id: editId } = useParams()
+  const isEdit = Boolean(editId)
+  const [loading, setLoading] = useState(isEdit)
+  // Set when the loaded meeting already has a join link, so saving an edit does
+  // not mint a new one and invalidate what the vendor was sent.
+  const [existingLink, setExistingLink] = useState(false)
+
+  // The PERSISTED status, as opposed to the unsaved is_completed toggle. Send
+  // MOM / Download PDF act on the server record, and the backend refuses to
+  // publish a meeting that is not actually Completed — so showing them off the
+  // local toggle would offer a button that is guaranteed to fail.
+  const [savedStatus, setSavedStatus] = useState(null)
+  const [canComplete, setCanComplete] = useState(true)
+  const [momBusy,     setMomBusy]     = useState(null)   // 'send' | 'pdf'
+  const [momNote,     setMomNote]     = useState(null)
+  // Both conditions matter. The saved status is what the SERVER will accept —
+  // publishForAck refuses anything that is not Completed, so offering the
+  // buttons off the unsaved toggle alone would guarantee a failed request. The
+  // toggle is what the USER currently intends, so switching it off hides them
+  // straight away rather than leaving live actions on a meeting being reopened.
+  const isSavedCompleted = savedStatus === 'Completed' && form.is_completed
+
+  useEffect(() => {
+    if (!isEdit) return
+    kickoffApi.get(editId)
+      .then(res => {
+        const m = res?.data ?? res
+        const at = m.scheduled_at ? new Date(m.scheduled_at) : null
+        const pad = n => String(n).padStart(2, '0')
+
+        setForm({
+          subject_id:       m.subject?.id ? String(m.subject.id) : '',
+          title:            m.title || '',
+          meeting_date:     at ? `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}` : '',
+          meeting_time:     at ? `${pad(at.getHours())}:${pad(at.getMinutes())}` : '09:00',
+          planned_date:     m.planned_date ? String(m.planned_date).slice(0, 10) : '',
+          duration_minutes: m.duration_minutes ?? 60,
+          mode:             m.mode || 'onsite',
+          // `location` is the city; `venue` is what the form calls location_detail.
+          location:         m.city || m.location || '',
+          location_detail:  m.venue || '',
+          agenda:           m.agenda || '',
+          is_completed:     m.status === 'Completed',
+          meeting_platform: m.meeting_platform || 'stub',
+        })
+
+        setParticipants((m.attendees || []).map(a => ({
+          id: a.id, name: a.name || '', role: a.role || '', organisation: a.organisation || '',
+        })))
+
+        setMomItems((m.mom_items || []).map(i => ({
+          id:          i.id,
+          description: i.description || '',
+          responsible: i.responsible_names || i.responsible?.name || '',
+          remarks:     i.remark || '',
+          target_date: i.target_date ? String(i.target_date).slice(0, 10) : '',
+        })))
+
+        setExistingLink(Boolean(m.meeting_link))
+        setSavedStatus(m.status || null)
+        // can_complete is computed server-side: false until scheduled_at passes.
+        setCanComplete(m.can_complete !== false)
+        if (m.subject?.id) loadContacts(m.subject.id)
+      })
+      .catch(() => setErr('Could not load this meeting.'))
+      .finally(() => setLoading(false))
+    // loadContacts is stable (useCallback with no deps that change here)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editId, isEdit])
+
+  // Tenant default meeting platform: prefills the picker, and an admin can
+  // point it at whatever they just chose.
+  const [defaultPlatform, setDefaultPlatform] = useState(null)
+  const [savingPlatform, setSavingPlatform]   = useState(false)
+
   const [saving, setSaving]           = useState(false)
   const [err,    setErr]              = useState(null)
   const [generatingLink, setGenLink]  = useState(false)  // post-save link generation
@@ -128,7 +210,10 @@ export default function KickoffMeetingCreate() {
   // ── Fetch tenant default platform preference on mount ────────────────────
   useEffect(() => {
     meetingApi.getDefaultPlatform().then(d => {
-      if (d?.platform) setForm(f => ({ ...f, meeting_platform: d.platform }))
+      if (d?.platform) {
+        setDefaultPlatform(d.platform)
+        setForm(f => ({ ...f, meeting_platform: d.platform }))
+      }
     }).catch(() => {})
   }, [])
 
@@ -164,6 +249,42 @@ export default function KickoffMeetingCreate() {
   }
 
   // ── MOM helpers ─────────────────────────────────────────────────────────
+  /**
+   * Send the minutes to the vendor for acknowledgement.
+   *
+   * Generates the PDF first when none exists — publishForAck refuses without
+   * one, and making the user press two buttons in a fixed order to achieve one
+   * outcome is a worse experience than doing the obvious thing here.
+   */
+  const sendMom = async () => {
+    setMomBusy('send'); setMomNote(null)
+    try {
+      const fresh = await kickoffApi.get(editId)
+      if (!((fresh?.data ?? fresh)?.mom_path)) await kickoffApi.generateMom(editId)
+      await kickoffApi.publish(editId)
+      setMomNote({ ok: true, msg: 'Minutes sent to the vendor. They have 48 hours to acknowledge.' })
+    } catch (e) {
+      setMomNote({ ok: false, msg: e?.response?.data?.message || 'Could not send the minutes.' })
+    } finally { setMomBusy(null) }
+  }
+
+  /** Same generate-then-fetch pattern the listing uses, so behaviour matches. */
+  const downloadMom = async () => {
+    setMomBusy('pdf'); setMomNote(null)
+    try {
+      const fresh = await kickoffApi.get(editId)
+      if (!((fresh?.data ?? fresh)?.mom_path)) await kickoffApi.generateMom(editId)
+      const blob = await kickoffApi.momBlob(editId)
+      const url  = URL.createObjectURL(blob)
+      const a    = document.createElement('a')
+      a.href = url; a.download = `MOM-${editId}.pdf`
+      document.body.appendChild(a); a.click(); a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 60000)
+    } catch (e) {
+      setMomNote({ ok: false, msg: e?.response?.data?.message || 'Could not generate the MOM PDF.' })
+    } finally { setMomBusy(null) }
+  }
+
   const addMom    = () => setMomItems(m => [...m, EMPTY_MOM()])
   const removeMom = (id) => setMomItems(m => m.filter(x => x.id !== id))
   const setMom    = (id, k, v) =>
@@ -199,11 +320,17 @@ export default function KickoffMeetingCreate() {
           .map(({ description, responsible, remarks, target_date }) =>
             ({ description, responsible, remarks, target_date: target_date || undefined })),
       }
-      const created = await kickoffApi.schedule(payload)
-      const newId = (created?.data ?? created)?.id
+      // Same payload either way — update() and schedule() accept identical shapes,
+      // so edit reuses the whole form and its validation unchanged.
+      const saved = isEdit
+        ? await kickoffApi.update(editId, payload)
+        : await kickoffApi.schedule(payload)
+      const newId = (saved?.data ?? saved)?.id ?? editId
 
-      // Auto-generate online meeting link immediately after save
-      if (newId && form.mode === 'online') {
+      // Auto-generate online meeting link immediately after save. On edit, only
+      // when there isn't one already — regenerating would invalidate a link the
+      // vendor has already been sent.
+      if (newId && form.mode === 'online' && !(isEdit && existingLink)) {
         setGenLink(true)
         try {
           await meetingApi.generateLink(newId, form.meeting_platform)
@@ -239,10 +366,10 @@ export default function KickoffMeetingCreate() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>
               <span style={{ cursor: 'pointer', color: '#a78bfa' }} onClick={() => navigate('/app/tpv/kickoff')}>Kickoff Meetings</span>
               <ChevronRight size={12} />
-              <span>Create New</span>
+              <span>{isEdit ? 'Edit' : 'Create New'}{loading ? ' · loading…' : ''}</span>
             </div>
             <h1 style={{ color: 'var(--text-h)', fontSize: 23, fontWeight: 900, margin: 0, letterSpacing: '-0.02em' }}>
-              New Kickoff Meeting
+              {isEdit ? `Edit Kickoff Meeting #${editId}` : 'New Kickoff Meeting'}
             </h1>
             <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: '4px 0 0' }}>
               Schedule a pre-onboarding meeting with a third-party vendor.
@@ -250,15 +377,23 @@ export default function KickoffMeetingCreate() {
           </div>
         </div>
 
-        {/* Meeting Completed toggle */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', borderRadius: 12, background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+        {/* Meeting Completed toggle + the actions it unlocks */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', borderRadius: 12, background: isSavedCompleted ? 'rgba(16,185,129,0.08)' : 'var(--bg-card)', border: `1px solid ${isSavedCompleted ? 'rgba(16,185,129,0.35)' : 'var(--border)'}` }}>
           <CheckCircle2 size={16} style={{ color: form.is_completed ? '#10b981' : 'var(--text-muted)' }} />
-          <span style={{ fontSize: 13, fontWeight: 600, color: form.is_completed ? '#10b981' : 'var(--text-muted)' }}>
-            Meeting Completed
-          </span>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: form.is_completed ? '#10b981' : 'var(--text-muted)' }}>
+              Meeting Completed
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+              {canComplete ? 'Toggle once the meeting has taken place' : 'Available once the scheduled time has passed'}
+            </div>
+          </div>
           <button
-            onClick={() => setForm(f => ({ ...f, is_completed: !f.is_completed }))}
+            disabled={!canComplete && !form.is_completed}
+            title={canComplete ? '' : 'This meeting is still in the future.'}
+            onClick={() => canComplete && setForm(f => ({ ...f, is_completed: !f.is_completed }))}
             style={{
+              opacity: (!canComplete && !form.is_completed) ? 0.45 : 1,
               width: 44, height: 24, borderRadius: 999, border: 'none', cursor: 'pointer', padding: 0,
               background: form.is_completed ? 'linear-gradient(135deg,#10b981,#059669)' : 'var(--bg-input)',
               position: 'relative', transition: 'background .2s ease', flexShrink: 0,
@@ -271,7 +406,34 @@ export default function KickoffMeetingCreate() {
               boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
             }} />
           </button>
+
+          {/* Only once the meeting is Completed ON THE SERVER. Both actions hit
+              the saved record, and publish is refused for any other status. */}
+          {isSavedCompleted && (
+            <div style={{ marginLeft: 'auto', display: 'inline-flex', gap: 8 }}>
+              <button onClick={sendMom} disabled={momBusy !== null}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 9,
+                  fontSize: 12.5, fontWeight: 700, cursor: momBusy ? 'not-allowed' : 'pointer', border: 'none', color: '#fff',
+                  background: 'linear-gradient(145deg,#f59e0b,#d97706)', opacity: momBusy ? 0.6 : 1 }}>
+                <Send size={13} /> {momBusy === 'send' ? 'Sending…' : 'Send MOM'}
+              </button>
+              <button onClick={downloadMom} disabled={momBusy !== null}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 9,
+                  fontSize: 12.5, fontWeight: 700, cursor: momBusy ? 'not-allowed' : 'pointer', border: 'none', color: '#fff',
+                  background: 'linear-gradient(145deg,#ef4444,#dc2626)', opacity: momBusy ? 0.6 : 1 }}>
+                <Download size={13} /> {momBusy === 'pdf' ? 'Preparing…' : 'Download PDF'}
+              </button>
+            </div>
+          )}
         </div>
+        {momNote && (
+          <div style={{ marginTop: 8, padding: '9px 14px', borderRadius: 10, fontSize: 12.5,
+            background: momNote.ok ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
+            border: `1px solid ${momNote.ok ? 'rgba(16,185,129,0.4)' : 'rgba(239,68,68,0.4)'}`,
+            color: momNote.ok ? '#10b981' : '#ef4444' }}>
+            {momNote.msg}
+          </div>
+        )}
       </div>
 
       <ErrBanner msg={err} />
@@ -424,6 +586,31 @@ export default function KickoffMeetingCreate() {
                     options={PLATFORM_OPTIONS}
                   />
                 </Field>
+
+                {/* Admins can make the current choice the tenant-wide default,
+                    which is what prefills this field on the next meeting. */}
+                {user?.role === 'admin' && (
+                  <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <button type="button" disabled={savingPlatform || form.meeting_platform === defaultPlatform}
+                      onClick={async () => {
+                        setSavingPlatform(true)
+                        try {
+                          await meetingApi.savePlatformSetting(form.meeting_platform)
+                          setDefaultPlatform(form.meeting_platform)
+                        } catch { /* leave the default as it was */ }
+                        finally { setSavingPlatform(false) }
+                      }}
+                      style={{
+                        padding: '6px 11px', borderRadius: 8, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
+                        background: 'transparent', border: '1px solid var(--border)',
+                        color: form.meeting_platform === defaultPlatform ? 'var(--text-muted)' : '#a78bfa',
+                        opacity: savingPlatform ? 0.6 : 1,
+                      }}>
+                      {form.meeting_platform === defaultPlatform ? 'This is the default' : 'Set as default'}
+                    </button>
+                    {savingPlatform && <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Saving…</span>}
+                  </div>
+                )}
                 <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8, padding: '10px 13px', borderRadius: 10, background: 'rgba(124,58,237,0.07)', border: '1px solid rgba(124,58,237,0.22)' }}>
                   <Laptop size={13} style={{ color: '#a78bfa', flexShrink: 0 }} />
                   <span style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.45 }}>

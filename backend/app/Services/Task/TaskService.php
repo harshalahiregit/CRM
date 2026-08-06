@@ -1382,8 +1382,14 @@ class TaskService
         $tickets = ($t = $ids('ticket'))
             ? Ticket::forTenant($tenantId)->whereIn('id', $t)->pluck('subject', 'id')
             : collect();
+        $tpvVendors = ($v = $ids('tpv_vendor')) && Schema::hasTable('vendors')
+            ? \App\Models\Vendor\Vendor::forTenant($tenantId)->whereIn('id', $v)->pluck('company_name', 'id')
+            : collect();
+        $purchaseVendors = ($pv = $ids('purchase_vendor')) && Schema::hasTable('purchase_vendors')
+            ? \App\Models\Purchase\PurchaseVendor::forTenant($tenantId)->whereIn('id', $pv)->pluck('company_name', 'id')
+            : collect();
 
-        return $tasks->map(function (Task $task) use ($tenantId, $projects, $tickets) {
+        return $tasks->map(function (Task $task) use ($tenantId, $projects, $tickets, $tpvVendors, $purchaseVendors) {
             if (! $task->rel_id) {
                 return $task;
             }
@@ -1392,6 +1398,8 @@ class TaskService
             [$label, $url] = match ($task->rel_type) {
                 'project' => [$projects[$id] ?? "Project #{$id}", "/app/projects/{$id}"],
                 'ticket'  => [$tickets[$id] ?? "Ticket #{$id}", "/app/helpdesk/tickets/{$id}"],
+                'tpv_vendor'      => [$tpvVendors[$id] ?? "TPV Vendor #{$id}", "/app/tpv/vendors/{$id}"],
+                'purchase_vendor' => [$purchaseVendors[$id] ?? "Purchase Vendor #{$id}", "/app/purchase/vendors/{$id}"],
                 default   => [null, null],
             };
 
@@ -1427,6 +1435,14 @@ class TaskService
                 : [null, null],
             'contract' => Schema::hasTable('sales_contracts')
                 ? [\App\Models\Sales\SalesContract::forTenant($tenantId)->whereKey($relId)->value('subject') ?? "Contract #{$relId}", "/app/sales/contracts/{$relId}"]
+                : [null, null],
+            // Vendor links. TPV and Purchase are separate modules with separate
+            // tables -- a task relates to one or the other, never a shared "vendor".
+            'tpv_vendor' => Schema::hasTable('vendors')
+                ? [\App\Models\Vendor\Vendor::forTenant($tenantId)->whereKey($relId)->value('company_name') ?? "TPV Vendor #{$relId}", "/app/tpv/vendors/{$relId}"]
+                : [null, null],
+            'purchase_vendor' => Schema::hasTable('purchase_vendors')
+                ? [\App\Models\Purchase\PurchaseVendor::forTenant($tenantId)->whereKey($relId)->value('company_name') ?? "Purchase Vendor #{$relId}", "/app/purchase/vendors/{$relId}"]
                 : [null, null],
             default => [null, null],
         };

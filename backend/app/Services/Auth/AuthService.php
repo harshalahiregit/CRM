@@ -225,7 +225,7 @@ class AuthService
             'designation'       => $data['position'] ?? null,
             'meta'              => [
                 'username'   => $data['username'],
-                'vat_number' => $data['vat_number'] ?? null,
+                'gst_number' => $data['gst_number'] ?? null,
                 'industry'   => $data['industry'] ?? null,
                 'city'       => $data['city'] ?? null,
                 'state'      => $data['state'] ?? null,
@@ -243,6 +243,9 @@ class AuthService
             'tenant_id'   => AgencyContext::tenantId(),
             'user_id'     => $user->id,
             'company_name'=> $data['username'] ?? $user->name,
+            // Store on the vendor's own column, not just in user meta --
+            // the vendor master is what listings, PDFs and search read.
+            'gst_number'  => $data['gst_number'] ?? null,
             'vendor_type' => $data['tpv_type'] === 'temporary' ? 'temporary' : 'standard',
             // The registration choice is stored verbatim, so it is never
             // re-derived from vendor_type / is_temporary later on.

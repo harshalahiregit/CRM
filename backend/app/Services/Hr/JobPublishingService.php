@@ -8,6 +8,7 @@ use App\Models\Hr\HrJobPosting;
 use App\Models\Hr\HrJobPublication;
 use App\Models\User;
 use App\Services\Hr\Publishing\JobChannel;
+use App\Services\Hr\Publishing\SyncableChannel;
 use App\Support\Hr\JobPostingStatus;
 use Illuminate\Support\Facades\Log;
 
@@ -29,6 +30,8 @@ class JobPublishingService
                 'key'        => $key,
                 'label'      => $c['label'] ?? ucfirst($key),
                 'integrated' => ! empty($c['class']),
+                // So the UI offers Sync only where the channel can actually answer.
+                'syncable'   => ! empty($c['class']) && is_subclass_of($c['class'], SyncableChannel::class),
             ])->values()->all();
     }
 
@@ -124,6 +127,91 @@ class JobPublishingService
 
         $job->recordAudit('Removed from '.$channel->label(), $user, null, ['channel' => $channel->key()]);
         Log::channel('hr')->info('Job removed from channel', ['job_posting_id' => $job->id, 'tenant_id' => $job->tenant_id, 'channel' => $channel->key()]);
+    }
+
+    /**
+     * Ask a channel what it currently thinks of a posting and reconcile the ledger.
+     *
+     * Reuses the same publication row publish() wrote — there is no second store
+     * of channel state. A sync only ever updates `status`, `external_url`,
+     * `last_synced_at`, `error_message` and `meta`; `external_ref` and
+     * `published_at` are what the original publish established and are left alone.
+     *
+     * A channel that cannot report status is refused rather than silently reported
+     * as fine, and a transport failure is recorded WITHOUT touching the status —
+     * "we could not reach them" is not "the job was removed".
+     */
+    public function sync(HrJobPosting $job, string $channelKey, User $user): HrJobPublication
+    {
+        $this->assertTenant($job, $user);
+        $this->authorize($user->canManageHrQueue(), 'You are not authorised to sync this job');
+
+        $channel = $this->resolve($channelKey);
+
+        if (! $channel instanceof SyncableChannel) {
+            throw new BusinessException($channel->label().' does not report posting status', 422);
+        }
+
+        $publication = HrJobPublication::where('job_posting_id', $job->id)
+            ->where('channel', $channel->key())
+            ->whereNotNull('external_ref')
+            ->latest('id')->first();
+
+        if (! $publication) {
+            throw new BusinessException('This job has never been published to '.$channel->label().', so there is nothing to sync', 422);
+        }
+
+        try {
+            $result = $channel->syncStatus($job, (string) $publication->external_ref);
+        } catch (\Throwable $e) {
+            // Record the attempt, leave the status alone. Downgrading a live job to
+            // "removed" because their API was briefly unreachable would be worse
+            // than knowing nothing.
+            $publication->update([
+                'last_synced_at' => now(),
+                'error_message'  => mb_substr($e->getMessage(), 0, 1000),
+            ]);
+            $job->recordAudit('Sync with '.$channel->label().' failed', $user, $e->getMessage(), ['channel' => $channel->key()]);
+            Log::channel('hr')->warning('Job channel sync failed', [
+                'job_posting_id' => $job->id, 'channel' => $channel->key(), 'error' => $e->getMessage(),
+            ]);
+            throw new BusinessException('Could not sync with '.$channel->label().': '.$e->getMessage(), 502);
+        }
+
+        $previous = $publication->status;
+        $status = $result['status'] ?? 'unknown';
+
+        // NOT array_filter: `error_message => null` is the point — a successful
+        // sync must CLEAR a previous failure, and filtering nulls would keep a
+        // stale error next to a healthy status forever.
+        $publication->update([
+            'status'         => $status,
+            'external_url'   => $result['external_url'] ?? $publication->external_url,
+            'last_synced_at' => now(),
+            'error_message'  => null,
+            'meta'           => array_merge((array) $publication->meta, ['last_sync' => $result['meta'] ?? []]),
+        ]);
+
+        // Only audit a CHANGE. A nightly sync over every live job would otherwise
+        // bury the real events under one "nothing happened" entry per job per day.
+        if ($previous !== $status) {
+            $job->recordAudit('Status on '.$channel->label().' changed', $user, null, [
+                'channel' => $channel->key(), 'from' => $previous, 'to' => $status,
+            ]);
+            Log::channel('hr')->info('Job channel status changed', [
+                'job_posting_id' => $job->id, 'channel' => $channel->key(), 'from' => $previous, 'to' => $status,
+            ]);
+        }
+
+        return $publication->fresh();
+    }
+
+    /** Which channels can report status — so the UI only offers Sync where it works. */
+    public function syncableChannels(): array
+    {
+        return collect(config('hr_publishing.channels', []))
+            ->filter(fn ($c) => ! empty($c['class']) && is_subclass_of($c['class'], SyncableChannel::class))
+            ->keys()->values()->all();
     }
 
     private function resolve(string $key): JobChannel

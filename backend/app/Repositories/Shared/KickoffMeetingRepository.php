@@ -43,7 +43,14 @@ class KickoffMeetingRepository extends BaseRepository
     public function findForTenant(int $id, int $tenantId): ?KickoffMeeting
     {
         return KickoffMeeting::forTenant($tenantId)
-            ->with(['creator:id,name', 'kickoffable', 'attendees.vendorContact:id,name,designation', 'auditLogs'])
+            ->with([
+                'creator:id,name', 'kickoffable',
+                'attendees.vendorContact:id,name,designation',
+                // Eager-loaded with its owner so the edit form can render the
+                // responsible-person name without an N+1 per MOM item.
+                'momItems.responsible:id,name,organisation',
+                'auditLogs',
+            ])
             ->find($id);
     }
 

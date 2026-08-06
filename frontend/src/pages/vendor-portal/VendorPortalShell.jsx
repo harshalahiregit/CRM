@@ -40,12 +40,11 @@ export default function VendorPortalShell() {
   // Derive page title from current route
   const pageTitles = {
     '/vendor-portal/dashboard': 'Dashboard',
-    '/vendor-portal/onboarding': 'Onboarding',
-    '/vendor-portal/documents': 'Documents',
-    '/vendor-portal/workforce': 'Workforce',
+    '/vendor-portal/registration': 'My Company',
+    '/vendor-portal/documents': 'My Documents',
+    '/vendor-portal/workforce': 'My Workforce',
     '/vendor-portal/workforce/dashboard': 'Workforce Dashboard',
-    '/vendor-portal/workforce/workers': 'Workers',
-    '/vendor-portal/workforce/gate-log': 'Gate Log',
+    '/vendor-portal/workforce/workers': 'My Workers',
     '/vendor-portal/workforce/attendance': 'Attendance',
     '/vendor-portal/workforce/strikes': 'Safety Strikes',
   }
@@ -53,17 +52,24 @@ export default function VendorPortalShell() {
     .find(([path]) => location.pathname.startsWith(path))?.[1] ?? 'Portal'
 
   // Workforce tab appears automatically once admin activates the vendor (same logic, unchanged)
+  // Operational modules only. Onboarding is an ADMIN workflow — the vendor supplies
+  // documents and sees a read-only status card on the dashboard, but approving,
+  // holding and progressing an onboarding belongs to the admin panel. Keeping it
+  // here mixed the two roles and made the portal read like an internal tool.
+  // "My …" throughout: the portal shows one company's data, and the labels should
+  // say so. Generic titles ("Workforce", "Vendor Onboarding") read like the admin
+  // screens these pages were built from and left vendors unsure whose data it was.
   const mainNavItems = [
-    { to: '/vendor-portal/dashboard',  label: 'Dashboard',   icon: LayoutDashboard },
-    { to: '/vendor-portal/onboarding', label: 'Onboarding',  icon: ClipboardList },
-    { to: '/vendor-portal/documents',  label: 'Documents',   icon: FileText },
+    { to: '/vendor-portal/dashboard',    label: 'Dashboard',       icon: LayoutDashboard },
+    { to: '/vendor-portal/registration', label: 'My Company',      icon: Building2 },
     ...(vendor?.status === 'Active'
-      ? [{ to: '/vendor-portal/workforce', label: 'Workforce', icon: HardHat }]
+      ? [{ to: '/vendor-portal/workforce', label: 'My Workforce',  icon: HardHat }]
       : []),
+    { to: '/vendor-portal/documents',    label: 'My Documents',    icon: FileText },
   ]
 
   const bottomNavItems = [
-    { to: '/vendor-portal/dashboard', label: 'Profile', icon: User, exact: false },
+    { to: '/vendor-portal/registration', label: 'My Company', icon: User, exact: false },
   ]
 
   // Get user initials for avatar

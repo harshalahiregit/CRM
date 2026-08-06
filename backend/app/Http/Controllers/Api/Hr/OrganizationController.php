@@ -61,6 +61,8 @@ class OrganizationController extends Controller
             'head_employee_id' => 'nullable|integer',
             'description'      => 'nullable|string',
             'is_active'        => 'boolean',
+            'skills'           => 'nullable|array',
+            'skills.*'         => 'string|max:60',
         ]);
 
         return response()->json($this->org->createDepartment($data, $this->tenant($request), $request->user()), 201);
@@ -75,6 +77,8 @@ class OrganizationController extends Controller
             'head_employee_id' => 'nullable|integer',
             'description'      => 'nullable|string',
             'is_active'        => 'boolean',
+            'skills'           => 'nullable|array',
+            'skills.*'         => 'string|max:60',
         ]);
 
         return response()->json($this->org->updateDepartment($id, $data, $this->tenant($request), $request->user()));
@@ -104,6 +108,8 @@ class OrganizationController extends Controller
             'grade_id'    => 'nullable|integer',
             'description' => 'nullable|string',
             'is_active'   => 'boolean',
+            'skills'      => 'nullable|array',
+            'skills.*'    => 'string|max:60',
         ]);
 
         return response()->json($this->org->createDesignation($data, $this->tenant($request), $request->user()), 201);
@@ -118,6 +124,8 @@ class OrganizationController extends Controller
             'grade_id'    => 'nullable|integer',
             'description' => 'nullable|string',
             'is_active'   => 'boolean',
+            'skills'      => 'nullable|array',
+            'skills.*'    => 'string|max:60',
         ]);
 
         return response()->json($this->org->updateDesignation($id, $data, $this->tenant($request), $request->user()));
@@ -147,6 +155,8 @@ class OrganizationController extends Controller
             'level'       => 'nullable|integer|min:1|max:100',
             'description' => 'nullable|string',
             'is_active'   => 'boolean',
+            'skills'      => 'nullable|array',
+            'skills.*'    => 'string|max:60',
         ]);
 
         return response()->json($this->org->createGrade($data, $this->tenant($request), $request->user()), 201);
@@ -161,6 +171,8 @@ class OrganizationController extends Controller
             'level'       => 'nullable|integer|min:1|max:100',
             'description' => 'nullable|string',
             'is_active'   => 'boolean',
+            'skills'      => 'nullable|array',
+            'skills.*'    => 'string|max:60',
         ]);
 
         return response()->json($this->org->updateGrade($id, $data, $this->tenant($request), $request->user()));
@@ -189,6 +201,8 @@ class OrganizationController extends Controller
             'code'        => 'nullable|string|max:40',
             'description' => 'nullable|string',
             'is_active'   => 'boolean',
+            'skills'      => 'nullable|array',
+            'skills.*'    => 'string|max:60',
         ]);
 
         return response()->json($this->org->createRole($data, $this->tenant($request), $request->user()), 201);
@@ -202,6 +216,8 @@ class OrganizationController extends Controller
             'code'        => 'nullable|string|max:40',
             'description' => 'nullable|string',
             'is_active'   => 'boolean',
+            'skills'      => 'nullable|array',
+            'skills.*'    => 'string|max:60',
         ]);
 
         return response()->json($this->org->updateRole($id, $data, $this->tenant($request), $request->user()));

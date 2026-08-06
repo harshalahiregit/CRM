@@ -79,10 +79,8 @@ class HrEmployeeOnboarding extends Model
         return $this->hasMany(HrEmployeeOnboardingFamily::class, 'onboarding_id')->orderBy('sort_order');
     }
 
-    public function assets()
-    {
-        return $this->hasMany(HrEmployeeOnboardingAsset::class, 'onboarding_id');
-    }
+    // Assets are Inventory records, not onboarding records. The list an
+    // onboarding shows comes from EmployeeOnboardingService::assetsFor().
 
     public function backgroundVerification()
     {

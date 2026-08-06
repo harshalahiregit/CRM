@@ -69,6 +69,7 @@ Route::middleware(['auth:sanctum', 'role:admin,staff,third_party_vendor,vendor']
     // Vendor contacts — the master contact list per vendor (reused across the
     // module). No hard delete: deactivation is a status change. Static segments
     // stay ahead of the {contact} wildcard.
+    Route::get('/vendors/{vendor}/tasks',                     [\App\Http\Controllers\Api\Vendor\VendorController::class, 'tasks']);
     Route::get('/vendors/{vendor}/contacts',                  [TpvContactController::class, 'index']);
     Route::post('/vendors/{vendor}/contacts',                 [TpvContactController::class, 'store']);
     Route::get('/vendors/{vendor}/contacts/{contact}',        [TpvContactController::class, 'show']);
@@ -88,9 +89,22 @@ Route::middleware(['auth:sanctum', 'role:admin,staff,third_party_vendor,vendor']
     Route::post('/documents/{document}/versions/{version}/restore',     [VendorDocumentController::class, 'restoreVersion']);
 
     // Workforce — 5-step registration (profile → medical → induction → PPE → badge).
+    // PPE — read straight from Inventory; issue/return write through it.
+    Route::get('/ppe',                                    [\App\Http\Controllers\Api\Tpv\PpeController::class, 'catalogue']);
+    Route::get('/ppe/summary',                            [\App\Http\Controllers\Api\Tpv\PpeController::class, 'summary']);
+    // PPE requirement matrix — role → required PPE. Admin-configurable.
+    Route::get('/ppe/requirements',                       [\App\Http\Controllers\Api\Tpv\PpeRequirementController::class, 'index']);
+    Route::post('/ppe/requirements',                      [\App\Http\Controllers\Api\Tpv\PpeRequirementController::class, 'store']);
+    Route::put('/ppe/requirements/{requirement}',         [\App\Http\Controllers\Api\Tpv\PpeRequirementController::class, 'update']);
+    Route::delete('/ppe/requirements/{requirement}',      [\App\Http\Controllers\Api\Tpv\PpeRequirementController::class, 'destroy']);
+    Route::get('/ppe/compliance',                         [\App\Http\Controllers\Api\Tpv\PpeRequirementController::class, 'summary']);
+    Route::get('/ppe/compliance/workers/{worker}',        [\App\Http\Controllers\Api\Tpv\PpeRequirementController::class, 'worker']);
+    Route::get('/ppe/item/{product}/holders',             [\App\Http\Controllers\Api\Tpv\PpeController::class, 'holders']);
+    Route::get('/ppe/item/{product}/image',               [\App\Http\Controllers\Api\Tpv\PpeController::class, 'image']);
+    Route::get('/ppe/workers/{worker}',                     [\App\Http\Controllers\Api\Tpv\PpeController::class, 'worker']);
+    Route::post('/ppe/workers/{worker}/issue',              [\App\Http\Controllers\Api\Tpv\PpeController::class, 'issue']);
+    Route::post('/ppe/issues/{issue}/return',             [\App\Http\Controllers\Api\Tpv\PpeController::class, 'returnIssue']);
     Route::get('/workers/stats',                          [TpvWorkerController::class, 'stats']);
-    Route::get('/workers/ppe-inventory',                  [TpvWorkerController::class, 'getPpeInventory']);
-    Route::post('/workers/ppe-stock',                     [TpvWorkerController::class, 'updatePpeStock']);
     Route::get('/workers',                                [TpvWorkerController::class, 'index']);
     Route::post('/workers',                               [TpvWorkerController::class, 'store']);
     Route::post('/workers/upload',                        [TpvWorkerController::class, 'uploadWorkers']);
@@ -104,9 +118,9 @@ Route::middleware(['auth:sanctum', 'role:admin,staff,third_party_vendor,vendor']
     Route::post('/workers/{worker}/mark-medical',         [TpvWorkerController::class, 'markMedical']);
     Route::post('/workers/{worker}/induction',            [TpvWorkerController::class, 'saveInduction']);
     Route::post('/workers/{worker}/mark-induction',       [TpvWorkerController::class, 'markInduction']);
-    Route::post('/workers/{worker}/ppe',                  [TpvWorkerController::class, 'issuePpe']);
+    // Issuing and returning PPE lives on the /ppe routes above, which move Inventory
+    // stock. This one only records a deliberate skip of the step.
     Route::post('/workers/{worker}/mark-ppe',             [TpvWorkerController::class, 'markPpe']);
-    Route::delete('/workers/{worker}/ppe/{ppeIssue}',     [TpvWorkerController::class, 'removePpe']);
     Route::post('/workers/{worker}/mark-card-status',     [TpvWorkerController::class, 'markCardStatus']);
     Route::post('/workers/{worker}/mark-punch',           [TpvWorkerController::class, 'markPunch']);
     Route::post('/workers/{worker}/decide',               [TpvWorkerController::class, 'decideWorker']);

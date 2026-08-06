@@ -10,13 +10,22 @@ use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Log;
 
+/**
+ * Attendance.
+ *
+ * A newly opened day takes its shift timing — and whether it is a weekly off —
+ * from the employee's shift assignment. An employee with no assignment keeps the
+ * pre-shift behaviour exactly: the 'General' preset, opened as Absent.
+ */
 class AttendanceService
 {
     /** Statuses that count as "present" for attendance-percentage purposes. */
     private const PRESENT_ISH = ['Present', 'Late', 'Half Day', 'Work From Home', 'Remote'];
 
-    public function __construct(private AttendanceRepository $attendanceRepository)
-    {
+    public function __construct(
+        private AttendanceRepository $attendanceRepository,
+        private ShiftService $shifts,
+    ) {
     }
 
     /* ─────────────── Listing & dashboard ─────────────── */
@@ -89,21 +98,85 @@ class AttendanceService
             throw new BusinessException('This employee is not eligible for attendance on '.$date.' (must be Active and already joined).', 422);
         }
 
-        $record = HrAttendance::firstOrNew([
-            'tenant_id'   => $employee->tenant_id,
-            'employee_id' => $employee->id,
-            'date'        => $date,
-        ]);
+        // Two-step lookup on purpose. The `date` cast serialises with a time
+        // component, so a row written as "2026-09-13 00:00:00" is not found by
+        // an equality match on "2026-09-13" unless the driver coerces it — MySQL
+        // does (DATE column), SQLite does not. A plain firstOrNew() therefore
+        // misses on SQLite and tries to INSERT a duplicate, which the
+        // (tenant_id, employee_id, date) unique index rejects.
+        // Equality first so MySQL still uses that index; whereDate() is the
+        // fallback that makes every driver agree.
+        $base = HrAttendance::where('tenant_id', $employee->tenant_id)
+            ->where('employee_id', $employee->id);
+
+        $record = (clone $base)->where('date', $date)->first()
+            ?? (clone $base)->whereDate('date', $date)->first()
+            ?? new HrAttendance([
+                'tenant_id'   => $employee->tenant_id,
+                'employee_id' => $employee->id,
+                'date'        => $date,
+            ]);
 
         if (! $record->exists) {
-            $record->status = 'Absent';
-            $this->applyShift($record, $shift ?: 'General');
+            // The assigned shift decides the timing and whether the day is a weekly
+            // off. An explicit $shift still wins — a manual entry or an external
+            // sync stating a shift is a deliberate override, not a guess.
+            $assigned = $shift ? null : $this->assignedShiftFor($employee, $date);
+
+            $record->status = ($assigned && $assigned['off']) ? 'Weekend' : 'Absent';
+
+            if ($assigned && $assigned['shift']) {
+                $this->applyAssignedShift($record, $assigned);
+            } else {
+                $this->applyShift($record, $shift ?: 'General');
+            }
             $record->save();
         } elseif ($shift) {
             $this->applyShift($record, $shift);
         }
 
         return $record;
+    }
+
+    /**
+     * The employee's assigned shift for a date, or null when they have none.
+     *
+     * Returns null rather than a default so ensureRecord() can tell "no shift
+     * assigned" (keep the pre-shift behaviour) apart from "assigned, and today is
+     * a working day" — the two need different handling.
+     *
+     * @return array{shift: mixed, off: bool, start: ?string, end: ?string, grace: int}|null
+     */
+    private function assignedShiftFor(HrEmployee $employee, string $date): ?array
+    {
+        $resolved = $this->shifts->isOffDay((int) $employee->id, (int) $employee->tenant_id, $date);
+
+        if ($resolved['source'] !== 'shift') {
+            return null;   // unassigned — nothing here applies
+        }
+
+        return [
+            'shift' => $resolved['shift'],
+            'off'   => (bool) $resolved['off'],
+            'start' => $resolved['timing']?->start_time,
+            'end'   => $resolved['timing']?->end_time,
+            'grace' => (int) ($resolved['shift']->grace_in_minutes ?? 0),
+        ];
+    }
+
+    /**
+     * Write the assigned shift's own name, timing and grace onto the record.
+     *
+     * Deliberately NOT routed through applyShift(): that maps a name onto the
+     * five hardcoded HrAttendance::SHIFTS presets, and a tenant-defined shift is
+     * not one of them. Its configured times are used verbatim.
+     */
+    private function applyAssignedShift(HrAttendance $record, array $assigned): void
+    {
+        $record->shift        = $assigned['shift']->name;
+        $record->shift_start  = $assigned['start'];
+        $record->shift_end    = $assigned['end'];
+        $record->grace_period = $assigned['grace'];
     }
 
     public function checkIn(HrAttendance $a, ?string $at = null): HrAttendance
@@ -156,6 +229,76 @@ class AttendanceService
         $record->recordAudit('Attendance Marked (Manual)', null, $data['remarks'] ?? null, ['status' => $record->status]);
 
         return $record->fresh('employee');
+    }
+
+    /**
+     * Upsert one day from an external attendance source (SangoeTrack).
+     *
+     * Exists because neither saveManual() nor correct() fits a sync:
+     *  - both audit as a human action, which is untrue and would bury the real
+     *    audit trail under one row per employee per day per run;
+     *  - saveManual() never derives the status, because applyStatusFromCheckIn()
+     *    is only reached via checkIn(). Feeding a punch through it would leave
+     *    every synced day sitting at the 'Absent' that ensureRecord() opens with.
+     *
+     * So this runs the same private helpers the manual paths use — applyShift via
+     * ensureRecord, fillEditable, applyStatusFromCheckIn, recompute — and adds
+     * nothing of its own. Status/hours/overtime stay defined in exactly one place.
+     *
+     * An explicit remote status (Leave, Holiday, Weekend…) wins; otherwise the
+     * CRM derives Present/Late from the punch against the shift and grace period.
+     *
+     * @param  array{date:string, check_in?:?string, check_out?:?string, status?:?string, shift?:?string, remarks?:?string}  $data
+     */
+    public function syncExternal(HrEmployee $employee, array $data, string $source = 'SangoeTrack'): HrAttendance
+    {
+        $record = $this->ensureRecord($employee, $data['date'], $data['shift'] ?? $employee->shift ?: null);
+
+        $before = $record->only(['check_in', 'check_out', 'status', 'working_hours', 'overtime_hours']);
+
+        $this->fillEditable($record, $data);
+
+        // Only auto-derive when the source did not state a status; the helper is
+        // itself a no-op for Leave/Holiday/Weekend, so this is belt and braces.
+        if (empty($data['status'])) {
+            $this->applyStatusFromCheckIn($record);
+        }
+
+        $this->recompute($record);
+
+        // A no-op day (already synced, nothing moved) must not touch the row or
+        // the audit log — daily re-runs over a whole month are the normal case.
+        $after = $record->only(['check_in', 'check_out', 'status', 'working_hours', 'overtime_hours']);
+        $dirty = $record->isDirty();
+
+        if (! $dirty && $this->sameSnapshot($before, $after)) {
+            return $record;
+        }
+
+        $record->save();
+        $record->recordAudit(
+            'Attendance Synced ('.$source.')',
+            null,
+            null,
+            ['status' => $record->status, 'source' => $source],
+            $source
+        );
+
+        return $record;
+    }
+
+    /** Loose comparison of two attendance snapshots (Carbon vs string safe). */
+    private function sameSnapshot(array $a, array $b): bool
+    {
+        foreach ($a as $k => $v) {
+            $left  = $v instanceof Carbon ? $v->toDateTimeString() : (string) $v;
+            $right = ($b[$k] ?? null) instanceof Carbon ? $b[$k]->toDateTimeString() : (string) ($b[$k] ?? null);
+            if ($left !== $right) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /** Correction to an existing record (audited with the changed fields). */

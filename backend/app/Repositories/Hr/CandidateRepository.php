@@ -4,6 +4,7 @@ namespace App\Repositories\Hr;
 
 use App\Models\Hr\HrCandidate;
 use App\Repositories\BaseRepository;
+use App\Support\Hr\HiringManagerFilter;
 
 class CandidateRepository extends BaseRepository
 {
@@ -17,11 +18,20 @@ class CandidateRepository extends BaseRepository
         if (! empty($filters['stage']) && $filters['stage'] !== 'All') {
             $query->where('stage', $filters['stage']);
         }
+        // #3 — a candidate inherits the hiring manager from the job they applied
+        // to. One hop: candidate → jobPosting → manpowerRequest.
+        HiringManagerFilter::apply($query, $filters['hiring_manager_id'] ?? null, 'jobPosting');
         if (! empty($filters['job_posting_id'])) {
             $query->where('job_posting_id', $filters['job_posting_id']);
         }
         if (! empty($filters['source']) && $filters['source'] !== 'All') {
             $query->where('source', $filters['source']);
+        }
+        // A candidate has no designation of its own — it inherits one from the job
+        // posting it applied to, so the filter reaches through that relation.
+        if (! empty($filters['designation_name'])) {
+            $designation = $filters['designation_name'];
+            $query->whereHas('jobPosting', fn ($q) => $q->where('title', $designation));
         }
         if (! empty($filters['search'])) {
             $search = $filters['search'];

@@ -67,16 +67,35 @@ class EmployeeOnboardingController extends Controller
         $this->assertCanManage($request);
         $tenantId = $request->user()->tenant_id;
 
-        $employees = HrEmployee::where('tenant_id', $tenantId)
-            ->whereDoesntHave('employeeOnboarding')
+        // Onboarding is meant to run off the candidate database, so the caller can
+        // ask for candidate-linked employees only (`source=candidate`, the UI's
+        // default). Employees created directly still appear under `source=all`,
+        // because refusing them outright would strand everyone hired before the
+        // candidate pipeline existed.
+        $source = $request->query('source', 'all');
+
+        // Base scope: everyone still awaiting an onboarding record.
+        $base = fn () => HrEmployee::where('tenant_id', $tenantId)
+            ->whereDoesntHave('employeeOnboarding');
+
+        $employees = $base()
+            ->when($source === 'candidate', fn ($q) => $q->whereNotNull('candidate_id'))
             ->when($request->filled('search'), fn ($q) => $q->where(fn ($w) => $w
                 ->where('name', 'like', '%'.$request->search.'%')
                 ->orWhere('employee_code', 'like', '%'.$request->search.'%')))
             ->orderByDesc('id')
             ->limit(50)
-            ->get(['id', 'name', 'employee_code', 'designation', 'department', 'joining_date']);
+            ->get(['id', 'name', 'employee_code', 'designation', 'department', 'joining_date', 'candidate_id']);
 
-        return $this->success($employees);
+        return $this->success([
+            'employees' => $employees,
+            // Counted over the FULL eligible set, not the filtered one — the toggle
+            // has to say how many are hidden, which the filtered list cannot know.
+            'counts'    => [
+                'from_candidate' => $base()->whereNotNull('candidate_id')->count(),
+                'direct_entry'   => $base()->whereNull('candidate_id')->count(),
+            ],
+        ]);
     }
 
     /* ── Create ── */
@@ -188,31 +207,13 @@ class EmployeeOnboardingController extends Controller
         ];
     }
 
-    /* ── Assets ── */
-    public function storeAsset(Request $request, HrEmployeeOnboarding $onboarding)
-    {
-        return $this->childWrite($request, $onboarding, 'saveAsset', $this->assetRules());
-    }
-
-    public function updateAsset(Request $request, HrEmployeeOnboarding $onboarding, int $id)
-    {
-        return $this->childWrite($request, $onboarding, 'saveAsset', $this->assetRules(), $id);
-    }
-
-    public function destroyAsset(Request $request, HrEmployeeOnboarding $onboarding, int $id)
-    {
-        return $this->childDelete($request, $onboarding, 'assets', $id);
-    }
-
-    private function assetRules(): array
-    {
-        return [
-            'asset_type' => 'required|string|max:120', 'asset_tag_serial' => 'nullable|string|max:120',
-            'issued_date' => 'nullable|date', 'condition' => 'nullable|string|max:60',
-            'returned_date' => 'nullable|date', 'status' => 'nullable|string|max:30', 'remarks' => 'nullable|string|max:500',
-        ];
-    }
-
+    /* ── Assets ──
+     |
+     | There is no asset CRUD here any more. Assets are Inventory records: they are
+     | assigned in Inventory, which advances this onboarding's IT & Asset Allocation
+     | stage through AdvanceOnboardingAssetStage. The onboarding payload's `assets`
+     | key is a read of the Inventory register for the employee.
+     */
     /* ── Tasks ── */
     public function updateTask(Request $request, HrEmployeeOnboarding $onboarding, HrEmployeeOnboardingTask $task)
     {

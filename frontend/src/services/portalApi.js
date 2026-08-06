@@ -58,7 +58,7 @@ export const portalApi = {
     submit:          (id, data={}) => api.post(`/portal/onboarding/${id}/submit`, data).then(r => r.data),
     // Step 1 — Kickoff PDF
     kickoffPdf:      (id)          => api.get(`/portal/onboarding/${id}/kickoff`, { responseType: 'blob' }).then(r => r.data),
-    acceptKickoff:   (id)          => api.post(`/portal/onboarding/${id}/kickoff/accept`).then(r => r.data),
+    acceptKickoff:   (id, comment) => api.post(`/portal/onboarding/${id}/kickoff/accept`, comment ? { comment } : {}).then(r => r.data),
     logKickoffEvent: (id, event)   => api.post(`/portal/onboarding/${id}/kickoff/log`, { event }).then(r => r.data),
     // Admin-only — vendors cannot create, approve or delete onboardings
     create:          ()   => Promise.reject(new Error('Not available in vendor portal')),
@@ -111,10 +111,6 @@ export const portalApi = {
     update:        (id, data)  => api.put(`/portal/workers/${id}`, data).then(r => r.data),
     saveMedical:   (id, data)  => api.post(`/portal/workers/${id}/medical`, data).then(r => r.data),
     saveInduction: (id, data)  => api.post(`/portal/workers/${id}/induction`, data).then(r => r.data),
-    issuePpe:      (id, data)  => api.post(`/portal/workers/${id}/ppe`, data).then(r => r.data),
-    markPpe:       (id, data)  => api.post(`/tpv/workers/${id}/mark-ppe`, data).then(r => r.data),
-    getPpeInventory: ()        => api.get('/tpv/workers/ppe-inventory').then(r => r.data),
-    updatePpeStock:  (data)    => api.post('/tpv/workers/ppe-stock', data).then(r => r.data),
     markPunch:       (id, punch_count, punch_reason) => api.post(`/tpv/workers/${id}/mark-punch`, { punch_count, punch_reason }).then(r => r.data),
     markCardStatus:  (id, card_status) => api.post(`/tpv/workers/${id}/mark-card-status`, { card_status }).then(r => r.data),
     uploadWorkers: (file, vendor_id = null) => {
@@ -177,6 +173,20 @@ export const portalApi = {
     return upload(`/portal/documents/${docId}/resubmit`, fd)
   },
   downloadDocument: (docId) => api.get(`/portal/documents/${docId}/download`, { responseType: 'blob' }).then(r => r.data),
+  // ── PPE — served from INVENTORY (single source of truth) ────────────
+  ppe: {
+    catalogue:   ()               => api.get('/portal/ppe').then(r => r.data),
+    summary:     ()               => api.get('/portal/ppe/summary').then(r => r.data),
+    forWorker:   (workerId)       => api.get(`/portal/ppe/workers/${workerId}`).then(r => r.data),
+    issue:       (workerId, data) => api.post(`/portal/ppe/workers/${workerId}/issue`, data).then(r => r.data),
+    returnIssue: (issueId, data)  => api.post(`/portal/ppe/issues/${issueId}/return`, data).then(r => r.data),
+    holders:     (productId)      => api.get(`/portal/ppe/item/${productId}/holders`).then(r => r.data),
+    // Read-only: a vendor sees what its own workers still need, but cannot edit rules.
+    workerCompliance: (workerId)  => api.get(`/portal/ppe/compliance/workers/${workerId}`).then(r => r.data),
+    // Private file: fetched as a blob so the bearer token is sent.
+    imageBlob:   (productId)      => api.get(`/portal/ppe/item/${productId}/image`, { responseType: 'blob' }).then(r => URL.createObjectURL(r.data)),
+  },
+
 }
 
 export default portalApi

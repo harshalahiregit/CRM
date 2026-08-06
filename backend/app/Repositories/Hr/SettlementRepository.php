@@ -10,7 +10,12 @@ use Illuminate\Database\Eloquent\Collection;
 class SettlementRepository
 {
     private const EAGER = [
-        'employee:id,name,employee_code,department,designation',
+        // `joining_date` drives the tenure gratuity is computed from. It was missing
+        // from this constrained list, so the attribute read back as NULL, tenure
+        // computed as 0 years, and EVERY settlement paid zero gratuity regardless of
+        // service or policy. Constrained eager loads silently return null for
+        // unlisted columns — add a column here before reading it in the service.
+        'employee:id,name,employee_code,department,designation,joining_date',
         'exitRequest:id,exit_type_id,exit_policy_id,status,last_working_date,notice_days',
         'exitRequest.exitType:id,name,code',
     ];

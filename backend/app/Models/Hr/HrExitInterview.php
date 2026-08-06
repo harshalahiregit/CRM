@@ -13,7 +13,9 @@ class HrExitInterview extends Model
     protected $table = 'hr_exit_interviews';
 
     protected $fillable = [
-        'tenant_id', 'employee_id',
+        // #44 — the template this interview was taken on. Null for interviews on
+        // the original fixed form, which stays a permanently valid state.
+        'tenant_id', 'employee_id', 'questionnaire_id',
         'organization_or_project', 'personal_mobile', 'personal_email', 'exit_date',
         'reason_for_leaving', 'return_circumstances', 'recognition_feedback',
         'policies_feedback', 'jd_changed_feedback', 'tools_resources_feedback',

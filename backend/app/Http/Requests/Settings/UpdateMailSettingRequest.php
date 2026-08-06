@@ -24,6 +24,8 @@ class UpdateMailSettingRequest extends FormRequest
             'from_email' => 'nullable|email|max:255',
             'reply_to'   => 'nullable|email|max:255',
             'enabled'    => 'nullable|boolean',
+            // Off = accept a self-signed / mismatched mail-server certificate.
+            'verify_peer' => 'nullable|boolean',
         ];
     }
 }

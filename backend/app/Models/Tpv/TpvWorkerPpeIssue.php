@@ -17,12 +17,23 @@ class TpvWorkerPpeIssue extends Model
     protected $fillable = [
         'tenant_id','tpv_worker_id','issued_by','inventory_item_id',
         'item','qty','size','issued_date','notes',
+        // Return lifecycle. Quantities still live in Inventory — these only record
+        // how much of THIS issue has come back and in what condition.
+        'status','returned_qty','returned_at','returned_by','return_notes',
     ];
 
     protected $casts = [
-        'qty'         => 'integer',
-        'issued_date' => 'date',
+        'qty'          => 'integer',
+        'issued_date'  => 'date',
+        'returned_qty' => 'decimal:3',
+        'returned_at'  => 'datetime',
     ];
+
+    /** The Inventory product this issue drew from — the single source of stock. */
+    public function product()
+    {
+        return $this->belongsTo(\App\Models\Inventory\Product::class, 'inventory_item_id');
+    }
 
     protected $appends = ['item_label'];
 

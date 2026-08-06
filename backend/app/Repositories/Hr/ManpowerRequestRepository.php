@@ -5,6 +5,7 @@ namespace App\Repositories\Hr;
 use App\Models\Hr\HrManpowerRequest;
 use App\Models\User;
 use App\Repositories\BaseRepository;
+use App\Support\Hr\HiringManagerFilter;
 use App\Support\Hr\ManpowerRequestStatus as Status;
 
 class ManpowerRequestRepository extends BaseRepository
@@ -32,6 +33,17 @@ class ManpowerRequestRepository extends BaseRepository
         }
         if (! empty($filters['department']) && $filters['department'] !== 'All') {
             $query->where('department', $filters['department']);
+        }
+        // #3 — "Filter option in every listing. Ex. HIRING MANAGER".
+        // Left below the hiring-manager scope above on purpose: a hiring manager
+        // filtering the list is still confined to their own requests, so this
+        // narrows their view rather than widening it. `null` path = this model
+        // owns the column.
+        HiringManagerFilter::apply($query, $filters['hiring_manager_id'] ?? null, null);
+        // Job Title is drawn from the designation master, so a designation filter
+        // matches the stored position_title.
+        if (! empty($filters['designation_name'])) {
+            $query->where('position_title', $filters['designation_name']);
         }
 
         return $query->latest()->get();

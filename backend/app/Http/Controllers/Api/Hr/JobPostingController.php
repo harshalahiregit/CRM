@@ -53,10 +53,24 @@ class JobPostingController extends Controller
         return response()->json(['message' => 'Removed from channel']);
     }
 
+    /**
+     * POST /api/hr/jobs/{jobPosting}/sync/{channel}
+     *
+     * #13 — ask the channel what it currently thinks of the posting and reconcile
+     * the publication ledger. Refused for channels that cannot report status.
+     */
+    public function syncChannel(Request $request, HrJobPosting $jobPosting, string $channel)
+    {
+        return response()->json($this->jobPublishingService->sync($jobPosting, $channel, $request->user()));
+    }
+
     /* GET /api/hr/jobs */
     public function index(Request $request)
     {
-        return response()->json($this->jobPostingService->list($request->user(), $request->only('status')));
+        $filters = $request->only(['status', 'designation', 'designation_id', 'hiring_manager_id']);
+        $filters['designation_name'] = \App\Support\Hr\DesignationFilter::resolve($filters, $request->user()->tenant_id);
+
+        return response()->json($this->jobPostingService->list($request->user(), $filters));
     }
 
     /* GET /api/hr/jobs/stats */

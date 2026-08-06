@@ -6,8 +6,10 @@ import {
   Trash2, FileText, Eye, History, StickyNote, FolderOpen, Activity as ActivityIcon, LayoutGrid,
   Send, UserCircle2, CalendarDays, IndianRupee, Briefcase, Hash, Loader2,
   GitBranch, ChevronRight, ChevronDown, CalendarPlus, Rocket, Building2, ExternalLink, Bell, MessageSquare, RefreshCw,
+  Sparkles,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+import WorkflowProgress from '@/components/ui/WorkflowProgress'
 import CandidateInterviewWorkspace from '@/modules/hr/components/CandidateInterviewWorkspace'
 import GenerateOfferDrawer from '@/modules/hr/components/GenerateOfferDrawer'
 import AuditTimeline from '@/components/ui/AuditTimeline'
@@ -92,6 +94,16 @@ const stageTriad = (badges) => {
   return { previous: badges[i - 1]?.label || null, current: badges[i].label, next: badges[i + 1]?.label || null }
 }
 
+// #15 — the API returns raw column names in `auto_filled`; the toast has to say
+// what a recruiter calls them, not what the database does.
+const FIELD_LABELS = (f) => ({
+  current_department:      'Department',
+  current_designation:     'Designation',
+  current_company:         'Present Company',
+  referred_by_name:        'Reference',
+  professional_references: 'References',
+}[f] || f)
+
 export default function CandidateProfile() {
   const { isDark } = useTheme()
   const navigate   = useNavigate()
@@ -123,6 +135,7 @@ export default function CandidateProfile() {
   const [resumeProgress, setResumeProgress]   = useState(0)
   const [dragOver, setDragOver]               = useState(false)
   const [showPreview, setShowPreview]         = useState(false)
+  const [extracting, setExtracting]           = useState(false)   // #15
   const fileInputRef = useRef(null)
 
   const user      = currentUser()
@@ -295,11 +308,33 @@ export default function CandidateProfile() {
       clearInterval(ticker); setResumeProgress(100)
       setCandidate(prev => ({...prev, resume_path: result.resume_path}))
       showToast(`Resume uploaded — ${result.filename} (${result.size_kb} KB)`)
+      // #15 — the upload may have auto-filled Dept / Designation / Present Co. /
+      // Reference. Name the fields rather than silently changing the record, and
+      // reload so the panels below show the new values instead of stale blanks.
+      if (result.auto_filled?.length) {
+        loadCandidate()
+        showToast(`Auto-filled from resume: ${result.auto_filled.map(FIELD_LABELS).join(', ')}`)
+      }
       setTimeout(() => setResumeProgress(0), 1000)
     } catch (e) {
       clearInterval(ticker); showToast(e.response?.data?.message || 'Upload failed','error'); setResumeProgress(0)
     } finally { setResumeUploading(false) }
-  }, [candidate])
+  }, [candidate, loadCandidate])
+
+  // #15 — for resumes already on disk from before auto-fetch existed, or after a
+  // recruiter clears a field and wants the CV's value back.
+  const handleResumeExtract = async () => {
+    if (!candidate?.id || candidate.id === 'demo') return
+    setExtracting(true)
+    try {
+      const res = await hrApi.candidates.extractResume(candidate.id)
+      if (res.auto_filled?.length) loadCandidate()
+      showToast(res.auto_filled?.length
+        ? `Auto-filled from resume: ${res.auto_filled.map(FIELD_LABELS).join(', ')}`
+        : res.message, res.auto_filled?.length ? 'success' : 'error')
+    } catch (e) { showToast(e.response?.data?.message || 'Could not read the resume','error') }
+    finally { setExtracting(false) }
+  }
 
   const handleResumeDelete = async () => {
     if (!candidate?.id || candidate.id === 'demo') return
@@ -375,6 +410,11 @@ export default function CandidateProfile() {
 
   return (
     <div className="space-y-5 animate-[tiltIn_0.35s_ease_forwards]">
+      {/* #14 — where this hire has reached, and what comes next. */}
+      <div className="card-3d" style={{ padding:'14px 16px' }}>
+        <WorkflowProgress kind="candidate" record={c} />
+      </div>
+
       {toast && <div className="fixed top-5 right-5 z-[9999] px-5 py-3 rounded-2xl text-sm font-semibold text-white shadow-2xl" style={{ background:toast.type==='success'?'linear-gradient(135deg,#10b981,#059669)':'linear-gradient(135deg,#f87171,#ef4444)' }}>{toast.msg}</div>}
 
       {/* Workspace navigation (SPK-1): breadcrumb · prev/next candidate · single Back */}
@@ -591,6 +631,41 @@ export default function CandidateProfile() {
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* #15 — Present employment + who referred them. These are the fields the
+                resume auto-fetch and the LinkedIn parse both populate; without this
+                panel the values were stored and never shown. Rendered whenever any
+                one of them is known, with blanks called out so a recruiter can see
+                what is still missing rather than what simply isn't displayed. */}
+            {(c.current_company || c.current_designation || c.current_department || c.referred_by_name) && (
+              <div className="card-3d" style={{ padding:'20px' }}>
+                <h3 className="font-bold text-sm mb-4 flex items-center gap-2" style={{ color:'var(--text-h)' }}>
+                  <Building2 size={14} style={{ color:'#a78bfa' }}/> Present Employment &amp; Reference
+                </h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+                  {[
+                    ['Present Company', c.current_company],
+                    ['Designation',     c.current_designation],
+                    ['Department',      c.current_department],
+                    ['Reference',       c.referred_by_name],
+                  ].map(([k, v]) => (
+                    <div key={k} className="px-3 py-2 rounded-xl" style={{ background:'var(--bg-input)' }}>
+                      <p className="text-[10px] font-bold uppercase" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>{k}</p>
+                      <p className="text-sm font-semibold mt-0.5" style={{ color: v ? 'var(--text-h)' : 'var(--text-muted)', wordBreak:'break-word' }}>{v || '—'}</p>
+                    </div>
+                  ))}
+                </div>
+                {/* An internal referral is a link to a real employee; an external one
+                    is just a name. Saying which is which matters for referral payouts. */}
+                {c.referred_by_name && (
+                  <p className="text-[10px] mt-2.5" style={{ color:'var(--text-muted)' }}>
+                    {c.referred_by_id
+                      ? 'Referred by an employee of this organisation.'
+                      : 'External reference — not matched to an employee record.'}
+                  </p>
+                )}
               </div>
             )}
 
@@ -882,6 +957,16 @@ export default function CandidateProfile() {
               <div className="flex items-center gap-2">
                 <a href={`${hrApi.candidates.resumeUrl(c.id)}?token=${localStorage.getItem('crm_token')}`} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl" style={{ background:'rgba(124,58,237,0.1)', color:'#a78bfa', border:'1px solid rgba(124,58,237,0.2)' }}><Download size={11}/> Download</a>
                 <button onClick={()=>setShowPreview(p=>!p)} className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl" style={{ background:'rgba(59,130,246,0.1)', color:'#60a5fa', border:'1px solid rgba(59,130,246,0.2)' }}><Eye size={11}/> {showPreview?'Hide':'Preview'}</button>
+                {/* #15 — auto-fetch Dept / Designation / Present Co. / Reference.
+                    Runs on upload already; this is for resumes already on file. */}
+                {canManage && (
+                  <button onClick={handleResumeExtract} disabled={extracting}
+                    title="Read Department, Designation, Present Company and Reference from this resume. Fields you have already filled in are never overwritten."
+                    className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl"
+                    style={{ background:'rgba(16,185,129,0.1)', color:'#34d399', border:'1px solid rgba(16,185,129,0.2)', opacity: extracting ? 0.6 : 1 }}>
+                    <Sparkles size={11}/> {extracting ? 'Reading…' : 'Auto-fill Details'}
+                  </button>
+                )}
                 {canManage && <button onClick={handleResumeDelete} className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl" style={{ background:'rgba(239,68,68,0.08)', color:'#f87171', border:'1px solid rgba(239,68,68,0.15)' }}><Trash2 size={11}/></button>}
               </div>
             )}

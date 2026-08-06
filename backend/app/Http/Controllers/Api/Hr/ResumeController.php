@@ -59,6 +59,22 @@ class ResumeController extends Controller
         return response()->json(['success' => true, 'message' => 'Resume deleted.']);
     }
 
+    /**
+     * POST /api/hr/candidates/{candidate}/resume/extract
+     *
+     * #15 — re-read the stored resume and fill any blank Department / Designation /
+     * Present Company / Reference. Never overwrites a value already present.
+     */
+    public function extract(Request $request, HrCandidate $candidate)
+    {
+        $this->assertTenant($request, $candidate);
+        $this->assertCanManage($request);
+
+        return response()->json(
+            $this->resumeService->extract($candidate, $request->user()->tenant_id)
+        );
+    }
+
     private function assertTenant(Request $request, HrCandidate $candidate): void
     {
         abort_unless((int) $candidate->tenant_id === (int) $request->user()->tenant_id, 404, 'Candidate not found');

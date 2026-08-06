@@ -11,9 +11,11 @@ import { useAuth } from '@/context/AuthContext'
 import AuditTimeline from '@/components/ui/AuditTimeline'
 import {
   WORKER_STATUS, workerStatusCfg, vendorStatusCfg, fitnessCfg, FITNESS, BAND_COLORS,
-  PPE_ITEMS, PPE_MANDATORY, ppeLabel, SKILL_CATEGORIES, GENDERS,
+  SKILL_CATEGORIES, GENDERS,
   isWorkerEditable, canApproveTpv, canManageTpv, fmtDate,
 } from '../constants'
+import PpeCatalogue from '@/components/vendor/PpeCatalogue'
+import WorkerPpePanel from '@/components/vendor/WorkerPpePanel'
 import {
   KIT3D_STYLE, labelStyle, inputStyle, Overlay, ModalFooter, InfoBox,
   Field, TextInput, SelectInput, StatusBadge as StatusPill,
@@ -104,6 +106,11 @@ export default function TpvWorkerWizard() {
           <ul style={{ margin: 0, paddingLeft: 28, color: '#f59e0b', fontSize: 12, lineHeight: 1.7 }}>
             {progress.blockers.map((b, i) => <li key={i}>{b}</li>)}
           </ul>
+
+          {/* The role's full PPE checklist, so "what's missing" is never a guess. */}
+          {progress.ppe_compliance?.configured && !progress.ppe_compliance.compliant && (
+            <PpeChecklist c={progress.ppe_compliance} />
+          )}
         </div>
       )}
       {worker.status === WORKER_STATUS.TERMINATED && worker.remarks && (
@@ -116,7 +123,7 @@ export default function TpvWorkerWizard() {
         {active === 1 && <StepProfile worker={worker} editable={editable} onSaved={refresh} onNext={() => setActive(2)} api={api} />}
         {active === 2 && <Step2Medical worker={worker} editable={editable} onSaved={refresh} onNext={() => setActive(3)} api={api} />}
         {active === 3 && <StepInduction worker={worker} editable={editable} onSaved={refresh} onNext={() => setActive(4)} api={api} />}
-        {active === 4 && <StepPpe worker={worker} editable={editable} manage={manage} onChanged={refresh} onNext={() => setActive(5)} api={api} />}
+        {active === 4 && <StepPpe worker={worker} editable={editable} manage={manage} onChanged={refresh} onNext={() => setActive(5)} api={api} compliance={progress.ppe_compliance} />}
         {active === 5 && <StepBadge worker={worker} progress={progress} admin={admin} onChanged={refresh} api={api} />}
       </div>
 
@@ -1433,255 +1440,118 @@ function WizardGroupInductionModal({ workers, onClose, onCompleted, api }) {
   )
 }
 
-// ── Step 4 — PPE Verification & Stock Grid ───────────────────────────────────
-function StepPpe({ worker, editable, manage, onChanged, onNext, api }) {
-  const ppeStatus = worker.ppe_status || 0 // 0: Pending, 1: Completed, 2: Skipped
-  const issuedItems = worker.ppe_items ? worker.ppe_items.split(',').map(s => s.trim()) : []
+/**
+ * The role's PPE requirements, ticked off against what the worker holds.
+ *
+ * Requirements come from the PPE matrix (role → items), and "issued" comes from
+ * Inventory. Nothing here decides anything — it renders the same verdict the API
+ * refuses the badge on.
+ */
+function PpeChecklist({ c }) {
+  return (
+    <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid rgba(245,158,11,0.25)' }}>
+      <p style={{ margin: '0 0 8px', fontSize: 10.5, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+        Missing Mandatory PPE{c.role ? ` · ${c.role}` : ''}
+      </p>
+      <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'grid', gap: 5 }}>
+        {c.items.map(i => (
+          <li key={i.product_id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, fontWeight: 600, color: i.issued ? '#0ca30c' : '#d03b3b' }}>
+            <span style={{ fontWeight: 900 }}>{i.issued ? '✓' : '✗'}</span>
+            <span style={{ color: 'var(--text-h)' }}>{i.name}</span>
+            {i.qty > 1 && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>×{i.qty}</span>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
 
-  const [inventory, setInventory] = useState([
-    { commodity_id: 1, name: 'Safety Helmet', available_qty: 150, min_qty: 10, total_issued: 45, icon: '⛑️' },
-    { commodity_id: 2, name: 'Safety Shoes', available_qty: 200, min_qty: 15, total_issued: 60, icon: '👟' },
-    { commodity_id: 3, name: 'High-Visibility Reflective Vest', available_qty: 300, min_qty: 20, total_issued: 90, icon: '🦺' },
-    { commodity_id: 4, name: 'Full Body Safety Harness', available_qty: 85, min_qty: 5, total_issued: 12, icon: '🪝' },
-    { commodity_id: 5, name: 'Cut-Resistant Gloves', available_qty: 400, min_qty: 25, total_issued: 110, icon: '🧤' },
-    { commodity_id: 6, name: 'Safety Goggles', available_qty: 250, min_qty: 15, total_issued: 30, icon: '🥽' },
-    { commodity_id: 7, name: 'Ear Plugs / Defenders', available_qty: 500, min_qty: 30, total_issued: 150, icon: '🔇' },
-  ])
-
-  const [selectedItemIds, setSelectedItemIds] = useState([])
-  const [quantities, setQuantities] = useState({})
-  const [remarks, setRemarks] = useState(worker.ppe_remarks || '')
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved]   = useState(false)
-
-  // Restock Modal state
-  const [restockModalOpen, setRestockModalOpen] = useState(false)
-  const [restockItem, setRestockItem] = useState(null)
-  const [newStockQty, setNewStockQty] = useState('')
-
-  // Fetch live inventory from backend
-  useEffect(() => {
-    api.workers.getPpeInventory()
-      .then(res => {
-        if (res?.items && Array.isArray(res.items)) {
-          const PPE_ICONS = {
-            'Helmet': '⛑️', 'Safety Helmet': '⛑️',
-            'Gloves': '🧤', 'Cut-Resistant Gloves': '🧤',
-            'Safety Shoes': '👟',
-            'Vest': '🦺', 'High-Visibility Reflective Vest': '🦺',
-            'Goggles': '🥽', 'Safety Goggles': '🥽',
-            'Harness': '🪝', 'Full Body Safety Harness': '🪝',
-            'Ear Plugs': '🔇', 'Ear Plugs / Defenders': '🔇',
-          }
-          setInventory(res.items.map(item => ({
-            ...item,
-            icon: PPE_ICONS[item.name] || '🛡️'
-          })))
-        }
-      })
-      .catch(() => {})
-  }, [api])
-
-  const toggleItem = (id) => {
-    const item = inventory.find(i => i.commodity_id === id)
-    if (!item || item.available_qty <= 0) return
-    setSelectedItemIds(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id])
-    if (!quantities[id]) setQuantities(q => ({ ...q, [id]: 1 }))
-  }
-
-  const issuePpe = async () => {
-    if (selectedItemIds.length === 0) {
-      alert('Please select at least one PPE item to issue.')
-      return
-    }
-
-    const selectedItems = inventory.filter(i => selectedItemIds.includes(i.commodity_id))
-    const itemNames = selectedItems.map(i => i.name)
-
-    setSaving(true)
-    try {
-      await api.workers.markPpe(worker.id, {
-        ppe_status: 1,
-        ppe_items: itemNames,
-        ppe_remarks: remarks,
-        quantities,
-      })
-      setSaved(true)
-      onChanged()
-      if (onNext) onNext()
-    } catch (e) {
-      alert(e?.response?.data?.message || 'Failed to issue PPE')
-    } finally {
-      setSaving(false)
-    }
-  }
+// ── Step 4 — PPE, issued from Inventory ──────────────────────────────────────
+/**
+ * The catalogue and the worker's kit, both read from Inventory.
+ *
+ * This step used to carry its own hardcoded stock grid (Safety Helmet: 150, …)
+ * and a "Restock" button that wrote to a cache — a second PPE inventory. Both are
+ * gone: issuing goes through the PPE service, which checks and decrements real
+ * Inventory stock and writes a movement, and the step's own status is derived
+ * from the issues rather than set by hand.
+ */
+function StepPpe({ worker, editable, manage, onChanged, onNext, api, compliance }) {
+  const ppeStatus = Number(worker.ppe_status || 0) // 0 pending · 1 issued · 2 skipped
+  const [skipping, setSkipping] = useState(false)
 
   const skipPpe = async () => {
     if (!window.confirm('Skip PPE verification for this worker?')) return
-    setSaving(true)
+    setSkipping(true)
     try {
-      await api.workers.markPpe(worker.id, { ppe_status: 'skip' })
+      await api.workers.skipPpe(worker.id)
       onChanged()
       if (onNext) onNext()
     } catch (e) {
       alert(e?.response?.data?.message || 'Failed to skip PPE')
     } finally {
-      setSaving(false)
+      setSkipping(false)
     }
   }
 
-  const handleRestockSave = async () => {
-    if (!restockItem || newStockQty === '') return
-    try {
-      const qty = parseInt(newStockQty)
-      if (isNaN(qty) || qty < 0) { alert('Invalid quantity'); return }
-      await api.workers.updatePpeStock({ commodity_id: restockItem.commodity_id, available_qty: qty })
-      setInventory(p => p.map(i => i.commodity_id === restockItem.commodity_id ? { ...i, available_qty: qty } : i))
-      setRestockModalOpen(false)
-      setRestockItem(null)
-    } catch (e) {
-      alert('Failed to update stock')
-    }
-  }
-
-  const getStockPill = (qty, min, item) => {
-    if (qty <= 0)   return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}>
-        <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 20, background: '#fee2e2', color: '#991b1b' }}>Out of Stock</span>
-        {manage && (
-          <button type="button" onClick={(e) => { e.stopPropagation(); setRestockItem(item); setNewStockQty(item.available_qty); setRestockModalOpen(true) }} style={{ padding: '2px 8px', borderRadius: 6, background: '#7c3aed', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 9.5, fontWeight: 800 }}>
-            + Restock
-          </button>
-        )}
-      </div>
-    )
-    if (qty <= 2)   return <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 20, background: '#ffedd5', color: '#9a3412' }}>⚠ {qty} Remaining</span>
-    if (qty <= min) return <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 20, background: '#fef9c3', color: '#92400e' }}>Low Stock ({qty})</span>
-    return                 <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 20, background: '#dcfce7', color: '#166534' }}>In Stock</span>
-  }
+  const banner = ppeStatus === 1
+    ? { bg: '#dcfce7', border: '#86efac', pill: '#10b981', label: '✓ PPE Issued' }
+    : ppeStatus === 2
+      ? { bg: '#fef3c7', border: '#fde68a', pill: '#f59e0b', label: '⏩ PPE Skipped' }
+      : { bg: '#e0f2fe', border: '#7dd3fc', pill: '#0284c7', label: 'Pending PPE' }
 
   return (
-    <Panel title="Step 4 — Statutory PPE Kit Verification" sub="1:1 Reference CodeIgniter Implementation — Stock inventory check, PPE kit issuance & issuance record"
+    <Panel title="Step 4 — Statutory PPE Kit" sub="Stock, issuance and returns, read from and written to Inventory"
       actions={
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {editable && (
-            <>
-              <button type="button" onClick={skipPpe} style={{ padding: '8px 14px', borderRadius: 8, background: '#f59e0b', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 800, fontSize: 12 }}>
-                ⏩ Skip PPE
-              </button>
-              <SaveBtn onClick={issuePpe} saving={saving} saved={saved} label="Issue PPE Kit" />
-            </>
+          {/* Skipping the step is an admin decision, not a stock action. */}
+          {editable && manage && ppeStatus !== 1 && (
+            <button type="button" onClick={skipPpe} disabled={skipping}
+              style={{ padding: '8px 14px', borderRadius: 8, background: '#f59e0b', color: '#fff', border: 'none', cursor: skipping ? 'wait' : 'pointer', fontWeight: 800, fontSize: 12 }}>
+              ⏩ Skip PPE
+            </button>
           )}
           <button type="button" onClick={onNext}
             style={{
               padding: '8px 16px', borderRadius: 9, border: 'none',
               background: 'linear-gradient(135deg, #0284c7, #0369a1)', color: '#fff',
               fontWeight: 800, fontSize: 12.5, cursor: 'pointer',
-              display: 'inline-flex', alignItems: 'center', gap: 6
+              display: 'inline-flex', alignItems: 'center', gap: 6,
             }}>
             Continue → Step 5 (Card Status)
           </button>
         </div>
       }>
 
-      {/* Worker Banner */}
-      <div style={{ padding: '12px 18px', borderRadius: 10, background: ppeStatus === 1 ? '#dcfce7' : ppeStatus === 2 ? '#fef3c7' : '#e0f2fe', border: `1.5px solid ${ppeStatus === 1 ? '#86efac' : ppeStatus === 2 ? '#fde68a' : '#7dd3fc'}`, marginBottom: 18, display: 'flex', flexWrap: 'wrap', gap: 18, alignItems: 'center' }}>
-        <div><span style={{ fontSize: 9, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Worker</span><br /><strong style={{ color: 'var(--text-h)', fontSize: 13 }}>{worker.name} ({worker.worker_code || 'W-0001'})</strong></div>
+      <div style={{ padding: '12px 18px', borderRadius: 10, background: banner.bg, border: `1.5px solid ${banner.border}`, marginBottom: 18, display: 'flex', flexWrap: 'wrap', gap: 18, alignItems: 'center' }}>
+        <div><span style={{ fontSize: 9, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Worker</span><br /><strong style={{ color: 'var(--text-h)', fontSize: 13 }}>{worker.name} ({worker.worker_code || '—'})</strong></div>
         <div><span style={{ fontSize: 9, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Designation</span><br /><strong style={{ color: 'var(--text-h)', fontSize: 13 }}>{worker.designation || 'Worker'}</strong></div>
         <div style={{ marginLeft: 'auto' }}>
-          <span style={{ fontSize: 11, fontWeight: 800, padding: '4px 12px', borderRadius: 20, background: ppeStatus === 1 ? '#10b981' : ppeStatus === 2 ? '#f59e0b' : '#0284c7', color: '#fff' }}>
-            {ppeStatus === 1 ? '✓ PPE Issued' : ppeStatus === 2 ? '⏩ PPE Skipped' : 'Pending PPE'}
-          </span>
+          <span style={{ fontSize: 11, fontWeight: 800, padding: '4px 12px', borderRadius: 20, background: banner.pill, color: '#fff' }}>{banner.label}</span>
         </div>
       </div>
 
-      {/* Previously Issued Badges */}
-      {issuedItems.length > 0 && (
-        <div style={{ padding: 12, borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)', marginBottom: 18 }}>
-          <strong style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>Currently Issued Items:</strong>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {issuedItems.map(item => (
-              <span key={item} style={{ padding: '4px 10px', borderRadius: 6, background: '#0284c7', color: '#fff', fontSize: 11.5, fontWeight: 800 }}>
-                ✓ {item}
-              </span>
-            ))}
-          </div>
+      {/* What the worker's ROLE requires, ticked off against what they hold. */}
+      {compliance?.configured && (
+        <div style={{ padding: '12px 16px', borderRadius: 10, marginBottom: 18, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+          <PpeChecklist c={compliance} />
         </div>
       )}
 
-      {/* PPE Inventory Selection Grid */}
-      <h3 style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-h)', marginBottom: 12 }}>🛡️ Select PPE Items to Issue</h3>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 18 }}>
-        {inventory.map(item => {
-          const selected = selectedItemIds.includes(item.commodity_id)
-          const isOut = item.available_qty <= 0
-          return (
-            <div key={item.commodity_id} onClick={() => !isOut && toggleItem(item.commodity_id)}
-              style={{
-                padding: 14, borderRadius: 12, border: selected ? '2px solid #10b981' : '2px solid var(--border)',
-                background: selected ? '#f0fff4' : isOut ? 'var(--bg-input)' : 'var(--bg-card)',
-                cursor: isOut ? 'not-allowed' : 'pointer', textAlign: 'center', position: 'relative', opacity: isOut ? 0.6 : 1,
-                boxShadow: selected ? '0 0 0 3px rgba(16,185,129,0.2)' : 'none', transition: 'all 0.2s'
-              }}>
-              {selected && <span style={{ position: 'absolute', top: 6, right: 8, fontSize: 14, color: '#10b981', fontWeight: 900 }}>✔</span>}
-              <div style={{ fontSize: 32, marginBottom: 4 }}>{item.icon}</div>
-              <strong style={{ fontSize: 12.5, color: 'var(--text-h)', display: 'block', marginBottom: 4 }}>{item.name}</strong>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Stock: <strong>{item.available_qty}</strong></div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>Issued: <strong>{item.total_issued}</strong></div>
-              {getStockPill(item.available_qty, item.min_qty, item)}
-            </div>
-          )
-        })}
+      {/* What this worker is holding, with partial return / lost / damaged. */}
+      <div style={{ marginBottom: 22 }}>
+        <WorkerPpePanel workerId={worker.id} api={api} accent="#f59e0b" canManage={editable} onChanged={onChanged} />
       </div>
 
-      {/* Quantity Inputs Section */}
-      {selectedItemIds.length > 0 && (
-        <div style={{ padding: 14, borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)', marginBottom: 18 }}>
-          <strong style={{ fontSize: 12.5, color: '#0284c7', display: 'block', marginBottom: 10 }}>📦 Quantity per Selected Item</strong>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }}>
-            {inventory.filter(i => selectedItemIds.includes(i.commodity_id)).map(item => (
-              <div key={item.commodity_id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 12, fontWeight: 700, minWidth: 160, color: 'var(--text-h)' }}>{item.icon} {item.name}</span>
-                <input type="number" min="1" max={item.available_qty} value={quantities[item.commodity_id] || 1} onChange={e => setQuantities({ ...quantities, [item.commodity_id]: Math.max(1, parseInt(e.target.value) || 1) })} style={{ ...inputStyle, width: 80, padding: 6, textAlign: 'center' }} />
-                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Max: {item.available_qty}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Remarks */}
-      <Field label="Remarks (optional)">
-        <TextInput value={remarks} onChange={e => setRemarks(e.target.value)} placeholder="Any notes on kit condition, sizing, etc." />
-      </Field>
-
-      {/* Bottom Action Bar */}
-      <div style={{ marginTop: 24, paddingTop: 16, borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-        <button type="button" onClick={issuePpe} disabled={saving}
-          style={{
-            padding: '10px 20px', borderRadius: 10, border: 'none',
-            background: 'linear-gradient(135deg, #0284c7, #0369a1)', color: '#fff',
-            fontWeight: 800, fontSize: 13, cursor: 'pointer',
-            display: 'inline-flex', alignItems: 'center', gap: 6
-          }}>
-          Save &amp; Continue → Step 5 (Card Status)
-        </button>
-      </div>
-
-      {restockModalOpen && restockItem && (
-        <Overlay onClose={() => setRestockModalOpen(false)} width={420}>
-          <h3 style={{ fontSize: 16, fontWeight: 800, margin: '0 0 10px', color: 'var(--text-h)' }}>
-            📦 Restock PPE Item: {restockItem.icon} {restockItem.name}
-          </h3>
-          <p style={{ fontSize: 12.5, color: 'var(--text-muted)', marginBottom: 14 }}>
-            Update available inventory stock quantity for this item.
-          </p>
-          <Field label="New Available Quantity *">
-            <TextInput type="number" min="0" value={newStockQty} onChange={e => setNewStockQty(e.target.value)} placeholder="e.g. 50" />
-          </Field>
-          <ModalFooter onClose={() => setRestockModalOpen(false)} onConfirm={handleRestockSave} confirmLabel="Update Stock Quantity" />
-        </Overlay>
-      )}
+      {/* Live Inventory stock — issuing from here moves it. */}
+      <h3 style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-h)', margin: '0 0 12px' }}>Issue from Inventory</h3>
+      <PpeCatalogue
+        api={api}
+        accent="#f59e0b"
+        canIssue={editable}
+        workers={[{ id: worker.id, name: worker.name, full_name: worker.name, worker_code: worker.worker_code }]}
+        onIssued={onChanged}
+      />
     </Panel>
   )
 }

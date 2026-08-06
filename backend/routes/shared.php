@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\Shared\KickoffMeetingController;
 use App\Http\Controllers\Api\Shared\KickoffMeetingLinkController;
+use App\Http\Controllers\Api\Shared\MeetingPlatformController;
 use App\Http\Controllers\Api\Shared\PublicKickoffController;
 use Illuminate\Support\Facades\Route;
 
@@ -39,4 +40,13 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('kickoff')->grou
     // ── Online meeting link generation ────────────────────────────────────────
     Route::post('/meetings/{kickoffMeeting}/generate-link', [KickoffMeetingLinkController::class, 'generate']);
     Route::get('/meetings/{kickoffMeeting}/link',           [KickoffMeetingLinkController::class, 'show']);
+});
+
+// ── Tenant default meeting platform ─────────────────────────────────────
+// Sits outside the /kickoff prefix: it is a tenant-wide preference, not a
+// property of any one meeting. Reading it is open to staff (the Kickoff form
+// needs it); only an admin may change it.
+Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('settings')->group(function () {
+    Route::get('/meeting-platform', [MeetingPlatformController::class, 'show']);
+    Route::put('/meeting-platform', [MeetingPlatformController::class, 'update']);
 });

@@ -20,50 +20,63 @@ class PurchaseReportController extends Controller
 
     public function itemCost(Request $request)
     {
-        return $this->run($request, fn ($tid, $from, $to) => $this->reports->itemCost($tid, $from, $to));
+        return $this->run($request, fn ($tid, $from, $to, $f) => $this->reports->itemCost($tid, $from, $to, $f));
     }
 
     public function poVoucher(Request $request)
     {
-        return $this->run($request, fn ($tid, $from, $to) => $this->reports->poVoucher($tid, $from, $to));
+        return $this->run($request, fn ($tid, $from, $to, $f) => $this->reports->poVoucher($tid, $from, $to, $f));
     }
 
     public function orders(Request $request)
     {
-        return $this->run($request, fn ($tid, $from, $to) => $this->reports->orders($tid, $from, $to));
+        return $this->run($request, fn ($tid, $from, $to, $f) => $this->reports->orders($tid, $from, $to, $f));
     }
 
     public function invoices(Request $request)
     {
-        return $this->run($request, fn ($tid, $from, $to) => $this->reports->invoices($tid, $from, $to));
+        return $this->run($request, fn ($tid, $from, $to, $f) => $this->reports->invoices($tid, $from, $to, $f));
     }
 
     /** Chart: purchase statistics by number of purchase orders. */
     public function statsByCount(Request $request)
     {
-        return $this->run($request, fn ($tid, $from, $to) => $this->reports->orderStats($tid, $from, $to, 'count'));
+        return $this->run($request, fn ($tid, $from, $to, $f) => $this->reports->orderStats($tid, $from, $to, 'count', $f));
     }
 
     /** Chart: purchase statistics by cost. */
     public function statsByCost(Request $request)
     {
-        return $this->run($request, fn ($tid, $from, $to) => $this->reports->orderStats($tid, $from, $to, 'cost'));
+        return $this->run($request, fn ($tid, $from, $to, $f) => $this->reports->orderStats($tid, $from, $to, 'cost', $f));
     }
 
-    /** Validate the period, resolve its window, and hand off to the service. */
+    /** The values the filter controls offer, all drawn from real rows. */
+    public function filters(Request $request)
+    {
+        return response()->json($this->reports->filterOptions($request->user()->tenant_id));
+    }
+
+    /** Validate the filters, resolve the period window, and hand off to the service. */
     private function run(Request $request, callable $fn)
     {
         $data = $request->validate([
-            'period' => ['nullable', Rule::in(PurchaseReportService::PERIODS)],
+            'period'      => ['nullable', Rule::in(PurchaseReportService::PERIODS)],
+            'from'        => ['nullable', 'date'],
+            'to'          => ['nullable', 'date', 'after_or_equal:from'],
+            'currency'    => ['nullable', 'string', 'max:10'],
+            'year'        => ['nullable', 'integer', 'min:1970', 'max:2200'],
+            'items'       => ['nullable', 'array'],
+            'items.*'     => ['string', 'max:255'],
         ]);
 
-        [$from, $to] = $this->reports->resolvePeriod($data['period'] ?? 'all_time');
+        $period = $data['period'] ?? 'all_time';
+        [$from, $to] = $this->reports->resolvePeriod($period, $data['from'] ?? null, $data['to'] ?? null);
 
         return response()->json([
-            'period' => $data['period'] ?? 'all_time',
+            'period' => $period,
             'from'   => $from,
             'to'     => $to,
-            ...$fn($request->user()->tenant_id, $from, $to),
+            ...$fn($request->user()->tenant_id, $from, $to, $data),
         ]);
     }
 }

@@ -12,10 +12,13 @@ class HrDesignation extends Model
     protected $table = 'hr_designations';
 
     protected $fillable = [
+        // #43 — expected skills for this position; compared against the employee's own.
+        'skills',
         'tenant_id', 'name', 'code', 'grade_id', 'description', 'is_active',
     ];
 
     protected $casts = [
+        'skills' => 'array',
         'is_active' => 'boolean',
     ];
 

@@ -66,11 +66,23 @@ export default function EmployeeOnboarding() {
   useEffect(() => { const t = setTimeout(fetchList, 250); return () => clearTimeout(t) }, [fetchList])
   useEffect(() => { setPage(1) }, [search, statusF, stageF, sort])
 
+  // Onboarding runs off the candidate database, so the picker defaults to
+  // employees who came from a candidate. Directly-created employees are still
+  // reachable behind the toggle — hiding them outright would strand anyone
+  // hired before the candidate pipeline existed.
+  const loadEligible = async (source) => {
+    const res = unwrap(await hrApi.employeeOnboarding.eligibleEmployees({ source })) || {}
+    // Tolerate the old bare-array shape so a stale cached bundle keeps working.
+    return Array.isArray(res)
+      ? { list: res, counts: { from_candidate: res.length, direct_entry: 0 } }
+      : { list: res.employees || [], counts: res.counts || { from_candidate: 0, direct_entry: 0 } }
+  }
+
   const openStarter = async () => {
-    setStarter({ list: [], q: '', busy: false })
+    setStarter({ list: [], q: '', busy: false, source: 'candidate', counts: null })
     try {
-      const list = unwrap(await hrApi.employeeOnboarding.eligibleEmployees()) || []
-      setStarter(s => ({ ...s, list }))
+      const { list, counts } = await loadEligible('candidate')
+      setStarter(s => ({ ...s, list, counts }))
     } catch (e) { showToast(e.response?.data?.message || 'Failed to load employees', 'error') }
   }
   const startOnboarding = async (empId) => {
@@ -199,15 +211,63 @@ export default function EmployeeOnboarding() {
               <h3 style={{ color: 'var(--text-h)', fontSize: 16, fontWeight: 800, margin: 0 }}>Start Onboarding</h3>
               <button onClick={() => setStarter(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><X size={18} /></button>
             </div>
-            <input autoFocus placeholder="Search employees…" value={starter.q} onChange={e => setStarter(s => ({ ...s, q: e.target.value }))} style={{ ...inputStyle, marginBottom: 12 }} />
+            <input autoFocus placeholder="Search employees…" value={starter.q} onChange={e => setStarter(s => ({ ...s, q: e.target.value }))} style={{ ...inputStyle, marginBottom: 10 }} />
+
+            {/* Source toggle — candidate-linked is the intended path; direct
+                entries stay reachable so nobody is stranded. */}
+            <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+              {[
+                { key: 'candidate', label: 'From Candidate', n: starter.counts?.from_candidate },
+                { key: 'all',       label: 'All Employees',  n: (starter.counts?.from_candidate ?? 0) + (starter.counts?.direct_entry ?? 0) },
+              ].map(t => {
+                const on = (starter.source || 'candidate') === t.key
+                return (
+                  <button key={t.key} disabled={starter.busy}
+                    onClick={async () => {
+                      setStarter(s => ({ ...s, source: t.key, busy: true }))
+                      try {
+                        const { list, counts } = await loadEligible(t.key)
+                        setStarter(s => ({ ...s, list, counts, busy: false }))
+                      } catch { setStarter(s => ({ ...s, busy: false })) }
+                    }}
+                    style={{
+                      flex: 1, padding: '7px 10px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                      background: on ? 'rgba(124,58,237,0.15)' : 'var(--bg-input)',
+                      color: on ? '#a78bfa' : 'var(--text-muted)',
+                      border: `1px solid ${on ? 'rgba(124,58,237,0.4)' : 'var(--border)'}`,
+                    }}>
+                    {t.label}{typeof t.n === 'number' ? ` (${t.n})` : ''}
+                  </button>
+                )
+              })}
+            </div>
+
+            {(starter.source || 'candidate') === 'candidate' && (starter.counts?.direct_entry ?? 0) > 0 && (
+              <p style={{ fontSize: 11.5, color: 'var(--text-muted)', margin: '0 0 10px' }}>
+                {starter.counts.direct_entry} employee{starter.counts.direct_entry === 1 ? '' : 's'} created directly (not from a candidate) {starter.counts.direct_entry === 1 ? 'is' : 'are'} hidden — switch to <b>All Employees</b> to include {starter.counts.direct_entry === 1 ? 'it' : 'them'}.
+              </p>
+            )}
+
             <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
               {(starter.list || []).filter(e => !starter.q || `${e.name} ${e.employee_code}`.toLowerCase().includes(starter.q.toLowerCase())).map(e => (
                 <button key={e.id} disabled={starter.busy} onClick={() => startOnboarding(e.id)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--bg-input)', cursor: 'pointer', textAlign: 'left' }}>
-                  <span><span style={{ fontWeight: 700, color: 'var(--text-h)', fontSize: 13 }}>{e.name}</span><span style={{ fontSize: 11, color: 'var(--text-muted)' }}> · {e.employee_code}</span></span>
+                  <span>
+                    <span style={{ fontWeight: 700, color: 'var(--text-h)', fontSize: 13 }}>{e.name}</span>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}> · {e.employee_code}</span>
+                    {!e.candidate_id && (
+                      <span style={{ marginLeft: 6, fontSize: 9.5, fontWeight: 700, padding: '2px 6px', borderRadius: 5, color: '#fab219', background: 'color-mix(in srgb, #fab219 14%, transparent)' }}>DIRECT ENTRY</span>
+                    )}
+                  </span>
                   <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{e.designation || ''}</span>
                 </button>
               ))}
-              {(starter.list || []).length === 0 && <p style={{ fontSize: 12.5, color: 'var(--text-muted)', textAlign: 'center', padding: 20 }}>All employees already have an onboarding record.</p>}
+              {(starter.list || []).length === 0 && (
+                <p style={{ fontSize: 12.5, color: 'var(--text-muted)', textAlign: 'center', padding: 20 }}>
+                  {(starter.source || 'candidate') === 'candidate'
+                    ? 'No candidate-linked employees are awaiting onboarding.'
+                    : 'All employees already have an onboarding record.'}
+                </p>
+              )}
             </div>
           </div>
         </div>

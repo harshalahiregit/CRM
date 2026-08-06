@@ -96,6 +96,15 @@ export const purchasePortalApi = {
     setStatus: () => Promise.reject(new Error('Admin only')),
   },
 
+  // ── PPE — served from INVENTORY (single source of truth), read-only here ─
+  // A purchase vendor has no workers, so there is nothing to issue to.
+  ppe: {
+    catalogue: ()          => api.get('/portal/purchase/ppe').then(r => r.data),
+    summary:   ()          => api.get('/portal/purchase/ppe/summary').then(r => r.data),
+    // Private file: fetched as a blob so the bearer token is sent.
+    imageBlob: (productId) => api.get(`/portal/purchase/ppe/item/${productId}/image`, { responseType: 'blob' }).then(r => URL.createObjectURL(r.data)),
+  },
+
   // Standalone kickoff summary (the portal Kickoff tab, resolved from the token).
   kickoff: {
     get:    () => api.get('/portal/purchase/kickoff').then(r => r.data),

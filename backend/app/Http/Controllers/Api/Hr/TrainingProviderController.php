@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Hr;
 use App\Http\Controllers\Controller;
 use App\Services\Hr\TrainingProviderService;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 /**
  * Learning & Development → Training Providers (Phase 1). Thin: validate, delegate,
@@ -19,7 +20,8 @@ class TrainingProviderController extends Controller
 
     public function index(Request $request)
     {
-        return response()->json($this->service->list($this->tenant($request), $request->only(['status', 'search', 'provider_type'])));
+        return response()->json($this->service->list($this->tenant($request),
+            $request->only(['status', 'search', 'provider_type', 'department_id'])));
     }
 
     public function store(Request $request)
@@ -58,6 +60,22 @@ class TrainingProviderController extends Controller
             'website'        => 'nullable|string|max:200',
             'description'    => 'nullable|string',
             'is_active'      => 'boolean',
+
+            // #22 — department reuses hr_departments; the four lists are free text.
+            //
+            // TENANT-SCOPED: a bare exists() would accept any department id in the
+            // table, letting one tenant attach another tenant's department to its
+            // provider. The rule has to carry the tenant, not just the id.
+            'department_id'    => ['nullable', 'integer', Rule::exists('hr_departments', 'id')
+                ->where('tenant_id', $this->tenant($request))],
+            'expertise'        => 'nullable|array',
+            'expertise.*'      => 'string|max:80',
+            'certifications'   => 'nullable|array',
+            'certifications.*' => 'string|max:120',
+            'qualifications'   => 'nullable|array',
+            'qualifications.*' => 'string|max:120',
+            'skills'           => 'nullable|array',
+            'skills.*'         => 'string|max:60',
         ]);
     }
 

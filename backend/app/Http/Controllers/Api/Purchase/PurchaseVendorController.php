@@ -8,6 +8,7 @@ use App\Http\Requests\Purchase\UpdatePurchaseVendorRequest;
 use App\Models\Purchase\PurchaseVendor;
 use App\Services\Purchase\PurchaseVendorService;
 use App\Support\Purchase\PurchaseVendorStatus;
+use App\Support\Task\VendorTaskLink;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -37,6 +38,27 @@ class PurchaseVendorController extends Controller
     public function store(StorePurchaseVendorRequest $request)
     {
         return response()->json($this->vendors->create($request->validated(), $request->user()), 201);
+    }
+
+    /**
+     * Tasks linked to this Purchase vendor (tasks.rel_type = 'purchase_vendor').
+     *
+     * Separate from the TPV endpoint on purpose -- the two vendor modules share no
+     * table, no controller and no route, only the shape of the task link.
+     */
+    public function tasks(Request $request, PurchaseVendor $purchaseVendor)
+    {
+        $this->assertTenant($request, $purchaseVendor);
+        $tenantId = (int) $request->user()->tenant_id;
+
+        // Most Purchase Vendors have no User at all (they authenticate as a
+        // PurchaseVendor), so this is usually null and only the relation link applies.
+        $portalUserId = $purchaseVendor->user_id;
+
+        return response()->json([
+            'summary' => VendorTaskLink::summary(VendorTaskLink::PURCHASE, $purchaseVendor->id, $tenantId, $portalUserId),
+            'tasks'   => VendorTaskLink::forVendor(VendorTaskLink::PURCHASE, $purchaseVendor->id, $tenantId, $portalUserId),
+        ]);
     }
 
     public function show(Request $request, PurchaseVendor $purchaseVendor)

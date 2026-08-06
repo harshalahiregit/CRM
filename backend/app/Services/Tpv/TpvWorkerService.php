@@ -131,53 +131,16 @@ class TpvWorkerService
         return $worker->fresh(['induction']);
     }
 
-    /* ── Step 4 — PPE issuance ──────────────────────────────────────────── */
-
-    public function issuePpe(TpvWorker $worker, array $data, User $actor): TpvWorker
-    {
-        if (! $worker->isEditable()) {
-            throw new BusinessException('This worker is no longer editable.');
-        }
-        if (! Ppe::isValid($data['item'])) {
-            throw new BusinessException("Unknown PPE item: {$data['item']}");
-        }
-
-        // Re-issuing the same item replaces the record (a worker holds one of each).
-        $worker->ppeIssues()->updateOrCreate(
-            ['tpv_worker_id' => $worker->id, 'item' => $data['item']],
-            [
-                ...$data,
-                'tenant_id'   => $worker->tenant_id,
-                'issued_by'   => $actor->id,
-                'issued_date' => $data['issued_date'] ?? now()->toDateString(),
-            ]
-        );
-        $worker->update(['current_step' => max($worker->current_step, 4)]);
-
-        $worker->recordAudit('PPE Issued', $actor, null, ['item' => $data['item']]);
-
-        Log::channel('tpv')->info('TPV worker PPE issued', [
-            'worker_id' => $worker->id, 'tenant_id' => $worker->tenant_id, 'item' => $data['item'],
-        ]);
-
-        return $worker->fresh(['ppeIssues']);
-    }
-
-    public function removePpe(TpvWorker $worker, TpvWorkerPpeIssue $issue, User $actor): TpvWorker
-    {
-        if ((int) $issue->tpv_worker_id !== (int) $worker->id) {
-            throw new BusinessException('PPE issue does not belong to this worker.', 404);
-        }
-        if (! $worker->isEditable()) {
-            throw new BusinessException('This worker is no longer editable.');
-        }
-
-        $item = $issue->item;
-        $issue->delete();
-        $worker->recordAudit('PPE Removed', $actor, null, ['item' => $item]);
-
-        return $worker->fresh(['ppeIssues']);
-    }
+    /* ── Step 4 — PPE issuance ──────────────────────────────────────────────
+     |
+     | Handled entirely by PpeInventoryService: it checks stock, decrements it,
+     | writes the movement and derives the worker's PPE step state from the issues.
+     |
+     | The two methods that used to live here are gone on purpose. issuePpe() could
+     | create an issue record with no inventory_item_id — PPE handed out with no
+     | stock behind it — and removePpe() deleted an issue row without returning the
+     | quantity, so deleting a record left Inventory permanently short.
+     */
 
     /* ── Step 5 — badge issue (the gate) ────────────────────────────────── */
 
@@ -379,10 +342,10 @@ class TpvWorkerService
             $b[] = 'HSSE induction not passed.';
         }
 
-        // 5. Mandatory PPE.
-        $missing = array_diff(Ppe::MANDATORY, $this->issuedPpeItems($worker));
-        if ($missing !== []) {
-            $b[] = 'Mandatory PPE not issued: '.implode(', ', array_map(fn ($i) => Ppe::label($i), $missing)).'.';
+        // 5. Mandatory PPE — the required set is whatever Inventory tags 'mandatory'.
+        $missing = app(PpeInventoryService::class)->missingMandatoryFor($worker);
+        if ($missing->isNotEmpty()) {
+            $b[] = 'Mandatory PPE not issued: '.$missing->pluck('name')->implode(', ').'.';
         }
 
         return $b;
@@ -394,7 +357,10 @@ class TpvWorkerService
         $medical   = $worker->medical;
         $induction = $worker->induction;
         $issued    = $this->issuedPpeItems($worker);
-        $mandatory = array_intersect(Ppe::MANDATORY, $issued);
+        // Requirements are role-based, so they are counted per worker, not per tenant.
+        $compliance = app(PpeInventoryService::class)->complianceFor($worker);
+        $required   = count($compliance['items']);
+        $missing    = count($compliance['missing']);
 
         $profileDone = ! empty($worker->name) && $worker->dob && ! empty($worker->designation)
             && ! empty($worker->mobile) && ! empty($worker->aadhar_number)
@@ -411,11 +377,15 @@ class TpvWorkerService
                  'detail' => $medical ? Fitness::label($medical->fitness_status) : 'Not recorded'],
                 ['step' => 3, 'key' => 'induction', 'label' => 'Induction', 'complete' => (bool) $induction?->passed,
                  'detail' => $induction ? ($induction->passed ? 'Passed' : 'Not passed') : 'Not recorded'],
-                ['step' => 4, 'key' => 'ppe',       'label' => 'PPE',       'complete' => count($mandatory) === count(Ppe::MANDATORY),
-                 'detail' => count($mandatory).'/'.count(Ppe::MANDATORY).' mandatory · '.count($issued).' issued'],
+                ['step' => 4, 'key' => 'ppe',       'label' => 'PPE',       'complete' => $missing === 0 && count($issued) > 0,
+                 'detail' => $required === 0
+                     ? 'No PPE required for this role · '.count($issued).' issued'
+                     : ($required - $missing).'/'.$required.' required · '.count($issued).' issued'],
                 ['step' => 5, 'key' => 'badge',     'label' => 'Entry Badge', 'complete' => $worker->status === Status::ACTIVE,
                  'detail' => $worker->badge_number ?: Status::label($worker->status)],
             ],
+            // The ✓/✗ list, so a blocked badge can say exactly what is missing.
+            'ppe_compliance' => $compliance,
         ];
     }
 
@@ -430,6 +400,33 @@ class TpvWorkerService
             'suspended'  => $base()->where('status', Status::SUSPENDED)->count(),
             'terminated' => $base()->where('status', Status::TERMINATED)->count(),
             // Badges lapsing within 30 days — the renewal queue.
+            'expiring'   => $base()->where('status', Status::ACTIVE)
+                                   ->whereNotNull('badge_valid_until')
+                                   ->whereBetween('badge_valid_until', [now()->toDateString(), now()->addDays(30)->toDateString()])
+                                   ->count(),
+        ];
+    }
+
+    /**
+     * The same counters, scoped to ONE vendor — what the portal needs.
+     *
+     * VendorPortalController::workerStats() has always called this, but it was never
+     * defined, so GET /portal/workers/stats returned a 500. The vendor id is taken
+     * from the token by the caller and applied here on top of the tenant, so a
+     * portal user can only ever count their own workers.
+     */
+    public function statsForVendor(int $vendorId, int $tenantId): array
+    {
+        $base = fn () => TpvWorker::forTenant($tenantId)->where('vendor_id', $vendorId);
+
+        return [
+            'total'      => $base()->count(),
+            'draft'      => $base()->where('status', Status::DRAFT)->count(),
+            'active'     => $base()->where('status', Status::ACTIVE)->count(),
+            'suspended'  => $base()->where('status', Status::SUSPENDED)->count(),
+            'terminated' => $base()->where('status', Status::TERMINATED)->count(),
+            // Anything not yet Active is still awaiting medical / induction / badging.
+            'pending'    => $base()->whereNotIn('status', [Status::ACTIVE, Status::TERMINATED])->count(),
             'expiring'   => $base()->where('status', Status::ACTIVE)
                                    ->whereNotNull('badge_valid_until')
                                    ->whereBetween('badge_valid_until', [now()->toDateString(), now()->addDays(30)->toDateString()])

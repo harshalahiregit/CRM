@@ -1,0 +1,190 @@
+import { useQuery } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
+import { ListTodo, AlertTriangle, CheckCircle2, Clock, ArrowUpRight } from 'lucide-react'
+
+/**
+ * Tasks raised against a vendor.
+ *
+ * Module-agnostic and presentational: it takes a `fetcher` and knows nothing about
+ * TPV or Purchase, so those two modules stay independent while the same table isn't
+ * written twice. Read-only — tasks are created and linked in the Task module.
+ */
+
+/**
+ * Status palette, fixed and never themed. `good`/`warning`/`critical` are reserved
+ * for state and never reused as decorative accents. Each tile pairs its colour with
+ * an icon AND a label, because on a light surface warning is sub-3:1 — colour must
+ * never be the only carrier of meaning.
+ */
+const STATUS = {
+  neutral:  'var(--text-muted)',
+  good:     '#0ca30c',
+  warning:  '#fab219',
+  critical: '#d03b3b',
+}
+
+/**
+ * The Link column is CATEGORICAL identity (how the task reached this vendor), not
+ * status, so it takes categorical slots 1 and 2 in fixed order — NOT the module
+ * accent. Using the accent made "Related" and "Assigned" render identically on the
+ * TPV tab, whose accent is itself blue.
+ *
+ * Validated both modes: CVD ΔE 24.7 protan / 32.7 tritan, normal-vision 33.6,
+ * both ≥3:1 on their surface. Each chip still carries its word, so identity never
+ * rests on hue alone.
+ */
+const LINK_TONE = { related: '#2a78d6', assigned: '#eb6834' }
+
+export default function VendorTasksPanel({ queryKey, fetcher, accent = '#7C3AED', emptyHint }) {
+  // App-wide default is staleTime 5min — right for reference data, wrong for a work
+  // list that changes as tasks are assigned. Always refetch when the tab opens.
+  const { data, isLoading, isError } = useQuery({
+    queryKey,
+    queryFn: fetcher,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+  })
+
+  const summary = data?.summary || {}
+  const tasks = Array.isArray(data?.tasks) ? data.tasks : []
+
+  if (isLoading) return <Shell><Muted>Loading tasks…</Muted></Shell>
+  if (isError)   return <Shell><span style={{ color: STATUS.critical, fontSize: 13, fontWeight: 700 }}>Could not load tasks.</span></Shell>
+
+  const stats = [
+    { key: 'total',    label: 'Total',    value: summary.total ?? 0,    icon: ListTodo,      tone: STATUS.neutral },
+    { key: 'open',     label: 'Open',     value: summary.open ?? 0,     icon: Clock,         tone: STATUS.warning },
+    { key: 'complete', label: 'Complete', value: summary.complete ?? 0, icon: CheckCircle2,  tone: STATUS.good },
+    { key: 'overdue',  label: 'Overdue',  value: summary.overdue ?? 0,  icon: AlertTriangle, tone: STATUS.critical },
+  ]
+
+  return (
+    <div>
+      {/* Stat tiles, not a chart: four single headline numbers. The VALUE wears
+          primary ink; the coloured icon beside it carries the status identity, so
+          the row reads as one system rather than four competing colours. */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(148px,1fr))', gap: 10, marginBottom: 16 }}>
+        {stats.map(s => {
+          const muted = s.value === 0
+          return (
+            <div key={s.key} style={{
+              padding: '13px 15px', borderRadius: 12,
+              background: 'var(--bg-card)', border: '1px solid var(--border)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 7 }}>
+                <s.icon size={13} strokeWidth={2.4} style={{ color: muted ? 'var(--text-muted)' : s.tone, flexShrink: 0 }} />
+                <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+                  {s.label}
+                </span>
+              </div>
+              <div style={{
+                fontSize: 26, fontWeight: 800, lineHeight: 1, letterSpacing: '-0.02em',
+                fontVariantNumeric: 'tabular-nums',
+                color: muted ? 'var(--text-muted)' : 'var(--text-h)',
+              }}>{s.value}</div>
+            </div>
+          )
+        })}
+      </div>
+
+      {tasks.length === 0 ? (
+        <div style={{
+          padding: '38px 24px', textAlign: 'center', borderRadius: 12,
+          background: 'var(--bg-card)', border: '1px dashed var(--border)',
+        }}>
+          <ListTodo size={24} strokeWidth={1.8} style={{ color: 'var(--text-muted)', marginBottom: 10 }} />
+          <p style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-h)', margin: 0 }}>No tasks yet</p>
+          <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '6px auto 0', lineHeight: 1.55, maxWidth: 400 }}>
+            {emptyHint || 'Assign a task to this vendor’s login, or set a task’s “Related To” to this vendor.'}
+          </p>
+        </div>
+      ) : (
+        <div style={{ borderRadius: 12, border: '1px solid var(--border)', overflow: 'hidden', background: 'var(--bg-card)' }}>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr>
+                  {['Task', 'Link', 'Status', 'Priority', 'Assignees', 'Due', ''].map(h => (
+                    <th key={h} style={{
+                      padding: '9px 14px', textAlign: 'left', whiteSpace: 'nowrap',
+                      fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase',
+                      color: 'var(--text-muted)', borderBottom: '1px solid var(--border)',
+                    }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {tasks.map((t, i) => {
+                  const overdue = t.is_open && t.due_date && new Date(t.due_date) < new Date(new Date().toDateString())
+                  return (
+                    <tr key={t.id} style={{ borderTop: i === 0 ? 'none' : '1px solid var(--border)' }}>
+                      <td style={{ padding: '11px 14px', fontWeight: 650, color: 'var(--text-h)' }}>{t.name}</td>
+
+                      {/* Why the task is on this tab: raised against the vendor, or
+                          assigned to their portal login. Both are their work. */}
+                      <td style={{ padding: '11px 14px' }}>
+                        <Tag tone={t.link === 'assigned' ? LINK_TONE.assigned : LINK_TONE.related}>
+                          {t.link === 'assigned' ? 'Assigned' : 'Related'}
+                        </Tag>
+                      </td>
+
+                      <td style={{ padding: '11px 14px' }}>
+                        <Tag tone={t.is_open ? STATUS.warning : STATUS.good} dot>
+                          {String(t.status || '').replace(/_/g, ' ')}
+                        </Tag>
+                      </td>
+
+                      <td style={{ padding: '11px 14px', color: 'var(--text-muted)', textTransform: 'capitalize' }}>
+                        {t.priority || '—'}
+                      </td>
+
+                      <td style={{ padding: '11px 14px', color: 'var(--text-muted)' }}>
+                        {t.assignees?.length ? t.assignees.join(', ') : '—'}
+                      </td>
+
+                      <td style={{
+                        padding: '11px 14px', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums',
+                        color: overdue ? STATUS.critical : 'var(--text-muted)', fontWeight: overdue ? 700 : 400,
+                      }}>
+                        {overdue && <AlertTriangle size={11} style={{ display: 'inline', marginRight: 4, verticalAlign: '-1px' }} />}
+                        {t.due_date ? new Date(t.due_date).toLocaleDateString() : '—'}
+                      </td>
+
+                      <td style={{ padding: '11px 14px', textAlign: 'right' }}>
+                        <Link to={t.url} style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 3,
+                          fontSize: 12, fontWeight: 700, color: accent, textDecoration: 'none',
+                        }}>Open <ArrowUpRight size={12} /></Link>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* A status/identity chip. Never colour alone — always a word, optionally a dot. */
+function Tag({ tone, children, dot }) {
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 5,
+      fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 7,
+      whiteSpace: 'nowrap', textTransform: 'capitalize',
+      color: tone, background: `color-mix(in srgb, ${tone} 12%, transparent)`,
+    }}>
+      {dot && <span style={{ width: 5, height: 5, borderRadius: 999, background: tone, flexShrink: 0 }} />}
+      {children}
+    </span>
+  )
+}
+
+const Shell = ({ children }) => (
+  <div style={{ padding: 26, borderRadius: 12, background: 'var(--bg-card)', border: '1px solid var(--border)' }}>{children}</div>
+)
+const Muted = ({ children }) => <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>{children}</span>

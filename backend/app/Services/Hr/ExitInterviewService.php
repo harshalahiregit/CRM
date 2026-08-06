@@ -18,6 +18,10 @@ use Illuminate\Support\Facades\Log;
  */
 class ExitInterviewService
 {
+    public function __construct(private ExitQuestionnaireService $questionnaires)
+    {
+    }
+
     public function list(int $tenantId): Collection
     {
         return HrExitInterview::where('tenant_id', $tenantId)
@@ -70,6 +74,24 @@ class ExitInterviewService
             $exit->submitted_at = now();
         }
         $exit->save();
+
+        // #44 — templated answers, when a questionnaire was chosen for this exit.
+        // Absent both keys nothing below runs, so an interview taken on the
+        // original fixed form behaves exactly as it always has.
+        if (! empty($data['questionnaire_id'])) {
+            $this->questionnaires->saveAnswers(
+                $exit, (int) $data['questionnaire_id'], (array) ($data['answers'] ?? []), $employee->tenant_id
+            );
+
+            // Required questions are enforced only on SUBMIT — a draft must stay
+            // saveable half-finished, which is the whole point of a draft.
+            if ($submit && ($missing = $this->questionnaires->missingRequired($exit->fresh())) !== []) {
+                throw new BusinessException(
+                    'Answer the required questions before submitting: '.implode(', ', array_slice($missing, 0, 5))
+                    .(count($missing) > 5 ? ' …' : ''), 422
+                );
+            }
+        }
 
         $action = $submit ? 'Exit Interview Submitted' : 'Exit Interview Saved';
         $employee->recordAudit($action, $actor, null, array_filter([

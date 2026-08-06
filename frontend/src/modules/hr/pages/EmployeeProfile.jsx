@@ -2,16 +2,24 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Pencil, UserX, Download, Printer, X, FileText, Eye, LogOut,
-  LayoutDashboard, User, Briefcase, FileCheck, Landmark, History,
+  LayoutDashboard, User, Briefcase, FileCheck, Landmark, History, FolderOpen,
   CalendarCheck, CalendarDays, Target, GraduationCap, Mail, Boxes,
-  Sparkles, Plug, ShieldCheck, Wallet,
+  Sparkles, ShieldCheck, Wallet,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+import { useAuth } from '@/context/AuthContext'
+import { canManageHrQueue } from '../constants'
+import EmployeeLifecyclePanel from '../components/EmployeeLifecyclePanel'
+import EmployeeLoanCard from '../components/EmployeeLoanCard'
+import EmployeeScoreCard from '../components/EmployeeScoreCard'
+import EmployeeSkillsPanel from '../components/EmployeeSkillsPanel'      // #43
+import EmployeeAttendancePanel from '../components/EmployeeAttendancePanel' // #38
 import { useMasterData, withInactive } from '@/modules/hr/useMasterData'
 import { offerPortalApi } from '@/services/offerPortalApi'
 import AuditTimeline from '@/components/ui/AuditTimeline'
 import EmployeeNotifications from '@/modules/notifications/EmployeeNotifications'
 import EmployeeSalarySection from '@/modules/hr/components/EmployeeSalarySection'
+import EmployeeAssetsPanel from '@/modules/hr/components/EmployeeAssetsPanel'
 
 const DEPT_COLORS = { Engineering:'#3b82f6', Sales:'#10b981', HR:'#7C3AED', Operations:'#f59e0b', Product:'#ec4899', Marketing:'#f97316', Finance:'#6366f1' }
 const deptColor = d => DEPT_COLORS[d]||'#7C3AED'
@@ -22,6 +30,12 @@ const STATUS_S = s => s==='Active'?{c:'#10b981',bg:'rgba(16,185,129,0.12)'}:s===
 const DOC_ST = s => s==='Verified'?{c:'#10b981',bg:'rgba(16,185,129,0.12)'}:s==='Rejected'?{c:'#f87171',bg:'rgba(239,68,68,0.1)'}:{c:'#f59e0b',bg:'rgba(245,158,11,0.12)'}
 
 const has = v => v !== null && v !== undefined && String(v).trim() !== ''
+
+// Laravel's response()->json(null) serialises to `{}` (Symfony turns null into an
+// empty ArrayObject), and `{}` is truthy — so a "no record" response slipped past
+// truthiness guards and the render then read .progress.cleared off undefined.
+// Treat an object with no keys as absent.
+const present = v => (v && typeof v === 'object' && Object.keys(v).length === 0 ? null : (v || null))
 const pct = (filled, total) => total ? Math.round((filled/total)*100) : 0
 
 // Canonical document list for the Documents tab, mapped onto stored onboarding types.
@@ -55,6 +69,7 @@ const TABS = [
   { key:'training',    label:'Training',              icon:GraduationCap },
   { key:'probation',   label:'Probation',             icon:ShieldCheck },
   { key:'letters',     label:'Letters',               icon:Mail },
+  { key:'work',        label:'Work',                  icon:FolderOpen },
   { key:'timeline',    label:'Timeline',              icon:History },
 ]
 
@@ -95,6 +110,10 @@ const probationStatus = (e) => {
 export default function EmployeeProfile() {
   const { id } = useParams()
   const navigate = useNavigate()
+  // #39/#40 — scores and risk factors are HR-only; the card degrades to a
+  // read-only view (or a plain message) for anyone else.
+  const { user } = useAuth()
+  const canManageHr = canManageHrQueue(user)
   const [data, setData]     = useState(null)
   const [orgOpts, setOrgOpts] = useState(null)   // reuse existing Organization Setup options (read-only)
   const [salary, setSalary] = useState(null)     // Payroll Phase 3 — current + history (read-only here)
@@ -117,6 +136,9 @@ export default function EmployeeProfile() {
   const [tab, setTab]       = useState('overview')
   const [toast, setToast]   = useState(null)
   const [editing, setEditing] = useState(false)
+  // Asset counters for Overview; the Assets tab reads the same Inventory register.
+  const [assetSummary, setAssetSummary] = useState(null)
+  const [assetFilter, setAssetFilter]   = useState('all')
 
   const showToast = (msg, type='success') => { setToast({msg,type}); setTimeout(()=>setToast(null),3000) }
 
@@ -130,6 +152,8 @@ export default function EmployeeProfile() {
   useEffect(()=>{ hrApi.payroll.employeeSalary.get(id).then(setSalary).catch(()=>{}) },[id])
   // Payslip history from Payroll Phase 5 — read-only, with PDF download.
   useEffect(()=>{ hrApi.payroll.payslips.forEmployee(id).then(setPayslips).catch(()=>{}) },[id])
+  // Asset counters come from the Inventory register — HRMS stores none of them.
+  useEffect(()=>{ hrApi.employees.assetSummary(id).then(setAssetSummary).catch(()=>{}) },[id])
   // Performance timeline from PMS Phase 7 — read-only (goals/reviews/promotion/increment).
   useEffect(()=>{ hrApi.performance.timeline(id).then(setPerf).catch(()=>{}) },[id])
   // Leave balances from Leave Phase 2 — read-only summary in the Leave tab.
@@ -139,11 +163,11 @@ export default function EmployeeProfile() {
   // Upcoming holidays applicable to this employee (Leave Phase 5) — read-only.
   useEffect(()=>{ const today=new Date().toISOString().slice(0,10); hrApi.leave.holidays.list({ employee_id:id, status:'Active', from:today }).then(r=>setHolidays(r.data||[])).catch(()=>{}) },[id])
   // Current (non-withdrawn) exit request from Exit Phase 2 — read-only in the Exit tab.
-  useEffect(()=>{ hrApi.exit.requests.forEmployee(id).then(req=>setExit({ loaded:true, req:req||null })).catch(()=>setExit({ loaded:true, req:null })) },[id])
+  useEffect(()=>{ hrApi.exit.requests.forEmployee(id).then(req=>setExit({ loaded:true, req:present(req) })).catch(()=>setExit({ loaded:true, req:null })) },[id])
   // Departmental clearance progress from Exit Phase 4 — read-only in the Exit tab.
-  useEffect(()=>{ hrApi.exit.clearances.forEmployee(id).then(d=>setExitClr({ loaded:true, data:d||null })).catch(()=>setExitClr({ loaded:true, data:null })) },[id])
+  useEffect(()=>{ hrApi.exit.clearances.forEmployee(id).then(d=>setExitClr({ loaded:true, data:present(d) })).catch(()=>setExitClr({ loaded:true, data:null })) },[id])
   // Full & Final settlement summary from Exit Phase 5 — read-only in the Exit tab.
-  useEffect(()=>{ hrApi.exit.settlements.forEmployee(id).then(d=>setExitSet({ loaded:true, data:d||null })).catch(()=>setExitSet({ loaded:true, data:null })) },[id])
+  useEffect(()=>{ hrApi.exit.settlements.forEmployee(id).then(d=>setExitSet({ loaded:true, data:present(d) })).catch(()=>setExitSet({ loaded:true, data:null })) },[id])
   // Training assignments from L&D Phase 4 — read-only in the Training tab.
   useEffect(()=>{ hrApi.learning.assignments.forEmployee(id).then(d=>setTraining({ loaded:true, data:Array.isArray(d)?d:[] })).catch(()=>setTraining({ loaded:true, data:[] })) },[id])
   // Training records (attendance/assessment/quiz/certificate) from L&D Phases 5-6 — read-only.
@@ -283,10 +307,23 @@ export default function EmployeeProfile() {
             {/* Quick cards */}
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
               <QuickCard label="Profile Completion" value={`${completeness.overall}%`} color="#7C3AED" bar={completeness.overall} />
-              <QuickCard label="Assigned Assets" value="—" color="#0ea5e9" note="Inventory" />
               <QuickCard label="Pending Documents" value={pendingDocs} color={pendingDocs?'#f59e0b':'#10b981'} />
               <QuickCard label="Pending Training" value="—" color="#a78bfa" note="L&D" />
               <QuickCard label="Pending Letters" value="—" color="#ec4899" note="Letters" />
+            </div>
+
+            {/* Assets, straight from the Inventory register — each card filters the Assets tab. */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                { k:'assigned',          f:'assigned',    label:'Assigned Assets',   color:'#0ca30c' },
+                { k:'returned',          f:'returned',    label:'Returned',          color:'#8b8b8b' },
+                { k:'under_maintenance', f:'maintenance', label:'Under Maintenance', color:'#fab219' },
+                { k:'lost',              f:'lost',        label:'Lost',              color:'#d03b3b' },
+              ].map(c => (
+                <QuickCard key={c.k} label={c.label} color={c.color} note="Inventory"
+                  value={assetSummary ? assetSummary[c.k] : '—'}
+                  onClick={()=>{ setAssetFilter(c.f); setTab('assets') }} />
+              ))}
             </div>
 
             {/* Core identity */}
@@ -371,7 +408,18 @@ export default function EmployeeProfile() {
               <EmployeeSalarySection employeeId={id} />
             </div>
 
-            <AiInsight hint="Will suggest promotion or role changes based on tenure, grade and performance signals." />
+            {/* #43 — the employee's own skills, scored against the expected skills
+                of the department / designation / grade / role shown above. Sits on
+                this tab because those four fields are what it is scored against. */}
+            <EmployeeSkillsPanel employeeId={id} canManage={canManageHr} />
+
+            {/* #40 — the "coming soon" note here promised promotion and role-change
+                suggestions. RecommendationService::generatePromotion already derives
+                them from the latest rating and completed goals, and they are listed
+                on the Performance tab. */}
+            <p className="text-[11px] mt-3" style={{ color:'var(--text-muted)' }}>
+              Promotion and increment recommendations are under <b>Performance</b>.
+            </p>
           </div>
         )}
 
@@ -410,6 +458,10 @@ export default function EmployeeProfile() {
 
         {tab==='bank' && (
           <div>
+            {/* #38 — loan position sits with the other money on this profile.
+                Renders nothing when the employee has no loans. */}
+            <EmployeeLoanCard employeeId={id} />
+
             <p className="text-[11px] font-bold uppercase mb-2" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Bank Details</p>
             <Grid>
               <Field k="Account Holder" v={data.submission?.bank?.account_name}/>
@@ -418,7 +470,7 @@ export default function EmployeeProfile() {
               <Field k="IFSC" v={data.submission?.bank?.ifsc} mono/>
               <Field k="Branch" v={data.submission?.bank?.branch}/>
             </Grid>
-            <p className="text-[11px] font-bold uppercase mt-5 mb-2" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Tax (structure only — Payroll not implemented)</p>
+            <p className="text-[11px] font-bold uppercase mt-5 mb-2" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Tax (read-only — managed under Payroll)</p>
             <Grid>
               <Field k="PAN" v={data.submission?.bank?.pan}/>
               <Field k="Tax Regime" v={null}/>
@@ -497,27 +549,15 @@ export default function EmployeeProfile() {
         )}
 
         {tab==='assets' && (
-          <div>
-            <div className="overflow-x-auto rounded-xl" style={{ border:'1px solid var(--border)' }}>
-              <table className="w-full text-sm" style={{ minWidth:560 }}>
-                <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{['Asset Name','Asset Code','Serial Number','Assigned Date','Status'].map(h=><th key={h} className="text-left px-3 py-2.5 label-caps whitespace-nowrap">{h}</th>)}</tr></thead>
-                <tbody><tr><td colSpan={5} className="px-3 py-10 text-center text-xs" style={{ color:'var(--text-muted)' }}>No assets assigned.</td></tr></tbody>
-              </table>
-            </div>
-            <IntegrationNote icon={Boxes} title="Reserved for the existing Inventory module"
-              hint="Assigned assets (Laptop, Monitor, Mobile, SIM, ID Card, Access Card…) will be read from Inventory and displayed here. HRMS will not manage inventory itself." />
-            <AiInsight hint="Will suggest standard assets missing for this role (e.g. laptop, access card) based on department." />
-          </div>
+          <EmployeeAssetsPanel employeeId={id} filter={assetFilter} onFilterChange={setAssetFilter} />
         )}
 
         {tab==='attendance' && (
-          <div>
-            {/* Explicit product decision: attendance lives in the external SangoeTrack
-                app, never in HRMS. This is only an integration placeholder. */}
-            <IntegrationNote icon={Plug} title="Attendance" subtitle="Coming from SangoeTrack"
-              hint="(Not available until integration) — This employee's attendance will be displayed here once SangoeTrack integration is completed." big />
-            <AiInsight hint="Reserved for SangoeTrack integration — will summarise attendance trends once connected." />
-          </div>
+          // #38 — was a static "(Not available until integration)" note that would
+          // have stayed on screen even with SangoeTrack connected and days synced,
+          // because nothing here ever fetched. Now reads the existing
+          // GET /hr/employees/{id}/attendance and offers the on-demand pull.
+          <EmployeeAttendancePanel employeeId={id} canManage={canManageHr} />
         )}
 
         {tab==='leave' && (
@@ -589,12 +629,22 @@ export default function EmployeeProfile() {
                 })}
               </div>
             )}
-            <AiInsight hint="Reserved — will surface leave patterns and balance risks from this summary." />
+            {/* #40 — the "coming soon" note here promised leave patterns and balance
+                risks. LeaveBehaviourDimension scores exactly that (applied vs
+                approved vs rejected, days taken) and it surfaces on the Performance
+                tab with its evidence. */}
+            <p className="text-[10px]" style={{ color:'var(--text-muted)' }}>
+              Leave-behaviour analysis is under <b>Performance → Employee Score</b>.
+            </p>
           </div>
         )}
 
         {tab==='performance' && (
           <div className="space-y-5">
+            {/* #39/#40 — the overall score and the three insight groups, above
+                the goals and reviews they are computed from. */}
+            <EmployeeScoreCard employeeId={id} canManage={canManageHr} />
+
             {!perf ? <p className="text-sm py-4" style={{ color:'var(--text-muted)' }}>Loading performance…</p> : (
               <>
                 {/* Goals */}
@@ -629,7 +679,11 @@ export default function EmployeeProfile() {
                 </Grid>
               </>
             )}
-            <AiInsight hint="Reserved — will generate a performance summary, promotion insight and attrition risk from this history." />
+            {/* #40 — the "coming soon" note that used to sit here promised a
+                performance summary, promotion insight and attrition risk. All three
+                are built and rendered by EmployeeScoreCard at the top of this very
+                tab, so the placeholder was telling the user the opposite of what the
+                page shows. */}
           </div>
         )}
 
@@ -748,17 +802,50 @@ export default function EmployeeProfile() {
                 const current = rows.filter(r => r.status==='Assigned' || r.status==='In Progress')
                 const upcoming = current.filter(r => r.session_start && new Date(r.session_start) >= now)
                 const completed = rows.filter(r => r.status==='Completed')
+                // #23 — the retraining number, derived from the attempt_number and
+                // is_retraining the API already returns on every row. No second
+                // endpoint and no counting rule of its own: a repeat is whatever
+                // EmployeeTrainingService stamped it as when the training was
+                // assigned, so this view can never disagree with L&D.
+                const retrainings = rows.filter(r => r.is_retraining)
+                const repeatedPrograms = Object.values(
+                  rows.reduce((acc, r) => {
+                    const k = r.program_code || r.program
+                    acc[k] = acc[k] || { program: r.program, code: r.program_code, attempts: 0, latest: 0, reason: null }
+                    acc[k].attempts += 1
+                    if ((r.attempt_number || 1) >= acc[k].latest) {
+                      acc[k].latest = r.attempt_number || 1
+                      acc[k].reason = r.retraining_reason || acc[k].reason
+                    }
+                    return acc
+                  }, {})
+                ).filter(p => p.attempts > 1)
+
                 const K = [
                   { l:'Assigned', v:current.length, c:'#3b82f6' }, { l:'Upcoming', v:upcoming.length, c:'#7C3AED' },
                   { l:'Completed', v:completed.length, c:'#10b981' }, { l:'Total', v:rows.length, c:'#f59e0b' },
+                  // #23 — retraining is a headline number, not a detail: repeated
+                  // trainings are the signal that something did not stick.
+                  { l:'Retrainings', v:retrainings.length, c:'#f97316' },
                 ]
                 const Table = ({ list }) => (
                   <div className="overflow-x-auto rounded-xl" style={{ border:'1px solid var(--border)' }}>
-                    <table className="w-full text-sm" style={{ minWidth:560 }}>
-                      <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{['Program','Session','Due','Completion','Status'].map(h=><th key={h} className="text-left px-3 py-2.5 label-caps whitespace-nowrap">{h}</th>)}</tr></thead>
+                    <table className="w-full text-sm" style={{ minWidth:640 }}>
+                      <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{['Program','Attempt','Session','Due','Completion','Status'].map(h=><th key={h} className="text-left px-3 py-2.5 label-caps whitespace-nowrap">{h}</th>)}</tr></thead>
                       <tbody>{list.map(r=>(
                         <tr key={r.id} style={{ borderBottom:'1px solid var(--border)' }}>
                           <td className="px-3 py-2.5"><span className="font-semibold" style={{ color:'var(--text-h)' }}>{r.program}</span> <span className="text-[10px] font-mono" style={{ color:'#a78bfa' }}>{r.program_code}</span></td>
+                          {/* #23 — which go at this programme this is. A first attempt
+                              is shown plainly; only a repeat is called out, so the
+                              badge means something when it appears. */}
+                          <td className="px-3 py-2.5 whitespace-nowrap">
+                            <span className="font-bold" style={{ color: r.is_retraining ? '#f59e0b' : 'var(--text-muted)' }}>#{r.attempt_number || 1}</span>
+                            {r.is_retraining && (
+                              <span title={r.retraining_reason || 'Repeat of an earlier assignment'}
+                                className="ml-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded-md"
+                                style={{ background:'rgba(245,158,11,0.14)', color:'#f59e0b' }}>Retraining</span>
+                            )}
+                          </td>
                           <td className="px-3 py-2.5" style={{ color:'var(--text-muted)' }}>{r.session_title||'—'}<div className="text-[10px]">{r.trainer_name} · {fmtDate(r.session_start)}</div></td>
                           <td className="px-3 py-2.5" style={{ color:'var(--text-muted)' }}>{fmtDate(r.due_date)}</td>
                           <td className="px-3 py-2.5 font-bold" style={{ color:'#7C3AED' }}>{r.completion_percentage}%</td>
@@ -770,7 +857,31 @@ export default function EmployeeProfile() {
                 )
                 return (
                   <>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">{K.map(k=><div key={k.l} className="kpi-3d"><p className="text-3xl font-black" style={{ color:k.c }}>{k.v}</p><p className="text-xs font-medium mt-1" style={{ color:'var(--text-muted)' }}>{k.l}</p></div>)}</div>
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">{K.map(k=><div key={k.l} className="kpi-3d"><p className="text-3xl font-black" style={{ color:k.c }}>{k.v}</p><p className="text-xs font-medium mt-1" style={{ color:'var(--text-muted)' }}>{k.l}</p></div>)}</div>
+
+                    {/* #23 — programmes taken more than once, with how many times.
+                        Grouped from the same rows as the tables below, so the count
+                        here and the "#N / Retraining" badges there always agree. */}
+                    {repeatedPrograms.length > 0 && (
+                      <div className="rounded-xl p-3" style={{ background:'rgba(249,115,22,0.06)', border:'1px solid rgba(249,115,22,0.2)' }}>
+                        <p className="text-[11px] font-bold uppercase mb-2" style={{ color:'#f97316', letterSpacing:'0.04em' }}>Repeated Training</p>
+                        <div className="space-y-1.5">
+                          {repeatedPrograms.map(p => (
+                            <div key={p.code || p.program} className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <span className="text-xs font-semibold" style={{ color:'var(--text-h)' }}>{p.program}</span>
+                                {p.reason && <p className="text-[10px] mt-0.5" style={{ color:'var(--text-muted)' }}>{p.reason}</p>}
+                              </div>
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg whitespace-nowrap flex-shrink-0"
+                                style={{ background:'rgba(249,115,22,0.14)', color:'#f97316' }}>
+                                {p.attempts} attempts · {p.attempts - 1} retraining{p.attempts - 1 === 1 ? '' : 's'}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     <div>
                       <p className="text-[11px] font-bold uppercase mb-2" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Current Assignments</p>
                       {current.length===0 ? <p className="text-xs px-3 py-2 rounded-xl" style={{ background:'var(--bg-input)', color:'var(--text-muted)' }}>No active trainings.</p> : <Table list={current} />}
@@ -805,7 +916,14 @@ export default function EmployeeProfile() {
                 </div>
               </div>
             )}
-            <AiInsight hint="Will recommend training and retraining based on role, skill gaps and history." />
+            {/* #40 — the "coming soon" note removed from here promised training and
+                retraining recommendations from role, skill gaps and history. Those
+                are produced by EmployeeInsightService ("Close the skill gap: …",
+                "Complete overdue training: …") and shown on the Performance tab, and
+                the retraining figures are now on this tab (#23). */}
+            <p className="text-[10px]" style={{ color:'var(--text-muted)' }}>
+              Training and skill-gap recommendations appear under <b>Performance → Areas for Improvement</b>.
+            </p>
           </div>
         )}
 
@@ -958,6 +1076,16 @@ export default function EmployeeProfile() {
           </div>
         )}
 
+        {tab==='work' && (
+          <div className="space-y-3">
+            <p className="text-[11px]" style={{ color:'var(--text-muted)' }}>
+              Live from the Projects, Tasks, Helpdesk and Knowledge Base modules — nothing here is a copy.
+              Every row opens the record in the module that owns it.
+            </p>
+            <EmployeeLifecyclePanel employeeId={id} />
+          </div>
+        )}
+
         {tab==='timeline' && (
           <div>
             <p className="text-xs mb-4" style={{ color:'var(--text-muted)' }}>Full lifecycle — reused from audit logs (Applied → Interview → Offer → Joining → Employee, and every subsequent change). Future events (Promotion, Asset Assigned, Confirmation, Exit) will append here automatically.</p>
@@ -973,8 +1101,10 @@ export default function EmployeeProfile() {
 }
 
 /* ── Overview quick card ── */
-const QuickCard = ({ label, value, color, note, bar }) => (
-  <div className="rounded-xl px-3 py-3" style={{ background:'var(--bg-input)', border:'1px solid var(--border)' }}>
+const QuickCard = ({ label, value, color, note, bar, onClick }) => (
+  <div onClick={onClick} role={onClick ? 'button' : undefined}
+    className={`rounded-xl px-3 py-3${onClick ? ' cursor-pointer transition-transform hover:-translate-y-0.5' : ''}`}
+    style={{ background:'var(--bg-input)', border:'1px solid var(--border)' }}>
     <div className="flex items-center justify-between">
       <p className="text-2xl font-black" style={{ color }}>{value}</p>
       {note && <span className="text-[8.5px] font-bold px-1.5 py-0.5 rounded" style={{ background:'var(--bg-card)', color:'var(--text-muted)', border:'1px solid var(--border)' }}>{note}</span>}

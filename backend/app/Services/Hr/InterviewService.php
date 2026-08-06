@@ -6,6 +6,7 @@ use App\Exceptions\BusinessException;
 use App\Models\Hr\HrCandidate;
 use App\Jobs\Hr\RecalculateCandidateScore;
 use App\Models\Hr\HrInterviewRound;
+use App\Support\Hr\HiringManagerFilter;
 use App\Notifications\WhatsApp\InterviewScheduledNotification;
 use App\Support\Hr\InterviewSequence;
 use Carbon\Carbon;
@@ -37,6 +38,8 @@ class InterviewService
         if (! empty($filters['status']) && $filters['status'] !== 'All') {
             $query->where('status', $filters['status']);
         }
+        // #3 — two hops: round → candidate → jobPosting → manpowerRequest.
+        HiringManagerFilter::apply($query, $filters['hiring_manager_id'] ?? null, 'candidate.jobPosting');
         if (! empty($filters['date'])) {
             $query->whereDate('scheduled_at', $filters['date']);
         }

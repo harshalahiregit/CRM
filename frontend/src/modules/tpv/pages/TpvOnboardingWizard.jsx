@@ -246,6 +246,43 @@ const Panel = ({ title, sub, children, actions }) => (
   </div>
 )
 
+/**
+ * The 48-hour acknowledgement window.
+ *
+ * Reads the state the backend already computes (acknowledgement_expired) rather
+ * than comparing dates here — the server owns the clock, and a client whose
+ * time is wrong must not be able to talk itself into an open window.
+ */
+function AckWindowBanner({ meeting }) {
+  const expired  = !!meeting.acknowledgement_expired
+  const deadline = meeting.acknowledgement_deadline
+  const tone     = expired
+    ? { bg: 'rgba(239,68,68,0.08)', bd: 'rgba(239,68,68,0.35)', fg: '#ef4444', Icon: AlertTriangle }
+    : { bg: 'rgba(245,158,11,0.08)', bd: 'rgba(245,158,11,0.35)', fg: '#f59e0b', Icon: Clock }
+
+  return (
+    <div style={{ marginBottom: 16, padding: '14px 18px', borderRadius: 14, background: tone.bg, border: `1px solid ${tone.bd}` }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <tone.Icon size={18} style={{ color: tone.fg }} />
+        <span style={{ fontSize: 14, fontWeight: 800, color: tone.fg }}>
+          {expired ? 'Acknowledgement window closed' : 'Acknowledgement pending'}
+        </span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10, fontSize: 12, color: 'var(--text-h)', marginTop: 10 }}>
+        <div><strong>MOM sent:</strong> {fmtDateTime(meeting.acknowledgement_sent_at)}</div>
+        <div><strong>Deadline:</strong> {deadline ? fmtDateTime(deadline) : 'No deadline set'}</div>
+      </div>
+      <p style={{ margin: '10px 0 0', fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+        {expired
+          ? 'This acknowledgement link has expired. Please ask the coordinator to re-send the Minutes of Meeting so a fresh 48-hour window can be issued.'
+          : deadline
+            ? 'Please review and acknowledge the Minutes of Meeting within 48 hours of it being sent.'
+            : 'Please review and acknowledge the Minutes of Meeting.'}
+      </p>
+    </div>
+  )
+}
+
 // ── Step 1 — Kickoff ─────────────────────────────────────────────────────────
 // Wired to the shared KickoffMeeting engine. The meeting attaches to the vendor
 // (the onboarding's kickoff_meeting_id FK is synced by the backend on schedule),
@@ -266,6 +303,7 @@ function StepKickoff({ onboarding, editable, onAcknowledged, onContinue, api }) 
   const [zoom, setZoom] = useState(100)
   const [checked, setChecked] = useState(!!onboarding.acknowledged)
   const [accepting, setAccepting] = useState(false)
+  const [comment,   setComment]   = useState('')
 
   const loadMeeting = useCallback(() => {
     const vid = onboarding.vendor?.id
@@ -332,7 +370,7 @@ function StepKickoff({ onboarding, editable, onAcknowledged, onContinue, api }) 
       if (!checked) return
       setAccepting(true)
       try {
-        await api.onboarding.acceptKickoff(onboarding.id)
+        await api.onboarding.acceptKickoff(onboarding.id, comment.trim() || undefined)
         onAcknowledged?.()
       } catch (e) {
         alert(e?.response?.data?.message || 'Could not record acknowledgement.')
@@ -413,7 +451,24 @@ function StepKickoff({ onboarding, editable, onAcknowledged, onContinue, api }) 
                 {onboarding.acknowledged_ip && <div><strong>IP Address:</strong> {onboarding.acknowledged_ip}</div>}
                 {onboarding.acknowledged_device && <div><strong>Device:</strong> {onboarding.acknowledged_device}</div>}
               </div>
+              {/* The vendor's response, read-only once submitted. */}
+              {meeting?.acknowledgement_comment && (
+                <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid rgba(16,185,129,0.25)' }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: '#10b981', marginBottom: 5 }}>Your response</div>
+                  <p style={{ margin: 0, fontSize: 13, color: 'var(--text-h)', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>
+                    {meeting.acknowledgement_comment}
+                  </p>
+                </div>
+              )}
             </div>
+          )}
+
+          {/* Acknowledgement window — only once the MOM has actually been sent,
+              and only while it still matters (an acknowledged MOM has its own
+              banner above). A meeting published before the window existed has no
+              deadline and is deliberately shown as open-ended rather than late. */}
+          {!acknowledged && meeting?.acknowledgement_sent_at && (
+            <AckWindowBanner meeting={meeting} />
           )}
 
           {/* Meeting Summary Details */}
@@ -460,7 +515,25 @@ function StepKickoff({ onboarding, editable, onAcknowledged, onContinue, api }) 
                 </button>
               </div>
             ) : (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {/* Vendor response. Optional — acknowledging without a comment
+                    is the normal case, so this never blocks the button. */}
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-h)', marginBottom: 6 }}>
+                    Your response <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>(optional)</span>
+                  </label>
+                  <textarea
+                    value={comment}
+                    onChange={e => setComment(e.target.value)}
+                    disabled={!editable}
+                    rows={3}
+                    maxLength={5000}
+                    placeholder="Add your feedback or required changes"
+                    style={{ width: '100%', padding: '9px 12px', fontSize: 13, borderRadius: 10, resize: 'vertical',
+                      background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-body)' }}
+                  />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: editable ? 'pointer' : 'not-allowed', flex: 1, minWidth: 260 }}>
                   <input type="checkbox" checked={checked} disabled={!editable} onChange={e => setChecked(e.target.checked)} style={{ width: 18, height: 18, accentColor: '#7C3AED' }} />
                   <span style={{ fontSize: 13.5, color: 'var(--text-h)', fontWeight: 600 }}>
@@ -478,8 +551,9 @@ function StepKickoff({ onboarding, editable, onAcknowledged, onContinue, api }) 
                     opacity: (!checked || !editable) ? 0.7 : 1,
                   }}
                 >
-                  {accepting ? <Loader size={15} /> : <Check size={15} />} Continue →
+                  {accepting ? <Loader size={15} /> : <Check size={15} />} Submit Acknowledgement →
                 </button>
+                </div>
               </div>
             )}
           </div>
@@ -543,7 +617,9 @@ function getImageUrl(url) {
   if (url.startsWith('data:') || url.startsWith('http://') || url.startsWith('https://')) {
     return url
   }
-  const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
+  // Same env var as every other caller (VITE_API_BASE_URL was a typo and always
+  // fell back to localhost, which broke this link on any deployed domain).
+  const baseUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api'
   const cleanBase = baseUrl.replace(/\/api\/?$/, '')
   return `${cleanBase}${url.startsWith('/') ? '' : '/'}${url}`
 }

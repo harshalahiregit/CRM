@@ -42,6 +42,23 @@ class AppServiceProvider extends ServiceProvider
             fn () => \App\Services\AI\AIProviderFactory::make()
         );
 
+        // Document Numbering Engine — the single source of truth for every
+        // document number. Modules depend on the interface only, so the storage
+        // strategy can change without touching a single caller.
+        $this->app->bind(
+            \App\Services\Numbering\DocumentNumberServiceInterface::class,
+            \App\Services\Numbering\DatabaseDocumentNumberService::class
+        );
+
+        // Extension registries are SINGLETONS on purpose: each one supports runtime
+        // register() so a module can add a placeholder / reset rule / merge field
+        // from its own service provider. With a fresh instance per resolution those
+        // registrations would land on a throwaway object and silently do nothing.
+        // They hold only tenant-agnostic resolvers, so sharing them is safe.
+        $this->app->singleton(\App\Support\Numbering\Placeholders\PlaceholderRegistry::class);
+        $this->app->singleton(\App\Support\Numbering\Reset\ResetStrategyRegistry::class);
+        $this->app->singleton(\App\Support\Email\MergeFields\MergeFieldRegistry::class);
+
         // Payroll attendance boundary — placeholder until SangoeTrack integration.
         // Swap this binding for a SangoeTrackAttendanceProvider to go live; payroll
         // logic depends only on the AttendanceProvider interface.

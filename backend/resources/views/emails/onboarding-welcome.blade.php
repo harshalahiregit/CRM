@@ -4,7 +4,13 @@
     <h2>🎉 Congratulations, {{ $onboarding->candidate_name }}!</h2>
 
     <p>We are delighted to inform you that you have been <strong>selected</strong> for the position of
-        <strong>{{ $onboarding->position }}</strong>@if($onboarding->department) in the {{ $onboarding->department }} department@endif at {{ config('app.name') }}.</p>
+        {{-- A ternary, not @if/@endif: Blade matches directives with `\B@`, so an
+             `@endif` written immediately after a word character ("department@endif")
+             is NOT recognised as a directive. The @if was left unclosed and every
+             render of this template threw "unexpected end of file", which meant the
+             onboarding welcome email never sent and POST /hr/onboarding returned
+             500 for any candidate with an email address. --}}
+        <strong>{{ $onboarding->position }}</strong>{{ $onboarding->department ? ' in the '.$onboarding->department.' department' : '' }} at {{ config('app.name') }}.</p>
 
     @if(!empty($portalLink))
         <p><strong>Next step — complete your onboarding.</strong> Please use your secure link below to submit your
