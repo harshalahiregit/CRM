@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\Sales\PaymentLinkController;
 use App\Http\Controllers\Api\Sales\RetainerInvoiceController;
 use App\Http\Controllers\Api\Sales\HsnSacController;
 use App\Http\Controllers\Api\Sales\ProposalTemplateController;
+use App\Http\Controllers\Api\Sales\SalesDocumentTemplateController;
 use App\Http\Controllers\Api\Sales\SalesActivityController;
 use App\Http\Controllers\Api\Sales\SalesInsightController;
 use App\Http\Controllers\Api\Sales\ReminderController;
@@ -123,6 +124,16 @@ Route::middleware('auth:sanctum')->prefix('sales')->group(function () {
     Route::post('/proposal-templates/{proposalTemplate}/duplicate', [ProposalTemplateController::class, 'duplicate']);
     // Declared last so it can't shadow /categories above.
     Route::get('/proposal-templates/{proposalTemplate}',        [ProposalTemplateController::class, 'show']);
+
+    // Invoice / estimate / credit-note templates (line items + document defaults)
+    Route::get('/document-templates',                          [SalesDocumentTemplateController::class, 'index']);
+    Route::post('/document-templates',                         [SalesDocumentTemplateController::class, 'store']);
+    Route::post('/document-templates/from-document',           [SalesDocumentTemplateController::class, 'saveFromDocument']);
+    Route::put('/document-templates/{salesDocumentTemplate}',  [SalesDocumentTemplateController::class, 'update']);
+    Route::delete('/document-templates/{salesDocumentTemplate}', [SalesDocumentTemplateController::class, 'destroy']);
+    Route::post('/document-templates/{salesDocumentTemplate}/duplicate', [SalesDocumentTemplateController::class, 'duplicate']);
+    // Last, so it can't shadow /from-document above.
+    Route::get('/document-templates/{salesDocumentTemplate}',  [SalesDocumentTemplateController::class, 'show']);
 
     // Estimates
     Route::get('/estimates',                                   [EstimateController::class, 'index']);

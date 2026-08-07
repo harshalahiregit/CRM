@@ -6,6 +6,7 @@ import { useClientOptions } from '@/hooks/useClientOptions'
 import { useProjectOptions } from '@/hooks/useProjectOptions'
 import StatusBadge from '../components/StatusBadge'
 import LineItemsTable from '../components/LineItemsTable'
+import DocumentTemplateBar from '../components/DocumentTemplateBar'
 import RowMenu from '../components/RowMenu'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import RichTextEditor from '@/components/ui/RichTextEditor'
@@ -302,6 +303,8 @@ export default function Invoices() {
               {/* Line Items */}
               <div>
                 <p className="label-caps mb-4" style={{ color: '#a78bfa' }}>Line Items</p>
+                <DocumentTemplateBar docType="invoice" form={form}
+                  onApply={patch => setForm(p => ({ ...p, ...patch }))} />
                 <LineItemsTable
                   items={form.line_items}
                   onChange={rows => sf('line_items', rows)}
