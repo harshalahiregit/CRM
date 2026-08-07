@@ -23,6 +23,7 @@ import PollComposerModal from '@/components/poll/PollComposerModal'
 import QuickTaskModal from '@/components/task/QuickTaskModal'
 import MessageReactions from '@/components/editor/MessageReactions'
 import { useReactions } from '@/hooks/useReactions'
+import { useDiscardGuard } from '@/lib/confirmClose'
 import { taskApi } from '@/services/taskApi'
 import { RICH_MODULES, RICH_FORMATS } from '@/lib/quillConfig'
 import Select from './ui/Select'
@@ -139,9 +140,13 @@ const REPLY_EDITOR_CSS = `
   .reply-editor .ql-snow .ql-fill{fill:var(--text-muted)}
   .reply-editor .ql-snow button:hover .ql-stroke,.reply-editor .ql-snow button.ql-active .ql-stroke{stroke:var(--color-support-500)}
   .reply-editor .ql-snow button:hover .ql-fill,.reply-editor .ql-snow button.ql-active .ql-fill{fill:var(--color-support-500)}
-  .reply-editor .ql-snow .ql-tooltip{background:var(--bg-card);border:1px solid var(--border);box-shadow:var(--shadow-card-3d);color:var(--text-body);border-radius:10px;z-index:20}
-  .reply-editor .ql-snow .ql-tooltip input[type=text]{background:var(--bg-input);border:1px solid var(--border);color:var(--text-h);border-radius:6px}
-  .reply-editor .ql-snow .ql-tooltip a.ql-action,.reply-editor .ql-snow .ql-tooltip a.ql-remove{color:var(--color-support-500)}
+  .reply-editor .ql-snow .ql-tooltip{display:flex;align-items:center;gap:8px;background:var(--bg-card);border:1px solid var(--border);box-shadow:var(--shadow-card-3d);color:var(--text-body);border-radius:10px;padding:7px 12px;white-space:nowrap;z-index:20}
+  .reply-editor .ql-snow .ql-tooltip::before{margin:0;line-height:1.4}
+  .reply-editor .ql-snow .ql-tooltip .ql-preview{display:inline-block;max-width:220px;overflow:hidden;text-overflow:ellipsis;vertical-align:middle;margin:0;line-height:1.4}
+  .reply-editor .ql-snow .ql-tooltip input[type=text]{flex:1;min-width:180px;height:26px;background:var(--bg-input);border:1px solid var(--border);color:var(--text-h);border-radius:6px;margin:0}
+  .reply-editor .ql-snow .ql-tooltip a.ql-action,.reply-editor .ql-snow .ql-tooltip a.ql-remove{color:var(--color-support-500);margin:0;line-height:1.4}
+  .reply-editor .ql-snow .ql-tooltip:not(.ql-editing) a.ql-action{margin-left:auto}
+  .reply-editor .ql-snow .ql-tooltip:not(.ql-editing) a.ql-action::after{margin:0;padding-right:8px;border-right:1px solid var(--border)}
   /* Rendered reply bodies (server-sanitized HTML) inside the thread bubbles */
   .reply-html p{margin:0 0 .5rem}
   .reply-html p:last-child{margin-bottom:0}
@@ -253,6 +258,11 @@ export default function TicketThread() {
   // silently. Gate the shortcut on this so it no-ops until a valid target exists.
   const canResolve = (settings?.statuses || []).some(s => s.name === resolveStatus)
   const [taskRows, setTaskRows] = useState([{ ...BASE_ROW }])
+  // Guard the convert-to-tasks modal so typed rows aren't lost on an accidental
+  // close. Snapshot the seeded rows at open time; dirty = rows differ from it.
+  const convertSnapRef = useRef('')
+  const { guard: guardTasksClose, dialog: tasksDiscardDialog } = useDiscardGuard()
+  const requestCloseTasks = () => guardTasksClose(() => setTasksOpen(false), JSON.stringify(taskRows) !== convertSnapRef.current)
 
   const createTasks = useMutation({
     mutationFn: () => {
@@ -323,7 +333,9 @@ export default function TicketThread() {
   // Seed the rows from the ticket at open time (the button only renders once the
   // ticket is loaded, so `makeRow` always sees real data here).
   const openTaskModal = () => {
-    setTaskRows([makeRow()])
+    const seed = [makeRow()]
+    setTaskRows(seed)
+    convertSnapRef.current = JSON.stringify(seed)
     setTasksOpen(true)
   }
 
@@ -994,31 +1006,38 @@ export default function TicketThread() {
                 )}
 
                 {/* Toolbar */}
-                <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: '1px solid var(--border)', background: composerMode === 'note' ? 'transparent' : 'var(--bg-input)' }}>
-                  <div className="flex items-center gap-4">
+                <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-4 py-3" style={{ borderTop: '1px solid var(--border)', background: composerMode === 'note' ? 'transparent' : 'var(--bg-input)' }}>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2 min-w-0">
                     {composerMode === 'reply' ? (
                       <>
-                        <label className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer hover:opacity-70 transition-opacity" style={{ color: 'var(--text-muted)' }}>
-                          <Paperclip size={14} /> Attach
-                          <input type="file" multiple className="hidden" onChange={e => setFiles(prev => [...prev, ...Array.from(e.target.files)])} />
-                        </label>
-                        <EditorActionBar quillRef={quillRef} people={mentionPeople} accent="var(--color-support-500)" onPoll={() => setPollOpen(true)} meeting
-                          quickCreate={[
-                            { label: 'Task', icon: ListTodo, onClick: () => setQuickTaskOpen(true) },
-                            { label: 'Note', icon: StickyNote, onClick: () => setComposerMode('note') },
-                          ]} />
-                        <CannedResponsePicker onInsert={txt => setMessage(m => m ? `${m}\n\n${txt}` : txt)} />
-                        <InsertKbLinkPicker onInsert={html => setMessage(m => m ? `${m} ${html}` : html)} />
-                        <button type="button" onClick={saveAsCanned} disabled={!message.trim()}
-                          className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer hover:opacity-70 transition-opacity disabled:opacity-40"
-                          style={{ color: 'var(--text-muted)' }} title="Save this reply as a canned response">
-                          <Bookmark size={14} /> Save as canned
-                        </button>
-                        <button type="button" onClick={convertToKb} disabled={!message.trim()}
-                          className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer hover:opacity-70 transition-opacity disabled:opacity-40"
-                          style={{ color: 'var(--text-muted)' }} title="Turn this reply into a knowledge base article">
-                          <BookOpen size={14} /> To KB
-                        </button>
+                        {/* Insert tools (icons) */}
+                        <div className="flex items-center gap-2">
+                          <label className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer hover:opacity-70 transition-opacity" style={{ color: 'var(--text-muted)' }}>
+                            <Paperclip size={14} /> Attach
+                            <input type="file" multiple className="hidden" onChange={e => setFiles(prev => [...prev, ...Array.from(e.target.files)])} />
+                          </label>
+                          <EditorActionBar quillRef={quillRef} people={mentionPeople} accent="var(--color-support-500)" onPoll={() => setPollOpen(true)} meeting
+                            quickCreate={[
+                              { label: 'Task', icon: ListTodo, onClick: () => setQuickTaskOpen(true) },
+                              { label: 'Note', icon: StickyNote, onClick: () => setComposerMode('note') },
+                            ]} />
+                        </div>
+                        <span className="w-px h-4 self-center hidden sm:block" style={{ background: 'var(--border)' }} />
+                        {/* Content tools (text) */}
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                          <CannedResponsePicker onInsert={txt => setMessage(m => m ? `${m}\n\n${txt}` : txt)} />
+                          <InsertKbLinkPicker onInsert={html => setMessage(m => m ? `${m} ${html}` : html)} />
+                          <button type="button" onClick={saveAsCanned} disabled={!message.trim()}
+                            className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer hover:opacity-70 transition-opacity disabled:opacity-40"
+                            style={{ color: 'var(--text-muted)' }} title="Save this reply as a canned response">
+                            <Bookmark size={14} /> Save as canned
+                          </button>
+                          <button type="button" onClick={convertToKb} disabled={!message.trim()}
+                            className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer hover:opacity-70 transition-opacity disabled:opacity-40"
+                            style={{ color: 'var(--text-muted)' }} title="Turn this reply into a knowledge base article">
+                            <BookOpen size={14} /> To KB
+                          </button>
+                        </div>
                         {replyTip && <span className="text-[11px] font-semibold" style={{ color: 'var(--color-success-500)' }}>{replyTip}</span>}
                       </>
                     ) : (
@@ -1026,7 +1045,7 @@ export default function TicketThread() {
                     )}
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 shrink-0 ml-auto">
                     {(postReply.isError || addNote.isError) && <span className="text-xs" style={{ color: '#ef4444' }}>{(postReply.error || addNote.error)?.message}</span>}
                     {composerMode === 'note' ? (
                       <button type="submit" disabled={!canSend || busy} className="flex items-center gap-1.5 text-xs font-bold px-4 py-2 rounded-xl disabled:opacity-40" style={{ background: 'var(--color-warning-500)', color: '#fff' }}>
@@ -1152,7 +1171,7 @@ export default function TicketThread() {
       {tasksOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
-          onClick={() => setTasksOpen(false)}
+          onClick={requestCloseTasks}
         >
           <div
             className="w-full max-w-2xl rounded-2xl p-6 max-h-[85vh] overflow-y-auto"
@@ -1185,7 +1204,7 @@ export default function TicketThread() {
                   </p>
                 </div>
               </div>
-              <button onClick={() => setTasksOpen(false)} className="hover:opacity-60">
+              <button onClick={requestCloseTasks} className="hover:opacity-60">
                 <X size={18} style={{ color: 'var(--text-muted)' }} />
               </button>
             </div>
@@ -1257,7 +1276,7 @@ export default function TicketThread() {
             )}
             <div className="flex justify-end gap-2">
               <button
-                onClick={() => setTasksOpen(false)}
+                onClick={requestCloseTasks}
                 className="text-xs font-semibold px-4 py-2 rounded-xl"
                 style={{ color: 'var(--text-muted)', border: '1px solid var(--border)', background: 'transparent' }}
               >
@@ -1275,6 +1294,7 @@ export default function TicketThread() {
           </div>
         </div>
       )}
+      {tasksDiscardDialog}
     </div>
   )
 }

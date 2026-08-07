@@ -7,7 +7,7 @@ import {
   Play, Search, Clock, GitBranch, X,
 } from 'lucide-react'
 import { projectApi, PROJECT_STATUS, PROJECT_ACCENT } from '@/services/projectApi'
-import { guardedClose } from '@/lib/confirmClose'
+import { useDiscardGuard } from '@/lib/confirmClose'
 import { exportCsv, stampedName } from '@/lib/exportCsv'
 import { useAuth } from '@/context/AuthContext'
 import { useStatuses, statusOptions } from '@/hooks/useStatuses'
@@ -730,7 +730,8 @@ function MilestoneFormModal({ milestone, onClose, onSubmit, busy }) {
   })
   const snapRef = useRef(null)
   if (snapRef.current === null) snapRef.current = JSON.stringify(f)
-  const requestClose = () => guardedClose(onClose, JSON.stringify(f) !== snapRef.current)
+  const { guard, dialog } = useDiscardGuard()
+  const requestClose = () => guard(onClose, JSON.stringify(f) !== snapRef.current)
   const set = (k, v) => setF(p => ({ ...p, [k]: v }))
   const ok = f.name.trim() && f.start_date && f.due_date
   const submit = (e) => { e.preventDefault(); if (ok && !busy) onSubmit(f) }
@@ -740,6 +741,7 @@ function MilestoneFormModal({ milestone, onClose, onSubmit, busy }) {
   const req = <span style={{ color: 'var(--color-danger-500)' }}>*</span>
 
   return (
+    <>
     <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 overflow-y-auto" style={{ background: 'rgba(15,23,42,0.55)' }} onClick={requestClose}>
       <form onSubmit={submit} onClick={e => e.stopPropagation()}
         className="w-full rounded-2xl my-6" style={{ maxWidth: 520, background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card-3d)' }}>
@@ -792,6 +794,8 @@ function MilestoneFormModal({ milestone, onClose, onSubmit, busy }) {
         </footer>
       </form>
     </div>
+    {dialog}
+    </>
   )
 }
 

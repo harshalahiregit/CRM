@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Users, Briefcase, CheckSquare, MoreHorizontal,
-  FolderOpen, Receipt, Truck, LifeBuoy, BarChart2, Settings, Landmark
+  FolderOpen, LifeBuoy, Settings, Landmark
 } from 'lucide-react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useState } from 'react'
@@ -17,10 +17,7 @@ const PRIMARY_TABS = [
 const MORE_ITEMS = [
   { label: 'Accounts',  icon: Landmark,   path: '/app/accounts'  },
   { label: 'Projects',  icon: FolderOpen, path: '/app/projects'  },
-  { label: 'Invoices',  icon: Receipt,    path: '/app/invoices'  },
-  { label: 'Vendors',   icon: Truck,      path: '/app/vendors'   },
   { label: 'Tickets',   icon: LifeBuoy,   path: '/app/tickets'   },
-  { label: 'Reports',   icon: BarChart2,  path: '/app/reports'   },
   { label: 'Settings',  icon: Settings,   path: '/app/settings'  },
 ]
 
