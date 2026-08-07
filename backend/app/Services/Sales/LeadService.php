@@ -50,6 +50,7 @@ class LeadService
         $cold      = (clone $leads)->active()->where('lead_temperature', 'Cold')->count();
         $converted = (clone $leads)->converted()->count();
         $lost      = (clone $leads)->lost()->count();
+        $junk      = (clone $leads)->junk()->count();
         $pipeline  = (clone $leads)->active()->sum('lead_value');
 
         $conversionRate = $total > 0 ? round(($converted / $total) * 100, 1) : 0;
@@ -57,11 +58,27 @@ class LeadService
         $thisMonth      = (clone $leads)->whereMonth('created_at', now()->month)->whereYear('created_at', now()->year)->count();
         $thisMonthValue = (clone $leads)->whereMonth('created_at', now()->month)->whereYear('created_at', now()->year)->sum('lead_value');
 
-        $byStatus = LeadStatus::forTenant($tenantId)->ordered()->get()->map(function ($s) use ($tenantId) {
-            $count = Lead::forTenant($tenantId)->active()->where('status_id', $s->id)->count();
-            $value = Lead::forTenant($tenantId)->active()->where('status_id', $s->id)->sum('lead_value');
-            return ['name' => $s->name, 'color' => $s->color, 'count' => $count, 'value' => $value];
-        });
+        // One grouped query instead of two per status — this ran 2N queries and is
+        // read on every Leads page load. `id` is included so the page can match a
+        // count to its filter chip; without it the chips could only match on name.
+        $statusAgg = Lead::forTenant($tenantId)->active()
+            ->selectRaw('status_id, COUNT(*) as c, COALESCE(SUM(lead_value), 0) as v')
+            ->groupBy('status_id')
+            ->get()
+            ->keyBy('status_id');
+
+        $byStatus = LeadStatus::forTenant($tenantId)->ordered()->get()->map(fn ($s) => [
+            'id'    => $s->id,
+            'name'  => $s->name,
+            'color' => $s->color,
+            'count' => (int) ($statusAgg[$s->id]->c ?? 0),
+            'value' => (float) ($statusAgg[$s->id]->v ?? 0),
+        ]);
+
+        // Leads with no status still exist (created before any status was defined,
+        // or cleared since) and belong to no chip — surfaced so the chip counts add
+        // up to the total instead of silently falling short.
+        $unassigned = (clone $leads)->active()->whereNull('status_id')->count();
 
         $bySource = Lead::forTenant($tenantId)->active()
             ->selectRaw('source_id, count(*) as count')
@@ -78,6 +95,8 @@ class LeadService
             'cold'             => $cold,
             'converted'        => $converted,
             'lost'             => $lost,
+            'junk'             => $junk,
+            'unassigned'       => $unassigned,
             'pipeline_value'   => $pipeline,
             'conversion_rate'  => $conversionRate,
             'this_month'       => $thisMonth,

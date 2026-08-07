@@ -138,6 +138,9 @@ export default function Leads() {
     return true
   })
 
+  // status_id -> active lead count, from the summary the page already fetches.
+  const statusCount = (summary?.by_status || []).reduce((m, s) => { m[s.id] = s.count; return m }, {})
+
   const kpis = summary ? [
     { label:'Total Leads', val: summary.total, icon: Users, color:'#8b5cf6' },
     { label:'Hot Leads', val: summary.hot, icon: Flame, color:'#ef4444' },
@@ -196,10 +199,42 @@ export default function Leads() {
                 <I size={13}/>{k==='table'?'Table':'Kanban'}
               </button>
             ))}
-            <div className="flex gap-1 ml-2">
-              <button onClick={()=>setFilter('all')} className="px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all" style={{background:filter==='all'?'linear-gradient(135deg,#9f67ff,#7C3AED)':'var(--bg-input)',color:filter==='all'?'#fff':'var(--text-muted)',border:'1px solid var(--border)'}}>All</button>
-              {statuses.map(s=>(
-                <button key={s.id} onClick={()=>setFilter(s.id)} className="px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all" style={{background:filter===s.id?s.color:'var(--bg-input)',color:filter===s.id?'#fff':'var(--text-muted)',border:'1px solid var(--border)'}}>{s.name}</button>
+            {/* Each stage carries its own lead count, as in the previous CRM —
+                the numbers were already computed for the KPI row but the chips
+                only showed a name, so you had to click one to learn it was empty. */}
+            <div className="flex gap-1 ml-2 flex-wrap">
+              <button onClick={()=>setFilter('all')} className="px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all" style={{background:filter==='all'?'linear-gradient(135deg,#9f67ff,#7C3AED)':'var(--bg-input)',color:filter==='all'?'#fff':'var(--text-muted)',border:'1px solid var(--border)'}}>
+                {summary ? <span className="mr-1">{summary.active}</span> : null}All
+              </button>
+              {statuses.map(s=>{
+                const on = filter===s.id
+                const n = statusCount[s.id] ?? 0
+                return (
+                  <button key={s.id} onClick={()=>setFilter(s.id)} className="px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all" style={{background:on?s.color:'var(--bg-input)',color:on?'#fff':'var(--text-muted)',border:'1px solid var(--border)'}}>
+                    <span className="mr-1">{n}</span>
+                    {/* Off-state name takes the stage colour so the row reads as a
+                        pipeline; on-state stays white on the filled chip. */}
+                    <span style={on?undefined:{color:s.color}}>{s.name}</span>
+                  </button>
+                )
+              })}
+              {/* Lost / junk sit outside the pipeline (the stage chips count only
+                  active leads), and unassigned leads belong to no stage at all —
+                  shown as read-only tallies so the chip numbers reconcile with the
+                  total instead of appearing to lose leads. */}
+              {summary && [
+                { label:'Lost', n: summary.lost, tone:'#f87171' },
+                { label:'Junk', n: summary.junk, tone:'#fbbf24' },
+                { label:'No stage', n: summary.unassigned, tone:'var(--text-muted)' },
+              ].filter(x => x.n > 0).map(x => (
+                <span key={x.label} title={`${x.label} — not shown in the stage counts above`}
+                  className="px-3 py-1.5 rounded-xl text-[11px] font-bold"
+                  style={{background:'var(--bg-input)',color:x.tone,border:'1px dashed var(--border)'}}>
+                  {x.n} {x.label}
+                  {summary.total > 0 && <span className="ml-1 font-semibold" style={{color:'var(--text-muted)'}}>
+                    · {Math.round((x.n / summary.total) * 100)}%
+                  </span>}
+                </span>
               ))}
             </div>
           </div>
