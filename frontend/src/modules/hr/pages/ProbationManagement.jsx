@@ -141,7 +141,7 @@ function ProbationTypes({ showToast }) {
           </div>}
 
       {modal && (
-        <div className="modal-backdrop" onClick={()=>setModal(null)}><div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()} style={{ maxHeight:'92vh', overflowY:'auto' }}>
+        <div className="modal-backdrop"><div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()} style={{ maxHeight:'92vh', overflowY:'auto' }}>
           <div className="flex items-center justify-between mb-4"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{modal.editing?'Edit Probation Type':'Add Probation Type'}</h2><button onClick={()=>setModal(null)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Code *</label><input className="input-3d text-sm" value={modal.form.code} onChange={e=>setModal(m=>({...m,form:{...m.form,code:e.target.value}}))}/></div>
@@ -231,7 +231,7 @@ function ProbationPolicies({ showToast }) {
           </div>}
 
       {modal && (
-        <div className="modal-backdrop" onClick={()=>setModal(null)}><div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:720, width:'95%', maxHeight:'92vh', overflowY:'auto' }}>
+        <div className="modal-backdrop"><div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:720, width:'95%', maxHeight:'92vh', overflowY:'auto' }}>
           <div className="flex items-center justify-between mb-4"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{modal.editing?'Edit Probation Policy':'Add Probation Policy'}</h2><button onClick={()=>setModal(null)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-3">
             <div className="col-span-2"><label className="label">Policy Name *</label><input className="input-3d text-sm" value={modal.form.name} onChange={e=>setModal(m=>({...m,form:{...m.form,name:e.target.value}}))}/></div>
@@ -340,7 +340,7 @@ function EmployeeProbation({ showToast }) {
 
       {modal && <AssignProbationModal employees={employees} policies={policies} saving={saving} onClose={()=>setModal(null)} onAssign={doAssign} />}
       {cancelling && (
-        <div className="modal-backdrop" onClick={()=>setCancelling(null)}><div className="modal-box max-w-md" onClick={e=>e.stopPropagation()}>
+        <div className="modal-backdrop"><div className="modal-box max-w-md" onClick={e=>e.stopPropagation()}>
           <div className="flex items-center justify-between mb-3"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>Cancel Probation</h2><button onClick={()=>setCancelling(null)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
           <p className="text-xs mb-3" style={{ color:'var(--text-muted)' }}>This marks the probation as Cancelled (read-only afterwards).</p>
           <label className="label">Reason (optional)</label><textarea rows={3} className="input-3d text-sm resize-none" value={cancelling.reason} onChange={e=>setCancelling(c=>({...c,reason:e.target.value}))}/>
@@ -356,7 +356,7 @@ function AssignProbationModal({ employees, policies, saving, onClose, onAssign }
   const [form, setForm] = useState({ employee_id:'', probation_policy_id:'', probation_start_date:'', remarks:'' })
   const setF = p => setForm(f => ({ ...f, ...p }))
   return (
-    <div className="modal-backdrop" onClick={onClose}><div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()}>
+    <div className="modal-backdrop"><div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()}>
       <div className="flex items-center justify-between mb-4"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>Assign Probation</h2><button onClick={onClose} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
       <div className="space-y-3">
         <div><label className="label">Employee *</label><select className="input-3d text-sm" value={form.employee_id} onChange={e=>setF({ employee_id:e.target.value })}><option value="">Select…</option>{employees.map(e=><option key={e.id} value={e.id}>{e.name} ({e.employee_code})</option>)}</select></div>
@@ -536,7 +536,7 @@ function ReviewModal({ editingId, probations, employees, onClose, onSaved, showT
     </div>
   )
   return (
-    <div className="modal-backdrop" onClick={onClose}><div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:640, width:'96%', maxHeight:'92vh', overflowY:'auto' }}>
+    <div className="modal-backdrop"><div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:640, width:'96%', maxHeight:'92vh', overflowY:'auto' }}>
       <div className="flex items-center justify-between mb-4"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{editingId?'Edit Review':'Create Review'}</h2><button onClick={onClose} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
       {loading ? <HrLoading label="Loading…" /> : (
         <div className="space-y-3">
@@ -700,7 +700,7 @@ function ProbationExtensions({ showToast }) {
 
       {modal && <ExtensionModal editingId={modal.editing} probations={probations} employees={employees} onClose={()=>setModal(null)} onSaved={()=>{ setModal(null); load() }} showToast={showToast} />}
       {decide && (
-        <div className="modal-backdrop" onClick={()=>setDecide(null)}><div className="modal-box max-w-md" onClick={e=>e.stopPropagation()}>
+        <div className="modal-backdrop"><div className="modal-box max-w-md" onClick={e=>e.stopPropagation()}>
           <div className="flex items-center justify-between mb-3"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{decide.mode==='approve'?'Approve':'Reject'} Extension</h2><button onClick={()=>setDecide(null)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
           <p className="text-xs mb-3" style={{ color:'var(--text-muted)' }}>{decide.mode==='approve'?'Approving updates the probation end date and marks it Extended.':'Rejecting is final — the extension cannot be re-opened.'}</p>
           <label className="label">HR Comments</label><textarea rows={3} className="input-3d text-sm resize-none" value={decide.hr_comments} onChange={e=>setDecide(d=>({...d,hr_comments:e.target.value}))}/>
@@ -732,7 +732,7 @@ function ExtensionModal({ editingId, probations, employees, onClose, onSaved, sh
     catch (e) { showToast(e.response?.data?.message||'Save failed','error') } finally { setSaving(false) }
   }
   return (
-    <div className="modal-backdrop" onClick={onClose}><div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()} style={{ maxHeight:'92vh', overflowY:'auto' }}>
+    <div className="modal-backdrop"><div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()} style={{ maxHeight:'92vh', overflowY:'auto' }}>
       <div className="flex items-center justify-between mb-4"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{editingId?'Edit Extension':'Request Extension'}</h2><button onClick={onClose} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
       {loading ? <HrLoading label="Loading…" /> : (
         <div className="space-y-3">
@@ -897,7 +897,7 @@ function ProbationConfirmations({ showToast }) {
 
       {modal && <ConfirmationModal editingId={modal.editing} probations={probations} onClose={()=>setModal(null)} onSaved={()=>{ setModal(null); load() }} showToast={showToast} />}
       {decide && (
-        <div className="modal-backdrop" onClick={()=>setDecide(null)}><div className="modal-box max-w-md" onClick={e=>e.stopPropagation()}>
+        <div className="modal-backdrop"><div className="modal-box max-w-md" onClick={e=>e.stopPropagation()}>
           <div className="flex items-center justify-between mb-3"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{decide.mode==='approve'?'Approve':decide.mode==='reject'?'Reject':'Confirm Employee'}</h2><button onClick={()=>setDecide(null)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
           <p className="text-xs mb-3" style={{ color:'var(--text-muted)' }}>{decide.mode==='confirm'?'Confirming closes the probation and marks the employee Confirmed (terminal).':decide.mode==='approve'?'Approving allows the employee to be confirmed next.':'Rejecting is final — the employee will not be confirmed.'}</p>
           {decide.mode==='confirm' && <div className="mb-3"><label className="label">Effective Date</label><input type="date" className="input-3d text-sm" value={decide.effective_date} onChange={e=>setDecide(d=>({...d,effective_date:e.target.value}))}/></div>}
@@ -929,7 +929,7 @@ function ConfirmationModal({ editingId, probations, onClose, onSaved, showToast 
     catch (e) { showToast(e.response?.data?.message||'Save failed','error') } finally { setSaving(false) }
   }
   return (
-    <div className="modal-backdrop" onClick={onClose}><div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()} style={{ maxHeight:'92vh', overflowY:'auto' }}>
+    <div className="modal-backdrop"><div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()} style={{ maxHeight:'92vh', overflowY:'auto' }}>
       <div className="flex items-center justify-between mb-4"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{editingId?'Edit Confirmation':'New Confirmation'}</h2><button onClick={onClose} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
       {loading ? <HrLoading label="Loading…" /> : (
         <div className="space-y-3">

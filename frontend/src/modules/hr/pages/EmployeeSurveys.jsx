@@ -238,7 +238,7 @@ function SurveyBuilder({ state, setState, meta, categories, masters, showToast, 
   }
 
   return (
-    <div className="modal-backdrop" onClick={()=>setState(null)}>
+    <div className="modal-backdrop">
       <div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:760, width:'95%', maxHeight:'92vh', overflowY:'auto' }}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{state.id ? 'Edit' : 'New'} Survey</h2>
@@ -403,7 +403,7 @@ function Analytics({ survey, onClose, showToast }) {
   }, [survey.id])
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop">
       <div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:820, width:'95%', maxHeight:'92vh', overflowY:'auto' }}>
         <div className="flex items-center justify-between mb-1">
           <h2 className="font-black text-lg flex items-center gap-2" style={{ color:'var(--text-h)' }}>
@@ -557,7 +557,7 @@ function Categories({ showToast }) {
         )}
 
       {modal && (
-        <div className="modal-backdrop" onClick={()=>setModal(null)}>
+        <div className="modal-backdrop">
           <div className="modal-box max-w-md" onClick={e=>e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{modal.id ? 'Edit' : 'Add'} Category</h2>

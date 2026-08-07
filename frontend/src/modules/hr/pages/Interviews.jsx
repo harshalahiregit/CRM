@@ -401,7 +401,7 @@ export default function Interviews() {
 
       {/* SPK-1: Selection email — opens automatically when a candidate is marked Selected */}
       {selectionEmail && (
-        <div className="modal-backdrop" onClick={() => !selectionEmail.sending && setSelectionEmail(null)}>
+        <div className="modal-backdrop">
           <div className="modal-box max-w-lg" onClick={e => e.stopPropagation()} style={{ maxHeight: '90vh', overflowY: 'auto' }}>
             <div className="flex items-center justify-between mb-2">
               <h2 className="font-black text-lg flex items-center gap-2" style={{ color: 'var(--text-h)' }}><Mail size={18} style={{ color: '#10b981' }} /> Candidate Selected</h2>
@@ -424,7 +424,7 @@ export default function Interviews() {
 
       {/* Email Preview popup (feature 6) — edit the predefined template, preview, then send */}
       {emailModal && (
-        <div className="modal-backdrop" onClick={() => !emailModal.sending && setEmailModal(null)}>
+        <div className="modal-backdrop">
           <div className="modal-box max-w-2xl" onClick={e => e.stopPropagation()} style={{ maxHeight: '92vh', overflowY: 'auto' }}>
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-black text-lg flex items-center gap-2" style={{ color: 'var(--text-h)' }}><Mail size={18} style={{ color: '#a78bfa' }} /> Email Preview</h2>

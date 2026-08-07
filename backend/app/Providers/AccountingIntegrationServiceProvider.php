@@ -27,5 +27,12 @@ class AccountingIntegrationServiceProvider extends ServiceProvider
         CreditNote::saved(fn (CreditNote $m) => $observer()->creditNoteSaved($m));
         CreditNoteRefund::created(fn (CreditNoteRefund $m) => $observer()->refundCreated($m));
         ClientExpense::created(fn (ClientExpense $m) => $observer()->expenseCreated($m));
+
+        // Purchase invoices — hooked here rather than inside the Purchase module so
+        // Accounts consumes Purchase, not the reverse. class_exists keeps this a
+        // no-op in a workspace without that module.
+        if (class_exists(\App\Models\Purchase\PurchaseInvoice::class)) {
+            \App\Models\Purchase\PurchaseInvoice::saved(fn ($m) => $observer()->purchaseInvoiceSaved($m));
+        }
     }
 }

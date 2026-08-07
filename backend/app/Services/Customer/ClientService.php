@@ -313,6 +313,86 @@ class ClientService
             ->get();
     }
 
+    /**
+     * Names offered by the "Parent Company" picker.
+     *
+     * Two sources, because a parent is usually another customer in the workspace
+     * but doesn't have to be — a holding company may exist only as a label on
+     * its subsidiaries. So we union:
+     *   1. every client's company name (the common case), and
+     *   2. distinct parent_company values already saved that aren't clients,
+     *      so a name typed once is reusable and spelling stays consistent.
+     *
+     * parent_company remains free text: it is exported/imported by name in the
+     * CSV round-trip, and existing rows must keep resolving. Callers may still
+     * submit a brand-new name, which is what "add a new one" means here.
+     *
+     * Each entry is {id, name}: `id` is the client to LINK to (parent_client_id),
+     * and is null for a name-only parent that isn't a customer record.
+     *
+     * A company's own subsidiaries are excluded as well as itself — linking a
+     * parent to its own child would make a cycle.
+     *
+     * @return array<int, array{id:?int, name:string}>
+     */
+    public function parentCompanyOptions(int $tenantId, ?int $excludeClientId = null): array
+    {
+        $descendantIds = $excludeClientId
+            ? $this->descendantIds($tenantId, $excludeClientId)->push($excludeClientId)->all()
+            : [];
+
+        $clients = Client::forTenant($tenantId)
+            ->when($descendantIds, fn ($q) => $q->whereNotIn('id', $descendantIds))
+            ->whereNotNull('company')->where('company', '!=', '')
+            ->orderBy('company')
+            ->get(['id', 'company'])
+            ->map(fn (Client $c) => ['id' => $c->id, 'name' => trim((string) $c->company)]);
+
+        $linkedNames = $clients->pluck('name')->map(fn ($n) => mb_strtolower($n))->all();
+
+        // Parent names already in use that are NOT customer records — keep them
+        // selectable so a label-only holding company stays reusable.
+        $nameOnly = Client::forTenant($tenantId)
+            ->whereNotNull('parent_company')->where('parent_company', '!=', '')
+            ->distinct()->pluck('parent_company')
+            ->map(fn ($n) => trim((string) $n))->filter()
+            ->reject(fn ($n) => in_array(mb_strtolower($n), $linkedNames, true))
+            ->unique(fn ($n) => mb_strtolower($n))
+            ->map(fn ($n) => ['id' => null, 'name' => $n]);
+
+        return $clients->concat($nameOnly)
+            ->sortBy('name', SORT_NATURAL | SORT_FLAG_CASE)
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Every client beneath $clientId, so the parent picker can't create a cycle
+     * (A parented to B while B is parented to A). Iterative and depth-capped:
+     * legacy rows could already contain a loop, and this must not recurse forever.
+     */
+    private function descendantIds(int $tenantId, int $clientId): \Illuminate\Support\Collection
+    {
+        $found   = collect();
+        $frontier = collect([$clientId]);
+
+        for ($depth = 0; $depth < 20 && $frontier->isNotEmpty(); $depth++) {
+            $children = Client::forTenant($tenantId)
+                ->whereIn('parent_client_id', $frontier->all())
+                ->whereNotIn('id', $found->all())
+                ->pluck('id');
+
+            if ($children->isEmpty()) {
+                break;
+            }
+
+            $found    = $found->concat($children)->unique();
+            $frontier = $children;
+        }
+
+        return $found->values();
+    }
+
     public function syncAdmins(Client $client, array $userIds, int $tenantId): Collection
     {
         $this->assertTenant($client, $tenantId);

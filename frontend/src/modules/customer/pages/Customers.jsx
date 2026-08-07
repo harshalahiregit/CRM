@@ -1,9 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import {
-  Plus, Search, Edit2, Trash2, X, Upload, Download, Building2, Users,
-  UserCheck, TrendingUp, ChevronDown, FileSpreadsheet, FileText, Eye, UserCog, Sliders,
-} from 'lucide-react'
+import { Plus, Search, Edit2, Trash2, X, Upload, Download, Building2, Users, UserCheck, TrendingUp, ChevronDown, FileSpreadsheet, FileText, Eye, UserCog, Sliders, BarChart3 } from 'lucide-react'
 import { customerApi } from '@/services/customerApi'
 import { useToast } from '@/hooks/useToast'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
@@ -14,6 +11,7 @@ import ToggleSwitch from '../components/ToggleSwitch'
 import StepperNav from '../components/StepperNav'
 import AdminOrderPicker from '../components/AdminOrderPicker'
 import { CURRENCIES, LANGUAGES } from '../components/customerFormConstants'
+import ParentCompanyPicker from '../components/ParentCompanyPicker'
 import ContactPermissions, { DEFAULT_PERMISSIONS, DEFAULT_NOTIFICATIONS, permissionsFromLegacy } from '../components/ContactPermissions'
 import RaiseTicketButton from '@/components/RaiseTicketButton'
 
@@ -28,7 +26,7 @@ const STEPS = [
 ]
 const EDIT_TABS = STEPS.map(s => s.key)
 const EMPTY = {
-  company: '', gst_number: '', phone: '', website: '', parent_company: '', vendor_id: '',
+  company: '', gst_number: '', phone: '', website: '', parent_company: '', parent_client_id: null, vendor_id: '',
   opening_balance: '', opening_balance_date: '', show_primary_contact: false,
   default_currency: 'INR', default_language: 'English', group_ids: [],
   address: '', city: '', state: '', zip: '', country: '',
@@ -319,6 +317,11 @@ export default function Customers() {
                 </div>
               )}
             </div>
+            <button onClick={() => nav('/app/customers/group-reports')} title="Group-wise reports"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-semibold transition-all hover:scale-[1.02]"
+              style={{ background: 'var(--bg-input)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+              <BarChart3 size={15} /> Group Reports
+            </button>
             <RaiseTicketButton source="customer" style={{ padding: '10px 18px', borderRadius: 16 }} />
             <button onClick={() => setFieldsMgr(true)} title="Manage custom fields"
               className="flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-semibold transition-all hover:scale-[1.02]"
@@ -415,7 +418,7 @@ export default function Customers() {
       {/* ── Form Drawer ── */}
       {drawer && (
         <>
-          <div className="drawer-backdrop" onClick={() => setDrawer(false)} />
+          <div className="drawer-backdrop" />
           <div className="drawer-panel" style={{ width: 'min(640px, 96vw)' }}>
             <div className="drawer-header">
               <div>
@@ -460,7 +463,8 @@ export default function Customers() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div><label className="label">Website</label><input className="input-3d text-sm" value={form.website} onChange={e => sf('website', e.target.value)} /></div>
-                    <div><label className="label">Parent Company</label><input className="input-3d text-sm" placeholder="e.g. UBCPL Group" value={form.parent_company} onChange={e => sf('parent_company', e.target.value)} /></div>
+                    <div><label className="label">Parent Company</label><ParentCompanyPicker value={form.parent_company} parentClientId={form.parent_client_id}
+                      onChange={p => setForm(f => ({ ...f, ...p }))} /></div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div><label className="label">Opening Balance</label><input type="number" className="input-3d text-sm" placeholder="0.00" value={form.opening_balance} onChange={e => sf('opening_balance', e.target.value)} /></div>

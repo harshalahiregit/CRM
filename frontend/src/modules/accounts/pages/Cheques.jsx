@@ -303,7 +303,7 @@ function ChequeList({ direction, inr, banks, onView, onEdit, onDelete, onStatus 
 /* ── Issue cheque drawer (spec §2 — bank → book → auto number) ─────────────── */
 const ISSUE_EMPTY = {
   bank_account_id: '', chequebook_id: '', cheque_no: '', cheque_date: new Date().toISOString().slice(0, 10),
-  party_name: '', party_type: '', party_id: '', amount: '', is_account_payee: true,
+  party_name: '', party_type: '', party_id: '', party_source: '', amount: '', is_account_payee: true,
   reference: '', project_id: '', is_pdc: false, pdc_due_date: '', memo: '',
 }
 function IssueChequeDrawer({ banks, books, initial, isEdit = false, saving, onClose, onSave }) {
@@ -318,12 +318,14 @@ function IssueChequeDrawer({ banks, books, initial, isEdit = false, saving, onCl
   const useDropdown = hasParties && !manualPayee && !(isEdit && !form.party_id)
 
   const pickParty = (val) => {
-    if (val === '__manual__') { setManualPayee(true); setForm(f => ({ ...f, party_type: '', party_id: '' })); return }
-    if (!val) { setForm(f => ({ ...f, party_name: '', party_type: '', party_id: '' })); return }
+    if (val === '__manual__') { setManualPayee(true); setForm(f => ({ ...f, party_type: '', party_id: '', party_source: '' })); return }
+    if (!val) { setForm(f => ({ ...f, party_name: '', party_type: '', party_id: '', party_source: '' })); return }
     const [type, id] = val.split(':')
     const groups = { customer: dir?.customers, vendor: dir?.vendors, tpv: dir?.tpv }
     const hit = (groups[type] || []).find(p => String(p.id) === id)
-    setForm(f => ({ ...f, party_name: hit?.name || '', party_type: type, party_id: id }))
+    // `source` says WHICH table `id` belongs to — ledger ids and vendor-master ids
+    // overlap, so without it a saved payee can't be resolved back to its record.
+    setForm(f => ({ ...f, party_name: hit?.name || '', party_type: type, party_id: id, party_source: hit?.source || '' }))
   }
 
   const bankBooks = useMemo(
@@ -340,6 +342,7 @@ function IssueChequeDrawer({ banks, books, initial, isEdit = false, saving, onCl
     cheque_no: (!isEdit && form.chequebook_id) ? undefined : (form.cheque_no || null),
     party_type: form.party_id ? form.party_type : null,
     party_id: form.party_id || null,
+    party_source: form.party_id ? (form.party_source || null) : null,
     project_id: form.project_id || null,
     pdc_due_date: form.pdc_due_date || null,
   })

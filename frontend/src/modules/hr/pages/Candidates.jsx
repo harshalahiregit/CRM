@@ -436,7 +436,7 @@ export default function Candidates() {
 
       {/* Add Candidate Modal */}
       {showModal && (
-        <div className="modal-backdrop" onClick={()=>setShowModal(false)}>
+        <div className="modal-backdrop">
           <div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()} style={{ maxHeight:'90vh', overflowY:'auto' }}>
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>Add Candidate</h2>

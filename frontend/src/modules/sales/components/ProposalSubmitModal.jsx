@@ -65,7 +65,7 @@ export default function ProposalSubmitModal({ proposal, contact, onClose, onSent
 
   return createPortal(
     <>
-      <div className="drawer-backdrop" onClick={onClose} />
+      <div className="drawer-backdrop" />
       <div className="drawer-panel" style={{ width: 'min(680px, 96vw)' }}>
         <div className="drawer-header">
           <div>

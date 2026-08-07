@@ -255,7 +255,7 @@ function SalaryComponents({ showToast }) {
 
       {/* Create / Edit modal */}
       {modal && (
-        <div className="modal-backdrop" onClick={()=>setModal(null)}>
+        <div className="modal-backdrop">
           <div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()} style={{ maxHeight:'90vh', overflowY:'auto' }}>
             <div className="flex items-center justify-between mb-5">
               <h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{modal.editing ? 'Edit Component' : 'Add Salary Component'}</h2>
@@ -494,7 +494,7 @@ function StructureBuilder({ builder, setBuilder, compById, components, orgOpts, 
   const baseOptions = ['GROSS', ...f.lines.map(l => compById[l.component_id]).filter(Boolean).map(c => c.code || c.name)]
 
   return (
-    <div className="modal-backdrop" onClick={()=>setBuilder(null)}>
+    <div className="modal-backdrop">
       <div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:980, width:'96%', maxHeight:'92vh', overflowY:'auto' }}>
         <div className="flex items-center justify-between mb-5">
           <h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{builder.editing ? 'Edit Salary Structure' : 'New Salary Structure'}</h2>
@@ -740,7 +740,7 @@ function ManageSalary({ employee, structures, onClose, onChanged, showToast }) {
   )
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop">
       <div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:820, width:'95%', maxHeight:'92vh', overflowY:'auto' }}>
         <div className="flex items-center justify-between mb-1">
           <h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{employee.name} <span className="text-xs font-mono" style={{ color:'#a78bfa' }}>{employee.employee_code}</span></h2>
@@ -982,7 +982,7 @@ function CreateRunModal({ onClose, onCreated, showToast }) {
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop">
       <div className="modal-box max-w-sm" onClick={e=>e.stopPropagation()}>
         <div className="flex items-center justify-between mb-5"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>Create Payroll Run</h2><button onClick={onClose} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
         <div className="grid grid-cols-2 gap-3">
@@ -1001,7 +1001,7 @@ function CreateRunModal({ onClose, onCreated, showToast }) {
 
 function RunSummaryModal({ run, onClose }) {
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop">
       <div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:900, width:'95%', maxHeight:'92vh', overflowY:'auto' }}>
         <div className="flex items-center justify-between mb-1">
           <h2 className="font-black text-lg flex items-center gap-2" style={{ color:'var(--text-h)' }}><CheckCircle2 size={18} style={{ color:'#10b981' }}/> {run.period_label}</h2>
@@ -1386,7 +1386,7 @@ function GeneratePayslipsModal({ onClose, onDone, showToast }) {
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop">
       <div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>Generate Payslips</h2><button onClick={onClose} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
         <p className="text-xs mb-3" style={{ color:'var(--text-muted)' }}>Select a completed payroll run. Payslips are created for every employee record; existing ones are skipped.</p>
@@ -1419,7 +1419,7 @@ function PayslipDetailModal({ payslip, onClose, onDownload }) {
     </div>
   )
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop">
       <div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:640, width:'95%', maxHeight:'92vh', overflowY:'auto' }}>
         <div className="flex items-center justify-between mb-1">
           <h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{payslip.payslip_number}</h2>

@@ -356,7 +356,7 @@ export default function OfferLetters() {
 
       {/* Offer revision history (immutable) */}
       {history.open && (
-        <div className="modal-backdrop" onClick={()=>setHistory({open:false,offer:null,revisions:[]})}>
+        <div className="modal-backdrop">
           <div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()} style={{ maxHeight:'85vh', overflowY:'auto' }}>
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>Offer Revision History</h2>
@@ -381,7 +381,7 @@ export default function OfferLetters() {
       )}
       {/* Offer Reject Reason Modal */}
       {rejectModal.open && (
-        <div className="modal-backdrop" onClick={()=>setRejectModal({open:false,id:null,reason:''})}>
+        <div className="modal-backdrop">
           <div className="modal-box max-w-md" onClick={e=>e.stopPropagation()}>
             <div className="flex items-center justify-between mb-5">
               <div className="flex items-center gap-2">

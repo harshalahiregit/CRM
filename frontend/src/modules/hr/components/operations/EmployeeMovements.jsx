@@ -178,7 +178,7 @@ function MoveModal({ state, setState, employees, masters, meta, showToast, onDon
   }
 
   return (
-    <div className="modal-backdrop" onClick={()=>setState(null)}>
+    <div className="modal-backdrop">
       <div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:600, width:'95%', maxHeight:'92vh', overflowY:'auto' }}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>New Movement</h2>
@@ -303,7 +303,7 @@ function MovementHistory({ id, name, onClose, showToast }) {
   }, [id, showToast])
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop">
       <div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-black text-lg flex items-center gap-2" style={{ color:'var(--text-h)' }}><History size={17} style={{ color:'#a78bfa' }}/> {name}</h2>

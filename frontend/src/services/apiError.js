@@ -66,10 +66,18 @@ export function handleErr(err) {
     : []
   const hasFields = fields.length > 0
 
-  // Headline. Laravel's own 422 text is noise, so replace it with something that
-  // tells the user what to actually do.
+  // Framework/boilerplate headlines carry no information, so they get replaced.
+  // Anything else the server sends is a message written for this exact failure
+  // (ApiErrorMapper, BusinessException) and is more useful than a field count —
+  // e.g. "Email is required" beats "Please check 1 field".
+  const GENERIC_TITLES = ['validation failed', 'the given data was invalid.', 'server error', 'error']
+  const serverMsg = typeof data.message === 'string' ? data.message.trim() : ''
+  const serverMsgIsUseful = serverMsg !== '' && !GENERIC_TITLES.includes(serverMsg.toLowerCase())
+
   let title
-  if (hasFields) {
+  if (serverMsgIsUseful) {
+    title = serverMsg
+  } else if (hasFields) {
     title = fields.length === 1
       ? 'Please check 1 field'
       : `Please check ${fields.length} fields`
@@ -82,9 +90,11 @@ export function handleErr(err) {
     title = data.message || data.error || `Request failed (${status})`
   }
 
+  // The server may send a hint specific to the failure (ApiErrorMapper does);
+  // prefer it over the generic status-based line.
   const tip = !res
     ? 'Check that the backend is running and your connection is up.'
-    : tipFor(status, hasFields)
+    : (typeof data.hint === 'string' && data.hint.trim() ? data.hint.trim() : tipFor(status, hasFields))
 
   // Compose the flat message so untouched `toast.error(e.message)` calls still
   // show the detail. Toast splits this back into title / details / tip.

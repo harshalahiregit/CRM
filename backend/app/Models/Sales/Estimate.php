@@ -48,20 +48,43 @@ class Estimate extends Model
                 $est->estimate_type = 'proforma';
             }
             if (empty($est->reference)) {
-                $year   = date('Y');
-                $prefix = $est->estimate_type === 'estimate' ? 'EST-' : 'PI-';
-                // withTrashed(): soft-deleted rows still occupy the UNIQUE
-                // index on `reference`, so they must be counted or the next
-                // create reuses a number and the insert fails. Sequences are
-                // separate per type (EST-/PI-), matching the sidebar split.
-                $count = static::withTrashed()
-                               ->where('tenant_id', $est->tenant_id)
-                               ->where('estimate_type', $est->estimate_type)
-                               ->whereYear('created_at', $year)
-                               ->count() + 1;
-                $est->reference = $prefix . $year . '-' . str_pad($count, 3, '0', STR_PAD_LEFT);
+                // Estimates and proforma invoices number independently (matching the
+                // sidebar split), so each maps to its own engine document type:
+                // 'estimate' (EST) already ships in the registry, 'proforma_invoice'
+                // (PI) is registered by SalesNumberingServiceProvider. Falls back to
+                // the local allocator until the tenant enables the type.
+                $isEstimate = $est->estimate_type === 'estimate';
+
+                $est->reference = \App\Support\Sales\DocumentNumber::allocate(
+                    $isEstimate ? 'estimate' : 'proforma_invoice',
+                    (int) $est->tenant_id,
+                    fn () => static::nextLocalReference((int) $est->tenant_id, $isEstimate ? 'EST-' : 'PI-'),
+                );
             }
         });
+    }
+
+
+    /**
+     * EST-YYYY-NNN / PI-YYYY-NNN from the highest reference already issued this
+     * year for that prefix.
+     *
+     * Derived from MAX(reference) rather than COUNT(*): counting rows let a
+     * deleted estimate's number be reissued, and two concurrent creates read the
+     * same count and collided on the UNIQUE index. withTrashed() because
+     * soft-deleted rows still occupy that index.
+     */
+    protected static function nextLocalReference(int $tenantId, string $typePrefix): string
+    {
+        $prefix = $typePrefix.date('Y').'-';
+
+        $highest = static::withTrashed()
+            ->where('tenant_id', $tenantId)
+            ->where('reference', 'like', $prefix.'%')
+            ->selectRaw('MAX(CAST(SUBSTR(reference, ?) AS INTEGER)) AS seq', [strlen($prefix) + 1])
+            ->value('seq');
+
+        return $prefix.str_pad((string) (((int) $highest) + 1), 3, '0', STR_PAD_LEFT);
     }
 
     /* ── Relationships ─────────────────────── */

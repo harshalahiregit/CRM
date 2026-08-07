@@ -240,7 +240,7 @@ function TypeModal({ modal, setModal, saving, onSave }) {
   const set = (patch) => setModal(m => ({ ...m, form: { ...m.form, ...patch } }))
 
   return (
-    <div className="modal-backdrop" onClick={() => setModal(null)}>
+    <div className="modal-backdrop">
       <div className="modal-box max-w-lg" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{modal.id ? 'Edit' : 'Add'} Loan Type</h2>
@@ -318,7 +318,7 @@ function LoanModal({ modal, setModal, employees, types, saving, onSave, showToas
   }
 
   return (
-    <div className="modal-backdrop" onClick={() => setModal(null)}>
+    <div className="modal-backdrop">
       <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth:640, width:'95%', maxHeight:'92vh', overflowY:'auto' }}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>New Loan / Advance</h2>
@@ -467,7 +467,7 @@ function LoanDetail({ loan, onClose, act, showToast }) {
   const waive  = (i) => { const r = window.prompt(`Reason for waiving instalment ${i.sequence}?`); if (r) act(() => hrApi.loans.waive(loan.id, i.id, r), 'Instalment waived') }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop">
       <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth:800, width:'95%', maxHeight:'92vh', overflowY:'auto' }}>
         <div className="flex items-center justify-between mb-1">
           <h2 className="font-black text-lg flex items-center gap-2" style={{ color:'var(--text-h)' }}>
@@ -661,7 +661,7 @@ function RecoveryQueue({ showToast }) {
 /** Per-instalment recovery, naming the payroll run that collected each one. */
 function RecoveryDetail({ data, onClose }) {
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop">
       <div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:820, width:'95%', maxHeight:'92vh', overflowY:'auto' }}>
         <div className="flex items-center justify-between mb-1">
           <h2 className="font-black text-lg flex items-center gap-2" style={{ color:'var(--text-h)' }}>

@@ -164,7 +164,7 @@ function Kpis({ showToast }) {
             </table>
           </div>}
       {modal && (
-        <div className="modal-backdrop" onClick={()=>setModal(null)}><div className="modal-box max-w-md" onClick={e=>e.stopPropagation()}>
+        <div className="modal-backdrop"><div className="modal-box max-w-md" onClick={e=>e.stopPropagation()}>
           <div className="flex items-center justify-between mb-4"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{modal.editing?'Edit KPI':'Add KPI'}</h2><button onClick={()=>setModal(null)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2"><label className="label">Name *</label><input className="input-3d text-sm" value={modal.form.name} onChange={e=>setModal(m=>({...m,form:{...m.form,name:e.target.value}}))}/></div>
@@ -240,7 +240,7 @@ function Goals({ employees, showToast }) {
           </div>}
 
       {modal && (
-        <div className="modal-backdrop" onClick={()=>setModal(null)}><div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()} style={{ maxHeight:'90vh', overflowY:'auto' }}>
+        <div className="modal-backdrop"><div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()} style={{ maxHeight:'90vh', overflowY:'auto' }}>
           <div className="flex items-center justify-between mb-4"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{modal.editing?'Edit Goal':'Add Goal'}</h2><button onClick={()=>setModal(null)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2"><label className="label">Title *</label><input className="input-3d text-sm" value={modal.form.title} onChange={e=>setModal(m=>({...m,form:{...m.form,title:e.target.value}}))}/></div>
@@ -279,7 +279,7 @@ function AssignModal({ assign, setAssign, employees, onDone, showToast }) {
     catch (e) { showToast(e.response?.data?.message||'Failed','error'); setBusy(false) }
   }
   return (
-    <div className="modal-backdrop" onClick={()=>setAssign(null)}><div className="modal-box max-w-md" onClick={e=>e.stopPropagation()} style={{ maxHeight:'85vh', overflowY:'auto' }}>
+    <div className="modal-backdrop"><div className="modal-box max-w-md" onClick={e=>e.stopPropagation()} style={{ maxHeight:'85vh', overflowY:'auto' }}>
       <div className="flex items-center justify-between mb-1"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>Assign Goal</h2><button onClick={()=>setAssign(null)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
       <p className="text-xs mb-3" style={{ color:'var(--text-muted)' }}>{assign.goal.title}</p>
       <div className="space-y-1.5">
@@ -363,7 +363,7 @@ function ReviewModal({ modal, setModal, employees, saving, onSave }) {
   const wsum = modal.kpis.reduce((s,k)=>s+Number(k.weightage||0),0)
   const overall = wsum>0 ? (modal.kpis.reduce((s,k)=>s+Number(k.rating||0)*Number(k.weightage||0),0)/wsum).toFixed(2) : '0.00'
   return (
-    <div className="modal-backdrop" onClick={()=>setModal(null)}><div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:720, width:'95%', maxHeight:'92vh', overflowY:'auto' }}>
+    <div className="modal-backdrop"><div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:720, width:'95%', maxHeight:'92vh', overflowY:'auto' }}>
       <div className="flex items-center justify-between mb-4"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>New Performance Review</h2><button onClick={()=>setModal(null)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
         <div className="col-span-2"><label className="label">Employee *</label><select className="input-3d text-sm" value={modal.employee_id} onChange={e=>setModal(m=>({...m,employee_id:e.target.value}))}><option value="">Select…</option>{employees.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select></div>
@@ -396,7 +396,7 @@ function ReviewModal({ modal, setModal, employees, saving, onSave }) {
 function ReviewView({ review, onClose }) {
   const st = REVIEW_ST[review.status]||{}
   return (
-    <div className="modal-backdrop" onClick={onClose}><div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:640, width:'95%', maxHeight:'92vh', overflowY:'auto' }}>
+    <div className="modal-backdrop"><div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:640, width:'95%', maxHeight:'92vh', overflowY:'auto' }}>
       <div className="flex items-center justify-between mb-1"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{review.employee_name}</h2><button onClick={onClose} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
       <div className="flex items-center gap-2 mb-4"><span className="text-xs" style={{ color:'var(--text-muted)' }}>{review.review_type} · {review.period_label||review.period_year}</span><span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:st.bg, color:st.c }}>{review.status}</span><span className="ml-auto text-lg font-black" style={{ color:'#8b5cf6' }}>{review.overall_rating}</span></div>
       <p className="text-[11px] font-bold uppercase mb-2" style={{ color:'var(--text-muted)' }}>KPI Ratings</p>

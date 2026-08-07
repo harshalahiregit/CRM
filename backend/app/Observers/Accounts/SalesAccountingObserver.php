@@ -62,6 +62,23 @@ class SalesAccountingObserver
         $this->safely(fn () => $this->bridge->postExpense($expense), 'client_expense', $expense->id);
     }
 
+    /**
+     * Purchase invoices (owner: Harshal). Posts once approved, and reverses if a
+     * posted invoice is later cancelled — same discipline as the sales side.
+     * Typed loosely because Accounts must not hard-depend on the Purchase module
+     * being installed.
+     */
+    public function purchaseInvoiceSaved(object $invoice): void
+    {
+        $this->safely(function () use ($invoice) {
+            if (strtolower((string) ($invoice->status ?? '')) === 'cancelled') {
+                $this->bridge->reverseForSource('purchase_invoice', (int) $invoice->id, (int) $invoice->tenant_id, $invoice->created_by ?? null);
+            } else {
+                $this->bridge->postPurchaseInvoice($invoice);     // idempotent; no-op until approved
+            }
+        }, 'purchase_invoice', (int) $invoice->id);
+    }
+
     /** Run a posting action; never let an accounting error bubble into the source flow. */
     private function safely(callable $fn, string $kind, int $id): void
     {

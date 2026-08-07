@@ -19,7 +19,7 @@ class Client extends Model
     use SoftDeletes, BelongsToTenant;
 
     protected $fillable = [
-        'tenant_id', 'company', 'gst_number', 'phone', 'website', 'parent_company',
+        'tenant_id', 'company', 'gst_number', 'phone', 'website', 'parent_company', 'parent_client_id',
         'opening_balance', 'opening_balance_date', 'vendor_id', 'lead_id',
         'address', 'city', 'state', 'zip', 'country',
         'map_address', 'latitude', 'longitude',
@@ -41,6 +41,28 @@ class Client extends Model
     ];
 
     /* ── Relationships ─────────────────────────────────────────── */
+    /**
+     * The parent customer, when the parent is itself a client record.
+     * Null for a name-only parent (see parent_company) — a holding company that
+     * exists as a label but not as a customer.
+     */
+    public function parentClient()
+    {
+        return $this->belongsTo(self::class, 'parent_client_id');
+    }
+
+    /** Customers that name this one as their parent. */
+    public function subsidiaries()
+    {
+        return $this->hasMany(self::class, 'parent_client_id');
+    }
+
+    /** Parent label for display: the linked record's name, else the stored text. */
+    public function getParentNameAttribute(): ?string
+    {
+        return $this->parentClient?->company ?: ($this->parent_company ?: null);
+    }
+
     public function contacts(): HasMany
     {
         return $this->hasMany(ClientContact::class);

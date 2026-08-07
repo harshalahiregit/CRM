@@ -1154,7 +1154,7 @@ function EditModal({ employee, onClose, onSaved, showToast }) {
   }
   const set = (k,v) => setForm(f=>({...f,[k]:v}))
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop">
       <div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()} style={{ maxHeight:'90vh', overflowY:'auto' }}>
         <div className="flex items-center justify-between mb-5"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>Edit Employee</h2><button onClick={onClose} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
         <div className="space-y-3">

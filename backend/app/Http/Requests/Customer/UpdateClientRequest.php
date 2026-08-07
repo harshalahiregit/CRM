@@ -19,6 +19,10 @@ class UpdateClientRequest extends FormRequest
             'phone'            => 'nullable|string|max:30',
             'website'          => 'nullable|string|max:255',
             'parent_company'   => 'nullable|string|max:255',
+            // A company cannot be its own parent (and the parent must be in this tenant).
+            'parent_client_id' => ['nullable', 'integer',
+                \Illuminate\Validation\Rule::notIn(array_filter([$this->route('client')?->id])),
+                \Illuminate\Validation\Rule::exists('clients', 'id')->where('tenant_id', $this->user()->tenant_id)],
             'opening_balance'  => 'nullable|numeric',
             'opening_balance_date' => 'nullable|date',
             'show_primary_contact' => 'nullable|boolean',

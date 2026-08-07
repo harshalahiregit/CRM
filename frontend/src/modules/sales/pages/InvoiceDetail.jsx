@@ -310,7 +310,7 @@ export default function InvoiceDetail() {
       {/* ── Record Payment Drawer ── */}
       {showPayModal && (
         <>
-          <div className="drawer-backdrop" onClick={() => setShowPayModal(false)} />
+          <div className="drawer-backdrop" />
           <div className="drawer-panel" style={{ width: 'min(480px, 95vw)' }}>
             <div className="drawer-header">
               <div>
@@ -430,7 +430,7 @@ export default function InvoiceDetail() {
       {/* ── Apply Credit Drawer ── */}
       {showCreditDrawer && (
         <>
-          <div className="drawer-backdrop" onClick={() => setShowCreditDrawer(false)} />
+          <div className="drawer-backdrop" />
           <div className="drawer-panel" style={{ width: 'min(500px, 95vw)' }}>
             <div className="drawer-header">
               <div>

@@ -268,7 +268,7 @@ function RecordModal({ modal, setModal, states, branches, offices, saving, onSav
   const title = { branch:'Branch', office:'Office', floor:'Floor' }[kind]
 
   return (
-    <div className="modal-backdrop" onClick={() => setModal(null)}>
+    <div className="modal-backdrop">
       <div className="modal-box max-w-lg" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{modal.id ? 'Edit' : 'Add'} {title}</h2>
@@ -356,7 +356,7 @@ function SeatModal({ state, setState, employees, branches, offices, floors, savi
   const branch = branches.find(b => String(b.id) === String(state.branch_id))
 
   return (
-    <div className="modal-backdrop" onClick={() => setState(null)}>
+    <div className="modal-backdrop">
       <div className="modal-box max-w-md" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>Assign Work Location</h2>
@@ -426,7 +426,7 @@ function LocationHistory({ id, name, onClose, showToast }) {
   }, [id, showToast])
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop">
       <div className="modal-box max-w-lg" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-black text-lg flex items-center gap-2" style={{ color:'var(--text-h)' }}><History size={17} style={{ color:'#a78bfa' }}/> {name}</h2>

@@ -169,7 +169,7 @@ export default function CreditNotes() {
       {/* ── Create Drawer ── */}
       {showDrawer && (
         <>
-          <div className="drawer-backdrop" onClick={() => setShowDrawer(false)} />
+          <div className="drawer-backdrop" />
           <div className="drawer-panel" style={{ width: 'min(820px, 95vw)' }}>
             <div className="drawer-header">
               <div>
@@ -254,7 +254,7 @@ export default function CreditNotes() {
       {/* ── Refund Drawer ── */}
       {showRefund && selectedCN && (
         <>
-          <div className="drawer-backdrop" onClick={() => setShowRefund(false)} />
+          <div className="drawer-backdrop" />
           <div className="drawer-panel" style={{ width: 'min(460px, 95vw)' }}>
             <div className="drawer-header">
               <div>

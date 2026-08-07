@@ -19,7 +19,9 @@ import { createPortal } from 'react-dom'
  * `.modal-box`), so styling, animation and click-outside-to-close are unchanged
  * — only the DOM parent moves.
  */
-export default function Modal({ open, onClose, children, className = '', style, closeOnBackdrop = true }) {
+// closeOnBackdrop defaults to FALSE: a stray click on the dim area used to unmount
+// the modal and silently discard whatever was typed. Opt in for read-only content.
+export default function Modal({ open, onClose, children, className = '', style, closeOnBackdrop = false }) {
   if (!open) return null
 
   return createPortal(

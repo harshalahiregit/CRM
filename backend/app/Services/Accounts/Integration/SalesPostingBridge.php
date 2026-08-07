@@ -207,6 +207,95 @@ class SalesPostingBridge
         }
     }
 
+    /**
+     * Post an APPROVED purchase invoice as a Purchase voucher.
+     *
+     *   Dr  purchase / expense account      (the cost)
+     *   Cr  the vendor's payable ledger     (what we now owe)
+     *
+     * Only fires once the invoice is approved: an unapproved invoice is still a
+     * draft, and putting a draft liability on the books would overstate payables
+     * and then need reversing. Idempotent through source_type/source_id, so
+     * re-saving an approved invoice does not post twice.
+     *
+     * The Purchase module (owner: Harshal) is not modified — this is hooked from
+     * AccountingIntegrationServiceProvider the same way the sales documents are,
+     * so Accounts consumes Purchase rather than Purchase depending on Accounts.
+     */
+    public function postPurchaseInvoice(object $inv): ?Voucher
+    {
+        $tenantId = (int) $inv->tenant_id;
+
+        // Drafts stay off the books until somebody approves them.
+        if (empty($inv->approved_at)) {
+            return null;
+        }
+
+        $amount = round((float) $inv->total, 2);
+        if ($amount <= 0) {
+            return null;
+        }
+        if ($this->postedVoucher('purchase_invoice', (int) $inv->id, $tenantId)) {
+            return null;
+        }
+
+        $vendorLedger = $this->purchaseVendorLedger($inv, $tenantId);
+
+        $lines = [
+            ['ledger_id' => $this->role('expense_default', $tenantId), 'debit' => $amount],
+            ['ledger_id' => $vendorLedger->id, 'credit' => $amount],
+        ];
+
+        return $this->post(
+            $tenantId, 'purchase', $inv->invoice_date ?? now()->toDateString(),
+            $vendorLedger->id,
+            $inv->invoice_number ?: ("PINV-{$inv->id}"),
+            'purchase_invoice', (int) $inv->id,
+            'Purchase invoice '.($inv->invoice_number ?: "#{$inv->id}"),
+            $lines, [], $inv->created_by ?? null,
+        );
+    }
+
+    /**
+     * The purchase vendor's control ledger under Sundry Creditors — mirrors
+     * partyLedger() but on the payable side. Keyed on party_type 'vendor' plus
+     * party_id so it can't collide with a customer ledger holding the same id.
+     */
+    private function purchaseVendorLedger(object $inv, int $tenantId): Ledger
+    {
+        $vendorId = (int) ($inv->purchase_vendor_id ?? 0);
+
+        if ($vendorId) {
+            $existing = Ledger::forTenant($tenantId)->where('is_party', true)
+                ->where('party_type', 'vendor')->where('party_id', $vendorId)->first();
+            if ($existing) {
+                return $existing;
+            }
+        }
+
+        $group = AccountGroup::forTenant($tenantId)->where('name', 'Sundry Creditors')->first();
+        if (! $group) {
+            throw new BusinessException('The "Sundry Creditors" group is missing. Run accounts setup.');
+        }
+
+        $name = 'Vendor';
+        if ($vendorId && \Illuminate\Support\Facades\Schema::hasTable('purchase_vendors')) {
+            $name = \Illuminate\Support\Facades\DB::table('purchase_vendors')->where('id', $vendorId)->value('company_name') ?: $name;
+        }
+        if ($name === 'Vendor') {
+            $name = $vendorId ? "Vendor #{$vendorId}" : 'Purchase Vendor (unassigned)';
+        }
+        if (Ledger::forTenant($tenantId)->where('name', $name)->exists()) {
+            $name .= " (#{$vendorId})";
+        }
+
+        return Ledger::create([
+            'tenant_id' => $tenantId, 'group_id' => $group->id, 'name' => $name,
+            'is_party' => true, 'party_id' => $vendorId ?: null, 'party_type' => 'vendor',
+            'opening_balance_type' => 'cr',
+        ]);
+    }
+
     private function post(int $tenantId, string $type, $date, ?int $partyId, ?string $reference, string $sourceType, int $sourceId, string $narration, array $lines, array $taxLines, ?int $userId): Voucher
     {
         return $this->posting->post([

@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\Customer\ClientController;
 use App\Http\Controllers\Api\Customer\ExpenseCategoryController;
 use App\Http\Controllers\Api\Customer\ClientExpenseController;
 use App\Http\Controllers\Api\Customer\ClientGroupController;
+use App\Http\Controllers\Api\Customer\ClientGroupReportController;
 use App\Http\Controllers\Api\Customer\ClientNoteController;
 use App\Http\Controllers\Api\Customer\ClientPackageController;
 use App\Http\Controllers\Api\Customer\ClientPreAlertController;
@@ -36,6 +37,12 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('customers')->gr
     Route::put('/groups/{group}',    [ClientGroupController::class, 'update']);
     Route::delete('/groups/{group}', [ClientGroupController::class, 'destroy']);
 
+    // Group-wise reports (static paths — must stay above /{client}).
+    Route::get('/group-reports',            [ClientGroupReportController::class, 'show']);
+    Route::get('/group-reports/comparison', [ClientGroupReportController::class, 'comparison']);
+    Route::get('/group-reports/export',     [ClientGroupReportController::class, 'export']);
+    Route::get('/group-reports/pdf',        [ClientGroupReportController::class, 'pdf']);
+
     // Custom field definitions
     Route::get('/custom-fields',                  [CustomFieldController::class, 'index']);
     Route::post('/custom-fields',                 [CustomFieldController::class, 'store']);
@@ -46,6 +53,9 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('customers')->gr
     // Assignable staff (create-stepper needs it before a client exists;
     // must stay ABOVE the /{client} wildcard routes)
     Route::get('/assignable-staff', [ClientController::class, 'assignableStaff']);
+
+    // Parent Company picker options (static — must stay above /{client}).
+    Route::get('/parent-companies', [ClientController::class, 'parentCompanyOptions']);
 
     // Clients CRUD
     Route::get('/',            [ClientController::class, 'index']);

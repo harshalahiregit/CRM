@@ -213,7 +213,7 @@ function Categories({ showToast }) {
           </div>}
 
       {modal && (
-        <div className="modal-backdrop" onClick={()=>setModal(null)}><div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()}>
+        <div className="modal-backdrop"><div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()}>
           <div className="flex items-center justify-between mb-4"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{modal.editing?'Edit Category':'Add Category'}</h2><button onClick={()=>setModal(null)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Name *</label><input className="input-3d text-sm" value={modal.form.name} onChange={e=>setModal(m=>({...m,form:{...m.form,name:e.target.value}}))}/></div>
@@ -279,7 +279,7 @@ function Types({ showToast }) {
           </div>}
 
       {modal && (
-        <div className="modal-backdrop" onClick={()=>setModal(null)}><div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()} style={{ maxHeight:'92vh', overflowY:'auto' }}>
+        <div className="modal-backdrop"><div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()} style={{ maxHeight:'92vh', overflowY:'auto' }}>
           <div className="flex items-center justify-between mb-4"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{modal.editing?'Edit Type':'Add Type'}</h2><button onClick={()=>setModal(null)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Name *</label><input className="input-3d text-sm" value={modal.form.name} onChange={e=>setModal(m=>({...m,form:{...m.form,name:e.target.value}}))}/></div>
@@ -384,7 +384,7 @@ function Providers({ showToast }) {
           </div>}
 
       {modal && (
-        <div className="modal-backdrop" onClick={()=>setModal(null)}><div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:640, width:'95%', maxHeight:'92vh', overflowY:'auto' }}>
+        <div className="modal-backdrop"><div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:640, width:'95%', maxHeight:'92vh', overflowY:'auto' }}>
           <div className="flex items-center justify-between mb-4"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{modal.editing?'Edit Provider':'Add Provider'}</h2><button onClick={()=>setModal(null)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Name *</label><input className="input-3d text-sm" value={modal.form.name} onChange={e=>setModal(m=>({...m,form:{...m.form,name:e.target.value}}))}/></div>
@@ -527,7 +527,7 @@ function Programs({ showToast }) {
 
       {/* Add / Edit modal */}
       {modal && (
-        <div className="modal-backdrop" onClick={()=>setModal(null)}><div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:760, width:'96%', maxHeight:'92vh', overflowY:'auto' }}>
+        <div className="modal-backdrop"><div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:760, width:'96%', maxHeight:'92vh', overflowY:'auto' }}>
           <div className="flex items-center justify-between mb-4"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{modal.editing?'Edit Program':'Add Program'}</h2><button onClick={()=>setModal(null)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             <div><label className="label">Program Code *</label><input className="input-3d text-sm" value={modal.form.program_code} onChange={e=>setModal(m=>({...m,form:{...m.form,program_code:e.target.value}}))}/></div>
@@ -635,7 +635,7 @@ function SessionModal({ modal, setModal, ctx, onClose, onSaved }) {
   const [saving, setSaving] = useState(false)
   const setF = patch => setModal(m => ({ ...m, form:{ ...m.form, ...patch } }))
   return (
-    <div className="modal-backdrop" onClick={onClose}><div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:720, width:'96%', maxHeight:'92vh', overflowY:'auto' }}>
+    <div className="modal-backdrop"><div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:720, width:'96%', maxHeight:'92vh', overflowY:'auto' }}>
       <div className="flex items-center justify-between mb-4"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{modal.editing?'Edit Session':'Schedule Session'}</h2><button onClick={onClose} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         <div className="col-span-2 md:col-span-3"><label className="label">Program *</label><select className="input-3d text-sm" value={modal.form.training_program_id} onChange={e=>setF({ training_program_id:e.target.value })} disabled={!!modal.editing}><option value="">Select…</option>{ctx.programs.map(p=><option key={p.id} value={p.id}>{p.program_name} ({p.program_code})</option>)}</select></div>
@@ -972,7 +972,7 @@ function AssignModal({ programs, employees, onClose, onSaved, showToast }) {
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}><div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()} style={{ maxHeight:'92vh', overflowY:'auto' }}>
+    <div className="modal-backdrop"><div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()} style={{ maxHeight:'92vh', overflowY:'auto' }}>
       <div className="flex items-center justify-between mb-4"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>Assign Employee</h2><button onClick={onClose} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
       <div className="space-y-3">
         <div><label className="label">Employee *</label><select className="input-3d text-sm" value={form.employee_id} onChange={e=>setF({ employee_id:e.target.value })}><option value="">Select…</option>{employees.map(e=><option key={e.id} value={e.id}>{e.name} ({e.employee_code})</option>)}</select></div>
@@ -1160,7 +1160,7 @@ function MarksModal({ kind, assignments, editing, onClose, onSaved, showToast })
     catch (e) { showToast(e.response?.data?.message||'Save failed','error') } finally { setSaving(false) }
   }
   return (
-    <div className="modal-backdrop" onClick={onClose}><div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()}>
+    <div className="modal-backdrop"><div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()}>
       <div className="flex items-center justify-between mb-4"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{editing?'Edit':'Add'} {isAssess?'Assessment':'Quiz'}</h2><button onClick={onClose} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
       <div className="space-y-3">
         {!editing && <div><label className="label">Assignment *</label><select className="input-3d text-sm" value={form.employee_training_id} onChange={e=>setF({ employee_training_id:e.target.value })}><option value="">Select employee + program…</option>{assignments.map(a=><option key={a.id} value={a.id}>{a.employee_name} · {a.program} ({a.status})</option>)}</select></div>}
@@ -1291,7 +1291,7 @@ function CertModal({ completed, onClose, onSaved, showToast }) {
     catch (e) { showToast(e.response?.data?.message||'Generation failed','error') } finally { setSaving(false) }
   }
   return (
-    <div className="modal-backdrop" onClick={onClose}><div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()}>
+    <div className="modal-backdrop"><div className="modal-box max-w-lg" onClick={e=>e.stopPropagation()}>
       <div className="flex items-center justify-between mb-4"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>Generate Certificate</h2><button onClick={onClose} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
       <div className="space-y-3">
         <div><label className="label">Completed Training *</label><select className="input-3d text-sm" value={form.employee_training_id} onChange={e=>setForm(f=>({...f,employee_training_id:e.target.value}))}><option value="">Select…</option>{completed.map(c=><option key={c.employee_training_id} value={c.employee_training_id}>{c.employee_name} · {c.program}</option>)}</select><p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>Only completed trainings (attendance + assessment/quiz passed) qualify.</p></div>

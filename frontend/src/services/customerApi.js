@@ -71,6 +71,11 @@ export const customerApi = {
   projects: {
     list: () => api.get('/customers/projects-stub').then(r => r.data).catch(handleErr),
   },
+  // Names for the Parent Company picker: existing companies + parent names
+  // already in use. `exclude` keeps a company off its own list when editing.
+  parentCompanies: (exclude = null) =>
+    api.get('/customers/parent-companies', { params: exclude ? { exclude } : {} })
+      .then(r => r.data).catch(handleErr),
   notes: {
     list:   (id) => api.get(`/customers/${id}/notes`).then(r => r.data).catch(handleErr),
     create: (id, data) => api.post(`/customers/${id}/notes`, data).then(r => r.data).catch(handleErr),
@@ -134,6 +139,26 @@ export const customerApi = {
     `${api.defaults.baseURL}/customers/export?format=${format}${search ? `&search=${encodeURIComponent(search)}` : ''}`,
   sampleUrl: (format = 'csv') =>
     `${api.defaults.baseURL}/customers/import/sample?format=${format}`,
+
+  /**
+   * Group-wise reports. Downloads go through axios with responseType blob so the
+   * Bearer token is sent — a bare <a href> would hit the API unauthenticated.
+   */
+  groupReports: {
+    show:       (params = {}) => api.get('/customers/group-reports', { params }).then(r => r.data).catch(handleErr),
+    comparison: (params = {}) => api.get('/customers/group-reports/comparison', { params }).then(r => r.data).catch(handleErr),
+    download: async (kind, params = {}) => {
+      const path = kind === 'pdf' ? '/customers/group-reports/pdf' : '/customers/group-reports/export'
+      const res = await api.get(path, { params, responseType: 'blob' })
+      const cd = res.headers?.['content-disposition'] || ''
+      const guess = cd.match(/filename="?([^";]+)"?/)?.[1]
+      const name = guess || `group-report.${kind === 'pdf' ? 'pdf' : (params.format || 'csv')}`
+      const url = URL.createObjectURL(res.data)
+      const a = document.createElement('a')
+      a.href = url; a.download = name; document.body.appendChild(a); a.click()
+      a.remove(); URL.revokeObjectURL(url)
+    },
+  },
 
   // Groups
   groups: {

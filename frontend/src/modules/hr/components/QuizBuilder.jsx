@@ -253,7 +253,7 @@ function QuestionModal({ modal, setModal, types, categories, saving, onSave, onC
   const isBoolean = f.question_type === 'boolean'
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop">
       <div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:620, width:'95%', maxHeight:'92vh', overflowY:'auto' }}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{modal.editing ? 'Edit Question' : 'Add Question'}</h2>
@@ -523,7 +523,7 @@ function QuizModal({ modal, setModal, bank, programs, saving, onSave, onClose })
     sum + (q.marks_override === '' || q.marks_override === null ? Number(q.marks || 0) : Number(q.marks_override)), 0)
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop">
       <div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:720, width:'95%', maxHeight:'92vh', overflowY:'auto' }}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{modal.editing ? 'Edit Quiz' : 'Create Quiz'}</h2>

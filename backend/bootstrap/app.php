@@ -69,14 +69,44 @@ return Application::configure(basePath: dirname(__DIR__))
                     ], 401);
                 }
 
-                $status = $e instanceof BusinessException
-                    ? $e->getStatusCode()
-                    : (method_exists($e, 'getStatusCode') ? $e->getStatusCode() : 500);
+                // Everything else goes through ApiErrorMapper, which returns a
+                // sentence the user can act on. Returning $e->getMessage() here
+                // used to dump a whole failing SQL statement — connection, host,
+                // database name, columns and bound values — straight into a toast.
+                $mapped = \App\Support\ApiErrorMapper::map($e);
 
-                return response()->json([
-                    'status'  => 'error',
-                    'message' => $e->getMessage() ?: 'Server error',
-                ], $status);
+                // Reference ties the friendly message to the logged stack trace, so
+                // "error SVR-3F9A21" in a support request is actually findable.
+                $reference = strtoupper(substr(md5($e->getFile().$e->getLine().get_class($e)), 0, 6));
+
+                Log::channel('errors')->error('API error returned to client', [
+                    'reference' => $reference,
+                    'exception' => get_class($e),
+                    'raw'       => $e->getMessage(),
+                    'file'      => $e->getFile().':'.$e->getLine(),
+                ]);
+
+                $payload = [
+                    'status'    => 'error',
+                    'message'   => $mapped['message'],
+                    'reference' => $reference,
+                ];
+
+                // Point the form at the offending input when we could identify it.
+                if ($mapped['field']) {
+                    $payload['errors'] = [$mapped['field'] => [$mapped['hint'] ?: $mapped['message']]];
+                }
+                // Only as a standalone tip — when a field error was returned the
+                // hint IS that field's message, and repeating it reads as noise.
+                if ($mapped['hint'] && ! $mapped['field']) {
+                    $payload['hint'] = $mapped['hint'];
+                }
+                // Developers still need the real cause locally.
+                if (config('app.debug')) {
+                    $payload['debug'] = ['exception' => get_class($e), 'raw' => $e->getMessage()];
+                }
+
+                return response()->json($payload, $mapped['status']);
             }
         });
     })->create();

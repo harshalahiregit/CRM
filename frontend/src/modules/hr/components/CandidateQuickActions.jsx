@@ -133,7 +133,7 @@ export default function CandidateQuickActions({ candidate, recruiters = [], onCh
 
       {/* ── Modals ─────────────────────────────────────────────── */}
       {modal && (
-        <div className="modal-backdrop" onClick={closeAll}>
+        <div className="modal-backdrop">
           <div className="modal-box max-w-md" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-black text-base" style={{ color: 'var(--text-h)' }}>
