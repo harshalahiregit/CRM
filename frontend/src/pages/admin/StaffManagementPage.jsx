@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, MoreVertical, Edit, Trash2, Power, UserCheck, UserX, Shield, RefreshCw } from 'lucide-react'
 import api from '@/lib/api'
 import { useAuth } from '@/context/AuthContext'
@@ -7,6 +8,23 @@ import DeleteConfirmModal from '@/components/admin/DeleteConfirmModal'
 
 export default function StaffManagementPage() {
   const { user } = useAuth()
+  const queryClient = useQueryClient()
+
+  // Every module reads its assignable-people list from a React Query cache
+  // (Tasks ['task-staff'], Projects ['project-staff'], Helpdesk ['helpdesk-agents'],
+  // etc.). This page fetches with plain axios, so after any staff change those
+  // caches stay stale for up to 5 min — a newly added user wouldn't appear in
+  // assignee/member/agent pickers until then. Invalidate them on every staff
+  // mutation so the whole app reflects the directory immediately. Predicate-based
+  // so it also covers any future staff/user/agent list without hard-coding keys.
+  const invalidateDirectory = useCallback(() => {
+    queryClient.invalidateQueries({
+      predicate: (q) => {
+        const k = q.queryKey?.[0]
+        return typeof k === 'string' && /staff|agent|member|assignee|users?\b/i.test(k)
+      },
+    })
+  }, [queryClient])
   const [stats, setStats]       = useState({ total_staff: 0, active_staff: 0, inactive_staff: 0 })
   const [staff, setStaff]       = useState([])
   const [loading, setLoading]   = useState(true)
@@ -90,7 +108,7 @@ export default function StaffManagementPage() {
     try {
       await api.patch(`/admin/staff/${member.id}/toggle-status`, {})
       showToast(`${member.name}'s status updated`)
-      fetchStaff(); fetchStats()
+      fetchStaff(); fetchStats(); invalidateDirectory()
     } catch {
       showToast('Failed to update status', 'error')
     }
@@ -101,7 +119,7 @@ export default function StaffManagementPage() {
     try {
       await api.delete(`/admin/staff/${selectedStaff.id}`)
       showToast(`${selectedStaff.name} deleted`)
-      fetchStaff(); fetchStats()
+      fetchStaff(); fetchStats(); invalidateDirectory()
       setShowDeleteModal(false); setSelectedStaff(null)
     } catch {
       showToast('Failed to delete staff member', 'error')
@@ -431,7 +449,7 @@ export default function StaffManagementPage() {
           departments={departments}
           onClose={() => { setShowStaffModal(false); setSelectedStaff(null) }}
           onSuccess={() => {
-            fetchStaff(); fetchStats()
+            fetchStaff(); fetchStats(); invalidateDirectory()
             setShowStaffModal(false); setSelectedStaff(null)
             showToast(selectedStaff ? 'Staff member updated!' : 'Staff member created!')
           }}
