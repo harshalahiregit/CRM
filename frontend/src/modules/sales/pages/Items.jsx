@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Plus, Search, Edit2, Copy, Trash2, X, LayoutGrid, List, Upload, CheckCircle, Tag } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
 import { useToast } from '@/hooks/useToast'
+import RichTextEditor from '@/components/ui/RichTextEditor'
 
 const fmt = v => '₹' + Number(v||0).toLocaleString('en-IN')
 const CATEGORIES = ['All','Development','Design','Infrastructure','Marketing','Analytics','Consulting','Support']
@@ -220,7 +221,7 @@ export default function Items() {
                   </div>
                   <div>
                     <label className="label">Long Description <span style={{ color: 'var(--text-muted)', fontWeight: 400, textTransform: 'none', letterSpacing: 'normal' }}>(shown on documents)</span></label>
-                    <textarea className="input-3d text-sm resize-none" rows={3} placeholder="Detailed description visible on proposals, invoices…" value={form.long_description} onChange={e => sf('long_description', e.target.value)} />
+                    <RichTextEditor value={form.long_description} onChange={v => sf('long_description', v)} placeholder="Full item description…" minHeight={110} />
                   </div>
                 </div>
               </div>

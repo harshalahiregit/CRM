@@ -18,6 +18,7 @@ import NextBestActionChip from '../components/NextBestActionChip'
 import StatusBadge from '../components/StatusBadge'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import EmptyState from '@/components/ui/EmptyState'
+import { richHtml } from '@/lib/richText'
 
 const TEMP_ICON = { Hot: Flame, Warm: Thermometer, Cold: Snowflake }
 const TEMP_COLOR = { Hot: '#ef4444', Warm: '#f59e0b', Cold: '#3b82f6' }
@@ -287,9 +288,8 @@ function ProfileTab({ lead }) {
           <InfoRow icon={FileText} label="Expected Close" value={lead.expected_close_date ? String(lead.expected_close_date).slice(0, 10) : '—'} />
         </div>
         {lead.description && (
-          <p className="text-xs mt-4 pt-4" style={{ color: 'var(--text-muted)', borderTop: '1px solid var(--border)' }}>
-            {lead.description}
-          </p>
+          <div className="rich-content text-xs mt-4 pt-4" style={{ color: 'var(--text-muted)', borderTop: '1px solid var(--border)' }}
+            dangerouslySetInnerHTML={richHtml(lead.description)} />
         )}
       </div>
 

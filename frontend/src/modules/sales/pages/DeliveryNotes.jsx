@@ -5,6 +5,7 @@ import { useClientOptions } from '@/hooks/useClientOptions'
 import StatusBadge from '../components/StatusBadge'
 import RowMenu from '../components/RowMenu'
 import { useToast } from '@/hooks/useToast'
+import RichTextEditor from '@/components/ui/RichTextEditor'
 
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 
@@ -281,9 +282,7 @@ export default function DeliveryNotes() {
                 <p className="label-caps mb-4" style={{ color: '#a78bfa' }}>Notes</p>
                 <div>
                   <label className="label">Delivery Notes</label>
-                  <textarea className="input-3d text-sm resize-none" rows={4}
-                    placeholder="Special delivery instructions or notes for the recipient…"
-                    value={form.notes} onChange={e => sf('notes', e.target.value)} />
+                  <RichTextEditor value={form.notes} onChange={v => sf('notes', v)} placeholder="Delivery instructions, packing details…" minHeight={100} />
                 </div>
               </div>
 

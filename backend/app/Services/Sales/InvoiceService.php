@@ -36,9 +36,8 @@ class InvoiceService
     public function create(array $data, int $tenantId, int $userId): SalesInvoice
     {
         return DB::transaction(function () use ($data, $tenantId, $userId) {
-            if (isset($data['terms'])) {
-                $data['terms'] = HtmlSanitizer::clean($data['terms']); // rich text
-            }
+            // Rich text (notepad editor) — sanitized before it ever reaches the DB.
+            $data = HtmlSanitizer::cleanFields($data, ['terms', 'adminnote', 'clientnote']);
             $lineItems = $data['line_items'] ?? [];
             unset($data['line_items']);
 
@@ -74,9 +73,8 @@ class InvoiceService
         $this->assertBelongsToTenant($invoice, $tenantId);
 
         return DB::transaction(function () use ($invoice, $data, $tenantId) {
-            if (isset($data['terms'])) {
-                $data['terms'] = HtmlSanitizer::clean($data['terms']); // rich text
-            }
+            // Rich text (notepad editor) — sanitized before it ever reaches the DB.
+            $data = HtmlSanitizer::cleanFields($data, ['terms', 'adminnote', 'clientnote']);
             $hasLineItems = array_key_exists('line_items', $data);
             $lineItems = $data['line_items'] ?? [];
             unset($data['line_items']);
@@ -142,9 +140,8 @@ class InvoiceService
         }
 
         return DB::transaction(function () use ($invoice, $data, $tenantId, $userId) {
-            if (isset($data['terms'])) {
-                $data['terms'] = HtmlSanitizer::clean($data['terms']); // rich text
-            }
+            // Rich text (notepad editor) — sanitized before it ever reaches the DB.
+            $data = HtmlSanitizer::cleanFields($data, ['terms', 'adminnote', 'clientnote']);
             $payment = SalesPayment::create([
                 'tenant_id'      => $tenantId,
                 'invoice_id'     => $invoice->id,
@@ -271,6 +268,12 @@ class InvoiceService
                      ->delete();
 
         foreach ($items as $idx => $item) {
+            // Same prelude as ProposalService: normalize the tax shape and resolve a
+            // % discount to an amount BEFORE the row is built. Without it $taxInfo is
+            // undefined and every create/update with line items 500s.
+            $taxInfo = SalesLineItem::normalizeTaxes($item);
+            $item['tax'] = $taxInfo['tax'];
+            $item['discount'] = SalesLineItem::discountAmount($item);
             SalesLineItem::create([
                 'lineable_type' => SalesInvoice::class,
                 'lineable_id'   => $invoice->id,

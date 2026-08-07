@@ -7,6 +7,7 @@ import { salesApi } from '@/services/salesApi'
 import WinProbabilityBadge from '../components/WinProbabilityBadge'
 import { Plus, Search, MoreVertical, X, UserPlus, Flame, Thermometer, Snowflake, Eye, Trash2, XCircle, RotateCcw, TrendingUp, Users, Target, DollarSign, LayoutGrid, List, ChevronDown } from 'lucide-react'
 import { useToast } from '@/hooks/useToast'
+import RichTextEditor from '@/components/ui/RichTextEditor'
 
 const TEMP_ICON = { Hot: Flame, Warm: Thermometer, Cold: Snowflake }
 const TEMP_COLOR = { Hot: '#ef4444', Warm: '#f59e0b', Cold: '#3b82f6' }
@@ -414,7 +415,7 @@ export default function Leads() {
                     </div>
                   </div>
                   <div><label className="label">Tags</label><input className="input-3d text-sm" placeholder="Comma-separated tags" value={form.tags} onChange={e=>sf('tags',e.target.value)}/></div>
-                  <div><label className="label">Description</label><textarea className="input-3d text-sm" rows={3} placeholder="Notes about this lead…" value={form.description} onChange={e=>sf('description',e.target.value)}/></div>
+                  <div><label className="label">Description</label><RichTextEditor value={form.description} onChange={v => sf('description', v)} placeholder="Notes about this lead…" minHeight={110} /></div>
                 </div>
               </div>
               {/* Business / Qualification */}

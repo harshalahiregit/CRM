@@ -6,6 +6,7 @@ use App\Exceptions\UnauthorizedTenantException;
 use App\Models\Sales\ContractType;
 use App\Models\Sales\SalesContract;
 use App\Repositories\Sales\SalesContractRepository;
+use App\Support\HtmlSanitizer;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -32,6 +33,8 @@ class ContractService
         $contract = DB::transaction(function () use ($data, $tenantId, $userId) {
             $pages = $data['pages'] ?? null;
             unset($data['pages']);
+            // Rich text (notepad editor) — sanitized before it ever reaches the DB.
+            $data = HtmlSanitizer::cleanFields($data, ['description']);
             $contract = SalesContract::create([
                 ...$data,
                 'tenant_id'  => $tenantId,
@@ -61,6 +64,7 @@ class ContractService
         $pages = $data['pages'] ?? null;
         $hasPages = array_key_exists('pages', $data);
         unset($data['pages']);
+        $data = HtmlSanitizer::cleanFields($data, ['description']);
         $contract->update($data);
         if ($hasPages) {
             $this->contentPages->syncPages($contract, $pages ?? [], $tenantId);

@@ -394,14 +394,14 @@ export default function Invoices() {
                       <span className="px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ background: 'rgba(239,68,68,0.1)', color: '#f87171' }}>🔒 INTERNAL</span>
                       Admin Note
                     </label>
-                    <textarea className="input-3d text-sm resize-none" rows={2} placeholder="Internal notes (not visible to customer)…" value={form.adminnote} onChange={e => sf('adminnote', e.target.value)} />
+                    <RichTextEditor value={form.adminnote} onChange={v => sf('adminnote', v)} placeholder="Internal notes (not visible to customer)…" minHeight={90} />
                   </div>
                   <div>
                     <label className="label flex items-center gap-1">
                       <span className="px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ background: 'rgba(16,185,129,0.1)', color: '#10b981' }}>VISIBLE</span>
                       Client Note
                     </label>
-                    <textarea className="input-3d text-sm resize-none" rows={2} placeholder="Note visible on the invoice…" value={form.clientnote} onChange={e => sf('clientnote', e.target.value)} />
+                    <RichTextEditor value={form.clientnote} onChange={v => sf('clientnote', v)} placeholder="Note visible on the invoice…" minHeight={90} />
                   </div>
                   <div>
                     <label className="label">Terms & Conditions</label>

@@ -10,6 +10,7 @@ use App\Models\Sales\LeadNote;
 use App\Models\Sales\LeadQuestionnaireResponse;
 use App\Models\Sales\LeadStatus;
 use App\Repositories\Sales\LeadRepository;
+use App\Support\HtmlSanitizer;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -126,6 +127,8 @@ class LeadService
     public function create(array $data, int $tenantId, int $userId): Lead
     {
         $this->resolveSource($data, $tenantId);
+        // Rich text (notepad editor) — sanitized before it ever reaches the DB.
+        $data = HtmlSanitizer::cleanFields($data, ['description']);
 
         $lead = Lead::create([
             ...$data,
@@ -164,6 +167,7 @@ class LeadService
         $this->assertTenant($lead, $tenantId);
 
         $this->resolveSource($data, $tenantId);
+        $data = HtmlSanitizer::cleanFields($data, ['description']);
 
         $lead->update($data);
         $lead->logActivity('updated', "Lead \"{$lead->name}\" updated");

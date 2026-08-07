@@ -35,9 +35,8 @@ class ProposalService
         return DB::transaction(function () use ($data, $lineItems, $tenantId, $userId) {
             $pages = $data['pages'] ?? null;
             unset($data['pages']);
-            if (isset($data['terms'])) {
-                $data['terms'] = HtmlSanitizer::clean($data['terms']); // now rich text
-            }
+            // Rich text (notepad editor) — sanitized before it ever reaches the DB.
+            $data = HtmlSanitizer::cleanFields($data, ['terms', 'notes']);
             if (array_key_exists('cover', $data)) {
                 $data['cover'] = $this->cleanCover($data['cover']);
             }
@@ -82,9 +81,8 @@ class ProposalService
             $pages = $data['pages'] ?? null;
             $hasPages = array_key_exists('pages', $data);
             unset($data['pages']);
-            if (isset($data['terms'])) {
-                $data['terms'] = HtmlSanitizer::clean($data['terms']); // now rich text
-            }
+            // Rich text (notepad editor) — sanitized before it ever reaches the DB.
+            $data = HtmlSanitizer::cleanFields($data, ['terms', 'notes']);
             if (array_key_exists('cover', $data)) {
                 $data['cover'] = $this->cleanCover($data['cover']);
             }

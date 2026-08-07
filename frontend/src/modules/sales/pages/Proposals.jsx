@@ -493,7 +493,7 @@ export default function Proposals() {
                   </div>
                   <div>
                     <label className="label">Notes</label>
-                    <textarea className="input-3d text-sm resize-none" rows={4} placeholder="Additional notes visible on the proposal…" value={form.notes} onChange={e => sf('notes', e.target.value)} />
+                    <RichTextEditor value={form.notes} onChange={v => sf('notes', v)} placeholder="Additional notes visible on the proposal…" minHeight={110} />
                     <label className="label mt-3">Terms &amp; Conditions</label>
                     <RichTextEditor value={form.terms} onChange={v => sf('terms', v)} placeholder="Payment terms, validity, conditions…" minHeight={120} />
                   </div>

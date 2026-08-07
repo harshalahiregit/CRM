@@ -3,6 +3,7 @@ import Drawer from '@/components/ui/Drawer'
 import { contractApi } from '@/services/contractApi'
 import { useToast } from '@/hooks/useToast'
 import { useClientOptions } from '@/hooks/useClientOptions'
+import RichTextEditor from '@/components/ui/RichTextEditor'
 
 const BLANK = { subject: '', client_id: '', contract_type_id: '', value: '', currency: 'INR', start_date: '', end_date: '', description: '', status: 'draft', renewal_notice_days: 30 }
 
@@ -100,7 +101,7 @@ export default function ContractDrawer({ open, onClose, contractId, onSaved }) {
           </div>
           <div><label className="label">Renewal Notice (days)</label><input type="number" className="input-3d text-sm" value={form.renewal_notice_days} onChange={e => sf('renewal_notice_days', e.target.value)} /></div>
         </div>
-        <div><label className="label">Description</label><textarea rows={3} className="input-3d text-sm resize-none" value={form.description} onChange={e => sf('description', e.target.value)} /></div>
+        <div><label className="label">Description</label><RichTextEditor value={form.description} onChange={v => sf('description', v)} placeholder="What this contract covers…" minHeight={110} /></div>
       </div>
     </Drawer>
   )
