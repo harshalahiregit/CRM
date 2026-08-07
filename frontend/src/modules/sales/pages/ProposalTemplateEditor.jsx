@@ -34,10 +34,11 @@ export default function ProposalTemplateEditor() {
 
   useEffect(() => {
     if (!isEdit) return
-    salesApi.proposalTemplates.list()
-      .then(list => {
-        const t = (list || []).find(x => String(x.id) === String(id))
-        if (!t) { toast.error('Template not found'); navigate('/app/sales/proposal-templates'); return }
+    // Fetches this one template. It used to pull the ENTIRE list and find the id
+    // client-side, which meant loading every template's pages to edit one.
+    salesApi.proposalTemplates.get(id)
+      .then(t => {
+        if (!t?.id) { toast.error('Template not found'); navigate('/app/sales/proposal-templates'); return }
         setForm({
           name: t.name || '', description: t.description || '', category: t.category || '', terms: t.terms || '',
           cover: t.cover || BLANK.cover,

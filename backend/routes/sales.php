@@ -120,6 +120,9 @@ Route::middleware('auth:sanctum')->prefix('sales')->group(function () {
     Route::put('/proposal-templates/{proposalTemplate}',       [ProposalTemplateController::class, 'update']);
     Route::delete('/proposal-templates/{proposalTemplate}',    [ProposalTemplateController::class, 'destroy']);
     Route::post('/proposal-templates/{proposalTemplate}/clone',[ProposalTemplateController::class, 'clone']);
+    Route::post('/proposal-templates/{proposalTemplate}/duplicate', [ProposalTemplateController::class, 'duplicate']);
+    // Declared last so it can't shadow /categories above.
+    Route::get('/proposal-templates/{proposalTemplate}',        [ProposalTemplateController::class, 'show']);
 
     // Estimates
     Route::get('/estimates',                                   [EstimateController::class, 'index']);
