@@ -23,6 +23,57 @@ import { richHtml } from '@/lib/richText'
 const TEMP_ICON = { Hot: Flame, Warm: Thermometer, Cold: Snowflake }
 const TEMP_COLOR = { Hot: '#ef4444', Warm: '#f59e0b', Cold: '#3b82f6' }
 
+/**
+ * "Raise Ticket" — hands the lead's context to the Helpdesk module.
+ *
+ * Navigates rather than opening a form here on purpose: tickets belong to
+ * Helpdesk, and duplicating its form would mean two places to keep in step. The
+ * context rides in router state (not the URL) because it carries the contact's
+ * name and email — the same hand-off Helpdesk already uses for "Convert reply
+ * to KB", so its New Ticket modal opens part-filled.
+ *
+ * customer_id is included only once the lead has been converted; before that
+ * there is no customer to attach the ticket to, and helpdesk tickets have no
+ * lead_id column to fall back on.
+ */
+function RaiseTicketButton({ lead }) {
+  const navigate = useNavigate()
+  const customerId = lead.client_id || lead.customer_id || null
+
+  const raise = () => {
+    const who = lead.company ? `${lead.name} (${lead.company})` : lead.name
+    navigate('/app/helpdesk/tickets', {
+      state: {
+        draftTicket: {
+          subject: `Follow-up: ${who}`,
+          description: [
+            `Raised from lead: ${who}`,
+            lead.email ? `Email: ${lead.email}` : null,
+            lead.phone ? `Phone: ${lead.phone}` : null,
+            lead.status?.name ? `Stage: ${lead.status.name}` : null,
+          ].filter(Boolean).join('\n'),
+          requester_name: lead.name || '',
+          requester_email: lead.email || '',
+          priority: lead.lead_temperature === 'Hot' ? 'high' : 'medium',
+          customer_id: customerId,
+          // Helpdesk's `source` is a fixed allowlist and has no 'lead' value;
+          // 'sales' is the module leads belong to, so it badges correctly without
+          // extending someone else's taxonomy.
+          source: 'sales',
+        },
+      },
+    })
+  }
+
+  return (
+    <button onClick={raise}
+      className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl transition-opacity hover:opacity-90"
+      style={{ background: 'rgba(124,58,237,0.1)', color: 'var(--accent)', border: '1px solid var(--border)' }}>
+      <LifeBuoy size={13} /> Raise Ticket
+    </button>
+  )
+}
+
 const fmt = v => '₹' + Number(v || 0).toLocaleString('en-IN')
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 
@@ -382,12 +433,16 @@ function ProposalsTab({ lead, navigate }) {
     return (
       <div className="card-3d" style={{ padding: '20px' }}>
         <EmptyState icon={FileText} title="No proposals yet" description="Proposals created for this lead will appear here." />
+        <div className="flex justify-center mt-3"><RaiseTicketButton lead={lead} /></div>
       </div>
     )
   }
   return (
     <div className="card-3d" style={{ padding: '20px' }}>
-      <h3 className="font-bold text-sm mb-4" style={{ color: 'var(--text-h)' }}>Proposals</h3>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-bold text-sm" style={{ color: 'var(--text-h)' }}>Proposals</h3>
+        <RaiseTicketButton lead={lead} />
+      </div>
       <div className="space-y-2">
         {proposals.map(p => (
           <div
@@ -415,11 +470,13 @@ function QuestionnairesTab({ lead }) {
     return (
       <div className="card-3d" style={{ padding: '20px' }}>
         <EmptyState icon={HelpCircle} title="No questionnaire responses" description="Responses submitted for this lead will appear here." />
+        <div className="flex justify-center mt-3"><RaiseTicketButton lead={lead} /></div>
       </div>
     )
   }
   return (
     <div className="space-y-4">
+      <div className="flex justify-end"><RaiseTicketButton lead={lead} /></div>
       {responses.map(r => (
         <div key={r.id} className="card-3d" style={{ padding: '20px' }}>
           <div className="flex items-center justify-between mb-3">
@@ -480,7 +537,8 @@ function LeadSupportTab({ lead }) {
     return (
       <div className="card-3d" style={{ padding: '20px' }}>
         <EmptyState icon={LifeBuoy} title="No linked customer yet"
-          description="Convert this lead to a customer to track its support tickets here." />
+          description="Convert this lead to a customer to track its tickets here. You can still raise one now — it just won't be listed on this tab until the lead is converted." />
+        <div className="flex justify-center mt-3"><RaiseTicketButton lead={lead} /></div>
       </div>
     )
   }
@@ -497,6 +555,9 @@ function LeadSupportTab({ lead }) {
           Raise ticket
         </button>
       </div>
+      {/* The box above is a one-line shortcut; this opens Helpdesk's full form
+          (department, assignee, priority, description) with the lead prefilled. */}
+      <div className="flex justify-end mb-4 -mt-2"><RaiseTicketButton lead={lead} /></div>
       {loading ? (
         <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Loading tickets…</p>
       ) : rows.length === 0 ? (
