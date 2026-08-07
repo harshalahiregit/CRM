@@ -7,6 +7,7 @@ import { useProjectOptions } from '@/hooks/useProjectOptions'
 import StatusBadge from '../components/StatusBadge'
 import LineItemsTable from '../components/LineItemsTable'
 import DocumentTemplateBar from '../components/DocumentTemplateBar'
+import { salesDocumentTemplateApi } from '@/services/salesDocumentTemplateApi'
 import RowMenu from '../components/RowMenu'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import RichTextEditor from '@/components/ui/RichTextEditor'
@@ -65,13 +66,51 @@ export default function Invoices() {
   // drawer with that customer preselected.
   const [searchParams, setSearchParams] = useSearchParams()
   useEffect(() => {
-    if (searchParams.get('new') === '1') {
-      const cid = searchParams.get('client_id') || ''
-      setForm(p => ({ ...p, client_id: cid }))
-      setShowDrawer(true)
-      setSearchParams({}, { replace: true })
+    if (searchParams.get('new') !== '1') return
+    const cid = searchParams.get('client_id') || ''
+    const tpl = searchParams.get('template')
+    setForm(p => ({ ...p, client_id: cid }))
+    setShowDrawer(true)
+    setSearchParams({}, { replace: true })
+    // Chosen on the start page — load it and prefill the grid.
+    if (tpl) {
+      salesDocumentTemplateApi.get(tpl)
+        .then(t => { applyTemplate(t); showToast(`Started from "${t.name}"`) })
+        .catch(e => showToast(e.message, 'error'))
     }
   }, [])
+
+
+  /**
+   * Turn a chosen template into form values.
+   *
+   * Shared shape with DocumentTemplateBar's apply() — a template only overwrites
+   * a default it actually carries, so choosing one never blanks something the
+   * caller already set (e.g. the client_id carried in from a customer profile).
+   */
+  const applyTemplate = (t) => setForm(p => ({
+    ...p,
+    line_items: (t.line_items || []).map(i => ({
+      item_id: i.item_id ?? null,
+      item_name: i.item_name,
+      description: i.description ?? '',
+      hsn_sac_code: i.hsn_sac_code ?? '',
+      qty: Number(i.qty) || 1,
+      unit: i.unit || 'pcs',
+      rate: Number(i.rate) || 0,
+      tax: Number(i.tax) || 0,
+      taxes: i.taxes ?? null,
+      discount: Number(i.discount) || 0,
+      discount_mode: i.discount_mode || 'fixed',
+    })),
+    ...(t.terms ? { terms: t.terms } : {}),
+    ...(t.adminnote ? { adminnote: t.adminnote } : {}),
+    ...(t.clientnote ? { clientnote: t.clientnote } : {}),
+    ...(t.currency ? { currency: t.currency } : {}),
+    ...(t.discount_type ? { discount_type: t.discount_type } : {}),
+    ...(t.discount_mode ? { discount_mode: t.discount_mode } : {}),
+    ...(Number(t.discount_value) ? { discount_value: Number(t.discount_value) } : {}),
+  }))
 
   const handleCreate = async () => {
     if(!form.client_id) return showToast('Customer required','error')
@@ -131,7 +170,7 @@ export default function Invoices() {
           <h1 className="font-black" style={{fontSize:'clamp(1.3rem,2vw,1.8rem)',color:'var(--text-h)',letterSpacing:'-0.02em'}}><span className="text-gradient">Invoices</span></h1>
           <p className="text-xs mt-0.5" style={{color:'var(--text-muted)'}}>Billing documents sent to customers</p>
         </div>
-        <button onClick={()=>setShowDrawer(true)} className="flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold text-white hover:scale-[1.03] transition-all" style={{background:'linear-gradient(135deg,#9f67ff,#7C3AED,#5b21b6)',boxShadow:'0 6px 20px rgba(124,58,237,0.45)'}}>
+        <button onClick={()=>navigate('/app/sales/invoices/new')} className="flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold text-white hover:scale-[1.03] transition-all" style={{background:'linear-gradient(135deg,#9f67ff,#7C3AED,#5b21b6)',boxShadow:'0 6px 20px rgba(124,58,237,0.45)'}}>
           <Plus size={15}/> New Invoice
         </button>
       </div>
@@ -217,7 +256,7 @@ export default function Invoices() {
                   <div className="flex flex-col items-center gap-3">
                     <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl" style={{background:'rgba(124,58,237,0.08)'}}>🧾</div>
                     <p className="text-sm font-semibold" style={{color:'var(--text-muted)'}}>No invoices found</p>
-                    <button onClick={()=>setShowDrawer(true)} className="text-xs font-bold" style={{color:'#a78bfa'}}>+ Create first invoice</button>
+                    <button onClick={()=>navigate('/app/sales/invoices/new')} className="text-xs font-bold" style={{color:'#a78bfa'}}>+ Create first invoice</button>
                   </div>
                 </td></tr>}
               </tbody>
