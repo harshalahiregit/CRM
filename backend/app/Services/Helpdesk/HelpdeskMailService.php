@@ -68,8 +68,25 @@ class HelpdeskMailService
             return;
         }
 
-        $this->safely(fn () => Mail::to($to['email'])->send(new TicketReplyMail($ticket, $reply, $to['name'], $agentName)),
-            "reply email for ticket #{$ticket->id}");
+        // Cc the addresses the agent added on the reply. Stored as an array on the
+        // reply; drop blanks and the primary recipient (no point Cc'ing them the
+        // mail they're already the To of). Without this the Cc field was captured
+        // and saved but never actually copied anyone — "Cc not working".
+        $cc = collect($reply->cc ?? [])
+            ->filter(fn ($e) => is_string($e) && filter_var(trim($e), FILTER_VALIDATE_EMAIL))
+            ->map(fn ($e) => strtolower(trim($e)))
+            ->reject(fn ($e) => $e === strtolower(trim($to['email'])))
+            ->unique()
+            ->values()
+            ->all();
+
+        $this->safely(function () use ($to, $cc, $ticket, $reply, $agentName) {
+            $mailer = Mail::to($to['email']);
+            if (! empty($cc)) {
+                $mailer->cc($cc);
+            }
+            $mailer->send(new TicketReplyMail($ticket, $reply, $to['name'], $agentName));
+        }, "reply email for ticket #{$ticket->id}");
     }
 
     public function sendStatusUpdate(Ticket $ticket, string $oldStatus, string $newStatus): void
