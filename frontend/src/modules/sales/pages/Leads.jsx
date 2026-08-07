@@ -5,7 +5,7 @@ import GoalSummary from '../components/GoalSummary'
 import { taskApi } from '@/services/taskApi'
 import { salesApi } from '@/services/salesApi'
 import WinProbabilityBadge from '../components/WinProbabilityBadge'
-import { Plus, Search, MoreVertical, X, UserPlus, Flame, Thermometer, Snowflake, Eye, Trash2, XCircle, RotateCcw, TrendingUp, Users, Target, DollarSign, LayoutGrid, List, ChevronDown, Check } from 'lucide-react'
+import { Plus, Search, MoreVertical, X, UserPlus, Flame, Thermometer, Snowflake, Eye, Trash2, XCircle, RotateCcw, TrendingUp, Users, Target, DollarSign, LayoutGrid, List, ChevronDown } from 'lucide-react'
 import { useToast } from '@/hooks/useToast'
 
 const TEMP_ICON = { Hot: Flame, Warm: Thermometer, Cold: Snowflake }
@@ -17,9 +17,6 @@ export default function Leads() {
   const [statuses, setStatuses] = useState([])
   const [sources, setSources] = useState([])
   const [staff, setStaff] = useState([])
-  const [addingSource, setAddingSource] = useState(false)
-  const [newSource, setNewSource] = useState('')
-  const [savingSource, setSavingSource] = useState(false)
   const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState('table')
@@ -34,7 +31,7 @@ export default function Leads() {
   const [openMenu, setOpenMenu] = useState(null)
   const [menuPos, setMenuPos] = useState(null)  // fixed-position anchor for the row menu so it escapes the table's overflow
   const [selected, setSelected] = useState([])
-  const [form, setForm] = useState({ name:'', email:'', phone:'', company:'', title:'', website:'', industry:'', campaign:'', priority:'medium', expected_close_date:'', description:'', lead_value:'', source_id:'', status_id:'', assigned_to:'', tags:'', address:'', city:'', state:'', country:'', zip:'', referral_type:'none', referral_value:'', referral_contact:'' })
+  const [form, setForm] = useState({ name:'', email:'', phone:'', company:'', title:'', website:'', industry:'', campaign:'', priority:'medium', expected_close_date:'', description:'', lead_value:'', source:'', status_id:'', assigned_to:'', tags:'', address:'', city:'', state:'', country:'', zip:'', referral_type:'none', referral_value:'', referral_contact:'' })
 
   // Routed through the shared Toast so every module notifies identically
   // (and error toasts get the per-field validation detail + tip).
@@ -60,22 +57,6 @@ export default function Leads() {
     setLoading(false)
   }, [filter, view])
 
-
-  /** Create a lead source from inside the form and select it straight away. */
-  const addSource = async () => {
-    const name = newSource.trim()
-    if (!name) return
-    setSavingSource(true)
-    try {
-      const created = await salesApi.leadSources.create({ name })
-      const list = await salesApi.leadSources.list()
-      setSources(list)
-      const hit = list.find(s => String(s.id) === String(created?.id)) || created
-      if (hit?.id) sf('source_id', String(hit.id))
-      setNewSource(''); setAddingSource(false)
-      showToast('Source added')
-    } catch (e) { showToast(e.message, 'error') } finally { setSavingSource(false) }
-  }
 
   /**
    * Recreate the standard pipeline stages.
@@ -123,7 +104,7 @@ export default function Leads() {
       await salesApi.leads.create(payload)
       showToast('Lead created')
       setShowDrawer(false)
-      setForm({ name:'', email:'', phone:'', company:'', title:'', website:'', industry:'', campaign:'', priority:'medium', expected_close_date:'', description:'', lead_value:'', source_id:'', status_id:'', assigned_to:'', tags:'', address:'', city:'', state:'', country:'', zip:'', referral_type:'none', referral_value:'', referral_contact:'' })
+      setForm({ name:'', email:'', phone:'', company:'', title:'', website:'', industry:'', campaign:'', priority:'medium', expected_close_date:'', description:'', lead_value:'', source:'', status_id:'', assigned_to:'', tags:'', address:'', city:'', state:'', country:'', zip:'', referral_type:'none', referral_value:'', referral_contact:'' })
       load()
     } catch(e) { showToast(e.message,'error') }
   }
@@ -407,32 +388,16 @@ export default function Leads() {
                   <div className="grid grid-cols-3 gap-3">
                     <div>
                       <label className="label">Source</label>
-                      <div className="flex items-center gap-1.5">
-                        <select className="input-3d text-sm" value={form.source_id} onChange={e=>sf('source_id',e.target.value)}>
-                          <option value="">Select…</option>
-                          {sources.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
-                        </select>
-                        {/* Add a source without leaving the form — it was settings-only before */}
-                        <button type="button" title="Add a source" onClick={()=>setAddingSource(a=>!a)}
-                          className="p-2 rounded-lg flex-shrink-0" style={{background:'var(--bg-input)',border:'1px solid var(--border)',color:'var(--accent)'}}>
-                          <Plus size={15}/>
-                        </button>
-                      </div>
-                      {addingSource && (
-                        <div className="flex items-center gap-1.5 mt-2">
-                          <input autoFocus className="input-3d text-sm" placeholder="New source name" value={newSource}
-                            onChange={e=>setNewSource(e.target.value)}
-                            onKeyDown={e=>{ if(e.key==='Enter'){ e.preventDefault(); addSource() } }}/>
-                          <button type="button" onClick={addSource} disabled={!newSource.trim()||savingSource}
-                            className="p-2 rounded-lg flex-shrink-0 disabled:opacity-50" style={{background:'rgba(16,185,129,0.15)',color:'#10b981'}}>
-                            <Check size={15}/>
-                          </button>
-                          <button type="button" onClick={()=>{setAddingSource(false);setNewSource('')}}
-                            className="p-2 rounded-lg flex-shrink-0" style={{background:'var(--bg-input)',color:'var(--text-muted)'}}>
-                            <X size={15}/>
-                          </button>
-                        </div>
-                      )}
+                      {/* Free text rather than a dropdown + "add" button: typing is
+                          faster than picking, and the backend matches the name
+                          against existing sources (case-insensitively) so this
+                          doesn't spawn duplicates. The datalist just offers what's
+                          already been used — it isn't a required choice. */}
+                      <input className="input-3d text-sm" list="lead-source-options" placeholder="e.g. Referral"
+                        value={form.source} onChange={e=>sf('source',e.target.value)}/>
+                      <datalist id="lead-source-options">
+                        {sources.map(s=><option key={s.id} value={s.name}/>)}
+                      </datalist>
                     </div>
                     <div><label className="label">Status</label><select className="input-3d text-sm" value={form.status_id} onChange={e=>sf('status_id',e.target.value)}><option value="">Default</option>{statuses.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
                     <div><label className="label">Lead Value (₹)</label><input type="number" className="input-3d text-sm" placeholder="0" value={form.lead_value} onChange={e=>sf('lead_value',e.target.value)}/></div>

@@ -86,8 +86,47 @@ class LeadService
         ];
     }
 
+    /**
+     * Turn a typed-in source NAME into a `source_id`.
+     *
+     * The lead form asks for the source as free text rather than a dropdown, but
+     * `leads.source_id` is a foreign key — so the name is matched against the
+     * tenant's existing sources and only created when it's genuinely new. Matching
+     * is case-insensitive so "google" doesn't become a second "Google".
+     *
+     * `source` is not a column (it's the relation name), so it is always removed
+     * from the payload before the model sees it.
+     */
+    private function resolveSource(array &$data, int $tenantId): void
+    {
+        if (! array_key_exists('source', $data)) {
+            return;
+        }
+
+        $name = trim((string) $data['source']);
+        unset($data['source']);
+
+        if ($name === '') {
+            // Cleared on purpose — drop the association rather than keeping the old
+            // one, but only when the caller actually sent the field.
+            $data['source_id'] = null;
+
+            return;
+        }
+
+        $existing = \App\Models\Sales\LeadSource::forTenant($tenantId)
+            ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
+            ->first();
+
+        $data['source_id'] = $existing
+            ? $existing->id
+            : \App\Models\Sales\LeadSource::create(['tenant_id' => $tenantId, 'name' => $name])->id;
+    }
+
     public function create(array $data, int $tenantId, int $userId): Lead
     {
+        $this->resolveSource($data, $tenantId);
+
         $lead = Lead::create([
             ...$data,
             'tenant_id'  => $tenantId,
@@ -123,6 +162,8 @@ class LeadService
     public function update(Lead $lead, array $data, int $tenantId): Lead
     {
         $this->assertTenant($lead, $tenantId);
+
+        $this->resolveSource($data, $tenantId);
 
         $lead->update($data);
         $lead->logActivity('updated', "Lead \"{$lead->name}\" updated");
