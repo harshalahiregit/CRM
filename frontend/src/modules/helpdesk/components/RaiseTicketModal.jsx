@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { guardedClose } from '@/lib/confirmClose'
+import { useDiscardGuard } from '@/lib/confirmClose'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { X, LifeBuoy, AlertCircle, CheckCircle2, ArrowRight, Users, Check } from 'lucide-react'
@@ -36,8 +36,9 @@ export default function RaiseTicketModal({ open, onClose, projectId = null, sour
   }, [open, defaultSubject, defaultDescription])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+  const { guard, dialog } = useDiscardGuard()
   // Only guard while still filling the form — once created, closing is harmless.
-  const requestClose = () => guardedClose(onClose, !created && snapshotRef.current && JSON.stringify(form) !== snapshotRef.current)
+  const requestClose = () => guard(onClose, !created && snapshotRef.current && JSON.stringify(form) !== snapshotRef.current)
 
   // The people the admin assigned to the chosen department. Picking a department
   // is what routes the ticket to them (they're notified and can see it); showing
@@ -71,6 +72,7 @@ export default function RaiseTicketModal({ open, onClose, projectId = null, sour
   const departments = settings?.departments || []
 
   return (
+    <>
     <div className="fixed inset-0 z-[70] flex items-start justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }} onClick={requestClose}>
       <div className="w-full max-w-[500px] rounded-2xl mt-[8vh] max-h-[85vh] overflow-y-auto"
         style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card-3d)', padding: 24 }} onClick={e => e.stopPropagation()}>
@@ -171,5 +173,7 @@ export default function RaiseTicketModal({ open, onClose, projectId = null, sour
         )}
       </div>
     </div>
+    {dialog}
+    </>
   )
 }

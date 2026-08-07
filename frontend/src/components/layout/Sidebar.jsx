@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Users, Briefcase, CheckSquare, FolderOpen, Receipt, Truck, LifeBuoy,
-  BarChart2, Settings, ChevronLeft, ChevronRight, LogOut, User, Moon, Sun, Sparkles, Zap,
+  BarChart2, Settings, ChevronLeft, ChevronRight, LogOut, User, Sparkles, Zap,
   Package, UserCheck, CalendarDays, FileText, Rocket, Building2, ClipboardList,
   ChevronDown, Shield, UserCog, IndianRupee, FileSignature, CreditCard, FileX, ShoppingBag,
   UserPlus, Link2, RefreshCw, LayoutTemplate, Globe, TrendingUp, Landmark, BookText, Scale,
@@ -29,9 +29,6 @@ const NAV_ITEMS = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/app/dashboard' },
   { label: 'Tasks', icon: CheckSquare, path: '/app/tasks' },
   { label: 'Projects', icon: FolderOpen, path: '/app/projects' },
-  { label: 'Invoices', icon: Receipt, path: '/app/invoices' },
-  { label: 'Vendors', icon: Truck, path: '/app/vendors' },
-  { label: 'Reports', icon: BarChart2, path: '/app/reports' },
   { label: 'Settings', icon: Settings, path: '/app/settings' },
 ]
 
@@ -231,7 +228,7 @@ const SUBMODULE_SEARCH = [
 
 export default function Sidebar({ collapsed, onToggle }) {
   const { user, tenant, logout } = useAuth()
-  const { isDark, toggleTheme } = useTheme()
+  const { isDark } = useTheme()
   const navigate = useNavigate()
   const [hrExpanded, setHrExpanded] = useState(true)
   const [recruitExpanded, setRecruitExpanded] = useState(true)
@@ -818,35 +815,7 @@ export default function Sidebar({ collapsed, onToggle }) {
 
       {/* ── Bottom Controls ────────────────────────────────── */}
       <div className="p-3 space-y-1" style={{ borderTop: '1px solid var(--border)' }}>
-        {/* Theme toggle — 3D pill */}
-        <button
-          onClick={toggleTheme}
-          title={isDark ? 'Switch to Light' : 'Switch to Dark'}
-          className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl transition-all duration-200"
-          style={{
-            color: 'var(--text-muted)',
-            justifyContent: collapsed ? 'center' : undefined,
-          }}
-          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(124,58,237,0.08)'; e.currentTarget.style.color = 'var(--text-h)' }}
-          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-muted)' }}
-        >
-          <div
-            className="w-7 h-7 rounded-xl flex items-center justify-center"
-            style={{
-              background: isDark
-                ? 'linear-gradient(135deg,#fbbf24,#f59e0b)'
-                : 'linear-gradient(135deg,#6366f1,#4f46e5)',
-              boxShadow: isDark
-                ? '0 3px 10px rgba(251,191,36,0.4)'
-                : '0 3px 10px rgba(99,102,241,0.4)',
-            }}
-          >
-            {isDark ? <Sun size={13} className="text-white" /> : <Moon size={13} className="text-white" />}
-          </div>
-          {!collapsed && (
-            <span className="text-sm font-medium">{isDark ? 'Light Mode' : 'Dark Mode'}</span>
-          )}
-        </button>
+        {/* Theme toggle lives in the header (Sun/Moon icon) — no duplicate here. */}
 
         {/* User profile card */}
         {!collapsed && (
