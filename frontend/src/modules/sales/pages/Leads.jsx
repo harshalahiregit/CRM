@@ -2,13 +2,10 @@ import { useState, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import GoalSummary from '../components/GoalSummary'
+import { taskApi } from '@/services/taskApi'
 import { salesApi } from '@/services/salesApi'
 import WinProbabilityBadge from '../components/WinProbabilityBadge'
-import {
-  Plus, Search, MoreVertical, X, UserPlus, Flame, Thermometer, Snowflake,
-  Eye, Trash2, XCircle, RotateCcw, TrendingUp, Users, Target, DollarSign,
-  LayoutGrid, List, ChevronDown
-} from 'lucide-react'
+import { Plus, Search, MoreVertical, X, UserPlus, Flame, Thermometer, Snowflake, Eye, Trash2, XCircle, RotateCcw, TrendingUp, Users, Target, DollarSign, LayoutGrid, List, ChevronDown, Check } from 'lucide-react'
 import { useToast } from '@/hooks/useToast'
 
 const TEMP_ICON = { Hot: Flame, Warm: Thermometer, Cold: Snowflake }
@@ -19,6 +16,10 @@ export default function Leads() {
   const [data, setData] = useState([])
   const [statuses, setStatuses] = useState([])
   const [sources, setSources] = useState([])
+  const [staff, setStaff] = useState([])
+  const [addingSource, setAddingSource] = useState(false)
+  const [newSource, setNewSource] = useState('')
+  const [savingSource, setSavingSource] = useState(false)
   const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState('table')
@@ -29,7 +30,7 @@ export default function Leads() {
   const [openMenu, setOpenMenu] = useState(null)
   const [menuPos, setMenuPos] = useState(null)  // fixed-position anchor for the row menu so it escapes the table's overflow
   const [selected, setSelected] = useState([])
-  const [form, setForm] = useState({ name:'', email:'', phone:'', company:'', title:'', website:'', pan:'', gst:'', industry:'', campaign:'', priority:'medium', expected_close_date:'', description:'', lead_value:'', source_id:'', status_id:'', assigned_to:'', tags:'', address:'', city:'', state:'', country:'', zip:'', referral_type:'none', referral_value:'', referral_contact:'' })
+  const [form, setForm] = useState({ name:'', email:'', phone:'', company:'', title:'', website:'', industry:'', campaign:'', priority:'medium', expected_close_date:'', description:'', lead_value:'', source_id:'', status_id:'', assigned_to:'', tags:'', address:'', city:'', state:'', country:'', zip:'', referral_type:'none', referral_value:'', referral_contact:'' })
 
   // Routed through the shared Toast so every module notifies identically
   // (and error toasts get the per-field validation detail + tip).
@@ -52,7 +53,26 @@ export default function Leads() {
     setLoading(false)
   }, [filter, view])
 
+
+  /** Create a lead source from inside the form and select it straight away. */
+  const addSource = async () => {
+    const name = newSource.trim()
+    if (!name) return
+    setSavingSource(true)
+    try {
+      const created = await salesApi.leadSources.create({ name })
+      const list = await salesApi.leadSources.list()
+      setSources(list)
+      const hit = list.find(s => String(s.id) === String(created?.id)) || created
+      if (hit?.id) sf('source_id', String(hit.id))
+      setNewSource(''); setAddingSource(false)
+      showToast('Source added')
+    } catch (e) { showToast(e.message, 'error') } finally { setSavingSource(false) }
+  }
+
   useEffect(() => { load() }, [load])
+  // Assignable staff — fetched once; the list doesn't change with the filter.
+  useEffect(() => { taskApi.staff().then(setStaff).catch(() => setStaff([])) }, [])
 
   const handleCreate = async () => {
     if (!form.name.trim()) return showToast('Name is required','error')
@@ -67,7 +87,7 @@ export default function Leads() {
       await salesApi.leads.create(payload)
       showToast('Lead created')
       setShowDrawer(false)
-      setForm({ name:'', email:'', phone:'', company:'', title:'', website:'', pan:'', gst:'', industry:'', campaign:'', priority:'medium', expected_close_date:'', description:'', lead_value:'', source_id:'', status_id:'', assigned_to:'', tags:'', address:'', city:'', state:'', country:'', zip:'', referral_type:'none', referral_value:'', referral_contact:'' })
+      setForm({ name:'', email:'', phone:'', company:'', title:'', website:'', industry:'', campaign:'', priority:'medium', expected_close_date:'', description:'', lead_value:'', source_id:'', status_id:'', assigned_to:'', tags:'', address:'', city:'', state:'', country:'', zip:'', referral_type:'none', referral_value:'', referral_contact:'' })
       load()
     } catch(e) { showToast(e.message,'error') }
   }
@@ -307,9 +327,48 @@ export default function Leads() {
               <div className="mt-6"><p className="label-caps mb-4" style={{color:'#a78bfa'}}>Pipeline Details</p>
                 <div className="space-y-3">
                   <div className="grid grid-cols-3 gap-3">
-                    <div><label className="label">Source</label><select className="input-3d text-sm" value={form.source_id} onChange={e=>sf('source_id',e.target.value)}><option value="">Select…</option>{sources.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+                    <div>
+                      <label className="label">Source</label>
+                      <div className="flex items-center gap-1.5">
+                        <select className="input-3d text-sm" value={form.source_id} onChange={e=>sf('source_id',e.target.value)}>
+                          <option value="">Select…</option>
+                          {sources.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+                        </select>
+                        {/* Add a source without leaving the form — it was settings-only before */}
+                        <button type="button" title="Add a source" onClick={()=>setAddingSource(a=>!a)}
+                          className="p-2 rounded-lg flex-shrink-0" style={{background:'var(--bg-input)',border:'1px solid var(--border)',color:'var(--accent)'}}>
+                          <Plus size={15}/>
+                        </button>
+                      </div>
+                      {addingSource && (
+                        <div className="flex items-center gap-1.5 mt-2">
+                          <input autoFocus className="input-3d text-sm" placeholder="New source name" value={newSource}
+                            onChange={e=>setNewSource(e.target.value)}
+                            onKeyDown={e=>{ if(e.key==='Enter'){ e.preventDefault(); addSource() } }}/>
+                          <button type="button" onClick={addSource} disabled={!newSource.trim()||savingSource}
+                            className="p-2 rounded-lg flex-shrink-0 disabled:opacity-50" style={{background:'rgba(16,185,129,0.15)',color:'#10b981'}}>
+                            <Check size={15}/>
+                          </button>
+                          <button type="button" onClick={()=>{setAddingSource(false);setNewSource('')}}
+                            className="p-2 rounded-lg flex-shrink-0" style={{background:'var(--bg-input)',color:'var(--text-muted)'}}>
+                            <X size={15}/>
+                          </button>
+                        </div>
+                      )}
+                    </div>
                     <div><label className="label">Status</label><select className="input-3d text-sm" value={form.status_id} onChange={e=>sf('status_id',e.target.value)}><option value="">Default</option>{statuses.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
                     <div><label className="label">Lead Value (₹)</label><input type="number" className="input-3d text-sm" placeholder="0" value={form.lead_value} onChange={e=>sf('lead_value',e.target.value)}/></div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    {/* assigned_to was already in the payload and validated server-side,
+                        but the form had no control for it — leads could only be assigned
+                        afterwards from the row menu. */}
+                    <div><label className="label">Assign To</label>
+                      <select className="input-3d text-sm" value={form.assigned_to} onChange={e=>sf('assigned_to',e.target.value)}>
+                        <option value="">Unassigned</option>
+                        {staff.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
+                      </select>
+                    </div>
                   </div>
                   <div><label className="label">Tags</label><input className="input-3d text-sm" placeholder="Comma-separated tags" value={form.tags} onChange={e=>sf('tags',e.target.value)}/></div>
                   <div><label className="label">Description</label><textarea className="input-3d text-sm" rows={3} placeholder="Notes about this lead…" value={form.description} onChange={e=>sf('description',e.target.value)}/></div>
@@ -319,8 +378,6 @@ export default function Leads() {
               <div className="mt-6"><p className="label-caps mb-4" style={{color:'#a78bfa'}}>Business / Qualification</p>
                 <div className="space-y-3">
                   <div className="grid grid-cols-2 gap-3">
-                    <div><label className="label">GST Number</label><input className="input-3d text-sm" placeholder="27AAECM1234K1Z5" value={form.gst} onChange={e=>sf('gst',e.target.value)}/></div>
-                    <div><label className="label">PAN</label><input className="input-3d text-sm" placeholder="AAECM1234K" value={form.pan} onChange={e=>sf('pan',e.target.value)}/></div>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div><label className="label">Industry</label><input className="input-3d text-sm" placeholder="e.g. Textiles" value={form.industry} onChange={e=>sf('industry',e.target.value)}/></div>
