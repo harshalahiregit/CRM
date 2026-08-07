@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
+import GoalSummary from '../components/GoalSummary'
 import { salesApi } from '@/services/salesApi'
 import WinProbabilityBadge from '../components/WinProbabilityBadge'
 import {
@@ -145,6 +146,9 @@ export default function Leads() {
             ))}
           </div>
         )}
+
+        {/* Active lead-goal progress — renders nothing when no goals are set */}
+        <GoalSummary />
 
         {/* Controls */}
         <div className="flex items-center justify-between flex-wrap gap-3">

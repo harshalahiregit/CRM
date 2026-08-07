@@ -6,8 +6,8 @@ import {
 } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
 import { leadApi } from '@/services/leadApi'
-import { useLeadGoals } from '@/hooks/useLeadGoals'
 import { useMoneyFmt, MoneyToggle } from '@/components/ui/Money'
+import GoalSummary from '../components/GoalSummary'
 import RaiseTicketButton from '@/components/RaiseTicketButton'
 
 /**
@@ -50,7 +50,6 @@ export default function SalesDashboard() {
   const [data, setData] = useState(null)
   const [leads, setLeads] = useState(null)
   const [loading, setLoading] = useState(true)
-  const { data: goals } = useLeadGoals({ active_only: true })
 
   useEffect(() => {
     salesApi.dashboard.get().then(d => { setData(d); setLoading(false) }).catch(() => setLoading(false))
@@ -151,26 +150,7 @@ export default function SalesDashboard() {
             </div>
           )}
 
-          {goals?.length > 0 && (
-            <div className="card-3d" style={{ padding: '20px' }}>
-              <h2 className="font-bold text-sm mb-3" style={{ color: 'var(--text-h)' }}>Goal progress</h2>
-              <div className="space-y-3">
-                {goals.slice(0, 3).map(g => {
-                  const pct = g.target_count ? Math.min(100, Math.round((g.achieved_count / g.target_count) * 100))
-                    : g.target_value ? Math.min(100, Math.round((g.achieved_value / g.target_value) * 100)) : 0
-                  return (
-                    <div key={g.id}>
-                      <div className="flex justify-between text-[11px] mb-1">
-                        <span style={{ color: 'var(--text-muted)' }}>{g.user?.name || 'Team'} · {g.type}</span>
-                        <span className="font-bold" style={{ color: 'var(--text-h)' }}>{pct}%</span>
-                      </div>
-                      <Meter pct={pct} />
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          )}
+          <GoalSummary limit={3} compact />
         </div>
       </div>
 
