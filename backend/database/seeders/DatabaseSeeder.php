@@ -66,6 +66,11 @@ class DatabaseSeeder extends Seeder
             'company'   => 'Acme Corp',
         ]);
 
+        // Lead pipeline statuses + sources. Not demo data — the Leads kanban has no
+        // columns without statuses, so every workspace needs these. This seeder
+        // existed but was never wired up here, which is why the board came up blank.
+        $this->call(LeadDefaultsSeeder::class);
+
         // Helpdesk module demo data (owner: Shivam)
         $this->call(HelpdeskSeeder::class);
 

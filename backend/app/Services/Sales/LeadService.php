@@ -30,6 +30,11 @@ class LeadService
 
     public function kanban(int $tenantId)
     {
+        // The board IS the statuses — with none configured it has no columns and
+        // reads as a broken page. The Leads screen loads statuses and the board in
+        // parallel, so this can't rely on the statuses call having seeded first.
+        app(LeadSettingService::class)->ensureDefaults($tenantId);
+
         return $this->leadRepository->kanbanColumns($tenantId);
     }
 

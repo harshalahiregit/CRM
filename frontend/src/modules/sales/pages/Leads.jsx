@@ -23,7 +23,11 @@ export default function Leads() {
   const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState('table')
-  const [kanban, setKanban] = useState([])
+  // null = board not fetched yet. Distinct from [] (fetched, genuinely no columns)
+  // so switching to the board doesn't flash the "no statuses" empty state: the
+  // page-level `loading` flag is already false by then and can't cover this.
+  const [kanban, setKanban] = useState(null)
+  const [restoring, setRestoring] = useState(false)
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [showDrawer, setShowDrawer] = useState(false)
@@ -48,7 +52,10 @@ export default function Leads() {
         salesApi.leads.summary(),
       ])
       setData(leads); setStatuses(sts); setSources(srcs); setSummary(sum)
-      if (view === 'kanban') { const k = await salesApi.leads.kanban(); setKanban(k) }
+      if (view === 'kanban') {
+        const k = await salesApi.leads.kanban()
+        setKanban(Array.isArray(k) ? k : (k?.data ?? []))
+      }
     } catch(e) { showToast(e.message,'error') }
     setLoading(false)
   }, [filter, view])
@@ -68,6 +75,35 @@ export default function Leads() {
       setNewSource(''); setAddingSource(false)
       showToast('Source added')
     } catch (e) { showToast(e.message, 'error') } finally { setSavingSource(false) }
+  }
+
+  /**
+   * Recreate the standard pipeline stages.
+   *
+   * The backend seeds these for any workspace that has never had lead settings, so
+   * this is only reachable when someone has deleted every stage — at which point
+   * the board has no columns and there is no other screen for rebuilding them.
+   * Mirrors LeadDefaultsSeeder; done through the normal create endpoint so the
+   * stages are ordinary editable records.
+   */
+  const restoreStages = async () => {
+    setRestoring(true)
+    try {
+      const defaults = [
+        { name: 'New',           color: '#3b82f6', is_default: true },
+        { name: 'Contacted',     color: '#8b5cf6' },
+        { name: 'Qualified',     color: '#f59e0b' },
+        { name: 'Proposal Sent', color: '#ec4899' },
+        { name: 'Negotiation',   color: '#ef4444' },
+        { name: 'Won',           color: '#10b981', is_won_status: true },
+      ]
+      // Sequential, not Promise.all: sort_order follows creation order.
+      for (let i = 0; i < defaults.length; i++) {
+        await salesApi.leadStatuses.create({ ...defaults[i], sort_order: i + 1 })
+      }
+      showToast('Pipeline stages created')
+      await load()
+    } catch (e) { showToast(e.message, 'error') } finally { setRestoring(false) }
   }
 
   useEffect(() => { load() }, [load])
@@ -254,20 +290,62 @@ export default function Leads() {
         )}
 
         {/* Kanban View */}
-        {view === 'kanban' && (
+        {view === 'kanban' && kanban === null && (
+          <div className="flex gap-4 overflow-x-auto pb-4">
+            {[1,2,3,4].map(i => (
+              <div key={i} className="skeleton flex-shrink-0 w-72 rounded-2xl" style={{height:320,background:'var(--border)'}}/>
+            ))}
+          </div>
+        )}
+
+        {/* The board is built from pipeline statuses, so with none defined it has
+            nothing to draw. It used to render an empty <div> here, which read as a
+            broken page — say what's missing and offer the fix.
+
+            Keyed on real stages, not on the column count: the API prepends a
+            synthetic "Unassigned" column when leads have no status, so a workspace
+            with zero stages still returns one column and would otherwise show a
+            lone dashed box with no explanation. This card renders ABOVE that
+            column rather than replacing it, so those leads stay reachable. */}
+        {view === 'kanban' && kanban && !kanban.some(c => c.id != null) && (
+          <div className="card-3d text-center mb-4" style={{padding:'48px 24px'}}>
+            <LayoutGrid size={28} className="mx-auto mb-3" style={{color:'var(--text-muted)'}}/>
+            <p className="font-bold text-sm mb-1" style={{color:'var(--text-h)'}}>No pipeline stages yet</p>
+            <p className="text-xs mb-4 max-w-sm mx-auto" style={{color:'var(--text-muted)'}}>
+              The board shows one column per lead status. Add your stages — for example New,
+              Contacted, Qualified, Won — and your leads will appear here.
+            </p>
+            <button onClick={restoreStages} disabled={restoring} className="btn-primary text-xs">
+              {restoring ? 'Creating stages…' : 'Create default stages'}
+            </button>
+          </div>
+        )}
+
+        {view === 'kanban' && kanban?.length > 0 && (
           <div className="flex gap-4 overflow-x-auto pb-4" style={{minHeight:400}}>
             {kanban.map(col => (
-              <div key={col.id} className="flex-shrink-0 w-72 rounded-2xl p-3" style={{background:'var(--bg-input)',border:'1px solid var(--border)'}}>
+              // id is null for the synthetic "Unassigned" column the API prepends
+              // for leads that have no status — dashed border marks it as not a
+              // real pipeline stage.
+              <div key={col.id ?? 'unassigned'} className="flex-shrink-0 w-72 rounded-2xl p-3"
+                style={{background:'var(--bg-input)',border:col.id==null?'1px dashed var(--border)':'1px solid var(--border)'}}>
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
                     <div className="w-3 h-3 rounded-full" style={{background:col.color}}/>
                     <span className="text-sm font-bold" style={{color:'var(--text-h)'}}>{col.name}</span>
                     <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md" style={{background:`${col.color}20`,color:col.color}}>{col.count}</span>
                   </div>
-                  <span className="text-[10px] font-semibold" style={{color:'var(--text-muted)'}}>₹{(col.total_value/1000).toFixed(0)}K</span>
+                  {col.total_value > 0 && (
+                    <span className="text-[10px] font-semibold" style={{color:'var(--text-muted)'}}>₹{(col.total_value/1000).toFixed(0)}K</span>
+                  )}
                 </div>
+                {col.id == null && (
+                  <p className="text-[10px] mb-2 px-1" style={{color:'var(--text-muted)'}}>
+                    No status set — open a lead to assign one.
+                  </p>
+                )}
                 <div className="space-y-2">
-                  {col.leads.map(l => {
+                  {(col.leads ?? []).map(l => {
                     const TI = TEMP_ICON[l.lead_temperature] || Snowflake
                     return (
                       <div key={l.id} onClick={()=>navigate(`/app/sales/leads/${l.id}`)} className="p-3 rounded-xl cursor-pointer transition-all hover:scale-[1.01]" style={{background:'var(--bg-card)',border:'1px solid var(--border)',boxShadow:'0 2px 8px rgba(0,0,0,0.06)'}}>
@@ -284,7 +362,7 @@ export default function Leads() {
                       </div>
                     )
                   })}
-                  {col.leads.length===0 && <p className="text-center text-[11px] py-6" style={{color:'var(--text-muted)'}}>No leads</p>}
+                  {(col.leads ?? []).length===0 && <p className="text-center text-[11px] py-6" style={{color:'var(--text-muted)'}}>No leads</p>}
                 </div>
               </div>
             ))}
