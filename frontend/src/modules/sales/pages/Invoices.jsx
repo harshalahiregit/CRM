@@ -6,7 +6,7 @@ import { useClientOptions } from '@/hooks/useClientOptions'
 import { useProjectOptions } from '@/hooks/useProjectOptions'
 import StatusBadge from '../components/StatusBadge'
 import LineItemsTable from '../components/LineItemsTable'
-import DocumentTemplateBar from '../components/DocumentTemplateBar'
+import SaveAsTemplateButton from '../components/SaveAsTemplateButton'
 import { salesDocumentTemplateApi } from '@/services/salesDocumentTemplateApi'
 import RowMenu from '../components/RowMenu'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
@@ -84,9 +84,10 @@ export default function Invoices() {
   /**
    * Turn a chosen template into form values.
    *
-   * Shared shape with DocumentTemplateBar's apply() — a template only overwrites
-   * a default it actually carries, so choosing one never blanks something the
-   * caller already set (e.g. the client_id carried in from a customer profile).
+   * Applying happens here rather than inside the form: the template is chosen on
+   * the "New" page before this drawer opens. A template only overwrites a default
+   * it actually carries, so choosing one never blanks something already set
+   * (e.g. the client_id carried in from a customer profile).
    */
   const applyTemplate = (t) => setForm(p => ({
     ...p,
@@ -342,8 +343,6 @@ export default function Invoices() {
               {/* Line Items */}
               <div>
                 <p className="label-caps mb-4" style={{ color: '#a78bfa' }}>Line Items</p>
-                <DocumentTemplateBar docType="invoice" form={form}
-                  onApply={patch => setForm(p => ({ ...p, ...patch }))} />
                 <LineItemsTable
                   items={form.line_items}
                   onChange={rows => sf('line_items', rows)}
@@ -460,6 +459,7 @@ export default function Invoices() {
             {/* Footer */}
             <div className="drawer-footer">
               <button onClick={() => setShowDrawer(false)} className="flex-1 py-3 rounded-2xl text-sm font-semibold" style={{ background: 'var(--bg-input)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Cancel</button>
+              <SaveAsTemplateButton docType="invoice" form={form} />
               <button onClick={handleCreate} className="flex-[2] py-3 rounded-2xl text-sm font-bold text-white hover:scale-[1.01] transition-all" style={{ background: 'linear-gradient(135deg,#9f67ff,#7C3AED,#5b21b6)', boxShadow: '0 6px 20px rgba(124,58,237,0.4)' }}>Create Invoice</button>
             </div>
           </div>
