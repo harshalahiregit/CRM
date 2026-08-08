@@ -7,6 +7,9 @@ import { salesApi } from '@/services/salesApi'
 import WinProbabilityBadge from '../components/WinProbabilityBadge'
 import { Plus, Search, MoreVertical, X, UserPlus, Flame, Thermometer, Snowflake, Eye, Trash2, XCircle, RotateCcw, TrendingUp, Users, Target, DollarSign, LayoutGrid, List, ChevronDown } from 'lucide-react'
 import { useToast } from '@/hooks/useToast'
+import ListToolbar from '@/components/ui/ListToolbar'
+import { useListView } from '@/hooks/useListView'
+import { exportSalesList } from '@/services/salesApi'
 import RichTextEditor from '@/components/ui/RichTextEditor'
 
 const TEMP_ICON = { Hot: Flame, Warm: Thermometer, Cold: Snowflake }
@@ -149,6 +152,9 @@ export default function Leads() {
     { label:'This Month', val: summary.this_month, icon: TrendingUp, color:'#3b82f6' },
   ] : []
 
+  // Paging + count over the page's own search result.
+  const { pageSize, setPageSize, visible, matched } = useListView(filtered, [])
+
   if (loading) return <div className="space-y-4 animate-fade-in">{[1,2,3].map(i=><div key={i} className="skeleton h-28 rounded-2xl" style={{background:'var(--border)'}}/>)}</div>
 
   return (
@@ -238,10 +244,13 @@ export default function Leads() {
               ))}
             </div>
           </div>
-          <div className="relative">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{color:'var(--text-muted)'}}/>
-            <input className="input-3d text-sm pl-9 w-56" placeholder="Search leads…" value={search} onChange={e=>setSearch(e.target.value)}/>
-          </div>
+          <ListToolbar
+            search={search} onSearch={setSearch} searchPlaceholder="Search leads…"
+            count={matched} total={data.length} unit="lead"
+            pageSize={pageSize} onPageSize={setPageSize} onRefresh={load}
+            onExport={() => exportSalesList('leads', { search: search || undefined })
+              .catch(e => showToast(e.message, 'error'))}
+          />
         </div>
 
         {/* Bulk Actions Bar */}
@@ -260,7 +269,7 @@ export default function Leads() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm" style={{color:'var(--text-body)'}}>
                 <thead><tr style={{borderBottom:'1px solid var(--border)'}}>
-                  <th className="py-3 px-3 text-left"><input type="checkbox" onChange={e=>setSelected(e.target.checked?filtered.map(l=>l.id):[])} checked={selected.length===filtered.length&&filtered.length>0}/></th>
+                  <th className="py-3 px-3 text-left"><input type="checkbox" onChange={e=>setSelected(e.target.checked?visible.map(l=>l.id):[])} checked={selected.length===visible.length&&visible.length>0}/></th>
                   <th className="py-3 px-3 text-left text-xs font-bold" style={{color:'var(--text-muted)'}}>Name</th>
                   <th className="py-3 px-3 text-left text-xs font-bold" style={{color:'var(--text-muted)'}}>Company</th>
                   <th className="py-3 px-3 text-left text-xs font-bold" style={{color:'var(--text-muted)'}}>Email</th>
@@ -273,7 +282,7 @@ export default function Leads() {
                 </tr></thead>
                 <tbody>
                   {filtered.length === 0 && <tr><td colSpan={10} className="py-12 text-center text-sm" style={{color:'var(--text-muted)'}}>No leads found</td></tr>}
-                  {filtered.map(l => {
+                  {visible.map(l => {
                     const TI = TEMP_ICON[l.lead_temperature] || Snowflake
                     return (
                       <tr key={l.id} className="transition-colors cursor-pointer" style={{borderBottom:'1px solid var(--border)'}} onMouseEnter={e=>e.currentTarget.style.background='rgba(124,58,237,0.04)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>

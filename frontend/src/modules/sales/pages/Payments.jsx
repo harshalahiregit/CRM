@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react'
 import { Plus, Send, Trash2, X, Search, Filter } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
 import { useToast } from '@/hooks/useToast'
+import ListToolbar from '@/components/ui/ListToolbar'
+import { useListView } from '@/hooks/useListView'
+import { exportSalesList } from '@/services/salesApi'
 
 const fmt  = v => '₹' + Number(v || 0).toLocaleString('en-IN')
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
@@ -75,6 +78,9 @@ export default function Payments() {
   const totalAmt  = data.reduce((s, p) => s + (p.amount || 0), 0)
   const modeBreakdown = PAY_MODES.map(m => ({ mode: m, count: data.filter(p => p.mode === m).length, total: data.filter(p => p.mode === m).reduce((s, p) => s + (p.amount || 0), 0) })).filter(m => m.count > 0)
 
+  // Paging + count over the page's own search result.
+  const { pageSize, setPageSize, visible, matched } = useListView(filtered, [])
+
   return (
     <>
       <div className="space-y-6 animate-[tiltIn_0.35s_ease]">
@@ -141,12 +147,14 @@ export default function Payments() {
               </button>
             ))}
           </div>
-          <div className="flex-1 min-w-[220px] relative">
-            <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
-            <input value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="Search by invoice or client…"
-              className="input-3d text-sm pl-10 w-full" style={{ borderRadius: '14px' }} />
-          </div>
+          <ListToolbar
+            search={search} onSearch={setSearch} searchPlaceholder="Search by invoice or client…"
+            count={matched} total={data.length} unit="payment"
+            pageSize={pageSize} onPageSize={setPageSize} onRefresh={load}
+            onExport={() => exportSalesList('payments', { search: search || undefined })
+              .catch(e => showToast(e.message, 'error'))}
+            className="flex-1"
+          />
         </div>
 
         {/* Table */}
@@ -164,7 +172,7 @@ export default function Payments() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map(p => (
+                  {visible.map(p => (
                     <tr key={p.id} className="transition-colors" style={{ borderBottom: '1px solid var(--border)' }}
                       onMouseEnter={e => e.currentTarget.style.background = 'rgba(124,58,237,0.04)'}
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>

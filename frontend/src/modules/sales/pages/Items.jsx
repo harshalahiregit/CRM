@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { Plus, Search, Edit2, Copy, Trash2, X, LayoutGrid, List, Upload, CheckCircle, Tag } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
 import { useToast } from '@/hooks/useToast'
+import ListToolbar from '@/components/ui/ListToolbar'
+import { useListView } from '@/hooks/useListView'
 import RichTextEditor from '@/components/ui/RichTextEditor'
 
 const fmt = v => '₹' + Number(v||0).toLocaleString('en-IN')
@@ -66,6 +68,11 @@ export default function Items() {
     e.target.value = ''
   }
 
+  // Paging + count only: this list's search and category filter are server-side.
+  // No export — export columns are declared per list on the server and the item
+  // catalog isn't one of them.
+  const { pageSize, setPageSize, visible, matched } = useListView(data, [])
+
   return (
     <>
       <div className="space-y-6 animate-[tiltIn_0.35s_ease]">
@@ -117,6 +124,8 @@ export default function Items() {
           <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{color:'var(--text-muted)'}}/>
           <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search items…" className="input-3d text-sm pl-10 w-full"/>
         </div>
+        <ListToolbar count={matched} total={data.length} unit="item"
+          pageSize={pageSize} onPageSize={setPageSize} onRefresh={loadData} />
       </div>
 
       {/* Grid / List */}
@@ -126,7 +135,7 @@ export default function Items() {
         </div>
       ) : viewMode==='grid' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {data.map(item=>{
+          {visible.map(item=>{
             const c=catColor(item.category)
             return (
               <div key={item.id} className="card-3d group relative overflow-hidden" style={{padding:'20px'}}>
@@ -160,7 +169,7 @@ export default function Items() {
                 {['Name','Description','Category','Rate','Unit','Tax 1','Tax 2',''].map(h=><th key={h} className="py-3.5 px-4 text-left label-caps whitespace-nowrap">{h}</th>)}
               </tr></thead>
               <tbody>
-                {data.map(item=>{
+                {visible.map(item=>{
                   const c=catColor(item.category)
                   return (
                     <tr key={item.id} className="transition-colors" style={{borderBottom:'1px solid var(--border)'}}
