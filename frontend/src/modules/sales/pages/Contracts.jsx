@@ -3,6 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { Plus, FileSignature, CheckCircle, AlertTriangle, IndianRupee, RefreshCw } from 'lucide-react'
 import { contractApi } from '@/services/contractApi'
 import { useToast } from '@/hooks/useToast'
+import ListToolbar from '@/components/ui/ListToolbar'
+import { useListView } from '@/hooks/useListView'
+import { exportSalesList } from '@/services/salesApi'
 import ConfirmIconButton from '@/modules/customer/components/ConfirmIconButton'
 import ContractDrawer from '@/modules/sales/components/ContractDrawer'
 
@@ -33,6 +36,9 @@ export default function Contracts() {
     { label: 'Total Value', val: fmt(rows.reduce((s, c) => s + Number(c.value || 0), 0)), icon: IndianRupee, color: '#3b82f6' },
   ] : []
 
+  // Paging + count only: this list's search and status filter are server-side.
+  const { pageSize, setPageSize, visible, matched } = useListView(rows, [])
+
   return (
     <div className="p-4 md:p-6 max-w-[1400px] mx-auto">
       <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
@@ -55,13 +61,20 @@ export default function Contracts() {
         ))}
       </div>
 
-      <div className="flex items-center gap-2 mb-4 flex-wrap">
+      {/* Toolbar: search · status · count · rows-per-page · refresh · export */}
+      <ListToolbar
+        className="mb-4"
+        search={search} onSearch={setSearch} searchPlaceholder="Search contracts…"
+        count={matched} total={rows.length} unit="contract"
+        pageSize={pageSize} onPageSize={setPageSize} onRefresh={load}
+        onExport={() => exportSalesList('contracts', { status: filter || undefined, search: search || undefined })
+          .catch(e => toast.error(e.message))}
+      >
         <select className="input-3d text-sm w-40" value={filter} onChange={e => setFilter(e.target.value)}>
           <option value="">All Statuses</option>
           {['draft', 'active', 'expired', 'terminated', 'renewed'].map(s => <option key={s} value={s}>{s[0].toUpperCase() + s.slice(1)}</option>)}
         </select>
-        <input className="input-3d text-sm w-56" placeholder="Search contracts…" value={search} onChange={e => setSearch(e.target.value)} />
-      </div>
+      </ListToolbar>
 
       <div className="card-3d overflow-hidden" style={{ padding: 0 }}>
         <div className="overflow-x-auto">
@@ -74,7 +87,7 @@ export default function Contracts() {
                 <tr><td colSpan={9} className="p-6 text-center" style={{ color: 'var(--text-muted)' }}>Loading…</td></tr>
               ) : rows.length === 0 ? (
                 <tr><td colSpan={9} className="py-12 text-center" style={{ color: 'var(--text-muted)' }}>No contracts yet.</td></tr>
-              ) : rows.map(c => (
+              ) : visible.map(c => (
                 <tr key={c.id} className="cursor-pointer" onClick={() => nav(`/app/sales/contracts/${c.id}`)} style={{ borderBottom: '1px solid var(--border)' }}>
                   <td className="py-3 px-4 font-bold" style={{ color: 'var(--text-h)' }}>{c.reference_no}</td>
                   <td className="py-3 px-4" style={{ color: 'var(--text-body)' }}>{c.subject}</td>

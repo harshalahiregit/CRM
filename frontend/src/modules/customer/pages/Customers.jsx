@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Plus, Search, Edit2, Trash2, X, Upload, Download, Building2, Users, UserCheck, TrendingUp, ChevronDown, FileSpreadsheet, FileText, Eye, UserCog, Sliders, BarChart3 } from 'lucide-react'
 import { customerApi } from '@/services/customerApi'
 import { useToast } from '@/hooks/useToast'
+import ListToolbar from '@/components/ui/ListToolbar'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import CustomFieldInput, { cfWidthStyle } from '../components/CustomFieldInput'
 import CustomFieldsManager from '../components/CustomFieldsManager'
@@ -69,9 +70,13 @@ export default function Customers() {
   const sf = (k, v) => setForm(p => ({ ...p, [k]: v }))
   const sfSocial = (k, v) => setForm(p => ({ ...p, social_links: { ...p.social_links, [k]: v } }))
 
+  const [pageSize, setPageSize] = useState(25)
+
   const load = () => {
     setLoading(true)
-    customerApi.list({ search: search || undefined, per_page: 25 })
+    // per_page was pinned at 25 with no way to change it; it now follows the
+    // toolbar's selector. 0 = "All", which the API takes as a large page.
+    customerApi.list({ search: search || undefined, per_page: pageSize || 1000 })
       .then(res => { setRows(res.data ?? []); setMeta(res) })
       .catch(e => toast.error(e.message))
       .finally(() => setLoading(false))
@@ -79,7 +84,7 @@ export default function Customers() {
   const loadStats = () => customerApi.summary().then(setStats).catch(() => {})
 
   useEffect(() => { loadStats() }, [])
-  useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t) }, [search])
+  useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t) }, [search, pageSize])
 
   const openCreate = () => {
     setEditing(null); setForm(EMPTY); setTab('Details')
@@ -352,11 +357,13 @@ export default function Customers() {
           </div>
         )}
 
-        {/* Search */}
-        <div className="relative max-w-md">
-          <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search company, GST, phone…" className="input-3d text-sm pl-10 w-full" />
-        </div>
+        {/* Toolbar: search · count · rows-per-page · refresh · export */}
+        <ListToolbar
+          search={search} onSearch={setSearch} searchPlaceholder="Search company, GST, phone…"
+          count={rows.length} total={meta.total ?? rows.length} unit="customer"
+          pageSize={pageSize} onPageSize={setPageSize} onRefresh={load}
+          onExport={() => doExport('csv')}
+        />
 
         {/* Table */}
         <div className="card-3d overflow-hidden" style={{ padding: 0 }}>

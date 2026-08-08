@@ -7,6 +7,8 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import EmptyState from '@/components/ui/EmptyState'
 import FormField, { Input, Select, Textarea } from '@/components/ui/FormField'
 import { useToast } from '@/hooks/useToast'
+import ListToolbar from '@/components/ui/ListToolbar'
+import { useListView } from '@/hooks/useListView'
 
 const fmt = v => '₹' + Number(v || 0).toLocaleString('en-IN')
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
@@ -87,6 +89,10 @@ export default function PaymentLinks() {
     }
   }
 
+  // Search + rows-per-page client-side: the endpoint returns everything unpaginated.
+  const { search, setSearch, pageSize, setPageSize, visible, matched } =
+    useListView(data, ['reference','client','status'])
+
   return (
     <div className="space-y-6 animate-fade-in">
 
@@ -121,6 +127,12 @@ export default function PaymentLinks() {
         ))}
       </div>
 
+      {/* Toolbar: search · count · rows-per-page · refresh */}
+      <ListToolbar
+        search={search} onSearch={setSearch} searchPlaceholder="Search payment links…"
+        count={matched} total={data.length} unit="record"
+        pageSize={pageSize} onPageSize={setPageSize} onRefresh={load} />
+
       {/* List */}
       {loading ? (
         <div className="space-y-2">{[1, 2, 3].map(i => <div key={i} className="skeleton h-16 rounded-xl" style={{ background: 'var(--border)' }} />)}</div>
@@ -143,7 +155,7 @@ export default function PaymentLinks() {
                 </tr>
               </thead>
               <tbody>
-                {data.map(link => {
+                {visible.map(link => {
                   const s = STATUS_STYLE[link.status] || STATUS_STYLE.active
                   return (
                     <tr key={link.id} style={{ borderBottom: '1px solid var(--border)' }}>
