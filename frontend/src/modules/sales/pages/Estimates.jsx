@@ -5,11 +5,14 @@ import {
   LayoutGrid, List, FileText, User, Tag, MapPin, ChevronDown
 } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
+import { exportSalesList } from '@/services/salesApi'
 import { useClientOptions } from '@/hooks/useClientOptions'
 import { useProjectOptions } from '@/hooks/useProjectOptions'
 import StatusBadge from '../components/StatusBadge'
 import RowMenu from '../components/RowMenu'
 import LineItemsTable from '../components/LineItemsTable'
+import ListToolbar from '@/components/ui/ListToolbar'
+import { useListView } from '@/hooks/useListView'
 import SaveAsTemplateButton from '../components/SaveAsTemplateButton'
 import { salesDocumentTemplateApi } from '@/services/salesDocumentTemplateApi'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
@@ -184,7 +187,13 @@ export default function Estimates({ docType = 'proforma' }) {
 
   // Status tabs and the table both read the derived status, so a Sent-but-lapsed
   // estimate is counted, filtered and badged as Expired consistently.
-  const visible = filter === 'All' ? data : data.filter(e => effectiveStatus(e) === filter)
+  const byStatus = filter === 'All' ? data : data.filter(e => effectiveStatus(e) === filter)
+
+  // Search + rows-per-page on top of the status filter. The KPI boxes above stay
+  // on the FULL set (`data`) — they're a summary of the workspace, not of the
+  // current search.
+  const { search, setSearch, pageSize, setPageSize, visible, matched } =
+    useListView(byStatus, ['reference', 'subject', 'client', 'status'])
 
   const handleConvertToProforma = async (estimate) => {
     try {
@@ -273,9 +282,17 @@ export default function Estimates({ docType = 'proforma' }) {
         ))}
       </div>
 
-      {/* Filter tabs */}
+      {/* Toolbar: search · status tabs · count · rows-per-page · refresh · export */}
       {viewMode === 'table' && (
-        <div className="flex items-center gap-3 flex-wrap">
+        <ListToolbar
+          search={search} onSearch={setSearch}
+          searchPlaceholder={`Search ${DOC_LABEL.toLowerCase()}s…`}
+          count={matched} total={data.length} unit="record"
+          pageSize={pageSize} onPageSize={setPageSize}
+          onRefresh={load}
+          onExport={() => exportSalesList('estimates', { type: docType, status: filter !== 'All' ? filter : undefined, search: search || undefined })
+            .catch(e => showToast(e.message, 'error'))}
+        >
           <div className="flex gap-1.5 p-1 rounded-2xl" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
             {['All', ...STATUSES].map(f => (
               <button key={f} onClick={() => setFilter(f)}
@@ -288,7 +305,7 @@ export default function Estimates({ docType = 'proforma' }) {
               </button>
             ))}
           </div>
-        </div>
+        </ListToolbar>
       )}
 
       {/* ── Table View ── */}

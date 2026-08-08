@@ -11,7 +11,7 @@ class InvoiceRepository extends BaseRepository
 
     public function filtered(int $tenantId, array $filters)
     {
-        $query = SalesInvoice::forTenant($tenantId)->with(['lineItems', 'payments']);
+        $query = SalesInvoice::forTenant($tenantId)->with(['lineItems', 'payments', 'customer:id,company']);
 
         if (! empty($filters['status']) && $filters['status'] !== 'All') {
             $query->where('status', $filters['status']);

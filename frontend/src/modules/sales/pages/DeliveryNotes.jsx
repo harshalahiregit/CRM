@@ -5,6 +5,9 @@ import { useClientOptions } from '@/hooks/useClientOptions'
 import StatusBadge from '../components/StatusBadge'
 import RowMenu from '../components/RowMenu'
 import { useToast } from '@/hooks/useToast'
+import ListToolbar from '@/components/ui/ListToolbar'
+import { useListView } from '@/hooks/useListView'
+import { exportSalesList } from '@/services/salesApi'
 import RichTextEditor from '@/components/ui/RichTextEditor'
 
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
@@ -76,6 +79,11 @@ export default function DeliveryNotes() {
     delivered: data.filter(d => d.status === 'Delivered').length,
   }
 
+  // Search + rows-per-page over the (server status-filtered) list. Client-side
+  // because the endpoint returns everything unpaginated, so this costs no request.
+  const { search, setSearch, pageSize, setPageSize, visible, matched } =
+    useListView(data, ['number', 'client', 'status'])
+
   return (
     <>
       <div className="space-y-6 animate-[tiltIn_0.35s_ease]" onClick={() => setOpenMenu(null)}>
@@ -112,7 +120,14 @@ export default function DeliveryNotes() {
           ))}
         </div>
 
-        {/* Filter tabs */}
+        {/* Toolbar: search · status tabs · count · rows-per-page · refresh · export */}
+        <ListToolbar
+          search={search} onSearch={setSearch} searchPlaceholder="Search delivery notes…"
+          count={matched} total={data.length} unit="record"
+          pageSize={pageSize} onPageSize={setPageSize} onRefresh={load}
+          onExport={() => exportSalesList('delivery-notes', { status: filter !== 'All' ? filter : undefined, search: search || undefined })
+            .catch(e => showToast(e.message, 'error'))}
+        >
         <div className="flex gap-1.5 p-1 rounded-2xl w-fit" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
           {['All', ...STATUSES].map(f => (
             <button key={f} onClick={() => setFilter(f)}
@@ -125,6 +140,7 @@ export default function DeliveryNotes() {
             </button>
           ))}
         </div>
+        </ListToolbar>
 
         {/* Table */}
         {loading ? (
@@ -141,7 +157,7 @@ export default function DeliveryNotes() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.map(dn => (
+                  {visible.map(dn => (
                     <tr key={dn.id} className="transition-colors" style={{ borderBottom: '1px solid var(--border)' }}
                       onMouseEnter={e => e.currentTarget.style.background = 'rgba(124,58,237,0.04)'}
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
@@ -170,7 +186,7 @@ export default function DeliveryNotes() {
                       </td>
                     </tr>
                   ))}
-                  {data.length === 0 && (
+                  {visible.length === 0 && (
                     <tr><td colSpan="7" className="py-16 text-center">
                       <div className="flex flex-col items-center gap-3">
                         <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl" style={{ background: 'rgba(124,58,237,0.08)' }}>🚚</div>

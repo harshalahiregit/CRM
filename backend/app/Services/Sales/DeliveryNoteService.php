@@ -11,7 +11,7 @@ class DeliveryNoteService
 {
     public function list(int $tenantId, ?string $status): \Illuminate\Support\Collection
     {
-        $query = DeliveryNote::forTenant($tenantId)->with('invoice');
+        $query = DeliveryNote::forTenant($tenantId)->with(['invoice', 'customer:id,company']);
 
         if ($status && $status !== 'All') {
             $query->where('status', $status);

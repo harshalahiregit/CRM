@@ -21,7 +21,7 @@ class CreditNoteService
 
     public function list(int $tenantId, array $filters): mixed
     {
-        $query = CreditNote::forTenant($tenantId)->with('lineItems');
+        $query = CreditNote::forTenant($tenantId)->with(['lineItems', 'customer:id,company']);
 
         if (!empty($filters['status']) && $filters['status'] !== 'All') {
             $query->where('status', $filters['status']);

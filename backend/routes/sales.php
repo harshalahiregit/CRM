@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\Sales\RetainerInvoiceController;
 use App\Http\Controllers\Api\Sales\HsnSacController;
 use App\Http\Controllers\Api\Sales\ProposalTemplateController;
 use App\Http\Controllers\Api\Sales\SalesDocumentTemplateController;
+use App\Http\Controllers\Api\Sales\SalesExportController;
 use App\Http\Controllers\Api\Sales\LeadEngagementController;
 use App\Http\Controllers\Api\Sales\AppointmentController;
 use App\Http\Controllers\Api\Sales\SalesActivityController;
@@ -87,6 +88,9 @@ Route::middleware('auth:sanctum')->prefix('sales')->group(function () {
     Route::patch('/commissions/{commission}/approve',  [CommissionController::class, 'approve']);
     Route::patch('/commissions/{commission}/reject',   [CommissionController::class, 'reject']);
     Route::patch('/commissions/{commission}/mark-paid',[CommissionController::class, 'markPaid']);
+
+    // CSV / XLSX export for every Sales list (columns declared in SalesExportService)
+    Route::get('/export/{type}', SalesExportController::class);
 
     // Items catalog
     Route::get('/items',              [ItemController::class, 'index']);

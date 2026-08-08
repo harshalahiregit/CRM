@@ -12,6 +12,9 @@ import RowMenu from '../components/RowMenu'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import RichTextEditor from '@/components/ui/RichTextEditor'
 import { useToast } from '@/hooks/useToast'
+import ListToolbar from '@/components/ui/ListToolbar'
+import { useListView } from '@/hooks/useListView'
+import { exportSalesList } from '@/services/salesApi'
 
 const fmt = v => '₹' + Number(v||0).toLocaleString('en-IN')
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) : '—'
@@ -160,6 +163,11 @@ export default function Invoices() {
     outstanding: data.reduce((s,i)=>s+Number(i.balance||0),0),
   }
 
+  // Search + rows-per-page over the (server status-filtered) list. Client-side
+  // because the endpoint returns everything unpaginated, so this costs no request.
+  const { search, setSearch, pageSize, setPageSize, visible, matched } =
+    useListView(data, ['number', 'client', 'status', 'reference'])
+
   return (
     <>
       <div className="space-y-6 animate-[tiltIn_0.35s_ease]" onClick={()=>setOpenMenu(null)}>
@@ -193,7 +201,14 @@ export default function Invoices() {
         ))}
       </div>
 
-      {/* Filter tabs */}
+      {/* Toolbar: search · status tabs · count · rows-per-page · refresh · export */}
+      <ListToolbar
+        search={search} onSearch={setSearch} searchPlaceholder="Search invoices…"
+        count={matched} total={data.length} unit="record"
+        pageSize={pageSize} onPageSize={setPageSize} onRefresh={load}
+        onExport={() => exportSalesList('invoices', { status: filter !== 'All' ? filter : undefined, search: search || undefined })
+          .catch(e => showToast(e.message, 'error'))}
+      >
       <div className="flex gap-1.5 p-1 rounded-2xl w-fit" style={{background:'var(--bg-input)',border:'1px solid var(--border)'}}>
         {['All',...STATUSES].map(f=>(
           <button key={f} onClick={()=>setFilter(f)} className="px-3 py-1.5 rounded-xl text-xs font-bold transition-all"
@@ -202,6 +217,7 @@ export default function Invoices() {
           </button>
         ))}
       </div>
+      </ListToolbar>
 
       {/* Table */}
       {loading ? <div className="space-y-2">{[1,2,3].map(i=><div key={i} className="skeleton h-14 rounded-xl" style={{background:'var(--border)'}}/>)}</div> : (
@@ -216,7 +232,7 @@ export default function Invoices() {
                 </tr>
               </thead>
               <tbody>
-                {data.map(inv=>(
+                {visible.map(inv=>(
                   <tr key={inv.id} className="cursor-pointer transition-colors" style={{borderBottom:'1px solid var(--border)'}}
                     onClick={()=>navigate(`/app/sales/invoices/${inv.id}`)}
                     onMouseEnter={e=>e.currentTarget.style.background='rgba(124,58,237,0.04)'}
@@ -253,7 +269,7 @@ export default function Invoices() {
                     </td>
                   </tr>
                 ))}
-                {data.length===0 && <tr><td colSpan="8" className="py-16 text-center">
+                {visible.length===0 && <tr><td colSpan="8" className="py-16 text-center">
                   <div className="flex flex-col items-center gap-3">
                     <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl" style={{background:'rgba(124,58,237,0.08)'}}>🧾</div>
                     <p className="text-sm font-semibold" style={{color:'var(--text-muted)'}}>No invoices found</p>
