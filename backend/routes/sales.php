@@ -15,6 +15,8 @@ use App\Http\Controllers\Api\Sales\RetainerInvoiceController;
 use App\Http\Controllers\Api\Sales\HsnSacController;
 use App\Http\Controllers\Api\Sales\ProposalTemplateController;
 use App\Http\Controllers\Api\Sales\SalesDocumentTemplateController;
+use App\Http\Controllers\Api\Sales\LeadEngagementController;
+use App\Http\Controllers\Api\Sales\AppointmentController;
 use App\Http\Controllers\Api\Sales\SalesActivityController;
 use App\Http\Controllers\Api\Sales\SalesInsightController;
 use App\Http\Controllers\Api\Sales\ReminderController;
@@ -233,6 +235,23 @@ Route::middleware('auth:sanctum')->prefix('sales')->group(function () {
     Route::post('/leads/{lead}/convert',                       [LeadController::class, 'convert']);
     Route::post('/leads/{lead}/notes',                         [LeadController::class, 'addNote']);
     Route::post('/leads/{lead}/questionnaire-response',        [LeadController::class, 'submitQuestionnaireResponse']);
+
+    // ── Lead profile: attachments, email activity, custom fields ─
+    Route::get('/leads/{lead}/attachments',                    [LeadEngagementController::class, 'attachments']);
+    Route::post('/leads/{lead}/attachments',                   [LeadEngagementController::class, 'storeAttachment']);
+    Route::delete('/leads/{lead}/attachments/{attachment}',    [LeadEngagementController::class, 'destroyAttachment']);
+    Route::get('/leads/{lead}/emails',                         [LeadEngagementController::class, 'emails']);
+    Route::post('/leads/{lead}/emails',                        [LeadEngagementController::class, 'sendEmail']);
+    Route::get('/leads/{lead}/custom-fields',                  [LeadEngagementController::class, 'customFields']);
+    Route::put('/leads/{lead}/custom-fields',                  [LeadEngagementController::class, 'saveCustomFields']);
+
+    // ── Appointments (polymorphic subject; leads today) ─────────
+    Route::get('/appointments/upcoming',                       [AppointmentController::class, 'upcoming']);
+    Route::get('/appointments',                                [AppointmentController::class, 'index']);
+    Route::post('/appointments',                               [AppointmentController::class, 'store']);
+    Route::put('/appointments/{appointment}',                  [AppointmentController::class, 'update']);
+    Route::patch('/appointments/{appointment}/complete',       [AppointmentController::class, 'complete']);
+    Route::delete('/appointments/{appointment}',               [AppointmentController::class, 'destroy']);
 
     // ── Rule-based Sales Insights (no LLM/ML) ───────────────────
     Route::get('/leads/{lead}/win-probability',                [SalesInsightController::class, 'winProbability']);

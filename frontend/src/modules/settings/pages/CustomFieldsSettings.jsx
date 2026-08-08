@@ -11,6 +11,8 @@ import ToggleSwitch from '@/modules/customer/components/ToggleSwitch'
 const MODULES = [
   { value: 'customers', label: 'Customers', ready: true },
   { value: 'contacts', label: 'Contacts', ready: true },
+  // Leads render these on the lead profile's Custom Fields tab.
+  { value: 'leads', label: 'Leads', ready: true },
   { value: 'tasks', label: 'Tasks', ready: false },
   { value: 'projects', label: 'Projects', ready: false },
   { value: 'tickets', label: 'Tickets', ready: false },

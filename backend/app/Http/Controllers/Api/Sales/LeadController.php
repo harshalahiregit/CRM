@@ -88,14 +88,16 @@ class LeadController extends Controller
     /* ── Mark Lost ─────────────────────────────────────────────── */
     public function markLost(Lead $lead, Request $request)
     {
-        $updated = $this->leadService->markLost($lead, $request->user()->tenant_id, $request->user()->id);
+        $data = $request->validate(['reason' => 'nullable|string|max:255']);
+        $updated = $this->leadService->markLost($lead, $request->user()->tenant_id, $request->user()->id, $data['reason'] ?? null);
         return response()->json($updated);
     }
 
     /* ── Mark Junk ─────────────────────────────────────────────── */
     public function markJunk(Lead $lead, Request $request)
     {
-        $updated = $this->leadService->markJunk($lead, $request->user()->tenant_id, $request->user()->id);
+        $data = $request->validate(['reason' => 'nullable|string|max:255']);
+        $updated = $this->leadService->markJunk($lead, $request->user()->tenant_id, $request->user()->id, $data['reason'] ?? null);
         return response()->json($updated);
     }
 

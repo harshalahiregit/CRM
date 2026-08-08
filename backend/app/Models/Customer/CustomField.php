@@ -27,7 +27,10 @@ class CustomField extends Model
     public const OPTION_TYPES = ['select', 'multiselect', 'checkbox', 'radio'];
 
     /** Entity types custom fields may attach to (the `field_to` allow-list). */
-    public const FIELD_TARGETS = ['customers', 'contacts'];
+    // 'leads' joins the list so the lead profile gets the same custom-field engine
+    // the old CRM had on its lead tab; custom_field_values is already generic
+    // (field_to + rel_id), so nothing else has to change.
+    public const FIELD_TARGETS = ['customers', 'contacts', 'leads'];
 
     protected $fillable = [
         'tenant_id', 'field_to', 'name', 'slug', 'type', 'options',

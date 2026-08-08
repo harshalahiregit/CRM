@@ -4,10 +4,10 @@ import { helpdeskApi } from '@/services/helpdeskApi'
 import {
   ArrowLeft, Flame, Thermometer, Snowflake, Building2, Mail, Phone, Globe,
   MapPin, User, Tag, XCircle, RotateCcw, Trash2, TrendingUp, Plus, FileText,
-  HelpCircle, LifeBuoy, LayoutTemplate,
+  HelpCircle, LifeBuoy, LayoutTemplate, Printer, Ban,
 } from 'lucide-react'
 import {
-  useLead, useConvertLead, useDeleteLead, useMarkLeadLost, useRestoreLead,
+  useLead, useConvertLead, useDeleteLead, useMarkLeadLost, useMarkLeadJunk, useRestoreLead,
   useAddLeadNote, useUpdateLead,
 } from '@/hooks/useLeads'
 import { useToast } from '@/hooks/useToast'
@@ -19,6 +19,15 @@ import StatusBadge from '../components/StatusBadge'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import EmptyState from '@/components/ui/EmptyState'
 import { richHtml } from '@/lib/richText'
+import LeadTasksTab from '../components/lead/LeadTasksTab'
+import LeadAttachmentsTab from '../components/lead/LeadAttachmentsTab'
+import LeadAppointmentsTab from '../components/lead/LeadAppointmentsTab'
+import LeadCustomFieldsTab from '../components/lead/LeadCustomFieldsTab'
+import LeadEmailsTab from '../components/lead/LeadEmailsTab'
+import ConvertLeadDialog from '../components/lead/ConvertLeadDialog'
+import ReasonDialog from '../components/lead/ReasonDialog'
+import { printLead } from '../components/lead/printLead'
+import { leadEngagementApi } from '@/services/leadEngagementApi'
 
 const TEMP_ICON = { Hot: Flame, Warm: Thermometer, Cold: Snowflake }
 const TEMP_COLOR = { Hot: '#ef4444', Warm: '#f59e0b', Cold: '#3b82f6' }
@@ -77,10 +86,16 @@ function RaiseTicketButton({ lead }) {
 const fmt = v => '₹' + Number(v || 0).toLocaleString('en-IN')
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 
+// Ordered to mirror the old CRM's lead profile tabs.
 const TABS = [
   { key: 'profile', label: 'Profile' },
-  { key: 'notes', label: 'Notes' },
+  { key: 'emails', label: 'Email Activity' },
   { key: 'proposals', label: 'Proposals' },
+  { key: 'tasks', label: 'Tasks' },
+  { key: 'appointments', label: 'Appointments' },
+  { key: 'attachments', label: 'Attachments' },
+  { key: 'notes', label: 'Notes' },
+  { key: 'custom_fields', label: 'Custom Fields' },
   { key: 'questionnaires', label: 'Questionnaires' },
   { key: 'activity', label: 'Activity Log' },
   { key: 'support', label: 'Support' },
@@ -94,9 +109,12 @@ export default function LeadDetail() {
 
   const { data: lead, isLoading } = useLead(id)
   const [tab, setTab] = useState('profile')
-  const [confirmAction, setConfirmAction] = useState(null) // 'lost' | 'delete' | null
+  const [confirmAction, setConfirmAction] = useState(null) // 'delete' | null
+  const [reasonKind, setReasonKind] = useState(null)       // 'lost' | 'junk' | null
+  const [converting, setConverting] = useState(false)      // convert dialog open
 
   const markLost = useMarkLeadLost()
+  const markJunk = useMarkLeadJunk()
   const restore = useRestoreLead()
   const convert = useConvertLead()
   const deleteLead = useDeleteLead()
@@ -120,11 +138,25 @@ export default function LeadDetail() {
 
   const TempIcon = TEMP_ICON[lead.lead_temperature] || Thermometer
 
-  const handleMarkLost = () => {
-    markLost.mutate(lead.id, {
-      onSuccess: () => { toast.success('Lead marked as lost'); setConfirmAction(null) },
+  /** Lost and junk share one dialog; only the mutation differs. */
+  const handleWriteOff = (reason) => {
+    const mutation = reasonKind === 'junk' ? markJunk : markLost
+    mutation.mutate({ id: lead.id, reason: reason?.trim() || null }, {
+      onSuccess: () => { toast.success(reasonKind === 'junk' ? 'Lead marked as junk' : 'Lead marked as lost'); setReasonKind(null) },
       onError: (e) => toast.error(e.message),
     })
+  }
+
+  /**
+   * Print the lead sheet, including its custom-field values.
+   *
+   * The values aren't on the lead payload, so they're fetched on demand; a failure
+   * there prints the sheet without them rather than blocking the print entirely.
+   */
+  const handlePrint = async () => {
+    let fields = []
+    try { fields = await leadEngagementApi.customFields.get(lead.id) } catch { /* print without them */ }
+    printLead(lead, Array.isArray(fields) ? fields.filter(f => f.value) : [])
   }
 
   const handleDelete = () => {
@@ -141,9 +173,15 @@ export default function LeadDetail() {
     })
   }
 
-  const handleConvert = () => {
-    convert.mutate({ id: lead.id, data: {} }, {
-      onSuccess: () => toast.success('Lead converted to customer'),
+  const handleConvert = (data) => {
+    convert.mutate({ id: lead.id, data }, {
+      onSuccess: (res) => {
+        setConverting(false)
+        const cid = res?.client?.id
+        toast.success('Lead converted to customer')
+        // Land on the new customer — that's where the work continues.
+        if (cid) navigate(`/app/customers/${cid}`)
+      },
       onError: (e) => toast.error(e.message),
     })
   }
@@ -184,19 +222,31 @@ export default function LeadDetail() {
             ) : (
               <>
                 {!lead.date_converted && (
-                  <button onClick={handleConvert} disabled={convert.isPending}
+                  <button onClick={() => setConverting(true)} disabled={convert.isPending}
                     className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all hover:scale-[1.02]"
                     style={{ background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.25)', color: '#a78bfa' }}>
                     <TrendingUp size={13} /> Convert
                   </button>
                 )}
-                <button onClick={() => setConfirmAction('lost')}
+                <button onClick={() => setReasonKind('lost')}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all hover:scale-[1.02]"
                   style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
                   <XCircle size={13} /> Mark Lost
                 </button>
+                {/* Junk existed only on the list's row menu — spam should be
+                    dismissible from the record you're actually looking at. */}
+                <button onClick={() => setReasonKind('junk')}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all hover:scale-[1.02]"
+                  style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+                  <Ban size={13} /> Mark Junk
+                </button>
               </>
             )}
+            <button onClick={handlePrint} title="Print this lead's information"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all hover:scale-[1.02]"
+              style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+              <Printer size={13} /> Print
+            </button>
             <button onClick={() => setConfirmAction('delete')}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all hover:scale-[1.02]"
               style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: '#f87171' }}>
@@ -228,6 +278,11 @@ export default function LeadDetail() {
           <div className="lg:col-span-2 space-y-5">
             {tab === 'profile' && <ProfileTab lead={lead} />}
             {tab === 'notes' && <NotesTab lead={lead} toast={toast} />}
+      {tab === 'emails' && <LeadEmailsTab lead={lead} />}
+      {tab === 'tasks' && <LeadTasksTab leadId={lead.id} />}
+      {tab === 'appointments' && <LeadAppointmentsTab leadId={lead.id} />}
+      {tab === 'attachments' && <LeadAttachmentsTab leadId={lead.id} />}
+      {tab === 'custom_fields' && <LeadCustomFieldsTab leadId={lead.id} />}
             {tab === 'proposals' && <ProposalsTab lead={lead} navigate={navigate} />}
             {tab === 'questionnaires' && <QuestionnairesTab lead={lead} />}
             {tab === 'activity' && (
@@ -282,14 +337,22 @@ export default function LeadDetail() {
         </div>
       </div>
 
-      {confirmAction === 'lost' && (
-        <ConfirmDialog
-          title="Mark lead as lost?"
-          message="This lead will be moved out of the active pipeline. You can restore it later."
-          confirmLabel="Mark Lost"
-          tone="danger"
-          onConfirm={handleMarkLost}
-          onCancel={() => setConfirmAction(null)}
+      {/* Lost and junk both go through ReasonDialog so the reason is captured. */}
+      {reasonKind && (
+        <ReasonDialog
+          kind={reasonKind}
+          busy={markLost.isPending || markJunk.isPending}
+          onCancel={() => setReasonKind(null)}
+          onConfirm={handleWriteOff}
+        />
+      )}
+
+      {converting && (
+        <ConvertLeadDialog
+          lead={lead}
+          busy={convert.isPending}
+          onCancel={() => setConverting(false)}
+          onConfirm={handleConvert}
         />
       )}
 
