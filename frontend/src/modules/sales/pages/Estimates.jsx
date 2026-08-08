@@ -20,6 +20,36 @@ const fmt = v => '₹' + Number(v || 0).toLocaleString('en-IN')
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 
 const STATUSES = ['Draft', 'Sent', 'Accepted', 'Declined', 'Expired']
+
+/**
+ * Has this estimate lapsed?
+ *
+ * Nothing in the app ever writes the 'Expired' status — the old CRM did it from a
+ * nightly cron, and without one the Expired tab could never match a row and an
+ * Expired count would sit permanently at zero. So it is derived on read instead,
+ * using the old CRM's exact rule: only a SENT estimate expires (a draft was never
+ * put out, and an accepted or declined one already has its answer), and only once
+ * the valid-until date is in the past.
+ *
+ * A stored 'Expired' still counts, so if a scheduled job is added later this keeps
+ * working with no change here.
+ */
+const isExpired = (e) => {
+  if (e.status === 'Expired') return true
+  if (e.status !== 'Sent' || !e.valid_until) return false
+
+  // Compared as plain YYYY-MM-DD strings (which sort chronologically), NOT as
+  // Date objects. The API serialises valid_until as UTC midnight, so
+  // `new Date(...)` lands on the previous day for anyone west of UTC and would
+  // expire their estimates a day early. Slicing the date part sidesteps the
+  // timezone entirely, and keeps "valid until today" valid.
+  const d = new Date()
+  const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+  return String(e.valid_until).slice(0, 10) < today
+}
+
+const effectiveStatus = (e) => (isExpired(e) ? 'Expired' : e.status)
 const STAFF = ['Zafar Farooque', 'Priya Sharma', 'Rohit Verma', 'Anjali Singh', 'Karan Mehta']
 
 const EMPTY_FORM = {
@@ -71,9 +101,13 @@ export default function Estimates({ docType = 'proforma' }) {
 
   const load = () => {
     setLoading(true)
-    salesApi.estimates.list({ status: filter !== 'All' ? filter : undefined, type: docType }).then(d => { setData(d); setLoading(false) })
+    // Unfiltered on purpose: the KPI boxes must count every estimate of this type,
+    // and "Expired" is derived client-side (see isExpired) so the server can't
+    // filter on it. The endpoint isn't paginated, so this is one request either way
+    // and switching tabs no longer refetches.
+    salesApi.estimates.list({ type: docType }).then(d => { setData(d); setLoading(false) })
   }
-  useEffect(() => { load() }, [filter, docType])
+  useEffect(() => { load() }, [docType])
 
   // Arriving from a customer profile's "New Proforma Invoice" button.
   const [searchParams, setSearchParams] = useSearchParams()
@@ -136,13 +170,21 @@ export default function Estimates({ docType = 'proforma' }) {
     load()
   }
 
+  const countBy = (status) => data.filter(e => effectiveStatus(e) === status).length
+
   const stats = {
     total: data.length,
-    draft: data.filter(e => e.status === 'Draft').length,
-    sent: data.filter(e => e.status === 'Sent').length,
-    accepted: data.filter(e => e.status === 'Accepted').length,
+    draft: countBy('Draft'),
+    sent: countBy('Sent'),
+    accepted: countBy('Accepted'),
+    declined: countBy('Declined'),
+    expired: countBy('Expired'),
     totalVal: data.reduce((s, e) => s + Number(e.total || 0), 0),
   }
+
+  // Status tabs and the table both read the derived status, so a Sent-but-lapsed
+  // estimate is counted, filtered and badged as Expired consistently.
+  const visible = filter === 'All' ? data : data.filter(e => effectiveStatus(e) === filter)
 
   const handleConvertToProforma = async (estimate) => {
     try {
@@ -214,12 +256,14 @@ export default function Estimates({ docType = 'proforma' }) {
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
         {[
           { l: 'Total', v: stats.total, c: '#7C3AED' },
           { l: 'Draft', v: stats.draft, c: '#94a3b8' },
           { l: 'Sent', v: stats.sent, c: '#a78bfa' },
           { l: 'Accepted', v: stats.accepted, c: '#10b981' },
+          { l: 'Declined', v: stats.declined, c: '#ef4444' },
+          { l: 'Expired', v: stats.expired, c: '#f59e0b' },
           { l: 'Total Value', v: fmt(stats.totalVal), c: '#7C3AED' },
         ].map(k => (
           <div key={k.l} className="kpi-3d py-4 px-5">
@@ -263,7 +307,7 @@ export default function Estimates({ docType = 'proforma' }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.map(e => (
+                  {visible.map(e => (
                     <tr key={e.id} className="cursor-pointer transition-colors" style={{ borderBottom: '1px solid var(--border)' }}
                       onClick={() => navigate(`/app/sales/estimates/${e.id}`)}
                       onMouseEnter={ev => ev.currentTarget.style.background = 'rgba(124,58,237,0.04)'}
@@ -279,7 +323,7 @@ export default function Estimates({ docType = 'proforma' }) {
                       <td className="py-3.5 px-4 whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>{e.sale_agent || '—'}</td>
                       <td className="py-3.5 px-4 font-bold whitespace-nowrap" style={{ color: 'var(--text-h)' }}>{fmt(e.total)}</td>
                       <td className="py-3.5 px-4 whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>{fmtDate(e.valid_until)}</td>
-                      <td className="py-3.5 px-4"><StatusBadge status={e.status} /></td>
+                      <td className="py-3.5 px-4"><StatusBadge status={effectiveStatus(e)} /></td>
                       <td className="py-3.5 px-4" onClick={ev => ev.stopPropagation()}>
                         <RowMenu width={188}>
                           {[
@@ -302,7 +346,7 @@ export default function Estimates({ docType = 'proforma' }) {
                       </td>
                     </tr>
                   ))}
-                  {data.length === 0 && (
+                  {visible.length === 0 && (
                     <tr><td colSpan="8" className="py-16 text-center">
                       <div className="flex flex-col items-center gap-3">
                         <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl" style={{ background: 'rgba(124,58,237,0.08)' }}>📋</div>
@@ -323,7 +367,7 @@ export default function Estimates({ docType = 'proforma' }) {
         <div className="overflow-x-auto pb-4">
           <div className="flex gap-4" style={{ minWidth: `${PIPE_COLS.length * 292}px` }}>
             {PIPE_COLS.map(col => {
-              const cards = data.filter(e => e.status === col.key)
+              const cards = data.filter(e => effectiveStatus(e) === col.key)
               const colTotal = cards.reduce((s, e) => s + Number(e.total || 0), 0)
               return (
                 <div key={col.key} className="kanban-col">
