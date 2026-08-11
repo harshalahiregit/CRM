@@ -14,7 +14,8 @@ class UpdateProposalStatusRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'status' => 'required|in:Draft,Open,Sent,Accepted,Declined,Expired',
+            'status' => 'required|string|in:Draft,Pending Review,Sent,Viewed,Opened,Under Negotiation,Revision Requested,Accepted,Declined,Expired',
+            'rejection_reason' => 'nullable|string|max:500',
         ];
     }
 }

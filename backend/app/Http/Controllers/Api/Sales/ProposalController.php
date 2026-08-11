@@ -77,7 +77,12 @@ class ProposalController extends Controller
     public function updateStatus(UpdateProposalStatusRequest $request, Proposal $proposal)
     {
         return response()->json(
-            $this->proposalService->updateStatus($proposal, $request->validated('status'), $request->user()->tenant_id)
+            $this->proposalService->updateStatus(
+                $proposal,
+                $request->validated('status'),
+                $request->user()->tenant_id,
+                $request->validated('rejection_reason')
+            )
         );
     }
 

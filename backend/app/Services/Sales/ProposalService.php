@@ -8,8 +8,9 @@ use App\Models\Sales\Estimate;
 use App\Models\Sales\Proposal;
 use App\Models\Sales\SalesInvoice;
 use App\Models\Sales\SalesLineItem;
-use App\Mail\Sales\ProposalMail;
+use App\Models\Customer\Client;
 use App\Models\Customer\ClientContact;
+use App\Models\Sales\Lead;
 use App\Repositories\Sales\ProposalRepository;
 use App\Services\Mail\TenantMailer;
 use App\Support\HtmlSanitizer;
@@ -124,7 +125,7 @@ class ProposalService
         return $proposal->fresh();
     }
 
-    public function updateStatus(Proposal $proposal, string $status, int $tenantId): Proposal
+    public function updateStatus(Proposal $proposal, string $status, int $tenantId, ?string $rejectionReason = null): Proposal
     {
         $this->assertTenant($proposal, $tenantId);
 
@@ -133,9 +134,91 @@ class ProposalService
         if ($status === 'Declined') $data['declined_at'] = now();
 
         $proposal->update($data);
+
+        if ($status === 'Accepted') {
+            $this->convertLeadToCustomerOnAcceptance($proposal);
+        }
+
+        if ($status === 'Declined') {
+            if ($rejectionReason) {
+                $proposal->update(['tags' => trim(($proposal->tags ? $proposal->tags . ', ' : '') . 'Reason: ' . $rejectionReason)]);
+                $proposal->logActivity('declined', "Proposal declined with reason: {$rejectionReason}");
+            }
+            if ($proposal->rel_type === 'lead' && $proposal->rel_id) {
+                $lead = Lead::where('tenant_id', $tenantId)->find($proposal->rel_id);
+                if ($lead && ! $lead->is_converted) {
+                    $lostStatus = \App\Models\Sales\LeadStatus::where('tenant_id', $tenantId)->where('name', 'like', '%Lost%')->first();
+                    if ($lostStatus) {
+                        $lead->update(['status_id' => $lostStatus->id]);
+                    }
+                }
+            }
+        }
+
         Log::channel('sales')->info('Proposal status updated', ['proposal_id' => $proposal->id, 'status' => $status, 'tenant_id' => $tenantId]);
 
         return $proposal->fresh();
+    }
+
+    private function convertLeadToCustomerOnAcceptance(Proposal $proposal): void
+    {
+        if ($proposal->rel_type !== 'lead' || empty($proposal->rel_id)) {
+            return;
+        }
+
+        $lead = Lead::where('tenant_id', $proposal->tenant_id)->find($proposal->rel_id);
+        if (! $lead || $lead->is_converted) {
+            return;
+        }
+
+        // Create Client record for tenant
+        $companyName = $lead->company ?: $lead->name ?: 'New Customer';
+        $client = Client::create([
+            'tenant_id'      => $proposal->tenant_id,
+            'company'        => $companyName,
+            'gst_number'     => $lead->vat ?? $lead->gst_number ?? null,
+            'phone'          => $lead->phone ?? null,
+            'website'        => $lead->website ?? null,
+            'address'        => $lead->address ?? null,
+            'city'           => $lead->city ?? null,
+            'state'          => $lead->state ?? null,
+            'zip'            => $lead->zip ?? null,
+            'country'        => $lead->country ?? 'India',
+            'added_by'       => $proposal->created_by ?? null,
+        ]);
+
+        // Create primary ClientContact
+        $name = trim($lead->name ?: 'Main Contact');
+        $spacePos = strrpos($name, ' ');
+        $firstName = $spacePos !== false ? substr($name, 0, $spacePos) : $name;
+        $lastName = $spacePos !== false ? substr($name, $spacePos + 1) : 'Contact';
+
+        $contact = ClientContact::create([
+            'tenant_id'  => $proposal->tenant_id,
+            'client_id'  => $client->id,
+            'first_name' => $firstName,
+            'last_name'  => $lastName,
+            'email'      => $lead->email ?: null,
+            'phone'      => $lead->phone ?: null,
+            'title'      => $lead->title ?: 'Primary Contact',
+            'is_primary' => true,
+        ]);
+
+        // Update Lead state
+        $lead->update([
+            'is_converted' => true,
+            'converted_at' => now(),
+            'client_id'    => $client->id,
+        ]);
+
+        // Automatically update proposal reference to new customer
+        $proposal->update([
+            'rel_type'   => 'customer',
+            'rel_id'     => $client->id,
+            'contact_id' => $contact->id,
+        ]);
+
+        $proposal->logActivity('lead_converted', "Lead '{$lead->name}' automatically converted to Customer '{$client->company}' upon proposal acceptance.");
     }
 
     /**
@@ -262,6 +345,10 @@ class ProposalService
                 $action === 'accept' ? 'Client accepted the proposal' : 'Client declined the proposal',
                 null, $action === 'accept' ? "IP {$ip}" : null,
             );
+
+            if ($action === 'accept') {
+                $this->convertLeadToCustomerOnAcceptance($locked);
+            }
 
             Log::channel('sales')->info("Proposal {$action}ed via portal", [
                 'proposal_id' => $locked->id, 'ip' => $ip,

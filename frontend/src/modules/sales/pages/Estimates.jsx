@@ -23,7 +23,7 @@ import { useToast } from '@/hooks/useToast'
 const fmt = v => '₹' + Number(v || 0).toLocaleString('en-IN')
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 
-const STATUSES = ['Draft', 'Sent', 'Accepted', 'Declined', 'Expired']
+const STATUSES = ['Draft', 'Pending Review', 'Sent', 'Viewed', 'Under Negotiation', 'Revision Requested', 'Accepted', 'Declined', 'Expired']
 
 /**
  * Has this estimate lapsed?
