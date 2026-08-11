@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Truck, Plus, Search, Check, X, Trash2, Pencil, Mail, Phone } from 'lucide-react'
+import { Truck, Plus, Search, Check, X, Trash2, Pencil, Mail, Phone, FileDown } from 'lucide-react'
 import { inventoryApi, INV_ACCENT } from '@/services/inventoryApi'
 import { useAuth } from '@/context/AuthContext'
 import Select from '@/components/ui/Select'
@@ -16,12 +16,32 @@ export default function InventoryVendors() {
   const [statusF, setStatusF] = useState('')
   const [editing, setEditing] = useState(null)   // null = closed, {} = new, {…} = edit
   const [err, setErr] = useState('')
+  const [selected, setSelected] = useState(() => new Set())
 
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ['inv-vendors', search, statusF],
     queryFn: () => inventoryApi.vendors.list({ ...(search ? { search } : {}), ...(statusF ? { status: statusF } : {}) }),
   })
   const refresh = () => qc.invalidateQueries({ queryKey: ['inv-vendors'] })
+
+  /* Selection helpers — declared after rows so the row list is in scope */
+  const allChecked = rows.length > 0 && rows.every(r => selected.has(r.id))
+  const toggleAll  = () => setSelected(allChecked ? new Set() : new Set(rows.map(r => r.id)))
+  const toggleOne  = (id) => setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+
+  const exportSelected = () => {
+    const sel = rows.filter(r => selected.has(r.id))
+    const cols = [
+      ['Name', r => r.name], ['Code', r => r.code || ''], ['Email', r => r.email || ''],
+      ['Phone', r => r.phone || ''], ['GSTIN', r => r.gstin || ''], ['City', r => r.city || ''],
+      ['State', r => r.state || ''], ['Lead Time (days)', r => r.lead_time_days ?? ''], ['Status', r => r.status],
+    ]
+    const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`
+    const csv = [cols.map(c => esc(c[0])).join(','), ...sel.map(r => cols.map(c => esc(c[1](r))).join(','))].join('\n')
+    const url = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' }))
+    const a = document.createElement('a'); a.href = url; a.download = `vendors-${new Date().toISOString().slice(0,10)}.csv`; a.click()
+    URL.revokeObjectURL(url)
+  }
 
   const save = useMutation({
     mutationFn: (v) => {
@@ -89,20 +109,44 @@ export default function InventoryVendors() {
 
       {err && !editing && <p className="text-[11px]" style={{ color: 'var(--color-danger-500)' }}>{err}</p>}
 
+      {/* Selection bar */}
+      {selected.size > 0 && (
+        <div className="flex flex-wrap items-center gap-2 mb-3 px-3 py-2.5 rounded-2xl"
+          style={{ background: `color-mix(in srgb, ${INV_ACCENT} 10%, transparent)`, border: `1px solid ${INV_ACCENT}` }}>
+          <span className="text-xs font-bold" style={{ color: INV_ACCENT }}>{selected.size} selected</span>
+          <button onClick={exportSelected}
+            className="flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-lg"
+            style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-body)' }}>
+            <FileDown size={13} /> Export selected
+          </button>
+          <button onClick={() => setSelected(new Set())} className="ml-auto text-xs" style={{ color: 'var(--text-muted)' }}><X size={13} /></button>
+        </div>
+      )}
+
       <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
         <table className="w-full text-sm" style={{ borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border)' }}>
+              <th className="px-3 py-2.5">
+                <input type="checkbox" checked={allChecked} onChange={toggleAll}
+                  style={{ accentColor: INV_ACCENT, width: 14, height: 14, cursor: 'pointer' }} />
+              </th>
               {['Vendor', 'Contact', 'Location', 'Lead time', 'Items', 'Status', ''].map((h, i) => (
                 <th key={i} className="text-left px-3 py-2.5 text-[11px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {isLoading && <tr><td colSpan={7} className="px-3 py-8 text-center" style={{ color: 'var(--text-muted)' }}>Loading…</td></tr>}
-            {!isLoading && rows.length === 0 && <tr><td colSpan={7} className="px-3 py-10 text-center" style={{ color: 'var(--text-muted)' }}>No vendors yet. Add your first supplier.</td></tr>}
+            {isLoading && <tr><td colSpan={8} className="px-3 py-8 text-center" style={{ color: 'var(--text-muted)' }}>Loading…</td></tr>}
+            {!isLoading && rows.length === 0 && <tr><td colSpan={8} className="px-3 py-10 text-center" style={{ color: 'var(--text-muted)' }}>No vendors yet. Add your first supplier.</td></tr>}
             {rows.map(v => (
-              <tr key={v.id} style={{ borderBottom: '1px solid var(--border)' }}>
+              <tr key={v.id} style={{ borderBottom: '1px solid var(--border)', background: selected.has(v.id) ? `color-mix(in srgb, ${INV_ACCENT} 7%, transparent)` : 'transparent' }}
+                onMouseEnter={e => { if (!selected.has(v.id)) e.currentTarget.style.background = 'var(--bg-input)' }}
+                onMouseLeave={e => { if (!selected.has(v.id)) e.currentTarget.style.background = 'transparent' }}>
+                <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>
+                  <input type="checkbox" checked={selected.has(v.id)} onChange={() => toggleOne(v.id)}
+                    style={{ accentColor: INV_ACCENT, width: 14, height: 14, cursor: 'pointer' }} />
+                </td>
                 <td className="px-3 py-2.5">
                   <span className="block font-semibold" style={{ color: 'var(--text-h)' }}>{v.name}</span>
                   {v.code && <span className="block text-[10px]" style={{ color: 'var(--text-muted)' }}>{v.code}{v.gstin ? ` · ${v.gstin}` : ''}</span>}

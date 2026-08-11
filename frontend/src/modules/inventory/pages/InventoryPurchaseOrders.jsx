@@ -1,9 +1,10 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ShoppingCart, Plus, Search, Check, X, Trash2, Zap, Send, PackageCheck, Ban, ChevronLeft, FileText, Truck } from 'lucide-react'
+import { ShoppingCart, Plus, Search, Check, X, Trash2, Zap, Send, PackageCheck, Ban, ChevronLeft, FileText, Truck, FileDown } from 'lucide-react'
 import { inventoryApi, INV_ACCENT } from '@/services/inventoryApi'
 import { useAuth } from '@/context/AuthContext'
 import Select from '@/components/ui/Select'
+import { ConfirmModal } from '@/components/ui/SearchPicker'
 
 const INP = { width: '100%', padding: '8px 10px', fontSize: 13, borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)', outline: 'none' }
 const LBL = { display: 'block', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4, color: 'var(--text-muted)' }
@@ -25,12 +26,35 @@ export default function InventoryPurchaseOrders() {
   const [creating, setCreating] = useState(false)
   const [notice, setNotice] = useState('')
   const [err, setErr] = useState('')
+  const [selected, setSelected] = useState(() => new Set())
+  const [confirmBulkDel, setConfirmBulkDel] = useState(false)
 
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ['inv-po', search, statusF],
     queryFn: () => inventoryApi.purchaseOrders.list({ ...(search ? { search } : {}), ...(statusF ? { status: statusF } : {}) }),
   })
   const refresh = () => qc.invalidateQueries({ queryKey: ['inv-po'] })
+
+  /* Selection helpers */
+  const allChecked = rows.length > 0 && rows.every(r => selected.has(r.id))
+  const toggleAll  = () => setSelected(allChecked ? new Set() : new Set(rows.map(r => r.id)))
+  const toggleOne  = (id) => setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+
+  const bulkDelete = useMutation({
+    mutationFn: () => Promise.all([...selected].map(id => inventoryApi.purchaseOrders.remove(id))),
+    onSuccess: () => { setSelected(new Set()); setConfirmBulkDel(false); refresh() },
+    onError: (e) => setErr(e?.message || 'Could not delete selected POs.'),
+  })
+
+  const exportSelected = () => {
+    const sel = rows.filter(r => selected.has(r.id))
+    const cols = [['Code', r => r.code], ['Vendor', r => r.vendor?.name || ''], ['Lines', r => r.lines_count ?? 0], ['Total', r => r.total ?? 0], ['Status', r => r.status]]
+    const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`
+    const csv = [cols.map(c => esc(c[0])).join(','), ...sel.map(r => cols.map(c => esc(c[1](r))).join(','))].join('\n')
+    const url = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' }))
+    const a = document.createElement('a'); a.href = url; a.download = `purchase-orders-${new Date().toISOString().slice(0,10)}.csv`; a.click()
+    URL.revokeObjectURL(url)
+  }
 
   const generate = useMutation({
     mutationFn: () => inventoryApi.purchaseOrders.generate(),
@@ -84,36 +108,73 @@ export default function InventoryPurchaseOrders() {
         </div>
       </div>
 
+      {/* Selection bar */}
+      {selected.size > 0 && (
+        <div className="flex flex-wrap items-center gap-2 mb-3 px-3 py-2.5 rounded-2xl"
+          style={{ background: `color-mix(in srgb, ${INV_ACCENT} 10%, transparent)`, border: `1px solid ${INV_ACCENT}` }}>
+          <span className="text-xs font-bold" style={{ color: INV_ACCENT }}>{selected.size} selected</span>
+          <button onClick={exportSelected}
+            className="flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-lg"
+            style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-body)' }}>
+            <FileDown size={13} /> Export selected
+          </button>
+          {isAdmin && (
+            <button onClick={() => setConfirmBulkDel(true)}
+              className="flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-lg"
+              style={{ background: 'color-mix(in srgb, var(--color-danger-500) 10%, transparent)', border: '1px solid var(--color-danger-500)', color: 'var(--color-danger-500)' }}>
+              <Trash2 size={13} /> Delete selected
+            </button>
+          )}
+          <button onClick={() => setSelected(new Set())} className="ml-auto text-xs" style={{ color: 'var(--text-muted)' }}><X size={13} /></button>
+        </div>
+      )}
+
       <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
         <table className="w-full text-sm" style={{ borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border)' }}>
+              <th className="px-3 py-2.5">
+                <input type="checkbox" checked={allChecked} onChange={toggleAll}
+                  style={{ accentColor: INV_ACCENT, width: 14, height: 14, cursor: 'pointer' }} />
+              </th>
               {['PO', 'Vendor', 'Lines', 'Total', 'Source', 'Status', ''].map((h, i) => (
                 <th key={i} className="text-left px-3 py-2.5 text-[11px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {isLoading && <tr><td colSpan={7} className="px-3 py-8 text-center" style={{ color: 'var(--text-muted)' }}>Loading…</td></tr>}
-            {!isLoading && rows.length === 0 && <tr><td colSpan={7} className="px-3 py-10 text-center" style={{ color: 'var(--text-muted)' }}>No purchase orders yet. Use auto-reorder or create one.</td></tr>}
+            {isLoading && <tr><td colSpan={8} className="px-3 py-8 text-center" style={{ color: 'var(--text-muted)' }}>Loading…</td></tr>}
+            {!isLoading && rows.length === 0 && <tr><td colSpan={8} className="px-3 py-10 text-center" style={{ color: 'var(--text-muted)' }}>No purchase orders yet. Use auto-reorder or create one.</td></tr>}
             {rows.map(po => (
-              <tr key={po.id} className="cursor-pointer hover:opacity-80" style={{ borderBottom: '1px solid var(--border)' }} onClick={() => setOpenId(po.id)}>
-                <td className="px-3 py-2.5 font-semibold" style={{ color: 'var(--text-h)' }}>{po.code}</td>
-                <td className="px-3 py-2.5" style={{ color: 'var(--text-body)' }}>{po.vendor?.name || '—'}</td>
-                <td className="px-3 py-2.5 tabular-nums" style={{ color: 'var(--text-body)' }}>{po.lines_count ?? 0}</td>
-                <td className="px-3 py-2.5 tabular-nums" style={{ color: 'var(--text-body)' }}>{money(po.total)}</td>
-                <td className="px-3 py-2.5">
+              <tr key={po.id} className="cursor-pointer" style={{ borderBottom: '1px solid var(--border)', background: selected.has(po.id) ? `color-mix(in srgb, ${INV_ACCENT} 7%, transparent)` : 'transparent' }}
+                onMouseEnter={e => { if (!selected.has(po.id)) e.currentTarget.style.background = 'var(--bg-input)' }}
+                onMouseLeave={e => { if (!selected.has(po.id)) e.currentTarget.style.background = 'transparent' }}>
+                <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>
+                  <input type="checkbox" checked={selected.has(po.id)} onChange={() => toggleOne(po.id)}
+                    style={{ accentColor: INV_ACCENT, width: 14, height: 14, cursor: 'pointer' }} />
+                </td>
+                <td className="px-3 py-2.5 font-semibold" style={{ color: 'var(--text-h)' }} onClick={() => setOpenId(po.id)}>{po.code}</td>
+                <td className="px-3 py-2.5" style={{ color: 'var(--text-body)' }} onClick={() => setOpenId(po.id)}>{po.vendor?.name || '—'}</td>
+                <td className="px-3 py-2.5 tabular-nums" style={{ color: 'var(--text-body)' }} onClick={() => setOpenId(po.id)}>{po.lines_count ?? 0}</td>
+                <td className="px-3 py-2.5 tabular-nums" style={{ color: 'var(--text-body)' }} onClick={() => setOpenId(po.id)}>{money(po.total)}</td>
+                <td className="px-3 py-2.5" onClick={() => setOpenId(po.id)}>
                   {po.source === 'auto' && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: `color-mix(in srgb, ${INV_ACCENT} 16%, transparent)`, color: INV_ACCENT }}>AUTO</span>}
                 </td>
-                <td className="px-3 py-2.5">
+                <td className="px-3 py-2.5" onClick={() => setOpenId(po.id)}>
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase" style={{ background: `color-mix(in srgb, ${STATUS_COLORS[po.status]} 16%, transparent)`, color: STATUS_COLORS[po.status] }}>{po.status}</span>
                 </td>
-                <td className="px-3 py-2.5 text-right" style={{ color: 'var(--text-muted)' }}>›</td>
+                <td className="px-3 py-2.5 text-right" style={{ color: 'var(--text-muted)' }} onClick={() => setOpenId(po.id)}>›</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      <ConfirmModal open={confirmBulkDel} onClose={() => setConfirmBulkDel(false)}
+        onConfirm={() => bulkDelete.mutate()}
+        title={`Delete ${selected.size} purchase order${selected.size === 1 ? '' : 's'}?`}
+        message="Only draft POs can be deleted. Others will be skipped."
+        confirmLabel="Delete" danger />
     </div>
   )
 }
