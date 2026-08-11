@@ -307,7 +307,11 @@ function StepKickoff({ onboarding, editable, onAcknowledged, onContinue, api }) 
 
   const loadMeeting = useCallback(() => {
     const vid = onboarding.vendor?.id
-    if (!vid) { setLoad(false); return }
+    // kickoffApi is the ADMIN kickoff workspace (role:admin,staff). A vendor got a
+    // 403 here on every render, swallowed by the catch below — so `meeting` was
+    // always null in the portal anyway. The step still works: readyForAck falls
+    // back to `!!pdfUrl`, which comes from the vendor's own portal endpoint.
+    if (isPortal || !vid) { setLoad(false); return }
     setLoad(true)
     kickoffApi.list({ subject_type: 'vendor', subject_id: vid })
       .then(r => {
@@ -317,7 +321,7 @@ function StepKickoff({ onboarding, editable, onAcknowledged, onContinue, api }) 
         setLoad(false)
       })
       .catch(() => setLoad(false))
-  }, [onboarding.vendor?.id])
+  }, [onboarding.vendor?.id, isPortal])
 
   useEffect(() => { loadMeeting() }, [loadMeeting])
 

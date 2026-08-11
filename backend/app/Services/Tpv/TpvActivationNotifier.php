@@ -5,6 +5,7 @@ namespace App\Services\Tpv;
 use App\Models\Tpv\TpvNotificationLog as LogEntry;
 use App\Models\Vendor\Vendor;
 use App\Services\Notifications\NotificationService;
+use App\Support\FrontendUrl;
 use App\Support\Tpv\TpvRegistrationType;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -166,7 +167,7 @@ class TpvActivationNotifier
             'companyName'      => config('app.name', 'Our Company'),
             'logoUrl'          => config('mail.logo_url'),
             'supportEmail'     => config('mail.support_address', config('mail.from.address', 'support@example.com')),
-            'portalUrl'        => rtrim(config('app.frontend_url', config('app.url', '')), '/').'/vendor-portal/login',
+            'portalUrl'        => FrontendUrl::to('/vendor-portal/login'),
             'registrationType' => TpvRegistrationType::label($vendor->registration_type),
             'activationDate'   => now()->format('d M Y, H:i'),
             'tempPassword'     => $tempPassword,

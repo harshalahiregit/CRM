@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Plus, RefreshCw, Search, Eye, Pencil, Trash2, Users, CheckCircle, XCircle, Building2, X, Mail, CalendarDays, ShieldCheck, Clock,
+  Plus, RefreshCw, Eye, Pencil, Trash2, Users, CheckCircle, XCircle, Building2, X, Mail, CalendarDays, ShieldCheck, Clock,
+  ChevronUp, ChevronDown,
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { fmtDate } from '../constants'
@@ -11,6 +12,10 @@ import TemporaryTpvValidityBadge from '../components/TemporaryTpvValidityBadge'
 import {
   KIT3D_STYLE, inputStyle, labelStyle, Overlay, ModalFooter, Field, TextInput, SelectInput,
 } from '@/components/ui/kit3d'
+// Shared, not TPV-local: both are generic over columns/rows and the Purchase
+// vendor listing has the same shape, so it can adopt them unchanged.
+import TableToolbar from '@/components/ui/TableToolbar'
+import TablePagination from '@/components/ui/TablePagination'
 
 const EMPTY_FORM = {
   name: '', company_name: '', email: '', phone: '', gst_number: '', status: 'Active', vendor_type: '',
@@ -30,13 +35,49 @@ export default function TpvVendors() {
   const [editing, setEditing] = useState(null)   // form object (with id when editing), or null
   const [emailing, setEmailing] = useState(null) // vendor to email, or null
 
+  // Server-side paging/search/sort. The page no longer holds the whole table:
+  // it asks for one page and the server does the filtering, so this scales past
+  // the few hundred rows the old client-side filter could cope with.
+  const [meta, setMeta] = useState({ current_page: 1, last_page: 1, per_page: 25, total: 0 })
+  const [page, setPage] = useState(1)
+  const [perPage, setPerPage] = useState(25)
+  const [sort, setSort] = useState({ column: 'created_at', direction: 'desc' })
+  // Debounced so a search does not fire a request per keystroke.
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 350)
+    return () => clearTimeout(t)
+  }, [search])
+  // Any change to what is being asked for resets to page 1 — staying on page 7
+  // of a result set that now has 2 pages shows an empty table.
+  useEffect(() => { setPage(1) }, [debouncedSearch, perPage, sort.column, sort.direction])
+
   const load = useCallback(() => {
     setLoad(true)
-    cfg.api.vendors.list()
-      .then(r => { setRows(r?.data ?? r ?? []); setLoad(false) })
+    cfg.api.vendors.listPaged({
+      page, per_page: perPage,
+      sort_column: sort.column, sort_direction: sort.direction,
+      ...(debouncedSearch ? { search: debouncedSearch } : {}),
+    })
+      .then(r => {
+        // Tolerates both shapes: listPaged always sends per_page so the server
+        // returns an envelope, but a bare array must not blank the table if
+        // that ever changes.
+        const list = Array.isArray(r) ? r : (r?.data ?? [])
+        setRows(list)
+        setMeta(Array.isArray(r)
+          ? { current_page: 1, last_page: 1, per_page: list.length, total: list.length }
+          : { current_page: r?.current_page ?? 1, last_page: r?.last_page ?? 1, per_page: r?.per_page ?? perPage, total: r?.total ?? list.length })
+        setLoad(false)
+      })
       .catch(() => setLoad(false))
-  }, [cfg.api])
+  }, [cfg.api, page, perPage, sort.column, sort.direction, debouncedSearch])
   useEffect(() => { load() }, [load])
+
+  const toggleSort = (column) => setSort(s =>
+    s.column === column
+      ? { column, direction: s.direction === 'asc' ? 'desc' : 'asc' }
+      : { column, direction: 'asc' })
 
   // Counts come from the SERVER, not from the rows on screen. Counting loaded rows
   // meant the figures tracked the current filter/page rather than the tenant, and it
@@ -53,12 +94,25 @@ export default function TpvVendors() {
     temporary: stats.temporary ?? 0,
   }), [stats, rows])
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    if (!q) return rows
-    return rows.filter(v =>
-      `${v.user?.name || ''} ${v.company_name || ''} ${v.email || ''} ${v.phone || ''}`.toLowerCase().includes(q))
-  }, [rows, search])
+  // `rows` is now exactly the page the server returned — the old client-side
+  // filter is gone because filtering happens in SQL. Kept as a name so the
+  // markup below reads the same.
+  const filtered = rows
+
+  // Column definitions drive the header, the sort keys and every export, so the
+  // four can never describe different columns. `export` overrides the on-screen
+  // cell where it is a badge or a toggle rather than text.
+  const COLUMNS = useMemo(() => [
+    { key: 'id',                label: 'ID',                 sortable: true,  export: v => `#${v.id}` },
+    { key: 'name',              label: 'Vendor Name',        sortable: false, export: v => v.user?.name || '' },
+    { key: 'company_name',      label: 'Company',            sortable: true },
+    { key: 'registration_type', label: 'Type',               sortable: true,  export: v => v.registration_type_label || v.registration_type || '' },
+    { key: 'validity',          label: 'Remaining Validity', sortable: false, export: v => v.validity_countdown?.label || '' },
+    { key: 'phone',             label: 'Phone',              sortable: true },
+    { key: 'email',             label: 'Email',              sortable: true },
+    { key: 'status',            label: 'Status',             sortable: true },
+    { key: 'created_at',        label: 'Date Created',       sortable: true,  export: v => (v.created_at ? fmtDate(v.created_at) : '') },
+  ], [])
 
   const toggleStatus = async (v) => {
     const next = v.status === 'Active' ? 'Inactive' : 'Active'
@@ -105,11 +159,19 @@ export default function TpvVendors() {
         <Counter label="Inactive" value={counts.inactive} icon={XCircle} color="#ef4444" />
       </div>
 
-      <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
-        <div style={{ position: 'relative', minWidth: 260, marginLeft: 'auto' }}>
-          <Search size={14} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name, company, email…" style={{ ...inputStyle, paddingLeft: 32 }} />
-        </div>
+      {/* Search + exports. Search is sent to the SERVER, so it matches across
+          every page rather than only the rows currently loaded. */}
+      <div style={{ marginBottom: 16 }}>
+        <TableToolbar
+          search={search} setSearch={setSearch}
+          placeholder="Search name, company, email, GST, PAN…"
+          columns={COLUMNS} rows={filtered}
+          filename={`${cfg.moduleName.toLowerCase()}-vendors`}
+          title={`${cfg.moduleName}s`}
+          exportScopeNote={meta.total > filtered.length
+            ? `Exports the ${filtered.length} row(s) on this page. Set Rows to ${Math.min(100, meta.total)} to include more.`
+            : null}
+        />
       </div>
 
       {loading ? (
@@ -117,17 +179,45 @@ export default function TpvVendors() {
       ) : filtered.length === 0 ? (
         <div className="pr-glass" style={{ padding: '48px 24px', textAlign: 'center' }}>
           <div style={{ width: 60, height: 60, borderRadius: '50%', margin: '0 auto 16px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(124,58,237,0.12)' }}><Building2 size={28} style={{ color: '#a78bfa' }} /></div>
-          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text-h)' }}>No vendors yet</h3>
-          <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '6px 0 18px' }}>Add a {cfg.moduleName.toLowerCase()} to give them a portal login.</p>
-          {manage && <button onClick={() => setEditing({ ...EMPTY_FORM })} style={{ ...solidBtn, margin: '0 auto' }}><Plus size={15} /> New {cfg.moduleName}</button>}
+          {/* Two different empty states: an empty tenant needs an Add button, a
+              search with no hits needs the search cleared. Showing "No vendors
+              yet" to someone who has 900 vendors and mistyped a name is wrong. */}
+          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text-h)' }}>
+            {debouncedSearch ? 'No matching vendors' : 'No vendors yet'}
+          </h3>
+          <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '6px 0 18px' }}>
+            {debouncedSearch
+              ? <>Nothing matches “{debouncedSearch}”.</>
+              : <>Add a {cfg.moduleName.toLowerCase()} to give them a portal login.</>}
+          </p>
+          {debouncedSearch
+            ? <button onClick={() => setSearch('')} style={{ ...ghostBtn, margin: '0 auto' }}><X size={14} /> Clear search</button>
+            : manage && <button onClick={() => setEditing({ ...EMPTY_FORM })} style={{ ...solidBtn, margin: '0 auto' }}><Plus size={15} /> New {cfg.moduleName}</button>}
         </div>
       ) : (
         <div className="pr-glass" style={{ padding: 0, borderRadius: 16, overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
-              <thead><tr>{['ID', 'Vendor Name', 'Company', 'Type', 'Remaining Validity', 'Phone', 'Email', 'Status', 'Date Created', 'Options'].map((h, i) => (
-                <th key={h} style={{ textAlign: i === 9 ? 'right' : 'left', padding: '11px 14px', fontSize: 10, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid var(--border)' }}>{h}</th>
-              ))}</tr></thead>
+              <thead><tr>
+                {COLUMNS.map(c => {
+                  const active = sort.column === c.key
+                  return (
+                    <th key={c.key}
+                      onClick={c.sortable ? () => toggleSort(c.key) : undefined}
+                      title={c.sortable ? `Sort by ${c.label}` : undefined}
+                      style={{ textAlign: 'left', padding: '11px 14px', fontSize: 10, fontWeight: 800, color: active ? '#a78bfa' : 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid var(--border)', cursor: c.sortable ? 'pointer' : 'default', whiteSpace: 'nowrap', userSelect: 'none' }}>
+                      {c.label}
+                      {/* Only the active column shows a caret — an arrow on every
+                          sortable header makes it impossible to see which one is
+                          actually in effect. */}
+                      {c.sortable && active && (sort.direction === 'asc'
+                        ? <ChevronUp size={11} style={{ display: 'inline', marginLeft: 3, verticalAlign: '-1px' }} />
+                        : <ChevronDown size={11} style={{ display: 'inline', marginLeft: 3, verticalAlign: '-1px' }} />)}
+                    </th>
+                  )
+                })}
+                <th style={{ textAlign: 'right', padding: '11px 14px', fontSize: 10, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid var(--border)' }}>Options</th>
+              </tr></thead>
               <tbody>
                 {filtered.map(v => (
                   <tr key={v.id} className="pr-li-row">
@@ -146,7 +236,7 @@ export default function TpvVendors() {
                       <div style={{ display: 'inline-flex', gap: 6 }}>
                         <IconBtn title="View" onClick={() => navigate(cfg.viewPath(v.id))}><Eye size={13} /></IconBtn>
                         {manage && <IconBtn title="Edit" onClick={() => openEdit(v)}><Pencil size={13} /></IconBtn>}
-                        {manage && <IconBtn title="Send Email" onClick={() => setEmailing(v)}><Mail size={13} /></IconBtn>}
+                        {manage && <IconBtn title="Send Login Details" onClick={() => setEmailing(v)}><Mail size={13} /></IconBtn>}
                         {manage && <IconBtn title="Delete" color="#ef4444" onClick={() => remove(v)}><Trash2 size={13} /></IconBtn>}
                       </div>
                     </td>
@@ -154,6 +244,11 @@ export default function TpvVendors() {
                 ))}
               </tbody>
             </table>
+          </div>
+
+          {/* Page size + navigation, driven entirely by the server's meta. */}
+          <div style={{ borderTop: '1px solid var(--border)', padding: '0 8px' }}>
+            <TablePagination meta={meta} onPage={setPage} onPerPage={setPerPage} />
           </div>
         </div>
       )}
@@ -171,6 +266,33 @@ function EmailModal({ vendor, api, onClose }) {
   const [sending, setSending] = useState(false)
   const [err, setErr] = useState(null)
   const [sent, setSent] = useState(false)
+  const [prefilling, setPrefilling] = useState(true)
+
+  // Opens pre-filled with portal login details rather than blank.
+  //
+  // It carries a one-time SET-PASSWORD link, not a password: the stored password
+  // is a hash, so there is no plaintext to send — not for a vendor created a year
+  // ago, and not for one created a minute ago. The link is also the safer thing
+  // to put in an inbox, since it expires and burns after one use.
+  //
+  // The draft stays editable; this only saves the admin from typing it.
+  useEffect(() => {
+    let cancelled = false
+    if (!vendor?.email && !vendor?.user?.email) { setPrefilling(false); return }
+
+    api.vendors.loginLink?.(vendor.id)
+      .then(d => {
+        if (cancelled) return
+        setSubject(d.subject || '')
+        setBody(d.body || '')
+      })
+      // A failed mint must not block an ordinary email — the admin can still type
+      // one. Silent because the empty form is itself the fallback.
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setPrefilling(false) })
+
+    return () => { cancelled = true }
+  }, [vendor, api])
 
   const send = async () => {
     if (!subject.trim() || !body.trim()) { setErr('Subject and message are required.'); return }
@@ -182,17 +304,25 @@ function EmailModal({ vendor, api, onClose }) {
   return (
     <Overlay onClose={onClose} width={520}>
       <div style={{ padding: '20px 22px 6px' }}>
-        <h2 style={{ margin: 0, fontSize: 17, fontWeight: 900, color: 'var(--text-h)' }}>Send Email</h2>
+        <h2 style={{ margin: 0, fontSize: 17, fontWeight: 900, color: 'var(--text-h)' }}>Send Login Details</h2>
         <p style={{ margin: '3px 0 0', fontSize: 12.5, color: 'var(--text-muted)' }}>To {vendor.email || 'this vendor'} · {vendor.company_name}</p>
       </div>
       <div style={{ padding: '10px 22px' }}>
         {!vendor.email && <div style={{ padding: '8px 12px', borderRadius: 10, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', marginBottom: 10, fontSize: 12.5, color: 'var(--text-h)' }}>This vendor has no email on file.</div>}
+        {prefilling && <div style={{ padding: '8px 12px', borderRadius: 10, background: 'var(--bg-input)', marginBottom: 10, fontSize: 12.5, color: 'var(--text-muted)' }}>Preparing login details…</div>}
+        {/* Says what is actually being sent. An admin who expects the vendor's
+            password in the body should find out here, not from a support call. */}
+        {!prefilling && body.includes('/auth/set-password') && (
+          <div style={{ padding: '8px 12px', borderRadius: 10, background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.3)', marginBottom: 10, fontSize: 12, color: 'var(--text-muted)' }}>
+            Contains a one-time link to set a password — the existing password is stored hashed and cannot be sent. The link expires and works once.
+          </div>
+        )}
         <Field label="Subject"><TextInput value={subject} onChange={e => setSubject(e.target.value)} placeholder="Subject" /></Field>
         <Field label="Message" full><textarea value={body} onChange={e => setBody(e.target.value)} rows={6} placeholder="Type your message…" style={{ ...inputStyle, resize: 'vertical' }} /></Field>
         {err && <div style={{ fontSize: 12.5, color: '#ef4444', marginTop: 6 }}>{err}</div>}
         {sent && <div style={{ fontSize: 12.5, color: '#10b981', marginTop: 6, fontWeight: 700 }}>Email sent.</div>}
       </div>
-      <ModalFooter onClose={onClose} onConfirm={send} loading={sending} confirmLabel="Send Email" color="#7C3AED" />
+      <ModalFooter onClose={onClose} onConfirm={send} loading={sending} confirmLabel="Send Login Details" color="#7C3AED" />
     </Overlay>
   )
 }

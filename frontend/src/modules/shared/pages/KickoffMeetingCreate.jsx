@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useNavigate, useSearchParams, useParams } from 'react-router-dom'
 import {
   ArrowLeft, CalendarDays, Clock, MapPin, Users, Plus, Trash2,
@@ -13,6 +13,9 @@ import {
   KIT3D_STYLE, labelStyle, inputStyle, Field, TextInput, SelectInput,
 } from '@/components/ui/kit3d'
 import RichTextEditor from '@/components/ui/RichTextEditor'
+// Reused, not rebuilt: the same type-to-search combobox the HR module uses, so
+// there is one dropdown look across the app.
+import MultiSearchSelect from '@/components/ui/MultiSearchSelect'
 
 // ── Platform options for online meetings ─────────────────────────────────────
 const PLATFORM_OPTIONS = [
@@ -81,6 +84,35 @@ export default function KickoffMeetingCreate() {
   const [vendors, setVendors]   = useState([])
   const [contacts, setContacts] = useState([])   // vendor contacts for participant picker
 
+  // Options carry ids, so duplicate company names stay distinguishable. The
+  // sublabel disambiguates visually where the name repeats.
+  const vendorOptions = useMemo(() => {
+    const seen = new Map()
+    vendors.forEach(v => {
+      const base = (v.company_name || '').trim() || `Vendor #${v.id}`
+      seen.set(base, (seen.get(base) || 0) + 1)
+    })
+    return vendors.map(v => {
+      const base = (v.company_name || '').trim() || `Vendor #${v.id}`
+      return { id: String(v.id), label: base, sublabel: seen.get(base) > 1 ? `#${v.id}` : (v.email || '') }
+    })
+  }, [vendors])
+
+  // The chosen vendors, in order. The FIRST is the primary: it goes to the
+  // backend as subject_id (stored on kickoffable_*) and drives the contacts
+  // picker, exactly as the old single select did. The rest ride along in
+  // subject_ids. Keeping subject_id in sync here means every downstream reader
+  // (validation, summary panel, contacts) is untouched.
+  const [vendorIds, setVendorIdsRaw] = useState([])
+  const setVendorIds = (next) => {
+    setVendorIdsRaw(next)
+    const primary = next[0] || ''
+    setForm(f => ({ ...f, subject_id: primary }))
+    loadContacts(primary)
+  }
+
+
+
   // Optional ?vendor=<id> prefill — lets callers (e.g. Purchase Vendors) open this
   // page pre-scoped to a specific vendor. Backward compatible: no param → unchanged.
   const [searchParams] = useSearchParams()
@@ -101,6 +133,7 @@ export default function KickoffMeetingCreate() {
     }).catch(() => {})
     if (preVendorId) {
       setForm(f => ({ ...f, subject_id: preVendorId }))
+      setVendorIdsRaw([String(preVendorId)])
       tpvApi.contacts.list(preVendorId).then(r => setContacts(r?.data ?? r)).catch(() => {})
     }
   }, [preVendorId])
@@ -157,6 +190,15 @@ export default function KickoffMeetingCreate() {
         const m = res?.data ?? res
         const at = m.scheduled_at ? new Date(m.scheduled_at) : null
         const pad = n => String(n).padStart(2, '0')
+
+        // Every vendor on the meeting, primary first — the server already orders
+        // subject_list that way. Falls back to the single `subject` for a meeting
+        // saved before multi-vendor existed, so an old record still loads.
+        setVendorIdsRaw(
+          Array.isArray(m.subject_list) && m.subject_list.length
+            ? m.subject_list.map(s => String(s.subject_id ?? s.id))
+            : (m.subject?.id ? [String(m.subject.id)] : [])
+        )
 
         setForm({
           subject_id:       m.subject?.id ? String(m.subject.id) : '',
@@ -302,6 +344,9 @@ export default function KickoffMeetingCreate() {
       const payload = {
         subject_type:     'vendor',
         subject_id:       form.subject_id,
+        // Full set. The backend keeps the first on kickoffable_* and
+        // writes the rest to kickoff_meeting_subjects.
+        subject_ids:      vendorIds,
         title:            form.title || undefined,
         scheduled_at,
         planned_date:     form.planned_date || undefined,
@@ -450,8 +495,20 @@ export default function KickoffMeetingCreate() {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <Field label="Third Party Vendor *">
-                <SelectInput value={form.subject_id} onChange={set('subject_id')} pairs
-                  options={[['', 'Select a vendor…'], ...vendors.map(v => [v.id, v.company_name])]} />
+                {/* Type-to-search. The native <select> had no search, which is
+                    unusable once a tenant has more than a screenful of vendors. */}
+                {/* Multi-select. The FIRST vendor is the primary: it is what the
+                    backend stores on kickoffable_* and what drives the contacts
+                    picker below, so the order here is meaningful. */}
+                <MultiSearchSelect
+                  value={vendorIds}
+                  onChange={setVendorIds}
+                  options={vendorOptions}
+                  placeholder="Search and select one or more vendors…"
+                  emptyText="No vendor matches that search"
+                  loading={!vendors.length}
+                  primaryHint="Primary"
+                />
               </Field>
 
               <Field label="Meeting Title (optional — defaults to vendor name)">
@@ -725,10 +782,26 @@ export default function KickoffMeetingCreate() {
             <SectionTitle icon={CalendarDays}>Meeting Summary</SectionTitle>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <SummaryRow label="Vendor">
-                {form.subject_id
-                  ? (vendors.find(v => String(v.id) === String(form.subject_id))?.company_name || '—')
-                  : <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Not selected</span>}
+              {/* Every selected vendor, primary first — the summary must agree
+                  with the chips above, not show only the first one. */}
+              <SummaryRow label={vendorIds.length > 1 ? `Vendors (${vendorIds.length})` : 'Vendor'}>
+                {vendorIds.length === 0
+                  ? <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Not selected</span>
+                  : (
+                    <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 3, alignItems: 'flex-end' }}>
+                      {vendorIds.map((id, i) => {
+                        const o = vendorOptions.find(x => String(x.id) === String(id))
+                        return (
+                          <span key={id}>
+                            {o?.label || `#${id}`}
+                            {i === 0 && vendorIds.length > 1 && (
+                              <span style={{ fontSize: 9, fontWeight: 800, color: '#a78bfa', marginLeft: 5 }}>PRIMARY</span>
+                            )}
+                          </span>
+                        )
+                      })}
+                    </span>
+                  )}
               </SummaryRow>
 
               <SummaryRow label="Date &amp; Time">

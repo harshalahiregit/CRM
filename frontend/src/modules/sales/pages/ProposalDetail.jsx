@@ -105,13 +105,24 @@ export default function ProposalDetail() {
     }
   }
 
-  const handleStatusChange = async (status) => {
+  const [showDeclineModal, setShowDeclineModal] = useState(false)
+  const [rejectionReasonText, setRejectionReasonText] = useState('')
+
+  const handleStatusChange = async (status, rejectionReason = '') => {
     try {
-      await salesApi.proposals.updateStatus(proposal.id, status)
+      await salesApi.proposals.updateStatus(proposal.id, status, rejectionReason)
       showToast(`Status updated to ${status}!`)
       reload()
     } catch (e) {
       showToast(e.message || 'Failed to update status', 'error')
+    }
+  }
+
+  const onSelectStatus = (newStatus) => {
+    if (newStatus === 'Declined') {
+      setShowDeclineModal(true)
+    } else {
+      handleStatusChange(newStatus)
     }
   }
 
@@ -484,18 +495,34 @@ export default function ProposalDetail() {
             <div className="card-3d" style={{ padding: '20px' }}>
               <h3 className="font-bold text-sm mb-4" style={{ color: 'var(--text-h)' }}>Proposal Info</h3>
               <div className="space-y-3 text-xs">
-                {[
-                  { label: 'Client',   value: proposal.client },
-                  { label: 'Amount',   value: fmt(grand) },
-                  { label: 'Status',   value: <StatusBadge status={proposal.status} /> },
-                  { label: 'Created',  value: fmtDate(proposal.created_at) },
-                  { label: 'Expires',  value: fmtDate(proposal.open_till) },
-                ].map(row => (
-                  <div key={row.label} className="flex justify-between items-center py-1" style={{ borderBottom: '1px solid var(--border)' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>{row.label}</span>
-                    <span className="font-semibold" style={{ color: 'var(--text-h)' }}>{row.value}</span>
-                  </div>
-                ))}
+                <div className="flex justify-between items-center py-1" style={{ borderBottom: '1px solid var(--border)' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Client</span>
+                  <span className="font-semibold" style={{ color: 'var(--text-h)' }}>{proposal.client}</span>
+                </div>
+                <div className="flex justify-between items-center py-1" style={{ borderBottom: '1px solid var(--border)' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Amount</span>
+                  <span className="font-semibold" style={{ color: 'var(--text-h)' }}>{fmt(grand)}</span>
+                </div>
+                <div className="flex justify-between items-center py-1" style={{ borderBottom: '1px solid var(--border)' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Status Stage</span>
+                  <select
+                    className="text-xs font-bold px-2 py-1 rounded-lg border outline-none cursor-pointer"
+                    style={{ background: 'var(--bg-input)', borderColor: 'var(--border)', color: 'var(--text-h)' }}
+                    value={proposal.status}
+                    onChange={e => onSelectStatus(e.target.value)}>
+                    {['Draft', 'Pending Review', 'Sent', 'Viewed', 'Under Negotiation', 'Revision Requested', 'Accepted', 'Declined', 'Expired'].map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex justify-between items-center py-1" style={{ borderBottom: '1px solid var(--border)' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Created</span>
+                  <span className="font-semibold" style={{ color: 'var(--text-h)' }}>{fmtDate(proposal.created_at)}</span>
+                </div>
+                <div className="flex justify-between items-center py-1" style={{ borderBottom: '1px solid var(--border)' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Expires</span>
+                  <span className="font-semibold" style={{ color: 'var(--text-h)' }}>{fmtDate(proposal.open_till)}</span>
+                </div>
               </div>
             </div>
 
@@ -580,6 +607,46 @@ export default function ProposalDetail() {
           onConfirm={handleDelete}
           onCancel={() => setConfirmDelete(false)}
         />
+      )}
+
+      {showDeclineModal && (
+        <>
+          <div className="drawer-backdrop" onClick={() => setShowDeclineModal(false)} />
+          <div className="drawer-panel" style={{ width: 'min(440px, 96vw)' }}>
+            <div className="drawer-header">
+              <h2 className="font-black text-lg" style={{ color: 'var(--text-h)' }}>Mark Proposal as Declined</h2>
+              <button onClick={() => setShowDeclineModal(false)} className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ border: '1px solid var(--border)' }}>✕</button>
+            </div>
+            <div className="drawer-body space-y-4">
+              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                Please provide an optional reason for declining. If this proposal was created for a Lead, the lead status will be updated to <strong>Lost</strong>.
+              </p>
+              <div>
+                <label className="label">Rejection / Decline Reason</label>
+                <textarea
+                  className="input-3d text-sm w-full"
+                  rows={3}
+                  placeholder="e.g. Budget constrained, project scope altered, or chosen competitor..."
+                  value={rejectionReasonText}
+                  onChange={e => setRejectionReasonText(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="drawer-footer">
+              <button onClick={() => setShowDeclineModal(false)} className="flex-1 py-3 rounded-2xl text-sm font-semibold" style={{ background: 'var(--bg-input)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Cancel</button>
+              <button
+                onClick={() => {
+                  setShowDeclineModal(false)
+                  handleStatusChange('Declined', rejectionReasonText)
+                  setRejectionReasonText('')
+                }}
+                className="flex-[2] py-3 rounded-2xl text-sm font-bold text-white"
+                style={{ background: 'linear-gradient(135deg,#ef4444,#dc2626)' }}>
+                Confirm Decline
+              </button>
+            </div>
+          </div>
+        </>
       )}
     </>
   )

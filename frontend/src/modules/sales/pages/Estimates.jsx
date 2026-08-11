@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
 import { exportSalesList } from '@/services/salesApi'
+import { customerApi } from '@/services/customerApi'
 import { useClientOptions } from '@/hooks/useClientOptions'
 import { useProjectOptions } from '@/hooks/useProjectOptions'
 import StatusBadge from '../components/StatusBadge'
@@ -22,7 +23,7 @@ import { useToast } from '@/hooks/useToast'
 const fmt = v => '₹' + Number(v || 0).toLocaleString('en-IN')
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 
-const STATUSES = ['Draft', 'Sent', 'Accepted', 'Declined', 'Expired']
+const STATUSES = ['Draft', 'Pending Review', 'Sent', 'Viewed', 'Under Negotiation', 'Revision Requested', 'Accepted', 'Declined', 'Expired']
 
 /**
  * Has this estimate lapsed?
@@ -112,6 +113,28 @@ export default function Estimates({ docType = 'proforma' }) {
   }
   useEffect(() => { load() }, [docType])
 
+  const handleClientChange = async (cid) => {
+    sf('client_id', cid)
+    if (!cid) return
+    try {
+      const cust = await customerApi.get(cid)
+      if (cust) {
+        setForm(p => ({
+          ...p,
+          client_id: cid,
+          address: cust.address || cust.billing_street || p.address || '',
+          city: cust.city || cust.billing_city || p.city || '',
+          state: cust.state || cust.billing_state || p.state || '',
+          country: cust.country || cust.billing_country || p.country || 'India',
+          zip: cust.zip || cust.billing_zip || p.zip || '',
+        }))
+        setShowAddr(true)
+      }
+    } catch {
+      // ignore fetch error
+    }
+  }
+
   // Arriving from a customer profile's "New Proforma Invoice" button.
   const [searchParams, setSearchParams] = useSearchParams()
   useEffect(() => {
@@ -123,7 +146,11 @@ export default function Estimates({ docType = 'proforma' }) {
           .then(t => { applyTemplate(t); showToast(`Started from "${t.name}"`) })
           .catch(e => showToast(e.message, 'error'))
       }
-      setForm(p => ({ ...p, client_id: cid }))
+      if (cid) {
+        handleClientChange(cid)
+      } else {
+        setForm(p => ({ ...p, client_id: '' }))
+      }
       setShowDrawer(true)
       setSearchParams({}, { replace: true })
     }
@@ -484,7 +511,7 @@ export default function Estimates({ docType = 'proforma' }) {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="label">Customer *</label>
-                      <select className="input-3d text-sm" value={form.client_id} onChange={e => sf('client_id', e.target.value)}>
+                      <select className="input-3d text-sm" value={form.client_id} onChange={e => handleClientChange(e.target.value)}>
                         <option value="">Select customer…</option>
                         {clientOptions.map(c => <option key={c.id} value={c.id}>{c.company}</option>)}
                       </select>

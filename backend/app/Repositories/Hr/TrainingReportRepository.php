@@ -2,6 +2,7 @@
 
 namespace App\Repositories\Hr;
 
+use App\Support\Sql\SqlDate;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -203,11 +204,11 @@ class TrainingReportRepository
 
     private function yearExpr(string $col): string
     {
-        return "CAST(strftime('%Y', $col) AS INTEGER)";
+        return SqlDate::year($col);
     }
 
     private function monthExpr(string $col): string
     {
-        return "CAST(strftime('%m', $col) AS INTEGER)";
+        return SqlDate::month($col);
     }
 }

@@ -9,6 +9,27 @@ class VendorRepository extends BaseRepository
 {
     protected string $modelClass = Vendor::class;
 
+    /**
+     * Columns a client may sort by.
+     *
+     * A whitelist, not the request string: `orderBy` interpolates its column
+     * into the SQL, so accepting whatever arrives would be an injection point.
+     * Anything not listed falls back to the default ordering rather than
+     * erroring — a bad sort key is not worth failing a page load over.
+     */
+    private const SORTABLE = [
+        'id', 'vendor_code', 'company_name', 'email', 'phone',
+        'vendor_type', 'registration_type', 'status', 'created_at',
+    ];
+
+    /**
+     * @return \Illuminate\Database\Eloquent\Collection|\Illuminate\Contracts\Pagination\LengthAwarePaginator
+     *
+     * Pagination is OPT-IN, keyed on `per_page` being present. Six callers
+     * already read this endpoint expecting a bare array — the task-form vendor
+     * picker destructures it directly — so switching everyone to a paginated
+     * envelope would break them. Callers that want pages ask for them.
+     */
     public function filtered(int $tenantId, array $filters)
     {
         $query = Vendor::forTenant($tenantId)->with(['primaryContact', 'accountManager:id,name', 'user:id,name,email,status']);
@@ -37,6 +58,24 @@ class VendorRepository extends BaseRepository
             });
         }
 
-        return $query->latest()->get();
+        // Sorting. `latest()` stays the default so an unsorted request returns
+        // exactly the order it always has.
+        $column = $filters['sort_column'] ?? null;
+        if ($column && in_array($column, self::SORTABLE, true)) {
+            $direction = strtolower($filters['sort_direction'] ?? 'asc') === 'desc' ? 'desc' : 'asc';
+            $query->orderBy($column, $direction);
+        } else {
+            $query->latest();
+        }
+
+        if (! empty($filters['per_page'])) {
+            // Bounded: an unbounded per_page lets one request pull the whole
+            // table and undoes the point of paginating.
+            $perPage = min(max((int) $filters['per_page'], 1), 200);
+
+            return $query->paginate($perPage)->appends($filters);
+        }
+
+        return $query->get();
     }
 }

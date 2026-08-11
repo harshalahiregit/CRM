@@ -4,6 +4,7 @@ import { ArrowLeft, ArrowRight, Check, FileText, LayoutTemplate, Printer, Downlo
 import { proposalApi } from '@/services/proposalApi'
 import { proposalTemplateApi } from '@/services/proposalTemplateApi'
 import { customerApi } from '@/services/customerApi'
+import { leadApi } from '@/services/leadApi'
 import { useClientOptions } from '@/hooks/useClientOptions'
 import { useToast } from '@/hooks/useToast'
 import LineItemsTable from '../components/LineItemsTable'
@@ -38,6 +39,7 @@ export default function ProposalWizard() {
   const editing = !!id
 
   const clients = useClientOptions()
+  const [leads, setLeads] = useState([])
   const [templates, setTemplates] = useState([])
   const [contacts, setContacts] = useState([])
   const [addingContact, setAddingContact] = useState(false)
@@ -54,6 +56,55 @@ export default function ProposalWizard() {
   const sf = (k, v) => setForm(p => ({ ...p, [k]: v }))
 
   useEffect(() => { proposalTemplateApi.list().then(setTemplates).catch(() => {}) }, [])
+  useEffect(() => {
+    leadApi.list({ per_page: 500 }).then(res => setLeads(res?.data || res || [])).catch(() => {})
+  }, [])
+
+  const handleRecipientChange = async (relType, relId) => {
+    setForm(p => ({ ...p, rel_type: relType, rel_id: relId, contact_id: '' }))
+    if (!relId) return
+
+    try {
+      if (relType === 'customer') {
+        const cust = await customerApi.get(relId)
+        if (cust) {
+          const primary = cust.primaryContact || cust.primary_contact
+          setForm(p => ({
+            ...p,
+            rel_type: relType,
+            rel_id: relId,
+            proposal_to: cust.company || (primary ? `${primary.first_name || ''} ${primary.last_name || ''}`.trim() : p.proposal_to),
+            address: cust.address || cust.billing_street || p.address || '',
+            city: cust.city || cust.billing_city || p.city || '',
+            state: cust.state || cust.billing_state || p.state || '',
+            country: cust.country || cust.billing_country || p.country || 'India',
+            zip: cust.zip || cust.billing_zip || p.zip || '',
+            phone: cust.phone || primary?.phone || p.phone || '',
+            email: primary?.email || cust.email || p.email || '',
+          }))
+        }
+      } else if (relType === 'lead') {
+        const lead = await leadApi.get(relId)
+        if (lead) {
+          setForm(p => ({
+            ...p,
+            rel_type: relType,
+            rel_id: relId,
+            proposal_to: lead.company || lead.name || p.proposal_to,
+            address: lead.address || p.address || '',
+            city: lead.city || p.city || '',
+            state: lead.state || p.state || '',
+            country: lead.country || p.country || 'India',
+            zip: lead.zip || p.zip || '',
+            phone: lead.phone || p.phone || '',
+            email: lead.email || p.email || '',
+          }))
+        }
+      }
+    } catch {
+      // ignore fetch error
+    }
+  }
 
   // Load for edit
   useEffect(() => {
@@ -63,6 +114,7 @@ export default function ProposalWizard() {
       setForm({
         ...EMPTY,
         ...Object.fromEntries(Object.entries(p).filter(([k]) => k in EMPTY && p[k] !== null)),
+        rel_type: p.rel_type ?? 'customer',
         rel_id: p.rel_id ?? '',
         contact_id: p.contact_id ?? '',
         assigned_to: p.assigned_to ?? '',
@@ -76,8 +128,6 @@ export default function ProposalWizard() {
           item_name: li.item_name, description: li.description || '', qty: li.qty,
           rate: li.rate, unit: li.unit || '', tax: li.tax || 0, discount: li.discount || 0,
           discount_mode: li.discount_mode || 'fixed',
-          // Named taxes (CGST/SGST/IGST …) must survive a reload, or the
-          // picker resets to "No tax" and the breakdown silently reverts.
           taxes: Array.isArray(li.taxes) ? li.taxes : [],
         })),
       })
@@ -111,7 +161,7 @@ export default function ProposalWizard() {
   const stepError = (s) => {
     if (s === 1) {
       if (!form.subject.trim()) return 'Subject is required'
-      if (!form.rel_id) return 'Select a customer'
+      if (!form.rel_id) return form.rel_type === 'lead' ? 'Select a lead' : 'Select a customer'
       if (form.rel_type === 'customer' && !form.contact_id) return 'Select a recipient contact'
     }
     return null
@@ -256,54 +306,96 @@ export default function ProposalWizard() {
       {step === 1 && (
         <div className="card-3d max-w-3xl space-y-4" style={{ padding: '24px' }}>
           <div><label className="label">Subject *</label><input className="input-3d text-sm" value={form.subject} onChange={e => sf('subject', e.target.value)} placeholder="Website redesign proposal" /></div>
-          <div className="grid md:grid-cols-2 gap-4">
+          
+          <div className="grid md:grid-cols-3 gap-4">
             <div>
-              <label className="label">Customer *</label>
-              <select className="input-3d text-sm" value={form.rel_id} disabled={!!lockedClientId} onChange={e => { sf('rel_id', e.target.value); sf('contact_id', '') }}
+              <label className="label">Related To</label>
+              <select className="input-3d text-sm" value={form.rel_type} disabled={!!lockedClientId}
+                onChange={e => handleRecipientChange(e.target.value, '')}>
+                <option value="customer">Customer</option>
+                <option value="lead">Lead</option>
+              </select>
+            </div>
+            <div>
+              <label className="label">{form.rel_type === 'lead' ? 'Lead *' : 'Customer *'}</label>
+              <select className="input-3d text-sm" value={form.rel_id} disabled={!!lockedClientId}
+                onChange={e => handleRecipientChange(form.rel_type, e.target.value)}
                 style={lockedClientId ? { opacity: 0.7, cursor: 'not-allowed' } : undefined}>
-                <option value="">Select customer…</option>
-                {clients.map(c => <option key={c.id} value={c.id}>{c.company || c.name}</option>)}
+                <option value="">Select {form.rel_type === 'lead' ? 'lead' : 'customer'}…</option>
+                {form.rel_type === 'customer'
+                  ? clients.map(c => <option key={c.id} value={c.id}>{c.company || c.name}</option>)
+                  : leads.map(l => <option key={l.id} value={l.id}>{l.name || l.company} {l.company ? `(${l.company})` : ''}</option>)
+                }
               </select>
               {lockedClientId && <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>🔒 Locked — started from this customer's profile.</p>}
             </div>
-            <div>
-              <label className="label">Recipient Contact *</label>
-              <select className="input-3d text-sm" value={form.contact_id} onChange={e => {
-                const c = contacts.find(x => String(x.id) === e.target.value)
-                setForm(p => ({
-                  ...p, contact_id: e.target.value,
-                  proposal_to: p.proposal_to || (c ? c.name : ''),
-                  email: c?.email || p.email, phone: c?.phone || p.phone,
-                }))
-              }} disabled={!form.rel_id}>
-                <option value="">{form.rel_id ? 'Select contact…' : 'Pick a customer first'}</option>
-                {contacts.map(c => <option key={c.id} value={c.id}>{c.name}{c.email ? ` — ${c.email}` : ''}</option>)}
-              </select>
-              {/* Add a contact without leaving the wizard — same form as the customer
-                  profile (ContactFormDrawer), so nothing is captured differently here. */}
-              {form.rel_id && (
-                <button type="button" onClick={() => setAddingContact(true)}
-                  className="flex items-center gap-1.5 mt-2 text-xs font-bold" style={{ color: 'var(--accent)' }}>
-                  <UserPlus size={13} /> New contact for this customer
-                </button>
-              )}
-              {form.rel_id && !contacts.length && (
-                <p className="text-[11px] mt-1" style={{ color: '#f59e0b' }}>
-                  This customer has no contacts yet — add one above to continue.
-                </p>
-              )}
-            </div>
+            {form.rel_type === 'customer' ? (
+              <div>
+                <label className="label">Recipient Contact *</label>
+                <select className="input-3d text-sm" value={form.contact_id} onChange={e => {
+                  const c = contacts.find(x => String(x.id) === e.target.value)
+                  setForm(p => ({
+                    ...p, contact_id: e.target.value,
+                    proposal_to: p.proposal_to || (c ? c.name : ''),
+                    email: c?.email || p.email, phone: c?.phone || p.phone,
+                  }))
+                }} disabled={!form.rel_id}>
+                  <option value="">{form.rel_id ? 'Select contact…' : 'Pick a customer first'}</option>
+                  {contacts.map(c => <option key={c.id} value={c.id}>{c.name}{c.email ? ` — ${c.email}` : ''}</option>)}
+                </select>
+                {form.rel_id && (
+                  <button type="button" onClick={() => setAddingContact(true)}
+                    className="flex items-center gap-1.5 mt-2 text-xs font-bold" style={{ color: 'var(--accent)' }}>
+                    <UserPlus size={13} /> New contact for this customer
+                  </button>
+                )}
+                {form.rel_id && !contacts.length && (
+                  <p className="text-[11px] mt-1" style={{ color: '#f59e0b' }}>
+                    This customer has no contacts yet — add one above to continue.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div>
+                <label className="label">Recipient Name</label>
+                <input className="input-3d text-sm" value={form.proposal_to} onChange={e => sf('proposal_to', e.target.value)} placeholder="Display name" />
+              </div>
+            )}
           </div>
+
           <div className="grid md:grid-cols-3 gap-4">
             <div><label className="label">Date</label><input type="date" className="input-3d text-sm" value={form.date} onChange={e => sf('date', e.target.value)} /></div>
             <div><label className="label">Open Till</label><input type="date" className="input-3d text-sm" value={form.open_till} onChange={e => sf('open_till', e.target.value)} /></div>
             <div><label className="label">Currency</label><select className="input-3d text-sm" value={form.currency} onChange={e => sf('currency', e.target.value)}>{['INR', 'USD', 'EUR', 'GBP', 'AED'].map(c => <option key={c}>{c}</option>)}</select></div>
           </div>
+
           <div className="grid md:grid-cols-2 gap-4">
             <div><label className="label">Proposal To (display name)</label><input className="input-3d text-sm" value={form.proposal_to} onChange={e => sf('proposal_to', e.target.value)} /></div>
             <div><label className="label">Tags</label><input className="input-3d text-sm" value={form.tags} onChange={e => sf('tags', e.target.value)} placeholder="comma,separated" /></div>
           </div>
-          <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer" style={{ color: 'var(--text-muted)' }}>
+
+          {/* ── Address & Contact Info (Auto-fetched & Editable) ── */}
+          <div className="pt-3 border-t space-y-3" style={{ borderColor: 'var(--border)' }}>
+            <p className="label-caps" style={{ color: 'var(--accent)' }}>Address & Contact Details (Auto-fetched)</p>
+            <div>
+              <label className="label">Street Address</label>
+              <input className="input-3d text-sm" value={form.address} onChange={e => sf('address', e.target.value)} placeholder="Building, street, area..." />
+            </div>
+            <div className="grid md:grid-cols-2 gap-4">
+              <div><label className="label">City</label><input className="input-3d text-sm" value={form.city} onChange={e => sf('city', e.target.value)} placeholder="City" /></div>
+              <div><label className="label">State</label><input className="input-3d text-sm" value={form.state} onChange={e => sf('state', e.target.value)} placeholder="State" /></div>
+            </div>
+            <div className="grid md:grid-cols-2 gap-4">
+              <div><label className="label">Country</label><input className="input-3d text-sm" value={form.country} onChange={e => sf('country', e.target.value)} placeholder="Country" /></div>
+              <div><label className="label">ZIP / PIN Code</label><input className="input-3d text-sm" value={form.zip} onChange={e => sf('zip', e.target.value)} placeholder="ZIP code" /></div>
+            </div>
+            <div className="grid md:grid-cols-2 gap-4">
+              <div><label className="label">Email</label><input type="email" className="input-3d text-sm" value={form.email} onChange={e => sf('email', e.target.value)} placeholder="Recipient email" /></div>
+              <div><label className="label">Phone</label><input className="input-3d text-sm" value={form.phone} onChange={e => sf('phone', e.target.value)} placeholder="Recipient phone" /></div>
+            </div>
+          </div>
+
+          <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer pt-2" style={{ color: 'var(--text-muted)' }}>
             <input type="checkbox" checked={form.public_view_otp_enabled} onChange={e => sf('public_view_otp_enabled', e.target.checked)} />
             Require OTP verification (emailed code) before the client can open the public link
           </label>

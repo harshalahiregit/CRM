@@ -11,12 +11,14 @@ import RegistrationStatusCard from '@/components/vendor/RegistrationStatusCard'
  * "continue" a workflow whose decisions are not theirs. A vendor has exactly one
  * registration, and their only question is "where has it got to?".
  *
- * Strictly informational — no buttons, no wizard, no navigation into one. Documents
- * are the one thing the vendor actually supplies, so that is the single pointer out.
+ * A summary, not the workflow: the six steps themselves are worked through under
+ * My Onboarding. The step list here is whatever /progress returns, so this page
+ * and the wizard can never disagree about which stage is current.
  */
 export default function MyRegistrationStatus() {
   const [vendor, setVendor] = useState(null)
   const [onboarding, setOnboarding] = useState(null)
+  const [progress, setProgress] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -24,34 +26,53 @@ export default function MyRegistrationStatus() {
     Promise.all([
       portalApi.me().catch(() => null),
       portalApi.onboarding.list().catch(() => []),
-    ]).then(([me, list]) => {
+    ]).then(async ([me, list]) => {
       if (!alive) return
       setVendor(me?.vendor ?? me ?? null)
       // A vendor owns ONE registration; take the first and ignore any others rather
       // than exposing a list the portal has no business showing.
       const rows = Array.isArray(list) ? list : (list?.data ?? [])
-      setOnboarding(rows[0] ?? null)
-      setLoading(false)
+      const ob = rows[0] ?? null
+      setOnboarding(ob)
+
+      // The six steps come from the server, which owns the completion rules. This
+      // page used to invent its own labels ("Workforce", "Compliance") and derive
+      // done-ness from current_step alone, so it named stages that do not exist and
+      // disagreed with the wizard about which one was current.
+      if (ob?.id) {
+        const pr = await portalApi.onboarding.progress(ob.id).catch(() => null)
+        if (alive && pr?.steps) setProgress(pr)
+      }
+      if (alive) setLoading(false)
     })
     return () => { alive = false }
   }, [])
 
   const steps = useMemo(() => {
-    const step = onboarding?.current_step ?? 0
-    const approved = onboarding?.status === 'Approved'
-    const active = (vendor?.status || '').toLowerCase() === 'active'
-    // `done` once the wizard has moved past that step, or once approved outright.
-    const at = (n) => ({ done: approved || step > n, current: !approved && step === n })
+    const current = onboarding?.current_step ?? 0
 
+    // Server-owned: same six steps, same completion rules, same labels the wizard
+    // shows. Nothing is inferred here beyond which one is current.
+    if (progress?.steps?.length) {
+      return progress.steps.map((s) => ({
+        key: s.key,
+        label: s.label,
+        done: !!s.complete,
+        current: !s.complete && s.step === current,
+      }))
+    }
+
+    // Progress could not be fetched — name the steps correctly anyway rather than
+    // falling back to labels for stages that do not exist.
     return [
-      { key: 'company',    label: 'Company Details', ...at(2) },
-      { key: 'documents',  label: 'Documents',       ...at(3) },
-      { key: 'workforce',  label: 'Workforce',       ...at(4) },
-      { key: 'compliance', label: 'Compliance',      ...at(5) },
-      { key: 'approval',   label: 'Final Approval',  done: approved, current: !approved && step >= 6 },
-      { key: 'activated',  label: 'Portal Activated', done: active,  current: approved && !active },
-    ]
-  }, [onboarding, vendor])
+      { key: 'kickoff',      label: 'Kickoff MOM' },
+      { key: 'profile',      label: 'Company Profile' },
+      { key: 'documents',    label: 'Documents' },
+      { key: 'review',       label: 'Under Review' },
+      { key: 'confirmation', label: 'Confirmation' },
+      { key: 'submission',   label: 'Admin Approval' },
+    ].map((s, i) => ({ ...s, done: current > i + 1, current: current === i + 1 }))
+  }, [onboarding, progress])
 
   if (loading) {
     return <div style={{ padding: 24, color: 'var(--text-muted)', fontSize: 13 }}>Loading your registration…</div>
@@ -72,14 +93,13 @@ export default function MyRegistrationStatus() {
 
       <RegistrationStatusCard
         steps={steps}
-        title="Progress"
-        note="This page is for information only — there is nothing to action here."
+        title="Onboarding Progress"
+        note="A summary of where your onboarding stands. Continue it under My Onboarding."
       />
 
       <p style={{ margin: '14px 2px 0', fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-        The one step you control is paperwork — upload anything outstanding under{' '}
-        <strong style={{ color: 'var(--text-h)' }}>Documents</strong>. Everything else is reviewed and
-        approved by your account team.
+        Work through the steps under <strong style={{ color: 'var(--text-h)' }}>My Onboarding</strong>.
+        Document verification and final approval are carried out by your account team.
       </p>
     </div>
   )

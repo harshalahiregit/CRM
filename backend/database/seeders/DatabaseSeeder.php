@@ -12,59 +12,69 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         // Create demo tenant
-        $tenant = Tenant::create([
-            'name'      => 'MLA Consulting',
-            'slug'      => 'mla-consulting',
-            'subdomain' => 'mla-consulting',
-            'plan'      => 'professional',
-            'status'    => 'active',
-            'branding_color' => '#2563EB',
-        ]);
+        $tenant = Tenant::firstOrCreate(
+            ['subdomain' => 'mla-consulting'],
+            [
+                'name'      => 'MLA Consulting',
+                'slug'      => 'mla-consulting',
+                'plan'      => 'professional',
+                'status'    => 'active',
+                'branding_color' => '#2563EB',
+            ]
+        );
 
         // Create super admin
-        User::create([
-            'tenant_id' => $tenant->id,
-            'name'      => 'Super Admin',
-            'email'     => 'admin@mlacrm.com',
-            'password'  => Hash::make('Admin@12345'),
-            'role'      => 'admin',
-            'status'    => 'active',
-            'company'   => 'MLA Consulting',
-        ]);
+        User::firstOrCreate(
+            ['email' => 'admin@mlacrm.com'],
+            [
+                'tenant_id' => $tenant->id,
+                'name'      => 'Super Admin',
+                'password'  => Hash::make('Admin@12345'),
+                'role'      => 'admin',
+                'status'    => 'active',
+                'company'   => 'MLA Consulting',
+            ]
+        );
 
         // Demo vendor (active for testing)
-        User::create([
-            'tenant_id'   => $tenant->id,
-            'name'        => 'Demo Vendor',
-            'email'       => 'vendor@mlacrm.com',
-            'password'    => Hash::make('Vendor@12345'),
-            'role'        => 'vendor',
-            'vendor_type' => 'standard',
-            'status'      => 'active',
-            'company'     => 'Demo Supplies Ltd',
-        ]);
+        User::firstOrCreate(
+            ['email' => 'vendor@mlacrm.com'],
+            [
+                'tenant_id'   => $tenant->id,
+                'name'        => 'Demo Vendor',
+                'password'    => Hash::make('Vendor@12345'),
+                'role'        => 'vendor',
+                'vendor_type' => 'standard',
+                'status'      => 'active',
+                'company'     => 'Demo Supplies Ltd',
+            ]
+        );
 
         // Demo TPV (active for testing)
-        User::create([
-            'tenant_id' => $tenant->id,
-            'name'      => 'Demo TPV',
-            'email'     => 'tpv@mlacrm.com',
-            'password'  => Hash::make('TPV@12345'),
-            'role'      => 'third_party_vendor',
-            'tpv_type'  => 'permanent',
-            'status'    => 'active',
-        ]);
+        User::firstOrCreate(
+            ['email' => 'tpv@mlacrm.com'],
+            [
+                'tenant_id' => $tenant->id,
+                'name'      => 'Demo TPV',
+                'password'  => Hash::make('TPV@12345'),
+                'role'      => 'third_party_vendor',
+                'tpv_type'  => 'permanent',
+                'status'    => 'active',
+            ]
+        );
 
         // Demo client (active for testing)
-        User::create([
-            'tenant_id' => $tenant->id,
-            'name'      => 'Demo Client',
-            'email'     => 'client@mlacrm.com',
-            'password'  => Hash::make('Client@12345'),
-            'role'      => 'client',
-            'status'    => 'active',
-            'company'   => 'Acme Corp',
-        ]);
+        User::firstOrCreate(
+            ['email' => 'client@mlacrm.com'],
+            [
+                'tenant_id' => $tenant->id,
+                'name'      => 'Demo Client',
+                'password'  => Hash::make('Client@12345'),
+                'role'      => 'client',
+                'status'    => 'active',
+                'company'   => 'Acme Corp',
+            ]
+        );
 
         // Lead pipeline statuses + sources. Not demo data — the Leads kanban has no
         // columns without statuses, so every workspace needs these. This seeder
@@ -80,6 +90,9 @@ class DatabaseSeeder extends Seeder
 
         // Inventory catalog + stock ledger demo data (owner: Shivam).
         $this->call(InventorySeeder::class);
+
+        // Sales demo data (Contracts, Web-To-Lead Forms)
+        $this->call(SalesDemoSeeder::class);
 
         $this->command->info('✅ Demo data seeded successfully!');
         $this->command->info('');

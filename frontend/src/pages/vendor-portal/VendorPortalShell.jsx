@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import {
-  LayoutDashboard, ClipboardList, HardHat, LogOut, Building2,
+  LayoutDashboard, ClipboardList, ClipboardCheck, HardHat, LogOut, Building2,
   Sun, Moon, Bell, User, FileText, HelpCircle, ChevronRight, Menu, X,
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
@@ -61,6 +61,7 @@ export default function VendorPortalShell() {
   // screens these pages were built from and left vendors unsure whose data it was.
   const mainNavItems = [
     { to: '/vendor-portal/dashboard',    label: 'Dashboard',       icon: LayoutDashboard },
+    { to: '/vendor-portal/onboarding',   label: 'My Onboarding',   icon: ClipboardCheck },
     { to: '/vendor-portal/registration', label: 'My Company',      icon: Building2 },
     ...(vendor?.status === 'Active'
       ? [{ to: '/vendor-portal/workforce', label: 'My Workforce',  icon: HardHat }]

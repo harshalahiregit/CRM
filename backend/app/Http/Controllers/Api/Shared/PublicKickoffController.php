@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Services\Shared\KickoffMeetingService;
 use App\Support\Shared\KickoffSubject;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Unauthenticated vendor acknowledgement of the minutes.
@@ -23,6 +24,29 @@ class PublicKickoffController extends Controller
 {
     public function __construct(private KickoffMeetingService $kickoffService)
     {
+    }
+
+    /**
+     * GET /kickoff/ack/{token}/mom — the generated MOM PDF, inline.
+     *
+     * Lets a vendor READ the minutes before signing them; acknowledging blind was
+     * the only option before. Streams the one file the meeting already owns, so
+     * there is no second copy and nothing to keep in step: a MOM regenerated after
+     * an attendance change is what this returns.
+     *
+     * The token is the only identifier in the URL — no storage path, no meeting
+     * id. The filename is deliberately generic for the same reason.
+     */
+    public function mom(string $token)
+    {
+        $meeting = $this->kickoffService->resolveMomByToken($token);
+
+        return Storage::disk('kickoff_docs')->response(
+            $meeting->mom_path,
+            'Kickoff-Minutes.pdf',
+            ['Content-Type' => 'application/pdf'],
+            'inline'
+        );
     }
 
     /** The minutes to acknowledge. Read-only. */

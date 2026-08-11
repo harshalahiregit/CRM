@@ -71,7 +71,7 @@ export default function KickoffMeetings() {
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <p className="label-caps" style={{ color: '#a78bfa', margin: 0, fontSize: 11, fontWeight: 800, letterSpacing: '0.08em' }}>PRE-ONBOARDING</p>
-          <h1 style={{ color: 'var(--text-h)', fontSize: 24, fontWeight: 900, margin: '2px 0 0', letterSpacing: '-0.02em' }}>Kickoff Meetings</h1>
+          <h1 style={{ color: 'var(--text-h)', fontSize: 24, fontWeight: 900, margin: '2px 0 0', letterSpacing: '-0.02em' }}>Meetings</h1>
           <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: '4px 0 0' }}>Schedule, track attendance & minutes, and capture vendor acknowledgement.</p>
         </div>
         <div style={{ display: 'flex', gap: 9 }}>
@@ -143,7 +143,17 @@ export default function KickoffMeetings() {
                     <tr key={m.id} className="ko-row" onClick={() => navigate(`/app/tpv/kickoff/${m.id}`)} style={{ cursor: 'pointer', borderTop: '1px solid var(--border)' }}>
                       <td style={td}><span style={{ fontWeight: 800, color: 'var(--text-h)' }}>#{m.id}</span></td>
                       <td style={td}>
-                        <div style={{ fontWeight: 700, color: 'var(--text-h)', maxWidth: 190, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.subject?.name || m.title}</div>
+                        <div style={{ fontWeight: 700, color: 'var(--text-h)', maxWidth: 190, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                          title={(m.subject_list || []).map(s => s.name).join(', ') || undefined}>
+                          {m.subject?.name || m.title}
+                          {/* One row cannot hold five names — the count says there
+                              are more and the tooltip lists them. */}
+                          {m.subject_list?.length > 1 && (
+                            <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, color: '#a78bfa' }}>
+                              +{m.subject_list.length - 1}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td style={td}><Chip icon={Users}>{m.attendees_count ?? 0}</Chip></td>
                       <td style={td}>{koModeLabel(m.mode)}</td>

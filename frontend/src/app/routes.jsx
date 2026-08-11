@@ -11,6 +11,8 @@ import VendorRegisterPage from '@/pages/auth/VendorRegisterPage'
 import TPVRegisterPage from '@/pages/auth/TPVRegisterPage'
 import ClientRegisterPage from '@/pages/auth/ClientRegisterPage'
 import PendingApprovalPage from '@/pages/auth/PendingApprovalPage'
+import SetPasswordPage from '@/pages/auth/SetPasswordPage'
+import ForgotPasswordPage from '@/pages/auth/ForgotPasswordPage'
 
 // Core pages (lazy)
 const DashboardPage = lazy(() => import('@/pages/dashboard/DashboardPage'))
@@ -282,11 +284,13 @@ const KickoffMeetings = lazy(() => import('@/modules/shared/pages/KickoffMeeting
 const KickoffMeetingCreate = lazy(() => import('@/modules/shared/pages/KickoffMeetingCreate'))
 const KickoffMeetingDetail = lazy(() => import('@/modules/shared/pages/KickoffMeetingDetail'))
 const KickoffAck = lazy(() => import('@/pages/kickoff/KickoffAck'))
+const KickoffMom = lazy(() => import('@/pages/kickoff/KickoffMom'))
 
 // Vendor Self-Service Portal — its own chrome, gated to vendor roles. Every
 // endpoint resolves the vendor from the token (EnsureVendorPortalAccess).
 const VendorPortalShell = lazy(() => import('@/pages/vendor-portal/VendorPortalShell'))
 const MyRegistrationStatus = lazy(() => import('@/pages/vendor-portal/MyRegistrationStatus'))
+const PortalOnboardingEntry = lazy(() => import('@/pages/vendor-portal/PortalOnboardingEntry'))
 const PortalDashboard = lazy(() => import('@/pages/vendor-portal/PortalDashboard'))
 const PortalDocuments = lazy(() => import('@/pages/vendor-portal/PortalDocuments'))
 const PortalOrderDetail = lazy(() => import('@/pages/vendor-portal/PortalOrderDetail'))
@@ -355,7 +359,11 @@ export default function AppRoutes() {
         <Route path="register/client" element={<ClientRegisterPage />} />
         <Route path="register/company" element={<S><CompanyRegisterPage /></S>} />
         <Route path="pending-approval" element={<PendingApprovalPage />} />
-        <Route path="forgot-password" element={<GuestRoute><ComingSoon name="Forgot Password" /></GuestRoute>} />
+        <Route path="forgot-password" element={<GuestRoute><ForgotPasswordPage /></GuestRoute>} />
+        {/* Where a vendor login-link email lands. Not GuestRoute-wrapped: an
+            admin already signed in must still be able to open the link they
+            just sent, to check it works. */}
+        <Route path="set-password" element={<S><SetPasswordPage /></S>} />
         <Route path="verify-email" element={<ComingSoon name="Email Verification" />} />
       </Route>
 
@@ -371,6 +379,8 @@ export default function AppRoutes() {
       <Route path="/scan/:token" element={<S><GateScan /></S>} />
       <Route path="/checklist/:token" element={<S><ChecklistFill /></S>} />
       <Route path="/kickoff/ack/:token" element={<S><KickoffAck /></S>} />
+      {/* Read-only view of the same minutes — the e-mail's View MOM PDF link. */}
+      <Route path="/kickoff/mom/:token" element={<S><KickoffMom /></S>} />
 
       {/* Protected app routes */}
       <Route path="/app" element={<ProtectedRoute><AppShell /></ProtectedRoute>}>
@@ -669,14 +679,17 @@ export default function AppRoutes() {
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="dashboard"         element={<S><PortalDashboard /></S>} />
 
-        {/* Onboarding is an ADMIN workflow and is no longer part of the vendor
-            portal. Redirected rather than deleted so existing bookmarks and emailed
-            links land on the dashboard, where the read-only status card lives.
+        {/* Onboarding is the VENDOR's own six-step workflow, so it is served here
+            as well as under /app/tpv. The SAME TpvOnboardingWizard renders both:
+            useVendorModule() swaps tpvApi for portalApi on a /vendor-portal path,
+            and canApprove/canManage are both false for a third_party_vendor, so
+            the admin-only review and approval controls never render for a vendor.
+            The portal has no LIST — a vendor has exactly one onboarding, which
+            PortalOnboardingEntry resolves from the token.
             The admin routes under /app/tpv are untouched. */}
-        {/* One read-only status page replaces the onboarding LIST + wizard. */}
         <Route path="registration"      element={<S><MyRegistrationStatus /></S>} />
-        <Route path="onboarding"        element={<Navigate to="/vendor-portal/registration" replace />} />
-        <Route path="onboarding/:id"    element={<Navigate to="/vendor-portal/registration" replace />} />
+        <Route path="onboarding"        element={<S><PortalOnboardingEntry /></S>} />
+        <Route path="onboarding/:id"    element={<S><TpvOnboardingWizard /></S>} />
 
         {/* TPV Workforce — PortalWorkforceShell resolves vendor from token (no :vendorId in URL). */}
         <Route path="workforce" element={<S><PortalWorkforceShell /></S>}>

@@ -22,7 +22,7 @@ import RichTextEditor from '@/components/ui/RichTextEditor'
 const fmt = v => '₹' + Number(v || 0).toLocaleString('en-IN')
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 
-const STATUSES = ['Open', 'Sent', 'Revised', 'Declined', 'Accepted', 'Expired']
+const STATUSES = ['Draft', 'Pending Review', 'Sent', 'Viewed', 'Under Negotiation', 'Revision Requested', 'Accepted', 'Declined', 'Expired']
 const STAFF = ['Zafar Farooque', 'Priya Sharma', 'Rohit Verma', 'Anjali Singh', 'Karan Mehta']
 
 const EMPTY_FORM = {
