@@ -7,6 +7,7 @@ import { customerApi } from '@/services/customerApi'
 import { useClientOptions } from '@/hooks/useClientOptions'
 import { useToast } from '@/hooks/useToast'
 import LineItemsTable from '../components/LineItemsTable'
+import DocumentTemplateBar from '../components/DocumentTemplateBar'
 import PagesEditor from '../components/PagesEditor'
 import CoverEditor from '../components/CoverEditor'
 import ContactFormDrawer from '@/modules/customer/components/ContactFormDrawer'
@@ -320,6 +321,10 @@ export default function ProposalWizard() {
       {/* ── Step 3: Commercial ── */}
       {step === 3 && (
         <div className="card-3d space-y-4" style={{ padding: '20px' }}>
+          {/* Proposal templates carry cover + content pages but deliberately no
+              pricing, so the costing step gets its own line-item templates. */}
+          <DocumentTemplateBar docType="proposal" form={form}
+            onApply={patch => setForm(p => ({ ...p, ...patch }))} />
           <LineItemsTable
             items={form.line_items}
             onChange={items => sf('line_items', items)}

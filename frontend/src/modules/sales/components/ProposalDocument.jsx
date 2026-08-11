@@ -1,3 +1,4 @@
+import { richHtml } from '@/lib/richText'
 /**
  * Compiled client-facing proposal document — the single source of what the
  * client sees. Used by the wizard's Review step AND the public portal page,
@@ -73,7 +74,7 @@ export default function ProposalDocument({ proposal }) {
         {/* Legacy rule: no pages → notes as the body */}
         {!pages.length && proposal.notes && (
           <div className="mb-8">
-            <div className="rich-content text-sm whitespace-pre-wrap" style={{ color: 'var(--text-h)' }}>{proposal.notes}</div>
+            <div className="rich-content text-sm" style={{ color: 'var(--text-h)' }} dangerouslySetInnerHTML={richHtml(proposal.notes)} />
           </div>
         )}
 

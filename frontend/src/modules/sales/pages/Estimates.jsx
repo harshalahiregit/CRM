@@ -5,11 +5,16 @@ import {
   LayoutGrid, List, FileText, User, Tag, MapPin, ChevronDown
 } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
+import { exportSalesList } from '@/services/salesApi'
 import { useClientOptions } from '@/hooks/useClientOptions'
 import { useProjectOptions } from '@/hooks/useProjectOptions'
 import StatusBadge from '../components/StatusBadge'
 import RowMenu from '../components/RowMenu'
 import LineItemsTable from '../components/LineItemsTable'
+import ListToolbar from '@/components/ui/ListToolbar'
+import { useListView } from '@/hooks/useListView'
+import SaveAsTemplateButton from '../components/SaveAsTemplateButton'
+import { salesDocumentTemplateApi } from '@/services/salesDocumentTemplateApi'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import RichTextEditor from '@/components/ui/RichTextEditor'
 import { useToast } from '@/hooks/useToast'
@@ -18,6 +23,36 @@ const fmt = v => '₹' + Number(v || 0).toLocaleString('en-IN')
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 
 const STATUSES = ['Draft', 'Sent', 'Accepted', 'Declined', 'Expired']
+
+/**
+ * Has this estimate lapsed?
+ *
+ * Nothing in the app ever writes the 'Expired' status — the old CRM did it from a
+ * nightly cron, and without one the Expired tab could never match a row and an
+ * Expired count would sit permanently at zero. So it is derived on read instead,
+ * using the old CRM's exact rule: only a SENT estimate expires (a draft was never
+ * put out, and an accepted or declined one already has its answer), and only once
+ * the valid-until date is in the past.
+ *
+ * A stored 'Expired' still counts, so if a scheduled job is added later this keeps
+ * working with no change here.
+ */
+const isExpired = (e) => {
+  if (e.status === 'Expired') return true
+  if (e.status !== 'Sent' || !e.valid_until) return false
+
+  // Compared as plain YYYY-MM-DD strings (which sort chronologically), NOT as
+  // Date objects. The API serialises valid_until as UTC midnight, so
+  // `new Date(...)` lands on the previous day for anyone west of UTC and would
+  // expire their estimates a day early. Slicing the date part sidesteps the
+  // timezone entirely, and keeps "valid until today" valid.
+  const d = new Date()
+  const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+  return String(e.valid_until).slice(0, 10) < today
+}
+
+const effectiveStatus = (e) => (isExpired(e) ? 'Expired' : e.status)
 const STAFF = ['Zafar Farooque', 'Priya Sharma', 'Rohit Verma', 'Anjali Singh', 'Karan Mehta']
 
 const EMPTY_FORM = {
@@ -43,6 +78,11 @@ export default function Estimates({ docType = 'proforma' }) {
   const isEstimate = docType === 'estimate'
   const DOC_LABEL = isEstimate ? 'Estimate' : 'Proforma Invoice'
   const DOC_LABEL_PLURAL = isEstimate ? 'Estimates' : 'Proforma Invoices'
+
+  // Estimates start on the chooser page (blank vs a saved template), matching
+  // proposals. Proforma invoices share this component but have no chooser route,
+  // so they keep opening the form directly.
+  const startNew = () => isEstimate ? navigate('/app/sales/estimates/new') : setShowDrawer(true)
   const navigate = useNavigate()
   const clientOptions = useClientOptions()
   const projectOptions = useProjectOptions()
@@ -64,15 +104,25 @@ export default function Estimates({ docType = 'proforma' }) {
 
   const load = () => {
     setLoading(true)
-    salesApi.estimates.list({ status: filter !== 'All' ? filter : undefined, type: docType }).then(d => { setData(d); setLoading(false) })
+    // Unfiltered on purpose: the KPI boxes must count every estimate of this type,
+    // and "Expired" is derived client-side (see isExpired) so the server can't
+    // filter on it. The endpoint isn't paginated, so this is one request either way
+    // and switching tabs no longer refetches.
+    salesApi.estimates.list({ type: docType }).then(d => { setData(d); setLoading(false) })
   }
-  useEffect(() => { load() }, [filter, docType])
+  useEffect(() => { load() }, [docType])
 
   // Arriving from a customer profile's "New Proforma Invoice" button.
   const [searchParams, setSearchParams] = useSearchParams()
   useEffect(() => {
     if (searchParams.get('new') === '1') {
       const cid = searchParams.get('client_id') || ''
+      const tpl = searchParams.get('template')
+      if (tpl) {
+        salesDocumentTemplateApi.get(tpl)
+          .then(t => { applyTemplate(t); showToast(`Started from "${t.name}"`) })
+          .catch(e => showToast(e.message, 'error'))
+      }
       setForm(p => ({ ...p, client_id: cid }))
       setShowDrawer(true)
       setSearchParams({}, { replace: true })
@@ -80,6 +130,39 @@ export default function Estimates({ docType = 'proforma' }) {
   }, [])
 
   const sf = (k, v) => setForm(p => ({ ...p, [k]: v }))
+
+
+  /**
+   * Turn a chosen template into form values.
+   *
+   * Applying happens here rather than inside the form: the template is chosen on
+   * the "New" page before this drawer opens. A template only overwrites a default
+   * it actually carries, so choosing one never blanks something already set
+   * (e.g. the client_id carried in from a customer profile).
+   */
+  const applyTemplate = (t) => setForm(p => ({
+    ...p,
+    line_items: (t.line_items || []).map(i => ({
+      item_id: i.item_id ?? null,
+      item_name: i.item_name,
+      description: i.description ?? '',
+      hsn_sac_code: i.hsn_sac_code ?? '',
+      qty: Number(i.qty) || 1,
+      unit: i.unit || 'pcs',
+      rate: Number(i.rate) || 0,
+      tax: Number(i.tax) || 0,
+      taxes: i.taxes ?? null,
+      discount: Number(i.discount) || 0,
+      discount_mode: i.discount_mode || 'fixed',
+    })),
+    ...(t.terms ? { terms: t.terms } : {}),
+    ...(t.adminnote ? { adminnote: t.adminnote } : {}),
+    ...(t.clientnote ? { clientnote: t.clientnote } : {}),
+    ...(t.currency ? { currency: t.currency } : {}),
+    ...(t.discount_type ? { discount_type: t.discount_type } : {}),
+    ...(t.discount_mode ? { discount_mode: t.discount_mode } : {}),
+    ...(Number(t.discount_value) ? { discount_value: Number(t.discount_value) } : {}),
+  }))
 
   const handleCreate = async () => {
     if (!form.subject || !form.client_id) return showToast('Subject & customer required', 'error')
@@ -90,13 +173,27 @@ export default function Estimates({ docType = 'proforma' }) {
     load()
   }
 
+  const countBy = (status) => data.filter(e => effectiveStatus(e) === status).length
+
   const stats = {
     total: data.length,
-    draft: data.filter(e => e.status === 'Draft').length,
-    sent: data.filter(e => e.status === 'Sent').length,
-    accepted: data.filter(e => e.status === 'Accepted').length,
+    draft: countBy('Draft'),
+    sent: countBy('Sent'),
+    accepted: countBy('Accepted'),
+    declined: countBy('Declined'),
+    expired: countBy('Expired'),
     totalVal: data.reduce((s, e) => s + Number(e.total || 0), 0),
   }
+
+  // Status tabs and the table both read the derived status, so a Sent-but-lapsed
+  // estimate is counted, filtered and badged as Expired consistently.
+  const byStatus = filter === 'All' ? data : data.filter(e => effectiveStatus(e) === filter)
+
+  // Search + rows-per-page on top of the status filter. The KPI boxes above stay
+  // on the FULL set (`data`) — they're a summary of the workspace, not of the
+  // current search.
+  const { search, setSearch, pageSize, setPageSize, visible, matched } =
+    useListView(byStatus, ['reference', 'subject', 'client', 'status'])
 
   const handleConvertToProforma = async (estimate) => {
     try {
@@ -159,7 +256,7 @@ export default function Estimates({ docType = 'proforma' }) {
               </button>
             ))}
           </div>
-          <button onClick={() => setShowDrawer(true)}
+          <button onClick={() => startNew()}
             className="flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold text-white transition-all hover:scale-[1.03]"
             style={{ background: 'linear-gradient(135deg,#9f67ff,#7C3AED,#5b21b6)', boxShadow: '0 6px 20px rgba(124,58,237,0.45)' }}>
             <Plus size={15} /> New {DOC_LABEL}
@@ -168,12 +265,14 @@ export default function Estimates({ docType = 'proforma' }) {
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
         {[
           { l: 'Total', v: stats.total, c: '#7C3AED' },
           { l: 'Draft', v: stats.draft, c: '#94a3b8' },
           { l: 'Sent', v: stats.sent, c: '#a78bfa' },
           { l: 'Accepted', v: stats.accepted, c: '#10b981' },
+          { l: 'Declined', v: stats.declined, c: '#ef4444' },
+          { l: 'Expired', v: stats.expired, c: '#f59e0b' },
           { l: 'Total Value', v: fmt(stats.totalVal), c: '#7C3AED' },
         ].map(k => (
           <div key={k.l} className="kpi-3d py-4 px-5">
@@ -183,9 +282,17 @@ export default function Estimates({ docType = 'proforma' }) {
         ))}
       </div>
 
-      {/* Filter tabs */}
+      {/* Toolbar: search · status tabs · count · rows-per-page · refresh · export */}
       {viewMode === 'table' && (
-        <div className="flex items-center gap-3 flex-wrap">
+        <ListToolbar
+          search={search} onSearch={setSearch}
+          searchPlaceholder={`Search ${DOC_LABEL.toLowerCase()}s…`}
+          count={matched} total={data.length} unit="record"
+          pageSize={pageSize} onPageSize={setPageSize}
+          onRefresh={load}
+          onExport={() => exportSalesList('estimates', { type: docType, status: filter !== 'All' ? filter : undefined, search: search || undefined })
+            .catch(e => showToast(e.message, 'error'))}
+        >
           <div className="flex gap-1.5 p-1 rounded-2xl" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
             {['All', ...STATUSES].map(f => (
               <button key={f} onClick={() => setFilter(f)}
@@ -198,7 +305,7 @@ export default function Estimates({ docType = 'proforma' }) {
               </button>
             ))}
           </div>
-        </div>
+        </ListToolbar>
       )}
 
       {/* ── Table View ── */}
@@ -217,7 +324,7 @@ export default function Estimates({ docType = 'proforma' }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.map(e => (
+                  {visible.map(e => (
                     <tr key={e.id} className="cursor-pointer transition-colors" style={{ borderBottom: '1px solid var(--border)' }}
                       onClick={() => navigate(`/app/sales/estimates/${e.id}`)}
                       onMouseEnter={ev => ev.currentTarget.style.background = 'rgba(124,58,237,0.04)'}
@@ -233,7 +340,7 @@ export default function Estimates({ docType = 'proforma' }) {
                       <td className="py-3.5 px-4 whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>{e.sale_agent || '—'}</td>
                       <td className="py-3.5 px-4 font-bold whitespace-nowrap" style={{ color: 'var(--text-h)' }}>{fmt(e.total)}</td>
                       <td className="py-3.5 px-4 whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>{fmtDate(e.valid_until)}</td>
-                      <td className="py-3.5 px-4"><StatusBadge status={e.status} /></td>
+                      <td className="py-3.5 px-4"><StatusBadge status={effectiveStatus(e)} /></td>
                       <td className="py-3.5 px-4" onClick={ev => ev.stopPropagation()}>
                         <RowMenu width={188}>
                           {[
@@ -256,12 +363,12 @@ export default function Estimates({ docType = 'proforma' }) {
                       </td>
                     </tr>
                   ))}
-                  {data.length === 0 && (
+                  {visible.length === 0 && (
                     <tr><td colSpan="8" className="py-16 text-center">
                       <div className="flex flex-col items-center gap-3">
                         <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl" style={{ background: 'rgba(124,58,237,0.08)' }}>📋</div>
                         <p className="text-sm font-semibold" style={{ color: 'var(--text-muted)' }}>No estimates found</p>
-                        <button onClick={() => setShowDrawer(true)} className="text-xs font-bold" style={{ color: '#a78bfa' }}>+ Create first estimate</button>
+                        <button onClick={() => startNew()} className="text-xs font-bold" style={{ color: '#a78bfa' }}>+ Create first estimate</button>
                       </div>
                     </td></tr>
                   )}
@@ -277,7 +384,7 @@ export default function Estimates({ docType = 'proforma' }) {
         <div className="overflow-x-auto pb-4">
           <div className="flex gap-4" style={{ minWidth: `${PIPE_COLS.length * 292}px` }}>
             {PIPE_COLS.map(col => {
-              const cards = data.filter(e => e.status === col.key)
+              const cards = data.filter(e => effectiveStatus(e) === col.key)
               const colTotal = cards.reduce((s, e) => s + Number(e.total || 0), 0)
               return (
                 <div key={col.key} className="kanban-col">
@@ -489,18 +596,14 @@ export default function Estimates({ docType = 'proforma' }) {
                       <span className="px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ background: 'rgba(239,68,68,0.1)', color: '#f87171' }}>🔒 INTERNAL</span>
                       Admin Note (not visible to customer)
                     </label>
-                    <textarea className="input-3d text-sm resize-none" rows={3}
-                      placeholder="Internal notes for your team…"
-                      value={form.adminnote} onChange={e => sf('adminnote', e.target.value)} />
+                    <RichTextEditor value={form.adminnote} onChange={v => sf('adminnote', v)} placeholder="Internal notes for your team…" minHeight={100} />
                   </div>
                   <div>
                     <label className="label flex items-center gap-1">
                       <span className="px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ background: 'rgba(16,185,129,0.1)', color: '#10b981' }}>VISIBLE</span>
                       Client Note (shown on estimate)
                     </label>
-                    <textarea className="input-3d text-sm resize-none" rows={3}
-                      placeholder="Note visible to the customer…"
-                      value={form.clientnote} onChange={e => sf('clientnote', e.target.value)} />
+                    <RichTextEditor value={form.clientnote} onChange={v => sf('clientnote', v)} placeholder="Note visible to the customer…" minHeight={100} />
                   </div>
                   <div>
                     <label className="label">Terms & Conditions</label>
@@ -522,6 +625,7 @@ export default function Estimates({ docType = 'proforma' }) {
                 style={{ background: 'var(--bg-input)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
                 Cancel
               </button>
+              <SaveAsTemplateButton docType="estimate" form={form} />
               <button onClick={handleCreate}
                 className="flex-[2] py-3 rounded-2xl text-sm font-bold text-white transition-all hover:scale-[1.01]"
                 style={{ background: 'linear-gradient(135deg,#9f67ff,#7C3AED,#5b21b6)', boxShadow: '0 6px 20px rgba(124,58,237,0.4)' }}>

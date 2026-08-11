@@ -69,4 +69,23 @@ class ProposalTemplateController extends Controller
 
         return response()->json($proposal, 201);
     }
+
+    public function show(Request $request, ProposalTemplate $proposalTemplate)
+    {
+        return response()->json(
+            $this->proposalTemplateService->show($proposalTemplate, $request->user()->tenant_id)
+        );
+    }
+
+    /** Copy a template into a new template (clone() makes a proposal instead). */
+    public function duplicate(Request $request, ProposalTemplate $proposalTemplate)
+    {
+        $copy = $this->proposalTemplateService->duplicate(
+            $proposalTemplate,
+            $request->user()->tenant_id,
+            $request->user()->id
+        );
+
+        return response()->json($copy, 201);
+    }
 }

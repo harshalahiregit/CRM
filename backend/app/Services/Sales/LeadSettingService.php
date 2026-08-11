@@ -14,10 +14,43 @@ use Illuminate\Support\Facades\Log;
 
 class LeadSettingService
 {
+    /**
+     * Give a workspace its starter pipeline the first time it asks for one.
+     *
+     * `LeadDefaultsSeeder` has always held the 6 statuses + 7 sources, but it was
+     * never registered in DatabaseSeeder, so tenants created outside a seeded
+     * install got NONE — and the Leads kanban groups by status, so it rendered
+     * zero columns and looked broken. Seeding on first read fixes existing
+     * workspaces too, without a data migration.
+     *
+     * Delegates to the seeder rather than restating the list here so the two can
+     * never drift; `seedForTenant` is firstOrCreate-based and safe to re-enter.
+     * A workspace that deliberately deleted every status is not re-seeded — the
+     * guard is "has never had any", tracked by statuses OR sources existing.
+     */
+    public function ensureDefaults(int $tenantId): void
+    {
+        $hasAny = LeadStatus::forTenant($tenantId)->exists()
+            || LeadSource::forTenant($tenantId)->exists();
+
+        if ($hasAny) {
+            return;
+        }
+
+        try {
+            \Database\Seeders\LeadDefaultsSeeder::seedForTenant($tenantId);
+        } catch (\Throwable $e) {
+            // Never let setup convenience break a read.
+            Log::warning('Lead defaults seeding failed', ['tenant' => $tenantId, 'error' => $e->getMessage()]);
+        }
+    }
+
     /* ── Statuses ─────────────────────────────── */
 
     public function statuses(int $tenantId)
     {
+        $this->ensureDefaults($tenantId);
+
         return LeadStatus::forTenant($tenantId)->ordered()->get();
     }
 
@@ -69,6 +102,8 @@ class LeadSettingService
 
     public function sources(int $tenantId)
     {
+        $this->ensureDefaults($tenantId);
+
         return LeadSource::forTenant($tenantId)->ordered()->get();
     }
 

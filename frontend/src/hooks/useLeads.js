@@ -86,7 +86,11 @@ export function useConvertLead() {
 export function useMarkLeadLost() {
   const invalidate = useInvalidateLeads()
   return useMutation({
-    mutationFn: (id) => leadApi.markLost(id),
+    // Accepts either an id (list pages) or {id, reason} (the lead profile's
+    // reason dialog), so existing call sites keep working.
+    mutationFn: (arg) => typeof arg === 'object'
+      ? leadApi.markLost(arg.id, arg.reason)
+      : leadApi.markLost(arg),
     onSuccess: invalidate,
   })
 }
@@ -94,7 +98,11 @@ export function useMarkLeadLost() {
 export function useMarkLeadJunk() {
   const invalidate = useInvalidateLeads()
   return useMutation({
-    mutationFn: (id) => leadApi.markJunk(id),
+    // Accepts either an id (list pages) or {id, reason} (the lead profile's
+    // reason dialog), so existing call sites keep working.
+    mutationFn: (arg) => typeof arg === 'object'
+      ? leadApi.markJunk(arg.id, arg.reason)
+      : leadApi.markJunk(arg),
     onSuccess: invalidate,
   })
 }

@@ -10,6 +10,7 @@ import StatusBadge from '../components/StatusBadge'
 import ActivityTimeline from '../components/ActivityTimeline'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import { useToast } from '@/hooks/useToast'
+import { richHtml } from '@/lib/richText'
 
 const fmt     = v => '₹' + Number(v || 0).toLocaleString('en-IN')
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
@@ -338,7 +339,7 @@ export default function EstimateDetail() {
               {estimate.clientnote && (
                 <div className="p-4 rounded-2xl mt-4" style={{ background: 'rgba(16,185,129,0.05)', border: '1px solid rgba(16,185,129,0.15)' }}>
                   <p className="label-caps mb-1" style={{ color: '#10b981' }}>Note to Customer</p>
-                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{estimate.clientnote}</p>
+                  <div className="rich-content text-sm" style={{ color: 'var(--text-muted)' }} dangerouslySetInnerHTML={richHtml(estimate.clientnote)} />
                 </div>
               )}
 
@@ -386,7 +387,7 @@ export default function EstimateDetail() {
                     style={{ background: 'rgba(239,68,68,0.1)', color: '#f87171' }}>🔒 INTERNAL</span>
                   <h3 className="font-bold text-sm" style={{ color: 'var(--text-h)' }}>Admin Note</h3>
                 </div>
-                <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>{estimate.adminnote}</p>
+                <div className="rich-content text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }} dangerouslySetInnerHTML={richHtml(estimate.adminnote)} />
               </div>
             )}
 

@@ -12,6 +12,7 @@ import { useToast } from '@/hooks/useToast'
 import PagesEditor from '../components/PagesEditor'
 import SignatureModal from '../components/SignatureModal'
 import RichTextEditor from '@/components/ui/RichTextEditor'
+import { richHtml } from '@/lib/richText'
 
 const fmt = v => '₹' + Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const d10 = s => (s ? String(s).slice(0, 10) : '—')
@@ -147,7 +148,7 @@ function OverviewTab({ contract, sig }) {
             <span style={{ color: 'var(--text-muted)' }}>{k}</span><span className="font-semibold" style={{ color: 'var(--text-h)' }}>{v}</span>
           </div>
         ))}
-        {contract.description && <p className="text-xs mt-3 whitespace-pre-wrap" style={{ color: 'var(--text-muted)' }}>{contract.description}</p>}
+        {contract.description && <div className="rich-content text-xs mt-3" style={{ color: 'var(--text-muted)' }} dangerouslySetInnerHTML={richHtml(contract.description)} />}
       </div>
       <div className="card-3d" style={{ padding: '20px' }}>
         <p className="label-caps mb-3" style={{ color: 'var(--accent)' }}>Signature</p>

@@ -18,8 +18,15 @@ export const proposalTemplateApi = {
   delete: (id) =>
     api.delete(`/sales/proposal-templates/${id}`).then(r => r.data).catch(handleErr),
 
+  // clone → a new PROPOSAL from the template. duplicate → a copy of the TEMPLATE.
   clone: (id) =>
     api.post(`/sales/proposal-templates/${id}/clone`).then(r => r.data).catch(handleErr),
+
+  get: (id) =>
+    api.get(`/sales/proposal-templates/${id}`).then(r => r.data).catch(handleErr),
+
+  duplicate: (id) =>
+    api.post(`/sales/proposal-templates/${id}/duplicate`).then(r => r.data).catch(handleErr),
 }
 
 export default proposalTemplateApi

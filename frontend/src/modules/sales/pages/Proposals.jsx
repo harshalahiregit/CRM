@@ -14,6 +14,9 @@ import LineItemsTable from '../components/LineItemsTable'
 import RowMenu from '../components/RowMenu'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import { useToast } from '@/hooks/useToast'
+import ListToolbar from '@/components/ui/ListToolbar'
+import { useListView } from '@/hooks/useListView'
+import { exportSalesList } from '@/services/salesApi'
 import RichTextEditor from '@/components/ui/RichTextEditor'
 
 const fmt = v => '₹' + Number(v || 0).toLocaleString('en-IN')
@@ -125,6 +128,10 @@ export default function Proposals() {
     totalVal: data.reduce((s, p) => s + Number(p.total || 0), 0),
   }
 
+  // Paging only: this list's search is server-side, so the hook isn't given
+  // search fields — it just caps the rows and reports the count.
+  const { pageSize, setPageSize, visible, matched } = useListView(data, [])
+
   return (
     <>
       {/* Toast */}
@@ -164,8 +171,14 @@ export default function Proposals() {
         ))}
       </div>
 
-      {/* Filters */}
-      <div className="flex items-center gap-3 flex-wrap">
+      {/* Toolbar: search · status tabs · count · rows-per-page · refresh · export */}
+      <ListToolbar
+        search={search} onSearch={setSearch} searchPlaceholder="Search proposals or clients…"
+        count={matched} total={data.length} unit="record"
+        pageSize={pageSize} onPageSize={setPageSize} onRefresh={() => load()}
+        onExport={() => exportSalesList('proposals', { status: filter !== 'All' ? filter : undefined, search: search || undefined })
+          .catch(e => toast.error(e.message))}
+      >
         <div className="flex gap-1.5 flex-wrap p-1 rounded-2xl" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
           {['All', ...STATUSES].map(f => (
             <button key={f} onClick={() => setFilter(f)}
@@ -179,13 +192,7 @@ export default function Proposals() {
             </button>
           ))}
         </div>
-        <div className="flex-1 min-w-[220px] relative">
-          <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
-          <input value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Search proposals or clients…"
-            className="input-3d text-sm pl-10 w-full" style={{ borderRadius: '14px' }} />
-        </div>
-      </div>
+      </ListToolbar>
 
       {/* Table */}
       {loading ? (
@@ -204,7 +211,7 @@ export default function Proposals() {
                 </tr>
               </thead>
               <tbody>
-                {data.map((p) => (
+                {visible.map((p) => (
                   <tr key={p.id}
                     className="cursor-pointer transition-colors"
                     style={{ borderBottom: '1px solid var(--border)' }}
@@ -257,7 +264,7 @@ export default function Proposals() {
                     </td>
                   </tr>
                 ))}
-                {data.length === 0 && (
+                {visible.length === 0 && (
                   <tr><td colSpan="10" className="py-16 text-center">
                     <div className="flex flex-col items-center gap-3">
                       <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl"
@@ -493,7 +500,7 @@ export default function Proposals() {
                   </div>
                   <div>
                     <label className="label">Notes</label>
-                    <textarea className="input-3d text-sm resize-none" rows={4} placeholder="Additional notes visible on the proposal…" value={form.notes} onChange={e => sf('notes', e.target.value)} />
+                    <RichTextEditor value={form.notes} onChange={v => sf('notes', v)} placeholder="Additional notes visible on the proposal…" minHeight={110} />
                     <label className="label mt-3">Terms &amp; Conditions</label>
                     <RichTextEditor value={form.terms} onChange={v => sf('terms', v)} placeholder="Payment terms, validity, conditions…" minHeight={120} />
                   </div>

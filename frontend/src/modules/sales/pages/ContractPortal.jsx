@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import { XCircle, PenLine, ShieldCheck, Download, MessageSquare } from 'lucide-react'
 import { publicContractApi } from '@/services/publicProposalApi'
 import SignatureModal from '../components/SignatureModal'
+import { richHtml } from '@/lib/richText'
 
 const fmt = v => '₹' + Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const d10 = s => (s ? String(s).slice(0, 10) : '—')
@@ -60,7 +61,7 @@ export default function ContractPortal() {
               </div>
             </div>
 
-            {doc.description && <p className="text-sm mb-6 whitespace-pre-wrap" style={{ color: 'var(--text-h)' }}>{doc.description}</p>}
+            {doc.description && <div className="rich-content text-sm mb-6" style={{ color: 'var(--text-h)' }} dangerouslySetInnerHTML={richHtml(doc.description)} />}
 
             {(doc.pages || []).map((pg, i) => (
               <div key={i} className="mb-8">

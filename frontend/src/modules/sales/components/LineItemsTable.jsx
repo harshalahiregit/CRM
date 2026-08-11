@@ -1,6 +1,7 @@
 import { Plus, Trash2 } from 'lucide-react'
 import { useTaxRates } from '@/hooks/useTaxRates'
 import { useHsnSac } from '@/hooks/useHsnSac'
+import { useSalesItems } from '@/hooks/useSalesItems'
 import TaxSelect from './TaxSelect'
 
 const fmt = v => '₹' + Number(v || 0).toLocaleString('en-IN')
@@ -19,6 +20,8 @@ const EMPTY_ROW = {
 
 // A stable id for the shared HSN suggestions datalist.
 const HSN_LIST_ID = 'hsn-sac-suggestions'
+// …and for the saleable-item catalog picker on the item-name column.
+const CATALOG_LIST_ID = 'sales-item-suggestions'
 
 const UNITS = ['pcs', 'hrs', 'days', 'months', 'kg', 'ltr', 'box', 'set']
 
@@ -81,6 +84,7 @@ function calcLine(row, taxAfterDiscount = false) {
 export default function LineItemsTable({ items = [], onChange, discount = null, onDiscountChange = null, supplyType }) {
   const TAX_RATES = useTaxRates()
   const HSN_CODES = useHsnSac()
+  const CATALOG = useSalesItems()
   // Always have at least one row
   const rows = items.length > 0 ? items : [{ ...EMPTY_ROW }]
 
@@ -90,6 +94,34 @@ export default function LineItemsTable({ items = [], onChange, discount = null, 
       return { ...r, [field]: rawValue }
     })
     onChange(updated)
+  }
+
+  /**
+   * Pull a line from the item catalog.
+   *
+   * Fills name, description, rate, unit and tax from the saved item and records
+   * `item_id`, so a document line can be traced back to the catalog entry — the
+   * column existed and was never populated. Typing a name that isn't in the
+   * catalog is still fine: the text is kept and item_id stays null.
+   */
+  const pickCatalogItem = (idx, name) => {
+    const match = CATALOG.find(i => i.name?.toLowerCase() === name.trim().toLowerCase())
+    onChange(rows.map((r, i) => {
+      if (i !== idx) return r
+      const next = { ...r, item_name: name }
+      if (!match) return { ...next, item_id: null }
+      next.item_id = match.id
+      // Only fill what the row hasn't had set yet, so re-picking an item never
+      // silently overwrites a rate someone deliberately edited.
+      if (!r.description) next.description = match.long_description || match.description
+      if (!Number(r.rate)) next.rate = match.rate
+      if (!r.unit || r.unit === 'pcs') next.unit = match.unit
+      if (!Number(r.tax) && match.tax_rate != null) {
+        next.tax = match.tax_rate
+        next.taxes = [{ name: `GST ${match.tax_rate}%`, rate: match.tax_rate }]
+      }
+      return next
+    }))
   }
 
   /**
@@ -160,9 +192,10 @@ export default function LineItemsTable({ items = [], onChange, discount = null, 
                     <input
                       className="input-3d text-xs w-full"
                       style={{ padding: '5px 8px' }}
-                      placeholder="Item name"
+                      placeholder={CATALOG.length ? 'Item name or pick from catalog' : 'Item name'}
+                      list={CATALOG.length ? CATALOG_LIST_ID : undefined}
                       value={row.item_name}
-                      onChange={e => update(idx, 'item_name', e.target.value)}
+                      onChange={e => pickCatalogItem(idx, e.target.value)}
                     />
                   </td>
                   {/* Description */}
@@ -278,6 +311,17 @@ export default function LineItemsTable({ items = [], onChange, discount = null, 
         {HSN_CODES.map(h => (
           <option key={h.code} value={h.code}>
             {h.description ? `${h.description}${h.rate != null ? ` · GST ${h.rate}%` : ''}` : (h.rate != null ? `GST ${h.rate}%` : h.type?.toUpperCase())}
+          </option>
+        ))}
+      </datalist>
+
+      {/* Saleable items from the catalog (Sales → Items). Rate/unit/tax come with
+          the pick; an unlisted name is still accepted as free text. */}
+      <datalist id={CATALOG_LIST_ID}>
+        {CATALOG.map(i => (
+          <option key={i.id} value={i.name}>
+            {[i.category, i.rate ? `₹${i.rate}` : null, i.tax_rate != null ? `GST ${i.tax_rate}%` : null]
+              .filter(Boolean).join(' · ')}
           </option>
         ))}
       </datalist>

@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { Plus, Check, X, IndianRupee, Percent } from 'lucide-react'
 import { commissionApi } from '@/services/commissionApi'
 import { useToast } from '@/hooks/useToast'
+import ListToolbar from '@/components/ui/ListToolbar'
+import { useListView } from '@/hooks/useListView'
 import ConfirmIconButton from '@/modules/customer/components/ConfirmIconButton'
 import Drawer from '@/components/ui/Drawer'
 
@@ -35,6 +37,10 @@ export default function Commission() {
   const delRule = async (id) => { try { await commissionApi.deleteRule(id); toast.success('Deleted'); loadRules() } catch (e) { toast.error(e.message) } }
   const act = async (fn, id) => { try { await fn(id); loadEntries() } catch (e) { toast.error(e.message) } }
 
+  // Entries only: the rules table below is a short config list.
+  const { search, setSearch, pageSize, setPageSize, visible, matched } =
+    useListView(entries, ['staff_name', 'status', 'source_type'])
+
   return (
     <div className="p-4 md:p-6 max-w-[1300px] mx-auto">
       <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
@@ -55,6 +61,11 @@ export default function Commission() {
       </div>
 
       {tab === 'entries' && (
+        <>
+        <ListToolbar
+          search={search} onSearch={setSearch} searchPlaceholder="Search by staff or status…"
+          count={matched} total={(entries || []).length} unit="entry"
+          pageSize={pageSize} onPageSize={setPageSize} onRefresh={loadEntries} className="mb-3" />
         <div className="card-3d overflow-hidden" style={{ padding: 0 }}>
           <table className="w-full text-xs">
             <thead><tr style={{ background: 'rgba(124,58,237,0.04)', borderBottom: '1px solid var(--border)' }}>
@@ -63,7 +74,7 @@ export default function Commission() {
             <tbody>
               {entries === null ? <tr><td colSpan={7} className="p-6 text-center" style={{ color: 'var(--text-muted)' }}>Loading…</td></tr>
                 : entries.length === 0 ? <tr><td colSpan={7} className="py-12 text-center" style={{ color: 'var(--text-muted)' }}>No commission entries yet. They're generated automatically when invoices are paid or leads are won.</td></tr>
-                : entries.map(e => (
+                : visible.map(e => (
                   <tr key={e.id} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td className="py-3 px-4 font-bold" style={{ color: 'var(--text-h)' }}>{e.rule?.name || '—'}</td>
                     <td className="py-3 px-4" style={{ color: 'var(--text-muted)' }}>{e.staff?.name || 'Unassigned'}</td>
@@ -85,6 +96,7 @@ export default function Commission() {
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       {tab === 'rules' && (

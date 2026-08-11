@@ -27,9 +27,8 @@ class EstimateService
     public function create(array $data, array $lineItems, int $tenantId, int $userId): Estimate
     {
         return DB::transaction(function () use ($data, $lineItems, $tenantId, $userId) {
-            if (isset($data['terms'])) {
-                $data['terms'] = HtmlSanitizer::clean($data['terms']); // rich text
-            }
+            // Rich text (notepad editor) — sanitized before it ever reaches the DB.
+            $data = HtmlSanitizer::cleanFields($data, ['terms', 'adminnote', 'clientnote']);
             $estimate = Estimate::create([
                 ...$data,
                 'tenant_id'  => $tenantId,
@@ -57,9 +56,8 @@ class EstimateService
         $this->assertTenant($estimate, $tenantId);
 
         return DB::transaction(function () use ($estimate, $data, $lineItems, $hasLineItems, $tenantId) {
-            if (isset($data['terms'])) {
-                $data['terms'] = HtmlSanitizer::clean($data['terms']); // rich text
-            }
+            // Rich text (notepad editor) — sanitized before it ever reaches the DB.
+            $data = HtmlSanitizer::cleanFields($data, ['terms', 'adminnote', 'clientnote']);
             $estimate->update($data);
 
             if ($hasLineItems) {
@@ -236,6 +234,12 @@ class EstimateService
                      ->delete();
 
         foreach ($items as $idx => $item) {
+            // Same prelude as ProposalService: normalize the tax shape and resolve a
+            // % discount to an amount BEFORE the row is built. Without it $taxInfo is
+            // undefined and every create/update with line items 500s.
+            $taxInfo = SalesLineItem::normalizeTaxes($item);
+            $item['tax'] = $taxInfo['tax'];
+            $item['discount'] = SalesLineItem::discountAmount($item);
             SalesLineItem::create([
                 'lineable_type' => Estimate::class,
                 'lineable_id'   => $estimate->id,

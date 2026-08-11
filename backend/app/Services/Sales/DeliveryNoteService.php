@@ -4,13 +4,14 @@ namespace App\Services\Sales;
 
 use App\Exceptions\UnauthorizedTenantException;
 use App\Models\Sales\DeliveryNote;
+use App\Support\HtmlSanitizer;
 use Illuminate\Support\Facades\Log;
 
 class DeliveryNoteService
 {
     public function list(int $tenantId, ?string $status): \Illuminate\Support\Collection
     {
-        $query = DeliveryNote::forTenant($tenantId)->with('invoice');
+        $query = DeliveryNote::forTenant($tenantId)->with(['invoice', 'customer:id,company']);
 
         if ($status && $status !== 'All') {
             $query->where('status', $status);
@@ -21,6 +22,8 @@ class DeliveryNoteService
 
     public function create(array $data, int $tenantId, int $userId): DeliveryNote
     {
+        $data = HtmlSanitizer::cleanFields($data, ['note']);
+
         $dn = DeliveryNote::create([
             ...$data,
             'tenant_id'  => $tenantId,
@@ -43,6 +46,8 @@ class DeliveryNoteService
     public function update(DeliveryNote $deliveryNote, array $data, int $tenantId): DeliveryNote
     {
         $this->authorize($deliveryNote, $tenantId);
+
+        $data = HtmlSanitizer::cleanFields($data, ['note']);
 
         $deliveryNote->update($data);
 

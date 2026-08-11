@@ -35,6 +35,9 @@ class UpdateLeadRequest extends FormRequest
             'zip'               => 'nullable|string|max:20',
             'address'           => 'nullable|string',
             'source_id'         => 'nullable|exists:lead_sources,id',
+            // The form sends the source as free text; the service matches it
+            // against existing sources and creates it only when new.
+            'source'            => 'nullable|string|max:100',
             'is_public'         => 'nullable|boolean',
             'referral_type'     => 'nullable|in:none,percentage,fixed',
             'referral_value'    => 'nullable|numeric|min:0',

@@ -11,7 +11,7 @@ class EstimateRepository extends BaseRepository
 
     public function filtered(int $tenantId, ?string $status, ?string $type = null)
     {
-        $query = Estimate::forTenant($tenantId)->with('lineItems');
+        $query = Estimate::forTenant($tenantId)->with(['lineItems', 'customer:id,company']);
 
         if ($status && $status !== 'All') {
             $query->where('status', $status);

@@ -14,6 +14,10 @@ use App\Http\Controllers\Api\Sales\PaymentLinkController;
 use App\Http\Controllers\Api\Sales\RetainerInvoiceController;
 use App\Http\Controllers\Api\Sales\HsnSacController;
 use App\Http\Controllers\Api\Sales\ProposalTemplateController;
+use App\Http\Controllers\Api\Sales\SalesDocumentTemplateController;
+use App\Http\Controllers\Api\Sales\SalesExportController;
+use App\Http\Controllers\Api\Sales\LeadEngagementController;
+use App\Http\Controllers\Api\Sales\AppointmentController;
 use App\Http\Controllers\Api\Sales\SalesActivityController;
 use App\Http\Controllers\Api\Sales\SalesInsightController;
 use App\Http\Controllers\Api\Sales\ReminderController;
@@ -85,6 +89,9 @@ Route::middleware('auth:sanctum')->prefix('sales')->group(function () {
     Route::patch('/commissions/{commission}/reject',   [CommissionController::class, 'reject']);
     Route::patch('/commissions/{commission}/mark-paid',[CommissionController::class, 'markPaid']);
 
+    // CSV / XLSX export for every Sales list (columns declared in SalesExportService)
+    Route::get('/export/{type}', SalesExportController::class);
+
     // Items catalog
     Route::get('/items',              [ItemController::class, 'index']);
     Route::post('/items',             [ItemController::class, 'store']);
@@ -120,6 +127,19 @@ Route::middleware('auth:sanctum')->prefix('sales')->group(function () {
     Route::put('/proposal-templates/{proposalTemplate}',       [ProposalTemplateController::class, 'update']);
     Route::delete('/proposal-templates/{proposalTemplate}',    [ProposalTemplateController::class, 'destroy']);
     Route::post('/proposal-templates/{proposalTemplate}/clone',[ProposalTemplateController::class, 'clone']);
+    Route::post('/proposal-templates/{proposalTemplate}/duplicate', [ProposalTemplateController::class, 'duplicate']);
+    // Declared last so it can't shadow /categories above.
+    Route::get('/proposal-templates/{proposalTemplate}',        [ProposalTemplateController::class, 'show']);
+
+    // Invoice / estimate / credit-note templates (line items + document defaults)
+    Route::get('/document-templates',                          [SalesDocumentTemplateController::class, 'index']);
+    Route::post('/document-templates',                         [SalesDocumentTemplateController::class, 'store']);
+    Route::post('/document-templates/from-document',           [SalesDocumentTemplateController::class, 'saveFromDocument']);
+    Route::put('/document-templates/{salesDocumentTemplate}',  [SalesDocumentTemplateController::class, 'update']);
+    Route::delete('/document-templates/{salesDocumentTemplate}', [SalesDocumentTemplateController::class, 'destroy']);
+    Route::post('/document-templates/{salesDocumentTemplate}/duplicate', [SalesDocumentTemplateController::class, 'duplicate']);
+    // Last, so it can't shadow /from-document above.
+    Route::get('/document-templates/{salesDocumentTemplate}',  [SalesDocumentTemplateController::class, 'show']);
 
     // Estimates
     Route::get('/estimates',                                   [EstimateController::class, 'index']);
@@ -219,6 +239,23 @@ Route::middleware('auth:sanctum')->prefix('sales')->group(function () {
     Route::post('/leads/{lead}/convert',                       [LeadController::class, 'convert']);
     Route::post('/leads/{lead}/notes',                         [LeadController::class, 'addNote']);
     Route::post('/leads/{lead}/questionnaire-response',        [LeadController::class, 'submitQuestionnaireResponse']);
+
+    // ── Lead profile: attachments, email activity, custom fields ─
+    Route::get('/leads/{lead}/attachments',                    [LeadEngagementController::class, 'attachments']);
+    Route::post('/leads/{lead}/attachments',                   [LeadEngagementController::class, 'storeAttachment']);
+    Route::delete('/leads/{lead}/attachments/{attachment}',    [LeadEngagementController::class, 'destroyAttachment']);
+    Route::get('/leads/{lead}/emails',                         [LeadEngagementController::class, 'emails']);
+    Route::post('/leads/{lead}/emails',                        [LeadEngagementController::class, 'sendEmail']);
+    Route::get('/leads/{lead}/custom-fields',                  [LeadEngagementController::class, 'customFields']);
+    Route::put('/leads/{lead}/custom-fields',                  [LeadEngagementController::class, 'saveCustomFields']);
+
+    // ── Appointments (polymorphic subject; leads today) ─────────
+    Route::get('/appointments/upcoming',                       [AppointmentController::class, 'upcoming']);
+    Route::get('/appointments',                                [AppointmentController::class, 'index']);
+    Route::post('/appointments',                               [AppointmentController::class, 'store']);
+    Route::put('/appointments/{appointment}',                  [AppointmentController::class, 'update']);
+    Route::patch('/appointments/{appointment}/complete',       [AppointmentController::class, 'complete']);
+    Route::delete('/appointments/{appointment}',               [AppointmentController::class, 'destroy']);
 
     // ── Rule-based Sales Insights (no LLM/ML) ───────────────────
     Route::get('/leads/{lead}/win-probability',                [SalesInsightController::class, 'winProbability']);
