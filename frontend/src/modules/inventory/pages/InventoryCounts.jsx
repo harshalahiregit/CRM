@@ -10,6 +10,7 @@ import {
 import { useAuth } from '@/context/AuthContext'
 import Select from '@/components/ui/Select'
 import ScanInput from '../components/ScanInput'
+import { useDiscardGuard } from '@/lib/confirmClose'
 
 /**
  * Cycle counting and physical verification.
@@ -155,12 +156,16 @@ export default function InventoryCounts() {
 /* ── Raising a sheet ────────────────────────────────────────────── */
 
 function NewCountModal({ onClose, onDone }) {
+  const { guard, dialog } = useDiscardGuard()
   const [form, setForm] = useState({
     warehouse_id: '', name: '', scope: 'random', sample_size: 20,
     abc_class: 'A', blind: true, assigned_to: '',
   })
   const [picked, setPicked] = useState([])       // ids for the "chosen X" scopes
   const [err, setErr] = useState('')
+
+  const isDirty = () => Boolean(form.warehouse_id || form.name.trim() || picked.length > 0)
+  const handleClose = () => guard(onClose, isDirty())
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
   const scopeMeta = COUNT_SCOPES.find(s => s.value === form.scope)
@@ -190,16 +195,17 @@ function NewCountModal({ onClose, onDone }) {
   })
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 overflow-y-auto bg-black/50" onClick={onClose}>
-      <div className="w-full max-w-lg rounded-2xl mt-[6vh] mb-8" onClick={e => e.stopPropagation()}
-        style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-        <div className="flex items-center gap-2 px-5 py-4" style={{ borderBottom: '1px solid var(--border)' }}>
-          <ClipboardCheck size={16} style={{ color: INV_ACCENT }} />
-          <h2 className="text-sm font-bold" style={{ color: 'var(--text-h)' }}>New count</h2>
-          <button onClick={onClose} className="ml-auto hover:opacity-70" aria-label="Close">
-            <X size={18} style={{ color: 'var(--text-muted)' }} />
-          </button>
-        </div>
+    <>
+      <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 overflow-y-auto bg-black/50" onClick={handleClose}>
+        <div className="w-full max-w-lg rounded-2xl mt-[6vh] mb-8" onClick={e => e.stopPropagation()}
+          style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+          <div className="flex items-center gap-2 px-5 py-4" style={{ borderBottom: '1px solid var(--border)' }}>
+            <ClipboardCheck size={16} style={{ color: INV_ACCENT }} />
+            <h2 className="text-sm font-bold" style={{ color: 'var(--text-h)' }}>New count</h2>
+            <button onClick={handleClose} className="ml-auto hover:opacity-70" aria-label="Close">
+              <X size={18} style={{ color: 'var(--text-muted)' }} />
+            </button>
+          </div>
 
         <div className="p-5 space-y-3">
           <Field label="Warehouse">
@@ -272,12 +278,14 @@ function NewCountModal({ onClose, onDone }) {
               style={{ background: INV_ACCENT, color: '#fff' }}>
               {create.isPending ? 'Raising…' : <>Raise the sheet <ArrowRight size={12} /></>}
             </button>
-            <button onClick={onClose} className="text-xs font-bold px-3 py-2 rounded-xl"
+            <button onClick={handleClose} className="text-xs font-bold px-3 py-2 rounded-xl"
               style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}>Cancel</button>
           </div>
         </div>
       </div>
     </div>
+    {dialog}
+    </>
   )
 }
 

@@ -4,6 +4,7 @@ import { CalendarRange, Plus, Search, Check, X, Trash2, LogOut, LogIn, Ban } fro
 import { inventoryApi, INV_ACCENT } from '@/services/inventoryApi'
 import { useAuth } from '@/context/AuthContext'
 import Select from '@/components/ui/Select'
+import { useDiscardGuard } from '@/lib/confirmClose'
 
 const INP = { width: '100%', padding: '8px 10px', fontSize: 13, borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)', outline: 'none' }
 const money = (n) => n == null ? '—' : Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -96,9 +97,13 @@ export default function InventoryRentals() {
 }
 
 function RentalModal({ productList, onClose, onSaved }) {
+  const { guard, dialog } = useDiscardGuard()
   const [f, setF] = useState({ customer_name: '', customer_contact: '', product_id: '', item_label: '', qty: 1, rate: '', rate_period: 'day', deposit: '', due_date: '', note: '' })
   const [err, setErr] = useState('')
   const sf = (k, v) => setF(p => ({ ...p, [k]: v }))
+
+  const isDirty = () => Boolean(f.customer_name.trim() || f.customer_contact.trim() || f.item_label.trim() || f.rate || f.note.trim())
+  const handleClose = () => guard(onClose, isDirty())
 
   const save = useMutation({
     mutationFn: () => inventoryApi.rentals.create({
@@ -113,28 +118,31 @@ function RentalModal({ productList, onClose, onSaved }) {
   })
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,.5)' }} onClick={onClose}>
-      <div className="rounded-2xl p-5 w-full max-w-lg space-y-3" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-purple)' }} onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between"><h3 className="text-base font-black" style={{ color: 'var(--text-h)' }}>New rental</h3><button onClick={onClose}><X size={16} style={{ color: 'var(--text-muted)' }} /></button></div>
-        <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))' }}>
-          <Fld label="Customer *"><input value={f.customer_name} onChange={e => sf('customer_name', e.target.value)} style={INP} autoFocus /></Fld>
-          <Fld label="Contact"><input value={f.customer_contact} onChange={e => sf('customer_contact', e.target.value)} style={INP} /></Fld>
-          <Fld label="Item (from catalogue)"><Select size="sm" value={f.product_id} onChange={v => sf('product_id', v)} placeholder="— none —" searchable options={[{ value: '', label: '— none —' }, ...productList.map(p => ({ value: String(p.id), label: p.name }))]} /></Fld>
-          <Fld label="Or free-text item"><input value={f.item_label} onChange={e => sf('item_label', e.target.value)} style={INP} placeholder="e.g. Scaffold set" /></Fld>
-          <Fld label="Qty"><input type="number" min="0" value={f.qty} onChange={e => sf('qty', e.target.value)} style={INP} /></Fld>
-          <Fld label="Rate"><input type="number" min="0" value={f.rate} onChange={e => sf('rate', e.target.value)} style={INP} /></Fld>
-          <Fld label="Per"><Select size="sm" value={f.rate_period} onChange={v => sf('rate_period', v)} options={['day', 'week', 'month'].map(p => ({ value: p, label: p }))} /></Fld>
-          <Fld label="Deposit"><input type="number" min="0" value={f.deposit} onChange={e => sf('deposit', e.target.value)} style={INP} /></Fld>
-          <Fld label="Due back"><input type="date" value={f.due_date} onChange={e => sf('due_date', e.target.value)} style={INP} /></Fld>
-        </div>
-        <Fld label="Note"><input value={f.note} onChange={e => sf('note', e.target.value)} style={INP} /></Fld>
-        {err && <p className="text-[11px]" style={{ color: 'var(--color-danger-500)' }}>{err}</p>}
-        <div className="flex gap-2">
-          <button disabled={!f.customer_name.trim() || save.isPending} onClick={() => save.mutate()} className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl disabled:opacity-40" style={{ background: INV_ACCENT, color: '#fff' }}><Check size={13} /> {save.isPending ? 'Saving…' : 'Create'}</button>
-          <button onClick={onClose} className="text-xs font-bold px-3 py-2 rounded-xl" style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}>Cancel</button>
+    <>
+      <div className="fixed inset-0 z-[80] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,.5)' }} onClick={handleClose}>
+        <div className="rounded-2xl p-5 w-full max-w-lg space-y-3" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-purple)' }} onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-between"><h3 className="text-base font-black" style={{ color: 'var(--text-h)' }}>New rental</h3><button onClick={handleClose}><X size={16} style={{ color: 'var(--text-muted)' }} /></button></div>
+          <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))' }}>
+            <Fld label="Customer *"><input value={f.customer_name} onChange={e => sf('customer_name', e.target.value)} style={INP} autoFocus /></Fld>
+            <Fld label="Contact"><input value={f.customer_contact} onChange={e => sf('customer_contact', e.target.value)} style={INP} /></Fld>
+            <Fld label="Item (from catalogue)"><Select size="sm" value={f.product_id} onChange={v => sf('product_id', v)} placeholder="— none —" searchable options={[{ value: '', label: '— none —' }, ...productList.map(p => ({ value: String(p.id), label: p.name }))]} /></Fld>
+            <Fld label="Or free-text item"><input value={f.item_label} onChange={e => sf('item_label', e.target.value)} style={INP} placeholder="e.g. Scaffold set" /></Fld>
+            <Fld label="Qty"><input type="number" min="0" value={f.qty} onChange={e => sf('qty', e.target.value)} style={INP} /></Fld>
+            <Fld label="Rate"><input type="number" min="0" value={f.rate} onChange={e => sf('rate', e.target.value)} style={INP} /></Fld>
+            <Fld label="Per"><Select size="sm" value={f.rate_period} onChange={v => sf('rate_period', v)} options={['day', 'week', 'month'].map(p => ({ value: p, label: p }))} /></Fld>
+            <Fld label="Deposit"><input type="number" min="0" value={f.deposit} onChange={e => sf('deposit', e.target.value)} style={INP} /></Fld>
+            <Fld label="Due back"><input type="date" value={f.due_date} onChange={e => sf('due_date', e.target.value)} style={INP} /></Fld>
+          </div>
+          <Fld label="Note"><input value={f.note} onChange={e => sf('note', e.target.value)} style={INP} /></Fld>
+          {err && <p className="text-[11px]" style={{ color: 'var(--color-danger-500)' }}>{err}</p>}
+          <div className="flex gap-2">
+            <button disabled={!f.customer_name.trim() || save.isPending} onClick={() => save.mutate()} className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl disabled:opacity-40" style={{ background: INV_ACCENT, color: '#fff' }}><Check size={13} /> {save.isPending ? 'Saving…' : 'Create'}</button>
+            <button onClick={handleClose} className="text-xs font-bold px-3 py-2 rounded-xl" style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}>Cancel</button>
+          </div>
         </div>
       </div>
-    </div>
+      {dialog}
+    </>
   )
 }
 
