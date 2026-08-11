@@ -88,6 +88,7 @@ const CreditNotes = lazy(() => import('@/modules/sales/pages/CreditNotes'))
 const SalesItems = lazy(() => import('@/modules/sales/pages/Items'))
 const ProposalDetail = lazy(() => import('@/modules/sales/pages/ProposalDetail'))
 const ProposalWizard = lazy(() => import('@/modules/sales/pages/ProposalWizard'))
+const DocumentStart = lazy(() => import('@/modules/sales/pages/DocumentStart'))
 const ProposalPortal = lazy(() => import('@/modules/sales/pages/ProposalPortal'))
 const ContractDetail = lazy(() => import('@/modules/sales/pages/ContractDetail'))
 const ContractPortal = lazy(() => import('@/modules/sales/pages/ContractPortal'))
@@ -427,8 +428,10 @@ export default function AppRoutes() {
           <Route path="proposals" element={<S><Proposals /></S>} />
           <Route path="proposals/new" element={<S><ProposalWizard /></S>} />
           <Route path="proposals/:id/edit" element={<S><ProposalWizard /></S>} />
+          <Route path="estimates/new" element={<S><DocumentStart docType="estimate" /></S>} />
           <Route path="estimates" element={<S><Estimates docType="estimate" /></S>} />
           <Route path="proforma-invoices" element={<S><Estimates docType="proforma" /></S>} />
+          <Route path="invoices/new" element={<S><DocumentStart docType="invoice" /></S>} />
           <Route path="invoices" element={<S><SalesInvoices /></S>} />
           <Route path="delivery-notes" element={<S><DeliveryNotes /></S>} />
           <Route path="payments" element={<S><SalesPayments /></S>} />

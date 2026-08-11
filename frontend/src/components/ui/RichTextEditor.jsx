@@ -1,9 +1,9 @@
 import { useRef, useEffect, useCallback } from 'react'
 import {
-  Bold, Italic, Underline, Heading2, Heading3,
+  Bold, Italic, Underline, Strikethrough, Heading2, Heading3,
   List, ListOrdered, Link2, Table, Image as ImageIcon,
   AlignLeft, AlignCenter, AlignRight, Video, Music,
-  Baseline, Highlighter, Eraser,
+  Baseline, Highlighter, Eraser, Quote, Code,
 } from 'lucide-react'
 
 // Word-like font controls. Families are web-safe so they render in the PDF too.
@@ -148,17 +148,45 @@ export default function RichTextEditor({ value = '', onChange, placeholder = 'Wr
   // browser applies text-align to the containing block, which the sanitizer keeps).
   const align = (dir) => exec('justify' + dir)
 
+  /**
+   * Quote / code block, matching the toolbar the Tasks and Helpdesk editors offer
+   * so a note looks the same wherever it was written.
+   *
+   * formatBlock toggles: applying it to a block that already has that tag would
+   * otherwise nest another one, and there'd be no way back to a plain paragraph.
+   */
+  const toggleBlock = (tag) => {
+    const sel = window.getSelection()
+    const node = sel?.anchorNode
+    const el = node?.nodeType === 1 ? node : node?.parentElement
+    const already = el?.closest?.(tag)
+    // Keep the check inside the editor — closest() would otherwise walk out of it.
+    exec('formatBlock', already && ref.current?.contains(already) ? 'p' : tag)
+  }
+
+  // <pre> alone renders monospace but isn't semantically a code block; wrapping
+  // the text in <code> matches what Quill emits, and both tags are allowlisted.
+  const insertCodeBlock = () => {
+    const sel = window.getSelection()
+    const picked = sel && !sel.isCollapsed ? String(sel) : ''
+    const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    insertHTML(`<pre><code>${esc(picked) || 'code'}</code></pre><p><br></p>`)
+  }
+
   const GROUPS = [
     [
       { icon: Bold, title: 'Bold', run: () => exec('bold') },
       { icon: Italic, title: 'Italic', run: () => exec('italic') },
       { icon: Underline, title: 'Underline', run: () => exec('underline') },
+      { icon: Strikethrough, title: 'Strikethrough', run: () => exec('strikeThrough') },
     ],
     [
       { icon: Heading2, title: 'Heading', run: () => exec('formatBlock', 'h2') },
       { icon: Heading3, title: 'Sub-heading', run: () => exec('formatBlock', 'h3') },
       { icon: List, title: 'Bullet list', run: () => exec('insertUnorderedList') },
       { icon: ListOrdered, title: 'Numbered list', run: () => exec('insertOrderedList') },
+      { icon: Quote, title: 'Quote', run: () => toggleBlock('blockquote') },
+      { icon: Code, title: 'Code block', run: insertCodeBlock },
     ],
     [
       { icon: AlignLeft, title: 'Align left', run: () => align('Left') },

@@ -75,7 +75,7 @@ class LeadRepository extends BaseRepository
             ->orderBy('lead_order')
             ->get();
 
-        return $statuses->map(function ($status) use ($leads) {
+        $columns = $statuses->map(function ($status) use ($leads) {
             $statusLeads = $leads->where('status_id', $status->id)->values();
             return [
                 'id'          => $status->id,
@@ -86,6 +86,28 @@ class LeadRepository extends BaseRepository
                 'count'       => $statusLeads->count(),
                 'total_value' => $statusLeads->sum('lead_value'),
             ];
-        });
+        })->values();
+
+        // Leads with no status matched no column and so were invisible on the
+        // board — silently dropped, which is worse than an ugly column. They are
+        // real leads (created before any status existed, or with the status
+        // cleared) and need somewhere to be picked up from and dragged onward, so
+        // they get a synthetic first column. `id` is null: the frontend must treat
+        // it as read-only for drops, since "no status" isn't a status to move to.
+        $unassigned = $leads->whereNull('status_id')->values();
+
+        if ($unassigned->isNotEmpty()) {
+            $columns->prepend([
+                'id'          => null,
+                'name'        => 'Unassigned',
+                'color'       => '#94a3b8',
+                'is_won'      => false,
+                'leads'       => $unassigned,
+                'count'       => $unassigned->count(),
+                'total_value' => $unassigned->sum('lead_value'),
+            ]);
+        }
+
+        return $columns->values();
     }
 }

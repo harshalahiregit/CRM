@@ -5,6 +5,7 @@ namespace App\Services\Sales;
 use App\Exceptions\UnauthorizedTenantException;
 use App\Models\Sales\Reminder;
 use Illuminate\Support\Facades\DB;
+use App\Support\HtmlSanitizer;
 use Illuminate\Support\Facades\Log;
 
 class ReminderService
@@ -60,6 +61,8 @@ class ReminderService
     public function create(array $data, int $tenantId, int $userId): Reminder
     {
         $data['remindable_type'] = $this->resolveType($data['remindable_type']);
+        // Rich text (notepad editor) — sanitized before it ever reaches the DB.
+        $data = HtmlSanitizer::cleanFields($data, ['notes']);
 
         $reminder = Reminder::create([
             ...$data,
@@ -79,6 +82,8 @@ class ReminderService
         if (array_key_exists('remindable_type', $data)) {
             $data['remindable_type'] = $this->resolveType($data['remindable_type']);
         }
+
+        $data = HtmlSanitizer::cleanFields($data, ['notes']);
 
         $reminder->update($data);
         return $reminder->fresh()->load(['assignee:id,name', 'creator:id,name']);

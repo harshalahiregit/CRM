@@ -12,6 +12,7 @@ import ActivityTimeline from '../components/ActivityTimeline'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import ProposalSubmitModal from '../components/ProposalSubmitModal'
 import { useToast } from '@/hooks/useToast'
+import { richHtml } from '@/lib/richText'
 
 const fmt     = v => '₹' + Number(v || 0).toLocaleString('en-IN')
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
@@ -320,7 +321,7 @@ export default function ProposalDetail() {
               <div className="mb-6">
                 <p className="label-caps mb-1">Subject</p>
                 <p className="font-bold" style={{ color: 'var(--text-h)' }}>{proposal.subject}</p>
-                {proposal.notes && <p className="text-sm mt-2" style={{ color: 'var(--text-muted)' }}>{proposal.notes}</p>}
+                {proposal.notes && <div className="rich-content text-sm mt-2" style={{ color: 'var(--text-muted)' }} dangerouslySetInnerHTML={richHtml(proposal.notes)} />}
               </div>
 
               {/* Line items */}

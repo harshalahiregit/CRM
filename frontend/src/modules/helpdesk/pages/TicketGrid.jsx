@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useDiscardGuard } from '@/lib/confirmClose'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import {
   Search, Plus, X, Inbox, Clock, CheckCircle2, Circle, User, Zap,
   Download, Columns3, Rows3, AlignJustify, ArrowUp, ArrowDown, ChevronsUpDown,
@@ -91,6 +91,17 @@ export default function TicketGrid() {
   const [view, setView] = useState('all')
   const [q, setQ] = useState('')
   const [showNew, setShowNew] = useState(false)
+  // "Raise ticket" from another module (e.g. a lead) lands here with the context
+  // prefilled — same router-state hand-off as "Convert reply to KB" into KbAdmin.
+  const [draftTicket, setDraftTicket] = useState(null)
+  const routerLocation = useLocation()
+  useEffect(() => {
+    const draft = routerLocation.state?.draftTicket
+    if (!draft) return
+    setDraftTicket(draft)
+    setShowNew(true)
+    window.history.replaceState({}, '')   // consume it so a refresh doesn't re-open
+  }, [routerLocation.state])
   const [sort, setSort] = useState({ key: 'updated', dir: 'desc' })
   const [selected, setSelected] = useState(() => new Set())
   const [density, setDensity] = useState(() => loadPref('hd-grid-density', 'comfortable'))
@@ -539,8 +550,8 @@ export default function TicketGrid() {
       </div>
 
       {showNew && (
-        <NewTicketModal settings={settings} onClose={() => setShowNew(false)}
-          onCreated={(id) => { qc.invalidateQueries({ queryKey: ['helpdesk-tickets'] }); setShowNew(false); navigate(`/app/helpdesk/tickets/${id}`) }} />
+        <NewTicketModal settings={settings} draft={draftTicket} onClose={() => { setShowNew(false); setDraftTicket(null) }}
+          onCreated={(id) => { qc.invalidateQueries({ queryKey: ['helpdesk-tickets'] }); setShowNew(false); setDraftTicket(null); navigate(`/app/helpdesk/tickets/${id}`) }} />
       )}
 
       <ConfirmModal
@@ -585,10 +596,24 @@ function Checkbox({ checked, onChange, accent }) {
 /* ── New Ticket Modal (unchanged behaviour) ──────────────────── */
 const inp = { width: '100%', padding: '10px 13px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, outline: 'none', color: 'var(--text-h)', background: 'var(--bg-input)' }
 
-function NewTicketModal({ settings, onClose, onCreated }) {
-  const [form, setForm] = useState({ subject: '', description: '', priority: 'medium', status: 'open', department_id: '', assigned_to: '', requester_name: '', requester_email: '' })
+function NewTicketModal({ settings, onClose, onCreated, draft = null }) {
+  // `draft` carries context from another module ("Raise ticket" on a lead), so the
+  // form opens part-filled. customer_id is not an input here — it rides along
+  // hidden so the ticket stays linked to whoever it was raised for.
+  const [form, setForm] = useState({
+    subject: draft?.subject || '', description: draft?.description || '',
+    priority: draft?.priority || 'medium', status: 'open',
+    department_id: '', assigned_to: '',
+    requester_name: draft?.requester_name || '', requester_email: draft?.requester_email || '',
+  })
   const create = useMutation({
-    mutationFn: () => { const p = { ...form }; Object.keys(p).forEach(k => p[k] === '' && delete p[k]); return helpdeskApi.tickets.create(p) },
+    mutationFn: () => {
+      const p = { ...form }
+      Object.keys(p).forEach(k => p[k] === '' && delete p[k])
+      if (draft?.customer_id) p.customer_id = Number(draft.customer_id)
+      if (draft?.source) p.source = draft.source
+      return helpdeskApi.tickets.create(p)
+    },
     onSuccess: (t) => onCreated(t.id),
   })
   const snapRef = useRef(null)

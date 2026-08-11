@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckSquare, Plus, Search, Building2, FileSignature, CircleDot } from 'lucide-react'
 import { taskApi, TASK_PRIORITY } from '@/services/taskApi'
+import ListToolbar from '@/components/ui/ListToolbar'
+import { useListView } from '@/hooks/useListView'
 import TaskFormDrawer from '@/modules/tasks/components/TaskFormDrawer'
 
 /**
@@ -34,6 +36,9 @@ export default function SalesTasks() {
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['sales-tasks'] })
 
+  // Paging + count over the page's own search result.
+  const { pageSize, setPageSize, visible, matched } = useListView(tasks, [])
+
   return (
     <div className="space-y-6 animate-[tiltIn_0.35s_ease]">
       {/* Header */}
@@ -52,11 +57,11 @@ export default function SalesTasks() {
         </button>
       </div>
 
-      {/* Search */}
-      <div className="relative" style={{ maxWidth: 340 }}>
-        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
-        <input className="input-3d pl-9" placeholder="Search sales tasks…" value={search} onChange={e => setSearch(e.target.value)} />
-      </div>
+      {/* Toolbar: search · count · rows-per-page · refresh */}
+      <ListToolbar
+        search={search} onSearch={setSearch} searchPlaceholder="Search sales tasks…"
+        count={matched} total={(Array.isArray(data) ? data : data?.data ?? []).length} unit="task"
+        pageSize={pageSize} onPageSize={setPageSize} onRefresh={refresh} />
 
       {/* List */}
       <div className="card-3d overflow-hidden" style={{ padding: 0 }}>
@@ -75,7 +80,7 @@ export default function SalesTasks() {
                 No sales tasks yet. Create one, or add tasks from a customer or contract.
               </td></tr>
             )}
-            {tasks.map(t => {
+            {visible.map(t => {
               const meta = REL_META[t.rel_type] || { label: t.rel_type || '—', icon: CircleDot, color: 'var(--text-muted)' }
               const Icon = meta.icon
               const prio = TASK_PRIORITY[t.priority] || {}

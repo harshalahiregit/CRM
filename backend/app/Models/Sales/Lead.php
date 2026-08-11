@@ -20,6 +20,8 @@ class Lead extends Model
         'lead_temperature', 'conversion_chance', 'country', 'state', 'city',
         'zip', 'address', 'status_id', 'source_id', 'assigned_to', 'created_by',
         'is_public', 'last_contact_date', 'date_assigned', 'lost', 'junk',
+        // Why/when a lead was written off — the old CRM kept only the flags.
+        'lost_reason', 'lost_at', 'junk_reason', 'junk_at',
         'last_lead_status_id', 'date_converted', 'client_id', 'lead_order',
         'referral_type', 'referral_value', 'referral_contact', 'tags',
     ];
@@ -30,6 +32,8 @@ class Lead extends Model
         'conversion_chance'   => 'integer',
         'is_public'           => 'boolean',
         'lost'                => 'boolean',
+        'lost_at'             => 'datetime',
+        'junk_at'             => 'datetime',
         'junk'                => 'boolean',
         'last_contact_date'   => 'date',
         'expected_close_date' => 'date',

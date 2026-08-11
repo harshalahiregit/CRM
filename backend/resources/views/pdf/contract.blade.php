@@ -17,6 +17,14 @@
         .stamp { margin-top: 12px; display: inline-block; border: 2px solid #7C3AED; color: #7C3AED; border-radius: 8px; padding: 8px 16px; font-weight: bold; transform: rotate(-4deg); }
         .audit { font-size: 10px; color: #94a3b8; margin-top: 6px; }
         .portal { margin-top: 24px; font-size: 10px; color: #64748b; word-break: break-all; }
+        /* Rich-text (notepad) content: quote/code blocks and tables reach the PDF
+           through notes, terms, description and content pages. DomPDF has no
+           defaults for these, so without the rules they print as plain text. */
+        blockquote { border-left: 3px solid #7C3AED; padding: 2px 0 2px 10px; margin: 6px 0; color: #475569; font-style: italic; }
+        pre { background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px; margin: 6px 0; font-family: "Courier New", monospace; font-size: 11px; white-space: pre-wrap; }
+        code { font-family: "Courier New", monospace; font-size: 11px; }
+        s, strike { text-decoration: line-through; }
+        blockquote p { margin: 2px 0; }
     </style>
 </head>
 <body>
@@ -32,7 +40,8 @@
     </table>
 
     @if($contract->description)
-        <div class="box">{{ $contract->description }}</div>
+        {{-- Sanitized rich text (HtmlSanitizer) — safe to render as HTML. --}}
+        <div class="box">{!! \App\Support\RichText::toHtml($contract->description) !!}</div>
     @endif
 
     @if($contract->relationLoaded('pages'))

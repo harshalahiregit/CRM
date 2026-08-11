@@ -7,6 +7,9 @@ import StatusBadge from '../components/StatusBadge'
 import RowMenu from '../components/RowMenu'
 import RichTextEditor from '@/components/ui/RichTextEditor'
 import { useToast } from '@/hooks/useToast'
+import ListToolbar from '@/components/ui/ListToolbar'
+import { useListView } from '@/hooks/useListView'
+import { exportSalesList } from '@/services/salesApi'
 
 const fmt = v => '₹' + Number(v||0).toLocaleString('en-IN')
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) : '—'
@@ -75,6 +78,11 @@ export default function CreditNotes() {
     available: data.filter(c=>c.status==='Open').reduce((s,c)=>s+c.amount,0),
   }
 
+  // Search + rows-per-page over the (server status-filtered) list. Client-side
+  // because the endpoint returns everything unpaginated, so this costs no request.
+  const { search, setSearch, pageSize, setPageSize, visible, matched } =
+    useListView(data, ['number', 'client', 'status', 'reference'])
+
   return (
     <>
       <div className="space-y-6 animate-[tiltIn_0.35s_ease]" onClick={()=>setOpenMenu(null)}>
@@ -105,6 +113,14 @@ export default function CreditNotes() {
         ))}
       </div>
 
+      {/* Toolbar: search · status tabs · count · rows-per-page · refresh · export */}
+      <ListToolbar
+        search={search} onSearch={setSearch} searchPlaceholder="Search credit notes…"
+        count={matched} total={data.length} unit="record"
+        pageSize={pageSize} onPageSize={setPageSize} onRefresh={load}
+        onExport={() => exportSalesList('credit-notes', { status: filter !== 'All' ? filter : undefined, search: search || undefined })
+          .catch(e => showToast(e.message, 'error'))}
+      >
       <div className="flex gap-1.5 p-1 rounded-2xl w-fit" style={{background:'var(--bg-input)',border:'1px solid var(--border)'}}>
         {['All',...STATUSES].map(f=>(
           <button key={f} onClick={()=>setFilter(f)} className="px-3 py-1.5 rounded-xl text-xs font-bold transition-all"
@@ -113,6 +129,7 @@ export default function CreditNotes() {
           </button>
         ))}
       </div>
+      </ListToolbar>
 
       {loading ? <div className="space-y-2">{[1,2,3].map(i=><div key={i} className="skeleton h-14 rounded-xl" style={{background:'var(--border)'}}/>)}</div> : (
         <div className="card-3d overflow-hidden" style={{padding:0}}>
@@ -126,7 +143,7 @@ export default function CreditNotes() {
                 </tr>
               </thead>
               <tbody>
-                {data.map(cn=>(
+                {visible.map(cn=>(
                   <tr key={cn.id} className="transition-colors" style={{borderBottom:'1px solid var(--border)'}}
                     onMouseEnter={e=>e.currentTarget.style.background='rgba(124,58,237,0.04)'}
                     onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
@@ -157,7 +174,7 @@ export default function CreditNotes() {
                     </td>
                   </tr>
                 ))}
-                {data.length===0 && <tr><td colSpan="8" className="py-12 text-center" style={{color:'var(--text-muted)'}}>No credit notes found.</td></tr>}
+                {visible.length===0 && <tr><td colSpan="8" className="py-12 text-center" style={{color:'var(--text-muted)'}}>No credit notes found.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -223,14 +240,14 @@ export default function CreditNotes() {
                       <span className="px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ background: 'rgba(239,68,68,0.1)', color: '#f87171' }}>🔒 INTERNAL</span>
                       Admin Note
                     </label>
-                    <textarea className="input-3d text-sm resize-none" rows={2} placeholder="Internal notes…" value={form.adminnote} onChange={e => sf('adminnote', e.target.value)} />
+                    <RichTextEditor value={form.adminnote} onChange={v => sf('adminnote', v)} placeholder="Internal notes…" minHeight={90} />
                   </div>
                   <div>
                     <label className="label flex items-center gap-1">
                       <span className="px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ background: 'rgba(16,185,129,0.1)', color: '#10b981' }}>VISIBLE</span>
                       Client Note
                     </label>
-                    <textarea className="input-3d text-sm resize-none" rows={2} placeholder="Note visible to customer…" value={form.clientnote} onChange={e => sf('clientnote', e.target.value)} />
+                    <RichTextEditor value={form.clientnote} onChange={v => sf('clientnote', v)} placeholder="Note visible to customer…" minHeight={90} />
                   </div>
                   <div>
                     <label className="label">Terms</label>

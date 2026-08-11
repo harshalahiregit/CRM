@@ -67,6 +67,28 @@ class HtmlSanitizer
         'text-decoration'  => '~^(none|underline|line-through)$~i',
     ];
 
+    /**
+     * Clean several rich-text keys of a request payload in one call.
+     *
+     * Services accumulated one `if (isset($data['x'])) { … }` per rich field, and
+     * every new field meant remembering to add another — a field silently missed
+     * is stored unsanitized. Listing the keys in one place makes the set of rich
+     * fields obvious at the call site.
+     *
+     * Keys absent from `$data` are left absent (so a partial update doesn't blank
+     * a column), and a null value stays null rather than becoming an empty string.
+     */
+    public static function cleanFields(array $data, array $keys): array
+    {
+        foreach ($keys as $key) {
+            if (array_key_exists($key, $data) && $data[$key] !== null) {
+                $data[$key] = self::clean((string) $data[$key]);
+            }
+        }
+
+        return $data;
+    }
+
     public static function clean(?string $html): string
     {
         if ($html === null || trim($html) === '') {

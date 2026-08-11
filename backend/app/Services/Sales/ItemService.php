@@ -4,6 +4,7 @@ namespace App\Services\Sales;
 
 use App\Exceptions\UnauthorizedTenantException;
 use App\Models\Sales\SalesItem;
+use App\Support\HtmlSanitizer;
 use Illuminate\Support\Facades\Log;
 
 class ItemService
@@ -28,6 +29,8 @@ class ItemService
 
     public function create(array $data, int $tenantId): SalesItem
     {
+        $data = HtmlSanitizer::cleanFields($data, ['long_description']);
+
         $item = SalesItem::create([...$data, 'tenant_id' => $tenantId]);
 
         Log::channel('sales')->info('Sales item created', ['id' => $item->id, 'tenant_id' => $tenantId]);
@@ -45,6 +48,8 @@ class ItemService
     public function update(SalesItem $item, array $data, int $tenantId): SalesItem
     {
         $this->authorizeItem($item, $tenantId);
+
+        $data = HtmlSanitizer::cleanFields($data, ['long_description']);
 
         $item->update($data);
 

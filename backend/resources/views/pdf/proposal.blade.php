@@ -28,6 +28,14 @@
         .cover .cbody { text-align: left; max-width: 620px; margin: 22px auto 0; color: #334155; font-size: 13px; line-height: 1.6; }
         .cover .cbody img { max-width: 100%; }
         .cover .cmeta { color: #64748b; font-size: 13px; margin-top: 18px; }
+        /* Rich-text (notepad) content: quote/code blocks and tables reach the PDF
+           through notes, terms, description and content pages. DomPDF has no
+           defaults for these, so without the rules they print as plain text. */
+        blockquote { border-left: 3px solid #7C3AED; padding: 2px 0 2px 10px; margin: 6px 0; color: #475569; font-style: italic; }
+        pre { background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px; margin: 6px 0; font-family: "Courier New", monospace; font-size: 11px; white-space: pre-wrap; }
+        code { font-family: "Courier New", monospace; font-size: 11px; }
+        s, strike { text-decoration: line-through; }
+        blockquote p { margin: 2px 0; }
     </style>
 </head>
 <body>
@@ -117,7 +125,9 @@
 
     @if($proposal->notes)
         <div class="box" style="margin-top: 24px;">
-            <strong>Notes</strong><br>{{ $proposal->notes }}
+            {{-- Sanitized rich text (HtmlSanitizer), same as Terms below. --}}
+            <strong>Notes</strong>
+            <div>{!! \App\Support\RichText::toHtml($proposal->notes) !!}</div>
         </div>
     @endif
 
@@ -125,7 +135,7 @@
         {{-- Terms is sanitized rich text (HtmlSanitizer) — safe to render as HTML. --}}
         <div class="box" style="margin-top: 16px;">
             <strong>Terms &amp; Conditions</strong>
-            <div>{!! $proposal->terms !!}</div>
+            <div>{!! \App\Support\RichText::toHtml($proposal->terms) !!}</div>
         </div>
     @endif
 

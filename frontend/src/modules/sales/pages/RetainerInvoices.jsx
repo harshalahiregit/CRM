@@ -7,6 +7,8 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import EmptyState from '@/components/ui/EmptyState'
 import FormField, { Input, Select } from '@/components/ui/FormField'
 import { useToast } from '@/hooks/useToast'
+import ListToolbar from '@/components/ui/ListToolbar'
+import { useListView } from '@/hooks/useListView'
 
 const fmt = v => '₹' + Number(v || 0).toLocaleString('en-IN')
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
@@ -71,6 +73,10 @@ export default function RetainerInvoices() {
     }
   }
 
+  // Search + rows-per-page client-side: the endpoint returns everything unpaginated.
+  const { search, setSearch, pageSize, setPageSize, visible, matched } =
+    useListView(data, ['number','client','status'])
+
   return (
     <div className="space-y-6 animate-fade-in">
 
@@ -105,6 +111,12 @@ export default function RetainerInvoices() {
         ))}
       </div>
 
+      {/* Toolbar: search · count · rows-per-page · refresh */}
+      <ListToolbar
+        search={search} onSearch={setSearch} searchPlaceholder="Search retainer invoices…"
+        count={matched} total={data.length} unit="record"
+        pageSize={pageSize} onPageSize={setPageSize} onRefresh={load} />
+
       {/* List */}
       {loading ? (
         <div className="space-y-2">{[1, 2, 3].map(i => <div key={i} className="skeleton h-16 rounded-xl" style={{ background: 'var(--border)' }} />)}</div>
@@ -127,7 +139,7 @@ export default function RetainerInvoices() {
                 </tr>
               </thead>
               <tbody>
-                {data.map(r => {
+                {visible.map(r => {
                   const s = STATUS_STYLE[r.status] || STATUS_STYLE.Draft
                   return (
                     <tr key={r.id} style={{ borderBottom: '1px solid var(--border)' }}>

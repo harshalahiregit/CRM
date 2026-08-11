@@ -21,7 +21,7 @@ class CreditNoteService
 
     public function list(int $tenantId, array $filters): mixed
     {
-        $query = CreditNote::forTenant($tenantId)->with('lineItems');
+        $query = CreditNote::forTenant($tenantId)->with(['lineItems', 'customer:id,company']);
 
         if (!empty($filters['status']) && $filters['status'] !== 'All') {
             $query->where('status', $filters['status']);
@@ -36,9 +36,8 @@ class CreditNoteService
     public function create(array $data, int $tenantId, int $userId): CreditNote
     {
         return DB::transaction(function () use ($data, $tenantId, $userId) {
-            if (isset($data['terms'])) {
-                $data['terms'] = HtmlSanitizer::clean($data['terms']); // rich text
-            }
+            // Rich text (notepad editor) — sanitized before it ever reaches the DB.
+            $data = HtmlSanitizer::cleanFields($data, ['terms', 'adminnote', 'clientnote']);
             $cn = CreditNote::create([
                 ...$data,
                 'tenant_id'  => $tenantId,
@@ -158,9 +157,8 @@ class CreditNoteService
         }
 
         return DB::transaction(function () use ($creditNote, $data, $amount, $userId, $tenantId) {
-            if (isset($data['terms'])) {
-                $data['terms'] = HtmlSanitizer::clean($data['terms']); // rich text
-            }
+            // Rich text (notepad editor) — sanitized before it ever reaches the DB.
+            $data = HtmlSanitizer::cleanFields($data, ['terms', 'adminnote', 'clientnote']);
             CreditNoteRefund::create([
                 'credit_note_id' => $creditNote->id,
                 'amount'         => $amount,
@@ -202,6 +200,12 @@ class CreditNoteService
 
         $subtotal = $taxTotal = $total = 0;
         foreach ($items as $idx => $item) {
+            // Same prelude as ProposalService: normalize the tax shape and resolve a
+            // % discount to an amount BEFORE the row is built. Without it $taxInfo is
+            // undefined and every create/update with line items 500s.
+            $taxInfo = SalesLineItem::normalizeTaxes($item);
+            $item['tax'] = $taxInfo['tax'];
+            $item['discount'] = SalesLineItem::discountAmount($item);
             $lineTotal = SalesLineItem::computeTotal($item);
             $total += $lineTotal;
             SalesLineItem::create([

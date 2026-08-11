@@ -3,6 +3,8 @@ import { Plus, Phone, Users, Mail, MessageCircle, MessageSquare, MapPin, Check, 
 import { followUpApi } from '@/services/followUpApi'
 import { useToast } from '@/hooks/useToast'
 import ConfirmIconButton from '@/modules/customer/components/ConfirmIconButton'
+import RichTextEditor from '@/components/ui/RichTextEditor'
+import { richHtml } from '@/lib/richText'
 
 const TYPE_ICON = { call: Phone, meeting: Users, email: Mail, whatsapp: MessageCircle, sms: MessageSquare, visit: MapPin }
 const TYPES = ['call', 'meeting', 'email', 'whatsapp', 'sms', 'visit']
@@ -63,7 +65,7 @@ export default function FollowUpsPanel({ subjectType, subjectId }) {
           </div>
           <input className="input-3d text-sm" placeholder="Title, e.g. Call about renewal" value={form.title} onChange={e => sf('title', e.target.value)} />
           <input type="datetime-local" className="input-3d text-sm" value={form.due_at} onChange={e => sf('due_at', e.target.value)} />
-          <textarea rows={2} className="input-3d text-sm resize-none" placeholder="Notes…" value={form.notes} onChange={e => sf('notes', e.target.value)} />
+          <RichTextEditor value={form.notes} onChange={v => sf('notes', v)} placeholder="Notes…" minHeight={80} />
           <div className="flex justify-end gap-2">
             <button onClick={() => setAdding(false)} className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: 'var(--bg-card)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Cancel</button>
             <button onClick={save} className="px-4 py-1.5 rounded-lg text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>Save</button>
@@ -84,6 +86,9 @@ export default function FollowUpsPanel({ subjectType, subjectId }) {
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-bold" style={{ color: 'var(--text-h)', textDecoration: done ? 'line-through' : 'none' }}>{r.title}</p>
                     <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{fmtDT(r.due_at)} · {r.type}{r.priority === 'high' ? ' · High' : ''}</p>
+                    {/* The note was captured on create but never rendered back, so
+                        whatever was typed here was effectively write-only. */}
+                    {r.notes && <div className="rich-content text-[11px] mt-1" style={{ color: 'var(--text-muted)' }} dangerouslySetInnerHTML={richHtml(r.notes)} />}
                     {r.outcome && <p className="text-[11px] mt-1" style={{ color: 'var(--text-body)' }}>↳ {r.outcome}</p>}
                   </div>
                   <div className="flex gap-1 items-center">

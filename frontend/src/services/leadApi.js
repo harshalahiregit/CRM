@@ -30,11 +30,11 @@ export const leadApi = {
   assign: (id, userId) =>
     api.patch(`/sales/leads/${id}/assign`, { assigned_to: userId }).then(r => r.data).catch(handleErr),
 
-  markLost: (id) =>
-    api.patch(`/sales/leads/${id}/lost`).then(r => r.data).catch(handleErr),
+  markLost: (id, reason = null) =>
+    api.patch(`/sales/leads/${id}/lost`, reason ? { reason } : {}).then(r => r.data).catch(handleErr),
 
-  markJunk: (id) =>
-    api.patch(`/sales/leads/${id}/junk`).then(r => r.data).catch(handleErr),
+  markJunk: (id, reason = null) =>
+    api.patch(`/sales/leads/${id}/junk`, reason ? { reason } : {}).then(r => r.data).catch(handleErr),
 
   restore: (id) =>
     api.patch(`/sales/leads/${id}/restore`).then(r => r.data).catch(handleErr),

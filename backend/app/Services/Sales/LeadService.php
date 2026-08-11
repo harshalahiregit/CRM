@@ -10,6 +10,7 @@ use App\Models\Sales\LeadNote;
 use App\Models\Sales\LeadQuestionnaireResponse;
 use App\Models\Sales\LeadStatus;
 use App\Repositories\Sales\LeadRepository;
+use App\Support\HtmlSanitizer;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -30,6 +31,11 @@ class LeadService
 
     public function kanban(int $tenantId)
     {
+        // The board IS the statuses — with none configured it has no columns and
+        // reads as a broken page. The Leads screen loads statuses and the board in
+        // parallel, so this can't rely on the statuses call having seeded first.
+        app(LeadSettingService::class)->ensureDefaults($tenantId);
+
         return $this->leadRepository->kanbanColumns($tenantId);
     }
 
@@ -44,6 +50,7 @@ class LeadService
         $cold      = (clone $leads)->active()->where('lead_temperature', 'Cold')->count();
         $converted = (clone $leads)->converted()->count();
         $lost      = (clone $leads)->lost()->count();
+        $junk      = (clone $leads)->junk()->count();
         $pipeline  = (clone $leads)->active()->sum('lead_value');
 
         $conversionRate = $total > 0 ? round(($converted / $total) * 100, 1) : 0;
@@ -51,11 +58,27 @@ class LeadService
         $thisMonth      = (clone $leads)->whereMonth('created_at', now()->month)->whereYear('created_at', now()->year)->count();
         $thisMonthValue = (clone $leads)->whereMonth('created_at', now()->month)->whereYear('created_at', now()->year)->sum('lead_value');
 
-        $byStatus = LeadStatus::forTenant($tenantId)->ordered()->get()->map(function ($s) use ($tenantId) {
-            $count = Lead::forTenant($tenantId)->active()->where('status_id', $s->id)->count();
-            $value = Lead::forTenant($tenantId)->active()->where('status_id', $s->id)->sum('lead_value');
-            return ['name' => $s->name, 'color' => $s->color, 'count' => $count, 'value' => $value];
-        });
+        // One grouped query instead of two per status — this ran 2N queries and is
+        // read on every Leads page load. `id` is included so the page can match a
+        // count to its filter chip; without it the chips could only match on name.
+        $statusAgg = Lead::forTenant($tenantId)->active()
+            ->selectRaw('status_id, COUNT(*) as c, COALESCE(SUM(lead_value), 0) as v')
+            ->groupBy('status_id')
+            ->get()
+            ->keyBy('status_id');
+
+        $byStatus = LeadStatus::forTenant($tenantId)->ordered()->get()->map(fn ($s) => [
+            'id'    => $s->id,
+            'name'  => $s->name,
+            'color' => $s->color,
+            'count' => (int) ($statusAgg[$s->id]->c ?? 0),
+            'value' => (float) ($statusAgg[$s->id]->v ?? 0),
+        ]);
+
+        // Leads with no status still exist (created before any status was defined,
+        // or cleared since) and belong to no chip — surfaced so the chip counts add
+        // up to the total instead of silently falling short.
+        $unassigned = (clone $leads)->active()->whereNull('status_id')->count();
 
         $bySource = Lead::forTenant($tenantId)->active()
             ->selectRaw('source_id, count(*) as count')
@@ -72,6 +95,8 @@ class LeadService
             'cold'             => $cold,
             'converted'        => $converted,
             'lost'             => $lost,
+            'junk'             => $junk,
+            'unassigned'       => $unassigned,
             'pipeline_value'   => $pipeline,
             'conversion_rate'  => $conversionRate,
             'this_month'       => $thisMonth,
@@ -81,8 +106,49 @@ class LeadService
         ];
     }
 
+    /**
+     * Turn a typed-in source NAME into a `source_id`.
+     *
+     * The lead form asks for the source as free text rather than a dropdown, but
+     * `leads.source_id` is a foreign key — so the name is matched against the
+     * tenant's existing sources and only created when it's genuinely new. Matching
+     * is case-insensitive so "google" doesn't become a second "Google".
+     *
+     * `source` is not a column (it's the relation name), so it is always removed
+     * from the payload before the model sees it.
+     */
+    private function resolveSource(array &$data, int $tenantId): void
+    {
+        if (! array_key_exists('source', $data)) {
+            return;
+        }
+
+        $name = trim((string) $data['source']);
+        unset($data['source']);
+
+        if ($name === '') {
+            // Cleared on purpose — drop the association rather than keeping the old
+            // one, but only when the caller actually sent the field.
+            $data['source_id'] = null;
+
+            return;
+        }
+
+        $existing = \App\Models\Sales\LeadSource::forTenant($tenantId)
+            ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
+            ->first();
+
+        $data['source_id'] = $existing
+            ? $existing->id
+            : \App\Models\Sales\LeadSource::create(['tenant_id' => $tenantId, 'name' => $name])->id;
+    }
+
     public function create(array $data, int $tenantId, int $userId): Lead
     {
+        $this->resolveSource($data, $tenantId);
+        // Rich text (notepad editor) — sanitized before it ever reaches the DB.
+        $data = HtmlSanitizer::cleanFields($data, ['description']);
+
         $lead = Lead::create([
             ...$data,
             'tenant_id'  => $tenantId,
@@ -118,6 +184,9 @@ class LeadService
     public function update(Lead $lead, array $data, int $tenantId): Lead
     {
         $this->assertTenant($lead, $tenantId);
+
+        $this->resolveSource($data, $tenantId);
+        $data = HtmlSanitizer::cleanFields($data, ['description']);
 
         $lead->update($data);
         $lead->logActivity('updated', "Lead \"{$lead->name}\" updated");
@@ -160,18 +229,45 @@ class LeadService
         return $lead->fresh()->load(['status', 'source', 'assignedUser:id,name']);
     }
 
-    public function markLost(Lead $lead, int $tenantId, int $userId): Lead
+    /**
+     * Mark lost, keeping WHY.
+     *
+     * The old CRM stored only the boolean, so "14 lost leads" could never be
+     * reviewed afterwards. The reason is optional (never block the action) but it
+     * is what makes the number useful later.
+     */
+    public function markLost(Lead $lead, int $tenantId, int $userId, ?string $reason = null): Lead
     {
         $this->assertTenant($lead, $tenantId);
         $lead->markAsLost($userId);
+
+        $reason = trim((string) $reason);
+        $lead->update([
+            'lost_reason' => $reason !== '' ? mb_substr($reason, 0, 255) : null,
+            'lost_at'     => now(),
+        ]);
+        if ($reason !== '') {
+            $lead->logActivity('lost_reason', "Lost reason: {$reason}", null, null, $userId);
+        }
+
         Log::channel('sales')->info('Lead marked lost', ['lead_id' => $lead->id, 'tenant_id' => $tenantId]);
         return $lead->fresh()->load(['status', 'source']);
     }
 
-    public function markJunk(Lead $lead, int $tenantId, int $userId): Lead
+    public function markJunk(Lead $lead, int $tenantId, int $userId, ?string $reason = null): Lead
     {
         $this->assertTenant($lead, $tenantId);
         $lead->markAsJunk($userId);
+
+        $reason = trim((string) $reason);
+        $lead->update([
+            'junk_reason' => $reason !== '' ? mb_substr($reason, 0, 255) : null,
+            'junk_at'     => now(),
+        ]);
+        if ($reason !== '') {
+            $lead->logActivity('junk_reason', "Junk reason: {$reason}", null, null, $userId);
+        }
+
         Log::channel('sales')->info('Lead marked junk', ['lead_id' => $lead->id, 'tenant_id' => $tenantId]);
         return $lead->fresh()->load(['status', 'source']);
     }
@@ -180,8 +276,127 @@ class LeadService
     {
         $this->assertTenant($lead, $tenantId);
         $lead->restoreFromLostJunk($userId);
+        // Clear the audit too — a restored lead is active again, and a stale
+        // "lost because price" on a live lead would read as current.
+        $lead->update(['lost_reason' => null, 'lost_at' => null, 'junk_reason' => null, 'junk_at' => null]);
         Log::channel('sales')->info('Lead restored', ['lead_id' => $lead->id, 'tenant_id' => $tenantId]);
         return $lead->fresh()->load(['status', 'source']);
+    }
+
+    /**
+     * Build the customer record a converted lead becomes.
+     *
+     * Mirrors the old CRM's convert-to-customer: the lead's address becomes the
+     * billing address, a primary contact is created from the lead's own name and
+     * email, and the lead's custom-field values are carried over when asked for.
+     * Anything the caller supplies in $data wins, so the convert dialog can correct
+     * details on the way through.
+     */
+    private function createClientFromLead(Lead $lead, array $data, int $tenantId): \App\Models\Customer\Client
+    {
+        $company = trim((string) ($data['company'] ?? $lead->company ?? $lead->name));
+
+        $client = \App\Models\Customer\Client::create([
+            'tenant_id' => $tenantId,
+            'lead_id'   => $lead->id,
+            'company'   => $company !== '' ? $company : 'Unnamed customer',
+            'phone'     => $data['phone']   ?? $lead->phone,
+            'website'   => $data['website'] ?? $lead->website,
+            'address'   => $data['address'] ?? $lead->address,
+            'city'      => $data['city']    ?? $lead->city,
+            'state'     => $data['state']   ?? $lead->state,
+            'zip'       => $data['zip']     ?? $lead->zip,
+            'country'   => $data['country'] ?? $lead->country,
+            // The old CRM copied address → billing_street on convert; keep that so
+            // the first invoice has somewhere to bill.
+            'billing_street'  => $data['address'] ?? $lead->address,
+            'billing_city'    => $data['city']    ?? $lead->city,
+            'billing_state'   => $data['state']   ?? $lead->state,
+            'billing_zip'     => $data['zip']     ?? $lead->zip,
+            'billing_country' => $data['country'] ?? $lead->country,
+            'active'    => true,
+            'added_by'  => $lead->created_by,
+        ]);
+
+        // A customer with no contact can't be emailed or given portal access, so
+        // the lead's own details become the primary contact. Split "First Last"
+        // on the first space only — surnames can contain spaces.
+        $name  = trim((string) ($data['contact_name'] ?? $lead->name));
+        $parts = preg_split('/\s+/', $name, 2) ?: [];
+        $email = trim((string) ($data['contact_email'] ?? $lead->email ?? ''));
+
+        if ($name !== '' || $email !== '') {
+            $client->contacts()->create([
+                'tenant_id'  => $tenantId,
+                'first_name' => $parts[0] ?? $name,
+                'last_name'  => $parts[1] ?? null,
+                'email'      => $email !== '' ? $email : null,
+                'phone'      => $data['phone'] ?? $lead->phone,
+                'title'      => $lead->title,
+                'is_primary' => true,
+                'active'     => true,
+            ]);
+        }
+
+        // Notes and custom fields are opt-in, matching the old CRM's checkboxes.
+        if (! empty($data['transfer_notes'])) {
+            $this->transferNotes($lead, $client, $tenantId);
+        }
+
+        if (! empty($data['transfer_custom_fields'])) {
+            $this->transferCustomFields($lead, $client, $tenantId);
+        }
+
+        return $client;
+    }
+
+    /** Copy the lead's notes onto the new customer so the history isn't orphaned. */
+    private function transferNotes(Lead $lead, \App\Models\Customer\Client $client, int $tenantId): void
+    {
+        foreach ($lead->notes()->get() as $note) {
+            \App\Models\Customer\ClientNote::create([
+                'tenant_id'  => $tenantId,
+                'client_id'  => $client->id,
+                'content'    => $note->content,
+                'created_by' => $note->created_by,
+            ]);
+        }
+    }
+
+    /**
+     * Carry lead custom-field values across to the customer.
+     *
+     * Matched by field NAME, since lead fields and customer fields are separate
+     * definitions — a lead "Industry" and a customer "Industry" are different rows
+     * with different ids. Values with no matching customer field are skipped rather
+     * than invented.
+     */
+    private function transferCustomFields(Lead $lead, \App\Models\Customer\Client $client, int $tenantId): void
+    {
+        $leadValues = \App\Models\Customer\CustomFieldValue::forTenant($tenantId)
+            ->where('field_to', 'leads')->where('rel_id', $lead->id)
+            ->with('field:id,name')
+            ->get();
+
+        if ($leadValues->isEmpty()) {
+            return;
+        }
+
+        $customerFields = \App\Models\Customer\CustomField::forTenant($tenantId)
+            ->where('field_to', 'customers')->get()
+            ->keyBy(fn ($f) => mb_strtolower($f->name));
+
+        foreach ($leadValues as $value) {
+            $target = $customerFields[mb_strtolower((string) $value->field?->name)] ?? null;
+            if (! $target) {
+                continue;
+            }
+
+            \App\Models\Customer\CustomFieldValue::updateOrCreate(
+                ['field_id' => $target->id, 'rel_id' => $client->id],
+                ['tenant_id' => $tenantId, 'field_to' => 'customers', 'value' => $value->value],
+            );
+        }
     }
 
     public function convert(Lead $lead, array $data, int $tenantId, int $userId): array
@@ -195,14 +410,25 @@ class LeadService
         return DB::transaction(function () use ($lead, $data, $tenantId) {
             $wonStatus = LeadStatus::getWonStatus($tenantId);
 
+            // Actually create the customer. This previously only flipped a flag, so
+            // "Convert to customer" produced no customer at all — the lead was
+            // marked converted and clients.lead_id (which exists for exactly this)
+            // stayed empty.
+            $client = $this->createClientFromLead($lead, $data, $tenantId);
+
             $lead->update([
                 'status_id'      => $wonStatus?->id ?? $lead->status_id,
                 'date_converted' => now(),
+                'client_id'      => $client->id,
                 'lost'           => false,
                 'junk'           => false,
+                'lost_reason'    => null,
+                'junk_reason'    => null,
             ]);
 
-            $lead->proposals()->update(['rel_type' => 'customer']);
+            // Re-point the lead's proposals at the new customer so history follows
+            // it; rel_id must move too, or they'd point at a lead id as a customer.
+            $lead->proposals()->update(['rel_type' => 'customer', 'rel_id' => $client->id]);
 
             $this->updateGoalAchievement($lead, $tenantId);
 
@@ -216,6 +442,7 @@ class LeadService
             return [
                 'message' => 'Lead converted successfully',
                 'lead'    => $lead->fresh()->load(['status', 'source']),
+                'client'  => $client->fresh()->load('contacts'),
             ];
         });
     }

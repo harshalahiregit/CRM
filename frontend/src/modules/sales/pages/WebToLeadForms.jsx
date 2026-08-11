@@ -3,6 +3,8 @@ import { Plus, Copy, Trash2, Globe, Check } from 'lucide-react'
 import { webToLeadApi } from '@/services/webToLeadApi'
 import { leadSettingsApi } from '@/services/leadSettingsApi'
 import { useToast } from '@/hooks/useToast'
+import ListToolbar from '@/components/ui/ListToolbar'
+import { useListView } from '@/hooks/useListView'
 import ConfirmIconButton from '@/modules/customer/components/ConfirmIconButton'
 import Drawer from '@/components/ui/Drawer'
 
@@ -57,6 +59,10 @@ export default function WebToLeadForms() {
   const del = async (id) => { try { await webToLeadApi.delete(id); toast.success('Deleted'); load() } catch (e) { toast.error(e.message) } }
   const copyLink = (key) => { navigator.clipboard.writeText(`${window.location.origin}/f/${key}`); toast.success('Public link copied') }
 
+  // rows starts null while loading; the hook tolerates that and reports 0.
+  const { search, setSearch, pageSize, setPageSize, visible, matched } =
+    useListView(rows, ['name', 'title'])
+
   return (
     <div className="p-4 md:p-6 max-w-[1200px] mx-auto">
       <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
@@ -69,6 +75,11 @@ export default function WebToLeadForms() {
         </button>
       </div>
 
+      <ListToolbar
+        search={search} onSearch={setSearch} searchPlaceholder="Search forms…"
+        count={matched} total={(rows || []).length} unit="form"
+        pageSize={pageSize} onPageSize={setPageSize} onRefresh={load} className="mb-3" />
+
       <div className="card-3d overflow-hidden" style={{ padding: 0 }}>
         <table className="w-full text-xs">
           <thead><tr style={{ background: 'rgba(124,58,237,0.04)', borderBottom: '1px solid var(--border)' }}>
@@ -79,7 +90,7 @@ export default function WebToLeadForms() {
               <tr><td colSpan={6} className="p-6 text-center" style={{ color: 'var(--text-muted)' }}>Loading…</td></tr>
             ) : rows.length === 0 ? (
               <tr><td colSpan={6} className="py-12 text-center" style={{ color: 'var(--text-muted)' }}>No forms yet. Create one to capture leads from your website.</td></tr>
-            ) : rows.map(f => (
+            ) : visible.map(f => (
               <tr key={f.id} style={{ borderBottom: '1px solid var(--border)' }}>
                 <td className="py-3 px-4 font-bold" style={{ color: 'var(--text-h)' }}>{f.name}</td>
                 <td className="py-3 px-4" style={{ color: 'var(--text-muted)' }}>{(f.form_data || []).length} fields</td>
