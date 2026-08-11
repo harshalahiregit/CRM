@@ -508,7 +508,7 @@ export default function TaskFormDrawer({ open, onClose, task = null, defaults = 
           <Field label="Task Description">
             <style>{DESC_EDITOR_CSS}</style>
             <div className="task-desc-editor">
-              <ReactQuill theme="snow" modules={RICH_MODULES} formats={RICH_FORMATS}
+              <ReactQuill key={(form.rel_id ?? 'new') + '-form-desc'} theme="snow" modules={RICH_MODULES} formats={RICH_FORMATS}
                 value={form.description || ''} onChange={v => sf('description', v)} placeholder="Add description…" />
             </div>
           </Field>

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeftRight, Search, X, Truck, AlertTriangle, Ban, ArrowRight,
-  Clock, ShieldCheck, Inbox, MapPin,
+  Clock, ShieldCheck, Inbox, MapPin, FileDown,
 } from 'lucide-react'
 import { inventoryApi, INV_ACCENT, TRANSFER_STATUS, fmtQty, money } from '@/services/inventoryApi'
 import { useAuth } from '@/context/AuthContext'
@@ -23,6 +23,7 @@ export default function InventoryTransfers() {
   const [overdue, setOverdue] = useState(false)
   const [search, setSearch] = useState('')
   const [openId, setOpenId] = useState(null)
+  const [selected, setSelected] = useState(() => new Set())
 
   const isAdmin = user?.role === 'admin'
 
@@ -49,6 +50,25 @@ export default function InventoryTransfers() {
     qc.invalidateQueries({ queryKey: ['inv-transit-reconcile'] })
     qc.invalidateQueries({ queryKey: ['inv-summary'] })
     qc.invalidateQueries({ queryKey: ['inv-vouchers'] })
+  }
+
+  /* Selection helpers */
+  const allChecked = rows.length > 0 && rows.every(r => selected.has(r.id))
+  const toggleAll  = () => setSelected(allChecked ? new Set() : new Set(rows.map(r => r.id)))
+  const toggleOne  = (id, e) => { e.stopPropagation(); setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n }) }
+
+  const exportSelected = () => {
+    const sel = rows.filter(r => selected.has(r.id))
+    const cols = [
+      ['Code', r => r.code], ['From', r => r.from_warehouse?.name || ''], ['To', r => r.to_warehouse?.name || ''],
+      ['Status', r => r.status], ['Lines', r => r.lines_count ?? 0], ['Expected', r => r.expected_at ? String(r.expected_at).slice(0,10) : ''],
+      ['Vehicle / Carrier', r => r.vehicle_no || r.tracking_number || ''],
+    ]
+    const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`
+    const csv = [cols.map(c => esc(c[0])).join(','), ...sel.map(r => cols.map(c => esc(c[1](r))).join(','))].join('\n')
+    const url = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' }))
+    const a = document.createElement('a'); a.href = url; a.download = `consignments-${new Date().toISOString().slice(0,10)}.csv`; a.click()
+    URL.revokeObjectURL(url)
   }
 
   return (
@@ -121,38 +141,69 @@ export default function InventoryTransfers() {
         </div>
       )}
 
+      {/* Selection bar + select-all */}
+      {rows.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 mb-2">
+          <label className="flex items-center gap-1.5 text-xs cursor-pointer" style={{ color: 'var(--text-muted)' }}>
+            <input type="checkbox" checked={allChecked} onChange={toggleAll}
+              style={{ accentColor: INV_ACCENT, width: 13, height: 13 }} />
+            Select all
+          </label>
+          {selected.size > 0 && (
+            <>
+              <span className="text-xs font-bold" style={{ color: INV_ACCENT }}>{selected.size} selected</span>
+              <button onClick={exportSelected}
+                className="flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-lg"
+                style={{ background: `color-mix(in srgb, ${INV_ACCENT} 10%, transparent)`, border: `1px solid ${INV_ACCENT}`, color: INV_ACCENT }}>
+                <FileDown size={13} /> Export selected
+              </button>
+              <button onClick={() => setSelected(new Set())} className="text-xs" style={{ color: 'var(--text-muted)' }}><X size={13} /></button>
+            </>
+          )}
+        </div>
+      )}
+
       <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))' }}>
         {rows.map(r => {
           const st = TRANSFER_STATUS[r.status] || { label: r.status, color: 'var(--text-muted)' }
           const late = r.status === 'in_transit' && r.expected_at && new Date(r.expected_at) < new Date()
           return (
-            <button key={r.id} onClick={() => setOpenId(r.id)}
-              className="rounded-2xl p-3.5 text-left transition-all"
-              style={{ background: 'var(--bg-card)', border: `1px solid ${late ? 'var(--color-danger-500)' : st.color}` }}>
-              <div className="flex items-center gap-2 mb-1.5">
-                <span className="font-mono text-xs font-bold" style={{ color: INV_ACCENT }}>{r.code}</span>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg"
-                  style={{ background: `color-mix(in srgb, ${st.color} 15%, transparent)`, color: st.color }}>{st.label}</span>
-                {late && (
-                  <span className="flex items-center gap-0.5 text-[10px] font-bold" style={{ color: 'var(--color-danger-500)' }}>
-                    <Clock size={10} /> late
-                  </span>
-                )}
-              </div>
-              <p className="flex items-center gap-1 text-xs font-semibold" style={{ color: 'var(--text-h)' }}>
-                {r.from_warehouse?.name} <ArrowRight size={11} style={{ color: 'var(--text-muted)' }} /> {r.to_warehouse?.name}
-              </p>
-              <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
-                {r.lines_count} line{r.lines_count === 1 ? '' : 's'}
-                {r.voucher ? ` · ${r.voucher.code}` : ''}
-                {r.expected_at ? ` · due ${String(r.expected_at).slice(0, 10)}` : ''}
-              </p>
-              {(r.vehicle_no || r.tracking_number) && (
-                <p className="flex items-center gap-1 text-[10px] mt-1 font-mono" style={{ color: 'var(--text-muted)' }}>
-                  <Truck size={10} /> {r.vehicle_no || `${r.carrier || ''} ${r.tracking_number}`}
+            <div key={r.id} className="relative">
+              {/* Checkbox overlay — top-left, stops propagation so clicking it
+                  doesn't also open the workbench. */}
+              <label className="absolute top-2.5 left-2.5 z-10 cursor-pointer"
+                onClick={e => e.stopPropagation()}>
+                <input type="checkbox" checked={selected.has(r.id)} onChange={e => toggleOne(r.id, e)}
+                  style={{ accentColor: INV_ACCENT, width: 14, height: 14 }} />
+              </label>
+              <button onClick={() => setOpenId(r.id)}
+                className="w-full rounded-2xl p-3.5 pl-8 text-left transition-all"
+                style={{ background: selected.has(r.id) ? `color-mix(in srgb, ${INV_ACCENT} 8%, var(--bg-card))` : 'var(--bg-card)', border: `1px solid ${late ? 'var(--color-danger-500)' : st.color}` }}>
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="font-mono text-xs font-bold" style={{ color: INV_ACCENT }}>{r.code}</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg"
+                    style={{ background: `color-mix(in srgb, ${st.color} 15%, transparent)`, color: st.color }}>{st.label}</span>
+                  {late && (
+                    <span className="flex items-center gap-0.5 text-[10px] font-bold" style={{ color: 'var(--color-danger-500)' }}>
+                      <Clock size={10} /> late
+                    </span>
+                  )}
+                </div>
+                <p className="flex items-center gap-1 text-xs font-semibold" style={{ color: 'var(--text-h)' }}>
+                  {r.from_warehouse?.name} <ArrowRight size={11} style={{ color: 'var(--text-muted)' }} /> {r.to_warehouse?.name}
                 </p>
-              )}
-            </button>
+                <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                  {r.lines_count} line{r.lines_count === 1 ? '' : 's'}
+                  {r.voucher ? ` · ${r.voucher.code}` : ''}
+                  {r.expected_at ? ` · due ${String(r.expected_at).slice(0, 10)}` : ''}
+                </p>
+                {(r.vehicle_no || r.tracking_number) && (
+                  <p className="flex items-center gap-1 text-[10px] mt-1 font-mono" style={{ color: 'var(--text-muted)' }}>
+                    <Truck size={10} /> {r.vehicle_no || `${r.carrier || ''} ${r.tracking_number}`}
+                  </p>
+                )}
+              </button>
+            </div>
           )
         })}
       </div>

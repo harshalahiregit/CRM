@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
-import { FileText, Plus, Search, Send, Ban, Trash2, Eye, Mail, SendHorizontal, CheckCircle2, XCircle, ShieldAlert, ClipboardCheck, Truck } from 'lucide-react'
+import { FileText, Plus, Search, Send, Ban, Trash2, Eye, Mail, SendHorizontal, CheckCircle2, XCircle, ShieldAlert, ClipboardCheck, Truck, FileDown, X } from 'lucide-react'
 import { inventoryApi, VOUCHER_TYPES, VOUCHER_STATUS, money } from '@/services/inventoryApi'
 import { useAuth } from '@/context/AuthContext'
 import Select from '@/components/ui/Select'
@@ -36,6 +36,10 @@ export default function VoucherList() {
   const [status, setStatus] = useState('')
   const [raisedBy, setRaisedBy] = useState('')   // who filed the document
   const [err, setErr] = useState('')
+  const [selected, setSelected] = useState(() => new Set())
+
+  // Reset selection when type changes (e.g. navigating from receipts to deliveries).
+  useEffect(() => { setSelected(new Set()) }, [type])
 
   useEffect(() => {
     const t = setTimeout(() => setDebounced(search.trim()), 300)
@@ -65,6 +69,25 @@ export default function VoucherList() {
     qc.invalidateQueries({ queryKey: ['inv-summary'] })
   }
   const onErr = (e) => { setConfirm(null); setErr(e?.message || 'That action failed.') }
+
+  /* Selection helpers */
+  const allChecked = rows.length > 0 && rows.every(r => selected.has(r.id))
+  const toggleAll  = () => setSelected(allChecked ? new Set() : new Set(rows.map(r => r.id)))
+  const toggleOne  = (id) => setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+
+  const exportSelected = () => {
+    const sel = rows.filter(r => selected.has(r.id))
+    const cols = [
+      ['Code', r => r.code], ['Date', r => r.date_add ? String(r.date_add).slice(0,10) : ''],
+      ['Warehouse', r => r.warehouse?.name || ''], ['Lines', r => r.items_count ?? 0],
+      ['Total', r => r.total_amount ?? ''], ['Status', r => r.status], ['Raised By', r => r.creator?.name || ''],
+    ]
+    const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`
+    const csv = [cols.map(c => esc(c[0])).join(','), ...sel.map(r => cols.map(c => esc(c[1](r))).join(','))].join('\n')
+    const url = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' }))
+    const a = document.createElement('a'); a.href = url; a.download = `${type}-vouchers-${new Date().toISOString().slice(0,10)}.csv`; a.click()
+    URL.revokeObjectURL(url)
+  }
 
   const post = useMutation({ mutationFn: (id) => inventoryApi.vouchers.post(type, id), onSuccess: () => { setErr(''); bust() }, onError: onErr })
   const cancel = useMutation({ mutationFn: (id) => inventoryApi.vouchers.cancel(type, id), onSuccess: () => { setConfirm(null); setErr(''); bust() }, onError: onErr })
@@ -143,10 +166,28 @@ export default function VoucherList() {
           style={{ background: 'color-mix(in srgb, var(--color-danger-500) 12%, transparent)', color: 'var(--color-danger-500)' }}>{err}</p>
       )}
 
+      {/* Selection bar */}
+      {selected.size > 0 && (
+        <div className="flex flex-wrap items-center gap-2 mb-3 px-3 py-2.5 rounded-2xl"
+          style={{ background: `color-mix(in srgb, ${cfg.accent} 10%, transparent)`, border: `1px solid ${cfg.accent}` }}>
+          <span className="text-xs font-bold" style={{ color: cfg.accent }}>{selected.size} selected</span>
+          <button onClick={exportSelected}
+            className="flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-lg"
+            style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-body)' }}>
+            <FileDown size={13} /> Export selected
+          </button>
+          <button onClick={() => setSelected(new Set())} className="ml-auto text-xs" style={{ color: 'var(--text-muted)' }}><X size={13} /></button>
+        </div>
+      )}
+
       <div className="overflow-x-auto rounded-2xl" style={{ border: '1px solid var(--border)', background: 'var(--bg-card)' }}>
         <table className="w-full text-sm" style={{ minWidth: 820 }}>
           <thead>
             <tr className="text-left text-[11px] uppercase tracking-wide" style={{ color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>
+              <th className="px-4 py-3">
+                <input type="checkbox" checked={allChecked} onChange={toggleAll}
+                  style={{ accentColor: cfg.accent, width: 14, height: 14, cursor: 'pointer' }} />
+              </th>
               <th className="px-4 py-3 font-bold">Docket code</th>
               <th className="px-4 py-3 font-bold">{type === 'receipt' ? 'Supplier' : type === 'delivery' ? 'Customer' : type === 'loss_adjustment' ? 'Type' : 'Note'}</th>
               <th className="px-4 py-3 font-bold">Warehouse</th>
@@ -161,13 +202,13 @@ export default function VoucherList() {
           <tbody>
             {isLoading && [1, 2, 3].map(i => (
               <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
-                {[...Array(cfg.pricing ? 9 : 8)].map((_, j) => (
+                {[...Array(cfg.pricing ? 10 : 9)].map((_, j) => (
                   <td key={j} className="px-4 py-3"><div className="h-4 rounded animate-pulse" style={{ background: 'var(--bg-input)' }} /></td>
                 ))}
               </tr>
             ))}
             {!isLoading && rows.length === 0 && (
-              <tr><td colSpan={9} className="px-4 py-12 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
+              <tr><td colSpan={10} className="px-4 py-12 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
                 {debounced || status || raisedBy ? 'No vouchers match.' : `No ${cfg.short.toLowerCase()} vouchers yet.`}
               </td></tr>
             )}
@@ -178,11 +219,16 @@ export default function VoucherList() {
                 : type === 'loss_adjustment' ? (v.adjustment_type === 'loss' ? 'Loss' : 'Adjustment')
                 : v.description
               return (
-                <tr key={v.id} className="cursor-pointer" style={{ borderBottom: '1px solid var(--border)' }}
-                  onClick={() => { setEditing(v); setShowForm(true) }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-input)'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                  <td className="px-4 py-3 font-mono text-[11px] font-bold" style={{ color: cfg.accent }}>
+                <tr key={v.id} className="cursor-pointer"
+                  style={{ borderBottom: '1px solid var(--border)', background: selected.has(v.id) ? `color-mix(in srgb, ${cfg.accent} 7%, transparent)` : 'transparent' }}
+                  onMouseEnter={e => { if (!selected.has(v.id)) e.currentTarget.style.background = 'var(--bg-input)' }}
+                  onMouseLeave={e => { if (!selected.has(v.id)) e.currentTarget.style.background = 'transparent' }}>
+                  <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                    <input type="checkbox" checked={selected.has(v.id)} onChange={() => toggleOne(v.id)}
+                      style={{ accentColor: cfg.accent, width: 14, height: 14, cursor: 'pointer' }} />
+                  </td>
+                  <td className="px-4 py-3 font-mono text-[11px] font-bold cursor-pointer" style={{ color: cfg.accent }}
+                    onClick={() => { setEditing(v); setShowForm(true) }}>
                     {v.code}
                     {/* A rejection is only useful if the reason travels with it. */}
                     {v.status === 'draft' && v.rejection_reason && (
@@ -191,13 +237,13 @@ export default function VoucherList() {
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-xs truncate" style={{ color: 'var(--text-h)', maxWidth: 180 }}>{who || '—'}</td>
-                  <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>{v.warehouse?.name || (type === 'internal' ? 'per line' : '—')}</td>
-                  <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>{fmtDate(v.date_add)}</td>
-                  <td className="px-4 py-3 text-right text-xs tabular-nums" style={{ color: 'var(--text-muted)' }}>{v.items_count ?? 0}</td>
-                  {cfg.pricing && <td className="px-4 py-3 text-right text-xs tabular-nums" style={{ color: 'var(--text-h)' }}>{money(v.total_amount)}</td>}
-                  <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>{v.creator?.name || '—'}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 text-xs truncate cursor-pointer" style={{ color: 'var(--text-h)', maxWidth: 180 }} onClick={() => { setEditing(v); setShowForm(true) }}>{who || '—'}</td>
+                  <td className="px-4 py-3 text-xs cursor-pointer" style={{ color: 'var(--text-muted)' }} onClick={() => { setEditing(v); setShowForm(true) }}>{v.warehouse?.name || (type === 'internal' ? 'per line' : '—')}</td>
+                  <td className="px-4 py-3 text-xs cursor-pointer" style={{ color: 'var(--text-muted)' }} onClick={() => { setEditing(v); setShowForm(true) }}>{fmtDate(v.date_add)}</td>
+                  <td className="px-4 py-3 text-right text-xs tabular-nums cursor-pointer" style={{ color: 'var(--text-muted)' }} onClick={() => { setEditing(v); setShowForm(true) }}>{v.items_count ?? 0}</td>
+                  {cfg.pricing && <td className="px-4 py-3 text-right text-xs tabular-nums cursor-pointer" style={{ color: 'var(--text-h)' }} onClick={() => { setEditing(v); setShowForm(true) }}>{money(v.total_amount)}</td>}
+                  <td className="px-4 py-3 text-xs cursor-pointer" style={{ color: 'var(--text-muted)' }} onClick={() => { setEditing(v); setShowForm(true) }}>{v.creator?.name || '—'}</td>
+                  <td className="px-4 py-3 cursor-pointer" onClick={() => { setEditing(v); setShowForm(true) }}>
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg"
                       style={{ background: `color-mix(in srgb, ${st.color} 15%, transparent)`, color: st.color }}>{st.label}</span>
                   </td>
