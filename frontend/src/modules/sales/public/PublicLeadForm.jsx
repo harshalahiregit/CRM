@@ -48,32 +48,32 @@ export default function PublicLeadForm() {
   }
 
   const wrap = (children) => (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg,#faf8ff,#f3efff)', padding: 20 }}>
-      <div style={{ width: '100%', maxWidth: 520, background: '#fff', borderRadius: 20, padding: 32, boxShadow: '0 12px 40px rgba(124,58,237,0.15)', border: '1px solid rgba(124,58,237,0.12)' }}>
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-main, linear-gradient(135deg,#faf8ff,#f3efff))', padding: 20 }}>
+      <div style={{ width: '100%', maxWidth: 520, background: 'var(--bg-card, #fff)', color: 'var(--text-h, #1a1535)', borderRadius: 20, padding: 32, boxShadow: '0 12px 40px rgba(0,0,0,0.15)', border: '1px solid var(--border, rgba(124,58,237,0.12))' }}>
         {children}
       </div>
     </div>
   )
 
-  if (status === 'loading') return wrap(<p style={{ textAlign: 'center', color: '#6b63a0' }}>Loading…</p>)
+  if (status === 'loading') return wrap(<p style={{ textAlign: 'center', color: 'var(--text-muted, #6b63a0)' }}>Loading…</p>)
   if (status === 'notfound') return wrap(<p style={{ textAlign: 'center', color: '#ef4444' }}>This form is no longer available.</p>)
   if (status === 'done') return wrap(
     <div style={{ textAlign: 'center' }}>
       <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'rgba(16,185,129,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', color: '#10b981' }}>
         <CheckCircle2 size={32} />
       </div>
-      <h2 style={{ fontWeight: 800, color: '#1a1535', marginBottom: 8, fontSize: 22 }}>Submission Received</h2>
-      <p style={{ color: '#453d6b', fontSize: 14 }}>{successMsg}</p>
+      <h2 style={{ fontWeight: 800, color: 'var(--text-h, #1a1535)', marginBottom: 8, fontSize: 22 }}>Submission Received</h2>
+      <p style={{ color: 'var(--text-muted, #453d6b)', fontSize: 14 }}>{successMsg}</p>
     </div>
   )
 
   return wrap(
     <form onSubmit={submit}>
-      <h1 style={{ fontSize: 22, fontWeight: 900, color: '#1a1535', marginBottom: 4 }}>{form.name}</h1>
-      <p style={{ fontSize: 13, color: '#6b63a0', marginBottom: 20 }}>Fill in your details and we'll be in touch.</p>
+      <h1 style={{ fontSize: 22, fontWeight: 900, color: 'var(--text-h, #1a1535)', marginBottom: 4 }}>{form.name}</h1>
+      <p style={{ fontSize: 13, color: 'var(--text-muted, #6b63a0)', marginBottom: 20 }}>Fill in your details and we'll be in touch.</p>
       {(form.fields || []).map(f => (
         <div key={f.key} style={{ marginBottom: 16 }}>
-          <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#453d6b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+          <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-muted, #453d6b)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
             {f.label}{f.required ? ' *' : ''}
           </label>
 
@@ -89,7 +89,7 @@ export default function PublicLeadForm() {
               {(f.options || []).map(opt => {
                 const checked = Array.isArray(values[f.key]) && values[f.key].includes(opt)
                 return (
-                  <label key={opt} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#332a54', cursor: 'pointer', padding: '8px 12px', borderRadius: 10, background: checked ? 'rgba(124,58,237,0.08)' : 'rgba(124,58,237,0.03)', border: checked ? '1px solid #7C3AED' : '1px solid rgba(80,60,130,0.15)' }}>
+                  <label key={opt} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text-h, #332a54)', cursor: 'pointer', padding: '8px 12px', borderRadius: 10, background: checked ? 'rgba(124,58,237,0.12)' : 'var(--bg-input, rgba(124,58,237,0.03))', border: checked ? '1px solid #7C3AED' : '1px solid var(--border, rgba(80,60,130,0.15))' }}>
                     <input type="checkbox" checked={checked} onChange={() => toggleMultiSelect(f.key, opt)} />
                     {opt}
                   </label>
@@ -103,11 +103,11 @@ export default function PublicLeadForm() {
                   <Star size={24} fill={(values[f.key] || 0) >= star ? '#f59e0b' : 'none'} color={(values[f.key] || 0) >= star ? '#f59e0b' : '#cbd5e1'} />
                 </button>
               ))}
-              <span style={{ fontSize: 12, color: '#6b63a0', marginLeft: 6 }}>{values[f.key] ? `${values[f.key]} Star${values[f.key] > 1 ? 's' : ''}` : 'Select rating'}</span>
+              <span style={{ fontSize: 12, color: 'var(--text-muted, #6b63a0)', marginLeft: 6 }}>{values[f.key] ? `${values[f.key]} Star${values[f.key] > 1 ? 's' : ''}` : 'Select rating'}</span>
             </div>
           ) : f.type === 'file' || f.type === 'attachment' ? (
             <div>
-              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px 16px', borderRadius: 12, border: '2px dashed rgba(124,58,237,0.3)', background: 'rgba(124,58,237,0.03)', cursor: 'pointer', fontSize: 13, color: '#7C3AED', fontWeight: 600 }}>
+              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px 16px', borderRadius: 12, border: '2px dashed rgba(124,58,237,0.3)', background: 'var(--bg-input, rgba(124,58,237,0.03))', cursor: 'pointer', fontSize: 13, color: '#7C3AED', fontWeight: 600 }}>
                 <Upload size={16} />
                 {values[f.key]?.name ? `File: ${values[f.key].name}` : 'Click to Upload Attachment'}
                 <input type="file" onChange={e => handleFileUpload(f.key, e.target.files[0])} style={{ display: 'none' }} />
@@ -116,7 +116,7 @@ export default function PublicLeadForm() {
           ) : f.type === 'radio' ? (
             <div style={{ display: 'flex', gap: 12, marginTop: 4 }}>
               {(f.options || []).map(opt => (
-                <label key={opt} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#332a54', cursor: 'pointer' }}>
+                <label key={opt} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text-h, #332a54)', cursor: 'pointer' }}>
                   <input type="radio" name={f.key} checked={values[f.key] === opt} onChange={() => sv(f.key, opt)} />
                   {opt}
                 </label>
@@ -137,6 +137,6 @@ export default function PublicLeadForm() {
 
 const inputStyle = {
   width: '100%', padding: '11px 14px', borderRadius: 12, fontSize: 14,
-  border: '1px solid rgba(80,60,130,0.28)', background: 'rgba(124,58,237,0.03)',
-  color: '#1a1535', outline: 'none', boxSizing: 'border-box',
+  border: '1px solid var(--border, #d1d5db)', background: 'var(--bg-input, #f9fafb)',
+  color: 'var(--text-h, #1f2937)', outline: 'none', boxSizing: 'border-box',
 }

@@ -21,8 +21,8 @@ export const proposalApi = {
   send: (id) =>
     api.patch(`/sales/proposals/${id}/send`).then(r => r.data).catch(handleErr),
 
-  updateStatus: (id, status) =>
-    api.patch(`/sales/proposals/${id}/status`, { status }).then(r => r.data).catch(handleErr),
+  updateStatus: (id, status, rejectionReason) =>
+    api.patch(`/sales/proposals/${id}/status`, { status, rejection_reason: rejectionReason }).then(r => r.data).catch(handleErr),
 
   submit: (id, email) =>
     api.post(`/sales/proposals/${id}/submit`, email).then(r => r.data).catch(handleErr),
