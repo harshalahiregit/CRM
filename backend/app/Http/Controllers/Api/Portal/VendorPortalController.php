@@ -78,6 +78,12 @@ class VendorPortalController extends Controller
             // Drives the one-time post-activation welcome banner. Persisted
             // server-side, so dismissing it on one device dismisses it everywhere.
             $vendor->setAttribute('show_welcome_banner', $vendor->shouldShowWelcomeBanner());
+            // Same key, same type -- the CORRECT value. The raw is_temporary column
+            // is unset on every row the admin/self-registration paths write, so the
+            // payload said false for genuine temporary vendors and the portal's
+            // countdown banner hid itself. isTemporary() reads registration_type,
+            // which is the stored choice and the source of truth.
+            $vendor->setAttribute('is_temporary', $vendor->isTemporary());
 
             $openOrders = 0;
             $unpaidInvoices = 0;
@@ -142,14 +148,14 @@ class VendorPortalController extends Controller
 
             if (! $onboarding->kickoff_meeting_id) {
                 try {
-                    $kickoff = KickoffMeeting::forTenant($vendor->tenant_id)
-                        ->where(function ($q) use ($vendor) {
-                            $q->where('kickoffable_type', Vendor::class)
-                              ->orWhere('kickoffable_type', 'vendor');
-                        })
-                        ->where('kickoffable_id', $vendor->id)
-                        ->latest()
-                        ->first();
+                    // One resolver for the whole module. This used to match
+                    // kickoffable_id alone, which names only ONE vendor on a
+                    // multi-vendor kickoff — every secondary linked to nothing here
+                    // while the PDF stream (already pivot-aware) resolved fine, so
+                    // the pointer and the document disagreed. findKickoffMeeting()
+                    // also requires Completed + a stored MOM, so an in-progress
+                    // meeting is no longer written to the pointer.
+                    $kickoff = $this->kickoffPdfService->findKickoffMeeting($onboarding);
 
                     if ($kickoff) {
                         $onboarding->update(['kickoff_meeting_id' => $kickoff->id]);

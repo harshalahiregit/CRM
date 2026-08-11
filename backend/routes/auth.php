@@ -15,6 +15,14 @@ Route::prefix('auth')->group(function () {
     Route::post('/register/tpv',    [AuthController::class, 'registerTPV']);
     Route::post('/register/client', [AuthController::class, 'registerClient']);
     Route::post('/register/company', [AuthController::class, 'registerCompany'])->middleware('throttle:10,1');
+    // Mints a reset token and emails the /auth/set-password link. Throttled hard:
+    // an open endpoint that sends mail on demand is both a spam relay and a way
+    // to probe which addresses exist.
+    Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->middleware('throttle:5,1');
+    // Consumes the one-time token emailed by forgot-password or the vendor
+    // login-link action. Public by necessity — the recipient has no session yet.
+    // Throttled because an open endpoint that checks a token is a guessing target.
+    Route::post('/set-password',    [AuthController::class, 'setPassword'])->middleware('throttle:10,1');
 });
 
 // ── Protected Auth + Dashboard Routes (Sanctum) ─────────────────────────

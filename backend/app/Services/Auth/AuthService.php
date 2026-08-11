@@ -210,7 +210,16 @@ class AuthService
 
     public function registerTPV(array $data): User
     {
+        // Resolved once and stamped on BOTH rows, exactly as registerCompany does.
+        // The Vendor row has always carried it; the User row did not, which left
+        // users.tenant_id NULL on every self-registered TPV. Anything that scopes
+        // by the caller's tenant then resolved nothing -- including the portal
+        // countdown lookup (Vendor::forTenant($user->tenant_id)), so a temporary
+        // TPV never saw its own access window.
+        $tenantId = AgencyContext::tenantId();
+
         $user = User::create([
+            'tenant_id'         => $tenantId,
             'name'              => trim($data['first_name'].' '.$data['last_name']),
             'email'             => $data['email'],
             'password'          => Hash::make($data['password']),
@@ -240,7 +249,7 @@ class AuthService
         // the agency tenant (external parties aren't independent tenants), and the
         // Temporary/Permanent choice maps to the vendor_type.
         Vendor::create([
-            'tenant_id'   => AgencyContext::tenantId(),
+            'tenant_id'   => $tenantId,
             'user_id'     => $user->id,
             'company_name'=> $data['username'] ?? $user->name,
             // Store on the vendor's own column, not just in user meta --

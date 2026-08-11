@@ -15,6 +15,16 @@ class KickoffPdfService
 {
     private const DISK = 'kickoff_docs';
 
+    /**
+     * Every spelling a morph column has been written with. Older rows carry the
+     * short alias, newer ones the FQCN; both must match or a vendor's own meeting
+     * silently stops resolving. Named here rather than inlined so the kickoffable
+     * columns and the subjects pivot cannot drift apart.
+     */
+    private const VENDOR_TYPES = [Vendor::class, 'vendor', 'App\Models\Vendor\Vendor'];
+
+    private const ONBOARDING_TYPES = [TpvOnboarding::class, 'onboarding', 'App\Models\Tpv\TpvOnboarding'];
+
     /** Find the latest completed & sent Kickoff Meeting for an onboarding. */
     public function findKickoffMeeting(TpvOnboarding $onboarding): ?KickoffMeeting
     {
@@ -33,11 +43,23 @@ class KickoffPdfService
         return KickoffMeeting::forTenant($onboarding->tenant_id)
             ->where(function ($q) use ($onboarding) {
                 $q->where(function ($q2) use ($onboarding) {
-                    $q2->whereIn('kickoffable_type', [Vendor::class, 'vendor', 'App\Models\Vendor\Vendor'])
+                    $q2->whereIn('kickoffable_type', self::VENDOR_TYPES)
                        ->where('kickoffable_id', $onboarding->vendor_id);
                 })->orWhere(function ($q2) use ($onboarding) {
-                    $q2->whereIn('kickoffable_type', [TpvOnboarding::class, 'onboarding', 'App\Models\Tpv\TpvOnboarding'])
+                    $q2->whereIn('kickoffable_type', self::ONBOARDING_TYPES)
                        ->where('kickoffable_id', $onboarding->id);
+                // A multi-vendor kickoff names ONE vendor on kickoffable_*; the rest
+                // live only in kickoff_meeting_subjects. Matching the columns alone
+                // meant every secondary vendor was told "Kickoff meeting is not
+                // completed yet" while the primary read the same minutes fine.
+                })->orWhereHas('subjects', function ($q2) use ($onboarding) {
+                    $q2->where(function ($q3) use ($onboarding) {
+                        $q3->whereIn('subject_type', self::VENDOR_TYPES)
+                           ->where('subject_id', $onboarding->vendor_id);
+                    })->orWhere(function ($q3) use ($onboarding) {
+                        $q3->whereIn('subject_type', self::ONBOARDING_TYPES)
+                           ->where('subject_id', $onboarding->id);
+                    });
                 });
             })
             ->where('status', 'Completed')

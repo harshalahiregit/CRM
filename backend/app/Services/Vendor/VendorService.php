@@ -8,7 +8,9 @@ use App\Models\Vendor\Vendor;
 use App\Repositories\Vendor\VendorRepository;
 use App\Services\Notifications\NotificationService;
 use App\Services\Tpv\TpvActivationNotifier;
+use App\Support\FrontendUrl;
 use App\Support\Vendor\VendorStatus as Status;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -25,7 +27,14 @@ class VendorService
     ) {
     }
 
-    public function list(int $tenantId, array $filters): Collection
+    /**
+     * @return Collection|LengthAwarePaginator
+     *
+     * The union is load-bearing: the repository returns a paginator when the
+     * caller asks for `per_page` and a Collection otherwise. Pinning this to
+     * Collection would make every paginated request a TypeError.
+     */
+    public function list(int $tenantId, array $filters): Collection|LengthAwarePaginator
     {
         return $this->vendorRepository->filtered($tenantId, $filters);
     }
@@ -368,6 +377,66 @@ class VendorService
     private function loginStatusFor(?string $vendorStatus): string
     {
         return $vendorStatus === Status::ACTIVE ? 'active' : 'inactive';
+    }
+
+    /**
+     * A one-time link that lets a vendor set their own portal password, plus the
+     * subject/body the Send Email dialog opens pre-filled with.
+     *
+     * The stored password is a hash, so "email them their credentials" is not
+     * something this system can do — there is no plaintext to send. A set-password
+     * link is the closest honest equivalent, and it is better anyway: nothing
+     * secret sits in an inbox, and it works for a vendor created a year ago whose
+     * generated password was shown once and never recorded.
+     *
+     * Tokens live in Laravel's own `password_reset_tokens` table, which already
+     * exists and was unused. The token is stored HASHED and returned in plaintext
+     * exactly once — the same shape as Laravel's own broker, so a leaked database
+     * does not hand over working links.
+     */
+    public function buildLoginLink(Vendor $vendor): array
+    {
+        $email = $vendor->user?->email ?: $vendor->email;
+
+        if (! $email) {
+            throw new BusinessException('This vendor has no email address to send a login link to.', 422);
+        }
+
+        $token = Str::random(64);
+
+        // One live token per email: issuing a second must retire the first, or an
+        // older mail in the inbox keeps working after the newer one is used.
+        DB::table('password_reset_tokens')->updateOrInsert(
+            ['email' => $email],
+            ['token' => Hash::make($token), 'created_at' => now()]
+        );
+
+        // One resolver for every outbound SPA link - see App\Support\FrontendUrl.
+        $url = FrontendUrl::to('/auth/set-password', ['token' => $token, 'email' => $email]);
+
+        $company = $vendor->company_name ?: 'your organisation';
+        $expiry  = (int) config('auth.passwords.users.expire', 60);
+
+        return [
+            'email'   => $email,
+            'url'     => $url,
+            'subject' => 'Your portal login for '.$company,
+            'body'    => implode("\n", [
+                'Hello,',
+                '',
+                'A portal account has been created for '.$company.'.',
+                '',
+                'Login email: '.$email,
+                '',
+                'Set your password using the link below, then sign in:',
+                $url,
+                '',
+                'This link can be used once and expires in '.$expiry.' minutes.',
+                'If it expires, ask us to send a new one.',
+                '',
+                'Thank you.',
+            ]),
+        ];
     }
 
     /** Send an ad-hoc email to a vendor (the Dashboard "Send Email" action). */

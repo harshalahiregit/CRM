@@ -21,7 +21,12 @@ class VendorController extends Controller
         return response()->json(
             $this->vendorService->list(
                 $request->user()->tenant_id,
-                $request->only(['status', 'vendor_type', 'category', 'engagement', 'search'])
+                // per_page/page/sort_* are additive: omit them and the response
+                // is the same bare array every existing caller already reads.
+                $request->only([
+                    'status', 'vendor_type', 'category', 'engagement', 'search',
+                    'per_page', 'sort_column', 'sort_direction',
+                ])
             )
         );
     }
@@ -147,6 +152,22 @@ class VendorController extends Controller
         $result = $this->vendorService->sendEmail($vendor, $data['subject'], $data['body'], $request->user());
 
         return response()->json(['status' => 'success', 'result' => $result]);
+    }
+
+    /**
+     * GET /api/vendors/{vendor}/login-link
+     *
+     * Mints a one-time set-password link and returns the pre-filled subject and
+     * body for the Send Email dialog. It does NOT send anything — the admin sees
+     * the draft, can edit it, and sends via the existing email endpoint. That
+     * keeps one send path instead of two.
+     */
+    public function loginLink(Request $request, Vendor $vendor)
+    {
+        $this->assertTenant($request, $vendor);
+        abort_unless($request->user()->canManageHrQueue(), 403, 'You are not authorised to issue portal logins');
+
+        return response()->json($this->vendorService->buildLoginLink($vendor));
     }
 
     private function assertTenant(Request $request, Vendor $vendor): void

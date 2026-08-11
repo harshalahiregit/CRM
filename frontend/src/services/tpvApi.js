@@ -167,6 +167,11 @@ export const tpvApi = {
   // ── Third-party vendors (master + portal login), scoped to tpv engagement ──
   vendors: {
     list:      (params = {}) => api.get('/vendors', { params: { engagement: 'tpv', ...params } }).then(r => r.data),
+    // Same endpoint, paginated envelope. Split from list() rather than folded
+    // into it because callers of list() (task pickers, kickoff, compliance)
+    // destructure a bare array — passing per_page is what opts into
+    // { data, current_page, last_page, per_page, total }.
+    listPaged: (params = {}) => api.get('/vendors', { params: { engagement: 'tpv', per_page: 25, ...params } }).then(r => r.data),
     get:       (id)          => api.get(`/vendors/${id}`).then(r => r.data),
     tasks:     (id)          => api.get(`/tpv/vendors/${id}/tasks`).then(r => r.data),
     stats:     ()            => api.get('/vendors/stats').then(r => r.data),
@@ -176,6 +181,9 @@ export const tpvApi = {
     approve:   (id, remarks = '') => api.post(`/vendors/${id}/approve`, { remarks }).then(r => r.data),
     setStatus: (id, status)  => api.patch(`/vendors/${id}/status`, { status }).then(r => r.data),
     sendEmail: (id, data)    => api.post(`/vendors/${id}/email`, data).then(r => r.data),
+    // Mints a one-time set-password link and returns the pre-filled subject/body.
+    // Sending still goes through sendEmail above.
+    loginLink: (id)          => api.get(`/vendors/${id}/login-link`).then(r => r.data),
     delete:    (id)          => api.delete(`/vendors/${id}`).then(r => r.data),
   },
   // ── PPE — served from INVENTORY (single source of truth) ────────────

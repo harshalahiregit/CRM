@@ -2,6 +2,7 @@
 
 namespace App\Repositories\Hr;
 
+use App\Support\Sql\SqlDate;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -193,7 +194,6 @@ class LeaveReportRepository
 
     private function yearExpr(string $col): string
     {
-        // SQLite (this app) uses strftime; kept isolated so it is easy to swap.
-        return "CAST(strftime('%Y', $col) AS INTEGER)";
+        return SqlDate::year($col);
     }
 }

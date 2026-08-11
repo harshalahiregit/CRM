@@ -18,6 +18,8 @@ class UpdateKickoffMeetingRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'subject_ids'   => 'nullable|array',
+            'subject_ids.*' => 'integer',
             'title'     => 'sometimes|required|string|max:200',
             'reference' => 'nullable|string|max:80',
             'agenda'    => 'nullable|string|max:5000',

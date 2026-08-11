@@ -22,6 +22,9 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('vendors')->grou
     // Manual resend of the activation e-mail (Active vendors only).
     Route::post('/{vendor}/resend-activation', [VendorController::class, 'resendActivation']);
     Route::post('/{vendor}/email',          [VendorController::class, 'sendEmail']);
+    // Mints a one-time set-password link and returns the pre-filled draft. Sending
+    // still goes through /email above — one send path, not two.
+    Route::get('/{vendor}/login-link',       [VendorController::class, 'loginLink']);
     Route::delete('/{vendor}',              [VendorController::class, 'destroy']);
 });
 

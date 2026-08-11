@@ -33,6 +33,23 @@ function readJSON(key) {
 export const getUser = () => readJSON('crm_user')
 export const getTenant = () => readJSON('crm_tenant')
 
+/**
+ * Whether this session was established with "Remember me".
+ *
+ * Mirrors `user_sessions.remember_me`, which the backend's EnforceIdleTimeout
+ * middleware uses to exempt remembered sessions from the idle timeout — so the
+ * client-side idle timer can make the same call.
+ *
+ * Deliberately strict: only the exact value written by setAuth() counts as
+ * remembered. A session predating this key, or any unexpected value, reads as
+ * NOT remembered, so the idle timeout still applies. Failing the other way
+ * would silently turn an ordinary login into an unlimited one.
+ */
+export function getRemember() {
+  const raw = localStorage.getItem('crm_remember') ?? sessionStorage.getItem('crm_remember')
+  return raw === '1'
+}
+
 export function clearAuth() {
   KEYS.forEach(k => { localStorage.removeItem(k); sessionStorage.removeItem(k) })
 }

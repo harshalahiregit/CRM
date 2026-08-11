@@ -2,6 +2,7 @@
 
 namespace App\Repositories\Hr;
 
+use App\Support\Sql\SqlDate;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -36,7 +37,7 @@ class ProbationReportRepository
 
     private function durationExpr(): string
     {
-        return 'julianday(ep.probation_end_date) - julianday(ep.probation_start_date)';
+        return SqlDate::days('ep.probation_start_date', 'ep.probation_end_date');
     }
 
     /* ── Dashboard (tenant-scoped) ────────────────────────── */
@@ -47,7 +48,7 @@ class ProbationReportRepository
                 SUM(CASE WHEN current_status='Active' THEN 1 ELSE 0 END) as active,
                 SUM(CASE WHEN current_status='Extended' THEN 1 ELSE 0 END) as extended,
                 SUM(CASE WHEN current_status='Confirmed' THEN 1 ELSE 0 END) as confirmed,
-                AVG(julianday(probation_end_date) - julianday(probation_start_date)) as avg_duration")->first();
+                AVG(".SqlDate::days('probation_start_date', 'probation_end_date').') as avg_duration')->first();
 
         $conf = DB::table('hr_probation_confirmations')->where('tenant_id', $tenantId)
             ->selectRaw("SUM(CASE WHEN status='Pending' THEN 1 ELSE 0 END) as pending,
@@ -212,11 +213,11 @@ class ProbationReportRepository
 
     private function yearExpr(string $col): string
     {
-        return "CAST(strftime('%Y', $col) AS INTEGER)";
+        return SqlDate::year($col);
     }
 
     private function monthExpr(string $col): string
     {
-        return "CAST(strftime('%m', $col) AS INTEGER)";
+        return SqlDate::month($col);
     }
 }

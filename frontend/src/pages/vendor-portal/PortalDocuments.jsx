@@ -21,7 +21,10 @@ export default function PortalDocuments() {
   const [err, setErr] = useState(null)
   const [flash, setFlash] = useState(null)
 
-  const load = () => { setLoad(true); portalApi.documents().then(d => { setData(d?.data ?? d); setLoad(false) }).catch(() => setLoad(false)) }
+  // documents is a namespace, not a function — calling it threw a TypeError
+  // synchronously, before any promise existed, so the .catch() below could not
+  // catch it and the page never left its loading state.
+  const load = () => { setLoad(true); portalApi.documents.checklist().then(d => { setData(d?.data ?? d); setLoad(false) }).catch(() => setLoad(false)) }
   useEffect(() => { load() }, [])
 
   const doUpload = async (type, file) => {

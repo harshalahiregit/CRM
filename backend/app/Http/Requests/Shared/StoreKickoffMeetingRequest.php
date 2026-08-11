@@ -22,6 +22,10 @@ class StoreKickoffMeetingRequest extends FormRequest
             // Stable key from the allowlist — never a class name. Both or neither.
             'subject_type' => 'nullable|string|in:'.implode(',', array_keys(KickoffSubject::MAP)).'|required_with:subject_id',
             'subject_id'   => 'nullable|integer|required_with:subject_type',
+            // Additional vendors. subject_id above stays the PRIMARY and keeps
+            // living on kickoffable_*; these are the rest of the set.
+            'subject_ids'   => 'nullable|array',
+            'subject_ids.*' => 'integer',
 
             'scheduled_at'     => 'nullable|date',
             'duration_minutes' => 'nullable|integer|min:5|max:1440',

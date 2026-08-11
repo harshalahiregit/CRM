@@ -73,7 +73,25 @@ export default function KickoffMeetingDetail() {
               </span>
             )}
           </div>
-          {m.subject?.name && <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '5px 0 0' }}>{m.subject.label}: <strong style={{ color: 'var(--text-h)' }}>{m.subject.name}</strong></p>}
+          {/* All vendors on the meeting, primary first. Falls back to the single
+              subject for records saved before multi-vendor existed. */}
+          {(m.subject_list?.length ? m.subject_list : (m.subject ? [m.subject] : [])).length > 0 && (
+            <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '5px 0 0' }}>
+              {(m.subject_list?.length > 1 ? 'Vendors' : (m.subject?.label || 'Vendor'))}:{' '}
+              {(m.subject_list?.length ? m.subject_list : [m.subject]).map((s, i) => (
+                <span key={s.subject_id ?? s.id ?? i}>
+                  {i > 0 && ', '}
+                  <strong style={{ color: 'var(--text-h)' }}>{s.name}</strong>
+                  {s.is_primary && m.subject_list?.length > 1 && (
+                    <span style={{ fontSize: 9, fontWeight: 800, color: '#a78bfa', marginLeft: 4 }}>PRIMARY</span>
+                  )}
+                  {s.acknowledged && (
+                    <span style={{ fontSize: 9, fontWeight: 800, color: '#10b981', marginLeft: 4 }}>ACK</span>
+                  )}
+                </span>
+              ))}
+            </p>
+          )}
         </div>
         {/* Transition actions the server will actually accept */}
         <div style={{ display: 'flex', gap: 8, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>

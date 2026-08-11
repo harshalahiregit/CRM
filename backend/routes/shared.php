@@ -15,6 +15,10 @@ use Illuminate\Support\Facades\Route;
 // acknowledgement so the link is single-use.
 Route::prefix('kickoff/ack')->middleware('throttle:60,1')->group(function () {
     Route::get('/{token}',  [PublicKickoffController::class, 'show']);
+    // Read the minutes before signing them. Same token, same throttle, but
+    // read-only and repeatable — it is never burned, so the vendor can reopen
+    // the PDF while deciding. Declared before nothing else can shadow it.
+    Route::get('/{token}/mom', [PublicKickoffController::class, 'mom']);
     Route::post('/{token}', [PublicKickoffController::class, 'acknowledge']);
 })->where(['token' => '[A-Za-z0-9]{20,64}']);
 
