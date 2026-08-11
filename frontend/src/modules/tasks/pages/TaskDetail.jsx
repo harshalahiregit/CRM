@@ -430,7 +430,7 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
                 <div>
                   <style>{COMMENT_EDITOR_CSS}</style>
                   <div className="task-comment-editor task-desc">
-                    <ReactQuill ref={descQuillRef} theme="snow" modules={COMMENT_MODULES} formats={COMMENT_FORMATS}
+                    <ReactQuill key={`desc-${task.id}`} ref={descQuillRef} theme="snow" modules={COMMENT_MODULES} formats={COMMENT_FORMATS}
                       value={descDraft} onChange={setDescDraft} placeholder="Describe the task…" />
                   </div>
                   <div className="flex items-center justify-between gap-2 mt-2">

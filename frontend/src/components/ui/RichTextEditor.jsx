@@ -13,14 +13,45 @@ const FONT_FAMILIES = [
   { label: 'Serif', value: 'Georgia, "Times New Roman", serif' },
   { label: 'Mono', value: '"Courier New", monospace' },
 ]
-// execCommand fontSize uses 1–7 buckets; with styleWithCSS these become
-// keyword font-sizes the sanitizer allows.
+// execCommand fontSize uses 1–7 HTML buckets. Map them to CSS keywords that the
+// backend HtmlSanitizer explicitly whitelists.
 const FONT_SIZES = [
-  { label: 'Small', value: '2' },
+  { label: 'Small',  value: '2' },
   { label: 'Normal', value: '3' },
-  { label: 'Large', value: '5' },
-  { label: 'Huge', value: '7' },
+  { label: 'Large',  value: '5' },
+  { label: 'Huge',   value: '7' },
 ]
+const FONT_SIZE_CSS = {
+  '1': 'x-small', '2': 'small', '3': 'medium',
+  '4': 'large',   '5': 'x-large', '6': 'xx-large', '7': 'xx-large',
+}
+
+/**
+ * Chrome ignores styleWithCSS for execCommand('fontSize') and always emits
+ * <font size="N"> tags. Our server HtmlSanitizer strips <font> (not in
+ * ALLOWED_TAGS), so font sizes vanish after save. Walk the editor node after
+ * every execCommand and replace any <font> elements with <span style>.
+ */
+function convertFontTags(root) {
+  if (!root) return
+  // First pass: size + optional face/color.
+  root.querySelectorAll('font[size]').forEach(font => {
+    const span = document.createElement('span')
+    span.style.fontSize  = FONT_SIZE_CSS[font.getAttribute('size')] || 'medium'
+    if (font.getAttribute('face'))  span.style.fontFamily = font.getAttribute('face')
+    if (font.getAttribute('color')) span.style.color      = font.getAttribute('color')
+    while (font.firstChild) span.appendChild(font.firstChild)
+    font.replaceWith(span)
+  })
+  // Second pass: remaining <font> without size (face/color only).
+  root.querySelectorAll('font').forEach(font => {
+    const span = document.createElement('span')
+    if (font.getAttribute('face'))  span.style.fontFamily = font.getAttribute('face')
+    if (font.getAttribute('color')) span.style.color      = font.getAttribute('color')
+    while (font.firstChild) span.appendChild(font.firstChild)
+    font.replaceWith(span)
+  })
+}
 
 /**
  * Dependency-free rich text editor (contenteditable) shared by customer notes,
@@ -61,32 +92,80 @@ function toEmbedUrl(url) {
 }
 
 export default function RichTextEditor({ value = '', onChange, placeholder = 'Write here…', minHeight = 160 }) {
-  const ref = useRef(null)
+  const ref     = useRef(null)
   const fileRef = useRef(null)
 
+  // ─── Focus guard ────────────────────────────────────────────────────────────
+  // While the user is actively editing we NEVER touch innerHTML from outside.
+  // Any prop update that arrives while the editor has focus is silently ignored;
+  // the next time the editor blurs we emit the current content so the parent
+  // catches up. This eliminates ALL "content reset on re-render" bugs caused by
+  // browser HTML normalisation differences (trailing semicolons, attribute order,
+  // rgb() vs hex, etc.) making string comparisons unreliable.
+  const hasFocusRef = useRef(false)
+  // Last value we WROTE into the DOM so we can skip redundant innerHTML sets.
+  const lastSetRef  = useRef(null)
+
   useEffect(() => {
-    if (ref.current && ref.current.innerHTML !== (value || '')) {
-      ref.current.innerHTML = value || ''
-    }
+    if (!ref.current) return
+    if (hasFocusRef.current) return        // user is editing — leave it alone
+    const incoming = value || ''
+    if (incoming === lastSetRef.current) return  // already showing this value
+    lastSetRef.current = incoming
+    ref.current.innerHTML = incoming
   }, [value])
 
-  const emit = useCallback(() => onChange?.(ref.current?.innerHTML || ''), [onChange])
+  // ─── Selection save / restore ────────────────────────────────────────────────
+  // Clicking a <select> or <input type="color"> in the toolbar steals focus from
+  // the contenteditable, losing the user's text selection. We snapshot the range
+  // before the element steals focus (onMouseDown) and replay it inside exec /
+  // applyCss after refocusing the editor.
+  const savedSelRef = useRef(null)
 
+  const saveSelection = useCallback(() => {
+    const sel = window.getSelection()
+    if (sel?.rangeCount > 0 && ref.current?.contains(sel.anchorNode)) {
+      savedSelRef.current = sel.getRangeAt(0).cloneRange()
+    }
+  }, [])
+
+  const restoreSelection = () => {
+    if (!savedSelRef.current) return
+    const sel = window.getSelection()
+    if (sel) { sel.removeAllRanges(); sel.addRange(savedSelRef.current) }
+  }
+
+  // ─── Emit ────────────────────────────────────────────────────────────────────
+  // Always convert legacy <font> tags Chrome emits (execCommand fontSize ignores
+  // styleWithCSS), then read innerHTML and push up to the parent. Also update
+  // lastSetRef so the useEffect above treats the next re-render as a no-op.
+  const emit = useCallback(() => {
+    convertFontTags(ref.current)
+    const html = ref.current?.innerHTML || ''
+    lastSetRef.current = html   // mark: this is what we currently show
+    onChange?.(html)
+  }, [onChange])
+
+  // ─── execCommand helpers ─────────────────────────────────────────────────────
   const exec = (cmd, arg = null) => {
     ref.current?.focus()
+    restoreSelection()                          // replay selection lost to toolbar
     document.execCommand(cmd, false, arg)
+    convertFontTags(ref.current)
     emit()
   }
 
   const insertHTML = (html) => exec('insertHTML', html)
 
-  // Apply a CSS-based inline style to the selection (emits <span style> the
-  // sanitizer keeps, instead of legacy <font> tags).
+  // Apply a CSS-based inline style. Chrome's execCommand('fontSize') ignores
+  // styleWithCSS and always emits <font size>, so convertFontTags() cleans it up.
   const applyCss = (cmd, val) => {
     ref.current?.focus()
+    restoreSelection()                          // replay selection lost to toolbar
     document.execCommand('styleWithCSS', false, true)
     document.execCommand(cmd, false, val)
     document.execCommand('styleWithCSS', false, false)
+    convertFontTags(ref.current)
     emit()
   }
 
@@ -144,8 +223,7 @@ export default function RichTextEditor({ value = '', onChange, placeholder = 'Wr
     insertHTML(`<audio controls src="${url}"></audio><p><br></p>`)
   }
 
-  // Alignment works on the current block AND on a focused table cell (the
-  // browser applies text-align to the containing block, which the sanitizer keeps).
+  // Alignment: browser applies text-align to the containing block (sanitizer keeps it).
   const align = (dir) => exec('justify' + dir)
 
   /**
@@ -175,53 +253,62 @@ export default function RichTextEditor({ value = '', onChange, placeholder = 'Wr
 
   const GROUPS = [
     [
-      { icon: Bold, title: 'Bold', run: () => exec('bold') },
-      { icon: Italic, title: 'Italic', run: () => exec('italic') },
-      { icon: Underline, title: 'Underline', run: () => exec('underline') },
+      { icon: Bold,          title: 'Bold',          run: () => exec('bold') },
+      { icon: Italic,        title: 'Italic',        run: () => exec('italic') },
+      { icon: Underline,     title: 'Underline',     run: () => exec('underline') },
       { icon: Strikethrough, title: 'Strikethrough', run: () => exec('strikeThrough') },
     ],
     [
-      { icon: Heading2, title: 'Heading', run: () => exec('formatBlock', 'h2') },
-      { icon: Heading3, title: 'Sub-heading', run: () => exec('formatBlock', 'h3') },
-      { icon: List, title: 'Bullet list', run: () => exec('insertUnorderedList') },
+      { icon: Heading2,    title: 'Heading',       run: () => exec('formatBlock', 'h2') },
+      { icon: Heading3,    title: 'Sub-heading',   run: () => exec('formatBlock', 'h3') },
+      { icon: List,        title: 'Bullet list',   run: () => exec('insertUnorderedList') },
       { icon: ListOrdered, title: 'Numbered list', run: () => exec('insertOrderedList') },
       { icon: Quote, title: 'Quote', run: () => toggleBlock('blockquote') },
       { icon: Code, title: 'Code block', run: insertCodeBlock },
     ],
     [
-      { icon: AlignLeft, title: 'Align left', run: () => align('Left') },
-      { icon: AlignCenter, title: 'Align center', run: () => align('Center') },
-      { icon: AlignRight, title: 'Align right', run: () => align('Right') },
+      { icon: AlignLeft,   title: 'Align left',   run: () => align('Left') },
+      { icon: AlignCenter, title: 'Align center',  run: () => align('Center') },
+      { icon: AlignRight,  title: 'Align right',   run: () => align('Right') },
     ],
     [
-      { icon: Link2, title: 'Insert link', run: insertLink },
-      { icon: Table, title: 'Insert table (choose size)', run: insertTable },
-      { icon: ImageIcon, title: 'Insert image (≤500 KB, choose size)', run: pickImage },
-      { icon: Video, title: 'Insert video (YouTube/Vimeo or direct URL)', run: insertVideo },
-      { icon: Music, title: 'Insert audio (direct URL)', run: insertAudio },
+      { icon: Link2,     title: 'Insert link',                          run: insertLink },
+      { icon: Table,     title: 'Insert table (choose size)',            run: insertTable },
+      { icon: ImageIcon, title: 'Insert image (≤500 KB, choose size)',   run: pickImage },
+      { icon: Video,     title: 'Insert video (YouTube/Vimeo or direct URL)', run: insertVideo },
+      { icon: Music,     title: 'Insert audio (direct URL)',             run: insertAudio },
     ],
   ]
 
   return (
     <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-input)', background: 'var(--bg-input)' }}>
       <div className="flex items-center gap-0.5 flex-wrap px-2 py-1.5" style={{ borderBottom: '1px solid var(--border)' }}>
-        {/* Font family + size + colours (Word-like) */}
+        {/* Font family + size + colours */}
         <div className="flex items-center gap-1">
-          <select title="Font" onMouseDown={e => e.stopPropagation()} onChange={e => applyCss('fontName', e.target.value)}
+          {/* onMouseDown saves the selection BEFORE the <select> steals focus */}
+          <select title="Font"
+            onMouseDown={saveSelection}
+            onChange={e => applyCss('fontName', e.target.value)}
             className="text-xs rounded-lg outline-none" style={SELECT_STYLE}>
             {FONT_FAMILIES.map(f => <option key={f.label} value={f.value}>{f.label}</option>)}
           </select>
-          <select title="Font size" defaultValue="3" onChange={e => applyCss('fontSize', e.target.value)}
+          <select title="Font size" defaultValue="3"
+            onMouseDown={saveSelection}
+            onChange={e => applyCss('fontSize', e.target.value)}
             className="text-xs rounded-lg outline-none" style={{ ...SELECT_STYLE, maxWidth: 78 }}>
             {FONT_SIZES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
           </select>
-          <label title="Text colour" className="w-7 h-7 rounded-lg flex items-center justify-center cursor-pointer hover:bg-[rgba(124,58,237,0.1)] relative">
+          <label title="Text colour" onMouseDown={saveSelection}
+            className="w-7 h-7 rounded-lg flex items-center justify-center cursor-pointer hover:bg-[rgba(124,58,237,0.1)] relative">
             <Baseline size={14} style={{ color: 'var(--text-muted)' }} />
-            <input type="color" className="absolute inset-0 opacity-0 cursor-pointer" onChange={e => applyCss('foreColor', e.target.value)} />
+            <input type="color" className="absolute inset-0 opacity-0 cursor-pointer"
+              onChange={e => applyCss('foreColor', e.target.value)} />
           </label>
-          <label title="Highlight" className="w-7 h-7 rounded-lg flex items-center justify-center cursor-pointer hover:bg-[rgba(124,58,237,0.1)] relative">
+          <label title="Highlight" onMouseDown={saveSelection}
+            className="w-7 h-7 rounded-lg flex items-center justify-center cursor-pointer hover:bg-[rgba(124,58,237,0.1)] relative">
             <Highlighter size={14} style={{ color: 'var(--text-muted)' }} />
-            <input type="color" className="absolute inset-0 opacity-0 cursor-pointer" onChange={e => applyCss('hiliteColor', e.target.value)} />
+            <input type="color" className="absolute inset-0 opacity-0 cursor-pointer"
+              onChange={e => applyCss('hiliteColor', e.target.value)} />
           </label>
           <button type="button" title="Clear formatting" onMouseDown={e => e.preventDefault()} onClick={() => exec('removeFormat')}
             className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-[rgba(124,58,237,0.1)] transition-colors">
@@ -234,7 +321,7 @@ export default function RichTextEditor({ value = '', onChange, placeholder = 'Wr
             {gi > 0 && <span className="w-px h-4 mx-1" style={{ background: 'var(--border)' }} />}
             {group.map(({ icon: Icon, title, run }) => (
               <button key={title} type="button" title={title}
-                onMouseDown={e => e.preventDefault() /* keep selection */}
+                onMouseDown={e => e.preventDefault() /* keep selection + focus */}
                 onClick={run}
                 className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-[rgba(124,58,237,0.1)] transition-colors">
                 <Icon size={13} style={{ color: 'var(--text-muted)' }} />
@@ -246,8 +333,9 @@ export default function RichTextEditor({ value = '', onChange, placeholder = 'Wr
       <div
         ref={ref}
         contentEditable
+        onFocus={() => { hasFocusRef.current = true }}
+        onBlur={()  => { hasFocusRef.current = false; emit() }}
         onInput={emit}
-        onBlur={emit}
         data-placeholder={placeholder}
         className="rte-body px-4 py-3 text-sm outline-none"
         style={{ minHeight, color: 'var(--text-h)' }}

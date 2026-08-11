@@ -238,7 +238,7 @@ export function NotesTab({ projectId }) {
               <input value={editDraft.title} onChange={e => setEditDraft(d => ({ ...d, title: e.target.value }))} placeholder="Note title"
                 className="w-full rounded-lg outline-none mb-2" style={{ padding: '7px 10px', fontSize: 13, background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-h)' }} />
               <div className="proj-note-editor mb-2">
-                <ReactQuill ref={editNoteQuill} theme="snow" modules={RICH_MODULES} formats={RICH_FORMATS} value={editDraft.content} onChange={v => setEditDraft(d => ({ ...d, content: v }))} />
+                <ReactQuill key={'edit-' + editId} ref={editNoteQuill} theme="snow" modules={RICH_MODULES} formats={RICH_FORMATS} value={editDraft.content} onChange={v => setEditDraft(d => ({ ...d, content: v }))} />
               </div>
               <EditorActionBar quillRef={editNoteQuill} people={staff} accent={PROJECT_ACCENT} className="mb-2" meeting />
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">

@@ -295,7 +295,7 @@ function KbManager() {
                   className="w-full bg-transparent outline-none pb-4 mb-4" style={{ color: 'var(--text-muted)', fontSize: 14.5, borderBottom: '1px solid var(--border)' }} />
 
                 <div className="kb-editor rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)', background: 'var(--bg-input)' }}>
-                  <ReactQuill theme="snow" modules={QUILL_MODULES} formats={QUILL_FORMATS} value={article.content} onChange={v => setArticle({ ...article, content: v })} />
+                  <ReactQuill key={article.id ?? 'new'} theme="snow" modules={QUILL_MODULES} formats={QUILL_FORMATS} value={article.content} onChange={v => setArticle({ ...article, content: v })} />
                 </div>
                 {saveArticle.isError && <p className="text-xs mt-2" style={{ color: 'var(--color-danger-500)' }}>{saveArticle.error?.message}</p>}
               </div>
@@ -547,7 +547,7 @@ function CannedManager() {
             </div>
             <Field label="Reply text">
               <div className="kb-editor canned-quill rounded-lg overflow-hidden" style={{ border: '1px solid var(--border)' }}>
-                <ReactQuill theme="snow" modules={RICH_MODULES} formats={RICH_FORMATS}
+                <ReactQuill key={editing.id ?? 'new'} theme="snow" modules={RICH_MODULES} formats={RICH_FORMATS}
                   value={editing.content || ''} onChange={(html) => setEditing({ ...editing, content: html })}
                   placeholder="Type the reusable reply…" />
               </div>

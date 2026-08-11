@@ -59,6 +59,6 @@ export const RICH_MODULES = {
 
 export const RICH_FORMATS = [
   'header', 'size', 'bold', 'italic', 'underline', 'strike',
-  'color', 'background', 'list', 'bullet', 'align',
+  'color', 'background', 'list', 'bullet', 'indent', 'align',
   'blockquote', 'code-block', 'link', 'image',
 ]
