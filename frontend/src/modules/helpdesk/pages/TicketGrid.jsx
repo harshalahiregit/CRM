@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { guardedClose } from '@/lib/confirmClose'
+import { useDiscardGuard } from '@/lib/confirmClose'
 import { useNavigate } from 'react-router-dom'
 import {
   Search, Plus, X, Inbox, Clock, CheckCircle2, Circle, User, Zap,
@@ -593,13 +593,15 @@ function NewTicketModal({ settings, onClose, onCreated }) {
   })
   const snapRef = useRef(null)
   if (snapRef.current === null) snapRef.current = JSON.stringify(form)
-  const requestClose = () => guardedClose(onClose, JSON.stringify(form) !== snapRef.current)
+  const { guard, dialog } = useDiscardGuard()
+  const requestClose = () => guard(onClose, JSON.stringify(form) !== snapRef.current)
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
   const LBL = { display: 'block', fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 5 }
   // People the admin assigned to the chosen department (the ticket routes to them).
   const deptAgents = (settings?.departments || []).find(d => String(d.id) === String(form.department_id))?.managers || []
 
   return (
+    <>
     <div className="fixed inset-0 z-[70] flex items-start justify-center bg-black/50" style={{ paddingTop: '8vh' }} onClick={requestClose}>
       <div className="w-full max-w-[500px] rounded-2xl" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card-3d)', padding: 24, maxHeight: '85vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-5">
@@ -667,5 +669,7 @@ function NewTicketModal({ settings, onClose, onCreated }) {
         </div>
       </div>
     </div>
+    {dialog}
+    </>
   )
 }

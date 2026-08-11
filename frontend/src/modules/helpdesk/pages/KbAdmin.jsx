@@ -226,7 +226,7 @@ function KbManager() {
 
       {/* Articles + editor */}
       <div className="rounded-2xl" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card)', minHeight: 420 }}>
-        {!selSub && (
+        {!selSub && !article && (
           <div className="flex flex-col items-center justify-center h-72 gap-3">
             <div className="w-14 h-14 rounded-2xl flex items-center justify-center" style={{ background: `color-mix(in srgb, ${ACCENT} 10%, transparent)` }}><BookOpen size={26} style={{ color: ACCENT }} /></div>
             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Select a sub-category to manage its articles</p>
@@ -278,7 +278,8 @@ function KbManager() {
                 {article.id && (
                   <button onClick={() => delArticle.mutate(article.id)} title="Delete article" className="p-1.5 rounded-lg hover:opacity-100 opacity-60" style={{ color: 'var(--color-danger-500)' }}><Trash2 size={14} /></button>
                 )}
-                <button disabled={!article.title.trim() || saveArticle.isPending} onClick={() => saveArticle.mutate(article)}
+                <button disabled={!article.title.trim() || !article.subcategory_id || saveArticle.isPending} onClick={() => saveArticle.mutate(article)}
+                  title={!article.subcategory_id ? 'Pick a sub-category first (right panel → Organize)' : undefined}
                   className="flex items-center gap-1.5 text-xs font-bold px-4 py-2 rounded-xl disabled:opacity-40" style={{ background: ACCENT, color: '#fff' }}>
                   <Save size={13} /> {saveArticle.isPending ? 'Saving…' : 'Save'}
                 </button>
@@ -351,6 +352,11 @@ function KbManager() {
                       size="sm"
                       ariaLabel="Sub-category"
                     />
+                    {!article.subcategory_id && (
+                      <p className="text-[11px] mt-1.5" style={{ color: 'var(--color-danger-500)' }}>
+                        Required — pick a sub-category before saving.
+                      </p>
+                    )}
                   </Field>
                   <Field label="Department">
                     <Select

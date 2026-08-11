@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { guardedClose } from '@/lib/confirmClose'
+import { useDiscardGuard } from '@/lib/confirmClose'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { X, Check, Building2, IndianRupee, SlidersHorizontal, LayoutGrid, ShieldCheck } from 'lucide-react'
 import { projectApi, PROJECT_STATUS, BILLING_TYPES, PROJECT_ACCENT } from '@/services/projectApi'
@@ -95,7 +95,8 @@ export default function ProjectFormDrawer({ open, onClose, project = null, onSav
   }, [open, project, editing]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const sf = (k, v) => setForm(p => ({ ...p, [k]: v }))
-  const requestClose = () => guardedClose(onClose, snapshotRef.current && JSON.stringify(form) !== snapshotRef.current)
+  const { guard, dialog } = useDiscardGuard()
+  const requestClose = () => guard(onClose, snapshotRef.current && JSON.stringify(form) !== snapshotRef.current)
 
   // Default the visible-tabs bag from meta the first time it loads (new projects
   // start with every working tab on). Editing keeps whatever the project stored.
@@ -203,6 +204,7 @@ export default function ProjectFormDrawer({ open, onClose, project = null, onSav
   const partyLower = partyLabel.toLowerCase()
 
   return (
+    <>
     <div className="fixed inset-0 z-[55] flex items-start justify-center p-3 sm:p-6 overflow-y-auto"
       style={{ background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(2px)' }} onClick={requestClose}>
       <form onSubmit={submit} onClick={e => e.stopPropagation()}
@@ -455,6 +457,8 @@ export default function ProjectFormDrawer({ open, onClose, project = null, onSav
         emptyText="Everyone is already a member." accent={PROJECT_ACCENT}
       />
     </div>
+    {dialog}
+    </>
   )
 }
 

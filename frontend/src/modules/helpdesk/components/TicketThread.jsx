@@ -23,6 +23,7 @@ import PollComposerModal from '@/components/poll/PollComposerModal'
 import QuickTaskModal from '@/components/task/QuickTaskModal'
 import MessageReactions from '@/components/editor/MessageReactions'
 import { useReactions } from '@/hooks/useReactions'
+import { useDiscardGuard } from '@/lib/confirmClose'
 import { taskApi } from '@/services/taskApi'
 import { RICH_MODULES, RICH_FORMATS } from '@/lib/quillConfig'
 import Select from './ui/Select'
@@ -124,11 +125,13 @@ const isComposerEmpty = (html) => {
 // Repaints Quill's hard-coded light skin from design tokens so the reply composer
 // follows light/dark, plus styles for rendering stored reply HTML in the thread.
 const REPLY_EDITOR_CSS = `
-  .reply-editor{border:1px solid var(--border);border-radius:14px;overflow:hidden;background:var(--bg-input)}
+  /* No overflow:hidden here — it would clip Quill's link tooltip. Rounded
+     corners are applied to the toolbar (top) and container (bottom) instead. */
+  .reply-editor{border:1px solid var(--border);border-radius:14px;background:var(--bg-input)}
   .reply-editor:focus-within{border-color:var(--color-support-500);box-shadow:0 0 0 3px color-mix(in srgb,var(--color-support-500) 18%,transparent)}
-  .reply-editor .ql-toolbar.ql-snow{border:0;border-bottom:1px solid var(--border);background:var(--bg-card);padding:10px 14px}
+  .reply-editor .ql-toolbar.ql-snow{border:0;border-bottom:1px solid var(--border);background:var(--bg-card);padding:10px 14px;border-radius:14px 14px 0 0}
   .reply-editor .ql-toolbar.ql-snow .ql-formats{margin-right:14px}
-  .reply-editor .ql-container.ql-snow{border:0;background:transparent;font-family:inherit;font-size:14.5px}
+  .reply-editor .ql-container.ql-snow{border:0;background:transparent;font-family:inherit;font-size:14.5px;border-radius:0 0 14px 14px}
   .reply-editor .ql-editor{min-height:200px;max-height:520px;overflow-y:auto;color:var(--text-h);line-height:1.7;padding:16px 18px}
   .reply-editor .ql-editor p{margin-bottom:8px}
   .reply-editor .ql-editor.ql-blank::before{color:var(--text-muted);opacity:.6;font-style:normal;left:18px;right:18px}
@@ -139,9 +142,20 @@ const REPLY_EDITOR_CSS = `
   .reply-editor .ql-snow .ql-fill{fill:var(--text-muted)}
   .reply-editor .ql-snow button:hover .ql-stroke,.reply-editor .ql-snow button.ql-active .ql-stroke{stroke:var(--color-support-500)}
   .reply-editor .ql-snow button:hover .ql-fill,.reply-editor .ql-snow button.ql-active .ql-fill{fill:var(--color-support-500)}
-  .reply-editor .ql-snow .ql-tooltip{background:var(--bg-card);border:1px solid var(--border);box-shadow:var(--shadow-card-3d);color:var(--text-body);border-radius:10px;z-index:20}
-  .reply-editor .ql-snow .ql-tooltip input[type=text]{background:var(--bg-input);border:1px solid var(--border);color:var(--text-h);border-radius:6px}
-  .reply-editor .ql-snow .ql-tooltip a.ql-action,.reply-editor .ql-snow .ql-tooltip a.ql-remove{color:var(--color-support-500)}
+  /* Pin the tooltip to the editor's left and cap its width so Quill can never
+     push it off-screen (a tooltip wider than a narrow editor got a negative
+     left and the URL start was clipped). The URL flex-shrinks with an ellipsis. */
+  .reply-editor .ql-snow .ql-tooltip{display:flex;align-items:center;gap:8px;left:12px !important;right:auto;max-width:calc(100% - 24px);background:var(--bg-card);border:1px solid var(--border);box-shadow:var(--shadow-card-3d);color:var(--text-body);border-radius:10px;padding:7px 12px;white-space:nowrap;z-index:30}
+  /* Our display:flex above outranks Quill's ".ql-snow .ql-hidden{display:none}",
+     so without this the tooltip never hides — it stuck open after Edit/Remove.
+     Restore hiding with a more specific rule. */
+  .reply-editor .ql-snow .ql-tooltip.ql-hidden{display:none}
+  .reply-editor .ql-snow .ql-tooltip::before{margin:0;line-height:1.4;flex:0 0 auto}
+  .reply-editor .ql-snow .ql-tooltip .ql-preview{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;vertical-align:middle;margin:0;line-height:1.4}
+  .reply-editor .ql-snow .ql-tooltip input[type=text]{flex:1 1 auto;min-width:0;height:26px;background:var(--bg-input);border:1px solid var(--border);color:var(--text-h);border-radius:6px;margin:0}
+  .reply-editor .ql-snow .ql-tooltip a.ql-action,.reply-editor .ql-snow .ql-tooltip a.ql-remove{color:var(--color-support-500);margin:0;line-height:1.4;flex:0 0 auto}
+  .reply-editor .ql-snow .ql-tooltip:not(.ql-editing) a.ql-action{margin-left:auto}
+  .reply-editor .ql-snow .ql-tooltip:not(.ql-editing) a.ql-action::after{margin:0;padding-right:8px;border-right:1px solid var(--border)}
   /* Rendered reply bodies (server-sanitized HTML) inside the thread bubbles */
   .reply-html p{margin:0 0 .5rem}
   .reply-html p:last-child{margin-bottom:0}
@@ -175,7 +189,9 @@ export default function TicketThread() {
   // reference; "assign to me" defaults OFF so a reply never silently steals a
   // ticket unless the agent asks for it.
   const [assignToMe, setAssignToMe] = useState(() => localStorage.getItem('hd.reply.assignToMe') === '1')
-  const [returnToList, setReturnToList] = useState(() => localStorage.getItem('hd.reply.returnToList') !== '0')
+  // Default OFF: after sending, stay on the ticket (you usually keep working it).
+  // Opt in via the checkbox to auto-return to the list; the choice is remembered.
+  const [returnToList, setReturnToList] = useState(() => localStorage.getItem('hd.reply.returnToList') === '1')
   const toggleAssignToMe = (v) => { setAssignToMe(v); localStorage.setItem('hd.reply.assignToMe', v ? '1' : '0') }
   const toggleReturnToList = (v) => { setReturnToList(v); localStorage.setItem('hd.reply.returnToList', v ? '1' : '0') }
 
@@ -253,6 +269,11 @@ export default function TicketThread() {
   // silently. Gate the shortcut on this so it no-ops until a valid target exists.
   const canResolve = (settings?.statuses || []).some(s => s.name === resolveStatus)
   const [taskRows, setTaskRows] = useState([{ ...BASE_ROW }])
+  // Guard the convert-to-tasks modal so typed rows aren't lost on an accidental
+  // close. Snapshot the seeded rows at open time; dirty = rows differ from it.
+  const convertSnapRef = useRef('')
+  const { guard: guardTasksClose, dialog: tasksDiscardDialog } = useDiscardGuard()
+  const requestCloseTasks = () => guardTasksClose(() => setTasksOpen(false), JSON.stringify(taskRows) !== convertSnapRef.current)
 
   const createTasks = useMutation({
     mutationFn: () => {
@@ -323,7 +344,9 @@ export default function TicketThread() {
   // Seed the rows from the ticket at open time (the button only renders once the
   // ticket is loaded, so `makeRow` always sees real data here).
   const openTaskModal = () => {
-    setTaskRows([makeRow()])
+    const seed = [makeRow()]
+    setTaskRows(seed)
+    convertSnapRef.current = JSON.stringify(seed)
     setTasksOpen(true)
   }
 
@@ -516,6 +539,23 @@ export default function TicketThread() {
       // Send the Quill HTML verbatim as `message`; the server sanitizes on store.
       postReply.mutate({ resolve, text: message, ccVal: cc, fileList: files, assignMe: assignToMe, goBack: returnToList })
     }
+  }
+
+  // Insert HTML (a KB link, a canned reply) into the reply editor AT THE CARET
+  // using Quill's own API. The old approach string-concatenated into the
+  // controlled value (`${m} ${html}`), which appended outside the current block,
+  // ignored the cursor, and sometimes dropped the anchor — "KB link not working".
+  // dangerouslyPasteHTML respects the allowed formats, so the link/formatting
+  // survives; Quill's own change event syncs `message`, so we don't setMessage.
+  const insertIntoReply = (html) => {
+    if (composerMode !== 'reply') return
+    const q = quillRef.current?.getEditor?.()
+    if (!q) { setMessage(m => (m ? `${m} ${html}` : html)); return }
+    const sel = q.getSelection(true) || { index: q.getLength(), length: 0 }
+    q.clipboard.dangerouslyPasteHTML(sel.index, html, 'user')
+    // Drop the caret just after what we pasted so the agent keeps typing there.
+    q.setSelection(q.getSelection()?.index ?? q.getLength(), 0, 'user')
+    q.focus()
   }
 
   // Keyboard shortcuts: r = reply, n = note, e = resolve (ignored while typing).
@@ -994,31 +1034,38 @@ export default function TicketThread() {
                 )}
 
                 {/* Toolbar */}
-                <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: '1px solid var(--border)', background: composerMode === 'note' ? 'transparent' : 'var(--bg-input)' }}>
-                  <div className="flex items-center gap-4">
+                <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-4 py-3" style={{ borderTop: '1px solid var(--border)', background: composerMode === 'note' ? 'transparent' : 'var(--bg-input)' }}>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2 min-w-0">
                     {composerMode === 'reply' ? (
                       <>
-                        <label className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer hover:opacity-70 transition-opacity" style={{ color: 'var(--text-muted)' }}>
-                          <Paperclip size={14} /> Attach
-                          <input type="file" multiple className="hidden" onChange={e => setFiles(prev => [...prev, ...Array.from(e.target.files)])} />
-                        </label>
-                        <EditorActionBar quillRef={quillRef} people={mentionPeople} accent="var(--color-support-500)" onPoll={() => setPollOpen(true)} meeting
-                          quickCreate={[
-                            { label: 'Task', icon: ListTodo, onClick: () => setQuickTaskOpen(true) },
-                            { label: 'Note', icon: StickyNote, onClick: () => setComposerMode('note') },
-                          ]} />
-                        <CannedResponsePicker onInsert={txt => setMessage(m => m ? `${m}\n\n${txt}` : txt)} />
-                        <InsertKbLinkPicker onInsert={html => setMessage(m => m ? `${m} ${html}` : html)} />
-                        <button type="button" onClick={saveAsCanned} disabled={!message.trim()}
-                          className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer hover:opacity-70 transition-opacity disabled:opacity-40"
-                          style={{ color: 'var(--text-muted)' }} title="Save this reply as a canned response">
-                          <Bookmark size={14} /> Save as canned
-                        </button>
-                        <button type="button" onClick={convertToKb} disabled={!message.trim()}
-                          className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer hover:opacity-70 transition-opacity disabled:opacity-40"
-                          style={{ color: 'var(--text-muted)' }} title="Turn this reply into a knowledge base article">
-                          <BookOpen size={14} /> To KB
-                        </button>
+                        {/* Insert tools (icons) */}
+                        <div className="flex items-center gap-2">
+                          <label className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer hover:opacity-70 transition-opacity" style={{ color: 'var(--text-muted)' }}>
+                            <Paperclip size={14} /> Attach
+                            <input type="file" multiple className="hidden" onChange={e => setFiles(prev => [...prev, ...Array.from(e.target.files)])} />
+                          </label>
+                          <EditorActionBar quillRef={quillRef} people={mentionPeople} accent="var(--color-support-500)" onPoll={() => setPollOpen(true)} meeting
+                            quickCreate={[
+                              { label: 'Task', icon: ListTodo, onClick: () => setQuickTaskOpen(true) },
+                              { label: 'Note', icon: StickyNote, onClick: () => setComposerMode('note') },
+                            ]} />
+                        </div>
+                        <span className="w-px h-4 self-center hidden sm:block" style={{ background: 'var(--border)' }} />
+                        {/* Content tools (text) */}
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                          <CannedResponsePicker onInsert={html => insertIntoReply(html)} />
+                          <InsertKbLinkPicker onInsert={html => insertIntoReply(html)} />
+                          <button type="button" onClick={saveAsCanned} disabled={!message.trim()}
+                            className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer hover:opacity-70 transition-opacity disabled:opacity-40"
+                            style={{ color: 'var(--text-muted)' }} title="Save this reply as a canned response">
+                            <Bookmark size={14} /> Save as canned
+                          </button>
+                          <button type="button" onClick={convertToKb} disabled={!message.trim()}
+                            className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer hover:opacity-70 transition-opacity disabled:opacity-40"
+                            style={{ color: 'var(--text-muted)' }} title="Turn this reply into a knowledge base article">
+                            <BookOpen size={14} /> To KB
+                          </button>
+                        </div>
                         {replyTip && <span className="text-[11px] font-semibold" style={{ color: 'var(--color-success-500)' }}>{replyTip}</span>}
                       </>
                     ) : (
@@ -1026,7 +1073,7 @@ export default function TicketThread() {
                     )}
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 shrink-0 ml-auto">
                     {(postReply.isError || addNote.isError) && <span className="text-xs" style={{ color: '#ef4444' }}>{(postReply.error || addNote.error)?.message}</span>}
                     {composerMode === 'note' ? (
                       <button type="submit" disabled={!canSend || busy} className="flex items-center gap-1.5 text-xs font-bold px-4 py-2 rounded-xl disabled:opacity-40" style={{ background: 'var(--color-warning-500)', color: '#fff' }}>
@@ -1152,7 +1199,7 @@ export default function TicketThread() {
       {tasksOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
-          onClick={() => setTasksOpen(false)}
+          onClick={requestCloseTasks}
         >
           <div
             className="w-full max-w-2xl rounded-2xl p-6 max-h-[85vh] overflow-y-auto"
@@ -1185,7 +1232,7 @@ export default function TicketThread() {
                   </p>
                 </div>
               </div>
-              <button onClick={() => setTasksOpen(false)} className="hover:opacity-60">
+              <button onClick={requestCloseTasks} className="hover:opacity-60">
                 <X size={18} style={{ color: 'var(--text-muted)' }} />
               </button>
             </div>
@@ -1257,7 +1304,7 @@ export default function TicketThread() {
             )}
             <div className="flex justify-end gap-2">
               <button
-                onClick={() => setTasksOpen(false)}
+                onClick={requestCloseTasks}
                 className="text-xs font-semibold px-4 py-2 rounded-xl"
                 style={{ color: 'var(--text-muted)', border: '1px solid var(--border)', background: 'transparent' }}
               >
@@ -1275,6 +1322,7 @@ export default function TicketThread() {
           </div>
         </div>
       )}
+      {tasksDiscardDialog}
     </div>
   )
 }

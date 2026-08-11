@@ -9,7 +9,7 @@ import {
 import { tpvApi } from '@/services/tpvApi'
 import { purchaseApi } from '@/services/purchaseApi'
 import { taskApi, TASK_PRIORITY, TASK_ACCENT, REL_TYPES, EXTRA_REL_TYPES, REL_TYPE_LABEL, RATE_UNITS, fmtBytes } from '@/services/taskApi'
-import { guardedClose } from '@/lib/confirmClose'
+import { useDiscardGuard } from '@/lib/confirmClose'
 import Select from '@/components/ui/Select'
 import SearchPicker from '@/components/ui/SearchPicker'
 import TagInput from '@/components/ui/TagInput'
@@ -120,7 +120,8 @@ export default function TaskFormDrawer({ open, onClose, task = null, defaults = 
   // Dirty = the form differs from how it opened, or files are staged. Backdrop /
   // Close then asks before throwing typed data away.
   const dirty = () => (snapshotRef.current && JSON.stringify(form) !== snapshotRef.current) || pendingFiles.length > 0
-  const requestClose = () => guardedClose(onClose, dirty())
+  const { guard, dialog } = useDiscardGuard()
+  const requestClose = () => guard(onClose, dirty())
 
   // Workspace switches: hide rate fields entirely, and force a milestone on project tasks.
   const { data: taskSettings = {} } = useQuery({ queryKey: ['task-settings'], queryFn: taskApi.settings, enabled: open })
@@ -284,6 +285,7 @@ export default function TaskFormDrawer({ open, onClose, task = null, defaults = 
   const missingMilestone = requireMilestone && isProject && !!form.rel_id && !form.milestone_id
 
   return (
+    <>
     <div className="fixed inset-0 z-[55] flex items-start justify-center p-3 sm:p-6 overflow-y-auto"
       style={{ background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(2px)' }} onClick={requestClose}>
       <form onSubmit={submit} onClick={e => e.stopPropagation()}
@@ -577,6 +579,8 @@ export default function TaskFormDrawer({ open, onClose, task = null, defaults = 
         title="Add follower" subtitle="Followers get updates but aren't doing the work." emptyText="Everyone is already following." accent={TASK_ACCENT}
       />
     </div>
+    {dialog}
+    </>
   )
 }
 

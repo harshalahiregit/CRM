@@ -623,10 +623,7 @@ export default function AppRoutes() {
         <Route path="inventory/manufacturing" element={<S><InventoryManufacturing /></S>} />
         <Route path="inventory/settings" element={<S><InventorySettings /></S>} />
 
-        <Route path="invoices" element={<ComingSoon name="Invoices" />} />
-        <Route path="vendors" element={<ComingSoon name="Vendors" />} />
         <Route path="tickets" element={<ComingSoon name="Tickets" />} />
-        <Route path="reports/*" element={<ComingSoon name="Reports" />} />
         <Route path="settings" element={<S><SettingsLayout /></S>}>
           <Route index element={<Navigate to="general" replace />} />
           <Route path="general" element={<S><GeneralBrandingSettings /></S>} />
