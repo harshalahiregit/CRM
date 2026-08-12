@@ -250,6 +250,19 @@ export const purchaseApi = {
 
   // ── Purchase onboarding — the 6-step wizard (/purchase/onboarding) ───
   // Mirrors tpvApi.onboarding (incl. decisions + kickoff) so the shared wizard works.
+  // ── Purchase workforce (admin/staff) ──────────────────────────────────
+  // Tenant-scoped server-side: vendor_id here only FILTERS, it never authorises.
+  // Badge activation is role:admin on the backend — the UI hides the button for
+  // staff, and the endpoint refuses them regardless.
+  workforce: {
+    workers:  (params = {}) => api.get('/purchase/workforce/workers', { params }).then(r => r.data),
+    worker:   (id)          => api.get(`/purchase/workforce/workers/${id}`).then(r => r.data),
+    ppe:      (id)          => api.get(`/purchase/workforce/workers/${id}/ppe`).then(r => r.data),
+    gate:     (id)          => api.get(`/purchase/workforce/workers/${id}/gate`).then(r => r.data),
+    activate: (id, data = {}) => api.post(`/purchase/workforce/workers/${id}/activate`, data).then(r => r.data),
+    returnPpe: (issueId, data = {}) => api.post(`/purchase/workforce/ppe/issues/${issueId}/return`, data).then(r => r.data),
+  },
+
   onboarding: {
     list:     (params = {}) => api.get('/purchase/onboarding', { params }).then(r => r.data),
     stats:    ()            => api.get('/purchase/onboarding/stats').then(r => r.data),

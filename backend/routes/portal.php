@@ -121,7 +121,10 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal'])->prefix('portal/pu
     Route::post('/logout',                            [PurchaseVendorAuthController::class, 'logout']);
     Route::get('/dashboard',                          [PurchasePortalController::class, 'dashboard']);
     Route::get('/ppe',                                [\App\Http\Controllers\Api\Tpv\PpeController::class, 'catalogue']);
-    Route::get('/ppe/summary',                        [\App\Http\Controllers\Api\Tpv\PpeController::class, 'summary']);
+    // NOT PpeController::summary — that one totals every issue in the tenant, so
+    // it showed a Purchase vendor how much PPE the TPV vendors were holding. The
+    // shelf is shared and stays tenant-wide; the issued figures are the vendor's own.
+    Route::get('/ppe/summary',                        [PurchasePortalController::class, 'ppeSummary']);
     Route::get('/ppe/item/{product}/image',           [\App\Http\Controllers\Api\Tpv\PpeController::class, 'image']);
     Route::get('/tasks',                              [PurchasePortalController::class, 'tasks']);
     Route::get('/me',                                 [PurchasePortalController::class, 'me']);
@@ -167,6 +170,17 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal'])->prefix('portal/pu
     Route::post('/workers/{worker}/medical',          [PurchasePortalWorkforceController::class, 'saveMedical']);
     Route::post('/workers/{worker}/training',         [PurchasePortalWorkforceController::class, 'saveTraining']);
     Route::post('/workers/{worker}/induction',        [PurchasePortalWorkforceController::class, 'saveInduction']);
+
+    // ── Workforce step 4 (PPE) and step 5 (badge, read-only) ──────────────
+    // Vendor-owned: every worker/issue id is resolved through the caller's own
+    // vendor, so another vendor's row reads as absent. No warehouse_id is
+    // accepted — the server resolves the site, which is what stops a vendor
+    // moving stock between warehouses. Activation is NOT here: it is admin-only.
+    Route::get('/workers/{worker}/ppe',               [PurchasePortalWorkforceController::class, 'workerPpe']);
+    Route::get('/workers/{worker}/ppe/compliance',    [PurchasePortalWorkforceController::class, 'workerPpeCompliance']);
+    Route::post('/workers/{worker}/ppe/issue',        [PurchasePortalWorkforceController::class, 'issueWorkerPpe']);
+    Route::post('/ppe/issues/{issue}/return',         [PurchasePortalWorkforceController::class, 'returnWorkerPpe']);
+    Route::get('/workers/{worker}/badge',             [PurchasePortalWorkforceController::class, 'workerBadge']);
 
     // ── Commercial (own vendor only; read-only) ─────────────────────────
     Route::get('/orders',                             [PurchasePortalCommerceController::class, 'orders']);
