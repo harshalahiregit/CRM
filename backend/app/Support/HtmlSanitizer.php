@@ -193,8 +193,18 @@ class HtmlSanitizer
             $value = trim($attr->value);
 
             // URL-bearing attributes: enforce safe schemes per element.
-            if ($name === 'href' && ! preg_match('~^https?://~i', $value)) {
-                $el->removeAttribute($attr->name);
+            // Links: normalise rather than drop. A user who typed a bare domain
+            // ("example.com", "www.example.com") in the editor produced a
+            // schemeless href — previously we deleted it, so the link silently
+            // reverted to plain text on reload. Now we default it to https://,
+            // keep mailto:/tel:, and still drop dangerous schemes (javascript:, …).
+            if ($name === 'href') {
+                $safe = self::normalizeHref($value);
+                if ($safe === null) {
+                    $el->removeAttribute($attr->name);
+                } elseif ($safe !== $attr->value) {
+                    $el->setAttribute('href', $safe);
+                }
             }
             if ($name === 'src') {
                 $ok = match ($tag) {
@@ -226,6 +236,36 @@ class HtmlSanitizer
             $el->setAttribute('rel', 'noopener noreferrer');
             $el->setAttribute('target', '_blank');
         }
+    }
+
+    /**
+     * Normalise an <a href> to a safe, working URL — or null to drop it.
+     *  • http(s):// … kept as-is
+     *  • mailto: / tel: … kept (useful, safe)
+     *  • schemeless web address (example.com, www.x.com, x.com/path, x.com:8080)
+     *    … defaulted to https:// so the link actually works after save
+     *  • anything else (javascript:, data:, vbscript:, file:, #frag, /relative, bare word)
+     *    … dropped
+     */
+    private static function normalizeHref(string $href): ?string
+    {
+        $href = trim($href);
+        if ($href === '') {
+            return null;
+        }
+        if (preg_match('~^https?://~i', $href)) {
+            return $href;
+        }
+        if (preg_match('~^(mailto:|tel:)~i', $href)) {
+            return $href;
+        }
+        // A schemeless domain (one or more dot-separated labels + a 2+ letter TLD,
+        // with an optional port/path/query/fragment) → default the scheme to https.
+        if (preg_match('~^(?:[\w-]+\.)+[a-z]{2,}(?:[:/?#].*)?$~i', $href)) {
+            return 'https://'.$href;
+        }
+
+        return null;
     }
 
     /** Keep only whitelisted style properties whose value matches its pattern. */

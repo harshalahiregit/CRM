@@ -49,7 +49,7 @@ export default function GeneralBrandingSettings() {
         <h2 className="font-bold text-base mb-1" style={{ color: 'var(--text-h)' }}>General</h2>
         <p className="text-xs mb-5" style={{ color: 'var(--text-muted)' }}>Company identity and support contact details for this workspace.</p>
         <div className="grid md:grid-cols-2 gap-4">
-          <div><label className="label">Company Name</label><input className="input-3d text-sm" value={form.general.company_name || ''} onChange={e => sg('general', 'company_name', e.target.value)} placeholder="MLA Consulting" /></div>
+          <div><label className="label">Company Name</label><input className="input-3d text-sm" value={form.general.company_name || ''} onChange={e => sg('general', 'company_name', e.target.value)} placeholder="Sangoe Consulting" /></div>
           <div><label className="label">App Name</label><input className="input-3d text-sm" value={form.general.app_name || ''} onChange={e => sg('general', 'app_name', e.target.value)} placeholder="Sangoe CRM" /></div>
           <div><label className="label">Support Email</label><input className="input-3d text-sm" value={form.general.support_email || ''} onChange={e => sg('general', 'support_email', e.target.value)} placeholder="support@yourcompany.in" /></div>
           <div><label className="label">Support Phone</label><input className="input-3d text-sm" value={form.general.support_phone || ''} onChange={e => sg('general', 'support_phone', e.target.value)} placeholder="+91 …" /></div>

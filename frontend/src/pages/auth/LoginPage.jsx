@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { Eye, EyeOff, ChevronDown, Shield, Zap, Globe, Lock, CheckCircle, User, Star } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { purchaseVendorAuthApi } from '@/services/purchaseVendorAuthApi'
+import sangoeFull from '@/assets/sangoe-full.png'
 
 /**
  * A Purchase Vendor is a PurchaseVendor record, not a User, so it cannot go
@@ -115,12 +116,12 @@ export default function LoginPage() {
 
         {/* Logo */}
         <div className="relative z-10 mb-10">
-          <div className="flex items-center gap-2.5 mb-4">
-            <div className="w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>
-              <span className="text-white font-black text-sm">S</span>
+          <div className="mb-4">
+            {/* Full Sangoe wordmark on a white chip so the dark logo stays legible
+                on the dark panel */}
+            <div className="inline-flex items-center bg-white rounded-2xl px-4 py-3 shadow-xl">
+              <img src={sangoeFull} alt="Sangoe CRM Software" className="w-52 h-auto" />
             </div>
-            <span className="text-2xl font-black tracking-tight" style={{ color: '#edeaf8' }}>Sangoe</span>
-            <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(124,58,237,0.2)', color: '#c4b5fd', border: '1px solid rgba(124,58,237,0.3)' }}>CRM</span>
           </div>
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold"
                 style={{ background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981' }}>

@@ -31,15 +31,18 @@ const ACCENT = 'var(--color-support-500)'
 const QUILL_MODULES = {
   toolbar: [
     [{ header: [2, 3, 4, false] }],
+    [{ size: ['12px', '14px', '16px', '18px', '24px', '32px'] }],
     ['bold', 'italic', 'underline', 'strike', 'blockquote', 'code-block'],
+    [{ color: [] }, { background: [] }],
     [{ list: 'ordered' }, { list: 'bullet' }],
+    [{ align: [] }],
     ['link', 'image', 'video'],
     ['clean'],
   ],
 }
 const QUILL_FORMATS = [
-  'header', 'bold', 'italic', 'underline', 'strike', 'blockquote', 'code-block',
-  'list', 'bullet', 'link', 'image', 'video',
+  'header', 'size', 'bold', 'italic', 'underline', 'strike', 'blockquote', 'code-block',
+  'color', 'background', 'list', 'bullet', 'align', 'link', 'image', 'video',
 ]
 
 /**

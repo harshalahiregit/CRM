@@ -56,7 +56,7 @@ export default function ModulesPage() {
             Module <span className="text-gradient">Manager</span>
           </h1>
           <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
-            Install, manage and launch CRM modules just like Perfex CRM.
+            Install, manage and launch your CRM modules.
           </p>
         </div>
         <div
