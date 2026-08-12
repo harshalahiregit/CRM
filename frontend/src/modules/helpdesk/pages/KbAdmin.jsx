@@ -42,6 +42,7 @@ const QUILL_MODULES = {
     ],
     handlers: { image: quillImageHandler },
   },
+  imageCompressor: true,
 }
 const QUILL_FORMATS = [
   'header', 'size', 'bold', 'italic', 'underline', 'strike', 'blockquote', 'code-block',

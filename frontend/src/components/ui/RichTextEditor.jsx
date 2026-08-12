@@ -208,6 +208,23 @@ export default function RichTextEditor({ value = '', onChange, placeholder = 'Wr
     }
   }
 
+  // Paste / drop an image (e.g. a screenshot): the browser would otherwise drop
+  // it into the contenteditable as a full-size base64 blob. Intercept, compress,
+  // then insert so pasted images are as small as button-inserted ones.
+  const handleImageDrop = async (e) => {
+    const src = e.clipboardData || e.dataTransfer
+    const files = src && src.files ? Array.from(src.files).filter(f => f.type && f.type.startsWith('image/')) : []
+    if (!files.length) return
+    e.preventDefault()
+    for (const file of files) {
+      try {
+        const dataUrl = await compressImage(file, { maxDim: 1600, quality: 0.82 })
+        if (dataUrl) insertHTML(`<img src="${dataUrl}" alt="" style="width:100%" /><p><br></p>`)
+      } catch { /* ignore one bad file */ }
+    }
+    emit()
+  }
+
   const insertVideo = () => {
     const url = (window.prompt('Video URL — YouTube/Vimeo link, or a direct .mp4/.webm URL (https)') || '').trim()
     if (!url) return
@@ -341,6 +358,8 @@ export default function RichTextEditor({ value = '', onChange, placeholder = 'Wr
         onFocus={() => { hasFocusRef.current = true }}
         onBlur={()  => { hasFocusRef.current = false; emit() }}
         onInput={emit}
+        onPaste={handleImageDrop}
+        onDrop={handleImageDrop}
         data-placeholder={placeholder}
         className="rte-body px-4 py-3 text-sm outline-none"
         style={{ minHeight, color: 'var(--text-h)' }}
