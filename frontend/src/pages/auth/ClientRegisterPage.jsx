@@ -5,6 +5,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Eye, EyeOff, CheckCircle, User, Loader2 } from 'lucide-react'
 import { useState } from 'react'
 import api from '@/lib/api'
+import sangoeIcon from '@/assets/sangoe-icon.png'
 
 const schema = z.object({
   first_name:            z.string().min(2, 'Required'),
@@ -87,9 +88,9 @@ export default function ClientRegisterPage() {
 
         {/* Logo */}
         <div className="mb-6">
-          <div className="text-xl font-black tracking-tight">
-            <span style={{ color: '#ef4444' }}>MLA</span>
-            <span className="text-white ml-1">CRM</span>
+          <div className="flex items-center gap-2">
+            <img src={sangoeIcon} alt="Sangoe" className="w-8 h-8 rounded-lg object-contain" />
+            <span className="text-xl font-black tracking-tight text-white">Sangoe</span>
           </div>
           <div className="mt-2 flex items-center gap-1.5 px-2 py-1 rounded-md w-fit"
                style={{ background: 'rgba(20,184,166,0.15)', border: '1px solid rgba(20,184,166,0.3)' }}>

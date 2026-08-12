@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Users, Briefcase, CheckSquare, FolderOpen, Receipt, Truck, LifeBuoy,
-  BarChart2, Settings, ChevronLeft, ChevronRight, LogOut, User, Sparkles, Zap,
+  BarChart2, Settings, ChevronLeft, ChevronRight, LogOut, User, Zap,
   Package, UserCheck, CalendarDays, FileText, Rocket, Building2, ClipboardList,
   ChevronDown, Shield, UserCog, IndianRupee, FileSignature, CreditCard, FileX, ShoppingBag,
   UserPlus, Link2, RefreshCw, LayoutTemplate, Globe, TrendingUp, Landmark, BookText, Scale,
@@ -15,6 +15,7 @@ import { useAuth } from '@/context/AuthContext'
 import { useTheme } from '@/context/ThemeContext'
 import { isModuleInstalled } from '@/modules/registry'
 import { helpdeskApi } from '@/services/helpdeskApi'
+import sangoeIcon from '@/assets/sangoe-icon.png'
 import { useState, useEffect } from 'react'
 import clsx from 'clsx'
 import { leadApi } from '@/services/leadApi'
@@ -342,16 +343,12 @@ export default function Sidebar({ collapsed, onToggle }) {
         className="flex items-center gap-3 px-4 py-5 min-h-[64px] relative"
         style={{ borderBottom: '1px solid var(--border)' }}
       >
-        {/* 3D Logo mark */}
-        <div
-          className="w-9 h-9 rounded-2xl flex items-center justify-center flex-shrink-0 transition-transform duration-200 hover:scale-110"
-          style={{
-            background: 'linear-gradient(145deg,#9f67ff,#7C3AED,#5b21b6)',
-            boxShadow: '0 6px 20px rgba(124,58,237,0.45), inset 0 1px 0 rgba(255,255,255,0.25)',
-          }}
-        >
-          <Sparkles size={16} className="text-white" />
-        </div>
+        {/* Sangoe logo mark */}
+        <img
+          src={sangoeIcon}
+          alt="Sangoe"
+          className="w-9 h-9 rounded-2xl object-contain flex-shrink-0 transition-transform duration-200 hover:scale-110"
+        />
 
         {!collapsed && (
           <div className="overflow-hidden flex-1">

@@ -1,10 +1,11 @@
-import { Search, Bell, Menu, X, User, LogOut, Settings, Moon, Sun, Sparkles, Command, Eye, EyeOff } from 'lucide-react'
+import { Search, Bell, Menu, X, User, LogOut, Settings, Moon, Sun, Command, Eye, EyeOff } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { useTheme } from '@/context/ThemeContext'
 import { useMoneyVisibility } from '@/context/MoneyVisibilityContext'
 import NotificationBell from './NotificationBell'
+import sangoeIcon from '@/assets/sangoe-icon.png'
 import clsx from 'clsx'
 
 export default function Header({ sidebarCollapsed, mobileMenuOpen, onMobileMenuToggle, sidebarW = 260 }) {
@@ -48,12 +49,7 @@ export default function Header({ sidebarCollapsed, mobileMenuOpen, onMobileMenuT
 
         {/* Mobile brand */}
         <div className="flex items-center gap-2 md:hidden">
-          <div
-            className="w-7 h-7 rounded-xl flex items-center justify-center"
-            style={{ background: 'linear-gradient(145deg,#9f67ff,#7C3AED)', boxShadow: '0 3px 10px rgba(124,58,237,0.4)' }}
-          >
-            <Sparkles size={13} className="text-white" />
-          </div>
+          <img src={sangoeIcon} alt="Sangoe" className="w-7 h-7 rounded-xl object-contain" />
           <span className="text-sm font-black" style={{ color: 'var(--text-h)' }}>Sangoe</span>
         </div>
 

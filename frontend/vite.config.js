@@ -9,11 +9,11 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icons/*.png'],
       manifest: {
-        name: 'MLA Perfex CRM',
-        short_name: 'CRM',
-        description: 'Multi-Tenant SaaS CRM Platform',
-        theme_color: '#2563EB',
-        background_color: '#111827',
+        name: 'Sangoe CRM',
+        short_name: 'Sangoe',
+        description: 'Sangoe CRM — Business Growth Operating System',
+        theme_color: '#7C3AED',
+        background_color: '#0b0b16',
         display: 'standalone',
         orientation: 'portrait',
         start_url: '/app/dashboard',
@@ -21,7 +21,7 @@ export default defineConfig({
         icons: [
           { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
           { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
-          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: '/icons/icon-512-maskable.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
       workbox: {

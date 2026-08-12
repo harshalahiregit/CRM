@@ -3,6 +3,7 @@ import { Link, useSearchParams, useNavigate } from 'react-router-dom'
 import { Eye, EyeOff, CheckCircle, ShieldCheck, Loader2 } from 'lucide-react'
 import { useState } from 'react'
 import api from '@/lib/api'
+import sangoeIcon from '@/assets/sangoe-icon.png'
 
 const inputCls = `w-full px-3 py-2.5 rounded-lg text-sm outline-none transition-all
   placeholder-slate-600 border border-slate-600/50
@@ -84,9 +85,9 @@ export default function TPVRegisterPage() {
       <div className="hidden lg:flex w-[280px] xl:w-[320px] flex-col px-7 py-8 flex-shrink-0"
            style={{ background: 'linear-gradient(180deg, #1e3a5f 0%, #0f2744 100%)' }}>
         <div className="mb-6">
-          <div className="text-xl font-black">
-            <span style={{ color: '#ef4444' }}>MLA</span>
-            <span className="text-white ml-1">CRM</span>
+          <div className="flex items-center gap-2">
+            <img src={sangoeIcon} alt="Sangoe" className="w-8 h-8 rounded-lg object-contain" />
+            <span className="text-xl font-black text-white">Sangoe</span>
           </div>
           <div className="mt-2 flex items-center gap-1.5 px-2 py-1 rounded-md w-fit"
                style={{ background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(59,130,246,0.3)' }}>
