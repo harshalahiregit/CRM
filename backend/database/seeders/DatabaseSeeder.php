@@ -13,10 +13,10 @@ class DatabaseSeeder extends Seeder
     {
         // Create demo tenant
         $tenant = Tenant::firstOrCreate(
-            ['subdomain' => 'mla-consulting'],
+            ['subdomain' => 'sangoe-os'],
             [
-                'name'      => 'MLA Consulting',
-                'slug'      => 'mla-consulting',
+                'name'      => 'SANGOE OS',
+                'slug'      => 'sangoe-os',
                 'plan'      => 'professional',
                 'status'    => 'active',
                 'branding_color' => '#2563EB',
@@ -32,7 +32,7 @@ class DatabaseSeeder extends Seeder
                 'password'  => Hash::make('Admin@12345'),
                 'role'      => 'admin',
                 'status'    => 'active',
-                'company'   => 'MLA Consulting',
+                'company'   => 'SANGOE OS',
             ]
         );
 
