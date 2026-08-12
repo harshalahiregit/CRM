@@ -111,8 +111,10 @@ export const portalApi = {
     update:        (id, data)  => api.put(`/portal/workers/${id}`, data).then(r => r.data),
     saveMedical:   (id, data)  => api.post(`/portal/workers/${id}/medical`, data).then(r => r.data),
     saveInduction: (id, data)  => api.post(`/portal/workers/${id}/induction`, data).then(r => r.data),
-    markPunch:       (id, punch_count, punch_reason) => api.post(`/tpv/workers/${id}/mark-punch`, { punch_count, punch_reason }).then(r => r.data),
-    markCardStatus:  (id, card_status) => api.post(`/tpv/workers/${id}/mark-card-status`, { card_status }).then(r => r.data),
+    // Portal-owned, ownership-checked. These two used to hit the admin /tpv/*
+    // routes, which forced third_party_vendor into the admin role gate.
+    markPunch:       (id, punch_count, punch_reason) => api.post(`/portal/workers/${id}/mark-punch`, { punch_count, punch_reason }).then(r => r.data),
+    markCardStatus:  (id, card_status) => api.post(`/portal/workers/${id}/mark-card-status`, { card_status }).then(r => r.data),
     uploadWorkers: (file, vendor_id = null) => {
       const fd = new FormData()
       fd.append('worker_file', file)

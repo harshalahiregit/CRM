@@ -76,14 +76,22 @@ Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access'])->prefix('por
     // Workers — own vendor only (vendor_id injected server-side, never from URL)
     // PPE catalogue + issue/return for the vendor's own workers. Stock is
     // Inventory's; this only reads it and posts movements through the service.
+    // The shared catalogue and item photos are tenant-wide by design — there is
+    // ONE central store and a vendor has to see what is on the shelf. They expose
+    // no other vendor's holdings, so they stay on the Inventory-backed controller.
     Route::get('/ppe',                                    [\App\Http\Controllers\Api\Tpv\PpeController::class, 'catalogue']);
-    Route::get('/ppe/summary',                            [\App\Http\Controllers\Api\Tpv\PpeController::class, 'summary']);
     Route::get('/ppe/item/{product}/image',               [\App\Http\Controllers\Api\Tpv\PpeController::class, 'image']);
-    // Read-only: a vendor must see what its own workers still need, not edit the rules.
-    Route::get('/ppe/compliance/workers/{worker}',        [\App\Http\Controllers\Api\Tpv\PpeRequirementController::class, 'worker']);
-    Route::get('/ppe/workers/{worker}',                     [\App\Http\Controllers\Api\Tpv\PpeController::class, 'worker']);
-    Route::post('/ppe/workers/{worker}/issue',              [\App\Http\Controllers\Api\Tpv\PpeController::class, 'issue']);
-    Route::post('/ppe/issues/{issue}/return',             [\App\Http\Controllers\Api\Tpv\PpeController::class, 'returnIssue']);
+
+    // Everything worker-specific goes through VendorPortalController, which
+    // resolves the vendor from the token and calls assertWorkerOwned(). These were
+    // the ADMIN PpeController/PpeRequirementController, which guard on tenant
+    // ALONE — any vendor could read, issue against and write off another vendor's
+    // workers, moving shared Inventory stock. The summary is scoped the same way.
+    Route::get('/ppe/summary',                            [VendorPortalController::class, 'ppeSummary']);
+    Route::get('/ppe/compliance/workers/{worker}',        [VendorPortalController::class, 'workerPpeCompliance']);
+    Route::get('/ppe/workers/{worker}',                   [VendorPortalController::class, 'workerPpe']);
+    Route::post('/ppe/workers/{worker}/issue',            [VendorPortalController::class, 'issueWorkerPpe']);
+    Route::post('/ppe/issues/{issue}/return',             [VendorPortalController::class, 'returnWorkerPpe']);
     Route::get('/workers/stats',                          [VendorPortalController::class, 'workerStats']);
     Route::get('/workers',                                [VendorPortalController::class, 'workers']);
     Route::post('/workers',                               [VendorPortalController::class, 'storeWorker']);
@@ -92,6 +100,12 @@ Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access'])->prefix('por
     Route::put('/workers/{worker}',                       [VendorPortalController::class, 'updateWorker']);
     Route::post('/workers/{worker}/medical',              [VendorPortalController::class, 'saveMedical']);
     Route::post('/workers/{worker}/induction',            [VendorPortalController::class, 'saveInduction']);
+    // Punch + entry card. These were the portal's last two calls into the ADMIN
+    // /tpv/* group, which is why third_party_vendor had been added to that
+    // group's role gate — exposing every vendor's onboarding along with it.
+    // Same TpvWorkerService, ownership-checked instead of role-gated.
+    Route::post('/workers/{worker}/mark-punch',           [VendorPortalController::class, 'markWorkerPunch']);
+    Route::post('/workers/{worker}/mark-card-status',     [VendorPortalController::class, 'markWorkerCardStatus']);
     Route::get('/workers/{worker}/attendance',            [VendorPortalController::class, 'workerAttendance']);
     Route::get('/workers/{worker}/strikes',               [VendorPortalController::class, 'workerStrikes']);
 

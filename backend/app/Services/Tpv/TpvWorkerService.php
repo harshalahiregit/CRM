@@ -661,6 +661,24 @@ class TpvWorkerService
         ];
     }
 
+    /* ── Entry card ─────────────────────────────────────────────────── */
+
+    /**
+     * Record the gate entry-card decision for a worker.
+     *
+     * Lifted out of TpvWorkerController so the vendor portal can perform the
+     * same action without a second copy of the rule — both callers land here.
+     */
+    public function markCard(TpvWorker $worker, int $cardStatus): TpvWorker
+    {
+        $worker->update([
+            'card_status'    => $cardStatus,
+            'card_issued_at' => now(),
+        ]);
+
+        return $worker;
+    }
+
     /* ── 3-Punch Safety Strike Engine ───────────────────────────────── */
 
     public function applyPunch(TpvWorker $worker, int $punchCount, string $reason, User $actor, ?string $punchAt = null): TpvWorker

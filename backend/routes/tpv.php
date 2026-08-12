@@ -31,12 +31,25 @@ Route::get('/scan-access/{token}', [TpvWorkerController::class, 'scanAccess']);
 // Vendor/workforce data must never cross tenants or reach a client login, so
 // this group is role-gated from day one (ARCHITECTURE-PRIMER §1).
 //
-// The vendor-facing side of the wizard (a `third_party_vendor` login editing
-// only their own onboarding) is a separate portal group, not built yet — it
-// needs a per-record ownership check, not a blanket role gate.
+// The vendor-facing side of the wizard IS built: it lives in routes/portal.php
+// behind `vendor.portal`, where every handler resolves the vendor from the token
+// and calls assertOwned(). That is the ONLY door a third_party_vendor uses.
+//
+// This group must stay admin,staff. It once read
+// `role:admin,staff,third_party_vendor,vendor` — added so the portal could reach
+// two worker endpoints — but the gate covers the whole module, and the handlers
+// below check only the TENANT, never the vendor. A vendor login could therefore
+// list, read, overwrite and delete every OTHER vendor's onboarding (bank, GST,
+// PAN, documents) through /tpv/onboarding, which defeats the portal's ownership
+// checks entirely. Those two endpoints now have portal equivalents:
+// POST /portal/workers/{worker}/mark-punch and .../mark-card-status.
+//
+// A vendor's own temporary-access countdown has its own narrow group at the
+// bottom of this file; nothing else here is vendor-reachable.
+//
 // NOTE: both middleware must go in ONE ->middleware([...]) call — chaining a
 // second ->middleware() replaces the first and silently drops auth:sanctum.
-Route::middleware(['auth:sanctum', 'role:admin,staff,third_party_vendor,vendor'])->prefix('tpv')->group(function () {
+Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(function () {
 
     // Dashboard — read-only aggregation across the whole module.
     Route::get('/dashboard',                          [TpvDashboardController::class, 'index']);

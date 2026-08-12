@@ -571,8 +571,17 @@ export default function AppRoutes() {
               before :id so "edit" is never captured as a meeting id. */}
           <Route path="kickoff/:id/edit" element={<S><KickoffMeetingCreate /></S>} />
           <Route path="kickoff/:id" element={<S><KickoffMeetingDetail /></S>} />
+          {/* The onboarding QUEUE stays — it is how staff find work. The wizard
+              itself does not: Steps 1–6 are the vendor's own workflow and the
+              only mount is /vendor-portal/onboarding/:id. `editable` was derived
+              from status alone, never role, so an admin opening this route could
+              accept the kickoff MOM, type the vendor's bank details and tick the
+              vendor's declaration — entries the audit trail then attributes to
+              the vendor. Admin review and approval live on the vendor record
+              (TpvVendorDetail / TpvVendorDocuments) and are unchanged.
+              Old links land on the queue rather than 404. */}
           <Route path="onboarding" element={<S><TpvOnboardings /></S>} />
-          <Route path="onboarding/:id" element={<S><TpvOnboardingWizard /></S>} />
+          <Route path="onboarding/:id" element={<Navigate to="/app/tpv/onboarding" replace />} />
           <Route path="temporary" element={<S><TpvTemporaryVendors /></S>} />
           <Route path="approvals" element={<S><TpvApprovals /></S>} />
           {/* Was a ComingSoon placeholder with no implementation. Documents are
@@ -684,14 +693,15 @@ export default function AppRoutes() {
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="dashboard"         element={<S><PortalDashboard /></S>} />
 
-        {/* Onboarding is the VENDOR's own six-step workflow, so it is served here
-            as well as under /app/tpv. The SAME TpvOnboardingWizard renders both:
-            useVendorModule() swaps tpvApi for portalApi on a /vendor-portal path,
-            and canApprove/canManage are both false for a third_party_vendor, so
-            the admin-only review and approval controls never render for a vendor.
+        {/* Onboarding is the VENDOR's own six-step workflow, and this is now its
+            ONLY mount — the admin copy under /app/tpv/onboarding/:id was removed
+            because it rendered the same wizard fully editable for staff.
+            useVendorModule() resolves portalApi from the /vendor-portal path, and
+            canApprove/canManage are both false for a third_party_vendor, so the
+            admin-only review (Step 4) and approval (Step 6) controls render as
+            read-only status for the vendor.
             The portal has no LIST — a vendor has exactly one onboarding, which
-            PortalOnboardingEntry resolves from the token.
-            The admin routes under /app/tpv are untouched. */}
+            PortalOnboardingEntry resolves from the token. */}
         <Route path="registration"      element={<S><MyRegistrationStatus /></S>} />
         <Route path="onboarding"        element={<S><PortalOnboardingEntry /></S>} />
         <Route path="onboarding/:id"    element={<S><TpvOnboardingWizard /></S>} />
