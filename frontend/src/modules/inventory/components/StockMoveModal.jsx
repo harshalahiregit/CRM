@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { X, Check, ArrowLeftRight, ClipboardCheck, MapPin, Camera, Loader2 } from 'lucide-react'
 import { inventoryApi, INV_ACCENT, MOVEMENT_TYPES, fmtQty } from '@/services/inventoryApi'
 import Select from '@/components/ui/Select'
+import { useDiscardGuard } from '@/lib/confirmClose'
 
 /**
  * Two jobs behind one modal, because they're the same mental action ("fix the
@@ -11,6 +12,7 @@ import Select from '@/components/ui/Select'
  *   mode="adjust" → state the COUNTED total; the backend records the difference.
  */
 export default function StockMoveModal({ open, onClose, mode = 'move', product, onDone }) {
+  const { guard, dialog } = useDiscardGuard()
   const qc = useQueryClient()
   const adjusting = mode === 'adjust'
   const [form, setForm] = useState({})
@@ -18,6 +20,9 @@ export default function StockMoveModal({ open, onClose, mode = 'move', product, 
   const [geo, setGeo] = useState(null)          // { lat, lng, address }
   const [geoBusy, setGeoBusy] = useState(false)
   const [photo, setPhoto] = useState(null)      // base64 data URL
+
+  const isDirty = () => Boolean(form.quantity || form.reason || form.notes || photo)
+  const handleClose = () => guard(onClose, isDirty())
 
   const { data: warehouses = [] } = useQuery({ queryKey: ['inv-warehouses'], queryFn: inventoryApi.warehouses.list, enabled: open })
 
@@ -115,22 +120,23 @@ export default function StockMoveModal({ open, onClose, mode = 'move', product, 
     && (!needsGps || geo) && (!needsPhoto || photo)
 
   return (
-    <div className="fixed inset-0 z-[55] flex items-start justify-center p-4 overflow-y-auto"
-      style={{ background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(2px)' }} onClick={onClose}>
-      <form onSubmit={submit} onClick={e => e.stopPropagation()}
-        className="w-full rounded-2xl overflow-hidden my-8"
-        style={{ maxWidth: 520, background: 'var(--bg-global)', boxShadow: '0 24px 70px rgba(0,0,0,0.45)' }}>
+    <>
+      <div className="fixed inset-0 z-[55] flex items-start justify-center p-4 overflow-y-auto"
+        style={{ background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(2px)' }} onClick={handleClose}>
+        <form onSubmit={submit} onClick={e => e.stopPropagation()}
+          className="w-full rounded-2xl overflow-hidden my-8"
+          style={{ maxWidth: 520, background: 'var(--bg-global)', boxShadow: '0 24px 70px rgba(0,0,0,0.45)' }}>
 
-        <header className="flex items-center gap-2.5 px-5 py-4"
-          style={{ background: `linear-gradient(120deg, ${adjusting ? '#8b5cf6' : INV_ACCENT}, ${adjusting ? '#6d28d9' : '#059669'})` }}>
-          {adjusting ? <ClipboardCheck size={18} style={{ color: '#fff' }} /> : <ArrowLeftRight size={18} style={{ color: '#fff' }} />}
-          <h2 className="font-bold text-white" style={{ fontSize: 15 }}>
-            {adjusting ? 'Adjust counted stock' : 'Record stock movement'}
-          </h2>
-          <button type="button" onClick={onClose} aria-label="Close" className="ml-auto opacity-90 hover:opacity-100">
-            <X size={18} style={{ color: '#fff' }} />
-          </button>
-        </header>
+          <header className="flex items-center gap-2.5 px-5 py-4"
+            style={{ background: `linear-gradient(120deg, ${adjusting ? '#8b5cf6' : INV_ACCENT}, ${adjusting ? '#6d28d9' : '#059669'})` }}>
+            {adjusting ? <ClipboardCheck size={18} style={{ color: '#fff' }} /> : <ArrowLeftRight size={18} style={{ color: '#fff' }} />}
+            <h2 className="font-bold text-white" style={{ fontSize: 15 }}>
+              {adjusting ? 'Adjust counted stock' : 'Record stock movement'}
+            </h2>
+            <button type="button" onClick={handleClose} aria-label="Close" className="ml-auto opacity-90 hover:opacity-100">
+              <X size={18} style={{ color: '#fff' }} />
+            </button>
+          </header>
 
         <div className="p-5 space-y-4">
           <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
@@ -223,7 +229,7 @@ export default function StockMoveModal({ open, onClose, mode = 'move', product, 
         </div>
 
         <footer className="flex items-center justify-end gap-2 px-5 py-4" style={{ borderTop: '1px solid var(--border)', background: 'var(--bg-card)' }}>
-          <button type="button" onClick={onClose} className="text-sm font-semibold px-4 py-2.5 rounded-xl"
+          <button type="button" onClick={handleClose} className="text-sm font-semibold px-4 py-2.5 rounded-xl"
             style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>Cancel</button>
           <button type="submit" disabled={!valid || save.isPending}
             className="flex items-center gap-1.5 text-sm font-bold px-5 py-2.5 rounded-xl disabled:opacity-40"
@@ -233,6 +239,8 @@ export default function StockMoveModal({ open, onClose, mode = 'move', product, 
         </footer>
       </form>
     </div>
+    {dialog}
+    </>
   )
 }
 

@@ -75,7 +75,7 @@ export default function MailSettings() {
           </div>
           <div><label className="label">Username</label><input className="input-3d text-sm" autoComplete="off" value={form.username || ''} onChange={e => sf('username', e.target.value)} /></div>
           <div><label className="label">Password {hasPassword && <span style={{ color: 'var(--text-faint)' }}>(saved — leave blank to keep)</span>}</label><input type="password" autoComplete="new-password" className="input-3d text-sm" placeholder={hasPassword ? '••••••••' : ''} value={form.password} onChange={e => sf('password', e.target.value)} /></div>
-          <div><label className="label">From Name</label><input className="input-3d text-sm" placeholder="MLA Consulting" value={form.from_name || ''} onChange={e => sf('from_name', e.target.value)} /></div>
+          <div><label className="label">From Name</label><input className="input-3d text-sm" placeholder="Sangoe Consulting" value={form.from_name || ''} onChange={e => sf('from_name', e.target.value)} /></div>
           <div><label className="label">From Email</label><input className="input-3d text-sm" placeholder="crm@yourcompany.in" value={form.from_email || ''} onChange={e => sf('from_email', e.target.value)} /></div>
           <div><label className="label">Reply-To (optional)</label><input className="input-3d text-sm" value={form.reply_to || ''} onChange={e => sf('reply_to', e.target.value)} /></div>
         </div>

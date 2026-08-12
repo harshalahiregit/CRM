@@ -87,29 +87,28 @@ export default function MediaLightbox() {
     return () => document.removeEventListener('keydown', onKey)
   }, [media, close, navigate])
 
-  // Add cursor:zoom-in style globally to images inside rich areas
+  // Inside rich-content areas, render inserted images/videos as a size-capped
+  // PREVIEW (not a giant full-bleed block) with a zoom cursor — clicking opens
+  // the full-size lightbox. Height/width are capped and scaled proportionally
+  // (width:auto + max constraints) so a big square image no longer swallows the
+  // whole card; an author's explicit inline width (System B: width:33%/66%/…)
+  // still wins because these rules aren't !important on width.
   useEffect(() => {
     const id = 'media-lb-cursor-style'
     if (!document.getElementById(id)) {
       const el = document.createElement('style')
       el.id = id
+      const richImg = [
+        '.rich-content img', '.rte-body img', '.task-comment-html img',
+        '.proj-note-html img', '.reply-html img', '.pub-prose img', '.hc-prose img',
+      ].join(',')
+      const richVid = [
+        '.rich-content video', '.rte-body video', '.task-comment-html video',
+        '.proj-note-html video', '.reply-html video', '.pub-prose video', '.hc-prose video',
+      ].join(',')
       el.textContent = [
-        '.rich-content img,',
-        '.rte-body img,',
-        '.task-comment-html img,',
-        '.proj-note-html img,',
-        '.reply-html img,',
-        '.pub-prose img,',
-        '.hc-prose img',
-        '{ cursor:zoom-in !important; }',
-        '.rich-content video,',
-        '.rte-body video,',
-        '.task-comment-html video,',
-        '.proj-note-html video,',
-        '.reply-html video,',
-        '.pub-prose video,',
-        '.hc-prose video',
-        '{ cursor:pointer; }',
+        `${richImg} { cursor:zoom-in !important; width:auto; height:auto; max-width:100%; max-height:320px; border-radius:8px; object-fit:contain; }`,
+        `${richVid} { cursor:pointer; max-width:100%; max-height:360px; border-radius:8px; }`,
       ].join('\n')
       document.head.appendChild(el)
     }
