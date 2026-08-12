@@ -11,7 +11,7 @@ import {
 import { helpdeskApi } from '@/services/helpdeskApi'
 import Select from '../components/ui/Select'
 import { InputModal, ConfirmModal } from '../components/ui/SearchPicker'
-import { RICH_MODULES, RICH_FORMATS } from '@/lib/quillConfig'
+import { RICH_MODULES, RICH_FORMATS, quillImageHandler } from '@/lib/quillConfig'
 
 // Plain-text preview of stored rich HTML (canned reply bodies) for list rows —
 // strips tags so the snippet never shows raw markup.
@@ -29,16 +29,19 @@ const ACCENT = 'var(--color-support-500)'
 // image + video embeds so guides can include screenshots and how-to videos
 // (the "Step 1..5 with images and guide videos" the KB is meant to hold).
 const QUILL_MODULES = {
-  toolbar: [
-    [{ header: [2, 3, 4, false] }],
-    [{ size: ['12px', '14px', '16px', '18px', '24px', '32px'] }],
-    ['bold', 'italic', 'underline', 'strike', 'blockquote', 'code-block'],
-    [{ color: [] }, { background: [] }],
-    [{ list: 'ordered' }, { list: 'bullet' }],
-    [{ align: [] }],
-    ['link', 'image', 'video'],
-    ['clean'],
-  ],
+  toolbar: {
+    container: [
+      [{ header: [2, 3, 4, false] }],
+      [{ size: ['12px', '14px', '16px', '18px', '24px', '32px'] }],
+      ['bold', 'italic', 'underline', 'strike', 'blockquote', 'code-block'],
+      [{ color: [] }, { background: [] }],
+      [{ list: 'ordered' }, { list: 'bullet' }],
+      [{ align: [] }],
+      ['link', 'image', 'video'],
+      ['clean'],
+    ],
+    handlers: { image: quillImageHandler },
+  },
 }
 const QUILL_FORMATS = [
   'header', 'size', 'bold', 'italic', 'underline', 'strike', 'blockquote', 'code-block',

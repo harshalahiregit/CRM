@@ -5,6 +5,7 @@ import {
   AlignLeft, AlignCenter, AlignRight, Video, Music,
   Baseline, Highlighter, Eraser, Quote, Code,
 } from 'lucide-react'
+import { compressImage } from '@/lib/imageCompress'
 
 // Word-like font controls. Families are web-safe so they render in the PDF too.
 const FONT_FAMILIES = [
@@ -64,7 +65,6 @@ function convertFontTags(root) {
  * execCommand is deprecated but universally supported; it keeps us free of a
  * heavy editor dependency for the toolbar we actually need.
  */
-const MAX_IMAGE_BYTES = 500 * 1024 // keep pages PDF-friendly
 
 const IMAGE_SIZES = { Small: '33%', Medium: '66%', Full: '100%' }
 
@@ -190,17 +190,22 @@ export default function RichTextEditor({ value = '', onChange, placeholder = 'Wr
 
   const pickImage = () => fileRef.current?.click()
 
-  const insertImage = (e) => {
+  const insertImage = async (e) => {
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file) return
     if (!file.type.startsWith('image/')) return window.alert('Only images are allowed')
-    if (file.size > MAX_IMAGE_BYTES) return window.alert('Image too large — max 500 KB (resize/compress it first)')
     const choice = (window.prompt('Image size — Small / Medium / Full', 'Full') || 'Full').trim()
     const key = Object.keys(IMAGE_SIZES).find(k => k.toLowerCase() === choice.toLowerCase()) || 'Full'
-    const reader = new FileReader()
-    reader.onload = () => insertHTML(`<img src="${reader.result}" alt="" style="width:${IMAGE_SIZES[key]}" /><p><br></p>`)
-    reader.readAsDataURL(file)
+    // Auto-downscale + recompress so even a big phone photo embeds small — no
+    // more "max 500 KB, resize it yourself" and no multi-MB base64 in the DB.
+    try {
+      const dataUrl = await compressImage(file, { maxDim: 1600, quality: 0.82 })
+      if (!dataUrl) return
+      insertHTML(`<img src="${dataUrl}" alt="" style="width:${IMAGE_SIZES[key]}" /><p><br></p>`)
+    } catch {
+      window.alert('Could not process that image — please try a different file.')
+    }
   }
 
   const insertVideo = () => {
@@ -274,7 +279,7 @@ export default function RichTextEditor({ value = '', onChange, placeholder = 'Wr
     [
       { icon: Link2,     title: 'Insert link',                          run: insertLink },
       { icon: Table,     title: 'Insert table (choose size)',            run: insertTable },
-      { icon: ImageIcon, title: 'Insert image (≤500 KB, choose size)',   run: pickImage },
+      { icon: ImageIcon, title: 'Insert image (auto-compressed, choose size)',   run: pickImage },
       { icon: Video,     title: 'Insert video (YouTube/Vimeo or direct URL)', run: insertVideo },
       { icon: Music,     title: 'Insert audio (direct URL)',             run: insertAudio },
     ],
