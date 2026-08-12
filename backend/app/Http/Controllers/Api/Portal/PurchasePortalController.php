@@ -22,6 +22,7 @@ use App\Services\Purchase\PurchaseDocumentService;
 use App\Services\Purchase\PurchaseKickoffService;
 use App\Services\Purchase\PurchaseOnboardingService;
 use App\Services\Purchase\PurchaseWorkforceService;
+use App\Services\Tpv\PpeInventoryService;
 use App\Support\Purchase\PurchaseVendorCategoryConfig;
 use Illuminate\Http\Request;
 
@@ -364,6 +365,38 @@ class PurchasePortalController extends Controller
      * (tokenable = PurchaseVendor), guaranteed by the purchase.vendor.portal
      * middleware. No shared User/Vendor lookup; no vendor id in the URL.
      */
+    /**
+     * GET /portal/purchase/ppe/summary — stock visibility for a Purchase vendor.
+     *
+     * Availability stays tenant-wide: there is one central store and the point of
+     * this page is seeing what is on the shelf. The ISSUED figures do not, and
+     * that is the whole reason this method exists — the route used to call
+     * PpeInventoryService::summary(), which counts every tpv_worker_ppe_issue in
+     * the tenant, so a Purchase vendor was shown how much PPE other vendors were
+     * holding. PpeInventoryService's own docblock states that must not be
+     * tenant-wide.
+     *
+     * Purchase vendors have no PPE issuance of their own (no
+     * purchase_worker_ppe_issues table and no issue/return route), so their own
+     * issued figures are zero rather than someone else's.
+     */
+    public function ppeSummary(Request $request, PpeInventoryService $ppe)
+    {
+        $vendor = $this->purchaseVendor($request);
+        $rows   = $ppe->catalogue((int) $vendor->tenant_id);
+
+        return response()->json([
+            'total_items'        => $rows->count(),
+            'total_available'    => (float) $rows->sum('available'),
+            'low_stock_items'    => $rows->where('status', 'low_stock')->count(),
+            'out_of_stock_items' => $rows->where('status', 'out_of_stock')->count(),
+            // Purchase issues no PPE — these are its own totals, not the tenant's.
+            'total_issued'       => 0.0,
+            'issued_today'       => 0.0,
+            'returned_today'     => 0.0,
+        ]);
+    }
+
     private function purchaseVendor(Request $request): PurchaseVendor
     {
         $vendor = $request->user();

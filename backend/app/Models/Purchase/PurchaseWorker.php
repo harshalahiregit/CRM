@@ -22,9 +22,26 @@ class PurchaseWorker extends Model
         'worker_code', 'full_name', 'gender', 'dob', 'phone', 'email', 'designation',
         'id_proof_type', 'id_proof_number', 'address', 'city', 'state', 'pincode',
         'photo_path', 'status', 'notes',
+        // Workforce lifecycle. current_step and the badge are written by the
+        // service (forceFill), never mass-assigned from a request — a vendor must
+        // not be able to post itself a badge.
+        'current_step',
     ];
 
-    protected $casts = ['dob' => 'date'];
+    protected $casts = [
+        'dob'               => 'date',
+        'current_step'      => 'integer',
+        'badge_issued_at'   => 'datetime',
+        'badge_valid_until' => 'date',
+    ];
+
+    /** The gate scans this; it is a credential, so it never rides along in a payload. */
+    protected $hidden = ['qr_token'];
+
+    public function ppeIssues()
+    {
+        return $this->hasMany(PurchaseWorkerPpeIssue::class, 'purchase_worker_id');
+    }
 
     public function vendor()
     {

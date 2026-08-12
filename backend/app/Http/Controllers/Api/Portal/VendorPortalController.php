@@ -22,6 +22,7 @@ use App\Models\Vendor\TpvContact;
 use App\Models\Vendor\Vendor;
 use App\Models\Vendor\VendorDocument;
 use App\Services\Tpv\KickoffPdfService;
+use App\Services\Tpv\PpeInventoryService;
 use App\Services\Tpv\TpvOnboardingService;
 use App\Services\Tpv\TpvWorkerService;
 use App\Services\Vendor\VendorDocumentService;
@@ -51,6 +52,7 @@ class VendorPortalController extends Controller
         private TpvWorkerService     $workerService,
         private VendorDocumentService $documentService,
         private KickoffPdfService    $kickoffPdfService,
+        private PpeInventoryService  $ppeService,
     ) {
     }
 
@@ -467,6 +469,132 @@ class VendorPortalController extends Controller
         return response()->json($this->workerService->saveInduction($worker, $request->validated(), $request->user()));
     }
 
+    /* ── PPE (Workforce Step 4) ────────────────────────────────────────
+     *
+     * These four used to be the ADMIN PpeController and PpeRequirementController,
+     * mounted straight into this portal group. Those controllers guard on tenant
+     * alone, so any vendor could read another vendor's PPE — and, worse, issue
+     * and write off kit against another vendor's worker, moving shared Inventory
+     * stock. Same services, ownership-checked, so there is one stock ledger and
+     * one set of business rules.
+     */
+
+    /** One of the caller's own workers' PPE history. */
+    public function workerPpe(Request $request, TpvWorker $worker)
+    {
+        $this->assertWorkerOwned($request, $worker);
+
+        return response()->json(
+            $this->ppeService->forWorker($worker->id, (int) $worker->tenant_id)->values()
+        );
+    }
+
+    /** The role-based PPE checklist for one of the caller's own workers. */
+    public function workerPpeCompliance(Request $request, TpvWorker $worker)
+    {
+        $this->assertWorkerOwned($request, $worker);
+
+        return response()->json($this->ppeService->complianceFor($worker));
+    }
+
+    /**
+     * Issue PPE to the caller's own worker.
+     *
+     * `warehouse_id` is deliberately NOT accepted: the site is resolved
+     * server-side from the tenant's default so a vendor can never name another
+     * tenant's warehouse. Stock rules (availability, no-negative) stay in
+     * PpeInventoryService / StockService — none of them are re-implemented here.
+     */
+    public function issueWorkerPpe(Request $request, TpvWorker $worker)
+    {
+        $this->assertWorkerOwned($request, $worker);
+
+        $data = $request->validate([
+            'inventory_item_id' => 'required|integer|min:1',
+            'qty'               => 'required|numeric|min:0.001',
+            'size'              => 'nullable|string|max:40',
+            'issued_date'       => 'nullable|date',
+            'notes'             => 'nullable|string|max:500',
+        ]);
+
+        return response()->json($this->ppeService->issue($worker, $data, $request->user()), 201);
+    }
+
+    /** Return or write off PPE held by one of the caller's own workers. */
+    public function returnWorkerPpe(Request $request, TpvWorkerPpeIssue $issue)
+    {
+        // The issue row has no vendor_id of its own — ownership is inherited from
+        // the worker holding it, so that is what gets checked. An issue whose
+        // worker is missing is treated as not found rather than as unowned.
+        $this->assertWorkerOwned($request, $issue->worker);
+
+        $data = $request->validate([
+            'qty'       => 'nullable|numeric|min:0.001',
+            'condition' => 'required|in:returned,lost,damaged',
+            'notes'     => 'nullable|string|max:500',
+        ]);
+
+        return response()->json($this->ppeService->returnIssue($issue, $data, $request->user()));
+    }
+
+    /** PPE dashboard figures, with the "issued" side scoped to this vendor. */
+    public function ppeSummary(Request $request)
+    {
+        $vendor = $this->portalVendor($request);
+
+        return response()->json(
+            $this->ppeService->summaryForVendor($vendor->id, (int) $vendor->tenant_id)
+        );
+    }
+
+    /**
+     * Apply a safety punch to the caller's own worker.
+     *
+     * The portal used to call the ADMIN route /tpv/workers/{worker}/mark-punch,
+     * which is why `third_party_vendor` had been added to the admin role gate —
+     * and that gate covers the whole TPV module, including every vendor's
+     * onboarding. This endpoint exists so the portal has its own ownership-
+     * checked door and the admin gate can go back to admin,staff.
+     *
+     * Same validation and the same TpvWorkerService::applyPunch the admin
+     * controller uses; only the authorisation differs.
+     */
+    public function markWorkerPunch(Request $request, TpvWorker $worker)
+    {
+        $this->assertWorkerOwned($request, $worker);
+
+        $data = $request->validate([
+            'punch_count'  => 'required|integer|in:1,2,3',
+            'punch_reason' => 'required|string',
+        ]);
+
+        $updated = $this->workerService->applyPunch(
+            $worker,
+            (int) $data['punch_count'],
+            (string) $data['punch_reason'],
+            $request->user(),
+        );
+
+        return response()->json([
+            'status'  => 'success',
+            'message' => 'Punch '.$updated->punch_count.' applied successfully.',
+            'worker'  => $updated,
+        ]);
+    }
+
+    /** Record the entry-card decision for the caller's own worker. */
+    public function markWorkerCardStatus(Request $request, TpvWorker $worker)
+    {
+        $this->assertWorkerOwned($request, $worker);
+
+        $this->workerService->markCard($worker, (int) $request->input('card_status', 1));
+
+        return response()->json([
+            'status'  => 'success',
+            'message' => 'Entry card status updated successfully.',
+        ]);
+    }
+
     public function workerAttendance(Request $request, TpvWorker $worker)
     {
         $this->assertWorkerOwned($request, $worker);
@@ -631,8 +759,11 @@ class VendorPortalController extends Controller
     /**
      * 404 if the TpvWorker doesn't belong to the portal caller's vendor.
      * Deliberate 404 (not 403) — existence-hiding for cross-vendor isolation.
+     *
+     * Nullable so a sub-resource can hand over its owning worker directly: a PPE
+     * issue whose worker has gone missing is "not found", not a 500.
      */
-    private function assertWorkerOwned(Request $request, TpvWorker $worker): void
+    private function assertWorkerOwned(Request $request, ?TpvWorker $worker): void
     {
         $this->assertOwned($request, $worker, 'Worker');
     }

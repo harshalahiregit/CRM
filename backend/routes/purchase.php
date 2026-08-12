@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\Purchase\PurchaseKickoffController;
 use App\Http\Controllers\Api\Purchase\PurchaseApprovalController;
 use App\Http\Controllers\Api\Purchase\PurchaseVendorController;
 use App\Http\Controllers\Api\Purchase\PurchaseVendorItemController;
+use App\Http\Controllers\Api\Purchase\PurchaseWorkforceAdminController;
 use App\Http\Controllers\Api\Purchase\PurchaseOrderReturnController;
 use App\Http\Controllers\Api\Purchase\PurchaseReportController;
 use App\Http\Controllers\Api\Purchase\PurchaseSettingController;
@@ -196,6 +197,15 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     // Approval chain (read) — Registration → Document → Commercial → Purchase → Activation.
     Route::get('/onboarding/{onboarding}/approvals',      [PurchaseApprovalController::class, 'index']);
 
+    // ── Purchase workforce (admin/staff review) ────────────────────────────
+    // Tenant-scoped, not vendor-scoped: an admin legitimately sees every vendor's
+    // workers. Badge ACTIVATION is not here — it sits in the role:admin group
+    // below, so staff can review but not decide who may enter the site.
+    Route::get('/workforce/workers',                  [PurchaseWorkforceAdminController::class, 'index']);
+    Route::get('/workforce/workers/{worker}',         [PurchaseWorkforceAdminController::class, 'show']);
+    Route::get('/workforce/workers/{worker}/ppe',     [PurchaseWorkforceAdminController::class, 'ppe']);
+    Route::get('/workforce/workers/{worker}/gate',    [PurchaseWorkforceAdminController::class, 'gate']);
+
     // ── Kickoff meetings (Purchase-owned engine: purchase_kickoff_* tables) ─
     Route::get('/kickoff/stats',                   [PurchaseKickoffController::class, 'stats']);
     Route::get('/kickoff',                         [PurchaseKickoffController::class, 'index']);
@@ -271,6 +281,11 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('purchase')->group(fun
     // admin authority.
     Route::post('/contracts/{contract}/activate',  [PurchaseContractController::class, 'activate']);
     Route::post('/contracts/{contract}/terminate', [PurchaseContractController::class, 'terminate']);
+
+    // Workforce step 5 — activating a worker admits a person to the site, so it
+    // is an admin decision, not a staff one and never the vendor's.
+    Route::post('/workforce/workers/{worker}/activate',   [PurchaseWorkforceAdminController::class, 'activate']);
+    Route::post('/workforce/ppe/issues/{issue}/return',   [PurchaseWorkforceAdminController::class, 'returnPpe']);
 
     // Vendor onboarding decisions — a requester must not approve their own vendor.
     Route::post('/onboarding/{onboarding}/approve',  [PurchaseOnboardingController::class, 'approve']);

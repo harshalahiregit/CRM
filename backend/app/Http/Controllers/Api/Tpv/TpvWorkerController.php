@@ -331,12 +331,9 @@ class TpvWorkerController extends Controller
     public function markCardStatus(Request $request, TpvWorker $worker)
     {
         $this->assertTenant($request, $worker);
-        $cardStatus = (int) $request->input('card_status', 1);
 
-        $worker->update([
-            'card_status'    => $cardStatus,
-            'card_issued_at' => now(),
-        ]);
+        // Shared with the vendor portal's own mark-card endpoint.
+        $this->workerService->markCard($worker, (int) $request->input('card_status', 1));
 
         return response()->json(['status' => 'success', 'message' => 'Entry card status updated successfully.']);
     }

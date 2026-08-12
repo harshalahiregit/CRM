@@ -423,8 +423,16 @@ class TpvOnboardingService
             'remarks'             => $remarks ?? $onboarding->remarks,
             'registration_number' => $registrationNumber,
         ]);
+        // Activating the vendor IS the approval — everything downstream keys off
+        // vendor.status, not the onboarding's. The portal reveals "My Workforce"
+        // on Active, TpvWorkerService::blockers() refuses a site badge while the
+        // vendor is anything else, and GateScanService turns them away at the
+        // gate. Without this the vendor stayed Inactive after approval and staff
+        // had to flip the status by hand for any of it to work.
+        // Mirrors PurchaseOnboardingService::approve().
         $onboarding->vendor->update([
             'registration_number' => $registrationNumber,
+            'status'              => VendorStatus::ACTIVE,
         ]);
 
         $onboarding->recordAudit('Onboarding Approved', $actor, $remarks, [
