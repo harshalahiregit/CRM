@@ -18,6 +18,7 @@ import KnowledgeSuggestions from './KnowledgeSuggestions'
 import CannedResponsePicker from './CannedResponsePicker'
 import InsertKbLinkPicker from './InsertKbLinkPicker'
 import EditorActionBar from '@/components/editor/EditorActionBar'
+import CloudImport from '@/components/ui/CloudImport'
 import PollList from '@/components/poll/PollList'
 import PollComposerModal from '@/components/poll/PollComposerModal'
 import QuickTaskModal from '@/components/task/QuickTaskModal'
@@ -1044,6 +1045,8 @@ export default function TicketThread() {
                             <Paperclip size={14} /> Attach
                             <input type="file" multiple className="hidden" onChange={e => setFiles(prev => [...prev, ...Array.from(e.target.files)])} />
                           </label>
+                          <CloudImport variant="icon" accent="var(--color-support-500)"
+                            onFiles={(files) => setFiles(prev => [...prev, ...files])} />
                           <EditorActionBar quillRef={quillRef} people={mentionPeople} accent="var(--color-support-500)" onPoll={() => setPollOpen(true)} meeting
                             quickCreate={[
                               { label: 'Task', icon: ListTodo, onClick: () => setQuickTaskOpen(true) },

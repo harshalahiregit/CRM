@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { X, ClipboardCheck, Paperclip, Trash2, Download, Undo2, AlertTriangle } from 'lucide-react'
 import { inventoryApi, INV_ACCENT, fmtQty } from '@/services/inventoryApi'
 import { useDiscardGuard } from '@/lib/confirmClose'
+import CloudImport from '@/components/ui/CloudImport'
 
 /**
  * Goods-in inspection.
@@ -239,6 +240,8 @@ export default function InspectReceiptModal({ voucher, onClose }) {
                   className="ml-auto text-[11px] font-bold" style={{ color: INV_ACCENT }}>
                   {upload.isPending ? 'Uploading…' : 'Attach'}
                 </button>
+                <CloudImport variant="icon" accent={INV_ACCENT}
+                  onFiles={(files) => files.length && upload.mutate(files)} />
                 <input ref={fileRef} type="file" multiple hidden
                   onChange={e => { if (e.target.files?.length) upload.mutate(e.target.files); e.target.value = '' }} />
               </div>

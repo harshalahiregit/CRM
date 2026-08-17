@@ -18,7 +18,7 @@ class Attachment extends Model
     protected $table = 'attachments';
 
     /** Import sources. The bytes are ours in every case. */
-    public const SOURCES = ['upload', 'google_drive', 'onedrive'];
+    public const SOURCES = ['upload', 'google_drive', 'onedrive', 'pcloud'];
 
     protected $fillable = [
         'tenant_id', 'attachable_type', 'attachable_id', 'folder_id',
