@@ -2,20 +2,8 @@ import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Paperclip, Upload, Download, Trash2, AlarmClock, Plus, X } from 'lucide-react'
 import { taskApi, TASK_ACCENT, fmtBytes } from '@/services/taskApi'
-import { openGoogleDrivePicker } from '@/lib/googleDrivePicker'
+import CloudImport from '@/components/ui/CloudImport'
 import Select from '@/components/ui/Select'
-
-/** The multi-colour Google "G", inline so it needs no external asset. */
-function GoogleG({ size = 13 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden="true">
-      <path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z" />
-      <path fill="#34A853" d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z" />
-      <path fill="#FBBC05" d="M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24s.85 6.91 2.34 9.88l7.35-5.7z" />
-      <path fill="#EA4335" d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z" />
-    </svg>
-  )
-}
 
 /** Attachments and reminders — the two task features with their own sub-resources. */
 
@@ -47,15 +35,6 @@ export function FilesCard({ taskId }) {
   // before the async upload runs — so passing the FileList straight through sent
   // zero files. Array.from copies the File references, which survive the reset.
   const pick = (list) => { const files = Array.from(list || []); if (files.length) upload.mutate(files) }
-  const pickFromDrive = async () => {
-    setErr('')
-    try {
-      const files = await openGoogleDrivePicker()
-      if (files.length) upload.mutate(files)
-    } catch (e) {
-      setErr(e?.message || 'Could not open Google Drive.')
-    }
-  }
 
   return (
     <Card title={`Files${files.length ? ` · ${files.length}` : ''}`} icon={Paperclip}>
@@ -77,12 +56,10 @@ export function FilesCard({ taskId }) {
         <input ref={input} type="file" multiple hidden onChange={e => { pick(e.target.files); e.target.value = '' }} />
       </div>
 
-      {/* Import straight from Google Drive (needs Google API credentials configured). */}
-      <button type="button" onClick={pickFromDrive}
-        className="w-full flex items-center justify-center gap-2 text-[11px] font-semibold py-2 rounded-lg mb-3 transition-colors hover:opacity-80"
-        style={{ border: '1px solid var(--border)', color: 'var(--text-body)', background: 'var(--bg-input)' }}>
-        <GoogleG /> Choose from Google Drive
-      </button>
+      {/* Import from a connected cloud drive (Google Drive / OneDrive / pCloud). */}
+      <div className="mb-3">
+        <CloudImport onFiles={(files) => upload.mutate(files)} accent={TASK_ACCENT} label="Import from cloud" />
+      </div>
 
       {err && <p className="text-[11px] mb-2" style={{ color: 'var(--color-danger-500)' }}>{err}</p>}
 

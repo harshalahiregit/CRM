@@ -6,6 +6,9 @@ import {
 import { tpvApi } from '@/services/tpvApi'
 import { openGoogleDrivePicker, googleDriveConfigured, googleDriveFullyConfigured } from '@/lib/googleDrivePicker'
 import { openOneDrivePicker, oneDriveConfigured } from '@/lib/oneDrivePicker'
+import { configured as pcloudConfigured } from '@/lib/cloud/pcloud'
+import PcloudPicker from '@/components/ui/PcloudPicker'
+import { PcloudIcon } from '@/lib/cloud/icons'
 import { Overlay, ModalFooter, Field, TextInput } from '@/components/ui/kit3d'
 
 /**
@@ -31,7 +34,7 @@ const ICON_BY_EXT = {
 }
 const iconFor = (name) => ICON_BY_EXT[String(name).split('.').pop()?.toLowerCase()] || FileIcon
 
-const SOURCE_LABEL = { google_drive: 'Google Drive', onedrive: 'OneDrive', upload: null }
+const SOURCE_LABEL = { google_drive: 'Google Drive', onedrive: 'OneDrive', pcloud: 'pCloud', upload: null }
 
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString() : '—')
 
@@ -50,6 +53,7 @@ export function VendorAttachments({ vendorId, manage, api = tpvApi.vendors }) {
   const [creating, setCreating] = useState(false)
   const [renaming, setRenaming] = useState(null) // { kind:'file'|'folder', row }
   const [dragging, setDragging] = useState(false)
+  const [pcloudOpen, setPcloudOpen] = useState(false)
   const fileInput = useRef(null)
 
   const load = useCallback(() => {
@@ -161,6 +165,12 @@ export function VendorAttachments({ vendorId, manage, api = tpvApi.vendors }) {
           }}
         />
       )}
+      {pcloudOpen && (
+        <PcloudPicker
+          onClose={() => setPcloudOpen(false)}
+          onPicked={(files) => { setPcloudOpen(false); uploadAll(files, 'pcloud') }}
+        />
+      )}
 
       {/* Toolbar — breadcrumb on the left, the ways in on the right */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
@@ -195,6 +205,14 @@ export function VendorAttachments({ vendorId, manage, api = tpvApi.vendors }) {
                 disabled={!oneDriveConfigured}
                 title={oneDriveConfigured ? 'Import from OneDrive' : 'Set VITE_MS_CLIENT_ID to enable OneDrive sign-in'}
               >OneDrive</Btn>
+
+              {/* pCloud has no drop-in widget, so this opens the shared in-app
+                  browser (sign in → pick → download → upload), same as the others. */}
+              <Btn
+                onClick={() => setPcloudOpen(true)} icon={PcloudIcon}
+                disabled={!pcloudConfigured}
+                title={pcloudConfigured ? 'Import from pCloud' : 'Set VITE_PCLOUD_CLIENT_ID to enable pCloud sign-in'}
+              >pCloud</Btn>
             </>
           )}
         </div>
@@ -222,7 +240,7 @@ export function VendorAttachments({ vendorId, manage, api = tpvApi.vendors }) {
             </p>
             <p style={{ margin: '6px auto 0', maxWidth: 420, fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>
               {manage
-                ? 'Drag files here, or use Upload, Google Drive or OneDrive. Folders keep it organised.'
+                ? 'Drag files here, or use Upload, Google Drive, OneDrive or pCloud. Folders keep it organised.'
                 : 'Nothing has been filed here yet.'}
             </p>
           </div>

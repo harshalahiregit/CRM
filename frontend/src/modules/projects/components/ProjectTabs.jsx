@@ -9,6 +9,7 @@ import { exportCsv, stampedName } from '@/lib/exportCsv'
 import { RICH_MODULES, RICH_FORMATS } from '@/lib/quillConfig'
 import { ConfirmModal } from '@/components/ui/SearchPicker'
 import EditorActionBar from '@/components/editor/EditorActionBar'
+import CloudImport from '@/components/ui/CloudImport'
 
 const NOTE_PAGE_SIZES = [{ value: 25, label: '25' }, { value: 50, label: '50' }, { value: 100, label: '100' }, { value: 0, label: 'All' }]
 const stripHtml = (html) => (html || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/\s+/g, ' ').trim()
@@ -298,6 +299,8 @@ export function NotesTab({ projectId }) {
                     <Paperclip size={12} style={{ color: 'var(--text-muted)' }} />
                     <input type="file" hidden onChange={e => { const f = e.target.files?.[0]; if (f) upload.mutate({ noteId: n.id, file: f }); e.target.value = '' }} />
                   </label>
+                  <CloudImport variant="icon" accent={PROJECT_ACCENT}
+                    onFiles={(files) => files.forEach(file => upload.mutate({ noteId: n.id, file }))} />
                   <button onClick={() => startEdit(n)} aria-label="Edit note" className="hover:opacity-60"><Pencil size={12} style={{ color: 'var(--text-muted)' }} /></button>
                   <button onClick={() => printNote(n)} aria-label="Print note" className="hover:opacity-60"><Printer size={12} style={{ color: 'var(--text-muted)' }} /></button>
                   <button onClick={() => setConfirmDelete(n)} aria-label="Delete note" className="hover:opacity-60"><Trash2 size={12} style={{ color: 'var(--color-danger-500)' }} /></button>
