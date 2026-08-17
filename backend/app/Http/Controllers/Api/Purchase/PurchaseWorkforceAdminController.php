@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Api\Purchase;
 
 use App\Http\Controllers\Controller;
 use App\Models\Purchase\PurchaseWorker;
+use App\Models\Purchase\PurchaseWorkerMedical;
 use App\Models\Purchase\PurchaseWorkerPpeIssue;
+use App\Models\Purchase\PurchaseWorkerTraining;
 use App\Services\Purchase\PurchasePpeService;
 use App\Services\Purchase\PurchaseWorkforceService;
 use Illuminate\Http\Request;
@@ -39,6 +41,50 @@ class PurchaseWorkforceAdminController extends Controller
         }
 
         return response()->json(['data' => $q->latest()->get()]);
+    }
+
+    /* ── Vendor detail: Medical & Training tabs ────────────────────────
+     *
+     * Purchase keeps these NORMALISED — purchase_worker_medicals and
+     * purchase_worker_trainings are one-to-many, so a worker legitimately has a
+     * history of each. These list the records themselves rather than projecting
+     * one row per worker (which is how TPV models it, on a single wide
+     * tpv_workers row) — showing only the latest would misrepresent the history.
+     *
+     * whereHas('worker') is load-bearing: PurchaseWorkforceService::delete only
+     * soft-deletes the worker and these child tables carry no FK, so orphaned
+     * medicals would otherwise keep appearing on the tab.
+     */
+
+    public function medicals(Request $request)
+    {
+        return response()->json(['data' => $this->vendorScoped($request, PurchaseWorkerMedical::query())
+            ->orderByDesc('exam_date')->orderByDesc('id')->get()]);
+    }
+
+    public function trainings(Request $request)
+    {
+        return response()->json(['data' => $this->vendorScoped($request, PurchaseWorkerTraining::query())
+            ->orderByDesc('id')->get()]);
+    }
+
+    /**
+     * Tenant + vendor narrowing shared by both.
+     *
+     * The vendor filter is STRICT — a missing vendor_id returns nothing rather
+     * than the tenant's whole workforce, because these endpoints exist only to
+     * serve one vendor's tab.
+     */
+    private function vendorScoped(Request $request, $query)
+    {
+        $vendorId = (int) $request->query('vendor_id');
+        abort_if($vendorId <= 0, 422, 'A vendor is required.');
+
+        return $query
+            ->where('tenant_id', (int) $request->user()->tenant_id)
+            ->where('purchase_vendor_id', $vendorId)
+            ->whereHas('worker')
+            ->with('worker:id,full_name,worker_code,designation');
     }
 
     public function show(Request $request, PurchaseWorker $worker)

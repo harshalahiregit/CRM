@@ -25,6 +25,51 @@ const EMPTY_FORM = {
   items: [{ ...EMPTY_ITEM }],
 }
 
+/**
+ * Payload mapping, shared by this page's save and by NewOrderModal below, so a
+ * PO raised from a vendor screen is built exactly like one raised here.
+ */
+const orderLines = (f) => (f.items || []).filter(it => it.description?.trim() || it.catalog_item_id)
+
+const orderPayload = (f) => ({
+  title: f.title, department: f.department || null, vendor_id: f.vendor_id || null, currency: f.currency,
+  order_date: f.order_date || null, expected_delivery_date: f.expected_delivery_date || null,
+  terms: f.terms || null, notes: f.notes || null,
+  items: orderLines(f).map((it, i) => ({
+    catalog_item_id: it.catalog_item_id || null, description: it.description, qty: Number(it.qty) || 1,
+    unit: it.unit || null, rate: Number(it.rate) || 0, tax: Number(it.tax) || 0, sort_order: i,
+  })),
+})
+
+/**
+ * Standalone "new purchase order" modal for callers outside this page.
+ *
+ * The TPV vendor's Purchase Order tab opens this with the vendor preselected,
+ * so there is one PO form and one save path rather than a reduced copy that
+ * drifts. Mirrors NewRfqModal's shape.
+ */
+export function NewOrderModal({ onClose, onDone, presetVendorId = '' }) {
+  const { user } = useAuth()
+  const [editing, setEditing] = useState({ ...EMPTY_FORM, vendor_id: presetVendorId ? String(presetVendorId) : '' })
+  const [saving, setSaving] = useState(false)
+
+  const save = async () => {
+    if (!editing.title?.trim()) { alert('Title is required.'); return }
+    if (orderLines(editing).length === 0) { alert('Add at least one line item.'); return }
+    setSaving(true)
+    try {
+      const saved = await purchaseApi.orders.create(orderPayload(editing))
+      onDone(saved?.id ?? saved?.data?.id)
+    } catch (e) { alert(e?.response?.data?.message || 'Failed to save order') }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <OrderFormModal editing={editing} setEditing={setEditing} saving={saving}
+      admin={isAdmin(user)} onClose={onClose} onSave={save} />
+  )
+}
+
 const StatusBadge = ({ status }) => <StatusPill cfg={poStatusCfg(status)} />
 
 // ── PO pipeline — 3D extruded stage knobs with live counts ───────────────────
@@ -143,16 +188,11 @@ export default function PurchaseOrders() {
   const handleSave = async (mode = 'draft') => {
     const f = editing
     if (!f.title?.trim()) { alert('Title is required.'); return }
-    const items = f.items.filter(it => it.description?.trim() || it.catalog_item_id)
+    const items = orderLines(f)
     if (items.length === 0) { alert('Add at least one line item.'); return }
     setSaving(true)
     try {
-      const payload = {
-        title: f.title, department: f.department || null, vendor_id: f.vendor_id || null, currency: f.currency,
-        order_date: f.order_date || null, expected_delivery_date: f.expected_delivery_date || null,
-        terms: f.terms || null, notes: f.notes || null,
-        items: items.map((it, i) => ({ catalog_item_id: it.catalog_item_id || null, description: it.description, qty: Number(it.qty) || 1, unit: it.unit || null, rate: Number(it.rate) || 0, tax: Number(it.tax) || 0, sort_order: i })),
-      }
+      const payload = orderPayload(f)
       let saved
       if (f.id) saved = await purchaseApi.orders.update(f.id, payload)
       else saved = await purchaseApi.orders.create(payload)

@@ -174,6 +174,55 @@ export const tpvApi = {
     listPaged: (params = {}) => api.get('/vendors', { params: { engagement: 'tpv', per_page: 25, ...params } }).then(r => r.data),
     get:       (id)          => api.get(`/vendors/${id}`).then(r => r.data),
     tasks:     (id)          => api.get(`/tpv/vendors/${id}/tasks`).then(r => r.data),
+    // Follow-ups and notes on the shared polymorphic reminders/notes tables.
+    // Under /tpv/* (role:admin,staff) rather than /sales/reminders, which has no
+    // role gate — see VendorController.
+    reminders: {
+      list:     (vid)          => api.get(`/tpv/vendors/${vid}/reminders`).then(r => r.data),
+      create:   (vid, data)    => api.post(`/tpv/vendors/${vid}/reminders`, data).then(r => r.data),
+      complete: (vid, id, data = {}) => api.post(`/tpv/vendors/${vid}/reminders/${id}/complete`, data).then(r => r.data),
+      remove:   (vid, id)      => api.delete(`/tpv/vendors/${vid}/reminders/${id}`).then(r => r.data),
+    },
+    // Commercial: the optional link to this company's Purchase record, plus the
+    // two views Purchase exposes no vendor-level endpoint for. The other five
+    // document types read straight off purchaseApi with a purchase_vendor_id.
+    purchase: {
+      matches:   (vid)      => api.get(`/tpv/vendors/${vid}/purchase-matches`).then(r => r.data),
+      link:      (vid, purchase_vendor_id) => api.patch(`/tpv/vendors/${vid}/purchase-link`, { purchase_vendor_id }).then(r => r.data),
+      // Register this company in Purchase and link it in one step, so commercial
+      // work can start without retyping it into the Purchase module.
+      createRecord: (vid) => api.post(`/tpv/vendors/${vid}/purchase-record`).then(r => r.data),
+      payments:  (vid)      => api.get(`/tpv/vendors/${vid}/purchase-payments`).then(r => r.data),
+      statement: (vid)      => api.get(`/tpv/vendors/${vid}/purchase-statement`).then(r => r.data),
+    },
+    // Folder-tree file area. Google Drive / OneDrive files arrive here too — the
+    // pickers download the bytes and post them through upload() like any file.
+    attachments: {
+      browse: (vid, folderId = null) =>
+        api.get(`/tpv/vendors/${vid}/attachments`, { params: folderId ? { folder_id: folderId } : {} }).then(r => r.data),
+      upload: (vid, file, { folderId = null, source = 'upload', sourceRef = null } = {}) => {
+        const fd = new FormData()
+        fd.append('file', file)
+        if (folderId) fd.append('folder_id', folderId)
+        if (source) fd.append('source', source)
+        if (sourceRef) fd.append('source_ref', sourceRef)
+        return api.post(`/tpv/vendors/${vid}/attachments`, fd, { headers: { 'Content-Type': undefined } }).then(r => r.data)
+      },
+      rename:     (vid, id, name)     => api.put(`/tpv/vendors/${vid}/attachments/${id}`, { name }).then(r => r.data),
+      move:       (vid, id, folder_id) => api.put(`/tpv/vendors/${vid}/attachments/${id}`, { folder_id }).then(r => r.data),
+      remove:     (vid, id)           => api.delete(`/tpv/vendors/${vid}/attachments/${id}`).then(r => r.data),
+      download:   (vid, id)           => api.get(`/tpv/vendors/${vid}/attachments/${id}/download`, { responseType: 'blob' }).then(r => r.data),
+      createFolder: (vid, name, parent_id = null) =>
+        api.post(`/tpv/vendors/${vid}/attachment-folders`, { name, parent_id }).then(r => r.data),
+      renameFolder: (vid, id, name) => api.put(`/tpv/vendors/${vid}/attachment-folders/${id}`, { name }).then(r => r.data),
+      removeFolder: (vid, id)       => api.delete(`/tpv/vendors/${vid}/attachment-folders/${id}`).then(r => r.data),
+    },
+    notes: {
+      list:   (vid)           => api.get(`/tpv/vendors/${vid}/notes`).then(r => r.data),
+      create: (vid, data)     => api.post(`/tpv/vendors/${vid}/notes`, data).then(r => r.data),
+      update: (vid, id, data) => api.put(`/tpv/vendors/${vid}/notes/${id}`, data).then(r => r.data),
+      remove: (vid, id)       => api.delete(`/tpv/vendors/${vid}/notes/${id}`).then(r => r.data),
+    },
     stats:     ()            => api.get('/vendors/stats').then(r => r.data),
     resendActivation: (id)   => api.post(`/vendors/${id}/resend-activation`).then(r => r.data),
     create:    (data)        => api.post('/vendors', data).then(r => r.data),

@@ -37,6 +37,20 @@ class ProjectRepository extends BaseRepository
         if (! empty($filters['member'])) {
             $query->whereHas('members', fn ($q) => $q->where('user_id', $filters['member']));
         }
+        // A project already carries its vendor link (vendor_id + link_type); a
+        // vendor screen is that existing column read one vendor at a time, so
+        // there is one project list viewed several ways — no per-module store.
+        //
+        // `vendor_type` names a party TYPE, never a raw link_type: it is resolved
+        // against Project::VENDOR_LINK_MAP inside the scope, so a caller cannot
+        // pivot this filter onto another module's vendors. It defaults to
+        // tpv_vendor, which is what every caller predating Purchase means.
+        if (! empty($filters['vendor_id'])) {
+            $query->forVendorLink(
+                (int) $filters['vendor_id'],
+                $filters['vendor_type'] ?? 'tpv_vendor',
+            );
+        }
         // Tags live in the shared taggables table — filter without joining it into
         // the model, so Project stays unaware of how tagging is stored.
         if (! empty($filters['tag']) && Schema::hasTable('taggables')) {

@@ -236,6 +236,15 @@ class GateScanService
         if (! empty($filters['worker_id'])) {
             $query->where('tpv_worker_id', $filters['worker_id']);
         }
+        // A scan belongs to a WORKER, and a vendor owns workers — so the vendor
+        // view filters through that relation rather than getting a second,
+        // divergent query of its own. Tenant-scoped on both sides.
+        if (! empty($filters['vendor_id'])) {
+            $query->whereIn(
+                'tpv_worker_id',
+                TpvWorker::forTenant($tenantId)->where('vendor_id', (int) $filters['vendor_id'])->select('id')
+            );
+        }
         if (! empty($filters['date'])) {
             $query->whereDate('scanned_at', $filters['date']);
         }

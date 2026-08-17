@@ -232,15 +232,21 @@ class AuthService
             'access_expires_at' => null,
             'phone'             => $data['phone'] ?? null,
             'designation'       => $data['position'] ?? null,
+            // Kept as the raw record of what was typed at registration. The vendor
+            // master below is the authoritative copy that listings, PDFs and search
+            // read; this stays so the backfill has a source for older rows.
             'meta'              => [
-                'username'   => $data['username'],
-                'gst_number' => $data['gst_number'] ?? null,
-                'industry'   => $data['industry'] ?? null,
-                'city'       => $data['city'] ?? null,
-                'state'      => $data['state'] ?? null,
-                'country'    => $data['country'] ?? null,
-                'zip'        => $data['zip'] ?? null,
-                'website'    => $data['website'] ?? null,
+                'username'    => $data['username'],
+                'gst_number'  => $data['gst_number'] ?? null,
+                'industry'    => $data['industry'] ?? null,
+                'city'        => $data['city'] ?? null,
+                'state'       => $data['state'] ?? null,
+                'country'     => $data['country'] ?? null,
+                'zip'         => $data['zip'] ?? null,
+                'website'     => $data['website'] ?? null,
+                'legal_name'  => $data['legal_name'] ?? null,
+                'pan_number'  => $data['pan_number'] ?? null,
+                'address'     => $data['address'] ?? null,
             ],
         ]);
 
@@ -255,6 +261,15 @@ class AuthService
             // Store on the vendor's own column, not just in user meta --
             // the vendor master is what listings, PDFs and search read.
             'gst_number'  => $data['gst_number'] ?? null,
+            // These four were collected at registration and written ONLY to
+            // user.meta, so the vendor record showed a dash for details the
+            // vendor had already given us. `industry` is the registration form's
+            // word for what the vendor master calls `category`.
+            'legal_name'  => $data['legal_name'] ?? null,
+            'pan_number'  => isset($data['pan_number']) ? strtoupper((string) $data['pan_number']) : null,
+            'address'     => $data['address'] ?? null,
+            'website'     => $data['website'] ?? null,
+            'category'    => $data['industry'] ?? null,
             'vendor_type' => $data['tpv_type'] === 'temporary' ? 'temporary' : 'standard',
             // The registration choice is stored verbatim, so it is never
             // re-derived from vendor_type / is_temporary later on.

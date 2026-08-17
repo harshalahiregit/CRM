@@ -113,6 +113,14 @@ class Ticket extends Model
         return $this->belongsTo(TicketService::class, 'service_id');
     }
 
+    // tickets.project_id already existed; this only names it for eager loading —
+    // no new column, no new link. It is how a ticket reaches a vendor: a ticket
+    // has no vendor of its own, its PROJECT does.
+    public function project()
+    {
+        return $this->belongsTo(\App\Models\Project\Project::class, 'project_id');
+    }
+
     // NOTE: no customer() relation — customers belong to Zafar's module. Resolve
     // customer data through CustomerServiceContract, never an Eloquent join here.
 }

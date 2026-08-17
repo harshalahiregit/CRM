@@ -1,13 +1,19 @@
+import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
-import { ListTodo, AlertTriangle, CheckCircle2, Clock, ArrowUpRight } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { ListTodo, AlertTriangle, CheckCircle2, Clock, ArrowUpRight, Plus, Search } from 'lucide-react'
 
 /**
  * Tasks raised against a vendor.
  *
  * Module-agnostic and presentational: it takes a `fetcher` and knows nothing about
  * TPV or Purchase, so those two modules stay independent while the same table isn't
- * written twice. Read-only — tasks are created and linked in the Task module.
+ * written twice.
+ *
+ * Creating is OPT-IN. Pass `onAdd` and the header gains an add button, matching
+ * how the Projects tab raises a project already scoped to its vendor; the caller
+ * owns the form, so this component still knows nothing about either module. A
+ * caller that passes nothing keeps the previous read-only panel exactly.
  */
 
 /**
@@ -35,7 +41,12 @@ const STATUS = {
  */
 const LINK_TONE = { related: '#2a78d6', assigned: '#eb6834' }
 
-export default function VendorTasksPanel({ queryKey, fetcher, accent = '#7C3AED', emptyHint }) {
+export default function VendorTasksPanel({
+  queryKey, fetcher, accent = '#7C3AED', emptyHint,
+  onAdd, addLabel = 'Add Task', searchable = false,
+}) {
+  const navigate = useNavigate()
+  const [q, setQ] = useState('')
   // App-wide default is staleTime 5min — right for reference data, wrong for a work
   // list that changes as tasks are assigned. Always refetch when the tab opens.
   const { data, isLoading, isError } = useQuery({
@@ -47,7 +58,18 @@ export default function VendorTasksPanel({ queryKey, fetcher, accent = '#7C3AED'
   })
 
   const summary = data?.summary || {}
-  const tasks = Array.isArray(data?.tasks) ? data.tasks : []
+  const all = useMemo(() => (Array.isArray(data?.tasks) ? data.tasks : []), [data])
+
+  // Client-side, over the list already loaded — the same fields the Projects tab
+  // searches on, so neither tab needs a round-trip to filter.
+  const tasks = useMemo(() => {
+    const needle = q.trim().toLowerCase()
+    if (! needle) return all
+
+    return all.filter(t => [t.name, t.status, t.priority, ...(t.assignees || [])]
+      .filter(Boolean)
+      .some(f => String(f).toLowerCase().includes(needle)))
+  }, [all, q])
 
   if (isLoading) return <Shell><Muted>Loading tasks…</Muted></Shell>
   if (isError)   return <Shell><span style={{ color: STATUS.critical, fontSize: 13, fontWeight: 700 }}>Could not load tasks.</span></Shell>
@@ -61,6 +83,32 @@ export default function VendorTasksPanel({ queryKey, fetcher, accent = '#7C3AED'
 
   return (
     <div>
+      {/* Search + add, only for callers that opted in. */}
+      {(searchable || onAdd) && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
+          {searchable && (
+            <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
+              <Search size={13} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+              <input
+                value={q} onChange={e => setQ(e.target.value)} placeholder="Search tasks…"
+                style={{
+                  width: '100%', padding: '8px 12px 8px 32px', borderRadius: 10, fontSize: 13,
+                  background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)',
+                }}
+              />
+            </div>
+          )}
+          {onAdd && (
+            <button type="button" onClick={onAdd} style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 10,
+              border: 'none', background: accent, color: '#fff', fontWeight: 700, fontSize: 12.5, cursor: 'pointer',
+            }}>
+              <Plus size={14} /> {addLabel}
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Stat tiles, not a chart: four single headline numbers. The VALUE wears
           primary ink; the coloured icon beside it carries the status identity, so
           the row reads as one system rather than four competing colours. */}
@@ -94,9 +142,13 @@ export default function VendorTasksPanel({ queryKey, fetcher, accent = '#7C3AED'
           background: 'var(--bg-card)', border: '1px dashed var(--border)',
         }}>
           <ListTodo size={24} strokeWidth={1.8} style={{ color: 'var(--text-muted)', marginBottom: 10 }} />
-          <p style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-h)', margin: 0 }}>No tasks yet</p>
+          <p style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-h)', margin: 0 }}>
+            {q.trim() ? 'No matching tasks' : 'No tasks yet'}
+          </p>
           <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '6px auto 0', lineHeight: 1.55, maxWidth: 400 }}>
-            {emptyHint || 'Assign a task to this vendor’s login, or set a task’s “Related To” to this vendor.'}
+            {q.trim()
+              ? `Nothing matches “${q.trim()}”.`
+              : (emptyHint || 'Assign a task to this vendor’s login, or set a task’s “Related To” to this vendor.')}
           </p>
         </div>
       ) : (
@@ -118,7 +170,14 @@ export default function VendorTasksPanel({ queryKey, fetcher, accent = '#7C3AED'
                 {tasks.map((t, i) => {
                   const overdue = t.is_open && t.due_date && new Date(t.due_date) < new Date(new Date().toDateString())
                   return (
-                    <tr key={t.id} style={{ borderTop: i === 0 ? 'none' : '1px solid var(--border)' }}>
+                    // The whole row opens the task, matching the Projects tab. The
+                    // explicit "Open" link stays for keyboard and middle-click.
+                    <tr key={t.id}
+                      onClick={t.url ? () => navigate(t.url) : undefined}
+                      style={{
+                        borderTop: i === 0 ? 'none' : '1px solid var(--border)',
+                        cursor: t.url ? 'pointer' : 'default',
+                      }}>
                       <td style={{ padding: '11px 14px', fontWeight: 650, color: 'var(--text-h)' }}>{t.name}</td>
 
                       {/* Why the task is on this tab: raised against the vendor, or
@@ -151,7 +210,7 @@ export default function VendorTasksPanel({ queryKey, fetcher, accent = '#7C3AED'
                         {t.due_date ? new Date(t.due_date).toLocaleDateString() : '—'}
                       </td>
 
-                      <td style={{ padding: '11px 14px', textAlign: 'right' }}>
+                      <td style={{ padding: '11px 14px', textAlign: 'right' }} onClick={e => e.stopPropagation()}>
                         <Link to={t.url} style={{
                           display: 'inline-flex', alignItems: 'center', gap: 3,
                           fontSize: 12, fontWeight: 700, color: accent, textDecoration: 'none',

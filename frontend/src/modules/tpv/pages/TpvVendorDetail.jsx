@@ -1,35 +1,13 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft, Building2, User, Phone, Loader2, ShieldCheck, CheckCircle, XCircle, PauseCircle, CornerUpLeft, Clock, AlertTriangle,
-  Briefcase, IndianRupee, ClipboardCheck, BarChart3, ChevronDown, ChevronRight, Mail,
+  Briefcase, IndianRupee, ClipboardCheck, BarChart3, ChevronDown, ChevronRight, Mail, HardHat, Ban,
 } from 'lucide-react'
 
 const NOTIF_COLORS = { sent: '#10b981', failed: '#ef4444', skipped: '#94a3b8', queued: '#0ea5e9' }
 
-/**
- * What an empty tab should say, based on an audit of what actually exists.
- *
- *  · Listed here  → the owning module EXISTS; the vendor simply has no rows.
- *  · Not listed   → no such module in this system, so the default
- *                   "This module is not available." is the truthful message.
- *
- * Verified against the schema: tpv_workers / tpv_worker_medicals /
- * tpv_worker_inductions / tpv_worker_ppe_issues / tpv_gate_scans /
- * tpv_safety_strikes exist. PTW, Incidents, Visitors, Pre Alert, Package,
- * Survey, Training, Risk/Award/Penalty/Feedback/Referral have NO backing table.
- * Projects / Tasks / Expenses / Tickets exist generically but carry no vendor
- * link, so they cannot be filtered to this vendor.
- */
-const TAB_EMPTY_REASON = {
-  Medical:    'No Medical Records',
-  Workforce:  'No Workforce Records',
-  'Gate Log': 'No Gate Records',
-  Strikes:    'No Safety Strikes',
-  Projects:   'Projects are not linked to vendors in this system.',
-  Expenses:   'Expenses are not linked to vendors in this system.',
-  Ticket:     'Tickets are not linked to vendors in this system.',
-}
 import { useAuth } from '@/context/AuthContext'
 import { obStatusCfg } from '@/modules/tpv/constants'
 import { useVendorModule } from '@/modules/tpv/useVendorModule'
@@ -38,21 +16,68 @@ import TemporaryTpvValidityBadge from '@/modules/tpv/components/TemporaryTpvVali
 import { KIT3D_STYLE, Overlay, ModalFooter } from '@/components/ui/kit3d'
 import ComingSoonSection from '@/modules/tpv/components/ComingSoonSection'
 import VendorTasksPanel from '@/components/vendor/VendorTasksPanel'
+import TaskFormDrawer from '@/modules/tasks/components/TaskFormDrawer'
 import { tpvApi } from '@/services/tpvApi'
 import TpvVendorContacts from '@/modules/tpv/components/TpvVendorContacts'
 import TpvVendorDocuments from '@/modules/tpv/components/TpvVendorDocuments'
+import {
+  VendorWorkforce, VendorMedical, VendorTraining, VendorGateLog, VendorStrikes,
+} from '@/modules/tpv/components/VendorWorkforcePanels'
+import { VendorProjects } from '@/modules/tpv/components/VendorProjectsPanel'
+import { VendorTickets } from '@/modules/tpv/components/VendorTicketsPanel'
+import { VendorExpenses } from '@/modules/tpv/components/VendorExpensesPanel'
+import { VendorCustomers } from '@/modules/tpv/components/VendorCustomersPanel'
+import { VendorReminders } from '@/modules/tpv/components/VendorRemindersPanel'
+import { VendorNotes } from '@/modules/tpv/components/VendorNotesPanel'
+import { VendorCommercial } from '@/modules/tpv/components/VendorCommercialPanel'
+import { VendorAttachments } from '@/modules/tpv/components/VendorAttachmentsPanel'
 
-// The Vendor Detail navigation — 5 groups, 35 sections. Only Overview / Profile /
-// Contact are backed by live data today; every other section is a ComingSoonSection
-// placeholder. This data drives both the left nav and the content router below, so
-// adding a real section later means dropping it into the LIVE switch — nothing else.
+/**
+ * The Vendor Detail navigation — 6 groups, 38 sections. This drives BOTH the left
+ * nav and the content router below, so a section exists in exactly one of three
+ * states and the three partition the list with no overlap:
+ *
+ *   ACTIVE       a `case` in SectionContent — 24 sections, each reading an
+ *                EXISTING module scoped to this vendor. None owns a TPV table:
+ *                Reminders and Notes ride the SHARED polymorphic `reminders` and
+ *                `notes` tables, the same way Projects rides projects.vendor_id.
+ *   NOT_APPLICABLE  listed in the map below — the concept belongs to another
+ *                module and never applies here. A settled answer, not a gap.
+ *   COMING SOON  neither — no backing table yet, awaiting a business definition.
+ *
+ * Anything added here without a `case` falls to the placeholder, and anything
+ * given a `case` without being listed here is UNREACHABLE: `active` resolves
+ * through bySlug, which is built from this array, so a stray case silently
+ * renders Overview instead. Keep the two in step.
+ */
 const NAV_GROUPS = [
-  { group: 'General',     icon: User,           items: ['Overview', 'Profile', 'Contact', 'Medical', 'Training', 'Customer'] },
+  { group: 'General',     icon: User,           items: ['Overview', 'Profile', 'Contact', 'Customer'] },
+  { group: 'Workforce',   icon: HardHat,        items: ['Workforce', 'Medical', 'Training', 'Gate Log', 'Strikes'] },
   { group: 'Commercial',  icon: IndianRupee,    items: ['Quotation', 'Contracts', 'Purchase Order', 'Purchase Invoice', 'Debit Note', 'Purchase Statement', 'Payments'] },
   { group: 'Operations',  icon: Briefcase,      items: ['Projects', 'Tasks', 'Expenses', 'Attachments', 'ToDo', 'Notes', 'Technical File Maintenance', 'Ticket', 'Job', 'Reminders'] },
-  { group: 'Compliance',  icon: ClipboardCheck, items: ['Survey', 'PTW', 'Incidents', 'Documents', 'Pre Alert', 'Package', 'Visitors'] },
+  { group: 'Compliance',  icon: ClipboardCheck, items: ['Documents', 'Survey', 'PTW', 'Incidents', 'Pre Alert', 'Package', 'Visitors'] },
   { group: 'Performance', icon: BarChart3,      items: ['Risk Score', 'Award / Reward', 'Penalty', 'Feedback', 'Referrals'] },
 ]
+
+/**
+ * Sections the current application deliberately does not support for a TPV
+ * vendor — distinct from "not built yet". Each names the module that DOES own
+ * the concept, so the screen never implies a missing feature.
+ *
+ * The Commercial group used to live here for the same reason: every commercial
+ * document keys to purchase_vendors.purchase_vendor_id, and Purchase was
+ * decoupled from the shared Vendor Master on purpose (migrations
+ * 2026_08_30_000009 → _000014). Those tabs are now ACTIVE, but nothing about that
+ * decision changed — vendors.purchase_vendor_id is an OPTIONAL link an admin
+ * sets, and the tabs read the real Purchase lists through it. Unlinked, they say
+ * so. No commercial data is copied onto the TPV side.
+ */
+const NOT_APPLICABLE = {
+  'ToDo':               'Vendor to-dos are tracked in Tasks.',
+  'Pre Alert':          'Pre-alerts are a Customer module concept (client_pre_alerts).',
+  'Package':            'Packages are a Customer module concept (client_packages).',
+  'Job':                'No vendor job concept exists — the `jobs` table is the queue, and hr_job_* is recruitment.',
+}
 
 const slugify = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 const DEFAULT_TAB = 'Overview'
@@ -265,20 +290,29 @@ export default function TpvVendorDetail() {
                   <div style={{ padding: '2px 0 6px' }}>
                     {items.map(it => {
                       const on = active === it
+                      // Settled-as-out-of-scope sections stay reachable (the reason
+                      // is worth reading) but are dimmed, so the sidebar shows at a
+                      // glance what this vendor actually has.
+                      const na = !!NOT_APPLICABLE[it]
                       return (
                         <button
                           key={it}
                           onClick={() => selectTab(it)}
+                          title={na ? `Not applicable — ${NOT_APPLICABLE[it]}` : undefined}
                           style={{
-                            display: 'block', width: '100%', textAlign: 'left', cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', gap: 6, width: '100%', textAlign: 'left', cursor: 'pointer',
                             padding: '7px 12px 7px 30px', fontSize: 12.5, borderRadius: 8, border: 'none',
                             marginBottom: 1, transition: 'background 0.12s',
                             fontWeight: on ? 700 : 500,
                             color: on ? '#a78bfa' : 'var(--text-muted)',
                             background: on ? 'rgba(124,58,237,0.12)' : 'transparent',
                             borderLeft: `2px solid ${on ? '#7C3AED' : 'transparent'}`,
+                            opacity: na && !on ? 0.5 : 1,
                           }}
-                        >{it}</button>
+                        >
+                          <span>{it}</span>
+                          {na && <Ban size={11} style={{ flexShrink: 0, marginLeft: 'auto', opacity: 0.75 }} />}
+                        </button>
                       )
                     })}
                   </div>
@@ -290,7 +324,8 @@ export default function TpvVendorDetail() {
 
         <div style={{ flex: 1, minWidth: 0 }}>
           <SectionContent tab={active} v={v} isActive={isActive} manage={manage} api={cfg.api} moduleName={cfg.moduleName}
-          onDecision={kind => { setDecisionModal(kind); setRemarks('') }} />
+          onDecision={kind => { setDecisionModal(kind); setRemarks('') }}
+          onReload={load} />
         </div>
       </div>
 
@@ -337,7 +372,7 @@ export default function TpvVendorDetail() {
 }
 
 /** Routes the active section to live data or the shared placeholder. */
-function SectionContent({ tab, v, isActive, manage, api, moduleName, onDecision }) {
+function SectionContent({ tab, v, isActive, manage, api, moduleName, onDecision, onReload }) {
   switch (tab) {
     case 'Overview':
       return (
@@ -355,47 +390,18 @@ function SectionContent({ tab, v, isActive, manage, api, moduleName, onDecision 
         </Card>
       )
     case 'Profile':
-      return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <Card icon={User} title="Profile">
-            <Grid rows={[
-              ['Legal Name', v.legal_name],
-              ['GST Number', v.gst_number],
-              ['PAN Number', v.pan_number],
-              ['Registration No.', v.registration_number],
-              ['Category', v.category],
-              ['Website', v.website],
-              ['Account Manager', v.account_manager?.name],
-            ]} />
-          </Card>
-          {/* Contact & Address lives with the vendor profile (moved off the Contact tab) */}
-          <Card icon={Phone} title="Contact & Address">
-            <Grid rows={[
-              ['Email', v.email],
-              ['Phone', v.phone],
-              ['Address', v.address],
-              ['City', v.city],
-              ['State', v.state],
-              ['Country', v.country],
-              ['Pincode', v.pincode],
-            ]} />
-          </Card>
-        </div>
-      )
+      // Editable for admin/staff (canManage). A vendor never reaches this screen,
+      // and PUT /vendors/{id} is role:admin,staff + assertTenant() regardless —
+      // the button below is convenience, not the security boundary.
+      return <ProfilePanel v={v} manage={manage} api={api} onSaved={onReload} />
     case 'Contact':
       // The Contact tab is now purely the master contact list (vendor-scoped CRUD).
       return <TpvVendorContacts vendorId={v.id} vendor={v} manage={manage} api={api} />
     case 'Tasks':
       // Two routes reach this tab: tasks raised against the vendor
       // (rel_type='tpv_vendor') and tasks assigned to the vendor's portal login.
-      return (
-        <VendorTasksPanel
-          queryKey={['tpv-vendor-tasks', v.id]}
-          fetcher={() => tpvApi.vendors.tasks(v.id)}
-          accent="#0ea5e9"
-          emptyHint="Assign a task to this vendor’s login, or set a task’s “Related To” → “TPV Vendor” → this vendor."
-        />
-      )
+      // Raising one here mirrors the Projects tab — see VendorTasks below.
+      return <VendorTasks v={v} manage={manage} />
     case 'Documents':
       // Read-only: the vendor uploads through the portal during onboarding.
       // Admin reviews (approve/reject) and views/downloads — never uploads.
@@ -406,11 +412,94 @@ function SectionContent({ tab, v, isActive, manage, api, moduleName, onDecision 
           <TpvVendorDocuments vendorId={v.id} vendor={v} manage={false} api={api} moduleName={moduleName} />
         </>
       )
+    // ── Backed by data the TPV module already holds ────────────────────
+    // Each reads an EXISTING admin endpoint scoped to this vendor; none of them
+    // introduces a TPV-vendor-specific API or a second copy of the data.
+    case 'Workforce':
+      return <VendorWorkforce vendorId={v.id} manage={manage} />
+    case 'Medical':
+      return <VendorMedical vendorId={v.id} manage={manage} />
+    case 'Training':
+      return <VendorTraining vendorId={v.id} manage={manage} />
+    case 'Gate Log':
+      return <VendorGateLog vendorId={v.id} />
+    case 'Strikes':
+      return <VendorStrikes vendorId={v.id} manage={manage} />
+    // Projects were already vendor-linked on the projects table (vendor_id +
+    // link_type) — this reads that existing list, filtered to this vendor.
+    case 'Projects':
+      return <VendorProjects vendorId={v.id} vendorName={v.company_name} manage={manage} />
+    // Tickets and Expenses have no vendor column of their own — both reach this
+    // vendor through its PROJECTS, resolved server-side.
+    case 'Ticket':
+      return <VendorTickets vendorId={v.id} vendorName={v.company_name} manage={manage} />
+    case 'Expenses':
+      return <VendorExpenses vendorId={v.id} manage={manage} />
+    // No customer is linked to a vendor anywhere; the pair meet on a PROJECT
+    // (projects.vendor_id + projects.customer_id), so this reads that hop.
+    case 'Customer':
+      return <VendorCustomers vendorId={v.id} />
+    // Both ride SHARED polymorphic tables — `reminders` (remindable_*) and
+    // `notes` (notable_*) — so neither introduces a vendor-specific store.
+    // Commercial — all seven read the Purchase module through the optional
+    // vendors.purchase_vendor_id link. One component; the tab picks the document.
+    case 'Quotation':
+    case 'Contracts':
+    case 'Purchase Order':
+    case 'Purchase Invoice':
+    case 'Debit Note':
+    case 'Purchase Statement':
+    case 'Payments':
+      return <VendorCommercial tab={tab} vendorId={v.id} vendorName={v.company_name} manage={manage} />
+    case 'Reminders':
+      return <VendorReminders vendorId={v.id} vendorName={v.company_name} manage={manage} />
+    case 'Notes':
+      return <VendorNotes vendorId={v.id} vendorName={v.company_name} manage={manage} />
+    // Free-form files in folders — separate from Documents, which is the
+    // statutory checklist. Google Drive and OneDrive import into it.
+    case 'Attachments':
+      return <VendorAttachments vendorId={v.id} manage={manage} />
     default:
-      // Honest copy: distinguish "module exists, no rows for this vendor" from
-      // "no such module in this system". See TAB_EMPTY_REASON.
-      return <ComingSoonSection name={tab} reason={TAB_EMPTY_REASON[tab]} />
+      // Everything else is either settled as out of scope for a TPV vendor, or
+      // genuinely unbacked — no table, awaiting a business definition.
+      return <ComingSoonSection name={tab} reason={NOT_APPLICABLE[tab]} notApplicable={!!NOT_APPLICABLE[tab]} />
   }
+}
+
+/**
+ * The Tasks tab, with the same shape as Projects: list, search, and an add button
+ * that opens the TASK module's own drawer with this vendor pre-linked and locked.
+ *
+ * A task raised here therefore carries every field one raised from the Task screen
+ * does — assignees, followers, checklists, recurrence, billing — because it IS
+ * that form, not a reduced copy. Only `rel_type`/`rel_id` are decided for the user,
+ * which is exactly what makes the task come back to this tab.
+ */
+function VendorTasks({ v, manage }) {
+  const qc = useQueryClient()
+  const [adding, setAdding] = useState(false)
+  const key = ['tpv-vendor-tasks', v.id]
+
+  return (
+    <>
+      <TaskFormDrawer
+        open={adding}
+        onClose={() => setAdding(false)}
+        defaults={{ rel_type: 'tpv_vendor', rel_id: v.id }}
+        lockRel
+        lockRelLabel={v.company_name}
+        onSaved={() => qc.invalidateQueries({ queryKey: key })}
+      />
+      <VendorTasksPanel
+        queryKey={key}
+        fetcher={() => tpvApi.vendors.tasks(v.id)}
+        accent="#0ea5e9"
+        searchable
+        onAdd={manage ? () => setAdding(true) : undefined}
+        emptyHint="Assign a task to this vendor’s login, or set a task’s “Related To” → “TPV Vendor” → this vendor."
+      />
+    </>
+  )
 }
 
 /**
@@ -473,6 +562,155 @@ const ghostBtn = {
   border: '1px solid var(--border)', color: 'var(--text-muted)',
   fontSize: 12, fontWeight: 700, cursor: 'pointer',
   display: 'inline-flex', alignItems: 'center', gap: 5,
+}
+
+/**
+ * Vendor profile — read-only until an authorised user chooses to edit.
+ *
+ * Registration Number and Account Manager stay read-only on purpose: the first is
+ * assigned by onboarding approval, the second is an internal assignment. Both are
+ * shown because they are useful context, but neither is typed here.
+ *
+ * Saves through the SAME PUT /vendors/{id} the rest of the module uses, so
+ * validation and tenancy checks are the server's, not this component's.
+ */
+function ProfilePanel({ v, manage, api, onSaved }) {
+  const FIELDS = [
+    ['legal_name', 'Legal Name'],
+    ['gst_number', 'GST Number'],
+    ['pan_number', 'PAN Number'],
+    ['category',   'Category'],
+    ['website',    'Website'],
+  ]
+  const CONTACT = [
+    ['email',   'Email'],
+    ['phone',   'Phone'],
+    ['address', 'Address'],
+    ['city',    'City'],
+    ['state',   'State'],
+    ['country', 'Country'],
+    ['pincode', 'Pincode'],
+  ]
+
+  const blank = () => [...FIELDS, ...CONTACT].reduce((a, [k]) => ({ ...a, [k]: v[k] ?? '' }), {})
+
+  const [editing, setEditing] = useState(false)
+  const [form, setForm] = useState(blank)
+  const [saving, setSaving] = useState(false)
+  const [errs, setErrs] = useState({})
+  const [notice, setNotice] = useState(null)
+
+  // Re-seed whenever the vendor reloads, so a save (or another tab's change)
+  // is reflected instead of leaving stale values in the inputs.
+  useEffect(() => { if (!editing) setForm(blank()) }, [v]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const set = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }))
+
+  const cancel = () => { setForm(blank()); setErrs({}); setEditing(false) }
+
+  const validate = () => {
+    const e = {}
+    if (form.pan_number && !/^[A-Za-z]{5}[0-9]{4}[A-Za-z]$/.test(form.pan_number)) e.pan_number = 'Invalid PAN (AAAAA9999A).'
+    if (form.email && !/^\S+@\S+\.\S+$/.test(form.email)) e.email = 'Enter a valid email address.'
+    if (form.pincode && !/^[0-9]{6}$/.test(form.pincode)) e.pincode = '6 digits.'
+    return e
+  }
+
+  const save = async () => {
+    const e = validate()
+    setErrs(e)
+    if (Object.keys(e).length) return
+
+    setSaving(true); setNotice(null)
+    try {
+      const payload = { ...form, pan_number: form.pan_number ? form.pan_number.toUpperCase() : '' }
+      await api.vendors.update(v.id, payload)
+      setEditing(false)
+      setNotice({ ok: true, text: 'Profile updated.' })
+      onSaved?.()
+    } catch (err) {
+      // Field errors from the server win over the local guesses.
+      const back = err?.response?.data?.errors
+      if (back) setErrs(Object.fromEntries(Object.entries(back).map(([k, m]) => [k, Array.isArray(m) ? m[0] : m])))
+      setNotice({ ok: false, text: err?.response?.data?.message || 'Could not save the profile.' })
+    } finally { setSaving(false) }
+  }
+
+  const inputStyle = (k) => ({
+    width: '100%', padding: '7px 9px', borderRadius: 8, fontSize: 12.5,
+    background: 'var(--bg-input)', color: 'var(--text-h)',
+    border: `1px solid ${errs[k] ? '#ef4444' : 'var(--border)'}`,
+  })
+
+  const Row = ([k, label]) => (
+    <div key={k} style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingBottom: 7, borderBottom: editing ? 'none' : '1px solid var(--border)' }}>
+      <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>{label}</span>
+      {editing ? (
+        <>
+          <input value={form[k]} onChange={set(k)} style={inputStyle(k)} disabled={saving} />
+          {errs[k] && <span style={{ color: '#ef4444', fontSize: 11 }}>{errs[k]}</span>}
+        </>
+      ) : (
+        <span style={{ color: 'var(--text-h)', fontSize: 12.5, fontWeight: 600 }}>{v[k] || '—'}</span>
+      )}
+    </div>
+  )
+
+  const btn = (bg) => ({
+    display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 9,
+    border: bg ? 'none' : '1px solid var(--border)', cursor: saving ? 'default' : 'pointer',
+    background: bg || 'var(--bg-input)', color: bg ? '#fff' : 'var(--text-h)',
+    fontSize: 12.5, fontWeight: 700, opacity: saving ? 0.7 : 1,
+  })
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {notice && (
+        <div style={{
+          maxWidth: 760, padding: '9px 12px', borderRadius: 10, fontSize: 12.5,
+          background: notice.ok ? 'rgba(16,185,129,.10)' : 'rgba(239,68,68,.10)',
+          color: notice.ok ? '#047857' : '#ef4444',
+        }}>{notice.text}</div>
+      )}
+
+      <Card icon={User} title="Profile">
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 24px' }}>
+          {FIELDS.map(Row)}
+          {/* Assigned by the system / internally — never typed on this form. */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingBottom: 7, borderBottom: '1px solid var(--border)' }}>
+            <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>Registration No.</span>
+            <span style={{ color: 'var(--text-h)', fontSize: 12.5, fontWeight: 600 }}>{v.registration_number || '—'}</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingBottom: 7, borderBottom: '1px solid var(--border)' }}>
+            <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>Account Manager</span>
+            <span style={{ color: 'var(--text-h)', fontSize: 12.5, fontWeight: 600 }}>{v.account_manager?.name || '—'}</span>
+          </div>
+        </div>
+
+        {manage && (
+          <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+            {editing ? (
+              <>
+                <button onClick={save} disabled={saving} style={btn('#7C3AED')}>
+                  {saving && <Loader2 size={13} className="rfq-spin" />} Save
+                </button>
+                <button onClick={cancel} disabled={saving} style={btn(null)}>Cancel</button>
+              </>
+            ) : (
+              <button onClick={() => setEditing(true)} style={btn('#7C3AED')}>Edit</button>
+            )}
+          </div>
+        )}
+      </Card>
+
+      {/* Contact & Address lives with the vendor profile (moved off the Contact tab) */}
+      <Card icon={Phone} title="Contact & Address">
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 24px' }}>
+          {CONTACT.map(Row)}
+        </div>
+      </Card>
+    </div>
+  )
 }
 
 function Card({ icon: Icon, title, children }) {

@@ -26,6 +26,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('projects')->gro
     Route::get('/customers',           [ProjectController::class, 'customers']);
     Route::get('/vendors',             [ProjectController::class, 'vendors']);
 
+    // Vendor-scoped expense roll-up (TPV vendor detail → Expenses tab). Static,
+    // so it must sit above /{project} or "expenses" is read as a project id.
+    Route::get('/expenses',            [ProjectController::class, 'vendorExpenses']);
+
     // Milestone update/delete are keyed by milestone id (not nested) — declare
     // BEFORE /{project} so "milestones" isn't captured as a project id.
     Route::put('/milestones/{milestone}',    [ProjectMilestoneController::class, 'update']);

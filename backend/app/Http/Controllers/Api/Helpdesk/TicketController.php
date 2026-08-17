@@ -54,7 +54,22 @@ class TicketController extends Controller
     /* ── List ──────────────────────────────────────────────────── */
     public function index(Request $request)
     {
-        $filters = $request->only(['status', 'priority', 'assigned_to', 'customer_id', 'source', 'search']);
+        // vendor_id powers a vendor detail Tickets tab; vendor_type says which
+        // kind of vendor. It resolves to the vendor's projects server-side and
+        // narrows the query the agent could already run — the visibility barrier
+        // and assertInternal are untouched.
+        //
+        // An unrecognised vendor_type is refused rather than silently defaulting,
+        // so a typo cannot return the other module's tickets.
+        $filters = $request->only(['status', 'priority', 'assigned_to', 'customer_id', 'source', 'search', 'vendor_id', 'vendor_type']);
+
+        if (! empty($filters['vendor_type'])) {
+            abort_unless(
+                array_key_exists($filters['vendor_type'], \App\Models\Project\Project::VENDOR_LINK_MAP),
+                422,
+                'Unknown vendor type.',
+            );
+        }
         $tickets = $this->helpdesk->listTickets($request->user()->tenant_id, $filters, $request->user()->id, $request->user()->role, $request->user()->email);
 
         return $this->success($tickets, 'Tickets retrieved');

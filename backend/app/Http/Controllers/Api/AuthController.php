@@ -85,6 +85,9 @@ class AuthController extends Controller
      ───────────────────────────────────────────── */
     public function registerTPV(TPVRegisterRequest $request): JsonResponse
     {
+        // validated() carries the rules above; only() passes the address/identity
+        // fields the form also collects. legal_name/pan_number/address ARE
+        // validated, so they come through validated() and need no entry here.
         $user = $this->authService->registerTPV($request->validated() + $request->only(
             'gst_number', 'city', 'state', 'country', 'zip', 'website'
         ));

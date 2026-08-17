@@ -76,6 +76,11 @@ export default function TPVRegisterPage() {
       required: 'Please confirm your password.',
       validate: (v) => v === getValues('password') || 'Passwords do not match.',
     },
+    // Optional, but checked when filled — the server enforces the same shape, so
+    // a typo is caught here rather than coming back as a 422.
+    pan_number: {
+      pattern: { value: /^[A-Za-z]{5}[0-9]{4}[A-Za-z]$/, message: 'Invalid PAN (AAAAA9999A).' },
+    },
   }
 
   return (
@@ -237,8 +242,17 @@ export default function TPVRegisterPage() {
                 <input {...register('username', RULES.username)} placeholder="@username" className={inputCls} />
               </Field>
 
+              <Field label="Legal Name">
+                <input {...register('legal_name')} placeholder="Registered company name" className={inputCls} />
+              </Field>
+
               <Field label="GST No">
                 <input {...register('gst_number')} placeholder="GST number" className={inputCls} />
+              </Field>
+
+              <Field label="PAN Number" error={errors.pan_number}>
+                <input {...register('pan_number', RULES.pan_number)} placeholder="AAAAA9999A"
+                  className={inputCls} style={{ textTransform: 'uppercase' }} />
               </Field>
 
               <Field label="Phone">
@@ -267,6 +281,13 @@ export default function TPVRegisterPage() {
               <Field label="State">
                 <input {...register('state')} placeholder="State / Province" className={inputCls} />
               </Field>
+
+              {/* Spans the grid — a street address does not fit a half-width cell. */}
+              <div className="sm:col-span-2">
+                <Field label="Registered Address">
+                  <input {...register('address')} placeholder="Building, street, area" className={inputCls} />
+                </Field>
+              </div>
             </div>
           </div>
 

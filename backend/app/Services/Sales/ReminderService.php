@@ -75,6 +75,50 @@ class ReminderService
         return $reminder->load(['assignee:id,name', 'creator:id,name']);
     }
 
+    /**
+     * The same reminder engine, addressed by MODEL CLASS instead of a short key.
+     *
+     * The key path above resolves through SalesActivityService::SUBJECT_MAP, which
+     * is also what /api/sales/reminders validates against. That route carries no
+     * role gate, so adding a subject to the map would expose it to every
+     * authenticated login — including a vendor portal one. Modules outside Sales
+     * therefore attach here, behind their own gate, and the shared allowlist stays
+     * exactly as wide as it is today.
+     *
+     * Everything after the subject is identical: same table, same sanitising, same
+     * complete/update/delete methods, one reminder engine.
+     */
+    public function createForSubject(string $subjectClass, int $subjectId, array $data, int $tenantId, int $userId): Reminder
+    {
+        unset($data['remindable_type'], $data['remindable_id']);
+        $data = HtmlSanitizer::cleanFields($data, ['notes']);
+
+        $reminder = Reminder::create([
+            ...$data,
+            'remindable_type' => $subjectClass,
+            'remindable_id'   => $subjectId,
+            'tenant_id'       => $tenantId,
+            'created_by'      => $userId,
+        ]);
+
+        Log::channel('sales')->info('Reminder created', [
+            'reminder_id' => $reminder->id, 'tenant_id' => $tenantId, 'subject' => $subjectClass,
+        ]);
+
+        return $reminder->load(['assignee:id,name', 'creator:id,name']);
+    }
+
+    /** Pending-first listing for one subject, addressed by model class. */
+    public function listForSubject(string $subjectClass, int $subjectId, int $tenantId)
+    {
+        return Reminder::forTenant($tenantId)
+            ->forSubject($subjectClass, $subjectId)
+            ->with(['assignee:id,name', 'creator:id,name'])
+            ->orderByRaw('completed_at IS NOT NULL')   // open ones first
+            ->orderBy('due_at')
+            ->get();
+    }
+
     public function update(Reminder $reminder, array $data, int $tenantId): Reminder
     {
         $this->assertTenant($reminder, $tenantId);

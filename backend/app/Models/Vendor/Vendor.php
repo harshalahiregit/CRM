@@ -22,7 +22,9 @@ class Vendor extends Model
     protected $table = 'vendors';
 
     protected $fillable = [
-        'tenant_id','user_id','account_manager_id','vendor_code','company_name','legal_name',
+        // purchase_vendor_id is the OPTIONAL link to this company's Purchase
+        // record, set by an explicit admin action — see linkPurchaseVendor().
+        'tenant_id','user_id','purchase_vendor_id','account_manager_id','vendor_code','company_name','legal_name',
         'vendor_type','registration_type','engagements','email','phone','website','category',
         'registration_number','gst_number','pan_number',
         'address','city','state','country','pincode',
@@ -106,6 +108,18 @@ class Vendor extends Model
     public function user()
     {
         return $this->belongsTo(User::class, 'user_id');
+    }
+
+    /**
+     * This company's Purchase record, when it is registered in both modules.
+     *
+     * Null for the ordinary case of a vendor that is only TPV. Commercial
+     * documents live entirely on the Purchase side and are read through this
+     * link — nothing is copied across.
+     */
+    public function purchaseVendor()
+    {
+        return $this->belongsTo(\App\Models\Purchase\PurchaseVendor::class, 'purchase_vendor_id');
     }
 
     /** Internal staff who owns this vendor account. */

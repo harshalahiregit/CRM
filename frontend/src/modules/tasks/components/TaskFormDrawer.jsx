@@ -4,7 +4,7 @@ import ReactQuill from 'react-quill'
 import 'react-quill/dist/quill.snow.css'
 import { RICH_MODULES, RICH_FORMATS } from '@/lib/quillConfig'
 import {
-  X, Check, CheckCircle2, Link2, IndianRupee, Paperclip, ChevronDown, Flag, ListPlus, Plus,
+  X, Check, CheckCircle2, Link2, IndianRupee, Paperclip, ChevronDown, Flag, ListPlus, Plus, Lock,
 } from 'lucide-react'
 import { tpvApi } from '@/services/tpvApi'
 import { purchaseApi } from '@/services/purchaseApi'
@@ -80,7 +80,19 @@ const presetFromTask = (t) => {
   return map[`${t.repeat_every}:${t.recurring_type}`] || 'custom'
 }
 
-export default function TaskFormDrawer({ open, onClose, task = null, defaults = {}, onSaved }) {
+/**
+ * @param defaults    Pre-filled fields for a NEW task (merged over EMPTY).
+ * @param lockRel     Freeze "Related To" and its target. Set when another screen
+ *                    raises a task already scoped to itself — the TPV vendor
+ *                    detail opens this with that vendor filled in, so it is never
+ *                    re-picked (and never mis-picked). Mirrors ProjectFormDrawer's
+ *                    `preset` + locked party. Ignored while editing: an existing
+ *                    task must never hide what it is linked to.
+ * @param lockRelLabel Display name for the frozen target.
+ */
+export default function TaskFormDrawer({
+  open, onClose, task = null, defaults = {}, onSaved, lockRel = false, lockRelLabel = '',
+}) {
   const qc = useQueryClient()
   const editing = Boolean(task)
   const [form, setForm] = useState(EMPTY)
@@ -280,6 +292,8 @@ export default function TaskFormDrawer({ open, onClose, task = null, defaults = 
   if (!open) return null
   const busy = save.isPending
   const isProject = form.rel_type === 'project'
+  // Only for NEW tasks — editing must always show what the task is linked to.
+  const relLocked = !editing && lockRel && form.rel_type !== 'standalone'
   // When the workspace requires a milestone, block submit until one is chosen for
   // a project task — the same rule the server enforces, surfaced before the round-trip.
   const missingMilestone = requireMilestone && isProject && !!form.rel_id && !form.milestone_id
@@ -399,11 +413,29 @@ export default function TaskFormDrawer({ open, onClose, task = null, defaults = 
           )}
 
           <Field label="Related To">
-            <Select value={form.rel_type} onChange={v => setForm(p => ({ ...p, rel_type: v, rel_id: '', milestone_id: '' }))} options={REL_TYPES} />
+            {relLocked ? (
+              // Frozen: the screen that opened this drawer already decided what the
+              // task belongs to. Shown, not hidden, so the link is never a surprise.
+              <div className="flex items-center gap-2 rounded-xl"
+                style={{ ...INPUT_S, padding: '9px 12px', fontSize: 13, opacity: 0.85 }}>
+                <Lock size={12} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                <span className="truncate" style={{ color: 'var(--text-h)' }}>
+                  {lockRelLabel || relName || 'Selected record'}
+                </span>
+                <span className="ml-auto text-[10px] font-bold" style={{ color: 'var(--text-muted)' }}>
+                  {REL_TYPE_LABEL[form.rel_type] || form.rel_type}
+                </span>
+              </div>
+            ) : (
+              <Select value={form.rel_type} onChange={v => setForm(p => ({ ...p, rel_type: v, rel_id: '', milestone_id: '' }))} options={REL_TYPES} />
+            )}
           </Field>
 
-          {form.rel_type !== 'standalone' && (
+          {/* The target picker disappears when the link is frozen, but a locked
+              PROJECT task still needs its milestone, so the row survives for that. */}
+          {form.rel_type !== 'standalone' && (! relLocked || isProject) && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {! relLocked && (
               <Field label={REL_TYPE_LABEL[form.rel_type] || form.rel_type}>
                 <button type="button" onClick={() => setPicker('rel')} className="w-full flex items-center gap-2 rounded-xl text-left" style={{ ...INPUT_S }}>
                   <Link2 size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
@@ -412,6 +444,7 @@ export default function TaskFormDrawer({ open, onClose, task = null, defaults = 
                   </span>
                 </button>
               </Field>
+              )}
               {isProject && (
                 <Field label="Milestone" required={requireMilestone}>
                   <Select value={form.milestone_id ? String(form.milestone_id) : ''} onChange={v => sf('milestone_id', v ? Number(v) : '')}

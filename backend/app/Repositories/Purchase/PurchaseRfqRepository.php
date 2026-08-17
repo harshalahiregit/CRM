@@ -27,6 +27,16 @@ class PurchaseRfqRepository extends BaseRepository
                 ->orWhere('rfq_number', 'like', "%{$s}%")
                 ->orWhere('department', 'like', "%{$s}%"));
         }
+        // RFQs one vendor was invited to. The link is the recipient list, not a
+        // column on the RFQ — an RFQ goes to several vendors at once — so this
+        // filters through that relation. Additive: omit it and the list is
+        // tenant-wide exactly as before.
+        if (! empty($filters['purchase_vendor_id'])) {
+            $query->whereHas(
+                'rfqVendors',
+                fn ($q) => $q->where('purchase_vendor_id', (int) $filters['purchase_vendor_id'])
+            );
+        }
 
         return $query->latest()->get();
     }

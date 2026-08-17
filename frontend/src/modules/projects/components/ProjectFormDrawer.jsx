@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useDiscardGuard } from '@/lib/confirmClose'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { X, Check, Building2, IndianRupee, SlidersHorizontal, LayoutGrid, ShieldCheck } from 'lucide-react'
+import { X, Check, Building2, IndianRupee, SlidersHorizontal, LayoutGrid, ShieldCheck, Lock } from 'lucide-react'
 import { projectApi, PROJECT_STATUS, BILLING_TYPES, PROJECT_ACCENT } from '@/services/projectApi'
 import { refreshMasterData } from '@/modules/hr/useMasterData'
 import { tagApi } from '@/services/tagApi'
@@ -33,6 +33,39 @@ const LINK_TYPES = [
   { key: 'tpv_vendor',      label: 'TPV Vendor' },
 ]
 
+/**
+ * The pre-record link types, and what they became.
+ *
+ * A row written before the record-backed cleanup stored a portal USER in
+ * vendor_user_id and left vendor_id empty. Such a row can only be remapped when
+ * it ALSO carries a vendor_id — otherwise the new type has nothing to point at,
+ * the picker renders blank, and ProjectService::normalizeLink treats the party as
+ * explicitly cleared on save (it needs a truthy vendor_id to take the
+ * record-backed branch), silently nulling customer_id, vendor_user_id, vendor_id
+ * and link_type. So a legacy row without vendor_id keeps its legacy type, which
+ * normalizeLink still round-trips correctly via vendor_user_id.
+ */
+const LEGACY_TO_RECORD = { vendor: 'purchase_vendor', tpv: 'tpv_vendor' }
+
+/** Shown in the picker only while editing a row that still carries one. */
+const LEGACY_LABELS = {
+  vendor: 'Vendor (legacy portal login)',
+  tpv:    'TPV Vendor (legacy portal login)',
+}
+
+/**
+ * Which link type the form should show for a saved project.
+ *
+ * Remaps a legacy spelling ONLY when the row carries the vendor_id the modern
+ * type needs. Everything else is left exactly as stored.
+ */
+export function resolveLinkType(project) {
+  const modern = LEGACY_TO_RECORD[project.link_type]
+  if (modern) return project.vendor_id ? modern : project.link_type
+
+  return project.link_type || (project.vendor_user_id ? 'tpv_vendor' : 'customer')
+}
+
 const EMPTY = {
   name: '', description: '', status: 'not_started',
   link_type: 'customer', customer_id: '', vendor_user_id: '', vendor_id: '',
@@ -50,7 +83,7 @@ const EMPTY = {
   contacts_notification: 'all',
 }
 
-export default function ProjectFormDrawer({ open, onClose, project = null, onSaved }) {
+export default function ProjectFormDrawer({ open, onClose, project = null, onSaved, preset = null, presetLabel = '' }) {
   const qc = useQueryClient()
   const editing = Boolean(project)
   const [tab, setTab] = useState('project')     // 'project' | 'settings'
@@ -71,8 +104,7 @@ export default function ProjectFormDrawer({ open, onClose, project = null, onSav
           ...EMPTY, ...project,
           start_date: project.start_date ? String(project.start_date).split('T')[0] : today(),
           deadline: project.deadline ? String(project.deadline).split('T')[0] : '',
-          link_type: ({ vendor: 'purchase_vendor', tpv: 'tpv_vendor' }[project.link_type] || project.link_type)
-            || (project.vendor_user_id ? 'tpv_vendor' : 'customer'),
+          link_type: resolveLinkType(project),
           customer_id: project.customer_id ?? '',
           vendor_user_id: project.vendor_user_id ?? '',
           vendor_id: project.vendor_id ?? '',
@@ -89,12 +121,19 @@ export default function ProjectFormDrawer({ open, onClose, project = null, onSav
           send_created_email: !!project.send_created_email,
           contacts_notification: project.contacts_notification || 'all',
         }
-      : EMPTY
+      // `preset` lets another screen raise a project already assigned to its own
+      // party — the TPV vendor detail opens this drawer with that vendor filled
+      // in and locked, so the vendor is never re-picked (and never mis-picked).
+      : { ...EMPTY, ...preset }
     setForm(init)
     snapshotRef.current = JSON.stringify(init)
-  }, [open, project, editing]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, project, editing, preset]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const sf = (k, v) => setForm(p => ({ ...p, [k]: v }))
+  // Locked only when a preset actually names a party, and only for NEW projects
+  // — editing an existing one must never hide which company it belongs to.
+  const partyLocked = !editing && !!preset?.vendor_id
+
   const { guard, dialog } = useDiscardGuard()
   const requestClose = () => guard(onClose, snapshotRef.current && JSON.stringify(form) !== snapshotRef.current)
 
@@ -141,8 +180,24 @@ export default function ProjectFormDrawer({ open, onClose, project = null, onSav
       || `#${partyId}`
   }, [partyId, party.list, project])
 
-  // Switching link type clears the other party's id so only one is ever set.
-  const setLinkType = (t) => setForm(p => ({ ...p, link_type: t, customer_id: '', vendor_user_id: '' }))
+  /**
+   * Switching link type clears EVERY party id, so only one is ever set.
+   *
+   * vendor_id has to be cleared as well as customer_id/vendor_user_id: both
+   * vendor types write vendor_id, and the same integer is a different company
+   * under each. Leaving it behind carried a Purchase Vendor's id onto a TPV
+   * selection, which resolves to a real but WRONG vendor and passes the server's
+   * existence check.
+   *
+   * Re-selecting the current type is a no-op rather than a reset — the select
+   * fires on every choice, and wiping a party the user just picked would look
+   * like the form losing data.
+   */
+  const setLinkType = (t) => setForm(p => (
+    p.link_type === t
+      ? p
+      : { ...p, link_type: t, customer_id: '', vendor_user_id: '', vendor_id: '' }
+  ))
 
   const toggleTab = (key) => setForm(p => ({ ...p, visible_tabs: { ...effectiveTabs, [key]: !effectiveTabs[key] } }))
   // Each party (customer / vendor / TPV) has its own portal-permission bag, edited
@@ -177,7 +232,12 @@ export default function ProjectFormDrawer({ open, onClose, project = null, onSav
     if (p.progress_from_tasks) delete p.progress
     // Persist the resolved tab bag (so a never-touched new project still saves its defaults).
     p.visible_tabs = effectiveTabs
-    ;['customer_id', 'vendor_user_id', 'deadline', 'project_cost', 'rate_per_hour', 'estimated_hours'].forEach(k => {
+    // An EMPTY party id is never sent. normalizeLink derives the other ids from
+    // link_type anyway, so omitting them changes nothing for a normal save — but
+    // it stops an untouched legacy row (link_type 'vendor'/'tpv', vendor_user_id
+    // set, vendor_id empty) from being read as "party explicitly cleared" and
+    // having its link nulled by a save the user made for an unrelated field.
+    ;['customer_id', 'vendor_user_id', 'vendor_id', 'deadline', 'project_cost', 'rate_per_hour', 'estimated_hours'].forEach(k => {
       if (p[k] === '' || p[k] === null) delete p[k]
     })
     delete p.members; delete p.milestones; delete p.customer; delete p.vendor; delete p.creator
@@ -241,31 +301,61 @@ export default function ProjectFormDrawer({ open, onClose, project = null, onSav
 
           <Field label="This project is for">
             {/* Party type — a project can be raised for a customer, a vendor, or
-                a third-party vendor. The chosen party sees it on their dashboard. */}
-            <div className="flex items-center gap-1 mb-2">
-              {LINK_TYPES.map(lt => {
-                const on = form.link_type === lt.key
-                return (
-                  <button type="button" key={lt.key} onClick={() => setLinkType(lt.key)}
-                    className="flex-1 px-2 py-1.5 rounded-lg text-[11px] font-bold transition-colors"
-                    style={{
-                      background: on ? `color-mix(in srgb, ${PROJECT_ACCENT} 13%, transparent)` : 'var(--bg-input)',
-                      color: on ? PROJECT_ACCENT : 'var(--text-muted)',
-                      border: `1px solid ${on ? PROJECT_ACCENT : 'var(--border)'}`,
-                    }}>
-                    {lt.label}
-                  </button>
-                )
-              })}
-            </div>
-            <button type="button" onClick={() => setPicker('party')}
-              className="w-full flex items-center gap-2 rounded-xl text-left"
-              style={{ ...INPUT_S, padding: '9px 12px', fontSize: 13 }}>
-              <Building2 size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-              <span className="truncate" style={{ color: partyName ? 'var(--text-h)' : 'var(--text-muted)' }}>
-                {partyName || party.placeholder}
-              </span>
-            </button>
+                a third-party vendor. The chosen party sees it on their dashboard.
+                When the drawer was opened FROM a party's own screen the choice is
+                already made, so it is shown rather than offered: re-picking it
+                could only ever file the project against the wrong company. */}
+            {partyLocked ? (
+              <div className="flex items-center gap-2 rounded-xl"
+                style={{ ...INPUT_S, padding: '9px 12px', fontSize: 13, opacity: 0.85 }}>
+                <Lock size={12} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                <span className="truncate" style={{ color: 'var(--text-h)' }}>
+                  {presetLabel || partyName || 'Selected party'}
+                </span>
+                <span className="ml-auto text-[10px] font-bold" style={{ color: 'var(--text-muted)' }}>
+                  {LINK_TYPES.find(l => l.key === form.link_type)?.label}
+                </span>
+              </div>
+            ) : (
+              <>
+                {/* A legacy row keeps its stored type, so none of the three
+                    buttons is selected. Say why, rather than leaving what looks
+                    like an empty control — and make clear the link is intact
+                    until the user deliberately re-picks. */}
+                {LEGACY_LABELS[form.link_type] && (
+                  <div className="mb-2 rounded-lg px-3 py-2 text-[11.5px]"
+                    style={{ background: 'color-mix(in srgb, #f59e0b 10%, transparent)', border: '1px solid color-mix(in srgb, #f59e0b 35%, transparent)', color: 'var(--text-h)' }}>
+                    Linked to a <strong>{LEGACY_LABELS[form.link_type]}</strong>. This predates
+                    record-backed vendors, so it cannot be shown in the pickers below —
+                    it stays as it is unless you choose a new party.
+                  </div>
+                )}
+                <div className="flex items-center gap-1 mb-2">
+                  {LINK_TYPES.map(lt => {
+                    const on = form.link_type === lt.key
+                    return (
+                      <button type="button" key={lt.key} onClick={() => setLinkType(lt.key)}
+                        className="flex-1 px-2 py-1.5 rounded-lg text-[11px] font-bold transition-colors"
+                        style={{
+                          background: on ? `color-mix(in srgb, ${PROJECT_ACCENT} 13%, transparent)` : 'var(--bg-input)',
+                          color: on ? PROJECT_ACCENT : 'var(--text-muted)',
+                          border: `1px solid ${on ? PROJECT_ACCENT : 'var(--border)'}`,
+                        }}>
+                        {lt.label}
+                      </button>
+                    )
+                  })}
+                </div>
+                <button type="button" onClick={() => setPicker('party')}
+                  className="w-full flex items-center gap-2 rounded-xl text-left"
+                  style={{ ...INPUT_S, padding: '9px 12px', fontSize: 13 }}>
+                  <Building2 size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                  <span className="truncate" style={{ color: partyName ? 'var(--text-h)' : 'var(--text-muted)' }}>
+                    {partyName || party.placeholder}
+                  </span>
+                </button>
+              </>
+            )}
           </Field>
 
           <Field label="Description">

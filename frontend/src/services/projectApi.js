@@ -12,6 +12,13 @@ export const projectApi = {
   meta: () => api.get('/projects/meta').then(unwrap).catch(handleErr),
   list: (params = {}) => api.get('/projects', { params }).then(unwrap).catch(handleErr),
   get: (id) => api.get(`/projects/${id}`).then(unwrap).catch(handleErr),
+  // Project expenses for one vendor, across every project it is linked to.
+  // The vendor is resolved to projects server-side — this never sends project ids.
+  // vendorType names the party type ('tpv_vendor' | 'purchase_vendor'); the same
+  // integer is a different company under each, so it is always sent.
+  vendorExpenses: (vendorId, vendorType = 'tpv_vendor') =>
+    api.get('/projects/expenses', { params: { vendor_id: vendorId, vendor_type: vendorType } })
+      .then(unwrap).catch(handleErr),
   create: (data) => api.post('/projects', data).then(unwrap).catch(handleErr),
   update: (id, data) => api.put(`/projects/${id}`, data).then(unwrap).catch(handleErr),
   remove: (id) => api.delete(`/projects/${id}`).then(unwrap).catch(handleErr),
