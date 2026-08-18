@@ -92,6 +92,12 @@ class Vendor extends Model
         return $this->hasMany(VendorDocument::class, 'vendor_id');
     }
 
+    /** Customers directly linked to this vendor (clients.vendor_id). */
+    public function customers()
+    {
+        return $this->hasMany(\App\Models\Customer\Client::class, 'vendor_id');
+    }
+
     /** The TPV onboarding workflow over this vendor, if engaged for TPV. */
     public function tpvOnboarding()
     {

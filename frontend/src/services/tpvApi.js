@@ -174,6 +174,13 @@ export const tpvApi = {
     listPaged: (params = {}) => api.get('/vendors', { params: { engagement: 'tpv', per_page: 25, ...params } }).then(r => r.data),
     get:       (id)          => api.get(`/vendors/${id}`).then(r => r.data),
     tasks:     (id)          => api.get(`/tpv/vendors/${id}/tasks`).then(r => r.data),
+    // Workspace Overview dashboard — live per-vendor counts + status.
+    overview:  (id)          => api.get(`/tpv/vendors/${id}/overview`).then(r => r.data),
+    // Customers directly linked to this vendor (clients.vendor_id).
+    customers: {
+      list:   (vid)       => api.get(`/tpv/vendors/${vid}/customers`).then(r => r.data),
+      create: (vid, data) => api.post(`/tpv/vendors/${vid}/customers`, data).then(r => r.data),
+    },
     // Follow-ups and notes on the shared polymorphic reminders/notes tables.
     // Under /tpv/* (role:admin,staff) rather than /sales/reminders, which has no
     // role gate — see VendorController.

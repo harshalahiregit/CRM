@@ -426,14 +426,20 @@ class TpvOnboardingService
         // Activating the vendor IS the approval — everything downstream keys off
         // vendor.status, not the onboarding's. The portal reveals "My Workforce"
         // on Active, TpvWorkerService::blockers() refuses a site badge while the
-        // vendor is anything else, and GateScanService turns them away at the
-        // gate. Without this the vendor stayed Inactive after approval and staff
-        // had to flip the status by hand for any of it to work.
-        // Mirrors PurchaseOnboardingService::approve().
-        $onboarding->vendor->update([
-            'registration_number' => $registrationNumber,
-            'status'              => VendorStatus::ACTIVE,
-        ]);
+        // vendor is anything else, and GateScanService turns them away at the gate.
+        //
+        // Route the activation through VendorService::updateStatus so the FULL
+        // activation fires — not just a status flag: it activates the portal login
+        // (mirrors user.status + starts the temporary access window via
+        // TpvAccessService) and sends the logged, once-only activation email via
+        // TpvActivationNotifier. A bare $vendor->update(['status'=>Active]) here
+        // skipped all of that, leaving the login unprovisioned and no real email.
+        $vendor = $onboarding->vendor;
+        if ($vendor) {
+            $vendor->update(['registration_number' => $registrationNumber]);
+            app(\App\Services\Vendor\VendorService::class)
+                ->updateStatus($vendor, VendorStatus::ACTIVE, $actor, $remarks);
+        }
 
         $onboarding->recordAudit('Onboarding Approved', $actor, $remarks, [
             'to' => Status::APPROVED, 'registration_number' => $registrationNumber,
@@ -444,7 +450,9 @@ class TpvOnboardingService
             'actor_id' => $actor->id, 'registration_number' => $registrationNumber,
         ]);
 
-        $this->dispatchStatusNotification($onboarding, Status::APPROVED, $remarks);
+        // Activation email is sent by VendorService (TpvActivationNotifier), so we
+        // deliberately do NOT dispatch the onboarding "approved" mail here — that
+        // would double-send.
 
         return $onboarding;
     }
@@ -453,6 +461,10 @@ class TpvOnboardingService
     public function reject(TpvOnboarding $onboarding, User $actor, string $remarks): TpvOnboarding
     {
         $onboarding->update(['status' => Status::REJECTED, 'remarks' => $remarks]);
+        // Reflect the rejection on the vendor account too, so the portal dashboard
+        // and vendor status show Rejected (the login stays reachable so the vendor
+        // can read the reason). The vendor is not Active, so no workforce access.
+        $onboarding->vendor?->update(['status' => VendorStatus::REJECTED]);
         $onboarding->recordAudit('Onboarding Rejected', $actor, $remarks, ['to' => Status::REJECTED]);
 
         Log::channel('tpv')->info('TPV onboarding rejected', [
@@ -468,6 +480,9 @@ class TpvOnboardingService
     public function hold(TpvOnboarding $onboarding, User $actor, string $reason): TpvOnboarding
     {
         $onboarding->update(['status' => Status::ON_HOLD, 'hold_reason' => $reason, 'remarks' => $reason]);
+        // Put the vendor account on hold too — not Active, so workforce/gate access
+        // is withheld until the hold is released, while the login stays reachable.
+        $onboarding->vendor?->update(['status' => VendorStatus::ON_HOLD]);
         $onboarding->recordAudit('Onboarding On Hold', $actor, $reason, ['to' => Status::ON_HOLD]);
 
         Log::channel('tpv')->info('TPV onboarding put on hold', [
@@ -487,6 +502,11 @@ class TpvOnboardingService
         }
 
         $onboarding->update(['status' => Status::UNDER_REVIEW, 'hold_reason' => null]);
+        // Lift the account hold back to a reviewable (non-active) state so the
+        // onboarding decision can be taken again.
+        if ($onboarding->vendor && $onboarding->vendor->status === VendorStatus::ON_HOLD) {
+            $onboarding->vendor->update(['status' => VendorStatus::PENDING_APPROVAL]);
+        }
         $onboarding->recordAudit('Onboarding Released', $actor, null, ['to' => Status::UNDER_REVIEW]);
 
         Log::channel('tpv')->info('TPV onboarding released from hold', [

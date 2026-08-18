@@ -4,6 +4,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft, Building2, User, Phone, Loader2, ShieldCheck, CheckCircle, XCircle, PauseCircle, CornerUpLeft, Clock, AlertTriangle,
   Briefcase, IndianRupee, ClipboardCheck, BarChart3, ChevronDown, ChevronRight, Mail, HardHat, Ban,
+  Users, FileText, Paperclip, StickyNote,
 } from 'lucide-react'
 
 const NOTIF_COLORS = { sent: '#10b981', failed: '#ef4444', skipped: '#94a3b8', queued: '#0ea5e9' }
@@ -258,9 +259,16 @@ export default function TpvVendorDetail() {
           </div>
         </div>
 
-        {/* The Onboarding Decision toolbar used to sit here. It now lives with
-            the documents it is a judgement about — Compliance → Documents. */}
       </div>
+
+      {/* Onboarding Decision — prominent, directly under the header. Only for
+          admins/staff, and only once the vendor has an onboarding to decide on. */}
+      {manage && activeOnboarding && (
+        <OnboardingDecisionPanel
+          vendor={v} onboarding={activeOnboarding} api={cfg.api}
+          onDecision={kind => { setDecisionModal(kind); setRemarks('') }}
+        />
+      )}
 
       {/* Two-pane: left section nav + right content */}
       <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
@@ -375,20 +383,9 @@ export default function TpvVendorDetail() {
 function SectionContent({ tab, v, isActive, manage, api, moduleName, onDecision, onReload }) {
   switch (tab) {
     case 'Overview':
-      return (
-        <Card icon={ShieldCheck} title="Overview">
-          <Grid rows={[
-            ['Company', v.company_name],
-            ['Vendor Code', v.vendor_code],
-            ['Status', isActive ? 'Active' : 'Inactive'],
-            ['Type', v.vendor_type],
-            ['Portal Login', v.user?.name || '—'],
-            ['Login Status', v.user?.status || '—'],
-            ['Engagements', (v.engagements || []).join(', ') || '—'],
-            ['Created', v.created_at ? new Date(v.created_at).toLocaleDateString() : '—'],
-          ]} />
-        </Card>
-      )
+      return <VendorOverview vendor={v} api={api} isActive={isActive} />
+    case 'Customer':
+      return <VendorCustomers vendorId={v.id} vendorName={v.company_name} manage={manage} api={api} />
     case 'Profile':
       // Editable for admin/staff (canManage). A vendor never reaches this screen,
       // and PUT /vendors/{id} is role:admin,staff + assertTenant() regardless —
@@ -404,14 +401,9 @@ function SectionContent({ tab, v, isActive, manage, api, moduleName, onDecision,
       return <VendorTasks v={v} manage={manage} />
     case 'Documents':
       // Read-only: the vendor uploads through the portal during onboarding.
-      // Admin reviews (approve/reject) and views/downloads — never uploads.
-      // The onboarding decision sits directly above what it is a judgement about.
-      return (
-        <>
-          {manage && onDecision && <OnboardingDecisionBar onDecision={onDecision} />}
-          <TpvVendorDocuments vendorId={v.id} vendor={v} manage={false} api={api} moduleName={moduleName} />
-        </>
-      )
+      // Admin reviews (approve/reject) and views/downloads — never uploads. The
+      // onboarding decision now lives in the prominent panel under the header.
+      return <TpvVendorDocuments vendorId={v.id} vendor={v} manage={false} api={api} moduleName={moduleName} />
     // ── Backed by data the TPV module already holds ────────────────────
     // Each reads an EXISTING admin endpoint scoped to this vendor; none of them
     // introduces a TPV-vendor-specific API or a second copy of the data.
@@ -435,10 +427,6 @@ function SectionContent({ tab, v, isActive, manage, api, moduleName, onDecision,
       return <VendorTickets vendorId={v.id} vendorName={v.company_name} manage={manage} />
     case 'Expenses':
       return <VendorExpenses vendorId={v.id} manage={manage} />
-    // No customer is linked to a vendor anywhere; the pair meet on a PROJECT
-    // (projects.vendor_id + projects.customer_id), so this reads that hop.
-    case 'Customer':
-      return <VendorCustomers vendorId={v.id} />
     // Both ride SHARED polymorphic tables — `reminders` (remindable_*) and
     // `notes` (notable_*) — so neither introduces a vendor-specific store.
     // Commercial — all seven read the Purchase module through the optional
@@ -515,27 +503,160 @@ function VendorTasks({ v, manage }) {
  * to the vendor name invited approving an onboarding without having opened
  * what was submitted. Same actions, same handler — only the placement moved.
  */
-function OnboardingDecisionBar({ onDecision }) {
+/**
+ * Overview tab — a live per-vendor dashboard: profile summary + count cards
+ * (customers, contacts, workers, documents, attachments, notes) fetched from
+ * GET /tpv/vendors/{id}/overview, so the numbers always match the other tabs.
+ */
+function VendorOverview({ vendor, api, isActive }) {
+  const [data, setData] = useState(null)
+  const [err, setErr] = useState('')
+
+  useEffect(() => {
+    let alive = true
+    api.vendors.overview(vendor.id)
+      .then(d => { if (alive) setData(d) })
+      .catch(e => { if (alive) setErr(e?.response?.data?.message || 'Could not load the overview.') })
+    return () => { alive = false }
+  }, [vendor.id, api])
+
+  const c = data?.counts || {}
+  const cards = [
+    { label: 'Customers', value: c.customers, icon: Users },
+    { label: 'Contacts', value: c.contacts, icon: User },
+    { label: 'Workers', value: c.workers, icon: HardHat },
+    { label: 'Documents', value: c.documents, icon: FileText },
+    { label: 'Attachments', value: c.attachments, icon: Paperclip },
+    { label: 'Notes', value: c.notes, icon: StickyNote },
+  ]
+
   return (
-    <div style={{ marginBottom: 16, padding: '13px 16px', borderRadius: 12, background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-      <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-muted)', margin: '0 0 9px' }}>
-        Onboarding Decision
-      </p>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-        <button onClick={() => onDecision('approve')}
-          style={{ padding: '8px 14px', borderRadius: 9, background: '#0ca30c', color: '#fff', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <ShieldCheck size={14} /> Approve Onboarding
-        </button>
-        <button onClick={() => onDecision('hold')} style={ghostBtn}>
-          <PauseCircle size={14} /> Put On Hold
-        </button>
-        <button onClick={() => onDecision('reject')}
-          style={{ ...ghostBtn, color: '#d03b3b', borderColor: 'color-mix(in srgb, #d03b3b 32%, transparent)' }}>
-          <XCircle size={14} /> Reject
-        </button>
-        <button onClick={() => onDecision('resubmit')} style={ghostBtn}>
-          <CornerUpLeft size={14} /> Send Back
-        </button>
+    <div style={{ display: 'grid', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12 }}>
+        {cards.map(card => (
+          <div key={card.label} className="pr-glass" style={{ borderRadius: 14, padding: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)' }}>{card.label}</span>
+              <card.icon size={16} style={{ color: '#a78bfa' }} />
+            </div>
+            <div style={{ fontSize: 26, fontWeight: 800, color: 'var(--text-h)', marginTop: 6 }}>
+              {data ? (card.value ?? 0) : '—'}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {err && <p style={{ color: '#ef4444', fontSize: 12.5, margin: 0 }}>{err}</p>}
+
+      <Card icon={ShieldCheck} title="Vendor Summary">
+        <Grid rows={[
+          ['Company', vendor.company_name],
+          ['Vendor Code', vendor.vendor_code],
+          ['Account Status', isActive ? 'Active' : (vendor.status_label || vendor.status || 'Inactive')],
+          ['Type', vendor.vendor_type],
+          ['Portal Login', vendor.user?.name || '—'],
+          ['Login Status', vendor.user?.status || '—'],
+          ['Engagements', (vendor.engagements || []).join(', ') || '—'],
+          ['Created', vendor.created_at ? new Date(vendor.created_at).toLocaleDateString() : '—'],
+        ]} />
+      </Card>
+    </div>
+  )
+}
+
+/**
+ * Prominent Onboarding Decision panel — sits directly under the header once the
+ * vendor has an onboarding. Shows the vendor identity + current onboarding step /
+ * status / account status, and the Approve / Hold / Reject / Send-Back actions.
+ *
+ * Approve is gated: it enables only when the vendor has actually completed Steps
+ * 1–5 (onboarding Submitted / Under Review = "Waiting for Admin Approval") AND all
+ * required documents are uploaded, approved, and none are still rejected — the
+ * same completeness the Documents checklist reports. When blocked it stays visible
+ * but disabled, listing exactly what is missing, so an incomplete onboarding can
+ * never be approved by accident.
+ */
+function OnboardingDecisionPanel({ vendor, onboarding, api, onDecision }) {
+  const [docs, setDocs] = useState(null)
+  const status = onboarding?.status || 'Draft'
+  const step = onboarding?.current_step || 1
+  const obc = obStatusCfg(status)
+  const approved = status === 'Approved'
+  const accountActive = vendor.status === 'Active'
+
+  useEffect(() => {
+    let alive = true
+    api.documents.checklist(vendor.id).then(d => { if (alive) setDocs(d) }).catch(() => {})
+    return () => { alive = false }
+  }, [vendor.id, api])
+
+  const decidable = ['Submitted', 'Under_Review'].includes(status)
+  const rejectedDocs = docs?.summary?.rejected ?? 0
+  const docsComplete = docs?.complete ?? false
+  const canApprove = decidable && docsComplete && rejectedDocs === 0
+
+  const reasons = []
+  if (!decidable) reasons.push('Vendor must complete Steps 1–5 and submit (Waiting for Admin Approval)')
+  if (docs && !docsComplete) reasons.push('All required documents must be uploaded and approved')
+  if (rejectedDocs > 0) reasons.push(`${rejectedDocs} document(s) still rejected — must be corrected & re-approved`)
+
+  const tint = approved ? '#0ca30c' : status === 'Rejected' ? '#d03b3b' : status === 'On_Hold' ? '#b45309' : '#7C3AED'
+
+  return (
+    <div style={{
+      marginBottom: 18, borderRadius: 16, overflow: 'hidden',
+      background: 'var(--bg-card)', border: `1px solid color-mix(in srgb, ${tint} 40%, var(--border))`,
+      boxShadow: `0 1px 0 color-mix(in srgb, ${tint} 20%, transparent)`,
+    }}>
+      <div style={{ padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', borderBottom: '1px solid var(--border)', background: `color-mix(in srgb, ${tint} 6%, transparent)` }}>
+        <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-h)', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+          <ShieldCheck size={16} style={{ color: tint }} /> Onboarding Decision
+        </span>
+        <span style={{ flex: 1 }} />
+        <StatusPill label="Step" value={`${step} of 6`} tone="#7C3AED" />
+        <StatusPill label="Onboarding" value={obc.label} tone={obc.color} />
+        <StatusPill label="Account" value={accountActive ? 'Active' : (vendor.status_label || vendor.status)} tone={accountActive ? '#0ca30c' : '#8a94a6'} />
+      </div>
+
+      <div style={{ padding: '16px 18px' }}>
+        <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--text-muted)' }}>
+          <strong style={{ color: 'var(--text-h)' }}>{vendor.company_name || vendor.vendor_code}</strong>
+          {' — '}{approved
+            ? 'onboarding approved and the account is activated (Step 6).'
+            : decidable
+              ? 'has completed all steps and is waiting for your decision.'
+              : 'is still progressing through onboarding.'}
+        </p>
+
+        {approved ? (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 9, padding: '10px 14px', borderRadius: 10, background: 'color-mix(in srgb, #0ca30c 12%, transparent)', border: '1px solid color-mix(in srgb, #0ca30c 30%, transparent)', color: '#0ca30c', fontSize: 12.5, fontWeight: 700 }}>
+            <CheckCircle size={16} /> Step 6 — Account Activated. The vendor can now access the active portal.
+          </div>
+        ) : (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <button onClick={() => canApprove && onDecision('approve')} disabled={!canApprove}
+                title={canApprove ? 'Approve onboarding and activate the account' : 'Complete the requirements below to enable approval'}
+                style={{ padding: '9px 16px', borderRadius: 9, background: canApprove ? '#0ca30c' : 'color-mix(in srgb, #0ca30c 30%, var(--bg-input))', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 700, cursor: canApprove ? 'pointer' : 'not-allowed', opacity: canApprove ? 1 : 0.55, display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                <ShieldCheck size={15} /> Approve Onboarding
+              </button>
+              <button onClick={() => onDecision('hold')} style={{ ...ghostBtn, color: '#b45309', borderColor: 'color-mix(in srgb, #b45309 32%, transparent)' }}>
+                <PauseCircle size={14} /> Put Account On Hold
+              </button>
+              <button onClick={() => onDecision('reject')} style={{ ...ghostBtn, color: '#d03b3b', borderColor: 'color-mix(in srgb, #d03b3b 32%, transparent)' }}>
+                <XCircle size={14} /> Reject Account
+              </button>
+              <button onClick={() => onDecision('resubmit')} style={ghostBtn}>
+                <CornerUpLeft size={14} /> Send Back
+              </button>
+            </div>
+            {!canApprove && reasons.length > 0 && (
+              <ul style={{ margin: '12px 0 0', padding: '10px 14px 10px 30px', borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)', fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.7 }}>
+                {reasons.map((r, i) => <li key={i}>{r}</li>)}
+              </ul>
+            )}
+          </>
+        )}
       </div>
     </div>
   )

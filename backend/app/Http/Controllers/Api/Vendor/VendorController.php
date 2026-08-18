@@ -12,10 +12,15 @@ use App\Models\Purchase\PurchaseInvoice;
 use App\Models\Purchase\PurchaseInvoicePayment;
 use App\Models\Purchase\PurchaseVendor;
 use App\Models\Sales\Reminder;
+use App\Models\Customer\Client;
 use App\Models\Shared\Attachment;
 use App\Models\Shared\AttachmentFolder;
 use App\Models\Shared\Note;
+use App\Models\Tpv\TpvContact;
+use App\Models\Tpv\TpvWorker;
 use App\Models\Vendor\Vendor;
+use App\Models\Vendor\VendorDocument;
+use App\Support\Vendor\VendorStatus;
 use App\Services\Purchase\PurchaseVendorService;
 use App\Services\Sales\ReminderService;
 use App\Services\Shared\AttachmentService;
@@ -477,6 +482,75 @@ class VendorController extends Controller
         return response()->json(
             $this->notes->listForSubject(Vendor::class, $vendor->id, (int) $request->user()->tenant_id)
         );
+    }
+
+    /* ── Overview dashboard ─────────────────────────────────────────────────
+     *
+     * Live per-vendor summary counts for the workspace Overview tab. Each count
+     * matches exactly what its own tab lists, so the numbers never disagree.
+     */
+    public function overview(Request $request, Vendor $vendor)
+    {
+        $this->assertTenant($request, $vendor);
+        $tenantId = (int) $vendor->tenant_id;
+
+        return response()->json([
+            'status'       => $vendor->status,
+            'status_label' => $vendor->status_label,
+            'is_active'    => $vendor->status === VendorStatus::ACTIVE,
+            'vendor_code'  => $vendor->vendor_code,
+            'company_name' => $vendor->company_name,
+            'counts' => [
+                'customers'   => $vendor->customers()->count(),
+                'contacts'    => TpvContact::where('vendor_id', $vendor->id)->count(),
+                'workers'     => TpvWorker::where('vendor_id', $vendor->id)->count(),
+                'notes'       => count($this->notes->listForSubject(Vendor::class, $vendor->id, $tenantId)),
+                'attachments' => Attachment::where('attachable_type', Vendor::class)->where('attachable_id', $vendor->id)->count(),
+                'documents'   => VendorDocument::where('vendor_id', $vendor->id)->count(),
+            ],
+        ]);
+    }
+
+    /* ── Customers directly linked to this vendor (clients.vendor_id) ─────── */
+
+    public function customers(Request $request, Vendor $vendor)
+    {
+        $this->assertTenant($request, $vendor);
+
+        return response()->json(
+            $vendor->customers()
+                ->orderByDesc('id')
+                ->get(['id', 'company', 'phone', 'website', 'gst_number', 'city', 'state', 'country', 'active', 'created_at'])
+        );
+    }
+
+    public function storeCustomer(Request $request, Vendor $vendor)
+    {
+        $this->assertTenant($request, $vendor);
+
+        $data = $request->validate([
+            'company'    => 'required|string|max:191',
+            'phone'      => 'nullable|string|max:40',
+            'website'    => 'nullable|string|max:191',
+            'gst_number' => 'nullable|string|max:40',
+            'address'    => 'nullable|string|max:255',
+            'city'       => 'nullable|string|max:120',
+            'state'      => 'nullable|string|max:120',
+            'country'    => 'nullable|string|max:120',
+        ]);
+
+        // Reuse the Customer module's Client model. Set tenant_id explicitly from
+        // the caller (same as every other vendor-scoped create here) rather than
+        // relying on the BelongsToTenant auto-stamp, so it never depends on ambient
+        // auth() state.
+        $client = Client::create(array_merge($data, [
+            'tenant_id' => (int) $request->user()->tenant_id,
+            'vendor_id' => $vendor->id,
+            'added_by'  => (int) $request->user()->id,
+            'active'    => true,
+        ]));
+
+        return response()->json($client, 201);
     }
 
     public function storeNote(StoreVendorNoteRequest $request, Vendor $vendor)
