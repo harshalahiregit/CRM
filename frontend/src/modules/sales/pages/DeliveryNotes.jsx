@@ -5,6 +5,7 @@ import { useClientOptions } from '@/hooks/useClientOptions'
 import StatusBadge from '../components/StatusBadge'
 import RowMenu from '../components/RowMenu'
 import { useToast } from '@/hooks/useToast'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import ListToolbar from '@/components/ui/ListToolbar'
 import { useListView } from '@/hooks/useListView'
 import { exportSalesList } from '@/services/salesApi'
@@ -43,6 +44,24 @@ export default function DeliveryNotes() {
   const showToast = (msg, type = 'success') =>
     type === 'error' ? toast.error(msg) : type === 'info' ? toast.info(msg) : toast.success(msg)
   const sf = (k, v) => setForm(p => ({ ...p, [k]: v }))
+
+  const [confirmDelete, setConfirmDelete] = useState(null)
+
+  const markDelivered = async (dn) => {
+    try {
+      await salesApi.deliveryNotes.markDelivered(dn.id)
+      showToast(`${dn.number} marked as delivered`)
+      load()
+    } catch (e) { showToast(e.message || 'Could not update the delivery note', 'error') }
+  }
+
+  const doDelete = async () => {
+    try {
+      await salesApi.deliveryNotes.delete(confirmDelete.id)
+      showToast('Delivery note deleted')
+      setConfirmDelete(null); load()
+    } catch (e) { showToast(e.message || 'Could not delete', 'error'); setConfirmDelete(null) }
+  }
 
   const load = () => {
     setLoading(true)
@@ -170,9 +189,13 @@ export default function DeliveryNotes() {
                       <td className="py-3.5 px-4" onClick={e => e.stopPropagation()}>
                         <RowMenu width={188}>
                           {[
-                            { icon: Send, label: 'Send to Customer', action: () => showToast('Delivery note sent!') },
-                            { icon: Check, label: 'Mark as Delivered', action: () => showToast('Marked as Delivered!') },
-                            { icon: Trash2, label: 'Delete', action: () => showToast('Deleted!', 'error'), danger: true },
+                            // "Send to Customer" is gone: there is no send endpoint and no
+                            // delivery-note mailable, so it only ever showed a toast. The other
+                            // two DO have endpoints (markDelivered / delete) that this menu
+                            // never called — Delete in particular reported success and deleted
+                            // nothing.
+                            { icon: Check, label: 'Mark as Delivered', action: () => markDelivered(dn) },
+                            { icon: Trash2, label: 'Delete', action: () => setConfirmDelete(dn), danger: true },
                           ].map(a => (
                             <button key={a.label} onClick={() => a.action()}
                               className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-colors"
@@ -320,6 +343,16 @@ export default function DeliveryNotes() {
           </div>
         </>
       )}
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Delete this delivery note?"
+          message={`${confirmDelete.number} will be permanently removed.`}
+          confirmLabel="Delete" tone="danger"
+          onCancel={() => setConfirmDelete(null)} onConfirm={doDelete}
+        />
+      )}
     </>
+
   )
 }

@@ -37,6 +37,14 @@ export default function EstimateDetail() {
 
   const reload = () => salesApi.estimates.get(id).then(setEstimate)
 
+  const markSent = async () => {
+    try {
+      await salesApi.estimates.send(estimate.id)
+      showToast(`${estimate.reference} marked as sent`)
+      reload()
+    } catch (e) { showToast(e.message || 'Could not update', 'error') }
+  }
+
   useEffect(() => {
     salesApi.estimates.get(id).then(e => { setEstimate(e); setLoading(false) })
   }, [id])
@@ -161,9 +169,12 @@ export default function EstimateDetail() {
                 <CreditCard size={13} /> Record Payment
               </button>
             )}
+            {/* "Send" marks the document sent via PATCH /estimates/{id}/send — that
+                endpoint changes status only, there is no estimate mailable, so the
+                label no longer claims the customer received it. The PDF button was
+                removed: no estimate PDF endpoint exists and it produced nothing. */}
             {[
-              { icon: Send,     label: 'Send',      action: () => showToast('Proforma Invoice sent to customer!') },
-              { icon: Download, label: 'PDF',        action: () => showToast('PDF ready!') },
+              { icon: Send, label: 'Mark as Sent', action: markSent },
             ].map(a => (
               <button key={a.label} onClick={a.action}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all hover:scale-[1.02]"

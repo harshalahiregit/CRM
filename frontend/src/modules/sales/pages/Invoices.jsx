@@ -126,6 +126,23 @@ export default function Invoices() {
     await salesApi.invoices.recordPayment(selectedInv.id, payForm)
     showToast('Payment recorded!'); setShowPayModal(false); setPayForm(EMPTY_PAY); setShowTds(false); load()
   }
+  /**
+   * Marks the invoice sent (status + sent_at) via PATCH /invoices/{id}/send.
+   *
+   * Deliberately NOT worded as "sent to the customer": that endpoint only changes
+   * state, there is no invoice mailable, and this previously showed a success
+   * toast having made no request at all.
+   */
+  const handleMarkSent = async (inv) => {
+    try {
+      await salesApi.invoices.send(inv.id)
+      showToast(`${inv.number} marked as sent`)
+      load()
+    } catch (e) {
+      showToast(e.message || 'Could not update the invoice', 'error')
+    }
+  }
+
   const handleSendReminder = async (inv) => {
     try {
       await salesApi.invoices.sendPaymentReminder(inv.id)
@@ -253,7 +270,7 @@ export default function Invoices() {
                       <RowMenu width={188}>
                         {[
                           {icon:CreditCard, label:'Record Payment', action:()=>{setSelectedInv(inv);setShowPayModal(true)}},
-                          {icon:Send, label:'Send Invoice', action:()=>showToast('Invoice sent!')},
+                          {icon:Send, label:'Mark as Sent', action:()=>handleMarkSent(inv)},
                           {icon:Bell, label:'Send Reminder', action:()=>handleSendReminder(inv)},
                           {icon:Trash2, label:'Delete', action:()=>setConfirmDelete(inv), danger:true},
                         ].map(a=>(

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Plus, Search, Edit2, Copy, Trash2, X, LayoutGrid, List, Upload } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
 import { useToast } from '@/hooks/useToast'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import ListToolbar from '@/components/ui/ListToolbar'
 import { useListView } from '@/hooks/useListView'
 import RichTextEditor from '@/components/ui/RichTextEditor'
@@ -39,6 +40,18 @@ export default function Items() {
   const showToast = (msg, type = 'success') =>
     type === 'error' ? toast.error(msg) : type === 'info' ? toast.info(msg) : toast.success(msg)
   const sf = (k,v) => setForm(p=>({...p,[k]:v}))
+
+  const [confirmDel, setConfirmDel] = useState(null)
+
+  // The catalog's delete buttons showed "Deleted!" and called nothing; the
+  // endpoint existed the whole time (DELETE /sales/items/{id}).
+  const doDelete = async () => {
+    try {
+      await salesApi.items.delete(confirmDel.id)
+      showToast('Item deleted')
+      setConfirmDel(null); loadData()
+    } catch (e) { showToast(e.message || 'Could not delete the item', 'error'); setConfirmDel(null) }
+  }
 
   const loadData = () => {
     setLoading(true)
@@ -145,7 +158,7 @@ export default function Items() {
                   <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button onClick={()=>openEdit(item)} className="p-1.5 rounded-lg hover:bg-[rgba(124,58,237,0.08)] transition-colors"><Edit2 size={12} style={{color:'var(--text-muted)'}}/></button>
                     <button onClick={()=>showToast('Duplicated!')} className="p-1.5 rounded-lg hover:bg-[rgba(124,58,237,0.08)] transition-colors"><Copy size={12} style={{color:'var(--text-muted)'}}/></button>
-                    <button onClick={()=>showToast('Deleted!','error')} className="p-1.5 rounded-lg hover:bg-[rgba(239,68,68,0.08)] transition-colors"><Trash2 size={12} style={{color:'#f87171'}}/></button>
+                    <button onClick={()=>setConfirmDel(item)} className="p-1.5 rounded-lg hover:bg-[rgba(239,68,68,0.08)] transition-colors"><Trash2 size={12} style={{color:'#f87171'}}/></button>
                   </div>
                 </div>
                 <h3 className="font-bold text-sm mb-1" style={{color:'var(--text-h)'}}>{item.name}</h3>
@@ -186,7 +199,7 @@ export default function Items() {
                         <div className="flex gap-1">
                           <button onClick={()=>openEdit(item)} className="p-1.5 rounded-lg hover:bg-[rgba(124,58,237,0.08)] transition-colors"><Edit2 size={12} style={{color:'var(--text-muted)'}}/></button>
                           <button onClick={()=>showToast('Duplicated!')} className="p-1.5 rounded-lg hover:bg-[rgba(124,58,237,0.08)] transition-colors"><Copy size={12} style={{color:'var(--text-muted)'}}/></button>
-                          <button onClick={()=>showToast('Deleted!','error')} className="p-1.5 rounded-lg hover:bg-[rgba(239,68,68,0.08)] transition-colors"><Trash2 size={12} style={{color:'#f87171'}}/></button>
+                          <button onClick={()=>setConfirmDel(item)} className="p-1.5 rounded-lg hover:bg-[rgba(239,68,68,0.08)] transition-colors"><Trash2 size={12} style={{color:'#f87171'}}/></button>
                         </div>
                       </td>
                     </tr>
@@ -299,6 +312,16 @@ export default function Items() {
           </div>
         </>
       )}
+      {confirmDel && (
+        <ConfirmDialog
+          title="Delete this item?"
+          message={`"${confirmDel.name}" will be removed from the catalog. Documents already using it are unaffected.`}
+          confirmLabel="Delete" tone="danger"
+          onCancel={() => setConfirmDel(null)} onConfirm={doDelete}
+        />
+      )}
+
     </>
+
   )
 }

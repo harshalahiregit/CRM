@@ -191,16 +191,12 @@ export default function Payments() {
                         <span className="truncate block">{p.note || '—'}</span>
                       </td>
                       <td className="py-3.5 px-4">
-                        <div className="flex gap-1">
-                          <button onClick={() => showToast('Receipt sent!')}
-                            className="p-1.5 rounded-lg transition-colors hover:bg-[rgba(124,58,237,0.08)]" title="Send Receipt">
-                            <Send size={12} style={{ color: 'var(--text-muted)' }} />
-                          </button>
-                          <button onClick={() => showToast('Deleted!', 'error')}
-                            className="p-1.5 rounded-lg transition-colors hover:bg-[rgba(239,68,68,0.08)]" title="Delete">
-                            <Trash2 size={12} style={{ color: '#f87171' }} />
-                          </button>
-                        </div>
+                        {/* Both actions here were fake: "Send Receipt" has no endpoint
+                            and no receipt mailable, and Delete reported success while
+                            deleting nothing — payments have no destroy route (correctly:
+                            a recorded payment is ledger history). A payment is reversed
+                            with a credit note, not deleted. */}
+                        <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>—</span>
                       </td>
                     </tr>
                   ))}
