@@ -121,7 +121,7 @@ export default function KickoffMeetings() {
           {[1, 2, 3].map(i => <div key={i} className="skeleton" style={{ height: 64, borderRadius: 12, background: 'var(--border)' }} />)}
         </div>
       ) : data.length === 0 ? (
-        <EmptyState filter={filter} />
+        <EmptyState filter={filter} onNew={() => navigate('/app/tpv/kickoff/new')} />
       ) : (
         <div className="pr-glass" style={{ padding: 0, borderRadius: 16, overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
@@ -260,7 +260,7 @@ function EmptyState({ onNew, filter }) {
       <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '6px 0 18px' }}>
         Schedule a pre-onboarding meeting with a vendor to get started.
       </p>
-      {filter === 'All' && <button onClick={() => navigate('/app/tpv/kickoff/new')} style={{ ...solidBtn, margin: '0 auto' }}><Plus size={15} /> Schedule meeting</button>}
+      {filter === 'All' && <button onClick={onNew} style={{ ...solidBtn, margin: '0 auto' }}><Plus size={15} /> Schedule meeting</button>}
     </div>
   )
 }

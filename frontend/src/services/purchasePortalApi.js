@@ -11,7 +11,7 @@ const upload = (url, formData) =>
 
 export const purchasePortalApi = {
   // Persist the welcome-banner dismissal server-side (never localStorage).
-  dismissWelcomeBanner: () => pvApi.post('/portal/purchase/welcome/dismiss').then(r => r.data),
+  dismissWelcomeBanner: () => api.post('/portal/purchase/welcome/dismiss').then(r => r.data),
 
   me: () => api.get('/portal/purchase/me').then(r => r.data),
 

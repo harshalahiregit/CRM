@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { ExternalLink, Copy, CheckCircle, AlertCircle } from 'lucide-react';
 import { hrApi } from '../../services/hrApi';
+import { useToast } from '@/hooks/useToast'
 
 export default function ExternalPostingCard({ job, onUpdate }) {
+  const toast = useToast()
   const [externalIds, setExternalIds] = useState(job.external_job_ids || {});
   const [showIdInput, setShowIdInput] = useState(null);
   const [saving, setSaving] = useState(false);
