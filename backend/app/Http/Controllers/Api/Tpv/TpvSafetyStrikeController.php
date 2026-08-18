@@ -21,7 +21,7 @@ class TpvSafetyStrikeController extends Controller
         return response()->json(
             $this->strikeService->list(
                 $request->user()->tenant_id,
-                $request->only(['severity', 'active', 'worker_id'])
+                $request->only(['severity', 'active', 'worker_id', 'vendor_id'])
             )
         );
     }

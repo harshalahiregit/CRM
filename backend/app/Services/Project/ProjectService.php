@@ -923,6 +923,52 @@ class ProjectService
         ];
     }
 
+    /**
+     * Every project expense belonging to one TPV vendor, for the vendor detail
+     * Expenses tab.
+     *
+     * There is no vendor expense in this system and none is invented here: an
+     * expense belongs to a PROJECT, and a project carries the vendor link, so
+     * this is TPV vendor → TPV projects → project_expenses.
+     *
+     * Authorisation is not re-derived — it is inherited. The project ids come
+     * from the SAME filtered() call the Projects tab uses, with the same
+     * visibility array, so an expense is visible exactly when its project is
+     * visible on that tab. There is no path here to a project the caller cannot
+     * already open.
+     */
+    public function listVendorExpenses(
+        int $tenantId, int $vendorId, ?int $userId = null, bool $isAdmin = true,
+        string $vendorType = 'tpv_vendor',
+    ): array {
+        $visibility = (! $isAdmin && $userId !== null) ? ['user_id' => $userId] : null;
+
+        $projects = $this->projects->filtered(
+            $tenantId,
+            ['vendor_id' => $vendorId, 'vendor_type' => $vendorType],
+            $visibility,
+        );
+
+        if ($projects->isEmpty()) {
+            return ['rows' => [], 'total' => 0.0];
+        }
+
+        $names = $projects->pluck('name', 'id');
+
+        $rows = \App\Models\Project\ProjectExpense::forTenant($tenantId)
+            ->whereIn('project_id', $names->keys()->all())
+            ->with('creator:id,name')
+            ->orderByDesc('expense_date')->orderByDesc('id')
+            ->get()
+            // The tab spans several projects, so each row has to say which one.
+            ->each(fn ($e) => $e->setAttribute('project_name', $names[$e->project_id] ?? null));
+
+        return [
+            'rows'  => $rows,
+            'total' => round((float) $rows->sum('amount'), 2),
+        ];
+    }
+
     public function addExpense(int $projectId, array $data, int $tenantId, int $userId): \App\Models\Project\ProjectExpense
     {
         $this->find($projectId, $tenantId); // authorise/scope

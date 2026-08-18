@@ -6,6 +6,7 @@ import { useAuth } from '@/context/AuthContext'
 import Select from '@/components/ui/Select'
 import { ConfirmModal } from '@/components/ui/SearchPicker'
 import LocationLabelSheet from '../components/LocationLabelSheet'
+import { useDiscardGuard } from '@/lib/confirmClose'
 
 const typeLabel = (t) => WAREHOUSE_TYPES.find(x => x.value === t)?.label || t
 
@@ -479,6 +480,7 @@ function EnvPanel({ warehouse }) {
 /* ── New warehouse ────────────────────────────────────────────── */
 
 function WarehouseModal({ warehouse, onClose, onSaved }) {
+  const { guard, dialog } = useDiscardGuard()
   const editing = Boolean(warehouse?.id)
   const [form, setForm] = useState({
     name: warehouse?.name || '', code: warehouse?.code || '', type: warehouse?.type || 'godown',
@@ -491,6 +493,9 @@ function WarehouseModal({ warehouse, onClose, onSaved }) {
   })
   const [err, setErr] = useState('')
   const sf = (k, v) => setForm(p => ({ ...p, [k]: v }))
+
+  const isDirty = () => Boolean(form.name?.trim() || form.code?.trim() || form.address?.trim())
+  const handleClose = () => guard(onClose, isDirty())
 
   const num = (v) => v === '' || v === null ? null : Number(v)
   const save = useMutation({
@@ -510,17 +515,18 @@ function WarehouseModal({ warehouse, onClose, onSaved }) {
   })
 
   return (
-    <div className="fixed inset-0 z-[55] flex items-start justify-center p-4 overflow-y-auto"
-      style={{ background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(2px)' }} onClick={onClose}>
-      <form onClick={e => e.stopPropagation()} onSubmit={e => { e.preventDefault(); if (form.name.trim()) save.mutate() }}
-        className="w-full rounded-2xl overflow-hidden my-8" style={{ maxWidth: 480, background: 'var(--bg-global)', boxShadow: '0 24px 70px rgba(0,0,0,0.45)' }}>
-        <header className="flex items-center gap-2.5 px-5 py-4" style={{ background: `linear-gradient(120deg, ${INV_ACCENT}, #059669)` }}>
-          <Boxes size={18} style={{ color: '#fff' }} />
-          <h2 className="font-bold text-white" style={{ fontSize: 15 }}>{editing ? 'Edit Warehouse' : 'New Warehouse'}</h2>
-          <button type="button" onClick={onClose} aria-label="Close" className="ml-auto opacity-90 hover:opacity-100">
-            <X size={18} style={{ color: '#fff' }} />
-          </button>
-        </header>
+    <>
+      <div className="fixed inset-0 z-[55] flex items-start justify-center p-4 overflow-y-auto"
+        style={{ background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(2px)' }} onClick={handleClose}>
+        <form onClick={e => e.stopPropagation()} onSubmit={e => { e.preventDefault(); if (form.name.trim()) save.mutate() }}
+          className="w-full rounded-2xl overflow-hidden my-8" style={{ maxWidth: 480, background: 'var(--bg-global)', boxShadow: '0 24px 70px rgba(0,0,0,0.45)' }}>
+          <header className="flex items-center gap-2.5 px-5 py-4" style={{ background: `linear-gradient(120deg, ${INV_ACCENT}, #059669)` }}>
+            <Boxes size={18} style={{ color: '#fff' }} />
+            <h2 className="font-bold text-white" style={{ fontSize: 15 }}>{editing ? 'Edit Warehouse' : 'New Warehouse'}</h2>
+            <button type="button" onClick={handleClose} aria-label="Close" className="ml-auto opacity-90 hover:opacity-100">
+              <X size={18} style={{ color: '#fff' }} />
+            </button>
+          </header>
 
         <div className="p-5 space-y-4">
           <L label="Name" required>
@@ -561,7 +567,7 @@ function WarehouseModal({ warehouse, onClose, onSaved }) {
         </div>
 
         <footer className="flex justify-end gap-2 px-5 py-4" style={{ borderTop: '1px solid var(--border)', background: 'var(--bg-card)' }}>
-          <button type="button" onClick={onClose} className="text-sm font-semibold px-4 py-2.5 rounded-xl"
+          <button type="button" onClick={handleClose} className="text-sm font-semibold px-4 py-2.5 rounded-xl"
             style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>Cancel</button>
           <button type="submit" disabled={!form.name.trim() || save.isPending}
             className="flex items-center gap-1.5 text-sm font-bold px-5 py-2.5 rounded-xl disabled:opacity-40"
@@ -571,6 +577,8 @@ function WarehouseModal({ warehouse, onClose, onSaved }) {
         </footer>
       </form>
     </div>
+    {dialog}
+    </>
   )
 }
 

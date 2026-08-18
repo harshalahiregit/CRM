@@ -13,6 +13,16 @@ import {
 } from '@/components/ui/kit3d'
 import '@/pages/vendor-portal/portal.css'
 
+/**
+ * The vendor a queue row belongs to.
+ *
+ * Rows carry the foreign key; the eager-loaded relation is the fallback for any
+ * payload shape that omits it. Every link out of this queue goes to the VENDOR
+ * record — the six-step wizard is the vendor's own screen in the portal and is
+ * no longer mounted on the admin side.
+ */
+const vendorIdOf = (r) => r?.vendor_id ?? r?.vendor?.id
+
 export default function TpvOnboardings() {
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -36,6 +46,10 @@ export default function TpvOnboardings() {
       setRows(listData)
       setStats(statRes?.data ?? statRes ?? {})
 
+      // The portal never mounts this page — /vendor-portal/onboarding is served
+      // by PortalOnboardingEntry, which resolves the id from the token. Kept as
+      // a safety net so a portal render still lands on the wizard, never on an
+      // admin queue listing other vendors.
       if (cfg.portal && listData.length > 0) {
         navigate(cfg.onboardingPath(listData[0].id), { replace: true })
         return
@@ -123,7 +137,7 @@ export default function TpvOnboardings() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {filtered.map(r => (
             <div key={r.id} className="pr-glass pr-lift pr-pop" style={{ padding: 20, cursor: 'pointer' }}
-              onClick={() => navigate(cfg.onboardingPath(r.id))}>
+              onClick={() => navigate(cfg.viewPath(vendorIdOf(r)))}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
@@ -145,7 +159,7 @@ export default function TpvOnboardings() {
                   </div>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-                  <ActBtn onClick={() => navigate(cfg.onboardingPath(r.id))} icon={Eye} color="var(--text-muted)" bg="var(--bg-card)" border>Open Wizard</ActBtn>
+                  <ActBtn onClick={() => navigate(cfg.viewPath(vendorIdOf(r)))} icon={Eye} color="var(--text-muted)" bg="var(--bg-card)" border>Open Vendor</ActBtn>
                   {manage && r.status === OB_STATUS.IN_PROGRESS && (
                     <ActBtn onClick={() => remove(r)} icon={Trash2} color="#f87171" bg="var(--bg-card)" border>Delete</ActBtn>
                   )}
@@ -156,7 +170,9 @@ export default function TpvOnboardings() {
         </div>
       )}
 
-      {creating && <CreateModal api={cfg.api} onClose={() => setCreating(false)} onCreated={(id) => { setCreating(false); navigate(cfg.onboardingPath(id)) }} />}
+      {/* Starting an onboarding lands on the VENDOR record, not the wizard —
+          the wizard is the vendor's own screen in the portal. */}
+      {creating && <CreateModal api={cfg.api} onClose={() => setCreating(false)} onCreated={(_id, vendorId) => { setCreating(false); navigate(cfg.viewPath(vendorId)) }} />}
     </div>
   )
 }
@@ -179,7 +195,9 @@ function CreateModal({ onClose, onCreated, api = tpvApi }) {
     setSaving(true)
     try {
       const ob = await api.onboarding.create({ vendor_id: Number(vendorId) })
-      onCreated(ob?.id ?? ob?.data?.id)
+      // The vendor id comes from the picker — the created record only carries it
+      // as a foreign key, and the caller navigates to the vendor record.
+      onCreated(ob?.id ?? ob?.data?.id, Number(vendorId))
     } catch (e) { alert(e?.response?.data?.message || 'Could not start onboarding') }
     finally { setSaving(false) }
   }

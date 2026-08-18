@@ -2,6 +2,7 @@
 
 namespace App\Repositories\Hr;
 
+use App\Support\Sql\SqlDate;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -44,7 +45,7 @@ class ExitReportRepository
                 SUM(CASE WHEN status IN ('Submitted','Under Review','Approved') THEN 1 ELSE 0 END) as active_cases,
                 AVG(CASE WHEN notice_days > 0 THEN notice_days END) as avg_notice,
                 AVG(CASE WHEN last_working_date IS NOT NULL AND last_working_date >= request_date
-                    THEN julianday(last_working_date) - julianday(request_date) END) as avg_duration")
+                    THEN ".SqlDate::days('request_date', 'last_working_date').' END) as avg_duration')
             ->first();
 
         $completedClearances = DB::table('hr_exit_clearances')->where('tenant_id', $tenantId)->where('status', 'Completed')->count();
@@ -219,11 +220,11 @@ class ExitReportRepository
 
     private function yearExpr(string $col): string
     {
-        return "CAST(strftime('%Y', $col) AS INTEGER)";
+        return SqlDate::year($col);
     }
 
     private function monthExpr(string $col): string
     {
-        return "CAST(strftime('%m', $col) AS INTEGER)";
+        return SqlDate::month($col);
     }
 }

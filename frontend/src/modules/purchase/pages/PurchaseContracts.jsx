@@ -122,9 +122,17 @@ function Row({ r, onClick }) {
 }
 
 // ── New contract modal ────────────────────────────────────────────────────────
-function NewContractModal({ onClose, onDone }) {
+/**
+ * Exported so the vendor screens can raise a contract without a second copy of
+ * this form — the TPV vendor's Contracts tab opens it with that vendor already
+ * chosen. Mirrors NewRfqModal's shape.
+ */
+export function NewContractModal({ onClose, onDone, presetVendorId = '' }) {
   const [vendors, setVendors] = useState([])
-  const [f, setF] = useState({ title: '', type: 'rate_contract', vendor_id: '', start_date: '', end_date: '', spend_ceiling: '', terms: '' })
+  const [f, setF] = useState({
+    title: '', type: 'rate_contract', vendor_id: presetVendorId ? String(presetVendorId) : '',
+    start_date: '', end_date: '', spend_ceiling: '', terms: '',
+  })
   const [lines, setLines] = useState([{ ...EMPTY_LINE }])
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState(null)

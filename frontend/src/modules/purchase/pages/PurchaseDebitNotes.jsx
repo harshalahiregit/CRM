@@ -25,6 +25,44 @@ const EMPTY_FORM = {
   items: [{ ...EMPTY_ITEM }],
 }
 
+/** Shared by this page's save and by NewDebitNoteModal below — one payload shape. */
+const debitNoteLines = (f) => (f.items || []).filter(it => it.description?.trim() && Number(it.qty) > 0)
+
+const debitNotePayload = (f) => ({
+  vendor_id: f.vendor_id || null, purchase_order_id: f.purchase_order_id || null,
+  reason: f.reason || null, currency: f.currency, debit_date: f.debit_date || null,
+  adjust_inventory: !!f.purchase_order_id && f.adjust_inventory, notes: f.notes || null,
+  items: debitNoteLines(f).map((it, i) => ({
+    description: it.description, purchase_order_item_id: it.purchase_order_item_id || null,
+    qty: Number(it.qty) || 1, unit: it.unit || null, rate: Number(it.rate) || 0, tax: Number(it.tax) || 0, sort_order: i,
+  })),
+})
+
+/**
+ * Standalone "new debit note" modal for callers outside this page — the TPV
+ * vendor's Debit Note tab opens it with the vendor preselected.
+ */
+export function NewDebitNoteModal({ onClose, onDone, presetVendorId = '' }) {
+  const { user } = useAuth()
+  const [editing, setEditing] = useState({ ...EMPTY_FORM, vendor_id: presetVendorId ? String(presetVendorId) : '' })
+  const [saving, setSaving] = useState(false)
+
+  const save = async () => {
+    if (debitNoteLines(editing).length === 0) { alert('Add at least one line with a return quantity.'); return }
+    setSaving(true)
+    try {
+      const saved = await purchaseApi.debitNotes.create(debitNotePayload(editing))
+      onDone(saved?.id ?? saved?.data?.id)
+    } catch (e) { alert(e?.response?.data?.message || 'Failed to save debit note') }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <DebitNoteFormModal editing={editing} setEditing={setEditing} saving={saving}
+      manage={isStaffOrAdmin(user)} onClose={onClose} onSave={save} />
+  )
+}
+
 const StatusBadge = ({ status }) => <StatusPill cfg={dnStatusCfg(status)} />
 
 // ── Pipeline ─────────────────────────────────────────────────────────────────
@@ -136,19 +174,11 @@ export default function PurchaseDebitNotes() {
 
   const handleSave = async (mode = 'draft') => {
     const f = editing
-    const items = f.items.filter(it => it.description?.trim() && Number(it.qty) > 0)
+    const items = debitNoteLines(f)
     if (items.length === 0) { alert('Add at least one line with a return quantity.'); return }
     setSaving(true)
     try {
-      const payload = {
-        vendor_id: f.vendor_id || null, purchase_order_id: f.purchase_order_id || null,
-        reason: f.reason || null, currency: f.currency, debit_date: f.debit_date || null,
-        adjust_inventory: !!f.purchase_order_id && f.adjust_inventory, notes: f.notes || null,
-        items: items.map((it, i) => ({
-          description: it.description, purchase_order_item_id: it.purchase_order_item_id || null,
-          qty: Number(it.qty) || 1, unit: it.unit || null, rate: Number(it.rate) || 0, tax: Number(it.tax) || 0, sort_order: i,
-        })),
-      }
+      const payload = debitNotePayload(f)
       let saved
       if (f.id) saved = await purchaseApi.debitNotes.update(f.id, payload)
       else saved = await purchaseApi.debitNotes.create(payload)

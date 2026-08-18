@@ -7,6 +7,7 @@ use App\Models\Purchase\PurchaseVendor;
 use App\Services\Notifications\NotificationService;
 use App\Support\Purchase\PurchaseRegistrationType;
 use Illuminate\Support\Facades\DB;
+use App\Support\FrontendUrl;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -167,7 +168,7 @@ class PurchaseActivationNotifier
             'companyName'      => config('app.name', 'Our Company'),
             'logoUrl'          => config('mail.logo_url'),
             'supportEmail'     => config('mail.support_address', config('mail.from.address', 'support@example.com')),
-            'portalUrl'        => rtrim(config('app.frontend_url', config('app.url', '')), '/').'/purchase-portal/login',
+            'portalUrl'        => FrontendUrl::to('/purchase-portal/login'),
             'registrationType' => PurchaseRegistrationType::label($vendor->registration_type),
             'activationDate'   => now()->format('d M Y, H:i'),
             'tempPassword'     => $tempPassword,

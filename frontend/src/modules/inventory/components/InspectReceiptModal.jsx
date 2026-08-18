@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { X, ClipboardCheck, Paperclip, Trash2, Download, Undo2, AlertTriangle } from 'lucide-react'
 import { inventoryApi, INV_ACCENT, fmtQty } from '@/services/inventoryApi'
+import { useDiscardGuard } from '@/lib/confirmClose'
+import CloudImport from '@/components/ui/CloudImport'
 
 /**
  * Goods-in inspection.
@@ -24,10 +26,14 @@ const QC = {
 }
 
 export default function InspectReceiptModal({ voucher, onClose }) {
+  const { guard, dialog } = useDiscardGuard()
   const qc = useQueryClient()
   const [rows, setRows] = useState([])
   const [err, setErr] = useState('')
   const fileRef = useRef(null)
+
+  const isDirty = () => rows.some(r => r.accepted !== r.ordered || r.received !== r.ordered || Boolean(r.reason))
+  const handleClose = () => guard(onClose, isDirty())
 
   const { data: full, isLoading } = useQuery({
     queryKey: ['inv-voucher', voucher?.id],
@@ -110,24 +116,25 @@ export default function InspectReceiptModal({ voucher, onClose }) {
   const locked = ['posted', 'cancelled'].includes(full?.status)
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 overflow-y-auto bg-black/50" onClick={onClose}>
-      <div className="w-full max-w-3xl rounded-2xl mt-[5vh] mb-8" onClick={e => e.stopPropagation()}
-        style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+    <>
+      <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 overflow-y-auto bg-black/50" onClick={handleClose}>
+        <div className="w-full max-w-3xl rounded-2xl mt-[5vh] mb-8" onClick={e => e.stopPropagation()}
+          style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
 
-        <div className="flex items-center gap-2 px-5 py-4" style={{ borderBottom: '1px solid var(--border)' }}>
-          <ClipboardCheck size={16} style={{ color: INV_ACCENT }} />
-          <div className="min-w-0">
-            <h2 className="text-sm font-bold" style={{ color: 'var(--text-h)' }}>
-              Inspect delivery · {voucher.code}
-            </h2>
-            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-              {voucher.supplier_name || 'No supplier named'} — only what you accept goes on the shelf.
-            </p>
+          <div className="flex items-center gap-2 px-5 py-4" style={{ borderBottom: '1px solid var(--border)' }}>
+            <ClipboardCheck size={16} style={{ color: INV_ACCENT }} />
+            <div className="min-w-0">
+              <h2 className="text-sm font-bold" style={{ color: 'var(--text-h)' }}>
+                Inspect delivery · {voucher.code}
+              </h2>
+              <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                {voucher.supplier_name || 'No supplier named'} — only what you accept goes on the shelf.
+              </p>
+            </div>
+            <button onClick={handleClose} className="ml-auto hover:opacity-70" aria-label="Close">
+              <X size={18} style={{ color: 'var(--text-muted)' }} />
+            </button>
           </div>
-          <button onClick={onClose} className="ml-auto hover:opacity-70" aria-label="Close">
-            <X size={18} style={{ color: 'var(--text-muted)' }} />
-          </button>
-        </div>
 
         {isLoading ? (
           <div className="h-40 m-5 rounded-xl animate-pulse" style={{ background: 'var(--bg-input)' }} />
@@ -233,6 +240,8 @@ export default function InspectReceiptModal({ voucher, onClose }) {
                   className="ml-auto text-[11px] font-bold" style={{ color: INV_ACCENT }}>
                   {upload.isPending ? 'Uploading…' : 'Attach'}
                 </button>
+                <CloudImport variant="icon" accent={INV_ACCENT}
+                  onFiles={(files) => files.length && upload.mutate(files)} />
                 <input ref={fileRef} type="file" multiple hidden
                   onChange={e => { if (e.target.files?.length) upload.mutate(e.target.files); e.target.value = '' }} />
               </div>
@@ -270,7 +279,7 @@ export default function InspectReceiptModal({ voucher, onClose }) {
                   style={{ background: INV_ACCENT, color: '#fff' }}>
                   {save.isPending ? 'Saving…' : 'Save inspection'}
                 </button>
-                <button onClick={onClose} className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Cancel</button>
+                <button onClick={handleClose} className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Cancel</button>
                 <span className="ml-auto text-[10px]" style={{ color: 'var(--text-muted)' }}>
                   Posting will move {fmtQty(totals.accepted)} onto the shelf.
                 </span>
@@ -280,6 +289,8 @@ export default function InspectReceiptModal({ voucher, onClose }) {
         )}
       </div>
     </div>
+    {dialog}
+    </>
   )
 }
 

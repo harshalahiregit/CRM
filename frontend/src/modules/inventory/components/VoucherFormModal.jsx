@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { X, Check, Plus, Trash2, FileText, Send } from 'lucide-react'
 import { inventoryApi, VOUCHER_TYPES, fmtQty, money } from '@/services/inventoryApi'
 import Select from '@/components/ui/Select'
+import { useDiscardGuard } from '@/lib/confirmClose'
 
 /**
  * The blueprint's voucher form: a "General infor" header over a repeatable
@@ -20,6 +21,7 @@ const emptyLine = () => ({
 })
 
 export default function VoucherFormModal({ open, onClose, type, voucher = null, onSaved }) {
+  const { guard, dialog } = useDiscardGuard()
   const qc = useQueryClient()
   const cfg = VOUCHER_TYPES[type]
   const editing = Boolean(voucher)
@@ -28,6 +30,15 @@ export default function VoucherFormModal({ open, onClose, type, voucher = null, 
   const [form, setForm] = useState({})
   const [lines, setLines] = useState([emptyLine()])
   const [err, setErr] = useState('')
+
+  const isDirty = () => {
+    if (readOnly) return false
+    if (lines.some(l => l.product_id || l.quantity || l.unit_price || l.note)) return true
+    if (form.description?.trim() || form.reason?.trim() || form.customer_name?.trim() || form.supplier_name?.trim()) return true
+    return false
+  }
+
+  const handleClose = () => guard(onClose, isDirty())
 
   const { data: warehouses = [] } = useQuery({ queryKey: ['inv-warehouses'], queryFn: inventoryApi.warehouses.list, enabled: open })
   const { data: products = [] } = useQuery({ queryKey: ['inv-products', {}], queryFn: () => inventoryApi.products.list(), enabled: open })
@@ -127,28 +138,29 @@ export default function VoucherFormModal({ open, onClose, type, voucher = null, 
   const isRecount = type === 'loss_adjustment' && form.adjustment_type === 'adjustment'
 
   return (
-    <div className="fixed inset-0 z-[55] flex items-start justify-center p-3 sm:p-6 overflow-y-auto"
-      style={{ background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(2px)' }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} className="w-full rounded-2xl overflow-hidden my-2 flex flex-col"
-        style={{ maxWidth: 960, background: 'var(--bg-global)', boxShadow: '0 24px 70px rgba(0,0,0,0.45)', maxHeight: '94vh' }}>
+    <>
+      <div className="fixed inset-0 z-[55] flex items-start justify-center p-3 sm:p-6 overflow-y-auto"
+        style={{ background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(2px)' }} onClick={handleClose}>
+        <div onClick={e => e.stopPropagation()} className="w-full rounded-2xl overflow-hidden my-2 flex flex-col"
+          style={{ maxWidth: 960, background: 'var(--bg-global)', boxShadow: '0 24px 70px rgba(0,0,0,0.45)', maxHeight: '94vh' }}>
 
-        <header className="flex items-center gap-2.5 px-6 py-4 shrink-0" style={{ background: `linear-gradient(120deg, ${cfg.accent}, color-mix(in srgb, ${cfg.accent} 60%, #000))` }}>
-          <FileText size={19} style={{ color: '#fff' }} />
-          <div className="min-w-0">
-            <h2 className="font-bold text-white" style={{ fontSize: 16 }}>
-              {editing ? voucher.code : `New ${cfg.short.toLowerCase()}`}
-            </h2>
-            <p className="text-[11px] text-white opacity-80">{cfg.label}</p>
-          </div>
-          {readOnly && (
-            <span className="text-[10px] font-black px-2 py-1 rounded-lg" style={{ background: 'rgba(255,255,255,0.25)', color: '#fff' }}>
-              {voucher.status.toUpperCase()} · read only
-            </span>
-          )}
-          <button onClick={onClose} aria-label="Close" className="ml-auto opacity-90 hover:opacity-100">
-            <X size={19} style={{ color: '#fff' }} />
-          </button>
-        </header>
+          <header className="flex items-center gap-2.5 px-6 py-4 shrink-0" style={{ background: `linear-gradient(120deg, ${cfg.accent}, color-mix(in srgb, ${cfg.accent} 60%, #000))` }}>
+            <FileText size={19} style={{ color: '#fff' }} />
+            <div className="min-w-0">
+              <h2 className="font-bold text-white" style={{ fontSize: 16 }}>
+                {editing ? voucher.code : `New ${cfg.short.toLowerCase()}`}
+              </h2>
+              <p className="text-[11px] text-white opacity-80">{cfg.label}</p>
+            </div>
+            {readOnly && (
+              <span className="text-[10px] font-black px-2 py-1 rounded-lg" style={{ background: 'rgba(255,255,255,0.25)', color: '#fff' }}>
+                {voucher.status.toUpperCase()} · read only
+              </span>
+            )}
+            <button onClick={handleClose} aria-label="Close" className="ml-auto opacity-90 hover:opacity-100">
+              <X size={19} style={{ color: '#fff' }} />
+            </button>
+          </header>
 
         <div className="px-6 py-5 space-y-5 overflow-y-auto" style={{ flex: 1, opacity: readOnly ? 0.85 : 1, pointerEvents: readOnly ? 'none' : 'auto' }}>
           {/* ── General infor ── */}
@@ -327,7 +339,7 @@ export default function VoucherFormModal({ open, onClose, type, voucher = null, 
             </p>
           )}
           <div className="ml-auto flex items-center gap-2">
-            <button onClick={onClose} className="text-sm font-semibold px-4 py-2.5 rounded-xl"
+            <button onClick={handleClose} className="text-sm font-semibold px-4 py-2.5 rounded-xl"
               style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
               {readOnly ? 'Close' : 'Cancel'}
             </button>
@@ -349,6 +361,8 @@ export default function VoucherFormModal({ open, onClose, type, voucher = null, 
         </footer>
       </div>
     </div>
+    {dialog}
+    </>
   )
 }
 

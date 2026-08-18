@@ -18,7 +18,11 @@ class PurchaseRfqController extends Controller
     public function index(Request $request)
     {
         return response()->json(
-            $this->rfqService->list($request->user()->tenant_id, $request->only(['status', 'department', 'search']))
+            // purchase_vendor_id narrows to the RFQs one vendor was invited to —
+            // what the vendor screens ask for. Omitted, the list is unchanged.
+            $this->rfqService->list($request->user()->tenant_id, $request->only([
+                'status', 'department', 'search', 'purchase_vendor_id',
+            ]))
         );
     }
 

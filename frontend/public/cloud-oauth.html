@@ -1,0 +1,22 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Connecting…</title></head>
+<body style="font-family:system-ui;background:#0b0b16;color:#cbd5e1;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
+  <p>Connecting your account… you can close this window.</p>
+  <script>
+    // OAuth 2.0 "implicit" callback for the client-side cloud pickers (pCloud and
+    // any other provider that returns the token in the URL fragment). The provider
+    // redirects the popup here with the access token in location.hash; we hand it
+    // back to the app window that opened us, then close. Nothing is stored here.
+    (function () {
+      try {
+        var payload = window.location.hash || window.location.search || '';
+        if (window.opener) {
+          window.opener.postMessage({ source: 'cloud-oauth', payload: payload }, window.location.origin);
+        }
+      } catch (e) { /* opener gone / cross-origin — nothing we can do */ }
+      window.close();
+    })();
+  </script>
+</body>
+</html>

@@ -31,12 +31,25 @@ Route::get('/scan-access/{token}', [TpvWorkerController::class, 'scanAccess']);
 // Vendor/workforce data must never cross tenants or reach a client login, so
 // this group is role-gated from day one (ARCHITECTURE-PRIMER §1).
 //
-// The vendor-facing side of the wizard (a `third_party_vendor` login editing
-// only their own onboarding) is a separate portal group, not built yet — it
-// needs a per-record ownership check, not a blanket role gate.
+// The vendor-facing side of the wizard IS built: it lives in routes/portal.php
+// behind `vendor.portal`, where every handler resolves the vendor from the token
+// and calls assertOwned(). That is the ONLY door a third_party_vendor uses.
+//
+// This group must stay admin,staff. It once read
+// `role:admin,staff,third_party_vendor,vendor` — added so the portal could reach
+// two worker endpoints — but the gate covers the whole module, and the handlers
+// below check only the TENANT, never the vendor. A vendor login could therefore
+// list, read, overwrite and delete every OTHER vendor's onboarding (bank, GST,
+// PAN, documents) through /tpv/onboarding, which defeats the portal's ownership
+// checks entirely. Those two endpoints now have portal equivalents:
+// POST /portal/workers/{worker}/mark-punch and .../mark-card-status.
+//
+// A vendor's own temporary-access countdown has its own narrow group at the
+// bottom of this file; nothing else here is vendor-reachable.
+//
 // NOTE: both middleware must go in ONE ->middleware([...]) call — chaining a
 // second ->middleware() replaces the first and silently drops auth:sanctum.
-Route::middleware(['auth:sanctum', 'role:admin,staff,third_party_vendor,vendor'])->prefix('tpv')->group(function () {
+Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(function () {
 
     // Dashboard — read-only aggregation across the whole module.
     Route::get('/dashboard',                          [TpvDashboardController::class, 'index']);
@@ -70,6 +83,35 @@ Route::middleware(['auth:sanctum', 'role:admin,staff,third_party_vendor,vendor']
     // module). No hard delete: deactivation is a status change. Static segments
     // stay ahead of the {contact} wildcard.
     Route::get('/vendors/{vendor}/tasks',                     [\App\Http\Controllers\Api\Vendor\VendorController::class, 'tasks']);
+    // Follow-ups on the shared polymorphic `reminders` table. Mounted here rather
+    // than under /sales/reminders, which has no role gate — see the controller.
+    Route::get('/vendors/{vendor}/reminders',                 [\App\Http\Controllers\Api\Vendor\VendorController::class, 'reminders']);
+    Route::post('/vendors/{vendor}/reminders',                [\App\Http\Controllers\Api\Vendor\VendorController::class, 'storeReminder']);
+    Route::post('/vendors/{vendor}/reminders/{reminder}/complete', [\App\Http\Controllers\Api\Vendor\VendorController::class, 'completeReminder']);
+    Route::delete('/vendors/{vendor}/reminders/{reminder}',   [\App\Http\Controllers\Api\Vendor\VendorController::class, 'destroyReminder']);
+    // Commercial: the optional link to this company's Purchase record, plus the
+    // two views Purchase has no vendor-level endpoint for. Orders/invoices/debit
+    // notes/contracts/quotations are read straight off /purchase/* by the client.
+    Route::get('/vendors/{vendor}/purchase-matches',          [\App\Http\Controllers\Api\Vendor\VendorController::class, 'purchaseMatches']);
+    Route::patch('/vendors/{vendor}/purchase-link',           [\App\Http\Controllers\Api\Vendor\VendorController::class, 'linkPurchaseVendor']);
+    Route::post('/vendors/{vendor}/purchase-record',          [\App\Http\Controllers\Api\Vendor\VendorController::class, 'createPurchaseRecord']);
+    Route::get('/vendors/{vendor}/purchase-payments',         [\App\Http\Controllers\Api\Vendor\VendorController::class, 'purchasePayments']);
+    Route::get('/vendors/{vendor}/purchase-statement',        [\App\Http\Controllers\Api\Vendor\VendorController::class, 'purchaseStatement']);
+    // Attachments — the folder-tree file area on the shared polymorphic
+    // attachment_folders/attachments tables. Static segments before wildcards.
+    Route::get('/vendors/{vendor}/attachments',                    [\App\Http\Controllers\Api\Vendor\VendorController::class, 'attachments']);
+    Route::post('/vendors/{vendor}/attachments',                   [\App\Http\Controllers\Api\Vendor\VendorController::class, 'storeAttachment']);
+    Route::post('/vendors/{vendor}/attachment-folders',            [\App\Http\Controllers\Api\Vendor\VendorController::class, 'storeAttachmentFolder']);
+    Route::put('/vendors/{vendor}/attachment-folders/{folder}',    [\App\Http\Controllers\Api\Vendor\VendorController::class, 'updateAttachmentFolder']);
+    Route::delete('/vendors/{vendor}/attachment-folders/{folder}', [\App\Http\Controllers\Api\Vendor\VendorController::class, 'destroyAttachmentFolder']);
+    Route::get('/vendors/{vendor}/attachments/{attachment}/download', [\App\Http\Controllers\Api\Vendor\VendorController::class, 'downloadAttachment']);
+    Route::put('/vendors/{vendor}/attachments/{attachment}',        [\App\Http\Controllers\Api\Vendor\VendorController::class, 'updateAttachment']);
+    Route::delete('/vendors/{vendor}/attachments/{attachment}',     [\App\Http\Controllers\Api\Vendor\VendorController::class, 'destroyAttachment']);
+    // Notes on the shared polymorphic `notes` table.
+    Route::get('/vendors/{vendor}/notes',                     [\App\Http\Controllers\Api\Vendor\VendorController::class, 'notes']);
+    Route::post('/vendors/{vendor}/notes',                    [\App\Http\Controllers\Api\Vendor\VendorController::class, 'storeNote']);
+    Route::put('/vendors/{vendor}/notes/{note}',              [\App\Http\Controllers\Api\Vendor\VendorController::class, 'updateNote']);
+    Route::delete('/vendors/{vendor}/notes/{note}',           [\App\Http\Controllers\Api\Vendor\VendorController::class, 'destroyNote']);
     Route::get('/vendors/{vendor}/contacts',                  [TpvContactController::class, 'index']);
     Route::post('/vendors/{vendor}/contacts',                 [TpvContactController::class, 'store']);
     Route::get('/vendors/{vendor}/contacts/{contact}',        [TpvContactController::class, 'show']);

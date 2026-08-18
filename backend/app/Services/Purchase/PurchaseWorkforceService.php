@@ -2,12 +2,14 @@
 
 namespace App\Services\Purchase;
 
+use App\Exceptions\BusinessException;
 use App\Models\Purchase\PurchaseVendor;
 use App\Models\Purchase\PurchaseWorker;
 use App\Models\Purchase\PurchaseWorkerDocument;
 use App\Models\Purchase\PurchaseWorkerInduction;
 use App\Models\Purchase\PurchaseWorkerMedical;
 use App\Models\Purchase\PurchaseWorkerTraining;
+use App\Models\User;
 use App\Repositories\Purchase\PurchaseWorkerRepository;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
@@ -90,18 +92,25 @@ class PurchaseWorkforceService
 
     public function saveMedical(PurchaseWorker $worker, array $data): PurchaseWorkerMedical
     {
-        return PurchaseWorkerMedical::create(array_merge($this->tenantKeys($worker), [
+        $medical = PurchaseWorkerMedical::create(array_merge($this->tenantKeys($worker), [
             'exam_date'      => $data['exam_date'] ?? null,
             'expiry_date'    => $data['expiry_date'] ?? null,
             'fitness_status' => $data['fitness_status'] ?? 'Pending',
             'blood_group'    => $data['blood_group'] ?? null,
             'remarks'        => $data['remarks'] ?? null,
         ]));
+
+        // Step 2 clears only on a FIT result. Recording an Unfit examination is a
+        // valid thing to do — it just is not progress, and the pointer must not
+        // claim it is.
+        $this->advanceTo($worker, 2, $this->readiness($worker->fresh())['medical_ok']);
+
+        return $medical;
     }
 
     public function saveTraining(PurchaseWorker $worker, array $data): PurchaseWorkerTraining
     {
-        return PurchaseWorkerTraining::create(array_merge($this->tenantKeys($worker), [
+        $training = PurchaseWorkerTraining::create(array_merge($this->tenantKeys($worker), [
             'title'         => $data['title'],
             'training_date' => $data['training_date'] ?? null,
             'expiry_date'   => $data['expiry_date'] ?? null,
@@ -109,16 +118,133 @@ class PurchaseWorkforceService
             'score'         => $data['score'] ?? null,
             'remarks'       => $data['remarks'] ?? null,
         ]));
+
+        $this->advanceTo($worker, 3, $this->stepThreeCleared($worker->fresh()));
+
+        return $training;
     }
 
     public function saveInduction(PurchaseWorker $worker, array $data): PurchaseWorkerInduction
     {
-        return PurchaseWorkerInduction::create(array_merge($this->tenantKeys($worker), [
+        $induction = PurchaseWorkerInduction::create(array_merge($this->tenantKeys($worker), [
             'induction_date' => $data['induction_date'] ?? null,
             'status'         => $data['status'] ?? 'Pending',
             'conducted_by'   => $data['conducted_by'] ?? null,
             'remarks'        => $data['remarks'] ?? null,
         ]));
+
+        $this->advanceTo($worker, 3, $this->stepThreeCleared($worker->fresh()));
+
+        return $induction;
+    }
+
+    /**
+     * Step 3 covers BOTH training and induction — Purchase records them in two
+     * tables, and the step is only done when each has a completed row. Checked
+     * against readiness() so the wizard and the gate cannot disagree.
+     */
+    private function stepThreeCleared(PurchaseWorker $worker): bool
+    {
+        $r = $this->readiness($worker);
+
+        return $r['training_ok'] && $r['induction_ok'];
+    }
+
+    /**
+     * Mark $step as reached, and only ever move forward.
+     *
+     * current_step holds the HIGHEST step completed — 1 on create, 2 once medical
+     * is Fit, 3 once training and induction are done, 4 once PPE is issued, 5 once
+     * the badge is activated. Same convention the PPE service writes, so the two
+     * cannot disagree about where a worker is.
+     *
+     * The wizard resumes from this column, so a later save must never drag a
+     * worker backwards, and a failed medical or induction must not advance it.
+     */
+    private function advanceTo(PurchaseWorker $worker, int $step, bool $cleared): void
+    {
+        if (! $cleared) {
+            return;
+        }
+
+        if ((int) $worker->current_step < $step) {
+            $worker->forceFill(['current_step' => $step])->save();
+        }
+    }
+
+    /* ── Step 5 — entry badge (ADMIN only) ───────────────────────────────── */
+
+    /**
+     * Activate a worker and issue its entry badge.
+     *
+     * Deliberately NOT callable from the vendor portal: the vendor supplies the
+     * evidence, the site decides who may walk in. The route enforces role:admin;
+     * this re-checks readiness so a badge can never be issued to a worker who is
+     * not medically fit, trained, inducted and equipped.
+     */
+    public function activateBadge(PurchaseWorker $worker, User $actor, array $data = []): PurchaseWorker
+    {
+        if ($worker->badge_number) {
+            return $worker;   // idempotent: re-activating keeps the original badge
+        }
+
+        $r = $this->readiness($worker);
+
+        if (! $r['ready']) {
+            $missing = collect([
+                'documents' => $r['documents_ok'], 'medical' => $r['medical_ok'],
+                'training'  => $r['training_ok'],  'induction' => $r['induction_ok'],
+            ])->reject(fn ($ok) => $ok)->keys()->implode(', ');
+
+            throw new BusinessException("This worker is not ready for a badge — outstanding: {$missing}.", 422);
+        }
+
+        if ((int) $worker->current_step < 4) {
+            throw new BusinessException('PPE must be issued before a badge can be activated.', 422);
+        }
+
+        $worker->forceFill([
+            'status'            => 'Active',
+            'current_step'      => 5,
+            'badge_number'      => $this->makeBadgeNumber($worker),
+            // The gate scans this, so it must be unguessable and unique.
+            'qr_token'          => Str::random(48),
+            'badge_issued_at'   => now(),
+            'badge_issued_by'   => $actor->id,
+            'badge_valid_until' => $data['valid_until'] ?? null,
+        ])->save();
+
+        Log::channel('purchase')->info('Purchase worker badge activated', [
+            'worker_id' => $worker->id, 'actor_id' => $actor->id,
+        ]);
+
+        return $worker->fresh();
+    }
+
+    /**
+     * The gate decision for a scanned badge.
+     *
+     * Admit only an Active worker holding a badge. Everything else is a refusal
+     * with a reason, so the guard is told WHY rather than just "no".
+     */
+    public function gateDecision(PurchaseWorker $worker): array
+    {
+        if (! $worker->badge_number || ! $worker->qr_token) {
+            return ['admit' => false, 'reason' => 'No entry badge has been issued for this worker.'];
+        }
+        if ($worker->status !== 'Active') {
+            return ['admit' => false, 'reason' => 'This worker is not active.'];
+        }
+        if ($worker->badge_valid_until && $worker->badge_valid_until->isPast()) {
+            return ['admit' => false, 'reason' => 'This badge expired on '.$worker->badge_valid_until->format('d M Y').'.'];
+        }
+
+        return ['admit' => true, 'reason' => null, 'badge_number' => $worker->badge_number];
+    }
+
+    private function makeBadgeNumber(PurchaseWorker $worker): string
+    {
+        return 'PWB-'.now()->format('Y').'-'.str_pad((string) $worker->id, 5, '0', STR_PAD_LEFT);
     }
 
     /* ── Readiness & progress ────────────────────────────────────────────── */

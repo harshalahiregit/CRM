@@ -45,6 +45,14 @@ class SafetyStrikeService
         if (! empty($filters['worker_id'])) {
             $query->where('tpv_worker_id', $filters['worker_id']);
         }
+        // Same shape as the gate log: a strike is against a WORKER, and the vendor
+        // screen wants every strike across the workers it owns.
+        if (! empty($filters['vendor_id'])) {
+            $query->whereIn(
+                'tpv_worker_id',
+                TpvWorker::forTenant($tenantId)->where('vendor_id', (int) $filters['vendor_id'])->select('id')
+            );
+        }
 
         return $query->latest('occurred_at')->get();
     }

@@ -25,6 +25,44 @@ const EMPTY_FORM = {
   items: [{ ...EMPTY_ITEM }],
 }
 
+/** Shared by this page's save and by NewInvoiceModal below — one payload shape. */
+const invoiceLines = (f) => (f.items || []).filter(it => it.description?.trim())
+
+const invoicePayload = (f) => ({
+  title: f.title || null, vendor_id: f.vendor_id || null, vendor_invoice_ref: f.vendor_invoice_ref || null,
+  currency: f.currency, invoice_date: f.invoice_date || null, due_date: f.due_date || null,
+  terms: f.terms || null, notes: f.notes || null,
+  items: invoiceLines(f).map((it, i) => ({
+    description: it.description, qty: Number(it.qty) || 1, unit: it.unit || null,
+    rate: Number(it.rate) || 0, tax: Number(it.tax) || 0, sort_order: i,
+  })),
+})
+
+/**
+ * Standalone "new purchase invoice" modal for callers outside this page — the
+ * TPV vendor's Purchase Invoice tab opens it with the vendor preselected.
+ */
+export function NewInvoiceModal({ onClose, onDone, presetVendorId = '' }) {
+  const { user } = useAuth()
+  const [editing, setEditing] = useState({ ...EMPTY_FORM, vendor_id: presetVendorId ? String(presetVendorId) : '' })
+  const [saving, setSaving] = useState(false)
+
+  const save = async () => {
+    if (invoiceLines(editing).length === 0) { alert('Add at least one line item.'); return }
+    setSaving(true)
+    try {
+      const saved = await purchaseApi.invoices.create(invoicePayload(editing))
+      onDone(saved?.id ?? saved?.data?.id)
+    } catch (e) { alert(e?.response?.data?.message || 'Failed to save invoice') }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <InvoiceFormModal editing={editing} setEditing={setEditing} saving={saving}
+      admin={isAdmin(user)} onClose={onClose} onSave={save} />
+  )
+}
+
 const StatusBadge = ({ status }) => <StatusPill cfg={pinvStatusCfg(status)} />
 
 // ── Pipeline ─────────────────────────────────────────────────────────────────
@@ -137,15 +175,11 @@ export default function PurchaseInvoices() {
 
   const handleSave = async (mode = 'draft') => {
     const f = editing
-    const items = f.items.filter(it => it.description?.trim())
+    const items = invoiceLines(f)
     if (items.length === 0) { alert('Add at least one line item.'); return }
     setSaving(true)
     try {
-      const payload = {
-        title: f.title || null, vendor_id: f.vendor_id || null, vendor_invoice_ref: f.vendor_invoice_ref || null, currency: f.currency,
-        invoice_date: f.invoice_date || null, due_date: f.due_date || null, terms: f.terms || null, notes: f.notes || null,
-        items: items.map((it, i) => ({ description: it.description, qty: Number(it.qty) || 1, unit: it.unit || null, rate: Number(it.rate) || 0, tax: Number(it.tax) || 0, sort_order: i })),
-      }
+      const payload = invoicePayload(f)
       let saved
       if (f.id) saved = await purchaseApi.invoices.update(f.id, payload)
       else saved = await purchaseApi.invoices.create(payload)

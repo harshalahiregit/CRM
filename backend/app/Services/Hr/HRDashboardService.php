@@ -2,6 +2,7 @@
 
 namespace App\Services\Hr;
 
+use App\Support\Sql\SqlDate;
 use App\Models\Hr\HrCandidate;
 use App\Models\Hr\HrEmployee;
 use App\Models\Hr\HrInterviewRound;
@@ -29,11 +30,12 @@ class HRDashboardService
         $pendingFeedback  = HrInterviewRound::where('tenant_id', $tenantId)->where('result', 'Pending')->where('status', 'Scheduled')->count();
         $sources          = HrCandidate::where('tenant_id', $tenantId)->select('source')->distinct()->count();
 
-        // Time to Hire calculation (average days from Applied → Hired)
-        // SQLite compatible: use julianday() instead of DATEDIFF()
+        // Time to Hire calculation (average days from Applied → Hired).
+        // Driver-portable: julianday() is SQLite-only and raised
+        // "FUNCTION <db>.julianday does not exist" on MySQL.
         $timeToHire = HrCandidate::where('tenant_id', $tenantId)
             ->where('stage', 'Hired')
-            ->selectRaw('AVG(julianday(updated_at) - julianday(created_at)) as avg_days')
+            ->selectRaw('AVG('.SqlDate::days('created_at', 'updated_at').') as avg_days')
             ->value('avg_days');
         $timeToHire = $timeToHire ? round($timeToHire, 1) : 0;
 
@@ -45,11 +47,10 @@ class HRDashboardService
         $pendingInterviews = HrInterviewRound::where('tenant_id', $tenantId)->where('status', 'Scheduled')->count();
 
         // Hiring trend (last 6 months)
-        // SQLite compatible: use strftime() instead of DATE_FORMAT()
         $hiringTrend = HrCandidate::where('tenant_id', $tenantId)
             ->where('stage', 'Hired')
             ->where('updated_at', '>=', $today->copy()->subMonths(6))
-            ->selectRaw('strftime("%Y-%m", updated_at) as month, COUNT(*) as count')
+            ->selectRaw(SqlDate::yearMonth('updated_at').' as month, COUNT(*) as count')
             ->groupBy('month')
             ->orderBy('month')
             ->get();

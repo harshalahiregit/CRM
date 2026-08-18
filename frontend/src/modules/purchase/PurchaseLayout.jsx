@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, ClipboardList, FileSignature, ShoppingBag,
-  Truck, Receipt, FileX, FileText, Package, Building2, CalendarDays
+  Truck, Receipt, FileX, FileText, Package, Building2, CalendarDays, HardHat
 } from 'lucide-react'
 import ModuleShell from '@/components/layout/ModuleShell'
 
@@ -12,6 +12,7 @@ const PURCHASE_NAV = [
   { label: 'Vendors',        path: '/app/purchase/vendors',        icon: Building2       },
   { label: 'Vendor Onboarding', path: '/app/purchase/onboarding',  icon: ClipboardList   },
   { label: 'Kickoff Meetings', path: '/app/purchase/kickoff',      icon: CalendarDays    },
+  { label: 'Workforce',      path: '/app/purchase/workforce',      icon: HardHat         },
   { label: 'Requests',       path: '/app/purchase/requests',       icon: ClipboardList   },
   { label: 'Quotations',     path: '/app/purchase/quotations',     icon: FileSignature   },
   { label: 'Orders',         path: '/app/purchase/orders',         icon: ShoppingBag     },

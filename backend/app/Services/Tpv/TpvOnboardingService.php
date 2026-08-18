@@ -80,10 +80,77 @@ class TpvOnboardingService
             throw new BusinessException('Step must be between 1 and '.Status::TOTAL_STEPS.'.');
         }
 
+        // A vendor may move forward only into the first step that is not yet done;
+        // going back to re-read a finished step is always allowed. Enforced here
+        // rather than in the wizard because the endpoint is the boundary — the UI
+        // hiding a button is not a rule.
+        //
+        // Staff and admins are deliberately exempt: step 3 only counts as complete
+        // once EVERY required document is uploaded, so gating them would stop a
+        // reviewer opening step 4 to review the documents that have arrived.
+        if ($this->vendorDriven($actor)) {
+            $furthest = $this->furthestReachableStep($onboarding);
+
+            if ($step > $furthest) {
+                throw new BusinessException(
+                    'Complete step '.$furthest.' before moving on.',
+                    422
+                );
+            }
+        }
+
         $onboarding->update(['current_step' => $step]);
         $onboarding->recordAudit('Onboarding Step Changed', $actor, null, ['step' => $step]);
 
         return $onboarding;
+    }
+
+    /**
+     * Is this onboarding's vendor the one entitled to sign the minutes?
+     *
+     * The pivot's is_primary row is the designated signatory; meetings written
+     * before that table existed fall back to kickoffable_id, which was the only
+     * vendor a meeting could have.
+     */
+    private function isDesignatedSignatory(KickoffMeeting $meeting, TpvOnboarding $onboarding): bool
+    {
+        $vendorId = (int) $onboarding->vendor_id;
+
+        $primary = $meeting->subjects()->where('is_primary', true)->first();
+
+        if ($primary) {
+            return (int) $primary->subject_id === $vendorId;
+        }
+
+        return (int) $meeting->kickoffable_id === $vendorId;
+    }
+
+    /**
+     * True when the caller is the vendor working through its own onboarding,
+     * rather than staff operating it. Anything that is not internal staff is
+     * treated as the vendor — the safer default for a new role.
+     */
+    private function vendorDriven(User $actor): bool
+    {
+        return ! in_array($actor->role, ['admin', 'staff'], true);
+    }
+
+    /**
+     * The highest step a vendor may currently open: the first one not yet
+     * complete. Steps already finished stay reachable, so 1 is always allowed.
+     *
+     * Derived from stepStatus() rather than a second copy of the rules, so the
+     * gate and the progress bar can never disagree about what is done.
+     */
+    private function furthestReachableStep(TpvOnboarding $onboarding): int
+    {
+        foreach ($this->stepStatus($onboarding)['steps'] as $s) {
+            if (! $s['complete']) {
+                return (int) $s['step'];
+            }
+        }
+
+        return Status::TOTAL_STEPS;
     }
 
     /** Step 2 — persist the TPV-specific company/contact profile. */
@@ -201,7 +268,17 @@ class TpvOnboardingService
         // feedback about the MOM, not about this onboarding record.
         $comment = trim((string) ($meta['comment'] ?? ''));
 
-        if (! $meeting->acknowledged_at) {
+        // Only the designated signatory signs the MINUTES. Every vendor on a
+        // multi-vendor kickoff can now resolve the meeting (that is what makes the
+        // MOM visible to them at all), so without this a secondary reading its own
+        // Step 1 would put its name on the meeting's single signature line.
+        //
+        // A secondary still records receipt on ITS OWN onboarding below — that is a
+        // different fact from "the minutes were agreed", and gating it would leave
+        // every secondary stuck on Step 1 with nothing it is allowed to do.
+        $isSignatory = $this->isDesignatedSignatory($meeting, $onboarding);
+
+        if ($isSignatory && ! $meeting->acknowledged_at) {
             $meeting->update([
                 'acknowledged_at'         => now(),
                 'acknowledged_by_name'    => $byName,
@@ -346,8 +423,16 @@ class TpvOnboardingService
             'remarks'             => $remarks ?? $onboarding->remarks,
             'registration_number' => $registrationNumber,
         ]);
+        // Activating the vendor IS the approval — everything downstream keys off
+        // vendor.status, not the onboarding's. The portal reveals "My Workforce"
+        // on Active, TpvWorkerService::blockers() refuses a site badge while the
+        // vendor is anything else, and GateScanService turns them away at the
+        // gate. Without this the vendor stayed Inactive after approval and staff
+        // had to flip the status by hand for any of it to work.
+        // Mirrors PurchaseOnboardingService::approve().
         $onboarding->vendor->update([
             'registration_number' => $registrationNumber,
+            'status'              => VendorStatus::ACTIVE,
         ]);
 
         $onboarding->recordAudit('Onboarding Approved', $actor, $remarks, [

@@ -5,6 +5,7 @@ namespace App\Services\Shared;
 use App\Exceptions\BusinessException;
 use App\Models\Shared\KickoffAttendee;
 use App\Models\Shared\KickoffMeeting;
+use App\Models\Shared\KickoffMeetingSubject;
 use App\Models\Shared\KickoffMomItem;
 use App\Models\Tenant;
 use App\Models\Tpv\TpvOnboarding;
@@ -13,6 +14,7 @@ use App\Models\Vendor\Vendor;
 use App\Models\Vendor\VendorContact;
 use App\Repositories\Shared\KickoffMeetingRepository;
 use App\Services\Notifications\NotificationService;
+use App\Support\FrontendUrl;
 use App\Support\Shared\KickoffStatus as Status;
 use App\Support\Shared\KickoffSubject;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -80,6 +82,11 @@ class KickoffMeetingService
         // legacy kickoff_meeting_id so code reading the FK sees the latest meeting.
         $this->syncOnboardingPointer($subject, $meeting->id);
 
+        // Additional vendors, if the caller sent any. `subject_id` above remains
+        // the primary and stays on kickoffable_*, so nothing that queries those
+        // two columns changes behaviour.
+        $this->syncSubjects($meeting, $subject, $data['subject_ids'] ?? [], $actor->tenant_id);
+
         if (! empty($data['attendees'])) {
             $this->replaceAttendees($meeting, $data['attendees'], $actor->tenant_id);
         }
@@ -120,6 +127,14 @@ class KickoffMeetingService
             // already stored, so editing only the city keeps the venue.
             'location'         => $this->composeLocation($data, $meeting),
         ], fn ($v) => $v !== null));
+
+        // Only touched when the caller actually sends the field, so an edit that
+        // omits it leaves the vendor set alone rather than reducing it to one.
+        if (array_key_exists('subject_ids', $data)) {
+            $this->syncSubjects(
+                $meeting, $meeting->kickoffable, $data['subject_ids'] ?? [], $actor->tenant_id
+            );
+        }
 
         if (array_key_exists('attendees', $data)) {
             $this->replaceAttendees($meeting, $data['attendees'] ?? [], $actor->tenant_id);
@@ -275,15 +290,195 @@ class KickoffMeetingService
             $email = $meeting->attendees->firstWhere('email', '!=', null)?->email;
         }
 
-        $subjectTitle = "Minutes of Meeting Ready: {$meeting->title}";
-        $body = "The Minutes of Meeting (MOM) for \"{$meeting->title}\" have been published and are ready for your review and acknowledgement.\n\nPlease log into the Vendor Portal (Step 1 Onboarding) to view the document and record your acknowledgement.";
+        $meetingDate = optional($meeting->scheduled_at)->format('l, j F Y');
+        $dateSuffix  = $meetingDate ? ' - '.optional($meeting->scheduled_at)->format('j M Y') : '';
 
-        if ($email) {
-            $this->notifications->email($email, $subjectTitle, $body, ['kickoff_meeting_id' => $meeting->id]);
+        // Only the recipient who can actually acknowledge is told to. Promising
+        // "Acknowledgment Required" to a vendor whose mail carries no acknowledge
+        // button would be an instruction it cannot follow.
+        $ackSubject  = 'Kickoff Meeting Minutes - Acknowledgment Required'.$dateSuffix;
+        $readSubject = 'Kickoff Meeting Minutes'.$dateSuffix;
+
+        // The token IS the credential, so the link only exists while the window is
+        // live. Previously it was minted and never sent, which left the public
+        // one-click acknowledgement unreachable from the e-mail.
+        $ackUrl = $meeting->ack_token && ! $meeting->acknowledged_at
+            ? FrontendUrl::to('/kickoff/ack/'.$meeting->ack_token)
+            : null;
+
+        // Every vendor on the meeting gets its OWN read link, built from the
+        // per-vendor token already minted into kickoff_meeting_subjects. A
+        // secondary vendor could not read the minutes at all before this — the
+        // mail only ever went to the vendor named on kickoffable_*.
+        //
+        // The ACKNOWLEDGE button is unchanged: it stays meeting-level and stays
+        // with the primary, so no secondary is handed a credential that would let
+        // it sign on everyone's behalf.
+        $sent = [];
+
+        foreach ($this->momRecipients($meeting, $vendor, $email) as $r) {
+            $to = $r['email'];
+            if (! $to || isset($sent[strtolower($to)])) {
+                continue;
+            }
+            $sent[strtolower($to)] = true;
+
+            $momUrl  = $r['token'] ? FrontendUrl::to('/kickoff/mom/'.$r['token']) : null;
+            $ackHere = $r['is_primary'] ? $ackUrl : null;
+
+            $this->notifications->emailHtml(
+                $to,
+                $ackHere ? $ackSubject : $readSubject,
+                $this->renderMomEmail($meeting, $r['vendor'], $ackHere, $meetingDate, $momUrl),
+                ['kickoff_meeting_id' => $meeting->id, 'vendor_id' => $r['vendor']?->id],
+                $this->momPlainText($meeting, $r['vendor'], $ackHere, $meetingDate, $momUrl),
+            );
         }
+
         if ($phone) {
-            $this->notifications->whatsapp($phone, $body, ['kickoff_meeting_id' => $meeting->id]);
+            $primaryToken = $this->momTokenFor($meeting, $vendor);
+            $this->notifications->whatsapp(
+                $phone,
+                $this->momPlainText($meeting, $vendor, $ackUrl, $meetingDate,
+                    $primaryToken ? FrontendUrl::to('/kickoff/mom/'.$primaryToken) : null),
+                ['kickoff_meeting_id' => $meeting->id],
+            );
         }
+    }
+
+    /**
+     * Who receives the minutes, and with which read token.
+     *
+     * One row per vendor on the meeting, primary first. Falls back to the single
+     * resolved vendor for a meeting written before the subjects pivot existed —
+     * that one uses the meeting-level token, which resolveMomByToken() also
+     * accepts, so legacy meetings keep a working link.
+     *
+     * @return array<int, array{email: ?string, vendor: ?Vendor, token: ?string, is_primary: bool}>
+     */
+    private function momRecipients(KickoffMeeting $meeting, ?Vendor $primary, ?string $fallbackEmail): array
+    {
+        $meeting->loadMissing('subjects.subject');
+
+        if ($meeting->subjects->isEmpty()) {
+            return [[
+                'email'      => $fallbackEmail,
+                'vendor'     => $primary,
+                'token'      => $meeting->ack_token,
+                'is_primary' => true,
+            ]];
+        }
+
+        return $meeting->subjects->map(function (KickoffMeetingSubject $s) {
+            $v = $s->subject instanceof Vendor ? $s->subject : null;
+
+            return [
+                'email'      => $v?->email,
+                'vendor'     => $v,
+                'token'      => $s->ack_token,
+                'is_primary' => (bool) $s->is_primary,
+            ];
+        })->all();
+    }
+
+    /** The read token belonging to one vendor, for the non-e-mail channels. */
+    private function momTokenFor(KickoffMeeting $meeting, ?Vendor $vendor): ?string
+    {
+        if (! $vendor) {
+            return $meeting->ack_token;
+        }
+
+        $row = $meeting->subjects()
+            ->where('subject_type', $vendor::class)
+            ->where('subject_id', $vendor->id)
+            ->first();
+
+        return $row?->ack_token ?: $meeting->ack_token;
+    }
+
+    /** The branded MOM e-mail. Kept beside its plain-text twin so they stay in step. */
+    private function renderMomEmail(KickoffMeeting $meeting, ?Vendor $vendor, ?string $ackUrl, ?string $meetingDate, ?string $momUrl = null): string
+    {
+        $meeting->loadMissing(['attendees', 'momItems']);
+
+        $details = array_filter([
+            'Date'     => $meetingDate,
+            'Time'     => optional($meeting->scheduled_at)->format('h:i A'),
+            'Mode'     => $meeting->mode ? ucfirst($meeting->mode) : null,
+            // The PDF labels this the same way — an online meeting's "location"
+            // is its joining link, and calling it Location would read as a place.
+            ($meeting->mode === 'online' ? 'Meeting Link' : 'Location') => $meeting->location,
+        ]);
+
+        return view('emails.shared.kickoff_mom', [
+            'meeting'       => $meeting,
+            'meetingDate'   => $meetingDate,
+            'recipientName' => $vendor?->company_name ?: ($meeting->attendees->first()->name ?? 'Sir/Madam'),
+            'details'       => $details,
+            'attendees'     => $meeting->attendees,
+            'presentCount'  => $meeting->attendees->where('attended', true)->count(),
+            'momItems'      => $meeting->momItems,
+            'ackUrl'        => $ackUrl,
+            'momUrl'        => $momUrl,
+            'deadline'      => optional($meeting->acknowledgement_deadline)->format('d M Y, h:i A'),
+            'windowHours'   => KickoffMeeting::ACK_WINDOW_HOURS,
+            'companyName'   => config('app.name', 'Our Company'),
+            'logoUrl'       => config('mail.logo_url'),
+        ])->render();
+    }
+
+    /**
+     * Plain-text twin — the multipart alternative and the WhatsApp body. Clients
+     * that refuse HTML must still receive the acknowledgement link, or the whole
+     * message becomes undeliverable in practice.
+     */
+    private function momPlainText(KickoffMeeting $meeting, ?Vendor $vendor, ?string $ackUrl, ?string $meetingDate, ?string $momUrl = null): string
+    {
+        $meeting->loadMissing('momItems');
+
+        $lines = ['Dear '.($vendor?->company_name ?: 'Sir/Madam').',', ''];
+        $lines[] = 'Please find below the minutes of the kickoff meeting'.($meetingDate ? ' held on '.$meetingDate : '').'.';
+        $lines[] = '';
+
+        if ($meeting->scheduled_at) {
+            $lines[] = 'Date: '.$meeting->scheduled_at->format('d M Y').'   Time: '.$meeting->scheduled_at->format('h:i A');
+        }
+        if ($meeting->location) {
+            $lines[] = ($meeting->mode === 'online' ? 'Meeting Link: ' : 'Location: ').$meeting->location;
+        }
+
+        if ($meeting->momItems->count()) {
+            $lines[] = '';
+            $lines[] = 'ACTION ITEMS';
+            foreach ($meeting->momItems as $i => $item) {
+                $lines[] = ($i + 1).'. '.($item->description ?: '—')
+                    .($item->target_date ? ' (target '.$item->target_date->format('d M Y').')' : '')
+                    .($item->remark ? ' — '.$item->remark : '');
+            }
+        }
+
+        if ($meeting->minutes) {
+            $lines[] = '';
+            $lines[] = 'MINUTES';
+            $lines[] = $meeting->minutes;
+        }
+
+        if ($momUrl) {
+            $lines[] = '';
+            $lines[] = 'View the signed minutes (no login needed): '.$momUrl;
+        }
+
+        if ($ackUrl) {
+            $lines[] = '';
+            $lines[] = 'ACKNOWLEDGMENT REQUIRED';
+            if ($meeting->acknowledgement_deadline) {
+                $lines[] = 'Deadline: '.$meeting->acknowledgement_deadline->format('d M Y, h:i A')
+                    .' ('.KickoffMeeting::ACK_WINDOW_HOURS.' hours from now)';
+            }
+            $lines[] = 'Acknowledge here: '.$ackUrl;
+        }
+
+        return implode("\n", $lines);
     }
 
     /* ── Public acknowledgement (no auth — the token is the credential) ── */
@@ -294,6 +489,57 @@ class KickoffMeetingService
 
         if (! $meeting) {
             throw new BusinessException('This acknowledgement link is not valid. It may already have been used.', 404);
+        }
+
+        return $meeting;
+    }
+
+    /**
+     * Resolve a meeting for READING its minutes from a public link.
+     *
+     * Accepts either token in the acknowledgement infrastructure: the per-vendor
+     * one on kickoff_meeting_subjects (what the e-mail now sends, so each vendor
+     * holds its own revocable credential) or the meeting-level one, so links
+     * already in inboxes keep working.
+     *
+     * Read-only and repeatable by design — unlike acknowledge(), this never burns
+     * the token. It resolves mom_path at call time, so a MOM regenerated after
+     * attendance changes is what opens; there is no second copy to go stale.
+     */
+    public function resolveMomByToken(string $token): KickoffMeeting
+    {
+        $subject = KickoffMeetingSubject::where('ack_token', $token)->first();
+
+        $meeting = $subject
+            ? KickoffMeeting::find($subject->kickoff_meeting_id)
+            : KickoffMeeting::where('ack_token', $token)->first();
+
+        // One message for every miss — unknown, tampered, or deleted. Telling them
+        // apart would let someone probe which tokens exist.
+        if (! $meeting) {
+            throw new BusinessException('This link is not valid.', 404);
+        }
+
+        // A subject row carries its own tenant; it must be the meeting's. Belt and
+        // braces against a pivot row ever being written across tenants.
+        if ($subject && (int) $subject->tenant_id !== (int) $meeting->tenant_id) {
+            throw new BusinessException('This link is not valid.', 404);
+        }
+
+        // Same deadline as the acknowledgement window, but read DIRECTLY rather
+        // than through $meeting->acknowledgement_expired: that accessor means
+        // "the window shut without a signature", so it flips to false the moment
+        // someone acknowledges — which would leave a bearer token in an inbox
+        // working forever. A read link has to expire on the clock alone.
+        //
+        // A meeting never put on a clock (no deadline) stays readable, exactly as
+        // acknowledge() treats it. Past the deadline the portal is the way in.
+        if ($meeting->acknowledgement_deadline && $meeting->acknowledgement_deadline->isPast()) {
+            throw new BusinessException('This link has expired. Please sign in to the vendor portal to view the minutes.', 410);
+        }
+
+        if (! $meeting->mom_path || ! Storage::disk(self::DISK)->exists($meeting->mom_path)) {
+            throw new BusinessException('The minutes for this meeting are not available yet.', 404);
         }
 
         return $meeting;
@@ -423,6 +669,25 @@ class KickoffMeetingService
             'present' => $present, 'late' => $late, 'absent' => $absent,
         ]);
 
+        // The MOM prints the attendance table, so a document generated before this
+        // point now contradicts the record — it kept showing everyone Absent after
+        // they had been marked Present, and the only clue was a "Regenerate PDF"
+        // button nobody had reason to press.
+        //
+        // Only refreshed when a document already exists: generating one here would
+        // create a MOM for a meeting whose minutes have not been written yet.
+        if ($meeting->mom_path) {
+            try {
+                $this->generateMom($meeting->fresh(), $actor);
+            } catch (\Throwable $e) {
+                // Attendance is saved either way. A failed re-render must not undo
+                // it — the stale document is a smaller problem than losing the marks.
+                Log::channel('tpv')->warning('Could not refresh MOM after attendance change', [
+                    'meeting_id' => $meeting->id, 'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
         return $this->find($meeting->id, $actor->tenant_id);
     }
 
@@ -478,11 +743,18 @@ class KickoffMeetingService
      */
     public function generateMom(KickoffMeeting $meeting, User $actor): KickoffMeeting
     {
-        $meeting->loadMissing('attendees', 'kickoffable', 'creator');
+        $meeting->loadMissing('attendees', 'kickoffable', 'creator', 'subjects.subject');
+
+        // Every vendor on the meeting, primary first. Falls back to the single
+        // kickoffable so a record predating multi-vendor still names its vendor.
+        $subjectNames = $meeting->subjects->isNotEmpty()
+            ? $meeting->subjects->map(fn ($s) => KickoffSubject::nameOf($s->subject))->filter()->values()->all()
+            : array_filter([KickoffSubject::nameOf($meeting->kickoffable)]);
 
         $pdf = Pdf::loadView('pdf.kickoff_mom', [
-            'meeting'     => $meeting,
-            'tenant'      => Tenant::find($meeting->tenant_id),
+            'meeting'      => $meeting,
+            'tenant'       => Tenant::find($meeting->tenant_id),
+            'subjectNames' => $subjectNames,
             'subjectName' => KickoffSubject::nameOf($meeting->kickoffable),
             'generatedBy' => $actor->name,
             'generatedAt' => now(),
@@ -641,6 +913,69 @@ class KickoffMeetingService
                 'role'              => $a['role'] ?? null,
                 'attended'          => ! empty($a['attended']),
             ]);
+        }
+    }
+
+    /**
+     * Write the meeting's full vendor set into kickoff_meeting_subjects.
+     *
+     * The primary is always row one and mirrors kickoffable_*, so a single query
+     * on this table answers "who is on this meeting" — no union with the parent.
+     * Each vendor gets its own ack token because acknowledgement is per vendor;
+     * one shared token could not say which of them had signed off.
+     *
+     * Rebuilds the set rather than diffing, but PRESERVES any acknowledgement
+     * already given: re-saving a meeting must not silently un-sign a vendor.
+     */
+    private function syncSubjects(KickoffMeeting $meeting, ?object $primary, array $extraIds, int $tenantId): void
+    {
+        if (! $primary) {
+            return;   // a meeting with no vendor has nothing to mirror
+        }
+
+        $type = $primary::class;
+
+        // Primary first, then the extras, de-duplicated and with the primary
+        // never repeated — a vendor cannot attend the same meeting twice.
+        $ids = collect([$primary->id])
+            ->merge(array_map('intval', $extraIds))
+            ->unique()->values();
+
+        $existing = KickoffMeetingSubject::where('kickoff_meeting_id', $meeting->id)
+            ->get()->keyBy(fn ($r) => $r->subject_type.'#'.$r->subject_id);
+
+        foreach ($ids as $id) {
+            // Tenant-scoped: an id from another tenant must not attach.
+            $model = $type::forTenant($tenantId)->find($id);
+            if (! $model) {
+                continue;
+            }
+
+            $key = $type.'#'.$model->id;
+            $row = $existing->get($key);
+
+            if ($row) {
+                $row->update(['is_primary' => $model->id === $primary->id]);
+                $existing->forget($key);
+                continue;
+            }
+
+            KickoffMeetingSubject::create([
+                'tenant_id'          => $tenantId,
+                'kickoff_meeting_id' => $meeting->id,
+                'subject_type'       => $type,
+                'subject_id'         => $model->id,
+                'is_primary'         => $model->id === $primary->id,
+                'ack_token'          => Str::random(48),
+            ]);
+        }
+
+        // Anything left was removed from the meeting. An ACKNOWLEDGED vendor is
+        // kept: deleting it would erase a signature that was actually given.
+        foreach ($existing as $stale) {
+            if (! $stale->acknowledged_at) {
+                $stale->delete();
+            }
         }
     }
 

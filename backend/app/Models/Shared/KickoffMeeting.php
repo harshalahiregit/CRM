@@ -69,7 +69,9 @@ class KickoffMeeting extends Model
     protected $hidden = ['ack_token'];
 
     protected $appends = [
-        'status_label', 'is_acknowledged', 'subject',
+        // 'subject' stays — it is the primary vendor and existing callers read it.
+        // 'subject_list' is the full set, added alongside rather than instead.
+        'status_label', 'is_acknowledged', 'subject', 'subject_list',
         'acknowledgement_open', 'acknowledgement_expired', 'can_complete',
     ];
 
@@ -82,6 +84,19 @@ class KickoffMeeting extends Model
     public function kickoffable()
     {
         return $this->morphTo();
+    }
+
+    /**
+     * Every vendor on this meeting, primary first.
+     *
+     * `kickoffable` above still points at the primary and is what the vendor
+     * portal, the onboarding pointer and scopeFor() query — this is the full set
+     * on top of it, not a replacement.
+     */
+    public function subjects()
+    {
+        return $this->hasMany(KickoffMeetingSubject::class, 'kickoff_meeting_id')
+            ->orderByDesc('is_primary')->orderBy('id');
     }
 
     public function attendees()
@@ -147,6 +162,21 @@ class KickoffMeeting extends Model
     }
 
     /** Structured subject so a listing shows the vendor name, not a row id. */
+    /**
+     * Every vendor on the meeting, for display. Primary first.
+     *
+     * `subject` (singular, below) still returns the primary and is untouched, so
+     * anything already reading it keeps working; this is the full list beside it.
+     */
+    public function getSubjectListAttribute(): array
+    {
+        if (! $this->relationLoaded('subjects')) {
+            return $this->subject ? [$this->subject + ['is_primary' => true]] : [];
+        }
+
+        return $this->subjects->map->toDisplayArray()->values()->all();
+    }
+
     public function getSubjectAttribute(): ?array
     {
         if (! $this->kickoffable_type) {

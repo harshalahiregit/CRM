@@ -70,15 +70,20 @@
 </table>
 
 <div style="font-size:16px; font-weight:bold; color:#111827;">{{ $meeting->title }}</div>
-@if ($subjectName)
-    <div class="muted" style="margin-top:2px;">Third Party Vendor: <strong style="color:#374151;">{{ $subjectName }}</strong></div>
+{{-- All vendors on the meeting. $subjectNames falls back to the single
+     $subjectName for records saved before a meeting could carry several. --}}
+@if (count($subjectNames))
+    <div class="muted" style="margin-top:2px;">
+        {{ count($subjectNames) > 1 ? 'Third Party Vendors' : 'Third Party Vendor' }}:
+        <strong style="color:#374151;">{{ implode(', ', $subjectNames) }}</strong>
+    </div>
 @endif
 
 <h2>Meeting Details</h2>
 <table class="kv">
     <tr><td class="k">Meeting ID</td><td>{{ $meetingNo }}</td><td class="k">Status</td><td>{{ $meeting->status }}</td></tr>
     <tr><td class="k">Meeting Date</td><td>{{ $fmt($meeting->scheduled_at) }}</td><td class="k">Meeting Mode</td><td>{{ $mode }}</td></tr>
-    <tr><td class="k">Third Party Vendor</td><td>{{ $subjectName ?: '—' }}</td><td class="k">{{ $meeting->mode === 'online' ? 'Meeting Link' : 'Location' }}</td><td>{{ $meeting->location ?: '—' }}</td></tr>
+    <tr><td class="k">{{ count($subjectNames) > 1 ? 'Third Party Vendors' : 'Third Party Vendor' }}</td><td>{{ $subjectNames ? implode(', ', $subjectNames) : '—' }}</td><td class="k">{{ $meeting->mode === 'online' ? 'Meeting Link' : 'Location' }}</td><td>{{ $meeting->location ?: '—' }}</td></tr>
 </table>
 
 <h2>Participants &amp; Attendance ({{ $present }}/{{ $attendees->count() }} present)</h2>

@@ -3,6 +3,7 @@
 namespace App\Repositories\Helpdesk;
 
 use App\Models\Helpdesk\Ticket;
+use App\Models\Project\Project;
 use App\Repositories\BaseRepository;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -58,6 +59,27 @@ class TicketRepository extends BaseRepository
             $query->where(function ($sub) use ($s) {
                 $sub->where('subject', 'like', $s)->orWhere('description', 'like', $s);
             });
+        }
+        // A ticket has no vendor of its own — it reaches one THROUGH its project
+        // (tickets.project_id → projects.vendor_id). The project ids are resolved
+        // here from the vendor, never accepted from the caller, and the subquery
+        // carries its own tenant scope so a vendor id from another tenant matches
+        // nothing.
+        //
+        // This is a conjunctive narrowing: it runs on top of the visibility
+        // barrier above, so it can only ever REMOVE tickets an agent could
+        // already see — it never widens access.
+        if (! empty($filters['vendor_id'])) {
+            // vendor_type names the party type; the scope resolves it against a
+            // fixed map. Defaulting to tpv_vendor keeps every existing caller,
+            // which omits it, on exactly the query it ran before.
+            $query->whereIn('project_id', Project::forTenant($tenantId)
+                ->forVendorLink((int) $filters['vendor_id'], $filters['vendor_type'] ?? 'tpv_vendor')
+                ->select('id'));
+
+            // The vendor screen shows which project each ticket belongs to. Loaded
+            // only on this path so the tenant-wide ticket payload is unchanged.
+            $query->with('project:id,name');
         }
 
         return $query->latest()->get();

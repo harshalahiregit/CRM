@@ -165,6 +165,52 @@ export const purchaseApi = {
     approve:   (id)          => api.post(`/purchase/vendors/${id}/approve`).then(r => r.data),   // admin-only
     resendActivation: (id)   => api.post(`/purchase/vendors/${id}/resend-activation`).then(r => r.data), // admin-only
     delete:    (id)          => api.delete(`/purchase/vendors/${id}`).then(r => r.data),
+
+    // ── Vendor detail workspace tabs ─────────────────────────────────────
+    // Commercial: native. Every purchase document already keys to
+    // purchase_vendor_id, so payments and the statement need no link step.
+    payments:  (id) => api.get(`/purchase/vendors/${id}/payments`).then(r => r.data),
+    statement: (id) => api.get(`/purchase/vendors/${id}/statement`).then(r => r.data),
+
+    // Notes / reminders / attachments ride the SHARED polymorphic engines,
+    // addressed by model class — one table each, not a Purchase copy.
+    notes: {
+      list:   (vid)           => api.get(`/purchase/vendors/${vid}/notes`).then(r => r.data),
+      create: (vid, data)     => api.post(`/purchase/vendors/${vid}/notes`, data).then(r => r.data),
+      update: (vid, id, data) => api.put(`/purchase/vendors/${vid}/notes/${id}`, data).then(r => r.data),
+      remove: (vid, id)       => api.delete(`/purchase/vendors/${vid}/notes/${id}`).then(r => r.data),
+    },
+    reminders: {
+      list:     (vid)                => api.get(`/purchase/vendors/${vid}/reminders`).then(r => r.data),
+      create:   (vid, data)          => api.post(`/purchase/vendors/${vid}/reminders`, data).then(r => r.data),
+      complete: (vid, id, data = {}) => api.post(`/purchase/vendors/${vid}/reminders/${id}/complete`, data).then(r => r.data),
+      remove:   (vid, id)            => api.delete(`/purchase/vendors/${vid}/reminders/${id}`).then(r => r.data),
+    },
+    appointments: {
+      list:     (vid)       => api.get(`/purchase/vendors/${vid}/appointments`).then(r => r.data),
+      create:   (vid, data) => api.post(`/purchase/vendors/${vid}/appointments`, data).then(r => r.data),
+      complete: (vid, id, data) => api.patch(`/purchase/vendors/${vid}/appointments/${id}/complete`, data).then(r => r.data),
+      remove:   (vid, id)   => api.delete(`/purchase/vendors/${vid}/appointments/${id}`).then(r => r.data),
+    },
+    attachments: {
+      browse: (vid, folderId = null) =>
+        api.get(`/purchase/vendors/${vid}/attachments`, { params: folderId ? { folder_id: folderId } : {} }).then(r => r.data),
+      upload: (vid, file, { folderId = null, source = 'upload', sourceRef = null } = {}) => {
+        const fd = new FormData()
+        fd.append('file', file)
+        if (folderId) fd.append('folder_id', folderId)
+        if (source) fd.append('source', source)
+        if (sourceRef) fd.append('source_ref', sourceRef)
+        return api.post(`/purchase/vendors/${vid}/attachments`, fd, { headers: { 'Content-Type': undefined } }).then(r => r.data)
+      },
+      rename:       (vid, id, name)      => api.put(`/purchase/vendors/${vid}/attachments/${id}`, { name }).then(r => r.data),
+      move:         (vid, id, folder_id) => api.put(`/purchase/vendors/${vid}/attachments/${id}`, { folder_id }).then(r => r.data),
+      remove:       (vid, id)            => api.delete(`/purchase/vendors/${vid}/attachments/${id}`).then(r => r.data),
+      download:     (vid, id)            => api.get(`/purchase/vendors/${vid}/attachments/${id}/download`, { responseType: 'blob' }).then(r => r.data),
+      createFolder: (vid, name, parent_id = null) => api.post(`/purchase/vendors/${vid}/attachment-folders`, { name, parent_id }).then(r => r.data),
+      renameFolder: (vid, id, name)      => api.put(`/purchase/vendors/${vid}/attachment-folders/${id}`, { name }).then(r => r.data),
+      removeFolder: (vid, id)            => api.delete(`/purchase/vendors/${vid}/attachment-folders/${id}`).then(r => r.data),
+    },
   },
 
   // ── Settings — module config (key/value) + the vendor-category master ───
@@ -250,6 +296,24 @@ export const purchaseApi = {
 
   // ── Purchase onboarding — the 6-step wizard (/purchase/onboarding) ───
   // Mirrors tpvApi.onboarding (incl. decisions + kickoff) so the shared wizard works.
+  // ── Purchase workforce (admin/staff) ──────────────────────────────────
+  // Tenant-scoped server-side: vendor_id here only FILTERS, it never authorises.
+  // Badge activation is role:admin on the backend — the UI hides the button for
+  // staff, and the endpoint refuses them regardless.
+  workforce: {
+    workers:  (params = {}) => api.get('/purchase/workforce/workers', { params }).then(r => r.data),
+    worker:   (id)          => api.get(`/purchase/workforce/workers/${id}`).then(r => r.data),
+    ppe:      (id)          => api.get(`/purchase/workforce/workers/${id}/ppe`).then(r => r.data),
+    gate:     (id)          => api.get(`/purchase/workforce/workers/${id}/gate`).then(r => r.data),
+    activate: (id, data = {}) => api.post(`/purchase/workforce/workers/${id}/activate`, data).then(r => r.data),
+    returnPpe: (issueId, data = {}) => api.post(`/purchase/workforce/ppe/issues/${issueId}/return`, data).then(r => r.data),
+    // Vendor-detail Medical / Training tabs. Purchase keeps these NORMALISED
+    // (one-to-many), so they list the records themselves — not one row per
+    // worker the way TPV's single wide table allows.
+    medicals:  (vendorId) => api.get('/purchase/workforce/medicals', { params: { vendor_id: vendorId } }).then(r => r.data),
+    trainings: (vendorId) => api.get('/purchase/workforce/trainings', { params: { vendor_id: vendorId } }).then(r => r.data),
+  },
+
   onboarding: {
     list:     (params = {}) => api.get('/purchase/onboarding', { params }).then(r => r.data),
     stats:    ()            => api.get('/purchase/onboarding/stats').then(r => r.data),

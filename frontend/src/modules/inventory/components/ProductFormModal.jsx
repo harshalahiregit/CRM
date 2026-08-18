@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { X, Check, PackagePlus, IndianRupee, Tag, ImagePlus, Trash2, Plus } from 'lucide-react'
 import { inventoryApi, INV_ACCENT, calcSalePrice, calcProfitRatio } from '@/services/inventoryApi'
 import Select from '@/components/ui/Select'
+import { useDiscardGuard } from '@/lib/confirmClose'
 
 /**
  * Create / edit a product. Centered modal (matching the Task form), grouped into
@@ -28,10 +29,20 @@ const EMPTY = {
 }
 
 export default function ProductFormModal({ open, onClose, product = null, onSaved }) {
+  const { guard, dialog } = useDiscardGuard()
   const qc = useQueryClient()
   const editing = Boolean(product)
   const [form, setForm] = useState(EMPTY)
   const [err, setErr] = useState('')
+
+  const isDirty = () => {
+    if (editing) {
+      return form.name !== (product.name || '') || form.description !== (product.description || '') || form.cost_price !== (product.cost_price || '') || form.sale_price !== (product.sale_price || '')
+    }
+    return Boolean(form.name?.trim() || form.sku?.trim() || form.description?.trim() || form.cost_price || form.sale_price || altUnits.length || pv.length)
+  }
+
+  const handleClose = () => guard(onClose, isDirty())
 
   const { data: categories = [] } = useQuery({ queryKey: ['inv-categories'], queryFn: inventoryApi.categories.list, enabled: open })
   const { data: warehouses = [] } = useQuery({ queryKey: ['inv-warehouses'], queryFn: inventoryApi.warehouses.list, enabled: open })
@@ -206,20 +217,21 @@ export default function ProductFormModal({ open, onClose, product = null, onSave
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-[55] flex items-start justify-center p-3 sm:p-6 overflow-y-auto"
-      style={{ background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(2px)' }} onClick={onClose}>
-      <form onSubmit={submit} onClick={e => e.stopPropagation()}
-        className="w-full rounded-2xl overflow-hidden my-2 flex flex-col"
-        style={{ maxWidth: 780, background: 'var(--bg-global)', boxShadow: '0 24px 70px rgba(0,0,0,0.45)', maxHeight: '94vh' }}>
+    <>
+      <div className="fixed inset-0 z-[55] flex items-start justify-center p-3 sm:p-6 overflow-y-auto"
+        style={{ background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(2px)' }} onClick={handleClose}>
+        <form onSubmit={submit} onClick={e => e.stopPropagation()}
+          className="w-full rounded-2xl overflow-hidden my-2 flex flex-col"
+          style={{ maxWidth: 780, background: 'var(--bg-global)', boxShadow: '0 24px 70px rgba(0,0,0,0.45)', maxHeight: '94vh' }}>
 
-        <header className="flex items-center gap-2.5 px-6 py-4 shrink-0"
-          style={{ background: `linear-gradient(120deg, ${INV_ACCENT}, #059669)` }}>
-          <PackagePlus size={20} style={{ color: '#fff' }} />
-          <h2 className="font-bold text-white" style={{ fontSize: 17 }}>{editing ? 'Edit Product' : 'New Product'}</h2>
-          <button type="button" onClick={onClose} aria-label="Close" className="ml-auto opacity-90 hover:opacity-100">
-            <X size={19} style={{ color: '#fff' }} />
-          </button>
-        </header>
+          <header className="flex items-center gap-2.5 px-6 py-4 shrink-0"
+            style={{ background: `linear-gradient(120deg, ${INV_ACCENT}, #059669)` }}>
+            <PackagePlus size={20} style={{ color: '#fff' }} />
+            <h2 className="font-bold text-white" style={{ fontSize: 17 }}>{editing ? 'Edit Product' : 'New Product'}</h2>
+            <button type="button" onClick={handleClose} aria-label="Close" className="ml-auto opacity-90 hover:opacity-100">
+              <X size={19} style={{ color: '#fff' }} />
+            </button>
+          </header>
 
         <div className="px-6 py-5 space-y-5 overflow-y-auto" style={{ flex: 1 }}>
           <Section title="Identity">
@@ -493,7 +505,7 @@ export default function ProductFormModal({ open, onClose, product = null, onSave
         </div>
 
         <footer className="flex items-center justify-end gap-2 px-6 py-4 shrink-0" style={{ borderTop: '1px solid var(--border)', background: 'var(--bg-card)' }}>
-          <button type="button" onClick={onClose} className="text-sm font-semibold px-4 py-2.5 rounded-xl"
+          <button type="button" onClick={handleClose} className="text-sm font-semibold px-4 py-2.5 rounded-xl"
             style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>Cancel</button>
           <button type="submit" disabled={!form.name.trim() || save.isPending}
             className="flex items-center gap-1.5 text-sm font-bold px-5 py-2.5 rounded-xl disabled:opacity-40"
@@ -503,6 +515,8 @@ export default function ProductFormModal({ open, onClose, product = null, onSave
         </footer>
       </form>
     </div>
+    {dialog}
+    </>
   )
 }
 

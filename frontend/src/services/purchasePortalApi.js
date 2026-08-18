@@ -96,13 +96,38 @@ export const purchasePortalApi = {
     setStatus: () => Promise.reject(new Error('Admin only')),
   },
 
-  // ── PPE — served from INVENTORY (single source of truth), read-only here ─
-  // A purchase vendor has no workers, so there is nothing to issue to.
+  // ── Workforce — the vendor's own workers, resolved from the token ───────
+  // No vendor_id is ever sent: the server reads it from the PurchaseVendor token
+  // and 404s any worker that is not the caller's.
+  workers: {
+    list:      (params = {}) => api.get('/portal/purchase/workers', { params }).then(r => r.data),
+    summary:   ()            => api.get('/portal/purchase/workers/summary').then(r => r.data),
+    get:       (id)          => api.get(`/portal/purchase/workers/${id}`).then(r => r.data),
+    create:    (data)        => api.post('/portal/purchase/workers', data).then(r => r.data),
+    update:    (id, data)    => api.put(`/portal/purchase/workers/${id}`, data).then(r => r.data),
+    remove:    (id)          => api.delete(`/portal/purchase/workers/${id}`).then(r => r.data),
+    readiness: (id)          => api.get(`/portal/purchase/workers/${id}/readiness`).then(r => r.data),
+    medical:   (id, data)    => api.post(`/portal/purchase/workers/${id}/medical`, data).then(r => r.data),
+    training:  (id, data)    => api.post(`/portal/purchase/workers/${id}/training`, data).then(r => r.data),
+    induction: (id, data)    => api.post(`/portal/purchase/workers/${id}/induction`, data).then(r => r.data),
+    document:  (id, fd)      => api.post(`/portal/purchase/workers/${id}/documents`, fd).then(r => r.data),
+    // Step 5 is READ ONLY here — activation is an admin decision.
+    badge:     (id)          => api.get(`/portal/purchase/workers/${id}/badge`).then(r => r.data),
+    activate:  ()            => Promise.reject(new Error('Admin only')),
+  },
+
+  // ── PPE — served from central INVENTORY (single source of truth) ────────
+  // Issue/return move inventory_stock through StockService; the vendor never
+  // supplies a warehouse, so it cannot move stock between sites.
   ppe: {
     catalogue: ()          => api.get('/portal/purchase/ppe').then(r => r.data),
     summary:   ()          => api.get('/portal/purchase/ppe/summary').then(r => r.data),
     // Private file: fetched as a blob so the bearer token is sent.
     imageBlob: (productId) => api.get(`/portal/purchase/ppe/item/${productId}/image`, { responseType: 'blob' }).then(r => URL.createObjectURL(r.data)),
+    forWorker:  (workerId)        => api.get(`/portal/purchase/workers/${workerId}/ppe`).then(r => r.data),
+    compliance: (workerId)        => api.get(`/portal/purchase/workers/${workerId}/ppe/compliance`).then(r => r.data),
+    issue:      (workerId, data)  => api.post(`/portal/purchase/workers/${workerId}/ppe/issue`, data).then(r => r.data),
+    return:     (issueId, data)   => api.post(`/portal/purchase/ppe/issues/${issueId}/return`, data).then(r => r.data),
   },
 
   // Standalone kickoff summary (the portal Kickoff tab, resolved from the token).

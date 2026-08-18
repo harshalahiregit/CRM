@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Clock } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
+import { getRemember } from '@/lib/authStorage'
 import { authApi } from '@/services/authApi'
 
 /**
@@ -8,9 +9,33 @@ import { authApi } from '@/services/authApi'
  * the server-side idle timeout ends their session; "Stay Signed In" sends a
  * heartbeat. Mirrors the backend default (30 min idle, 2 min warning). A
  * throttled heartbeat on activity keeps the server session fresh during use.
+ *
+ * "Remember me" is honoured here too: the backend's EnforceIdleTimeout exempts
+ * remembered sessions, and this timer used to end them anyway — so ticking the
+ * box bought nothing. See the guard in the countdown below.
  */
-const IDLE_MINUTES = 30
-const WARN_SECONDS = 120
+
+/**
+ * The idle window in minutes.
+ *
+ * `AUTH_SESSION_IDLE_MINUTES` stays the source of truth for what the server
+ * enforces; this is the client's copy of it, overridable at build time via
+ * VITE_IDLE_MINUTES so a deployment can keep the two in step without a code
+ * change. Unset → 30, exactly as before.
+ *
+ * A non-positive or unparseable value falls back to 30 rather than disabling
+ * the timer: a typo in the build config must not quietly hand out sessions
+ * that never expire.
+ */
+function configuredIdleMinutes() {
+  const raw = Number(import.meta.env.VITE_IDLE_MINUTES)
+  return Number.isFinite(raw) && raw > 0 ? raw : 30
+}
+
+const IDLE_MINUTES = configuredIdleMinutes()
+// Two minutes' notice, but never more than half the window — otherwise a short
+// configured timeout would show the countdown from the moment the page loads.
+const WARN_SECONDS = Math.min(120, Math.floor((IDLE_MINUTES * 60) / 2))
 
 export default function IdleTimeoutWarning() {
   const { logout } = useAuth()
@@ -34,6 +59,16 @@ export default function IdleTimeoutWarning() {
 
   useEffect(() => {
     const id = setInterval(() => {
+      // A remembered session is exempt from the idle timeout server-side, so
+      // ending it here would sign the user out of a session the API is still
+      // perfectly happy to serve. Read per tick, not once at mount, so a
+      // re-login within the same page load is picked up. Anything other than a
+      // confirmed remember-me reads false and keeps the timeout.
+      if (getRemember()) {
+        if (warn) setWarn(false)
+        return
+      }
+
       const idle = (Date.now() - lastActivity.current) / 1000
       const warnAt = IDLE_MINUTES * 60 - WARN_SECONDS
       if (idle >= IDLE_MINUTES * 60) {

@@ -11,6 +11,8 @@ import VendorRegisterPage from '@/pages/auth/VendorRegisterPage'
 import TPVRegisterPage from '@/pages/auth/TPVRegisterPage'
 import ClientRegisterPage from '@/pages/auth/ClientRegisterPage'
 import PendingApprovalPage from '@/pages/auth/PendingApprovalPage'
+import SetPasswordPage from '@/pages/auth/SetPasswordPage'
+import ForgotPasswordPage from '@/pages/auth/ForgotPasswordPage'
 
 // Core pages (lazy)
 const DashboardPage = lazy(() => import('@/pages/dashboard/DashboardPage'))
@@ -227,6 +229,7 @@ const PurchaseVendors = lazy(() => import('@/modules/purchase/pages/PurchaseVend
 const PurchaseVendorDetailLayout = lazy(() => import('@/modules/purchase/pages/vendor-detail/PurchaseVendorDetailLayout'))
 const PurchaseVendorOnboardings = lazy(() => import('@/modules/purchase/pages/PurchaseVendorOnboardings'))
 const PurchaseVendorOnboardingWizard = lazy(() => import('@/modules/purchase/pages/PurchaseVendorOnboardingWizard'))
+const PurchaseWorkforce = lazy(() => import('@/modules/purchase/pages/PurchaseWorkforce'))
 // Purchase Kickoff — Purchase-owned pages on /api/purchase/kickoff (no TPV/shared reuse).
 const PurchaseKickoffMeetings = lazy(() => import('@/modules/purchase/pages/PurchaseKickoffMeetings'))
 const PurchaseKickoffCreate = lazy(() => import('@/modules/purchase/pages/PurchaseKickoffCreate'))
@@ -240,6 +243,7 @@ const PurchasePortalDocuments = lazy(() => import('@/pages/purchase-portal/Purch
 const PurchasePortalApproval = lazy(() => import('@/pages/purchase-portal/PurchasePortalApproval'))
 const PurchasePortalKickoff = lazy(() => import('@/pages/purchase-portal/PurchasePortalKickoff'))
 const PurchasePortalPpe = lazy(() => import('@/pages/purchase-portal/PurchasePortalPpe'))
+const PurchasePortalWorkforce = lazy(() => import('@/pages/purchase-portal/PurchasePortalWorkforce'))
 const PurchaseVendorLogin = lazy(() => import('@/pages/purchase-portal/PurchaseVendorLogin'))
 const PurchaseVendorRegister = lazy(() => import('@/pages/purchase-portal/PurchaseVendorRegister'))
 const PurchaseVendorForgotPassword = lazy(() => import('@/pages/purchase-portal/PurchaseVendorForgotPassword'))
@@ -282,11 +286,13 @@ const KickoffMeetings = lazy(() => import('@/modules/shared/pages/KickoffMeeting
 const KickoffMeetingCreate = lazy(() => import('@/modules/shared/pages/KickoffMeetingCreate'))
 const KickoffMeetingDetail = lazy(() => import('@/modules/shared/pages/KickoffMeetingDetail'))
 const KickoffAck = lazy(() => import('@/pages/kickoff/KickoffAck'))
+const KickoffMom = lazy(() => import('@/pages/kickoff/KickoffMom'))
 
 // Vendor Self-Service Portal — its own chrome, gated to vendor roles. Every
 // endpoint resolves the vendor from the token (EnsureVendorPortalAccess).
 const VendorPortalShell = lazy(() => import('@/pages/vendor-portal/VendorPortalShell'))
 const MyRegistrationStatus = lazy(() => import('@/pages/vendor-portal/MyRegistrationStatus'))
+const PortalOnboardingEntry = lazy(() => import('@/pages/vendor-portal/PortalOnboardingEntry'))
 const PortalDashboard = lazy(() => import('@/pages/vendor-portal/PortalDashboard'))
 const PortalDocuments = lazy(() => import('@/pages/vendor-portal/PortalDocuments'))
 const PortalOrderDetail = lazy(() => import('@/pages/vendor-portal/PortalOrderDetail'))
@@ -355,7 +361,11 @@ export default function AppRoutes() {
         <Route path="register/client" element={<ClientRegisterPage />} />
         <Route path="register/company" element={<S><CompanyRegisterPage /></S>} />
         <Route path="pending-approval" element={<PendingApprovalPage />} />
-        <Route path="forgot-password" element={<GuestRoute><ComingSoon name="Forgot Password" /></GuestRoute>} />
+        <Route path="forgot-password" element={<GuestRoute><ForgotPasswordPage /></GuestRoute>} />
+        {/* Where a vendor login-link email lands. Not GuestRoute-wrapped: an
+            admin already signed in must still be able to open the link they
+            just sent, to check it works. */}
+        <Route path="set-password" element={<S><SetPasswordPage /></S>} />
         <Route path="verify-email" element={<ComingSoon name="Email Verification" />} />
       </Route>
 
@@ -371,6 +381,8 @@ export default function AppRoutes() {
       <Route path="/scan/:token" element={<S><GateScan /></S>} />
       <Route path="/checklist/:token" element={<S><ChecklistFill /></S>} />
       <Route path="/kickoff/ack/:token" element={<S><KickoffAck /></S>} />
+      {/* Read-only view of the same minutes — the e-mail's View MOM PDF link. */}
+      <Route path="/kickoff/mom/:token" element={<S><KickoffMom /></S>} />
 
       {/* Protected app routes */}
       <Route path="/app" element={<ProtectedRoute><AppShell /></ProtectedRoute>}>
@@ -529,6 +541,9 @@ export default function AppRoutes() {
           <Route path="vendors/:id/*" element={<S><PurchaseVendorDetailLayout /></S>} />
           <Route path="onboarding" element={<S><PurchaseVendorOnboardings /></S>} />
           <Route path="onboarding/:id" element={<S><PurchaseVendorOnboardingWizard /></S>} />
+          {/* Admin/staff review of vendor-supplied workers. Activation inside is
+              admin-only — the button is hidden for staff and the endpoint refuses them. */}
+          <Route path="workforce" element={<S><PurchaseWorkforce /></S>} />
           {/* Kickoff Meetings — Purchase-owned pages on /api/purchase/kickoff (no TPV reuse) */}
           <Route path="kickoff" element={<S><PurchaseKickoffMeetings /></S>} />
           <Route path="kickoff/new" element={<S><PurchaseKickoffCreate /></S>} />
@@ -556,8 +571,17 @@ export default function AppRoutes() {
               before :id so "edit" is never captured as a meeting id. */}
           <Route path="kickoff/:id/edit" element={<S><KickoffMeetingCreate /></S>} />
           <Route path="kickoff/:id" element={<S><KickoffMeetingDetail /></S>} />
+          {/* The onboarding QUEUE stays — it is how staff find work. The wizard
+              itself does not: Steps 1–6 are the vendor's own workflow and the
+              only mount is /vendor-portal/onboarding/:id. `editable` was derived
+              from status alone, never role, so an admin opening this route could
+              accept the kickoff MOM, type the vendor's bank details and tick the
+              vendor's declaration — entries the audit trail then attributes to
+              the vendor. Admin review and approval live on the vendor record
+              (TpvVendorDetail / TpvVendorDocuments) and are unchanged.
+              Old links land on the queue rather than 404. */}
           <Route path="onboarding" element={<S><TpvOnboardings /></S>} />
-          <Route path="onboarding/:id" element={<S><TpvOnboardingWizard /></S>} />
+          <Route path="onboarding/:id" element={<Navigate to="/app/tpv/onboarding" replace />} />
           <Route path="temporary" element={<S><TpvTemporaryVendors /></S>} />
           <Route path="approvals" element={<S><TpvApprovals /></S>} />
           {/* Was a ComingSoon placeholder with no implementation. Documents are
@@ -669,14 +693,18 @@ export default function AppRoutes() {
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="dashboard"         element={<S><PortalDashboard /></S>} />
 
-        {/* Onboarding is an ADMIN workflow and is no longer part of the vendor
-            portal. Redirected rather than deleted so existing bookmarks and emailed
-            links land on the dashboard, where the read-only status card lives.
-            The admin routes under /app/tpv are untouched. */}
-        {/* One read-only status page replaces the onboarding LIST + wizard. */}
+        {/* Onboarding is the VENDOR's own six-step workflow, and this is now its
+            ONLY mount — the admin copy under /app/tpv/onboarding/:id was removed
+            because it rendered the same wizard fully editable for staff.
+            useVendorModule() resolves portalApi from the /vendor-portal path, and
+            canApprove/canManage are both false for a third_party_vendor, so the
+            admin-only review (Step 4) and approval (Step 6) controls render as
+            read-only status for the vendor.
+            The portal has no LIST — a vendor has exactly one onboarding, which
+            PortalOnboardingEntry resolves from the token. */}
         <Route path="registration"      element={<S><MyRegistrationStatus /></S>} />
-        <Route path="onboarding"        element={<Navigate to="/vendor-portal/registration" replace />} />
-        <Route path="onboarding/:id"    element={<Navigate to="/vendor-portal/registration" replace />} />
+        <Route path="onboarding"        element={<S><PortalOnboardingEntry /></S>} />
+        <Route path="onboarding/:id"    element={<S><TpvOnboardingWizard /></S>} />
 
         {/* TPV Workforce — PortalWorkforceShell resolves vendor from token (no :vendorId in URL). */}
         <Route path="workforce" element={<S><PortalWorkforceShell /></S>}>
@@ -711,11 +739,20 @@ export default function AppRoutes() {
       }>
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="dashboard"  element={<S><PurchasePortalDashboard /></S>} />
-        {/* Onboarding + Approval are admin workflows — see the TPV block above. */}
-        <Route path="onboarding" element={<Navigate to="/purchase-portal/dashboard" replace />} />
+        {/* The six onboarding steps are the VENDOR's own work — profile and final
+            submission exist in no other screen, so with these redirected in place
+            nothing in the product could submit a purchase onboarding at all. The
+            admin page at /app/purchase/onboarding/:id stays review-only (documents
+            + Approve/Reject/Hold) and is unaffected.
+            PurchasePortalOnboarding resolves the record from the token via
+            onboarding.self() — no id in the URL. */}
+        <Route path="onboarding" element={<S><PurchasePortalOnboarding /></S>} />
         <Route path="documents"  element={<S><PurchasePortalDocuments /></S>} />
-        <Route path="approval"   element={<Navigate to="/purchase-portal/dashboard" replace />} />
+        <Route path="approval"   element={<S><PurchasePortalApproval /></S>} />
         <Route path="kickoff"    element={<S><PurchasePortalKickoff /></S>} />
+        {/* My Workforce — unlocked once the vendor is Active. The 5-step worker
+            lifecycle; step 5 (badge) is read-only here, activation is admin-only. */}
+        <Route path="workforce"  element={<S><PurchasePortalWorkforce /></S>} />
         <Route path="ppe"        element={<S><PurchasePortalPpe /></S>} />
       </Route>
 

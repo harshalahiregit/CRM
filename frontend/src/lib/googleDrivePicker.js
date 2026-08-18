@@ -9,7 +9,20 @@ const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID
 const API_KEY = import.meta.env.VITE_GOOGLE_API_KEY
 const SCOPE = 'https://www.googleapis.com/auth/drive.readonly'
 
-export const googleDriveConfigured = Boolean(CLIENT_ID && API_KEY)
+/**
+ * The two credentials are needed at DIFFERENT stages, so they are reported
+ * separately rather than as one all-or-nothing flag.
+ *
+ *   CLIENT_ID → sign-in and consent. Enough on its own to reach Google's login
+ *               screen, which is what makes the button worth enabling.
+ *   API_KEY   → the Picker itself (setDeveloperKey). Only needed once the user
+ *               is past consent.
+ *
+ * Gating the button on both meant a half-configured project showed a dead
+ * control with no way to see how far the setup had got.
+ */
+export const googleDriveConfigured = Boolean(CLIENT_ID)
+export const googleDriveFullyConfigured = Boolean(CLIENT_ID && API_KEY)
 
 /** Inject a <script> once and resolve when it has loaded. */
 function loadScript(src) {
@@ -53,10 +66,20 @@ function getAccessToken() {
  */
 export async function openGoogleDrivePicker() {
   if (!googleDriveConfigured) {
-    throw new Error('Google Drive isn’t configured. Set VITE_GOOGLE_CLIENT_ID and VITE_GOOGLE_API_KEY to enable it.')
+    throw new Error('Google Drive isn’t configured. Set VITE_GOOGLE_CLIENT_ID to enable sign-in.')
   }
   await loadPicker()
+
+  // Sign-in first: this is Google's own account chooser and consent screen, and
+  // it needs only the client id.
   const token = await getAccessToken()
+
+  // Past consent, the Picker needs the developer key. Failing here — after the
+  // user has signed in — is the honest place to say so, rather than pretending
+  // the whole feature is unavailable before they have seen anything.
+  if (!API_KEY) {
+    throw new Error('Signed in to Google. Set VITE_GOOGLE_API_KEY to finish enabling the file picker.')
+  }
 
   const picked = await new Promise((resolve, reject) => {
     try {

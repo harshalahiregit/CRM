@@ -38,7 +38,7 @@ class TpvGateLogController extends Controller
     public function log(Request $request)
     {
         return response()->json(
-            $this->gateService->gateLog($request->user()->tenant_id, $request->only(['decision', 'worker_id', 'date']))
+            $this->gateService->gateLog($request->user()->tenant_id, $request->only(['decision', 'worker_id', 'date', 'vendor_id']))
         );
     }
 

@@ -80,7 +80,7 @@ class SalesDemoSeeder extends Seeder
                 'currency' => 'INR',
                 'start_date' => Carbon::now()->subDays(15),
                 'end_date' => Carbon::now()->addYear(),
-                'description' => '<p><strong>ENTERPRISE SOFTWARE & SERVICE AGREEMENT</strong></p><p>This Agreement is made by and between MLA Consulting and Acme Corporation for providing SaaS CRM & ERP Modules, 24/7 dedicated support, and monthly uptime SLAs of 99.9%.</p>',
+                'description' => '<p><strong>ENTERPRISE SOFTWARE & SERVICE AGREEMENT</strong></p><p>This Agreement is made by and between SANGOE OS and Acme Corporation for providing SaaS CRM & ERP Modules, 24/7 dedicated support, and monthly uptime SLAs of 99.9%.</p>',
                 'status' => 'active',
                 'signed_by_name' => 'Rajesh Kumar',
                 'signed_at' => Carbon::now()->subDays(10),

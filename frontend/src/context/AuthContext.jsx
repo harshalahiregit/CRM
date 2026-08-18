@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect } from 'react'
 import api from '@/lib/api'
 import { setAuth, getToken, getUser, getTenant, clearAuth, updateUserTenant } from '@/lib/authStorage'
 
@@ -75,6 +75,17 @@ export function AuthProvider({ children }) {
       setUser(u)
       setTenant(t)
     } catch { /* silent fail */ }
+  }, [])
+
+  /* ── ON LOAD: refresh identity from the server ───────────────────────
+     The cached user/tenant (name, tenant name + subdomain, role) comes from
+     the last login and is otherwise never updated. Refreshing /auth/me once on
+     mount — whenever a token exists — keeps the sidebar's company name and
+     everything else in sync with the database without forcing a re-login.
+     Silent-fails offline so it never blocks the app or logs anyone out. */
+  useEffect(() => {
+    if (getToken()) refreshUser()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return (

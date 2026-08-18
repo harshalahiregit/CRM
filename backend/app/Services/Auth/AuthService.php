@@ -210,7 +210,16 @@ class AuthService
 
     public function registerTPV(array $data): User
     {
+        // Resolved once and stamped on BOTH rows, exactly as registerCompany does.
+        // The Vendor row has always carried it; the User row did not, which left
+        // users.tenant_id NULL on every self-registered TPV. Anything that scopes
+        // by the caller's tenant then resolved nothing -- including the portal
+        // countdown lookup (Vendor::forTenant($user->tenant_id)), so a temporary
+        // TPV never saw its own access window.
+        $tenantId = AgencyContext::tenantId();
+
         $user = User::create([
+            'tenant_id'         => $tenantId,
             'name'              => trim($data['first_name'].' '.$data['last_name']),
             'email'             => $data['email'],
             'password'          => Hash::make($data['password']),
@@ -223,15 +232,21 @@ class AuthService
             'access_expires_at' => null,
             'phone'             => $data['phone'] ?? null,
             'designation'       => $data['position'] ?? null,
+            // Kept as the raw record of what was typed at registration. The vendor
+            // master below is the authoritative copy that listings, PDFs and search
+            // read; this stays so the backfill has a source for older rows.
             'meta'              => [
-                'username'   => $data['username'],
-                'gst_number' => $data['gst_number'] ?? null,
-                'industry'   => $data['industry'] ?? null,
-                'city'       => $data['city'] ?? null,
-                'state'      => $data['state'] ?? null,
-                'country'    => $data['country'] ?? null,
-                'zip'        => $data['zip'] ?? null,
-                'website'    => $data['website'] ?? null,
+                'username'    => $data['username'],
+                'gst_number'  => $data['gst_number'] ?? null,
+                'industry'    => $data['industry'] ?? null,
+                'city'        => $data['city'] ?? null,
+                'state'       => $data['state'] ?? null,
+                'country'     => $data['country'] ?? null,
+                'zip'         => $data['zip'] ?? null,
+                'website'     => $data['website'] ?? null,
+                'legal_name'  => $data['legal_name'] ?? null,
+                'pan_number'  => $data['pan_number'] ?? null,
+                'address'     => $data['address'] ?? null,
             ],
         ]);
 
@@ -240,12 +255,21 @@ class AuthService
         // the agency tenant (external parties aren't independent tenants), and the
         // Temporary/Permanent choice maps to the vendor_type.
         Vendor::create([
-            'tenant_id'   => AgencyContext::tenantId(),
+            'tenant_id'   => $tenantId,
             'user_id'     => $user->id,
             'company_name'=> $data['username'] ?? $user->name,
             // Store on the vendor's own column, not just in user meta --
             // the vendor master is what listings, PDFs and search read.
             'gst_number'  => $data['gst_number'] ?? null,
+            // These four were collected at registration and written ONLY to
+            // user.meta, so the vendor record showed a dash for details the
+            // vendor had already given us. `industry` is the registration form's
+            // word for what the vendor master calls `category`.
+            'legal_name'  => $data['legal_name'] ?? null,
+            'pan_number'  => isset($data['pan_number']) ? strtoupper((string) $data['pan_number']) : null,
+            'address'     => $data['address'] ?? null,
+            'website'     => $data['website'] ?? null,
+            'category'    => $data['industry'] ?? null,
             'vendor_type' => $data['tpv_type'] === 'temporary' ? 'temporary' : 'standard',
             // The registration choice is stored verbatim, so it is never
             // re-derived from vendor_type / is_temporary later on.

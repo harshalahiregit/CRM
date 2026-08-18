@@ -4,6 +4,7 @@ import { Hourglass, TrendingDown, Check, X, Trash2, Tag, Truck, Recycle, Ban, Pe
 import { inventoryApi, INV_ACCENT } from '@/services/inventoryApi'
 import { useAuth } from '@/context/AuthContext'
 import Select from '@/components/ui/Select'
+import { useDiscardGuard } from '@/lib/confirmClose'
 
 const INP = { width: '100%', padding: '8px 10px', fontSize: 13, borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)', outline: 'none' }
 const money = (n) => Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -138,6 +139,7 @@ export default function InventoryDeadStock() {
 }
 
 function PlanModal({ row, onClose, onSaved }) {
+  const { guard, dialog } = useDiscardGuard()
   const [action, setAction] = useState('discount')
   const [discount, setDiscount] = useState('')
   const [newPrice, setNewPrice] = useState('')
@@ -145,6 +147,9 @@ function PlanModal({ row, onClose, onSaved }) {
   const [toWarehouse, setToWarehouse] = useState('')
   const [note, setNote] = useState('')
   const [err, setErr] = useState('')
+
+  const isDirty = () => Boolean(discount || newPrice || toWarehouse || note.trim())
+  const handleClose = () => guard(onClose, isDirty())
 
   const { data: warehouses = [] } = useQuery({ queryKey: ['inv-wh-all'], queryFn: () => inventoryApi.warehouses.list(), enabled: action === 'transfer' })
   const whList = Array.isArray(warehouses) ? warehouses : (warehouses?.data || [])
@@ -163,52 +168,55 @@ function PlanModal({ row, onClose, onSaved }) {
   })
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,.5)' }} onClick={onClose}>
-      <div className="rounded-2xl p-5 w-full max-w-md space-y-3" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-purple)' }} onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between">
-          <h3 className="text-base font-black" style={{ color: 'var(--text-h)' }}>Plan action</h3>
-          <button onClick={onClose}><X size={16} style={{ color: 'var(--text-muted)' }} /></button>
-        </div>
-        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{row.name} · {row.quantity} on hand · {money(row.value)} at rest</p>
-
-        <div className="flex flex-wrap gap-1.5">
-          {ACTIONS.map(a => (
-            <button key={a.value} onClick={() => setAction(a.value)} className="flex items-center gap-1 text-xs font-bold px-2.5 py-1.5 rounded-xl"
-              style={action === a.value ? { background: INV_ACCENT, color: '#fff' } : { border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
-              <a.icon size={12} /> {a.label}
-            </button>
-          ))}
-        </div>
-
-        {action === 'discount' && (
-          <div className="space-y-2">
-            <div className="grid grid-cols-2 gap-2">
-              <label className="block"><span className="block text-[10px] font-bold uppercase mb-1" style={{ color: 'var(--text-muted)' }}>Discount %</span><input type="number" min="0" max="100" value={discount} onChange={e => { setDiscount(e.target.value); setNewPrice('') }} style={INP} /></label>
-              <label className="block"><span className="block text-[10px] font-bold uppercase mb-1" style={{ color: 'var(--text-muted)' }}>or New price</span><input type="number" min="0" value={newPrice} onChange={e => { setNewPrice(e.target.value); setDiscount('') }} style={INP} /></label>
-            </div>
-            <label className="flex items-center gap-2 text-xs" style={{ color: 'var(--text-body)' }}>
-              <input type="checkbox" checked={applyNow} onChange={e => setApplyNow(e.target.checked)} /> Apply the new price to the item now
-            </label>
+    <>
+      <div className="fixed inset-0 z-[90] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,.5)' }} onClick={handleClose}>
+        <div className="rounded-2xl p-5 w-full max-w-md space-y-3" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-purple)' }} onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-black" style={{ color: 'var(--text-h)' }}>Plan action</h3>
+            <button onClick={handleClose}><X size={16} style={{ color: 'var(--text-muted)' }} /></button>
           </div>
-        )}
-        {action === 'transfer' && (
-          <label className="block"><span className="block text-[10px] font-bold uppercase mb-1" style={{ color: 'var(--text-muted)' }}>Move to warehouse</span>
-            <Select size="sm" value={toWarehouse} onChange={setToWarehouse} placeholder="Choose destination…" options={whList.map(w => ({ value: String(w.id), label: w.name }))} />
-            <span className="block text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>Records the intent — post the actual move on the Consignments screen.</span>
-          </label>
-        )}
-        {action === 'write_off' && <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Records the decision. Post the stock removal on the Loss &amp; adjustment screen (with approvals).</p>}
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{row.name} · {row.quantity} on hand · {money(row.value)} at rest</p>
 
-        <label className="block"><span className="block text-[10px] font-bold uppercase mb-1" style={{ color: 'var(--text-muted)' }}>Note</span><input value={note} onChange={e => setNote(e.target.value)} style={INP} placeholder="Why / plan…" /></label>
+          <div className="flex flex-wrap gap-1.5">
+            {ACTIONS.map(a => (
+              <button key={a.value} onClick={() => setAction(a.value)} className="flex items-center gap-1 text-xs font-bold px-2.5 py-1.5 rounded-xl"
+                style={action === a.value ? { background: INV_ACCENT, color: '#fff' } : { border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+                <a.icon size={12} /> {a.label}
+              </button>
+            ))}
+          </div>
 
-        {err && <p className="text-[11px]" style={{ color: 'var(--color-danger-500)' }}>{err}</p>}
-        <div className="flex gap-2">
-          <button disabled={save.isPending} onClick={() => save.mutate()} className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl disabled:opacity-40" style={{ background: INV_ACCENT, color: '#fff' }}>
-            <Check size={13} /> {save.isPending ? 'Saving…' : 'Record action'}
-          </button>
-          <button onClick={onClose} className="text-xs font-bold px-3 py-2 rounded-xl" style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}>Cancel</button>
+          {action === 'discount' && (
+            <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block"><span className="block text-[10px] font-bold uppercase mb-1" style={{ color: 'var(--text-muted)' }}>Discount %</span><input type="number" min="0" max="100" value={discount} onChange={e => { setDiscount(e.target.value); setNewPrice('') }} style={INP} /></label>
+                <label className="block"><span className="block text-[10px] font-bold uppercase mb-1" style={{ color: 'var(--text-muted)' }}>or New price</span><input type="number" min="0" value={newPrice} onChange={e => { setNewPrice(e.target.value); setDiscount('') }} style={INP} /></label>
+              </div>
+              <label className="flex items-center gap-2 text-xs" style={{ color: 'var(--text-body)' }}>
+                <input type="checkbox" checked={applyNow} onChange={e => setApplyNow(e.target.checked)} /> Apply the new price to the item now
+              </label>
+            </div>
+          )}
+          {action === 'transfer' && (
+            <label className="block"><span className="block text-[10px] font-bold uppercase mb-1" style={{ color: 'var(--text-muted)' }}>Move to warehouse</span>
+              <Select size="sm" value={toWarehouse} onChange={setToWarehouse} placeholder="Choose destination…" options={whList.map(w => ({ value: String(w.id), label: w.name }))} />
+              <span className="block text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>Records the intent — post the actual move on the Consignments screen.</span>
+            </label>
+          )}
+          {action === 'write_off' && <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Records the decision. Post the stock removal on the Loss &amp; adjustment screen (with approvals).</p>}
+
+          <label className="block"><span className="block text-[10px] font-bold uppercase mb-1" style={{ color: 'var(--text-muted)' }}>Note</span><input value={note} onChange={e => setNote(e.target.value)} style={INP} placeholder="Why / plan…" /></label>
+
+          {err && <p className="text-[11px]" style={{ color: 'var(--color-danger-500)' }}>{err}</p>}
+          <div className="flex gap-2">
+            <button disabled={save.isPending} onClick={() => save.mutate()} className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl disabled:opacity-40" style={{ background: INV_ACCENT, color: '#fff' }}>
+              <Check size={13} /> {save.isPending ? 'Saving…' : 'Record action'}
+            </button>
+            <button onClick={handleClose} className="text-xs font-bold px-3 py-2 rounded-xl" style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}>Cancel</button>
+          </div>
         </div>
       </div>
-    </div>
+      {dialog}
+    </>
   )
 }

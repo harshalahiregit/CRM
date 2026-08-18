@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\Purchase\PurchaseKickoffController;
 use App\Http\Controllers\Api\Purchase\PurchaseApprovalController;
 use App\Http\Controllers\Api\Purchase\PurchaseVendorController;
 use App\Http\Controllers\Api\Purchase\PurchaseVendorItemController;
+use App\Http\Controllers\Api\Purchase\PurchaseWorkforceAdminController;
 use App\Http\Controllers\Api\Purchase\PurchaseOrderReturnController;
 use App\Http\Controllers\Api\Purchase\PurchaseReportController;
 use App\Http\Controllers\Api\Purchase\PurchaseSettingController;
@@ -156,6 +157,48 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::patch('/vendors/{purchaseVendor}/status', [PurchaseVendorController::class, 'updateStatus'])->whereNumber('purchaseVendor');
     Route::delete('/vendors/{purchaseVendor}',       [PurchaseVendorController::class, 'destroy'])->whereNumber('purchaseVendor');
 
+    // ── Vendor detail workspace: the tabs that hang off one vendor ─────────
+    // All inside THIS group, so they inherit auth:sanctum + role:admin,staff.
+    // Never chain a second ->middleware(): it replaces rather than appends and
+    // silently drops auth:sanctum (see the note at the top of this file).
+    //
+    // Commercial: payments and the statement are native — every purchase document
+    // already keys to purchase_vendor_id, so there is no link step.
+    Route::get('/vendors/{purchaseVendor}/payments',  [PurchaseVendorController::class, 'payments'])->whereNumber('purchaseVendor');
+    Route::get('/vendors/{purchaseVendor}/statement', [PurchaseVendorController::class, 'statement'])->whereNumber('purchaseVendor');
+
+    // Appointments — shared `appointments` table, mirrored here because
+    // /api/sales/appointments carries no role gate and takes subject_type as a
+    // free string.
+    Route::get('/vendors/{purchaseVendor}/appointments',                       [PurchaseVendorController::class, 'appointments'])->whereNumber('purchaseVendor');
+    Route::post('/vendors/{purchaseVendor}/appointments',                      [PurchaseVendorController::class, 'storeAppointment'])->whereNumber('purchaseVendor');
+    Route::patch('/vendors/{purchaseVendor}/appointments/{appointment}/complete', [PurchaseVendorController::class, 'completeAppointment'])->whereNumber('purchaseVendor');
+    Route::delete('/vendors/{purchaseVendor}/appointments/{appointment}',      [PurchaseVendorController::class, 'destroyAppointment'])->whereNumber('purchaseVendor');
+
+    // Notes — shared polymorphic `notes` table.
+    Route::get('/vendors/{purchaseVendor}/notes',            [PurchaseVendorController::class, 'notes'])->whereNumber('purchaseVendor');
+    Route::post('/vendors/{purchaseVendor}/notes',           [PurchaseVendorController::class, 'storeNote'])->whereNumber('purchaseVendor');
+    Route::put('/vendors/{purchaseVendor}/notes/{note}',     [PurchaseVendorController::class, 'updateNote'])->whereNumber('purchaseVendor');
+    Route::delete('/vendors/{purchaseVendor}/notes/{note}',  [PurchaseVendorController::class, 'destroyNote'])->whereNumber('purchaseVendor');
+
+    // Reminders — shared polymorphic `reminders` table. No update action by
+    // design: ReminderService::update can retarget a reminder at another record.
+    Route::get('/vendors/{purchaseVendor}/reminders',                        [PurchaseVendorController::class, 'reminders'])->whereNumber('purchaseVendor');
+    Route::post('/vendors/{purchaseVendor}/reminders',                       [PurchaseVendorController::class, 'storeReminder'])->whereNumber('purchaseVendor');
+    Route::post('/vendors/{purchaseVendor}/reminders/{reminder}/complete',   [PurchaseVendorController::class, 'completeReminder'])->whereNumber('purchaseVendor');
+    Route::delete('/vendors/{purchaseVendor}/reminders/{reminder}',          [PurchaseVendorController::class, 'destroyReminder'])->whereNumber('purchaseVendor');
+
+    // Attachments — shared folder tree. Static segments and the folder routes
+    // are declared ahead of the bare {attachment} wildcard.
+    Route::get('/vendors/{purchaseVendor}/attachments',                            [PurchaseVendorController::class, 'attachments'])->whereNumber('purchaseVendor');
+    Route::post('/vendors/{purchaseVendor}/attachments',                           [PurchaseVendorController::class, 'storeAttachment'])->whereNumber('purchaseVendor');
+    Route::post('/vendors/{purchaseVendor}/attachment-folders',                    [PurchaseVendorController::class, 'storeAttachmentFolder'])->whereNumber('purchaseVendor');
+    Route::put('/vendors/{purchaseVendor}/attachment-folders/{folder}',            [PurchaseVendorController::class, 'updateAttachmentFolder'])->whereNumber('purchaseVendor');
+    Route::delete('/vendors/{purchaseVendor}/attachment-folders/{folder}',         [PurchaseVendorController::class, 'destroyAttachmentFolder'])->whereNumber('purchaseVendor');
+    Route::get('/vendors/{purchaseVendor}/attachments/{attachment}/download',      [PurchaseVendorController::class, 'downloadAttachment'])->whereNumber('purchaseVendor');
+    Route::put('/vendors/{purchaseVendor}/attachments/{attachment}',               [PurchaseVendorController::class, 'updateAttachment'])->whereNumber('purchaseVendor');
+    Route::delete('/vendors/{purchaseVendor}/attachments/{attachment}',            [PurchaseVendorController::class, 'destroyAttachment'])->whereNumber('purchaseVendor');
+
     // ── Vendor Items — Purchase Vendor ↔ Inventory Item mapping ────────────
     // Purchase owns the LINK only; inventory_products stays the Item Master and
     // is joined read-only. Item groups/items themselves come from Inventory APIs.
@@ -195,6 +238,20 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::post('/onboarding/{onboarding}/kickoff/log',   [PurchaseOnboardingController::class, 'logKickoffEvent']);
     // Approval chain (read) — Registration → Document → Commercial → Purchase → Activation.
     Route::get('/onboarding/{onboarding}/approvals',      [PurchaseApprovalController::class, 'index']);
+
+    // ── Purchase workforce (admin/staff review) ────────────────────────────
+    // Tenant-scoped, not vendor-scoped: an admin legitimately sees every vendor's
+    // workers. Badge ACTIVATION is not here — it sits in the role:admin group
+    // below, so staff can review but not decide who may enter the site.
+    Route::get('/workforce/workers',                  [PurchaseWorkforceAdminController::class, 'index']);
+    Route::get('/workforce/workers/{worker}',         [PurchaseWorkforceAdminController::class, 'show']);
+    Route::get('/workforce/workers/{worker}/ppe',     [PurchaseWorkforceAdminController::class, 'ppe']);
+    Route::get('/workforce/workers/{worker}/gate',    [PurchaseWorkforceAdminController::class, 'gate']);
+    // Vendor detail Medical / Training tabs. Vendor-scoped (?vendor_id=) and
+    // strict about it — declared before the {worker} wildcard above would ever
+    // be consulted, since these are static segments.
+    Route::get('/workforce/medicals',                 [PurchaseWorkforceAdminController::class, 'medicals']);
+    Route::get('/workforce/trainings',                [PurchaseWorkforceAdminController::class, 'trainings']);
 
     // ── Kickoff meetings (Purchase-owned engine: purchase_kickoff_* tables) ─
     Route::get('/kickoff/stats',                   [PurchaseKickoffController::class, 'stats']);
@@ -271,6 +328,11 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('purchase')->group(fun
     // admin authority.
     Route::post('/contracts/{contract}/activate',  [PurchaseContractController::class, 'activate']);
     Route::post('/contracts/{contract}/terminate', [PurchaseContractController::class, 'terminate']);
+
+    // Workforce step 5 — activating a worker admits a person to the site, so it
+    // is an admin decision, not a staff one and never the vendor's.
+    Route::post('/workforce/workers/{worker}/activate',   [PurchaseWorkforceAdminController::class, 'activate']);
+    Route::post('/workforce/ppe/issues/{issue}/return',   [PurchaseWorkforceAdminController::class, 'returnPpe']);
 
     // Vendor onboarding decisions — a requester must not approve their own vendor.
     Route::post('/onboarding/{onboarding}/approve',  [PurchaseOnboardingController::class, 'approve']);

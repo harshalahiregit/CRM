@@ -2,6 +2,8 @@
 // primitives used across the Purchase and TPV modules. Promoted out of
 // modules/purchase so no module imports from another module (TEAM-CONVENTIONS §3).
 
+import { createPortal } from 'react-dom'
+
 export const labelStyle = { display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }
 export const inputStyle = { width: '100%', padding: '9px 12px', background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-h)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }
 
@@ -44,12 +46,27 @@ export const KIT3D_STYLE = `
 `
 
 // ── Modal primitives ─────────────────────────────────────────────────────────
+/**
+ * Modal shell, rendered through a PORTAL to document.body.
+ *
+ * The portal is load-bearing, not tidiness. `position: fixed` is relative to the
+ * viewport only while no ancestor establishes a containing block — and
+ * `.card-3d` sets BOTH `transform-style: preserve-3d` and `will-change:
+ * transform`, either of which does exactly that. An Overlay rendered inside a
+ * card was therefore pinned to the card and overflowed it, while the identical
+ * modal opened from a page root looked fine. Portalling to body means a caller
+ * never has to know whether some ancestor happens to be transformed.
+ *
+ * React still bubbles events through the component tree, not the DOM tree, so
+ * handlers around the caller keep working.
+ */
 export function Overlay({ onClose, width = 480, children }) {
-  return (
+  return createPortal(
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
       onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="pr-glass pr-pop" style={{ width: '100%', maxWidth: width, maxHeight: '90vh', overflowY: 'auto', padding: 28 }}>{children}</div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 

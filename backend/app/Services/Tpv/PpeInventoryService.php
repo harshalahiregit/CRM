@@ -5,10 +5,12 @@ namespace App\Services\Tpv;
 use App\Exceptions\BusinessException;
 use App\Models\Inventory\Category;
 use App\Models\Inventory\Product;
+use App\Models\Inventory\Warehouse;
 use App\Models\Tpv\TpvPpeRequirement;
 use App\Models\Tpv\TpvWorker;
 use App\Models\Tpv\TpvWorkerPpeIssue;
 use App\Models\User;
+use App\Services\Inventory\ConfigService;
 use App\Services\Inventory\StockService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -46,8 +48,54 @@ class PpeInventoryService
         'lost'     => null,       // never coming back → already out of stock
     ];
 
-    public function __construct(private StockService $stock)
+    public function __construct(private StockService $stock, private ConfigService $config)
     {
+    }
+
+    /**
+     * Which warehouse a PPE movement comes out of (or goes back into).
+     *
+     * StockService::record() needs a real warehouse — balances are held per
+     * product × warehouse — and it 404s on a missing one. Neither PPE caller
+     * sends a warehouse: the catalogue issues from a worker's kit list and the
+     * return panel from an existing issue, and neither UI has any notion of
+     * sites. So the site is resolved here, server-side, in this order:
+     *
+     *   1. An explicit warehouse_id — but only after it is confirmed to belong
+     *      to this tenant. A vendor must never be able to move another tenant's
+     *      stock by naming its id, so this is validated, never trusted.
+     *   2. The tenant's configured default_warehouse_id (Inventory settings).
+     *   3. The warehouse flagged is_default — WarehouseService keeps exactly one
+     *      per tenant and makes the first one created the default.
+     *
+     * Failing with a plain message beats the old "That warehouse does not exist",
+     * which pointed at a warehouse nobody had named.
+     */
+    private function resolveWarehouseId(int $tenantId, mixed $requested = null): int
+    {
+        if ($requested !== null && $requested !== '') {
+            $owned = Warehouse::forTenant($tenantId)->whereKey((int) $requested)->value('id');
+
+            // Tenant isolation: an id from another tenant reads as absent, not as
+            // permission to touch it.
+            return (int) ($owned ?? throw new BusinessException('That warehouse does not exist.', 404));
+        }
+
+        $configured = $this->config->get($tenantId, 'default_warehouse_id');
+        if ($configured) {
+            $owned = Warehouse::forTenant($tenantId)->whereKey((int) $configured)->value('id');
+            if ($owned) {
+                return (int) $owned;
+            }
+        }
+
+        $fallback = Warehouse::forTenant($tenantId)->where('is_default', true)->value('id')
+            ?? Warehouse::forTenant($tenantId)->orderBy('id')->value('id');
+
+        return (int) ($fallback ?? throw new BusinessException(
+            'No warehouse is set up for PPE stock. Add one in Inventory → Warehouses, or set a default.',
+            422
+        ));
     }
 
     /* ── Reads ──────────────────────────────────────────────────────── */
@@ -153,6 +201,35 @@ class PpeInventoryService
         ];
     }
 
+    /**
+     * The same dashboard figures, but the "issued" side counted from one vendor's
+     * own workers.
+     *
+     * Stock availability stays tenant-wide on purpose: there is one central store
+     * and a vendor has to see what is on the shelf to know whether it can kit a
+     * worker out. What must NOT be tenant-wide is how much everyone else is
+     * holding, so those three figures are scoped here.
+     */
+    public function summaryForVendor(int $vendorId, int $tenantId): array
+    {
+        $rows  = $this->catalogue($tenantId);
+        $today = now()->toDateString();
+
+        $mine = fn () => TpvWorkerPpeIssue::query()
+            ->where('tpv_worker_ppe_issues.tenant_id', $tenantId)
+            ->whereIn('tpv_worker_id', TpvWorker::where('vendor_id', $vendorId)->select('id'));
+
+        return [
+            'total_items'        => $rows->count(),
+            'total_available'    => (float) $rows->sum('available'),
+            'total_issued'       => (float) $mine()->where('status', 'issued')->sum(DB::raw('qty - returned_qty')),
+            'low_stock_items'    => $rows->where('status', 'low_stock')->count(),
+            'out_of_stock_items' => $rows->where('status', 'out_of_stock')->count(),
+            'issued_today'       => (float) $mine()->whereDate('issued_date', $today)->sum('qty'),
+            'returned_today'     => (float) $mine()->whereDate('returned_at', $today)->sum('returned_qty'),
+        ];
+    }
+
     /** One worker's PPE history — issued, returned, lost, damaged. */
     public function forWorker(int $workerId, int $tenantId): Collection
     {
@@ -210,7 +287,11 @@ class PpeInventoryService
             ), 422);
         }
 
-        return DB::transaction(function () use ($worker, $product, $qty, $data, $actor, $tenantId) {
+        // Resolved before the transaction so a misconfigured tenant fails cleanly
+        // rather than half-way through writing an issue row.
+        $warehouseId = $this->resolveWarehouseId($tenantId, $data['warehouse_id'] ?? null);
+
+        return DB::transaction(function () use ($worker, $product, $qty, $data, $actor, $tenantId, $warehouseId) {
             $issue = TpvWorkerPpeIssue::create([
                 'tenant_id'         => $tenantId,
                 'tpv_worker_id'     => $worker->id,
@@ -231,7 +312,7 @@ class PpeInventoryService
                 'product_id'     => $product->id,
                 'type'           => 'issue',
                 'quantity'       => $qty,
-                'warehouse_id'   => $data['warehouse_id'] ?? null,
+                'warehouse_id'   => $warehouseId,
                 'reason'         => 'PPE issued to worker',
                 'notes'          => trim(sprintf('%s (worker #%d)', $worker->full_name ?? $worker->name ?? 'Worker', $worker->id)),
                 'reference_type' => 'ppe_issue',
@@ -422,6 +503,23 @@ class PpeInventoryService
     }
 
     /**
+     * The site this issue's stock left from, read back off its ledger entry.
+     *
+     * Null for an issue predating warehouse resolution, or one whose movement was
+     * pruned — the caller then falls back to the tenant default.
+     */
+    private function issuedFromWarehouseId(TpvWorkerPpeIssue $issue): ?int
+    {
+        return \App\Models\Inventory\Movement::query()
+            ->where('tenant_id', $issue->tenant_id)
+            ->where('reference_type', 'ppe_issue')
+            ->where('reference_id', $issue->id)
+            ->where('direction', 'out')
+            ->orderBy('id')
+            ->value('from_warehouse_id');
+    }
+
+    /**
      * Return, or write off as lost/damaged.
      *
      * Only a genuine return puts stock back; lost and damaged leave the ledger with
@@ -448,18 +546,31 @@ class PpeInventoryService
             ), 422);
         }
 
-        return DB::transaction(function () use ($issue, $qty, $condition, $data, $actor) {
-            $tenantId = (int) $issue->tenant_id;
+        // Only a genuine return moves stock, so only then is a site needed —
+        // resolving it for a lost/damaged write-off would fail a tenant that has
+        // no warehouse at all, for a call that touches no stock.
+        //
+        // Kit goes back where it came from: the outward movement recorded at issue
+        // time carries the site, so a return does not silently relocate stock to
+        // the default warehouse. An explicit warehouse_id still wins; the tenant
+        // default is the last resort.
+        $movementType = self::RETURN_CONDITIONS[$condition];
+        $warehouseId  = $movementType
+            ? $this->resolveWarehouseId(
+                (int) $issue->tenant_id,
+                $data['warehouse_id'] ?? $this->issuedFromWarehouseId($issue),
+            )
+            : null;
 
-            // Only a genuine return puts stock back; see RETURN_CONDITIONS.
-            $movementType = self::RETURN_CONDITIONS[$condition];
+        return DB::transaction(function () use ($issue, $qty, $condition, $data, $actor, $movementType, $warehouseId) {
+            $tenantId = (int) $issue->tenant_id;
 
             if ($movementType && $issue->inventory_item_id) {
                 $this->stock->record([
                     'product_id'     => $issue->inventory_item_id,
                     'type'           => $movementType,
                     'quantity'       => $qty,
-                    'warehouse_id'   => $data['warehouse_id'] ?? null,
+                    'warehouse_id'   => $warehouseId,
                     'reason'         => 'PPE '.$condition,
                     'notes'          => $data['notes'] ?? null,
                     'reference_type' => 'ppe_issue',

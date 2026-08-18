@@ -119,11 +119,46 @@ class PurchaseOnboardingService
             throw new BusinessException('Step must be between 1 and '.Status::TOTAL_STEPS.'.');
         }
 
+        // A vendor may only move forward into the first step that is not yet done;
+        // going back to re-read a finished one is always allowed. Enforced at the
+        // service because the endpoint is the boundary — the wizard hiding a button
+        // is not a rule.
+        //
+        // Staff/admin are exempt: step 3 counts as complete only once EVERY required
+        // document is uploaded, so gating them would stop a reviewer opening step 4
+        // to review the documents that have actually arrived. The actor here is a
+        // PurchaseVendor precisely when the portal is driving it.
+        if ($actor instanceof PurchaseVendor) {
+            $furthest = $this->furthestReachableStep($onboarding);
+
+            if ($step > $furthest) {
+                throw new BusinessException('Complete step '.$furthest.' before moving on.', 422);
+            }
+        }
+
         $onboarding->update(['current_step' => $step]);
         $onboarding->recordAudit('Onboarding Step Changed', $this->actorUser($actor), null,
             ['step' => $step], $this->actorLabel($actor));
 
         return $onboarding;
+    }
+
+    /**
+     * The highest step a vendor may currently open: the first one not yet complete.
+     * Finished steps stay reachable, so step 1 is always allowed.
+     *
+     * Read from stepStatus() rather than a second copy of the rules, so the gate and
+     * the progress bar can never disagree about what is done.
+     */
+    private function furthestReachableStep(PurchaseOnboarding $onboarding): int
+    {
+        foreach ($this->stepStatus($onboarding)['steps'] as $s) {
+            if (! $s['complete']) {
+                return (int) $s['step'];
+            }
+        }
+
+        return Status::TOTAL_STEPS;
     }
 
     /** Step 2 — persist the company/contact profile and mirror to the vendor. */

@@ -72,7 +72,15 @@ class ProjectController extends Controller
 
     public function index(Request $request)
     {
-        $filters = $request->only(['status', 'customer_id', 'search', 'member', 'tag']);
+        // vendor_id powers a vendor detail Projects tab; vendor_type says WHICH
+        // kind of vendor, because the same integer is a different company under
+        // each party type. Both ride the normal project list, so tenant scoping
+        // and the non-admin visibility barrier below still apply unchanged.
+        //
+        // vendor_type is validated here and resolved against a fixed map inside
+        // the scope — a raw link_type is never accepted from a caller.
+        $filters = $request->only(['status', 'customer_id', 'search', 'member', 'tag', 'vendor_id', 'vendor_type']);
+        $filters['vendor_type'] = $this->vendorType($request);
         return $this->success(
             $this->projects->list($request->user()->tenant_id, $filters, $request->user()->id, $this->isAdmin($request)),
             'Projects retrieved'
@@ -254,6 +262,48 @@ class ProjectController extends Controller
     }
 
     /* ── Expenses tab ──────────────────────────────────────────── */
+
+    /**
+     * Project expenses for one vendor, across every project it is linked to.
+     *
+     * Deliberately NOT keyed by a project the caller names: the vendor id is
+     * resolved to projects server-side, through the same visibility path as the
+     * Projects tab, so this cannot reach a project the caller cannot open.
+     */
+    public function vendorExpenses(Request $request)
+    {
+        $vendorId = (int) $request->query('vendor_id');
+        abort_if($vendorId <= 0, 422, 'A vendor is required.');
+
+        return $this->success(
+            $this->projects->listVendorExpenses(
+                $request->user()->tenant_id, $vendorId, $request->user()->id, $this->isAdmin($request),
+                $this->vendorType($request),
+            ),
+            'Expenses retrieved'
+        );
+    }
+
+    /**
+     * The party type a vendor filter refers to, validated against the fixed map.
+     *
+     * Defaults to tpv_vendor: every caller that predates the Purchase vendor
+     * screen omits the parameter and means TPV. An unrecognised value is refused
+     * outright rather than silently defaulting, so a typo cannot quietly return
+     * the wrong module's projects.
+     */
+    private function vendorType(Request $request): string
+    {
+        $type = (string) ($request->query('vendor_type') ?: 'tpv_vendor');
+
+        abort_unless(
+            array_key_exists($type, \App\Models\Project\Project::VENDOR_LINK_MAP),
+            422,
+            'Unknown vendor type.',
+        );
+
+        return $type;
+    }
 
     public function expenses(Request $request, int $project)
     {

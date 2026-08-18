@@ -125,11 +125,19 @@ function RfqRow({ r, onClick }) {
 }
 
 // ── New RFQ modal ─────────────────────────────────────────────────────────────
-function NewRfqModal({ onClose, onDone }) {
+/**
+ * Exported so the vendor screens can raise an RFQ without a second copy of this
+ * form — the TPV vendor's Quotation tab opens exactly this, with that vendor
+ * already on the recipient list.
+ *
+ * @param presetVendorIds  Recipients to start with. Additive: omitted, the modal
+ *                         behaves exactly as it always has (nothing preselected).
+ */
+export function NewRfqModal({ onClose, onDone, presetVendorIds = [] }) {
   const [vendors, setVendors] = useState([])
   const [f, setF] = useState({ title: '', department: '', required_by: '', closes_at: '', notes: '' })
   const [items, setItems] = useState([{ ...EMPTY_ITEM }])
-  const [picked, setPicked] = useState([])   // vendor ids
+  const [picked, setPicked] = useState(presetVendorIds)   // vendor ids
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState(null)
   const [catalog, setCatalog] = useState([])       // active catalog items

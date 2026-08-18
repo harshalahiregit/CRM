@@ -31,12 +31,19 @@ export default function PurchasePortalShell() {
   const doLogout = async () => { try { await purchaseVendorAuthApi.logout() } finally { navigate('/purchase-portal/login') } }
 
   const nav = [
-    // Same rule as the TPV portal: Onboarding and Approval are admin workflows.
-    // The vendor uploads documents and reads its status; the decisions are the
-    // admin's. Kickoff stays — the vendor genuinely participates in it.
+    // The six onboarding steps are the vendor's own work — the company profile and
+    // the final submission exist on no other screen. The DECISIONS (approve/reject/
+    // hold) remain the admin's, on the admin pages. Approval here is read-only status.
     { to: '/purchase-portal/dashboard',  label: 'Dashboard',        icon: LayoutDashboard },
+    { to: '/purchase-portal/onboarding', label: 'My Onboarding',    icon: ClipboardList },
     { to: '/purchase-portal/documents',  label: 'My Documents',     icon: FileText },
     { to: '/purchase-portal/kickoff',    label: 'Kickoff Meeting',  icon: CalendarDays },
+    { to: '/purchase-portal/approval',   label: 'Approval Status',  icon: ShieldCheck },
+    // Unlocked once the vendor is Active — the workforce only matters after the
+    // company itself has been approved.
+    ...(vendor?.status === 'Active'
+      ? [{ to: '/purchase-portal/workforce', label: 'My Workforce', icon: HardHat }]
+      : []),
     { to: '/purchase-portal/ppe',        label: 'PPE Stock',        icon: HardHat },
   ]
   const pageTitle = nav.slice().reverse().find(n => location.pathname.startsWith(n.to))?.label ?? 'Portal'

@@ -71,6 +71,16 @@ return [
             'throw'      => false,
         ],
 
+        // ── Free-form attachments (the folder-tree file area) — private, served
+        // via controller. Separate from vendor_docs, which holds the statutory
+        // checklist; this is whatever the team chooses to file. ──
+        'attachments' => [
+            'driver'     => 'local',
+            'root'       => storage_path('app/private/attachments'),
+            'visibility' => 'private',
+            'throw'      => false,
+        ],
+
         // ── Purchase-vendor statutory documents — private, served via controller.
         // Purchase owns its document store separately from vendor_docs/TPV. ──
         'purchase_docs' => [

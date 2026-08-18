@@ -14,7 +14,7 @@ class KickoffMeetingRepository extends BaseRepository
     public function filtered(int $tenantId, array $filters)
     {
         $query = KickoffMeeting::forTenant($tenantId)
-            ->with(['creator:id,name', 'kickoffable'])
+            ->with(['creator:id,name', 'kickoffable', 'subjects.subject'])
             ->withCount([
                 'attendees',
                 // Present count drives the list's "Attendance" column (present/total).
@@ -44,6 +44,7 @@ class KickoffMeetingRepository extends BaseRepository
     {
         return KickoffMeeting::forTenant($tenantId)
             ->with([
+                'subjects.subject',
                 'creator:id,name', 'kickoffable',
                 'attendees.vendorContact:id,name,designation',
                 // Eager-loaded with its owner so the edit form can render the
