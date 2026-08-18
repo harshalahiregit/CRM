@@ -38,6 +38,12 @@ export default function ProposalDetail() {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [emailModal, setEmailModal] = useState(false)
   const [templateModal, setTemplateModal] = useState(false)
+  // Declared here, above the loading/not-found guards below. They used to sit
+  // further down the component, so on the first render (before the proposal
+  // loaded) React saw two fewer hooks than on the next — "Rendered more hooks
+  // than during the previous render".
+  const [showDeclineModal, setShowDeclineModal] = useState(false)
+  const [rejectionReasonText, setRejectionReasonText] = useState('')
 
   // Routed through the shared Toast so every module notifies identically
   // (and error toasts get the per-field validation detail + tip).
@@ -104,9 +110,6 @@ export default function ProposalDetail() {
       showToast(e.message || 'Failed to send', 'error')
     }
   }
-
-  const [showDeclineModal, setShowDeclineModal] = useState(false)
-  const [rejectionReasonText, setRejectionReasonText] = useState('')
 
   const handleStatusChange = async (status, rejectionReason = '') => {
     try {

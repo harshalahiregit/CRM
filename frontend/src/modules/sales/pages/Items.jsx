@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Search, Edit2, Copy, Trash2, X, LayoutGrid, List, Upload, CheckCircle, Tag } from 'lucide-react'
+import { Plus, Search, Edit2, Copy, Trash2, X, LayoutGrid, List, Upload } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
 import { useToast } from '@/hooks/useToast'
 import ListToolbar from '@/components/ui/ListToolbar'

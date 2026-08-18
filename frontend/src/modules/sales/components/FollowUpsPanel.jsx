@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Phone, Users, Mail, MessageCircle, MessageSquare, MapPin, Check, Trash2 } from 'lucide-react'
+import { Plus, Phone, Users, Mail, MessageCircle, MessageSquare, MapPin, Check } from 'lucide-react'
 import { followUpApi } from '@/services/followUpApi'
 import { useToast } from '@/hooks/useToast'
 import ConfirmIconButton from '@/modules/customer/components/ConfirmIconButton'

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, Check, X, IndianRupee, Percent } from 'lucide-react'
+import { Plus, Check, X } from 'lucide-react'
 import { commissionApi } from '@/services/commissionApi'
 import { useToast } from '@/hooks/useToast'
 import ListToolbar from '@/components/ui/ListToolbar'
