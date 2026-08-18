@@ -1,85 +1,125 @@
-import { useState, useEffect, useMemo } from 'react'
-import { Building2 } from 'lucide-react'
-import { projectApi } from '@/services/projectApi'
-import { SectionTable } from './VendorSectionTable'
+import { useState, useEffect, useCallback } from 'react'
+import { Building2, Plus, Loader2, Inbox } from 'lucide-react'
+import { tpvApi } from '@/services/tpvApi'
+import { Overlay, ModalFooter, Field, TextInput } from '@/components/ui/kit3d'
 
 /**
- * The customers this TPV vendor works for.
+ * Customers directly linked to this TPV vendor (clients.vendor_id).
  *
- * No customer is linked to a vendor anywhere in the schema, and none was linked
- * here. The relationship already exists one hop out: a project carries both
- * parties — projects.vendor_id (this vendor) and projects.customer_id (the
- * client) — so "who does this vendor work for" is answered by the vendor's own
- * projects.
- *
- * That means NO new endpoint and no new query: this reads the same authorised
- * GET /projects?vendor_id= the Projects tab uses, where every row already
- * arrives decorated with its resolved customer. The grouping below is
- * presentation over data the caller is already permitted to see — the access
- * decision stays entirely server-side, in the vendor_id filter.
+ * Add Customer creates a real Customer-module record (Client) with vendor_id set,
+ * so the link is a first-class relation — not derived from projects. Reads
+ * GET /tpv/vendors/{id}/customers; creates via POST the same route.
  */
-export function VendorCustomers({ vendorId }) {
-  const [projects, setProjects] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+export function VendorCustomers({ vendorId, vendorName, manage = false, api = tpvApi }) {
+  const [rows, setRows] = useState(null)
+  const [error, setError] = useState('')
+  const [adding, setAdding] = useState(false)
 
-  useEffect(() => {
-    let live = true
-    setLoading(true); setError(null)
+  const load = useCallback(() => {
+    setError('')
+    api.vendors.customers.list(vendorId)
+      .then(setRows)
+      .catch(e => setError(e?.response?.data?.message || 'Could not load customers.'))
+  }, [vendorId, api])
 
-    projectApi.list({ vendor_id: vendorId })
-      .then(d => { if (live) setProjects(d?.data ?? d ?? []) })
-      .catch(e => { if (live) setError(e?.title || e?.message || 'Could not load customers.') })
-      .finally(() => { if (live) setLoading(false) })
+  useEffect(() => { load() }, [load])
 
-    return () => { live = false }
-  }, [vendorId])
-
-  // One row per customer, carrying the projects that connect them to this vendor.
-  const rows = useMemo(() => {
-    const byId = new Map()
-
-    projects.forEach(p => {
-      const c = p.customer
-      if (!c?.id) return   // an internal project has no client — not a customer
-
-      const entry = byId.get(c.id) || { id: c.id, name: c.name || c.company, email: c.email, projects: [] }
-      entry.projects.push(p)
-      byId.set(c.id, entry)
-    })
-
-    return [...byId.values()].sort((a, b) => b.projects.length - a.projects.length)
-  }, [projects])
-
-  const unlinked = projects.length - rows.reduce((n, r) => n + r.projects.length, 0)
+  const th = { textAlign: 'left', padding: '9px 12px', fontSize: 10, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text-muted)', fontWeight: 700, whiteSpace: 'nowrap' }
+  const td = { padding: '10px 12px', color: 'var(--text-muted)', fontSize: 13 }
 
   return (
-    <SectionTable
-      icon={Building2} title="Customers" loading={loading} error={error} rows={rows}
-      hint={
-        rows.length
-          ? `Reached through this vendor's projects.${unlinked > 0 ? ` ${unlinked} project${unlinked === 1 ? ' has' : 's have'} no customer.` : ''}`
-          : "Customers are reached through this vendor's projects — this vendor has none with a customer yet."
-      }
-      searchFields={['name', 'email']}
-      columns={[
-        { key: 'name', label: 'Customer', render: c => <span style={{ fontWeight: 700 }}>{c.name || '—'}</span> },
-        { key: 'email', label: 'Email' },
-        {
-          key: 'count',
-          label: 'Projects',
-          render: c => (
-            <span style={{ fontSize: 11.5, fontWeight: 700, color: '#a78bfa' }}>
-              {c.projects.length}
-            </span>
-          ),
-        },
-        {
-          key: 'projects',
-          label: 'Via',
-          render: c => c.projects.map(p => p.name).join(', '),
-        },
-      ]}
-    />
+    <div className="card-3d" style={{ padding: 18 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, gap: 10 }}>
+        <h2 style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-h)', margin: 0, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          <Building2 size={16} style={{ color: '#a78bfa' }} /> Customers
+          {rows && <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>· {rows.length}</span>}
+        </h2>
+        {manage && (
+          <button onClick={() => setAdding(true)} style={primaryBtn}><Plus size={14} /> Add Customer</button>
+        )}
+      </div>
+
+      {error && <p style={{ color: '#ef4444', fontSize: 12.5, margin: '0 0 10px' }}>{error}</p>}
+
+      {rows === null ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-muted)', padding: '18px 0' }}>
+          <Loader2 size={15} className="rfq-spin" /> Loading…
+        </div>
+      ) : rows.length === 0 ? (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: '34px 0', color: 'var(--text-muted)' }}>
+          <Inbox size={26} style={{ opacity: 0.6 }} />
+          <span style={{ fontSize: 13 }}>No customers linked to this vendor yet.</span>
+        </div>
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr style={{ background: 'var(--bg-input)' }}>
+              <th style={th}>Customer</th><th style={th}>Phone</th><th style={th}>Location</th><th style={th}>GST</th><th style={th}>Added</th>
+            </tr></thead>
+            <tbody>
+              {rows.map(c => (
+                <tr key={c.id} style={{ borderTop: '1px solid var(--border)' }}>
+                  <td style={{ ...td, color: 'var(--text-h)', fontWeight: 700 }}>{c.company || '—'}</td>
+                  <td style={td}>{c.phone || '—'}</td>
+                  <td style={td}>{[c.city, c.state, c.country].filter(Boolean).join(', ') || '—'}</td>
+                  <td style={td}>{c.gst_number || '—'}</td>
+                  <td style={td}>{c.created_at ? new Date(c.created_at).toLocaleDateString() : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {adding && (
+        <AddCustomerModal
+          vendorName={vendorName}
+          onClose={() => setAdding(false)}
+          onSave={async (data) => { await api.vendors.customers.create(vendorId, data); setAdding(false); load() }}
+        />
+      )}
+    </div>
   )
+}
+
+function AddCustomerModal({ vendorName, onClose, onSave }) {
+  const [form, setForm] = useState({ company: '', phone: '', website: '', gst_number: '', city: '', state: '', country: '' })
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  const save = async () => {
+    if (!form.company.trim()) { setErr('Company name is required.'); return }
+    setBusy(true); setErr('')
+    try { await onSave({ ...form, company: form.company.trim() }) }
+    catch (e) { setErr(e?.response?.data?.message || 'Could not add the customer.'); setBusy(false) }
+  }
+
+  return (
+    <Overlay onClose={() => !busy && onClose()} width={520}>
+      <h2 style={{ color: 'var(--text-h)', margin: '0 0 4px', fontSize: 17, fontWeight: 800 }}>Add Customer</h2>
+      <p style={{ margin: '0 0 14px', fontSize: 12, color: 'var(--text-muted)' }}>
+        The new customer will be linked to <strong style={{ color: 'var(--text-h)' }}>{vendorName || 'this vendor'}</strong>.
+      </p>
+      {err && (
+        <div style={{ padding: '9px 12px', borderRadius: 10, marginBottom: 12, fontSize: 12.5, color: '#ef4444', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)' }}>{err}</div>
+      )}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <Field label="Company *"><TextInput value={form.company} onChange={e => set('company', e.target.value)} placeholder="Customer company name" autoFocus /></Field>
+        <Field label="Phone"><TextInput value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="Phone" /></Field>
+        <Field label="Website"><TextInput value={form.website} onChange={e => set('website', e.target.value)} placeholder="https://" /></Field>
+        <Field label="GST Number"><TextInput value={form.gst_number} onChange={e => set('gst_number', e.target.value)} placeholder="GSTIN" /></Field>
+        <Field label="City"><TextInput value={form.city} onChange={e => set('city', e.target.value)} placeholder="City" /></Field>
+        <Field label="State"><TextInput value={form.state} onChange={e => set('state', e.target.value)} placeholder="State" /></Field>
+        <Field label="Country"><TextInput value={form.country} onChange={e => set('country', e.target.value)} placeholder="Country" /></Field>
+      </div>
+      <ModalFooter onClose={onClose} onConfirm={save} loading={busy} disabled={!form.company.trim()} confirmLabel="Add Customer" />
+    </Overlay>
+  )
+}
+
+const primaryBtn = {
+  display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 9,
+  border: 'none', background: 'linear-gradient(135deg,#7C3AED,#6d28d9)', color: '#fff',
+  fontWeight: 700, fontSize: 12.5, cursor: 'pointer',
 }
