@@ -456,7 +456,7 @@ function KbManager() {
 
       {/* Template picker modal */}
       {tplOpen && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }} onClick={() => setTplOpen(false)}>
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>
           <div className="w-full max-w-lg rounded-2xl p-6" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card-3d)' }} onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-1"><h2 className="font-display font-bold" style={{ fontSize: 18, color: 'var(--text-h)' }}>Start from a template</h2><button onClick={() => setTplOpen(false)}><X size={18} style={{ color: 'var(--text-muted)' }} /></button></div>
             <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>Pick a structure to start with — you can edit everything.</p>

@@ -147,7 +147,7 @@ function RescheduleModal({ iv, onClose, onSubmit }) {
     try { await onSubmit({ preferred_date: date, preferred_time: time, reason }) } finally { setBusy(false) }
   }
   return (
-    <div style={overlay} onClick={e => e.target === e.currentTarget && onClose()}>
+    <div style={overlay}>
       <div className="card-3d" style={{ width: '100%', maxWidth: 420, padding: 22 }}>
         <h3 style={{ margin: '0 0 4px', fontSize: 17, fontWeight: 800, color: 'var(--text-h)' }}>Request Reschedule</h3>
         <p style={{ margin: '0 0 14px', fontSize: 12.5, color: 'var(--text-muted)' }}>{iv.round} · {iv.candidate}</p>

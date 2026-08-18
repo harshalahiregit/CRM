@@ -152,7 +152,7 @@ export default function ClientTrackingPortal() {
 
       {/* Feedback modal */}
       {fb && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, zIndex: 1000 }} onClick={e => e.target === e.currentTarget && setFb(null)}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, zIndex: 1000 }}>
           <div style={{ background: '#fff', borderRadius: 16, padding: 24, width: '100%', maxWidth: 440 }}>
             <h3 style={{ margin: '0 0 4px', fontSize: 17, fontWeight: 800, color: '#111827' }}>
               {fb.decision === 'accept' ? 'Accept' : fb.decision === 'reject' ? 'Reject' : 'Request More Profiles'}

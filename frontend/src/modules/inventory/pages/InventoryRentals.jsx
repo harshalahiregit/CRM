@@ -119,7 +119,7 @@ function RentalModal({ productList, onClose, onSaved }) {
 
   return (
     <>
-      <div className="fixed inset-0 z-[80] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,.5)' }} onClick={handleClose}>
+      <div className="fixed inset-0 z-[80] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,.5)' }}>
         <div className="rounded-2xl p-5 w-full max-w-lg space-y-3" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-purple)' }} onClick={e => e.stopPropagation()}>
           <div className="flex items-center justify-between"><h3 className="text-base font-black" style={{ color: 'var(--text-h)' }}>New rental</h3><button onClick={handleClose}><X size={16} style={{ color: 'var(--text-muted)' }} /></button></div>
           <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))' }}>

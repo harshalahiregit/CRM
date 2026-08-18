@@ -117,7 +117,7 @@ export default function InspectReceiptModal({ voucher, onClose }) {
 
   return (
     <>
-      <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 overflow-y-auto bg-black/50" onClick={handleClose}>
+      <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 overflow-y-auto bg-black/50">
         <div className="w-full max-w-3xl rounded-2xl mt-[5vh] mb-8" onClick={e => e.stopPropagation()}
           style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
 

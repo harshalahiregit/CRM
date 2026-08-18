@@ -30,7 +30,7 @@ export default function ProjectInvoiceModal({ open, onClose, projectId, canManag
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-start justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }} onClick={onClose}>
+    <div className="fixed inset-0 z-[60] flex items-start justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>
       <div className="w-full max-w-lg rounded-2xl mt-[8vh] max-h-[80vh] overflow-y-auto"
         style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card-3d)' }} onClick={e => e.stopPropagation()}>
 

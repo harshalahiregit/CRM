@@ -466,7 +466,7 @@ const Toggle = ({ label, on, onClick }) => <button type="button" onClick={onClic
 
 function Modal({ title, children, onClose, onSave, saving }) {
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop">
       <div className="modal-box w-full max-w-lg" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4"><h3 className="text-lg font-black" style={{ color: 'var(--text-h)' }}>{title}</h3><button onClick={onClose} className="p-1.5 rounded-lg" style={{ background: 'var(--bg-input)', color: 'var(--text-muted)' }}><X size={16} /></button></div>
         <div className="space-y-3">{children}</div>

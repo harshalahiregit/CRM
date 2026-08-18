@@ -462,7 +462,7 @@ function ExitRequestDrawer({ id, onClose, onWithdraw }) {
   const Field = ({ l, v }) => <div><p className="label-caps mb-0.5">{l}</p><p className="text-sm font-semibold" style={{ color:'var(--text-h)' }}>{v||'—'}</p></div>
 
   return (
-    <div className="fixed inset-0 z-[9998] flex justify-end" onClick={onClose}>
+    <div className="fixed inset-0 z-[9998] flex justify-end">
       <div className="absolute inset-0" style={{ background:'rgba(0,0,0,0.4)' }} />
       <div className="relative h-full overflow-y-auto animate-[slideIn_0.25s_ease]" onClick={e=>e.stopPropagation()} style={{ width:'min(460px,95vw)', background:'var(--bg-card,var(--bg-input))', borderLeft:'1px solid var(--border)', boxShadow:'-10px 0 40px rgba(0,0,0,0.3)' }}>
         <div className="sticky top-0 flex items-center justify-between px-5 py-4" style={{ background:'var(--bg-card,var(--bg-input))', borderBottom:'1px solid var(--border)' }}>
@@ -591,7 +591,7 @@ function ExitApprovalDrawer({ id, onClose, onChanged, showToast }) {
   const isSubmitted = r?.status==='Submitted', isReview = r?.status==='Under Review', isDecided = r?.status==='Approved'||r?.status==='Rejected'
 
   return (
-    <div className="fixed inset-0 z-[9998] flex justify-end" onClick={onClose}>
+    <div className="fixed inset-0 z-[9998] flex justify-end">
       <div className="absolute inset-0" style={{ background:'rgba(0,0,0,0.4)' }} />
       <div className="relative h-full overflow-y-auto animate-[slideIn_0.25s_ease]" onClick={e=>e.stopPropagation()} style={{ width:'min(480px,96vw)', background:'var(--bg-card,var(--bg-input))', borderLeft:'1px solid var(--border)', boxShadow:'-10px 0 40px rgba(0,0,0,0.3)' }}>
         <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-4" style={{ background:'var(--bg-card,var(--bg-input))', borderBottom:'1px solid var(--border)' }}>
@@ -750,7 +750,7 @@ function ClearanceDrawer({ id, onClose, onChanged, showToast }) {
   const readOnly = c?.status === 'Completed'
 
   return (
-    <div className="fixed inset-0 z-[9998] flex justify-end" onClick={onClose}>
+    <div className="fixed inset-0 z-[9998] flex justify-end">
       <div className="absolute inset-0" style={{ background:'rgba(0,0,0,0.4)' }} />
       <div className="relative h-full overflow-y-auto animate-[slideIn_0.25s_ease]" onClick={e=>e.stopPropagation()} style={{ width:'min(520px,97vw)', background:'var(--bg-card,var(--bg-input))', borderLeft:'1px solid var(--border)', boxShadow:'-10px 0 40px rgba(0,0,0,0.3)' }}>
         <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-4" style={{ background:'var(--bg-card,var(--bg-input))', borderBottom:'1px solid var(--border)' }}>
@@ -932,7 +932,7 @@ function SettlementDrawer({ id, onClose, onChanged, showToast }) {
 
   const c = s?.components
   return (
-    <div className="fixed inset-0 z-[9998] flex justify-end" onClick={onClose}>
+    <div className="fixed inset-0 z-[9998] flex justify-end">
       <div className="absolute inset-0" style={{ background:'rgba(0,0,0,0.4)' }} />
       <div className="relative h-full overflow-y-auto animate-[slideIn_0.25s_ease]" onClick={e=>e.stopPropagation()} style={{ width:'min(540px,98vw)', background:'var(--bg-card,var(--bg-input))', borderLeft:'1px solid var(--border)', boxShadow:'-10px 0 40px rgba(0,0,0,0.3)' }}>
         <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-4" style={{ background:'var(--bg-card,var(--bg-input))', borderBottom:'1px solid var(--border)' }}>

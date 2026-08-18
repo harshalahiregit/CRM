@@ -206,7 +206,7 @@ function FulfilmentWorkbench({ id, onClose, onChanged, currentUser }) {
 
   if (isLoading || !list) {
     return (
-      <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50" onClick={onClose}>
+      <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50">
         <div className="w-full max-w-2xl h-64 rounded-2xl animate-pulse" style={{ background: 'var(--bg-card)' }} />
       </div>
     )
@@ -216,7 +216,7 @@ function FulfilmentWorkbench({ id, onClose, onChanged, currentUser }) {
   const closed = ['shipped', 'delivered', 'cancelled'].includes(list.status)
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 overflow-y-auto bg-black/50" onClick={onClose}>
+    <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 overflow-y-auto bg-black/50">
       <div className="w-full max-w-2xl rounded-2xl mt-[4vh] mb-8" onClick={e => e.stopPropagation()}
         style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
 

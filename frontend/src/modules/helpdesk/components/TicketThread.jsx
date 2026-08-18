@@ -1202,7 +1202,6 @@ export default function TicketThread() {
       {tasksOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
-          onClick={requestCloseTasks}
         >
           <div
             className="w-full max-w-2xl rounded-2xl p-6 max-h-[85vh] overflow-y-auto"

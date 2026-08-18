@@ -108,7 +108,7 @@ export default function PurchaseVendors() {
       </div>
 
       {modal && (
-        <div style={overlay} onClick={() => setModal(null)}>
+        <div style={overlay}>
           <div className="card-3d" style={{ padding: 0, width: 720, maxWidth: '95vw', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
             <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--border)' }}>
               <h2 style={{ fontSize: 17, fontWeight: 800, color: 'var(--text-h)', margin: 0 }}>New Purchase Vendor</h2>

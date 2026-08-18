@@ -45,7 +45,7 @@ export default function SendVoucherModal({ type, voucher, onClose }) {
   if (!voucher) return null
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 overflow-y-auto" style={{ background: 'rgba(0,0,0,0.5)' }} onClick={onClose}>
+    <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 overflow-y-auto" style={{ background: 'rgba(0,0,0,0.5)' }}>
       <div className="w-full max-w-[480px] rounded-2xl mt-[8vh] p-5" onClick={e => e.stopPropagation()}
         style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card-3d)' }}>
 

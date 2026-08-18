@@ -57,7 +57,7 @@ export default function NewTicketModal({ settings, onClose, onCreated, draft = n
 
   return (
     <>
-    <div className="fixed inset-0 z-[70] flex items-start justify-center bg-black/50" style={{ paddingTop: '8vh' }} onClick={requestClose}>
+    <div className="fixed inset-0 z-[70] flex items-start justify-center bg-black/50" style={{ paddingTop: '8vh' }}>
       <div className="w-full max-w-[500px] rounded-2xl" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card-3d)', padding: 24, maxHeight: '85vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-5">
           <h2 className="font-black text-base" style={{ color: 'var(--text-h)' }}>{title}</h2>

@@ -122,7 +122,7 @@ export default function StockMoveModal({ open, onClose, mode = 'move', product, 
   return (
     <>
       <div className="fixed inset-0 z-[55] flex items-start justify-center p-4 overflow-y-auto"
-        style={{ background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(2px)' }} onClick={handleClose}>
+        style={{ background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(2px)' }}>
         <form onSubmit={submit} onClick={e => e.stopPropagation()}
           className="w-full rounded-2xl overflow-hidden my-8"
           style={{ maxWidth: 520, background: 'var(--bg-global)', boxShadow: '0 24px 70px rgba(0,0,0,0.45)' }}>
