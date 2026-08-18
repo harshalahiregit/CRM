@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, Copy, Trash2, Globe, Check } from 'lucide-react'
+import { Plus, Copy, Check } from 'lucide-react'
 import { webToLeadApi } from '@/services/webToLeadApi'
 import { leadSettingsApi } from '@/services/leadSettingsApi'
 import { useToast } from '@/hooks/useToast'

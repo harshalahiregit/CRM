@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Search, Edit2, Trash2, X, Upload, Download, Building2, Users, UserCheck, TrendingUp, ChevronDown, FileSpreadsheet, FileText, Eye, UserCog, Sliders, BarChart3 } from 'lucide-react'
+import { Plus, Edit2, Trash2, X, Upload, Download, Building2, Users, UserCheck, TrendingUp, ChevronDown, FileSpreadsheet, FileText, Eye, Sliders, BarChart3 } from 'lucide-react'
 import { customerApi } from '@/services/customerApi'
 import { useToast } from '@/hooks/useToast'
 import ListToolbar from '@/components/ui/ListToolbar'

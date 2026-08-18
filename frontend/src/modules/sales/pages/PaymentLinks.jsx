@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Plus, Copy, XCircle, Trash2, Link2, CheckCircle } from 'lucide-react'
+import { ArrowLeft, Plus, Copy, XCircle, Trash2, Link2 } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
 import Drawer from '@/components/ui/Drawer'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'

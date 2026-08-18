@@ -337,6 +337,12 @@ function ProfileTab({ client, reload, toast }) {
     }
   }
   const [form, setForm] = useState(seed)
+  // Custom-field definitions and the field setter were extracted along with
+  // ContactFormDrawer but are still used here, which left every Profile-tab
+  // reference to them undefined. Re-declared locally.
+  const [cfDefs, setCfDefs] = useState([])
+  const sf = (k, v) => setForm(p => ({ ...p, [k]: v }))
+
   useEffect(() => {
     customerApi.groups.list().then(setGroupOptions).catch(() => {})
     customerApi.customFields.list().then(setCfDefs).catch(() => {})
@@ -391,7 +397,7 @@ function ProfileTab({ client, reload, toast }) {
               <div><label className="label">Phone</label><input className="input-3d text-sm" value={form.phone} onChange={e => sf('phone', e.target.value)} /></div>
               <div><label className="label">Website</label><input className="input-3d text-sm" value={form.website} onChange={e => sf('website', e.target.value)} /></div>
               <div><label className="label">Parent Company</label><ParentCompanyPicker value={form.parent_company} parentClientId={form.parent_client_id}
-                      onChange={p => setForm(f => ({ ...f, ...p }))} excludeId={id} /></div>
+                      onChange={p => setForm(f => ({ ...f, ...p }))} excludeId={client.id} /></div>
               <div><label className="label">Opening Balance</label><input type="number" className="input-3d text-sm" value={form.opening_balance} onChange={e => sf('opening_balance', e.target.value)} /></div>
               <div><label className="label">Balance as of</label><input type="date" className="input-3d text-sm" value={form.opening_balance_date} onChange={e => sf('opening_balance_date', e.target.value)} /></div>
               <div><label className="label">Currency</label><select className="input-3d text-sm" value={form.default_currency} onChange={e => sf('default_currency', e.target.value)}>{CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}</select></div>

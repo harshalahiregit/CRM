@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Send, Copy, Receipt, Trash2, ClipboardList, CheckCircle, XCircle, Download, CreditCard, X, Banknote, AlertCircle } from 'lucide-react'
+import { ArrowLeft, Send, Copy, Receipt, Trash2, Download, CreditCard, X, Banknote, AlertCircle } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
 import StatusBadge from '../components/StatusBadge'
 import ActivityTimeline from '../components/ActivityTimeline'

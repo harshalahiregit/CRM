@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Plus, Trash2, X, MoreVertical, Ban, ArrowRightLeft, Receipt, Tag } from 'lucide-react'
+import { Plus, Trash2, X, Ban, ArrowRightLeft, Receipt, Tag } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
 import { useClientOptions } from '@/hooks/useClientOptions'
 import StatusBadge from '../components/StatusBadge'

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { CheckSquare, Plus, Search, Building2, FileSignature, CircleDot } from 'lucide-react'
+import { Plus, Building2, FileSignature, CircleDot } from 'lucide-react'
 import { taskApi, TASK_PRIORITY } from '@/services/taskApi'
 import ListToolbar from '@/components/ui/ListToolbar'
 import { useListView } from '@/hooks/useListView'

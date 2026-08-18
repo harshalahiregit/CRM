@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Plus, BookText, Loader2, Trash2, X, Receipt, Settings2 } from 'lucide-react'
+import { Plus, BookText, Loader2, X, Receipt, Settings2 } from 'lucide-react'
 import { accountsApi } from '@/services/accountsApi'
 import { fmtDate, VOUCHER_TYPES } from '@/modules/accounts/format'
 import { useInr } from '@/modules/accounts/useMoney'

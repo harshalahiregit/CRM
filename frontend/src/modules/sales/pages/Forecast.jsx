@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { TrendingUp, IndianRupee, Target, Filter } from 'lucide-react'
+import { TrendingUp, IndianRupee, Target } from 'lucide-react'
 import { forecastApi } from '@/services/forecastApi'
 import { useToast } from '@/hooks/useToast'
 

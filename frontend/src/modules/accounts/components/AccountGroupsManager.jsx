@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Loader2, Edit2, Trash2, Lock, X } from 'lucide-react'
+import { Plus, Loader2, Edit2, Trash2, Lock } from 'lucide-react'
 import { accountsApi } from '@/services/accountsApi'
 import { NATURE_LABEL } from '@/modules/accounts/format'
 import { useToast } from '@/hooks/useToast'

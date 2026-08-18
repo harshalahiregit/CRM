@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, Send, Check, Trash2, X, MoreVertical, Truck, MapPin, ChevronDown, Tag } from 'lucide-react'
+import { Plus, Send, Check, Trash2, X, Truck, MapPin, ChevronDown } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
 import { useClientOptions } from '@/hooks/useClientOptions'
 import StatusBadge from '../components/StatusBadge'
