@@ -144,6 +144,14 @@ export default function TpvVendorDetail() {
     try { await cfg.api.vendors.reinstate(id); load() }
     catch (e) { alert(e?.response?.data?.message || 'Could not reinstate the vendor.') }
   }
+  const offboardVendor = async () => {
+    if (!confirm('Offboard this vendor? This ENDS the engagement: the login is locked and every on-site worker is terminated. This is not auto-reversible.')) return
+    const reason = window.prompt('Reason for offboarding (required):')
+    if (reason == null) return
+    if (!reason.trim()) { alert('A reason is required to offboard.'); return }
+    try { await cfg.api.vendors.offboard(id, reason.trim()); load() }
+    catch (e) { alert(e?.response?.data?.message || 'Could not offboard the vendor.') }
+  }
 
   const load = useCallback(() => {
     setLoad(true)
@@ -249,6 +257,12 @@ export default function TpvVendorDetail() {
                 <button onClick={reinstateVendor}
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: 'var(--bg-card)', border: '1px solid rgba(16,185,129,0.4)', color: '#10b981', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
                   <ShieldCheck size={13} /> Reinstate
+                </button>
+              )}
+              {manage && !['Offboarded', 'Draft', 'Pending_Approval'].includes(v.status) && (
+                <button onClick={offboardVendor}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: 'var(--bg-card)', border: '1px solid rgba(100,116,139,0.4)', color: '#64748b', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                  <XCircle size={13} /> Offboard
                 </button>
               )}
               {v.status === 'Suspended' && v.suspension_reason && (
