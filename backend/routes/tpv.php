@@ -216,6 +216,13 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::post('/permits/{permit}/reject',               [\App\Http\Controllers\Api\Tpv\PermitController::class, 'reject']);
     Route::post('/permits/{permit}/activate',             [\App\Http\Controllers\Api\Tpv\PermitController::class, 'activate']);
     Route::post('/permits/{permit}/close',                [\App\Http\Controllers\Api\Tpv\PermitController::class, 'close']);
+
+    // Proactive safety engagement (Doc_4 Phase 5/6) — observations + toolbox talks.
+    Route::get('/observations',                           [\App\Http\Controllers\Api\Tpv\SafetyEngagementController::class, 'observations']);
+    Route::post('/observations',                          [\App\Http\Controllers\Api\Tpv\SafetyEngagementController::class, 'storeObservation']);
+    Route::post('/observations/{observation}/close',      [\App\Http\Controllers\Api\Tpv\SafetyEngagementController::class, 'closeObservation']);
+    Route::get('/toolbox-talks',                          [\App\Http\Controllers\Api\Tpv\SafetyEngagementController::class, 'talks']);
+    Route::post('/toolbox-talks',                         [\App\Http\Controllers\Api\Tpv\SafetyEngagementController::class, 'storeTalk']);
 });
 
 // Admin approval — activates the vendor for site access.

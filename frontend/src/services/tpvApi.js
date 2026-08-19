@@ -169,6 +169,15 @@ export const tpvApi = {
     dashboard: () => api.get('/tpv/governance/dashboard').then(r => r.data),
   },
 
+  // ── Proactive safety engagement (Doc_4 Phase 5/6). ──
+  safety: {
+    observations:     (params = {}) => api.get('/tpv/observations', { params }).then(r => r.data?.data ?? r.data),
+    createObservation:(data)        => api.post('/tpv/observations', data).then(r => r.data),
+    closeObservation: (id, data = {}) => api.post(`/tpv/observations/${id}/close`, data).then(r => r.data),
+    talks:            (params = {}) => api.get('/tpv/toolbox-talks', { params }).then(r => r.data?.data ?? r.data),
+    createTalk:       (data)        => api.post('/tpv/toolbox-talks', data).then(r => r.data),
+  },
+
   // ── Permit-to-Work + JSA (Doc_4 Phase 5). ──
   permits: {
     list:     (params = {}) => api.get('/tpv/permits', { params }).then(r => r.data?.data ?? r.data),
