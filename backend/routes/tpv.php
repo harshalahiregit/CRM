@@ -236,6 +236,13 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::get('/site-vehicles',                          [$sr, 'vehicles']);
     Route::post('/site-vehicles',                         [$sr, 'storeVehicle']);
     Route::post('/site-vehicles/{vehicle}/checkout',      [$sr, 'checkoutVehicle']);
+
+    // Evidence locker (Doc 6) — central compliance-evidence register.
+    $el = \App\Http\Controllers\Api\Tpv\EvidenceLockerController::class;
+    Route::get('/evidence',                               [$el, 'index']);
+    Route::post('/evidence',                              [$el, 'store']);
+    Route::patch('/evidence/{evidence}',                  [$el, 'update']);
+    Route::delete('/evidence/{evidence}',                 [$el, 'destroy']);
 });
 
 // Admin approval — activates the vendor for site access.
