@@ -188,6 +188,17 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::get('/strikes/stats',                          [TpvSafetyStrikeController::class, 'stats']);
     Route::get('/strikes',                                [TpvSafetyStrikeController::class, 'index']);
     Route::get('/workers/{worker}/strikes',               [TpvSafetyStrikeController::class, 'forWorker']);
+
+    // HSSE incidents → RCA → CAPA (Doc_4 Phase 5). A Serious/Fatal or stop-work
+    // incident auto-suspends the vendor; an incident closes only once its root
+    // cause is recorded and every CAPA is verified (enforced in the service).
+    Route::get('/incidents',                              [\App\Http\Controllers\Api\Tpv\IncidentController::class, 'index']);
+    Route::post('/incidents',                             [\App\Http\Controllers\Api\Tpv\IncidentController::class, 'store']);
+    Route::get('/incidents/{incident}',                   [\App\Http\Controllers\Api\Tpv\IncidentController::class, 'show']);
+    Route::post('/incidents/{incident}/rca',              [\App\Http\Controllers\Api\Tpv\IncidentController::class, 'recordRca']);
+    Route::post('/incidents/{incident}/close',            [\App\Http\Controllers\Api\Tpv\IncidentController::class, 'close']);
+    Route::post('/incidents/{incident}/capas',            [\App\Http\Controllers\Api\Tpv\IncidentController::class, 'addCapa']);
+    Route::patch('/incidents/{incident}/capas/{capa}',    [\App\Http\Controllers\Api\Tpv\IncidentController::class, 'updateCapa']);
 });
 
 // Admin approval — activates the vendor for site access.
