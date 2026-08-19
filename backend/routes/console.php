@@ -20,6 +20,14 @@ Schedule::command('accounts:pdc-due')
     ->withoutOverlapping()
     ->runInBackground();
 
+// Database backup (enhancement #12): one archive a night, kept to the last N
+// (config/backup.php). Early hours to avoid the working-day load; the command
+// prunes older archives itself so the store never grows without bound.
+Schedule::command('backup:run')
+    ->dailyAt('02:00')
+    ->withoutOverlapping()
+    ->runInBackground();
+
 // Tasks: spawn recurring copies, fire reminders, send due/overdue notices.
 // Every 15 minutes so a reminder set for 10:30 doesn't land at 11:00; the command
 // is idempotent, so the extra runs are no-ops when nothing is due.

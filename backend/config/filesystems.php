@@ -38,6 +38,17 @@ return [
             'report' => false,
         ],
 
+        // Daily database backups (enhancement #12). Private local store by
+        // default; point BACKUP_DISK at 's3' (or an OneDrive/pCloud-mounted disk)
+        // in production to ship backups off-box. The backup command prunes this to
+        // the last N archives itself.
+        'backups' => [
+            'driver'     => 'local',
+            'root'       => storage_path('app/backups'),
+            'visibility' => 'private',
+            'throw'      => false,
+        ],
+
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),
