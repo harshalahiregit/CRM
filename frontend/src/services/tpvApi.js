@@ -179,6 +179,18 @@ export const tpvApi = {
     createTalk:       (data)        => api.post('/tpv/toolbox-talks', data).then(r => r.data),
   },
 
+  // ── Site safety registers (Doc_4 Phase 5/6): drills + visitor + vehicle. ──
+  registers: {
+    drills:        () => api.get('/tpv/drills').then(r => r.data?.data ?? r.data),
+    createDrill:   (data) => api.post('/tpv/drills', data).then(r => r.data),
+    visitors:      () => api.get('/tpv/visitors').then(r => r.data?.data ?? r.data),
+    createVisitor: (data) => api.post('/tpv/visitors', data).then(r => r.data),
+    checkoutVisitor: (id) => api.post(`/tpv/visitors/${id}/checkout`).then(r => r.data),
+    vehicles:      () => api.get('/tpv/site-vehicles').then(r => r.data?.data ?? r.data),
+    createVehicle: (data) => api.post('/tpv/site-vehicles', data).then(r => r.data),
+    checkoutVehicle: (id) => api.post(`/tpv/site-vehicles/${id}/checkout`).then(r => r.data),
+  },
+
   // ── Permit-to-Work + JSA (Doc_4 Phase 5). ──
   permits: {
     list:     (params = {}) => api.get('/tpv/permits', { params }).then(r => r.data?.data ?? r.data),
