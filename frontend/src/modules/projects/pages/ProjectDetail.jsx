@@ -733,8 +733,17 @@ function MilestoneFormModal({ milestone, onClose, onSubmit, busy }) {
   const { guard, dialog } = useDiscardGuard()
   const requestClose = () => guard(onClose, JSON.stringify(f) !== snapRef.current)
   const set = (k, v) => setF(p => ({ ...p, [k]: v }))
-  const ok = f.name.trim() && f.start_date && f.due_date
-  const submit = (e) => { e.preventDefault(); if (ok && !busy) onSubmit(f) }
+  // Due date must never fall before the start date — a milestone cannot end
+  // before it begins. Compared as YYYY-MM-DD strings (lexicographic == chronological).
+  const dateError = f.start_date && f.due_date && f.due_date < f.start_date
+    ? 'Due date cannot be before the start date.'
+    : ''
+  const ok = f.name.trim() && f.start_date && f.due_date && !dateError
+  const submit = (e) => {
+    e.preventDefault()
+    if (dateError) { alert(dateError); return }   // hard stop: alert and do not proceed
+    if (ok && !busy) onSubmit(f)
+  }
 
   const LBL = { display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-body)', marginBottom: 5 }
   const INP = { width: '100%', padding: '9px 12px', borderRadius: 8, fontSize: 13.5, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)', outline: 'none' }
@@ -761,7 +770,14 @@ function MilestoneFormModal({ milestone, onClose, onSubmit, busy }) {
           </div>
           <div>
             <label style={LBL}>{req} Due date</label>
-            <input type="date" value={f.due_date} onChange={e => set('due_date', e.target.value)} style={INP} />
+            <input type="date" value={f.due_date} min={f.start_date || undefined}
+              onChange={e => set('due_date', e.target.value)}
+              style={{ ...INP, ...(dateError ? { borderColor: 'var(--color-danger-500)' } : {}) }} />
+            {dateError && (
+              <p style={{ margin: '6px 0 0', fontSize: 12, fontWeight: 600, color: 'var(--color-danger-500)' }}>
+                {dateError}
+              </p>
+            )}
           </div>
           <div>
             <label style={LBL}>Description</label>
