@@ -145,29 +145,54 @@ export default function TpvTemporaryVendors() {
 const VALIDITY = [[1, '1 day'], [3, '3 days'], [7, '7 days'], [15, '15 days'], ['custom', 'Custom…']]
 
 function CreateModal({ onClose, onDone }) {
-  const [f, setF] = useState({ company_name: '', email: '', phone: '', validity: 7, custom: '', access_start_at: '' })
+  const [f, setF] = useState({ company_name: '', email: '', phone: '', validity: 7, custom: '', access_start_at: '', password: '' })
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState(null)
+  const [created, setCreated] = useState(null) // { email, generated_password }
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }))
 
+  const valid = f.company_name.trim() && f.email.trim() && (!f.password || f.password.length >= 8)
+
   const save = async () => {
+    if (!valid) { setErr('Company name and a valid email are required (password, if set, needs 8+ characters).'); return }
     setSaving(true); setErr(null)
     try {
       const validity_days = f.validity === 'custom' ? Number(f.custom) : Number(f.validity)
-      await tpvApi.access.createTemporary({
+      const res = await tpvApi.access.createTemporary({
         company_name: f.company_name, email: f.email, phone: f.phone || undefined,
         validity_days, access_start_at: f.access_start_at || undefined,
+        password: f.password || undefined,
       })
-      onDone()
+      const gen = res?.generated_password ?? res?.data?.generated_password
+      // Reveal an auto-generated credential once; if the admin set their own, just finish.
+      if (gen) { setCreated({ email: f.email, generated_password: gen }); setSaving(false) }
+      else onDone()
     } catch (e) { setErr(e?.response?.data?.message || 'Could not create the temporary vendor.'); setSaving(false) }
+  }
+
+  if (created) {
+    return (
+      <Overlay onClose={onDone} width={560}>
+        <ModalHead title="Temporary Vendor Created" sub="Save this login now — the password is shown only once." />
+        <div style={{ padding: '10px 22px' }}>
+          <div style={{ fontSize: 12.5, lineHeight: 2, padding: '12px 16px', borderRadius: 10, background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.28)' }}>
+            <div><strong>Login email:</strong> {created.email}</div>
+            <div><strong>Password:</strong> <code style={{ fontSize: 13, padding: '2px 8px', borderRadius: 6, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }}>{created.generated_password}</code></div>
+          </div>
+          <p style={{ fontSize: 11.5, color: 'var(--text-muted)', margin: '10px 2px 0' }}>The credentials have also been emailed to the vendor.</p>
+        </div>
+        <ModalFooter onClose={onDone} onConfirm={onDone} confirmLabel="Done" color="#7C3AED" />
+      </Overlay>
+    )
   }
 
   return (
     <Overlay onClose={onClose} width={560}>
-      <ModalHead title="New Temporary Vendor" sub="System generates credentials and emails the login." />
+      <ModalHead title="New Temporary Vendor" sub="Set a login password or leave blank to auto-generate. Credentials are emailed to the vendor." />
       <div style={{ padding: '10px 22px', display: 'flex', flexDirection: 'column', gap: 4 }}>
         <Field label="Company Name" full><TextInput value={f.company_name} onChange={set('company_name')} placeholder="Vendor company" /></Field>
         <Field label="Email (login)" full><TextInput type="email" value={f.email} onChange={set('email')} placeholder="vendor@company.com" /></Field>
+        <Field label="Password (optional)" full><TextInput type="text" value={f.password} onChange={set('password')} placeholder="Leave blank to auto-generate" /></Field>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <Field label="Phone"><TextInput value={f.phone} onChange={set('phone')} placeholder="+91 …" /></Field>
           <Field label="Validity"><SelectInput value={f.validity} onChange={set('validity')} options={VALIDITY} pairs /></Field>
@@ -178,7 +203,7 @@ function CreateModal({ onClose, onDone }) {
         </div>
         {err && <ModalError>{err}</ModalError>}
       </div>
-      <ModalFooter onClose={onClose} onConfirm={save} loading={saving} confirmLabel="Create" color="#7C3AED" />
+      <ModalFooter onClose={onClose} onConfirm={save} loading={saving} disabled={!valid} confirmLabel="Create" color="#7C3AED" />
     </Overlay>
   )
 }

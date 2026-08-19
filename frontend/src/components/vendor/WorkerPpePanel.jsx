@@ -1,6 +1,7 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { HardHat, RotateCcw } from 'lucide-react'
+import { HardHat, RotateCcw, X } from 'lucide-react'
 
 /**
  * Assigned PPE for one worker, with the return / lost / damaged actions.
@@ -115,10 +116,12 @@ function ReturnDialog({ row, outstanding, api, accent, onClose, onDone }) {
     onError: (e) => setErr(e?.response?.data?.message || 'That action failed.'),
   })
 
-  return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60 }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: 380, maxWidth: '94vw', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, padding: 22 }}>
-        <h3 style={{ margin: 0, fontSize: 15.5, fontWeight: 800, color: 'var(--text-h)' }}>Return {row.item}</h3>
+  // Portalled to <body> so a .pr-glass ancestor can't clip it (see PpeCatalogue).
+  return createPortal(
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 380, maxWidth: '94vw', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, padding: 22, position: 'relative' }}>
+        <button onClick={onClose} aria-label="Close" style={{ position: 'absolute', top: 14, right: 14, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><X size={17} /></button>
+        <h3 style={{ margin: 0, fontSize: 15.5, fontWeight: 800, color: 'var(--text-h)', paddingRight: 24 }}>Return {row.item}</h3>
         <p style={{ margin: '4px 0 14px', fontSize: 12, color: 'var(--text-muted)' }}>{outstanding} outstanding</p>
 
         <label style={lbl}>Quantity</label>
@@ -147,7 +150,8 @@ function ReturnDialog({ row, outstanding, api, accent, onClose, onDone }) {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 

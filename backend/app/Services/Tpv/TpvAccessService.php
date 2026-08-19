@@ -74,7 +74,9 @@ class TpvAccessService
                 'access_reminders_sent' => [],
             ]);
 
-            $password = Str::random(12);
+            // Accept an admin-supplied password, else mint one — mirroring
+            // VendorService::create so the two vendor-creation paths behave alike.
+            $password = ! empty($data['password']) ? $data['password'] : Str::random(12);
             $user = User::create([
                 'tenant_id'         => $tid,
                 'name'              => $data['company_name'],
@@ -94,7 +96,14 @@ class TpvAccessService
             ]);
             Log::channel('tpv')->info('Temporary TPV created', ['vendor_id' => $vendor->id, 'tenant_id' => $tid]);
 
-            return ['vendor' => $vendor->fresh(), 'credentials_sent' => true];
+            // Surface the credential once when we generated it — the admin needs to
+            // pass it on. When the admin typed their own, they already have it, so we
+            // never echo it back. Never persisted in clear either way.
+            return [
+                'vendor'             => $vendor->fresh(),
+                'credentials_sent'   => true,
+                'generated_password' => empty($data['password']) ? $password : null,
+            ];
         });
     }
 
@@ -266,7 +275,7 @@ class TpvAccessService
     public function listTemporary(int $tenantId): array
     {
         return Vendor::forTenant($tenantId)
-            ->where('is_temporary', true)
+            ->temporary()
             ->latest()
             ->get()
             ->map(fn (Vendor $v) => array_merge([
@@ -291,7 +300,7 @@ class TpvAccessService
         $sent = 0;
         $expired = 0;
 
-        Vendor::where('is_temporary', true)
+        Vendor::temporary()
             ->where('access_status', Access::ACTIVE)
             ->whereNotNull('access_expires_at')
             ->chunkById(200, function ($vendors) use (&$sent, &$expired) {

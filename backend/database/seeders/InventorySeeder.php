@@ -81,7 +81,10 @@ class InventorySeeder extends Seeder
 
             // ── Categories ────────────────────────────────────────────────────
             $cats = [];
-            foreach (['Electronics', 'Office Supplies', 'Raw Materials', 'Packaging', 'Tools', 'Finished Goods'] as $i => $n) {
+            // 'PPE' is a first-class category: the TPV PPE matrix / issuance flow
+            // treats every product under a category named "PPE" as issuable safety
+            // gear. Without it that catalogue is empty and the picker has no options.
+            foreach (['Electronics', 'Office Supplies', 'Raw Materials', 'Packaging', 'Tools', 'Finished Goods', 'PPE'] as $i => $n) {
                 $cats[$n] = Category::create(['tenant_id' => $tid, 'name' => $n, 'order' => $i + 1, 'description' => "$n inventory items"]);
             }
 
@@ -115,6 +118,13 @@ class InventorySeeder extends Seeder
                 ['TLS-5001', 'Screwdriver Set', 'Tools', 'BOX', 350, 650, 15, '8205', 18, 60, 20, false, false],
                 ['TLS-5002', 'Measuring Tape 5m', 'Tools', 'PCS', 90, 180, 30, '9017', 18, 110, 25, false, false],
                 ['FG-6001', 'Assembled Cable Kit', 'Finished Goods', 'BOX', 400, 799, 20, '8544', 18, 35, 0, false, false],
+                // ── PPE (issuable safety gear for the TPV workforce flow) ──────
+                ['PPE-7001', 'Safety Helmet', 'PPE', 'PCS', 180, 320, 50, '6506', 18, 200, 40, false, false],
+                ['PPE-7002', 'Safety Gloves (Pair)', 'PPE', 'PCS', 60, 120, 100, '6116', 18, 400, 80, false, false],
+                ['PPE-7003', 'Safety Boots (Pair)', 'PPE', 'PCS', 650, 1100, 40, '6403', 18, 150, 30, false, false],
+                ['PPE-7004', 'Hi-Vis Safety Vest', 'PPE', 'PCS', 120, 240, 60, '6211', 18, 250, 50, false, false],
+                ['PPE-7005', 'Safety Goggles', 'PPE', 'PCS', 90, 180, 60, '9004', 18, 180, 30, false, false],
+                ['PPE-7006', 'Ear Plugs (Pair)', 'PPE', 'PCS', 15, 40, 120, '3926', 18, 500, 100, false, false],
             ];
 
             $p = [];  // sku => product
