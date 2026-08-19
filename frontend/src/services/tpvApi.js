@@ -179,6 +179,14 @@ export const tpvApi = {
     createTalk:       (data)        => api.post('/tpv/toolbox-talks', data).then(r => r.data),
   },
 
+  // ── Evidence locker (Doc 6) — central compliance-evidence register. ──
+  evidence: {
+    list:   (params = {}) => api.get('/tpv/evidence', { params }).then(r => r.data),
+    create: (data)        => api.post('/tpv/evidence', data).then(r => r.data),
+    update: (id, data)    => api.patch(`/tpv/evidence/${id}`, data).then(r => r.data),
+    remove: (id)          => api.delete(`/tpv/evidence/${id}`).then(r => r.data),
+  },
+
   // ── Site safety registers (Doc_4 Phase 5/6): drills + visitor + vehicle. ──
   registers: {
     drills:        () => api.get('/tpv/drills').then(r => r.data?.data ?? r.data),
