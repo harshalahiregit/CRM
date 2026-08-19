@@ -15,6 +15,15 @@ class GovernanceController extends Controller
         return response()->json($service->build($request->user()->tenant_id));
     }
 
+    /** HSSE authority matrix (Doc 1) — the named authorities + who owns what. */
+    public function authorityMatrix()
+    {
+        return response()->json([
+            'authorities' => config('authority.authorities'),
+            'matrix'      => config('authority.matrix'),
+        ]);
+    }
+
     /** DPR / WPR / MCR periodic compliance report. */
     public function report(Request $request, ComplianceReportService $service)
     {

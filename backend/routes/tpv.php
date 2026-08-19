@@ -196,6 +196,8 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::get('/governance/dashboard',                   [\App\Http\Controllers\Api\Tpv\GovernanceController::class, 'dashboard']);
     // DPR / WPR / MCR periodic compliance reports (Doc 6).
     Route::get('/governance/report',                      [\App\Http\Controllers\Api\Tpv\GovernanceController::class, 'report']);
+    // Authority matrix (Doc 1) — the named authorities + who signs off what.
+    Route::get('/governance/authority-matrix',            [\App\Http\Controllers\Api\Tpv\GovernanceController::class, 'authorityMatrix']);
 
     // HSSE incidents → RCA → CAPA (Doc_4 Phase 5). A Serious/Fatal or stop-work
     // incident auto-suspends the vendor; an incident closes only once its root
