@@ -202,6 +202,8 @@ export const tpvApi = {
     tasks:     (id)          => api.get(`/tpv/vendors/${id}/tasks`).then(r => r.data),
     // Workspace Overview dashboard — live per-vendor counts + status.
     overview:  (id)          => api.get(`/tpv/vendors/${id}/overview`).then(r => r.data),
+    // VRS scorecard (Doc 5) — { live, history }.
+    scorecard: (id)          => api.get(`/tpv/vendors/${id}/scorecard`).then(r => r.data),
     // Customers directly linked to this vendor (clients.vendor_id).
     customers: {
       list:   (vid)       => api.get(`/tpv/vendors/${vid}/customers`).then(r => r.data),
