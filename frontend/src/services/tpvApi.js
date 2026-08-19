@@ -164,6 +164,18 @@ export const tpvApi = {
     setStatus: (vendorId, id, status)  => api.patch(`/tpv/vendors/${vendorId}/contacts/${id}/status`, { status }).then(r => r.data),
   },
 
+  // ── HSSE incidents → RCA → CAPA (Doc_4 Phase 5). Serious/Fatal or stop-work
+  // incidents auto-suspend the vendor; close requires RCA + all CAPAs verified. ──
+  incidents: {
+    list:       (params = {}) => api.get('/tpv/incidents', { params }).then(r => r.data?.data ?? r.data),
+    get:        (id)          => api.get(`/tpv/incidents/${id}`).then(r => r.data),
+    create:     (data)        => api.post('/tpv/incidents', data).then(r => r.data),
+    recordRca:  (id, data)    => api.post(`/tpv/incidents/${id}/rca`, data).then(r => r.data),
+    close:      (id)          => api.post(`/tpv/incidents/${id}/close`).then(r => r.data),
+    addCapa:    (id, data)    => api.post(`/tpv/incidents/${id}/capas`, data).then(r => r.data),
+    updateCapa: (id, capaId, data) => api.patch(`/tpv/incidents/${id}/capas/${capaId}`, data).then(r => r.data),
+  },
+
   // ── Vendor/TPV employees (enhancement #2/#9/#10) — a vendor's assignable
   // people. list() feeds the assignee cascade; grantAccess() provisions a login
   // so a contact can be assigned work and see it. ──
