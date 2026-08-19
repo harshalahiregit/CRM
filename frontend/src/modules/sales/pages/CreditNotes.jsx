@@ -7,6 +7,7 @@ import StatusBadge from '../components/StatusBadge'
 import RowMenu from '../components/RowMenu'
 import RichTextEditor from '@/components/ui/RichTextEditor'
 import { useToast } from '@/hooks/useToast'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import ListToolbar from '@/components/ui/ListToolbar'
 import { useListView } from '@/hooks/useListView'
 import { exportSalesList } from '@/services/salesApi'
@@ -37,6 +38,18 @@ export default function CreditNotes() {
   const showToast = (msg, type = 'success') =>
     type === 'error' ? toast.error(msg) : type === 'info' ? toast.info(msg) : toast.success(msg)
   const sf = (k,v) => setForm(p=>({...p,[k]:v}))
+
+  const [confirmDel, setConfirmDel] = useState(null)
+
+  // Delete reported success and called nothing; DELETE /sales/credit-notes/{id}
+  // has existed all along.
+  const doDelete = async () => {
+    try {
+      await salesApi.creditNotes.delete(confirmDel.id)
+      showToast('Credit note deleted')
+      setConfirmDel(null); load()
+    } catch (e) { showToast(e.message || 'Could not delete the credit note', 'error'); setConfirmDel(null) }
+  }
 
   const load = () => {
     setLoading(true)
@@ -160,7 +173,7 @@ export default function CreditNotes() {
                           {icon:ArrowRightLeft, label:'Apply to Invoice', action:()=>showToast('Applied to invoice!')},
                           {icon:Receipt, label:'Create Refund', action:()=>{setSelectedCN(cn);setShowRefund(true)}},
                           {icon:Ban, label:'Mark Void', action:()=>showToast('Marked void!')},
-                          {icon:Trash2, label:'Delete', action:()=>showToast('Deleted!','error'), danger:true},
+                          {icon:Trash2, label:'Delete', action:()=>setConfirmDel(cn), danger:true},
                         ].map(a=>(
                           <button key={a.label} onClick={()=>a.action()}
                             className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-colors"
@@ -347,6 +360,15 @@ export default function CreditNotes() {
           </div>
         </>
       )}
+      {confirmDel && (
+        <ConfirmDialog
+          title="Delete this credit note?"
+          message={`${confirmDel.number} will be permanently removed.`}
+          confirmLabel="Delete" tone="danger"
+          onCancel={() => setConfirmDel(null)} onConfirm={doDelete}
+        />
+      )}
+
     </>
   )
 }

@@ -84,6 +84,16 @@ export default function InvoiceDetail() {
     }
   }
 
+  const markSent = async () => {
+    try {
+      await salesApi.invoices.send(invoice.id)
+      showToast(`${invoice.number} marked as sent`)
+      setInvoice(await salesApi.invoices.get(invoice.id))
+    } catch (e) {
+      showToast(e.message || 'Could not update the invoice', 'error')
+    }
+  }
+
   const handleSendReminder = async () => {
     try {
       await salesApi.invoices.sendPaymentReminder(invoice.id)
@@ -154,9 +164,12 @@ export default function InvoiceDetail() {
             style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
             <Copy size={13} /> {invoice.public_link_token ? 'Copy Public Link' : 'Public Link'}
           </button>
+          {/* "Send" marks the invoice sent (status + sent_at) — there is no invoice
+              mailable, so it must not claim the customer was emailed. The PDF button
+              was removed outright: no invoice PDF endpoint exists, and it showed
+              "PDF ready!" having produced nothing. */}
           {[
-            { icon: Send, label: 'Send', action: () => showToast('Invoice sent!') },
-            { icon: Download, label: 'PDF', action: () => showToast('PDF ready!') },
+            { icon: Send, label: 'Mark as Sent', action: markSent },
           ].map(a => (
             <button key={a.label} onClick={a.action} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all hover:scale-[1.02]"
               style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
