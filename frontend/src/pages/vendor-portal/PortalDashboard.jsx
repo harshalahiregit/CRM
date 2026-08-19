@@ -1,6 +1,6 @@
 import RegistrationStatusCard from '@/components/vendor/RegistrationStatusCard'
 import { useState, useEffect, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import {
   ShoppingBag, FileText, Wallet, Rocket, CheckCircle2, Clock, ArrowRight, HardHat,
   RefreshCw, TrendingUp, Users, UserCheck, ClipboardList, HelpCircle, ChevronRight,
@@ -552,12 +552,12 @@ export default function PortalDashboard() {
             <div style={{ fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.5, marginBottom: 16 }}>
               Our support team is ready to assist with onboarding and compliance questions.
             </div>
-            <a
-              href="mailto:support@company.com"
+            <Link
+              to="/vendor-portal/support"
               style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 10, background: 'rgba(99,102,241,0.12)', color: '#818cf8', fontWeight: 700, fontSize: 13, textDecoration: 'none', border: '1px solid rgba(99,102,241,0.2)' }}
             >
-              <ExternalLink size={14} /> Contact Support
-            </a>
+              <HelpCircle size={14} /> Contact Support
+            </Link>
           </div>
         </div>
       </div>

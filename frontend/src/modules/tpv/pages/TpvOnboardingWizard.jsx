@@ -93,7 +93,13 @@ export default function TpvOnboardingWizard() {
       const ob = res?.onboarding ?? res?.data?.onboarding
       const pr = res?.progress ?? res?.data?.progress
       setOnboarding(ob); setProgress(pr)
-      if (!keepStep) setActive(ob?.current_step || 1)
+      // Open editable onboardings at the step the vendor left off on, but a
+      // submitted/decided one (Approved/Rejected/On_Hold/Submitted/Under_Review)
+      // jumps straight to Step 6 — its outcome — instead of a stale, locked
+      // mid-wizard screen (e.g. an approved vendor whose current_step was still 3
+      // would otherwise land on a read-only "upload documents" panel that looks
+      // broken). The stepper still lets them browse the earlier steps.
+      if (!keepStep) setActive(isOnboardingEditable(ob?.status) ? (ob?.current_step || 1) : 6)
     } catch (e) { console.error('Failed to load onboarding', e) }
     finally { setLoading(false) }
   }, [id, api])
@@ -191,7 +197,7 @@ export default function TpvOnboardingWizard() {
 // ── Stepper — extruded 3D knobs with live completion ─────────────────────────
 function Stepper({ steps, active, onGo }) {
   return (
-    <div className="pr-glass" style={{ padding: 16 }}>
+    <div className="pr-glass" style={{ padding: 16, overflowX: 'auto' }}>
       <div style={{ display: 'flex', alignItems: 'center', width: 'max-content', minWidth: '100%', gap: 0 }}>
         {steps.map((s, i) => {
           const Icon = STEP_ICONS[s.key] || FileText
