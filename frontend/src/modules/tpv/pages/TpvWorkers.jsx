@@ -174,15 +174,18 @@ export default function TpvWorkers() {
           <button onClick={fetchAll} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 14px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-muted)', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>
             <RefreshCw size={14} />
           </button>
+          {/* Bulk Upload is admin/staff only (no vendor-portal endpoint). */}
           {manage && (
-            <>
-              <button onClick={() => setUploading(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 18px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-h)', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>
-                📥 Bulk Upload
-              </button>
-              <button onClick={() => setCreating(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 18px', borderRadius: 10, background: 'linear-gradient(135deg,#7C3AED,#6d28d9)', color: '#fff', fontWeight: 700, border: 'none', cursor: 'pointer', fontSize: 13 }}>
-                <Plus size={15} /> Register Worker
-              </button>
-            </>
+            <button onClick={() => setUploading(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 18px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-h)', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>
+              📥 Bulk Upload
+            </button>
+          )}
+          {/* A vendor manages its OWN workforce in the portal, so Register is
+              available to admin/staff AND the portal vendor (portalApi.workers.create). */}
+          {(manage || isPortal) && (
+            <button onClick={() => setCreating(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 18px', borderRadius: 10, background: 'linear-gradient(135deg,#7C3AED,#6d28d9)', color: '#fff', fontWeight: 700, border: 'none', cursor: 'pointer', fontSize: 13 }}>
+              <Plus size={15} /> Register Worker
+            </button>
           )}
         </div>
       </div>
@@ -227,7 +230,7 @@ export default function TpvWorkers() {
           </div>
           <h3 style={{ color: 'var(--text-h)', fontSize: 16, fontWeight: 800, margin: '0 0 6px' }}>No workers registered</h3>
           <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '0 0 18px' }}>Register a worker to take them through medical, induction, PPE and badging.</p>
-          {manage && <button onClick={() => setCreating(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 20px', borderRadius: 10, background: 'linear-gradient(135deg,#7C3AED,#6d28d9)', color: '#fff', fontWeight: 700, border: 'none', cursor: 'pointer', fontSize: 13 }}><Plus size={15} /> Register Worker</button>}
+          {(manage || isPortal) && <button onClick={() => setCreating(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 20px', borderRadius: 10, background: 'linear-gradient(135deg,#7C3AED,#6d28d9)', color: '#fff', fontWeight: 700, border: 'none', cursor: 'pointer', fontSize: 13 }}><Plus size={15} /> Register Worker</button>}
         </div>
       ) : viewMode === 'table' ? (
         <div className="pr-glass" style={{ padding: 0, borderRadius: 16, overflow: 'hidden' }}>

@@ -739,9 +739,12 @@ class TpvWorkerService
 
     public function getPublicScan(string $token): array
     {
-        $worker = TpvWorker::with('vendor:id,company_name,vendor_code')
+        // Resolve by the QR token ONLY — the token is the bearer credential and a
+        // terminated worker has it nulled, so a retained card stops resolving.
+        // (Previously an `orWhere('worker_code')` let a terminated worker still
+        // resolve by their printed code, defeating that.)
+        $worker = TpvWorker::with('vendor:id,company_name,vendor_code,status')
             ->where('qr_token', $token)
-            ->orWhere('worker_code', $token)
             ->first();
 
         if (!$worker) {
@@ -753,20 +756,38 @@ class TpvWorkerService
         }
 
         $punch = (int) ($worker->punch_count ?? 0);
-        $isTerminated = ($punch >= 3 || $worker->status === Status::TERMINATED || !$worker->is_active);
 
-        $stateLabel = 'ACCESS ACTIVE';
-        $stateColor = 'green';
-        if ($isTerminated) {
-            $stateLabel = 'PERMANENTLY BLOCKED';
-            $stateColor = 'red';
-        } elseif ($punch === 1) {
-            $stateLabel = 'FIRST WARNING';
-            $stateColor = 'yellow';
+        // The public verification page must reflect the SAME access decision the
+        // site gate makes — not just the punch count. It previously showed a green
+        // "ACCESS ACTIVE" for a suspended worker, an expired badge, or an inactive
+        // vendor, all of which the real gate (GateScanService::evaluate) denies.
+        $terminated    = $punch >= 3 || $worker->status === Status::TERMINATED || ! $worker->is_active;
+        $suspended     = $worker->status === Status::SUSPENDED;
+        $notActive     = $worker->status !== Status::ACTIVE;   // e.g. still Draft — no badge issued
+        $badgeExpired  = $worker->badge_valid_until && $worker->badge_valid_until->isPast();
+        $vendorBlocked = $worker->vendor && $worker->vendor->status !== VendorStatus::ACTIVE;
+
+        $isTerminated = $terminated;   // kept for backward-compatible payload key
+
+        if ($terminated) {
+            $stateLabel = 'PERMANENTLY BLOCKED'; $stateColor = 'red';
+        } elseif ($suspended) {
+            $stateLabel = 'ACCESS SUSPENDED'; $stateColor = 'red';
+        } elseif ($badgeExpired) {
+            $stateLabel = 'BADGE EXPIRED'; $stateColor = 'red';
+        } elseif ($vendorBlocked) {
+            $stateLabel = 'VENDOR NOT ACTIVE'; $stateColor = 'red';
+        } elseif ($notActive) {
+            $stateLabel = 'NO ACTIVE BADGE'; $stateColor = 'red';
         } elseif ($punch === 2) {
-            $stateLabel = 'FINAL WARNING';
-            $stateColor = 'orange';
+            $stateLabel = 'FINAL WARNING'; $stateColor = 'orange';
+        } elseif ($punch === 1) {
+            $stateLabel = 'FIRST WARNING'; $stateColor = 'yellow';
+        } else {
+            $stateLabel = 'ACCESS ACTIVE'; $stateColor = 'green';
         }
+        // Anything red means the gate would refuse entry.
+        $denied = $stateColor === 'red';
 
         return [
             'found'         => true,
@@ -775,9 +796,12 @@ class TpvWorkerService
                 'worker_code'   => $worker->worker_code,
                 'name'          => $worker->name,
                 'gender'        => $worker->gender,
+                'dob'           => $worker->dob?->toDateString(),
                 'age'           => $worker->age,
                 'blood_group'   => $worker->blood_group,
                 'designation'   => $worker->designation,
+                'badge_number'  => $worker->badge_number,
+                'valid_until'   => $worker->badge_valid_until?->toDateString(),
                 'photo_url'     => $worker->photo_path ? asset('storage/'.$worker->photo_path) : null,
                 'company_name'  => $worker->vendor->company_name ?? 'TPV Vendor',
                 'vendor_code'   => $worker->vendor->vendor_code ?? '—',
@@ -794,6 +818,7 @@ class TpvWorkerService
             'state_label'   => $stateLabel,
             'state_color'   => $stateColor,
             'is_terminated' => $isTerminated,
+            'access_denied' => $denied,
             'scanned_at'    => now()->format('d M Y, H:i').' IST',
         ];
     }
