@@ -84,7 +84,12 @@ export default function TpvVendors() {
   // was a second definition of the same numbers — Purchase already reads its stats
   // endpoint, and both must answer identically.
   const [stats, setStats] = useState({})
-  useEffect(() => { cfg.api.vendors.stats?.().then(setStats).catch(() => {}) }, [rows, cfg])
+  // Depend on cfg.api, NOT cfg: useVendorModule() builds a fresh config object
+  // on every render, so `cfg` in this array made the effect re-run after its
+  // own setStats -> new cfg -> setStats -> ... hammering /vendors/stats in an
+  // endless loop. cfg.api is a module singleton, so its identity is stable
+  // (this is the same dependency the load() effect above already uses).
+  useEffect(() => { cfg.api.vendors.stats?.().then(setStats).catch(() => {}) }, [rows, cfg.api])
 
   const counts = useMemo(() => ({
     total:     stats.total     ?? rows.length,
@@ -420,7 +425,7 @@ function VendorModal({ form, cfg, onClose, onDone }) {
   }
 
   return (
-    <Overlay onClose={onClose} width={640}>
+    <Overlay onClose={onClose} width={640} showClose={false}>
       <div style={{ padding: '20px 22px 6px' }}>
         <h2 style={{ margin: 0, fontSize: 17, fontWeight: 900, color: 'var(--text-h)' }}>{isNew ? `Add ${cfg.moduleName}` : `Edit · ${form.company_name}`}</h2>
         <p style={{ margin: '3px 0 0', fontSize: 12.5, color: 'var(--text-muted)' }}>Vendor profile, portal login and address in one form.</p>

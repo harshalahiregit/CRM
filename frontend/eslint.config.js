@@ -10,7 +10,9 @@ export default defineConfig([
     files: ['**/*.{js,jsx}'],
     extends: [
       js.configs.recommended,
-      reactHooks.configs.flat.recommended,
+      // v5.2 of the plugin exposes the flat config as 'recommended-latest';
+      // there is no `configs.flat`, and reaching for it threw on every lint run.
+      reactHooks.configs['recommended-latest'],
       reactRefresh.configs.vite,
     ],
     languageOptions: {

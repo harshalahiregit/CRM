@@ -263,7 +263,10 @@ export const purchaseApi = {
   },
 
   // ── Vendor approval chain (/purchase/onboarding/{id}/approvals) ─────────
-  approvals: {
+  // Named approvalChain, not approvals: a SECOND `approvals:` key further down
+  // this same object literal silently overwrote this one, so `chain` and the
+  // stage-scoped approve/reject below did not exist at runtime at all.
+  approvalChain: {
     chain:   (onboardingId)                 => api.get(`/purchase/onboarding/${onboardingId}/approvals`).then(r => r.data),
     approve: (onboardingId, stage, remarks = '') => api.post(`/purchase/onboarding/${onboardingId}/approvals/${stage}/approve`, { remarks }).then(r => r.data),
     reject:  (onboardingId, stage, remarks)      => api.post(`/purchase/onboarding/${onboardingId}/approvals/${stage}/reject`, { remarks }).then(r => r.data),

@@ -250,7 +250,7 @@ function RecordQuoteModal({ rfq, onClose, onDone }) {
   }
 
   return (
-    <Overlay onClose={onClose} width={860}>
+    <Overlay onClose={onClose} width={860} showClose={false}>
       <div style={{ padding: '20px 22px 6px' }}>
         <h2 style={{ margin: 0, fontSize: 17, fontWeight: 900, color: 'var(--text-h)' }}>Record Quotation</h2>
         <p style={{ margin: '3px 0 0', fontSize: 12.5, color: 'var(--text-muted)' }}>Enter the rates a vendor quoted for {rfq.rfq_number}.</p>
@@ -301,7 +301,7 @@ function AwardModal({ quotation, onClose, onDone }) {
     catch (e) { setErr(e?.response?.data?.message || 'Could not award.'); setSaving(false) }
   }
   return (
-    <Overlay onClose={onClose} width={440}>
+    <Overlay onClose={onClose} width={440} showClose={false}>
       <div style={{ padding: '20px 22px 6px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><Award size={19} style={{ color: '#10b981' }} /><h2 style={{ margin: 0, fontSize: 17, fontWeight: 900, color: 'var(--text-h)' }}>Award to {quotation.vendor}</h2></div>
         <p style={{ margin: '8px 0 0', fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.5 }}>

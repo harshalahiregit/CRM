@@ -3,6 +3,7 @@
 // modules/purchase so no module imports from another module (TEAM-CONVENTIONS §3).
 
 import { createPortal } from 'react-dom'
+import { X } from 'lucide-react'
 
 export const labelStyle = { display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }
 export const inputStyle = { width: '100%', padding: '9px 12px', background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-h)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }
@@ -64,11 +65,26 @@ export const KIT3D_STYLE = `
 // on a stray outside click, so an Overlay closes only via its own X / Cancel
 // control. Pass closeOnBackdrop for the rare read-only popup where a backdrop
 // dismiss is genuinely wanted.
-export function Overlay({ onClose, width = 480, children, closeOnBackdrop = false }) {
+export function Overlay({ onClose, width = 480, children, closeOnBackdrop = false, showClose = true }) {
   return createPortal(
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
       onClick={closeOnBackdrop ? (e => e.target === e.currentTarget && onClose()) : undefined}>
-      <div className="pr-glass pr-pop" style={{ width: '100%', maxWidth: width, maxHeight: '90vh', overflowY: 'auto', padding: 28 }}>{children}</div>
+      <div className="pr-glass pr-pop" style={{ width: '100%', maxWidth: width, maxHeight: '90vh', overflowY: 'auto', padding: 28 }}>
+        {/* Every Overlay gets a top-right X. Most callers only offered a Cancel
+            button at the very bottom, so a tall form had to be scrolled all the
+            way down just to back out of it. Sticky + zero-height so it stays
+            reachable while scrolling without taking a row of layout; callers
+            that already draw their own X pass showClose={false}. */}
+        {showClose && onClose && (
+          <div style={{ position: 'sticky', top: -6, height: 0, zIndex: 3, display: 'flex', justifyContent: 'flex-end', pointerEvents: 'none' }}>
+            <button type="button" onClick={onClose} aria-label="Close" title="Close"
+              style={{ pointerEvents: 'auto', marginTop: -10, marginRight: -10, width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-muted)', cursor: 'pointer' }}>
+              <X size={16} />
+            </button>
+          </div>
+        )}
+        {children}
+      </div>
     </div>,
     document.body,
   )

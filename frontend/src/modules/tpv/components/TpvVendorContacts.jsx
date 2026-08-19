@@ -362,7 +362,7 @@ function ContactModal({ vendorId, vendor, mode, contact, onClose, onSaved, api =
   const errInput = (key) => errs[key] ? { borderColor: '#ef444480' } : {}
 
   return (
-    <Overlay onClose={() => !saving && onClose()} width={820}>
+    <Overlay onClose={() => !saving && onClose()} width={820} showClose={false}>
       {/* Modal header */}
       <div style={{ marginBottom: 20 }}>
         <h2 style={{ color: 'var(--text-h)', margin: '0 0 4px', fontSize: 18, fontWeight: 800 }}>{title}</h2>

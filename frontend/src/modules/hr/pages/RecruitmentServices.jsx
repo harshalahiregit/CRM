@@ -443,7 +443,7 @@ function ClientCollaboration({ request, showToast, onClose, onChanged }) {
   ]
 
   return (
-    <Overlay onClose={onClose} width={1120}>
+    <Overlay onClose={onClose} width={1120} showClose={false}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
         <div>
           <p style={{ ...label, marginBottom: 2 }}>Client Collaboration · HR-{request.id}</p>
