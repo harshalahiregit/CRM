@@ -2348,6 +2348,31 @@ function StepSubmission({ onboarding, vendor, admin, onChanged, onBack, api, use
             </div>
           </div>
 
+          {/* 📄 WORK START LETTER — the formal HSSE approval-to-commence-work,
+              issued on approval. TPV-only (Purchase issues its own). */}
+          {engagement === 'tpv' && (
+            <div style={{ marginBottom: 14 }}>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const blob = await api.onboarding.workStartLetter(onboarding.id)
+                    window.open(URL.createObjectURL(blob), '_blank', 'noopener')
+                  } catch (e) {
+                    alert(e?.response?.data?.message || 'Work start letter is not available yet.')
+                  }
+                }}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 18px', borderRadius: 10,
+                  border: '1px solid #6ee7b7', background: 'rgba(255,255,255,0.9)', color: '#047857',
+                  fontWeight: 800, fontSize: 13, cursor: 'pointer',
+                }}
+              >
+                <FileText size={16} /> View HSSE Work Start Letter
+              </button>
+            </div>
+          )}
+
           {/* 🚀 START WORKFORCE CTA BUTTON — TPV-only (purchase vendors have no workforce) */}
           {engagement === 'tpv' && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, paddingTop: 10, borderTop: '1px dashed #6ee7b7' }}>

@@ -23,6 +23,41 @@ class VendorWorkController extends Controller
 {
     use ApiResponse;
 
+    /**
+     * The caller's vendor-master record id, resolved by their login user OR their
+     * email. A TPV vendor whose portal `user_id` was never captured (login-less)
+     * still owns work linked to the vendor RECORD (`projects.vendor_id`); without
+     * this fallback that work is silently invisible on the portal.
+     */
+    protected function ownVendorId(Request $request): ?int
+    {
+        $user = $request->user();
+
+        return \App\Models\Vendor\Vendor::query()
+            ->where('tenant_id', $user->tenant_id)
+            ->where(fn ($q) => $q->where('user_id', $user->id)
+                ->when($user->email, fn ($w) => $w->orWhere('email', $user->email)))
+            ->value('id');
+    }
+
+    /**
+     * Projects reach a vendor two ways: their login User is the `vendor_user_id`,
+     * or the project is linked to the vendor RECORD (`vendor_id` + a tpv link_type).
+     * The second path covers login-less vendors.
+     */
+    protected function scopeVendorProjects($query, Request $request)
+    {
+        $uid = $request->user()->id;
+        $vendorId = $this->ownVendorId($request);
+
+        return $query->where(function ($q) use ($uid, $vendorId) {
+            $q->where('vendor_user_id', $uid);
+            if ($vendorId) {
+                $q->orWhere(fn ($r) => $r->whereIn('link_type', ['tpv', 'tpv_vendor'])->where('vendor_id', $vendorId));
+            }
+        });
+    }
+
     /** Headline counts for the portal dashboard cards. */
     public function summary(Request $request)
     {
@@ -33,7 +68,7 @@ class VendorWorkController extends Controller
         $tasks = Task::forTenant($tid)->whereHas('assignees', fn ($q) => $q->where('user_id', $uid));
 
         return $this->success([
-            'projects'   => Project::where('tenant_id', $tid)->where('vendor_user_id', $uid)->count(),
+            'projects'   => $this->scopeVendorProjects(Project::where('tenant_id', $tid), $request)->count(),
             'tasks'      => (clone $tasks)->count(),
             'open_tasks' => (clone $tasks)->whereNotIn('status', ['complete', 'finished', 'cancelled'])->count(),
             'tickets'    => Ticket::forTenant($tid)->where('assigned_to', $uid)->count(),
@@ -45,8 +80,7 @@ class VendorWorkController extends Controller
     {
         $user = $request->user();
 
-        $rows = Project::where('tenant_id', $user->tenant_id)
-            ->where('vendor_user_id', $user->id)
+        $rows = $this->scopeVendorProjects(Project::where('tenant_id', $user->tenant_id), $request)
             ->orderByDesc('id')
             ->get(['id', 'name', 'status', 'progress', 'link_type', 'deadline', 'created_at'])
             ->map(fn (Project $p) => [

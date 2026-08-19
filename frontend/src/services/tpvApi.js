@@ -56,6 +56,7 @@ export const tpvApi = {
     submit:      (id, data = {}) => api.post(`/tpv/onboarding/${id}/submit`, data).then(r => r.data),
     // Step 1 — Kickoff PDF (blob), acknowledgement, and view/download/print logging.
     kickoffPdf:      (id)        => api.get(`/tpv/onboarding/${id}/kickoff`, { responseType: 'blob' }).then(r => r.data),
+    workStartLetter: (id)        => api.get(`/tpv/onboarding/${id}/work-start-letter`, { responseType: 'blob' }).then(r => r.data),
     acceptKickoff:   (id, comment) => api.post(`/tpv/onboarding/${id}/kickoff/accept`, comment ? { comment } : {}).then(r => r.data),
     logKickoffEvent: (id, event) => api.post(`/tpv/onboarding/${id}/kickoff/log`, { event }).then(r => r.data),
     // Admin

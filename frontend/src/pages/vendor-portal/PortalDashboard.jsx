@@ -4,7 +4,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import {
   ShoppingBag, FileText, Wallet, Rocket, CheckCircle2, Clock, ArrowRight, HardHat,
   RefreshCw, TrendingUp, Users, UserCheck, ClipboardList, HelpCircle, ChevronRight,
-  AlertTriangle, BarChart3, PhoneCall, Building2, MessageSquare, ExternalLink,
+  AlertTriangle, BarChart3, PhoneCall, Building2, MessageSquare, ExternalLink, BookOpen, X,
 } from 'lucide-react'
 import { portalApi } from '@/services/portalApi'
 import { useAuth } from '@/context/AuthContext'
@@ -22,8 +22,19 @@ export default function PortalDashboard() {
   const { user } = useAuth()
   const isTPV = user?.role === 'third_party_vendor'
   const [data, setData] = useState({ me: null, onboarding: null, workerStats: {}, documents: null, orders: [], invoices: [] })
-  const [work, setWork] = useState({ summary: {}, projects: [], tasks: [], tickets: [] })
+  const [work, setWork] = useState({ summary: {}, projects: [], tasks: [], tickets: [], kb: [] })
   const [loading, setLoad] = useState(true)
+  const [kbArticle, setKbArticle] = useState(null)   // { loading, title, content, ... } | null
+
+  const openKbArticle = async (item) => {
+    setKbArticle({ loading: true, title: item.title })
+    try {
+      const full = await portalApi.myWork.kbArticle(item.slug || item.id)
+      setKbArticle({ loading: false, ...full })
+    } catch {
+      setKbArticle({ loading: false, title: item.title, content: '<p>This article could not be loaded.</p>' })
+    }
+  }
 
   // ── DATA FETCHING ──────────────────────────────────────────────────────
   const load = () => {
@@ -40,8 +51,9 @@ export default function PortalDashboard() {
       portalApi.myWork.projects().catch(() => []),
       portalApi.myWork.tasks().catch(() => []),
       portalApi.myWork.tickets().catch(() => []),
+      portalApi.myWork.kb().catch(() => []),
     ]
-    Promise.all(calls).then(([me, obList, wkStats, docs, orders, invoices, wSummary, wProjects, wTasks, wTickets]) => {
+    Promise.all(calls).then(([me, obList, wkStats, docs, orders, invoices, wSummary, wProjects, wTasks, wTickets, wKb]) => {
       setData({
         me,
         onboarding: obList[0] ?? null,
@@ -55,6 +67,7 @@ export default function PortalDashboard() {
         projects: Array.isArray(wProjects) ? wProjects : [],
         tasks:    Array.isArray(wTasks) ? wTasks : [],
         tickets:  Array.isArray(wTickets) ? wTickets : [],
+        kb:       Array.isArray(wKb) ? wKb : [],
       })
       setLoad(false)
     })
@@ -277,8 +290,44 @@ export default function PortalDashboard() {
                 <WorkPill text={t.status} />
               </>
             )} />
+          {/* Knowledge Base (enhancement #6) — published help content, click to read */}
+          <WorkColumn icon={BookOpen} color="#10b981" title="Knowledge Base" items={work.kb} empty="No articles published yet."
+            onItemClick={openKbArticle}
+            render={a => (
+              <>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-h)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.title}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.category || 'General'}{a.excerpt ? ` · ${a.excerpt}` : ''}</div>
+                </div>
+                <ChevronRight size={15} style={{ color: '#10b981', flexShrink: 0 }} />
+              </>
+            )} />
         </div>
       </div>
+
+      {/* ── KB article reader modal ───────────────────────────────────── */}
+      {kbArticle && (
+        <div onClick={() => setKbArticle(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, backdropFilter: 'blur(2px)' }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, maxWidth: 720, width: '100%', maxHeight: '85vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.4)' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '18px 22px', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, background: 'var(--bg-card)' }}>
+              <BookOpen size={20} style={{ color: '#10b981', flexShrink: 0, marginTop: 2 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text-h)' }}>{kbArticle.title}</h3>
+                {kbArticle.category && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{kbArticle.category}</div>}
+              </div>
+              <button onClick={() => setKbArticle(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}><X size={18} /></button>
+            </div>
+            <div style={{ padding: '18px 22px' }}>
+              {kbArticle.loading
+                ? <div style={{ color: 'var(--text-muted)', fontSize: 13, textAlign: 'center', padding: '20px 0' }}>Loading…</div>
+                : <div className="kb-article-body" style={{ fontSize: 13.5, color: 'var(--text-body)', lineHeight: 1.65 }}
+                    dangerouslySetInnerHTML={{ __html: kbArticle.content || '<p>No content.</p>' }} />}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Onboarding progress card (full-width, when present) ────────── */}
       {onboarding && (
@@ -581,7 +630,7 @@ function StatusPillInline({ cfg }) {
 }
 
 /** One column of the "My Work" grid — a titled list with a soft empty state. */
-function WorkColumn({ icon: Icon, color, title, items, empty, render }) {
+function WorkColumn({ icon: Icon, color, title, items, empty, render, onItemClick }) {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
@@ -596,7 +645,9 @@ function WorkColumn({ icon: Icon, color, title, items, empty, render }) {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {items.slice(0, 6).map((it, i) => (
-            <div key={it.id ?? i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 11px', borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+            <div key={it.id ?? i}
+              onClick={onItemClick ? () => onItemClick(it) : undefined}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 11px', borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)', cursor: onItemClick ? 'pointer' : 'default' }}>
               {render(it)}
             </div>
           ))}

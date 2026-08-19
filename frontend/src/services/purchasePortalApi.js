@@ -15,6 +15,10 @@ export const purchasePortalApi = {
 
   me: () => api.get('/portal/purchase/me').then(r => r.data),
 
+  // Self-service profile + commercial fields (business fields only; never
+  // code/category/status/auth). Maps to PUT /portal/purchase/profile.
+  updateProfile: (payload) => api.put('/portal/purchase/profile', payload).then(r => r.data),
+
   // ── Onboarding (the vendor's own record) ────────────────────────────────
   // list() wraps the single-record response in an array for list-style
   // rendering; stats() is derived client-side from the record.

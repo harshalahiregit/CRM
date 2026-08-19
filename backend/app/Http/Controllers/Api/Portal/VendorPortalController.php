@@ -22,6 +22,7 @@ use App\Models\Vendor\TpvContact;
 use App\Models\Vendor\Vendor;
 use App\Models\Vendor\VendorDocument;
 use App\Services\Tpv\KickoffPdfService;
+use App\Services\Tpv\WorkStartLetterService;
 use App\Services\Tpv\PpeInventoryService;
 use App\Services\Tpv\TpvOnboardingService;
 use App\Services\Tpv\TpvWorkerService;
@@ -209,6 +210,60 @@ class VendorPortalController extends Controller
         $this->assertOwned($request, $onboarding, 'Onboarding');
 
         return $this->kickoffPdfService->stream($onboarding);
+    }
+
+    /** Stream this vendor's own HSSE Work Start Letter (issued on approval). */
+    public function workStartLetter(Request $request, TpvOnboarding $onboarding)
+    {
+        $this->assertOwned($request, $onboarding, 'Onboarding');
+
+        return app(WorkStartLetterService::class)->stream($onboarding);
+    }
+
+    /**
+     * Published Knowledge Base articles for the vendor's tenant — the KB the
+     * dashboard surfaces alongside Projects/Tasks/Tickets (enhancement #6).
+     * Read-only, published-only, tenant-scoped; authoring stays admin-side.
+     */
+    public function kbArticles(Request $request)
+    {
+        $tid = $request->user()->tenant_id;
+
+        $articles = \App\Models\Helpdesk\KbArticle::where('tenant_id', $tid)
+            ->published()
+            ->with('category:id,name')
+            ->latest('published_at')
+            ->limit((int) $request->integer('limit', 20))
+            ->get(['id', 'category_id', 'title', 'excerpt', 'public_slug', 'published_at']);
+
+        return response()->json(['data' => $articles->map(fn ($a) => [
+            'id'           => $a->id,
+            'title'        => $a->title,
+            'excerpt'      => $a->excerpt,
+            'slug'         => $a->public_slug,
+            'category'     => $a->category?->name,
+            'published_at' => optional($a->published_at)->toDateString(),
+        ])]);
+    }
+
+    /** Full body of one published KB article (tenant-scoped, published-only). */
+    public function kbArticle(Request $request, string $slug)
+    {
+        $tid = $request->user()->tenant_id;
+
+        $article = \App\Models\Helpdesk\KbArticle::where('tenant_id', $tid)
+            ->published()
+            ->with('category:id,name')
+            ->where('public_slug', $slug)
+            ->firstOrFail(['id', 'category_id', 'title', 'excerpt', 'content', 'public_slug', 'published_at']);
+
+        return response()->json(['data' => [
+            'id'       => $article->id,
+            'title'    => $article->title,
+            'excerpt'  => $article->excerpt,
+            'content'  => $article->content,
+            'category' => $article->category?->name,
+        ]]);
     }
 
     /** Record the vendor's acknowledgement of the Kickoff PDF. */

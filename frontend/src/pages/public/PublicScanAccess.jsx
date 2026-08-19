@@ -134,6 +134,32 @@ export default function PublicScanAccess() {
               <td style={lblCol}>Employing Vendor</td>
               <td style={valCol}>{worker.company_name} ({worker.vendor_code})</td>
             </tr>
+            {worker.medical_valid_until && (
+              <tr style={rowBorder}>
+                <td style={lblCol}>Medical Valid Until</td>
+                <td style={{ ...valCol, color: worker.medical_expired ? '#ef4444' : undefined, fontWeight: worker.medical_expired ? 900 : undefined }}>
+                  {worker.medical_valid_until}{worker.medical_expired ? ' — EXPIRED' : ''}
+                </td>
+              </tr>
+            )}
+            {worker.training && (
+              <tr style={rowBorder}>
+                <td style={lblCol}>Training</td>
+                <td style={valCol}>{worker.training}</td>
+              </tr>
+            )}
+            {worker.bocw_number && (
+              <tr style={rowBorder}>
+                <td style={lblCol}>BOCW Health Card</td>
+                <td style={valCol}>{worker.bocw_number}</td>
+              </tr>
+            )}
+            {worker.awards && (
+              <tr style={rowBorder}>
+                <td style={lblCol}>Awards</td>
+                <td style={valCol}>{worker.awards}</td>
+              </tr>
+            )}
             <tr>
               <td style={lblCol}>Punch Count</td>
               <td style={{ ...valCol, color: pc >= 3 ? '#ef4444' : pc === 2 ? '#f97316' : pc === 1 ? '#f59e0b' : '#10b981', fontWeight: 900 }}>

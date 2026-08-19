@@ -217,6 +217,7 @@ function StepProfile({ worker, editable, onSaved, onNext, api }) {
     designation: worker.designation || '', skill_category: worker.skill_category || '',
     aadhar_number: worker.aadhar_number || '', mobile: worker.mobile || '', blood_group: worker.blood_group || '',
     address: worker.address || '', emergency_contact: worker.emergency_contact || '', emergency_phone: worker.emergency_phone || '',
+    awards: worker.awards || '', bocw_number: worker.bocw_number || '',
   })
   const [saving, setSaving] = useState(false)
   const [saved, setSaved]   = useState(false)
@@ -270,6 +271,8 @@ function StepProfile({ worker, editable, onSaved, onNext, api }) {
         <Field label="Emergency Contact"><TextInput value={f.emergency_contact} onChange={set('emergency_contact')} disabled={!editable} placeholder="Name" /></Field>
         <Field label="Emergency Phone"><TextInput value={f.emergency_phone} onChange={set('emergency_phone')} disabled={!editable} /></Field>
         <Field label="Address" full><textarea value={f.address} onChange={set('address')} disabled={!editable} rows={2} style={{ ...inputStyle, resize: 'vertical' }} /></Field>
+        <Field label="BOCW Health Card No."><TextInput value={f.bocw_number} onChange={set('bocw_number')} disabled={!editable} placeholder="Welfare board card #" /></Field>
+        <Field label="Awards / Recognition" full><textarea value={f.awards} onChange={set('awards')} disabled={!editable} rows={2} placeholder="e.g. Safety Star – Aug 2026" style={{ ...inputStyle, resize: 'vertical' }} /></Field>
       </div>
 
       <div style={{ marginTop: 24, paddingTop: 16, borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: 12 }}>

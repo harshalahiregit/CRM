@@ -54,6 +54,11 @@ class TpvWorkerController extends Controller
 
         $worker->load(['vendor', 'medical.recorder:id,name', 'induction.recorder:id,name', 'ppeIssues.issuer:id,name', 'creator:id,name', 'auditLogs']);
 
+        // The single-worker detail is the edit surface — the managing staff / owning
+        // vendor who keyed the Aadhaar need the full number back to amend it. Every
+        // other serialization (roster, cards, scan) keeps it masked.
+        $worker->makeVisible('aadhar_number');
+
         return response()->json([
             'worker'   => $worker,
             'progress' => $this->workerService->stepStatus($worker),
