@@ -88,6 +88,12 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::get('/vendors/{vendor}/overview',                  [\App\Http\Controllers\Api\Vendor\VendorController::class, 'overview']);
     Route::get('/vendors/{vendor}/customers',                 [\App\Http\Controllers\Api\Vendor\VendorController::class, 'customers']);
     Route::post('/vendors/{vendor}/customers',                [\App\Http\Controllers\Api\Vendor\VendorController::class, 'storeCustomer']);
+    // Employees (enhancement #2/#9/#10) — the vendor's assignable people. index()
+    // feeds the assignee cascade; grant-access provisions a login so an employee
+    // can be assigned work and see it. Static segments stay ahead of wildcards.
+    Route::get('/vendors/{vendor}/employees',                 [\App\Http\Controllers\Api\Vendor\VendorEmployeeController::class, 'index']);
+    Route::post('/vendors/{vendor}/employees',                [\App\Http\Controllers\Api\Vendor\VendorEmployeeController::class, 'store']);
+    Route::post('/vendors/{vendor}/employees/{contact}/grant-access', [\App\Http\Controllers\Api\Vendor\VendorEmployeeController::class, 'grantAccess']);
     // Follow-ups on the shared polymorphic `reminders` table. Mounted here rather
     // than under /sales/reminders, which has no role gate — see the controller.
     Route::get('/vendors/{vendor}/reminders',                 [\App\Http\Controllers\Api\Vendor\VendorController::class, 'reminders']);

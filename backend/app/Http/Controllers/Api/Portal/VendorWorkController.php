@@ -24,20 +24,16 @@ class VendorWorkController extends Controller
     use ApiResponse;
 
     /**
-     * The caller's vendor-master record id, resolved by their login user OR their
-     * email. A TPV vendor whose portal `user_id` was never captured (login-less)
-     * still owns work linked to the vendor RECORD (`projects.vendor_id`); without
-     * this fallback that work is silently invisible on the portal.
+     * The caller's vendor-master record id. Covers all three ways a login maps to
+     * a vendor: the vendor's PRIMARY account (vendors.user_id), the same email, or
+     * an EMPLOYEE login (vendor_contacts.user_id). An employee sees their vendor's
+     * record-linked work just like the primary account does. A login-less vendor's
+     * record work is reached by the email fallback inside the service.
      */
     protected function ownVendorId(Request $request): ?int
     {
-        $user = $request->user();
-
-        return \App\Models\Vendor\Vendor::query()
-            ->where('tenant_id', $user->tenant_id)
-            ->where(fn ($q) => $q->where('user_id', $user->id)
-                ->when($user->email, fn ($w) => $w->orWhere('email', $user->email)))
-            ->value('id');
+        return app(\App\Services\Vendor\VendorEmployeeService::class)
+            ->resolveVendorIdForUser($request->user());
     }
 
     /**
@@ -103,12 +99,9 @@ class VendorWorkController extends Controller
         // Two ways a task reaches a TPV: the vendor's User is an assignee, or the
         // task is linked to the vendor RECORD via rel_type='tpv_vendor'. Before the
         // rel link existed only the first was possible, so a task raised against the
-        // vendor as an organisation never appeared here.
-        $vendorId = \App\Models\Vendor\Vendor::query()
-            ->where('tenant_id', $user->tenant_id)
-            ->where(fn ($q) => $q->where('user_id', $user->id)
-                ->when($user->email, fn ($w) => $w->orWhere('email', $user->email)))
-            ->value('id');
+        // vendor as an organisation never appeared here. Resolution covers primary
+        // AND employee logins, so a vendor's employees see the vendor's tasks too.
+        $vendorId = $this->ownVendorId($request);
 
         $tasks = Task::forTenant($user->tenant_id)
             ->where(function ($q) use ($user, $vendorId) {

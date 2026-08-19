@@ -164,6 +164,15 @@ export const tpvApi = {
     setStatus: (vendorId, id, status)  => api.patch(`/tpv/vendors/${vendorId}/contacts/${id}/status`, { status }).then(r => r.data),
   },
 
+  // ── Vendor/TPV employees (enhancement #2/#9/#10) — a vendor's assignable
+  // people. list() feeds the assignee cascade; grantAccess() provisions a login
+  // so a contact can be assigned work and see it. ──
+  employees: {
+    list:        (vendorId)            => api.get(`/tpv/vendors/${vendorId}/employees`).then(r => r.data?.data ?? r.data),
+    create:      (vendorId, data)      => api.post(`/tpv/vendors/${vendorId}/employees`, data).then(r => r.data?.data ?? r.data),
+    grantAccess: (vendorId, contactId) => api.post(`/tpv/vendors/${vendorId}/employees/${contactId}/grant-access`).then(r => r.data?.data ?? r.data),
+  },
+
   // ── Vendor master (shared with Purchase) — the onboarding vendor picker ─
   // ── Third-party vendors (master + portal login), scoped to tpv engagement ──
   vendors: {

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   Plus, Search, Eye, Pencil, RefreshCw, Power, Star, Users,
-  ChevronLeft, ChevronRight, Upload, X, Camera, User,
+  ChevronLeft, ChevronRight, Upload, X, Camera, User, KeyRound, ShieldCheck,
 } from 'lucide-react'
 import { tpvApi } from '@/services/tpvApi'
 import { CONTACT_STATUS, contactStatusCfg, GENDERS, fmtDate } from '../constants'
@@ -70,6 +70,18 @@ export default function TpvVendorContacts({ vendorId, vendor, manage, api = tpvA
     catch (e) { alert(e?.response?.data?.message || 'Could not update status') }
   }
 
+  // Enable this contact as an assignable EMPLOYEE — provisions a portal login so
+  // they can be assigned tasks/projects and see their own work (enhancement #9).
+  const [granting, setGranting] = useState(null)
+  const grantAccess = async (c) => {
+    if (!c.email) { alert('Add an email address for this contact first — a login needs one.'); return }
+    if (!confirm(`Give ${c.full_name} portal access so they can be assigned work? A login will be created for ${c.email}.`)) return
+    setGranting(c.id)
+    try { await api.employees.grantAccess(vendorId, c.id); fetchAll() }
+    catch (e) { alert(e?.response?.data?.message || 'Could not enable portal access') }
+    finally { setGranting(null) }
+  }
+
   const th = { textAlign: 'left', padding: '10px 12px', fontSize: 10.5, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }
   const td = { padding: '11px 12px', borderBottom: '1px solid var(--border)', fontSize: 12.5, verticalAlign: 'middle' }
 
@@ -112,7 +124,7 @@ export default function TpvVendorContacts({ vendorId, vendor, manage, api = tpvA
         <>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead><tr>{['Name', 'Code', 'Designation', 'Department', 'Mobile', 'Email', 'Primary', 'Status', 'Actions'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+              <thead><tr>{['Name', 'Code', 'Designation', 'Department', 'Mobile', 'Email', 'Primary', 'Portal', 'Status', 'Actions'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
               <tbody>
                 {pageRows.map(c => (
                   <tr key={c.id} className="pr-li-row">
@@ -133,6 +145,17 @@ export default function TpvVendorContacts({ vendorId, vendor, manage, api = tpvA
                       {c.is_primary
                         ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, color: '#f59e0b' }}><Star size={12} fill="#f59e0b" /> Primary</span>
                         : <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>—</span>}
+                    </td>
+                    <td style={td}>
+                      {c.user_id
+                        ? <span title="Has a portal login — can be assigned work" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, color: '#10b981' }}><ShieldCheck size={13} /> Assignable</span>
+                        : manage
+                          ? <button onClick={() => grantAccess(c)} disabled={granting === c.id}
+                              title={c.email ? 'Create a portal login so this person can be assigned work' : 'Add an email first'}
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-card)', color: c.email ? '#a78bfa' : 'var(--text-muted)', cursor: granting === c.id ? 'default' : 'pointer', fontSize: 11.5, fontWeight: 700, opacity: granting === c.id ? 0.6 : 1 }}>
+                              <KeyRound size={12} /> {granting === c.id ? 'Enabling…' : 'Grant access'}
+                            </button>
+                          : <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>—</span>}
                     </td>
                     <td style={td}><StatusPill cfg={contactStatusCfg(c.status)} /></td>
                     <td style={td}>

@@ -21,7 +21,7 @@ class TpvContact extends Model
     protected $table = 'tpv_contacts';
 
     protected $fillable = [
-        'tenant_id', 'vendor_id', 'created_by', 'updated_by',
+        'tenant_id', 'vendor_id', 'user_id', 'created_by', 'updated_by',
         'first_name', 'last_name', 'designation', 'department',
         'email', 'mobile', 'alternate_mobile',
         'is_primary', 'status',
@@ -45,6 +45,12 @@ class TpvContact extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    /** The optional login for this contact — set once it becomes an assignable employee. */
+    public function user()
+    {
+        return $this->belongsTo(User::class, 'user_id');
+    }
+
     /* ── Helpers ────────────────────────────────────────────────────────── */
 
     public function getFullNameAttribute(): string
@@ -60,5 +66,11 @@ class TpvContact extends Model
     public function isActive(): bool
     {
         return $this->status === Status::ACTIVE;
+    }
+
+    /** Assignable to work once it is active AND owns a login. */
+    public function isAssignable(): bool
+    {
+        return $this->isActive() && $this->user_id !== null;
     }
 }
