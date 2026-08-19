@@ -43,6 +43,13 @@ Schedule::command('vrs:snapshot')
     ->withoutOverlapping()
     ->runInBackground();
 
+// Work permits (Doc_4 Phase 5): expire any whose validity window has passed, so
+// a lapsed permit no longer reads as live authorisation to work.
+Schedule::command('permits:expire')
+    ->dailyAt('00:15')
+    ->withoutOverlapping()
+    ->runInBackground();
+
 // Tasks: spawn recurring copies, fire reminders, send due/overdue notices.
 // Every 15 minutes so a reminder set for 10:30 doesn't land at 11:00; the command
 // is idempotent, so the extra runs are no-ops when nothing is due.
