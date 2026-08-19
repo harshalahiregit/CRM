@@ -554,6 +554,30 @@ function VendorTasks({ v, manage }) {
  * (customers, contacts, workers, documents, attachments, notes) fetched from
  * GET /tpv/vendors/{id}/overview, so the numbers always match the other tabs.
  */
+// The five mandated onboarding gates (Doc 2/4) — a cleared/total strip.
+function GateStrip({ g }) {
+  return (
+    <div className="pr-glass" style={{ borderRadius: 14, padding: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <ShieldCheck size={15} style={{ color: '#a78bfa' }} />
+        <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-h)' }}>Onboarding Gates</span>
+        <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 800, color: g.all_cleared ? '#10b981' : '#f59e0b' }}>{g.cleared}/{g.total} cleared</span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
+        {(g.gates || []).map((gate, i) => (
+          <div key={i} style={{ padding: '9px 11px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-input)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {gate.passed ? <CheckCircle size={14} style={{ color: '#10b981' }} /> : <Clock size={14} style={{ color: '#f59e0b' }} />}
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-h)' }}>{gate.gate}</span>
+            </div>
+            <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 3, lineHeight: 1.4 }}>{gate.detail}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // VRS scorecard (Doc 5) — overall band + the three contributing dimensions.
 function ScorecardCard({ sc }) {
   const bandColor = { A: '#10b981', B: '#0ea5e9', C: '#f59e0b', D: '#ef4444' }[sc.band] || '#94a3b8'
@@ -597,6 +621,7 @@ function VendorOverview({ vendor, api, isActive }) {
   const [data, setData] = useState(null)
   const [err, setErr] = useState('')
   const [scorecard, setScorecard] = useState(null)
+  const [gates, setGates] = useState(null)
 
   useEffect(() => {
     let alive = true
@@ -605,6 +630,9 @@ function VendorOverview({ vendor, api, isActive }) {
       .catch(e => { if (alive) setErr(e?.response?.data?.message || 'Could not load the overview.') })
     if (api.vendors.scorecard) {
       api.vendors.scorecard(vendor.id).then(d => { if (alive) setScorecard(d?.live ?? null) }).catch(() => {})
+    }
+    if (api.vendors.gates) {
+      api.vendors.gates(vendor.id).then(d => { if (alive) setGates(d) }).catch(() => {})
     }
     return () => { alive = false }
   }, [vendor.id, api])
@@ -636,6 +664,8 @@ function VendorOverview({ vendor, api, isActive }) {
       </div>
 
       {err && <p style={{ color: '#ef4444', fontSize: 12.5, margin: 0 }}>{err}</p>}
+
+      {gates && <GateStrip g={gates} />}
 
       {scorecard && <ScorecardCard sc={scorecard} />}
 
