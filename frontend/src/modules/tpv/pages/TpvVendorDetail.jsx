@@ -130,6 +130,21 @@ export default function TpvVendorDetail() {
     } finally { setResending(false) }
   }
 
+  // Compliance suspension (admin). The nightly sweep does this automatically on
+  // expired statutory docs; these are the manual overrides.
+  const suspendVendor = async () => {
+    const reason = window.prompt('Reason for suspending this vendor (required):')
+    if (reason == null) return
+    if (!reason.trim()) { alert('A reason is required to suspend.'); return }
+    try { await cfg.api.vendors.suspend(id, reason.trim()); load() }
+    catch (e) { alert(e?.response?.data?.message || 'Could not suspend the vendor.') }
+  }
+  const reinstateVendor = async () => {
+    if (!confirm('Reinstate this vendor to Active? Their login and site access are restored.')) return
+    try { await cfg.api.vendors.reinstate(id); load() }
+    catch (e) { alert(e?.response?.data?.message || 'Could not reinstate the vendor.') }
+  }
+
   const load = useCallback(() => {
     setLoad(true)
     cfg.api.vendors.get(id).then(r => { setV(r?.data ?? r); setLoad(false) }).catch(() => setLoad(false))
@@ -223,6 +238,23 @@ export default function TpvVendorDetail() {
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-h)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
                   <Mail size={13} /> {resending ? 'Sending…' : 'Resend Activation Email'}
                 </button>
+              )}
+              {manage && isActive && (
+                <button onClick={suspendVendor}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: 'var(--bg-card)', border: '1px solid rgba(249,115,22,0.4)', color: '#f97316', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                  <Ban size={13} /> Suspend
+                </button>
+              )}
+              {manage && v.status === 'Suspended' && (
+                <button onClick={reinstateVendor}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: 'var(--bg-card)', border: '1px solid rgba(16,185,129,0.4)', color: '#10b981', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                  <ShieldCheck size={13} /> Reinstate
+                </button>
+              )}
+              {v.status === 'Suspended' && v.suspension_reason && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: '#f97316', fontWeight: 600 }}>
+                  <AlertTriangle size={12} /> {v.suspension_reason}
+                </span>
               )}
               {notice && <span style={{ fontSize: 12, fontWeight: 700, color: notice.ok ? '#10b981' : '#ef4444' }}>{notice.text}</span>}
               {v.last_notification && (

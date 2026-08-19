@@ -28,6 +28,14 @@ Schedule::command('backup:run')
     ->withoutOverlapping()
     ->runInBackground();
 
+// Vendor compliance sweep: auto-suspend vendors whose statutory cover has expired
+// and reinstate them once renewed. Runs before the working day so a lapse locks
+// site access from the morning.
+Schedule::command('vendors:enforce-compliance')
+    ->dailyAt('05:30')
+    ->withoutOverlapping()
+    ->runInBackground();
+
 // Tasks: spawn recurring copies, fire reminders, send due/overdue notices.
 // Every 15 minutes so a reminder set for 10:30 doesn't land at 11:00; the command
 // is idempotent, so the extra runs are no-ops when nothing is due.

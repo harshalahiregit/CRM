@@ -33,4 +33,7 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('vendors')->grou
 Route::middleware(['auth:sanctum', 'role:admin'])->prefix('vendors')->group(function () {
 
     Route::post('/{vendor}/approve',        [VendorController::class, 'approve']);
+    // Compliance suspension is an admin authority (the auto-sweep does it too).
+    Route::post('/{vendor}/suspend',        [VendorController::class, 'suspend']);
+    Route::post('/{vendor}/reinstate',      [VendorController::class, 'reinstate']);
 });
