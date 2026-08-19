@@ -129,6 +129,32 @@ class PurchaseWorkforceAdminController extends Controller
         return response()->json($this->service->activateBadge($worker, $request->user(), $data));
     }
 
+    /** Suspend a worker — withholds site access until reinstated. */
+    public function suspend(Request $request, PurchaseWorker $worker)
+    {
+        $this->assertTenant($request, $worker);
+        $data = $request->validate(['reason' => 'nullable|string|max:500']);
+
+        return response()->json($this->service->suspend($worker, $request->user(), $data['reason'] ?? null));
+    }
+
+    /** Lift a suspension and return the worker to Active. */
+    public function reinstate(Request $request, PurchaseWorker $worker)
+    {
+        $this->assertTenant($request, $worker);
+
+        return response()->json($this->service->reinstate($worker, $request->user()));
+    }
+
+    /** Terminate a worker — permanent; nulls the QR token so the badge cannot scan back in. */
+    public function terminate(Request $request, PurchaseWorker $worker)
+    {
+        $this->assertTenant($request, $worker);
+        $data = $request->validate(['reason' => 'nullable|string|max:500']);
+
+        return response()->json($this->service->terminate($worker, $request->user(), $data['reason'] ?? null));
+    }
+
     /**
      * Admin-side PPE return/write-off, for kit handed back at the gate rather
      * than through the vendor's portal.
