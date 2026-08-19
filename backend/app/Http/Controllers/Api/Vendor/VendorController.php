@@ -489,6 +489,17 @@ class VendorController extends Controller
      * Live per-vendor summary counts for the workspace Overview tab. Each count
      * matches exactly what its own tab lists, so the numbers never disagree.
      */
+    /** Live VRS scorecard (Doc 5) computed from incidents/strikes/docs/workforce. */
+    public function scorecard(Request $request, Vendor $vendor, \App\Services\Vendor\VendorScorecardService $vrs)
+    {
+        $this->assertTenant($request, $vendor);
+
+        return response()->json([
+            'live'    => $vrs->compute($vendor),
+            'history' => $vrs->history($vendor),
+        ]);
+    }
+
     public function overview(Request $request, Vendor $vendor)
     {
         $this->assertTenant($request, $vendor);

@@ -540,15 +540,58 @@ function VendorTasks({ v, manage }) {
  * (customers, contacts, workers, documents, attachments, notes) fetched from
  * GET /tpv/vendors/{id}/overview, so the numbers always match the other tabs.
  */
+// VRS scorecard (Doc 5) — overall band + the three contributing dimensions.
+function ScorecardCard({ sc }) {
+  const bandColor = { A: '#10b981', B: '#0ea5e9', C: '#f59e0b', D: '#ef4444' }[sc.band] || '#94a3b8'
+  const dims = [
+    { key: 'safety', label: 'Safety', v: sc.dimensions?.safety, note: d => `${d.open_incidents ?? 0} open · ${d.active_strikes ?? 0} strikes` },
+    { key: 'compliance', label: 'Compliance', v: sc.dimensions?.compliance, note: d => d.note || `${d.valid ?? 0}/${d.required ?? 0} docs current` },
+    { key: 'workforce', label: 'Workforce', v: sc.dimensions?.workforce, note: d => d.note || `${d.active ?? 0}/${d.total ?? 0} active` },
+  ]
+  const barColor = (s) => s >= 85 ? '#10b981' : s >= 70 ? '#0ea5e9' : s >= 55 ? '#f59e0b' : '#ef4444'
+  return (
+    <div className="pr-glass" style={{ borderRadius: 14, padding: 18 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 58, height: 58, borderRadius: 14, background: `${bandColor}22`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <span style={{ fontSize: 30, fontWeight: 900, color: bandColor }}>{sc.band}</span>
+          </div>
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>Vendor Rating</div>
+            <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--text-h)' }}>{sc.overall_score}<span style={{ fontSize: 14, color: 'var(--text-muted)' }}>/100</span></div>
+          </div>
+        </div>
+        <div style={{ flex: 1, minWidth: 240, display: 'grid', gap: 9 }}>
+          {dims.map(d => (
+            <div key={d.key}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, marginBottom: 3 }}>
+                <span style={{ color: 'var(--text-h)', fontWeight: 700 }}>{d.label} <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>· {d.v ? d.note(d.v) : '—'}</span></span>
+                <span style={{ color: barColor(d.v?.score ?? 0), fontWeight: 800 }}>{d.v?.score ?? 0}</span>
+              </div>
+              <div style={{ height: 6, borderRadius: 999, background: 'var(--bg-input)', overflow: 'hidden' }}>
+                <div style={{ width: `${d.v?.score ?? 0}%`, height: '100%', background: barColor(d.v?.score ?? 0), borderRadius: 999 }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function VendorOverview({ vendor, api, isActive }) {
   const [data, setData] = useState(null)
   const [err, setErr] = useState('')
+  const [scorecard, setScorecard] = useState(null)
 
   useEffect(() => {
     let alive = true
     api.vendors.overview(vendor.id)
       .then(d => { if (alive) setData(d) })
       .catch(e => { if (alive) setErr(e?.response?.data?.message || 'Could not load the overview.') })
+    if (api.vendors.scorecard) {
+      api.vendors.scorecard(vendor.id).then(d => { if (alive) setScorecard(d?.live ?? null) }).catch(() => {})
+    }
     return () => { alive = false }
   }, [vendor.id, api])
 
@@ -579,6 +622,8 @@ function VendorOverview({ vendor, api, isActive }) {
       </div>
 
       {err && <p style={{ color: '#ef4444', fontSize: 12.5, margin: 0 }}>{err}</p>}
+
+      {scorecard && <ScorecardCard sc={scorecard} />}
 
       <Card icon={ShieldCheck} title="Vendor Summary">
         <Grid rows={[

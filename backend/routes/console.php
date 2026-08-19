@@ -36,6 +36,13 @@ Schedule::command('vendors:enforce-compliance')
     ->withoutOverlapping()
     ->runInBackground();
 
+// Vendor Rating System (Doc 5): persist each vendor's monthly scorecard on the
+// 1st so the trend over time is captured. The live scorecard is always available.
+Schedule::command('vrs:snapshot')
+    ->monthlyOn(1, '03:00')
+    ->withoutOverlapping()
+    ->runInBackground();
+
 // Tasks: spawn recurring copies, fire reminders, send due/overdue notices.
 // Every 15 minutes so a reminder set for 10:30 doesn't land at 11:00; the command
 // is idempotent, so the extra runs are no-ops when nothing is due.
