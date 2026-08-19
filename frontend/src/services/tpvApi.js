@@ -167,6 +167,7 @@ export const tpvApi = {
   // ── HSSE governance dashboard (Doc 6) — one command view. ──
   governance: {
     dashboard: () => api.get('/tpv/governance/dashboard').then(r => r.data),
+    report: (kind, anchor) => api.get('/tpv/governance/report', { params: { kind, anchor } }).then(r => r.data),
   },
 
   // ── Proactive safety engagement (Doc_4 Phase 5/6). ──

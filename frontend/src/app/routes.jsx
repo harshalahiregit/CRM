@@ -270,6 +270,7 @@ const TpvIncidents = lazy(() => import('@/modules/tpv/pages/TpvIncidents'))
 const GovernanceDashboard = lazy(() => import('@/modules/tpv/pages/GovernanceDashboard'))
 const TpvPermits = lazy(() => import('@/modules/tpv/pages/TpvPermits'))
 const TpvSafetyEngagement = lazy(() => import('@/modules/tpv/pages/TpvSafetyEngagement'))
+const TpvReports = lazy(() => import('@/modules/tpv/pages/TpvReports'))
 // Vendor-scoped Workforce workspace — its own rail, entered after Onboarding Step-6.
 const WorkforceLayout = lazy(() => import('@/modules/tpv/WorkforceLayout'))
 const WorkforceDashboard = lazy(() => import('@/modules/tpv/pages/WorkforceDashboard'))
@@ -607,6 +608,7 @@ export default function AppRoutes() {
           <Route path="permits" element={<S><TpvPermits /></S>} />
           <Route path="safety-engagement" element={<S><TpvSafetyEngagement /></S>} />
           <Route path="governance" element={<S><GovernanceDashboard /></S>} />
+          <Route path="reports" element={<S><TpvReports /></S>} />
         </Route>
 
         {/* WORKFORCE — vendor-scoped workspace (own rail), entered from Onboarding Step-6.
