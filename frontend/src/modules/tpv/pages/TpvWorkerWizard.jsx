@@ -140,7 +140,7 @@ export default function TpvWorkerWizard() {
 // ── Stepper ──────────────────────────────────────────────────────────────────
 function Stepper({ steps, active, onGo }) {
   return (
-    <div className="pr-glass" style={{ padding: 16 }}>
+    <div className="pr-glass" style={{ padding: 16, overflowX: 'auto' }}>
       <div style={{ display: 'flex', alignItems: 'center', width: 'max-content', minWidth: '100%', gap: 0 }}>
         {steps.map((s, i) => {
           const Icon = STEP_ICONS[s.key] || UserCheck
@@ -293,25 +293,28 @@ function StepProfile({ worker, editable, onSaved, onNext, api }) {
 // ── Step 2 — Medical + screening ─────────────────────────────────────────────
 function Step2Medical({ worker, editable, onSaved, onNext, api }) {
   const m = worker.medical || {}
+  // Hydrate from the canonical tpv_worker_medicals columns (exam_type, examiner_name,
+  // clinic_name, vision, height_cm, weight_kg, bp_systolic/diastolic, restrictions),
+  // falling back to the legacy flat names so an old record still shows on re-open.
   const [f, setF] = useState({
-    medical_type: m.medical_type || '',
-    doctor_name: m.doctor_name || '',
-    organization_name: m.organization_name || 'Hospital / Clinic',
+    medical_type: m.exam_type || m.medical_type || '',
+    doctor_name: m.examiner_name || m.doctor_name || '',
+    organization_name: m.clinic_name || m.organization_name || 'Hospital / Clinic',
     doctor_registration: m.doctor_registration || '',
     designation: worker.designation || 'Worker',
     dob: worker.dob?.slice(0, 10) || '',
     gender: worker.gender || 'Male',
     blood_group: worker.blood_group || 'O+',
-    eyesight: m.eyesight || '6/6',
-    height: m.height || '',
-    weight: m.weight || '',
-    blood_pressure: m.blood_pressure || '120/80',
+    eyesight: m.vision || m.eyesight || '6/6',
+    height: m.height_cm || m.height || '',
+    weight: m.weight_kg || m.weight || '',
+    blood_pressure: (m.bp_systolic && m.bp_diastolic) ? `${m.bp_systolic}/${m.bp_diastolic}` : (m.blood_pressure || '120/80'),
     height_phobia: m.height_phobia || 'no',
     heart_disease: m.heart_disease || 'no',
     habits: m.habits || 'none',
     handicapped: m.handicapped || 'no',
-    doctor_comments: m.doctor_comments || '',
-    external_doctor_name: m.external_doctor_name || '',
+    doctor_comments: m.restrictions || m.doctor_comments || '',
+    external_doctor_name: (m.exam_type === 'external' ? m.examiner_name : '') || m.external_doctor_name || '',
     external_pdf: null,
     signature_data: '',
     stamp_data: '',
@@ -320,9 +323,11 @@ function Step2Medical({ worker, editable, onSaved, onNext, api }) {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved]   = useState(false)
   const [mhVer, setMhVer]   = useState(1)
-  const [mhAnswers, setMhAnswers] = useState({})
+  const [mhAnswers, setMhAnswers] = useState(m.screening_responses && typeof m.screening_responses === 'object' ? m.screening_responses : {})
   const [sigTab, setSigTab] = useState('upload')
-  const [sigPreview, setSigPreview] = useState(m.signature_file ? `/storage/${m.signature_file}` : null)
+  const [sigPreview, setSigPreview] = useState(
+    m.signature_path ? `/storage/${m.signature_path}` : (m.signature_file ? `/storage/${m.signature_file}` : null)
+  )
   const [stampText, setStampText]   = useState('')
   const [stampFont, setStampFont]   = useState('bold 20px Arial')
   const [stampColor, setStampColor] = useState('#0d47a1')
@@ -533,44 +538,39 @@ function Step2Medical({ worker, editable, onSaved, onNext, api }) {
     if (f.medical_type === 'internal') {
       if (!f.doctor_name.trim()) { alert('Doctor Name is required.'); return }
       if (!f.organization_name.trim()) { alert('Hospital/Organisation Name is required.'); return }
-      if (!f.doctor_registration.trim()) { alert('Registration Number is required.'); return }
       if (!f.height || Number(f.height) < 100) { alert('Valid height (100-250 cm) is required.'); return }
       if (!f.weight || Number(f.weight) < 30) { alert('Valid weight (30-200 kg) is required.'); return }
-      if (!f.doctor_comments.trim()) { alert('Doctor Comments are required.'); return }
+      if (medicalResult === 'Pending Vitals') { alert('Enter height and weight so a fitness result can be determined.'); return }
     } else if (f.medical_type === 'external') {
       if (!f.external_doctor_name.trim()) { alert('External Doctor Name is required.'); return }
     }
 
     setSaving(true)
     try {
-      const fd = new FormData()
-      fd.append('medical_type', f.medical_type)
-      fd.append('doctor_name', f.doctor_name)
-      fd.append('organization_name', f.organization_name)
-      fd.append('doctor_registration', f.doctor_registration)
-      fd.append('dob', f.dob)
-      fd.append('gender', f.gender)
-      fd.append('blood_group', f.blood_group)
-      fd.append('eyesight', f.eyesight)
-      fd.append('height', f.height)
-      fd.append('weight', f.weight)
-      fd.append('blood_pressure', f.blood_pressure)
-      fd.append('height_phobia', f.height_phobia)
-      fd.append('heart_disease', f.heart_disease)
-      fd.append('habits', f.habits)
-      fd.append('handicapped', f.handicapped)
-      fd.append('physical_score', physicalScore)
-      fd.append('medical_result', medicalResult)
-      fd.append('mh_version', mhVer)
-      fd.append('mh_score', totalMhScore)
-      fd.append('mh_risk', mhRisk)
-      fd.append('doctor_comments', f.doctor_comments)
-      fd.append('external_doctor_name', f.external_doctor_name)
-      if (f.signature_data) fd.append('signature_data', f.signature_data)
-      if (f.stamp_data) fd.append('stamp_data', f.stamp_data)
-      if (f.external_pdf) fd.append('external_pdf', f.external_pdf)
+      const [sys, dia] = (f.blood_pressure || '').split('/').map(s => parseInt(s, 10))
+      const isExternal = f.medical_type === 'external'
+      // Map the form onto the canonical tpv_worker_medicals contract the API
+      // validates (SaveWorkerMedicalRequest). fitness_status is derived from the
+      // computed physical result; an external certificate is taken as certifying
+      // fitness. This is also what the badge gate reads, so the two must agree.
+      const payload = {
+        exam_type: isExternal ? 'external' : 'internal',
+        exam_date: new Date().toISOString().slice(0, 10),
+        examiner_name: (isExternal ? f.external_doctor_name : f.doctor_name) || null,
+        clinic_name: f.organization_name || null,
+        height_cm: f.height ? Number(f.height) : null,
+        weight_kg: f.weight ? Number(f.weight) : null,
+        bp_systolic: Number.isFinite(sys) ? sys : null,
+        bp_diastolic: Number.isFinite(dia) ? dia : null,
+        vision: f.eyesight || null,
+        screening_responses: Object.keys(mhAnswers).length ? mhAnswers : null,
+        screening_score: allMhAnswered ? totalMhScore : null,
+        fitness_status: isExternal ? 'Fit' : (medicalResult === 'Medically Fit' ? 'Fit' : 'Unfit'),
+        restrictions: f.doctor_comments || null,
+        signature_data: f.signature_data || undefined,
+      }
 
-      await api.workers.saveMedical(worker.id, fd)
+      await api.workers.saveMedical(worker.id, payload)
       setSaved(true)
       onSaved()
       if (onNext) onNext()
@@ -582,17 +582,10 @@ function Step2Medical({ worker, editable, onSaved, onNext, api }) {
   }
 
   const markSkip = async () => {
-    if (!window.confirm('Skip Medical Examination for this worker?')) return
-    setSaving(true)
-    try {
-      await api.workers.saveMedical(worker.id, { medical_type: 'skip' })
-      onSaved()
-      if (onNext) onNext()
-    } catch (e) {
-      alert(e?.response?.data?.message || 'Failed to skip medical')
-    } finally {
-      setSaving(false)
-    }
+    // No medical record is created on skip, so the badge gate stays blocked until
+    // one is recorded — advancing is a UI convenience, not a persisted state.
+    if (!window.confirm('Skip the medical examination for now? No medical record will be created, and a site badge cannot be issued until one is.')) return
+    if (onNext) onNext()
   }
 
   return (
@@ -838,13 +831,13 @@ function StepInduction({ worker, editable, onSaved, onNext, api }) {
   const ind = worker.induction || {}
   const [f, setF] = useState({
     induction_type: ind.induction_type || 'General Safety',
-    trainer: ind.trainer || 'Safety Officer – Rahul Sharma',
+    trainer: ind.trainer_name || ind.trainer || 'Safety Officer – Rahul Sharma',
     custom_trainer: '',
     location: ind.induction_location || 'Site Office',
     time_mode: 'auto', // 'auto' | 'manual'
     start_time: ind.induction_start || '',
     end_time: ind.induction_end || '',
-    duration_minutes: ind.induction_duration || '',
+    duration_minutes: ind.duration_minutes || ind.induction_duration || '',
     m_start_date: new Date().toISOString().slice(0, 10),
     m_start_time: new Date().toTimeString().slice(0, 5),
     m_end_date: new Date().toISOString().slice(0, 10),
@@ -854,15 +847,15 @@ function StepInduction({ worker, editable, onSaved, onNext, api }) {
     proof_data: '',
   })
 
-  const [topics, setTopics] = useState(ind.topics || ['Site Safety Rules', 'PPE Usage', 'Emergency Response'])
+  const [topics, setTopics] = useState((Array.isArray(ind.topics) && ind.topics.length ? ind.topics : null) || ['Site Safety Rules', 'PPE Usage', 'Emergency Response'])
   const [saving, setSaving] = useState(false)
   const [saved, setSaved]   = useState(false)
   const [sessionActive, setSessionActive] = useState(false)
-  const [proofConfirmed, setProofConfirmed] = useState(!!ind.induction_status)
+  const [proofConfirmed, setProofConfirmed] = useState(!!(ind.passed || ind.induction_status))
 
   // Camera states
   const [camActive, setCamActive] = useState(false)
-  const [photoPreview, setPhotoPreview] = useState(ind.induction_photo ? `/storage/${ind.induction_photo}` : null)
+  const [photoPreview, setPhotoPreview] = useState((ind.photo_path || ind.induction_photo) ? `/storage/${ind.photo_path || ind.induction_photo}` : null)
   const videoRef = useRef(null)
   const photoCanvasRef = useRef(null)
   const streamRef = useRef(null)
@@ -996,8 +989,11 @@ function StepInduction({ worker, editable, onSaved, onNext, api }) {
 
       const payload = {
         induction_type: f.induction_type,
+        // trainer_name is the persisted column; trainer kept for the legacy path.
         trainer: finalTrainer,
+        trainer_name: finalTrainer,
         location: f.location,
+        training_date: new Date().toISOString().slice(0, 10),
         start_time: f.start_time || new Date().toISOString(),
         end_time: endISO,
         duration_minutes: dur || 15,
@@ -1005,6 +1001,9 @@ function StepInduction({ worker, editable, onSaved, onNext, api }) {
         signature_data: f.proof_type === 'sig' ? f.proof_data : null,
         thumb_data: f.proof_type === 'thumb' ? f.proof_data : null,
         topics,
+        // Completing the induction session marks it passed — this is the flag the
+        // badge gate reads (blockers() → "HSSE induction not passed").
+        passed: true,
       }
 
       await api.workers.saveInduction(worker.id, payload)
@@ -1019,17 +1018,10 @@ function StepInduction({ worker, editable, onSaved, onNext, api }) {
   }
 
   const markSkip = async () => {
-    if (!window.confirm('Skip HSSE Induction for this worker?')) return
-    setSaving(true)
-    try {
-      await api.workers.saveInduction(worker.id, { induction_type: 'skip' })
-      onSaved()
-      if (onNext) onNext()
-    } catch (e) {
-      alert(e?.response?.data?.message || 'Failed to skip induction')
-    } finally {
-      setSaving(false)
-    }
+    // No induction record is created on skip, so the badge gate stays blocked
+    // until one is recorded — advancing is a UI convenience, not persisted state.
+    if (!window.confirm('Skip HSSE induction for now? No induction record will be created, and a site badge cannot be issued until one is.')) return
+    if (onNext) onNext()
   }
 
   const [groupModalOpen, setGroupModalOpen] = useState(false)

@@ -229,6 +229,26 @@ class Vendor extends Model
         return (bool) $this->is_temporary || $this->vendor_type === 'temporary';
     }
 
+    /**
+     * Query counterpart of isTemporary() — the single source of truth for "which
+     * rows are temporary". Every listing/sweep must use this instead of a raw
+     * `where('is_temporary', true)`: that boolean is unset on every vendor created
+     * through the admin/self-registration paths, so filtering on it hid all of them
+     * (empty Temporary tab, no expiry reminders). Mirrors the predicate exactly:
+     * registration_type when present, else the legacy is_temporary/vendor_type.
+     */
+    public function scopeTemporary($query)
+    {
+        $temp = \App\Support\Tpv\TpvRegistrationType::TEMPORARY;
+
+        return $query->where(function ($q) use ($temp) {
+            $q->where('registration_type', $temp)
+                ->orWhere(fn ($w) => $w
+                    ->whereNull('registration_type')
+                    ->where(fn ($x) => $x->where('is_temporary', true)->orWhere('vendor_type', 'temporary')));
+        });
+    }
+
     /** Server-authoritative seconds remaining (never negative). */
     public function accessSecondsRemaining(): int
     {

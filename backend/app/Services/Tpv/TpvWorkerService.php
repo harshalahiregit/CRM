@@ -93,6 +93,16 @@ class TpvWorkerService
         // the client's.
         $data['screening_band'] = Fitness::bandForScore($data['screening_score'] ?? null);
 
+        // The examiner's signature arrives as a base64 PNG data URL; decode it to a
+        // stored file and keep only the path. Same convention as the legacy path.
+        if (! empty($data['signature_data']) && str_contains($data['signature_data'], 'base64,')) {
+            $binary = base64_decode(explode('base64,', $data['signature_data'])[1]);
+            $path   = 'workers/signatures/sig_'.uniqid().'.png';
+            \Illuminate\Support\Facades\Storage::disk('public')->put($path, $binary);
+            $data['signature_path'] = $path;
+        }
+        unset($data['signature_data']);
+
         // A medical certificate is conventionally current for one year. If the
         // examiner did not stamp an explicit expiry, derive it from the exam date
         // (falling back to today) so the currency window is always enforceable at
@@ -123,6 +133,27 @@ class TpvWorkerService
     {
         if (! $worker->isEditable()) {
             throw new BusinessException('This worker is no longer editable.');
+        }
+
+        // Accept the legacy field names the wizard sends and map them onto the
+        // canonical columns. Non-fillable extras (induction_type, location, start/end
+        // time) are silently dropped by mass assignment, as before.
+        if (empty($data['trainer_name']) && ! empty($data['trainer'])) {
+            $data['trainer_name'] = $data['trainer'];
+        }
+        if (empty($data['training_date'])) {
+            $data['training_date'] = now()->toDateString();
+        }
+
+        // Decode the base64 proof images (group photo, signature, thumb impression)
+        // to stored files — the model keeps only the paths.
+        foreach (['photo_data' => 'photo_path', 'signature_data' => 'signature_path', 'thumb_data' => 'thumbprint_path'] as $src => $dst) {
+            if (! empty($data[$src]) && str_contains($data[$src], 'base64,')) {
+                $binary = base64_decode(explode('base64,', $data[$src])[1]);
+                $path   = 'workers/induction/'.$dst.'_'.uniqid().'.png';
+                \Illuminate\Support\Facades\Storage::disk('public')->put($path, $binary);
+                $data[$dst] = $path;
+            }
         }
 
         $worker->induction()->updateOrCreate(

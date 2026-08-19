@@ -385,7 +385,7 @@ export default function TpvVendorDetail() {
 
       {/* Decision Modal Overlay */}
       {decisionModal && (
-        <Overlay onClose={() => !decisionBusy && setDecisionModal(null)} width={480}>
+        <Overlay onClose={() => !decisionBusy && setDecisionModal(null)} width={480} hideClose>
           <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text-h)', display: 'flex', alignItems: 'center', gap: 8 }}>
               {decisionModal === 'approve' ? <CheckCircle size={18} style={{ color: '#10b981' }} /> : decisionModal === 'hold' ? <PauseCircle size={18} style={{ color: '#b45309' }} /> : <XCircle size={18} style={{ color: '#ef4444' }} />}

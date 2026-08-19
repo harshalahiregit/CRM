@@ -64,11 +64,20 @@ export const KIT3D_STYLE = `
 // on a stray outside click, so an Overlay closes only via its own X / Cancel
 // control. Pass closeOnBackdrop for the rare read-only popup where a backdrop
 // dismiss is genuinely wanted.
-export function Overlay({ onClose, width = 480, children, closeOnBackdrop = false }) {
+export function Overlay({ onClose, width = 480, children, closeOnBackdrop = false, hideClose = false }) {
   return createPortal(
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
       onClick={closeOnBackdrop ? (e => e.target === e.currentTarget && onClose()) : undefined}>
-      <div className="pr-glass pr-pop" style={{ width: '100%', maxWidth: width, maxHeight: '90vh', overflowY: 'auto', padding: 28 }}>{children}</div>
+      <div className="pr-glass pr-pop" style={{ position: 'relative', width: '100%', maxWidth: width, maxHeight: '90vh', overflowY: 'auto', padding: 28 }}>
+        {/* Always-present close affordance so no modal (e.g. an empty-state with no
+            footer) can trap the user with no way out. Opt out with hideClose when a
+            modal draws its own header X. */}
+        {onClose && !hideClose && (
+          <button onClick={onClose} aria-label="Close" type="button"
+            style={{ position: 'absolute', top: 12, right: 12, width: 26, height: 26, lineHeight: '22px', textAlign: 'center', fontSize: 20, borderRadius: 8, border: 'none', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', zIndex: 2 }}>×</button>
+        )}
+        {children}
+      </div>
     </div>,
     document.body,
   )

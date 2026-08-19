@@ -36,6 +36,10 @@ class SaveWorkerMedicalRequest extends FormRequest
 
             'fitness_status'      => ['required', Rule::in(TpvMedicalFitness::ALL)],
             'restrictions'        => 'nullable|string',
+
+            // Examiner's signature captured in-browser as a base64 PNG data URL.
+            // Decoded to a stored file (signature_path) in the service.
+            'signature_data'      => 'nullable|string',
         ];
     }
 }

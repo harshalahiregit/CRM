@@ -420,7 +420,7 @@ export default function TpvVendorDocuments({ vendorId, vendor, manage, api = tpv
 
       {/* Document File Preview Overlay */}
       {previewDoc && (
-        <Overlay onClose={() => setPreviewDoc(null)} width={previewDoc.type === 'image' ? 680 : 850}>
+        <Overlay onClose={() => setPreviewDoc(null)} width={previewDoc.type === 'image' ? 680 : 850} hideClose>
           <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: 'var(--text-h)' }}>{previewDoc.name}</h3>
             <button onClick={() => setPreviewDoc(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 18 }}>✕</button>
@@ -469,7 +469,7 @@ function ReviewModal({ reviewing, onClose, onConfirm }) {
   }
 
   return (
-    <Overlay onClose={onClose} width={480}>
+    <Overlay onClose={onClose} width={480} hideClose>
       <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text-h)', display: 'flex', alignItems: 'center', gap: 8 }}>
           {isApprove ? <CheckCircle size={18} style={{ color: '#10b981' }} /> : <XCircle size={18} style={{ color: '#ef4444' }} />}
@@ -547,7 +547,7 @@ function VersionHistoryDrawer({ documentId, onClose, onRestored, api = tpvApi })
   }
 
   return (
-    <Overlay onClose={onClose} width={520}>
+    <Overlay onClose={onClose} width={520} hideClose>
       <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text-h)', display: 'flex', alignItems: 'center', gap: 8 }}>
           <History size={18} style={{ color: '#7C3AED' }} /> Document Version &amp; Audit History

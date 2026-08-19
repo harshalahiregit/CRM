@@ -236,10 +236,15 @@ function AddDialog({ initial, meta, onClose, onDone, onError }) {
         )}
 
         <label style={{ ...lbl, marginTop: 12 }}>PPE item (from Inventory)</label>
-        <select value={productId} onChange={e => setProductId(e.target.value)} style={inp}>
+        <select value={productId} onChange={e => setProductId(e.target.value)} style={inp} disabled={!(meta?.items || []).length}>
           <option value="">Select…</option>
           {(meta?.items || []).map(i => <option key={i.product_id} value={i.product_id}>{i.name} · {i.sku}</option>)}
         </select>
+        {!(meta?.items || []).length && (
+          <p style={{ margin: '5px 0 0', fontSize: 11, color: '#f59e0b' }}>
+            No PPE items in Inventory yet — add products under a category named “PPE” in the Inventory module, then they’ll appear here.
+          </p>
+        )}
 
         <label style={{ ...lbl, marginTop: 12 }}>Quantity required</label>
         <input type="number" min="1" value={qty} onChange={e => setQty(e.target.value)} style={inp} />
