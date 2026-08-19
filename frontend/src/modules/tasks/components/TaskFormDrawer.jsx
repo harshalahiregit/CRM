@@ -12,6 +12,7 @@ import { taskApi, TASK_PRIORITY, TASK_ACCENT, REL_TYPES, EXTRA_REL_TYPES, REL_TY
 import { useDiscardGuard } from '@/lib/confirmClose'
 import Select from '@/components/ui/Select'
 import SearchPicker from '@/components/ui/SearchPicker'
+import VendorEmployeeCascadePicker from './VendorEmployeeCascadePicker'
 import TagInput from '@/components/ui/TagInput'
 import { projectApi } from '@/services/projectApi'
 import { helpdeskApi } from '@/services/helpdeskApi'
@@ -599,11 +600,17 @@ export default function TaskFormDrawer({
         items={vendors.filter(s => !form.assignee_ids.includes(s.id)).map(s => ({ id: s.id, label: s.name, sublabel: s.email }))}
         title="Assign a vendor" subtitle="They'll see it on their vendor portal." emptyText="No vendors available." accent={TASK_ACCENT}
       />
-      <SearchPicker
-        open={picker === 'tpv'} onClose={() => setPicker(null)}
-        onPick={it => it && !form.assignee_ids.includes(it.id) && sf('assignee_ids', [...form.assignee_ids, it.id])}
-        items={tpvs.filter(s => !form.assignee_ids.includes(s.id)).map(s => ({ id: s.id, label: s.name, sublabel: s.email }))}
-        title="Assign a third-party vendor" subtitle="They'll see it on their portal." emptyText="No third-party vendors available." accent={TASK_ACCENT}
+      {/* TPV assignee = a two-stage cascade (enhancement #9): pick the vendor,
+          then ONLY its employees. Selecting an employee provisions a login if
+          needed, so the id added is always a real users.id. Refetch the TPV user
+          list so a freshly-provisioned employee resolves to a named chip. */}
+      <VendorEmployeeCascadePicker
+        open={picker === 'tpv'} onClose={() => setPicker(null)} accent={TASK_ACCENT}
+        excludeIds={form.assignee_ids}
+        onPick={({ user_id }) => {
+          if (user_id && !form.assignee_ids.includes(user_id)) sf('assignee_ids', [...form.assignee_ids, user_id])
+          qc.invalidateQueries({ queryKey: ['task-vendors', 'tpv'] })
+        }}
       />
       <SearchPicker
         open={picker === 'follower'} onClose={() => setPicker(null)}
