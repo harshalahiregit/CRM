@@ -295,6 +295,7 @@ const MyRegistrationStatus = lazy(() => import('@/pages/vendor-portal/MyRegistra
 const PortalOnboardingEntry = lazy(() => import('@/pages/vendor-portal/PortalOnboardingEntry'))
 const PortalDashboard = lazy(() => import('@/pages/vendor-portal/PortalDashboard'))
 const PortalDocuments = lazy(() => import('@/pages/vendor-portal/PortalDocuments'))
+const PortalSupport = lazy(() => import('@/pages/vendor-portal/PortalSupport'))
 const PortalOrderDetail = lazy(() => import('@/pages/vendor-portal/PortalOrderDetail'))
 const PortalInvoiceDetail = lazy(() => import('@/pages/vendor-portal/PortalInvoiceDetail'))
 const PortalWorkforceShell = lazy(() => import('@/pages/vendor-portal/PortalWorkforceShell'))
@@ -703,6 +704,7 @@ export default function AppRoutes() {
             The portal has no LIST — a vendor has exactly one onboarding, which
             PortalOnboardingEntry resolves from the token. */}
         <Route path="registration"      element={<S><MyRegistrationStatus /></S>} />
+        <Route path="support"           element={<S><PortalSupport /></S>} />
         <Route path="onboarding"        element={<S><PortalOnboardingEntry /></S>} />
         <Route path="onboarding/:id"    element={<S><TpvOnboardingWizard /></S>} />
 
