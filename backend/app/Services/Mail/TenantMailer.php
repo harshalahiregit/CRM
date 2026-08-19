@@ -64,6 +64,43 @@ class TenantMailer
         }
     }
 
+    /**
+     * Send pre-rendered HTML through the tenant's own SMTP settings.
+     *
+     * NotificationService (vendor activation, kickoff MoM, HR notices) renders
+     * its own HTML rather than a Mailable, so it could not use send() and was
+     * calling the global Mail:: facade directly — meaning Settings -> Email was
+     * silently ignored on every one of those mails. This gives that path the
+     * same per-tenant resolution: tenant SMTP when configured, .env otherwise.
+     *
+     * Unlike send(), transport errors are left to the caller to catch, because
+     * NotificationService's contract is to record a status and never throw.
+     */
+    public function sendRawHtml(
+        ?int $tenantId,
+        string|array $to,
+        string $subject,
+        string $html,
+        ?string $text = null,
+    ): void {
+        $settings   = $tenantId ? $this->settingsFor($tenantId) : null;
+        $mailerName = $this->configureMailer($settings);
+
+        Mail::mailer($mailerName)->send([], [], function ($m) use ($to, $subject, $html, $text, $settings) {
+            $m->to($to)->subject($subject)->html($html);
+
+            if ($text !== null && $text !== '') {
+                $m->text($text);
+            }
+            if ($settings) {
+                $m->from($settings->from_email, $settings->from_name ?: $settings->from_email);
+                if ($settings->reply_to) {
+                    $m->replyTo($settings->reply_to);
+                }
+            }
+        });
+    }
+
     public function testSend(int $tenantId, string $to): void
     {
         $this->send($tenantId, $to, new TestMail());

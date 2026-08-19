@@ -78,6 +78,9 @@ class TpvActivationNotifier
             $this->render($vendor, $tempPassword),
             ['vendor_id' => $vendor->id, 'event' => LogEntry::TYPE_ACTIVATED],
             $this->plainText($vendor, $tempPassword),
+            // Explicit: this runs in DB::afterCommit, so don't rely on an
+            // authenticated user being present to find the tenant's SMTP.
+            $vendor->tenant_id,
         );
 
         if ($status !== 'sent') {

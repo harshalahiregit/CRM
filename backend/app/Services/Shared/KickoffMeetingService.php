@@ -332,6 +332,7 @@ class KickoffMeetingService
                 $this->renderMomEmail($meeting, $r['vendor'], $ackHere, $meetingDate, $momUrl),
                 ['kickoff_meeting_id' => $meeting->id, 'vendor_id' => $r['vendor']?->id],
                 $this->momPlainText($meeting, $r['vendor'], $ackHere, $meetingDate, $momUrl),
+                $meeting->tenant_id,
             );
         }
 

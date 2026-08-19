@@ -82,6 +82,7 @@ class PurchaseActivationNotifier
             $this->render($vendor, $tempPassword),
             ['purchase_vendor_id' => $vendor->id, 'event' => LogEntry::TYPE_ACTIVATED],
             $this->plainText($vendor, $tempPassword),
+            $vendor->tenant_id,
         );
 
         if ($status !== 'sent') {

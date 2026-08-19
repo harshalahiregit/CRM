@@ -2,8 +2,9 @@
 
 namespace App\Services\Notifications;
 
+use App\Services\Mail\TenantMailer;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
 
 /**
  * Channel-abstracted notification dispatcher (Company Portal).
@@ -16,11 +17,28 @@ use Illuminate\Support\Facades\Mail;
  */
 class NotificationService
 {
+    public function __construct(private TenantMailer $mailer)
+    {
+    }
+
+    /**
+     * Which tenant's SMTP settings to send with.
+     *
+     * Explicit wins (a notifier that knows the subject's tenant should say so —
+     * it stays correct in queued/console context where there is no user), then
+     * the acting user's tenant. Null means "no tenant context", and TenantMailer
+     * falls back to the global .env mailer.
+     */
+    private function resolveTenantId(?int $tenantId): ?int
+    {
+        return $tenantId ?? Auth::user()?->tenant_id;
+    }
+
     /**
      * Send an email notification. Returns the delivery status ('sent'|'skipped'|'failed').
      * Never throws — a notification failure must not break the business action.
      */
-    public function email(?string $to, string $subject, string $body, array $context = []): string
+    public function email(?string $to, string $subject, string $body, array $context = [], ?int $tenantId = null): string
     {
         if (! $to) {
             Log::channel('hr')->warning('Notification skipped: no recipient', ['subject' => $subject] + $context);
@@ -29,9 +47,7 @@ class NotificationService
         }
 
         try {
-            Mail::html(nl2br(e($body)), function ($m) use ($to, $subject) {
-                $m->to($to)->subject($subject);
-            });
+            $this->mailer->sendRawHtml($this->resolveTenantId($tenantId), $to, $subject, nl2br(e($body)));
 
             return 'sent';
         } catch (\Throwable $e) {
@@ -46,7 +62,7 @@ class NotificationService
      * email(): never throws, returns 'sent'|'skipped'|'failed'. Kept separate
      * from email() because that one escapes its body for plain-text callers.
      */
-    public function emailHtml(?string $to, string $subject, string $html, array $context = [], ?string $text = null): string
+    public function emailHtml(?string $to, string $subject, string $html, array $context = [], ?string $text = null, ?int $tenantId = null): string
     {
         if (! $to) {
             Log::channel('hr')->warning('Notification skipped: no recipient', ['subject' => $subject] + $context);
@@ -57,12 +73,7 @@ class NotificationService
         try {
             // multipart/alternative when a text part is supplied, so clients that
             // refuse HTML (and screen readers) still get readable content.
-            Mail::send([], [], function ($m) use ($to, $subject, $html, $text) {
-                $m->to($to)->subject($subject)->html($html);
-                if ($text !== null && $text !== '') {
-                    $m->text($text);
-                }
-            });
+            $this->mailer->sendRawHtml($this->resolveTenantId($tenantId), $to, $subject, $html, $text);
 
             return 'sent';
         } catch (\Throwable $e) {
