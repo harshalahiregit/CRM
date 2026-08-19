@@ -26,6 +26,7 @@ const TPV_NAV = [
   { label: 'Observations', path: '/app/tpv/safety-engagement', icon: Eye     },
   { label: 'Incidents',   path: '/app/tpv/incidents',  icon: Siren           },
   { label: 'Governance',  path: '/app/tpv/governance', icon: ShieldCheck     },
+  { label: 'Reports',     path: '/app/tpv/reports',    icon: ClipboardList   },
 ]
 
 export default function TPVLayout() {

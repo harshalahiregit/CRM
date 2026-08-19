@@ -194,6 +194,8 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     // HSSE governance dashboard (Doc 6) — one command view over incidents,
     // ratings, compliance and workforce.
     Route::get('/governance/dashboard',                   [\App\Http\Controllers\Api\Tpv\GovernanceController::class, 'dashboard']);
+    // DPR / WPR / MCR periodic compliance reports (Doc 6).
+    Route::get('/governance/report',                      [\App\Http\Controllers\Api\Tpv\GovernanceController::class, 'report']);
 
     // HSSE incidents → RCA → CAPA (Doc_4 Phase 5). A Serious/Fatal or stop-work
     // incident auto-suspends the vendor; an incident closes only once its root
