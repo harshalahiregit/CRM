@@ -332,6 +332,10 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('purchase')->group(fun
     // Workforce step 5 — activating a worker admits a person to the site, so it
     // is an admin decision, not a staff one and never the vendor's.
     Route::post('/workforce/workers/{worker}/activate',   [PurchaseWorkforceAdminController::class, 'activate']);
+    // Worker lifecycle — suspend/reinstate/terminate withhold or restore site access.
+    Route::post('/workforce/workers/{worker}/suspend',    [PurchaseWorkforceAdminController::class, 'suspend']);
+    Route::post('/workforce/workers/{worker}/reinstate',  [PurchaseWorkforceAdminController::class, 'reinstate']);
+    Route::post('/workforce/workers/{worker}/terminate',  [PurchaseWorkforceAdminController::class, 'terminate']);
     Route::post('/workforce/ppe/issues/{issue}/return',   [PurchaseWorkforceAdminController::class, 'returnPpe']);
 
     // Vendor onboarding decisions — a requester must not approve their own vendor.

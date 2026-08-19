@@ -56,6 +56,29 @@ export default function PurchaseWorkerDetail({ workerId, onBack }) {
     finally { setBusy(false) }
   }
 
+  // Worker lifecycle — suspend/reinstate/terminate withhold or restore site access.
+  const suspendWorker = async () => {
+    const reason = window.prompt('Reason for suspending this worker (optional):') ?? ''
+    setBusy(true); setErr(null)
+    try { await purchaseApi.workforce.suspend(workerId, reason.trim() || null); await load() }
+    catch (e) { setErr(e?.response?.data?.message || 'Could not suspend this worker.') }
+    finally { setBusy(false) }
+  }
+  const reinstateWorker = async () => {
+    setBusy(true); setErr(null)
+    try { await purchaseApi.workforce.reinstate(workerId); await load() }
+    catch (e) { setErr(e?.response?.data?.message || 'Could not reinstate this worker.') }
+    finally { setBusy(false) }
+  }
+  const terminateWorker = async () => {
+    if (!confirm('Terminate this worker? This is permanent and disables their badge at the gate.')) return
+    const reason = window.prompt('Reason for termination (optional):') ?? ''
+    setBusy(true); setErr(null)
+    try { await purchaseApi.workforce.terminate(workerId, reason.trim() || null); await load() }
+    catch (e) { setErr(e?.response?.data?.message || 'Could not terminate this worker.') }
+    finally { setBusy(false) }
+  }
+
   const giveBack = async (issueId, condition) => {
     setBusy(true); setErr(null)
     try { await purchaseApi.workforce.returnPpe(issueId, { condition }); await load() }
@@ -227,13 +250,39 @@ export default function PurchaseWorkerDetail({ workerId, onBack }) {
         <Panel title="Step 5 — Badge & Gate">
           {b.activated ? (
             <>
-              <Note tone="ok">This worker is activated and cleared for site entry.</Note>
+              <Note tone={w.status === 'Active' ? 'ok' : w.status === 'Terminated' ? 'warn' : 'info'}>
+                {w.status === 'Active' ? 'This worker is activated and cleared for site entry.'
+                  : w.status === 'Suspended' ? 'This worker is suspended — site access is withheld until reinstated.'
+                  : w.status === 'Terminated' ? 'This worker is terminated — the badge no longer scans at the gate.'
+                  : `Worker status: ${w.status}.`}
+              </Note>
               <div style={{ ...grid, marginTop: 12 }}>
                 <Read label="Badge number" value={b.badge_number} />
                 <Read label="Issued" value={b.badge_issued_at ? new Date(b.badge_issued_at).toLocaleString() : '—'} />
                 <Read label="Valid until" value={b.badge_valid_until || 'No expiry'} />
                 <Read label="Worker status" value={w.status} />
               </div>
+
+              {isAdmin && w.status !== 'Terminated' && (
+                <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
+                  {w.status === 'Active' && (
+                    <button onClick={suspendWorker} disabled={busy}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 9, border: '1px solid rgba(249,115,22,0.4)', background: 'transparent', color: '#f97316', fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}>
+                      Suspend
+                    </button>
+                  )}
+                  {w.status === 'Suspended' && (
+                    <button onClick={reinstateWorker} disabled={busy}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 9, border: '1px solid rgba(16,185,129,0.4)', background: 'transparent', color: '#10b981', fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}>
+                      Reinstate
+                    </button>
+                  )}
+                  <button onClick={terminateWorker} disabled={busy}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 9, border: '1px solid rgba(239,68,68,0.4)', background: 'transparent', color: '#ef4444', fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}>
+                    Terminate
+                  </button>
+                </div>
+              )}
             </>
           ) : (
             <>
