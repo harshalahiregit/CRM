@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Package, AlertTriangle, CheckCircle2, XCircle, ArrowUpRight, Boxes } from 'lucide-react'
+import { Package, AlertTriangle, CheckCircle2, XCircle, ArrowUpRight, Boxes, X } from 'lucide-react'
 
 /**
  * PPE catalogue + summary, read live from INVENTORY.
@@ -177,10 +178,14 @@ function IssueDrawer({ item, workers, api, accent, onClose, onDone }) {
     onError: (e) => setErr(e?.response?.data?.message || 'Could not issue this item.'),
   })
 
-  return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60 }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: 420, maxWidth: '94vw', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, padding: 22 }}>
-        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text-h)' }}>Issue {item.name}</h3>
+  // Portalled to <body> so it can never be trapped or clipped inside a .pr-glass
+  // card (backdrop-filter makes such a card the containing block for fixed
+  // descendants, and its overflow:hidden then crops them).
+  return createPortal(
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 420, maxWidth: '94vw', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, padding: 22, position: 'relative' }}>
+        <button onClick={onClose} aria-label="Close" style={{ position: 'absolute', top: 14, right: 14, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><X size={17} /></button>
+        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text-h)', paddingRight: 24 }}>Issue {item.name}</h3>
         <p style={{ margin: '4px 0 16px', fontSize: 12, color: 'var(--text-muted)' }}>{item.sku}</p>
 
         <Field label="Worker">
@@ -226,7 +231,8 @@ function IssueDrawer({ item, workers, api, accent, onClose, onDone }) {
           >{issue.isPending ? 'Issuing…' : 'Issue'}</button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 

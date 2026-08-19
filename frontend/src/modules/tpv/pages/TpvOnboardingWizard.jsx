@@ -1788,7 +1788,7 @@ function StepDocuments({ checklist, vendorId, onboarding, editable, manage, admi
 
       {/* Modal Document Viewer */}
       {previewDoc && (
-        <Overlay onClose={() => setPreviewDoc(null)} width={previewDoc.type === 'image' ? 680 : 850}>
+        <Overlay onClose={() => setPreviewDoc(null)} width={previewDoc.type === 'image' ? 680 : 850} showClose={false}>
           <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justify: 'space-between' }}>
             <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: 'var(--text-h)' }}>{previewDoc.name}</h3>
             <button onClick={() => setPreviewDoc(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 18 }}>✕</button>
@@ -1869,7 +1869,7 @@ function ProviderRequestModal({ provider, docRow, onboarding, user, onClose, onS
   }
 
   return (
-    <Overlay onClose={onClose} width={540}>
+    <Overlay onClose={onClose} width={540} showClose={false}>
       {/* Orange Gradient Header */}
       <div style={{
         background: 'linear-gradient(135deg, #f97316, #ea580c)',
@@ -2544,7 +2544,7 @@ function StepSubmission({ onboarding, vendor, admin, onChanged, onBack, api, use
 
       {/* ADMIN DECISION MODAL */}
       {modal && (
-        <Overlay onClose={() => !loading && setModal(null)} width={480}>
+        <Overlay onClose={() => !loading && setModal(null)} width={480} showClose={false}>
           <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text-h)', display: 'flex', alignItems: 'center', gap: 8 }}>
               {modal === 'approve' ? <CheckCircle size={18} style={{ color: '#10b981' }} /> : modal === 'hold' ? <PauseCircle size={18} style={{ color: '#b45309' }} /> : <XCircle size={18} style={{ color: '#ef4444' }} />}
