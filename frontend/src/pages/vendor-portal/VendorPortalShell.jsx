@@ -40,6 +40,7 @@ export default function VendorPortalShell() {
   // Derive page title from current route
   const pageTitles = {
     '/vendor-portal/dashboard': 'Dashboard',
+    '/vendor-portal/support': 'Support & Help',
     '/vendor-portal/registration': 'My Company',
     '/vendor-portal/documents': 'My Documents',
     '/vendor-portal/workforce': 'My Workforce',
@@ -121,22 +122,20 @@ export default function VendorPortalShell() {
           <div className="portal-nav-section" style={{ marginTop: 8 }}>Account</div>
 
           <NavLink
-            to="/vendor-portal/dashboard"
-            className={({ isActive }) => `portal-nav-item${isActive ? '' : ''}`}
-            style={{ color: 'var(--text-muted)' }}
-            onClick={e => e.preventDefault()}
+            to="/vendor-portal/registration"
+            className={({ isActive }) => `portal-nav-item${isActive ? ' active' : ''}`}
           >
-            <User size={16} />
+            <User size={16} className="portal-nav-icon" />
             Profile
           </NavLink>
 
-          <a
-            href="mailto:support@company.com"
-            className="portal-nav-item"
+          <NavLink
+            to="/vendor-portal/support"
+            className={({ isActive }) => `portal-nav-item${isActive ? ' active' : ''}`}
           >
-            <HelpCircle size={16} />
+            <HelpCircle size={16} className="portal-nav-icon" />
             Support
-          </a>
+          </NavLink>
         </nav>
 
         {/* Sidebar Bottom — Logout */}

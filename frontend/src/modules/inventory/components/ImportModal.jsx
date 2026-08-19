@@ -57,7 +57,7 @@ export default function ImportModal({ kind, onClose, onDone }) {
   }
 
   return (
-    <div className="fixed inset-0 z-[75] flex items-start justify-center p-4 overflow-y-auto" style={{ background: 'rgba(0,0,0,0.5)' }} onClick={close}>
+    <div className="fixed inset-0 z-[75] flex items-start justify-center p-4 overflow-y-auto" style={{ background: 'rgba(0,0,0,0.5)' }}>
       <div className="w-full max-w-[520px] rounded-2xl mt-[6vh] mb-8 p-5" onClick={e => e.stopPropagation()}
         style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card-3d)' }}>
 

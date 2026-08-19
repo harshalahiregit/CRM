@@ -189,7 +189,7 @@ function CandidateWorkspace({ requestId, sid, onClose, onChanged, showToast }) {
   const TABS = ['summary', 'ai', 'journey', 'interviews', 'offer', 'timeline', 'comments']
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={e => e.target === e.currentTarget && onClose()}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
       <div className="card-3d" style={{ width: '100%', maxWidth: 780, maxHeight: '92vh', overflowY: 'auto', padding: 22 }}>
         {!d ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--text-muted)' }}>Loading…</div> : (
           <>

@@ -370,7 +370,7 @@ export default function ProductList() {
 
       {/* Bulk action prompt — asks for the value the chosen action needs. */}
       {bulkAsk && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }} onClick={() => setBulkAsk(null)}>
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>
           <div className="w-full max-w-[380px] rounded-2xl p-5" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }} onClick={e => e.stopPropagation()}>
             <h3 className="font-bold text-sm mb-1" style={{ color: 'var(--text-h)' }}>{bulkAsk.label}</h3>
             <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>Applies to {selected.size} selected item{selected.size === 1 ? '' : 's'}.</p>

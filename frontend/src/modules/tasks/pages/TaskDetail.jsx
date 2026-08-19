@@ -833,7 +833,7 @@ function DeleteTaskModal({ open, onClose, onConfirm, taskName, link, subtaskCoun
   const ok = text.trim().toLowerCase() === 'delete'
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4" style={{ background: 'rgba(15,23,42,0.55)' }} onClick={onClose}>
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4" style={{ background: 'rgba(15,23,42,0.55)' }}>
       <div className="w-full rounded-2xl p-5" style={{ maxWidth: 440, background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card-3d)' }} onClick={e => e.stopPropagation()}>
         <div className="flex items-center gap-2 mb-2">
           <Trash2 size={16} style={{ color: 'var(--color-danger-500)' }} />

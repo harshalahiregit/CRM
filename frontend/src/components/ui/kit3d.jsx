@@ -60,10 +60,14 @@ export const KIT3D_STYLE = `
  * React still bubbles events through the component tree, not the DOM tree, so
  * handlers around the caller keep working.
  */
-export function Overlay({ onClose, width = 480, children }) {
+// A backdrop click no longer closes the modal by default: forms lose typed data
+// on a stray outside click, so an Overlay closes only via its own X / Cancel
+// control. Pass closeOnBackdrop for the rare read-only popup where a backdrop
+// dismiss is genuinely wanted.
+export function Overlay({ onClose, width = 480, children, closeOnBackdrop = false }) {
   return createPortal(
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
-      onClick={e => e.target === e.currentTarget && onClose()}>
+      onClick={closeOnBackdrop ? (e => e.target === e.currentTarget && onClose()) : undefined}>
       <div className="pr-glass pr-pop" style={{ width: '100%', maxWidth: width, maxHeight: '90vh', overflowY: 'auto', padding: 28 }}>{children}</div>
     </div>,
     document.body,

@@ -266,7 +266,7 @@ export default function ProjectFormDrawer({ open, onClose, project = null, onSav
   return (
     <>
     <div className="fixed inset-0 z-[55] flex items-start justify-center p-3 sm:p-6 overflow-y-auto"
-      style={{ background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(2px)' }} onClick={requestClose}>
+      style={{ background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(2px)' }}>
       <form onSubmit={submit} onClick={e => e.stopPropagation()}
         className="w-full rounded-2xl overflow-hidden my-2 flex flex-col"
         style={{ maxWidth: 640, background: 'var(--bg-global)', boxShadow: '0 24px 70px rgba(0,0,0,0.45)', maxHeight: '94vh' }}>

@@ -169,7 +169,7 @@ function PlanModal({ row, onClose, onSaved }) {
 
   return (
     <>
-      <div className="fixed inset-0 z-[90] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,.5)' }} onClick={handleClose}>
+      <div className="fixed inset-0 z-[90] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,.5)' }}>
         <div className="rounded-2xl p-5 w-full max-w-md space-y-3" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-purple)' }} onClick={e => e.stopPropagation()}>
           <div className="flex items-center justify-between">
             <h3 className="text-base font-black" style={{ color: 'var(--text-h)' }}>Plan action</h3>

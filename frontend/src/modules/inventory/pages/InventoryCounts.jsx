@@ -196,7 +196,7 @@ function NewCountModal({ onClose, onDone }) {
 
   return (
     <>
-      <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 overflow-y-auto bg-black/50" onClick={handleClose}>
+      <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 overflow-y-auto bg-black/50">
         <div className="w-full max-w-lg rounded-2xl mt-[6vh] mb-8" onClick={e => e.stopPropagation()}
           style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
           <div className="flex items-center gap-2 px-5 py-4" style={{ borderBottom: '1px solid var(--border)' }}>
@@ -421,7 +421,7 @@ function CountWorkbench({ id, onClose, onChanged }) {
 
   if (isLoading || !s) {
     return (
-      <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50" onClick={onClose}>
+      <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50">
         <div className="w-full max-w-3xl h-64 rounded-2xl animate-pulse" style={{ background: 'var(--bg-card)' }} />
       </div>
     )
@@ -430,7 +430,7 @@ function CountWorkbench({ id, onClose, onChanged }) {
   const st = COUNT_STATUS[s.status] || { label: s.status, color: 'var(--text-muted)' }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 overflow-y-auto bg-black/50" onClick={onClose}>
+    <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 overflow-y-auto bg-black/50">
       <div className="w-full max-w-3xl rounded-2xl mt-[4vh] mb-8" onClick={e => e.stopPropagation()}
         style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
 

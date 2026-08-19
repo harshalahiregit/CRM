@@ -137,7 +137,7 @@ function ContactModal({ vendorId, modal, onClose, onSaved, onEdit }) {
   const title = view ? 'Contact Details' : modal.mode === 'add' ? 'Add Contact' : 'Edit Contact'
 
   return (
-    <div style={overlay} onClick={onClose}>
+    <div style={overlay}>
       <div className="card-3d" style={{ padding: 0, width: 680, maxWidth: '95vw', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
         <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <h2 style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-h)', margin: 0 }}>{title}</h2>

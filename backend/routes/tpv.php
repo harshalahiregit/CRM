@@ -83,6 +83,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     // module). No hard delete: deactivation is a status change. Static segments
     // stay ahead of the {contact} wildcard.
     Route::get('/vendors/{vendor}/tasks',                     [\App\Http\Controllers\Api\Vendor\VendorController::class, 'tasks']);
+    // Workspace Overview dashboard (live per-vendor counts) + directly-linked customers.
+    Route::get('/vendors/{vendor}/overview',                  [\App\Http\Controllers\Api\Vendor\VendorController::class, 'overview']);
+    Route::get('/vendors/{vendor}/customers',                 [\App\Http\Controllers\Api\Vendor\VendorController::class, 'customers']);
+    Route::post('/vendors/{vendor}/customers',                [\App\Http\Controllers\Api\Vendor\VendorController::class, 'storeCustomer']);
     // Follow-ups on the shared polymorphic `reminders` table. Mounted here rather
     // than under /sales/reminders, which has no role gate — see the controller.
     Route::get('/vendors/{vendor}/reminders',                 [\App\Http\Controllers\Api\Vendor\VendorController::class, 'reminders']);

@@ -34,7 +34,7 @@ const Field = ({ l, children, full }) => <div style={{ gridColumn: full ? '1 / -
 function Overlay({ onClose, width = 640, children }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
-      onClick={e => e.target === e.currentTarget && onClose()}>
+      >
       <div className="card-3d" style={{ width: '100%', maxWidth: width, maxHeight: '90vh', overflowY: 'auto', padding: 24 }}>{children}</div>
     </div>
   )

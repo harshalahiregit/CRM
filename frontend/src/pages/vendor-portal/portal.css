@@ -166,6 +166,10 @@
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  /* Without this a flex item keeps min-width:auto and refuses to shrink below its
+     content's intrinsic width — a wide child (e.g. the onboarding stepper) then
+     pushes the whole column past the viewport and clips off the right edge. */
+  min-width: 0;
 }
 
 /* ── Top Header ─────────────────────────────────────────────────────────── */
@@ -260,6 +264,10 @@
   padding: 28px;
   flex: 1;
   overflow-y: auto;
+  /* Keep the content box at viewport width so wide children scroll INSIDE their
+     own cards instead of stretching the page. */
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 /* ── Cards ─────────────────────────────────────────────────────────────────── */
