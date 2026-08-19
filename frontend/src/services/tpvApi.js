@@ -168,6 +168,7 @@ export const tpvApi = {
   governance: {
     dashboard: () => api.get('/tpv/governance/dashboard').then(r => r.data),
     report: (kind, anchor) => api.get('/tpv/governance/report', { params: { kind, anchor } }).then(r => r.data),
+    authorityMatrix: () => api.get('/tpv/governance/authority-matrix').then(r => r.data),
   },
 
   // ── Proactive safety engagement (Doc_4 Phase 5/6). ──

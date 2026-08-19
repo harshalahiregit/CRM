@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, CalendarDays, Rocket,
-  UserCheck, CheckSquare, ScanLine, ShieldAlert, Clock, ShieldCheck, HardHat, ClipboardList, Siren, FileCheck2, Eye, FolderLock } from 'lucide-react'
+  UserCheck, CheckSquare, ScanLine, ShieldAlert, Clock, ShieldCheck, HardHat, ClipboardList, Siren, FileCheck2, Eye, FolderLock, Landmark } from 'lucide-react'
 import ModuleShell from '@/components/layout/ModuleShell'
 
 // Ordered to follow the vendor lifecycle, left → right:
@@ -28,6 +28,7 @@ const TPV_NAV = [
   { label: 'Incidents',   path: '/app/tpv/incidents',  icon: Siren           },
   { label: 'Governance',  path: '/app/tpv/governance', icon: ShieldCheck     },
   { label: 'Evidence',    path: '/app/tpv/evidence',   icon: FolderLock      },
+  { label: 'Authority',   path: '/app/tpv/authority-matrix', icon: Landmark  },
   { label: 'Reports',     path: '/app/tpv/reports',    icon: ClipboardList   },
 ]
 
