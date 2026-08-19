@@ -250,6 +250,7 @@ const PurchaseVendorLogin = lazy(() => import('@/pages/purchase-portal/PurchaseV
 const PurchaseVendorRegister = lazy(() => import('@/pages/purchase-portal/PurchaseVendorRegister'))
 const PurchaseVendorForgotPassword = lazy(() => import('@/pages/purchase-portal/PurchaseVendorForgotPassword'))
 const PurchaseVendorResetPassword = lazy(() => import('@/pages/purchase-portal/PurchaseVendorResetPassword'))
+const PurchaseVendorVerifyEmail = lazy(() => import('@/pages/purchase-portal/PurchaseVendorVerifyEmail'))
 const PurchaseVendorPortalGuard = lazy(() => import('@/pages/purchase-portal/PurchaseVendorPortalGuard'))
 
 // TPV Module (lazy) — pages land here as they're built
@@ -750,6 +751,7 @@ export default function AppRoutes() {
       <Route path="/purchase-portal/register"        element={<S><PurchaseVendorRegister /></S>} />
       <Route path="/purchase-portal/forgot-password" element={<S><PurchaseVendorForgotPassword /></S>} />
       <Route path="/purchase-portal/reset-password"  element={<S><PurchaseVendorResetPassword /></S>} />
+      <Route path="/purchase-portal/verify-email"    element={<S><PurchaseVendorVerifyEmail /></S>} />
 
       {/* Purchase Vendor Portal — authenticated (PurchaseVendor token only). Data
           scoped server-side from the token; no vendor id in any URL. Independent

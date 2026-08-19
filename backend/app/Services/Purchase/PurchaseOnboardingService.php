@@ -25,6 +25,7 @@ class PurchaseOnboardingService
         private PurchaseDocumentService $documentService,
         private PurchaseRegistrationNumberService $registrationNumbers,
         private PurchaseApprovalService $approvals,
+        private \App\Services\Notifications\NotificationService $channels,
     ) {
     }
 
@@ -489,13 +490,13 @@ class PurchaseOnboardingService
         };
 
         if (! empty($toEmail) && $subject !== '') {
-            try {
-                \Illuminate\Support\Facades\Mail::raw($body, function ($m) use ($toEmail, $subject) {
-                    $m->to($toEmail)->subject($subject);
-                });
-            } catch (\Throwable $e) {
-                Log::channel('purchase')->warning('Notification mail error: '.$e->getMessage());
-            }
+            // Tenant SMTP (Settings -> Email) rather than the global .env
+            // account; records a status and never throws.
+            $this->channels->email(
+                $toEmail, $subject, $body,
+                ['purchase_vendor_id' => $vendor->id, 'event' => 'onboarding_status'],
+                $vendor->tenant_id,
+            );
         }
 
         Log::channel('purchase')->info("Notification logged for {$company} - Status: {$status}");

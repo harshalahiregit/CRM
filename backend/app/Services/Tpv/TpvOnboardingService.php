@@ -18,6 +18,7 @@ class TpvOnboardingService
     public function __construct(
         private VendorDocumentService $documentService,
         private RegistrationNumberService $registrationNumbers,
+        private \App\Services\Notifications\NotificationService $channels,
     ) {
     }
 
@@ -588,13 +589,14 @@ class TpvOnboardingService
         }
 
         if (! empty($toEmail) && ! empty($subject)) {
-            try {
-                \Illuminate\Support\Facades\Mail::raw($body, function ($message) use ($toEmail, $subject) {
-                    $message->to($toEmail)->subject($subject);
-                });
-            } catch (\Throwable $e) {
-                Log::channel('tpv')->warning("Notification mail error: " . $e->getMessage());
-            }
+            // Through NotificationService so this uses the tenant's own SMTP
+            // (Settings -> Email) like every other vendor mail, instead of the
+            // global .env account. It records a status and never throws.
+            $this->channels->email(
+                $toEmail, $subject, $body,
+                ['vendor_id' => $vendor->id, 'event' => 'onboarding_status'],
+                $vendor->tenant_id,
+            );
         }
 
         Log::channel('tpv')->info("Notification alert logged for {$companyName} - Status: {$status}");

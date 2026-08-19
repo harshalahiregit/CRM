@@ -22,6 +22,10 @@ class PurchaseVendorPortalAuthService
 {
     private const TOKEN_NAME = 'purchase-portal';
 
+    public function __construct(private PurchaseAuthNotifier $notifier)
+    {
+    }
+
     /** Public self-registration — creates ONLY a PurchaseVendor (never a User/Vendor). */
     public function register(array $data): PurchaseVendor
     {
@@ -48,10 +52,14 @@ class PurchaseVendorPortalAuthService
         ]);
 
         $vendor->recordAudit('Purchase Vendor Registered', null, null, ['email' => $vendor->email]);
-        // Delivery is a generic notification concern; logged here (no shared auth).
+
+        // The verification link is e-mailed through the tenant's own SMTP. The
+        // token is deliberately NOT logged: a log line carrying it is a
+        // credential at rest that grants the account to anyone with log access.
+        $this->notifier->onRegistered($vendor);
+
         Log::channel('purchase')->info('Purchase vendor registered — verification pending', [
             'purchase_vendor_id' => $vendor->id, 'email' => $vendor->email,
-            'verify_token' => $vendor->email_verification_token,
         ]);
 
         return $vendor;
@@ -125,8 +133,11 @@ class PurchaseVendorPortalAuthService
             'password_reset_expires_at'  => now()->addHour(),
         ])->save();
 
+        // Same reasoning as register(): mail the link, never log the token.
+        $this->notifier->onPasswordResetRequested($vendor);
+
         Log::channel('purchase')->info('Purchase vendor password reset requested', [
-            'purchase_vendor_id' => $vendor->id, 'reset_token' => $vendor->password_reset_token,
+            'purchase_vendor_id' => $vendor->id,
         ]);
     }
 
