@@ -169,6 +169,18 @@ export const tpvApi = {
     dashboard: () => api.get('/tpv/governance/dashboard').then(r => r.data),
   },
 
+  // ── Permit-to-Work + JSA (Doc_4 Phase 5). ──
+  permits: {
+    list:     (params = {}) => api.get('/tpv/permits', { params }).then(r => r.data?.data ?? r.data),
+    get:      (id)          => api.get(`/tpv/permits/${id}`).then(r => r.data),
+    create:   (data)        => api.post('/tpv/permits', data).then(r => r.data),
+    addStep:  (id, data)    => api.post(`/tpv/permits/${id}/steps`, data).then(r => r.data),
+    approve:  (id, remarks) => api.post(`/tpv/permits/${id}/approve`, { remarks }).then(r => r.data),
+    reject:   (id, remarks) => api.post(`/tpv/permits/${id}/reject`, { remarks }).then(r => r.data),
+    activate: (id)          => api.post(`/tpv/permits/${id}/activate`).then(r => r.data),
+    close:    (id)          => api.post(`/tpv/permits/${id}/close`).then(r => r.data),
+  },
+
   // ── HSSE incidents → RCA → CAPA (Doc_4 Phase 5). Serious/Fatal or stop-work
   // incidents auto-suspend the vendor; close requires RCA + all CAPAs verified. ──
   incidents: {

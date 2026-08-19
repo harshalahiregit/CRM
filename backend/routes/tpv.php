@@ -205,6 +205,17 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::post('/incidents/{incident}/close',            [\App\Http\Controllers\Api\Tpv\IncidentController::class, 'close']);
     Route::post('/incidents/{incident}/capas',            [\App\Http\Controllers\Api\Tpv\IncidentController::class, 'addCapa']);
     Route::patch('/incidents/{incident}/capas/{capa}',    [\App\Http\Controllers\Api\Tpv\IncidentController::class, 'updateCapa']);
+
+    // Permit-to-Work + JSA (Doc_4 Phase 5). Approval requires a JSA and refuses a
+    // suspended vendor; a permit expires at its validity window.
+    Route::get('/permits',                                [\App\Http\Controllers\Api\Tpv\PermitController::class, 'index']);
+    Route::post('/permits',                               [\App\Http\Controllers\Api\Tpv\PermitController::class, 'store']);
+    Route::get('/permits/{permit}',                       [\App\Http\Controllers\Api\Tpv\PermitController::class, 'show']);
+    Route::post('/permits/{permit}/steps',                [\App\Http\Controllers\Api\Tpv\PermitController::class, 'addStep']);
+    Route::post('/permits/{permit}/approve',              [\App\Http\Controllers\Api\Tpv\PermitController::class, 'approve']);
+    Route::post('/permits/{permit}/reject',               [\App\Http\Controllers\Api\Tpv\PermitController::class, 'reject']);
+    Route::post('/permits/{permit}/activate',             [\App\Http\Controllers\Api\Tpv\PermitController::class, 'activate']);
+    Route::post('/permits/{permit}/close',                [\App\Http\Controllers\Api\Tpv\PermitController::class, 'close']);
 });
 
 // Admin approval — activates the vendor for site access.
