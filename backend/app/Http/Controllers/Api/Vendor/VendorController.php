@@ -489,6 +489,14 @@ class VendorController extends Controller
      * Live per-vendor summary counts for the workspace Overview tab. Each count
      * matches exactly what its own tab lists, so the numbers never disagree.
      */
+    /** The five mandated onboarding gates (Doc 2/4) computed for this vendor. */
+    public function gates(Request $request, Vendor $vendor, \App\Services\Tpv\GateStatusService $gates)
+    {
+        $this->assertTenant($request, $vendor);
+
+        return response()->json($gates->compute($vendor));
+    }
+
     /** Live VRS scorecard (Doc 5) computed from incidents/strikes/docs/workforce. */
     public function scorecard(Request $request, Vendor $vendor, \App\Services\Vendor\VendorScorecardService $vrs)
     {

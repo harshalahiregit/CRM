@@ -253,6 +253,8 @@ export const tpvApi = {
     overview:  (id)          => api.get(`/tpv/vendors/${id}/overview`).then(r => r.data),
     // VRS scorecard (Doc 5) — { live, history }.
     scorecard: (id)          => api.get(`/tpv/vendors/${id}/scorecard`).then(r => r.data),
+    // The five mandated onboarding gates (Doc 2/4).
+    gates:     (id)          => api.get(`/tpv/vendors/${id}/gates`).then(r => r.data),
     // Customers directly linked to this vendor (clients.vendor_id).
     customers: {
       list:   (vid)       => api.get(`/tpv/vendors/${vid}/customers`).then(r => r.data),
