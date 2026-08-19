@@ -183,6 +183,10 @@ export const tpvApi = {
     // { data, current_page, last_page, per_page, total }.
     listPaged: (params = {}) => api.get('/vendors', { params: { engagement: 'tpv', per_page: 25, ...params } }).then(r => r.data),
     get:       (id)          => api.get(`/vendors/${id}`).then(r => r.data),
+    // Compliance suspension (admin). The nightly sweep does this automatically on
+    // expired statutory docs; these are the manual controls.
+    suspend:   (id, reason)  => api.post(`/vendors/${id}/suspend`, { reason }).then(r => r.data),
+    reinstate: (id)          => api.post(`/vendors/${id}/reinstate`).then(r => r.data),
     tasks:     (id)          => api.get(`/tpv/vendors/${id}/tasks`).then(r => r.data),
     // Workspace Overview dashboard — live per-vendor counts + status.
     overview:  (id)          => api.get(`/tpv/vendors/${id}/overview`).then(r => r.data),

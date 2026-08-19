@@ -50,6 +50,10 @@ export const VENDOR_STATUS_CONFIG = {
   Pending_Approval: { label: 'Pending Approval', color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
   Active:           { label: 'Active',           color: '#10b981', bg: 'rgba(16,185,129,0.15)' },
   On_Hold:          { label: 'On Hold',          color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
+  Suspended:        { label: 'Suspended',        color: '#f97316', bg: 'rgba(249,115,22,0.15)' },
+  Rejected:         { label: 'Rejected',         color: '#ef4444', bg: 'rgba(239,68,68,0.15)' },
+  Inactive:         { label: 'Inactive',         color: '#94a3b8', bg: 'rgba(148,163,184,0.15)' },
+  Offboarded:       { label: 'Offboarded',       color: '#64748b', bg: 'rgba(100,116,139,0.15)' },
   Blacklisted:      { label: 'Blacklisted',      color: '#ef4444', bg: 'rgba(239,68,68,0.15)' },
 }
 export const vendorStatusCfg = (s) => VENDOR_STATUS_CONFIG[s] || VENDOR_STATUS_CONFIG.Draft
