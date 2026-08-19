@@ -164,6 +164,11 @@ export const tpvApi = {
     setStatus: (vendorId, id, status)  => api.patch(`/tpv/vendors/${vendorId}/contacts/${id}/status`, { status }).then(r => r.data),
   },
 
+  // ── HSSE governance dashboard (Doc 6) — one command view. ──
+  governance: {
+    dashboard: () => api.get('/tpv/governance/dashboard').then(r => r.data),
+  },
+
   // ── HSSE incidents → RCA → CAPA (Doc_4 Phase 5). Serious/Fatal or stop-work
   // incidents auto-suspend the vendor; close requires RCA + all CAPAs verified. ──
   incidents: {

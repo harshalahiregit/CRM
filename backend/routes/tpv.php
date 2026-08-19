@@ -191,6 +191,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::get('/strikes',                                [TpvSafetyStrikeController::class, 'index']);
     Route::get('/workers/{worker}/strikes',               [TpvSafetyStrikeController::class, 'forWorker']);
 
+    // HSSE governance dashboard (Doc 6) — one command view over incidents,
+    // ratings, compliance and workforce.
+    Route::get('/governance/dashboard',                   [\App\Http\Controllers\Api\Tpv\GovernanceController::class, 'dashboard']);
+
     // HSSE incidents → RCA → CAPA (Doc_4 Phase 5). A Serious/Fatal or stop-work
     // incident auto-suspends the vendor; an incident closes only once its root
     // cause is recorded and every CAPA is verified (enforced in the service).

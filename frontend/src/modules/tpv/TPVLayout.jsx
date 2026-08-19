@@ -23,6 +23,7 @@ const TPV_NAV = [
   { label: 'Gate Log',    path: '/app/tpv/gate-log',   icon: ScanLine        },
   { label: 'Strikes',     path: '/app/tpv/strikes',    icon: ShieldAlert     },
   { label: 'Incidents',   path: '/app/tpv/incidents',  icon: Siren           },
+  { label: 'Governance',  path: '/app/tpv/governance', icon: ShieldCheck     },
 ]
 
 export default function TPVLayout() {
