@@ -371,15 +371,40 @@ class TpvWorkerController extends Controller
         $status = $request->input('status');
         $remarks = $request->input('remarks');
 
+        // Approval IS badge issuance. Route it through the gated activation
+        // (TpvWorkerService::activate → blockers()) so a worker can NEVER become
+        // Active without passing every readiness gate and receiving a real QR
+        // token. The old path set status='Active' directly here, skipping the gate
+        // and leaving the worker Active with no badge/token — an ungated back door.
+        if ($status === 'Approved') {
+            $worker = $this->workerService->activate($worker, $request->user(), null);
+            $worker->update([
+                'approval_status'  => 'Approved',
+                'approval_remarks' => $remarks,
+                'approved_at'      => now(),
+                'approved_by'      => $request->user()->id,
+            ]);
+
+            return response()->json([
+                'status'   => 'success',
+                'message'  => 'Worker approved — entry badge issued.',
+                'worker'   => $worker,
+                'qr_token' => $worker->qr_token,
+            ]);
+        }
+
+        // Reject / On_Hold / Resubmit are soft decisions recorded on the approval
+        // columns ONLY. They must not touch the `status` enum — there is no
+        // 'Rejected' worker status, and writing one breaks status_label, the
+        // editability check, and the status scopes.
         $worker->update([
             'approval_status'  => $status,
             'approval_remarks' => $remarks,
-            'approved_at'      => $status === 'Approved' ? now() : null,
-            'approved_by'      => $status === 'Approved' ? $request->user()->id : null,
-            'status'           => $status === 'Approved' ? 'Active' : ($status === 'Rejected' ? 'Rejected' : $worker->status),
+            'approved_at'      => null,
+            'approved_by'      => null,
         ]);
 
-        return response()->json(['status' => 'success', 'message' => "Worker decision updated to {$status}."]);
+        return response()->json(['status' => 'success', 'message' => "Worker decision recorded: {$status}."]);
     }
 
     public function scanAccess(Request $request, string $token)

@@ -1575,17 +1575,63 @@ function StepBadge({ worker, progress, admin, onChanged, api }) {
   })
   const [savingEdit, setSavingEdit] = useState(false)
 
-  const punchCount = () => parseInt(worker.punch_count || 0)
-  const pc = punchCount()
-  const isTerminated = pc >= 3
-  const ppeOk = () => parseInt(worker.ppe_status || 0) >= 1
-  const isPpeIssued = ppeOk()
+  // ── Real status-driven state (NOT punch-count) ──
+  const isActive     = worker.status === WORKER_STATUS.ACTIVE
+  const isSuspended  = worker.status === WORKER_STATUS.SUSPENDED
+  const isTerminated = worker.status === WORKER_STATUS.TERMINATED
+  const isDraft      = worker.status === WORKER_STATUS.DRAFT
+  const hasBadge     = isActive || isSuspended || isTerminated   // a badge was issued
+  const blockers     = progress?.blockers || []
+  const canActivate  = admin && isDraft && blockers.length === 0
 
-  const validTo = '24 Jul 2027'
+  const pc = parseInt(worker.punch_count || 0)
+  const isPpeIssued = parseInt(worker.ppe_status || 0) >= 1
+
+  // Real badge fields from the server (no more hardcoded validity).
+  const validTo   = worker.badge_valid_until ? fmtDate(worker.badge_valid_until) : '—'
+  const badgeNo   = worker.badge_number || '—'
   const workerCode = worker.worker_code || `W-${String(worker.id).padStart(5, '0')}`
-  const qrDataNormal = `${window.location.origin}/scan/${workerCode}`
-  const qrDataTerm = `ACCESS RESTRICTED — Worker Terminated — Code: ${workerCode}`
-  const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(isTerminated ? qrDataTerm : qrDataNormal)}`
+
+  // ── Badge issuance (admin) + real QR from the server token ──
+  const [activating, setActivating] = useState(false)
+  const [qrToken, setQrToken]       = useState(null)   // revealed once, admin only
+  const [qrImg, setQrImg]           = useState(null)   // locally-rendered QR image
+
+  // Reveal the real badge token for an Active/badged worker (admin-only, audited
+  // server-side). The vendor cannot reveal it — the printable QR is admin-issued.
+  useEffect(() => {
+    let alive = true
+    if (hasBadge && admin && !qrToken) {
+      api.workers.badge(worker.id)
+        .then(b => { if (alive && b?.qr_token) setQrToken(b.qr_token) })
+        .catch(() => {})
+    }
+    return () => { alive = false }
+  }, [hasBadge, admin, worker.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Render the QR locally from the real token → the gate scan URL. No external
+  // service, and it encodes the actual credential the gate resolves on.
+  useEffect(() => {
+    if (qrToken) {
+      QRCode.toDataURL(`${window.location.origin}/scan/${qrToken}`, { width: 220, margin: 1 })
+        .then(setQrImg).catch(() => {})
+    } else {
+      setQrImg(null)
+    }
+  }, [qrToken])
+
+  const handleActivate = async () => {
+    setActivating(true)
+    try {
+      const res = await api.workers.activate(worker.id)
+      if (res?.qr_token) setQrToken(res.qr_token)   // surfaced once, at issue
+      onChanged()
+    } catch (e) {
+      alert(e?.response?.data?.message || 'Could not issue the entry badge.')
+    } finally {
+      setActivating(false)
+    }
+  }
 
   // Build activity log from worker punch_log or default fields
   let punchLog = []
@@ -1635,17 +1681,23 @@ function StepBadge({ worker, progress, admin, onChanged, api }) {
     }
   }
 
+  const verifyUrl = qrToken ? `${window.location.origin}/scan/${qrToken}` : null
+
   const sendWhatsApp = () => {
+    if (!verifyUrl) return
     const text = `🪪 *HSSE ACCESS CONTROL PASS*\n\n`
       + `*Worker Name:* ${worker.name}\n`
       + `*Worker Code:* ${workerCode}\n`
+      + `*Badge No:* ${badgeNo}\n`
       + `*Designation:* ${worker.designation || 'Worker'}\n`
-      + `*Status:* ${isTerminated ? '⛔ Terminated (Access Revoked)' : '✓ Active Access'}\n`
-      + `*Verify Pass:* ${qrDataNormal}`
+      + `*Valid Until:* ${validTo}\n`
+      + `*Status:* ${isTerminated ? '⛔ Terminated (Access Revoked)' : isSuspended ? '⏸ Suspended' : '✓ Active Access'}\n`
+      + `*Verify Pass:* ${verifyUrl}`
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank')
   }
 
   const printCard = () => {
+    if (!qrImg) return
     const win = window.open('', '_blank', 'width=600,height=700')
     win.document.write(`
       <html>
@@ -1654,8 +1706,9 @@ function StepBadge({ worker, progress, admin, onChanged, api }) {
           <h2 style="color:#d4af37;">HSSE ACCESS CONTROL CARD</h2>
           <div style="border:2px solid #d4af37; border-radius:16px; padding:20px; max-width:380px; margin:0 auto; background:#162740;">
             <h3 style="margin:0 0 6px;">${worker.name}</h3>
-            <p style="color:#00d4ff; font-weight:bold; margin:0 0 12px;">${worker.designation || 'Worker'} (${workerCode})</p>
-            <img src="${qrSrc}" width="160" style="background:#fff; padding:8px; border-radius:8px;" />
+            <p style="color:#00d4ff; font-weight:bold; margin:0 0 4px;">${worker.designation || 'Worker'} (${workerCode})</p>
+            <p style="color:#a78bfa; font-size:12px; margin:0 0 12px;">Badge: ${badgeNo}</p>
+            <img src="${qrImg}" width="160" style="background:#fff; padding:8px; border-radius:8px;" />
             <p style="font-size:12px; color:#a78bfa; margin-top:12px;">VALID UNTIL: ${validTo}</p>
           </div>
           <script>window.onload = function() { window.print(); window.close(); }</script>
@@ -1664,9 +1717,51 @@ function StepBadge({ worker, progress, admin, onChanged, api }) {
     `)
   }
 
+  // ── Draft worker: no badge yet — show issuance panel, not a fake pass ──
+  if (!hasBadge) {
+    return (
+      <Panel title="Step 5 — Entry Badge" sub="Issue the site-access badge once every readiness gate is cleared">
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: '20px 16px', textAlign: 'center' }}>
+          <div style={{ width: 60, height: 60, borderRadius: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', background: canActivate ? 'linear-gradient(145deg,#10b981,#059669)' : 'var(--bg-input)', color: canActivate ? '#fff' : 'var(--text-muted)' }}>
+            <QrCode size={28} />
+          </div>
+          {canActivate ? (
+            <>
+              <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-h)' }}>Ready to issue the entry badge</div>
+              <p style={{ fontSize: 12.5, color: 'var(--text-muted)', maxWidth: 420, margin: 0, lineHeight: 1.6 }}>
+                All readiness gates are cleared. Issuing the badge activates the worker for site access and generates their QR access credential.
+              </p>
+              <button type="button" onClick={handleActivate} disabled={activating}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '11px 22px', borderRadius: 11, background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff', border: 'none', fontWeight: 800, fontSize: 13.5, cursor: activating ? 'wait' : 'pointer', opacity: activating ? 0.7 : 1 }}>
+                {activating ? <Loader size={16} className="rfq-spin" /> : <ShieldCheck size={16} />}
+                {activating ? 'Issuing badge…' : 'Issue Entry Badge'}
+              </button>
+            </>
+          ) : admin ? (
+            <>
+              <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-h)' }}>Badge cannot be issued yet</div>
+              <p style={{ fontSize: 12.5, color: 'var(--text-muted)', maxWidth: 420, margin: 0, lineHeight: 1.6 }}>
+                Resolve the {blockers.length} blocking item{blockers.length === 1 ? '' : 's'} listed at the top of this page (medical, induction, PPE, profile) before the entry badge can be issued.
+              </p>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-h)' }}>Awaiting badge issuance</div>
+              <p style={{ fontSize: 12.5, color: 'var(--text-muted)', maxWidth: 420, margin: 0, lineHeight: 1.6 }}>
+                {blockers.length > 0
+                  ? `Complete the ${blockers.length} remaining item${blockers.length === 1 ? '' : 's'} above. Once ready, your site administrator will issue the entry badge.`
+                  : 'All steps are complete. Your site administrator will now issue the entry badge for this worker.'}
+              </p>
+            </>
+          )}
+        </div>
+      </Panel>
+    )
+  }
+
   return (
-    <Panel title="Step 5 — Access Control 3D Pass & Credentials" sub="1:1 Reference CodeIgniter Implementation — Cyber 3D flip pass, 3-punch violation enforcement & site entry pass"
-      actions={
+    <Panel title="Step 5 — Access Control Pass & Credentials" sub="Site entry pass · real QR access credential · 3-punch violation enforcement"
+      actions={qrImg ? (
         <div style={{ display: 'flex', gap: 8 }}>
           <button type="button" onClick={sendWhatsApp} style={{ padding: '7px 12px', borderRadius: 8, background: '#10b981', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 800, fontSize: 11.5, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
             💬 Send WhatsApp Pass
@@ -1675,7 +1770,7 @@ function StepBadge({ worker, progress, admin, onChanged, api }) {
             🖨️ Print Pass
           </button>
         </div>
-      }>
+      ) : null}>
 
       {/* 3D Card Scene */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, marginBottom: 24 }}>
@@ -1727,12 +1822,14 @@ function StepBadge({ worker, progress, admin, onChanged, api }) {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 900, fontSize: 18, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: 2 }}>{worker.name}</div>
                   <div style={{ fontSize: 10, color: '#00d4ff', fontWeight: 800, letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 4 }}>{worker.designation || 'Site Worker'}</div>
-                  <div style={{ fontFamily: 'monospace', fontSize: 12, color: '#d4af37', letterSpacing: 1.5 }}>{workerCode}</div>
+                  <div style={{ fontFamily: 'monospace', fontSize: 11, color: '#d4af37', letterSpacing: 1 }}>{workerCode} · {badgeNo}</div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 8px', marginTop: 4, fontSize: 9, color: 'rgba(255,255,255,0.4)' }}>
-                    <div>Blood <strong style={{ color: '#fff' }}>{worker.blood_group || '-'}</strong></div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '2px 8px', marginTop: 4, fontSize: 9, color: 'rgba(255,255,255,0.4)' }}>
+                    <div>DOB <strong style={{ color: '#fff' }}>{worker.dob ? fmtDate(worker.dob) : '-'}</strong></div>
+                    <div>Age <strong style={{ color: '#fff' }}>{worker.age != null ? worker.age : '-'}</strong></div>
                     <div>Gender <strong style={{ color: '#fff' }}>{worker.gender || '-'}</strong></div>
-                    <div>Valid To <strong style={{ color: '#fff' }}>{validTo}</strong></div>
+                    <div>Blood <strong style={{ color: '#fff' }}>{worker.blood_group || '-'}</strong></div>
+                    <div style={{ gridColumn: 'span 2' }}>Valid To <strong style={{ color: '#fff' }}>{validTo}</strong></div>
                   </div>
                 </div>
               </div>
@@ -1757,15 +1854,21 @@ function StepBadge({ worker, progress, admin, onChanged, api }) {
                 </span>
               </div>
 
-              {/* Status Banner */}
-              <div style={{
-                padding: '4px 0', borderRadius: 6, textAlign: 'center', fontSize: 9.5, fontWeight: 900, letterSpacing: 1.5, textTransform: 'uppercase',
-                background: isTerminated ? 'rgba(220,38,38,0.15)' : pc === 2 ? 'rgba(240,112,48,0.15)' : pc === 1 ? 'rgba(245,197,24,0.15)' : 'rgba(34,197,94,0.15)',
-                color: isTerminated ? '#dc2626' : pc === 2 ? '#f07030' : pc === 1 ? '#f5c518' : '#22c55e',
-                border: `1px solid ${isTerminated ? 'rgba(220,38,38,0.4)' : pc === 2 ? 'rgba(240,112,48,0.4)' : pc === 1 ? 'rgba(245,197,24,0.4)' : 'rgba(34,197,94,0.4)'}`
-              }}>
-                {isTerminated ? '⛔ Access Terminated' : pc === 2 ? '🚨 Final Warning — Last Chance' : pc === 1 ? '⚠ Punch 1 Recorded' : '✓ Access Active'}
-              </div>
+              {/* Status Banner — driven by the real worker status */}
+              {(() => {
+                const tone = isTerminated ? ['rgba(220,38,38,0.15)', '#dc2626', 'rgba(220,38,38,0.4)']
+                  : isSuspended ? ['rgba(245,158,11,0.15)', '#f59e0b', 'rgba(245,158,11,0.4)']
+                  : pc === 2 ? ['rgba(240,112,48,0.15)', '#f07030', 'rgba(240,112,48,0.4)']
+                  : pc === 1 ? ['rgba(245,197,24,0.15)', '#f5c518', 'rgba(245,197,24,0.4)']
+                  : ['rgba(34,197,94,0.15)', '#22c55e', 'rgba(34,197,94,0.4)']
+                const label = isTerminated ? '⛔ Access Terminated' : isSuspended ? '⏸ Access Suspended'
+                  : pc === 2 ? '🚨 Final Warning — Last Chance' : pc === 1 ? '⚠ Punch 1 Recorded' : '✓ Access Active'
+                return (
+                  <div style={{ padding: '4px 0', borderRadius: 6, textAlign: 'center', fontSize: 9.5, fontWeight: 900, letterSpacing: 1.5, textTransform: 'uppercase', background: tone[0], color: tone[1], border: `1px solid ${tone[2]}` }}>
+                    {label}
+                  </div>
+                )
+              })()}
             </div>
 
             {/* BACK FACE (QR CODE) */}
@@ -1776,10 +1879,16 @@ function StepBadge({ worker, progress, admin, onChanged, api }) {
               display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 16
             }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.4)', letterSpacing: 2, textTransform: 'uppercase' }}>Scan QR to Verify Access</div>
-              <div style={{ background: '#fff', padding: 8, borderRadius: 10, boxShadow: '0 0 24px rgba(0,212,255,0.2)' }}>
-                <img src={qrSrc} alt="QR Code" style={{ width: 120, height: 120, display: 'block' }} />
-              </div>
-              <div style={{ fontFamily: 'monospace', fontSize: 12, color: '#d4af37', letterSpacing: 2 }}>{workerCode}</div>
+              {qrImg ? (
+                <div style={{ background: '#fff', padding: 8, borderRadius: 10, boxShadow: '0 0 24px rgba(0,212,255,0.2)' }}>
+                  <img src={qrImg} alt="QR Code" style={{ width: 120, height: 120, display: 'block' }} />
+                </div>
+              ) : (
+                <div style={{ width: 136, height: 136, borderRadius: 10, border: '1px dashed rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 10, fontSize: 9.5, color: 'rgba(255,255,255,0.45)', lineHeight: 1.5 }}>
+                  Entry QR is issued by the site administrator
+                </div>
+              )}
+              <div style={{ fontFamily: 'monospace', fontSize: 12, color: '#d4af37', letterSpacing: 2 }}>{badgeNo}</div>
               <div style={{ fontSize: 8.5, color: 'rgba(255,255,255,0.3)', letterSpacing: 1 }}>VALID UNTIL {validTo}</div>
             </div>
 
@@ -1793,11 +1902,15 @@ function StepBadge({ worker, progress, admin, onChanged, api }) {
 
       {/* Pass Actions Bar */}
       <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginBottom: 24, flexWrap: 'wrap' }}>
-        {!isTerminated ? (
+        {isActive ? (
           <button type="button" onClick={() => { setPunchErr(''); setPunchModalOpen(true) }}
             style={{ padding: '8px 18px', borderRadius: 9, background: '#f59e0b', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 800, fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             ✊ Record Punch {pc}/3
           </button>
+        ) : isSuspended ? (
+          <span style={{ padding: '8px 18px', borderRadius: 9, background: '#f59e0b', color: '#fff', fontWeight: 900, fontSize: 12 }}>
+            ⏸ Access Suspended
+          </span>
         ) : (
           <span style={{ padding: '8px 18px', borderRadius: 9, background: '#ef4444', color: '#fff', fontWeight: 900, fontSize: 12 }}>
             ⛔ Access Revoked (Terminated)
