@@ -715,6 +715,18 @@ class VendorController extends Controller
         );
     }
 
+    /** Offboard a vendor — end the engagement (terminal). */
+    public function offboard(Request $request, Vendor $vendor)
+    {
+        $this->assertTenant($request, $vendor);
+
+        $data = $request->validate(['reason' => 'required|string|max:500']);
+
+        return response()->json(
+            $this->vendorService->offboard($vendor, $data['reason'], $request->user())
+        );
+    }
+
     public function destroy(Request $request, Vendor $vendor)
     {
         $this->assertTenant($request, $vendor);

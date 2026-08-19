@@ -343,6 +343,45 @@ class VendorService
         return $vendor;
     }
 
+    /**
+     * Offboard a vendor — end the engagement. Terminal: status Offboarded, login
+     * locked, and every on-site worker terminated (their QR token nulled) so no
+     * badge outlives the relationship. Not auto-reversible.
+     */
+    public function offboard(Vendor $vendor, string $reason, ?User $actor = null): Vendor
+    {
+        $from = $vendor->status;
+        $vendor->update([
+            'status'             => Status::OFFBOARDED,
+            'offboarded_at'      => now(),
+            'offboarding_reason' => $reason,
+        ]);
+
+        if ($vendor->user_id && $vendor->user) {
+            $vendor->user->update(['status' => 'inactive']);
+        }
+
+        // Terminate the vendor's active site workers — no badge survives offboarding.
+        $terminated = 0;
+        \App\Models\Tpv\TpvWorker::where('vendor_id', $vendor->id)
+            ->whereNotIn('status', [\App\Support\Tpv\TpvWorkerStatus::TERMINATED])
+            ->get()->each(function ($worker) use (&$terminated) {
+                $worker->forceFill(['status' => \App\Support\Tpv\TpvWorkerStatus::TERMINATED, 'qr_token' => null])->save();
+                $terminated++;
+            });
+
+        $vendor->recordAudit('Vendor Offboarded', $actor, $reason, [
+            'from' => $from, 'to' => Status::OFFBOARDED, 'workers_terminated' => $terminated,
+        ]);
+
+        Log::channel('vendor')->warning('Vendor offboarded', [
+            'vendor_id' => $vendor->id, 'tenant_id' => $vendor->tenant_id,
+            'workers_terminated' => $terminated, 'reason' => $reason,
+        ]);
+
+        return $vendor->fresh();
+    }
+
     public function destroy(Vendor $vendor): void
     {
         $vendor->delete();

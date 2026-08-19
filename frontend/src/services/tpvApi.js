@@ -226,6 +226,7 @@ export const tpvApi = {
     // expired statutory docs; these are the manual controls.
     suspend:   (id, reason)  => api.post(`/vendors/${id}/suspend`, { reason }).then(r => r.data),
     reinstate: (id)          => api.post(`/vendors/${id}/reinstate`).then(r => r.data),
+    offboard:  (id, reason)  => api.post(`/vendors/${id}/offboard`, { reason }).then(r => r.data),
     tasks:     (id)          => api.get(`/tpv/vendors/${id}/tasks`).then(r => r.data),
     // Workspace Overview dashboard — live per-vendor counts + status.
     overview:  (id)          => api.get(`/tpv/vendors/${id}/overview`).then(r => r.data),
