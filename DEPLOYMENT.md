@@ -90,7 +90,26 @@ php artisan queue:restart      # REQUIRED — long-running workers cache old cod
 
 ## Mail configuration
 
-Real send requires SMTP creds in `backend/.env`:
+There are **two** mail paths, and which one is used depends on the tenant:
+
+1. **Per-tenant SMTP** — whatever is saved in **Settings -> Email** for that
+   workspace. Resolved by `TenantMailer`, and it takes precedence. This now
+   covers vendor activation (TPV + Purchase), kickoff MoM notices, HR notices,
+   proposals, contracts, lead mail and portal OTPs.
+2. **Global `.env` SMTP** — the fallback, used only when a tenant has no mail
+   settings saved, or has them saved but disabled.
+
+So a workspace with working Settings -> Email needs nothing in `.env`, and a
+bad `.env` account cannot break it. Conversely, fixing `.env` will **not** fix
+a tenant whose own SMTP settings are wrong — check Settings -> Email first.
+
+Delivery failures on the tenant path are recorded per attempt and logged to
+`storage/logs/hr-*.log` (not `laravel.log`):
+```bash
+grep -h "Notification email failed" storage/logs/hr-*.log | tail -5
+```
+
+The global fallback needs SMTP creds in `backend/.env`:
 ```
 MAIL_MAILER=smtp
 MAIL_HOST=smtp.gmail.com
