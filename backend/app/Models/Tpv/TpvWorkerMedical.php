@@ -14,7 +14,7 @@ class TpvWorkerMedical extends Model
     protected $table = 'tpv_worker_medicals';
 
     protected $fillable = [
-        'tenant_id','tpv_worker_id','recorded_by','exam_type','exam_date','examiner_name','clinic_name',
+        'tenant_id','tpv_worker_id','recorded_by','exam_type','exam_date','valid_until','examiner_name','clinic_name',
         'height_cm','weight_kg','bp_systolic','bp_diastolic','vision',
         'screening_responses','screening_score','screening_band',
         'fitness_status','restrictions','signature_path',
@@ -22,13 +22,14 @@ class TpvWorkerMedical extends Model
 
     protected $casts = [
         'exam_date'           => 'date',
+        'valid_until'         => 'date',
         'height_cm'           => 'decimal:1',
         'weight_kg'           => 'decimal:1',
         'screening_responses' => 'array',
         'screening_score'     => 'integer',
     ];
 
-    protected $appends = ['fitness_label', 'bmi'];
+    protected $appends = ['fitness_label', 'bmi', 'is_expired'];
 
     public function worker()
     {
@@ -59,5 +60,23 @@ class TpvWorkerMedical extends Model
     public function isPassing(): bool
     {
         return Fitness::isPassing($this->fitness_status);
+    }
+
+    /** The certificate has lapsed — its currency window closed. */
+    public function isExpired(): bool
+    {
+        return $this->valid_until !== null && $this->valid_until->isPast();
+    }
+
+    /** Serialized flag so the UI can badge a lapsed medical without recomputing. */
+    public function getIsExpiredAttribute(): bool
+    {
+        return $this->isExpired();
+    }
+
+    /** Fit AND still within its currency window — the real "medical clear" gate. */
+    public function isCurrentlyValid(): bool
+    {
+        return $this->isPassing() && ! $this->isExpired();
     }
 }

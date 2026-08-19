@@ -243,6 +243,8 @@ const PurchasePortalDocuments = lazy(() => import('@/pages/purchase-portal/Purch
 const PurchasePortalApproval = lazy(() => import('@/pages/purchase-portal/PurchasePortalApproval'))
 const PurchasePortalKickoff = lazy(() => import('@/pages/purchase-portal/PurchasePortalKickoff'))
 const PurchasePortalPpe = lazy(() => import('@/pages/purchase-portal/PurchasePortalPpe'))
+const PurchasePortalSupport = lazy(() => import('@/pages/purchase-portal/PurchasePortalSupport'))
+const PurchasePortalProfile = lazy(() => import('@/pages/purchase-portal/PurchasePortalProfile'))
 const PurchasePortalWorkforce = lazy(() => import('@/pages/purchase-portal/PurchasePortalWorkforce'))
 const PurchaseVendorLogin = lazy(() => import('@/pages/purchase-portal/PurchaseVendorLogin'))
 const PurchaseVendorRegister = lazy(() => import('@/pages/purchase-portal/PurchaseVendorRegister'))
@@ -756,6 +758,8 @@ export default function AppRoutes() {
             lifecycle; step 5 (badge) is read-only here, activation is admin-only. */}
         <Route path="workforce"  element={<S><PurchasePortalWorkforce /></S>} />
         <Route path="ppe"        element={<S><PurchasePortalPpe /></S>} />
+        <Route path="profile"    element={<S><PurchasePortalProfile /></S>} />
+        <Route path="support"    element={<S><PurchasePortalSupport /></S>} />
       </Route>
 
       {/* External Company Portal — company accounts only. Sprint 1: Dashboard live;

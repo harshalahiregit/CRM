@@ -99,6 +99,33 @@ class TpvOnboarding extends Model
     }
 
     /**
+     * Why this onboarding is not yet an active vendor — the tracker's
+     * "Blocking Reason" column. Null once approved. Derived from status and, for
+     * an awaiting-decision record, the outstanding statutory documents.
+     */
+    public function blockingReason(): ?string
+    {
+        switch ($this->status) {
+            case Status::APPROVED:
+                return null;
+            case Status::REJECTED:
+                return 'Rejected'.($this->remarks ? ': '.$this->remarks : '.');
+            case Status::ON_HOLD:
+                return 'On hold'.($this->hold_reason ? ': '.$this->hold_reason : '.');
+            case Status::RESUBMIT_REQUIRED:
+                return 'Resubmit required'.($this->remarks ? ': '.$this->remarks : '.');
+            case Status::SUBMITTED:
+            case Status::UNDER_REVIEW:
+                $out = $this->vendor ? $this->outstandingDocuments() : [];
+                return $out
+                    ? count($out).' document(s) pending: '.implode(', ', array_slice($out, 0, 4)).(count($out) > 4 ? '…' : '')
+                    : 'Awaiting admin approval decision.';
+            default: // Draft / In_Progress
+                return 'Awaiting vendor submission (step '.((int) $this->current_step).'/6).';
+        }
+    }
+
+    /**
      * Doc types still missing or not yet approved for this vendor. Step 5 (final
      * confirmation) is blocked until this is empty.
      */

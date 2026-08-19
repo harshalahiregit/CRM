@@ -160,7 +160,7 @@ class VendorService
         $onboarding = $vendor->tpvOnboarding;
         if ($onboarding) {
             $onboarding->update([
-                'status'              => \App\Support\Tpv\OnboardingStatus::APPROVED,
+                'status'              => \App\Support\Tpv\TpvOnboardingStatus::APPROVED,
                 'approved_at'         => now(),
                 'approved_by'         => $actor->id,
                 'registration_number' => $registrationNumber,
@@ -170,7 +170,7 @@ class VendorService
             \App\Models\Tpv\TpvOnboarding::create([
                 'tenant_id'           => $vendor->tenant_id,
                 'vendor_id'           => $vendor->id,
-                'status'              => \App\Support\Tpv\OnboardingStatus::APPROVED,
+                'status'              => \App\Support\Tpv\TpvOnboardingStatus::APPROVED,
                 'current_step'        => 6,
                 'acknowledged'        => true,
                 'onboarding_complete' => true,

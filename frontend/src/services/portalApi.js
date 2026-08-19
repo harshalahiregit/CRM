@@ -27,6 +27,8 @@ export const portalApi = {
     projects: () => api.get('/portal/my-work/projects').then(r => r.data?.data ?? r.data),
     tasks:    () => api.get('/portal/my-work/tasks').then(r => r.data?.data ?? r.data),
     tickets:  () => api.get('/portal/my-work/tickets').then(r => r.data?.data ?? r.data),
+    kb:       () => api.get('/portal/my-work/kb').then(r => r.data?.data ?? r.data),
+    kbArticle: (slug) => api.get(`/portal/my-work/kb/${slug}`).then(r => r.data?.data ?? r.data),
   },
 
   // ── Onboarding — mirrors tpvApi.onboarding shape ───────────────────────
@@ -58,6 +60,7 @@ export const portalApi = {
     submit:          (id, data={}) => api.post(`/portal/onboarding/${id}/submit`, data).then(r => r.data),
     // Step 1 — Kickoff PDF
     kickoffPdf:      (id)          => api.get(`/portal/onboarding/${id}/kickoff`, { responseType: 'blob' }).then(r => r.data),
+    workStartLetter: (id)          => api.get(`/portal/onboarding/${id}/work-start-letter`, { responseType: 'blob' }).then(r => r.data),
     acceptKickoff:   (id, comment) => api.post(`/portal/onboarding/${id}/kickoff/accept`, comment ? { comment } : {}).then(r => r.data),
     logKickoffEvent: (id, event)   => api.post(`/portal/onboarding/${id}/kickoff/log`, { event }).then(r => r.data),
     // Admin-only — vendors cannot create, approve or delete onboardings

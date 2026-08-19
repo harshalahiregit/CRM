@@ -9,6 +9,7 @@ use App\Http\Requests\Tpv\SubmitOnboardingRequest;
 use App\Models\Tpv\TpvOnboarding;
 use App\Services\Tpv\KickoffPdfService;
 use App\Services\Tpv\TpvOnboardingService;
+use App\Services\Tpv\WorkStartLetterService;
 use App\Support\UserAgentInfo;
 use Illuminate\Http\Request;
 
@@ -17,6 +18,7 @@ class TpvOnboardingController extends Controller
     public function __construct(
         private TpvOnboardingService $tpvOnboardingService,
         private KickoffPdfService $kickoffPdfService,
+        private WorkStartLetterService $workStartLetterService,
     ) {
     }
 
@@ -26,6 +28,14 @@ class TpvOnboardingController extends Controller
         $this->assertTenant($request, $onboarding);
 
         return $this->kickoffPdfService->stream($onboarding);
+    }
+
+    /** Stream the HSSE Work Start Letter (issued on approval; lazily generated). */
+    public function workStartLetter(Request $request, TpvOnboarding $onboarding)
+    {
+        $this->assertTenant($request, $onboarding);
+
+        return $this->workStartLetterService->stream($onboarding);
     }
 
     /** Step 1 — record the vendor's acknowledgement with captured context. */

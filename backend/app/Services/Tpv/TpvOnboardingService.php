@@ -33,7 +33,11 @@ class TpvOnboardingService
             $query->where('vendor_id', $filters['vendor_id']);
         }
 
-        return $query->latest()->get();
+        // Surface the tracker's "Blocking Reason" per row (why it isn't active yet).
+        // Eager-load the documents used by outstandingDocuments() so awaiting-decision
+        // rows don't each fire their own query.
+        return $query->with(['vendor.documents:id,vendor_id,type,status'])->latest()->get()
+            ->each(fn (TpvOnboarding $o) => $o->setAttribute('blocking_reason', $o->blockingReason()));
     }
 
     /** Start the 6-step wizard for a vendor. One onboarding per vendor. */
@@ -439,6 +443,14 @@ class TpvOnboardingService
             $vendor->update(['registration_number' => $registrationNumber]);
             app(\App\Services\Vendor\VendorService::class)
                 ->updateStatus($vendor, VendorStatus::ACTIVE, $actor, $remarks);
+        }
+
+        // Issue the formal Work Start Letter (HSSE approval to commence work). It
+        // is generated after activation and stored against the onboarding; the
+        // service swallows its own errors so a letter failure never rolls back the
+        // approval. Downloadable by admin and vendor thereafter.
+        if ($vendor) {
+            app(\App\Services\Tpv\WorkStartLetterService::class)->generate($onboarding->fresh() ?? $onboarding);
         }
 
         $onboarding->recordAudit('Onboarding Approved', $actor, $remarks, [
