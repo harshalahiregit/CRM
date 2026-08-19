@@ -225,6 +225,17 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::post('/observations/{observation}/close',      [\App\Http\Controllers\Api\Tpv\SafetyEngagementController::class, 'closeObservation']);
     Route::get('/toolbox-talks',                          [\App\Http\Controllers\Api\Tpv\SafetyEngagementController::class, 'talks']);
     Route::post('/toolbox-talks',                         [\App\Http\Controllers\Api\Tpv\SafetyEngagementController::class, 'storeTalk']);
+
+    // Site safety registers (Doc_4 Phase 5/6) — drills + visitor + vehicle gate logs.
+    $sr = \App\Http\Controllers\Api\Tpv\SiteRegisterController::class;
+    Route::get('/drills',                                 [$sr, 'drills']);
+    Route::post('/drills',                                [$sr, 'storeDrill']);
+    Route::get('/visitors',                               [$sr, 'visitors']);
+    Route::post('/visitors',                              [$sr, 'storeVisitor']);
+    Route::post('/visitors/{visitor}/checkout',           [$sr, 'checkoutVisitor']);
+    Route::get('/site-vehicles',                          [$sr, 'vehicles']);
+    Route::post('/site-vehicles',                         [$sr, 'storeVehicle']);
+    Route::post('/site-vehicles/{vehicle}/checkout',      [$sr, 'checkoutVehicle']);
 });
 
 // Admin approval — activates the vendor for site access.

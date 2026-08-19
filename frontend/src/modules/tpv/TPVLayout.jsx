@@ -24,6 +24,7 @@ const TPV_NAV = [
   { label: 'Strikes',     path: '/app/tpv/strikes',    icon: ShieldAlert     },
   { label: 'Permits',     path: '/app/tpv/permits',    icon: FileCheck2      },
   { label: 'Observations', path: '/app/tpv/safety-engagement', icon: Eye     },
+  { label: 'Registers',   path: '/app/tpv/site-registers', icon: ClipboardList },
   { label: 'Incidents',   path: '/app/tpv/incidents',  icon: Siren           },
   { label: 'Governance',  path: '/app/tpv/governance', icon: ShieldCheck     },
   { label: 'Reports',     path: '/app/tpv/reports',    icon: ClipboardList   },
