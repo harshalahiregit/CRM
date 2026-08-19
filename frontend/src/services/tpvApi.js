@@ -56,6 +56,7 @@ export const tpvApi = {
     submit:      (id, data = {}) => api.post(`/tpv/onboarding/${id}/submit`, data).then(r => r.data),
     // Step 1 — Kickoff PDF (blob), acknowledgement, and view/download/print logging.
     kickoffPdf:      (id)        => api.get(`/tpv/onboarding/${id}/kickoff`, { responseType: 'blob' }).then(r => r.data),
+    workStartLetter: (id)        => api.get(`/tpv/onboarding/${id}/work-start-letter`, { responseType: 'blob' }).then(r => r.data),
     acceptKickoff:   (id, comment) => api.post(`/tpv/onboarding/${id}/kickoff/accept`, comment ? { comment } : {}).then(r => r.data),
     logKickoffEvent: (id, event) => api.post(`/tpv/onboarding/${id}/kickoff/log`, { event }).then(r => r.data),
     // Admin
@@ -163,6 +164,75 @@ export const tpvApi = {
     setStatus: (vendorId, id, status)  => api.patch(`/tpv/vendors/${vendorId}/contacts/${id}/status`, { status }).then(r => r.data),
   },
 
+  // ── HSSE governance dashboard (Doc 6) — one command view. ──
+  governance: {
+    dashboard: () => api.get('/tpv/governance/dashboard').then(r => r.data),
+    report: (kind, anchor) => api.get('/tpv/governance/report', { params: { kind, anchor } }).then(r => r.data),
+    authorityMatrix: () => api.get('/tpv/governance/authority-matrix').then(r => r.data),
+  },
+
+  // ── Proactive safety engagement (Doc_4 Phase 5/6). ──
+  safety: {
+    observations:     (params = {}) => api.get('/tpv/observations', { params }).then(r => r.data?.data ?? r.data),
+    createObservation:(data)        => api.post('/tpv/observations', data).then(r => r.data),
+    closeObservation: (id, data = {}) => api.post(`/tpv/observations/${id}/close`, data).then(r => r.data),
+    talks:            (params = {}) => api.get('/tpv/toolbox-talks', { params }).then(r => r.data?.data ?? r.data),
+    createTalk:       (data)        => api.post('/tpv/toolbox-talks', data).then(r => r.data),
+  },
+
+  // ── Evidence locker (Doc 6) — central compliance-evidence register. ──
+  evidence: {
+    list:   (params = {}) => api.get('/tpv/evidence', { params }).then(r => r.data),
+    create: (data)        => api.post('/tpv/evidence', data).then(r => r.data),
+    update: (id, data)    => api.patch(`/tpv/evidence/${id}`, data).then(r => r.data),
+    remove: (id)          => api.delete(`/tpv/evidence/${id}`).then(r => r.data),
+  },
+
+  // ── Site safety registers (Doc_4 Phase 5/6): drills + visitor + vehicle. ──
+  registers: {
+    drills:        () => api.get('/tpv/drills').then(r => r.data?.data ?? r.data),
+    createDrill:   (data) => api.post('/tpv/drills', data).then(r => r.data),
+    visitors:      () => api.get('/tpv/visitors').then(r => r.data?.data ?? r.data),
+    createVisitor: (data) => api.post('/tpv/visitors', data).then(r => r.data),
+    checkoutVisitor: (id) => api.post(`/tpv/visitors/${id}/checkout`).then(r => r.data),
+    vehicles:      () => api.get('/tpv/site-vehicles').then(r => r.data?.data ?? r.data),
+    createVehicle: (data) => api.post('/tpv/site-vehicles', data).then(r => r.data),
+    checkoutVehicle: (id) => api.post(`/tpv/site-vehicles/${id}/checkout`).then(r => r.data),
+  },
+
+  // ── Permit-to-Work + JSA (Doc_4 Phase 5). ──
+  permits: {
+    list:     (params = {}) => api.get('/tpv/permits', { params }).then(r => r.data?.data ?? r.data),
+    get:      (id)          => api.get(`/tpv/permits/${id}`).then(r => r.data),
+    create:   (data)        => api.post('/tpv/permits', data).then(r => r.data),
+    addStep:  (id, data)    => api.post(`/tpv/permits/${id}/steps`, data).then(r => r.data),
+    approve:  (id, remarks) => api.post(`/tpv/permits/${id}/approve`, { remarks }).then(r => r.data),
+    reject:   (id, remarks) => api.post(`/tpv/permits/${id}/reject`, { remarks }).then(r => r.data),
+    activate: (id)          => api.post(`/tpv/permits/${id}/activate`).then(r => r.data),
+    close:    (id)          => api.post(`/tpv/permits/${id}/close`).then(r => r.data),
+  },
+
+  // ── HSSE incidents → RCA → CAPA (Doc_4 Phase 5). Serious/Fatal or stop-work
+  // incidents auto-suspend the vendor; close requires RCA + all CAPAs verified. ──
+  incidents: {
+    list:       (params = {}) => api.get('/tpv/incidents', { params }).then(r => r.data?.data ?? r.data),
+    get:        (id)          => api.get(`/tpv/incidents/${id}`).then(r => r.data),
+    create:     (data)        => api.post('/tpv/incidents', data).then(r => r.data),
+    recordRca:  (id, data)    => api.post(`/tpv/incidents/${id}/rca`, data).then(r => r.data),
+    close:      (id)          => api.post(`/tpv/incidents/${id}/close`).then(r => r.data),
+    addCapa:    (id, data)    => api.post(`/tpv/incidents/${id}/capas`, data).then(r => r.data),
+    updateCapa: (id, capaId, data) => api.patch(`/tpv/incidents/${id}/capas/${capaId}`, data).then(r => r.data),
+  },
+
+  // ── Vendor/TPV employees (enhancement #2/#9/#10) — a vendor's assignable
+  // people. list() feeds the assignee cascade; grantAccess() provisions a login
+  // so a contact can be assigned work and see it. ──
+  employees: {
+    list:        (vendorId)            => api.get(`/tpv/vendors/${vendorId}/employees`).then(r => r.data?.data ?? r.data),
+    create:      (vendorId, data)      => api.post(`/tpv/vendors/${vendorId}/employees`, data).then(r => r.data?.data ?? r.data),
+    grantAccess: (vendorId, contactId) => api.post(`/tpv/vendors/${vendorId}/employees/${contactId}/grant-access`).then(r => r.data?.data ?? r.data),
+  },
+
   // ── Vendor master (shared with Purchase) — the onboarding vendor picker ─
   // ── Third-party vendors (master + portal login), scoped to tpv engagement ──
   vendors: {
@@ -173,9 +243,18 @@ export const tpvApi = {
     // { data, current_page, last_page, per_page, total }.
     listPaged: (params = {}) => api.get('/vendors', { params: { engagement: 'tpv', per_page: 25, ...params } }).then(r => r.data),
     get:       (id)          => api.get(`/vendors/${id}`).then(r => r.data),
+    // Compliance suspension (admin). The nightly sweep does this automatically on
+    // expired statutory docs; these are the manual controls.
+    suspend:   (id, reason)  => api.post(`/vendors/${id}/suspend`, { reason }).then(r => r.data),
+    reinstate: (id)          => api.post(`/vendors/${id}/reinstate`).then(r => r.data),
+    offboard:  (id, reason)  => api.post(`/vendors/${id}/offboard`, { reason }).then(r => r.data),
     tasks:     (id)          => api.get(`/tpv/vendors/${id}/tasks`).then(r => r.data),
     // Workspace Overview dashboard — live per-vendor counts + status.
     overview:  (id)          => api.get(`/tpv/vendors/${id}/overview`).then(r => r.data),
+    // VRS scorecard (Doc 5) — { live, history }.
+    scorecard: (id)          => api.get(`/tpv/vendors/${id}/scorecard`).then(r => r.data),
+    // The five mandated onboarding gates (Doc 2/4).
+    gates:     (id)          => api.get(`/tpv/vendors/${id}/gates`).then(r => r.data),
     // Customers directly linked to this vendor (clients.vendor_id).
     customers: {
       list:   (vid)       => api.get(`/tpv/vendors/${vid}/customers`).then(r => r.data),

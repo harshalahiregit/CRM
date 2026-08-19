@@ -72,6 +72,7 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::get('/onboarding/{onboarding}/progress',   [TpvOnboardingController::class, 'progress']);
     // Step 1 — Kickoff PDF: stream, acknowledge, and log view/download/print.
     Route::get('/onboarding/{onboarding}/kickoff',         [TpvOnboardingController::class, 'kickoffPdf']);
+    Route::get('/onboarding/{onboarding}/work-start-letter', [TpvOnboardingController::class, 'workStartLetter']);
     Route::post('/onboarding/{onboarding}/kickoff/accept', [TpvOnboardingController::class, 'acceptKickoff']);
     Route::post('/onboarding/{onboarding}/kickoff/log',    [TpvOnboardingController::class, 'logKickoffEvent']);
     Route::post('/onboarding/{onboarding}/profile',   [TpvOnboardingController::class, 'saveProfile']);
@@ -85,8 +86,18 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::get('/vendors/{vendor}/tasks',                     [\App\Http\Controllers\Api\Vendor\VendorController::class, 'tasks']);
     // Workspace Overview dashboard (live per-vendor counts) + directly-linked customers.
     Route::get('/vendors/{vendor}/overview',                  [\App\Http\Controllers\Api\Vendor\VendorController::class, 'overview']);
+    // Vendor Rating System scorecard (Doc 5) — live score + persisted history.
+    Route::get('/vendors/{vendor}/scorecard',                 [\App\Http\Controllers\Api\Vendor\VendorController::class, 'scorecard']);
+    // The five mandated onboarding gates (Doc 2/4), computed per vendor.
+    Route::get('/vendors/{vendor}/gates',                     [\App\Http\Controllers\Api\Vendor\VendorController::class, 'gates']);
     Route::get('/vendors/{vendor}/customers',                 [\App\Http\Controllers\Api\Vendor\VendorController::class, 'customers']);
     Route::post('/vendors/{vendor}/customers',                [\App\Http\Controllers\Api\Vendor\VendorController::class, 'storeCustomer']);
+    // Employees (enhancement #2/#9/#10) — the vendor's assignable people. index()
+    // feeds the assignee cascade; grant-access provisions a login so an employee
+    // can be assigned work and see it. Static segments stay ahead of wildcards.
+    Route::get('/vendors/{vendor}/employees',                 [\App\Http\Controllers\Api\Vendor\VendorEmployeeController::class, 'index']);
+    Route::post('/vendors/{vendor}/employees',                [\App\Http\Controllers\Api\Vendor\VendorEmployeeController::class, 'store']);
+    Route::post('/vendors/{vendor}/employees/{contact}/grant-access', [\App\Http\Controllers\Api\Vendor\VendorEmployeeController::class, 'grantAccess']);
     // Follow-ups on the shared polymorphic `reminders` table. Mounted here rather
     // than under /sales/reminders, which has no role gate — see the controller.
     Route::get('/vendors/{vendor}/reminders',                 [\App\Http\Controllers\Api\Vendor\VendorController::class, 'reminders']);
@@ -181,6 +192,61 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::get('/strikes/stats',                          [TpvSafetyStrikeController::class, 'stats']);
     Route::get('/strikes',                                [TpvSafetyStrikeController::class, 'index']);
     Route::get('/workers/{worker}/strikes',               [TpvSafetyStrikeController::class, 'forWorker']);
+
+    // HSSE governance dashboard (Doc 6) — one command view over incidents,
+    // ratings, compliance and workforce.
+    Route::get('/governance/dashboard',                   [\App\Http\Controllers\Api\Tpv\GovernanceController::class, 'dashboard']);
+    // DPR / WPR / MCR periodic compliance reports (Doc 6).
+    Route::get('/governance/report',                      [\App\Http\Controllers\Api\Tpv\GovernanceController::class, 'report']);
+    // Authority matrix (Doc 1) — the named authorities + who signs off what.
+    Route::get('/governance/authority-matrix',            [\App\Http\Controllers\Api\Tpv\GovernanceController::class, 'authorityMatrix']);
+
+    // HSSE incidents → RCA → CAPA (Doc_4 Phase 5). A Serious/Fatal or stop-work
+    // incident auto-suspends the vendor; an incident closes only once its root
+    // cause is recorded and every CAPA is verified (enforced in the service).
+    Route::get('/incidents',                              [\App\Http\Controllers\Api\Tpv\IncidentController::class, 'index']);
+    Route::post('/incidents',                             [\App\Http\Controllers\Api\Tpv\IncidentController::class, 'store']);
+    Route::get('/incidents/{incident}',                   [\App\Http\Controllers\Api\Tpv\IncidentController::class, 'show']);
+    Route::post('/incidents/{incident}/rca',              [\App\Http\Controllers\Api\Tpv\IncidentController::class, 'recordRca']);
+    Route::post('/incidents/{incident}/close',            [\App\Http\Controllers\Api\Tpv\IncidentController::class, 'close']);
+    Route::post('/incidents/{incident}/capas',            [\App\Http\Controllers\Api\Tpv\IncidentController::class, 'addCapa']);
+    Route::patch('/incidents/{incident}/capas/{capa}',    [\App\Http\Controllers\Api\Tpv\IncidentController::class, 'updateCapa']);
+
+    // Permit-to-Work + JSA (Doc_4 Phase 5). Approval requires a JSA and refuses a
+    // suspended vendor; a permit expires at its validity window.
+    Route::get('/permits',                                [\App\Http\Controllers\Api\Tpv\PermitController::class, 'index']);
+    Route::post('/permits',                               [\App\Http\Controllers\Api\Tpv\PermitController::class, 'store']);
+    Route::get('/permits/{permit}',                       [\App\Http\Controllers\Api\Tpv\PermitController::class, 'show']);
+    Route::post('/permits/{permit}/steps',                [\App\Http\Controllers\Api\Tpv\PermitController::class, 'addStep']);
+    Route::post('/permits/{permit}/approve',              [\App\Http\Controllers\Api\Tpv\PermitController::class, 'approve']);
+    Route::post('/permits/{permit}/reject',               [\App\Http\Controllers\Api\Tpv\PermitController::class, 'reject']);
+    Route::post('/permits/{permit}/activate',             [\App\Http\Controllers\Api\Tpv\PermitController::class, 'activate']);
+    Route::post('/permits/{permit}/close',                [\App\Http\Controllers\Api\Tpv\PermitController::class, 'close']);
+
+    // Proactive safety engagement (Doc_4 Phase 5/6) — observations + toolbox talks.
+    Route::get('/observations',                           [\App\Http\Controllers\Api\Tpv\SafetyEngagementController::class, 'observations']);
+    Route::post('/observations',                          [\App\Http\Controllers\Api\Tpv\SafetyEngagementController::class, 'storeObservation']);
+    Route::post('/observations/{observation}/close',      [\App\Http\Controllers\Api\Tpv\SafetyEngagementController::class, 'closeObservation']);
+    Route::get('/toolbox-talks',                          [\App\Http\Controllers\Api\Tpv\SafetyEngagementController::class, 'talks']);
+    Route::post('/toolbox-talks',                         [\App\Http\Controllers\Api\Tpv\SafetyEngagementController::class, 'storeTalk']);
+
+    // Site safety registers (Doc_4 Phase 5/6) — drills + visitor + vehicle gate logs.
+    $sr = \App\Http\Controllers\Api\Tpv\SiteRegisterController::class;
+    Route::get('/drills',                                 [$sr, 'drills']);
+    Route::post('/drills',                                [$sr, 'storeDrill']);
+    Route::get('/visitors',                               [$sr, 'visitors']);
+    Route::post('/visitors',                              [$sr, 'storeVisitor']);
+    Route::post('/visitors/{visitor}/checkout',           [$sr, 'checkoutVisitor']);
+    Route::get('/site-vehicles',                          [$sr, 'vehicles']);
+    Route::post('/site-vehicles',                         [$sr, 'storeVehicle']);
+    Route::post('/site-vehicles/{vehicle}/checkout',      [$sr, 'checkoutVehicle']);
+
+    // Evidence locker (Doc 6) — central compliance-evidence register.
+    $el = \App\Http\Controllers\Api\Tpv\EvidenceLockerController::class;
+    Route::get('/evidence',                               [$el, 'index']);
+    Route::post('/evidence',                              [$el, 'store']);
+    Route::patch('/evidence/{evidence}',                  [$el, 'update']);
+    Route::delete('/evidence/{evidence}',                 [$el, 'destroy']);
 });
 
 // Admin approval — activates the vendor for site access.

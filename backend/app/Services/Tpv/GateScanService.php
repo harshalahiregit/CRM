@@ -96,7 +96,12 @@ class GateScanService
         // ── Medical currency + restrictions ──
         $medical = $worker->medical;
         if ($medical) {
-            if ($medical->exam_date && $medical->exam_date->lt(now()->subYear())) {
+            if ($medical->isExpired()) {
+                // A lapsed fitness certificate is a hard stop, not a soft warning.
+                $deny[] = 'Medical certificate expired on '.$medical->valid_until->format('d M Y').'.';
+            } elseif ($medical->valid_until && $medical->valid_until->lt(now()->addDays(30))) {
+                $warn[] = 'Medical certificate expires on '.$medical->valid_until->format('d M Y').'.';
+            } elseif ($medical->exam_date && $medical->exam_date->lt(now()->subYear())) {
                 $warn[] = 'Medical examination is over a year old.';
             }
             if ($medical->fitness_status === TpvMedicalFitness::FIT_WITH_RESTRICTIONS) {

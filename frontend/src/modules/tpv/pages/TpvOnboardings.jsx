@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Plus, RefreshCw, Search, Rocket, Eye, Trash2, ShieldCheck, Clock, CheckCircle, XCircle,
+  Plus, RefreshCw, Search, Rocket, Eye, Trash2, ShieldCheck, Clock, CheckCircle, XCircle, AlertTriangle,
 } from 'lucide-react'
 import { tpvApi } from '@/services/tpvApi'
 import { useAuth } from '@/context/AuthContext'
@@ -157,6 +157,12 @@ export default function TpvOnboardings() {
                   <div className="pr-bar" style={{ marginTop: 10, maxWidth: 320 }}>
                     <span style={{ width: `${Math.round(((r.current_step || 1) / 6) * 100)}%` }} />
                   </div>
+                  {r.blocking_reason && r.status !== OB_STATUS.APPROVED && (
+                    <div style={{ marginTop: 9, display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 11.5, color: r.status === OB_STATUS.REJECTED ? '#f87171' : '#f59e0b', fontWeight: 600, lineHeight: 1.45 }}>
+                      <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+                      <span><strong style={{ fontWeight: 800 }}>Blocking:</strong> {r.blocking_reason}</span>
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
                   <ActBtn onClick={() => navigate(cfg.viewPath(vendorIdOf(r)))} icon={Eye} color="var(--text-muted)" bg="var(--bg-card)" border>Open Vendor</ActBtn>

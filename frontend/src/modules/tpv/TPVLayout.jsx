@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, CalendarDays, Rocket,
-  UserCheck, CheckSquare, ScanLine, ShieldAlert, Clock, ShieldCheck, HardHat, ClipboardList } from 'lucide-react'
+  UserCheck, CheckSquare, ScanLine, ShieldAlert, Clock, ShieldCheck, HardHat, ClipboardList, Siren, FileCheck2, Eye, FolderLock, Landmark } from 'lucide-react'
 import ModuleShell from '@/components/layout/ModuleShell'
 
 // Ordered to follow the vendor lifecycle, left → right:
@@ -22,6 +22,14 @@ const TPV_NAV = [
   { label: 'Compliance',  path: '/app/tpv/compliance', icon: CheckSquare     },
   { label: 'Gate Log',    path: '/app/tpv/gate-log',   icon: ScanLine        },
   { label: 'Strikes',     path: '/app/tpv/strikes',    icon: ShieldAlert     },
+  { label: 'Permits',     path: '/app/tpv/permits',    icon: FileCheck2      },
+  { label: 'Observations', path: '/app/tpv/safety-engagement', icon: Eye     },
+  { label: 'Registers',   path: '/app/tpv/site-registers', icon: ClipboardList },
+  { label: 'Incidents',   path: '/app/tpv/incidents',  icon: Siren           },
+  { label: 'Governance',  path: '/app/tpv/governance', icon: ShieldCheck     },
+  { label: 'Evidence',    path: '/app/tpv/evidence',   icon: FolderLock      },
+  { label: 'Authority',   path: '/app/tpv/authority-matrix', icon: Landmark  },
+  { label: 'Reports',     path: '/app/tpv/reports',    icon: ClipboardList   },
 ]
 
 export default function TPVLayout() {

@@ -46,7 +46,11 @@ export default function PurchasePortalShell() {
       : []),
     { to: '/purchase-portal/ppe',        label: 'PPE Stock',        icon: HardHat },
   ]
-  const pageTitle = nav.slice().reverse().find(n => location.pathname.startsWith(n.to))?.label ?? 'Portal'
+  const pageTitle = location.pathname.startsWith('/purchase-portal/support')
+    ? 'Support'
+    : location.pathname.startsWith('/purchase-portal/profile')
+    ? 'Company Profile'
+    : (nav.slice().reverse().find(n => location.pathname.startsWith(n.to))?.label ?? 'Portal')
   const initials = (vendor?.company_name || 'PV').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()
 
   return (
@@ -72,7 +76,14 @@ export default function PurchasePortalShell() {
             </NavLink>
           ))}
           <div className="portal-nav-section" style={{ marginTop: 8 }}>Account</div>
-          <a href="mailto:support@company.com" className="portal-nav-item"><HelpCircle size={16} /> Support</a>
+          <NavLink to="/purchase-portal/profile"
+            className={({ isActive }) => `portal-nav-item${isActive ? ' active' : ''}`}>
+            <User size={16} /> Company Profile
+          </NavLink>
+          <NavLink to="/purchase-portal/support"
+            className={({ isActive }) => `portal-nav-item${isActive ? ' active' : ''}`}>
+            <HelpCircle size={16} /> Support
+          </NavLink>
         </nav>
 
         <div className="portal-sidebar-bottom">

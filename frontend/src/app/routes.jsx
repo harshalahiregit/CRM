@@ -243,6 +243,8 @@ const PurchasePortalDocuments = lazy(() => import('@/pages/purchase-portal/Purch
 const PurchasePortalApproval = lazy(() => import('@/pages/purchase-portal/PurchasePortalApproval'))
 const PurchasePortalKickoff = lazy(() => import('@/pages/purchase-portal/PurchasePortalKickoff'))
 const PurchasePortalPpe = lazy(() => import('@/pages/purchase-portal/PurchasePortalPpe'))
+const PurchasePortalSupport = lazy(() => import('@/pages/purchase-portal/PurchasePortalSupport'))
+const PurchasePortalProfile = lazy(() => import('@/pages/purchase-portal/PurchasePortalProfile'))
 const PurchasePortalWorkforce = lazy(() => import('@/pages/purchase-portal/PurchasePortalWorkforce'))
 const PurchaseVendorLogin = lazy(() => import('@/pages/purchase-portal/PurchaseVendorLogin'))
 const PurchaseVendorRegister = lazy(() => import('@/pages/purchase-portal/PurchaseVendorRegister'))
@@ -264,6 +266,14 @@ const TpvPpeMatrix = lazy(() => import('@/modules/tpv/pages/TpvPpeMatrix'))
 const TpvWorkerWizard = lazy(() => import('@/modules/tpv/pages/TpvWorkerWizard'))
 const TpvGateLog = lazy(() => import('@/modules/tpv/pages/TpvGateLog'))
 const TpvStrikes = lazy(() => import('@/modules/tpv/pages/TpvStrikes'))
+const TpvIncidents = lazy(() => import('@/modules/tpv/pages/TpvIncidents'))
+const GovernanceDashboard = lazy(() => import('@/modules/tpv/pages/GovernanceDashboard'))
+const TpvPermits = lazy(() => import('@/modules/tpv/pages/TpvPermits'))
+const TpvSafetyEngagement = lazy(() => import('@/modules/tpv/pages/TpvSafetyEngagement'))
+const TpvReports = lazy(() => import('@/modules/tpv/pages/TpvReports'))
+const TpvSiteRegisters = lazy(() => import('@/modules/tpv/pages/TpvSiteRegisters'))
+const TpvEvidenceLocker = lazy(() => import('@/modules/tpv/pages/TpvEvidenceLocker'))
+const TpvAuthorityMatrix = lazy(() => import('@/modules/tpv/pages/TpvAuthorityMatrix'))
 // Vendor-scoped Workforce workspace — its own rail, entered after Onboarding Step-6.
 const WorkforceLayout = lazy(() => import('@/modules/tpv/WorkforceLayout'))
 const WorkforceDashboard = lazy(() => import('@/modules/tpv/pages/WorkforceDashboard'))
@@ -597,6 +607,14 @@ export default function AppRoutes() {
           <Route path="compliance/checklists/:id" element={<S><ChecklistDetail /></S>} />
           <Route path="gate-log" element={<S><TpvGateLog /></S>} />
           <Route path="strikes" element={<S><TpvStrikes /></S>} />
+          <Route path="incidents" element={<S><TpvIncidents /></S>} />
+          <Route path="permits" element={<S><TpvPermits /></S>} />
+          <Route path="safety-engagement" element={<S><TpvSafetyEngagement /></S>} />
+          <Route path="governance" element={<S><GovernanceDashboard /></S>} />
+          <Route path="reports" element={<S><TpvReports /></S>} />
+          <Route path="site-registers" element={<S><TpvSiteRegisters /></S>} />
+          <Route path="evidence" element={<S><TpvEvidenceLocker /></S>} />
+          <Route path="authority-matrix" element={<S><TpvAuthorityMatrix /></S>} />
         </Route>
 
         {/* WORKFORCE — vendor-scoped workspace (own rail), entered from Onboarding Step-6.
@@ -756,6 +774,8 @@ export default function AppRoutes() {
             lifecycle; step 5 (badge) is read-only here, activation is admin-only. */}
         <Route path="workforce"  element={<S><PurchasePortalWorkforce /></S>} />
         <Route path="ppe"        element={<S><PurchasePortalPpe /></S>} />
+        <Route path="profile"    element={<S><PurchasePortalProfile /></S>} />
+        <Route path="support"    element={<S><PurchasePortalSupport /></S>} />
       </Route>
 
       {/* External Company Portal — company accounts only. Sprint 1: Dashboard live;

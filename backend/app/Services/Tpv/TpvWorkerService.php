@@ -93,6 +93,15 @@ class TpvWorkerService
         // the client's.
         $data['screening_band'] = Fitness::bandForScore($data['screening_score'] ?? null);
 
+        // A medical certificate is conventionally current for one year. If the
+        // examiner did not stamp an explicit expiry, derive it from the exam date
+        // (falling back to today) so the currency window is always enforceable at
+        // the gate and at badge activation.
+        if (empty($data['valid_until'])) {
+            $base = ! empty($data['exam_date']) ? \Illuminate\Support\Carbon::parse($data['exam_date']) : now();
+            $data['valid_until'] = $base->copy()->addYear()->toDateString();
+        }
+
         $worker->medical()->updateOrCreate(
             ['tpv_worker_id' => $worker->id],
             [...$data, 'tenant_id' => $worker->tenant_id, 'recorded_by' => $actor->id]
@@ -326,12 +335,14 @@ class TpvWorkerService
             $b[] = "Worker is {$worker->age} — must be at least 18.";
         }
 
-        // 3. Medical — Unfit is a hard stop.
+        // 3. Medical — Unfit is a hard stop; so is a lapsed certificate (§8).
         $medical = $worker->medical;
         if (! $medical) {
             $b[] = 'Medical examination not recorded.';
         } elseif (! $medical->isPassing()) {
             $b[] = 'Medical outcome is Unfit.';
+        } elseif ($medical->isExpired()) {
+            $b[] = 'Medical certificate expired on '.$medical->valid_until->format('d M Y').' — a fresh examination is required.';
         }
 
         // 4. HSSE induction.
@@ -373,8 +384,12 @@ class TpvWorkerService
             'steps' => [
                 ['step' => 1, 'key' => 'profile',   'label' => 'Profile',   'complete' => $profileDone,
                  'detail' => $profileDone ? 'Complete' : 'Incomplete'],
-                ['step' => 2, 'key' => 'medical',   'label' => 'Medical',   'complete' => (bool) $medical?->isPassing(),
-                 'detail' => $medical ? Fitness::label($medical->fitness_status) : 'Not recorded'],
+                ['step' => 2, 'key' => 'medical',   'label' => 'Medical',   'complete' => (bool) $medical?->isCurrentlyValid(),
+                 'detail' => $medical
+                     ? ($medical->isExpired()
+                         ? 'Expired '.$medical->valid_until->format('d M Y')
+                         : Fitness::label($medical->fitness_status).($medical->valid_until ? ' · valid to '.$medical->valid_until->format('d M Y') : ''))
+                     : 'Not recorded'],
                 ['step' => 3, 'key' => 'induction', 'label' => 'Induction', 'complete' => (bool) $induction?->passed,
                  'detail' => $induction ? ($induction->passed ? 'Passed' : 'Not passed') : 'Not recorded'],
                 ['step' => 4, 'key' => 'ppe',       'label' => 'PPE',       'complete' => $missing === 0 && count($issued) > 0,
@@ -743,7 +758,7 @@ class TpvWorkerService
         // terminated worker has it nulled, so a retained card stops resolving.
         // (Previously an `orWhere('worker_code')` let a terminated worker still
         // resolve by their printed code, defeating that.)
-        $worker = TpvWorker::with('vendor:id,company_name,vendor_code,status')
+        $worker = TpvWorker::with(['vendor:id,company_name,vendor_code,status', 'medical', 'induction'])
             ->where('qr_token', $token)
             ->first();
 
@@ -765,6 +780,7 @@ class TpvWorkerService
         $suspended     = $worker->status === Status::SUSPENDED;
         $notActive     = $worker->status !== Status::ACTIVE;   // e.g. still Draft — no badge issued
         $badgeExpired  = $worker->badge_valid_until && $worker->badge_valid_until->isPast();
+        $medicalExpired = $worker->medical && $worker->medical->isExpired();
         $vendorBlocked = $worker->vendor && $worker->vendor->status !== VendorStatus::ACTIVE;
 
         $isTerminated = $terminated;   // kept for backward-compatible payload key
@@ -775,6 +791,8 @@ class TpvWorkerService
             $stateLabel = 'ACCESS SUSPENDED'; $stateColor = 'red';
         } elseif ($badgeExpired) {
             $stateLabel = 'BADGE EXPIRED'; $stateColor = 'red';
+        } elseif ($medicalExpired) {
+            $stateLabel = 'MEDICAL EXPIRED'; $stateColor = 'red';
         } elseif ($vendorBlocked) {
             $stateLabel = 'VENDOR NOT ACTIVE'; $stateColor = 'red';
         } elseif ($notActive) {
@@ -802,6 +820,14 @@ class TpvWorkerService
                 'designation'   => $worker->designation,
                 'badge_number'  => $worker->badge_number,
                 'valid_until'   => $worker->badge_valid_until?->toDateString(),
+                'medical_valid_until' => $worker->medical?->valid_until?->toDateString(),
+                'medical_expired'     => $medicalExpired,
+                'awards'              => $worker->awards,
+                'bocw_number'         => $worker->bocw_number,
+                'training'            => $worker->induction && $worker->induction->passed
+                    ? trim(($worker->induction->trainer_name ? 'HSSE induction by '.$worker->induction->trainer_name : 'HSSE induction')
+                        .($worker->induction->training_date ? ' · '.\Illuminate\Support\Carbon::parse($worker->induction->training_date)->format('d M Y') : ''))
+                    : null,
                 'photo_url'     => $worker->photo_path ? asset('storage/'.$worker->photo_path) : null,
                 'company_name'  => $worker->vendor->company_name ?? 'TPV Vendor',
                 'vendor_code'   => $worker->vendor->vendor_code ?? '—',

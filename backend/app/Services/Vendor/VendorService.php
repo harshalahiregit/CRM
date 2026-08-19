@@ -160,7 +160,7 @@ class VendorService
         $onboarding = $vendor->tpvOnboarding;
         if ($onboarding) {
             $onboarding->update([
-                'status'              => \App\Support\Tpv\OnboardingStatus::APPROVED,
+                'status'              => \App\Support\Tpv\TpvOnboardingStatus::APPROVED,
                 'approved_at'         => now(),
                 'approved_by'         => $actor->id,
                 'registration_number' => $registrationNumber,
@@ -170,7 +170,7 @@ class VendorService
             \App\Models\Tpv\TpvOnboarding::create([
                 'tenant_id'           => $vendor->tenant_id,
                 'vendor_id'           => $vendor->id,
-                'status'              => \App\Support\Tpv\OnboardingStatus::APPROVED,
+                'status'              => \App\Support\Tpv\TpvOnboardingStatus::APPROVED,
                 'current_step'        => 6,
                 'acknowledged'        => true,
                 'onboarding_complete' => true,
@@ -270,6 +270,116 @@ class VendorService
         ]);
 
         return $vendor;
+    }
+
+    /**
+     * Suspend a vendor for a compliance breach (lapsed statutory cover, incident,
+     * stop-work). Reversible via reinstate(). Locks the login out and, being a
+     * non-Active status, withholds site access at the gate and blocks new badges.
+     * `$auto` marks a system-applied suspension so the nightly sweep only ever
+     * auto-reinstates what it itself suspended — never an admin's manual action.
+     */
+    public function suspend(Vendor $vendor, string $reason, ?User $actor = null, bool $auto = false): Vendor
+    {
+        if ($vendor->status === Status::SUSPENDED) {
+            // Refresh the reason but do not re-audit an unchanged state.
+            $vendor->update(['suspension_reason' => $reason, 'auto_suspended' => $auto || $vendor->auto_suspended]);
+
+            return $vendor;
+        }
+
+        $from = $vendor->status;
+        $vendor->update([
+            'status'            => Status::SUSPENDED,
+            'suspended_at'      => now(),
+            'suspension_reason' => $reason,
+            'auto_suspended'    => $auto,
+        ]);
+
+        if ($vendor->user_id && $vendor->user) {
+            $vendor->user->update(['status' => 'inactive']);
+        }
+
+        $vendor->recordAudit('Vendor Suspended', $actor, $reason, ['from' => $from, 'to' => Status::SUSPENDED, 'auto' => $auto]);
+
+        Log::channel('vendor')->warning('Vendor suspended', [
+            'vendor_id' => $vendor->id, 'tenant_id' => $vendor->tenant_id, 'auto' => $auto, 'reason' => $reason,
+        ]);
+
+        return $vendor;
+    }
+
+    /**
+     * Lift a suspension and return the vendor to Active. Restores the login and
+     * re-opens a temporary vendor's access window (a fresh one — theirs may have
+     * lapsed while suspended), but does NOT re-send the activation welcome.
+     */
+    public function reinstate(Vendor $vendor, ?User $actor = null): Vendor
+    {
+        if ($vendor->status !== Status::SUSPENDED) {
+            return $vendor;
+        }
+
+        $vendor->update([
+            'status'            => Status::ACTIVE,
+            'suspended_at'      => null,
+            'suspension_reason' => null,
+            'auto_suspended'    => false,
+        ]);
+
+        if ($vendor->user_id && $vendor->user) {
+            $vendor->user->update(['status' => 'active']);
+        }
+
+        // Re-open a temporary vendor's window; no-ops for permanent vendors.
+        app(\App\Services\Tpv\TpvAccessService::class)->beginAccessWindow($vendor->fresh());
+
+        $vendor->recordAudit('Vendor Reinstated', $actor, null, ['from' => Status::SUSPENDED, 'to' => Status::ACTIVE]);
+
+        Log::channel('vendor')->info('Vendor reinstated', [
+            'vendor_id' => $vendor->id, 'tenant_id' => $vendor->tenant_id,
+        ]);
+
+        return $vendor;
+    }
+
+    /**
+     * Offboard a vendor — end the engagement. Terminal: status Offboarded, login
+     * locked, and every on-site worker terminated (their QR token nulled) so no
+     * badge outlives the relationship. Not auto-reversible.
+     */
+    public function offboard(Vendor $vendor, string $reason, ?User $actor = null): Vendor
+    {
+        $from = $vendor->status;
+        $vendor->update([
+            'status'             => Status::OFFBOARDED,
+            'offboarded_at'      => now(),
+            'offboarding_reason' => $reason,
+        ]);
+
+        if ($vendor->user_id && $vendor->user) {
+            $vendor->user->update(['status' => 'inactive']);
+        }
+
+        // Terminate the vendor's active site workers — no badge survives offboarding.
+        $terminated = 0;
+        \App\Models\Tpv\TpvWorker::where('vendor_id', $vendor->id)
+            ->whereNotIn('status', [\App\Support\Tpv\TpvWorkerStatus::TERMINATED])
+            ->get()->each(function ($worker) use (&$terminated) {
+                $worker->forceFill(['status' => \App\Support\Tpv\TpvWorkerStatus::TERMINATED, 'qr_token' => null])->save();
+                $terminated++;
+            });
+
+        $vendor->recordAudit('Vendor Offboarded', $actor, $reason, [
+            'from' => $from, 'to' => Status::OFFBOARDED, 'workers_terminated' => $terminated,
+        ]);
+
+        Log::channel('vendor')->warning('Vendor offboarded', [
+            'vendor_id' => $vendor->id, 'tenant_id' => $vendor->tenant_id,
+            'workers_terminated' => $terminated, 'reason' => $reason,
+        ]);
+
+        return $vendor->fresh();
     }
 
     public function destroy(Vendor $vendor): void

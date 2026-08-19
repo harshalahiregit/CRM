@@ -18,6 +18,10 @@ Route::middleware(['auth:sanctum', 'role:vendor,third_party_vendor'])->prefix('p
     Route::get('/projects', [VendorWorkController::class, 'projects']);
     Route::get('/tasks',    [VendorWorkController::class, 'tasks']);
     Route::get('/tickets',  [VendorWorkController::class, 'tickets']);
+    // Knowledge Base (enhancement #6) — published, tenant-scoped help content the
+    // dashboard shows next to Projects/Tasks/Tickets. Role-only gate, same as above.
+    Route::get('/kb',            [VendorPortalController::class, 'kbArticles']);
+    Route::get('/kb/{slug}',     [VendorPortalController::class, 'kbArticle']);
 });
 
 // ── Vendor Self-Service Portal ──────────────────────────────────────────
@@ -61,6 +65,7 @@ Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access'])->prefix('por
     Route::get('/onboarding/{onboarding}',                [VendorPortalController::class, 'onboardingShow']);
     Route::get('/onboarding/{onboarding}/progress',       [VendorPortalController::class, 'onboardingProgress']);
     Route::get('/onboarding/{onboarding}/kickoff',        [VendorPortalController::class, 'kickoffPdf']);
+    Route::get('/onboarding/{onboarding}/work-start-letter', [VendorPortalController::class, 'workStartLetter']);
     Route::post('/onboarding/{onboarding}/kickoff/accept',[VendorPortalController::class, 'acceptKickoff']);
     Route::post('/onboarding/{onboarding}/kickoff/log',   [VendorPortalController::class, 'logKickoffEvent']);
     Route::post('/onboarding/{onboarding}/profile',       [VendorPortalController::class, 'saveProfile']);

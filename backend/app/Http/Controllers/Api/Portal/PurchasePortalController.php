@@ -50,7 +50,7 @@ class PurchasePortalController extends Controller
     public function me(Request $request)
     {
         $vendor = $this->purchaseVendor($request);
-        $vendor->loadMissing(['contacts']);
+        $vendor->loadMissing(['contacts', 'accountManager']);
         // Drives the one-time post-activation welcome banner. Persisted
         // server-side, so dismissing it on one device dismisses it everywhere.
         $vendor->setAttribute('show_welcome_banner', $vendor->shouldShowWelcomeBanner());

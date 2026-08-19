@@ -18,6 +18,9 @@ class SaveWorkerMedicalRequest extends FormRequest
         return [
             'exam_type'           => 'nullable|in:internal,external',
             'exam_date'           => 'nullable|date',
+            // Certificate currency window. Optional — defaults to exam_date + 1yr
+            // server-side when omitted. Cannot predate the examination.
+            'valid_until'         => 'nullable|date|after_or_equal:exam_date',
             'examiner_name'       => 'nullable|string|max:120',
             'clinic_name'         => 'nullable|string|max:160',
 

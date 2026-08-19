@@ -222,6 +222,55 @@ class PurchaseWorkforceService
     }
 
     /**
+     * Worker lifecycle (parity with the TPV worker lifecycle). Status alone gates
+     * site access — gateDecision() admits only an Active worker — so suspending or
+     * terminating a worker withholds entry immediately, no badge revocation dance.
+     */
+    public function suspend(PurchaseWorker $worker, User $actor, ?string $reason = null): PurchaseWorker
+    {
+        $worker->forceFill(['status' => 'Suspended', 'notes' => $this->appendNote($worker, "Suspended: {$reason}")])->save();
+        Log::channel('purchase')->warning('Purchase worker suspended', ['worker_id' => $worker->id, 'actor_id' => $actor->id, 'reason' => $reason]);
+
+        return $worker->fresh();
+    }
+
+    public function reinstate(PurchaseWorker $worker, User $actor): PurchaseWorker
+    {
+        if ($worker->status !== 'Suspended') {
+            return $worker;
+        }
+        // Re-check currency — a medical/badge may have lapsed while suspended.
+        $dec = $this->gateDecision($worker->fresh());
+        // Restore to Active regardless (the gate still enforces currency on scan),
+        // but surface the lapse to the caller via the decision.
+        $worker->forceFill(['status' => 'Active'])->save();
+        Log::channel('purchase')->info('Purchase worker reinstated', ['worker_id' => $worker->id, 'actor_id' => $actor->id, 'gate' => $dec['admit'] ?? null]);
+
+        return $worker->fresh();
+    }
+
+    public function terminate(PurchaseWorker $worker, User $actor, ?string $reason = null): PurchaseWorker
+    {
+        // Null the QR token so a retained physical badge stops resolving at the
+        // gate — a terminated worker must not scan back in (parity with TPV).
+        $worker->forceFill([
+            'status'   => 'Terminated',
+            'qr_token' => null,
+            'notes'    => $this->appendNote($worker, "Terminated: {$reason}"),
+        ])->save();
+        Log::channel('purchase')->warning('Purchase worker terminated', ['worker_id' => $worker->id, 'actor_id' => $actor->id, 'reason' => $reason]);
+
+        return $worker->fresh();
+    }
+
+    private function appendNote(PurchaseWorker $worker, string $line): string
+    {
+        $line = trim($line);
+
+        return trim(($worker->notes ? $worker->notes."\n" : '').now()->format('d M Y').' — '.$line);
+    }
+
+    /**
      * The gate decision for a scanned badge.
      *
      * Admit only an Active worker holding a badge. Everything else is a refusal
@@ -237,6 +286,14 @@ class PurchaseWorkforceService
         }
         if ($worker->badge_valid_until && $worker->badge_valid_until->isPast()) {
             return ['admit' => false, 'reason' => 'This badge expired on '.$worker->badge_valid_until->format('d M Y').'.'];
+        }
+
+        // Medical currency is a hard gate, not just an activation check — a
+        // certificate can lapse long after the badge was issued (parity with the
+        // TPV gate). readiness() already tracks it; the gate must refuse it too.
+        $med = $worker->relationLoaded('latestMedical') ? $worker->latestMedical : $worker->latestMedical()->first();
+        if ($med && $med->expiry_date && $med->expiry_date->isPast()) {
+            return ['admit' => false, 'reason' => 'Medical certificate expired on '.$med->expiry_date->format('d M Y').'.'];
         }
 
         return ['admit' => true, 'reason' => null, 'badge_number' => $worker->badge_number];

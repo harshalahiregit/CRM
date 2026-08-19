@@ -117,6 +117,9 @@ export function VendorMedical({ vendorId, manage }) {
             { value: 'internal', label: 'Internal' }, { value: 'external', label: 'External' },
           ] },
           { name: 'exam_date', label: 'Exam date', type: 'date' },
+          // Certificate currency window. Left blank, the server defaults it to
+          // exam date + 1 year; once past, activation is blocked and the gate denies.
+          { name: 'valid_until', label: 'Valid until', type: 'date', help: 'Defaults to exam date + 1 year if left blank' },
           { name: 'examiner_name', label: 'Examiner' },
           { name: 'clinic_name', label: 'Clinic' },
           { name: 'restrictions', label: 'Restrictions', type: 'textarea' },

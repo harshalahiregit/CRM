@@ -20,6 +20,36 @@ Schedule::command('accounts:pdc-due')
     ->withoutOverlapping()
     ->runInBackground();
 
+// Database backup (enhancement #12): one archive a night, kept to the last N
+// (config/backup.php). Early hours to avoid the working-day load; the command
+// prunes older archives itself so the store never grows without bound.
+Schedule::command('backup:run')
+    ->dailyAt('02:00')
+    ->withoutOverlapping()
+    ->runInBackground();
+
+// Vendor compliance sweep: auto-suspend vendors whose statutory cover has expired
+// and reinstate them once renewed. Runs before the working day so a lapse locks
+// site access from the morning.
+Schedule::command('vendors:enforce-compliance')
+    ->dailyAt('05:30')
+    ->withoutOverlapping()
+    ->runInBackground();
+
+// Vendor Rating System (Doc 5): persist each vendor's monthly scorecard on the
+// 1st so the trend over time is captured. The live scorecard is always available.
+Schedule::command('vrs:snapshot')
+    ->monthlyOn(1, '03:00')
+    ->withoutOverlapping()
+    ->runInBackground();
+
+// Work permits (Doc_4 Phase 5): expire any whose validity window has passed, so
+// a lapsed permit no longer reads as live authorisation to work.
+Schedule::command('permits:expire')
+    ->dailyAt('00:15')
+    ->withoutOverlapping()
+    ->runInBackground();
+
 // Tasks: spawn recurring copies, fire reminders, send due/overdue notices.
 // Every 15 minutes so a reminder set for 10:30 doesn't land at 11:00; the command
 // is idempotent, so the extra runs are no-ops when nothing is due.

@@ -29,6 +29,8 @@ class UpdateTpvWorkerRequest extends FormRequest
             'remarks'           => 'nullable|string',
             'age_reason'        => 'nullable|string',
             'email'             => 'nullable|string',
+            'awards'            => 'nullable|string|max:2000',
+            'bocw_number'       => 'nullable|string|max:60',
         ];
     }
 }

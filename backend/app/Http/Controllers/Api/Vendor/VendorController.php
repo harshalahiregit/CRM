@@ -489,6 +489,25 @@ class VendorController extends Controller
      * Live per-vendor summary counts for the workspace Overview tab. Each count
      * matches exactly what its own tab lists, so the numbers never disagree.
      */
+    /** The five mandated onboarding gates (Doc 2/4) computed for this vendor. */
+    public function gates(Request $request, Vendor $vendor, \App\Services\Tpv\GateStatusService $gates)
+    {
+        $this->assertTenant($request, $vendor);
+
+        return response()->json($gates->compute($vendor));
+    }
+
+    /** Live VRS scorecard (Doc 5) computed from incidents/strikes/docs/workforce. */
+    public function scorecard(Request $request, Vendor $vendor, \App\Services\Vendor\VendorScorecardService $vrs)
+    {
+        $this->assertTenant($request, $vendor);
+
+        return response()->json([
+            'live'    => $vrs->compute($vendor),
+            'history' => $vrs->history($vendor),
+        ]);
+    }
+
     public function overview(Request $request, Vendor $vendor)
     {
         $this->assertTenant($request, $vendor);
@@ -679,6 +698,40 @@ class VendorController extends Controller
 
         return response()->json(
             $this->vendorService->updateStatus($vendor, $data['status'], $request->user(), $data['remarks'] ?? null)
+        );
+    }
+
+    /** Manually suspend a vendor for a compliance breach (mandatory reason). */
+    public function suspend(Request $request, Vendor $vendor)
+    {
+        $this->assertTenant($request, $vendor);
+
+        $data = $request->validate(['reason' => 'required|string|max:500']);
+
+        return response()->json(
+            $this->vendorService->suspend($vendor, $data['reason'], $request->user(), false)
+        );
+    }
+
+    /** Lift a suspension and return the vendor to Active. */
+    public function reinstate(Request $request, Vendor $vendor)
+    {
+        $this->assertTenant($request, $vendor);
+
+        return response()->json(
+            $this->vendorService->reinstate($vendor, $request->user())
+        );
+    }
+
+    /** Offboard a vendor — end the engagement (terminal). */
+    public function offboard(Request $request, Vendor $vendor)
+    {
+        $this->assertTenant($request, $vendor);
+
+        $data = $request->validate(['reason' => 'required|string|max:500']);
+
+        return response()->json(
+            $this->vendorService->offboard($vendor, $data['reason'], $request->user())
         );
     }
 

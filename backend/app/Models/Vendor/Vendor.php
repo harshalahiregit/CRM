@@ -29,6 +29,8 @@ class Vendor extends Model
         'registration_number','gst_number','pan_number',
         'address','city','state','country','pincode',
         'status','approved_at','approved_by','notes',
+        'auto_suspended','suspended_at','suspension_reason',
+        'offboarded_at','offboarding_reason',
         // Temporary TPV access (Phase 2)
         'is_temporary','access_start_at','access_expires_at','access_status',
         'access_extended_at','access_extended_by','extension_reason',
@@ -38,6 +40,9 @@ class Vendor extends Model
     protected $casts = [
         'engagements'               => 'array',
         'approved_at'               => 'datetime',
+        'auto_suspended'            => 'boolean',
+        'suspended_at'              => 'datetime',
+        'offboarded_at'             => 'datetime',
         'is_temporary'              => 'boolean',
         'access_start_at'           => 'datetime',
         'access_expires_at'         => 'datetime',

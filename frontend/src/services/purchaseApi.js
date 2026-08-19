@@ -309,6 +309,10 @@ export const purchaseApi = {
     ppe:      (id)          => api.get(`/purchase/workforce/workers/${id}/ppe`).then(r => r.data),
     gate:     (id)          => api.get(`/purchase/workforce/workers/${id}/gate`).then(r => r.data),
     activate: (id, data = {}) => api.post(`/purchase/workforce/workers/${id}/activate`, data).then(r => r.data),
+    // Worker lifecycle (admin) — suspend/reinstate/terminate withhold or restore site access.
+    suspend:   (id, reason)  => api.post(`/purchase/workforce/workers/${id}/suspend`, { reason }).then(r => r.data),
+    reinstate: (id)          => api.post(`/purchase/workforce/workers/${id}/reinstate`).then(r => r.data),
+    terminate: (id, reason)  => api.post(`/purchase/workforce/workers/${id}/terminate`, { reason }).then(r => r.data),
     returnPpe: (issueId, data = {}) => api.post(`/purchase/workforce/ppe/issues/${issueId}/return`, data).then(r => r.data),
     // Vendor-detail Medical / Training tabs. Purchase keeps these NORMALISED
     // (one-to-many), so they list the records themselves — not one row per

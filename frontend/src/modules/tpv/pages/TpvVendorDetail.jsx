@@ -130,6 +130,29 @@ export default function TpvVendorDetail() {
     } finally { setResending(false) }
   }
 
+  // Compliance suspension (admin). The nightly sweep does this automatically on
+  // expired statutory docs; these are the manual overrides.
+  const suspendVendor = async () => {
+    const reason = window.prompt('Reason for suspending this vendor (required):')
+    if (reason == null) return
+    if (!reason.trim()) { alert('A reason is required to suspend.'); return }
+    try { await cfg.api.vendors.suspend(id, reason.trim()); load() }
+    catch (e) { alert(e?.response?.data?.message || 'Could not suspend the vendor.') }
+  }
+  const reinstateVendor = async () => {
+    if (!confirm('Reinstate this vendor to Active? Their login and site access are restored.')) return
+    try { await cfg.api.vendors.reinstate(id); load() }
+    catch (e) { alert(e?.response?.data?.message || 'Could not reinstate the vendor.') }
+  }
+  const offboardVendor = async () => {
+    if (!confirm('Offboard this vendor? This ENDS the engagement: the login is locked and every on-site worker is terminated. This is not auto-reversible.')) return
+    const reason = window.prompt('Reason for offboarding (required):')
+    if (reason == null) return
+    if (!reason.trim()) { alert('A reason is required to offboard.'); return }
+    try { await cfg.api.vendors.offboard(id, reason.trim()); load() }
+    catch (e) { alert(e?.response?.data?.message || 'Could not offboard the vendor.') }
+  }
+
   const load = useCallback(() => {
     setLoad(true)
     cfg.api.vendors.get(id).then(r => { setV(r?.data ?? r); setLoad(false) }).catch(() => setLoad(false))
@@ -223,6 +246,29 @@ export default function TpvVendorDetail() {
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-h)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
                   <Mail size={13} /> {resending ? 'Sending…' : 'Resend Activation Email'}
                 </button>
+              )}
+              {manage && isActive && (
+                <button onClick={suspendVendor}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: 'var(--bg-card)', border: '1px solid rgba(249,115,22,0.4)', color: '#f97316', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                  <Ban size={13} /> Suspend
+                </button>
+              )}
+              {manage && v.status === 'Suspended' && (
+                <button onClick={reinstateVendor}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: 'var(--bg-card)', border: '1px solid rgba(16,185,129,0.4)', color: '#10b981', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                  <ShieldCheck size={13} /> Reinstate
+                </button>
+              )}
+              {manage && !['Offboarded', 'Draft', 'Pending_Approval'].includes(v.status) && (
+                <button onClick={offboardVendor}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: 'var(--bg-card)', border: '1px solid rgba(100,116,139,0.4)', color: '#64748b', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                  <XCircle size={13} /> Offboard
+                </button>
+              )}
+              {v.status === 'Suspended' && v.suspension_reason && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: '#f97316', fontWeight: 600 }}>
+                  <AlertTriangle size={12} /> {v.suspension_reason}
+                </span>
               )}
               {notice && <span style={{ fontSize: 12, fontWeight: 700, color: notice.ok ? '#10b981' : '#ef4444' }}>{notice.text}</span>}
               {v.last_notification && (
@@ -508,15 +554,86 @@ function VendorTasks({ v, manage }) {
  * (customers, contacts, workers, documents, attachments, notes) fetched from
  * GET /tpv/vendors/{id}/overview, so the numbers always match the other tabs.
  */
+// The five mandated onboarding gates (Doc 2/4) — a cleared/total strip.
+function GateStrip({ g }) {
+  return (
+    <div className="pr-glass" style={{ borderRadius: 14, padding: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <ShieldCheck size={15} style={{ color: '#a78bfa' }} />
+        <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-h)' }}>Onboarding Gates</span>
+        <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 800, color: g.all_cleared ? '#10b981' : '#f59e0b' }}>{g.cleared}/{g.total} cleared</span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
+        {(g.gates || []).map((gate, i) => (
+          <div key={i} style={{ padding: '9px 11px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-input)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {gate.passed ? <CheckCircle size={14} style={{ color: '#10b981' }} /> : <Clock size={14} style={{ color: '#f59e0b' }} />}
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-h)' }}>{gate.gate}</span>
+            </div>
+            <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 3, lineHeight: 1.4 }}>{gate.detail}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// VRS scorecard (Doc 5) — overall band + the three contributing dimensions.
+function ScorecardCard({ sc }) {
+  const bandColor = { A: '#10b981', B: '#0ea5e9', C: '#f59e0b', D: '#ef4444' }[sc.band] || '#94a3b8'
+  const dims = [
+    { key: 'safety', label: 'Safety', v: sc.dimensions?.safety, note: d => `${d.open_incidents ?? 0} open · ${d.active_strikes ?? 0} strikes` },
+    { key: 'compliance', label: 'Compliance', v: sc.dimensions?.compliance, note: d => d.note || `${d.valid ?? 0}/${d.required ?? 0} docs current` },
+    { key: 'workforce', label: 'Workforce', v: sc.dimensions?.workforce, note: d => d.note || `${d.active ?? 0}/${d.total ?? 0} active` },
+  ]
+  const barColor = (s) => s >= 85 ? '#10b981' : s >= 70 ? '#0ea5e9' : s >= 55 ? '#f59e0b' : '#ef4444'
+  return (
+    <div className="pr-glass" style={{ borderRadius: 14, padding: 18 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 58, height: 58, borderRadius: 14, background: `${bandColor}22`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <span style={{ fontSize: 30, fontWeight: 900, color: bandColor }}>{sc.band}</span>
+          </div>
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>Vendor Rating</div>
+            <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--text-h)' }}>{sc.overall_score}<span style={{ fontSize: 14, color: 'var(--text-muted)' }}>/100</span></div>
+          </div>
+        </div>
+        <div style={{ flex: 1, minWidth: 240, display: 'grid', gap: 9 }}>
+          {dims.map(d => (
+            <div key={d.key}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, marginBottom: 3 }}>
+                <span style={{ color: 'var(--text-h)', fontWeight: 700 }}>{d.label} <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>· {d.v ? d.note(d.v) : '—'}</span></span>
+                <span style={{ color: barColor(d.v?.score ?? 0), fontWeight: 800 }}>{d.v?.score ?? 0}</span>
+              </div>
+              <div style={{ height: 6, borderRadius: 999, background: 'var(--bg-input)', overflow: 'hidden' }}>
+                <div style={{ width: `${d.v?.score ?? 0}%`, height: '100%', background: barColor(d.v?.score ?? 0), borderRadius: 999 }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function VendorOverview({ vendor, api, isActive }) {
   const [data, setData] = useState(null)
   const [err, setErr] = useState('')
+  const [scorecard, setScorecard] = useState(null)
+  const [gates, setGates] = useState(null)
 
   useEffect(() => {
     let alive = true
     api.vendors.overview(vendor.id)
       .then(d => { if (alive) setData(d) })
       .catch(e => { if (alive) setErr(e?.response?.data?.message || 'Could not load the overview.') })
+    if (api.vendors.scorecard) {
+      api.vendors.scorecard(vendor.id).then(d => { if (alive) setScorecard(d?.live ?? null) }).catch(() => {})
+    }
+    if (api.vendors.gates) {
+      api.vendors.gates(vendor.id).then(d => { if (alive) setGates(d) }).catch(() => {})
+    }
     return () => { alive = false }
   }, [vendor.id, api])
 
@@ -547,6 +664,10 @@ function VendorOverview({ vendor, api, isActive }) {
       </div>
 
       {err && <p style={{ color: '#ef4444', fontSize: 12.5, margin: 0 }}>{err}</p>}
+
+      {gates && <GateStrip g={gates} />}
+
+      {scorecard && <ScorecardCard sc={scorecard} />}
 
       <Card icon={ShieldCheck} title="Vendor Summary">
         <Grid rows={[

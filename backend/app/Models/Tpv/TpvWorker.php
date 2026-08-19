@@ -36,6 +36,8 @@ class TpvWorker extends Model
         'approval_status','approval_remarks','approved_at','approved_by',
         'badge_number','qr_token','badge_issued_at','badge_issued_by','badge_valid_until',
         'remarks',
+        // Recognition + statutory health card surfaced on the digital card (§12).
+        'awards','bocw_number',
     ];
 
     protected $casts = [
@@ -55,11 +57,15 @@ class TpvWorker extends Model
         'badge_valid_until' => 'date',
     ];
 
-    protected $appends = ['status_label', 'age', 'badge_valid'];
+    protected $appends = ['status_label', 'age', 'badge_valid', 'aadhar_masked'];
 
     // The QR token is a bearer credential for the gate — never serialise it in
     // list/detail payloads. The badge endpoint returns it explicitly.
-    protected $hidden = ['qr_token'];
+    // Aadhaar is PII (§7). The raw number is hidden from every default
+    // serialization — lists, cards, the public scan — and only the last four
+    // digits leak via `aadhar_masked`. The single-worker edit view re-reveals it
+    // with ->makeVisible('aadhar_number') for the managing staff/owner who key it.
+    protected $hidden = ['qr_token', 'aadhar_number'];
 
     /* ── Code auto-generation ─────────────────────── */
     protected static function booted(): void
@@ -128,6 +134,23 @@ class TpvWorker extends Model
     public function getAgeAttribute(): ?int
     {
         return $this->dob ? $this->dob->age : null;
+    }
+
+    /**
+     * Privacy-safe Aadhaar (§7): all but the last four digits masked, e.g.
+     * "XXXX XXXX 1234". Null stays null; short/odd values still mask everything
+     * but the trailing four so nothing over-exposes.
+     */
+    public function getAadharMaskedAttribute(): ?string
+    {
+        $raw = preg_replace('/\D/', '', (string) $this->aadhar_number);
+        if ($raw === '' || $raw === null) {
+            return null;
+        }
+        $last4 = substr($raw, -4);
+        $hiddenLen = max(0, strlen($raw) - 4);
+
+        return trim(chunk_split(str_repeat('X', $hiddenLen).$last4, 4, ' '));
     }
 
     /** Badge is only meaningful while Active and within its validity window. */
