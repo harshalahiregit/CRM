@@ -259,7 +259,7 @@ function ReturnModal({ orderReturn, vendors, onClose, onDone }) {
   }
 
   return (
-    <Overlay onClose={onClose} width={900} showClose={false}>
+    <Overlay onClose={onClose} width={900}>
       <div style={{ padding: '20px 22px 8px' }}>
         <h2 style={{ margin: 0, fontSize: 17, fontWeight: 900, color: 'var(--text-h)' }}>{isNew ? 'New Order Return' : `Edit · ${orderReturn.or_number}`}</h2>
         <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: '4px 0 0' }}>Goods going back to a Purchase Vendor. The return number is generated on save.</p>

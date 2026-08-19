@@ -425,7 +425,7 @@ function VendorModal({ form, cfg, onClose, onDone }) {
   }
 
   return (
-    <Overlay onClose={onClose} width={640} showClose={false}>
+    <Overlay onClose={onClose} width={640}>
       <div style={{ padding: '20px 22px 6px' }}>
         <h2 style={{ margin: 0, fontSize: 17, fontWeight: 900, color: 'var(--text-h)' }}>{isNew ? `Add ${cfg.moduleName}` : `Edit · ${form.company_name}`}</h2>
         <p style={{ margin: '3px 0 0', fontSize: 12.5, color: 'var(--text-muted)' }}>Vendor profile, portal login and address in one form.</p>
