@@ -32,6 +32,7 @@ import { VendorReminders } from '@/modules/tpv/components/VendorRemindersPanel'
 import { VendorNotes } from '@/modules/tpv/components/VendorNotesPanel'
 import { VendorCommercial } from '@/modules/tpv/components/VendorCommercialPanel'
 import { VendorAttachments } from '@/modules/tpv/components/VendorAttachmentsPanel'
+import { VendorRiskPanel } from '@/modules/tpv/components/VendorRiskPanel'
 
 /**
  * The Vendor Detail navigation — 6 groups, 38 sections. This drives BOTH the left
@@ -493,6 +494,10 @@ function SectionContent({ tab, v, isActive, manage, api, moduleName, onDecision,
     // statutory checklist. Google Drive and OneDrive import into it.
     case 'Attachments':
       return <VendorAttachments vendorId={v.id} manage={manage} />
+    // Vendor Risk Classification (gap report area 2) — forward-looking risk tier,
+    // distinct from the VRS performance scorecard shown on Overview.
+    case 'Risk Score':
+      return <VendorRiskPanel vendorId={v.id} vendor={v} manage={manage} api={api} />
     default:
       // Everything else is either settled as out of scope for a TPV vendor, or
       // genuinely unbacked — no table, awaiting a business definition.
