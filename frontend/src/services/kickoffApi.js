@@ -18,6 +18,8 @@ export const kickoffApi = {
   // Configurable meeting-type catalogue + agenda priorities + per-type agenda
   // templates (config/meetings.php).
   meetingTypes: ()     => api.get('/kickoff/meeting-types').then(r => r.data),
+  // Active projects for the "which project is this for?" picker (Meeting.docx §16).
+  projects: ()         => api.get('/kickoff/projects').then(r => r.data),
   // Still-open actions/issues from a subject's earlier meetings, to pre-load into
   // a new one. params: { subject_type, subject_id, exclude_meeting_id? }.
   carryForward: (params) => api.get('/kickoff/meetings/carry-forward', { params }).then(r => r.data),

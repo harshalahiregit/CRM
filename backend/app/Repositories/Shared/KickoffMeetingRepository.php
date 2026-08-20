@@ -33,6 +33,10 @@ class KickoffMeetingRepository extends BaseRepository
             $query->where('kickoffable_type', $filters['subject_type'])
                 ->where('kickoffable_id', (int) $filters['subject_id']);
         }
+        // Project rollup (Meeting.docx §16) — every meeting tagged to one project.
+        if (! empty($filters['project_id'])) {
+            $query->where('project_id', (int) $filters['project_id']);
+        }
         if (! empty($filters['awaiting_ack'])) {
             $query->where('status', Status::COMPLETED)->whereNull('acknowledged_at');
         }
