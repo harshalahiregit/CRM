@@ -171,16 +171,19 @@ class KickoffMeetingService
             $this->replaceAttendees($meeting, $data['attendees'], $actor->tenant_id);
         }
 
-        if (array_key_exists('mom_items', $data)) {
-            $this->replaceMomItems($meeting, $data['mom_items'] ?? [], $actor->tenant_id);
-        }
+        // Agenda first — it returns the client-key → id map the actions and
+        // decisions link against (Meeting.docx §7). null = agenda not in this
+        // submission, so the links below are left untouched.
+        $agendaMap = array_key_exists('agenda_items', $data)
+            ? $this->replaceAgendaItems($meeting, $data['agenda_items'] ?? [], $actor->tenant_id)
+            : null;
 
-        if (array_key_exists('agenda_items', $data)) {
-            $this->replaceAgendaItems($meeting, $data['agenda_items'] ?? [], $actor->tenant_id);
+        if (array_key_exists('mom_items', $data)) {
+            $this->replaceMomItems($meeting, $data['mom_items'] ?? [], $actor->tenant_id, $agendaMap);
         }
 
         if (array_key_exists('decisions', $data)) {
-            $this->syncDecisions($meeting, $data['decisions'] ?? [], $actor->tenant_id);
+            $this->syncDecisions($meeting, $data['decisions'] ?? [], $actor->tenant_id, $agendaMap);
         }
 
         if (array_key_exists('issues', $data)) {
@@ -242,16 +245,18 @@ class KickoffMeetingService
             $this->replaceAttendees($meeting, $data['attendees'] ?? [], $actor->tenant_id);
         }
 
-        if (array_key_exists('mom_items', $data)) {
-            $this->replaceMomItems($meeting, $data['mom_items'] ?? [], $actor->tenant_id);
-        }
+        // Agenda first — its client-key → id map wires the action/decision links
+        // (Meeting.docx §7). null when agenda is not part of this edit.
+        $agendaMap = array_key_exists('agenda_items', $data)
+            ? $this->replaceAgendaItems($meeting, $data['agenda_items'] ?? [], $actor->tenant_id)
+            : null;
 
-        if (array_key_exists('agenda_items', $data)) {
-            $this->replaceAgendaItems($meeting, $data['agenda_items'] ?? [], $actor->tenant_id);
+        if (array_key_exists('mom_items', $data)) {
+            $this->replaceMomItems($meeting, $data['mom_items'] ?? [], $actor->tenant_id, $agendaMap);
         }
 
         if (array_key_exists('decisions', $data)) {
-            $this->syncDecisions($meeting, $data['decisions'] ?? [], $actor->tenant_id);
+            $this->syncDecisions($meeting, $data['decisions'] ?? [], $actor->tenant_id, $agendaMap);
         }
 
         if (array_key_exists('issues', $data)) {
@@ -1170,12 +1175,18 @@ class KickoffMeetingService
      * edit. Only the content fields the form owns are (re)written here; items the
      * form no longer contains are removed.
      */
-    private function replaceMomItems(KickoffMeeting $meeting, array $items, int $tenantId): void
+    private function replaceMomItems(KickoffMeeting $meeting, array $items, int $tenantId, ?array $agendaMap = null): void
     {
         $validAttendeeIds = $meeting->attendees()->pluck('id')->all();
+        $agendaValidIds = $meeting->agendaItems()->pluck('id')->all();
         $priorities = config('meetings.priorities', ['Low', 'Medium', 'High']);
         $keepIds = [];
         $order = 0;
+        // client_key (string) → saved action id, so a second pass can wire the
+        // action-to-action dependencies once every row exists (Meeting.docx §8).
+        $actionKeyToId = [];
+        // saved action id → its requested depends-on client_key, resolved below.
+        $dependsIntent = [];
 
         foreach ($items as $item) {
             $description = trim((string) ($item['description'] ?? ''));
@@ -1208,6 +1219,11 @@ class KickoffMeetingService
                 $priority = null;
             }
 
+            // The agenda item this action came out of (Meeting.docx §7). Resolved
+            // through the same-submission agenda map when present, else validated as
+            // an existing agenda id on this meeting; anything unresolved is dropped.
+            $agendaId = $this->resolveAgendaLink($item, $agendaMap, $agendaValidIds);
+
             // Content fields only — never status/evidence/verification.
             $content = [
                 'description' => $description,
@@ -1221,6 +1237,11 @@ class KickoffMeetingService
                 'priority' => $priority,
                 'sort_order' => $order++,
             ];
+            // Only re-link the agenda when the agenda was part of this submission;
+            // otherwise leave whatever the row already points at untouched.
+            if ($agendaMap !== null || array_key_exists('agenda_client_key', $item) || array_key_exists('agenda_item_id', $item)) {
+                $content['agenda_item_id'] = $agendaId;
+            }
 
             // An id that belongs to THIS meeting → update in place, preserving its
             // Action-Engine state. Anything else is a new action.
@@ -1231,6 +1252,7 @@ class KickoffMeetingService
             if ($existing) {
                 $existing->update($content);
                 $keepIds[] = $existing->id;
+                $savedId = $existing->id;
             } else {
                 $created = KickoffMomItem::create([
                     ...$content,
@@ -1244,11 +1266,52 @@ class KickoffMeetingService
                     'carried_from_id' => $this->carriedFromId($item, KickoffMomItem::class, $tenantId),
                 ]);
                 $keepIds[] = $created->id;
+                $savedId = $created->id;
+            }
+
+            // Index this row by every key it can be referenced by (its client_key
+            // and its prior server id), so a dependency pointing at it resolves.
+            foreach ([$item['client_key'] ?? null, $item['id'] ?? null] as $k) {
+                if ($k !== null && $k !== '') {
+                    $actionKeyToId[(string) $k] = $savedId;
+                }
+            }
+            if (array_key_exists('depends_on_client_key', $item)) {
+                $dependsIntent[$savedId] = $item['depends_on_client_key'];
             }
         }
 
         // Rows the form dropped are removed (their tracking goes with them).
         $meeting->momItems()->whereNotIn('id', $keepIds ?: [0])->delete();
+
+        // Second pass: wire dependencies now that every action id is known. A key
+        // that does not resolve, or a self-reference, clears the dependency.
+        foreach ($dependsIntent as $actionId => $key) {
+            $depId = ($key !== null && $key !== '' && isset($actionKeyToId[(string) $key]))
+                ? $actionKeyToId[(string) $key]
+                : null;
+            if ($depId === $actionId) {
+                $depId = null;
+            }
+            KickoffMomItem::whereKey($actionId)->update(['depends_on_id' => $depId]);
+        }
+    }
+
+    /**
+     * Resolve a row's agenda link to an agenda id on this meeting, or null.
+     * Prefers the same-submission client-key map; falls back to an existing id.
+     */
+    private function resolveAgendaLink(array $row, ?array $agendaMap, array $validIds): ?int
+    {
+        $key = $row['agenda_client_key'] ?? $row['agenda_item_id'] ?? null;
+        if ($key === null || $key === '') {
+            return null;
+        }
+        if ($agendaMap !== null && isset($agendaMap[(string) $key])) {
+            return $agendaMap[(string) $key];
+        }
+
+        return in_array((int) $key, $validIds, true) ? (int) $key : null;
     }
 
     /** Next per-tenant, per-year action reference (ACT-YYYY-NNNN). */
@@ -1332,9 +1395,10 @@ class KickoffMeetingService
     /* ── Decision register (Meeting.docx §9) ────────────────────────────────── */
 
     /** Upsert the meeting's decisions by id. Content-owned; no separate engine. */
-    private function syncDecisions(KickoffMeeting $meeting, array $rows, int $tenantId): void
+    private function syncDecisions(KickoffMeeting $meeting, array $rows, int $tenantId, ?array $agendaMap = null): void
     {
         $validAttendeeIds = $meeting->attendees()->pluck('id')->all();
+        $agendaValidIds = $meeting->agendaItems()->pluck('id')->all();
         $statuses = config('meetings.decision_statuses', ['Active', 'Superseded', 'Rescinded']);
         $keepIds = [];
         $order = 0;
@@ -1361,6 +1425,10 @@ class KickoffMeetingService
                 'status' => $status,
                 'sort_order' => $order++,
             ];
+            // The agenda item this decision was taken under (Meeting.docx §7).
+            if ($agendaMap !== null || array_key_exists('agenda_client_key', $row) || array_key_exists('agenda_item_id', $row)) {
+                $content['agenda_item_id'] = $this->resolveAgendaLink($row, $agendaMap, $agendaValidIds);
+            }
 
             $existing = ! empty($row['id']) ? $meeting->decisions()->whereKey($row['id'])->first() : null;
             if ($existing) {
@@ -1789,13 +1857,22 @@ class KickoffMeetingService
      * free-typed owner name is resolved to an attendee where it matches and kept
      * verbatim otherwise. Empty rows (no item text) are dropped.
      */
-    private function replaceAgendaItems(KickoffMeeting $meeting, array $items, int $tenantId): void
+    /**
+     * Rebuild the meeting's agenda, returning a client-key → new-id map so the
+     * MOM items and decisions saved afterwards can resolve their agenda link
+     * (Meeting.docx §7). Agenda ids are not stable across a save (delete+recreate),
+     * so the caller must always link by the stable client key the form assigns.
+     *
+     * @return array<string, int> keyed by the row's `client_key` (string)
+     */
+    private function replaceAgendaItems(KickoffMeeting $meeting, array $items, int $tenantId): array
     {
         $meeting->agendaItems()->delete();
 
         $validAttendeeIds = $meeting->attendees()->pluck('id')->all();
         $priorities = config('meetings.priorities', ['Low', 'Medium', 'High']);
         $order = 0;
+        $map = [];
 
         foreach ($items as $item) {
             $topic = trim((string) ($item['item'] ?? ''));
@@ -1822,7 +1899,7 @@ class KickoffMeetingService
                 $priority = null;
             }
 
-            MeetingAgendaItem::create([
+            $created = MeetingAgendaItem::create([
                 'tenant_id' => $tenantId,
                 'kickoff_meeting_id' => $meeting->id,
                 'item' => $topic,
@@ -1833,7 +1910,19 @@ class KickoffMeetingService
                 'priority' => $priority,
                 'sort_order' => $order++,
             ]);
+
+            // Remember which fresh row this input represents so actions/decisions
+            // in the same submission can point at it. Prefer the explicit
+            // client_key; fall back to the prior server id (an edit that kept the
+            // item sends its old id, which the MOM link also references).
+            foreach ([$item['client_key'] ?? null, $item['id'] ?? null] as $k) {
+                if ($k !== null && $k !== '') {
+                    $map[(string) $k] = $created->id;
+                }
+            }
         }
+
+        return $map;
     }
 
     private function replaceAttendees(KickoffMeeting $meeting, array $attendees, int $tenantId): void

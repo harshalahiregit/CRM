@@ -347,6 +347,8 @@ function ActionItemsCard({ m, meetingId, onChanged, onError }) {
                     <span style={{ fontSize: 10, fontWeight: 800, padding: '1px 7px', borderRadius: 6, background: c.bg, color: c.color }}>{c.label}</span>
                     {item.priority && <span style={{ fontSize: 10, fontWeight: 800, color: item.priority === 'High' ? '#ef4444' : item.priority === 'Medium' ? '#d97706' : 'var(--text-muted)' }}>{item.priority}</span>}
                     {item.target_date && <span style={{ fontSize: 10.5, color: item.is_overdue ? '#ef4444' : 'var(--text-muted)' }}>due {fmtDate(item.target_date)}</span>}
+                    {item.agenda_item?.item && <span title="Agenda item" style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 6, background: 'rgba(124,58,237,0.12)', color: '#a78bfa' }}>▸ {item.agenda_item.item}</span>}
+                    {item.depends_on && <span title="Blocked until this action is done" style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 6, background: 'rgba(245,158,11,0.12)', color: '#d97706' }}>⛓ depends on {item.depends_on.action_ref || 'another action'}</span>}
                   </div>
                   <div style={{ fontSize: 13, color: 'var(--text-h)', lineHeight: 1.5 }} dangerouslySetInnerHTML={{ __html: item.description }} />
                   {owner && <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 3 }}>Owner: {owner}</div>}
@@ -443,6 +445,7 @@ function DecisionsCard({ m }) {
               {d.decision_ref && <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text-muted)' }}>{d.decision_ref}</span>}
               <span style={{ fontSize: 10, fontWeight: 800, color: d.status === 'Active' ? '#10b981' : '#94a3b8' }}>{d.status}</span>
               {d.effective_date && <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>effective {fmtDate(d.effective_date)}</span>}
+              {d.agenda_item?.item && <span title="Agenda item" style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 6, background: 'rgba(124,58,237,0.12)', color: '#a78bfa' }}>▸ {d.agenda_item.item}</span>}
             </div>
             <div style={{ fontSize: 13, color: 'var(--text-h)', lineHeight: 1.5 }}>{d.decision}</div>
             <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 3 }}>
