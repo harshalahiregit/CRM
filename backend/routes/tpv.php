@@ -92,6 +92,8 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::get('/vendors/{vendor}/gates',                     [\App\Http\Controllers\Api\Vendor\VendorController::class, 'gates']);
     // Vendor Risk Classification (gap report area 2) — read the tier + factors.
     Route::get('/vendors/{vendor}/risk',                      [\App\Http\Controllers\Api\Tpv\VendorRiskController::class, 'show']);
+    // Vendor Prequalification (gap report area 6) — read the outcome + questionnaire.
+    Route::get('/vendors/{vendor}/prequalification',          [\App\Http\Controllers\Api\Tpv\VendorPrequalificationController::class, 'show']);
     Route::get('/vendors/{vendor}/customers',                 [\App\Http\Controllers\Api\Vendor\VendorController::class, 'customers']);
     Route::post('/vendors/{vendor}/customers',                [\App\Http\Controllers\Api\Vendor\VendorController::class, 'storeCustomer']);
     // Employees (enhancement #2/#9/#10) — the vendor's assignable people. index()
@@ -275,6 +277,8 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('tpv')->group(function
 
     // Setting a vendor's risk classification is an admin authority decision.
     Route::put('/vendors/{vendor}/risk',              [\App\Http\Controllers\Api\Tpv\VendorRiskController::class, 'assess']);
+    // Scoring a vendor's prequalification is likewise an admin authority decision.
+    Route::put('/vendors/{vendor}/prequalification',  [\App\Http\Controllers\Api\Tpv\VendorPrequalificationController::class, 'assess']);
 
     // Granting or revoking site access is admin authority.
     Route::post('/workers/{worker}/activate',         [TpvWorkerController::class, 'activate']);
