@@ -71,7 +71,10 @@ export default function KickoffMeetingDetail() {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <h1 style={{ color: 'var(--text-h)', fontSize: 23, fontWeight: 900, margin: 0, letterSpacing: '-0.02em' }}>{m.title}</h1>
+            {m.meeting_no && <span style={{ padding: '3px 9px', borderRadius: 7, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 11.5, fontWeight: 800, letterSpacing: '0.02em' }}>{m.meeting_no}</span>}
             <span style={{ padding: '4px 11px', borderRadius: 999, background: cfg.bg, color: cfg.color, fontSize: 12, fontWeight: 800 }}>{cfg.label}</span>
+            {m.priority && <span style={{ padding: '3px 9px', borderRadius: 7, fontSize: 11, fontWeight: 800, background: m.priority === 'Urgent' || m.priority === 'High' ? 'rgba(239,68,68,0.14)' : 'rgba(148,163,184,0.15)', color: m.priority === 'Urgent' || m.priority === 'High' ? '#ef4444' : 'var(--text-muted)' }}>{m.priority}</span>}
+            {m.confidentiality && m.confidentiality !== 'Public' && <span style={{ padding: '3px 9px', borderRadius: 7, fontSize: 11, fontWeight: 800, background: 'rgba(245,158,11,0.14)', color: '#d97706' }}>{m.confidentiality}</span>}
             {m.is_acknowledged && (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, fontWeight: 700, color: '#10b981' }}>
                 <ShieldCheck size={13} /> Acknowledged by {m.acknowledged_by_name}
@@ -129,8 +132,14 @@ export default function KickoffMeetingDetail() {
               <Detail icon={CalendarDays} label="Type" value={m.meeting_type_label || 'Kickoff Meeting'} />
               <Detail icon={Clock} label="Date & time" value={fmtDateTime(m.scheduled_at)} />
               <Detail icon={Clock} label="Duration" value={m.duration_minutes ? `${m.duration_minutes} min` : '—'} />
+              {m.end_at && <Detail icon={Clock} label="End time" value={fmtDateTime(m.end_at)} />}
               <Detail icon={MapPin} label={m.mode === 'online' ? 'Meeting link' : 'Location'} value={m.location || '—'} />
               <Detail icon={CalendarDays} label="Mode" value={koModeLabel(m.mode)} />
+              {m.chairperson && <Detail icon={Users} label="Chairperson" value={m.chairperson} />}
+              {m.coordinator && <Detail icon={Users} label="Coordinator" value={m.coordinator} />}
+              {m.department && <Detail icon={CalendarDays} label="Department" value={m.department} />}
+              {m.client_name && <Detail icon={Users} label="Client" value={m.client_name} />}
+              {m.work_package && <Detail icon={CalendarDays} label="Work package" value={m.work_package} />}
             </div>
             {m.status === KO_STATUS.DELAYED && m.delay_reason && (
               <div style={{ marginTop: 14, padding: '11px 13px', borderRadius: 11, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.32)' }}>

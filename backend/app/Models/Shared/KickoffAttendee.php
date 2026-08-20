@@ -21,19 +21,23 @@ class KickoffAttendee extends Model
 
     protected $table = 'kickoff_attendees';
 
-    /** Attendance states. NULL means nobody has marked this attendee yet. */
+    /** Attendance states (Meeting.docx §6). NULL = not marked yet. */
     public const PRESENT = 'Present';
     public const LATE    = 'Late';
     public const ABSENT  = 'Absent';
+    public const EXCUSED = 'Excused';
+    public const ONLINE  = 'Online';
+    public const OFFLINE = 'Offline';
 
-    public const STATUSES = [self::PRESENT, self::LATE, self::ABSENT];
+    public const STATUSES = [self::PRESENT, self::LATE, self::ABSENT, self::EXCUSED, self::ONLINE, self::OFFLINE];
 
-    /** States that count as having turned up — the boolean projection. */
-    public const ATTENDING = [self::PRESENT, self::LATE];
+    /** States that count as having turned up — the boolean projection.
+     *  Online = joined remotely, Offline = attended in person; both are present. */
+    public const ATTENDING = [self::PRESENT, self::LATE, self::ONLINE, self::OFFLINE];
 
     protected $fillable = [
         'tenant_id','kickoff_meeting_id','vendor_contact_id','user_id',
-        'name','email','organisation','role','attended',
+        'name','email','phone','organisation','role','designation','side','attended',
         'attendance_status','remark',
     ];
 

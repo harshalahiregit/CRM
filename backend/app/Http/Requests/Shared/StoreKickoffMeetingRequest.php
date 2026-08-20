@@ -29,13 +29,23 @@ class StoreKickoffMeetingRequest extends FormRequest
             'subject_ids.*' => 'integer',
 
             'scheduled_at'     => 'nullable|date',
+            'end_at'           => 'nullable|date',
             'duration_minutes' => 'nullable|integer|min:5|max:1440',
-            'mode'             => 'nullable|string|in:online,onsite',
+            'mode'             => 'nullable|string|in:online,onsite,hybrid',
             'location'         => 'nullable|string|max:255',
             'planned_date'     => 'nullable|date',
             'city'             => 'nullable|string|max:120',
             'venue'            => 'nullable|string|max:180',
             'address'          => 'nullable|string|max:255',
+
+            // Meeting.docx §2 detail fields.
+            'priority'         => 'nullable|string|in:'.implode(',', config('meetings.meeting_priorities', ['Low', 'Medium', 'High', 'Urgent'])),
+            'confidentiality'  => 'nullable|string|in:'.implode(',', config('meetings.confidentiality', ['Public', 'Internal', 'Confidential', 'Restricted'])),
+            'chairperson'      => 'nullable|string|max:160',
+            'coordinator'      => 'nullable|string|max:160',
+            'department'       => 'nullable|string|max:120',
+            'client_name'      => 'nullable|string|max:200',
+            'work_package'     => 'nullable|string|max:200',
 
             // Itemised minutes. responsible_attendee_id is re-checked in the
             // service against THIS meeting's attendees; the rule only shapes it.
@@ -103,8 +113,11 @@ class StoreKickoffMeetingRequest extends FormRequest
             'attendees.*.vendor_contact_id' => 'nullable|integer',
             'attendees.*.name'              => 'required_without:attendees.*.vendor_contact_id|nullable|string|max:120',
             'attendees.*.email'             => 'nullable|email|max:180',
+            'attendees.*.phone'             => 'nullable|string|max:40',
             'attendees.*.organisation'      => 'nullable|string|max:120',
             'attendees.*.role'              => 'nullable|string|max:60',
+            'attendees.*.designation'       => 'nullable|string|max:120',
+            'attendees.*.side'              => 'nullable|string|in:internal,external',
             'attendees.*.attended'          => 'nullable|boolean',
         ];
     }

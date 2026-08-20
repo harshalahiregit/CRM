@@ -49,7 +49,7 @@ const combineDateTime = (date, time) => {
 const stripHtml = (s) => (s || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
 
 const EMPTY_MOM = () => ({ id: Date.now() + Math.random(), description: '', responsible: '', responsible_org: '', remarks: '', target_date: '', priority: '', status: 'Open', action_ref: '', carried_from_id: null, carried_from_label: '' })
-const EMPTY_PARTICIPANT = () => ({ id: Date.now() + Math.random(), name: '', role: '', organisation: '' })
+const EMPTY_PARTICIPANT = () => ({ id: Date.now() + Math.random(), name: '', role: '', organisation: '', phone: '', designation: '', side: '' })
 const EMPTY_AGENDA = () => ({ id: Date.now() + Math.random(), item: '', owner: '', duration_minutes: '', priority: '' })
 const EMPTY_DECISION = () => ({ id: Date.now() + Math.random(), decision: '', decided_by: '', impact: '', effective_date: '', status: 'Active' })
 const EMPTY_ISSUE = () => ({ id: Date.now() + Math.random(), title: '', category: '', severity: '', owner: '', due_date: '', status: 'Open', issue_ref: '', converted_to: '', carried_from_id: null, carried_from_label: '' })
@@ -151,12 +151,21 @@ export default function KickoffMeetingCreate() {
     title:            '',
     meeting_date:     '',
     meeting_time:     '09:00',
+    meeting_end_time: '',
     planned_date:     '',
     duration_minutes: 60,
     mode:             'onsite',
     location:         '',   // City / Location
     location_detail:  '',   // Venue / Address
     agenda:           '',
+    // Meeting.docx §2 detail fields.
+    priority:         '',
+    confidentiality:  '',
+    chairperson:      '',
+    coordinator:      '',
+    department:       '',
+    client_name:      '',
+    work_package:     '',
     is_completed:     false,
     meeting_platform: 'stub',  // used when mode = 'online'
   })
@@ -171,6 +180,8 @@ export default function KickoffMeetingCreate() {
   const [severities,   setSeverities]   = useState(['Low', 'Medium', 'High', 'Critical'])
   const [categories,   setCategories]   = useState([])
   const [templates,    setTemplates]    = useState({})   // per-type standard agendas
+  const [mtgPriorities, setMtgPriorities] = useState(['Low', 'Medium', 'High', 'Urgent'])
+  const [confLevels,    setConfLevels]    = useState(['Public', 'Internal', 'Confidential', 'Restricted'])
 
   // ── edit mode ───────────────────────────────────────────────────────────
   // /kickoff/:id/edit renders this same page. There is deliberately no second
@@ -222,6 +233,7 @@ export default function KickoffMeetingCreate() {
           title:            m.title || '',
           meeting_date:     at ? `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}` : '',
           meeting_time:     at ? `${pad(at.getHours())}:${pad(at.getMinutes())}` : '09:00',
+          meeting_end_time: m.end_at ? `${pad(new Date(m.end_at).getHours())}:${pad(new Date(m.end_at).getMinutes())}` : '',
           planned_date:     m.planned_date ? String(m.planned_date).slice(0, 10) : '',
           duration_minutes: m.duration_minutes ?? 60,
           mode:             m.mode || 'onsite',
@@ -229,12 +241,20 @@ export default function KickoffMeetingCreate() {
           location:         m.city || m.location || '',
           location_detail:  m.venue || '',
           agenda:           m.agenda || '',
+          priority:         m.priority || '',
+          confidentiality:  m.confidentiality || '',
+          chairperson:      m.chairperson || '',
+          coordinator:      m.coordinator || '',
+          department:       m.department || '',
+          client_name:      m.client_name || '',
+          work_package:     m.work_package || '',
           is_completed:     m.status === 'Completed',
           meeting_platform: m.meeting_platform || 'stub',
         })
 
         setParticipants((m.attendees || []).map(a => ({
           id: a.id, name: a.name || '', role: a.role || '', organisation: a.organisation || '',
+          phone: a.phone || '', designation: a.designation || '', side: a.side || '',
         })))
 
         setMomItems((m.mom_items || []).map(i => ({
@@ -302,6 +322,8 @@ export default function KickoffMeetingCreate() {
       if (Array.isArray(d?.issue_severities) && d.issue_severities.length) setSeverities(d.issue_severities)
       if (Array.isArray(d?.issue_categories)) setCategories(d.issue_categories)
       if (d?.templates && typeof d.templates === 'object') setTemplates(d.templates)
+      if (Array.isArray(d?.meeting_priorities) && d.meeting_priorities.length) setMtgPriorities(d.meeting_priorities)
+      if (Array.isArray(d?.confidentiality) && d.confidentiality.length) setConfLevels(d.confidentiality)
     }).catch(() => {})
   }, [])
 
@@ -339,10 +361,12 @@ export default function KickoffMeetingCreate() {
     if (!c) return
     if (participants.some(p => p.name === c.full_name)) return  // already added
     setParticipants(p => [...p, {
-      id:           Date.now() + Math.random(),
+      ...EMPTY_PARTICIPANT(),
       name:         c.full_name ?? '',
-      role:         c.designation ?? '',
+      designation:  c.designation ?? '',
       organisation: c.company_name ?? '',
+      phone:        c.phone ?? c.mobile ?? '',
+      side:         'external',   // vendor contacts are the external side
     }])
   }
 
@@ -472,17 +496,30 @@ export default function KickoffMeetingCreate() {
         meeting_type:     form.meeting_type || 'kickoff',
         title:            form.title || undefined,
         scheduled_at,
+        end_at:           form.meeting_end_time ? combineDateTime(form.meeting_date, form.meeting_end_time) : undefined,
         planned_date:     form.planned_date || undefined,
         duration_minutes: Number(form.duration_minutes) || undefined,
         mode:             form.mode,
+        // On-site and hybrid both have a physical location; online does not.
         location:         form.mode !== 'online' ? form.location         : undefined,
         location_detail:  form.mode !== 'online' ? form.location_detail  : undefined,
         agenda:           form.agenda || undefined,
+        // Meeting.docx §2 detail fields.
+        priority:         form.priority || undefined,
+        confidentiality:  form.confidentiality || undefined,
+        chairperson:      form.chairperson || undefined,
+        coordinator:      form.coordinator || undefined,
+        department:       form.department || undefined,
+        client_name:      form.client_name || undefined,
+        work_package:     form.work_package || undefined,
         is_completed:     form.is_completed,
         // Extended fields — backend uses what it knows, ignores the rest
         attendees: participants
           .filter(p => p.name.trim())
-          .map(({ name, role, organisation }) => ({ name, role, organisation })),
+          .map(({ name, role, organisation, phone, designation, side }) => ({
+            name, role, organisation,
+            phone: phone || undefined, designation: designation || undefined, side: side || undefined,
+          })),
         mom_items: momItems
           .filter(m => m.description.replace(/<[^>]*>/g, '').trim())
           .map(({ id, description, responsible, remarks, target_date, priority, responsible_org, carried_from_id }) => ({
@@ -532,7 +569,7 @@ export default function KickoffMeetingCreate() {
       // Auto-generate online meeting link immediately after save. On edit, only
       // when there isn't one already — regenerating would invalidate a link the
       // vendor has already been sent.
-      if (newId && form.mode === 'online' && !(isEdit && existingLink)) {
+      if (newId && (form.mode === 'online' || form.mode === 'hybrid') && !(isEdit && existingLink)) {
         setGenLink(true)
         try {
           await meetingApi.generateLink(newId, form.meeting_platform)
@@ -683,6 +720,35 @@ export default function KickoffMeetingCreate() {
                 <TextInput value={form.title} onChange={set('title')} placeholder="e.g. Kickoff — Acme Contractors" />
               </Field>
 
+              {/* Meeting details (Meeting.docx §2) */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <Field label="Priority">
+                  <SelectInput value={form.priority} onChange={set('priority')} pairs
+                    options={[['', '—'], ...mtgPriorities.map(p => [p, p])]} />
+                </Field>
+                <Field label="Confidentiality">
+                  <SelectInput value={form.confidentiality} onChange={set('confidentiality')} pairs
+                    options={[['', '—'], ...confLevels.map(c => [c, c])]} />
+                </Field>
+                <Field label="Chairperson">
+                  <TextInput value={form.chairperson} onChange={set('chairperson')} placeholder="Name" />
+                </Field>
+                <Field label="Meeting Coordinator">
+                  <TextInput value={form.coordinator} onChange={set('coordinator')} placeholder="Name" />
+                </Field>
+                <Field label="Department">
+                  <TextInput value={form.department} onChange={set('department')} placeholder="e.g. HSE / Projects" />
+                </Field>
+                <Field label="Client (optional)">
+                  <TextInput value={form.client_name} onChange={set('client_name')} placeholder="Client name" />
+                </Field>
+                <div style={{ gridColumn: '1/-1' }}>
+                  <Field label="Work Package (optional)">
+                    <TextInput value={form.work_package} onChange={set('work_package')} placeholder="e.g. WP-03 Structural" />
+                  </Field>
+                </div>
+              </div>
+
               {/* Participants */}
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
@@ -714,21 +780,35 @@ export default function KickoffMeetingCreate() {
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                     {participants.map((p, i) => (
-                      <div key={p.id} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 8, padding: '12px', borderRadius: 12, background: 'var(--bg-input)', border: '1px solid var(--border)', alignItems: 'end' }}>
-                        <Field label={`Name ${i + 1}`}>
-                          <TextInput value={p.name} onChange={e => setParticipant(p.id, 'name', e.target.value)} placeholder="Full name" />
-                        </Field>
-                        <Field label="Role / Designation">
-                          <TextInput value={p.role} onChange={e => setParticipant(p.id, 'role', e.target.value)} placeholder="e.g. Site Engineer" />
-                        </Field>
-                        <Field label="Organisation">
-                          <TextInput value={p.organisation} onChange={e => setParticipant(p.id, 'organisation', e.target.value)} placeholder="Company name" />
-                        </Field>
-                        <button onClick={() => removeParticipant(p.id)}
-                          title="Remove participant"
-                          style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.06)', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginBottom: 1 }}>
-                          <Trash2 size={13} />
-                        </button>
+                      <div key={p.id} style={{ padding: '12px', borderRadius: 12, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                          <span style={{ fontSize: 11, fontWeight: 800, color: '#a78bfa' }}>Participant {i + 1}</span>
+                          <button onClick={() => removeParticipant(p.id)} title="Remove participant"
+                            style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.06)', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                          <Field label="Name">
+                            <TextInput value={p.name} onChange={e => setParticipant(p.id, 'name', e.target.value)} placeholder="Full name" />
+                          </Field>
+                          <Field label="Organisation">
+                            <TextInput value={p.organisation} onChange={e => setParticipant(p.id, 'organisation', e.target.value)} placeholder="Company name" />
+                          </Field>
+                          <Field label="Side">
+                            <SelectInput value={p.side} onChange={e => setParticipant(p.id, 'side', e.target.value)} pairs
+                              options={[['', '—'], ['internal', 'Internal'], ['external', 'External']]} />
+                          </Field>
+                          <Field label="Role in meeting">
+                            <TextInput value={p.role} onChange={e => setParticipant(p.id, 'role', e.target.value)} placeholder="e.g. Chair, Note-taker" />
+                          </Field>
+                          <Field label="Designation">
+                            <TextInput value={p.designation} onChange={e => setParticipant(p.id, 'designation', e.target.value)} placeholder="e.g. Site Engineer" />
+                          </Field>
+                          <Field label="Phone">
+                            <TextInput value={p.phone} onChange={e => setParticipant(p.id, 'phone', e.target.value)} placeholder="Mobile" />
+                          </Field>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -745,8 +825,11 @@ export default function KickoffMeetingCreate() {
               <Field label="Meeting Date *">
                 <TextInput type="date" value={form.meeting_date} onChange={set('meeting_date')} />
               </Field>
-              <Field label="Meeting Time *">
+              <Field label="Start Time *">
                 <TextInput type="time" value={form.meeting_time} onChange={set('meeting_time')} />
+              </Field>
+              <Field label="End Time (optional)">
+                <TextInput type="time" value={form.meeting_end_time} onChange={set('meeting_end_time')} />
               </Field>
               <Field label="City / Location *">
                 <TextInput value={form.location} onChange={set('location')} placeholder="e.g. Mumbai" />
@@ -766,10 +849,10 @@ export default function KickoffMeetingCreate() {
           {/* Section 3 — Meeting Mode */}
           <div className="pr-glass" style={{ padding: 20 }}>
             <SectionTitle icon={MapPin}>Meeting Mode</SectionTitle>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
               {KO_MODES.map(([val, label]) => {
                 const on = form.mode === val
-                const Icon = val === 'online' ? Laptop : Building2
+                const Icon = val === 'onsite' ? Building2 : Laptop
                 return (
                   <button key={val} type="button" onClick={() => setForm(f => ({ ...f, mode: val }))}
                     className="pr-node"
@@ -791,8 +874,8 @@ export default function KickoffMeetingCreate() {
               })}
             </div>
 
-            {/* Conditional: location fields (on-site) OR platform picker (online) */}
-            {form.mode !== 'online' ? (
+            {/* On-site AND hybrid have a physical location. */}
+            {form.mode !== 'online' && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 16 }}>
                 <Field label="City / Location *">
                   <TextInput value={form.location} onChange={set('location')} placeholder="e.g. Mumbai" />
@@ -801,7 +884,9 @@ export default function KickoffMeetingCreate() {
                   <TextInput value={form.location_detail} onChange={set('location_detail')} placeholder="e.g. Site office, Gate 1" />
                 </Field>
               </div>
-            ) : (
+            )}
+            {/* Online AND hybrid have a joining platform. */}
+            {form.mode !== 'onsite' && (
               <div style={{ marginTop: 16 }}>
                 <Field label="Meeting Platform">
                   <SelectInput
