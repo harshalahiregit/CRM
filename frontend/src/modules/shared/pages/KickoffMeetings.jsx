@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   CalendarDays, Plus, RefreshCw, Clock, CheckCircle2, XCircle, Send,
   Users, AlertTriangle, ClipboardCheck, Pencil, BellRing, Eye, Download, Loader2, Mail, MessageCircle, Smartphone,
+  ChevronLeft, ChevronRight, List, LayoutGrid,
 } from 'lucide-react'
 import { kickoffApi } from '@/services/kickoffApi'
 import {
@@ -25,6 +26,7 @@ export default function KickoffMeetings() {
   const [filter, setFilter] = useState('All')
   const [banner, setBanner] = useState(null)
   const [pdfBusy, setPdfBusy] = useState(null)
+  const [view, setView] = useState('list')   // 'list' | 'calendar'
 
   // Row-action modal targets — showNew removed: create navigates to full page
   const [attendanceFor, setAttFor]    = useState(null)
@@ -98,28 +100,45 @@ export default function KickoffMeetings() {
         </div>
       )}
 
-      {/* Filter chips */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-        {['All', KO_STATUS.SCHEDULED, KO_STATUS.DELAYED, KO_STATUS.COMPLETED, KO_STATUS.CANCELLED].map(f => {
-          const on = filter === f
-          return (
-            <button key={f} onClick={() => setFilter(f)}
-              style={{ padding: '6px 14px', borderRadius: 999, fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
-                background: on ? 'linear-gradient(145deg,#a78bfa,#7C3AED)' : 'var(--bg-card)',
-                border: on ? 'none' : '1px solid var(--border)',
-                color: on ? '#fff' : 'var(--text-muted)',
-                boxShadow: on ? '0 6px 16px -6px rgba(124,58,237,.6)' : 'none' }}>
-              {f}
-            </button>
-          )
-        })}
+      {/* Filter chips + view toggle */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {['All', KO_STATUS.SCHEDULED, KO_STATUS.DELAYED, KO_STATUS.COMPLETED, KO_STATUS.CANCELLED].map(f => {
+            const on = filter === f
+            return (
+              <button key={f} onClick={() => setFilter(f)}
+                style={{ padding: '6px 14px', borderRadius: 999, fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
+                  background: on ? 'linear-gradient(145deg,#a78bfa,#7C3AED)' : 'var(--bg-card)',
+                  border: on ? 'none' : '1px solid var(--border)',
+                  color: on ? '#fff' : 'var(--text-muted)',
+                  boxShadow: on ? '0 6px 16px -6px rgba(124,58,237,.6)' : 'none' }}>
+                {f}
+              </button>
+            )
+          })}
+        </div>
+        {/* List / Calendar toggle — the calendar renders the same (filtered) rows. */}
+        <div style={{ display: 'inline-flex', borderRadius: 10, overflow: 'hidden', border: '1px solid var(--border)' }}>
+          {[['list', 'List', List], ['calendar', 'Calendar', LayoutGrid]].map(([v, label, Icon]) => {
+            const on = view === v
+            return (
+              <button key={v} onClick={() => setView(v)}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 13px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', border: 'none',
+                  background: on ? 'linear-gradient(145deg,#a78bfa,#7C3AED)' : 'var(--bg-card)', color: on ? '#fff' : 'var(--text-muted)' }}>
+                <Icon size={14} /> {label}
+              </button>
+            )
+          })}
+        </div>
       </div>
 
-      {/* 12-column register */}
+      {/* 12-column register (or calendar) */}
       {loading ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {[1, 2, 3].map(i => <div key={i} className="skeleton" style={{ height: 64, borderRadius: 12, background: 'var(--border)' }} />)}
         </div>
+      ) : view === 'calendar' ? (
+        <MeetingCalendar data={data} onOpen={(mid) => navigate(`/app/tpv/kickoff/${mid}`)} />
       ) : data.length === 0 ? (
         <EmptyState filter={filter} onNew={() => navigate('/app/tpv/kickoff/new')} />
       ) : (
@@ -264,6 +283,95 @@ function EmptyState({ onNew, filter }) {
     </div>
   )
 }
+
+/* ── Month calendar ─────────────────────────────────────────────────────────── */
+/**
+ * A month grid of meetings, placed on their scheduled_at day and coloured by
+ * status. Renders the same (status-filtered) rows the table does — no separate
+ * fetch — so the two views never disagree. Clicking a meeting opens its detail. */
+function MeetingCalendar({ data, onOpen }) {
+  const [cursor, setCursor] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1) })
+  const year = cursor.getFullYear(), month = cursor.getMonth()
+
+  const byDay = useMemo(() => {
+    const map = {}
+    ;(data || []).forEach(m => {
+      if (!m.scheduled_at) return
+      const d = new Date(m.scheduled_at)
+      if (Number.isNaN(d.getTime())) return
+      const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+      ;(map[key] = map[key] || []).push({ m, d })
+    })
+    Object.values(map).forEach(arr => arr.sort((a, b) => a.d - b.d))
+    return map
+  }, [data])
+
+  const gridStart = new Date(year, month, 1 - new Date(year, month, 1).getDay())
+  const days = Array.from({ length: 42 }, (_, i) => { const d = new Date(gridStart); d.setDate(gridStart.getDate() + i); return d })
+
+  const today = new Date()
+  const todayKey = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`
+  const monthLabel = cursor.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
+  const inMonth = (data || []).filter(m => { if (!m.scheduled_at) return false; const d = new Date(m.scheduled_at); return d.getFullYear() === year && d.getMonth() === month }).length
+  const hhmm = (d) => d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }).replace(' ', '')
+
+  return (
+    <div className="pr-glass" style={{ padding: 18 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button onClick={() => setCursor(new Date(year, month - 1, 1))} style={navBtn} title="Previous month"><ChevronLeft size={16} /></button>
+          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 900, color: 'var(--text-h)', minWidth: 150, textAlign: 'center' }}>{monthLabel}</h3>
+          <button onClick={() => setCursor(new Date(year, month + 1, 1))} style={navBtn} title="Next month"><ChevronRight size={16} /></button>
+          <button onClick={() => { const d = new Date(); setCursor(new Date(d.getFullYear(), d.getMonth(), 1)) }}
+            style={{ ...navBtn, width: 'auto', padding: '0 12px', fontSize: 12, fontWeight: 700 }}>Today</button>
+        </div>
+        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{inMonth} meeting{inMonth === 1 ? '' : 's'} this month</span>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 6, marginBottom: 6 }}>
+        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(w => (
+          <div key={w} style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)', textAlign: 'center', padding: '2px 0' }}>{w}</div>
+        ))}
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 6 }}>
+        {days.map((d, i) => {
+          const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+          const items = byDay[key] || []
+          const other = d.getMonth() !== month
+          const isToday = key === todayKey
+          return (
+            <div key={i} style={{ minHeight: 98, borderRadius: 10, padding: 6, background: other ? 'transparent' : 'var(--bg-input)', border: `1px solid ${isToday ? '#7C3AED' : 'var(--border)'}`, opacity: other ? 0.4 : 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div style={{ fontSize: 11, fontWeight: isToday ? 800 : 600, color: isToday ? '#a78bfa' : 'var(--text-muted)', textAlign: 'right' }}>{d.getDate()}</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3, overflow: 'hidden' }}>
+                {items.slice(0, 3).map(({ m, d: md }) => {
+                  const cfg = koStatusCfg(m.status)
+                  return (
+                    <button key={m.id} onClick={() => onOpen(m.id)} title={`${m.subject?.name || m.title} · ${hhmm(md)}`}
+                      style={{ display: 'flex', alignItems: 'center', gap: 4, textAlign: 'left', padding: '2px 5px', borderRadius: 6, cursor: 'pointer', border: 'none', background: cfg.bg, color: cfg.color, fontSize: 10.5, fontWeight: 700, overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                      <span style={{ width: 5, height: 5, borderRadius: '50%', background: cfg.color, flexShrink: 0 }} />
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{hhmm(md)} {m.subject?.name || m.title}</span>
+                    </button>
+                  )
+                })}
+                {items.length > 3 && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', paddingLeft: 3 }}>+{items.length - 3} more</span>}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      <div style={{ display: 'flex', gap: 14, marginTop: 12, flexWrap: 'wrap' }}>
+        {[KO_STATUS.SCHEDULED, KO_STATUS.DELAYED, KO_STATUS.COMPLETED, KO_STATUS.CANCELLED].map(s => {
+          const c = koStatusCfg(s)
+          return <span key={s} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--text-muted)' }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: c.color }} /> {c.label}</span>
+        })}
+      </div>
+    </div>
+  )
+}
+
+const navBtn = { width: 32, height: 32, borderRadius: 8, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-muted)' }
 
 /* ── Attendance modal ───────────────────────────────────────────────────────── */
 function AttendanceModal({ id, onClose, onDone }) {

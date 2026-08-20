@@ -33,6 +33,7 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('kickoff')->grou
     Route::get('/meetings/stats',              [KickoffMeetingController::class, 'stats']);
     // Declared before /meetings/{kickoffMeeting} so the wildcard cannot swallow it.
     Route::get('/meetings/carry-forward',      [KickoffMeetingController::class, 'carryForward']);
+    Route::get('/meetings/history',            [KickoffMeetingController::class, 'history']);
     Route::get('/meeting-types',               [KickoffMeetingController::class, 'meetingTypes']);
     Route::get('/meetings',                    [KickoffMeetingController::class, 'index']);
     Route::post('/meetings',                   [KickoffMeetingController::class, 'store']);

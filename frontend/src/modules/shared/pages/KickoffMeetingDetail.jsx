@@ -212,6 +212,9 @@ export default function KickoffMeetingDetail() {
               <p style={{ fontSize: 13, color: 'var(--text-h)', margin: '12px 0 0', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{m.minutes}</p>
             </div>
           )}
+
+          {/* This subject's whole meeting history + rollup totals */}
+          <VendorHistoryCard m={m} onOpen={(mid) => navigate(`/app/tpv/kickoff/${mid}`)} />
         </div>
 
         {/* Right column */}
@@ -743,6 +746,85 @@ function MomStamp({ label, who, when }) {
       <span style={{ color: 'var(--text-h)', fontWeight: 600, textAlign: 'right' }}>{fmtDateTime(when)}</span>
     </div>
   )
+}
+
+/* ── Subject meeting history + rollup (Meeting.docx — the per-vendor record) ────
+ * Every meeting this subject has had, newest first, each with its own open-action
+ * and open-issue counts, plus rollup totals across them. The current meeting is
+ * marked; the rest link across. */
+function VendorHistoryCard({ m, onOpen }) {
+  const subject = m.subject
+  const [data, setData]       = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [err, setErr]         = useState(null)
+
+  useEffect(() => {
+    if (!subject?.type || !subject?.id) return
+    setLoading(true); setErr(null)
+    kickoffApi.history({ subject_type: subject.type, subject_id: subject.id })
+      .then(setData).catch(() => setErr('Could not load the meeting history.')).finally(() => setLoading(false))
+  }, [subject?.type, subject?.id])
+
+  if (!subject?.id) return null
+
+  const t = data?.totals
+  return (
+    <div className="pr-glass" style={{ padding: 20 }}>
+      <SectionTitle icon={History}>{subject.name || subject.label || 'Subject'} — meeting history</SectionTitle>
+
+      {loading ? (
+        <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '12px 0 0' }}>Loading…</p>
+      ) : err ? (
+        <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '12px 0 0' }}>{err}</p>
+      ) : !data ? null : (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, margin: '12px 0 14px' }}>
+            <HStat label="Meetings"     value={t.meetings} />
+            <HStat label="Completed"    value={t.completed} color="#10b981" />
+            <HStat label="Open actions" value={t.open_actions} color={t.open_actions ? '#f59e0b' : undefined} />
+            <HStat label="Open issues"  value={t.open_issues} color={t.open_issues ? '#ef4444' : undefined} />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {data.meetings.map(row => {
+              const cur = row.id === m.id
+              const cfg = koStatusCfg(row.status)
+              return (
+                <button key={row.id} onClick={() => !cur && onOpen(row.id)} disabled={cur}
+                  style={{ textAlign: 'left', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10,
+                    cursor: cur ? 'default' : 'pointer', background: cur ? 'rgba(124,58,237,0.08)' : 'var(--bg-input)', border: `1px solid ${cur ? '#7C3AED' : 'var(--border)'}` }}>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-h)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 230 }}>{row.title || row.meeting_type_label}</span>
+                      {cur && <span style={{ fontSize: 9.5, fontWeight: 800, color: '#a78bfa' }}>THIS MEETING</span>}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{row.meeting_type_label} · {row.scheduled_at ? fmtDateTime(row.scheduled_at) : 'Unscheduled'}</div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                    {row.open_actions > 0 && <HPill tone="#f59e0b">{row.open_actions} act</HPill>}
+                    {row.open_issues > 0 && <HPill tone="#ef4444">{row.open_issues} iss</HPill>}
+                    <span style={{ padding: '2px 9px', borderRadius: 999, background: cfg.bg, color: cfg.color, fontSize: 10.5, fontWeight: 800, whiteSpace: 'nowrap' }}>{cfg.label}</span>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+function HStat({ label, value, color }) {
+  return (
+    <div style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+      <div style={{ fontSize: 19, fontWeight: 900, color: color || 'var(--text-h)', lineHeight: 1 }}>{value ?? 0}</div>
+      <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 4 }}>{label}</div>
+    </div>
+  )
+}
+function HPill({ tone, children }) {
+  return <span style={{ padding: '2px 7px', borderRadius: 6, background: `${tone}1f`, color: tone, fontSize: 10, fontWeight: 800, whiteSpace: 'nowrap' }}>{children}</span>
 }
 
 /* ── Transition modal ─────────────────────────────────────────────────────── */

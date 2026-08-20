@@ -1437,6 +1437,68 @@ class KickoffMeetingService
         return ['actions' => $actions, 'issues' => $issues];
     }
 
+    /**
+     * A subject's whole meeting history with rollup totals (Meeting.docx — the
+     * per-vendor/project meeting record). Every meeting where the subject is the
+     * primary, newest first, each with its own open-action/open-issue counts, plus
+     * tenant-wide totals across them. Read-only; drives the history card.
+     *
+     * @return array{subject: array<string,mixed>, totals: array<string,int>, meetings: array<int,array<string,mixed>>}
+     */
+    public function subjectHistory(int $tenantId, string $subjectType, $subjectId): array
+    {
+        if (! KickoffSubject::isValid($subjectType)) {
+            throw new BusinessException('Unknown subject type.');
+        }
+        $class   = KickoffSubject::classFor($subjectType);
+        $subject = $class::forTenant($tenantId)->find($subjectId);
+
+        $meetings = KickoffMeeting::forTenant($tenantId)
+            ->where('kickoffable_type', $class)
+            ->where('kickoffable_id', (int) $subjectId)
+            ->withCount([
+                'momItems as open_actions' => fn ($q) => $q->whereIn('status', MomActionStatus::OPEN_STATES),
+                'issues as open_issues'    => fn ($q) => $q->whereIn('status', MeetingIssueStatus::OPEN_STATES),
+            ])
+            ->orderByDesc('scheduled_at')
+            ->get();
+
+        $totals = [
+            'meetings'     => $meetings->count(),
+            'scheduled'    => $meetings->where('status', Status::SCHEDULED)->count(),
+            'delayed'      => $meetings->where('status', Status::DELAYED)->count(),
+            'completed'    => $meetings->where('status', Status::COMPLETED)->count(),
+            'cancelled'    => $meetings->where('status', Status::CANCELLED)->count(),
+            'open_actions' => (int) $meetings->sum('open_actions'),
+            'open_issues'  => (int) $meetings->sum('open_issues'),
+            'awaiting_ack' => $meetings->where('status', Status::COMPLETED)->whereNull('acknowledged_at')->count(),
+        ];
+
+        return [
+            'subject' => [
+                'type' => $subjectType,
+                'id'   => (int) $subjectId,
+                'name' => $subject ? KickoffSubject::nameOf($subject) : null,
+            ],
+            'totals'  => $totals,
+            'meetings' => $meetings->map(fn (KickoffMeeting $m) => [
+                'id'                 => $m->id,
+                'title'              => $m->title,
+                'reference'          => $m->reference,
+                'meeting_type'       => $m->meeting_type,
+                'meeting_type_label' => $m->meeting_type_label,
+                'status'             => $m->status,
+                'status_label'       => $m->status_label,
+                'scheduled_at'       => optional($m->scheduled_at)->toIso8601String(),
+                'mom_status'         => $m->mom_status,
+                'mom_status_label'   => $m->mom_status_label,
+                'is_acknowledged'    => $m->is_acknowledged,
+                'open_actions'       => (int) $m->open_actions,
+                'open_issues'        => (int) $m->open_issues,
+            ])->values()->all(),
+        ];
+    }
+
     /** Where a carried item came from, for the "carried from …" label. */
     private function originStamp(?KickoffMeeting $m): array
     {
