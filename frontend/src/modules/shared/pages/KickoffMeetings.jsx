@@ -27,6 +27,8 @@ export default function KickoffMeetings() {
   const [banner, setBanner] = useState(null)
   const [pdfBusy, setPdfBusy] = useState(null)
   const [view, setView] = useState('list')   // 'list' | 'calendar'
+  const [pageSize, setPageSize] = useState(25)   // rows per page ('all' = no paging)
+  const [page, setPage] = useState(1)
 
   // Row-action modal targets — showNew removed: create navigates to full page
   const [attendanceFor, setAttFor]    = useState(null)
@@ -41,6 +43,8 @@ export default function KickoffMeetings() {
       .catch(() => setLoad(false))
   }
   useEffect(() => { load() }, [filter]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Any change to the filter or page size sends the reader back to page 1.
+  useEffect(() => { setPage(1) }, [filter, pageSize])
 
   // View / Download the MOM PDF — generate on demand if none exists yet.
   const handlePdf = async (m, download) => {
@@ -63,6 +67,14 @@ export default function KickoffMeetings() {
       setBanner(e?.response?.data?.message || 'Could not open the MOM PDF.')
     } finally { setPdfBusy(null) }
   }
+
+  // Client-side paging over the already-fetched rows (same data the calendar uses).
+  const total      = data.length
+  const totalPages = pageSize === 'all' ? 1 : Math.max(1, Math.ceil(total / pageSize))
+  const curPage    = Math.min(page, totalPages)
+  const pageRows   = pageSize === 'all' ? data : data.slice((curPage - 1) * pageSize, curPage * pageSize)
+  const rangeFrom  = total === 0 ? 0 : (pageSize === 'all' ? 1 : (curPage - 1) * pageSize + 1)
+  const rangeTo    = pageSize === 'all' ? total : Math.min(curPage * pageSize, total)
 
   return (
     <div style={{ padding: 24, minHeight: '100vh', background: 'var(--bg-global)' }}>
@@ -117,6 +129,19 @@ export default function KickoffMeetings() {
             )
           })}
         </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        {/* Rows per page — only meaningful for the table view. */}
+        {view === 'list' && (
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted)' }}>
+            Rows
+            <select value={pageSize} onChange={e => setPageSize(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+              style={{ padding: '6px 8px', borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
+                background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-h)' }}>
+              {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+              <option value="all">All</option>
+            </select>
+          </label>
+        )}
         {/* List / Calendar toggle — the calendar renders the same (filtered) rows. */}
         <div style={{ display: 'inline-flex', borderRadius: 10, overflow: 'hidden', border: '1px solid var(--border)' }}>
           {[['list', 'List', List], ['calendar', 'Calendar', LayoutGrid]].map(([v, label, Icon]) => {
@@ -129,6 +154,7 @@ export default function KickoffMeetings() {
               </button>
             )
           })}
+        </div>
         </div>
       </div>
 
@@ -154,7 +180,7 @@ export default function KickoffMeetings() {
                 </tr>
               </thead>
               <tbody>
-                {data.map(m => {
+                {pageRows.map(m => {
                   const cfg = koStatusCfg(m.status)
                   const busyView = pdfBusy === `${m.id}:view`
                   const busyDl   = pdfBusy === `${m.id}:dl`
@@ -215,6 +241,24 @@ export default function KickoffMeetings() {
                 })}
               </tbody>
             </table>
+          </div>
+
+          {/* Pagination footer */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 16px', borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+              Showing <strong style={{ color: 'var(--text-h)' }}>{rangeFrom}–{rangeTo}</strong> of {total}
+            </span>
+            {pageSize !== 'all' && totalPages > 1 && (
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={curPage <= 1} style={pagerBtn(curPage <= 1)}>
+                  <ChevronLeft size={14} /> Prev
+                </button>
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Page <strong style={{ color: 'var(--text-h)' }}>{curPage}</strong> / {totalPages}</span>
+                <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={curPage >= totalPages} style={pagerBtn(curPage >= totalPages)}>
+                  Next <ChevronRight size={14} />
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -591,3 +635,8 @@ const ghostBtn = {
   display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 14px', borderRadius: 10, cursor: 'pointer',
   fontSize: 13, fontWeight: 600, color: 'var(--text-muted)', background: 'var(--bg-card)', border: '1px solid var(--border)',
 }
+const pagerBtn = (disabled) => ({
+  display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 8, fontSize: 12.5, fontWeight: 700,
+  cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.45 : 1,
+  background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-h)',
+})
