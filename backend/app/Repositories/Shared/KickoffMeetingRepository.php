@@ -15,7 +15,9 @@ class KickoffMeetingRepository extends BaseRepository
     public function filtered(int $tenantId, array $filters)
     {
         $query = KickoffMeeting::forTenant($tenantId)
-            ->with(['creator:id,name', 'kickoffable', 'subjects.subject'])
+            // Attendee names ride along so the calendar's Participant filter works
+            // without a second fetch (Meeting.docx §15).
+            ->with(['creator:id,name', 'kickoffable', 'subjects.subject', 'attendees:id,kickoff_meeting_id,name'])
             ->withCount([
                 'attendees',
                 // Present count drives the list's "Attendance" column (present/total).

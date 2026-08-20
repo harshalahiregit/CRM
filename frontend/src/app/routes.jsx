@@ -269,6 +269,7 @@ const TpvGateLog = lazy(() => import('@/modules/tpv/pages/TpvGateLog'))
 const TpvStrikes = lazy(() => import('@/modules/tpv/pages/TpvStrikes'))
 const TpvIncidents = lazy(() => import('@/modules/tpv/pages/TpvIncidents'))
 const GovernanceDashboard = lazy(() => import('@/modules/tpv/pages/GovernanceDashboard'))
+const MeetingPerformance = lazy(() => import('@/modules/tpv/pages/MeetingPerformance'))
 const TpvPermits = lazy(() => import('@/modules/tpv/pages/TpvPermits'))
 const TpvSafetyEngagement = lazy(() => import('@/modules/tpv/pages/TpvSafetyEngagement'))
 const TpvReports = lazy(() => import('@/modules/tpv/pages/TpvReports'))
@@ -583,6 +584,7 @@ export default function AppRoutes() {
               before :id so "edit" is never captured as a meeting id. */}
           <Route path="kickoff/:id/edit" element={<S><KickoffMeetingCreate /></S>} />
           <Route path="kickoff/:id" element={<S><KickoffMeetingDetail /></S>} />
+          <Route path="performance" element={<S><MeetingPerformance /></S>} />
           {/* The onboarding QUEUE stays — it is how staff find work. The wizard
               itself does not: Steps 1–6 are the vendor's own workflow and the
               only mount is /vendor-portal/onboarding/:id. `editable` was derived
