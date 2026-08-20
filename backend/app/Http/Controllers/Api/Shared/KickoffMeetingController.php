@@ -78,6 +78,12 @@ class KickoffMeetingController extends Controller
         return response()->json($this->kickoffService->stats($request->user()->tenant_id));
     }
 
+    /** The Meetings dashboard aggregate (Meeting.docx §14). */
+    public function dashboard(Request $request)
+    {
+        return response()->json($this->kickoffService->dashboard($request->user()->tenant_id));
+    }
+
     /**
      * A subject's full meeting history + rollup totals (open actions/issues,
      * status mix, acknowledgements outstanding). Drives the history card.

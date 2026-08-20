@@ -31,6 +31,7 @@ Route::prefix('kickoff/ack')->middleware('throttle:60,1')->group(function () {
 // second ->middleware() replaces the first and silently drops auth:sanctum.
 Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('kickoff')->group(function () {
     Route::get('/meetings/stats',              [KickoffMeetingController::class, 'stats']);
+    Route::get('/meetings/dashboard',          [KickoffMeetingController::class, 'dashboard']);
     // Declared before /meetings/{kickoffMeeting} so the wildcard cannot swallow it.
     Route::get('/meetings/carry-forward',      [KickoffMeetingController::class, 'carryForward']);
     Route::get('/meetings/history',            [KickoffMeetingController::class, 'history']);

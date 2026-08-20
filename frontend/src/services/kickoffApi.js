@@ -13,6 +13,8 @@ const upload = (url, formData) =>
 export const kickoffApi = {
   list:  (params = {}) => api.get('/kickoff/meetings', { params }).then(r => r.data),
   stats: ()            => api.get('/kickoff/meetings/stats').then(r => r.data),
+  // Richer Meetings dashboard aggregate (Meeting.docx §14).
+  dashboard: ()        => api.get('/kickoff/meetings/dashboard').then(r => r.data),
   // Configurable meeting-type catalogue + agenda priorities + per-type agenda
   // templates (config/meetings.php).
   meetingTypes: ()     => api.get('/kickoff/meeting-types').then(r => r.data),
