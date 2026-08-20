@@ -29,6 +29,9 @@ class Vendor extends Model
         'registration_number','gst_number','pan_number',
         'address','city','state','country','pincode',
         'status','approved_at','approved_by','notes',
+        // Vendor Risk Classification (gap report area 2) — forward-looking risk
+        // tier, distinct from the VRS performance band.
+        'risk_level','risk_score','risk_factors','risk_notes','risk_assessed_at','risk_assessed_by',
         'auto_suspended','suspended_at','suspension_reason',
         'offboarded_at','offboarding_reason',
         // Temporary TPV access (Phase 2)
@@ -40,6 +43,9 @@ class Vendor extends Model
     protected $casts = [
         'engagements'               => 'array',
         'approved_at'               => 'datetime',
+        'risk_factors'              => 'array',
+        'risk_score'                => 'integer',
+        'risk_assessed_at'          => 'datetime',
         'auto_suspended'            => 'boolean',
         'suspended_at'              => 'datetime',
         'offboarded_at'             => 'datetime',
@@ -71,6 +77,12 @@ class Vendor extends Model
                 $vendor->vendor_code = 'VEN-'.$year.'-'.str_pad((string) $count, 3, '0', STR_PAD_LEFT);
             }
         });
+    }
+
+    /** Who last classified this vendor's risk (gap report area 2). */
+    public function riskAssessor()
+    {
+        return $this->belongsTo(User::class, 'risk_assessed_by');
     }
 
     /* ── Relationships ──────────────────────────────────────────────────── */

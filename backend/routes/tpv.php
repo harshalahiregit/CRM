@@ -90,6 +90,8 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::get('/vendors/{vendor}/scorecard',                 [\App\Http\Controllers\Api\Vendor\VendorController::class, 'scorecard']);
     // The five mandated onboarding gates (Doc 2/4), computed per vendor.
     Route::get('/vendors/{vendor}/gates',                     [\App\Http\Controllers\Api\Vendor\VendorController::class, 'gates']);
+    // Vendor Risk Classification (gap report area 2) — read the tier + factors.
+    Route::get('/vendors/{vendor}/risk',                      [\App\Http\Controllers\Api\Tpv\VendorRiskController::class, 'show']);
     Route::get('/vendors/{vendor}/customers',                 [\App\Http\Controllers\Api\Vendor\VendorController::class, 'customers']);
     Route::post('/vendors/{vendor}/customers',                [\App\Http\Controllers\Api\Vendor\VendorController::class, 'storeCustomer']);
     // Employees (enhancement #2/#9/#10) — the vendor's assignable people. index()
@@ -270,6 +272,9 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('tpv')->group(function
 
     // Approving/rejecting a statutory document is an admin gate.
     Route::post('/documents/{document}/review',       [VendorDocumentController::class, 'review']);
+
+    // Setting a vendor's risk classification is an admin authority decision.
+    Route::put('/vendors/{vendor}/risk',              [\App\Http\Controllers\Api\Tpv\VendorRiskController::class, 'assess']);
 
     // Granting or revoking site access is admin authority.
     Route::post('/workers/{worker}/activate',         [TpvWorkerController::class, 'activate']);
