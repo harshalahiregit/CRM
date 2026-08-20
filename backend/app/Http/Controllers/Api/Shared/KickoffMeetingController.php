@@ -9,7 +9,9 @@ use App\Http\Requests\Shared\UpdateKickoffMeetingRequest;
 use App\Models\Shared\KickoffAttendee;
 use App\Models\Shared\KickoffMeeting;
 use App\Models\Shared\KickoffMomItem;
+use App\Models\Shared\MeetingIssue;
 use App\Services\Shared\KickoffMeetingService;
+use App\Support\Shared\MeetingIssueStatus;
 use App\Support\Shared\MomActionStatus;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -34,9 +36,12 @@ class KickoffMeetingController extends Controller
     public function meetingTypes()
     {
         return response()->json([
-            'types'        => config('meetings.types', []),
-            'default_type' => config('meetings.default_type', 'kickoff'),
-            'priorities'   => config('meetings.priorities', ['Low', 'Medium', 'High']),
+            'types'             => config('meetings.types', []),
+            'default_type'      => config('meetings.default_type', 'kickoff'),
+            'priorities'        => config('meetings.priorities', ['Low', 'Medium', 'High']),
+            'issue_severities'  => config('meetings.issue_severities', ['Low', 'Medium', 'High', 'Critical']),
+            'issue_categories'  => config('meetings.issue_categories', []),
+            'decision_statuses' => config('meetings.decision_statuses', ['Active', 'Superseded', 'Rescinded']),
         ]);
     }
 
@@ -158,6 +163,38 @@ class KickoffMeetingController extends Controller
     private function assertItemBelongs(KickoffMomItem $item, KickoffMeeting $meeting): void
     {
         abort_unless((int) $item->kickoff_meeting_id === (int) $meeting->id, 404, 'Action not found on this meeting.');
+    }
+
+    /** Progress a meeting issue through its lifecycle (Meeting.docx §10). */
+    public function progressIssue(Request $request, KickoffMeeting $kickoffMeeting, MeetingIssue $meetingIssue)
+    {
+        $this->assertTenant($request, $kickoffMeeting);
+        abort_unless((int) $meetingIssue->kickoff_meeting_id === (int) $kickoffMeeting->id, 404, 'Issue not found on this meeting.');
+
+        $data = $request->validate([
+            'status'      => 'nullable|string|in:'.implode(',', MeetingIssueStatus::ALL),
+            'severity'    => 'nullable|string',
+            'category'    => 'nullable|string|max:60',
+            'owner_names' => 'nullable|string|max:300',
+            'due_date'    => 'nullable|date',
+        ]);
+
+        return response()->json($this->kickoffService->progressIssue($meetingIssue, $data, $request->user()));
+    }
+
+    /** Escalate a meeting issue into a real HSSE Incident. */
+    public function convertIssue(Request $request, KickoffMeeting $kickoffMeeting, MeetingIssue $meetingIssue)
+    {
+        $this->assertTenant($request, $kickoffMeeting);
+        abort_unless((int) $meetingIssue->kickoff_meeting_id === (int) $kickoffMeeting->id, 404, 'Issue not found on this meeting.');
+
+        $data = $request->validate([
+            'type'      => 'nullable|string|max:60',
+            'severity'  => 'nullable|string|in:Minor,Moderate,Serious,Fatal',
+            'stop_work' => 'nullable|boolean',
+        ]);
+
+        return response()->json($this->kickoffService->convertIssueToIncident($meetingIssue, $data, $request->user()));
     }
 
     /** Generate (or regenerate) the Minutes-of-Meeting PDF from existing data. */

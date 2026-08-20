@@ -55,6 +55,12 @@ export const kickoffApi = {
   actionEvidenceBlob: (meetingId, itemId) =>
     api.get(`/kickoff/meetings/${meetingId}/mom-items/${itemId}/evidence`, { responseType: 'blob' }).then(r => r.data),
 
+  // Issue register — progress lifecycle + escalate to an Incident.
+  progressIssue: (meetingId, issueId, data) =>
+    api.post(`/kickoff/meetings/${meetingId}/issues/${issueId}/progress`, data).then(r => r.data),
+  convertIssue: (meetingId, issueId, data) =>
+    api.post(`/kickoff/meetings/${meetingId}/issues/${issueId}/convert`, data).then(r => r.data),
+
   // Subject pickers — thin wrappers over shared endpoints, mirroring how each
   // module wraps /vendors itself rather than importing another module's service.
   subjects: {

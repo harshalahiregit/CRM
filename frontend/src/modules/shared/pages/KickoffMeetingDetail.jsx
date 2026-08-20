@@ -9,7 +9,7 @@ import { kickoffApi } from '@/services/kickoffApi'
 import { meetingApi } from '@/services/meetingApi'
 import {
   KO_STATUS, koStatusCfg, koNextStatuses, koModeLabel, fmtDateTime, fmtDate,
-  actStatusCfg, actNextStatuses,
+  actStatusCfg, actNextStatuses, issueStatusCfg, issueNextStatuses, ISSUE_TO_INCIDENT_SEVERITY,
 } from '../kickoffConstants'
 import { KIT3D_STYLE, Overlay, ModalFooter, Field, TextInput, SelectInput } from '@/components/ui/kit3d'
 
@@ -251,6 +251,12 @@ export default function KickoffMeetingDetail() {
           {/* Action items — the Action Engine (Meeting.docx §8) */}
           <ActionItemsCard m={m} meetingId={id} onChanged={load} onError={setErr} />
 
+          {/* Decision register (§9) */}
+          <DecisionsCard m={m} />
+
+          {/* Issues raised (§10) — track + escalate */}
+          <IssuesCard m={m} meetingId={id} onChanged={load} onError={setErr} />
+
           {/* Minutes document */}
           <MomCard m={m} onUploaded={setM} onError={setErr} />
 
@@ -391,6 +397,119 @@ function ActionProgressForm({ item, meetingId, onDone, onError }) {
           </button>
         )}
       </div>
+    </div>
+  )
+}
+
+/* ── Decision register (§9) ───────────────────────────────────────────────── */
+function DecisionsCard({ m }) {
+  const rows = m.decisions || []
+  if (rows.length === 0) return null
+  return (
+    <div className="pr-glass" style={{ padding: 20 }}>
+      <SectionTitle icon={ShieldCheck}>Decisions</SectionTitle>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
+        {rows.map(d => (
+          <div key={d.id} style={{ padding: '11px 13px', borderRadius: 11, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3, flexWrap: 'wrap' }}>
+              {d.decision_ref && <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text-muted)' }}>{d.decision_ref}</span>}
+              <span style={{ fontSize: 10, fontWeight: 800, color: d.status === 'Active' ? '#10b981' : '#94a3b8' }}>{d.status}</span>
+              {d.effective_date && <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>effective {fmtDate(d.effective_date)}</span>}
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--text-h)', lineHeight: 1.5 }}>{d.decision}</div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 3 }}>
+              {(d.decided_by_names || d.decided_by?.name) && <>By {d.decided_by_names || d.decided_by?.name}</>}
+              {d.impact && <> · Impact: {d.impact}</>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/* ── Issues raised (§10) — track lifecycle + escalate to an Incident ────────── */
+function IssuesCard({ m, meetingId, onChanged, onError }) {
+  const rows = m.issues || []
+  if (rows.length === 0) return null
+  const open = rows.filter(i => i.is_open).length
+  return (
+    <div className="pr-glass" style={{ padding: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+        <SectionTitle icon={AlertTriangle}>Issues Raised</SectionTitle>
+        <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{open} open</span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 6 }}>
+        {rows.map(it => <IssueRow key={it.id} it={it} meetingId={meetingId} onChanged={onChanged} onError={onError} />)}
+      </div>
+    </div>
+  )
+}
+
+function IssueRow({ it, meetingId, onChanged, onError }) {
+  const [open, setOpen]     = useState(false)
+  const [status, setStatus] = useState('')
+  const [busy, setBusy]     = useState(false)
+  // Convert-to-incident controls.
+  const [conv, setConv]     = useState(false)
+  const [sev, setSev]       = useState(ISSUE_TO_INCIDENT_SEVERITY[it.severity] || 'Moderate')
+  const c = issueStatusCfg(it.status)
+  const owner = it.owner_names || it.owner?.name
+
+  const progress = async () => {
+    setBusy(true)
+    try { await kickoffApi.progressIssue(meetingId, it.id, { status: status || undefined }); setOpen(false); onChanged() }
+    catch (e) { onError(e?.response?.data?.message || 'Could not update the issue.'); setBusy(false) }
+  }
+  const convert = async () => {
+    setBusy(true)
+    try { await kickoffApi.convertIssue(meetingId, it.id, { severity: sev }); setConv(false); onChanged() }
+    catch (e) { onError(e?.response?.data?.message || 'Could not escalate the issue.'); setBusy(false) }
+  }
+
+  return (
+    <div style={{ padding: '12px 14px', borderRadius: 12, background: 'var(--bg-input)', border: `1px solid ${it.is_overdue ? 'rgba(239,68,68,0.4)' : 'var(--border)'}` }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 3 }}>
+            {it.issue_ref && <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text-muted)' }}>{it.issue_ref}</span>}
+            <span style={{ fontSize: 10, fontWeight: 800, padding: '1px 7px', borderRadius: 6, background: c.bg, color: c.color }}>{c.label}</span>
+            {it.severity && <span style={{ fontSize: 10, fontWeight: 800, color: it.severity === 'Critical' || it.severity === 'High' ? '#ef4444' : 'var(--text-muted)' }}>{it.severity}</span>}
+            {it.category && <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>{it.category}</span>}
+            {it.due_date && <span style={{ fontSize: 10.5, color: it.is_overdue ? '#ef4444' : 'var(--text-muted)' }}>due {fmtDate(it.due_date)}</span>}
+            {it.converted_to && <span style={{ fontSize: 10, fontWeight: 800, color: '#ef4444' }}>→ {it.converted_to} {it.converted_ref}</span>}
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text-h)', fontWeight: 600 }}>{it.title}</div>
+          {it.description && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{it.description}</div>}
+          {owner && <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 3 }}>Owner: {owner}</div>}
+        </div>
+        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+          <button onClick={() => { setOpen(!open); setConv(false) }} style={{ padding: '6px 11px', borderRadius: 8, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: '#a78bfa' }}>{open ? 'Close' : 'Update'}</button>
+          {!it.converted_to && <button onClick={() => { setConv(!conv); setOpen(false) }} style={{ padding: '6px 11px', borderRadius: 8, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.3)', color: '#ef4444' }}>Escalate</button>}
+        </div>
+      </div>
+
+      {open && (
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)', display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+          <Field label="Move to">
+            <SelectInput value={status} onChange={e => setStatus(e.target.value)} pairs
+              options={[['', 'Keep current'], ...issueNextStatuses(it.status).map(s => [s, issueStatusCfg(s).label])]} />
+          </Field>
+          <button onClick={progress} disabled={busy || !status} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', fontWeight: 700, fontSize: 12.5, cursor: 'pointer', background: 'linear-gradient(135deg,#7C3AED,#6d28d9)', color: '#fff', opacity: !status ? 0.5 : 1 }}>{busy ? 'Saving…' : 'Save'}</button>
+        </div>
+      )}
+
+      {conv && (
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+          <p style={{ fontSize: 11.5, color: 'var(--text-muted)', margin: '0 0 8px' }}>Raise this issue as an HSSE incident against the vendor. Serious/Fatal will suspend the vendor.</p>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+            <Field label="Incident severity">
+              <SelectInput value={sev} onChange={e => setSev(e.target.value)} pairs options={[['Minor', 'Minor'], ['Moderate', 'Moderate'], ['Serious', 'Serious'], ['Fatal', 'Fatal']]} />
+            </Field>
+            <button onClick={convert} disabled={busy} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', fontWeight: 700, fontSize: 12.5, cursor: 'pointer', background: 'linear-gradient(135deg,#ef4444,#dc2626)', color: '#fff' }}>{busy ? 'Raising…' : 'Raise incident'}</button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

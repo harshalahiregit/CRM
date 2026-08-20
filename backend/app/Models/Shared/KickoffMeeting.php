@@ -129,6 +129,20 @@ class KickoffMeeting extends Model
             ->orderBy('sort_order')->orderBy('id');
     }
 
+    /** Decision register (Meeting.docx §9). */
+    public function decisions()
+    {
+        return $this->hasMany(MeetingDecision::class, 'kickoff_meeting_id')
+            ->orderBy('sort_order')->orderBy('id');
+    }
+
+    /** Issues raised (Meeting.docx §10). */
+    public function issues()
+    {
+        return $this->hasMany(MeetingIssue::class, 'kickoff_meeting_id')
+            ->orderBy('sort_order')->orderBy('id');
+    }
+
     /**
      * Whether the acknowledgement window is still open.
      *

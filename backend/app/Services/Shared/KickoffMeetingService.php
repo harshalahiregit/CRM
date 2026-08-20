@@ -8,6 +8,9 @@ use App\Models\Shared\KickoffMeeting;
 use App\Models\Shared\KickoffMeetingSubject;
 use App\Models\Shared\KickoffMomItem;
 use App\Models\Shared\MeetingAgendaItem;
+use App\Models\Shared\MeetingDecision;
+use App\Models\Shared\MeetingIssue;
+use App\Support\Shared\MeetingIssueStatus;
 use App\Support\Shared\MomActionStatus;
 use App\Models\Tenant;
 use App\Models\Tpv\TpvOnboarding;
@@ -102,6 +105,14 @@ class KickoffMeetingService
             $this->replaceAgendaItems($meeting, $data['agenda_items'] ?? [], $actor->tenant_id);
         }
 
+        if (array_key_exists('decisions', $data)) {
+            $this->syncDecisions($meeting, $data['decisions'] ?? [], $actor->tenant_id);
+        }
+
+        if (array_key_exists('issues', $data)) {
+            $this->syncIssues($meeting, $data['issues'] ?? [], $actor->tenant_id);
+        }
+
         $meeting->recordAudit('created', $actor, "Kickoff '{$meeting->title}' scheduled", [
             'subject' => $subject ? KickoffSubject::nameOf($subject) : null,
         ]);
@@ -154,6 +165,14 @@ class KickoffMeetingService
 
         if (array_key_exists('agenda_items', $data)) {
             $this->replaceAgendaItems($meeting, $data['agenda_items'] ?? [], $actor->tenant_id);
+        }
+
+        if (array_key_exists('decisions', $data)) {
+            $this->syncDecisions($meeting, $data['decisions'] ?? [], $actor->tenant_id);
+        }
+
+        if (array_key_exists('issues', $data)) {
+            $this->syncIssues($meeting, $data['issues'] ?? [], $actor->tenant_id);
         }
 
         $meeting->recordAudit('updated', $actor, 'Meeting details updated');
@@ -1015,6 +1034,208 @@ class KickoffMeetingService
             "Action {$item->action_ref} → ".MomActionStatus::label($item->status));
 
         return $item->fresh(['responsible:id,name', 'verifier:id,name', 'agendaItem:id,item']);
+    }
+
+    /* ── Decision register (Meeting.docx §9) ────────────────────────────────── */
+
+    /** Upsert the meeting's decisions by id. Content-owned; no separate engine. */
+    private function syncDecisions(KickoffMeeting $meeting, array $rows, int $tenantId): void
+    {
+        $validAttendeeIds = $meeting->attendees()->pluck('id')->all();
+        $statuses         = config('meetings.decision_statuses', ['Active', 'Superseded', 'Rescinded']);
+        $keepIds          = [];
+        $order            = 0;
+
+        foreach ($rows as $row) {
+            $text = trim((string) ($row['decision'] ?? ''));
+            if ($text === '') {
+                continue;
+            }
+
+            $by = $row['decided_by_attendee_id'] ?? null;
+            if ($by !== null && ! in_array((int) $by, $validAttendeeIds, true)) {
+                $by = null;
+            }
+            $names  = trim((string) ($row['decided_by_names'] ?? $row['decided_by'] ?? ''));
+            $status = in_array($row['status'] ?? null, $statuses, true) ? $row['status'] : 'Active';
+
+            $content = [
+                'decision'               => $text,
+                'decided_by_attendee_id' => $by,
+                'decided_by_names'       => $names !== '' ? $names : null,
+                'impact'                 => $row['impact'] ?? null,
+                'effective_date'         => $row['effective_date'] ?? null,
+                'status'                 => $status,
+                'sort_order'             => $order++,
+            ];
+
+            $existing = ! empty($row['id']) ? $meeting->decisions()->whereKey($row['id'])->first() : null;
+            if ($existing) {
+                $existing->update($content);
+                $keepIds[] = $existing->id;
+            } else {
+                $created = MeetingDecision::create([
+                    ...$content,
+                    'tenant_id'          => $tenantId,
+                    'kickoff_meeting_id' => $meeting->id,
+                    'decision_ref'       => $this->nextRef($tenantId, MeetingDecision::class, 'decision_ref', 'DEC'),
+                ]);
+                $keepIds[] = $created->id;
+            }
+        }
+
+        $meeting->decisions()->whereNotIn('id', $keepIds ?: [0])->delete();
+    }
+
+    /* ── Issues raised (Meeting.docx §10) ───────────────────────────────────── */
+
+    /**
+     * Upsert the meeting's issues by id. Writes CONTENT only — status and the
+     * conversion marker are owned by the issue engine and survive a form edit.
+     */
+    private function syncIssues(KickoffMeeting $meeting, array $rows, int $tenantId): void
+    {
+        $validAttendeeIds = $meeting->attendees()->pluck('id')->all();
+        $severities       = config('meetings.issue_severities', ['Low', 'Medium', 'High', 'Critical']);
+        $keepIds          = [];
+        $order            = 0;
+
+        foreach ($rows as $row) {
+            $title = trim((string) ($row['title'] ?? ''));
+            if ($title === '') {
+                continue;
+            }
+
+            $owner = $row['owner_attendee_id'] ?? null;
+            if ($owner !== null && ! in_array((int) $owner, $validAttendeeIds, true)) {
+                $owner = null;
+            }
+            $names    = trim((string) ($row['owner_names'] ?? $row['owner'] ?? ''));
+            $severity = in_array($row['severity'] ?? null, $severities, true) ? $row['severity'] : null;
+
+            $content = [
+                'title'             => $title,
+                'description'       => $row['description'] ?? null,
+                'category'          => $row['category'] ?? null,
+                'severity'          => $severity,
+                'owner_attendee_id' => $owner,
+                'owner_names'       => $names !== '' ? $names : null,
+                'due_date'          => $row['due_date'] ?? null,
+                'sort_order'        => $order++,
+            ];
+
+            $existing = ! empty($row['id']) ? $meeting->issues()->whereKey($row['id'])->first() : null;
+            if ($existing) {
+                $existing->update($content);
+                $keepIds[] = $existing->id;
+            } else {
+                $created = MeetingIssue::create([
+                    ...$content,
+                    'tenant_id'          => $tenantId,
+                    'kickoff_meeting_id' => $meeting->id,
+                    'issue_ref'          => $this->nextRef($tenantId, MeetingIssue::class, 'issue_ref', 'ISS'),
+                    'status'             => MeetingIssueStatus::OPEN,
+                ]);
+                $keepIds[] = $created->id;
+            }
+        }
+
+        $meeting->issues()->whereNotIn('id', $keepIds ?: [0])->delete();
+    }
+
+    /** Progress an issue through its lifecycle. */
+    public function progressIssue(MeetingIssue $issue, array $data, User $actor): MeetingIssue
+    {
+        $to = $data['status'] ?? null;
+        if ($to !== null && $to !== $issue->status && ! MeetingIssueStatus::canTransition($issue->status, $to)) {
+            throw new BusinessException(
+                'Cannot move a '.MeetingIssueStatus::label($issue->status).' issue to '.MeetingIssueStatus::label($to).'.'
+            );
+        }
+
+        $changes = [];
+        foreach (['due_date', 'category', 'owner_names'] as $field) {
+            if (array_key_exists($field, $data)) {
+                $changes[$field] = $data[$field];
+            }
+        }
+        if (! empty($data['severity']) && in_array($data['severity'], config('meetings.issue_severities', []), true)) {
+            $changes['severity'] = $data['severity'];
+        }
+        if ($to !== null && $to !== $issue->status) {
+            $changes['status'] = $to;
+        }
+
+        $issue->update($changes);
+        $issue->meeting?->recordAudit('issue_updated', $actor,
+            "Issue {$issue->issue_ref} → ".MeetingIssueStatus::label($issue->status));
+
+        return $issue->fresh(['owner:id,name']);
+    }
+
+    /**
+     * Escalate an issue into an HSSE Incident (Meeting.docx §10 — "convert the
+     * issue into Task/NCR/CAPA/Incident/Approval"). Incident is the target wired
+     * today; it creates a real HsseIncident against the meeting's vendor and links
+     * it back on the issue. Severity is admin-chosen so a routine escalation does
+     * not silently trip auto-suspension.
+     */
+    public function convertIssueToIncident(MeetingIssue $issue, array $data, User $actor): MeetingIssue
+    {
+        if ($issue->is_converted) {
+            throw new BusinessException("This issue was already converted to {$issue->converted_to} ({$issue->converted_ref}).");
+        }
+
+        $vendorId = $this->meetingVendorId($issue->meeting);
+        if (! $vendorId) {
+            throw new BusinessException('This meeting is not linked to a vendor, so its issues cannot be raised as vendor incidents.');
+        }
+
+        $incident = app(\App\Services\Tpv\IncidentService::class)->create($actor->tenant_id, [
+            'vendor_id'   => $vendorId,
+            'title'       => $issue->title,
+            'type'        => $data['type'] ?? 'Other',
+            'severity'    => $data['severity'] ?? 'Moderate',
+            'description' => $issue->description,
+            'stop_work'   => (bool) ($data['stop_work'] ?? false),
+        ], $actor);
+
+        $issue->update([
+            'converted_to'  => 'Incident',
+            'converted_ref' => $incident->reference,
+            'converted_id'  => $incident->id,
+            // An escalated issue moves into progress — it is now tracked as an incident.
+            'status'        => MeetingIssueStatus::isOpen($issue->status) ? MeetingIssueStatus::IN_PROGRESS : $issue->status,
+        ]);
+
+        $issue->meeting?->recordAudit('issue_converted', $actor,
+            "Issue {$issue->issue_ref} raised as incident {$incident->reference}");
+
+        return $issue->fresh(['owner:id,name']);
+    }
+
+    /** The vendor id behind a meeting's subject, if any (vendor or onboarding). */
+    private function meetingVendorId(KickoffMeeting $meeting): ?int
+    {
+        if ($meeting->kickoffable_type === \App\Models\Vendor\Vendor::class) {
+            return (int) $meeting->kickoffable_id;
+        }
+        if ($meeting->kickoffable_type === \App\Models\Tpv\TpvOnboarding::class) {
+            return $meeting->kickoffable?->vendor_id;
+        }
+
+        return null;
+    }
+
+    /** Next per-tenant, per-year reference for a child record ({PREFIX}-YYYY-NNNN). */
+    private function nextRef(int $tenantId, string $modelClass, string $column, string $prefix): string
+    {
+        $year = date('Y');
+        $n = $modelClass::where('tenant_id', $tenantId)
+            ->where($column, 'like', "{$prefix}-{$year}-%")
+            ->count() + 1;
+
+        return sprintf('%s-%s-%04d', $prefix, $year, $n);
     }
 
     /**

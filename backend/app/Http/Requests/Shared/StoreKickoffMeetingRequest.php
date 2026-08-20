@@ -39,7 +39,12 @@ class StoreKickoffMeetingRequest extends FormRequest
 
             // Itemised minutes. responsible_attendee_id is re-checked in the
             // service against THIS meeting's attendees; the rule only shapes it.
+            // `id` MUST be listed — validated() drops nested keys without a rule,
+            // and the service upserts by id (loses action tracking without it).
             'mom_items'                             => 'nullable|array',
+            'mom_items.*.id'                        => 'nullable|integer',
+            'mom_items.*.priority'                  => 'nullable|string',
+            'mom_items.*.responsible_org'           => 'nullable|string|max:160',
             'mom_items.*.description'               => 'required|string|max:5000',
             'mom_items.*.responsible_attendee_id'   => 'nullable|integer',
             'mom_items.*.remark'                    => 'nullable|string|max:2000',
@@ -65,6 +70,30 @@ class StoreKickoffMeetingRequest extends FormRequest
             'agenda_items.*.owner'             => 'nullable|string|max:500',
             'agenda_items.*.duration_minutes'  => 'nullable|integer|min:1|max:1440',
             'agenda_items.*.priority'          => 'nullable|string|in:'.implode(',', config('meetings.priorities', ['Low', 'Medium', 'High'])),
+
+            // Decision register (Meeting.docx §9).
+            'decisions'                          => 'nullable|array',
+            'decisions.*.id'                     => 'nullable|integer',
+            'decisions.*.decision'               => 'required|string|max:5000',
+            'decisions.*.decided_by_attendee_id' => 'nullable|integer',
+            'decisions.*.decided_by_names'       => 'nullable|string|max:300',
+            'decisions.*.decided_by'             => 'nullable|string|max:300',
+            'decisions.*.impact'                 => 'nullable|string|max:2000',
+            'decisions.*.effective_date'         => 'nullable|date',
+            'decisions.*.status'                 => 'nullable|string',
+
+            // Issues raised (Meeting.docx §10). status/conversion are engine-owned,
+            // not accepted from the form.
+            'issues'                       => 'nullable|array',
+            'issues.*.id'                  => 'nullable|integer',
+            'issues.*.title'               => 'required|string|max:255',
+            'issues.*.description'         => 'nullable|string|max:5000',
+            'issues.*.category'            => 'nullable|string|max:60',
+            'issues.*.severity'            => 'nullable|string',
+            'issues.*.owner_attendee_id'   => 'nullable|integer',
+            'issues.*.owner_names'         => 'nullable|string|max:300',
+            'issues.*.owner'               => 'nullable|string|max:300',
+            'issues.*.due_date'            => 'nullable|date',
 
             'attendees'                     => 'nullable|array',
             'attendees.*.vendor_contact_id' => 'nullable|integer',

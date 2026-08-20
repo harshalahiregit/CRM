@@ -58,6 +58,8 @@ class KickoffMeetingRepository extends BaseRepository
                 'momItems.verifier:id,name',
                 'momItems.agendaItem:id,item',
                 'agendaItems.owner:id,name,organisation',
+                'decisions.decidedBy:id,name',
+                'issues.owner:id,name',
                 'auditLogs',
             ])
             ->find($id);
