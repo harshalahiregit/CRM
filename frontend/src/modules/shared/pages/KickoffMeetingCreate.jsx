@@ -442,10 +442,29 @@ export default function KickoffMeetingCreate() {
         subject_id: form.subject_id,
         exclude_meeting_id: editId || undefined,
       })
-      setCarry({ actions: d?.actions || [], issues: d?.issues || [] })
+      setCarry({
+        actions: d?.actions || [],
+        issues: d?.issues || [],
+        previousAgenda: d?.previous_agenda || null,
+        previousStats: d?.previous_stats || null,
+      })
     } catch (e) {
       setCarryErr(e?.response?.data?.message || 'Could not load previous items.')
     } finally { setCarryBusy(false) }
+  }
+
+  // §3 copy-agenda-from-previous: append the previous meeting's agenda items,
+  // skipping any topic already present (same rule as the template loader).
+  const copyPreviousAgenda = () => {
+    const items = carry?.previousAgenda?.items || []
+    if (!items.length) return
+    setAgendaItems(prev => {
+      const seen = new Set(prev.map(a => (a.item || '').trim().toLowerCase()))
+      const additions = items
+        .filter(t => t.item && !seen.has(t.item.trim().toLowerCase()))
+        .map(t => ({ ...EMPTY_AGENDA(), item: t.item, owner: t.owner_names || '', duration_minutes: t.duration_minutes ?? '', priority: t.priority || '' }))
+      return [...prev, ...additions]
+    })
   }
 
   const carryAction = (a) => setMomItems(prev => (
@@ -1010,6 +1029,36 @@ export default function KickoffMeetingCreate() {
               </div>
             )}
 
+            {/* §11 — what the previous meeting left behind, at a glance. */}
+            {carry?.previousStats && (
+              <div style={{ padding: '12px 14px', borderRadius: 12, marginBottom: 14, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-h)' }}>
+                    Last meeting: {originLabel(carry.previousStats.origin) || carry.previousStats.meeting_type_label}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    <MiniTag>{carry.previousStats.status_label}</MiniTag>
+                    <MiniTag>{carry.previousStats.mom_status_label}</MiniTag>
+                    {carry.previousStats.acknowledged && <MiniTag tone="#10b981">Acknowledged</MiniTag>}
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
+                  <PrevStat n={carry.previousStats.decisions} label="Decisions" />
+                  <PrevStat n={carry.previousStats.open_actions} label="Open actions" tone={carry.previousStats.open_actions ? '#f59e0b' : undefined} />
+                  <PrevStat n={carry.previousStats.open_issues} label="Open issues" tone={carry.previousStats.open_issues ? '#ef4444' : undefined} />
+                </div>
+              </div>
+            )}
+
+            {/* §3 — reuse the previous meeting's agenda in this one. */}
+            {carry?.previousAgenda?.items?.length > 0 && (
+              <button type="button" onClick={copyPreviousAgenda}
+                style={{ ...addBtn, width: '100%', justifyContent: 'center', marginBottom: 14 }}
+                title={`Append ${carry.previousAgenda.items.length} agenda item(s) from ${originLabel(carry.previousAgenda.origin)}`}>
+                <FileText size={13} /> Copy agenda from last meeting ({carry.previousAgenda.items.length})
+              </button>
+            )}
+
             {carry && (
               (carry.actions.length === 0 && carry.issues.length === 0) ? (
                 <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: 0 }}>
@@ -1366,6 +1415,24 @@ function CarryItem({ refCode, title, meta, overdue, added, onAdd }) {
 const carryHeadStyle = {
   fontSize: 11.5, fontWeight: 800, color: 'var(--text-muted)',
   textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8,
+}
+
+// ── previous-meeting stat helpers (§11) ───────────────────────────────────────
+function MiniTag({ children, tone }) {
+  return (
+    <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 999,
+      color: tone || 'var(--text-muted)', background: tone ? `${tone}1a` : 'var(--bg-card)', border: `1px solid ${tone ? `${tone}55` : 'var(--border)'}` }}>
+      {children}
+    </span>
+  )
+}
+function PrevStat({ n, label, tone }) {
+  return (
+    <div style={{ textAlign: 'center', padding: '8px 4px', borderRadius: 10, background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+      <div style={{ fontSize: 18, fontWeight: 900, color: tone || 'var(--text-h)', lineHeight: 1 }}>{n ?? 0}</div>
+      <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.03em', marginTop: 4 }}>{label}</div>
+    </div>
+  )
 }
 
 // ── tiny summary row ──────────────────────────────────────────────────────────

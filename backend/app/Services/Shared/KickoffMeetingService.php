@@ -1545,7 +1545,7 @@ class KickoffMeetingService
      */
     public function carryForwardItems(int $tenantId, ?string $subjectType, $subjectId, ?int $excludeMeetingId = null): array
     {
-        $empty = ['actions' => [], 'issues' => []];
+        $empty = ['actions' => [], 'issues' => [], 'previous_agenda' => null, 'previous_stats' => null];
 
         if (! $subjectType || ! $subjectId || ! KickoffSubject::isValid($subjectType)) {
             return $empty;
@@ -1613,7 +1613,62 @@ class KickoffMeetingService
                 'origin' => $this->originStamp($meetingIndex->get($i->kickoff_meeting_id)),
             ])->values()->all();
 
-        return ['actions' => $actions, 'issues' => $issues];
+        // §3 copy-agenda-from-previous: the agenda of the most recent prior meeting
+        // that actually has structured agenda items (skip meetings that never used
+        // the Agenda Builder), offered for one-click reuse in the new meeting.
+        $previousAgenda = null;
+        $agendaByMeeting = MeetingAgendaItem::where('tenant_id', $tenantId)
+            ->whereIn('kickoff_meeting_id', $meetingIds)
+            ->orderBy('sort_order')->orderBy('id')
+            ->get()
+            ->groupBy('kickoff_meeting_id');
+        foreach ($meetingIds as $mid) {                       // $meetingIds is newest-first
+            if ($agendaByMeeting->has($mid)) {
+                $origin = $meetingIndex->get($mid);
+                $previousAgenda = [
+                    'origin' => $this->originStamp($origin),
+                    'items' => $agendaByMeeting->get($mid)->map(fn (MeetingAgendaItem $a) => [
+                        'item' => $a->item,
+                        'description' => $a->description,
+                        'owner_names' => $a->owner_names,
+                        'duration_minutes' => $a->duration_minutes,
+                        'priority' => $a->priority,
+                    ])->values()->all(),
+                ];
+                break;
+            }
+        }
+
+        // §11 previous-MOM stats: a compact "what happened last time" snapshot of
+        // the single most recent prior meeting, so the organiser opens the new one
+        // knowing the outstanding load. Read-only.
+        $last = KickoffMeeting::forTenant($tenantId)
+            ->withCount([
+                'momItems as open_actions' => fn ($q) => $q->whereIn('status', MomActionStatus::OPEN_STATES),
+                'issues as open_issues' => fn ($q) => $q->whereIn('status', MeetingIssueStatus::OPEN_STATES),
+                'decisions as decisions_count',
+            ])
+            ->find($priorMeetings->first()->id);
+
+        $previousStats = $last ? [
+            'origin' => $this->originStamp($last),
+            'meeting_type_label' => $last->meeting_type_label,
+            'status' => $last->status,
+            'status_label' => $last->status_label,
+            'mom_status' => $last->mom_status,
+            'mom_status_label' => $last->mom_status_label,
+            'acknowledged' => $last->acknowledged_at !== null,
+            'open_actions' => (int) $last->open_actions,
+            'open_issues' => (int) $last->open_issues,
+            'decisions' => (int) $last->decisions_count,
+        ] : null;
+
+        return [
+            'actions' => $actions,
+            'issues' => $issues,
+            'previous_agenda' => $previousAgenda,
+            'previous_stats' => $previousStats,
+        ];
     }
 
     /**
