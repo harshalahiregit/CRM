@@ -32,6 +32,9 @@ class Vendor extends Model
         // Vendor Risk Classification (gap report area 2) — forward-looking risk
         // tier, distinct from the VRS performance band.
         'risk_level','risk_score','risk_factors','risk_notes','risk_assessed_at','risk_assessed_by',
+        // Prequalification (gap report area 6) — scored questionnaire outcome.
+        'qualification_status','qualification_score','qualification_responses',
+        'qualification_notes','qualification_assessed_at','qualification_assessed_by',
         'auto_suspended','suspended_at','suspension_reason',
         'offboarded_at','offboarding_reason',
         // Temporary TPV access (Phase 2)
@@ -46,6 +49,9 @@ class Vendor extends Model
         'risk_factors'              => 'array',
         'risk_score'                => 'integer',
         'risk_assessed_at'          => 'datetime',
+        'qualification_responses'   => 'array',
+        'qualification_score'       => 'integer',
+        'qualification_assessed_at' => 'datetime',
         'auto_suspended'            => 'boolean',
         'suspended_at'              => 'datetime',
         'offboarded_at'             => 'datetime',
@@ -83,6 +89,12 @@ class Vendor extends Model
     public function riskAssessor()
     {
         return $this->belongsTo(User::class, 'risk_assessed_by');
+    }
+
+    /** Who last prequalified this vendor (gap report area 6). */
+    public function qualificationAssessor()
+    {
+        return $this->belongsTo(User::class, 'qualification_assessed_by');
     }
 
     /* ── Relationships ──────────────────────────────────────────────────── */

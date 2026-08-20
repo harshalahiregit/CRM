@@ -259,6 +259,9 @@ export const tpvApi = {
     // catalogue; assess (admin) recomputes from the answered factors.
     risk:       (id)         => api.get(`/tpv/vendors/${id}/risk`).then(r => r.data),
     assessRisk: (id, data)   => api.put(`/tpv/vendors/${id}/risk`, data).then(r => r.data),
+    // Vendor Prequalification (gap report area 6) — scored questionnaire → outcome.
+    prequalification:       (id)       => api.get(`/tpv/vendors/${id}/prequalification`).then(r => r.data),
+    assessPrequalification: (id, data) => api.put(`/tpv/vendors/${id}/prequalification`, data).then(r => r.data),
     // Customers directly linked to this vendor (clients.vendor_id).
     customers: {
       list:   (vid)       => api.get(`/tpv/vendors/${vid}/customers`).then(r => r.data),
