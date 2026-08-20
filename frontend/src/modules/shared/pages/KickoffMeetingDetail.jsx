@@ -25,6 +25,7 @@ export default function KickoffMeetingDetail() {
   const [loading, setLoad] = useState(true)
   const [err, setErr]     = useState(null)
   const [ackLink, setAckLink] = useState(null)
+  const [publishBusy, setPublishBusy] = useState(false)   // "Send for acknowledgement" in flight
   const [action, setAction]   = useState(null)   // { to } transition modal
   const [linkData, setLinkData]     = useState(null)    // online meeting link data
   const [genLinkBusy, setGenLinkBusy] = useState(false) // link generation in progress
@@ -41,6 +42,7 @@ export default function KickoffMeetingDetail() {
   useEffect(() => { load() }, [id])
 
   const publish = async () => {
+    setPublishBusy(true); setErr(null)
     try {
       const res = await kickoffApi.publish(id)
       // Backend returns the token once; compose the link from origin, as the
@@ -48,6 +50,7 @@ export default function KickoffMeetingDetail() {
       setAckLink(`${window.location.origin}/kickoff/ack/${res.ack_token}`)
       setM(res.meeting)
     } catch (e) { setErr(e?.response?.data?.message || 'Could not publish.') }
+    finally { setPublishBusy(false) }
   }
 
   if (loading) return <div style={{ padding: 24 }}><style>{KIT3D_STYLE}</style><div className="skeleton" style={{ height: 44, width: 280, borderRadius: 12, background: 'var(--border)' }} /></div>
@@ -254,7 +257,11 @@ export default function KickoffMeetingDetail() {
                 <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '0 0 12px', lineHeight: 1.5 }}>
                   Send the approved minutes to the vendor for acknowledgement — a single-use public link, no login needed.
                 </p>
-                <button onClick={publish} style={{ ...solidBtn, width: '100%', justifyContent: 'center' }}><Send size={15} /> Send for acknowledgement</button>
+                <button onClick={publish} disabled={publishBusy}
+                  style={{ ...solidBtn, width: '100%', justifyContent: 'center', cursor: publishBusy ? 'wait' : 'pointer', opacity: publishBusy ? 0.75 : 1 }}>
+                  {publishBusy ? <Loader2 size={15} className="ko-spin" /> : <Send size={15} />}
+                  {publishBusy ? 'Sending…' : 'Send for acknowledgement'}
+                </button>
               </div>
             )}
           </div>
