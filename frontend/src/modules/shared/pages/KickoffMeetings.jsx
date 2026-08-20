@@ -29,6 +29,8 @@ export default function KickoffMeetings() {
   const [view, setView] = useState('list')   // 'list' | 'calendar'
   const [pageSize, setPageSize] = useState(25)   // rows per page ('all' = no paging)
   const [page, setPage] = useState(1)
+  const [projects, setProjects] = useState([])   // §16 project rollup source
+  const [projectF, setProjectF] = useState('All') // '' | project id (client-side)
 
   // Row-action modal targets — showNew removed: create navigates to full page
   const [attendanceFor, setAttFor]    = useState(null)
@@ -43,8 +45,14 @@ export default function KickoffMeetings() {
       .catch(() => setLoad(false))
   }
   useEffect(() => { load() }, [filter]) // eslint-disable-line react-hooks/exhaustive-deps
-  // Any change to the filter or page size sends the reader back to page 1.
-  useEffect(() => { setPage(1) }, [filter, pageSize])
+  // Projects for the §16 rollup filter — soft link, empty on failure.
+  useEffect(() => { kickoffApi.projects().then(d => { if (Array.isArray(d)) setProjects(d) }).catch(() => {}) }, [])
+  // Any change to a filter or page size sends the reader back to page 1.
+  useEffect(() => { setPage(1) }, [filter, pageSize, projectF])
+
+  // Project rollup is applied client-side over the loaded rows (same pattern as
+  // the calendar's Type/Organizer filters) — the table and calendar share it.
+  const rows = projectF === 'All' ? data : data.filter(m => String(m.project_id) === String(projectF))
 
   // View / Download the MOM PDF — generate on demand if none exists yet.
   const handlePdf = async (m, download) => {
@@ -69,10 +77,10 @@ export default function KickoffMeetings() {
   }
 
   // Client-side paging over the already-fetched rows (same data the calendar uses).
-  const total      = data.length
+  const total      = rows.length
   const totalPages = pageSize === 'all' ? 1 : Math.max(1, Math.ceil(total / pageSize))
   const curPage    = Math.min(page, totalPages)
-  const pageRows   = pageSize === 'all' ? data : data.slice((curPage - 1) * pageSize, curPage * pageSize)
+  const pageRows   = pageSize === 'all' ? rows : rows.slice((curPage - 1) * pageSize, curPage * pageSize)
   const rangeFrom  = total === 0 ? 0 : (pageSize === 'all' ? 1 : (curPage - 1) * pageSize + 1)
   const rangeTo    = pageSize === 'all' ? total : Math.min(curPage * pageSize, total)
 
@@ -158,6 +166,16 @@ export default function KickoffMeetings() {
               </button>
             )
           })}
+          {/* §16 project rollup — every meeting tagged to one project. */}
+          {projects.length > 0 && (
+            <select value={projectF} onChange={e => setProjectF(e.target.value)} title="Filter by project"
+              style={{ padding: '6px 10px', borderRadius: 999, fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
+                background: projectF !== 'All' ? 'linear-gradient(145deg,#a78bfa,#7C3AED)' : 'var(--bg-card)',
+                border: projectF !== 'All' ? 'none' : '1px solid var(--border)', color: projectF !== 'All' ? '#fff' : 'var(--text-muted)' }}>
+              <option value="All">All projects</option>
+              {projects.map(p => <option key={p.id} value={String(p.id)}>{p.name}</option>)}
+            </select>
+          )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         {/* Rows per page — only meaningful for the table view. */}
@@ -194,8 +212,8 @@ export default function KickoffMeetings() {
           {[1, 2, 3].map(i => <div key={i} className="skeleton" style={{ height: 64, borderRadius: 12, background: 'var(--border)' }} />)}
         </div>
       ) : view === 'calendar' ? (
-        <MeetingCalendar data={data} onOpen={(mid) => navigate(`/app/tpv/kickoff/${mid}`)} />
-      ) : data.length === 0 ? (
+        <MeetingCalendar data={rows} onOpen={(mid) => navigate(`/app/tpv/kickoff/${mid}`)} />
+      ) : rows.length === 0 ? (
         <EmptyState filter={filter} onNew={() => navigate('/app/tpv/kickoff/new')} />
       ) : (
         <div className="pr-glass" style={{ padding: 0, borderRadius: 16, overflow: 'hidden' }}>

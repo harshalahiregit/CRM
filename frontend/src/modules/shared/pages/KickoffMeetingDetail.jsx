@@ -140,6 +140,7 @@ export default function KickoffMeetingDetail() {
               {m.department && <Detail icon={CalendarDays} label="Department" value={m.department} />}
               {m.client_name && <Detail icon={Users} label="Client" value={m.client_name} />}
               {m.work_package && <Detail icon={CalendarDays} label="Work package" value={m.work_package} />}
+              {(m.project_label || m.project_id) && <Detail icon={CalendarDays} label="Project" value={m.project_label || `#${m.project_id}`} />}
             </div>
             {m.status === KO_STATUS.DELAYED && m.delay_reason && (
               <div style={{ marginTop: 14, padding: '11px 13px', borderRadius: 11, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.32)' }}>

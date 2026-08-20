@@ -166,9 +166,11 @@ export default function KickoffMeetingCreate() {
     department:       '',
     client_name:      '',
     work_package:     '',
+    project_id:       '',       // soft link into the Projects module (§16)
     is_completed:     false,
     meeting_platform: 'stub',  // used when mode = 'online'
   })
+  const [projects, setProjects] = useState([])   // { id, name, project_code, client_name, ... }
   const [participants, setParticipants] = useState([])  // [{ id, name, role, organisation }]
   const [momItems,     setMomItems]     = useState([])  // [{ id, description, responsible, remarks, target_date }]
   const [agendaItems,  setAgendaItems]  = useState([])  // [{ id, item, owner, duration_minutes, priority }]
@@ -248,6 +250,7 @@ export default function KickoffMeetingCreate() {
           department:       m.department || '',
           client_name:      m.client_name || '',
           work_package:     m.work_package || '',
+          project_id:       m.project_id || '',
           is_completed:     m.status === 'Completed',
           meeting_platform: m.meeting_platform || 'stub',
         })
@@ -325,6 +328,8 @@ export default function KickoffMeetingCreate() {
       if (Array.isArray(d?.meeting_priorities) && d.meeting_priorities.length) setMtgPriorities(d.meeting_priorities)
       if (Array.isArray(d?.confidentiality) && d.confidentiality.length) setConfLevels(d.confidentiality)
     }).catch(() => {})
+    // Projects for the §16 picker — a soft link, so failure just leaves it empty.
+    kickoffApi.projects().then(d => { if (Array.isArray(d)) setProjects(d) }).catch(() => {})
   }, [])
 
   // ── Fetch tenant default platform preference on mount ────────────────────
@@ -531,6 +536,7 @@ export default function KickoffMeetingCreate() {
         department:       form.department || undefined,
         client_name:      form.client_name || undefined,
         work_package:     form.work_package || undefined,
+        project_id:       form.project_id || undefined,
         is_completed:     form.is_completed,
         // Extended fields — backend uses what it knows, ignores the rest
         attendees: participants
@@ -761,6 +767,15 @@ export default function KickoffMeetingCreate() {
                 <Field label="Client (optional)">
                   <TextInput value={form.client_name} onChange={set('client_name')} placeholder="Client name" />
                 </Field>
+                {projects.length > 0 && (
+                  <Field label="Project (optional)">
+                    <SelectInput value={form.project_id} onChange={set('project_id')} pairs
+                      options={[['', '— none —'], ...projects.map(p => [
+                        String(p.id),
+                        `${p.name}${p.project_code ? ` (${p.project_code})` : ''}`,
+                      ])]} />
+                  </Field>
+                )}
                 <div style={{ gridColumn: '1/-1' }}>
                   <Field label="Work Package (optional)">
                     <TextInput value={form.work_package} onChange={set('work_package')} placeholder="e.g. WP-03 Structural" />
