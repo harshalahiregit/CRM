@@ -8,7 +8,7 @@ import { useAuth } from '@/context/AuthContext'
 import { kickoffApi } from '@/services/kickoffApi'
 import { meetingApi } from '@/services/meetingApi'
 import { tpvApi } from '@/services/tpvApi'
-import { KO_MODES, actStatusCfg } from '../kickoffConstants'
+import { KO_MODES, actStatusCfg, issueStatusCfg } from '../kickoffConstants'
 import {
   KIT3D_STYLE, labelStyle, inputStyle, Field, TextInput, SelectInput,
 } from '@/components/ui/kit3d'
@@ -48,6 +48,8 @@ const combineDateTime = (date, time) => {
 const EMPTY_MOM = () => ({ id: Date.now() + Math.random(), description: '', responsible: '', responsible_org: '', remarks: '', target_date: '', priority: '', status: 'Open', action_ref: '' })
 const EMPTY_PARTICIPANT = () => ({ id: Date.now() + Math.random(), name: '', role: '', organisation: '' })
 const EMPTY_AGENDA = () => ({ id: Date.now() + Math.random(), item: '', owner: '', duration_minutes: '', priority: '' })
+const EMPTY_DECISION = () => ({ id: Date.now() + Math.random(), decision: '', decided_by: '', impact: '', effective_date: '', status: 'Active' })
+const EMPTY_ISSUE = () => ({ id: Date.now() + Math.random(), title: '', category: '', severity: '', owner: '', due_date: '', status: 'Open', issue_ref: '', converted_to: '' })
 
 // ── Section header matching KickoffMeetingDetail style ───────────────────────
 function SectionTitle({ icon: Icon, children }) {
@@ -158,9 +160,13 @@ export default function KickoffMeetingCreate() {
   const [participants, setParticipants] = useState([])  // [{ id, name, role, organisation }]
   const [momItems,     setMomItems]     = useState([])  // [{ id, description, responsible, remarks, target_date }]
   const [agendaItems,  setAgendaItems]  = useState([])  // [{ id, item, owner, duration_minutes, priority }]
-  // Configurable meeting-type catalogue + agenda priorities (config/meetings.php).
+  const [decisions,    setDecisions]    = useState([])  // Decision register
+  const [issues,       setIssues]       = useState([])  // Issues raised
+  // Configurable catalogue (config/meetings.php).
   const [meetingTypes, setMeetingTypes] = useState({ kickoff: 'Kickoff Meeting' })
   const [priorities,   setPriorities]   = useState(['Low', 'Medium', 'High'])
+  const [severities,   setSeverities]   = useState(['Low', 'Medium', 'High', 'Critical'])
+  const [categories,   setCategories]   = useState([])
 
   // ── edit mode ───────────────────────────────────────────────────────────
   // /kickoff/:id/edit renders this same page. There is deliberately no second
@@ -247,6 +253,22 @@ export default function KickoffMeetingCreate() {
           priority:         a.priority || '',
         })))
 
+        setDecisions((m.decisions || []).map(d => ({
+          id: d.id, decision: d.decision || '',
+          decided_by: d.decided_by_names || d.decided_by?.name || '',
+          impact: d.impact || '',
+          effective_date: d.effective_date ? String(d.effective_date).slice(0, 10) : '',
+          status: d.status || 'Active',
+        })))
+
+        setIssues((m.issues || []).map(i => ({
+          id: i.id, issue_ref: i.issue_ref || '', status: i.status || 'Open', converted_to: i.converted_to || '',
+          title: i.title || '', description: i.description || '',
+          category: i.category || '', severity: i.severity || '',
+          owner: i.owner_names || i.owner?.name || '',
+          due_date: i.due_date ? String(i.due_date).slice(0, 10) : '',
+        })))
+
         setExistingLink(Boolean(m.meeting_link))
         setSavedStatus(m.status || null)
         // can_complete is computed server-side: false until scheduled_at passes.
@@ -273,6 +295,8 @@ export default function KickoffMeetingCreate() {
     kickoffApi.meetingTypes().then(d => {
       if (d?.types && Object.keys(d.types).length) setMeetingTypes(d.types)
       if (Array.isArray(d?.priorities) && d.priorities.length) setPriorities(d.priorities)
+      if (Array.isArray(d?.issue_severities) && d.issue_severities.length) setSeverities(d.issue_severities)
+      if (Array.isArray(d?.issue_categories)) setCategories(d.issue_categories)
     }).catch(() => {})
   }, [])
 
@@ -365,6 +389,14 @@ export default function KickoffMeetingCreate() {
   const setAgenda    = (id, k, v) =>
     setAgendaItems(a => a.map(x => x.id === id ? { ...x, [k]: v } : x))
 
+  // ── decision + issue helpers ─────────────────────────────────────────────
+  const addDecision    = () => setDecisions(d => [...d, EMPTY_DECISION()])
+  const removeDecision = (id) => setDecisions(d => d.filter(x => x.id !== id))
+  const setDecision    = (id, k, v) => setDecisions(d => d.map(x => x.id === id ? { ...x, [k]: v } : x))
+  const addIssue    = () => setIssues(i => [...i, EMPTY_ISSUE()])
+  const removeIssue = (id) => setIssues(i => i.filter(x => x.id !== id))
+  const setIssue    = (id, k, v) => setIssues(i => i.map(x => x.id === id ? { ...x, [k]: v } : x))
+
   // ── save ────────────────────────────────────────────────────────────────
   const save = async () => {
     if (!form.subject_id)   { setErr('Please select a Third Party Vendor.'); return }
@@ -412,6 +444,21 @@ export default function KickoffMeetingCreate() {
             owner: owner || undefined,
             duration_minutes: Number(duration_minutes) || undefined,
             priority: priority || undefined,
+          })),
+        decisions: decisions
+          .filter(d => d.decision.trim())
+          .map(({ id, decision, decided_by, impact, effective_date, status }) => ({
+            id: Number.isInteger(id) ? id : undefined,
+            decision, decided_by: decided_by || undefined, impact: impact || undefined,
+            effective_date: effective_date || undefined, status: status || undefined,
+          })),
+        issues: issues
+          .filter(i => i.title.trim())
+          .map(({ id, title, description, category, severity, owner, due_date }) => ({
+            id: Number.isInteger(id) ? id : undefined,
+            title, description: description || undefined,
+            category: category || undefined, severity: severity || undefined,
+            owner: owner || undefined, due_date: due_date || undefined,
           })),
       }
       // Same payload either way — update() and schedule() accept identical shapes,
@@ -880,6 +927,69 @@ export default function KickoffMeetingCreate() {
                 <button onClick={addMom} style={{ ...addBtn, justifyContent: 'center', width: '100%' }}>
                   <Plus size={13} /> Add Another Item
                 </button>
+              </div>
+            )}
+          </div>
+
+          {/* Section 5 — Decision register */}
+          <div className="pr-glass" style={{ padding: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <SectionTitle icon={CheckCircle2}>Decisions</SectionTitle>
+              <button onClick={addDecision} style={addBtn}><Plus size={13} /> Add Decision</button>
+            </div>
+            {decisions.length === 0 ? (
+              <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: 0 }}>No decisions recorded yet.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {decisions.map((d, i) => (
+                  <div key={d.id} style={{ padding: 14, borderRadius: 12, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                      <span style={{ fontSize: 11, fontWeight: 800, color: '#a78bfa' }}>Decision {i + 1}</span>
+                      <button onClick={() => removeDecision(d.id)} style={{ width: 26, height: 26, borderRadius: 7, border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.06)', color: '#ef4444', cursor: 'pointer' }}><Trash2 size={12} /></button>
+                    </div>
+                    <TextInput value={d.decision} onChange={e => setDecision(d.id, 'decision', e.target.value)} placeholder="Decision taken…" />
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
+                      <Field label="Decision maker"><TextInput value={d.decided_by} onChange={e => setDecision(d.id, 'decided_by', e.target.value)} placeholder="Name" /></Field>
+                      <Field label="Impact"><TextInput value={d.impact} onChange={e => setDecision(d.id, 'impact', e.target.value)} placeholder="e.g. Schedule / Cost" /></Field>
+                      <Field label="Effective date"><TextInput type="date" value={d.effective_date} onChange={e => setDecision(d.id, 'effective_date', e.target.value)} /></Field>
+                      <Field label="Status"><SelectInput value={d.status} onChange={e => setDecision(d.id, 'status', e.target.value)} pairs options={[['Active', 'Active'], ['Superseded', 'Superseded'], ['Rescinded', 'Rescinded']]} /></Field>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Section 6 — Issues raised */}
+          <div className="pr-glass" style={{ padding: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <SectionTitle icon={AlertTriangle}>Issues Raised</SectionTitle>
+              <button onClick={addIssue} style={addBtn}><Plus size={13} /> Add Issue</button>
+            </div>
+            {issues.length === 0 ? (
+              <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: 0 }}>No issues raised yet.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {issues.map((it, i) => (
+                  <div key={it.id} style={{ padding: 14, borderRadius: 12, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: '#a78bfa' }}>Issue {i + 1}</span>
+                        {it.issue_ref && <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text-muted)' }}>{it.issue_ref}</span>}
+                        {it.issue_ref && (() => { const c = issueStatusCfg(it.status); return <span style={{ fontSize: 10, fontWeight: 800, padding: '1px 7px', borderRadius: 6, background: c.bg, color: c.color }}>{c.label}</span> })()}
+                        {it.converted_to && <span style={{ fontSize: 10, fontWeight: 800, color: '#ef4444' }}>→ {it.converted_to}</span>}
+                      </span>
+                      <button onClick={() => removeIssue(it.id)} style={{ width: 26, height: 26, borderRadius: 7, border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.06)', color: '#ef4444', cursor: 'pointer' }}><Trash2 size={12} /></button>
+                    </div>
+                    <TextInput value={it.title} onChange={e => setIssue(it.id, 'title', e.target.value)} placeholder="Issue…" />
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
+                      <Field label="Category"><SelectInput value={it.category} onChange={e => setIssue(it.id, 'category', e.target.value)} pairs options={[['', '—'], ...categories.map(c => [c, c])]} /></Field>
+                      <Field label="Severity"><SelectInput value={it.severity} onChange={e => setIssue(it.id, 'severity', e.target.value)} pairs options={[['', '—'], ...severities.map(s => [s, s])]} /></Field>
+                      <Field label="Owner"><TextInput value={it.owner} onChange={e => setIssue(it.id, 'owner', e.target.value)} placeholder="Name" /></Field>
+                      <Field label="Due date"><TextInput type="date" value={it.due_date} onChange={e => setIssue(it.id, 'due_date', e.target.value)} /></Field>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>

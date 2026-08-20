@@ -50,4 +50,28 @@ return [
     */
     'priorities' => ['Low', 'Medium', 'High'],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Issue register (Meeting.docx §10)
+    |--------------------------------------------------------------------------
+    */
+    'issue_severities' => ['Low', 'Medium', 'High', 'Critical'],
+
+    'issue_categories' => [
+        'Safety', 'Compliance', 'Quality', 'Commercial',
+        'Workforce', 'Schedule', 'Technical', 'Environmental', 'Other',
+    ],
+
+    // Targets an issue can be escalated into. Only 'Incident' auto-creates a
+    // record today (via IncidentService); the rest are recorded as markers until
+    // their modules are wired.
+    'issue_convert_targets' => ['Incident', 'NCR', 'CAPA', 'Task', 'Approval'],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Decision register (Meeting.docx §9)
+    |--------------------------------------------------------------------------
+    */
+    'decision_statuses' => ['Active', 'Superseded', 'Rescinded'],
+
 ];
