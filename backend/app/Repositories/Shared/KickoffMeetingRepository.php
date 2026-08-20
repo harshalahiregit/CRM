@@ -24,6 +24,11 @@ class KickoffMeetingRepository extends BaseRepository
         if (! empty($filters['status']) && $filters['status'] !== 'All') {
             $query->where('status', $filters['status']);
         }
+        // Optional meeting-type filter. Guarded so existing callers that never send
+        // it keep seeing every type.
+        if (! empty($filters['meeting_type']) && $filters['meeting_type'] !== 'All') {
+            $query->where('meeting_type', $filters['meeting_type']);
+        }
         if (! empty($filters['subject_type']) && ! empty($filters['subject_id'])) {
             $query->where('kickoffable_type', $filters['subject_type'])
                   ->where('kickoffable_id', (int) $filters['subject_id']);
@@ -50,6 +55,7 @@ class KickoffMeetingRepository extends BaseRepository
                 // Eager-loaded with its owner so the edit form can render the
                 // responsible-person name without an N+1 per MOM item.
                 'momItems.responsible:id,name,organisation',
+                'agendaItems.owner:id,name,organisation',
                 'auditLogs',
             ])
             ->find($id);

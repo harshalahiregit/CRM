@@ -10,7 +10,7 @@ import ModuleShell from '@/components/layout/ModuleShell'
 // this module is the HSSE/onboarding workflow over those vendors.
 const TPV_NAV = [
   { label: 'Dashboard',   path: '/app/tpv/dashboard',  icon: LayoutDashboard },
-  { label: 'Kickoff',     path: '/app/tpv/kickoff',    icon: CalendarDays    },
+  { label: 'Meetings',    path: '/app/tpv/kickoff',    icon: CalendarDays    },
   { label: 'Onboarding',  path: '/app/tpv/onboarding', icon: Rocket          },
   { label: 'Temporary',   path: '/app/tpv/temporary',  icon: Clock           },
   { label: 'Approvals',   path: '/app/tpv/approvals',  icon: ShieldCheck     },

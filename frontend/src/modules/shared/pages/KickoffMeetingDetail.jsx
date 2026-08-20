@@ -121,6 +121,7 @@ export default function KickoffMeetingDetail() {
           <div className="pr-glass" style={{ padding: 20 }}>
             <SectionTitle icon={CalendarDays}>Schedule</SectionTitle>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginTop: 12 }}>
+              <Detail icon={CalendarDays} label="Type" value={m.meeting_type_label || 'Kickoff Meeting'} />
               <Detail icon={Clock} label="Date & time" value={fmtDateTime(m.scheduled_at)} />
               <Detail icon={Clock} label="Duration" value={m.duration_minutes ? `${m.duration_minutes} min` : '—'} />
               <Detail icon={MapPin} label={m.mode === 'online' ? 'Meeting link' : 'Location'} value={m.location || '—'} />
@@ -132,9 +133,25 @@ export default function KickoffMeetingDetail() {
                 <div style={{ fontSize: 12.5, color: 'var(--text-h)' }}>{m.delay_reason}</div>
               </div>
             )}
+            {Array.isArray(m.agenda_items) && m.agenda_items.length > 0 && (
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Agenda</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {m.agenda_items.map((a, i) => (
+                    <div key={a.id} style={{ display: 'flex', alignItems: 'baseline', gap: 8, fontSize: 13, color: 'var(--text-h)' }}>
+                      <span style={{ fontWeight: 800, color: '#a78bfa', minWidth: 16 }}>{i + 1}.</span>
+                      <span style={{ flex: 1 }}>{a.item}</span>
+                      {(a.owner_names || a.owner?.name) && <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{a.owner_names || a.owner?.name}</span>}
+                      {a.duration_minutes ? <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{a.duration_minutes}m</span> : null}
+                      {a.priority && <span style={{ fontSize: 10.5, fontWeight: 800, padding: '1px 7px', borderRadius: 6, background: a.priority === 'High' ? 'rgba(239,68,68,0.12)' : a.priority === 'Medium' ? 'rgba(245,158,11,0.12)' : 'rgba(148,163,184,0.15)', color: a.priority === 'High' ? '#ef4444' : a.priority === 'Medium' ? '#d97706' : 'var(--text-muted)' }}>{a.priority}</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {m.agenda && (
               <div style={{ marginTop: 14 }}>
-                <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5 }}>Agenda</div>
+                <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5 }}>Agenda notes</div>
                 <p style={{ fontSize: 13, color: 'var(--text-h)', margin: 0, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{m.agenda}</p>
               </div>
             )}
