@@ -128,6 +128,16 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Meeting-level priority + confidentiality (Meeting.docx §2)
+    |--------------------------------------------------------------------------
+    */
+    'meeting_priorities'   => ['Low', 'Medium', 'High', 'Urgent'],
+    'confidentiality'      => ['Public', 'Internal', 'Confidential', 'Restricted'],
+    // Meeting mode (Meeting.docx §2 — Physical / Online / Hybrid).
+    'modes'                => ['onsite', 'online', 'hybrid'],
+
+    /*
+    |--------------------------------------------------------------------------
     | Issue register (Meeting.docx §10)
     |--------------------------------------------------------------------------
     */

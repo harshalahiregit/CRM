@@ -26,7 +26,10 @@ class KickoffMeeting extends Model
         'tenant_id','created_by','kickoffable_type','kickoffable_id',
         // Kickoff is now one configurable meeting type among many (config/meetings.php).
         'meeting_type',
-        'reference','title','agenda','status',
+        'reference','meeting_no','title','agenda','status',
+        // Meeting.docx §2 detail fields.
+        'end_at','priority','confidentiality','chairperson','coordinator',
+        'department','client_name','project_id','work_package',
         'scheduled_at','duration_minutes','mode','location',
         'original_scheduled_at','delay_reason',
         'mom_path','minutes','completed_at',
@@ -49,6 +52,7 @@ class KickoffMeeting extends Model
 
     protected $casts = [
         'scheduled_at'             => 'datetime',
+        'end_at'                   => 'datetime',
         'original_scheduled_at'    => 'datetime',
         'completed_at'             => 'datetime',
         'acknowledged_at'          => 'datetime',
@@ -75,6 +79,21 @@ class KickoffMeeting extends Model
      * audited publish-minutes response.
      */
     protected $hidden = ['ack_token'];
+
+    /** Auto-assign a human Meeting No (MTG-YYYY-NNNN) per tenant (Meeting.docx §2). */
+    protected static function booted(): void
+    {
+        static::creating(function (KickoffMeeting $m) {
+            if (empty($m->meeting_no)) {
+                $year = date('Y');
+                $n = static::withTrashed()
+                    ->where('tenant_id', $m->tenant_id)
+                    ->whereYear('created_at', $year)
+                    ->count() + 1;
+                $m->meeting_no = sprintf('MTG-%s-%04d', $year, $n);
+            }
+        });
+    }
 
     protected $appends = [
         // 'subject' stays — it is the primary vendor and existing callers read it.

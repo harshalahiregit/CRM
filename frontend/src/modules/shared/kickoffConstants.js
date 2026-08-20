@@ -92,7 +92,7 @@ export const momStatusCfg = (s) => MOM_STATUS_CONFIG[s] || MOM_STATUS_CONFIG.Dra
 // The ordered pipeline, for the stepper on the detail card.
 export const MOM_STAGES = ['Draft', 'Pending_Approval', 'Approved', 'Distributed']
 
-export const KO_MODES = [['onsite', 'On site'], ['online', 'Online']]
+export const KO_MODES = [['onsite', 'On site'], ['online', 'Online'], ['hybrid', 'Hybrid']]
 export const koModeLabel = (m) => (KO_MODES.find(([v]) => v === m) || [m, m || '—'])[1]
 
 export const fmtDateTime = (d) => (d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) : '—')

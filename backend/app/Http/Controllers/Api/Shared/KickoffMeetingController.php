@@ -39,6 +39,9 @@ class KickoffMeetingController extends Controller
             'types'             => config('meetings.types', []),
             'default_type'      => config('meetings.default_type', 'kickoff'),
             'priorities'        => config('meetings.priorities', ['Low', 'Medium', 'High']),
+            // Meeting-level option lists (Meeting.docx §2).
+            'meeting_priorities' => config('meetings.meeting_priorities', ['Low', 'Medium', 'High', 'Urgent']),
+            'confidentiality'   => config('meetings.confidentiality', ['Public', 'Internal', 'Confidential', 'Restricted']),
             // Per-type standard agendas the Agenda Builder can one-click load.
             'templates'         => config('meetings.templates', []),
             'issue_severities'  => config('meetings.issue_severities', ['Low', 'Medium', 'High', 'Critical']),

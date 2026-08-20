@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   CalendarDays, Plus, RefreshCw, Clock, CheckCircle2, XCircle, Send,
   Users, AlertTriangle, ClipboardCheck, Pencil, BellRing, Eye, Download, Loader2, Mail, MessageCircle, Smartphone,
-  ChevronLeft, ChevronRight, List, LayoutGrid,
+  ChevronLeft, ChevronRight, List, LayoutGrid, Laptop, Building2, UserX,
 } from 'lucide-react'
 import { kickoffApi } from '@/services/kickoffApi'
 import {
@@ -489,10 +489,13 @@ function AttendanceModal({ id, onClose, onDone }) {
                     {/* Participant type · Third Party Vendor */}
                     <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{[a.role, a.organisation].filter(Boolean).join(' · ') || '—'}</div>
                   </div>
-                  <div style={{ display: 'inline-flex', borderRadius: 9, overflow: 'hidden', border: '1px solid var(--border)' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: 'flex-end' }}>
                     <SegBtn active={a.attendance_status === 'Present'} color="#10b981" icon={CheckCircle2} onClick={() => setStatus(a.id, 'Present')}>Present</SegBtn>
                     <SegBtn active={a.attendance_status === 'Late'}    color="#f59e0b" icon={Clock}        onClick={() => setStatus(a.id, 'Late')}>Late</SegBtn>
                     <SegBtn active={a.attendance_status === 'Absent'}  color="#ef4444" icon={XCircle}      onClick={() => setStatus(a.id, 'Absent')}>Absent</SegBtn>
+                    <SegBtn active={a.attendance_status === 'Excused'} color="#a78bfa" icon={UserX}        onClick={() => setStatus(a.id, 'Excused')}>Excused</SegBtn>
+                    <SegBtn active={a.attendance_status === 'Online'}  color="#0ea5e9" icon={Laptop}       onClick={() => setStatus(a.id, 'Online')}>Online</SegBtn>
+                    <SegBtn active={a.attendance_status === 'Offline'} color="#64748b" icon={Building2}    onClick={() => setStatus(a.id, 'Offline')}>Offline</SegBtn>
                   </div>
                 </div>
                 <input
@@ -530,9 +533,10 @@ function AttendanceModal({ id, onClose, onDone }) {
 
 const SegBtn = ({ active, color, icon: Icon, onClick, children }) => (
   <button onClick={onClick}
-    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', border: 'none',
-      background: active ? `${color}22` : 'transparent', color: active ? color : 'var(--text-muted)' }}>
-    <Icon size={13} /> {children}
+    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 10px', fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
+      borderRadius: 8, border: `1px solid ${active ? color + '66' : 'var(--border)'}`,
+      background: active ? `${color}22` : 'var(--bg-card)', color: active ? color : 'var(--text-muted)' }}>
+    <Icon size={12} /> {children}
   </button>
 )
 
