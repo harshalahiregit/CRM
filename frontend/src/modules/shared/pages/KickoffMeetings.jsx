@@ -358,82 +358,112 @@ function EmptyState({ onNew, filter }) {
   )
 }
 
-/* ── Month calendar ─────────────────────────────────────────────────────────── */
+/* ── Calendar ───────────────────────────────────────────────────────────────── */
 /**
- * A month grid of meetings, placed on their scheduled_at day and coloured by
- * status. Renders the same (status-filtered) rows the table does — no separate
- * fetch — so the two views never disagree. Clicking a meeting opens its detail. */
+ * Meetings on a calendar, in one of four views — Month · Week · Day · Agenda
+ * (Meeting.docx §15) — with in-view Type and Organizer filters. Renders the same
+ * (status-filtered) rows the table does — no separate fetch — so the views never
+ * disagree. Clicking a meeting opens its detail. */
+const CAL_VIEWS = [['month', 'Month'], ['week', 'Week'], ['day', 'Day'], ['agenda', 'Agenda']]
+const dayKeyOf = (d) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+const hhmm = (d) => d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }).replace(' ', '')
+
 function MeetingCalendar({ data, onOpen }) {
-  const [cursor, setCursor] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1) })
-  const year = cursor.getFullYear(), month = cursor.getMonth()
+  const [mode, setMode]     = useState('month')          // month | week | day | agenda
+  const [cursor, setCursor] = useState(() => new Date()) // any date inside the shown range
+  const [typeF, setTypeF]   = useState('All')
+  const [orgF, setOrgF]     = useState('All')
+
+  // Distinct types / organizers present in the loaded rows, for the two filters.
+  const { types, orgs } = useMemo(() => {
+    const t = new Map(), o = new Map()
+    ;(data || []).forEach(m => {
+      if (m.meeting_type) t.set(m.meeting_type, m.meeting_type_label || m.meeting_type)
+      const on = m.creator?.name
+      if (on) o.set(on, on)
+    })
+    return { types: [...t.entries()], orgs: [...o.keys()] }
+  }, [data])
+
+  const rows = useMemo(() => (data || []).filter(m =>
+    (typeF === 'All' || m.meeting_type === typeF) &&
+    (orgF === 'All' || m.creator?.name === orgF),
+  ), [data, typeF, orgF])
 
   const byDay = useMemo(() => {
     const map = {}
-    ;(data || []).forEach(m => {
+    rows.forEach(m => {
       if (!m.scheduled_at) return
       const d = new Date(m.scheduled_at)
       if (Number.isNaN(d.getTime())) return
-      const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
-      ;(map[key] = map[key] || []).push({ m, d })
+      ;(map[dayKeyOf(d)] = map[dayKeyOf(d)] || []).push({ m, d })
     })
     Object.values(map).forEach(arr => arr.sort((a, b) => a.d - b.d))
     return map
-  }, [data])
-
-  const gridStart = new Date(year, month, 1 - new Date(year, month, 1).getDay())
-  const days = Array.from({ length: 42 }, (_, i) => { const d = new Date(gridStart); d.setDate(gridStart.getDate() + i); return d })
+  }, [rows])
 
   const today = new Date()
-  const todayKey = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`
-  const monthLabel = cursor.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
-  const inMonth = (data || []).filter(m => { if (!m.scheduled_at) return false; const d = new Date(m.scheduled_at); return d.getFullYear() === year && d.getMonth() === month }).length
-  const hhmm = (d) => d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }).replace(' ', '')
+  const todayKey = dayKeyOf(today)
+
+  // Prev/next step size follows the view.
+  const step = (dir) => setCursor(c => {
+    const d = new Date(c)
+    if (mode === 'month') d.setMonth(d.getMonth() + dir)
+    else if (mode === 'week' || mode === 'agenda') d.setDate(d.getDate() + dir * 7)
+    else d.setDate(d.getDate() + dir)
+    return d
+  })
+
+  const rangeLabel = mode === 'month'
+    ? cursor.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
+    : mode === 'day'
+      ? cursor.toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'short', year: 'numeric' })
+      : (() => { const s = new Date(cursor); s.setDate(s.getDate() - s.getDay()); const e = new Date(s); e.setDate(s.getDate() + 6)
+          return `${s.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} – ${e.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}` })()
+
+  const selStyle = { height: 32, borderRadius: 8, padding: '0 8px', fontSize: 12, fontWeight: 600, background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-h)', cursor: 'pointer' }
 
   return (
     <div className="pr-glass" style={{ padding: 18 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, gap: 10, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <button onClick={() => setCursor(new Date(year, month - 1, 1))} style={navBtn} title="Previous month"><ChevronLeft size={16} /></button>
-          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 900, color: 'var(--text-h)', minWidth: 150, textAlign: 'center' }}>{monthLabel}</h3>
-          <button onClick={() => setCursor(new Date(year, month + 1, 1))} style={navBtn} title="Next month"><ChevronRight size={16} /></button>
-          <button onClick={() => { const d = new Date(); setCursor(new Date(d.getFullYear(), d.getMonth(), 1)) }}
-            style={{ ...navBtn, width: 'auto', padding: '0 12px', fontSize: 12, fontWeight: 700 }}>Today</button>
+          <button onClick={() => step(-1)} style={navBtn} title="Previous"><ChevronLeft size={16} /></button>
+          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 900, color: 'var(--text-h)', minWidth: 190, textAlign: 'center' }}>{rangeLabel}</h3>
+          <button onClick={() => step(1)} style={navBtn} title="Next"><ChevronRight size={16} /></button>
+          <button onClick={() => setCursor(new Date())} style={{ ...navBtn, width: 'auto', padding: '0 12px', fontSize: 12, fontWeight: 700 }}>Today</button>
         </div>
-        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{inMonth} meeting{inMonth === 1 ? '' : 's'} this month</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {types.length > 0 && (
+            <select value={typeF} onChange={e => setTypeF(e.target.value)} style={selStyle} title="Filter by type">
+              <option value="All">All types</option>
+              {types.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+            </select>
+          )}
+          {orgs.length > 0 && (
+            <select value={orgF} onChange={e => setOrgF(e.target.value)} style={selStyle} title="Filter by organizer">
+              <option value="All">All organizers</option>
+              {orgs.map(o => <option key={o} value={o}>{o}</option>)}
+            </select>
+          )}
+          <div style={{ display: 'inline-flex', gap: 4, background: 'var(--bg-input)', borderRadius: 9, padding: 3, border: '1px solid var(--border)' }}>
+            {CAL_VIEWS.map(([v, label]) => {
+              const on = mode === v
+              return (
+                <button key={v} onClick={() => setMode(v)}
+                  style={{ padding: '5px 11px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', border: 'none',
+                    background: on ? 'linear-gradient(135deg,#a78bfa,#7C3AED)' : 'transparent', color: on ? '#fff' : 'var(--text-muted)' }}>
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 6, marginBottom: 6 }}>
-        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(w => (
-          <div key={w} style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)', textAlign: 'center', padding: '2px 0' }}>{w}</div>
-        ))}
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 6 }}>
-        {days.map((d, i) => {
-          const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
-          const items = byDay[key] || []
-          const other = d.getMonth() !== month
-          const isToday = key === todayKey
-          return (
-            <div key={i} style={{ minHeight: 98, borderRadius: 10, padding: 6, background: other ? 'transparent' : 'var(--bg-input)', border: `1px solid ${isToday ? '#7C3AED' : 'var(--border)'}`, opacity: other ? 0.4 : 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <div style={{ fontSize: 11, fontWeight: isToday ? 800 : 600, color: isToday ? '#a78bfa' : 'var(--text-muted)', textAlign: 'right' }}>{d.getDate()}</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 3, overflow: 'hidden' }}>
-                {items.slice(0, 3).map(({ m, d: md }) => {
-                  const cfg = koStatusCfg(m.status)
-                  return (
-                    <button key={m.id} onClick={() => onOpen(m.id)} title={`${m.subject?.name || m.title} · ${hhmm(md)}`}
-                      style={{ display: 'flex', alignItems: 'center', gap: 4, textAlign: 'left', padding: '2px 5px', borderRadius: 6, cursor: 'pointer', border: 'none', background: cfg.bg, color: cfg.color, fontSize: 10.5, fontWeight: 700, overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                      <span style={{ width: 5, height: 5, borderRadius: '50%', background: cfg.color, flexShrink: 0 }} />
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{hhmm(md)} {m.subject?.name || m.title}</span>
-                    </button>
-                  )
-                })}
-                {items.length > 3 && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', paddingLeft: 3 }}>+{items.length - 3} more</span>}
-              </div>
-            </div>
-          )
-        })}
-      </div>
+      {mode === 'month' && <MonthGrid cursor={cursor} byDay={byDay} todayKey={todayKey} onOpen={onOpen} />}
+      {mode === 'week'  && <WeekGrid cursor={cursor} byDay={byDay} todayKey={todayKey} onOpen={onOpen} />}
+      {mode === 'day'   && <DayList day={cursor} items={byDay[dayKeyOf(cursor)] || []} onOpen={onOpen} />}
+      {mode === 'agenda' && <AgendaList cursor={cursor} rows={rows} onOpen={onOpen} />}
 
       <div style={{ display: 'flex', gap: 14, marginTop: 12, flexWrap: 'wrap' }}>
         {[KO_STATUS.SCHEDULED, KO_STATUS.DELAYED, KO_STATUS.COMPLETED, KO_STATUS.CANCELLED].map(s => {
@@ -441,6 +471,157 @@ function MeetingCalendar({ data, onOpen }) {
           return <span key={s} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--text-muted)' }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: c.color }} /> {c.label}</span>
         })}
       </div>
+    </div>
+  )
+}
+
+/** An event pill used across all calendar views. */
+function CalEvent({ m, d, onOpen, showDate = false }) {
+  const cfg = koStatusCfg(m.status)
+  return (
+    <button onClick={() => onOpen(m.id)} title={`${m.subject?.name || m.title} · ${hhmm(d)}`}
+      style={{ display: 'flex', alignItems: 'center', gap: 5, textAlign: 'left', padding: '3px 6px', borderRadius: 6, cursor: 'pointer', border: 'none', background: cfg.bg, color: cfg.color, fontSize: 10.5, fontWeight: 700, overflow: 'hidden', whiteSpace: 'nowrap', width: '100%' }}>
+      <span style={{ width: 5, height: 5, borderRadius: '50%', background: cfg.color, flexShrink: 0 }} />
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        {showDate ? `${d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} ` : ''}{hhmm(d)} {m.subject?.name || m.title}
+      </span>
+    </button>
+  )
+}
+
+function MonthGrid({ cursor, byDay, todayKey, onOpen }) {
+  const year = cursor.getFullYear(), month = cursor.getMonth()
+  const gridStart = new Date(year, month, 1 - new Date(year, month, 1).getDay())
+  const days = Array.from({ length: 42 }, (_, i) => { const d = new Date(gridStart); d.setDate(gridStart.getDate() + i); return d })
+  return (
+    <>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 6, marginBottom: 6 }}>
+        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(w => (
+          <div key={w} style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)', textAlign: 'center', padding: '2px 0' }}>{w}</div>
+        ))}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 6 }}>
+        {days.map((d, i) => {
+          const items = byDay[dayKeyOf(d)] || []
+          const other = d.getMonth() !== month
+          const isToday = dayKeyOf(d) === todayKey
+          return (
+            <div key={i} style={{ minHeight: 98, borderRadius: 10, padding: 6, background: other ? 'transparent' : 'var(--bg-input)', border: `1px solid ${isToday ? '#7C3AED' : 'var(--border)'}`, opacity: other ? 0.4 : 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div style={{ fontSize: 11, fontWeight: isToday ? 800 : 600, color: isToday ? '#a78bfa' : 'var(--text-muted)', textAlign: 'right' }}>{d.getDate()}</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3, overflow: 'hidden' }}>
+                {items.slice(0, 3).map(({ m, d: md }) => <CalEvent key={m.id} m={m} d={md} onOpen={onOpen} />)}
+                {items.length > 3 && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', paddingLeft: 3 }}>+{items.length - 3} more</span>}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </>
+  )
+}
+
+function WeekGrid({ cursor, byDay, todayKey, onOpen }) {
+  const start = new Date(cursor); start.setDate(start.getDate() - start.getDay())
+  const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return d })
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 6 }}>
+      {days.map((d, i) => {
+        const items = byDay[dayKeyOf(d)] || []
+        const isToday = dayKeyOf(d) === todayKey
+        return (
+          <div key={i} style={{ minHeight: 220, borderRadius: 10, padding: 7, background: 'var(--bg-input)', border: `1px solid ${isToday ? '#7C3AED' : 'var(--border)'}`, display: 'flex', flexDirection: 'column', gap: 5 }}>
+            <div style={{ textAlign: 'center', paddingBottom: 5, borderBottom: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)' }}>{d.toLocaleDateString('en-IN', { weekday: 'short' })}</div>
+              <div style={{ fontSize: 14, fontWeight: isToday ? 900 : 700, color: isToday ? '#a78bfa' : 'var(--text-h)' }}>{d.getDate()}</div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, overflow: 'hidden' }}>
+              {items.length === 0
+                ? <span style={{ fontSize: 10.5, color: 'var(--text-muted)', textAlign: 'center', marginTop: 6 }}>—</span>
+                : items.map(({ m, d: md }) => <CalEvent key={m.id} m={m} d={md} onOpen={onOpen} />)}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function DayList({ day, items, onOpen }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {items.length === 0 ? (
+        <div style={{ padding: '28px 16px', borderRadius: 12, background: 'var(--bg-input)', border: '1px dashed var(--border)', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+          No meetings on {day.toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'long' })}.
+        </div>
+      ) : items.map(({ m, d }) => {
+        const cfg = koStatusCfg(m.status)
+        return (
+          <button key={m.id} onClick={() => onOpen(m.id)}
+            style={{ display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', padding: '12px 14px', borderRadius: 12, cursor: 'pointer', background: 'var(--bg-input)', border: '1px solid var(--border)', width: '100%' }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-h)', minWidth: 66 }}>{hhmm(d)}</div>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: cfg.color, flexShrink: 0 }} />
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-h)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.subject?.name || m.title}</div>
+              <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{[m.meeting_type_label, m.creator?.name && `by ${m.creator.name}`].filter(Boolean).join(' · ')}</div>
+            </div>
+            <span style={{ fontSize: 10.5, fontWeight: 700, padding: '3px 9px', borderRadius: 999, background: cfg.bg, color: cfg.color }}>{cfg.label}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/** Upcoming meetings from the cursor date onward, grouped by day. */
+function AgendaList({ cursor, rows, onOpen }) {
+  const from = new Date(cursor); from.setHours(0, 0, 0, 0)
+  const upcoming = useMemo(() => rows
+    .filter(m => m.scheduled_at && new Date(m.scheduled_at) >= from)
+    .map(m => ({ m, d: new Date(m.scheduled_at) }))
+    .sort((a, b) => a.d - b.d), [rows, from])
+
+  const groups = useMemo(() => {
+    const g = []
+    let last = null
+    upcoming.forEach(({ m, d }) => {
+      const k = dayKeyOf(d)
+      if (k !== last) { g.push({ key: k, d, items: [] }); last = k }
+      g[g.length - 1].items.push({ m, d })
+    })
+    return g
+  }, [upcoming])
+
+  if (groups.length === 0) return (
+    <div style={{ padding: '28px 16px', borderRadius: 12, background: 'var(--bg-input)', border: '1px dashed var(--border)', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+      No upcoming meetings from this date.
+    </div>
+  )
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {groups.map(g => (
+        <div key={g.key}>
+          <div style={{ fontSize: 11.5, fontWeight: 800, color: '#a78bfa', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 7 }}>
+            {g.d.toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {g.items.map(({ m, d }) => {
+              const cfg = koStatusCfg(m.status)
+              return (
+                <button key={m.id} onClick={() => onOpen(m.id)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', padding: '10px 13px', borderRadius: 11, cursor: 'pointer', background: 'var(--bg-input)', border: '1px solid var(--border)', width: '100%' }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text-h)', minWidth: 60 }}>{hhmm(d)}</div>
+                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: cfg.color, flexShrink: 0 }} />
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-h)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.subject?.name || m.title}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{[m.meeting_type_label, m.creator?.name && `by ${m.creator.name}`].filter(Boolean).join(' · ')}</div>
+                  </div>
+                  <span style={{ fontSize: 10.5, fontWeight: 700, padding: '3px 9px', borderRadius: 999, background: cfg.bg, color: cfg.color }}>{cfg.label}</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
