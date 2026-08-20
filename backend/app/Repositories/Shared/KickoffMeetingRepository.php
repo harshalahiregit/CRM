@@ -31,7 +31,7 @@ class KickoffMeetingRepository extends BaseRepository
         }
         if (! empty($filters['subject_type']) && ! empty($filters['subject_id'])) {
             $query->where('kickoffable_type', $filters['subject_type'])
-                  ->where('kickoffable_id', (int) $filters['subject_id']);
+                ->where('kickoffable_id', (int) $filters['subject_id']);
         }
         if (! empty($filters['awaiting_ack'])) {
             $query->where('status', Status::COMPLETED)->whereNull('acknowledged_at');
@@ -53,6 +53,7 @@ class KickoffMeetingRepository extends BaseRepository
                 'creator:id,name', 'kickoffable',
                 // MOM approval actors, so the workflow card can name who did what.
                 'momSubmitter:id,name', 'momApprover:id,name', 'momDistributor:id,name',
+                'momOrganizerApprover:id,name',
                 'attendees.vendorContact:id,name,designation',
                 // Eager-loaded with its owner so the edit form can render the
                 // responsible-person name without an N+1 per MOM item.
@@ -72,14 +73,14 @@ class KickoffMeetingRepository extends BaseRepository
         $base = fn () => KickoffMeeting::forTenant($tenantId);
 
         return [
-            'total'        => $base()->count(),
-            'scheduled'    => $base()->where('status', Status::SCHEDULED)->count(),
-            'delayed'      => $base()->where('status', Status::DELAYED)->count(),
-            'completed'    => $base()->where('status', Status::COMPLETED)->count(),
+            'total' => $base()->count(),
+            'scheduled' => $base()->where('status', Status::SCHEDULED)->count(),
+            'delayed' => $base()->where('status', Status::DELAYED)->count(),
+            'completed' => $base()->where('status', Status::COMPLETED)->count(),
             'awaiting_ack' => $base()->where('status', Status::COMPLETED)->whereNull('acknowledged_at')->count(),
             // Open meetings whose date is already in the past — the chase list.
-            'overdue'      => $base()->open()->whereNotNull('scheduled_at')
-                                   ->where('scheduled_at', '<', now())->count(),
+            'overdue' => $base()->open()->whereNotNull('scheduled_at')
+                ->where('scheduled_at', '<', now())->count(),
         ];
     }
 }

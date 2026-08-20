@@ -647,6 +647,9 @@ function MomApprovalCard({ m, onChanged, onError }) {
   const cfg       = momStatusCfg(status)
   const completed = m.status === KO_STATUS.COMPLETED
   const curIdx    = MOM_STAGES.indexOf(status)
+  // Both approval levels share the approve/return controls; only the label differs.
+  const isPending    = status === 'Pending_Approval' || status === 'Pending_Chairperson'
+  const approveLabel = status === 'Pending_Approval' ? 'Approve (Organizer)' : 'Approve (Chairperson)'
 
   const run = async (fn, key) => {
     setBusy(key); onError(null)
@@ -684,7 +687,7 @@ function MomApprovalCard({ m, onChanged, onError }) {
         })}
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9.5, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.02em', marginBottom: 12 }}>
-        <span>Draft</span><span>Pending</span><span>Approved</span><span>Distributed</span>
+        <span>Draft</span><span>Organizer</span><span>Chairperson</span><span>Approved</span><span>Distributed</span>
       </div>
 
       {/* Contextual actions */}
@@ -698,13 +701,13 @@ function MomApprovalCard({ m, onChanged, onError }) {
         )
       )}
 
-      {status === 'Pending_Approval' && !returning && (
+      {isPending && !returning && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          <MomBtn onClick={approve} busy={busy === 'approve'} icon={ThumbsUp} tone="#10b981">Approve</MomBtn>
+          <MomBtn onClick={approve} busy={busy === 'approve'} icon={ThumbsUp} tone="#10b981">{approveLabel}</MomBtn>
           <MomBtn onClick={() => setReturning(true)} busy={false} icon={Undo2} tone="#f59e0b">Return</MomBtn>
         </div>
       )}
-      {status === 'Pending_Approval' && returning && (
+      {isPending && returning && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <textarea value={note} onChange={e => setNote(e.target.value)} rows={3}
             placeholder="What needs to change? (required)"
@@ -737,11 +740,13 @@ function MomApprovalCard({ m, onChanged, onError }) {
       )}
 
       {/* Audit stamps */}
-      {(m.mom_submitted_at || m.mom_approved_at || m.mom_distributed_at || m.mom_approval_note) && (
+      {(m.mom_submitted_at || m.mom_organizer_approved_at || m.mom_approved_at || m.mom_distributed_at || m.mom_viewed_at || m.mom_approval_note) && (
         <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 6 }}>
           {m.mom_submitted_at && <MomStamp label="Submitted" who={m.mom_submitter?.name} when={m.mom_submitted_at} />}
-          {m.mom_approved_at && <MomStamp label="Approved" who={m.mom_approver?.name} when={m.mom_approved_at} />}
+          {m.mom_organizer_approved_at && <MomStamp label="Organizer approved" who={m.mom_organizer_approver?.name} when={m.mom_organizer_approved_at} />}
+          {m.mom_approved_at && <MomStamp label="Chairperson approved" who={m.mom_approver?.name} when={m.mom_approved_at} />}
           {m.mom_distributed_at && <MomStamp label="Distributed" who={m.mom_distributor?.name} when={m.mom_distributed_at} />}
+          {m.mom_viewed_at && <MomStamp label="Viewed by vendor" who={null} when={m.mom_viewed_at} />}
           {m.mom_approval_note && (
             <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2, lineHeight: 1.45 }}>
               <span style={{ fontWeight: 700 }}>Note:</span> {m.mom_approval_note}

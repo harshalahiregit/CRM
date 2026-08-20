@@ -13,17 +13,23 @@ namespace App\Support\Shared;
  */
 final class MomApprovalStatus
 {
-    public const DRAFT       = 'Draft';
-    public const PENDING     = 'Pending_Approval';
-    public const APPROVED    = 'Approved';
+    public const DRAFT = 'Draft';
+
+    public const PENDING = 'Pending_Approval';        // awaiting organizer
+
+    public const PENDING_CHAIR = 'Pending_Chairperson';     // organizer done, awaiting chair
+
+    public const APPROVED = 'Approved';                // chairperson done = final
+
     public const DISTRIBUTED = 'Distributed';
 
-    public const ALL = [self::DRAFT, self::PENDING, self::APPROVED, self::DISTRIBUTED];
+    public const ALL = [self::DRAFT, self::PENDING, self::PENDING_CHAIR, self::APPROVED, self::DISTRIBUTED];
 
     public const LABELS = [
-        self::DRAFT       => 'Draft',
-        self::PENDING     => 'Pending Approval',
-        self::APPROVED    => 'Approved',
+        self::DRAFT => 'Draft',
+        self::PENDING => 'Pending Organizer',
+        self::PENDING_CHAIR => 'Pending Chairperson',
+        self::APPROVED => 'Approved',
         self::DISTRIBUTED => 'Distributed',
     ];
 
@@ -31,12 +37,14 @@ final class MomApprovalStatus
     public const DISTRIBUTABLE = [self::APPROVED, self::DISTRIBUTED];
 
     public const TRANSITIONS = [
-        // Submit for approval.
-        self::DRAFT       => [self::PENDING],
-        // Approve, or return for revision (→ Draft).
-        self::PENDING     => [self::APPROVED, self::DRAFT],
+        // Submit for approval (Meeting.docx §12: Draft → Review → Organizer → Chair).
+        self::DRAFT => [self::PENDING],
+        // Organizer approves → awaiting chairperson, or returns for revision.
+        self::PENDING => [self::PENDING_CHAIR, self::DRAFT],
+        // Chairperson gives final approval, or returns for revision.
+        self::PENDING_CHAIR => [self::APPROVED, self::DRAFT],
         // Distribute, or pull back for revision (needs re-approval afterwards).
-        self::APPROVED    => [self::DISTRIBUTED, self::DRAFT],
+        self::APPROVED => [self::DISTRIBUTED, self::DRAFT],
         // Already sent — revising means going back to Draft and round again.
         self::DISTRIBUTED => [self::DRAFT],
     ];

@@ -20,10 +20,12 @@ export default function KickoffAck() {
   const [loadErr, setLoadErr] = useState(null)
   const [name, setName] = useState('')
   const [comment, setComment] = useState('')
+  const [responseType, setResponseType] = useState('acknowledge') // acknowledge | dispute | correction
   const [submitting, setSub] = useState(false)
   const [pdfBusy, setPdfBusy] = useState(false)
   const [err, setErr] = useState(null)
   const [done, setDone] = useState(false)
+  const [doneType, setDoneType] = useState('acknowledge')
   const [signedName, setSignedName] = useState('')
 
   useEffect(() => {
@@ -48,16 +50,31 @@ export default function KickoffAck() {
 
   const submit = async () => {
     if (!name.trim()) { setErr('Please enter your name.'); return }
+    if (responseType !== 'acknowledge' && !comment.trim()) {
+      setErr(responseType === 'dispute'
+        ? 'Please describe what you disagree with.'
+        : 'Please describe the correction needed.')
+      return
+    }
     setSub(true); setErr(null)
     try {
-      await kickoffAckApi.acknowledge(token, name.trim(), comment.trim() || undefined)
+      await kickoffAckApi.acknowledge(token, name.trim(), comment.trim() || undefined, responseType)
       setSignedName(name.trim())
+      setDoneType(responseType)
       setDone(true)
     } catch (e) {
-      setErr(e?.response?.data?.message || 'Could not acknowledge. Please try again.')
+      setErr(e?.response?.data?.message || 'Could not submit your response. Please try again.')
       setSub(false)
     }
   }
+
+  // The three ways a vendor can respond (Meeting.docx §13).
+  const RESPONSES = [
+    { key: 'acknowledge', label: 'Acknowledge', color: '#10b981' },
+    { key: 'correction',  label: 'Request correction', color: '#f59e0b' },
+    { key: 'dispute',     label: 'Dispute', color: '#ef4444' },
+  ]
+  const active = RESPONSES.find(r => r.key === responseType) || RESPONSES[0]
 
   if (loading) return <Shell><Centered><Loader2 size={30} className="ka-spin" style={{ color: '#a78bfa' }} /><p style={muted}>Loading…</p></Centered></Shell>
 
@@ -69,18 +86,25 @@ export default function KickoffAck() {
     </Centered></Shell>
   )
 
-  if (done) return (
-    <Shell><Centered>
-      <Disc color="#10b981" icon={CheckCircle2} />
-      <h1 style={h1}>Acknowledged</h1>
-      <p style={{ ...muted, maxWidth: 320 }}>
-        Thank you{signedName ? `, ${signedName}` : ''}. Your acknowledgement of these minutes has been recorded.
-      </p>
-      <div className="pr-glass" style={{ marginTop: 18, padding: '12px 16px', borderRadius: 14 }}>
-        <p style={{ ...muted, fontSize: 12, margin: 0 }}>You can close this page.</p>
-      </div>
-    </Centered></Shell>
-  )
+  if (done) {
+    const DONE = {
+      acknowledge: { color: '#10b981', icon: CheckCircle2, title: 'Acknowledged', msg: 'Your acknowledgement of these minutes has been recorded.' },
+      correction:  { color: '#f59e0b', icon: FileText,     title: 'Correction requested', msg: 'Your correction request has been sent to the coordinator. You will be asked to acknowledge the revised minutes.' },
+      dispute:     { color: '#ef4444', icon: XCircle,      title: 'Dispute recorded', msg: 'Your dispute has been recorded and sent to the coordinator.' },
+    }[doneType] || {}
+    return (
+      <Shell><Centered>
+        <Disc color={DONE.color} icon={DONE.icon} />
+        <h1 style={h1}>{DONE.title}</h1>
+        <p style={{ ...muted, maxWidth: 320 }}>
+          Thank you{signedName ? `, ${signedName}` : ''}. {DONE.msg}
+        </p>
+        <div className="pr-glass" style={{ marginTop: 18, padding: '12px 16px', borderRadius: 14 }}>
+          <p style={{ ...muted, fontSize: 12, margin: 0 }}>You can close this page.</p>
+        </div>
+      </Centered></Shell>
+    )
+  }
 
   return (
     <Shell>
@@ -134,10 +158,24 @@ export default function KickoffAck() {
 
         {/* Acknowledge */}
         <div className="pr-glass" style={{ padding: 18 }}>
-          <SectionTitle icon={ShieldCheck}>Acknowledge these minutes</SectionTitle>
-          <p style={{ ...muted, fontSize: 12.5, margin: '8px 0 14px', lineHeight: 1.5 }}>
-            By entering your name and confirming, you acknowledge that these minutes reflect what was agreed at the meeting.
+          <SectionTitle icon={ShieldCheck}>Respond to these minutes</SectionTitle>
+          <p style={{ ...muted, fontSize: 12.5, margin: '8px 0 12px', lineHeight: 1.5 }}>
+            Acknowledge that these minutes reflect what was agreed, or ask for a correction / raise a dispute before you sign.
           </p>
+
+          {/* How the vendor is responding. */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 12 }}>
+            {RESPONSES.map(r => {
+              const on = r.key === responseType
+              return (
+                <button key={r.key} onClick={() => { setResponseType(r.key); setErr(null) }}
+                  style={{ padding: '9px 6px', borderRadius: 10, fontSize: 12, fontWeight: 700, cursor: 'pointer', lineHeight: 1.2,
+                    color: on ? '#fff' : r.color, background: on ? r.color : `${r.color}14`, border: `1px solid ${on ? r.color : `${r.color}55`}` }}>
+                  {r.label}
+                </button>
+              )
+            })}
+          </div>
 
           {/* Review the actual signed document before acknowledging. */}
           {meeting.has_document && (
@@ -153,7 +191,11 @@ export default function KickoffAck() {
           <input value={name} onChange={e => setName(e.target.value)} placeholder="Your full name"
             style={{ ...inputStyle, height: 48, fontSize: 15, marginBottom: 12 }} />
           <textarea value={comment} onChange={e => setComment(e.target.value)} rows={2}
-            placeholder="Add a remark (optional) — e.g. agreed with one correction"
+            placeholder={responseType === 'acknowledge'
+              ? 'Add a remark (optional) — e.g. agreed with one note'
+              : responseType === 'dispute'
+                ? 'Describe what you disagree with (required)'
+                : 'Describe the correction needed (required)'}
             style={{ ...inputStyle, minHeight: 64, fontSize: 14, marginBottom: 12, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5, padding: '10px 12px' }} />
           {err && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 10, marginBottom: 12, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)' }}>
@@ -164,10 +206,14 @@ export default function KickoffAck() {
           <button onClick={submit} disabled={submitting}
             style={{ width: '100%', height: 52, borderRadius: 13, cursor: 'pointer', fontSize: 15, fontWeight: 800, color: '#fff', border: 'none',
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              background: 'linear-gradient(145deg,#34d399,#10b981)', boxShadow: '0 10px 24px -6px rgba(16,185,129,.6), inset 0 1px 0 rgba(255,255,255,.3)',
+              background: `linear-gradient(145deg,${active.color},${active.color})`, boxShadow: `0 10px 24px -6px ${active.color}99, inset 0 1px 0 rgba(255,255,255,.3)`,
               opacity: submitting ? 0.7 : 1 }}>
             {submitting ? <Loader2 size={17} className="ka-spin" /> : <ShieldCheck size={17} />}
-            {submitting ? 'Recording…' : 'I acknowledge the minutes'}
+            {submitting
+              ? 'Submitting…'
+              : responseType === 'acknowledge' ? 'I acknowledge the minutes'
+              : responseType === 'dispute' ? 'Submit dispute'
+              : 'Request correction'}
           </button>
         </div>
       </div>

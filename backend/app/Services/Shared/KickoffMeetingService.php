@@ -10,9 +10,6 @@ use App\Models\Shared\KickoffMomItem;
 use App\Models\Shared\MeetingAgendaItem;
 use App\Models\Shared\MeetingDecision;
 use App\Models\Shared\MeetingIssue;
-use App\Support\Shared\MeetingIssueStatus;
-use App\Support\Shared\MomActionStatus;
-use App\Support\Shared\MomApprovalStatus;
 use App\Models\Tenant;
 use App\Models\Tpv\TpvOnboarding;
 use App\Models\User;
@@ -20,10 +17,15 @@ use App\Models\Vendor\Vendor;
 use App\Models\Vendor\VendorContact;
 use App\Repositories\Shared\KickoffMeetingRepository;
 use App\Services\Notifications\NotificationService;
+use App\Services\Tpv\IncidentService;
 use App\Support\FrontendUrl;
 use App\Support\Shared\KickoffStatus as Status;
 use App\Support\Shared\KickoffSubject;
+use App\Support\Shared\MeetingIssueStatus;
+use App\Support\Shared\MomActionStatus;
+use App\Support\Shared\MomApprovalStatus;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -35,8 +37,7 @@ class KickoffMeetingService
     public function __construct(
         private KickoffMeetingRepository $repo,
         private NotificationService $notifications,
-    ) {
-    }
+    ) {}
 
     public function list(int $tenantId, array $filters)
     {
@@ -57,7 +58,7 @@ class KickoffMeetingService
     {
         $meetings = KickoffMeeting::forTenant($tenantId);
 
-        $today    = (clone $meetings)->open()->whereDate('scheduled_at', now()->toDateString())->count();
+        $today = (clone $meetings)->open()->whereDate('scheduled_at', now()->toDateString())->count();
         $upcoming = (clone $meetings)->open()->whereNotNull('scheduled_at')->where('scheduled_at', '>', now())->count();
 
         // MOM not yet distributed on a completed meeting; overdue if completed > 3 days ago.
@@ -68,46 +69,46 @@ class KickoffMeetingService
             ->where('completed_at', '<', now()->subDays(3))->count();
 
         // Action effectiveness across the tenant.
-        $actions        = KickoffMomItem::where('tenant_id', $tenantId);
-        $totalActions   = (clone $actions)->count();
-        $closedActions  = (clone $actions)->where('status', MomActionStatus::CLOSED)->count();
-        $openActions    = (clone $actions)->whereIn('status', MomActionStatus::OPEN_STATES)->count();
+        $actions = KickoffMomItem::where('tenant_id', $tenantId);
+        $totalActions = (clone $actions)->count();
+        $closedActions = (clone $actions)->where('status', MomActionStatus::CLOSED)->count();
+        $openActions = (clone $actions)->whereIn('status', MomActionStatus::OPEN_STATES)->count();
         $overdueActions = (clone $actions)->whereIn('status', MomActionStatus::OPEN_STATES)
             ->whereNotNull('target_date')->whereDate('target_date', '<', now())->count();
-        $closureRate    = $totalActions > 0 ? (int) round($closedActions / $totalActions * 100) : 0;
+        $closureRate = $totalActions > 0 ? (int) round($closedActions / $totalActions * 100) : 0;
 
         // Decisions still in force (Active) and issues still open.
         $decisionsActive = MeetingDecision::where('tenant_id', $tenantId)->where('status', 'Active')->count();
-        $openIssues      = MeetingIssue::where('tenant_id', $tenantId)
+        $openIssues = MeetingIssue::where('tenant_id', $tenantId)
             ->whereIn('status', MeetingIssueStatus::OPEN_STATES)->count();
 
         // Meetings by type + by status.
         $byType = (clone $meetings)->get(['meeting_type'])
             ->groupBy('meeting_type')
             ->map(fn ($g, $type) => [
-                'type'  => $type,
+                'type' => $type,
                 'label' => config("meetings.types.{$type}", ucfirst(str_replace('_', ' ', (string) $type))),
                 'count' => $g->count(),
             ])->sortByDesc('count')->values()->all();
 
         return [
-            'total'            => (clone $meetings)->count(),
-            'today'            => $today,
-            'upcoming'         => $upcoming,
-            'scheduled'        => (clone $meetings)->where('status', Status::SCHEDULED)->count(),
-            'delayed'          => (clone $meetings)->where('status', Status::DELAYED)->count(),
-            'completed'        => (clone $meetings)->where('status', Status::COMPLETED)->count(),
-            'pending_mom'      => $pendingMom,
-            'overdue_mom'      => $overdueMom,
-            'awaiting_ack'     => (clone $meetings)->where('status', Status::COMPLETED)->whereNull('acknowledged_at')->count(),
-            'total_actions'    => $totalActions,
-            'open_actions'     => $openActions,
-            'overdue_actions'  => $overdueActions,
-            'closed_actions'   => $closedActions,
-            'closure_rate'     => $closureRate,
+            'total' => (clone $meetings)->count(),
+            'today' => $today,
+            'upcoming' => $upcoming,
+            'scheduled' => (clone $meetings)->where('status', Status::SCHEDULED)->count(),
+            'delayed' => (clone $meetings)->where('status', Status::DELAYED)->count(),
+            'completed' => (clone $meetings)->where('status', Status::COMPLETED)->count(),
+            'pending_mom' => $pendingMom,
+            'overdue_mom' => $overdueMom,
+            'awaiting_ack' => (clone $meetings)->where('status', Status::COMPLETED)->whereNull('acknowledged_at')->count(),
+            'total_actions' => $totalActions,
+            'open_actions' => $openActions,
+            'overdue_actions' => $overdueActions,
+            'closed_actions' => $closedActions,
+            'closure_rate' => $closureRate,
             'decisions_active' => $decisionsActive,
-            'open_issues'      => $openIssues,
-            'by_type'          => $byType,
+            'open_issues' => $openIssues,
+            'by_type' => $byType,
         ];
     }
 
@@ -129,31 +130,31 @@ class KickoffMeetingService
         $subject = $this->resolveSubject($data['subject_type'] ?? null, $data['subject_id'] ?? null, $actor->tenant_id);
 
         $meeting = KickoffMeeting::create([
-            'tenant_id'        => $actor->tenant_id,
-            'created_by'       => $actor->id,
+            'tenant_id' => $actor->tenant_id,
+            'created_by' => $actor->id,
             'kickoffable_type' => $subject ? $subject::class : null,
-            'kickoffable_id'   => $subject?->id,
-            'meeting_type'     => $data['meeting_type'] ?? config('meetings.default_type', 'kickoff'),
-            'title'            => $data['title'] ?? $this->defaultTitle($subject),
-            'reference'        => $data['reference'] ?? null,
-            'agenda'           => $data['agenda'] ?? null,
-            'status'           => Status::SCHEDULED,
-            'scheduled_at'     => $data['scheduled_at'] ?? null,
-            'end_at'           => $data['end_at'] ?? null,
+            'kickoffable_id' => $subject?->id,
+            'meeting_type' => $data['meeting_type'] ?? config('meetings.default_type', 'kickoff'),
+            'title' => $data['title'] ?? $this->defaultTitle($subject),
+            'reference' => $data['reference'] ?? null,
+            'agenda' => $data['agenda'] ?? null,
+            'status' => Status::SCHEDULED,
+            'scheduled_at' => $data['scheduled_at'] ?? null,
+            'end_at' => $data['end_at'] ?? null,
             'duration_minutes' => $data['duration_minutes'] ?? null,
-            'priority'         => $data['priority'] ?? null,
-            'confidentiality'  => $data['confidentiality'] ?? null,
-            'chairperson'      => $data['chairperson'] ?? null,
-            'coordinator'      => $data['coordinator'] ?? null,
-            'department'       => $data['department'] ?? null,
-            'client_name'      => $data['client_name'] ?? null,
-            'work_package'     => $data['work_package'] ?? null,
-            'mode'             => $data['mode'] ?? null,
-            'planned_date'     => $data['planned_date'] ?? null,
-            'city'             => $data['city'] ?? null,
-            'venue'            => $data['venue'] ?? $data['location_detail'] ?? null,
-            'address'          => $data['address'] ?? null,
-            'location'         => $this->composeLocation($data),
+            'priority' => $data['priority'] ?? null,
+            'confidentiality' => $data['confidentiality'] ?? null,
+            'chairperson' => $data['chairperson'] ?? null,
+            'coordinator' => $data['coordinator'] ?? null,
+            'department' => $data['department'] ?? null,
+            'client_name' => $data['client_name'] ?? null,
+            'work_package' => $data['work_package'] ?? null,
+            'mode' => $data['mode'] ?? null,
+            'planned_date' => $data['planned_date'] ?? null,
+            'city' => $data['city'] ?? null,
+            'venue' => $data['venue'] ?? $data['location_detail'] ?? null,
+            'address' => $data['address'] ?? null,
+            'location' => $this->composeLocation($data),
         ]);
 
         // Convenience back-pointer: when the subject is an onboarding, fill its
@@ -203,28 +204,28 @@ class KickoffMeetingService
         }
 
         $meeting->update(array_filter([
-            'title'            => $data['title'] ?? null,
-            'meeting_type'     => $data['meeting_type'] ?? null,
-            'reference'        => $data['reference'] ?? null,
-            'agenda'           => $data['agenda'] ?? null,
-            'scheduled_at'     => $data['scheduled_at'] ?? null,
-            'end_at'           => $data['end_at'] ?? null,
+            'title' => $data['title'] ?? null,
+            'meeting_type' => $data['meeting_type'] ?? null,
+            'reference' => $data['reference'] ?? null,
+            'agenda' => $data['agenda'] ?? null,
+            'scheduled_at' => $data['scheduled_at'] ?? null,
+            'end_at' => $data['end_at'] ?? null,
             'duration_minutes' => $data['duration_minutes'] ?? null,
-            'priority'         => $data['priority'] ?? null,
-            'confidentiality'  => $data['confidentiality'] ?? null,
-            'chairperson'      => $data['chairperson'] ?? null,
-            'coordinator'      => $data['coordinator'] ?? null,
-            'department'       => $data['department'] ?? null,
-            'client_name'      => $data['client_name'] ?? null,
-            'work_package'     => $data['work_package'] ?? null,
-            'mode'             => $data['mode'] ?? null,
-            'planned_date'     => $data['planned_date'] ?? null,
-            'city'             => $data['city'] ?? null,
-            'venue'            => $data['venue'] ?? $data['location_detail'] ?? null,
-            'address'          => $data['address'] ?? null,
+            'priority' => $data['priority'] ?? null,
+            'confidentiality' => $data['confidentiality'] ?? null,
+            'chairperson' => $data['chairperson'] ?? null,
+            'coordinator' => $data['coordinator'] ?? null,
+            'department' => $data['department'] ?? null,
+            'client_name' => $data['client_name'] ?? null,
+            'work_package' => $data['work_package'] ?? null,
+            'mode' => $data['mode'] ?? null,
+            'planned_date' => $data['planned_date'] ?? null,
+            'city' => $data['city'] ?? null,
+            'venue' => $data['venue'] ?? $data['location_detail'] ?? null,
+            'address' => $data['address'] ?? null,
             // Recomposed from whichever parts were sent, falling back to what is
             // already stored, so editing only the city keeps the venue.
-            'location'         => $this->composeLocation($data, $meeting),
+            'location' => $this->composeLocation($data, $meeting),
         ], fn ($v) => $v !== null));
 
         // Only touched when the caller actually sends the field, so an edit that
@@ -281,7 +282,7 @@ class KickoffMeetingService
             }
             // Preserve the first promised date so "how late" can be measured.
             $changes['original_scheduled_at'] = $meeting->original_scheduled_at ?? $meeting->scheduled_at;
-            $changes['delay_reason']          = $data['delay_reason'];
+            $changes['delay_reason'] = $data['delay_reason'];
             if (! empty($data['scheduled_at'])) {
                 $changes['scheduled_at'] = $data['scheduled_at'];
             }
@@ -318,7 +319,7 @@ class KickoffMeetingService
     }
 
     /** Attach an uploaded Minutes-of-Meeting document (not generated — see migration). */
-    public function uploadMom(KickoffMeeting $meeting, \Illuminate\Http\UploadedFile $file, User $actor): KickoffMeeting
+    public function uploadMom(KickoffMeeting $meeting, UploadedFile $file, User $actor): KickoffMeeting
     {
         // Replace the old file rather than orphan it on disk.
         if ($meeting->mom_path && Storage::disk(self::DISK)->exists($meeting->mom_path)) {
@@ -367,7 +368,7 @@ class KickoffMeetingService
         }
 
         $meeting->update([
-            'mom_status'       => MomApprovalStatus::PENDING,
+            'mom_status' => MomApprovalStatus::PENDING,
             'mom_submitted_at' => now(),
             'mom_submitted_by' => $actor->id,
             // Clear a stale return-reason from a previous round.
@@ -386,29 +387,44 @@ class KickoffMeetingService
      */
     public function decideMom(KickoffMeeting $meeting, string $decision, ?string $note, User $actor): KickoffMeeting
     {
-        if ($meeting->mom_status !== MomApprovalStatus::PENDING) {
-            throw new BusinessException('Only minutes that are pending approval can be approved or returned.');
+        $status = $meeting->mom_status;
+        if (! in_array($status, [MomApprovalStatus::PENDING, MomApprovalStatus::PENDING_CHAIR], true)) {
+            throw new BusinessException('Only minutes awaiting approval can be approved or returned.');
         }
 
         $note = trim((string) $note);
 
         if ($decision === 'approve') {
-            $meeting->update([
-                'mom_status'        => MomApprovalStatus::APPROVED,
-                'mom_approved_at'   => now(),
-                'mom_approved_by'   => $actor->id,
-                'mom_approval_note' => $note !== '' ? $note : null,
-            ]);
-            $meeting->recordAudit('mom_approved', $actor, 'Minutes approved'.($note !== '' ? ": {$note}" : ''));
+            if ($status === MomApprovalStatus::PENDING) {
+                // Level 1 — organizer approval hands off to the chairperson.
+                $meeting->update([
+                    'mom_status' => MomApprovalStatus::PENDING_CHAIR,
+                    'mom_organizer_approved_at' => now(),
+                    'mom_organizer_approved_by' => $actor->id,
+                    'mom_approval_note' => $note !== '' ? $note : $meeting->mom_approval_note,
+                ]);
+                $meeting->recordAudit('mom_organizer_approved', $actor, 'Minutes approved by the organizer'.($note !== '' ? ": {$note}" : ''));
+            } else {
+                // Level 2 — chairperson gives final approval.
+                $meeting->update([
+                    'mom_status' => MomApprovalStatus::APPROVED,
+                    'mom_approved_at' => now(),
+                    'mom_approved_by' => $actor->id,
+                    'mom_approval_note' => $note !== '' ? $note : $meeting->mom_approval_note,
+                ]);
+                $meeting->recordAudit('mom_approved', $actor, 'Minutes given final (chairperson) approval'.($note !== '' ? ": {$note}" : ''));
+            }
         } elseif ($decision === 'return') {
             if ($note === '') {
                 throw new BusinessException('Returning minutes needs a reason so the author knows what to revise.');
             }
             $meeting->update([
-                'mom_status'        => MomApprovalStatus::DRAFT,
+                'mom_status' => MomApprovalStatus::DRAFT,
                 'mom_approval_note' => $note,
-                'mom_approved_at'   => null,
-                'mom_approved_by'   => null,
+                'mom_organizer_approved_at' => null,
+                'mom_organizer_approved_by' => null,
+                'mom_approved_at' => null,
+                'mom_approved_by' => null,
             ]);
             $meeting->recordAudit('mom_returned', $actor, "Minutes returned for revision: {$note}");
         } else {
@@ -416,6 +432,14 @@ class KickoffMeetingService
         }
 
         return $this->find($meeting->id, $actor->tenant_id);
+    }
+
+    /** First-view stamp for the distribution Sent → Viewed → Acknowledged trail. */
+    public function markMomViewed(KickoffMeeting $meeting): void
+    {
+        if ($meeting->mom_viewed_at === null) {
+            $meeting->forceFill(['mom_viewed_at' => now()])->saveQuietly();
+        }
     }
 
     /**
@@ -430,9 +454,12 @@ class KickoffMeetingService
         }
 
         $meeting->update([
-            'mom_status'      => MomApprovalStatus::DRAFT,
+            'mom_status' => MomApprovalStatus::DRAFT,
             'mom_approved_at' => null,
             'mom_approved_by' => null,
+            // Both sign-offs are void once the content reopens — the round starts over.
+            'mom_organizer_approved_at' => null,
+            'mom_organizer_approved_by' => null,
         ]);
 
         $meeting->recordAudit('mom_revised', $actor, 'Minutes reopened for revision');
@@ -468,16 +495,16 @@ class KickoffMeetingService
         // distinguishable from one that was never asked for.
         $sentAt = now();
         $meeting->update([
-            'ack_token'                => Str::random(48),
-            'acknowledgement_sent_at'  => $sentAt,
+            'ack_token' => Str::random(48),
+            'acknowledgement_sent_at' => $sentAt,
             'acknowledgement_deadline' => $sentAt->copy()->addHours(KickoffMeeting::ACK_WINDOW_HOURS),
-            'acknowledgement_status'   => KickoffMeeting::ACK_PENDING,
+            'acknowledgement_status' => KickoffMeeting::ACK_PENDING,
             // Sending for acknowledgement IS distribution — record it on the MOM
             // lifecycle, stamping the distributor the first time only so a re-send
             // does not overwrite who originally issued the minutes.
-            'mom_status'               => MomApprovalStatus::DISTRIBUTED,
-            'mom_distributed_at'       => $meeting->mom_distributed_at ?? $sentAt,
-            'mom_distributed_by'       => $meeting->mom_distributed_by ?? $actor->id,
+            'mom_status' => MomApprovalStatus::DISTRIBUTED,
+            'mom_distributed_at' => $meeting->mom_distributed_at ?? $sentAt,
+            'mom_distributed_by' => $meeting->mom_distributed_by ?? $actor->id,
         ]);
 
         $this->sendMomNotifications($meeting);
@@ -519,12 +546,12 @@ class KickoffMeetingService
         }
 
         $meetingDate = optional($meeting->scheduled_at)->format('l, j F Y');
-        $dateSuffix  = $meetingDate ? ' - '.optional($meeting->scheduled_at)->format('j M Y') : '';
+        $dateSuffix = $meetingDate ? ' - '.optional($meeting->scheduled_at)->format('j M Y') : '';
 
         // Only the recipient who can actually acknowledge is told to. Promising
         // "Acknowledgment Required" to a vendor whose mail carries no acknowledge
         // button would be an instruction it cannot follow.
-        $ackSubject  = 'Kickoff Meeting Minutes - Acknowledgment Required'.$dateSuffix;
+        $ackSubject = 'Kickoff Meeting Minutes - Acknowledgment Required'.$dateSuffix;
         $readSubject = 'Kickoff Meeting Minutes'.$dateSuffix;
 
         // The token IS the credential, so the link only exists while the window is
@@ -551,7 +578,7 @@ class KickoffMeetingService
             }
             $sent[strtolower($to)] = true;
 
-            $momUrl  = $r['token'] ? FrontendUrl::to('/kickoff/mom/'.$r['token']) : null;
+            $momUrl = $r['token'] ? FrontendUrl::to('/kickoff/mom/'.$r['token']) : null;
             $ackHere = $r['is_primary'] ? $ackUrl : null;
 
             $this->notifications->emailHtml(
@@ -560,6 +587,27 @@ class KickoffMeetingService
                 $this->renderMomEmail($meeting, $r['vendor'], $ackHere, $meetingDate, $momUrl),
                 ['kickoff_meeting_id' => $meeting->id, 'vendor_id' => $r['vendor']?->id],
                 $this->momPlainText($meeting, $r['vendor'], $ackHere, $meetingDate, $momUrl),
+                $meeting->tenant_id,
+            );
+        }
+
+        // Distribute a read copy to the internal side too (Meeting.docx §13 — the
+        // minutes go to the organisation's own attendees, not only the vendor).
+        // No acknowledge button and no public read token: internal staff read it in
+        // the app; this is a courtesy notification that the minutes were issued.
+        foreach ($meeting->attendees as $a) {
+            $to = $a->email;
+            if (! $to || strtolower((string) $a->side) !== 'internal' || isset($sent[strtolower($to)])) {
+                continue;
+            }
+            $sent[strtolower($to)] = true;
+
+            $this->notifications->emailHtml(
+                $to,
+                $readSubject,
+                $this->renderMomEmail($meeting, null, null, $meetingDate, null),
+                ['kickoff_meeting_id' => $meeting->id],
+                $this->momPlainText($meeting, null, null, $meetingDate, null),
                 $meeting->tenant_id,
             );
         }
@@ -591,9 +639,9 @@ class KickoffMeetingService
 
         if ($meeting->subjects->isEmpty()) {
             return [[
-                'email'      => $fallbackEmail,
-                'vendor'     => $primary,
-                'token'      => $meeting->ack_token,
+                'email' => $fallbackEmail,
+                'vendor' => $primary,
+                'token' => $meeting->ack_token,
                 'is_primary' => true,
             ]];
         }
@@ -602,9 +650,9 @@ class KickoffMeetingService
             $v = $s->subject instanceof Vendor ? $s->subject : null;
 
             return [
-                'email'      => $v?->email,
-                'vendor'     => $v,
-                'token'      => $s->ack_token,
+                'email' => $v?->email,
+                'vendor' => $v,
+                'token' => $s->ack_token,
                 'is_primary' => (bool) $s->is_primary,
             ];
         })->all();
@@ -631,28 +679,28 @@ class KickoffMeetingService
         $meeting->loadMissing(['attendees', 'momItems']);
 
         $details = array_filter([
-            'Date'     => $meetingDate,
-            'Time'     => optional($meeting->scheduled_at)->format('h:i A'),
-            'Mode'     => $meeting->mode ? ucfirst($meeting->mode) : null,
+            'Date' => $meetingDate,
+            'Time' => optional($meeting->scheduled_at)->format('h:i A'),
+            'Mode' => $meeting->mode ? ucfirst($meeting->mode) : null,
             // The PDF labels this the same way — an online meeting's "location"
             // is its joining link, and calling it Location would read as a place.
             ($meeting->mode === 'online' ? 'Meeting Link' : 'Location') => $meeting->location,
         ]);
 
         return view('emails.shared.kickoff_mom', [
-            'meeting'       => $meeting,
-            'meetingDate'   => $meetingDate,
+            'meeting' => $meeting,
+            'meetingDate' => $meetingDate,
             'recipientName' => $vendor?->company_name ?: ($meeting->attendees->first()->name ?? 'Sir/Madam'),
-            'details'       => $details,
-            'attendees'     => $meeting->attendees,
-            'presentCount'  => $meeting->attendees->where('attended', true)->count(),
-            'momItems'      => $meeting->momItems,
-            'ackUrl'        => $ackUrl,
-            'momUrl'        => $momUrl,
-            'deadline'      => optional($meeting->acknowledgement_deadline)->format('d M Y, h:i A'),
-            'windowHours'   => KickoffMeeting::ACK_WINDOW_HOURS,
-            'companyName'   => config('app.name', 'Our Company'),
-            'logoUrl'       => config('mail.logo_url'),
+            'details' => $details,
+            'attendees' => $meeting->attendees,
+            'presentCount' => $meeting->attendees->where('attended', true)->count(),
+            'momItems' => $meeting->momItems,
+            'ackUrl' => $ackUrl,
+            'momUrl' => $momUrl,
+            'deadline' => optional($meeting->acknowledgement_deadline)->format('d M Y, h:i A'),
+            'windowHours' => KickoffMeeting::ACK_WINDOW_HOURS,
+            'companyName' => config('app.name', 'Our Company'),
+            'logoUrl' => config('mail.logo_url'),
         ])->render();
     }
 
@@ -798,21 +846,63 @@ class KickoffMeetingService
 
         $comment = trim((string) ($data['comment'] ?? ''));
 
-        $meeting->update([
-            'acknowledged_at'         => now(),
-            'acknowledged_by_name'    => $data['name'],
-            'acknowledged_ip'         => $meta['ip'] ?? null,
-            'acknowledgement_status'  => KickoffMeeting::ACK_ACKNOWLEDGED,
-            // Optional — acknowledging without a comment is the normal case.
+        // The vendor's response is one of three (Meeting.docx §13): a plain
+        // acknowledgement, a dispute (they disagree with what was minuted), or a
+        // request for correction (a factual fix before they sign). Anything else —
+        // or nothing — is treated as a plain acknowledgement.
+        $responseType = in_array($data['response_type'] ?? null, ['acknowledge', 'dispute', 'correction'], true)
+            ? $data['response_type']
+            : 'acknowledge';
+
+        // A dispute or a correction request needs the reason spelled out — that is
+        // the whole content of the response.
+        if ($responseType !== 'acknowledge' && $comment === '') {
+            throw new BusinessException($responseType === 'dispute'
+                ? 'Please describe what you disagree with so it can be addressed.'
+                : 'Please describe the correction needed before you can request it.');
+        }
+
+        $ackStatus = match ($responseType) {
+            'dispute' => 'disputed',
+            'correction' => 'correction_requested',
+            default => KickoffMeeting::ACK_ACKNOWLEDGED,
+        };
+
+        $changes = [
+            'acknowledged_ip' => $meta['ip'] ?? null,
+            'acknowledgement_status' => $ackStatus,
+            'acknowledgement_response_type' => $responseType,
+            // Optional for a plain ack; mandatory (enforced above) otherwise.
             'acknowledgement_comment' => $comment !== '' ? $comment : null,
             // Burn the token — an acknowledgement link is single-use.
-            'ack_token'               => null,
-        ]);
+            'ack_token' => null,
+        ];
 
-        $meeting->recordAudit('acknowledged', null, "Minutes acknowledged by {$data['name']}", [
-            'ip' => $meta['ip'] ?? null,
-        ]);
-        Log::channel('tpv')->info('Kickoff minutes acknowledged', [
+        if ($responseType === 'acknowledge') {
+            // Only a clean acknowledgement closes the loop and stamps the signer.
+            $changes['acknowledged_at'] = now();
+            $changes['acknowledged_by_name'] = $data['name'];
+        } else {
+            // A dispute / correction sends the minutes back to Draft so the
+            // coordinator can revise and re-issue them; the signer is recorded but
+            // the meeting is not yet acknowledged.
+            $changes['acknowledged_by_name'] = $data['name'];
+            $changes['mom_status'] = MomApprovalStatus::DRAFT;
+        }
+
+        $meeting->update($changes);
+
+        $verb = match ($responseType) {
+            'dispute' => 'disputed',
+            'correction' => 'requested a correction to',
+            default => 'acknowledged',
+        };
+        $meeting->recordAudit('acknowledged', null, "Minutes {$verb} by {$data['name']}"
+            .($comment !== '' ? ": {$comment}" : ''), [
+                'ip' => $meta['ip'] ?? null,
+                'response_type' => $responseType,
+            ]);
+        Log::channel('tpv')->info('Kickoff minutes '.$verb, [
             'meeting_id' => $meeting->id, 'by' => $data['name'], 'ip' => $meta['ip'] ?? null,
         ]);
 
@@ -842,8 +932,8 @@ class KickoffMeetingService
     public function markAttendance(KickoffMeeting $meeting, array $rows, User $actor): KickoffMeeting
     {
         $present = 0;
-        $late    = 0;
-        $absent  = 0;
+        $late = 0;
+        $absent = 0;
 
         foreach ($rows as $row) {
             $attendee = $meeting->attendees()->whereKey($row['id'])->first();
@@ -859,18 +949,18 @@ class KickoffMeetingService
                 if ($status === null || $status === '') {
                     // Explicitly un-marking: back to "not marked yet".
                     $changes['attendance_status'] = null;
-                    $changes['attended']          = false;
+                    $changes['attended'] = false;
                 } else {
                     if (! in_array($status, KickoffAttendee::STATUSES, true)) {
                         throw new BusinessException('Unknown attendance status: '.$status);
                     }
                     $changes['attendance_status'] = $status;
-                    $changes['attended']          = in_array($status, KickoffAttendee::ATTENDING, true);
+                    $changes['attended'] = in_array($status, KickoffAttendee::ATTENDING, true);
                 }
             } elseif (array_key_exists('attended', $row)) {
                 // Legacy boolean caller — derive a status so the two agree.
-                $attended                     = ! empty($row['attended']);
-                $changes['attended']          = $attended;
+                $attended = ! empty($row['attended']);
+                $changes['attended'] = $attended;
                 $changes['attendance_status'] = $attended ? KickoffAttendee::PRESENT : KickoffAttendee::ABSENT;
             }
 
@@ -886,9 +976,9 @@ class KickoffMeetingService
 
             match ($attendee->fresh()->attendance_status) {
                 KickoffAttendee::PRESENT => $present++,
-                KickoffAttendee::LATE    => $late++,
-                KickoffAttendee::ABSENT  => $absent++,
-                default           => null,
+                KickoffAttendee::LATE => $late++,
+                KickoffAttendee::ABSENT => $absent++,
+                default => null,
             };
         }
 
@@ -930,10 +1020,10 @@ class KickoffMeetingService
         $meeting->loadMissing('attendees', 'kickoffable');
 
         $subjectName = KickoffSubject::nameOf($meeting->kickoffable);
-        $when    = $meeting->scheduled_at ? $meeting->scheduled_at->format('d M Y, g:i A') : 'a date to be confirmed';
-        $where   = $meeting->location ? " at {$meeting->location}" : '';
+        $when = $meeting->scheduled_at ? $meeting->scheduled_at->format('d M Y, g:i A') : 'a date to be confirmed';
+        $where = $meeting->location ? " at {$meeting->location}" : '';
         $subject = "Reminder: {$meeting->title}";
-        $body    = "This is a reminder for the kickoff meeting \"{$meeting->title}\""
+        $body = "This is a reminder for the kickoff meeting \"{$meeting->title}\""
             .($subjectName ? " with {$subjectName}" : '')
             .", scheduled for {$when}{$where}.";
 
@@ -948,9 +1038,9 @@ class KickoffMeetingService
 
         // WhatsApp / SMS — stubs. Directed at the vendor's phone (the attendee
         // registry holds no numbers). 'queued' means logged, never delivered.
-        $phone    = $this->subjectPhone($meeting->kickoffable);
+        $phone = $this->subjectPhone($meeting->kickoffable);
         $whatsapp = $this->notifications->whatsapp($phone, $body, ['kickoff_meeting_id' => $meeting->id]);
-        $sms      = $this->notifications->sms($phone, $body, ['kickoff_meeting_id' => $meeting->id]);
+        $sms = $this->notifications->sms($phone, $body, ['kickoff_meeting_id' => $meeting->id]);
 
         $meeting->recordAudit('reminder_sent', $actor, "Reminder sent — email: {$email['sent']} sent, WhatsApp/SMS queued");
         Log::channel('tpv')->info('Kickoff reminder sent', [
@@ -959,9 +1049,9 @@ class KickoffMeetingService
 
         return [
             'recipients' => $meeting->attendees->count(),
-            'email'      => $email,
-            'whatsapp'   => $whatsapp,
-            'sms'        => $sms,
+            'email' => $email,
+            'whatsapp' => $whatsapp,
+            'sms' => $sms,
         ];
     }
 
@@ -981,8 +1071,8 @@ class KickoffMeetingService
             : array_filter([KickoffSubject::nameOf($meeting->kickoffable)]);
 
         $pdf = Pdf::loadView('pdf.kickoff_mom', [
-            'meeting'      => $meeting,
-            'tenant'       => Tenant::find($meeting->tenant_id),
+            'meeting' => $meeting,
+            'tenant' => Tenant::find($meeting->tenant_id),
             'subjectNames' => $subjectNames,
             'subjectName' => KickoffSubject::nameOf($meeting->kickoffable),
             'generatedBy' => $actor->name,
@@ -1081,9 +1171,9 @@ class KickoffMeetingService
     private function replaceMomItems(KickoffMeeting $meeting, array $items, int $tenantId): void
     {
         $validAttendeeIds = $meeting->attendees()->pluck('id')->all();
-        $priorities       = config('meetings.priorities', ['Low', 'Medium', 'High']);
-        $keepIds          = [];
-        $order            = 0;
+        $priorities = config('meetings.priorities', ['Low', 'Medium', 'High']);
+        $keepIds = [];
+        $order = 0;
 
         foreach ($items as $item) {
             $description = trim((string) ($item['description'] ?? ''));
@@ -1118,16 +1208,16 @@ class KickoffMeetingService
 
             // Content fields only — never status/evidence/verification.
             $content = [
-                'description'             => $description,
+                'description' => $description,
                 'responsible_attendee_id' => $responsible,
-                'responsible_names'       => $names !== '' ? $names : null,
-                'responsible_org'         => $item['responsible_org'] ?? null,
+                'responsible_names' => $names !== '' ? $names : null,
+                'responsible_org' => $item['responsible_org'] ?? null,
                 // `remarks` is what the existing form sends.
-                'remark'                  => $item['remark'] ?? $item['remarks'] ?? null,
-                'notes'                   => $item['notes'] ?? null,
-                'target_date'             => $item['target_date'] ?? null,
-                'priority'                => $priority,
-                'sort_order'              => $order++,
+                'remark' => $item['remark'] ?? $item['remarks'] ?? null,
+                'notes' => $item['notes'] ?? null,
+                'target_date' => $item['target_date'] ?? null,
+                'priority' => $priority,
+                'sort_order' => $order++,
             ];
 
             // An id that belongs to THIS meeting → update in place, preserving its
@@ -1142,14 +1232,14 @@ class KickoffMeetingService
             } else {
                 $created = KickoffMomItem::create([
                     ...$content,
-                    'tenant_id'          => $tenantId,
+                    'tenant_id' => $tenantId,
                     'kickoff_meeting_id' => $meeting->id,
-                    'action_ref'         => $this->nextActionRef($tenantId),
-                    'status'             => MomActionStatus::OPEN,
+                    'action_ref' => $this->nextActionRef($tenantId),
+                    'status' => MomActionStatus::OPEN,
                     // Provenance for a carried-forward action. Set only on create —
                     // it is immutable once written, and marks the origin item as
                     // already rolled forward so carry-forward never offers it again.
-                    'carried_from_id'    => $this->carriedFromId($item, KickoffMomItem::class, $tenantId),
+                    'carried_from_id' => $this->carriedFromId($item, KickoffMomItem::class, $tenantId),
                 ]);
                 $keepIds[] = $created->id;
             }
@@ -1205,7 +1295,7 @@ class KickoffMeetingService
             $changes['evidence_path'] = $data['evidence_path'];
         } elseif (! empty($data['evidence_data']) && str_contains($data['evidence_data'], 'base64,')) {
             $binary = base64_decode(explode('base64,', $data['evidence_data'])[1]);
-            $path   = 'kickoff/action-evidence/ev_'.uniqid().'.png';
+            $path = 'kickoff/action-evidence/ev_'.uniqid().'.png';
             Storage::disk(self::DISK)->put($path, $binary);
             $changes['evidence_path'] = $path;
         }
@@ -1213,16 +1303,16 @@ class KickoffMeetingService
         if ($to !== null && $to !== $item->status) {
             if ($to === MomActionStatus::CLOSED) {
                 $hasEvidence = ! empty($changes['evidence_path'] ?? $item->evidence_path);
-                $hasNote     = trim((string) ($changes['verification_note'] ?? $item->verification_note)) !== '';
+                $hasNote = trim((string) ($changes['verification_note'] ?? $item->verification_note)) !== '';
                 if (! $hasEvidence && ! $hasNote) {
                     throw new BusinessException('Closing an action needs evidence or a verification note.');
                 }
-                $changes['closed_at']   = now();
+                $changes['closed_at'] = now();
                 $changes['verified_at'] = now();
                 $changes['verified_by'] = $actor->id;
             }
             if ($to === MomActionStatus::REOPENED) {
-                $changes['closed_at']   = null;
+                $changes['closed_at'] = null;
                 $changes['verified_at'] = null;
                 $changes['verified_by'] = null;
             }
@@ -1243,9 +1333,9 @@ class KickoffMeetingService
     private function syncDecisions(KickoffMeeting $meeting, array $rows, int $tenantId): void
     {
         $validAttendeeIds = $meeting->attendees()->pluck('id')->all();
-        $statuses         = config('meetings.decision_statuses', ['Active', 'Superseded', 'Rescinded']);
-        $keepIds          = [];
-        $order            = 0;
+        $statuses = config('meetings.decision_statuses', ['Active', 'Superseded', 'Rescinded']);
+        $keepIds = [];
+        $order = 0;
 
         foreach ($rows as $row) {
             $text = trim((string) ($row['decision'] ?? ''));
@@ -1257,17 +1347,17 @@ class KickoffMeetingService
             if ($by !== null && ! in_array((int) $by, $validAttendeeIds, true)) {
                 $by = null;
             }
-            $names  = trim((string) ($row['decided_by_names'] ?? $row['decided_by'] ?? ''));
+            $names = trim((string) ($row['decided_by_names'] ?? $row['decided_by'] ?? ''));
             $status = in_array($row['status'] ?? null, $statuses, true) ? $row['status'] : 'Active';
 
             $content = [
-                'decision'               => $text,
+                'decision' => $text,
                 'decided_by_attendee_id' => $by,
-                'decided_by_names'       => $names !== '' ? $names : null,
-                'impact'                 => $row['impact'] ?? null,
-                'effective_date'         => $row['effective_date'] ?? null,
-                'status'                 => $status,
-                'sort_order'             => $order++,
+                'decided_by_names' => $names !== '' ? $names : null,
+                'impact' => $row['impact'] ?? null,
+                'effective_date' => $row['effective_date'] ?? null,
+                'status' => $status,
+                'sort_order' => $order++,
             ];
 
             $existing = ! empty($row['id']) ? $meeting->decisions()->whereKey($row['id'])->first() : null;
@@ -1277,9 +1367,9 @@ class KickoffMeetingService
             } else {
                 $created = MeetingDecision::create([
                     ...$content,
-                    'tenant_id'          => $tenantId,
+                    'tenant_id' => $tenantId,
                     'kickoff_meeting_id' => $meeting->id,
-                    'decision_ref'       => $this->nextRef($tenantId, MeetingDecision::class, 'decision_ref', 'DEC'),
+                    'decision_ref' => $this->nextRef($tenantId, MeetingDecision::class, 'decision_ref', 'DEC'),
                 ]);
                 $keepIds[] = $created->id;
             }
@@ -1297,9 +1387,9 @@ class KickoffMeetingService
     private function syncIssues(KickoffMeeting $meeting, array $rows, int $tenantId): void
     {
         $validAttendeeIds = $meeting->attendees()->pluck('id')->all();
-        $severities       = config('meetings.issue_severities', ['Low', 'Medium', 'High', 'Critical']);
-        $keepIds          = [];
-        $order            = 0;
+        $severities = config('meetings.issue_severities', ['Low', 'Medium', 'High', 'Critical']);
+        $keepIds = [];
+        $order = 0;
 
         foreach ($rows as $row) {
             $title = trim((string) ($row['title'] ?? ''));
@@ -1311,18 +1401,18 @@ class KickoffMeetingService
             if ($owner !== null && ! in_array((int) $owner, $validAttendeeIds, true)) {
                 $owner = null;
             }
-            $names    = trim((string) ($row['owner_names'] ?? $row['owner'] ?? ''));
+            $names = trim((string) ($row['owner_names'] ?? $row['owner'] ?? ''));
             $severity = in_array($row['severity'] ?? null, $severities, true) ? $row['severity'] : null;
 
             $content = [
-                'title'             => $title,
-                'description'       => $row['description'] ?? null,
-                'category'          => $row['category'] ?? null,
-                'severity'          => $severity,
+                'title' => $title,
+                'description' => $row['description'] ?? null,
+                'category' => $row['category'] ?? null,
+                'severity' => $severity,
                 'owner_attendee_id' => $owner,
-                'owner_names'       => $names !== '' ? $names : null,
-                'due_date'          => $row['due_date'] ?? null,
-                'sort_order'        => $order++,
+                'owner_names' => $names !== '' ? $names : null,
+                'due_date' => $row['due_date'] ?? null,
+                'sort_order' => $order++,
             ];
 
             $existing = ! empty($row['id']) ? $meeting->issues()->whereKey($row['id'])->first() : null;
@@ -1332,11 +1422,11 @@ class KickoffMeetingService
             } else {
                 $created = MeetingIssue::create([
                     ...$content,
-                    'tenant_id'          => $tenantId,
+                    'tenant_id' => $tenantId,
                     'kickoff_meeting_id' => $meeting->id,
-                    'issue_ref'          => $this->nextRef($tenantId, MeetingIssue::class, 'issue_ref', 'ISS'),
-                    'status'             => MeetingIssueStatus::OPEN,
-                    'carried_from_id'    => $this->carriedFromId($row, MeetingIssue::class, $tenantId),
+                    'issue_ref' => $this->nextRef($tenantId, MeetingIssue::class, 'issue_ref', 'ISS'),
+                    'status' => MeetingIssueStatus::OPEN,
+                    'carried_from_id' => $this->carriedFromId($row, MeetingIssue::class, $tenantId),
                 ]);
                 $keepIds[] = $created->id;
             }
@@ -1393,21 +1483,21 @@ class KickoffMeetingService
             throw new BusinessException('This meeting is not linked to a vendor, so its issues cannot be raised as vendor incidents.');
         }
 
-        $incident = app(\App\Services\Tpv\IncidentService::class)->create($actor->tenant_id, [
-            'vendor_id'   => $vendorId,
-            'title'       => $issue->title,
-            'type'        => $data['type'] ?? 'Other',
-            'severity'    => $data['severity'] ?? 'Moderate',
+        $incident = app(IncidentService::class)->create($actor->tenant_id, [
+            'vendor_id' => $vendorId,
+            'title' => $issue->title,
+            'type' => $data['type'] ?? 'Other',
+            'severity' => $data['severity'] ?? 'Moderate',
             'description' => $issue->description,
-            'stop_work'   => (bool) ($data['stop_work'] ?? false),
+            'stop_work' => (bool) ($data['stop_work'] ?? false),
         ], $actor);
 
         $issue->update([
-            'converted_to'  => 'Incident',
+            'converted_to' => 'Incident',
             'converted_ref' => $incident->reference,
-            'converted_id'  => $incident->id,
+            'converted_id' => $incident->id,
             // An escalated issue moves into progress — it is now tracked as an incident.
-            'status'        => MeetingIssueStatus::isOpen($issue->status) ? MeetingIssueStatus::IN_PROGRESS : $issue->status,
+            'status' => MeetingIssueStatus::isOpen($issue->status) ? MeetingIssueStatus::IN_PROGRESS : $issue->status,
         ]);
 
         $issue->meeting?->recordAudit('issue_converted', $actor,
@@ -1419,10 +1509,10 @@ class KickoffMeetingService
     /** The vendor id behind a meeting's subject, if any (vendor or onboarding). */
     private function meetingVendorId(KickoffMeeting $meeting): ?int
     {
-        if ($meeting->kickoffable_type === \App\Models\Vendor\Vendor::class) {
+        if ($meeting->kickoffable_type === Vendor::class) {
             return (int) $meeting->kickoffable_id;
         }
-        if ($meeting->kickoffable_type === \App\Models\Tpv\TpvOnboarding::class) {
+        if ($meeting->kickoffable_type === TpvOnboarding::class) {
             return $meeting->kickoffable?->vendor_id;
         }
 
@@ -1474,7 +1564,7 @@ class KickoffMeetingService
         }
 
         $meetingIndex = $priorMeetings->keyBy('id');
-        $meetingIds   = $priorMeetings->pluck('id')->all();
+        $meetingIds = $priorMeetings->pluck('id')->all();
 
         // Origins already rolled forward — excluded so nothing is offered twice.
         $carriedActionOrigins = KickoffMomItem::where('tenant_id', $tenantId)
@@ -1489,17 +1579,17 @@ class KickoffMeetingService
             ->orderByRaw('target_date is null, target_date')
             ->get()
             ->map(fn (KickoffMomItem $a) => [
-                'id'                => $a->id,
-                'action_ref'        => $a->action_ref,
-                'description'       => $a->description,
+                'id' => $a->id,
+                'action_ref' => $a->action_ref,
+                'description' => $a->description,
                 'responsible_names' => $a->responsible_names,
-                'responsible_org'   => $a->responsible_org,
-                'target_date'       => optional($a->target_date)->toDateString(),
-                'priority'          => $a->priority,
-                'status'            => $a->status,
-                'status_label'      => $a->status_label,
-                'is_overdue'        => $a->is_overdue,
-                'origin'            => $this->originStamp($meetingIndex->get($a->kickoff_meeting_id)),
+                'responsible_org' => $a->responsible_org,
+                'target_date' => optional($a->target_date)->toDateString(),
+                'priority' => $a->priority,
+                'status' => $a->status,
+                'status_label' => $a->status_label,
+                'is_overdue' => $a->is_overdue,
+                'origin' => $this->originStamp($meetingIndex->get($a->kickoff_meeting_id)),
             ])->values()->all();
 
         $issues = MeetingIssue::where('tenant_id', $tenantId)
@@ -1509,18 +1599,18 @@ class KickoffMeetingService
             ->orderByRaw('due_date is null, due_date')
             ->get()
             ->map(fn (MeetingIssue $i) => [
-                'id'           => $i->id,
-                'issue_ref'    => $i->issue_ref,
-                'title'        => $i->title,
-                'description'  => $i->description,
-                'category'     => $i->category,
-                'severity'     => $i->severity,
-                'owner_names'  => $i->owner_names,
-                'due_date'     => optional($i->due_date)->toDateString(),
-                'status'       => $i->status,
+                'id' => $i->id,
+                'issue_ref' => $i->issue_ref,
+                'title' => $i->title,
+                'description' => $i->description,
+                'category' => $i->category,
+                'severity' => $i->severity,
+                'owner_names' => $i->owner_names,
+                'due_date' => optional($i->due_date)->toDateString(),
+                'status' => $i->status,
                 'status_label' => $i->status_label,
-                'is_overdue'   => $i->is_overdue,
-                'origin'       => $this->originStamp($meetingIndex->get($i->kickoff_meeting_id)),
+                'is_overdue' => $i->is_overdue,
+                'origin' => $this->originStamp($meetingIndex->get($i->kickoff_meeting_id)),
             ])->values()->all();
 
         return ['actions' => $actions, 'issues' => $issues];
@@ -1539,7 +1629,7 @@ class KickoffMeetingService
         if (! KickoffSubject::isValid($subjectType)) {
             throw new BusinessException('Unknown subject type.');
         }
-        $class   = KickoffSubject::classFor($subjectType);
+        $class = KickoffSubject::classFor($subjectType);
         $subject = $class::forTenant($tenantId)->find($subjectId);
 
         $meetings = KickoffMeeting::forTenant($tenantId)
@@ -1549,52 +1639,52 @@ class KickoffMeetingService
                 'momItems as open_actions' => fn ($q) => $q->whereIn('status', MomActionStatus::OPEN_STATES),
                 'momItems as overdue_actions' => fn ($q) => $q->whereIn('status', MomActionStatus::OPEN_STATES)
                     ->whereNotNull('target_date')->whereDate('target_date', '<', now()),
-                'issues as open_issues'    => fn ($q) => $q->whereIn('status', MeetingIssueStatus::OPEN_STATES),
+                'issues as open_issues' => fn ($q) => $q->whereIn('status', MeetingIssueStatus::OPEN_STATES),
             ])
             ->orderByDesc('scheduled_at')
             ->get();
 
         // Meetings by type (Meeting.docx §17 — "Weekly Review — 14, HSE — 8 …").
         $byType = $meetings->groupBy('meeting_type')->map(fn ($group, $type) => [
-            'type'  => $type,
+            'type' => $type,
             'label' => config("meetings.types.{$type}", ucfirst(str_replace('_', ' ', (string) $type))),
             'count' => $group->count(),
         ])->sortByDesc('count')->values()->all();
 
         $totals = [
-            'meetings'        => $meetings->count(),
-            'scheduled'       => $meetings->where('status', Status::SCHEDULED)->count(),
-            'delayed'         => $meetings->where('status', Status::DELAYED)->count(),
-            'completed'       => $meetings->where('status', Status::COMPLETED)->count(),
-            'cancelled'       => $meetings->where('status', Status::CANCELLED)->count(),
-            'open_actions'    => (int) $meetings->sum('open_actions'),
+            'meetings' => $meetings->count(),
+            'scheduled' => $meetings->where('status', Status::SCHEDULED)->count(),
+            'delayed' => $meetings->where('status', Status::DELAYED)->count(),
+            'completed' => $meetings->where('status', Status::COMPLETED)->count(),
+            'cancelled' => $meetings->where('status', Status::CANCELLED)->count(),
+            'open_actions' => (int) $meetings->sum('open_actions'),
             'overdue_actions' => (int) $meetings->sum('overdue_actions'),
-            'open_issues'     => (int) $meetings->sum('open_issues'),
-            'awaiting_ack'    => $meetings->where('status', Status::COMPLETED)->whereNull('acknowledged_at')->count(),
+            'open_issues' => (int) $meetings->sum('open_issues'),
+            'awaiting_ack' => $meetings->where('status', Status::COMPLETED)->whereNull('acknowledged_at')->count(),
         ];
 
         return [
             'subject' => [
                 'type' => $subjectType,
-                'id'   => (int) $subjectId,
+                'id' => (int) $subjectId,
                 'name' => $subject ? KickoffSubject::nameOf($subject) : null,
             ],
-            'totals'  => $totals,
+            'totals' => $totals,
             'by_type' => $byType,
             'meetings' => $meetings->map(fn (KickoffMeeting $m) => [
-                'id'                 => $m->id,
-                'title'              => $m->title,
-                'reference'          => $m->reference,
-                'meeting_type'       => $m->meeting_type,
+                'id' => $m->id,
+                'title' => $m->title,
+                'reference' => $m->reference,
+                'meeting_type' => $m->meeting_type,
                 'meeting_type_label' => $m->meeting_type_label,
-                'status'             => $m->status,
-                'status_label'       => $m->status_label,
-                'scheduled_at'       => optional($m->scheduled_at)->toIso8601String(),
-                'mom_status'         => $m->mom_status,
-                'mom_status_label'   => $m->mom_status_label,
-                'is_acknowledged'    => $m->is_acknowledged,
-                'open_actions'       => (int) $m->open_actions,
-                'open_issues'        => (int) $m->open_issues,
+                'status' => $m->status,
+                'status_label' => $m->status_label,
+                'scheduled_at' => optional($m->scheduled_at)->toIso8601String(),
+                'mom_status' => $m->mom_status,
+                'mom_status_label' => $m->mom_status_label,
+                'is_acknowledged' => $m->is_acknowledged,
+                'open_actions' => (int) $m->open_actions,
+                'open_issues' => (int) $m->open_issues,
             ])->values()->all(),
         ];
     }
@@ -1604,9 +1694,9 @@ class KickoffMeetingService
     {
         return [
             'meeting_id' => $m?->id,
-            'title'      => $m?->title,
-            'reference'  => $m?->reference,
-            'date'       => optional($m?->scheduled_at)->toDateString(),
+            'title' => $m?->title,
+            'reference' => $m?->reference,
+            'date' => optional($m?->scheduled_at)->toDateString(),
         ];
     }
 
@@ -1647,8 +1737,8 @@ class KickoffMeetingService
         $meeting->agendaItems()->delete();
 
         $validAttendeeIds = $meeting->attendees()->pluck('id')->all();
-        $priorities       = config('meetings.priorities', ['Low', 'Medium', 'High']);
-        $order            = 0;
+        $priorities = config('meetings.priorities', ['Low', 'Medium', 'High']);
+        $order = 0;
 
         foreach ($items as $item) {
             $topic = trim((string) ($item['item'] ?? ''));
@@ -1676,15 +1766,15 @@ class KickoffMeetingService
             }
 
             MeetingAgendaItem::create([
-                'tenant_id'         => $tenantId,
+                'tenant_id' => $tenantId,
                 'kickoff_meeting_id' => $meeting->id,
-                'item'              => $topic,
-                'description'       => $item['description'] ?? null,
+                'item' => $topic,
+                'description' => $item['description'] ?? null,
                 'owner_attendee_id' => $owner,
-                'owner_names'       => $names !== '' ? $names : null,
-                'duration_minutes'  => $item['duration_minutes'] ?? null,
-                'priority'          => $priority,
-                'sort_order'        => $order++,
+                'owner_names' => $names !== '' ? $names : null,
+                'duration_minutes' => $item['duration_minutes'] ?? null,
+                'priority' => $priority,
+                'sort_order' => $order++,
             ]);
         }
     }
@@ -1703,18 +1793,18 @@ class KickoffMeetingService
             }
 
             KickoffAttendee::create([
-                'tenant_id'         => $tenantId,
+                'tenant_id' => $tenantId,
                 'kickoff_meeting_id' => $meeting->id,
                 'vendor_contact_id' => $contact?->id,
-                'name'              => $contact?->name ?? ($a['name'] ?? 'Unnamed attendee'),
-                'email'             => $contact?->email ?? ($a['email'] ?? null),
-                'phone'             => $contact?->phone ?? ($a['phone'] ?? null),
-                'organisation'      => $a['organisation'] ?? null,
-                'role'              => $a['role'] ?? null,
-                'designation'       => $contact?->designation ?? ($a['designation'] ?? null),
+                'name' => $contact?->name ?? ($a['name'] ?? 'Unnamed attendee'),
+                'email' => $contact?->email ?? ($a['email'] ?? null),
+                'phone' => $contact?->phone ?? ($a['phone'] ?? null),
+                'organisation' => $a['organisation'] ?? null,
+                'role' => $a['role'] ?? null,
+                'designation' => $contact?->designation ?? ($a['designation'] ?? null),
                 // internal (own org) vs external (vendor/contractor) — Meeting.docx §5.
-                'side'              => in_array($a['side'] ?? null, ['internal', 'external'], true) ? $a['side'] : null,
-                'attended'          => ! empty($a['attended']),
+                'side' => in_array($a['side'] ?? null, ['internal', 'external'], true) ? $a['side'] : null,
+                'attended' => ! empty($a['attended']),
             ]);
         }
     }
@@ -1760,16 +1850,17 @@ class KickoffMeetingService
             if ($row) {
                 $row->update(['is_primary' => $model->id === $primary->id]);
                 $existing->forget($key);
+
                 continue;
             }
 
             KickoffMeetingSubject::create([
-                'tenant_id'          => $tenantId,
+                'tenant_id' => $tenantId,
                 'kickoff_meeting_id' => $meeting->id,
-                'subject_type'       => $type,
-                'subject_id'         => $model->id,
-                'is_primary'         => $model->id === $primary->id,
-                'ack_token'          => Str::random(48),
+                'subject_type' => $type,
+                'subject_id' => $model->id,
+                'is_primary' => $model->id === $primary->id,
+                'ack_token' => Str::random(48),
             ]);
         }
 
@@ -1804,10 +1895,10 @@ class KickoffMeetingService
 
     private function syncOnboardingPointer(?object $subject, int $meetingId): void
     {
-        if ($subject instanceof \App\Models\Tpv\TpvOnboarding) {
+        if ($subject instanceof TpvOnboarding) {
             $subject->update(['kickoff_meeting_id' => $meetingId]);
-        } elseif ($subject instanceof \App\Models\Vendor\Vendor) {
-            $onboarding = \App\Models\Tpv\TpvOnboarding::forTenant($subject->tenant_id)
+        } elseif ($subject instanceof Vendor) {
+            $onboarding = TpvOnboarding::forTenant($subject->tenant_id)
                 ->where('vendor_id', $subject->id)
                 ->latest()
                 ->first();

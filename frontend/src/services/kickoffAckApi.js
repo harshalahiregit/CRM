@@ -13,8 +13,11 @@ const api = axios.create({ baseURL: BASE })
 
 export const kickoffAckApi = {
   show:        (token)                => api.get(`/kickoff/ack/${token}`).then(r => r.data),
-  // comment is optional — the vendor may sign with a remark (stored server-side).
-  acknowledge: (token, name, comment) => api.post(`/kickoff/ack/${token}`, { name, comment }).then(r => r.data),
+  // comment is optional for a plain acknowledge; responseType is one of
+  // acknowledge | dispute | correction (Meeting.docx §13) — a dispute/correction
+  // requires the comment (enforced server-side). Defaults to a plain acknowledge.
+  acknowledge: (token, name, comment, responseType = 'acknowledge') =>
+    api.post(`/kickoff/ack/${token}`, { name, comment, response_type: responseType }).then(r => r.data),
   // Reading the minutes is repeatable — this never burns the token, unlike
   // acknowledge(). Blob rather than a raw href so a failure surfaces as a
   // message instead of the browser showing its own error page.
