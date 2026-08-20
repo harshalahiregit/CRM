@@ -43,6 +43,12 @@ export const kickoffApi = {
   generateMom: (id) => api.post(`/kickoff/meetings/${id}/mom/generate`).then(r => r.data),
   momBlob: (id) => api.get(`/kickoff/meetings/${id}/mom`, { responseType: 'blob' }).then(r => r.data),
 
+  // MOM approval workflow — submit for approval, approve/return, reopen to revise.
+  // Distribution is `publish` below (now gated on approval server-side).
+  momSubmit: (id)            => api.post(`/kickoff/meetings/${id}/mom/submit`).then(r => r.data),
+  momDecide: (id, data)      => api.post(`/kickoff/meetings/${id}/mom/decide`, data).then(r => r.data),
+  momRevise: (id)            => api.post(`/kickoff/meetings/${id}/mom/revise`).then(r => r.data),
+
   // Returns { meeting, ack_token } — the token is disclosed only here. The page
   // composes the link from window.location.origin, as the badge QR does.
   publish: (id) => api.post(`/kickoff/meetings/${id}/publish`).then(r => r.data),

@@ -44,6 +44,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('kickoff')->grou
     Route::post('/meetings/{kickoffMeeting}/mom',        [KickoffMeetingController::class, 'uploadMom']);
     Route::post('/meetings/{kickoffMeeting}/mom/generate', [KickoffMeetingController::class, 'generateMom']);
     Route::get('/meetings/{kickoffMeeting}/mom',         [KickoffMeetingController::class, 'momFile']);
+    // MOM approval workflow — submit → approve/return → (publish = distribute).
+    Route::post('/meetings/{kickoffMeeting}/mom/submit',  [KickoffMeetingController::class, 'momSubmit']);
+    Route::post('/meetings/{kickoffMeeting}/mom/decide',  [KickoffMeetingController::class, 'momDecide']);
+    Route::post('/meetings/{kickoffMeeting}/mom/revise',  [KickoffMeetingController::class, 'momRevise']);
     Route::post('/meetings/{kickoffMeeting}/publish',    [KickoffMeetingController::class, 'publish']);
     // Action Engine — progress a single MOM action + read its evidence.
     Route::post('/meetings/{kickoffMeeting}/mom-items/{momItem}/progress', [KickoffMeetingController::class, 'progressAction']);
