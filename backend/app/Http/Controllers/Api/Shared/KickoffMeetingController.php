@@ -75,6 +75,22 @@ class KickoffMeetingController extends Controller
         return response()->json($this->kickoffService->stats($request->user()->tenant_id));
     }
 
+    /**
+     * A subject's full meeting history + rollup totals (open actions/issues,
+     * status mix, acknowledgements outstanding). Drives the history card.
+     */
+    public function history(Request $request)
+    {
+        $data = $request->validate([
+            'subject_type' => 'required|string',
+            'subject_id'   => 'required|integer',
+        ]);
+
+        return response()->json(
+            $this->kickoffService->subjectHistory($request->user()->tenant_id, $data['subject_type'], $data['subject_id'])
+        );
+    }
+
     public function store(StoreKickoffMeetingRequest $request)
     {
         return response()->json(

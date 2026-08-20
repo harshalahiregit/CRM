@@ -19,6 +19,8 @@ export const kickoffApi = {
   // Still-open actions/issues from a subject's earlier meetings, to pre-load into
   // a new one. params: { subject_type, subject_id, exclude_meeting_id? }.
   carryForward: (params) => api.get('/kickoff/meetings/carry-forward', { params }).then(r => r.data),
+  // A subject's whole meeting history + rollup totals. params: { subject_type, subject_id }.
+  history: (params) => api.get('/kickoff/meetings/history', { params }).then(r => r.data),
   get:   (id)          => api.get(`/kickoff/meetings/${id}`).then(r => r.data),
   schedule: (data)     => api.post('/kickoff/meetings', data).then(r => r.data),
   update:   (id, data) => api.put(`/kickoff/meetings/${id}`, data).then(r => r.data),
