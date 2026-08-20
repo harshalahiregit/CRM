@@ -3,13 +3,14 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, CalendarDays, Clock, MapPin, Users, CheckCircle2, XCircle,
   Send, Copy, Upload, AlertTriangle, Loader2, FileText, ShieldCheck, History,
-  Sparkles, Eye, Download, Video, ExternalLink,
+  Sparkles, Eye, Download, Video, ExternalLink, ClipboardCheck, ThumbsUp, Undo2, RotateCcw,
 } from 'lucide-react'
 import { kickoffApi } from '@/services/kickoffApi'
 import { meetingApi } from '@/services/meetingApi'
 import {
   KO_STATUS, koStatusCfg, koNextStatuses, koModeLabel, fmtDateTime, fmtDate,
   actStatusCfg, actNextStatuses, issueStatusCfg, issueNextStatuses, ISSUE_TO_INCIDENT_SEVERITY,
+  MOM_STATUS_CONFIG, momStatusCfg, MOM_STAGES,
 } from '../kickoffConstants'
 import { KIT3D_STYLE, Overlay, ModalFooter, Field, TextInput, SelectInput } from '@/components/ui/kit3d'
 
@@ -215,6 +216,9 @@ export default function KickoffMeetingDetail() {
 
         {/* Right column */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* MOM approval & distribution workflow */}
+          <MomApprovalCard m={m} onChanged={(updated) => { setM(updated); setErr(null) }} onError={setErr} />
+
           {/* Acknowledgement */}
           <div className="pr-glass" style={{ padding: 20 }}>
             <SectionTitle icon={ShieldCheck}>Vendor acknowledgement</SectionTitle>
@@ -238,10 +242,14 @@ export default function KickoffMeetingDetail() {
                   <button onClick={() => navigator.clipboard?.writeText(ackLink)} style={{ padding: '0 12px', borderRadius: 9, cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}><Copy size={14} /></button>
                 </div>
               </div>
+            ) : !['Approved', 'Distributed'].includes(m.mom_status) ? (
+              <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '12px 0 0', lineHeight: 1.5 }}>
+                The minutes must be <strong style={{ color: 'var(--text-h)' }}>approved</strong> before they can be sent to the vendor — use the <strong style={{ color: 'var(--text-h)' }}>Minutes approval</strong> card above.
+              </p>
             ) : (
               <div style={{ marginTop: 12 }}>
                 <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '0 0 12px', lineHeight: 1.5 }}>
-                  Generate a public link the vendor can use to acknowledge the minutes.
+                  Send the approved minutes to the vendor for acknowledgement — a single-use public link, no login needed.
                 </p>
                 <button onClick={publish} style={{ ...solidBtn, width: '100%', justifyContent: 'center' }}><Send size={15} /> Send for acknowledgement</button>
               </div>
@@ -603,6 +611,137 @@ function MomBtn({ onClick, busy, icon: Icon, tone, full, children }) {
         fontSize: 12.5, fontWeight: 700, color: tone, background: `${tone}14`, border: `1px solid ${tone}44` }}>
       {busy ? <Loader2 size={14} className="ko-spin" /> : <Icon size={14} />} {children}
     </button>
+  )
+}
+
+/* ── MOM approval & distribution (Meeting.docx — approve before distribute) ────
+ * The minutes move Draft → Pending Approval → Approved → Distributed. The author
+ * submits; an approver approves or returns with a reason; distribution is the
+ * vendor-acknowledgement send (in the card below), which the server refuses until
+ * the minutes are Approved. This card owns the approval steps + the audit stamps. */
+function MomApprovalCard({ m, onChanged, onError }) {
+  const [busy, setBusy]           = useState(null)   // submit|approve|return|revise
+  const [returning, setReturning] = useState(false)
+  const [note, setNote]           = useState('')
+
+  const status    = m.mom_status || 'Draft'
+  const cfg       = momStatusCfg(status)
+  const completed = m.status === KO_STATUS.COMPLETED
+  const curIdx    = MOM_STAGES.indexOf(status)
+
+  const run = async (fn, key) => {
+    setBusy(key); onError(null)
+    try { onChanged(await fn()) }
+    catch (e) { onError(e?.response?.data?.message || 'Could not update the minutes.') }
+    finally { setBusy(null) }
+  }
+  const submit  = () => run(() => kickoffApi.momSubmit(m.id), 'submit')
+  const approve = () => run(() => kickoffApi.momDecide(m.id, { decision: 'approve' }), 'approve')
+  const revise  = () => run(() => kickoffApi.momRevise(m.id), 'revise')
+  const doReturn = () => run(async () => {
+    const r = await kickoffApi.momDecide(m.id, { decision: 'return', note })
+    setReturning(false); setNote('')
+    return r?.data ?? r
+  }, 'return')
+
+  return (
+    <div className="pr-glass" style={{ padding: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 6 }}>
+        <SectionTitle icon={ClipboardCheck}>Minutes approval</SectionTitle>
+        <span style={{ padding: '3px 10px', borderRadius: 999, background: cfg.bg, color: cfg.color, fontSize: 11.5, fontWeight: 800 }}>{cfg.label}</span>
+      </div>
+
+      {/* Pipeline stepper */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, margin: '10px 0 14px' }}>
+        {MOM_STAGES.map((st, i) => {
+          const done = i <= curIdx
+          const c = momStatusCfg(st)
+          return (
+            <div key={st} style={{ display: 'flex', alignItems: 'center', flex: i < MOM_STAGES.length - 1 ? 1 : '0 0 auto' }}>
+              <div title={MOM_STATUS_CONFIG[st].label} style={{ width: 9, height: 9, borderRadius: '50%', flexShrink: 0, background: done ? c.color : 'var(--border)' }} />
+              {i < MOM_STAGES.length - 1 && <div style={{ flex: 1, height: 2, background: i < curIdx ? momStatusCfg(MOM_STAGES[i + 1]).color : 'var(--border)' }} />}
+            </div>
+          )
+        })}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9.5, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.02em', marginBottom: 12 }}>
+        <span>Draft</span><span>Pending</span><span>Approved</span><span>Distributed</span>
+      </div>
+
+      {/* Contextual actions */}
+      {status === 'Draft' && (
+        completed ? (
+          <MomBtn onClick={submit} busy={busy === 'submit'} icon={Send} tone="#7C3AED" full>Submit for approval</MomBtn>
+        ) : (
+          <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: 0, lineHeight: 1.5 }}>
+            Complete the meeting first — minutes are submitted for approval once the meeting has taken place.
+          </p>
+        )
+      )}
+
+      {status === 'Pending_Approval' && !returning && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          <MomBtn onClick={approve} busy={busy === 'approve'} icon={ThumbsUp} tone="#10b981">Approve</MomBtn>
+          <MomBtn onClick={() => setReturning(true)} busy={false} icon={Undo2} tone="#f59e0b">Return</MomBtn>
+        </div>
+      )}
+      {status === 'Pending_Approval' && returning && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <textarea value={note} onChange={e => setNote(e.target.value)} rows={3}
+            placeholder="What needs to change? (required)"
+            style={{ width: '100%', padding: '8px 11px', borderRadius: 8, fontSize: 13, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)', resize: 'vertical', fontFamily: 'inherit' }} />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={doReturn} disabled={busy === 'return' || !note.trim()}
+              style={{ flex: 1, padding: '8px 12px', borderRadius: 8, border: 'none', fontWeight: 700, fontSize: 12.5, cursor: note.trim() ? 'pointer' : 'not-allowed', background: 'linear-gradient(135deg,#f59e0b,#d97706)', color: '#fff', opacity: note.trim() ? 1 : 0.5 }}>
+              {busy === 'return' ? 'Returning…' : 'Return for revision'}
+            </button>
+            <button onClick={() => { setReturning(false); setNote('') }}
+              style={{ padding: '8px 12px', borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {status === 'Approved' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 10, background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.3)' }}>
+            <CheckCircle2 size={15} style={{ color: '#10b981', flexShrink: 0 }} />
+            <span style={{ fontSize: 12, color: 'var(--text-h)' }}>Approved — send to the vendor from the acknowledgement card below.</span>
+          </div>
+          <MomBtn onClick={revise} busy={busy === 'revise'} icon={RotateCcw} tone="#94a3b8" full>Reopen for revision</MomBtn>
+        </div>
+      )}
+
+      {status === 'Distributed' && (
+        <MomBtn onClick={revise} busy={busy === 'revise'} icon={RotateCcw} tone="#94a3b8" full>Reopen for revision</MomBtn>
+      )}
+
+      {/* Audit stamps */}
+      {(m.mom_submitted_at || m.mom_approved_at || m.mom_distributed_at || m.mom_approval_note) && (
+        <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {m.mom_submitted_at && <MomStamp label="Submitted" who={m.mom_submitter?.name} when={m.mom_submitted_at} />}
+          {m.mom_approved_at && <MomStamp label="Approved" who={m.mom_approver?.name} when={m.mom_approved_at} />}
+          {m.mom_distributed_at && <MomStamp label="Distributed" who={m.mom_distributor?.name} when={m.mom_distributed_at} />}
+          {m.mom_approval_note && (
+            <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2, lineHeight: 1.45 }}>
+              <span style={{ fontWeight: 700 }}>Note:</span> {m.mom_approval_note}
+            </div>
+          )}
+        </div>
+      )}
+
+      <style>{`@keyframes koSpin{to{transform:rotate(360deg)}}.ko-spin{animation:koSpin .9s linear infinite}`}</style>
+    </div>
+  )
+}
+
+function MomStamp({ label, who, when }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 11.5 }}>
+      <span style={{ color: 'var(--text-muted)' }}>{label}{who ? ` · ${who}` : ''}</span>
+      <span style={{ color: 'var(--text-h)', fontWeight: 600, textAlign: 'right' }}>{fmtDateTime(when)}</span>
+    </div>
   )
 }
 

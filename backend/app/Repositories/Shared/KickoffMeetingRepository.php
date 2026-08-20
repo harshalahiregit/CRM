@@ -51,6 +51,8 @@ class KickoffMeetingRepository extends BaseRepository
             ->with([
                 'subjects.subject',
                 'creator:id,name', 'kickoffable',
+                // MOM approval actors, so the workflow card can name who did what.
+                'momSubmitter:id,name', 'momApprover:id,name', 'momDistributor:id,name',
                 'attendees.vendorContact:id,name,designation',
                 // Eager-loaded with its owner so the edit form can render the
                 // responsible-person name without an N+1 per MOM item.

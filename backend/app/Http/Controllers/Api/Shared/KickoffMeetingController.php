@@ -253,6 +253,41 @@ class KickoffMeetingController extends Controller
         );
     }
 
+    /** Submit the minutes for approval (Draft → Pending Approval). */
+    public function momSubmit(Request $request, KickoffMeeting $kickoffMeeting)
+    {
+        $this->assertTenant($request, $kickoffMeeting);
+
+        return response()->json(
+            $this->kickoffService->submitMomForApproval($kickoffMeeting, $request->user())
+        );
+    }
+
+    /** Approve or return submitted minutes. decision = approve | return. */
+    public function momDecide(Request $request, KickoffMeeting $kickoffMeeting)
+    {
+        $this->assertTenant($request, $kickoffMeeting);
+
+        $data = $request->validate([
+            'decision' => 'required|string|in:approve,return',
+            'note'     => 'nullable|string|max:2000',
+        ]);
+
+        return response()->json(
+            $this->kickoffService->decideMom($kickoffMeeting, $data['decision'], $data['note'] ?? null, $request->user())
+        );
+    }
+
+    /** Reopen approved/distributed minutes for revision (→ Draft). */
+    public function momRevise(Request $request, KickoffMeeting $kickoffMeeting)
+    {
+        $this->assertTenant($request, $kickoffMeeting);
+
+        return response()->json(
+            $this->kickoffService->reviseMom($kickoffMeeting, $request->user())
+        );
+    }
+
     /**
      * Publish minutes for vendor acknowledgement. The token is disclosed once,
      * here — hidden on the model everywhere else, so this is the only place it

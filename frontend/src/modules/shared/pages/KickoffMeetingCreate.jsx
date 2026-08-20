@@ -347,25 +347,6 @@ export default function KickoffMeetingCreate() {
   }
 
   // ── MOM helpers ─────────────────────────────────────────────────────────
-  /**
-   * Send the minutes to the vendor for acknowledgement.
-   *
-   * Generates the PDF first when none exists — publishForAck refuses without
-   * one, and making the user press two buttons in a fixed order to achieve one
-   * outcome is a worse experience than doing the obvious thing here.
-   */
-  const sendMom = async () => {
-    setMomBusy('send'); setMomNote(null)
-    try {
-      const fresh = await kickoffApi.get(editId)
-      if (!((fresh?.data ?? fresh)?.mom_path)) await kickoffApi.generateMom(editId)
-      await kickoffApi.publish(editId)
-      setMomNote({ ok: true, msg: 'Minutes sent to the vendor. They have 48 hours to acknowledge.' })
-    } catch (e) {
-      setMomNote({ ok: false, msg: e?.response?.data?.message || 'Could not send the minutes.' })
-    } finally { setMomBusy(null) }
-  }
-
   /** Same generate-then-fetch pattern the listing uses, so behaviour matches. */
   const downloadMom = async () => {
     setMomBusy('pdf'); setMomNote(null)
@@ -632,11 +613,13 @@ export default function KickoffMeetingCreate() {
               the saved record, and publish is refused for any other status. */}
           {isSavedCompleted && (
             <div style={{ marginLeft: 'auto', display: 'inline-flex', gap: 8 }}>
-              <button onClick={sendMom} disabled={momBusy !== null}
+              {/* Distribution is gated by approval now — the full submit → approve →
+                  distribute workflow lives on the meeting detail page. */}
+              <button onClick={() => navigate(`/app/tpv/kickoff/${editId}`)}
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 9,
-                  fontSize: 12.5, fontWeight: 700, cursor: momBusy ? 'not-allowed' : 'pointer', border: 'none', color: '#fff',
-                  background: 'linear-gradient(145deg,#f59e0b,#d97706)', opacity: momBusy ? 0.6 : 1 }}>
-                <Send size={13} /> {momBusy === 'send' ? 'Sending…' : 'Send MOM'}
+                  fontSize: 12.5, fontWeight: 700, cursor: 'pointer', border: 'none', color: '#fff',
+                  background: 'linear-gradient(145deg,#f59e0b,#d97706)' }}>
+                <Send size={13} /> Minutes approval
               </button>
               <button onClick={downloadMom} disabled={momBusy !== null}
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 9,

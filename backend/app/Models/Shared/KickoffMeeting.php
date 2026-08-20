@@ -30,6 +30,9 @@ class KickoffMeeting extends Model
         'scheduled_at','duration_minutes','mode','location',
         'original_scheduled_at','delay_reason',
         'mom_path','minutes','completed_at',
+        // MOM approval workflow (Meeting.docx). Distribution = the vendor send.
+        'mom_status','mom_submitted_at','mom_submitted_by','mom_approved_at',
+        'mom_approved_by','mom_approval_note','mom_distributed_at','mom_distributed_by',
         // Structured venue. `location` above stays the single displayable string
         // every existing consumer reads; these are the parts it is built from.
         'city','venue','address',
@@ -53,6 +56,9 @@ class KickoffMeeting extends Model
         'planned_date'             => 'date',
         'acknowledgement_sent_at'  => 'datetime',
         'acknowledgement_deadline' => 'datetime',
+        'mom_submitted_at'         => 'datetime',
+        'mom_approved_at'          => 'datetime',
+        'mom_distributed_at'       => 'datetime',
     ];
 
     /** Acknowledgement window states. NULL = never sent for acknowledgement. */
@@ -75,8 +81,29 @@ class KickoffMeeting extends Model
         // 'subject_list' is the full set, added alongside rather than instead.
         'status_label', 'is_acknowledged', 'subject', 'subject_list',
         'acknowledgement_open', 'acknowledgement_expired', 'can_complete',
-        'meeting_type_label',
+        'meeting_type_label', 'mom_status_label',
     ];
+
+    /** Human label for the MOM approval state. Defaults to Draft. */
+    public function getMomStatusLabelAttribute(): string
+    {
+        return \App\Support\Shared\MomApprovalStatus::label($this->mom_status);
+    }
+
+    public function momSubmitter()
+    {
+        return $this->belongsTo(User::class, 'mom_submitted_by');
+    }
+
+    public function momApprover()
+    {
+        return $this->belongsTo(User::class, 'mom_approved_by');
+    }
+
+    public function momDistributor()
+    {
+        return $this->belongsTo(User::class, 'mom_distributed_by');
+    }
 
     /** Human label for the stored meeting_type key. Falls back to the raw key. */
     public function getMeetingTypeLabelAttribute(): string

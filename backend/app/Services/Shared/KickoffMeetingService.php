@@ -12,6 +12,7 @@ use App\Models\Shared\MeetingDecision;
 use App\Models\Shared\MeetingIssue;
 use App\Support\Shared\MeetingIssueStatus;
 use App\Support\Shared\MomActionStatus;
+use App\Support\Shared\MomApprovalStatus;
 use App\Models\Tenant;
 use App\Models\Tpv\TpvOnboarding;
 use App\Models\User;
@@ -255,6 +256,101 @@ class KickoffMeetingService
         return $this->find($meeting->id, $actor->tenant_id);
     }
 
+    /* ── MOM approval workflow (Meeting.docx — approve before distribute) ───── */
+
+    /**
+     * Submit the minutes for approval. Draft → Pending Approval. A PDF is the
+     * thing being approved, so one is generated if none exists yet. Only a
+     * Completed meeting has final minutes to approve.
+     */
+    public function submitMomForApproval(KickoffMeeting $meeting, User $actor): KickoffMeeting
+    {
+        if ($meeting->status !== Status::COMPLETED) {
+            throw new BusinessException('Complete the meeting before submitting its minutes for approval.');
+        }
+        if (! MomApprovalStatus::canTransition($meeting->mom_status, MomApprovalStatus::PENDING)) {
+            throw new BusinessException('These minutes are '.MomApprovalStatus::label($meeting->mom_status).' — they cannot be submitted for approval from here.');
+        }
+
+        // The reviewer approves a document, not a promise of one.
+        if (! $meeting->mom_path) {
+            $this->generateMom($meeting, $actor);
+        }
+
+        $meeting->update([
+            'mom_status'       => MomApprovalStatus::PENDING,
+            'mom_submitted_at' => now(),
+            'mom_submitted_by' => $actor->id,
+            // Clear a stale return-reason from a previous round.
+            'mom_approval_note' => null,
+        ]);
+
+        $meeting->recordAudit('mom_submitted', $actor, 'Minutes submitted for approval');
+
+        return $this->find($meeting->id, $actor->tenant_id);
+    }
+
+    /**
+     * Decide on submitted minutes. 'approve' → Approved (a note is optional).
+     * 'return' → back to Draft with a MANDATORY reason so the author knows what
+     * to change. Only minutes that are Pending Approval can be decided.
+     */
+    public function decideMom(KickoffMeeting $meeting, string $decision, ?string $note, User $actor): KickoffMeeting
+    {
+        if ($meeting->mom_status !== MomApprovalStatus::PENDING) {
+            throw new BusinessException('Only minutes that are pending approval can be approved or returned.');
+        }
+
+        $note = trim((string) $note);
+
+        if ($decision === 'approve') {
+            $meeting->update([
+                'mom_status'        => MomApprovalStatus::APPROVED,
+                'mom_approved_at'   => now(),
+                'mom_approved_by'   => $actor->id,
+                'mom_approval_note' => $note !== '' ? $note : null,
+            ]);
+            $meeting->recordAudit('mom_approved', $actor, 'Minutes approved'.($note !== '' ? ": {$note}" : ''));
+        } elseif ($decision === 'return') {
+            if ($note === '') {
+                throw new BusinessException('Returning minutes needs a reason so the author knows what to revise.');
+            }
+            $meeting->update([
+                'mom_status'        => MomApprovalStatus::DRAFT,
+                'mom_approval_note' => $note,
+                'mom_approved_at'   => null,
+                'mom_approved_by'   => null,
+            ]);
+            $meeting->recordAudit('mom_returned', $actor, "Minutes returned for revision: {$note}");
+        } else {
+            throw new BusinessException('Unknown approval decision.');
+        }
+
+        return $this->find($meeting->id, $actor->tenant_id);
+    }
+
+    /**
+     * Pull approved (or already-distributed) minutes back to Draft so they can be
+     * edited — they must then be re-submitted and re-approved. Distribution stamps
+     * are left intact as the historical record of the previous issue.
+     */
+    public function reviseMom(KickoffMeeting $meeting, User $actor): KickoffMeeting
+    {
+        if (! MomApprovalStatus::canTransition($meeting->mom_status, MomApprovalStatus::DRAFT)) {
+            throw new BusinessException('These minutes cannot be sent back for revision from '.MomApprovalStatus::label($meeting->mom_status).'.');
+        }
+
+        $meeting->update([
+            'mom_status'      => MomApprovalStatus::DRAFT,
+            'mom_approved_at' => null,
+            'mom_approved_by' => null,
+        ]);
+
+        $meeting->recordAudit('mom_revised', $actor, 'Minutes reopened for revision');
+
+        return $this->find($meeting->id, $actor->tenant_id);
+    }
+
     /**
      * Publish the minutes for vendor acknowledgement — mints the public token.
      * Only meaningful once the meeting is Completed; the vendor is acknowledging
@@ -267,6 +363,12 @@ class KickoffMeetingService
         }
         if (! $meeting->mom_path) {
             throw new BusinessException('Generate or upload the MOM PDF before sending for acknowledgement.');
+        }
+        // The approval gate: minutes cannot be distributed until they are approved.
+        // Distribution IS this send, so this is where the gate belongs — no caller
+        // (detail page, create page, or the public flow) can bypass it.
+        if (! MomApprovalStatus::isDistributable($meeting->mom_status)) {
+            throw new BusinessException('These minutes must be approved before they can be distributed.');
         }
         if ($meeting->acknowledged_at) {
             throw new BusinessException('This meeting has already been acknowledged.');
@@ -281,11 +383,17 @@ class KickoffMeetingService
             'acknowledgement_sent_at'  => $sentAt,
             'acknowledgement_deadline' => $sentAt->copy()->addHours(KickoffMeeting::ACK_WINDOW_HOURS),
             'acknowledgement_status'   => KickoffMeeting::ACK_PENDING,
+            // Sending for acknowledgement IS distribution — record it on the MOM
+            // lifecycle, stamping the distributor the first time only so a re-send
+            // does not overwrite who originally issued the minutes.
+            'mom_status'               => MomApprovalStatus::DISTRIBUTED,
+            'mom_distributed_at'       => $meeting->mom_distributed_at ?? $sentAt,
+            'mom_distributed_by'       => $meeting->mom_distributed_by ?? $actor->id,
         ]);
 
         $this->sendMomNotifications($meeting);
 
-        $meeting->recordAudit('mom_published', $actor, 'Minutes sent to the vendor for acknowledgement'
+        $meeting->recordAudit('mom_published', $actor, 'Minutes distributed to the vendor for acknowledgement'
             .' (valid '.KickoffMeeting::ACK_WINDOW_HOURS.'h)');
 
         return $this->find($meeting->id, $actor->tenant_id);
