@@ -19,21 +19,39 @@ export default function KickoffAck() {
   const [loading, setLoad] = useState(true)
   const [loadErr, setLoadErr] = useState(null)
   const [name, setName] = useState('')
+  const [comment, setComment] = useState('')
   const [submitting, setSub] = useState(false)
+  const [pdfBusy, setPdfBusy] = useState(false)
   const [err, setErr] = useState(null)
   const [done, setDone] = useState(false)
+  const [signedName, setSignedName] = useState('')
 
   useEffect(() => {
     kickoffAckApi.show(token)
-      .then(m => { setMeeting(m); setLoad(false); if (m.acknowledged_at) setDone(true) })
+      .then(m => { setMeeting(m); setLoad(false); if (m.acknowledged_at) { setDone(true); setSignedName(m.acknowledged_by_name || '') } })
       .catch(e => { setLoadErr(e?.response?.data?.message || 'This link is not valid.'); setLoad(false) })
   }, [token])
+
+  // Open the actual minutes document (PDF) so the vendor reviews what they sign.
+  // Read-only and repeatable — this never burns the token, unlike acknowledge().
+  const viewPdf = async () => {
+    setPdfBusy(true); setErr(null)
+    try {
+      const blob = await kickoffAckApi.mom(token)
+      const url = URL.createObjectURL(blob)
+      window.open(url, '_blank', 'noopener')
+      setTimeout(() => URL.revokeObjectURL(url), 60000)
+    } catch (e) {
+      setErr(e?.response?.data?.message || 'Could not open the minutes document.')
+    } finally { setPdfBusy(false) }
+  }
 
   const submit = async () => {
     if (!name.trim()) { setErr('Please enter your name.'); return }
     setSub(true); setErr(null)
     try {
-      await kickoffAckApi.acknowledge(token, name.trim())
+      await kickoffAckApi.acknowledge(token, name.trim(), comment.trim() || undefined)
+      setSignedName(name.trim())
       setDone(true)
     } catch (e) {
       setErr(e?.response?.data?.message || 'Could not acknowledge. Please try again.')
@@ -56,7 +74,7 @@ export default function KickoffAck() {
       <Disc color="#10b981" icon={CheckCircle2} />
       <h1 style={h1}>Acknowledged</h1>
       <p style={{ ...muted, maxWidth: 320 }}>
-        Thank you{meeting?.acknowledged_by_name ? `, ${meeting.acknowledged_by_name}` : ''}. Your acknowledgement of these minutes has been recorded.
+        Thank you{signedName ? `, ${signedName}` : ''}. Your acknowledgement of these minutes has been recorded.
       </p>
       <div className="pr-glass" style={{ marginTop: 18, padding: '12px 16px', borderRadius: 14 }}>
         <p style={{ ...muted, fontSize: 12, margin: 0 }}>You can close this page.</p>
@@ -120,8 +138,23 @@ export default function KickoffAck() {
           <p style={{ ...muted, fontSize: 12.5, margin: '8px 0 14px', lineHeight: 1.5 }}>
             By entering your name and confirming, you acknowledge that these minutes reflect what was agreed at the meeting.
           </p>
+
+          {/* Review the actual signed document before acknowledging. */}
+          {meeting.has_document && (
+            <button onClick={viewPdf} disabled={pdfBusy}
+              style={{ width: '100%', height: 46, borderRadius: 12, cursor: pdfBusy ? 'wait' : 'pointer', fontSize: 13.5, fontWeight: 700, marginBottom: 12,
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                color: '#a78bfa', background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.35)' }}>
+              {pdfBusy ? <Loader2 size={16} className="ka-spin" /> : <FileText size={16} />}
+              {pdfBusy ? 'Opening…' : 'View the minutes document (PDF)'}
+            </button>
+          )}
+
           <input value={name} onChange={e => setName(e.target.value)} placeholder="Your full name"
             style={{ ...inputStyle, height: 48, fontSize: 15, marginBottom: 12 }} />
+          <textarea value={comment} onChange={e => setComment(e.target.value)} rows={2}
+            placeholder="Add a remark (optional) — e.g. agreed with one correction"
+            style={{ ...inputStyle, minHeight: 64, fontSize: 14, marginBottom: 12, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5, padding: '10px 12px' }} />
           {err && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 10, marginBottom: 12, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)' }}>
               <XCircle size={14} style={{ color: '#ef4444', flexShrink: 0 }} />

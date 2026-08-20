@@ -73,7 +73,8 @@ class PublicKickoffController extends Controller
                 'role'         => $a->role,
                 'attended'     => $a->attended,
             ]),
-            'acknowledged_at' => $meeting->acknowledged_at,
+            'acknowledged_at'      => $meeting->acknowledged_at,
+            'acknowledged_by_name' => $meeting->acknowledged_by_name,
         ]);
     }
 
