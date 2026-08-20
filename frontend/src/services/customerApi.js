@@ -11,6 +11,9 @@ const crud = (resource) => ({
 })
 
 export const customerApi = {
+  // Customer 360 overview — live counts from the modules that own the data.
+  overview: (id) => api.get(`/customers/${id}/overview`).then(r => r.data).catch(handleErr),
+
   // Simple per-customer record tabs
   contracts:     crud('contracts'),
   expenses:      crud('expenses'),

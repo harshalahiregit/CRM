@@ -6,8 +6,7 @@ import {
   Globe, Linkedin, Facebook, Instagram, Twitter,
   Package, Users2, UserPlus, Link2, Plus, Trash2, Eye, EyeOff, Upload,
   FileText, KeyRound, Bell, StickyNote, MapPin, Edit2, X, ChevronDown,
-  ClipboardList, FileX, IndianRupee, RefreshCw, FileSignature, Percent, Truck, LifeBuoy, Paperclip, Send,
-} from 'lucide-react'
+  ClipboardList, FileX, IndianRupee, RefreshCw, FileSignature, Percent, Truck, LifeBuoy, Paperclip, Send, LayoutDashboard} from 'lucide-react'
 import { customerApi } from '@/services/customerApi'
 import { useToast } from '@/hooks/useToast'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
@@ -17,6 +16,7 @@ import ParentCompanyPicker from '../components/ParentCompanyPicker'
 import StepperNav from '../components/StepperNav'
 import ConfirmIconButton from '../components/ConfirmIconButton'
 import ToggleSwitch from '../components/ToggleSwitch'
+import OverviewTab from '../components/OverviewTab'
 import NotesTab from '../components/NotesTab'
 import RichTextEditor from '@/components/ui/RichTextEditor'
 import { MoneyToggle, useMoneyFmt } from '@/components/ui/Money'
@@ -38,7 +38,7 @@ const d10 = s => (s ? String(s).slice(0, 10) : '—')
 // 24 buttons was hard to scan). Grouping mirrors the sidebar's mental model.
 const TAB_GROUPS = [
   { label: 'Overview', color: '#7c3aed', tabs: [
-    ['Profile', Building2], ['Contacts', Users2], ['Notes', StickyNote], ['Reminders', Bell],
+    ['Overview', LayoutDashboard], ['Profile', Building2], ['Contacts', Users2], ['Notes', StickyNote], ['Reminders', Bell],
   ]},
   { label: 'Finance', color: '#0d9488', tabs: [
     ['Statement', Wallet], ['Invoices', Receipt], ['Payments', CreditCard], ['Proposals', FileText],
@@ -75,7 +75,7 @@ export default function CustomerDetail() {
   const mfmt = useMoneyFmt()
   const [client, setClient] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState('Profile')
+  const [tab, setTab] = useState('Overview')
   const [tabData, setTabData] = useState({})   // { [tab]: data }
   const [recordOptions, setRecordOptions] = useState({ expenseCategories: [], projects: [] })
   const [tabLoading, setTabLoading] = useState(false)
@@ -261,6 +261,7 @@ export default function CustomerDetail() {
 
         {/* ── Tab content ── */}
         <div className="flex-1 min-w-0 w-full space-y-6">
+      {tab === 'Overview' && <OverviewTab id={id} client={client} toast={toast} />}
       {tab === 'Profile' && <ProfileTab client={client} reload={loadClient} toast={toast} />}
       {tab === 'Contacts' && <ContactsTab id={id} contacts={data ?? client.contacts} reload={() => refreshTab('Contacts')} toast={toast} />}
       {tab === 'Address Book' && <AddressBookTab id={id} addresses={data} reload={() => refreshTab('Address Book')} toast={toast} />}

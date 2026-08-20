@@ -54,6 +54,9 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('customers')->gr
     // must stay ABOVE the /{client} wildcard routes)
     Route::get('/assignable-staff', [ClientController::class, 'assignableStaff']);
 
+    // Customer 360 overview — live counts from the owning modules, nothing stored.
+    Route::get('/{client}/overview', [\App\Http\Controllers\Api\Customer\Customer360Controller::class, 'show']);
+
     // Parent Company picker options (static — must stay above /{client}).
     Route::get('/parent-companies', [ClientController::class, 'parentCompanyOptions']);
 
