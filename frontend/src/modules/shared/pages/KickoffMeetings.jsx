@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   CalendarDays, Plus, RefreshCw, Clock, CheckCircle2, XCircle, Send,
   Users, AlertTriangle, ClipboardCheck, Pencil, BellRing, Eye, Download, Loader2, Mail, MessageCircle, Smartphone,
-  ChevronLeft, ChevronRight, List, LayoutGrid, Laptop, Building2, UserX,
+  ChevronLeft, ChevronRight, List, LayoutGrid, Laptop, Building2, UserX, ListChecks,
 } from 'lucide-react'
 import { kickoffApi } from '@/services/kickoffApi'
 import {
@@ -38,7 +38,7 @@ export default function KickoffMeetings() {
     setLoad(true)
     Promise.all([
       kickoffApi.list(filter === 'All' ? {} : { status: filter }),
-      kickoffApi.stats(),
+      kickoffApi.dashboard(),
     ]).then(([rows, s]) => { setData(rows?.data ?? rows); setStats(s); setLoad(false) })
       .catch(() => setLoad(false))
   }
@@ -94,14 +94,44 @@ export default function KickoffMeetings() {
         </div>
       </div>
 
-      {/* KPI strip */}
+      {/* Dashboard (Meeting.docx §14) */}
       {stats && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 18 }}>
-          <Kpi label="Scheduled" value={stats.scheduled} icon={CalendarDays} color="#0ea5e9" />
-          <Kpi label="Delayed" value={stats.delayed} icon={Clock} color="#f59e0b" danger={stats.delayed > 0} />
-          <Kpi label="Completed" value={stats.completed} icon={CheckCircle2} color="#10b981" />
-          <Kpi label="Awaiting acknowledgement" value={stats.awaiting_ack} icon={Send} color="#a78bfa" danger={stats.awaiting_ack > 0} />
-        </div>
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6,1fr)', gap: 12, marginBottom: 12 }}>
+            <Kpi label="Today" value={stats.today} icon={CalendarDays} color="#7C3AED" />
+            <Kpi label="Upcoming" value={stats.upcoming} icon={Clock} color="#0ea5e9" />
+            <Kpi label="Pending MOM" value={stats.pending_mom} icon={ClipboardCheck} color="#f59e0b" danger={stats.pending_mom > 0} />
+            <Kpi label="Overdue MOM" value={stats.overdue_mom} icon={AlertTriangle} color="#ef4444" danger={stats.overdue_mom > 0} />
+            <Kpi label="Open actions" value={stats.open_actions} icon={ListChecks} color="#a78bfa" />
+            <Kpi label="Overdue actions" value={stats.overdue_actions} icon={AlertTriangle} color="#ef4444" danger={stats.overdue_actions > 0} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1.4fr repeat(3,1fr)', gap: 12, marginBottom: 18, alignItems: 'stretch' }}>
+            {/* Meeting effectiveness — action closure rate */}
+            <div className="pr-kpi" style={{ padding: 16, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                <span style={{ fontSize: 28, fontWeight: 900, color: stats.closure_rate >= 70 ? '#10b981' : stats.closure_rate >= 40 ? '#f59e0b' : '#ef4444', lineHeight: 1 }}>{stats.closure_rate}%</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)' }}>Action closure rate</span>
+              </div>
+              <div style={{ height: 7, borderRadius: 999, background: 'var(--bg-input)', overflow: 'hidden', margin: '10px 0 6px' }}>
+                <div style={{ height: '100%', width: `${stats.closure_rate}%`, borderRadius: 999, background: stats.closure_rate >= 70 ? '#10b981' : stats.closure_rate >= 40 ? '#f59e0b' : '#ef4444' }} />
+              </div>
+              <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{stats.closed_actions}/{stats.total_actions} actions closed</span>
+            </div>
+            <Kpi label="Completed" value={stats.completed} icon={CheckCircle2} color="#10b981" />
+            <Kpi label="Awaiting ack" value={stats.awaiting_ack} icon={Send} color="#a78bfa" danger={stats.awaiting_ack > 0} />
+            <Kpi label="Decisions active" value={stats.decisions_active} icon={ClipboardCheck} color="#0ea5e9" />
+          </div>
+          {stats.by_type?.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 18 }}>
+              {stats.by_type.map(b => (
+                <span key={b.type} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 11px', borderRadius: 999, background: 'var(--bg-card)', border: '1px solid var(--border)', fontSize: 12 }}>
+                  <span style={{ color: 'var(--text-muted)' }}>{b.label}</span>
+                  <span style={{ color: '#a78bfa', fontWeight: 800 }}>{b.count}</span>
+                </span>
+              ))}
+            </div>
+          )}
+        </>
       )}
 
       {banner && (

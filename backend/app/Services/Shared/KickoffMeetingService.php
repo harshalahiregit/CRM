@@ -48,6 +48,69 @@ class KickoffMeetingService
         return $this->repo->stats($tenantId);
     }
 
+    /**
+     * The Meetings dashboard aggregate (Meeting.docx §14): today / upcoming,
+     * pending & overdue MOM, open & overdue actions, decisions, meetings by type,
+     * and the action-closure effectiveness rate.
+     */
+    public function dashboard(int $tenantId): array
+    {
+        $meetings = KickoffMeeting::forTenant($tenantId);
+
+        $today    = (clone $meetings)->open()->whereDate('scheduled_at', now()->toDateString())->count();
+        $upcoming = (clone $meetings)->open()->whereNotNull('scheduled_at')->where('scheduled_at', '>', now())->count();
+
+        // MOM not yet distributed on a completed meeting; overdue if completed > 3 days ago.
+        $pendingMomBase = (clone $meetings)->where('status', Status::COMPLETED)
+            ->where(fn ($q) => $q->whereNull('mom_status')->orWhere('mom_status', '!=', MomApprovalStatus::DISTRIBUTED));
+        $pendingMom = (clone $pendingMomBase)->count();
+        $overdueMom = (clone $pendingMomBase)->whereNotNull('completed_at')
+            ->where('completed_at', '<', now()->subDays(3))->count();
+
+        // Action effectiveness across the tenant.
+        $actions        = KickoffMomItem::where('tenant_id', $tenantId);
+        $totalActions   = (clone $actions)->count();
+        $closedActions  = (clone $actions)->where('status', MomActionStatus::CLOSED)->count();
+        $openActions    = (clone $actions)->whereIn('status', MomActionStatus::OPEN_STATES)->count();
+        $overdueActions = (clone $actions)->whereIn('status', MomActionStatus::OPEN_STATES)
+            ->whereNotNull('target_date')->whereDate('target_date', '<', now())->count();
+        $closureRate    = $totalActions > 0 ? (int) round($closedActions / $totalActions * 100) : 0;
+
+        // Decisions still in force (Active) and issues still open.
+        $decisionsActive = MeetingDecision::where('tenant_id', $tenantId)->where('status', 'Active')->count();
+        $openIssues      = MeetingIssue::where('tenant_id', $tenantId)
+            ->whereIn('status', MeetingIssueStatus::OPEN_STATES)->count();
+
+        // Meetings by type + by status.
+        $byType = (clone $meetings)->get(['meeting_type'])
+            ->groupBy('meeting_type')
+            ->map(fn ($g, $type) => [
+                'type'  => $type,
+                'label' => config("meetings.types.{$type}", ucfirst(str_replace('_', ' ', (string) $type))),
+                'count' => $g->count(),
+            ])->sortByDesc('count')->values()->all();
+
+        return [
+            'total'            => (clone $meetings)->count(),
+            'today'            => $today,
+            'upcoming'         => $upcoming,
+            'scheduled'        => (clone $meetings)->where('status', Status::SCHEDULED)->count(),
+            'delayed'          => (clone $meetings)->where('status', Status::DELAYED)->count(),
+            'completed'        => (clone $meetings)->where('status', Status::COMPLETED)->count(),
+            'pending_mom'      => $pendingMom,
+            'overdue_mom'      => $overdueMom,
+            'awaiting_ack'     => (clone $meetings)->where('status', Status::COMPLETED)->whereNull('acknowledged_at')->count(),
+            'total_actions'    => $totalActions,
+            'open_actions'     => $openActions,
+            'overdue_actions'  => $overdueActions,
+            'closed_actions'   => $closedActions,
+            'closure_rate'     => $closureRate,
+            'decisions_active' => $decisionsActive,
+            'open_issues'      => $openIssues,
+            'by_type'          => $byType,
+        ];
+    }
+
     /** Tenant-guarded fetch — 404 rather than leak existence across tenants. */
     public function find(int $id, int $tenantId): KickoffMeeting
     {
