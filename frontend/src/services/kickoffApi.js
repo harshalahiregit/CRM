@@ -43,6 +43,18 @@ export const kickoffApi = {
   // composes the link from window.location.origin, as the badge QR does.
   publish: (id) => api.post(`/kickoff/meetings/${id}/publish`).then(r => r.data),
 
+  // Action Engine — progress one MOM action (status/remark/priority/evidence file).
+  // Multipart so an evidence document can ride along with the status change.
+  progressAction: (meetingId, itemId, data) => {
+    const fd = new FormData()
+    Object.entries(data).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') fd.append(k, v)
+    })
+    return upload(`/kickoff/meetings/${meetingId}/mom-items/${itemId}/progress`, fd)
+  },
+  actionEvidenceBlob: (meetingId, itemId) =>
+    api.get(`/kickoff/meetings/${meetingId}/mom-items/${itemId}/evidence`, { responseType: 'blob' }).then(r => r.data),
+
   // Subject pickers — thin wrappers over shared endpoints, mirroring how each
   // module wraps /vendors itself rather than importing another module's service.
   subjects: {

@@ -8,6 +8,7 @@ use App\Models\Shared\KickoffMeeting;
 use App\Models\Shared\KickoffMeetingSubject;
 use App\Models\Shared\KickoffMomItem;
 use App\Models\Shared\MeetingAgendaItem;
+use App\Support\Shared\MomActionStatus;
 use App\Models\Tenant;
 use App\Models\Tpv\TpvOnboarding;
 use App\Models\User;
@@ -854,11 +855,18 @@ class KickoffMeetingService
      * an item cannot be assigned to somebody who was never in the room — or to
      * an attendee belonging to another tenant's meeting.
      */
+    /**
+     * Sync the itemised minutes from the form. UPSERTS by id rather than deleting
+     * and recreating, so an action's lifecycle fields (status, evidence,
+     * verification) — owned by the Action Engine, not the form — survive a meeting
+     * edit. Only the content fields the form owns are (re)written here; items the
+     * form no longer contains are removed.
+     */
     private function replaceMomItems(KickoffMeeting $meeting, array $items, int $tenantId): void
     {
-        $meeting->momItems()->delete();
-
         $validAttendeeIds = $meeting->attendees()->pluck('id')->all();
+        $priorities       = config('meetings.priorities', ['Low', 'Medium', 'High']);
+        $keepIds          = [];
         $order            = 0;
 
         foreach ($items as $item) {
@@ -887,19 +895,126 @@ class KickoffMeetingService
                 $responsible = $match?->id;
             }
 
-            KickoffMomItem::create([
-                'tenant_id'               => $tenantId,
-                'kickoff_meeting_id'      => $meeting->id,
+            $priority = $item['priority'] ?? null;
+            if ($priority !== null && ! in_array($priority, $priorities, true)) {
+                $priority = null;
+            }
+
+            // Content fields only — never status/evidence/verification.
+            $content = [
                 'description'             => $description,
                 'responsible_attendee_id' => $responsible,
                 'responsible_names'       => $names !== '' ? $names : null,
+                'responsible_org'         => $item['responsible_org'] ?? null,
                 // `remarks` is what the existing form sends.
                 'remark'                  => $item['remark'] ?? $item['remarks'] ?? null,
                 'notes'                   => $item['notes'] ?? null,
                 'target_date'             => $item['target_date'] ?? null,
+                'priority'                => $priority,
                 'sort_order'              => $order++,
-            ]);
+            ];
+
+            // An id that belongs to THIS meeting → update in place, preserving its
+            // Action-Engine state. Anything else is a new action.
+            $existing = ! empty($item['id'])
+                ? $meeting->momItems()->whereKey($item['id'])->first()
+                : null;
+
+            if ($existing) {
+                $existing->update($content);
+                $keepIds[] = $existing->id;
+            } else {
+                $created = KickoffMomItem::create([
+                    ...$content,
+                    'tenant_id'          => $tenantId,
+                    'kickoff_meeting_id' => $meeting->id,
+                    'action_ref'         => $this->nextActionRef($tenantId),
+                    'status'             => MomActionStatus::OPEN,
+                ]);
+                $keepIds[] = $created->id;
+            }
         }
+
+        // Rows the form dropped are removed (their tracking goes with them).
+        $meeting->momItems()->whereNotIn('id', $keepIds ?: [0])->delete();
+    }
+
+    /** Next per-tenant, per-year action reference (ACT-YYYY-NNNN). */
+    private function nextActionRef(int $tenantId): string
+    {
+        $year = date('Y');
+        $n = KickoffMomItem::where('tenant_id', $tenantId)
+            ->where('action_ref', 'like', "ACT-{$year}-%")
+            ->count() + 1;
+
+        return sprintf('ACT-%s-%04d', $year, $n);
+    }
+
+    /**
+     * Progress a single MOM action through its lifecycle (the Action Engine).
+     * Guards the transition, records evidence/verification, and enforces that a
+     * closure carries evidence or a verification note (business rule 12).
+     */
+    public function progressAction(KickoffMomItem $item, array $data, User $actor): KickoffMomItem
+    {
+        $to = $data['status'] ?? null;
+        if ($to !== null && $to !== $item->status && ! MomActionStatus::canTransition($item->status, $to)) {
+            throw new BusinessException(
+                'Cannot move a '.MomActionStatus::label($item->status).' action to '.MomActionStatus::label($to).'.'
+            );
+        }
+
+        $changes = [];
+        foreach (['responsible_org', 'target_date'] as $field) {
+            if (array_key_exists($field, $data)) {
+                $changes[$field] = $data[$field];
+            }
+        }
+        // The verifier's note lives in verification_note — a field the meeting form
+        // does not own — so a later form edit can never overwrite it.
+        if (array_key_exists('note', $data)) {
+            $changes['verification_note'] = $data['note'];
+        }
+        if (! empty($data['priority']) && in_array($data['priority'], config('meetings.priorities', ['Low', 'Medium', 'High']), true)) {
+            $changes['priority'] = $data['priority'];
+        }
+
+        // Evidence file — decoded from base64 or handed in already-stored by the
+        // controller as evidence_path.
+        if (! empty($data['evidence_path'])) {
+            $changes['evidence_path'] = $data['evidence_path'];
+        } elseif (! empty($data['evidence_data']) && str_contains($data['evidence_data'], 'base64,')) {
+            $binary = base64_decode(explode('base64,', $data['evidence_data'])[1]);
+            $path   = 'kickoff/action-evidence/ev_'.uniqid().'.png';
+            Storage::disk(self::DISK)->put($path, $binary);
+            $changes['evidence_path'] = $path;
+        }
+
+        if ($to !== null && $to !== $item->status) {
+            if ($to === MomActionStatus::CLOSED) {
+                $hasEvidence = ! empty($changes['evidence_path'] ?? $item->evidence_path);
+                $hasNote     = trim((string) ($changes['verification_note'] ?? $item->verification_note)) !== '';
+                if (! $hasEvidence && ! $hasNote) {
+                    throw new BusinessException('Closing an action needs evidence or a verification note.');
+                }
+                $changes['closed_at']   = now();
+                $changes['verified_at'] = now();
+                $changes['verified_by'] = $actor->id;
+            }
+            if ($to === MomActionStatus::REOPENED) {
+                $changes['closed_at']   = null;
+                $changes['verified_at'] = null;
+                $changes['verified_by'] = null;
+            }
+            $changes['status'] = $to;
+        }
+
+        $item->update($changes);
+
+        $item->meeting?->recordAudit('action_updated', $actor,
+            "Action {$item->action_ref} → ".MomActionStatus::label($item->status));
+
+        return $item->fresh(['responsible:id,name', 'verifier:id,name', 'agendaItem:id,item']);
     }
 
     /**
