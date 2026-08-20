@@ -427,10 +427,22 @@ export default function KickoffMeetingCreate() {
     if (!templateForType.length) return
     setAgendaItems(prev => {
       const seen = new Set(prev.map(a => (a.item || '').trim().toLowerCase()))
-      const additions = templateForType
-        .filter(t => t.item && !seen.has(t.item.trim().toLowerCase()))
-        .map(t => ({ ...EMPTY_AGENDA(), item: t.item, duration_minutes: t.duration_minutes ?? '', priority: t.priority || '' }))
-      return [...prev, ...additions]
+      const push = (line, extra = {}) => {
+        const k = (line || '').trim().toLowerCase()
+        if (!line || seen.has(k)) return null
+        seen.add(k)
+        return { ...EMPTY_AGENDA(), item: line, ...extra }
+      }
+      const fromTemplate = templateForType
+        .map(t => push(t.item, { duration_minutes: t.duration_minutes ?? '', priority: t.priority || '' }))
+        .filter(Boolean)
+      // §4: the template also pulls in the vendor's current live status — one
+      // agenda line per flagged section (open incidents, pending CAPA, …).
+      const fromStatus = (vendorStatus?.sections || [])
+        .filter(s => s.flag && s.agenda)
+        .map(s => push(s.agenda))
+        .filter(Boolean)
+      return [...prev, ...fromTemplate, ...fromStatus]
     })
   }
 
@@ -441,6 +453,28 @@ export default function KickoffMeetingCreate() {
   const [carry,     setCarry]     = useState(null)   // { actions:[], issues:[] } | null
   const [carryBusy, setCarryBusy] = useState(false)
   const [carryErr,  setCarryErr]  = useState(null)
+
+  // §4 live vendor status — auto-loaded when a vendor is selected, so a template
+  // load can pull the vendor's current workforce/compliance/incident/… status
+  // straight into the agenda.
+  const [vendorStatus, setVendorStatus] = useState(null)
+  useEffect(() => {
+    if (!form.subject_id) { setVendorStatus(null); return }
+    let live = true
+    kickoffApi.vendorStatus(form.subject_id)
+      .then(d => { if (live) setVendorStatus(d) })
+      .catch(() => { if (live) setVendorStatus(null) })
+    return () => { live = false }
+  }, [form.subject_id])
+
+  // Append an agenda item for one live-status section (skips a duplicate topic).
+  const addStatusAgenda = (line) => {
+    if (!line) return
+    setAgendaItems(prev => {
+      const seen = new Set(prev.map(a => (a.item || '').trim().toLowerCase()))
+      return seen.has(line.trim().toLowerCase()) ? prev : [...prev, { ...EMPTY_AGENDA(), item: line }]
+    })
+  }
 
   const originLabel = (o) => o ? `${o.reference || o.title || 'Meeting'}${o.date ? ' · ' + o.date : ''}` : ''
 
@@ -977,6 +1011,34 @@ export default function KickoffMeetingCreate() {
                     A meeting link will be <strong style={{ color: 'var(--text-h)' }}>automatically generated</strong> when you save.
                     {generatingLink && <span style={{ color: '#a78bfa', marginLeft: 6 }}>Generating link…</span>}
                   </span>
+                </div>
+              </div>
+            )}
+
+            {/* §4 live vendor status — current workforce/compliance/incident/… state,
+                each addable as an agenda line (Load template pulls the flagged ones in). */}
+            {vendorStatus?.sections?.length > 0 && (
+              <div style={{ marginTop: 18, padding: 14, borderRadius: 12, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
+                  <History size={13} style={{ color: '#a78bfa' }} />
+                  <span style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text-h)' }}>Live vendor status</span>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>· {vendorStatus.vendor?.name}</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(190px,1fr))', gap: 8 }}>
+                  {vendorStatus.sections.map(s => (
+                    <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 9, background: 'var(--bg-card)', border: `1px solid ${s.flag ? 'rgba(245,158,11,0.35)' : 'var(--border)'}` }}>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>{s.label}</div>
+                        <div style={{ fontSize: 12.5, fontWeight: 700, color: s.flag ? '#d97706' : 'var(--text-h)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.value}</div>
+                      </div>
+                      {s.agenda && (
+                        <button type="button" onClick={() => addStatusAgenda(s.agenda)} title="Add to agenda"
+                          style={{ width: 24, height: 24, borderRadius: 7, flexShrink: 0, cursor: 'pointer', border: '1px solid var(--border)', background: 'var(--bg-input)', color: '#a78bfa', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <Plus size={12} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
