@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Shared;
 
+use App\Support\Shared\MeetingTypeCatalog;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -22,7 +23,7 @@ class UpdateKickoffMeetingRequest extends FormRequest
             'subject_ids' => 'nullable|array',
             'subject_ids.*' => 'integer',
             'title' => 'sometimes|required|string|max:200',
-            'meeting_type' => 'nullable|string|in:'.implode(',', array_keys(config('meetings.types', []))),
+            'meeting_type' => 'nullable|string|in:'.implode(',', app(MeetingTypeCatalog::class)->keys($this->user()->tenant_id)),
             'reference' => 'nullable|string|max:80',
             'agenda' => 'nullable|string|max:5000',
 

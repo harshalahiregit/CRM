@@ -20,6 +20,13 @@ export const kickoffApi = {
   meetingTypes: ()     => api.get('/kickoff/meeting-types').then(r => r.data),
   // Active projects for the "which project is this for?" picker (Meeting.docx §16).
   projects: ()         => api.get('/kickoff/projects').then(r => r.data),
+
+  // Admin Types/Templates settings — { builtins, custom, effective }. Writes are
+  // admin-gated server-side; layered over config/meetings.php (MeetingTypeCatalog).
+  typeSettings: ()          => api.get('/kickoff/meeting-type-settings').then(r => r.data),
+  createType:   (data)      => api.post('/kickoff/meeting-type-settings', data).then(r => r.data),
+  updateType:   (id, data)  => api.put(`/kickoff/meeting-type-settings/${id}`, data).then(r => r.data),
+  deleteType:   (id)        => api.delete(`/kickoff/meeting-type-settings/${id}`).then(r => r.data),
   // Still-open actions/issues from a subject's earlier meetings, to pre-load into
   // a new one. params: { subject_type, subject_id, exclude_meeting_id? }.
   carryForward: (params) => api.get('/kickoff/meetings/carry-forward', { params }).then(r => r.data),

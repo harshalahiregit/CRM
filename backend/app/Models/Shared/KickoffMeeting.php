@@ -7,6 +7,7 @@ use App\Models\Traits\BelongsToTenant;
 use App\Models\User;
 use App\Support\Shared\KickoffStatus as Status;
 use App\Support\Shared\KickoffSubject;
+use App\Support\Shared\MeetingTypeCatalog;
 use App\Support\Shared\MomApprovalStatus;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -137,12 +138,15 @@ class KickoffMeeting extends Model
         return $this->belongsTo(User::class, 'mom_organizer_approved_by');
     }
 
-    /** Human label for the stored meeting_type key. Falls back to the raw key. */
+    /**
+     * Human label for the stored meeting_type key. Resolved through the tenant's
+     * catalogue (config baseline + any admin-defined types), request-cached so
+     * reading it on every list row does not re-query. Falls back to the raw key.
+     */
     public function getMeetingTypeLabelAttribute(): string
     {
-        $key = $this->meeting_type ?: config('meetings.default_type', 'kickoff');
-
-        return config("meetings.types.{$key}", ucfirst(str_replace('_', ' ', (string) $key)));
+        return app(MeetingTypeCatalog::class)
+            ->label((int) $this->tenant_id, $this->meeting_type);
     }
 
     public function creator()
