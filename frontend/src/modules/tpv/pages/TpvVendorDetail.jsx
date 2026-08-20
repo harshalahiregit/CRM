@@ -34,6 +34,7 @@ import { VendorCommercial } from '@/modules/tpv/components/VendorCommercialPanel
 import { VendorAttachments } from '@/modules/tpv/components/VendorAttachmentsPanel'
 import { VendorRiskPanel } from '@/modules/tpv/components/VendorRiskPanel'
 import { VendorPrequalificationPanel } from '@/modules/tpv/components/VendorPrequalificationPanel'
+import { VendorMeetingsPanel } from '@/modules/tpv/components/VendorMeetingsPanel'
 
 /**
  * The Vendor Detail navigation — 6 groups, 38 sections. This drives BOTH the left
@@ -54,7 +55,7 @@ import { VendorPrequalificationPanel } from '@/modules/tpv/components/VendorPreq
  * renders Overview instead. Keep the two in step.
  */
 const NAV_GROUPS = [
-  { group: 'General',     icon: User,           items: ['Overview', 'Profile', 'Contact', 'Customer'] },
+  { group: 'General',     icon: User,           items: ['Overview', 'Profile', 'Contact', 'Customer', 'Meetings'] },
   { group: 'Workforce',   icon: HardHat,        items: ['Workforce', 'Medical', 'Training', 'Gate Log', 'Strikes'] },
   { group: 'Commercial',  icon: IndianRupee,    items: ['Quotation', 'Contracts', 'Purchase Order', 'Purchase Invoice', 'Debit Note', 'Purchase Statement', 'Payments'] },
   { group: 'Operations',  icon: Briefcase,      items: ['Projects', 'Tasks', 'Expenses', 'Attachments', 'ToDo', 'Notes', 'Technical File Maintenance', 'Ticket', 'Job', 'Reminders'] },
@@ -434,6 +435,10 @@ function SectionContent({ tab, v, isActive, manage, api, moduleName, onDecision,
       return <VendorOverview vendor={v} api={api} isActive={isActive} />
     case 'Customer':
       return <VendorCustomers vendorId={v.id} vendorName={v.company_name} manage={manage} api={api} />
+    // Meeting.docx §17 — the vendor's meeting history from the shared engine.
+    case 'Meetings':
+      return <VendorMeetingsPanel vendorId={v.id} api={api} />
+
     case 'Profile':
       // Editable for admin/staff (canManage). A vendor never reaches this screen,
       // and PUT /vendors/{id} is role:admin,staff + assertTenant() regardless —
