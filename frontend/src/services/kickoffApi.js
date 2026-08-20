@@ -23,6 +23,8 @@ export const kickoffApi = {
   // A project's meeting rollup (Meeting.docx §16) — counts + meeting list for the
   // project detail page. { totals, meetings }.
   projectMeetings: (projectId) => api.get(`/kickoff/projects/${projectId}/meetings`).then(r => r.data),
+  // A vendor's live governance status (Meeting.docx §4) — { vendor, sections }.
+  vendorStatus: (vendorId) => api.get('/kickoff/vendor-status', { params: { vendor_id: vendorId } }).then(r => r.data),
 
   // Admin Types/Templates settings — { builtins, custom, effective }. Writes are
   // admin-gated server-side; layered over config/meetings.php (MeetingTypeCatalog).

@@ -45,6 +45,8 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('kickoff')->grou
     Route::delete('/meeting-type-settings/{meetingType}', [MeetingTypeSettingsController::class, 'destroy']);
     Route::get('/projects', [KickoffMeetingController::class, 'projects']);
     Route::get('/projects/{project}/meetings', [KickoffMeetingController::class, 'projectMeetings'])->where('project', '[0-9]+');
+    // Live vendor governance status for the §4 template auto-load.
+    Route::get('/vendor-status', [KickoffMeetingController::class, 'vendorStatus']);
     Route::get('/meetings', [KickoffMeetingController::class, 'index']);
     Route::post('/meetings', [KickoffMeetingController::class, 'store']);
     Route::get('/meetings/{kickoffMeeting}', [KickoffMeetingController::class, 'show']);

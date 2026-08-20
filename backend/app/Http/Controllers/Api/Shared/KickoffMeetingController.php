@@ -12,6 +12,7 @@ use App\Models\Shared\KickoffMeeting;
 use App\Models\Shared\KickoffMomItem;
 use App\Models\Shared\MeetingIssue;
 use App\Services\Shared\KickoffMeetingService;
+use App\Services\Shared\VendorLiveStatusService;
 use App\Support\Shared\MeetingIssueStatus;
 use App\Support\Shared\MeetingTypeCatalog;
 use App\Support\Shared\MomActionStatus;
@@ -40,6 +41,18 @@ class KickoffMeetingController extends Controller
     public function projects(Request $request, ProjectDirectoryContract $projects)
     {
         return response()->json($projects->listProjects($request->user()->tenant_id));
+    }
+
+    /**
+     * A vendor's live governance status (Meeting.docx §4) — workforce, training,
+     * PPE, compliance, incidents, CAPA, strikes, gate. Feeds the create form so a
+     * template load can pull the vendor's current status into the agenda.
+     */
+    public function vendorStatus(Request $request, VendorLiveStatusService $status)
+    {
+        $data = $request->validate(['vendor_id' => 'required|integer']);
+
+        return response()->json($status->snapshot($request->user()->tenant_id, (int) $data['vendor_id']));
     }
 
     /**
