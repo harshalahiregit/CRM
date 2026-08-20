@@ -1,7 +1,9 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { CalendarClock, Plus, Trash2, Check, Users, Mail, X, Video, Link2, AtSign, ExternalLink } from 'lucide-react'
 import { projectApi, PROJECT_ACCENT } from '@/services/projectApi'
+import { kickoffApi } from '@/services/kickoffApi'
 import { taskApi } from '@/services/taskApi'
 import { meetingLinkApi } from '@/services/meetingLinkApi'
 import { ConfirmModal } from '@/components/ui/SearchPicker'
@@ -85,10 +87,16 @@ export function MeetingsTab({ projectId, canManage = false }) {
   if (isLoading) return <Skeleton />
 
   return (
+   <div className="flex flex-col gap-4">
+    {/* Governance rollup of the shared TPV/kickoff meetings tagged to this
+        project (Meeting.docx §16) — distinct from the project's own ad-hoc
+        meetings listed below. */}
+    <ProjectKickoffRollup projectId={projectId} />
+
     <section className="rounded-2xl p-4" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
       <div className="flex items-center gap-2 mb-3 flex-wrap">
         <h2 className="font-bold text-xs flex items-center gap-1.5" style={{ color: 'var(--text-h)' }}>
-          <CalendarClock size={14} style={{ color: PROJECT_ACCENT }} /> Meetings
+          <CalendarClock size={14} style={{ color: PROJECT_ACCENT }} /> Project meetings
         </h2>
         <div className="flex items-center gap-1.5 ml-1">
           <Chip label="Total" value={counters.total} color="var(--text-muted)" />
@@ -278,6 +286,61 @@ export function MeetingsTab({ projectId, canManage = false }) {
       <ConfirmModal open={Boolean(confirmDelete)} onClose={() => setConfirmDelete(null)}
         onConfirm={() => del.mutate(confirmDelete.id)}
         title="Delete this meeting?" message={`“${confirmDelete?.title}” will be removed.`} confirmLabel="Delete" danger />
+    </section>
+   </div>
+  )
+}
+
+/* ── §16 governance rollup: TPV/kickoff meetings tagged to this project ──────── */
+function ProjectKickoffRollup({ projectId }) {
+  const navigate = useNavigate()
+  const { data } = useQuery({
+    queryKey: ['project-kickoff-rollup', projectId],
+    queryFn: () => kickoffApi.projectMeetings(projectId),
+  })
+  const totals = data?.totals
+  const meetings = data?.meetings || []
+
+  // Nothing tagged yet — keep the tab focused on the project's own meetings.
+  if (!totals || totals.meetings === 0) return null
+
+  const tiles = [
+    ['Meetings', totals.meetings, 'var(--text-h)'],
+    ['MOMs', totals.moms, 'var(--text-h)'],
+    ['Actions', totals.total_actions, 'var(--text-h)'],
+    ['Open', totals.open_actions, '#f59e0b'],
+    ['Overdue', totals.overdue_actions, totals.overdue_actions ? '#ef4444' : 'var(--text-muted)'],
+    ['Decisions', totals.decisions, '#0ea5e9'],
+  ]
+
+  return (
+    <section className="rounded-2xl p-4" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+      <h2 className="font-bold text-xs flex items-center gap-1.5 mb-3" style={{ color: 'var(--text-h)' }}>
+        <CalendarClock size={14} style={{ color: PROJECT_ACCENT }} /> TPV / Governance meetings
+      </h2>
+      <div className="grid gap-2 mb-3" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(90px,1fr))' }}>
+        {tiles.map(([label, val, color]) => (
+          <div key={label} className="rounded-xl p-2.5 text-center" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+            <div className="font-black leading-none" style={{ fontSize: 20, color }}>{val ?? 0}</div>
+            <div className="text-[10px] font-bold uppercase mt-1" style={{ color: 'var(--text-muted)', letterSpacing: '0.03em' }}>{label}</div>
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-col gap-1.5">
+        {meetings.slice(0, 8).map(m => (
+          <button key={m.id} onClick={() => navigate(`/app/tpv/kickoff/${m.id}`)}
+            className="flex items-center gap-2 text-left rounded-lg px-2.5 py-2 w-full"
+            style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+            <span className="text-[11px] font-semibold flex-1 min-w-0 truncate" style={{ color: 'var(--text-h)' }}>
+              {m.subject?.name || m.title}
+              <span className="ml-1.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>{m.meeting_type_label}</span>
+            </span>
+            {m.open_actions > 0 && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: 'rgba(245,158,11,0.15)', color: '#d97706' }}>{m.open_actions} open</span>}
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded capitalize" style={{ background: 'var(--bg-card)', color: 'var(--text-muted)' }}>{m.status_label}</span>
+          </button>
+        ))}
+        {meetings.length > 8 && <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>+{meetings.length - 8} more</span>}
+      </div>
     </section>
   )
 }

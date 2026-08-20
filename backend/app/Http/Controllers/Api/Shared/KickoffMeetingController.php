@@ -42,6 +42,17 @@ class KickoffMeetingController extends Controller
         return response()->json($projects->listProjects($request->user()->tenant_id));
     }
 
+    /**
+     * A project's meeting rollup (Meeting.docx §16) — the counts + meeting list a
+     * PM sees when they open a project. Keyed on the soft project_id link.
+     */
+    public function projectMeetings(Request $request, int $project)
+    {
+        return response()->json(
+            $this->kickoffService->projectMeetings($request->user()->tenant_id, $project)
+        );
+    }
+
     /** The configurable meeting-type catalogue (Meeting.docx) + agenda priorities. */
     public function meetingTypes(Request $request, MeetingTypeCatalog $catalog)
     {

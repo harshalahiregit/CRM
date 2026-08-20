@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   CalendarDays, Plus, RefreshCw, Clock, CheckCircle2, XCircle, Send,
   Users, AlertTriangle, ClipboardCheck, Pencil, BellRing, Eye, Download, Loader2, Mail, MessageCircle, Smartphone,
-  ChevronLeft, ChevronRight, List, LayoutGrid, Laptop, Building2, UserX, ListChecks, Trash2, Settings2,
+  ChevronLeft, ChevronRight, List, LayoutGrid, Laptop, Building2, UserX, ListChecks, Trash2, Settings2, UserCheck,
 } from 'lucide-react'
 import { kickoffApi } from '@/services/kickoffApi'
 import { useAuth } from '@/context/AuthContext'
@@ -21,6 +21,7 @@ import { KIT3D_STYLE, Overlay, ModalFooter } from '@/components/ui/kit3d'
  */
 export default function KickoffMeetings() {
   const navigate = useNavigate()
+  const { user } = useAuth()
   const [data, setData]   = useState([])
   const [stats, setStats] = useState(null)
   const [loading, setLoad] = useState(true)
@@ -55,8 +56,12 @@ export default function KickoffMeetings() {
   // Quick views (Meeting.docx nav sub-items) + project rollup are applied
   // client-side over the loaded rows (same pattern as the calendar's filters).
   const now = Date.now()
+  // Mine = meetings I organise (creator) or attend (name matches an attendee).
+  const mine = (m) => (m.creator?.id && user?.id && m.creator.id === user.id)
+    || (user?.name && (m.attendees || []).some(a => a.name === user.name))
   const quickMatch = (m) => {
     switch (quickView) {
+      case 'my':           return mine(m)
       case 'upcoming':     return !isKoClosed(m.status) && m.scheduled_at && new Date(m.scheduled_at).getTime() >= now
       // Completed meetings whose minutes are not yet distributed — the MOM is owed.
       case 'pending_mom':  return m.status === KO_STATUS.COMPLETED && m.mom_status !== 'Distributed'
@@ -143,16 +148,12 @@ export default function KickoffMeetings() {
             <Kpi label="Awaiting ack" value={stats.awaiting_ack} icon={Send} color="#a78bfa" danger={stats.awaiting_ack > 0} />
             <Kpi label="Decisions active" value={stats.decisions_active} icon={ClipboardCheck} color="#0ea5e9" />
           </div>
-          {stats.by_type?.length > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 18 }}>
-              {stats.by_type.map(b => (
-                <span key={b.type} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 11px', borderRadius: 999, background: 'var(--bg-card)', border: '1px solid var(--border)', fontSize: 12 }}>
-                  <span style={{ color: 'var(--text-muted)' }}>{b.label}</span>
-                  <span style={{ color: '#a78bfa', fontWeight: 800 }}>{b.count}</span>
-                </span>
-              ))}
-            </div>
-          )}
+          {/* Breakdowns — by type / by project / by vendor (Meeting.docx §14). */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(240px,1fr))', gap: 12, marginBottom: 18 }}>
+            <BreakdownCard title="By type" rows={stats.by_type} keyField="type" />
+            <BreakdownCard title="By project" rows={stats.by_project} keyField="project_id" empty="No project-linked meetings" />
+            <BreakdownCard title="By vendor" rows={stats.by_vendor} keyField="name" empty="No vendor meetings" />
+          </div>
         </>
       )}
 
@@ -168,6 +169,7 @@ export default function KickoffMeetings() {
       <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap', borderBottom: '1px solid var(--border)', paddingBottom: 2 }}>
         {[
           ['all', 'All', CalendarDays, data.length],
+          ['my', 'My Meetings', UserCheck, data.filter(mine).length],
           ['upcoming', 'Upcoming', Clock, data.filter(m => !isKoClosed(m.status) && m.scheduled_at && new Date(m.scheduled_at).getTime() >= now).length],
           ['pending_mom', 'Pending MOM', ClipboardCheck, data.filter(m => m.status === KO_STATUS.COMPLETED && m.mom_status !== 'Distributed').length],
           ['open_actions', 'Open Actions', ListChecks, data.filter(m => (m.open_actions ?? 0) > 0).length],
@@ -363,6 +365,33 @@ function Kpi({ label, value, icon: Icon, color, danger }) {
       </div>
       <div style={{ fontSize: 24, fontWeight: 900, color: 'var(--text-h)', marginTop: 11, lineHeight: 1 }}>{value ?? 0}</div>
       <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginTop: 4 }}>{label}</div>
+    </div>
+  )
+}
+
+/** One dashboard breakdown (by type / project / vendor) — top rows + count. */
+function BreakdownCard({ title, rows, keyField, empty = 'No data' }) {
+  const list = rows || []
+  const max = Math.max(1, ...list.map(r => r.count || 0))
+  return (
+    <div className="pr-kpi" style={{ padding: 14 }}>
+      <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 10 }}>{title}</div>
+      {list.length === 0 ? (
+        <p style={{ fontSize: 11.5, color: 'var(--text-muted)', margin: 0, fontStyle: 'italic' }}>{empty}</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+          {list.slice(0, 6).map(r => (
+            <div key={String(r[keyField])} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: 'var(--text-h)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.label || r.name}</span>
+              <span style={{ width: 54, height: 5, borderRadius: 999, background: 'var(--bg-input)', overflow: 'hidden', flexShrink: 0 }}>
+                <span style={{ display: 'block', height: '100%', width: `${Math.round((r.count / max) * 100)}%`, background: '#a78bfa', borderRadius: 999 }} />
+              </span>
+              <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text-h)', minWidth: 22, textAlign: 'right' }}>{r.count}</span>
+            </div>
+          ))}
+          {list.length > 6 && <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>+{list.length - 6} more</span>}
+        </div>
+      )}
     </div>
   )
 }
@@ -632,22 +661,30 @@ function MeetingCalendar({ data, onOpen }) {
   const [cursor, setCursor] = useState(() => new Date()) // any date inside the shown range
   const [typeF, setTypeF]   = useState('All')
   const [orgF, setOrgF]     = useState('All')
+  const [vendorF, setVendorF] = useState('All')
+  const [deptF, setDeptF]     = useState('All')
+  const [partF, setPartF]     = useState('All')
 
-  // Distinct types / organizers present in the loaded rows, for the two filters.
-  const { types, orgs } = useMemo(() => {
-    const t = new Map(), o = new Map()
+  // Distinct values present in the loaded rows, for the §15 filters.
+  const { types, orgs, vendors, depts, participants } = useMemo(() => {
+    const t = new Map(), o = new Set(), v = new Set(), d = new Set(), p = new Set()
     ;(data || []).forEach(m => {
       if (m.meeting_type) t.set(m.meeting_type, m.meeting_type_label || m.meeting_type)
-      const on = m.creator?.name
-      if (on) o.set(on, on)
+      if (m.creator?.name) o.add(m.creator.name)
+      if (m.subject?.name) v.add(m.subject.name)
+      if (m.department) d.add(m.department)
+      ;(m.attendees || []).forEach(a => { if (a.name) p.add(a.name) })
     })
-    return { types: [...t.entries()], orgs: [...o.keys()] }
+    return { types: [...t.entries()], orgs: [...o], vendors: [...v], depts: [...d], participants: [...p] }
   }, [data])
 
   const rows = useMemo(() => (data || []).filter(m =>
     (typeF === 'All' || m.meeting_type === typeF) &&
-    (orgF === 'All' || m.creator?.name === orgF),
-  ), [data, typeF, orgF])
+    (orgF === 'All' || m.creator?.name === orgF) &&
+    (vendorF === 'All' || m.subject?.name === vendorF) &&
+    (deptF === 'All' || m.department === deptF) &&
+    (partF === 'All' || (m.attendees || []).some(a => a.name === partF)),
+  ), [data, typeF, orgF, vendorF, deptF, partF])
 
   const byDay = useMemo(() => {
     const map = {}
@@ -702,6 +739,24 @@ function MeetingCalendar({ data, onOpen }) {
             <select value={orgF} onChange={e => setOrgF(e.target.value)} style={selStyle} title="Filter by organizer">
               <option value="All">All organizers</option>
               {orgs.map(o => <option key={o} value={o}>{o}</option>)}
+            </select>
+          )}
+          {vendors.length > 0 && (
+            <select value={vendorF} onChange={e => setVendorF(e.target.value)} style={selStyle} title="Filter by vendor">
+              <option value="All">All vendors</option>
+              {vendors.map(v => <option key={v} value={v}>{v}</option>)}
+            </select>
+          )}
+          {depts.length > 0 && (
+            <select value={deptF} onChange={e => setDeptF(e.target.value)} style={selStyle} title="Filter by department">
+              <option value="All">All departments</option>
+              {depts.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+          )}
+          {participants.length > 0 && (
+            <select value={partF} onChange={e => setPartF(e.target.value)} style={selStyle} title="Filter by participant">
+              <option value="All">All participants</option>
+              {participants.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
           )}
           <div style={{ display: 'inline-flex', gap: 4, background: 'var(--bg-input)', borderRadius: 9, padding: 3, border: '1px solid var(--border)' }}>

@@ -2,6 +2,7 @@
 
 namespace App\Services\Shared;
 
+use App\Contracts\ProjectDirectoryContract;
 use App\Exceptions\BusinessException;
 use App\Models\Shared\KickoffAttendee;
 use App\Models\Shared\KickoffMeeting;
@@ -22,6 +23,7 @@ use App\Support\FrontendUrl;
 use App\Support\Shared\KickoffStatus as Status;
 use App\Support\Shared\KickoffSubject;
 use App\Support\Shared\MeetingIssueStatus;
+use App\Support\Shared\MeetingTypeCatalog;
 use App\Support\Shared\MomActionStatus;
 use App\Support\Shared\MomApprovalStatus;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -83,11 +85,32 @@ class KickoffMeetingService
             ->whereIn('status', MeetingIssueStatus::OPEN_STATES)->count();
 
         // Meetings by type + by status.
+        $catalog = app(MeetingTypeCatalog::class);
         $byType = (clone $meetings)->get(['meeting_type'])
             ->groupBy('meeting_type')
             ->map(fn ($g, $type) => [
                 'type' => $type,
-                'label' => config("meetings.types.{$type}", ucfirst(str_replace('_', ' ', (string) $type))),
+                'label' => $catalog->label($tenantId, $type),
+                'count' => $g->count(),
+            ])->sortByDesc('count')->values()->all();
+
+        // Meetings by project (§14) — soft project link resolved via the contract.
+        $projDir = app(ProjectDirectoryContract::class);
+        $byProject = (clone $meetings)->whereNotNull('project_id')->get(['project_id'])
+            ->groupBy('project_id')
+            ->map(fn ($g, $pid) => [
+                'project_id' => (int) $pid,
+                'label' => $projDir->labelFor((int) $pid, $tenantId) ?? ('Project #'.$pid),
+                'count' => $g->count(),
+            ])->sortByDesc('count')->values()->all();
+
+        // Meetings by vendor/subject (§14) — resolves vendor + onboarding subjects
+        // to their display name. Dashboard scale, so eager-loading the morph is fine.
+        $byVendor = (clone $meetings)->whereNotNull('kickoffable_id')
+            ->with('kickoffable')->get(['id', 'kickoffable_type', 'kickoffable_id'])
+            ->groupBy(fn ($m) => $m->kickoffable_type.'#'.$m->kickoffable_id)
+            ->map(fn ($g) => [
+                'name' => KickoffSubject::nameOf($g->first()->kickoffable) ?? 'Unknown',
                 'count' => $g->count(),
             ])->sortByDesc('count')->values()->all();
 
@@ -109,6 +132,8 @@ class KickoffMeetingService
             'decisions_active' => $decisionsActive,
             'open_issues' => $openIssues,
             'by_type' => $byType,
+            'by_project' => $byProject,
+            'by_vendor' => $byVendor,
         ];
     }
 
@@ -1810,6 +1835,62 @@ class KickoffMeetingService
                 'is_acknowledged' => $m->is_acknowledged,
                 'open_actions' => (int) $m->open_actions,
                 'open_issues' => (int) $m->open_issues,
+            ])->values()->all(),
+        ];
+    }
+
+    /**
+     * A project's meeting rollup (Meeting.docx §16) — every meeting tagged to the
+     * project (via the soft project_id link), with the headline counts a PM sees on
+     * the project: meetings, MOMs, actions (open/overdue), decisions. Keyed on the
+     * project_id column, NOT the polymorphic subject (which is the vendor).
+     *
+     * @return array{totals: array<string,int>, meetings: array<int,array<string,mixed>>}
+     */
+    public function projectMeetings(int $tenantId, int $projectId): array
+    {
+        $meetings = KickoffMeeting::forTenant($tenantId)
+            ->where('project_id', $projectId)
+            ->withCount([
+                'momItems as open_actions' => fn ($q) => $q->whereIn('status', MomActionStatus::OPEN_STATES),
+                'momItems as overdue_actions' => fn ($q) => $q->whereIn('status', MomActionStatus::OPEN_STATES)
+                    ->whereNotNull('target_date')->whereDate('target_date', '<', now()),
+                'momItems as total_actions',
+                'decisions as decisions_count',
+                'issues as open_issues' => fn ($q) => $q->whereIn('status', MeetingIssueStatus::OPEN_STATES),
+            ])
+            ->orderByDesc('scheduled_at')
+            ->get();
+
+        $totals = [
+            'meetings' => $meetings->count(),
+            'moms' => $meetings->whereNotNull('mom_path')->count(),
+            'completed' => $meetings->where('status', Status::COMPLETED)->count(),
+            'total_actions' => (int) $meetings->sum('total_actions'),
+            'open_actions' => (int) $meetings->sum('open_actions'),
+            'overdue_actions' => (int) $meetings->sum('overdue_actions'),
+            'decisions' => (int) $meetings->sum('decisions_count'),
+            'open_issues' => (int) $meetings->sum('open_issues'),
+        ];
+
+        return [
+            'totals' => $totals,
+            'meetings' => $meetings->map(fn (KickoffMeeting $m) => [
+                'id' => $m->id,
+                'title' => $m->title,
+                'reference' => $m->reference,
+                'meeting_type' => $m->meeting_type,
+                'meeting_type_label' => $m->meeting_type_label,
+                'status' => $m->status,
+                'status_label' => $m->status_label,
+                'scheduled_at' => optional($m->scheduled_at)->toIso8601String(),
+                'mom_status' => $m->mom_status,
+                'mom_status_label' => $m->mom_status_label,
+                'is_acknowledged' => $m->is_acknowledged,
+                'open_actions' => (int) $m->open_actions,
+                'decisions' => (int) $m->decisions_count,
+                // The vendor this project meeting was with, for the row subtitle.
+                'subject' => $m->subject,
             ])->values()->all(),
         ];
     }
