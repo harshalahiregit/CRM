@@ -23,7 +23,7 @@ class KickoffMomItem extends Model
     protected $table = 'kickoff_mom_items';
 
     protected $fillable = [
-        'tenant_id', 'kickoff_meeting_id', 'agenda_item_id', 'action_ref',
+        'tenant_id', 'kickoff_meeting_id', 'agenda_item_id', 'carried_from_id', 'action_ref',
         'description', 'responsible_attendee_id', 'responsible_names', 'responsible_org',
         'remark', 'notes', 'target_date', 'sort_order',
         'status', 'priority', 'evidence_path', 'verification_note',

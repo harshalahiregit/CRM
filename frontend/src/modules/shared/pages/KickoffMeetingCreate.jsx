@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams, useParams } from 'react-router-dom'
 import {
   ArrowLeft, CalendarDays, Clock, MapPin, Users, Plus, Trash2,
   AlertTriangle, ChevronRight, Laptop, Building2, CheckCircle2, Send, Download,
+  FileText, History, RotateCcw,
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { kickoffApi } from '@/services/kickoffApi'
@@ -44,12 +45,14 @@ const combineDateTime = (date, time) => {
   if (!date) return ''
   return `${date}T${time || '09:00'}:00`
 }
+// Rich-text fields store HTML; the carry-forward list shows them as plain text.
+const stripHtml = (s) => (s || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
 
-const EMPTY_MOM = () => ({ id: Date.now() + Math.random(), description: '', responsible: '', responsible_org: '', remarks: '', target_date: '', priority: '', status: 'Open', action_ref: '' })
+const EMPTY_MOM = () => ({ id: Date.now() + Math.random(), description: '', responsible: '', responsible_org: '', remarks: '', target_date: '', priority: '', status: 'Open', action_ref: '', carried_from_id: null, carried_from_label: '' })
 const EMPTY_PARTICIPANT = () => ({ id: Date.now() + Math.random(), name: '', role: '', organisation: '' })
 const EMPTY_AGENDA = () => ({ id: Date.now() + Math.random(), item: '', owner: '', duration_minutes: '', priority: '' })
 const EMPTY_DECISION = () => ({ id: Date.now() + Math.random(), decision: '', decided_by: '', impact: '', effective_date: '', status: 'Active' })
-const EMPTY_ISSUE = () => ({ id: Date.now() + Math.random(), title: '', category: '', severity: '', owner: '', due_date: '', status: 'Open', issue_ref: '', converted_to: '' })
+const EMPTY_ISSUE = () => ({ id: Date.now() + Math.random(), title: '', category: '', severity: '', owner: '', due_date: '', status: 'Open', issue_ref: '', converted_to: '', carried_from_id: null, carried_from_label: '' })
 
 // ── Section header matching KickoffMeetingDetail style ───────────────────────
 function SectionTitle({ icon: Icon, children }) {
@@ -167,6 +170,7 @@ export default function KickoffMeetingCreate() {
   const [priorities,   setPriorities]   = useState(['Low', 'Medium', 'High'])
   const [severities,   setSeverities]   = useState(['Low', 'Medium', 'High', 'Critical'])
   const [categories,   setCategories]   = useState([])
+  const [templates,    setTemplates]    = useState({})   // per-type standard agendas
 
   // ── edit mode ───────────────────────────────────────────────────────────
   // /kickoff/:id/edit renders this same page. There is deliberately no second
@@ -297,6 +301,7 @@ export default function KickoffMeetingCreate() {
       if (Array.isArray(d?.priorities) && d.priorities.length) setPriorities(d.priorities)
       if (Array.isArray(d?.issue_severities) && d.issue_severities.length) setSeverities(d.issue_severities)
       if (Array.isArray(d?.issue_categories)) setCategories(d.issue_categories)
+      if (d?.templates && typeof d.templates === 'object') setTemplates(d.templates)
     }).catch(() => {})
   }, [])
 
@@ -397,6 +402,77 @@ export default function KickoffMeetingCreate() {
   const removeIssue = (id) => setIssues(i => i.filter(x => x.id !== id))
   const setIssue    = (id, k, v) => setIssues(i => i.map(x => x.id === id ? { ...x, [k]: v } : x))
 
+  // ── agenda template loader ────────────────────────────────────────────────
+  // A meeting type's standard agenda, appended to the builder on demand. Rows
+  // already present (same topic) are skipped, so loading twice is harmless and a
+  // template never clobbers what the user has already typed.
+  const templateForType = templates[form.meeting_type] || []
+  const loadTemplate = () => {
+    if (!templateForType.length) return
+    setAgendaItems(prev => {
+      const seen = new Set(prev.map(a => (a.item || '').trim().toLowerCase()))
+      const additions = templateForType
+        .filter(t => t.item && !seen.has(t.item.trim().toLowerCase()))
+        .map(t => ({ ...EMPTY_AGENDA(), item: t.item, duration_minutes: t.duration_minutes ?? '', priority: t.priority || '' }))
+      return [...prev, ...additions]
+    })
+  }
+
+  // ── carry-forward from previous meetings ──────────────────────────────────
+  // Still-open actions/issues from this vendor's earlier meetings, pulled in as
+  // fresh rows that point back at their origin (carried_from_id) — so the same
+  // item is never carried twice and the new meeting starts with unfinished work.
+  const [carry,     setCarry]     = useState(null)   // { actions:[], issues:[] } | null
+  const [carryBusy, setCarryBusy] = useState(false)
+  const [carryErr,  setCarryErr]  = useState(null)
+
+  const originLabel = (o) => o ? `${o.reference || o.title || 'Meeting'}${o.date ? ' · ' + o.date : ''}` : ''
+
+  const fetchCarryForward = async () => {
+    if (!form.subject_id) { setCarryErr('Select a vendor first.'); return }
+    setCarryBusy(true); setCarryErr(null)
+    try {
+      const d = await kickoffApi.carryForward({
+        subject_type: 'vendor',
+        subject_id: form.subject_id,
+        exclude_meeting_id: editId || undefined,
+      })
+      setCarry({ actions: d?.actions || [], issues: d?.issues || [] })
+    } catch (e) {
+      setCarryErr(e?.response?.data?.message || 'Could not load previous items.')
+    } finally { setCarryBusy(false) }
+  }
+
+  const carryAction = (a) => setMomItems(prev => (
+    prev.some(m => m.carried_from_id === a.id) ? prev : [...prev, {
+      ...EMPTY_MOM(),
+      description:     a.description || '',
+      responsible:     a.responsible_names || '',
+      responsible_org: a.responsible_org || '',
+      target_date:     a.target_date || '',
+      priority:        a.priority || '',
+      carried_from_id: a.id,
+      carried_from_label: `${a.action_ref || 'Action'}${a.origin ? ' · ' + originLabel(a.origin) : ''}`,
+    }]
+  ))
+  const carryIssueRow = (it) => setIssues(prev => (
+    prev.some(x => x.carried_from_id === it.id) ? prev : [...prev, {
+      ...EMPTY_ISSUE(),
+      title:       it.title || '',
+      description: it.description || '',
+      category:    it.category || '',
+      severity:    it.severity || '',
+      owner:       it.owner_names || '',
+      due_date:    it.due_date || '',
+      carried_from_id: it.id,
+      carried_from_label: `${it.issue_ref || 'Issue'}${it.origin ? ' · ' + originLabel(it.origin) : ''}`,
+    }]
+  ))
+
+  // Which carried items are already on this meeting — to mark them "Added".
+  const addedActionOrigins = new Set(momItems.map(m => m.carried_from_id).filter(Boolean))
+  const addedIssueOrigins  = new Set(issues.map(i => i.carried_from_id).filter(Boolean))
+
   // ── save ────────────────────────────────────────────────────────────────
   const save = async () => {
     if (!form.subject_id)   { setErr('Please select a Third Party Vendor.'); return }
@@ -428,7 +504,7 @@ export default function KickoffMeetingCreate() {
           .map(({ name, role, organisation }) => ({ name, role, organisation })),
         mom_items: momItems
           .filter(m => m.description.replace(/<[^>]*>/g, '').trim())
-          .map(({ id, description, responsible, remarks, target_date, priority, responsible_org }) => ({
+          .map(({ id, description, responsible, remarks, target_date, priority, responsible_org, carried_from_id }) => ({
             // Integer id = an existing server row → the backend upserts it and
             // keeps its Action-Engine state. A client temp id (non-integer) is new.
             id: Number.isInteger(id) ? id : undefined,
@@ -436,6 +512,9 @@ export default function KickoffMeetingCreate() {
             target_date: target_date || undefined,
             priority: priority || undefined,
             responsible_org: responsible_org || undefined,
+            // Provenance for a carried-forward action; the backend sets it only on
+            // create and refuses to carry the same origin twice.
+            carried_from_id: carried_from_id || undefined,
           })),
         agenda_items: agendaItems
           .filter(a => a.item.trim())
@@ -454,11 +533,12 @@ export default function KickoffMeetingCreate() {
           })),
         issues: issues
           .filter(i => i.title.trim())
-          .map(({ id, title, description, category, severity, owner, due_date }) => ({
+          .map(({ id, title, description, category, severity, owner, due_date, carried_from_id }) => ({
             id: Number.isInteger(id) ? id : undefined,
             title, description: description || undefined,
             category: category || undefined, severity: severity || undefined,
             owner: owner || undefined, due_date: due_date || undefined,
+            carried_from_id: carried_from_id || undefined,
           })),
       }
       // Same payload either way — update() and schedule() accept identical shapes,
@@ -785,11 +865,20 @@ export default function KickoffMeetingCreate() {
 
             {/* Agenda builder — structured items (topic · owner · duration · priority) */}
             <div style={{ marginTop: 18 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 8, flexWrap: 'wrap' }}>
                 <label style={labelStyle}>Agenda</label>
-                <button type="button" onClick={addAgenda} style={addBtn}>
-                  <Plus size={13} /> Add Item
-                </button>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {/* Standard agenda for the selected type — appended, never destructive. */}
+                  {templateForType.length > 0 && (
+                    <button type="button" onClick={loadTemplate} style={addBtn}
+                      title={`Load the standard ${meetingTypes[form.meeting_type] || ''} agenda`}>
+                      <FileText size={13} /> Load {meetingTypes[form.meeting_type] || 'standard'} template
+                    </button>
+                  )}
+                  <button type="button" onClick={addAgenda} style={addBtn}>
+                    <Plus size={13} /> Add Item
+                  </button>
+                </div>
               </div>
 
               {agendaItems.length === 0 ? (
@@ -832,6 +921,67 @@ export default function KickoffMeetingCreate() {
             </div>
           </div>
 
+          {/* Carry forward — open actions/issues from this vendor's earlier meetings */}
+          <div className="pr-glass" style={{ padding: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, gap: 10, flexWrap: 'wrap' }}>
+              <SectionTitle icon={History}>Carry Forward</SectionTitle>
+              <button type="button" onClick={fetchCarryForward} disabled={carryBusy || !form.subject_id}
+                style={{ ...addBtn, opacity: (carryBusy || !form.subject_id) ? 0.55 : 1, cursor: (carryBusy || !form.subject_id) ? 'not-allowed' : 'pointer' }}
+                title={form.subject_id ? "Pull open items from this vendor's earlier meetings" : 'Select a vendor first'}>
+                <RotateCcw size={13} /> {carryBusy ? 'Loading…' : (carry ? 'Refresh' : 'Load previous open items')}
+              </button>
+            </div>
+            <p style={{ color: 'var(--text-muted)', fontSize: 12, margin: '0 0 12px', lineHeight: 1.5 }}>
+              Bring still-open actions and issues from this vendor's earlier meetings into this one. Each is added as a fresh, linked row — nothing is ever carried twice.
+            </p>
+
+            {carryErr && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', borderRadius: 10, marginBottom: 12, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)' }}>
+                <AlertTriangle size={13} style={{ color: '#ef4444', flexShrink: 0 }} />
+                <span style={{ fontSize: 12, color: 'var(--text-h)' }}>{carryErr}</span>
+              </div>
+            )}
+
+            {carry && (
+              (carry.actions.length === 0 && carry.issues.length === 0) ? (
+                <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: 0 }}>
+                  No open actions or issues from previous meetings for this vendor.
+                </p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  {carry.actions.length > 0 && (
+                    <div>
+                      <div style={carryHeadStyle}>Open actions ({carry.actions.length})</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {carry.actions.map(a => (
+                          <CarryItem key={`a${a.id}`}
+                            refCode={a.action_ref} title={stripHtml(a.description) || '(no description)'}
+                            overdue={a.is_overdue} added={addedActionOrigins.has(a.id)}
+                            onAdd={() => carryAction(a)}
+                            meta={[a.status_label, a.priority, a.target_date && `due ${a.target_date}`, a.origin && `from ${originLabel(a.origin)}`]} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {carry.issues.length > 0 && (
+                    <div>
+                      <div style={carryHeadStyle}>Open issues ({carry.issues.length})</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {carry.issues.map(it => (
+                          <CarryItem key={`i${it.id}`}
+                            refCode={it.issue_ref} title={it.title || '(untitled)'}
+                            overdue={it.is_overdue} added={addedIssueOrigins.has(it.id)}
+                            onAdd={() => carryIssueRow(it)}
+                            meta={[it.status_label, it.severity, it.category, it.due_date && `due ${it.due_date}`, it.origin && `from ${originLabel(it.origin)}`]} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            )}
+          </div>
+
           {/* Section 4 — Minutes of Meeting (MOM) */}
           <div className="pr-glass" style={{ padding: 20 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
@@ -860,6 +1010,11 @@ export default function KickoffMeetingCreate() {
                         {item.action_ref && (() => { const c = actStatusCfg(item.status); return (
                           <span style={{ fontSize: 10, fontWeight: 800, padding: '1px 7px', borderRadius: 6, background: c.bg, color: c.color }}>{c.label}</span>
                         )})()}
+                        {item.carried_from_label && (
+                          <span title="Carried forward from a previous meeting" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 700, color: '#0ea5e9' }}>
+                            <RotateCcw size={10} /> {item.carried_from_label}
+                          </span>
+                        )}
                       </span>
                       <button onClick={() => removeMom(item.id)}
                         title="Remove item"
@@ -978,6 +1133,11 @@ export default function KickoffMeetingCreate() {
                         {it.issue_ref && <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text-muted)' }}>{it.issue_ref}</span>}
                         {it.issue_ref && (() => { const c = issueStatusCfg(it.status); return <span style={{ fontSize: 10, fontWeight: 800, padding: '1px 7px', borderRadius: 6, background: c.bg, color: c.color }}>{c.label}</span> })()}
                         {it.converted_to && <span style={{ fontSize: 10, fontWeight: 800, color: '#ef4444' }}>→ {it.converted_to}</span>}
+                        {it.carried_from_label && (
+                          <span title="Carried forward from a previous meeting" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 700, color: '#0ea5e9' }}>
+                            <RotateCcw size={10} /> {it.carried_from_label}
+                          </span>
+                        )}
                       </span>
                       <button onClick={() => removeIssue(it.id)} style={{ width: 26, height: 26, borderRadius: 7, border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.06)', color: '#ef4444', cursor: 'pointer' }}><Trash2 size={12} /></button>
                     </div>
@@ -1095,6 +1255,49 @@ export default function KickoffMeetingCreate() {
       </div>{/* end grid */}
     </div>
   )
+}
+
+// ── carry-forward row ─────────────────────────────────────────────────────────
+/**
+ * One open action/issue offered for carry-forward. Shows its ref, a one-line
+ * title, and a meta strip (status · priority/severity · due · origin meeting).
+ * The Add button flips to a static "Added" chip once it is on the new meeting.
+ */
+function CarryItem({ refCode, title, meta, overdue, added, onAdd }) {
+  const bits = (meta || []).filter(Boolean)
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', borderRadius: 10,
+      background: 'var(--bg-input)', border: `1px solid ${overdue ? 'rgba(239,68,68,0.35)' : 'var(--border)'}`,
+    }}>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 3 }}>
+          {refCode && <span style={{ fontSize: 10.5, fontWeight: 800, color: '#a78bfa' }}>{refCode}</span>}
+          {overdue && <span style={{ fontSize: 9.5, fontWeight: 800, color: '#ef4444', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Overdue</span>}
+        </div>
+        <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-h)', lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+          {title}
+        </div>
+        {bits.length > 0 && (
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3 }}>{bits.join('  ·  ')}</div>
+        )}
+      </div>
+      {added ? (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, fontWeight: 700, color: '#10b981', flexShrink: 0, padding: '5px 6px' }}>
+          <CheckCircle2 size={13} /> Added
+        </span>
+      ) : (
+        <button type="button" onClick={onAdd} style={{ ...addBtn, padding: '6px 11px', flexShrink: 0 }}>
+          <Plus size={12} /> Add
+        </button>
+      )}
+    </div>
+  )
+}
+
+const carryHeadStyle = {
+  fontSize: 11.5, fontWeight: 800, color: 'var(--text-muted)',
+  textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8,
 }
 
 // ── tiny summary row ──────────────────────────────────────────────────────────

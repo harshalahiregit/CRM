@@ -21,7 +21,7 @@ class MeetingIssue extends Model
     protected $table = 'meeting_issues';
 
     protected $fillable = [
-        'tenant_id', 'kickoff_meeting_id', 'issue_ref',
+        'tenant_id', 'kickoff_meeting_id', 'carried_from_id', 'issue_ref',
         'title', 'description', 'category', 'severity',
         'owner_attendee_id', 'owner_names', 'due_date', 'status',
         'converted_to', 'converted_ref', 'converted_id', 'sort_order',
