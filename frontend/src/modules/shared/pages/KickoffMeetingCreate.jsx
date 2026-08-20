@@ -47,11 +47,12 @@ const combineDateTime = (date, time) => {
 }
 // Rich-text fields store HTML; the carry-forward list shows them as plain text.
 const stripHtml = (s) => (s || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+const truncate = (s, n) => { const t = (s || '').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t }
 
-const EMPTY_MOM = () => ({ id: Date.now() + Math.random(), description: '', responsible: '', responsible_org: '', remarks: '', target_date: '', priority: '', status: 'Open', action_ref: '', carried_from_id: null, carried_from_label: '' })
+const EMPTY_MOM = () => ({ id: Date.now() + Math.random(), description: '', responsible: '', responsible_org: '', remarks: '', target_date: '', priority: '', status: 'Open', action_ref: '', carried_from_id: null, carried_from_label: '', agenda_key: '', depends_key: '' })
 const EMPTY_PARTICIPANT = () => ({ id: Date.now() + Math.random(), name: '', role: '', organisation: '', phone: '', designation: '', side: '' })
 const EMPTY_AGENDA = () => ({ id: Date.now() + Math.random(), item: '', owner: '', duration_minutes: '', priority: '' })
-const EMPTY_DECISION = () => ({ id: Date.now() + Math.random(), decision: '', decided_by: '', impact: '', effective_date: '', status: 'Active' })
+const EMPTY_DECISION = () => ({ id: Date.now() + Math.random(), decision: '', decided_by: '', impact: '', effective_date: '', status: 'Active', agenda_key: '' })
 const EMPTY_ISSUE = () => ({ id: Date.now() + Math.random(), title: '', category: '', severity: '', owner: '', due_date: '', status: 'Open', issue_ref: '', converted_to: '', carried_from_id: null, carried_from_label: '' })
 
 // ── Section header matching KickoffMeetingDetail style ───────────────────────
@@ -270,6 +271,10 @@ export default function KickoffMeetingCreate() {
           remarks:         i.remark || '',
           target_date:     i.target_date ? String(i.target_date).slice(0, 10) : '',
           priority:        i.priority || '',
+          // Links are keyed by the linked row's id — on load a row's id IS its
+          // server id, so the agenda_item_id / depends_on_id map straight across.
+          agenda_key:      i.agenda_item_id || '',
+          depends_key:     i.depends_on_id || '',
         })))
 
         setAgendaItems((m.agenda_items || []).map(a => ({
@@ -286,6 +291,7 @@ export default function KickoffMeetingCreate() {
           impact: d.impact || '',
           effective_date: d.effective_date ? String(d.effective_date).slice(0, 10) : '',
           status: d.status || 'Active',
+          agenda_key: d.agenda_item_id || '',
         })))
 
         setIssues((m.issues || []).map(i => ({
@@ -547,21 +553,30 @@ export default function KickoffMeetingCreate() {
           })),
         mom_items: momItems
           .filter(m => m.description.replace(/<[^>]*>/g, '').trim())
-          .map(({ id, description, responsible, remarks, target_date, priority, responsible_org, carried_from_id }) => ({
+          .map(({ id, description, responsible, remarks, target_date, priority, responsible_org, carried_from_id, agenda_key, depends_key }) => ({
             // Integer id = an existing server row → the backend upserts it and
             // keeps its Action-Engine state. A client temp id (non-integer) is new.
             id: Number.isInteger(id) ? id : undefined,
+            // Stable key the backend uses to resolve agenda / dependency links
+            // (§7/§8) — the row's own id, always sent as a string.
+            client_key: String(id),
             description, responsible, remarks,
             target_date: target_date || undefined,
             priority: priority || undefined,
             responsible_org: responsible_org || undefined,
+            // Agenda link + action dependency, both keyed by the linked row's id.
+            agenda_client_key: agenda_key ? String(agenda_key) : '',
+            depends_on_client_key: depends_key ? String(depends_key) : '',
             // Provenance for a carried-forward action; the backend sets it only on
             // create and refuses to carry the same origin twice.
             carried_from_id: carried_from_id || undefined,
           })),
         agenda_items: agendaItems
           .filter(a => a.item.trim())
-          .map(({ item, owner, duration_minutes, priority }) => ({
+          .map(({ id, item, owner, duration_minutes, priority }) => ({
+            id: Number.isInteger(id) ? id : undefined,
+            // The key actions/decisions link to — the row's own id, as a string.
+            client_key: String(id),
             item,
             owner: owner || undefined,
             duration_minutes: Number(duration_minutes) || undefined,
@@ -569,10 +584,11 @@ export default function KickoffMeetingCreate() {
           })),
         decisions: decisions
           .filter(d => d.decision.trim())
-          .map(({ id, decision, decided_by, impact, effective_date, status }) => ({
+          .map(({ id, decision, decided_by, impact, effective_date, status, agenda_key }) => ({
             id: Number.isInteger(id) ? id : undefined,
             decision, decided_by: decided_by || undefined, impact: impact || undefined,
             effective_date: effective_date || undefined, status: status || undefined,
+            agenda_client_key: agenda_key ? String(agenda_key) : '',
           })),
         issues: issues
           .filter(i => i.title.trim())
@@ -1196,6 +1212,19 @@ export default function KickoffMeetingCreate() {
                         <TextInput value={item.responsible_org} onChange={e => setMom(item.id, 'responsible_org', e.target.value)} placeholder="e.g. Vendor / PMC" />
                       </Field>
 
+                      {/* Agenda item this action came from (Meeting.docx §7) */}
+                      <Field label="Agenda item">
+                        <SelectInput value={item.agenda_key} onChange={e => setMom(item.id, 'agenda_key', e.target.value)} pairs
+                          options={[['', '— none —'], ...agendaItems.filter(a => a.item.trim()).map(a => [String(a.id), truncate(a.item, 40)])]} />
+                      </Field>
+
+                      {/* Depends on another action (Meeting.docx §8) */}
+                      <Field label="Depends on">
+                        <SelectInput value={item.depends_key} onChange={e => setMom(item.id, 'depends_key', e.target.value)} pairs
+                          options={[['', '— none —'], ...momItems.filter(x => x.id !== item.id && stripHtml(x.description).trim())
+                            .map(x => [String(x.id), (x.action_ref ? x.action_ref + ' · ' : '') + truncate(stripHtml(x.description), 34)])]} />
+                      </Field>
+
                       {/* Remarks — full width, rich text */}
                       <div style={{ gridColumn: '1/-1' }}>
                         <label style={{ ...labelStyle, display: 'block', marginBottom: 6 }}>Remarks / Notes</label>
@@ -1240,6 +1269,9 @@ export default function KickoffMeetingCreate() {
                       <Field label="Impact"><TextInput value={d.impact} onChange={e => setDecision(d.id, 'impact', e.target.value)} placeholder="e.g. Schedule / Cost" /></Field>
                       <Field label="Effective date"><TextInput type="date" value={d.effective_date} onChange={e => setDecision(d.id, 'effective_date', e.target.value)} /></Field>
                       <Field label="Status"><SelectInput value={d.status} onChange={e => setDecision(d.id, 'status', e.target.value)} pairs options={[['Active', 'Active'], ['Superseded', 'Superseded'], ['Rescinded', 'Rescinded']]} /></Field>
+                      {/* Agenda item this decision was taken under (Meeting.docx §7) */}
+                      <Field label="Agenda item"><SelectInput value={d.agenda_key} onChange={e => setDecision(d.id, 'agenda_key', e.target.value)} pairs
+                        options={[['', '— none —'], ...agendaItems.filter(a => a.item.trim()).map(a => [String(a.id), truncate(a.item, 40)])]} /></Field>
                     </div>
                   </div>
                 ))}

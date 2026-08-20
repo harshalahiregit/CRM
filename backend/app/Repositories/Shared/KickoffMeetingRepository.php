@@ -64,8 +64,11 @@ class KickoffMeetingRepository extends BaseRepository
                 'momItems.responsible:id,name,organisation',
                 'momItems.verifier:id,name',
                 'momItems.agendaItem:id,item',
+                // The action this one waits on (Meeting.docx §8).
+                'momItems.dependsOn:id,action_ref,description',
                 'agendaItems.owner:id,name,organisation',
                 'decisions.decidedBy:id,name',
+                'decisions.agendaItem:id,item',
                 'issues.owner:id,name',
                 'auditLogs',
             ])

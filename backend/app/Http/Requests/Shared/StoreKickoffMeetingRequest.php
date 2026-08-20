@@ -67,6 +67,13 @@ class StoreKickoffMeetingRequest extends FormRequest
             'mom_items.*.remark' => 'nullable|string|max:2000',
             'mom_items.*.notes' => 'nullable|string|max:5000',
             'mom_items.*.target_date' => 'nullable|date',
+            // Per-agenda-item structure + action dependency (Meeting.docx §7/§8).
+            // Links are by the form's stable client_key, resolved server-side —
+            // agenda ids are not stable across a save. See replaceMomItems().
+            'mom_items.*.client_key' => 'nullable|string|max:64',
+            'mom_items.*.agenda_client_key' => 'nullable|string|max:64',
+            'mom_items.*.agenda_item_id' => 'nullable|integer',
+            'mom_items.*.depends_on_client_key' => 'nullable|string|max:64',
 
             // Field names the existing Kickoff form already posts. Accepted as
             // aliases so that form keeps working unchanged: `location_detail`
@@ -87,6 +94,9 @@ class StoreKickoffMeetingRequest extends FormRequest
             'agenda_items.*.owner' => 'nullable|string|max:500',
             'agenda_items.*.duration_minutes' => 'nullable|integer|min:1|max:1440',
             'agenda_items.*.priority' => 'nullable|string|in:'.implode(',', config('meetings.priorities', ['Low', 'Medium', 'High'])),
+            // Stable key the actions/decisions link against (§7). Its own id too.
+            'agenda_items.*.id' => 'nullable|integer',
+            'agenda_items.*.client_key' => 'nullable|string|max:64',
 
             // Decision register (Meeting.docx §9).
             'decisions' => 'nullable|array',
@@ -98,6 +108,9 @@ class StoreKickoffMeetingRequest extends FormRequest
             'decisions.*.impact' => 'nullable|string|max:2000',
             'decisions.*.effective_date' => 'nullable|date',
             'decisions.*.status' => 'nullable|string',
+            // Agenda link (§7) — resolved server-side like the MOM items.
+            'decisions.*.agenda_client_key' => 'nullable|string|max:64',
+            'decisions.*.agenda_item_id' => 'nullable|integer',
 
             // Issues raised (Meeting.docx §10). status/conversion are engine-owned,
             // not accepted from the form.

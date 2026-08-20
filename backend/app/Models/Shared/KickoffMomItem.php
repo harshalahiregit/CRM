@@ -23,7 +23,7 @@ class KickoffMomItem extends Model
     protected $table = 'kickoff_mom_items';
 
     protected $fillable = [
-        'tenant_id', 'kickoff_meeting_id', 'agenda_item_id', 'carried_from_id', 'action_ref',
+        'tenant_id', 'kickoff_meeting_id', 'agenda_item_id', 'depends_on_id', 'carried_from_id', 'action_ref',
         'description', 'responsible_attendee_id', 'responsible_names', 'responsible_org',
         'remark', 'notes', 'target_date', 'sort_order',
         'status', 'priority', 'evidence_path', 'verification_note',
@@ -32,8 +32,8 @@ class KickoffMomItem extends Model
 
     protected $casts = [
         'target_date' => 'date',
-        'sort_order'  => 'integer',
-        'closed_at'   => 'datetime',
+        'sort_order' => 'integer',
+        'closed_at' => 'datetime',
         'verified_at' => 'datetime',
     ];
 
@@ -54,6 +54,12 @@ class KickoffMomItem extends Model
     public function agendaItem()
     {
         return $this->belongsTo(MeetingAgendaItem::class, 'agenda_item_id');
+    }
+
+    /** The action this one is blocked by, until that one is done (Meeting.docx §8). */
+    public function dependsOn()
+    {
+        return $this->belongsTo(self::class, 'depends_on_id');
     }
 
     public function verifier()
