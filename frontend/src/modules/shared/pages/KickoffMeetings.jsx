@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import { kickoffApi } from '@/services/kickoffApi'
 import {
-  KO_STATUS, koStatusCfg, koModeLabel, fmtDate, fmtDateTime,
+  KO_STATUS, koStatusCfg, koModeLabel, fmtDate, fmtDateTime, isKoClosed,
 } from '../kickoffConstants'
 import { KIT3D_STYLE, Overlay, ModalFooter } from '@/components/ui/kit3d'
 
@@ -31,6 +31,7 @@ export default function KickoffMeetings() {
   const [page, setPage] = useState(1)
   const [projects, setProjects] = useState([])   // §16 project rollup source
   const [projectF, setProjectF] = useState('All') // '' | project id (client-side)
+  const [quickView, setQuickView] = useState('all') // all|upcoming|pending_mom|open_actions|templates
 
   // Row-action modal targets — showNew removed: create navigates to full page
   const [attendanceFor, setAttFor]    = useState(null)
@@ -48,11 +49,23 @@ export default function KickoffMeetings() {
   // Projects for the §16 rollup filter — soft link, empty on failure.
   useEffect(() => { kickoffApi.projects().then(d => { if (Array.isArray(d)) setProjects(d) }).catch(() => {}) }, [])
   // Any change to a filter or page size sends the reader back to page 1.
-  useEffect(() => { setPage(1) }, [filter, pageSize, projectF])
+  useEffect(() => { setPage(1) }, [filter, pageSize, projectF, quickView])
 
-  // Project rollup is applied client-side over the loaded rows (same pattern as
-  // the calendar's Type/Organizer filters) — the table and calendar share it.
-  const rows = projectF === 'All' ? data : data.filter(m => String(m.project_id) === String(projectF))
+  // Quick views (Meeting.docx nav sub-items) + project rollup are applied
+  // client-side over the loaded rows (same pattern as the calendar's filters).
+  const now = Date.now()
+  const quickMatch = (m) => {
+    switch (quickView) {
+      case 'upcoming':     return !isKoClosed(m.status) && m.scheduled_at && new Date(m.scheduled_at).getTime() >= now
+      // Completed meetings whose minutes are not yet distributed — the MOM is owed.
+      case 'pending_mom':  return m.status === KO_STATUS.COMPLETED && m.mom_status !== 'Distributed'
+      case 'open_actions': return (m.open_actions ?? 0) > 0
+      default:             return true
+    }
+  }
+  const rows = data
+    .filter(m => projectF === 'All' || String(m.project_id) === String(projectF))
+    .filter(quickMatch)
 
   // View / Download the MOM PDF — generate on demand if none exists yet.
   const handlePdf = async (m, download) => {
@@ -150,8 +163,29 @@ export default function KickoffMeetings() {
         </div>
       )}
 
+      {/* Quick views (Meeting.docx nav sub-items) — client-side over loaded rows. */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap', borderBottom: '1px solid var(--border)', paddingBottom: 2 }}>
+        {[
+          ['all', 'All', CalendarDays, data.length],
+          ['upcoming', 'Upcoming', Clock, data.filter(m => !isKoClosed(m.status) && m.scheduled_at && new Date(m.scheduled_at).getTime() >= now).length],
+          ['pending_mom', 'Pending MOM', ClipboardCheck, data.filter(m => m.status === KO_STATUS.COMPLETED && m.mom_status !== 'Distributed').length],
+          ['open_actions', 'Open Actions', ListChecks, data.filter(m => (m.open_actions ?? 0) > 0).length],
+          ['templates', 'Templates', LayoutGrid, null],
+        ].map(([v, label, Icon, count]) => {
+          const on = quickView === v
+          return (
+            <button key={v} onClick={() => setQuickView(v)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 13px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
+                border: 'none', borderBottom: `2px solid ${on ? '#7C3AED' : 'transparent'}`, background: 'transparent', color: on ? 'var(--text-h)' : 'var(--text-muted)' }}>
+              <Icon size={14} style={{ color: on ? '#a78bfa' : 'var(--text-muted)' }} /> {label}
+              {count != null && <span style={{ fontSize: 10.5, fontWeight: 800, padding: '1px 7px', borderRadius: 999, background: on ? 'rgba(124,58,237,0.15)' : 'var(--bg-input)', color: on ? '#a78bfa' : 'var(--text-muted)' }}>{count}</span>}
+            </button>
+          )
+        })}
+      </div>
+
       {/* Filter chips + view toggle */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div style={{ display: quickView === 'templates' ? 'none' : 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {['All', KO_STATUS.SCHEDULED, KO_STATUS.DELAYED, KO_STATUS.COMPLETED, KO_STATUS.CANCELLED].map(f => {
             const on = filter === f
@@ -207,7 +241,9 @@ export default function KickoffMeetings() {
       </div>
 
       {/* 12-column register (or calendar) */}
-      {loading ? (
+      {quickView === 'templates' ? (
+        <TemplatesPanel />
+      ) : loading ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {[1, 2, 3].map(i => <div key={i} className="skeleton" style={{ height: 64, borderRadius: 12, background: 'var(--border)' }} />)}
         </div>
@@ -372,6 +408,67 @@ function EmptyState({ onNew, filter }) {
         Schedule a pre-onboarding meeting with a vendor to get started.
       </p>
       {filter === 'All' && <button onClick={onNew} style={{ ...solidBtn, margin: '0 auto' }}><Plus size={15} /> Schedule meeting</button>}
+    </div>
+  )
+}
+
+/* ── Templates reference (Meeting.docx §4 / nav "Templates") ──────────────────
+ * Read-only view of every meeting type's standard agenda, so an organiser can
+ * see what the Agenda Builder's one-click "Load template" will insert. The
+ * templates themselves live in config/meetings.php and load into the form. */
+function TemplatesPanel() {
+  const [data, setData] = useState(null)
+  const [err, setErr] = useState(null)
+
+  useEffect(() => {
+    kickoffApi.meetingTypes()
+      .then(d => setData(d))
+      .catch(() => setErr('Could not load the templates.'))
+  }, [])
+
+  if (err) return <div className="pr-glass" style={{ padding: 24, color: 'var(--text-muted)', fontSize: 13 }}>{err}</div>
+  if (!data) return <div className="skeleton" style={{ height: 200, borderRadius: 16, background: 'var(--border)' }} />
+
+  const templates = data.templates || {}
+  const types = data.types || {}
+  const entries = Object.entries(templates).filter(([, items]) => Array.isArray(items) && items.length)
+
+  if (entries.length === 0) return (
+    <div className="pr-glass" style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+      No agenda templates are configured yet.
+    </div>
+  )
+
+  return (
+    <div>
+      <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '0 0 14px', lineHeight: 1.5 }}>
+        Standard agendas per meeting type — the Agenda Builder loads these with one click when you schedule a meeting of that type.
+      </p>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(320px,1fr))', gap: 14 }}>
+        {entries.map(([type, items]) => (
+          <div key={type} className="pr-glass" style={{ padding: 18 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 12 }}>
+              <h3 style={{ margin: 0, fontSize: 14.5, fontWeight: 900, color: 'var(--text-h)' }}>{types[type] || type}</h3>
+              <span style={{ fontSize: 10.5, fontWeight: 800, padding: '2px 9px', borderRadius: 999, background: 'var(--bg-input)', color: 'var(--text-muted)' }}>{items.length} item{items.length === 1 ? '' : 's'}</span>
+            </div>
+            <ol style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 7 }}>
+              {items.map((it, i) => (
+                <li key={i} style={{ display: 'flex', gap: 9, fontSize: 12.5, color: 'var(--text-h)', lineHeight: 1.45 }}>
+                  <span style={{ fontSize: 10.5, fontWeight: 800, color: '#a78bfa', minWidth: 16 }}>{i + 1}.</span>
+                  <span style={{ flex: 1 }}>
+                    {it.item}
+                    {(it.duration_minutes || it.priority) && (
+                      <span style={{ fontSize: 10.5, color: 'var(--text-muted)', marginLeft: 6 }}>
+                        {[it.duration_minutes && `${it.duration_minutes} min`, it.priority].filter(Boolean).join(' · ')}
+                      </span>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

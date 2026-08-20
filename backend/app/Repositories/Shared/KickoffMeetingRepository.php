@@ -5,6 +5,7 @@ namespace App\Repositories\Shared;
 use App\Models\Shared\KickoffMeeting;
 use App\Repositories\BaseRepository;
 use App\Support\Shared\KickoffStatus as Status;
+use App\Support\Shared\MomActionStatus;
 
 class KickoffMeetingRepository extends BaseRepository
 {
@@ -19,6 +20,8 @@ class KickoffMeetingRepository extends BaseRepository
                 'attendees',
                 // Present count drives the list's "Attendance" column (present/total).
                 'attendees as attended_count' => fn ($q) => $q->where('attended', true),
+                // Open-action count powers the registry's "Open actions" quick view.
+                'momItems as open_actions' => fn ($q) => $q->whereIn('status', MomActionStatus::OPEN_STATES),
             ]);
 
         if (! empty($filters['status']) && $filters['status'] !== 'All') {
