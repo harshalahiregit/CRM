@@ -32,6 +32,8 @@ import { VendorReminders } from '@/modules/tpv/components/VendorRemindersPanel'
 import { VendorNotes } from '@/modules/tpv/components/VendorNotesPanel'
 import { VendorCommercial } from '@/modules/tpv/components/VendorCommercialPanel'
 import { VendorAttachments } from '@/modules/tpv/components/VendorAttachmentsPanel'
+import { VendorRiskPanel } from '@/modules/tpv/components/VendorRiskPanel'
+import { VendorPrequalificationPanel } from '@/modules/tpv/components/VendorPrequalificationPanel'
 
 /**
  * The Vendor Detail navigation — 6 groups, 38 sections. This drives BOTH the left
@@ -56,7 +58,7 @@ const NAV_GROUPS = [
   { group: 'Workforce',   icon: HardHat,        items: ['Workforce', 'Medical', 'Training', 'Gate Log', 'Strikes'] },
   { group: 'Commercial',  icon: IndianRupee,    items: ['Quotation', 'Contracts', 'Purchase Order', 'Purchase Invoice', 'Debit Note', 'Purchase Statement', 'Payments'] },
   { group: 'Operations',  icon: Briefcase,      items: ['Projects', 'Tasks', 'Expenses', 'Attachments', 'ToDo', 'Notes', 'Technical File Maintenance', 'Ticket', 'Job', 'Reminders'] },
-  { group: 'Compliance',  icon: ClipboardCheck, items: ['Documents', 'Survey', 'PTW', 'Incidents', 'Pre Alert', 'Package', 'Visitors'] },
+  { group: 'Compliance',  icon: ClipboardCheck, items: ['Documents', 'Prequalification', 'Survey', 'PTW', 'Incidents', 'Pre Alert', 'Package', 'Visitors'] },
   { group: 'Performance', icon: BarChart3,      items: ['Risk Score', 'Award / Reward', 'Penalty', 'Feedback', 'Referrals'] },
 ]
 
@@ -493,6 +495,14 @@ function SectionContent({ tab, v, isActive, manage, api, moduleName, onDecision,
     // statutory checklist. Google Drive and OneDrive import into it.
     case 'Attachments':
       return <VendorAttachments vendorId={v.id} manage={manage} />
+    // Vendor Risk Classification (gap report area 2) — forward-looking risk tier,
+    // distinct from the VRS performance scorecard shown on Overview.
+    case 'Risk Score':
+      return <VendorRiskPanel vendorId={v.id} vendor={v} manage={manage} api={api} />
+    // Prequalification (gap report area 6) — scored questionnaire → Qualified /
+    // Conditional / Not Qualified; gates approval (slice B4).
+    case 'Prequalification':
+      return <VendorPrequalificationPanel vendorId={v.id} manage={manage} api={api} />
     default:
       // Everything else is either settled as out of scope for a TPV vendor, or
       // genuinely unbacked — no table, awaiting a business definition.
