@@ -1484,20 +1484,30 @@ class KickoffMeetingService
             ->where('kickoffable_id', (int) $subjectId)
             ->withCount([
                 'momItems as open_actions' => fn ($q) => $q->whereIn('status', MomActionStatus::OPEN_STATES),
+                'momItems as overdue_actions' => fn ($q) => $q->whereIn('status', MomActionStatus::OPEN_STATES)
+                    ->whereNotNull('target_date')->whereDate('target_date', '<', now()),
                 'issues as open_issues'    => fn ($q) => $q->whereIn('status', MeetingIssueStatus::OPEN_STATES),
             ])
             ->orderByDesc('scheduled_at')
             ->get();
 
+        // Meetings by type (Meeting.docx §17 — "Weekly Review — 14, HSE — 8 …").
+        $byType = $meetings->groupBy('meeting_type')->map(fn ($group, $type) => [
+            'type'  => $type,
+            'label' => config("meetings.types.{$type}", ucfirst(str_replace('_', ' ', (string) $type))),
+            'count' => $group->count(),
+        ])->sortByDesc('count')->values()->all();
+
         $totals = [
-            'meetings'     => $meetings->count(),
-            'scheduled'    => $meetings->where('status', Status::SCHEDULED)->count(),
-            'delayed'      => $meetings->where('status', Status::DELAYED)->count(),
-            'completed'    => $meetings->where('status', Status::COMPLETED)->count(),
-            'cancelled'    => $meetings->where('status', Status::CANCELLED)->count(),
-            'open_actions' => (int) $meetings->sum('open_actions'),
-            'open_issues'  => (int) $meetings->sum('open_issues'),
-            'awaiting_ack' => $meetings->where('status', Status::COMPLETED)->whereNull('acknowledged_at')->count(),
+            'meetings'        => $meetings->count(),
+            'scheduled'       => $meetings->where('status', Status::SCHEDULED)->count(),
+            'delayed'         => $meetings->where('status', Status::DELAYED)->count(),
+            'completed'       => $meetings->where('status', Status::COMPLETED)->count(),
+            'cancelled'       => $meetings->where('status', Status::CANCELLED)->count(),
+            'open_actions'    => (int) $meetings->sum('open_actions'),
+            'overdue_actions' => (int) $meetings->sum('overdue_actions'),
+            'open_issues'     => (int) $meetings->sum('open_issues'),
+            'awaiting_ack'    => $meetings->where('status', Status::COMPLETED)->whereNull('acknowledged_at')->count(),
         ];
 
         return [
@@ -1507,6 +1517,7 @@ class KickoffMeetingService
                 'name' => $subject ? KickoffSubject::nameOf($subject) : null,
             ],
             'totals'  => $totals,
+            'by_type' => $byType,
             'meetings' => $meetings->map(fn (KickoffMeeting $m) => [
                 'id'                 => $m->id,
                 'title'              => $m->title,

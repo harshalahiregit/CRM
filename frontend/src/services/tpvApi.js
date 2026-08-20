@@ -259,6 +259,9 @@ export const tpvApi = {
     // catalogue; assess (admin) recomputes from the answered factors.
     risk:       (id)         => api.get(`/tpv/vendors/${id}/risk`).then(r => r.data),
     assessRisk: (id, data)   => api.put(`/tpv/vendors/${id}/risk`, data).then(r => r.data),
+    // Vendor meeting history (Meeting.docx §17) — reads the shared meetings engine
+    // scoped to this vendor: rollup totals, by-type counts, and the meeting list.
+    meetingHistory: (id) => api.get('/kickoff/meetings/history', { params: { subject_type: 'vendor', subject_id: id } }).then(r => r.data),
     // Vendor Prequalification (gap report area 6) — scored questionnaire → outcome.
     prequalification:       (id)       => api.get(`/tpv/vendors/${id}/prequalification`).then(r => r.data),
     assessPrequalification: (id, data) => api.put(`/tpv/vendors/${id}/prequalification`, data).then(r => r.data),
