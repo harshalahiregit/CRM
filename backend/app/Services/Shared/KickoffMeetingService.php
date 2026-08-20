@@ -272,9 +272,19 @@ class KickoffMeetingService
             throw new BusinessException('These minutes are '.MomApprovalStatus::label($meeting->mom_status).' — they cannot be submitted for approval from here.');
         }
 
-        // The reviewer approves a document, not a promise of one.
+        // The reviewer approves a document, so generate one — but the approval of
+        // the minutes' CONTENT must not be blocked if the PDF engine is momentarily
+        // unavailable. A failed render is logged; the document can be regenerated or
+        // uploaded before distribution (which does still require a file).
         if (! $meeting->mom_path) {
-            $this->generateMom($meeting, $actor);
+            try {
+                $this->generateMom($meeting, $actor);
+                $meeting->refresh();
+            } catch (\Throwable $e) {
+                Log::channel('tpv')->warning('MOM PDF generation failed on submit — proceeding without it', [
+                    'meeting_id' => $meeting->id, 'error' => $e->getMessage(),
+                ]);
+            }
         }
 
         $meeting->update([
