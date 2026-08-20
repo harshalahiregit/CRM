@@ -8,7 +8,9 @@ use App\Http\Requests\Shared\TransitionKickoffRequest;
 use App\Http\Requests\Shared\UpdateKickoffMeetingRequest;
 use App\Models\Shared\KickoffAttendee;
 use App\Models\Shared\KickoffMeeting;
+use App\Models\Shared\KickoffMomItem;
 use App\Services\Shared\KickoffMeetingService;
+use App\Support\Shared\MomActionStatus;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
@@ -115,6 +117,47 @@ class KickoffMeetingController extends Controller
             'status' => 'success',
             'result' => $this->kickoffService->sendReminder($kickoffMeeting, $request->user()),
         ]);
+    }
+
+    /** Progress a single MOM action through its lifecycle (the Action Engine). */
+    public function progressAction(Request $request, KickoffMeeting $kickoffMeeting, KickoffMomItem $momItem)
+    {
+        $this->assertTenant($request, $kickoffMeeting);
+        $this->assertItemBelongs($momItem, $kickoffMeeting);
+
+        $data = $request->validate([
+            'status'          => 'nullable|string|in:'.implode(',', MomActionStatus::ALL),
+            'note'            => 'nullable|string|max:2000',
+            'priority'        => 'nullable|string',
+            'responsible_org' => 'nullable|string|max:160',
+            'target_date'     => 'nullable|date',
+            'evidence'        => 'nullable|file|mimes:pdf,doc,docx,png,jpg,jpeg|max:10240',
+        ]);
+
+        // Store an uploaded evidence file (if any) and hand its path to the service.
+        if ($request->hasFile('evidence')) {
+            $data['evidence_path'] = $request->file('evidence')->store('kickoff/action-evidence', 'kickoff_docs');
+        }
+
+        return response()->json(
+            $this->kickoffService->progressAction($momItem, $data, $request->user())
+        );
+    }
+
+    /** Stream a MOM action's evidence file inline. */
+    public function actionEvidence(Request $request, KickoffMeeting $kickoffMeeting, KickoffMomItem $momItem)
+    {
+        $this->assertTenant($request, $kickoffMeeting);
+        $this->assertItemBelongs($momItem, $kickoffMeeting);
+
+        abort_unless($momItem->evidence_path && Storage::disk('kickoff_docs')->exists($momItem->evidence_path), 404, 'No evidence on file.');
+
+        return Storage::disk('kickoff_docs')->response($momItem->evidence_path);
+    }
+
+    private function assertItemBelongs(KickoffMomItem $item, KickoffMeeting $meeting): void
+    {
+        abort_unless((int) $item->kickoff_meeting_id === (int) $meeting->id, 404, 'Action not found on this meeting.');
     }
 
     /** Generate (or regenerate) the Minutes-of-Meeting PDF from existing data. */

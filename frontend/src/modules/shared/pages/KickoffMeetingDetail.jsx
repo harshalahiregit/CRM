@@ -9,8 +9,9 @@ import { kickoffApi } from '@/services/kickoffApi'
 import { meetingApi } from '@/services/meetingApi'
 import {
   KO_STATUS, koStatusCfg, koNextStatuses, koModeLabel, fmtDateTime, fmtDate,
+  actStatusCfg, actNextStatuses,
 } from '../kickoffConstants'
-import { KIT3D_STYLE, Overlay, ModalFooter, Field, TextInput } from '@/components/ui/kit3d'
+import { KIT3D_STYLE, Overlay, ModalFooter, Field, TextInput, SelectInput } from '@/components/ui/kit3d'
 
 /**
  * Kickoff meeting detail — schedule, attendee registry, status transitions,
@@ -247,6 +248,9 @@ export default function KickoffMeetingDetail() {
             )}
           </div>
 
+          {/* Action items — the Action Engine (Meeting.docx §8) */}
+          <ActionItemsCard m={m} meetingId={id} onChanged={load} onError={setErr} />
+
           {/* Minutes document */}
           <MomCard m={m} onUploaded={setM} onError={setErr} />
 
@@ -271,6 +275,122 @@ export default function KickoffMeetingDetail() {
       </div>
 
       {action && <TransitionModal m={m} to={action.to} onClose={() => setAction(null)} onDone={(updated) => { setAction(null); setM(updated); setErr(null) }} />}
+    </div>
+  )
+}
+
+/* ── Action items — the Action Engine ─────────────────────────────────────────
+ * Each MOM item is a trackable action with a lifecycle. This card lists them and
+ * lets an owner progress one (status + verification note + evidence file) without
+ * re-editing the whole meeting — the state survives meeting edits (upsert). */
+function ActionItemsCard({ m, meetingId, onChanged, onError }) {
+  const items = m.mom_items || []
+  const [openId, setOpenId] = useState(null)
+
+  if (items.length === 0) return null
+
+  const openCount = items.filter(i => i.is_open).length
+  const overdue   = items.filter(i => i.is_overdue).length
+
+  return (
+    <div className="pr-glass" style={{ padding: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+        <SectionTitle icon={CheckCircle2}>Action Items</SectionTitle>
+        <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+          {openCount} open{overdue > 0 && <span style={{ color: '#ef4444', fontWeight: 700 }}> · {overdue} overdue</span>}
+        </span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
+        {items.map(item => {
+          const c = actStatusCfg(item.status)
+          const owner = item.responsible_names || item.responsible?.name || item.responsible_org
+          return (
+            <div key={item.id} style={{ padding: '12px 14px', borderRadius: 12, background: 'var(--bg-input)', border: `1px solid ${item.is_overdue ? 'rgba(239,68,68,0.4)' : 'var(--border)'}` }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 3 }}>
+                    {item.action_ref && <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text-muted)' }}>{item.action_ref}</span>}
+                    <span style={{ fontSize: 10, fontWeight: 800, padding: '1px 7px', borderRadius: 6, background: c.bg, color: c.color }}>{c.label}</span>
+                    {item.priority && <span style={{ fontSize: 10, fontWeight: 800, color: item.priority === 'High' ? '#ef4444' : item.priority === 'Medium' ? '#d97706' : 'var(--text-muted)' }}>{item.priority}</span>}
+                    {item.target_date && <span style={{ fontSize: 10.5, color: item.is_overdue ? '#ef4444' : 'var(--text-muted)' }}>due {fmtDate(item.target_date)}</span>}
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--text-h)', lineHeight: 1.5 }} dangerouslySetInnerHTML={{ __html: item.description }} />
+                  {owner && <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 3 }}>Owner: {owner}</div>}
+                  {item.verification_note && <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 3, fontStyle: 'italic' }}>“{item.verification_note}”</div>}
+                  {item.verified_at && <div style={{ fontSize: 11, color: '#10b981', marginTop: 3 }}>Verified by {item.verifier?.name || '—'} · {fmtDate(item.verified_at)}</div>}
+                </div>
+                <button onClick={() => setOpenId(openId === item.id ? null : item.id)}
+                  style={{ padding: '6px 11px', borderRadius: 8, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: '#a78bfa', flexShrink: 0 }}>
+                  {openId === item.id ? 'Close' : 'Update'}
+                </button>
+              </div>
+              {openId === item.id && (
+                <ActionProgressForm item={item} meetingId={meetingId}
+                  onDone={() => { setOpenId(null); onChanged() }} onError={onError} />
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+/* Inline form to progress one action: status move + verification note + evidence. */
+function ActionProgressForm({ item, meetingId, onDone, onError }) {
+  const [status, setStatus] = useState('')
+  const [remark, setRemark] = useState('')
+  const [file, setFile]     = useState(null)
+  const [busy, setBusy]     = useState(false)
+  const nexts = actNextStatuses(item.status)
+
+  const save = async () => {
+    setBusy(true)
+    try {
+      await kickoffApi.progressAction(meetingId, item.id, {
+        status: status || undefined,
+        note: remark || undefined,
+        evidence: file || undefined,
+      })
+      onDone()
+    } catch (e) { onError(e?.response?.data?.message || 'Could not update the action.'); setBusy(false) }
+  }
+
+  const viewEvidence = async () => {
+    try {
+      const blob = await kickoffApi.actionEvidenceBlob(meetingId, item.id)
+      window.open(URL.createObjectURL(blob), '_blank')
+    } catch { onError('Could not open the evidence file.') }
+  }
+
+  return (
+    <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)', display: 'grid', gap: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+        <Field label="Move to">
+          <SelectInput value={status} onChange={e => setStatus(e.target.value)} pairs
+            options={[['', 'Keep current'], ...nexts.map(s => [s, actStatusCfg(s).label])]} />
+        </Field>
+        <Field label="Evidence (optional)">
+          <input type="file" onChange={e => setFile(e.target.files?.[0] || null)}
+            style={{ fontSize: 12, color: 'var(--text-muted)' }} accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" />
+        </Field>
+      </div>
+      <Field label="Verification note / remark">
+        <textarea value={remark} onChange={e => setRemark(e.target.value)} rows={2}
+          placeholder="What was done / verified…"
+          style={{ width: '100%', padding: '8px 11px', borderRadius: 8, fontSize: 13, background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-h)', resize: 'vertical', fontFamily: 'inherit' }} />
+      </Field>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <button onClick={save} disabled={busy || (!status && !remark && !file)}
+          style={{ padding: '8px 16px', borderRadius: 8, border: 'none', fontWeight: 700, fontSize: 12.5, cursor: busy ? 'wait' : 'pointer', background: 'linear-gradient(135deg,#7C3AED,#6d28d9)', color: '#fff', opacity: (!status && !remark && !file) ? 0.5 : 1 }}>
+          {busy ? 'Saving…' : 'Save update'}
+        </button>
+        {item.evidence_path && (
+          <button onClick={viewEvidence} style={{ padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)', color: '#a78bfa', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            <Eye size={13} /> Evidence
+          </button>
+        )}
+      </div>
     </div>
   )
 }

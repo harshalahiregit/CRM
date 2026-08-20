@@ -35,6 +35,28 @@ export const KO_TRANSITIONS = {
 }
 export const koNextStatuses = (s) => KO_TRANSITIONS[s] || []
 
+// ── MOM Action lifecycle — App\Support\Shared\MomActionStatus ─────────────────
+export const ACT_STATUS_CONFIG = {
+  Open:                 { label: 'Open',                 color: '#0ea5e9', bg: 'rgba(14,165,233,0.15)' },
+  In_Progress:          { label: 'In Progress',          color: '#a78bfa', bg: 'rgba(167,139,250,0.15)' },
+  Pending_Verification: { label: 'Pending Verification', color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
+  Closed:               { label: 'Closed',               color: '#10b981', bg: 'rgba(16,185,129,0.15)' },
+  Reopened:             { label: 'Reopened',             color: '#ef4444', bg: 'rgba(239,68,68,0.15)' },
+  Cancelled:            { label: 'Cancelled',            color: '#94a3b8', bg: 'rgba(148,163,184,0.15)' },
+}
+export const actStatusCfg = (s) => ACT_STATUS_CONFIG[s] || ACT_STATUS_CONFIG.Open
+
+/** Mirrors MomActionStatus::TRANSITIONS so the UI only offers accepted moves. */
+export const ACT_TRANSITIONS = {
+  Open:                 ['In_Progress', 'Pending_Verification', 'Cancelled'],
+  In_Progress:          ['Open', 'Pending_Verification', 'Cancelled'],
+  Pending_Verification: ['In_Progress', 'Closed', 'Reopened', 'Cancelled'],
+  Closed:               ['Reopened'],
+  Reopened:             ['In_Progress', 'Pending_Verification', 'Closed', 'Cancelled'],
+  Cancelled:            ['Reopened'],
+}
+export const actNextStatuses = (s) => ACT_TRANSITIONS[s] || []
+
 export const KO_MODES = [['onsite', 'On site'], ['online', 'Online']]
 export const koModeLabel = (m) => (KO_MODES.find(([v]) => v === m) || [m, m || '—'])[1]
 

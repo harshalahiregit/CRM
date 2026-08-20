@@ -8,7 +8,7 @@ import { useAuth } from '@/context/AuthContext'
 import { kickoffApi } from '@/services/kickoffApi'
 import { meetingApi } from '@/services/meetingApi'
 import { tpvApi } from '@/services/tpvApi'
-import { KO_MODES } from '../kickoffConstants'
+import { KO_MODES, actStatusCfg } from '../kickoffConstants'
 import {
   KIT3D_STYLE, labelStyle, inputStyle, Field, TextInput, SelectInput,
 } from '@/components/ui/kit3d'
@@ -45,7 +45,7 @@ const combineDateTime = (date, time) => {
   return `${date}T${time || '09:00'}:00`
 }
 
-const EMPTY_MOM = () => ({ id: Date.now() + Math.random(), description: '', responsible: '', remarks: '', target_date: '' })
+const EMPTY_MOM = () => ({ id: Date.now() + Math.random(), description: '', responsible: '', responsible_org: '', remarks: '', target_date: '', priority: '', status: 'Open', action_ref: '' })
 const EMPTY_PARTICIPANT = () => ({ id: Date.now() + Math.random(), name: '', role: '', organisation: '' })
 const EMPTY_AGENDA = () => ({ id: Date.now() + Math.random(), item: '', owner: '', duration_minutes: '', priority: '' })
 
@@ -228,11 +228,15 @@ export default function KickoffMeetingCreate() {
         })))
 
         setMomItems((m.mom_items || []).map(i => ({
-          id:          i.id,
-          description: i.description || '',
-          responsible: i.responsible_names || i.responsible?.name || '',
-          remarks:     i.remark || '',
-          target_date: i.target_date ? String(i.target_date).slice(0, 10) : '',
+          id:              i.id,
+          action_ref:      i.action_ref || '',
+          status:          i.status || 'Open',
+          description:     i.description || '',
+          responsible:     i.responsible_names || i.responsible?.name || '',
+          responsible_org: i.responsible_org || '',
+          remarks:         i.remark || '',
+          target_date:     i.target_date ? String(i.target_date).slice(0, 10) : '',
+          priority:        i.priority || '',
         })))
 
         setAgendaItems((m.agenda_items || []).map(a => ({
@@ -392,8 +396,15 @@ export default function KickoffMeetingCreate() {
           .map(({ name, role, organisation }) => ({ name, role, organisation })),
         mom_items: momItems
           .filter(m => m.description.replace(/<[^>]*>/g, '').trim())
-          .map(({ description, responsible, remarks, target_date }) =>
-            ({ description, responsible, remarks, target_date: target_date || undefined })),
+          .map(({ id, description, responsible, remarks, target_date, priority, responsible_org }) => ({
+            // Integer id = an existing server row → the backend upserts it and
+            // keeps its Action-Engine state. A client temp id (non-integer) is new.
+            id: Number.isInteger(id) ? id : undefined,
+            description, responsible, remarks,
+            target_date: target_date || undefined,
+            priority: priority || undefined,
+            responsible_org: responsible_org || undefined,
+          })),
         agenda_items: agendaItems
           .filter(a => a.item.trim())
           .map(({ item, owner, duration_minutes, priority }) => ({
@@ -796,7 +807,13 @@ export default function KickoffMeetingCreate() {
                   <div key={item.id} style={{ padding: '16px', borderRadius: 14, background: 'var(--bg-input)', border: '1px solid var(--border)', position: 'relative' }}>
                     {/* Item header */}
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                      <span style={{ fontSize: 11, fontWeight: 800, color: '#a78bfa', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Item {i + 1}</span>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: '#a78bfa', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Action {i + 1}</span>
+                        {item.action_ref && <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text-muted)' }}>{item.action_ref}</span>}
+                        {item.action_ref && (() => { const c = actStatusCfg(item.status); return (
+                          <span style={{ fontSize: 10, fontWeight: 800, padding: '1px 7px', borderRadius: 6, background: c.bg, color: c.color }}>{c.label}</span>
+                        )})()}
+                      </span>
                       <button onClick={() => removeMom(item.id)}
                         title="Remove item"
                         style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.06)', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -832,6 +849,17 @@ export default function KickoffMeetingCreate() {
                           value={item.target_date}
                           onChange={e => setMom(item.id, 'target_date', e.target.value)}
                         />
+                      </Field>
+
+                      {/* Priority */}
+                      <Field label="Priority">
+                        <SelectInput value={item.priority} onChange={e => setMom(item.id, 'priority', e.target.value)} pairs
+                          options={[['', '—'], ...priorities.map(p => [p, p])]} />
+                      </Field>
+
+                      {/* Responsible organisation */}
+                      <Field label="Responsible Org">
+                        <TextInput value={item.responsible_org} onChange={e => setMom(item.id, 'responsible_org', e.target.value)} placeholder="e.g. Vendor / PMC" />
                       </Field>
 
                       {/* Remarks — full width, rich text */}

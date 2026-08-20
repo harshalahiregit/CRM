@@ -43,6 +43,9 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('kickoff')->grou
     Route::post('/meetings/{kickoffMeeting}/mom/generate', [KickoffMeetingController::class, 'generateMom']);
     Route::get('/meetings/{kickoffMeeting}/mom',         [KickoffMeetingController::class, 'momFile']);
     Route::post('/meetings/{kickoffMeeting}/publish',    [KickoffMeetingController::class, 'publish']);
+    // Action Engine — progress a single MOM action + read its evidence.
+    Route::post('/meetings/{kickoffMeeting}/mom-items/{momItem}/progress', [KickoffMeetingController::class, 'progressAction']);
+    Route::get('/meetings/{kickoffMeeting}/mom-items/{momItem}/evidence',   [KickoffMeetingController::class, 'actionEvidence']);
     Route::delete('/meetings/{kickoffMeeting}', [KickoffMeetingController::class, 'destroy']);
 
     // ── Online meeting link generation ────────────────────────────────────────

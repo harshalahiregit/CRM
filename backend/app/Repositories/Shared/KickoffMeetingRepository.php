@@ -55,6 +55,8 @@ class KickoffMeetingRepository extends BaseRepository
                 // Eager-loaded with its owner so the edit form can render the
                 // responsible-person name without an N+1 per MOM item.
                 'momItems.responsible:id,name,organisation',
+                'momItems.verifier:id,name',
+                'momItems.agendaItem:id,item',
                 'agendaItems.owner:id,name,organisation',
                 'auditLogs',
             ])
