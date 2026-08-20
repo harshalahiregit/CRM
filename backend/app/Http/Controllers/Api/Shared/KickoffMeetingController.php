@@ -39,10 +39,35 @@ class KickoffMeetingController extends Controller
             'types'             => config('meetings.types', []),
             'default_type'      => config('meetings.default_type', 'kickoff'),
             'priorities'        => config('meetings.priorities', ['Low', 'Medium', 'High']),
+            // Per-type standard agendas the Agenda Builder can one-click load.
+            'templates'         => config('meetings.templates', []),
             'issue_severities'  => config('meetings.issue_severities', ['Low', 'Medium', 'High', 'Critical']),
             'issue_categories'  => config('meetings.issue_categories', []),
             'decision_statuses' => config('meetings.decision_statuses', ['Active', 'Superseded', 'Rescinded']),
         ]);
+    }
+
+    /**
+     * Still-open actions and issues from a subject's earlier meetings, to
+     * pre-load into a new one (Meeting.docx — carry-forward). Read-only; the
+     * items only become records once the new meeting is saved with them.
+     */
+    public function carryForward(Request $request)
+    {
+        $data = $request->validate([
+            'subject_type'       => 'required|string',
+            'subject_id'         => 'required|integer',
+            'exclude_meeting_id' => 'nullable|integer',
+        ]);
+
+        return response()->json(
+            $this->kickoffService->carryForwardItems(
+                $request->user()->tenant_id,
+                $data['subject_type'],
+                $data['subject_id'],
+                $data['exclude_meeting_id'] ?? null,
+            )
+        );
     }
 
     public function stats(Request $request)

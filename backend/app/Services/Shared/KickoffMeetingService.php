@@ -949,6 +949,10 @@ class KickoffMeetingService
                     'kickoff_meeting_id' => $meeting->id,
                     'action_ref'         => $this->nextActionRef($tenantId),
                     'status'             => MomActionStatus::OPEN,
+                    // Provenance for a carried-forward action. Set only on create —
+                    // it is immutable once written, and marks the origin item as
+                    // already rolled forward so carry-forward never offers it again.
+                    'carried_from_id'    => $this->carriedFromId($item, KickoffMomItem::class, $tenantId),
                 ]);
                 $keepIds[] = $created->id;
             }
@@ -1135,6 +1139,7 @@ class KickoffMeetingService
                     'kickoff_meeting_id' => $meeting->id,
                     'issue_ref'          => $this->nextRef($tenantId, MeetingIssue::class, 'issue_ref', 'ISS'),
                     'status'             => MeetingIssueStatus::OPEN,
+                    'carried_from_id'    => $this->carriedFromId($row, MeetingIssue::class, $tenantId),
                 ]);
                 $keepIds[] = $created->id;
             }
@@ -1236,6 +1241,129 @@ class KickoffMeetingService
             ->count() + 1;
 
         return sprintf('%s-%s-%04d', $prefix, $year, $n);
+    }
+
+    /* ── Carry-forward (Meeting.docx — open items roll into the next meeting) ── */
+
+    /**
+     * The still-open actions and issues from a subject's earlier meetings, so a
+     * new meeting can start pre-loaded with what was left unfinished.
+     *
+     * "Earlier meetings" is the same set the registry lists for the subject — the
+     * ones where it is the PRIMARY (kickoffable_*). An item already carried forward
+     * once (something later points back at it via carried_from_id) is left out, so
+     * it cannot be rolled forward twice and appear on two future meetings at once.
+     *
+     * @return array{actions: array<int, array<string, mixed>>, issues: array<int, array<string, mixed>>}
+     */
+    public function carryForwardItems(int $tenantId, ?string $subjectType, $subjectId, ?int $excludeMeetingId = null): array
+    {
+        $empty = ['actions' => [], 'issues' => []];
+
+        if (! $subjectType || ! $subjectId || ! KickoffSubject::isValid($subjectType)) {
+            return $empty;
+        }
+        $class = KickoffSubject::classFor($subjectType);
+
+        $priorMeetings = KickoffMeeting::forTenant($tenantId)
+            ->where('kickoffable_type', $class)
+            ->where('kickoffable_id', (int) $subjectId)
+            ->when($excludeMeetingId, fn ($q) => $q->where('id', '!=', $excludeMeetingId))
+            ->orderByDesc('scheduled_at')
+            ->get(['id', 'title', 'reference', 'scheduled_at']);
+
+        if ($priorMeetings->isEmpty()) {
+            return $empty;
+        }
+
+        $meetingIndex = $priorMeetings->keyBy('id');
+        $meetingIds   = $priorMeetings->pluck('id')->all();
+
+        // Origins already rolled forward — excluded so nothing is offered twice.
+        $carriedActionOrigins = KickoffMomItem::where('tenant_id', $tenantId)
+            ->whereNotNull('carried_from_id')->pluck('carried_from_id')->all();
+        $carriedIssueOrigins = MeetingIssue::where('tenant_id', $tenantId)
+            ->whereNotNull('carried_from_id')->pluck('carried_from_id')->all();
+
+        $actions = KickoffMomItem::where('tenant_id', $tenantId)
+            ->whereIn('kickoff_meeting_id', $meetingIds)
+            ->whereIn('status', MomActionStatus::OPEN_STATES)
+            ->when($carriedActionOrigins, fn ($q) => $q->whereNotIn('id', $carriedActionOrigins))
+            ->orderByRaw('target_date is null, target_date')
+            ->get()
+            ->map(fn (KickoffMomItem $a) => [
+                'id'                => $a->id,
+                'action_ref'        => $a->action_ref,
+                'description'       => $a->description,
+                'responsible_names' => $a->responsible_names,
+                'responsible_org'   => $a->responsible_org,
+                'target_date'       => optional($a->target_date)->toDateString(),
+                'priority'          => $a->priority,
+                'status'            => $a->status,
+                'status_label'      => $a->status_label,
+                'is_overdue'        => $a->is_overdue,
+                'origin'            => $this->originStamp($meetingIndex->get($a->kickoff_meeting_id)),
+            ])->values()->all();
+
+        $issues = MeetingIssue::where('tenant_id', $tenantId)
+            ->whereIn('kickoff_meeting_id', $meetingIds)
+            ->whereIn('status', MeetingIssueStatus::OPEN_STATES)
+            ->when($carriedIssueOrigins, fn ($q) => $q->whereNotIn('id', $carriedIssueOrigins))
+            ->orderByRaw('due_date is null, due_date')
+            ->get()
+            ->map(fn (MeetingIssue $i) => [
+                'id'           => $i->id,
+                'issue_ref'    => $i->issue_ref,
+                'title'        => $i->title,
+                'description'  => $i->description,
+                'category'     => $i->category,
+                'severity'     => $i->severity,
+                'owner_names'  => $i->owner_names,
+                'due_date'     => optional($i->due_date)->toDateString(),
+                'status'       => $i->status,
+                'status_label' => $i->status_label,
+                'is_overdue'   => $i->is_overdue,
+                'origin'       => $this->originStamp($meetingIndex->get($i->kickoff_meeting_id)),
+            ])->values()->all();
+
+        return ['actions' => $actions, 'issues' => $issues];
+    }
+
+    /** Where a carried item came from, for the "carried from …" label. */
+    private function originStamp(?KickoffMeeting $m): array
+    {
+        return [
+            'meeting_id' => $m?->id,
+            'title'      => $m?->title,
+            'reference'  => $m?->reference,
+            'date'       => optional($m?->scheduled_at)->toDateString(),
+        ];
+    }
+
+    /**
+     * Resolve and validate a carried-forward origin id from a form row.
+     *
+     * Returns the id only when it names a real record of the same kind in this
+     * tenant that has NOT already been carried into another record — so a replayed
+     * or duplicated payload can never fan one origin out across several meetings.
+     */
+    private function carriedFromId(array $row, string $modelClass, int $tenantId): ?int
+    {
+        $originId = $row['carried_from_id'] ?? null;
+        if (! $originId) {
+            return null;
+        }
+
+        $exists = $modelClass::where('tenant_id', $tenantId)->whereKey($originId)->exists();
+        if (! $exists) {
+            return null;
+        }
+
+        $already = $modelClass::where('tenant_id', $tenantId)
+            ->where('carried_from_id', $originId)
+            ->exists();
+
+        return $already ? null : (int) $originId;
     }
 
     /**

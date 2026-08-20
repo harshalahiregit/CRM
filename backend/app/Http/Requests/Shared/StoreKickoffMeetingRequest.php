@@ -43,6 +43,9 @@ class StoreKickoffMeetingRequest extends FormRequest
             // and the service upserts by id (loses action tracking without it).
             'mom_items'                             => 'nullable|array',
             'mom_items.*.id'                        => 'nullable|integer',
+            // Carry-forward provenance (id of the prior meeting's action). Set on
+            // create only; the service verifies it and refuses a double-carry.
+            'mom_items.*.carried_from_id'           => 'nullable|integer',
             'mom_items.*.priority'                  => 'nullable|string',
             'mom_items.*.responsible_org'           => 'nullable|string|max:160',
             'mom_items.*.description'               => 'required|string|max:5000',
@@ -86,6 +89,7 @@ class StoreKickoffMeetingRequest extends FormRequest
             // not accepted from the form.
             'issues'                       => 'nullable|array',
             'issues.*.id'                  => 'nullable|integer',
+            'issues.*.carried_from_id'     => 'nullable|integer',
             'issues.*.title'               => 'required|string|max:255',
             'issues.*.description'         => 'nullable|string|max:5000',
             'issues.*.category'            => 'nullable|string|max:60',

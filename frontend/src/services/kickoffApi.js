@@ -13,8 +13,12 @@ const upload = (url, formData) =>
 export const kickoffApi = {
   list:  (params = {}) => api.get('/kickoff/meetings', { params }).then(r => r.data),
   stats: ()            => api.get('/kickoff/meetings/stats').then(r => r.data),
-  // Configurable meeting-type catalogue + agenda priorities (config/meetings.php).
+  // Configurable meeting-type catalogue + agenda priorities + per-type agenda
+  // templates (config/meetings.php).
   meetingTypes: ()     => api.get('/kickoff/meeting-types').then(r => r.data),
+  // Still-open actions/issues from a subject's earlier meetings, to pre-load into
+  // a new one. params: { subject_type, subject_id, exclude_meeting_id? }.
+  carryForward: (params) => api.get('/kickoff/meetings/carry-forward', { params }).then(r => r.data),
   get:   (id)          => api.get(`/kickoff/meetings/${id}`).then(r => r.data),
   schedule: (data)     => api.post('/kickoff/meetings', data).then(r => r.data),
   update:   (id, data) => api.put(`/kickoff/meetings/${id}`, data).then(r => r.data),
