@@ -15,9 +15,10 @@ class StoreKickoffMeetingRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'title'     => 'nullable|string|max:200',
-            'reference' => 'nullable|string|max:80',
-            'agenda'    => 'nullable|string|max:5000',
+            'title'        => 'nullable|string|max:200',
+            'meeting_type' => 'nullable|string|in:'.implode(',', array_keys(config('meetings.types', []))),
+            'reference'    => 'nullable|string|max:80',
+            'agenda'       => 'nullable|string|max:5000',
 
             // Stable key from the allowlist — never a class name. Both or neither.
             'subject_type' => 'nullable|string|in:'.implode(',', array_keys(KickoffSubject::MAP)).'|required_with:subject_id',
@@ -52,6 +53,18 @@ class StoreKickoffMeetingRequest extends FormRequest
             'location_detail'         => 'nullable|string|max:255',
             'mom_items.*.responsible' => 'nullable|string|max:500',
             'mom_items.*.remarks'     => 'nullable|string|max:2000',
+
+            // Structured agenda (Agenda Builder). owner_attendee_id is re-checked in
+            // the service against this meeting's attendees; `owner` is an alias for a
+            // free-typed owner-name list.
+            'agenda_items'                     => 'nullable|array',
+            'agenda_items.*.item'              => 'required|string|max:255',
+            'agenda_items.*.description'       => 'nullable|string|max:2000',
+            'agenda_items.*.owner_attendee_id' => 'nullable|integer',
+            'agenda_items.*.owner_names'       => 'nullable|string|max:500',
+            'agenda_items.*.owner'             => 'nullable|string|max:500',
+            'agenda_items.*.duration_minutes'  => 'nullable|integer|min:1|max:1440',
+            'agenda_items.*.priority'          => 'nullable|string|in:'.implode(',', config('meetings.priorities', ['Low', 'Medium', 'High'])),
 
             'attendees'                     => 'nullable|array',
             'attendees.*.vendor_contact_id' => 'nullable|integer',

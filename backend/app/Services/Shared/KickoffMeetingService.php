@@ -7,6 +7,7 @@ use App\Models\Shared\KickoffAttendee;
 use App\Models\Shared\KickoffMeeting;
 use App\Models\Shared\KickoffMeetingSubject;
 use App\Models\Shared\KickoffMomItem;
+use App\Models\Shared\MeetingAgendaItem;
 use App\Models\Tenant;
 use App\Models\Tpv\TpvOnboarding;
 use App\Models\User;
@@ -64,6 +65,7 @@ class KickoffMeetingService
             'created_by'       => $actor->id,
             'kickoffable_type' => $subject ? $subject::class : null,
             'kickoffable_id'   => $subject?->id,
+            'meeting_type'     => $data['meeting_type'] ?? config('meetings.default_type', 'kickoff'),
             'title'            => $data['title'] ?? $this->defaultTitle($subject),
             'reference'        => $data['reference'] ?? null,
             'agenda'           => $data['agenda'] ?? null,
@@ -95,6 +97,10 @@ class KickoffMeetingService
             $this->replaceMomItems($meeting, $data['mom_items'] ?? [], $actor->tenant_id);
         }
 
+        if (array_key_exists('agenda_items', $data)) {
+            $this->replaceAgendaItems($meeting, $data['agenda_items'] ?? [], $actor->tenant_id);
+        }
+
         $meeting->recordAudit('created', $actor, "Kickoff '{$meeting->title}' scheduled", [
             'subject' => $subject ? KickoffSubject::nameOf($subject) : null,
         ]);
@@ -114,6 +120,7 @@ class KickoffMeetingService
 
         $meeting->update(array_filter([
             'title'            => $data['title'] ?? null,
+            'meeting_type'     => $data['meeting_type'] ?? null,
             'reference'        => $data['reference'] ?? null,
             'agenda'           => $data['agenda'] ?? null,
             'scheduled_at'     => $data['scheduled_at'] ?? null,
@@ -142,6 +149,10 @@ class KickoffMeetingService
 
         if (array_key_exists('mom_items', $data)) {
             $this->replaceMomItems($meeting, $data['mom_items'] ?? [], $actor->tenant_id);
+        }
+
+        if (array_key_exists('agenda_items', $data)) {
+            $this->replaceAgendaItems($meeting, $data['agenda_items'] ?? [], $actor->tenant_id);
         }
 
         $meeting->recordAudit('updated', $actor, 'Meeting details updated');
@@ -887,6 +898,59 @@ class KickoffMeetingService
                 'notes'                   => $item['notes'] ?? null,
                 'target_date'             => $item['target_date'] ?? null,
                 'sort_order'              => $order++,
+            ]);
+        }
+    }
+
+    /**
+     * Wholesale-replace the structured agenda. Mirrors replaceMomItems: an owner
+     * given as an attendee id is verified against THIS meeting's attendees; a
+     * free-typed owner name is resolved to an attendee where it matches and kept
+     * verbatim otherwise. Empty rows (no item text) are dropped.
+     */
+    private function replaceAgendaItems(KickoffMeeting $meeting, array $items, int $tenantId): void
+    {
+        $meeting->agendaItems()->delete();
+
+        $validAttendeeIds = $meeting->attendees()->pluck('id')->all();
+        $priorities       = config('meetings.priorities', ['Low', 'Medium', 'High']);
+        $order            = 0;
+
+        foreach ($items as $item) {
+            $topic = trim((string) ($item['item'] ?? ''));
+            if ($topic === '') {
+                continue;
+            }
+
+            $owner = $item['owner_attendee_id'] ?? null;
+            if ($owner !== null && ! in_array((int) $owner, $validAttendeeIds, true)) {
+                $owner = null;
+            }
+
+            $names = trim((string) ($item['owner_names'] ?? $item['owner'] ?? ''));
+            if ($owner === null && $names !== '') {
+                $first = trim(explode(',', $names)[0]);
+                $match = $meeting->attendees->first(
+                    fn ($a) => strcasecmp(trim((string) $a->name), $first) === 0
+                );
+                $owner = $match?->id;
+            }
+
+            $priority = $item['priority'] ?? null;
+            if ($priority !== null && ! in_array($priority, $priorities, true)) {
+                $priority = null;
+            }
+
+            MeetingAgendaItem::create([
+                'tenant_id'         => $tenantId,
+                'kickoff_meeting_id' => $meeting->id,
+                'item'              => $topic,
+                'description'       => $item['description'] ?? null,
+                'owner_attendee_id' => $owner,
+                'owner_names'       => $names !== '' ? $names : null,
+                'duration_minutes'  => $item['duration_minutes'] ?? null,
+                'priority'          => $priority,
+                'sort_order'        => $order++,
             ]);
         }
     }

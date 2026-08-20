@@ -31,6 +31,7 @@ Route::prefix('kickoff/ack')->middleware('throttle:60,1')->group(function () {
 // second ->middleware() replaces the first and silently drops auth:sanctum.
 Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('kickoff')->group(function () {
     Route::get('/meetings/stats',              [KickoffMeetingController::class, 'stats']);
+    Route::get('/meeting-types',               [KickoffMeetingController::class, 'meetingTypes']);
     Route::get('/meetings',                    [KickoffMeetingController::class, 'index']);
     Route::post('/meetings',                   [KickoffMeetingController::class, 'store']);
     Route::get('/meetings/{kickoffMeeting}',   [KickoffMeetingController::class, 'show']);

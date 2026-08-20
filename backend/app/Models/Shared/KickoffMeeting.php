@@ -24,6 +24,8 @@ class KickoffMeeting extends Model
 
     protected $fillable = [
         'tenant_id','created_by','kickoffable_type','kickoffable_id',
+        // Kickoff is now one configurable meeting type among many (config/meetings.php).
+        'meeting_type',
         'reference','title','agenda','status',
         'scheduled_at','duration_minutes','mode','location',
         'original_scheduled_at','delay_reason',
@@ -73,7 +75,16 @@ class KickoffMeeting extends Model
         // 'subject_list' is the full set, added alongside rather than instead.
         'status_label', 'is_acknowledged', 'subject', 'subject_list',
         'acknowledgement_open', 'acknowledgement_expired', 'can_complete',
+        'meeting_type_label',
     ];
+
+    /** Human label for the stored meeting_type key. Falls back to the raw key. */
+    public function getMeetingTypeLabelAttribute(): string
+    {
+        $key = $this->meeting_type ?: config('meetings.default_type', 'kickoff');
+
+        return config("meetings.types.{$key}", ucfirst(str_replace('_', ' ', (string) $key)));
+    }
 
     public function creator()
     {
@@ -108,6 +119,13 @@ class KickoffMeeting extends Model
     public function momItems()
     {
         return $this->hasMany(KickoffMomItem::class, 'kickoff_meeting_id')
+            ->orderBy('sort_order')->orderBy('id');
+    }
+
+    /** Structured agenda (topic · owner · duration · priority), in agenda order. */
+    public function agendaItems()
+    {
+        return $this->hasMany(MeetingAgendaItem::class, 'kickoff_meeting_id')
             ->orderBy('sort_order')->orderBy('id');
     }
 

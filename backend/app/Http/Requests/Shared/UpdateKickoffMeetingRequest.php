@@ -20,9 +20,10 @@ class UpdateKickoffMeetingRequest extends FormRequest
         return [
             'subject_ids'   => 'nullable|array',
             'subject_ids.*' => 'integer',
-            'title'     => 'sometimes|required|string|max:200',
-            'reference' => 'nullable|string|max:80',
-            'agenda'    => 'nullable|string|max:5000',
+            'title'        => 'sometimes|required|string|max:200',
+            'meeting_type' => 'nullable|string|in:'.implode(',', array_keys(config('meetings.types', []))),
+            'reference'    => 'nullable|string|max:80',
+            'agenda'       => 'nullable|string|max:5000',
 
             'scheduled_at'     => 'nullable|date',
             'duration_minutes' => 'nullable|integer|min:5|max:1440',
@@ -46,6 +47,16 @@ class UpdateKickoffMeetingRequest extends FormRequest
             'location_detail'         => 'nullable|string|max:255',
             'mom_items.*.responsible' => 'nullable|string|max:500',
             'mom_items.*.remarks'     => 'nullable|string|max:2000',
+
+            // Structured agenda (Agenda Builder) — see the store request.
+            'agenda_items'                     => 'nullable|array',
+            'agenda_items.*.item'              => 'required|string|max:255',
+            'agenda_items.*.description'       => 'nullable|string|max:2000',
+            'agenda_items.*.owner_attendee_id' => 'nullable|integer',
+            'agenda_items.*.owner_names'       => 'nullable|string|max:500',
+            'agenda_items.*.owner'             => 'nullable|string|max:500',
+            'agenda_items.*.duration_minutes'  => 'nullable|integer|min:1|max:1440',
+            'agenda_items.*.priority'          => 'nullable|string|in:'.implode(',', config('meetings.priorities', ['Low', 'Medium', 'High'])),
 
             'attendees'                     => 'sometimes|array',
             'attendees.*.vendor_contact_id' => 'nullable|integer',

@@ -47,6 +47,7 @@ const combineDateTime = (date, time) => {
 
 const EMPTY_MOM = () => ({ id: Date.now() + Math.random(), description: '', responsible: '', remarks: '', target_date: '' })
 const EMPTY_PARTICIPANT = () => ({ id: Date.now() + Math.random(), name: '', role: '', organisation: '' })
+const EMPTY_AGENDA = () => ({ id: Date.now() + Math.random(), item: '', owner: '', duration_minutes: '', priority: '' })
 
 // ── Section header matching KickoffMeetingDetail style ───────────────────────
 function SectionTitle({ icon: Icon, children }) {
@@ -141,6 +142,7 @@ export default function KickoffMeetingCreate() {
   // ── form state ──────────────────────────────────────────────────────────
   const [form, setForm] = useState({
     subject_id:       '',
+    meeting_type:     'kickoff',
     title:            '',
     meeting_date:     '',
     meeting_time:     '09:00',
@@ -155,6 +157,10 @@ export default function KickoffMeetingCreate() {
   })
   const [participants, setParticipants] = useState([])  // [{ id, name, role, organisation }]
   const [momItems,     setMomItems]     = useState([])  // [{ id, description, responsible, remarks, target_date }]
+  const [agendaItems,  setAgendaItems]  = useState([])  // [{ id, item, owner, duration_minutes, priority }]
+  // Configurable meeting-type catalogue + agenda priorities (config/meetings.php).
+  const [meetingTypes, setMeetingTypes] = useState({ kickoff: 'Kickoff Meeting' })
+  const [priorities,   setPriorities]   = useState(['Low', 'Medium', 'High'])
 
   // ── edit mode ───────────────────────────────────────────────────────────
   // /kickoff/:id/edit renders this same page. There is deliberately no second
@@ -202,6 +208,7 @@ export default function KickoffMeetingCreate() {
 
         setForm({
           subject_id:       m.subject?.id ? String(m.subject.id) : '',
+          meeting_type:     m.meeting_type || 'kickoff',
           title:            m.title || '',
           meeting_date:     at ? `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}` : '',
           meeting_time:     at ? `${pad(at.getHours())}:${pad(at.getMinutes())}` : '09:00',
@@ -228,6 +235,14 @@ export default function KickoffMeetingCreate() {
           target_date: i.target_date ? String(i.target_date).slice(0, 10) : '',
         })))
 
+        setAgendaItems((m.agenda_items || []).map(a => ({
+          id:               a.id,
+          item:             a.item || '',
+          owner:            a.owner_names || a.owner?.name || '',
+          duration_minutes: a.duration_minutes ?? '',
+          priority:         a.priority || '',
+        })))
+
         setExistingLink(Boolean(m.meeting_link))
         setSavedStatus(m.status || null)
         // can_complete is computed server-side: false until scheduled_at passes.
@@ -248,6 +263,14 @@ export default function KickoffMeetingCreate() {
   const [saving, setSaving]           = useState(false)
   const [err,    setErr]              = useState(null)
   const [generatingLink, setGenLink]  = useState(false)  // post-save link generation
+
+  // ── Meeting-type catalogue (config-driven) ───────────────────────────────
+  useEffect(() => {
+    kickoffApi.meetingTypes().then(d => {
+      if (d?.types && Object.keys(d.types).length) setMeetingTypes(d.types)
+      if (Array.isArray(d?.priorities) && d.priorities.length) setPriorities(d.priorities)
+    }).catch(() => {})
+  }, [])
 
   // ── Fetch tenant default platform preference on mount ────────────────────
   useEffect(() => {
@@ -332,6 +355,12 @@ export default function KickoffMeetingCreate() {
   const setMom    = (id, k, v) =>
     setMomItems(m => m.map(x => x.id === id ? { ...x, [k]: v } : x))
 
+  // ── agenda-item helpers ──────────────────────────────────────────────────
+  const addAgenda    = () => setAgendaItems(a => [...a, EMPTY_AGENDA()])
+  const removeAgenda = (id) => setAgendaItems(a => a.filter(x => x.id !== id))
+  const setAgenda    = (id, k, v) =>
+    setAgendaItems(a => a.map(x => x.id === id ? { ...x, [k]: v } : x))
+
   // ── save ────────────────────────────────────────────────────────────────
   const save = async () => {
     if (!form.subject_id)   { setErr('Please select a Third Party Vendor.'); return }
@@ -347,6 +376,7 @@ export default function KickoffMeetingCreate() {
         // Full set. The backend keeps the first on kickoffable_* and
         // writes the rest to kickoff_meeting_subjects.
         subject_ids:      vendorIds,
+        meeting_type:     form.meeting_type || 'kickoff',
         title:            form.title || undefined,
         scheduled_at,
         planned_date:     form.planned_date || undefined,
@@ -364,6 +394,14 @@ export default function KickoffMeetingCreate() {
           .filter(m => m.description.replace(/<[^>]*>/g, '').trim())
           .map(({ description, responsible, remarks, target_date }) =>
             ({ description, responsible, remarks, target_date: target_date || undefined })),
+        agenda_items: agendaItems
+          .filter(a => a.item.trim())
+          .map(({ item, owner, duration_minutes, priority }) => ({
+            item,
+            owner: owner || undefined,
+            duration_minutes: Number(duration_minutes) || undefined,
+            priority: priority || undefined,
+          })),
       }
       // Same payload either way — update() and schedule() accept identical shapes,
       // so edit reuses the whole form and its validation unchanged.
@@ -508,6 +546,15 @@ export default function KickoffMeetingCreate() {
                   emptyText="No vendor matches that search"
                   loading={!vendors.length}
                   primaryHint="Primary"
+                />
+              </Field>
+
+              <Field label="Meeting Type">
+                <SelectInput
+                  value={form.meeting_type}
+                  onChange={set('meeting_type')}
+                  pairs
+                  options={Object.entries(meetingTypes)}
                 />
               </Field>
 
@@ -678,17 +725,52 @@ export default function KickoffMeetingCreate() {
               </div>
             )}
 
-            {/* Agenda */}
-            <div style={{ marginTop: 16 }}>
-              <Field label="Agenda">
-                <textarea
-                  value={form.agenda}
-                  onChange={set('agenda')}
-                  rows={3}
-                  placeholder="HSSE induction, scope walk, document checklist…"
-                  style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }}
-                />
-              </Field>
+            {/* Agenda builder — structured items (topic · owner · duration · priority) */}
+            <div style={{ marginTop: 18 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <label style={labelStyle}>Agenda</label>
+                <button type="button" onClick={addAgenda} style={addBtn}>
+                  <Plus size={13} /> Add Item
+                </button>
+              </div>
+
+              {agendaItems.length === 0 ? (
+                <div style={{ padding: '16px', borderRadius: 12, background: 'var(--bg-input)', border: '1px dashed var(--border)', textAlign: 'center' }}>
+                  <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: 0 }}>
+                    No agenda items yet. Click <strong>Add Item</strong> to build the agenda.
+                  </p>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {agendaItems.map((a, i) => (
+                    <div key={a.id} style={{ display: 'grid', gridTemplateColumns: '22px 1fr 0.9fr 0.7fr 0.8fr 30px', gap: 8, alignItems: 'center' }}>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: '#a78bfa', textAlign: 'center' }}>{i + 1}</span>
+                      <TextInput value={a.item} onChange={e => setAgenda(a.id, 'item', e.target.value)} placeholder="Agenda item / topic" />
+                      <TextInput value={a.owner} onChange={e => setAgenda(a.id, 'owner', e.target.value)} placeholder="Owner" />
+                      <TextInput type="number" min="1" value={a.duration_minutes} onChange={e => setAgenda(a.id, 'duration_minutes', e.target.value)} placeholder="min" />
+                      <SelectInput value={a.priority} onChange={e => setAgenda(a.id, 'priority', e.target.value)} pairs
+                        options={[['', 'Priority'], ...priorities.map(p => [p, p])]} />
+                      <button type="button" onClick={() => removeAgenda(a.id)} title="Remove item"
+                        style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.06)', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Free-text agenda notes stay for anything the structured rows don't capture. */}
+              <div style={{ marginTop: 14 }}>
+                <Field label="Agenda notes (optional)">
+                  <textarea
+                    value={form.agenda}
+                    onChange={set('agenda')}
+                    rows={2}
+                    placeholder="Any extra context, links, or a copied agenda…"
+                    style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }}
+                  />
+                </Field>
+              </div>
             </div>
           </div>
 

@@ -23,9 +23,19 @@ class KickoffMeetingController extends Controller
         return response()->json(
             $this->kickoffService->list(
                 $request->user()->tenant_id,
-                $request->only(['status', 'subject_type', 'subject_id', 'awaiting_ack', 'search'])
+                $request->only(['status', 'meeting_type', 'subject_type', 'subject_id', 'awaiting_ack', 'search'])
             )
         );
+    }
+
+    /** The configurable meeting-type catalogue (Meeting.docx) + agenda priorities. */
+    public function meetingTypes()
+    {
+        return response()->json([
+            'types'        => config('meetings.types', []),
+            'default_type' => config('meetings.default_type', 'kickoff'),
+            'priorities'   => config('meetings.priorities', ['Low', 'Medium', 'High']),
+        ]);
     }
 
     public function stats(Request $request)
