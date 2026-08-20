@@ -13,6 +13,7 @@ use App\Models\Shared\KickoffMomItem;
 use App\Models\Shared\MeetingIssue;
 use App\Services\Shared\KickoffMeetingService;
 use App\Support\Shared\MeetingIssueStatus;
+use App\Support\Shared\MeetingTypeCatalog;
 use App\Support\Shared\MomActionStatus;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -42,17 +43,20 @@ class KickoffMeetingController extends Controller
     }
 
     /** The configurable meeting-type catalogue (Meeting.docx) + agenda priorities. */
-    public function meetingTypes()
+    public function meetingTypes(Request $request, MeetingTypeCatalog $catalog)
     {
+        $tenantId = $request->user()->tenant_id;
+
         return response()->json([
-            'types' => config('meetings.types', []),
+            // Tenant catalogue = config baseline + admin-defined types/templates.
+            'types' => $catalog->types($tenantId),
             'default_type' => config('meetings.default_type', 'kickoff'),
             'priorities' => config('meetings.priorities', ['Low', 'Medium', 'High']),
             // Meeting-level option lists (Meeting.docx §2).
             'meeting_priorities' => config('meetings.meeting_priorities', ['Low', 'Medium', 'High', 'Urgent']),
             'confidentiality' => config('meetings.confidentiality', ['Public', 'Internal', 'Confidential', 'Restricted']),
             // Per-type standard agendas the Agenda Builder can one-click load.
-            'templates' => config('meetings.templates', []),
+            'templates' => $catalog->templates($tenantId),
             'issue_severities' => config('meetings.issue_severities', ['Low', 'Medium', 'High', 'Critical']),
             'issue_categories' => config('meetings.issue_categories', []),
             'decision_statuses' => config('meetings.decision_statuses', ['Active', 'Superseded', 'Rescinded']),

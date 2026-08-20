@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\Shared\KickoffMeetingController;
 use App\Http\Controllers\Api\Shared\KickoffMeetingLinkController;
 use App\Http\Controllers\Api\Shared\MeetingLinkController;
 use App\Http\Controllers\Api\Shared\MeetingPlatformController;
+use App\Http\Controllers\Api\Shared\MeetingTypeSettingsController;
 use App\Http\Controllers\Api\Shared\PollController;
 use App\Http\Controllers\Api\Shared\PublicKickoffController;
 use App\Http\Controllers\Api\Shared\ReactionController;
@@ -36,6 +37,12 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('kickoff')->grou
     Route::get('/meetings/carry-forward', [KickoffMeetingController::class, 'carryForward']);
     Route::get('/meetings/history', [KickoffMeetingController::class, 'history']);
     Route::get('/meeting-types', [KickoffMeetingController::class, 'meetingTypes']);
+    // Admin Types/Templates settings — reads open to staff, writes admin-gated
+    // in-controller. Layers over config/meetings.php (MeetingTypeCatalog).
+    Route::get('/meeting-type-settings', [MeetingTypeSettingsController::class, 'index']);
+    Route::post('/meeting-type-settings', [MeetingTypeSettingsController::class, 'store']);
+    Route::put('/meeting-type-settings/{meetingType}', [MeetingTypeSettingsController::class, 'update']);
+    Route::delete('/meeting-type-settings/{meetingType}', [MeetingTypeSettingsController::class, 'destroy']);
     Route::get('/projects', [KickoffMeetingController::class, 'projects']);
     Route::get('/meetings', [KickoffMeetingController::class, 'index']);
     Route::post('/meetings', [KickoffMeetingController::class, 'store']);

@@ -2,10 +2,21 @@
 
 namespace App\Providers;
 
+use App\Contracts\AI\AIProviderInterface;
+use App\Contracts\Hr\AttendanceProvider;
 use App\Contracts\ProjectDirectoryContract;
+use App\Services\AI\AIProviderFactory;
 use App\Services\Customer\CustomerDirectoryService;
 use App\Services\Helpdesk\Contracts\CustomerServiceContract;
+use App\Services\Helpdesk\SlaService;
+use App\Services\Hr\Attendance\PlaceholderAttendanceProvider;
 use App\Services\Integration\ProjectDirectoryService;
+use App\Services\Numbering\DatabaseDocumentNumberService;
+use App\Services\Numbering\DocumentNumberServiceInterface;
+use App\Support\Email\MergeFields\MergeFieldRegistry;
+use App\Support\Numbering\Placeholders\PlaceholderRegistry;
+use App\Support\Numbering\Reset\ResetStrategyRegistry;
+use App\Support\Shared\MeetingTypeCatalog;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -34,20 +45,26 @@ class AppServiceProvider extends ServiceProvider
         // singleton under Octane would survive the request and keep serving stale
         // targets after an admin edits them. `scoped` is dropped at the request
         // boundary, which is exactly the lifetime the cache should have.
-        $this->app->scoped(\App\Services\Helpdesk\SlaService::class);
+        $this->app->scoped(SlaService::class);
+
+        // Meeting-type catalogue — merges config/meetings.php with the tenant's
+        // meeting_types rows. `scoped` for the same reason: it memoises the merge
+        // per request (the KickoffMeeting label accessor reads it on every row) and
+        // is dropped at the request boundary so an admin edit is seen next request.
+        $this->app->scoped(MeetingTypeCatalog::class);
 
         // Vendor-neutral AI provider — resolved from config('ai.provider').
         $this->app->bind(
-            \App\Contracts\AI\AIProviderInterface::class,
-            fn () => \App\Services\AI\AIProviderFactory::make()
+            AIProviderInterface::class,
+            fn () => AIProviderFactory::make()
         );
 
         // Document Numbering Engine — the single source of truth for every
         // document number. Modules depend on the interface only, so the storage
         // strategy can change without touching a single caller.
         $this->app->bind(
-            \App\Services\Numbering\DocumentNumberServiceInterface::class,
-            \App\Services\Numbering\DatabaseDocumentNumberService::class
+            DocumentNumberServiceInterface::class,
+            DatabaseDocumentNumberService::class
         );
 
         // Extension registries are SINGLETONS on purpose: each one supports runtime
@@ -55,16 +72,16 @@ class AppServiceProvider extends ServiceProvider
         // from its own service provider. With a fresh instance per resolution those
         // registrations would land on a throwaway object and silently do nothing.
         // They hold only tenant-agnostic resolvers, so sharing them is safe.
-        $this->app->singleton(\App\Support\Numbering\Placeholders\PlaceholderRegistry::class);
-        $this->app->singleton(\App\Support\Numbering\Reset\ResetStrategyRegistry::class);
-        $this->app->singleton(\App\Support\Email\MergeFields\MergeFieldRegistry::class);
+        $this->app->singleton(PlaceholderRegistry::class);
+        $this->app->singleton(ResetStrategyRegistry::class);
+        $this->app->singleton(MergeFieldRegistry::class);
 
         // Payroll attendance boundary — placeholder until SangoeTrack integration.
         // Swap this binding for a SangoeTrackAttendanceProvider to go live; payroll
         // logic depends only on the AttendanceProvider interface.
         $this->app->bind(
-            \App\Contracts\Hr\AttendanceProvider::class,
-            \App\Services\Hr\Attendance\PlaceholderAttendanceProvider::class
+            AttendanceProvider::class,
+            PlaceholderAttendanceProvider::class
         );
     }
 

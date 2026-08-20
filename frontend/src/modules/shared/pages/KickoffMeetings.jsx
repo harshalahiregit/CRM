@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom'
 import {
   CalendarDays, Plus, RefreshCw, Clock, CheckCircle2, XCircle, Send,
   Users, AlertTriangle, ClipboardCheck, Pencil, BellRing, Eye, Download, Loader2, Mail, MessageCircle, Smartphone,
-  ChevronLeft, ChevronRight, List, LayoutGrid, Laptop, Building2, UserX, ListChecks,
+  ChevronLeft, ChevronRight, List, LayoutGrid, Laptop, Building2, UserX, ListChecks, Trash2, Settings2,
 } from 'lucide-react'
 import { kickoffApi } from '@/services/kickoffApi'
+import { useAuth } from '@/context/AuthContext'
 import {
   KO_STATUS, koStatusCfg, koModeLabel, fmtDate, fmtDateTime, isKoClosed,
 } from '../kickoffConstants'
@@ -412,66 +413,209 @@ function EmptyState({ onNew, filter }) {
   )
 }
 
-/* ── Templates reference (Meeting.docx §4 / nav "Templates") ──────────────────
- * Read-only view of every meeting type's standard agenda, so an organiser can
- * see what the Agenda Builder's one-click "Load template" will insert. The
- * templates themselves live in config/meetings.php and load into the form. */
+/* ── Templates & Types settings (Meeting.docx §4 / admin Types-Templates) ─────
+ * Reference of every meeting type's standard agenda (what the Agenda Builder's
+ * one-click "Load template" inserts), PLUS an admin editor: types live in
+ * config/meetings.php as the built-in baseline, and a tenant can add its own or
+ * override a built-in via meeting_types rows (merged by MeetingTypeCatalog). */
 function TemplatesPanel() {
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
   const [data, setData] = useState(null)
   const [err, setErr] = useState(null)
+  const [editing, setEditing] = useState(null) // row being edited / created
 
-  useEffect(() => {
-    kickoffApi.meetingTypes()
-      .then(d => setData(d))
-      .catch(() => setErr('Could not load the templates.'))
-  }, [])
+  const load = () => kickoffApi.typeSettings().then(setData).catch(() => setErr('Could not load the meeting types.'))
+  useEffect(() => { load() }, [])
+
+  const remove = async (row) => {
+    if (!window.confirm(`Remove "${row.label}"? The built-in default (if any) applies again.`)) return
+    try { await kickoffApi.deleteType(row.id); load() }
+    catch (e) { setErr(e?.response?.data?.message || 'Could not remove the type.') }
+  }
 
   if (err) return <div className="pr-glass" style={{ padding: 24, color: 'var(--text-muted)', fontSize: 13 }}>{err}</div>
   if (!data) return <div className="skeleton" style={{ height: 200, borderRadius: 16, background: 'var(--border)' }} />
 
-  const templates = data.templates || {}
-  const types = data.types || {}
-  const entries = Object.entries(templates).filter(([, items]) => Array.isArray(items) && items.length)
-
-  if (entries.length === 0) return (
-    <div className="pr-glass" style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
-      No agenda templates are configured yet.
-    </div>
-  )
+  const builtins = data.builtins || []
+  const custom = data.custom || []
 
   return (
     <div>
-      <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '0 0 14px', lineHeight: 1.5 }}>
-        Standard agendas per meeting type — the Agenda Builder loads these with one click when you schedule a meeting of that type.
-      </p>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(320px,1fr))', gap: 14 }}>
-        {entries.map(([type, items]) => (
-          <div key={type} className="pr-glass" style={{ padding: 18 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 12 }}>
-              <h3 style={{ margin: 0, fontSize: 14.5, fontWeight: 900, color: 'var(--text-h)' }}>{types[type] || type}</h3>
-              <span style={{ fontSize: 10.5, fontWeight: 800, padding: '2px 9px', borderRadius: 999, background: 'var(--bg-input)', color: 'var(--text-muted)' }}>{items.length} item{items.length === 1 ? '' : 's'}</span>
-            </div>
-            <ol style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 7 }}>
-              {items.map((it, i) => (
-                <li key={i} style={{ display: 'flex', gap: 9, fontSize: 12.5, color: 'var(--text-h)', lineHeight: 1.45 }}>
-                  <span style={{ fontSize: 10.5, fontWeight: 800, color: '#a78bfa', minWidth: 16 }}>{i + 1}.</span>
-                  <span style={{ flex: 1 }}>
-                    {it.item}
-                    {(it.duration_minutes || it.priority) && (
-                      <span style={{ fontSize: 10.5, color: 'var(--text-muted)', marginLeft: 6 }}>
-                        {[it.duration_minutes && `${it.duration_minutes} min`, it.priority].filter(Boolean).join(' · ')}
-                      </span>
-                    )}
-                  </span>
-                </li>
-              ))}
-            </ol>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
+        <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: 0, lineHeight: 1.5, maxWidth: 620 }}>
+          Standard agendas per meeting type — the Agenda Builder loads these with one click. Built-in types ship with the app;
+          {isAdmin ? ' admins can add their own or override a built-in below.' : ' an admin can add custom types.'}
+        </p>
+        {isAdmin && (
+          <button onClick={() => setEditing({ key: '', label: '', templates: [], is_active: true, sort_order: 0 })} style={solidBtn}>
+            <Plus size={15} /> Add meeting type
+          </button>
+        )}
+      </div>
+
+      {editing && <TypeEditor row={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load() }} onError={setErr} />}
+
+      {custom.length > 0 && (
+        <>
+          <div style={sectionLabel}><Settings2 size={13} /> Custom &amp; overrides ({custom.length})</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(320px,1fr))', gap: 14, marginBottom: 22 }}>
+            {custom.map(row => (
+              <TypeCard key={row.id} title={row.label} badge={row.is_active ? null : 'Hidden'} keyName={row.key} items={row.templates || []}
+                actions={isAdmin ? (
+                  <div style={{ display: 'inline-flex', gap: 4 }}>
+                    <IconBtn title="Edit" icon={Pencil} color="#a78bfa" onClick={() => setEditing({ ...row, templates: row.templates || [] })} />
+                    <IconBtn title="Remove" icon={Trash2} color="#ef4444" onClick={() => remove(row)} />
+                  </div>
+                ) : null} />
+            ))}
           </div>
+        </>
+      )}
+
+      <div style={sectionLabel}><LayoutGrid size={13} /> Built-in types ({builtins.length})</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(320px,1fr))', gap: 14 }}>
+        {builtins.map(b => (
+          <TypeCard key={b.key} title={b.label} keyName={b.key} items={b.templates || []}
+            actions={isAdmin ? <IconBtn title="Override for this tenant" icon={Pencil} color="#a78bfa"
+              onClick={() => setEditing({ key: b.key, label: b.label, templates: b.templates || [], is_active: true, sort_order: 0 })} /> : null} />
         ))}
       </div>
     </div>
   )
 }
+
+function TypeCard({ title, keyName, items, actions, badge }) {
+  return (
+    <div className="pr-glass" style={{ padding: 18 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 12 }}>
+        <div style={{ minWidth: 0 }}>
+          <h3 style={{ margin: 0, fontSize: 14.5, fontWeight: 900, color: 'var(--text-h)', display: 'flex', alignItems: 'center', gap: 7 }}>
+            {title}
+            {badge && <span style={{ fontSize: 9.5, fontWeight: 800, padding: '1px 7px', borderRadius: 999, background: 'var(--bg-input)', color: 'var(--text-muted)' }}>{badge}</span>}
+          </h3>
+          <span style={{ fontSize: 10.5, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{keyName}</span>
+        </div>
+        {actions}
+      </div>
+      {items.length === 0 ? (
+        <p style={{ fontSize: 11.5, color: 'var(--text-muted)', margin: 0, fontStyle: 'italic' }}>No template items.</p>
+      ) : (
+        <ol style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 7 }}>
+          {items.map((it, i) => (
+            <li key={i} style={{ display: 'flex', gap: 9, fontSize: 12.5, color: 'var(--text-h)', lineHeight: 1.45 }}>
+              <span style={{ fontSize: 10.5, fontWeight: 800, color: '#a78bfa', minWidth: 16 }}>{i + 1}.</span>
+              <span style={{ flex: 1 }}>
+                {it.item}
+                {(it.duration_minutes || it.priority) && (
+                  <span style={{ fontSize: 10.5, color: 'var(--text-muted)', marginLeft: 6 }}>
+                    {[it.duration_minutes && `${it.duration_minutes} min`, it.priority].filter(Boolean).join(' · ')}
+                  </span>
+                )}
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  )
+}
+
+const IconBtn = ({ title, icon: Icon, color, onClick }) => (
+  <button title={title} onClick={onClick}
+    style={{ width: 28, height: 28, borderRadius: 8, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'var(--bg-input)', border: '1px solid var(--border)', color }}>
+    <Icon size={14} />
+  </button>
+)
+
+const sectionLabel = { display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 10px' }
+
+/* Admin editor for one meeting type + its agenda template. */
+function TypeEditor({ row, onClose, onSaved, onError }) {
+  const isOverrideOfBuiltin = !row.id && row.key !== ''
+  const [key, setKey] = useState(row.key || '')
+  const [label, setLabel] = useState(row.label || '')
+  const [active, setActive] = useState(row.is_active !== false)
+  const [items, setItems] = useState(row.templates?.length ? row.templates.map(t => ({ ...t })) : [{ item: '', duration_minutes: '', priority: '' }])
+  const [busy, setBusy] = useState(false)
+
+  const setItem = (i, k, v) => setItems(a => a.map((x, j) => j === i ? { ...x, [k]: v } : x))
+  const addItem = () => setItems(a => [...a, { item: '', duration_minutes: '', priority: '' }])
+  const rmItem = (i) => setItems(a => a.filter((_, j) => j !== i))
+
+  const save = async () => {
+    onError(null)
+    const cleanKey = key.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_')
+    if (!/^[a-z][a-z0-9_]*$/.test(cleanKey)) { onError('Key must start with a letter and use only lowercase letters, digits and underscores.'); return }
+    if (!label.trim()) { onError('A label is required.'); return }
+    const payload = {
+      key: cleanKey,
+      label: label.trim(),
+      is_active: active,
+      templates: items.filter(it => it.item.trim()).map(it => ({
+        item: it.item.trim(),
+        duration_minutes: it.duration_minutes ? Number(it.duration_minutes) : undefined,
+        priority: it.priority || undefined,
+      })),
+    }
+    setBusy(true)
+    try {
+      if (row.id) await kickoffApi.updateType(row.id, payload)
+      else await kickoffApi.createType(payload)
+      onSaved()
+    } catch (e) {
+      onError(e?.response?.data?.message || 'Could not save the meeting type.')
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="pr-glass" style={{ padding: 20, marginBottom: 20, border: '1px solid rgba(124,58,237,0.35)' }}>
+      <h3 style={{ margin: '0 0 14px', fontSize: 15, fontWeight: 900, color: 'var(--text-h)' }}>
+        {row.id ? 'Edit type' : isOverrideOfBuiltin ? `Override built-in "${row.label}"` : 'New meeting type'}
+      </h3>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+        <label style={{ fontSize: 12 }}>
+          <span style={editLbl}>Key</span>
+          <input value={key} disabled={isOverrideOfBuiltin || !!row.id} onChange={e => setKey(e.target.value)}
+            placeholder="e.g. safety_standdown" style={{ ...editInput, opacity: (isOverrideOfBuiltin || row.id) ? 0.6 : 1 }} />
+        </label>
+        <label style={{ fontSize: 12 }}>
+          <span style={editLbl}>Label</span>
+          <input value={label} onChange={e => setLabel(e.target.value)} placeholder="e.g. Safety Stand-down" style={editInput} />
+        </label>
+      </div>
+      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--text-h)', marginBottom: 14, cursor: 'pointer' }}>
+        <input type="checkbox" checked={active} onChange={e => setActive(e.target.checked)} />
+        Active (unchecking hides this type — for a built-in key, removes it from the pickers)
+      </label>
+
+      <div style={editLbl}>Agenda template</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
+        {items.map((it, i) => (
+          <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 90px 110px 30px', gap: 8, alignItems: 'center' }}>
+            <input value={it.item} onChange={e => setItem(i, 'item', e.target.value)} placeholder={`Agenda item ${i + 1}`} style={editInput} />
+            <input value={it.duration_minutes} onChange={e => setItem(i, 'duration_minutes', e.target.value)} placeholder="min" type="number" style={editInput} />
+            <select value={it.priority || ''} onChange={e => setItem(i, 'priority', e.target.value)} style={editInput}>
+              <option value="">Priority…</option>
+              {['Low', 'Medium', 'High'].map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+            <button onClick={() => rmItem(i)} title="Remove" style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.06)', color: '#ef4444', cursor: 'pointer' }}><Trash2 size={12} /></button>
+          </div>
+        ))}
+        <button onClick={addItem} style={{ ...ghostBtn, alignSelf: 'flex-start' }}><Plus size={13} /> Add item</button>
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+        <button onClick={onClose} style={ghostBtn}>Cancel</button>
+        <button onClick={save} disabled={busy} style={{ ...solidBtn, opacity: busy ? 0.6 : 1 }}>{busy ? 'Saving…' : 'Save type'}</button>
+      </div>
+    </div>
+  )
+}
+
+const editLbl = { display: 'block', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)', marginBottom: 5 }
+const editInput = { width: '100%', padding: '8px 10px', borderRadius: 8, fontSize: 12.5, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }
 
 /* ── Calendar ───────────────────────────────────────────────────────────────── */
 /**
