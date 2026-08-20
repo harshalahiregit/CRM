@@ -22,9 +22,7 @@ use Illuminate\Support\Facades\Storage;
  */
 class PublicKickoffController extends Controller
 {
-    public function __construct(private KickoffMeetingService $kickoffService)
-    {
-    }
+    public function __construct(private KickoffMeetingService $kickoffService) {}
 
     /**
      * GET /kickoff/ack/{token}/mom — the generated MOM PDF, inline.
@@ -41,6 +39,10 @@ class PublicKickoffController extends Controller
     {
         $meeting = $this->kickoffService->resolveMomByToken($token);
 
+        // Sent → Viewed → Acknowledged: the vendor opening the minutes is the
+        // "viewed" signal (Meeting.docx §13). First view only; idempotent.
+        $this->kickoffService->markMomViewed($meeting);
+
         return Storage::disk('kickoff_docs')->response(
             $meeting->mom_path,
             'Kickoff-Minutes.pdf',
@@ -54,26 +56,29 @@ class PublicKickoffController extends Controller
     {
         $meeting = $this->kickoffService->resolveByToken($token);
 
+        // Opening the acknowledgement page is a "viewed" signal too. Idempotent.
+        $this->kickoffService->markMomViewed($meeting);
+
         return response()->json([
-            'id'              => $meeting->id,
-            'title'          => $meeting->title,
-            'reference'      => $meeting->reference,
-            'agenda'         => $meeting->agenda,
-            'minutes'        => $meeting->minutes,
-            'scheduled_at'   => $meeting->scheduled_at,
-            'completed_at'   => $meeting->completed_at,
-            'has_document'   => (bool) $meeting->mom_path,
-            'subject'        => $meeting->kickoffable_type ? [
+            'id' => $meeting->id,
+            'title' => $meeting->title,
+            'reference' => $meeting->reference,
+            'agenda' => $meeting->agenda,
+            'minutes' => $meeting->minutes,
+            'scheduled_at' => $meeting->scheduled_at,
+            'completed_at' => $meeting->completed_at,
+            'has_document' => (bool) $meeting->mom_path,
+            'subject' => $meeting->kickoffable_type ? [
                 'label' => KickoffSubject::label(KickoffSubject::keyFor($meeting->kickoffable_type)),
-                'name'  => KickoffSubject::nameOf($meeting->kickoffable),
+                'name' => KickoffSubject::nameOf($meeting->kickoffable),
             ] : null,
-            'attendees'      => $meeting->attendees->map(fn ($a) => [
-                'name'         => $a->name,
+            'attendees' => $meeting->attendees->map(fn ($a) => [
+                'name' => $a->name,
                 'organisation' => $a->organisation,
-                'role'         => $a->role,
-                'attended'     => $a->attended,
+                'role' => $a->role,
+                'attended' => $a->attended,
             ]),
-            'acknowledged_at'      => $meeting->acknowledged_at,
+            'acknowledged_at' => $meeting->acknowledged_at,
             'acknowledged_by_name' => $meeting->acknowledged_by_name,
         ]);
     }
@@ -81,14 +86,24 @@ class PublicKickoffController extends Controller
     public function acknowledge(Request $request, string $token)
     {
         $meeting = $this->kickoffService->resolveByToken($token);
-        $data    = $request->validate([
-            'name'    => 'required|string|max:120',
+        $data = $request->validate([
+            'name' => 'required|string|max:120',
             // Optional response, same field the portal flow stores.
             'comment' => 'nullable|string|max:5000',
+            // How the vendor is responding (Meeting.docx §13). Defaults to a plain
+            // acknowledgement when absent; dispute/correction require a comment
+            // (enforced in the service).
+            'response_type' => 'nullable|in:acknowledge,dispute,correction',
         ]);
 
         $this->kickoffService->acknowledge($meeting, $data, ['ip' => $request->ip()]);
 
-        return response()->json(['message' => 'Thank you — the minutes have been acknowledged.']);
+        $message = match ($data['response_type'] ?? 'acknowledge') {
+            'dispute' => 'Thank you — your dispute has been recorded and sent to the coordinator.',
+            'correction' => 'Thank you — your correction request has been sent to the coordinator.',
+            default => 'Thank you — the minutes have been acknowledged.',
+        };
+
+        return response()->json(['message' => $message]);
     }
 }
