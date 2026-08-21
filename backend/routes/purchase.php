@@ -253,6 +253,12 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::get('/workforce/medicals',                 [PurchaseWorkforceAdminController::class, 'medicals']);
     Route::get('/workforce/trainings',                [PurchaseWorkforceAdminController::class, 'trainings']);
 
+    // ── Compliance register (mirror of TPV §21 — purchase_vendor_compliance) ─
+    Route::get('/vendor-compliance',                              [\App\Http\Controllers\Api\Purchase\PurchaseComplianceController::class, 'index']);
+    Route::get('/vendors/{purchaseVendor}/compliance',            [\App\Http\Controllers\Api\Purchase\PurchaseComplianceController::class, 'vendorMatrix'])->whereNumber('purchaseVendor');
+    Route::post('/vendors/{purchaseVendor}/compliance',           [\App\Http\Controllers\Api\Purchase\PurchaseComplianceController::class, 'upsert'])->whereNumber('purchaseVendor');
+    Route::delete('/vendor-compliance/{compliance}',              [\App\Http\Controllers\Api\Purchase\PurchaseComplianceController::class, 'destroy'])->whereNumber('compliance');
+
     // ── Kickoff meetings (Purchase-owned engine: purchase_kickoff_* tables) ─
     Route::get('/kickoff/stats',                   [PurchaseKickoffController::class, 'stats']);
     Route::get('/kickoff',                         [PurchaseKickoffController::class, 'index']);
