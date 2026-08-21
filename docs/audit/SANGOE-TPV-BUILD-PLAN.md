@@ -284,6 +284,14 @@ live vendor-status template, AI assist. Kickoff is now "Meetings → New → Typ
   purchaseApi `documentVault`, and a Vault page in the Purchase nav (teal). Read-only, no store's write path
   touched. Verified via rolled-back tinker (3-source seed, expiry buckets 1 expired/1 expiring, filters,
   grouping) + green build. **Parity mirror #5.**
+- [x] **§31 Communications — Purchase mirror** — `PurchaseCommunicationService` over the shared
+  `Notifications\NotificationService` transport + `purchase_notification_logs` + the in-app `notifications`
+  bell: a DERIVED alerts feed (documents expired/expiring 30d, overdue NCRs, overdue CAPAs — severity-ranked
+  with deep links + suggested messages) and an admin `send(vendor, channel, subject, body)` over
+  email/WhatsApp/SMS that records a log row (sent/failed) + a sender bell breadcrumb, guarding missing contact.
+  Routes `/purchase/communications` + POST `/communications/send` (admin-gated), purchaseApi `communications`,
+  and a Communications page (action feed with per-alert Notify + Open, and a Sent log). Alert kinds whose
+  Purchase mirrors haven't landed (violations/renewals) are simply absent — additive. Verified via rolled-back
+  tinker (2 severity-sorted alerts, email send logged + bell, no-contact guard) + green build. **Parity mirror #6.**
 - [ ] Remaining Purchase mirrors: Inspections · Violations/Strikes · Renewal · Offboarding · Performance Index
-  (VPI) · Communications · PPE-at-gate. (Purchase has its own gate/PPE/worker stack, so those mirror onto
-  `purchase_*` equivalents.)
+  (VPI) · PPE-at-gate. (Purchase has its own gate/PPE/worker stack, so those mirror onto `purchase_*` equivalents.)
