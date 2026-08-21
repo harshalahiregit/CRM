@@ -7,6 +7,7 @@ use App\Models\Customer\ClientContract;
 use App\Models\Customer\ClientReminder;
 use App\Models\Customer\ClientShipment;
 use App\Models\Sales\SalesInvoice;
+use App\Support\Customer\CustomerOptions;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -33,6 +34,10 @@ use Illuminate\Support\Facades\Schema;
  */
 class Customer360Service
 {
+    public function __construct(private CustomerHealthService $health)
+    {
+    }
+
     /** Contracts expiring inside this many days raise an alert. */
     private const CONTRACT_EXPIRY_WINDOW_DAYS = 30;
 
@@ -43,6 +48,11 @@ class Customer360Service
             'alerts'   => $this->alerts($client),
             'recent'   => $this->recentActivity($client),
             'owner'    => $this->owner($client),
+            // Computed live here — a cached score on a detail page would be
+            // wrong the moment an invoice is paid. The stored copy on `clients`
+            // exists for the LIST, where ten aggregates per row is untenable.
+            'health'   => $this->health->score($client),
+            'risk'     => $this->health->risk($client),
         ];
     }
 

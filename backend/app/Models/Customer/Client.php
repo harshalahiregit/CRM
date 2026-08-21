@@ -32,12 +32,15 @@ class Client extends Model
         'business_unit', 'region',
         'customer_type', 'customer_tier', 'industry',
         'payment_terms', 'relationship_started_at', 'lifecycle_status',
+        'health_score', 'health_status', 'health_calculated_at',
+        'risk_relationship', 'risk_compliance', 'risk_overall',
     ];
 
     protected $casts = [
         'social_links'         => 'array',
         'foundation_date'      => 'date',
         'relationship_started_at' => 'date',
+        'health_calculated_at' => 'datetime',
         'dob'                  => 'date',
         'anniversary_date'     => 'date',
         'opening_balance'      => 'decimal:2',
