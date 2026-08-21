@@ -136,7 +136,14 @@ live vendor-status template, AI assist. Kickoff is now "Meetings → New → Typ
   (list, raise/edit modal, one-click status advance, overdue flag) in the Compliance cluster. Control Tower
   `open.ncrs` + Action Centre `ncr_overdue` now count the real table. Verified via rolled-back tinker
   (lifecycle + close-guard) + green build.
-- [ ] **§22 Inspections & Audits** — inspection-type catalogue + Plan→Inspect→Finding→Action→CAPA→Verify→Close.
+- [x] **§22 Inspections & Audits** — `tpv_inspections` (INS-YYYY-### ref, InspectionType catalogue
+  [pre-mobilisation/HSE/site/PPE/workforce/equipment/compliance/behavioural/housekeeping/environmental/
+  vendor-audit], vendor/project/WP link, score, Planned→In_Progress→Completed→Closed) + `tpv_inspection_findings`
+  (category/severity/status, corrective action, **escalate-to-NCR** which creates a real NCR + links back).
+  `TpvInspectionService` (injects TpvNcrService) + controller + routes + an **Inspections** page (list +
+  create/edit + expandable per-inspection finding management + one-click "Raise NCR") in Work Control.
+  Verified via rolled-back tinker (inspection, finding, finding→NCR NCR-2026-001, double-escalate guard,
+  counts) + green build. Closes the Plan→Inspect→Finding→Action→NCR chain.
 - [~] **§25 CAPA generalisation** — decouple from incident-only; link audit/inspection/NCR/meeting/
   compliance-failure/repeated-violation; add immediate-correction, root-cause, effectiveness fields + **evidence files**.
 - [~] **§26 Strikes & Violations** — configurable violation catalogue + Warning→Strike1→2→3→Suspension→

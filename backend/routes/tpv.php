@@ -270,6 +270,17 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::post('/ncrs/{ncr}/transition',                 [\App\Http\Controllers\Api\Tpv\TpvNcrController::class, 'transition'])->where('ncr', '[0-9]+');
     Route::delete('/ncrs/{ncr}',                          [\App\Http\Controllers\Api\Tpv\TpvNcrController::class, 'destroy'])->where('ncr', '[0-9]+');
 
+    // Inspections & Audits (Sangoe TPV §22) — Plan→Inspect→Finding→Action→CAPA/NCR→Close.
+    Route::get('/inspections',                            [\App\Http\Controllers\Api\Tpv\TpvInspectionController::class, 'index']);
+    Route::post('/inspections',                           [\App\Http\Controllers\Api\Tpv\TpvInspectionController::class, 'store']);
+    Route::get('/inspections/{inspection}',               [\App\Http\Controllers\Api\Tpv\TpvInspectionController::class, 'show'])->where('inspection', '[0-9]+');
+    Route::put('/inspections/{inspection}',               [\App\Http\Controllers\Api\Tpv\TpvInspectionController::class, 'update'])->where('inspection', '[0-9]+');
+    Route::delete('/inspections/{inspection}',            [\App\Http\Controllers\Api\Tpv\TpvInspectionController::class, 'destroy'])->where('inspection', '[0-9]+');
+    Route::post('/inspections/{inspection}/findings',     [\App\Http\Controllers\Api\Tpv\TpvInspectionController::class, 'addFinding'])->where('inspection', '[0-9]+');
+    Route::put('/inspection-findings/{finding}',          [\App\Http\Controllers\Api\Tpv\TpvInspectionController::class, 'updateFinding'])->where('finding', '[0-9]+');
+    Route::delete('/inspection-findings/{finding}',       [\App\Http\Controllers\Api\Tpv\TpvInspectionController::class, 'destroyFinding'])->where('finding', '[0-9]+');
+    Route::post('/inspection-findings/{finding}/escalate', [\App\Http\Controllers\Api\Tpv\TpvInspectionController::class, 'escalateFinding'])->where('finding', '[0-9]+');
+
     // Permit-to-Work + JSA (Doc_4 Phase 5). Approval requires a JSA and refuses a
     // suspended vendor; a permit expires at its validity window.
     Route::get('/permits',                                [\App\Http\Controllers\Api\Tpv\PermitController::class, 'index']);
