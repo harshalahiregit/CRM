@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   HardHat, Users, ShieldAlert, ScanLine, RefreshCw, ArrowRight, Rocket,
   FileCheck, BadgeCheck, AlertTriangle, Clock, UserX, ShieldX,
+  Building2, Gauge, ListChecks, ShieldQuestion, Ban,
 } from 'lucide-react'
 import { tpvApi } from '@/services/tpvApi'
 import { severityCfg, obStatusCfg, STRIKE_LIMIT, fmtDateTime } from '../constants'
@@ -66,6 +67,13 @@ export default function TpvDashboard() {
         </div>
       </div>
 
+      {/* ── Control Tower (§4/§37) — executive layer above the HSSE operations ── */}
+      {data.control_tower && (
+        <ControlTower ct={data.control_tower} actions={data.action_centre || []} risk={data.risk_breakdown || []} onGo={navigate} />
+      )}
+
+      <SectionDivider label="HSSE & Workforce Operations" />
+
       {/* KPI tiles */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 16 }}>
         <KpiTile label="On Site Now" value={k.on_site_now ?? 0} sub={`${k.checked_in_today ?? 0} checked in today`} icon={HardHat} grad="linear-gradient(145deg,#34d399,#10b981)" glow="#10b981" onClick={() => navigate('/app/tpv/gate-log')} />
@@ -97,6 +105,141 @@ export default function TpvDashboard() {
       </div>
 
       <RecentDenials rows={data.recent_denials || []} onGo={navigate} />
+    </div>
+  )
+}
+
+// ── Control Tower (§4/§37) ───────────────────────────────────────────────────
+// The executive command layer: vendor/workforce/risk headline numbers, the
+// Action Centre (everything waiting on a human), and the risk breakdown. Sits
+// above the HSSE operational dashboard so management sees governance first.
+const RISK_TONE = {
+  Critical: '#ef4444', High: '#f97316', Medium: '#f59e0b', Low: '#10b981', Unclassified: '#94a3b8',
+}
+
+function ControlTower({ ct, actions, risk, onGo }) {
+  const v = ct.vendors || {}, wf = ct.workforce || {}, rd = ct.readiness || {}, op = ct.open || {}, pf = ct.performance || {}
+  const pct = (n) => (n === null || n === undefined ? '—' : `${n}%`)
+
+  return (
+    <div style={{ marginBottom: 22 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <Gauge size={16} style={{ color: '#a78bfa' }} />
+        <h2 style={{ margin: 0, fontSize: 15, fontWeight: 900, color: 'var(--text-h)', letterSpacing: '-0.01em' }}>TPV Control Tower</h2>
+        <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>third-party governance at a glance</span>
+      </div>
+
+      {/* Executive KPI grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6,1fr)', gap: 10, marginBottom: 14 }}>
+        <ExecStat label="Vendors" value={v.total ?? 0} sub={`${v.active ?? 0} active · ${v.pending ?? 0} pending`} icon={Building2} tone="#7C3AED" onClick={() => onGo('/app/tpv/vendors')} />
+        <ExecStat label="Workforce" value={wf.total ?? 0} sub={`${wf.on_site_now ?? 0} on site now`} icon={Users} tone="#0ea5e9" onClick={() => onGo('/app/tpv/workforce')} />
+        <ExecStat label="High Risk" value={v.high_risk ?? 0} sub="High + Critical" icon={ShieldAlert} tone="#ef4444" onClick={() => onGo('/app/tpv/vendors')} danger={v.high_risk > 0} />
+        <ExecStat label="Temporary" value={v.temporary ?? 0} sub={`${v.expiring ?? 0} expiring 30d`} icon={Clock} tone="#f59e0b" onClick={() => onGo('/app/tpv/temporary')} />
+        <ExecStat label="Suspended" value={v.suspended ?? 0} sub={`${v.blacklisted ?? 0} blacklisted`} icon={Ban} tone="#f43f5e" onClick={() => onGo('/app/tpv/vendors')} danger={v.suspended > 0} />
+        <ExecStat label="Avg Performance" value={pf.avg_score ?? '—'} sub={pf.period ? `period ${pf.period}` : 'no scores yet'} icon={Gauge} tone="#10b981" onClick={() => onGo('/app/tpv/performance')} />
+        <ExecStat label="Training %" value={pct(rd.training_pct)} sub="active workforce" icon={BadgeCheck} tone="#22c55e" />
+        <ExecStat label="Medical %" value={pct(rd.medical_pct)} sub="active workforce" icon={FileCheck} tone="#14b8a6" />
+        <ExecStat label="Open Actions" value={op.actions ?? 0} sub={`${op.overdue_actions ?? 0} overdue`} icon={ListChecks} tone="#8b5cf6" onClick={() => onGo('/app/tpv/kickoff')} danger={op.overdue_actions > 0} />
+        <ExecStat label="Open CAPAs" value={op.capas ?? 0} sub={`${op.ncrs ?? 0} NCRs`} icon={ShieldQuestion} tone="#f97316" onClick={() => onGo('/app/tpv/incidents')} />
+        <ExecStat label="Active Permits" value={op.active_permits ?? 0} sub="currently valid" icon={FileCheck} tone="#0ea5e9" onClick={() => onGo('/app/tpv/permits')} />
+        <ExecStat label="Active Strikes" value={op.total_strikes ?? 0} sub="outstanding" icon={ShieldAlert} tone="#a78bfa" onClick={() => onGo('/app/tpv/strikes')} danger={op.total_strikes > 0} />
+      </div>
+
+      {/* Action Centre + Risk breakdown */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 14 }}>
+        <ActionCentre rows={actions} onGo={onGo} />
+        <RiskBreakdown rows={risk} onGo={onGo} />
+      </div>
+    </div>
+  )
+}
+
+function ExecStat({ label, value, sub, icon: Icon, tone, onClick, danger }) {
+  return (
+    <div className="pr-glass pr-lift" onClick={onClick}
+      style={{ padding: '12px 13px', borderRadius: 13, cursor: onClick ? 'pointer' : 'default', outline: danger ? `1.5px solid ${tone}55` : 'none' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 7 }}>
+        <span style={{ width: 26, height: 26, borderRadius: 8, background: `${tone}1f`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <Icon size={14} style={{ color: tone }} />
+        </span>
+        <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', lineHeight: 1.1 }}>{label}</span>
+      </div>
+      <div style={{ fontSize: 21, fontWeight: 900, color: 'var(--text-h)', letterSpacing: '-0.02em', lineHeight: 1 }}>{value}</div>
+      {sub && <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 3 }}>{sub}</div>}
+    </div>
+  )
+}
+
+function ActionCentre({ rows, onGo }) {
+  return (
+    <div className="pr-glass" style={{ padding: 18 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+        <ListChecks size={15} style={{ color: '#a78bfa' }} />
+        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: 'var(--text-h)' }}>Action Centre</h3>
+      </div>
+      <p style={{ margin: '0 0 12px', fontSize: 11.5, color: 'var(--text-muted)' }}>Everything waiting on a human — click to clear it</p>
+      {rows.length === 0 ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0' }}>
+          <div style={{ width: 36, height: 36, borderRadius: 11, background: 'rgba(16,185,129,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <BadgeCheck size={17} style={{ color: '#10b981' }} />
+          </div>
+          <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: 0 }}>Nothing outstanding — the queue is clear.</p>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+          {rows.map(r => (
+            <button key={r.key} onClick={() => r.path && onGo(r.path)} className="pr-lift"
+              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 11, cursor: 'pointer', textAlign: 'left',
+                background: 'var(--bg-input, rgba(124,58,237,0.05))', border: '1px solid var(--border)' }}>
+              <span style={{ fontSize: 15, fontWeight: 900, color: '#a78bfa', fontVariantNumeric: 'tabular-nums', minWidth: 26 }}>{r.count}</span>
+              <span style={{ flex: 1, fontSize: 12.5, fontWeight: 600, color: 'var(--text-h)' }}>{r.label}</span>
+              <ArrowRight size={14} style={{ color: 'var(--text-muted)' }} />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Directly-labelled rows — each bar carries its level name + count, so the warm
+// risk ramp (red→amber→green) is reinforcement, never the sole identity carrier.
+function RiskBreakdown({ rows, onGo }) {
+  const total = rows.reduce((s, r) => s + r.count, 0)
+  const max = Math.max(1, ...rows.map(r => r.count))
+  return (
+    <div className="pr-glass" style={{ padding: 18 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+        <ShieldAlert size={15} style={{ color: '#a78bfa' }} />
+        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: 'var(--text-h)' }}>Risk Classification</h3>
+      </div>
+      <p style={{ margin: '0 0 14px', fontSize: 11.5, color: 'var(--text-muted)' }}>{total} vendor{total === 1 ? '' : 's'} by risk tier</p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
+        {rows.map(r => {
+          const tone = RISK_TONE[r.level] || '#94a3b8'
+          const pct = Math.round((r.count / max) * 100)
+          return (
+            <div key={r.level} onClick={() => onGo('/app/tpv/vendors')} style={{ cursor: 'pointer' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-h)' }}>{r.level}</span>
+                <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--text-h)', fontVariantNumeric: 'tabular-nums' }}>{r.count}</span>
+              </div>
+              <div className="pr-bar" style={{ height: 9 }}>
+                <span style={{ width: r.count === 0 ? '0%' : `${Math.max(4, pct)}%`, background: `linear-gradient(90deg, ${tone}bb, ${tone})`, boxShadow: `0 2px 8px -1px ${tone}88` }} />
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function SectionDivider({ label }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '4px 0 18px' }}>
+      <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', whiteSpace: 'nowrap' }}>{label}</span>
+      <span style={{ flex: 1, height: 1, background: 'var(--border)' }} />
     </div>
   )
 }

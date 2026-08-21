@@ -2,15 +2,23 @@
 
 namespace App\Services\Tpv;
 
+use App\Models\Shared\KickoffMomItem;
+use App\Models\Tpv\IncidentCapa;
 use App\Models\Tpv\TpvGateAttendance;
 use App\Models\Tpv\TpvGateScan;
 use App\Models\Tpv\TpvOnboarding;
 use App\Models\Tpv\TpvSafetyStrike;
 use App\Models\Tpv\TpvWorker;
+use App\Models\Tpv\WorkPermit;
+use App\Models\Vendor\Vendor;
+use App\Models\Vendor\VendorDocument;
+use App\Models\Vendor\VendorScorecard;
+use App\Support\Shared\MomActionStatus;
 use App\Support\Tpv\GateDecision;
 use App\Support\Tpv\StrikeSeverity as Severity;
 use App\Support\Tpv\TpvOnboardingStatus as OnbStatus;
 use App\Support\Tpv\TpvWorkerStatus;
+use App\Support\Vendor\VendorStatus;
 use Carbon\CarbonImmutable;
 
 /**
@@ -30,15 +38,153 @@ class TpvDashboardService
     public function getDashboard(int $tenantId): array
     {
         return [
-            'kpis'                => $this->kpis($tenantId),
-            'onboarding_funnel'   => $this->onboardingFunnel($tenantId),
-            'onboarding_status'   => $this->onboardingStatus($tenantId),
-            'gate_activity'       => $this->gateActivity($tenantId),
-            'strike_severity'     => $this->strikeSeverity($tenantId),
-            'at_risk'             => $this->atRisk($tenantId),
+            'kpis' => $this->kpis($tenantId),
+            // §4/§37 Control Tower — executive KPIs, Action Centre, Risk breakdown.
+            'control_tower' => $this->controlTower($tenantId),
+            'action_centre' => $this->actionCentre($tenantId),
+            'risk_breakdown' => $this->riskBreakdown($tenantId),
+            'onboarding_funnel' => $this->onboardingFunnel($tenantId),
+            'onboarding_status' => $this->onboardingStatus($tenantId),
+            'gate_activity' => $this->gateActivity($tenantId),
+            'strike_severity' => $this->strikeSeverity($tenantId),
+            'at_risk' => $this->atRisk($tenantId),
             'workforce_by_vendor' => $this->workforceByVendor($tenantId),
-            'recent_denials'      => $this->recentDenials($tenantId),
+            'recent_denials' => $this->recentDenials($tenantId),
         ];
+    }
+
+    /**
+     * §4/§37 — the executive KPI layer of the Control Tower. Every number is a
+     * live count over what exists today; areas not yet built (NCR, contracts)
+     * are surfaced as 0/null so they light up automatically as later phases land,
+     * rather than being silently omitted.
+     */
+    private function controlTower(int $tenantId): array
+    {
+        $v = fn () => Vendor::forTenant($tenantId);
+        $today = now()->toDateString();
+        $soon = now()->addDays(self::EXPIRY_WINDOW_DAYS)->toDateString();
+
+        $activeWorkers = TpvWorker::forTenant($tenantId)->where('status', TpvWorkerStatus::ACTIVE);
+        $activeCount = (clone $activeWorkers)->count();
+
+        // Readiness % over the active workforce (0 workers → null, not a fake 0%).
+        $medicalOk = (clone $activeWorkers)
+            ->whereHas('medical', fn ($q) => $q->whereDate('valid_until', '>=', $today)
+                ->whereIn('fitness_status', ['Fit', 'Fit_With_Restrictions']))->count();
+        $trainingOk = (clone $activeWorkers)
+            ->whereHas('induction', fn ($q) => $q->where('passed', true))->count();
+
+        $latestPeriod = VendorScorecard::where('tenant_id', $tenantId)->max('period');
+        $avgPerf = $latestPeriod
+            ? (int) round(VendorScorecard::where('tenant_id', $tenantId)->where('period', $latestPeriod)->avg('overall_score'))
+            : null;
+
+        return [
+            'vendors' => [
+                'total' => (clone $v())->count(),
+                'active' => (clone $v())->where('status', VendorStatus::ACTIVE)->count(),
+                'pending' => (clone $v())->whereIn('status', [VendorStatus::DRAFT, VendorStatus::PENDING_APPROVAL])->count(),
+                'suspended' => (clone $v())->where('status', VendorStatus::SUSPENDED)->count(),
+                'blacklisted' => (clone $v())->where('status', VendorStatus::BLACKLISTED)->count(),
+                'offboarded' => (clone $v())->where('status', VendorStatus::OFFBOARDED)->count(),
+                'temporary' => (clone $v())->temporary()->count(),
+                'high_risk' => (clone $v())->whereIn('risk_level', ['High', 'Critical'])->count(),
+                'expiring' => (clone $v())->temporary()
+                    ->whereNotNull('access_expires_at')
+                    ->whereBetween('access_expires_at', [$today, $soon])->count(),
+            ],
+            'workforce' => [
+                'total' => TpvWorker::forTenant($tenantId)->count(),
+                'active' => $activeCount,
+                'on_site_now' => TpvGateAttendance::forTenant($tenantId)->forDate($today)->onSite()->count(),
+            ],
+            'readiness' => [
+                'training_pct' => $activeCount ? (int) round($trainingOk / $activeCount * 100) : null,
+                'medical_pct' => $activeCount ? (int) round($medicalOk / $activeCount * 100) : null,
+            ],
+            'open' => [
+                'actions' => KickoffMomItem::where('tenant_id', $tenantId)
+                    ->whereIn('status', MomActionStatus::OPEN_STATES)->count(),
+                'overdue_actions' => KickoffMomItem::where('tenant_id', $tenantId)
+                    ->whereIn('status', MomActionStatus::OPEN_STATES)
+                    ->whereNotNull('target_date')->whereDate('target_date', '<', $today)->count(),
+                'capas' => IncidentCapa::where('tenant_id', $tenantId)
+                    ->whereNotIn('status', ['Done', 'Verified'])->count(),
+                'ncrs' => 0, // §24 NCR entity not yet built (Phase 6).
+                'active_permits' => WorkPermit::where('tenant_id', $tenantId)
+                    ->whereIn('status', ['Approved', 'Active'])
+                    ->where(fn ($q) => $q->whereNull('valid_to')->orWhereDate('valid_to', '>=', $today))->count(),
+                'total_strikes' => TpvSafetyStrike::forTenant($tenantId)->active()->count(),
+            ],
+            'performance' => [
+                'avg_score' => $avgPerf,
+                'period' => $latestPeriod,
+            ],
+        ];
+    }
+
+    /**
+     * §4 Action Centre — one queue of everything waiting on a human, each row a
+     * count + the page that clears it. Ordered most-urgent first.
+     */
+    private function actionCentre(int $tenantId): array
+    {
+        $today = now()->toDateString();
+        $week = now()->addDays(7)->toDateString();
+        $soon = now()->addDays(self::EXPIRY_WINDOW_DAYS)->toDateString();
+
+        $rows = [
+            ['key' => 'approvals', 'label' => 'Approvals pending', 'path' => '/app/tpv/approvals',
+                'count' => TpvOnboarding::forTenant($tenantId)
+                    ->whereIn('status', [OnbStatus::SUBMITTED, OnbStatus::UNDER_REVIEW])->count()
+                    + WorkPermit::where('tenant_id', $tenantId)->where('status', 'Requested')->count()],
+            ['key' => 'documents', 'label' => 'Documents pending review', 'path' => '/app/tpv/vendors',
+                'count' => VendorDocument::where('tenant_id', $tenantId)
+                    ->whereNotIn('status', ['Approved', 'Rejected'])->count()],
+            ['key' => 'docs_expiring', 'label' => 'Documents expiring (30d)', 'path' => '/app/tpv/vendors',
+                'count' => VendorDocument::where('tenant_id', $tenantId)->where('status', 'Approved')
+                    ->whereNotNull('expires_at')->whereBetween('expires_at', [$today, $soon])->count()],
+            ['key' => 'workforce', 'label' => 'Workforce pending approval', 'path' => '/app/tpv/workforce',
+                'count' => TpvWorker::forTenant($tenantId)->where('status', TpvWorkerStatus::DRAFT)->count()],
+            ['key' => 'training', 'label' => 'Training pending', 'path' => '/app/tpv/workforce',
+                'count' => TpvWorker::forTenant($tenantId)->where('status', TpvWorkerStatus::ACTIVE)
+                    ->whereDoesntHave('induction', fn ($q) => $q->where('passed', true))->count()],
+            ['key' => 'medical', 'label' => 'Medical expiring/expired', 'path' => '/app/tpv/workforce',
+                'count' => TpvWorker::forTenant($tenantId)->where('status', TpvWorkerStatus::ACTIVE)
+                    ->whereDoesntHave('medical', fn ($q) => $q->whereDate('valid_until', '>=', $soon))->count()],
+            ['key' => 'capa_overdue', 'label' => 'CAPA overdue', 'path' => '/app/tpv/incidents',
+                'count' => IncidentCapa::where('tenant_id', $tenantId)->whereNotIn('status', ['Done', 'Verified'])
+                    ->whereNotNull('due_date')->whereDate('due_date', '<', $today)->count()],
+            ['key' => 'mom_actions_overdue', 'label' => 'Meeting actions overdue', 'path' => '/app/tpv/kickoff',
+                'count' => KickoffMomItem::where('tenant_id', $tenantId)->whereIn('status', MomActionStatus::OPEN_STATES)
+                    ->whereNotNull('target_date')->whereDate('target_date', '<', $today)->count()],
+            ['key' => 'permit_expiry', 'label' => 'Permits expiring (7d)', 'path' => '/app/tpv/permits',
+                'count' => WorkPermit::where('tenant_id', $tenantId)->whereIn('status', ['Approved', 'Active'])
+                    ->whereNotNull('valid_to')->whereBetween('valid_to', [$today, $week])->count()],
+            ['key' => 'renewal_due', 'label' => 'Temporary vendors expiring (7d)', 'path' => '/app/tpv/temporary',
+                'count' => Vendor::forTenant($tenantId)->temporary()->whereNotNull('access_expires_at')
+                    ->whereBetween('access_expires_at', [$today, $week])->count()],
+        ];
+
+        // Surface only what needs attention; a zeroed row is noise on a to-do list.
+        return array_values(array_filter($rows, fn ($r) => $r['count'] > 0));
+    }
+
+    /**
+     * §4 Risk dashboard — vendors by classification. Fixed Critical→Low order,
+     * plus the unclassified bucket so the total always reconciles to Vendor count.
+     */
+    private function riskBreakdown(int $tenantId): array
+    {
+        $rows = Vendor::forTenant($tenantId)
+            ->selectRaw('risk_level, COUNT(*) as count')
+            ->groupBy('risk_level')->get()
+            ->mapWithKeys(fn ($r) => [($r->risk_level ?: 'Unclassified') => (int) $r->count]);
+
+        return collect(['Critical', 'High', 'Medium', 'Low', 'Unclassified'])
+            ->map(fn ($lvl) => ['level' => $lvl, 'count' => (int) ($rows[$lvl] ?? 0)])
+            ->all();
     }
 
     /** Headline numbers. */
@@ -48,28 +194,28 @@ class TpvDashboardService
 
         return [
             // Live site state.
-            'on_site_now'      => TpvGateAttendance::forTenant($tenantId)->forDate($today)->onSite()->count(),
+            'on_site_now' => TpvGateAttendance::forTenant($tenantId)->forDate($today)->onSite()->count(),
             'checked_in_today' => TpvGateAttendance::forTenant($tenantId)->forDate($today)->count(),
-            'active_workers'   => TpvWorker::forTenant($tenantId)->where('status', TpvWorkerStatus::ACTIVE)->count(),
+            'active_workers' => TpvWorker::forTenant($tenantId)->where('status', TpvWorkerStatus::ACTIVE)->count(),
 
             // Queue waiting on a human.
-            'awaiting_review'  => TpvOnboarding::forTenant($tenantId)
-                                      ->whereIn('status', [OnbStatus::SUBMITTED, OnbStatus::UNDER_REVIEW])->count(),
+            'awaiting_review' => TpvOnboarding::forTenant($tenantId)
+                ->whereIn('status', [OnbStatus::SUBMITTED, OnbStatus::UNDER_REVIEW])->count(),
             'approved_vendors' => TpvOnboarding::forTenant($tenantId)->where('status', OnbStatus::APPROVED)->count(),
 
             // Safety.
-            'active_strikes'   => TpvSafetyStrike::forTenant($tenantId)->active()->count(),
-            'at_risk'          => $this->atRiskQuery($tenantId)->count(),
-            'terminations'     => TpvSafetyStrike::forTenant($tenantId)->where('triggered_termination', true)->count(),
+            'active_strikes' => TpvSafetyStrike::forTenant($tenantId)->active()->count(),
+            'at_risk' => $this->atRiskQuery($tenantId)->count(),
+            'terminations' => TpvSafetyStrike::forTenant($tenantId)->where('triggered_termination', true)->count(),
 
             // Attention counters.
-            'denied_today'     => TpvGateScan::forTenant($tenantId)->whereDate('scanned_at', $today)->denied()->count(),
-            'badges_expiring'  => TpvWorker::forTenant($tenantId)
-                                      ->where('status', TpvWorkerStatus::ACTIVE)
-                                      ->whereNotNull('badge_valid_until')
-                                      ->whereDate('badge_valid_until', '>=', now())
-                                      ->whereDate('badge_valid_until', '<=', now()->addDays(self::EXPIRY_WINDOW_DAYS))
-                                      ->count(),
+            'denied_today' => TpvGateScan::forTenant($tenantId)->whereDate('scanned_at', $today)->denied()->count(),
+            'badges_expiring' => TpvWorker::forTenant($tenantId)
+                ->where('status', TpvWorkerStatus::ACTIVE)
+                ->whereNotNull('badge_valid_until')
+                ->whereDate('badge_valid_until', '>=', now())
+                ->whereDate('badge_valid_until', '<=', now()->addDays(self::EXPIRY_WINDOW_DAYS))
+                ->count(),
         ];
     }
 
@@ -101,8 +247,8 @@ class TpvDashboardService
         // Fixed order so the strip is stable regardless of what exists.
         return collect(OnbStatus::ALL)->map(fn ($s) => [
             'status' => $s,
-            'label'  => OnbStatus::label($s),
-            'count'  => (int) ($rows[$s]->count ?? 0),
+            'label' => OnbStatus::label($s),
+            'count' => (int) ($rows[$s]->count ?? 0),
         ])->filter(fn ($r) => $r['count'] > 0)->values()->all();
     }
 
@@ -117,14 +263,14 @@ class TpvDashboardService
     {
         $out = [];
         for ($i = 6; $i >= 0; $i--) {
-            $day   = CarbonImmutable::now()->subDays($i);
+            $day = CarbonImmutable::now()->subDays($i);
             $scans = TpvGateScan::forTenant($tenantId)->whereDate('scanned_at', $day->toDateString());
 
             $out[] = [
-                'day'      => $day->format('D'),
-                'date'     => $day->toDateString(),
+                'day' => $day->format('D'),
+                'date' => $day->toDateString(),
                 'admitted' => (clone $scans)->whereIn('decision', GateDecision::PERMITS_ENTRY)->count(),
-                'refused'  => (clone $scans)->where('decision', GateDecision::DENY)->count(),
+                'refused' => (clone $scans)->where('decision', GateDecision::DENY)->count(),
             ];
         }
 
@@ -140,8 +286,8 @@ class TpvDashboardService
 
         return collect(Severity::ALL)->map(fn ($s) => [
             'severity' => $s,
-            'label'    => Severity::label($s),
-            'count'    => (int) ($rows[$s]->count ?? 0),
+            'label' => Severity::label($s),
+            'count' => (int) ($rows[$s]->count ?? 0),
         ])->all();
     }
 
@@ -163,13 +309,13 @@ class TpvDashboardService
             ->with(['vendor:id,company_name', 'strikes' => fn ($q) => $q->whereNull('voided_at')])
             ->limit(8)->get()
             ->map(fn ($w) => [
-                'id'             => $w->id,
-                'name'           => $w->name,
-                'worker_code'    => $w->worker_code,
-                'badge_number'   => $w->badge_number,
-                'vendor'         => $w->vendor?->company_name,
+                'id' => $w->id,
+                'name' => $w->name,
+                'worker_code' => $w->worker_code,
+                'badge_number' => $w->badge_number,
+                'vendor' => $w->vendor?->company_name,
                 'active_strikes' => $w->strikes->count(),
-                'limit'          => Severity::LIMIT,
+                'limit' => Severity::LIMIT,
             ])
             ->sortByDesc('active_strikes')->values()->all();
     }
@@ -198,8 +344,8 @@ class TpvDashboardService
             ->groupBy('vendor_id')->pluck('c', 'vendor_id');
 
         return $rows->map(fn ($r) => [
-            'name'    => $r->vendor?->company_name ?? 'Unknown',
-            'code'    => $r->vendor?->vendor_code,
+            'name' => $r->vendor?->company_name ?? 'Unknown',
+            'code' => $r->vendor?->vendor_code,
             'workers' => (int) $r->workers,
             'on_site' => (int) ($onSiteByVendor[$r->vendor_id] ?? 0),
         ])->all();
@@ -212,12 +358,12 @@ class TpvDashboardService
             ->with('worker:id,name,worker_code')
             ->latest('scanned_at')->limit(6)->get()
             ->map(fn ($s) => [
-                'id'          => $s->id,
-                'worker'      => $s->worker?->name ?? 'Unknown badge',
+                'id' => $s->id,
+                'worker' => $s->worker?->name ?? 'Unknown badge',
                 'worker_code' => $s->worker?->worker_code,
-                'gate'        => $s->gate,
-                'reasons'     => $s->reasons ?? [],
-                'scanned_at'  => $s->scanned_at,
+                'gate' => $s->gate,
+                'reasons' => $s->reasons ?? [],
+                'scanned_at' => $s->scanned_at,
             ])->all();
     }
 }
