@@ -259,6 +259,20 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::post('/vendors/{purchaseVendor}/compliance',           [\App\Http\Controllers\Api\Purchase\PurchaseComplianceController::class, 'upsert'])->whereNumber('purchaseVendor');
     Route::delete('/vendor-compliance/{compliance}',              [\App\Http\Controllers\Api\Purchase\PurchaseComplianceController::class, 'destroy'])->whereNumber('compliance');
 
+    // ── Non-Conformance Reports (mirror of TPV §24 — purchase_ncrs) ─────────
+    Route::get('/ncrs',                    [\App\Http\Controllers\Api\Purchase\PurchaseNcrController::class, 'index']);
+    Route::post('/ncrs',                   [\App\Http\Controllers\Api\Purchase\PurchaseNcrController::class, 'store']);
+    Route::put('/ncrs/{ncr}',              [\App\Http\Controllers\Api\Purchase\PurchaseNcrController::class, 'update'])->whereNumber('ncr');
+    Route::post('/ncrs/{ncr}/transition',  [\App\Http\Controllers\Api\Purchase\PurchaseNcrController::class, 'transition'])->whereNumber('ncr');
+    Route::delete('/ncrs/{ncr}',           [\App\Http\Controllers\Api\Purchase\PurchaseNcrController::class, 'destroy'])->whereNumber('ncr');
+
+    // ── CAPA register (mirror of TPV §25 — purchase_capas) ─────────────────
+    Route::get('/capas',                   [\App\Http\Controllers\Api\Purchase\PurchaseCapaController::class, 'index']);
+    Route::post('/capas',                  [\App\Http\Controllers\Api\Purchase\PurchaseCapaController::class, 'store']);
+    Route::put('/capas/{capa}',            [\App\Http\Controllers\Api\Purchase\PurchaseCapaController::class, 'update'])->whereNumber('capa');
+    Route::post('/capas/{capa}/transition',[\App\Http\Controllers\Api\Purchase\PurchaseCapaController::class, 'transition'])->whereNumber('capa');
+    Route::delete('/capas/{capa}',         [\App\Http\Controllers\Api\Purchase\PurchaseCapaController::class, 'destroy'])->whereNumber('capa');
+
     // ── Kickoff meetings (Purchase-owned engine: purchase_kickoff_* tables) ─
     Route::get('/kickoff/stats',                   [PurchaseKickoffController::class, 'stats']);
     Route::get('/kickoff',                         [PurchaseKickoffController::class, 'index']);

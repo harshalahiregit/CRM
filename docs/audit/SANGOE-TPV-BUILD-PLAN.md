@@ -262,6 +262,13 @@ live vendor-status template, AI assist. Kickoff is now "Meetings → New → Typ
   Purchase DB, fully module-isolated. Verified via rolled-back tinker (14 cats, HSE Compliant / expired Licences→
   Expired / Non_Compliant Labour / untracked Under_Review, roster tracked 3 ok 1 problems 2 pct 7%, code PV-0001)
   + green build. **Parity mirror #1.**
-- [ ] Remaining Purchase mirrors: NCR · CAPA · Inspections · Violations/Strikes · Renewal · Offboarding ·
-  Document Vault · Analytics · Performance Index (VPI) · Communications · PPE-at-gate. (Purchase has its own
-  gate/PPE/worker stack, so those mirror onto `purchase_*` equivalents.)
+- [x] **§24 NCR + §25 CAPA — Purchase mirror** — `purchase_ncrs` (PNCR-YYYY-### ref, PurchaseNcr + service +
+  controller, Raised→…→Closed with close-guard) and `purchase_capas` (PCAPA-YYYY-### ref, `PurchaseCapaSource`
+  isolated catalogue mapping ncr→PurchaseNcr / meeting→PurchaseKickoffMeeting, PurchaseCapa + service +
+  controller, Open→…→Verified with Rule-12 evidence gate + `raiseFrom`). Routes `/purchase/ncrs` +
+  `/purchase/capas`, purchaseApi `ncrs`/`capas`, and NCR + CAPA pages in the Purchase nav (teal). Verified via
+  rolled-back tinker (PNCR-2026-001 overdue + close-guard + close, PCAPA-2026-001 raiseFrom-NCR link, evidence
+  gate blocks then passes, stats, filters) + green build. **Parity mirrors #2 & #3.**
+- [ ] Remaining Purchase mirrors: Inspections · Violations/Strikes · Renewal · Offboarding · Document Vault ·
+  Analytics · Performance Index (VPI) · Communications · PPE-at-gate. (Purchase has its own gate/PPE/worker
+  stack, so those mirror onto `purchase_*` equivalents.)

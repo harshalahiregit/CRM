@@ -329,6 +329,24 @@ export const purchaseApi = {
     delete: (complianceId)      => api.delete(`/purchase/vendor-compliance/${complianceId}`).then(r => r.data),
   },
 
+  // ── Non-Conformance Reports (mirror of TPV §24 — purchase_ncrs) ─────────
+  ncrs: {
+    list:       (params = {}) => api.get('/purchase/ncrs', { params }).then(r => r.data),
+    create:     (data)        => api.post('/purchase/ncrs', data).then(r => r.data),
+    update:     (id, data)    => api.put(`/purchase/ncrs/${id}`, data).then(r => r.data),
+    transition: (id, data)    => api.post(`/purchase/ncrs/${id}/transition`, data).then(r => r.data),
+    delete:     (id)          => api.delete(`/purchase/ncrs/${id}`).then(r => r.data),
+  },
+
+  // ── CAPA register (mirror of TPV §25 — purchase_capas) ─────────────────
+  capas: {
+    list:       (params = {}) => api.get('/purchase/capas', { params }).then(r => r.data),
+    create:     (data)        => api.post('/purchase/capas', data).then(r => r.data),
+    update:     (id, data)    => api.put(`/purchase/capas/${id}`, data).then(r => r.data),
+    transition: (id, data)    => api.post(`/purchase/capas/${id}/transition`, data).then(r => r.data),
+    delete:     (id)          => api.delete(`/purchase/capas/${id}`).then(r => r.data),
+  },
+
   onboarding: {
     list:     (params = {}) => api.get('/purchase/onboarding', { params }).then(r => r.data),
     stats:    ()            => api.get('/purchase/onboarding/stats').then(r => r.data),
