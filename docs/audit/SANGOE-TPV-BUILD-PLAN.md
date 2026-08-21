@@ -123,8 +123,14 @@ live vendor-status template, AI assist. Kickoff is now "Meetings → New → Typ
   enforcement path. Controller + routes + a **Work Authorization** page (roster with authorized/blocked +
   expandable per-check breakdown, required vs advisory) as the first Work-Control item. Verified via tinker
   (full check breakdown, roster) + green build.
-- [ ] **Rule 5 PPE-at-gate** — enforce mandatory PPE at gate scan (today only at badge issue). Deferred:
-  this MODIFIES GateScanService enforcement — its own slice with gate-harness verification.
+- [x] **Rule 5 PPE-at-gate** — the site gate now checks mandatory PPE. `GateScanService::evaluate()` calls
+  `PpeInventoryService::missingMandatoryFor($worker)` and, per new config `tpv.gate.ppe_enforcement`
+  (`warn` default / `deny` / `off`, env `TPV_GATE_PPE_ENFORCEMENT`), adds a warn or deny reason listing the
+  missing items. The check is wrapped in try/catch so a PPE-subsystem failure can never turn away an
+  otherwise-clear worker (falls back to Admit + logs). Backend-only — the existing gate scan/guard UI already
+  renders `reasons`, so the message surfaces without a frontend change. Gate-harness verified (rolled-back):
+  baseline Admit; warn→Warn (entry allowed, items listed); deny→Deny (checkIn refused); off→Admit;
+  hard-deny (terminated) still wins with PPE reason appended; PPE-service-throws → resilient Admit.
 - [ ] Permit types add isolation/shutdown/critical; link Permit↔Worker↔Gate (deferred with PPE-at-gate).
 
 ## Phase 6 — Corrective-action completeness
