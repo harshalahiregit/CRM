@@ -121,8 +121,13 @@ class PublicMomViewTest extends TestCase
         $token   = $meeting->subjects->first()->ack_token;
 
         $this->get('/api/kickoff/ack/'.Str::random(48).'/mom')->assertNotFound();
-        // One character changed — must not resolve.
-        $this->get('/api/kickoff/ack/'.substr($token, 0, 47).'X/mom')->assertNotFound();
+        // One character changed — must not resolve. The replacement is chosen
+        // against the original character rather than hard-coded: tokens are
+        // alphanumeric, so a fixed 'X' silently rebuilt the REAL token on the
+        // ~1-in-62 of runs where the token already ended in one, and the test
+        // failed claiming a tampered token had resolved.
+        $this->get('/api/kickoff/ack/'.substr($token, 0, 47).($token[47] === 'X' ? 'Y' : 'X').'/mom')
+            ->assertNotFound();
     }
 
     /**
