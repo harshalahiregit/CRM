@@ -31,6 +31,13 @@ export const tpvApi = {
     update: (id, data)    => api.put(`/tpv/work-orders/${id}`, data).then(r => r.data),
     delete: (id)          => api.delete(`/tpv/work-orders/${id}`).then(r => r.data),
   },
+  // Compliance engine (Sangoe TPV §21) — per-vendor 14-category register.
+  vendorCompliance: {
+    roster: ()             => api.get('/tpv/vendor-compliance').then(r => r.data),
+    matrix: (vendorId)     => api.get(`/tpv/vendors/${vendorId}/compliance`).then(r => r.data),
+    upsert: (vendorId, data) => api.post(`/tpv/vendors/${vendorId}/compliance`, data).then(r => r.data),
+    delete: (id)           => api.delete(`/tpv/vendor-compliance/${id}`).then(r => r.data),
+  },
   // Offboarding / Closure (Sangoe TPV §29).
   offboardings: {
     list:           (params = {}) => api.get('/tpv/offboardings', { params }).then(r => r.data),
