@@ -98,6 +98,11 @@ export const tpvApi = {
     list:   (params = {}) => api.get('/tpv/document-vault', { params }).then(r => r.data),
     vendor: (vendorId)    => api.get(`/tpv/vendors/${vendorId}/vault`).then(r => r.data),
   },
+  // Reports & Analytics (Sangoe TPV §33) — trend/benchmark analytics + CSV export.
+  analytics: {
+    get:    (params = {})  => api.get('/tpv/analytics', { params }).then(r => r.data),
+    export: (dataset)      => api.get('/tpv/analytics/export', { params: { dataset }, responseType: 'blob' }).then(r => r.data),
+  },
   // Unified Work Authorization (Sangoe TPV §19) — read-only composite verdict.
   workAuthorization: {
     roster: (params = {}) => api.get('/tpv/work-authorization', { params }).then(r => r.data?.data ?? r.data),

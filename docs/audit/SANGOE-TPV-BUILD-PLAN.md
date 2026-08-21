@@ -206,7 +206,14 @@ live vendor-status template, AI assist. Kickoff is now "Meetings → New → Typ
   uploader-name resolve, source/expiry filters, vendor vault grouping) + green build.
 - [~] **§31 Communications** — in-app feed + SMS/WhatsApp + expiry/incident/strike/CAPA/renewal notifications.
 - [~] **§32 Vendor Portal** — add respond-to-NCR, submit-CAPA-evidence, view meetings/MOM, respond-to-actions.
-- [~] **§33 Reports & Analytics** — trend/benchmark analytics + CSV/Excel export (today print-PDF only).
+- [x] **§33 Reports & Analytics** — a new Analytics hub added ADDITIVELY (the DPR/WPR/MCR print report at
+  `/reports` is untouched): `TpvAnalyticsService` computes cross-module overview (portfolio by status,
+  governance open/overdue NCR/CAPA/violation/inspection, compliance %), a 6-month month-over-month trend
+  series (NCRs/CAPAs/violations/inspections), a per-vendor benchmark leaderboard (compliance %, open NCRs/CAPAs,
+  violation points — worst-first), and CSV export of 6 datasets (vendors/ncrs/capas/violations/inspections/
+  benchmark) via an RFC-4180 writer + attachment response. Read-only. Analytics page = KPI row + stacked trend
+  bars + CSV export bar + benchmark table, under Intelligence → Analytics. Verified via rolled-back tinker
+  (overview, 6-month trends Mar–Aug, 8-vendor benchmark, CSV header/rows, multi-dataset export) + green build.
 
 ## Cross-cutting — the 12 Critical Business Rules (§36)
 

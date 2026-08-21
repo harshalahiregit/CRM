@@ -301,6 +301,7 @@ const TpvReports = lazy(() => import('@/modules/tpv/pages/TpvReports'))
 const TpvSiteRegisters = lazy(() => import('@/modules/tpv/pages/TpvSiteRegisters'))
 const TpvEvidenceLocker = lazy(() => import('@/modules/tpv/pages/TpvEvidenceLocker'))
 const TpvDocumentVault = lazy(() => import('@/modules/tpv/pages/TpvDocumentVault'))
+const TpvAnalytics = lazy(() => import('@/modules/tpv/pages/TpvAnalytics'))
 const TpvAuthorityMatrix = lazy(() => import('@/modules/tpv/pages/TpvAuthorityMatrix'))
 // Vendor-scoped Workforce workspace — its own rail, entered after Onboarding Step-6.
 const WorkforceLayout = lazy(() => import('@/modules/tpv/WorkforceLayout'))
@@ -675,6 +676,7 @@ export default function AppRoutes() {
           <Route path="site-registers" element={<S><TpvSiteRegisters /></S>} />
           <Route path="evidence" element={<S><TpvEvidenceLocker /></S>} />
           <Route path="document-vault" element={<S><TpvDocumentVault /></S>} />
+          <Route path="analytics" element={<S><TpvAnalytics /></S>} />
           <Route path="authority-matrix" element={<S><TpvAuthorityMatrix /></S>} />
         </Route>
 
