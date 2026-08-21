@@ -263,6 +263,13 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::get('/work-authorization',                     [\App\Http\Controllers\Api\Tpv\TpvWorkAuthorizationController::class, 'index']);
     Route::get('/workers/{worker}/authorization',         [\App\Http\Controllers\Api\Tpv\TpvWorkAuthorizationController::class, 'worker'])->where('worker', '[0-9]+');
 
+    // Non-Conformance Reports (Sangoe TPV §24).
+    Route::get('/ncrs',                                   [\App\Http\Controllers\Api\Tpv\TpvNcrController::class, 'index']);
+    Route::post('/ncrs',                                  [\App\Http\Controllers\Api\Tpv\TpvNcrController::class, 'store']);
+    Route::put('/ncrs/{ncr}',                             [\App\Http\Controllers\Api\Tpv\TpvNcrController::class, 'update'])->where('ncr', '[0-9]+');
+    Route::post('/ncrs/{ncr}/transition',                 [\App\Http\Controllers\Api\Tpv\TpvNcrController::class, 'transition'])->where('ncr', '[0-9]+');
+    Route::delete('/ncrs/{ncr}',                          [\App\Http\Controllers\Api\Tpv\TpvNcrController::class, 'destroy'])->where('ncr', '[0-9]+');
+
     // Permit-to-Work + JSA (Doc_4 Phase 5). Approval requires a JSA and refuses a
     // suspended vendor; a permit expires at its validity window.
     Route::get('/permits',                                [\App\Http\Controllers\Api\Tpv\PermitController::class, 'index']);

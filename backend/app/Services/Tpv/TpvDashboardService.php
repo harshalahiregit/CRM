@@ -6,6 +6,7 @@ use App\Models\Shared\KickoffMomItem;
 use App\Models\Tpv\IncidentCapa;
 use App\Models\Tpv\TpvGateAttendance;
 use App\Models\Tpv\TpvGateScan;
+use App\Models\Tpv\TpvNcr;
 use App\Models\Tpv\TpvOnboarding;
 use App\Models\Tpv\TpvSafetyStrike;
 use App\Models\Tpv\TpvWorker;
@@ -111,7 +112,7 @@ class TpvDashboardService
                     ->whereNotNull('target_date')->whereDate('target_date', '<', $today)->count(),
                 'capas' => IncidentCapa::where('tenant_id', $tenantId)
                     ->whereNotIn('status', ['Done', 'Verified'])->count(),
-                'ncrs' => 0, // §24 NCR entity not yet built (Phase 6).
+                'ncrs' => TpvNcr::forTenant($tenantId)->where('status', '!=', 'Closed')->count(),
                 'active_permits' => WorkPermit::where('tenant_id', $tenantId)
                     ->whereIn('status', ['Approved', 'Active'])
                     ->where(fn ($q) => $q->whereNull('valid_to')->orWhereDate('valid_to', '>=', $today))->count(),
@@ -155,6 +156,9 @@ class TpvDashboardService
                     ->whereDoesntHave('medical', fn ($q) => $q->whereDate('valid_until', '>=', $soon))->count()],
             ['key' => 'capa_overdue', 'label' => 'CAPA overdue', 'path' => '/app/tpv/incidents',
                 'count' => IncidentCapa::where('tenant_id', $tenantId)->whereNotIn('status', ['Done', 'Verified'])
+                    ->whereNotNull('due_date')->whereDate('due_date', '<', $today)->count()],
+            ['key' => 'ncr_overdue', 'label' => 'NCR overdue', 'path' => '/app/tpv/ncr',
+                'count' => TpvNcr::forTenant($tenantId)->where('status', '!=', 'Closed')
                     ->whereNotNull('due_date')->whereDate('due_date', '<', $today)->count()],
             ['key' => 'mom_actions_overdue', 'label' => 'Meeting actions overdue', 'path' => '/app/tpv/kickoff',
                 'count' => KickoffMomItem::where('tenant_id', $tenantId)->whereIn('status', MomActionStatus::OPEN_STATES)
