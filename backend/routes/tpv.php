@@ -282,6 +282,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::get('/document-vault',                         [\App\Http\Controllers\Api\Tpv\TpvDocumentVaultController::class, 'index']);
     Route::get('/vendors/{vendor}/vault',                 [\App\Http\Controllers\Api\Tpv\TpvDocumentVaultController::class, 'vendor'])->where('vendor', '[0-9]+');
 
+    // Reports & Analytics (Sangoe TPV §33) — trend/benchmark analytics + CSV export.
+    Route::get('/analytics',                              [\App\Http\Controllers\Api\Tpv\TpvAnalyticsController::class, 'index']);
+    Route::get('/analytics/export',                       [\App\Http\Controllers\Api\Tpv\TpvAnalyticsController::class, 'export']);
+
     // Inspections & Audits (Sangoe TPV §22) — Plan→Inspect→Finding→Action→CAPA/NCR→Close.
     Route::get('/inspections',                            [\App\Http\Controllers\Api\Tpv\TpvInspectionController::class, 'index']);
     Route::post('/inspections',                           [\App\Http\Controllers\Api\Tpv\TpvInspectionController::class, 'store']);
