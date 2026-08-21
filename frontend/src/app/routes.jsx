@@ -221,6 +221,7 @@ const PurchaseContracts = lazy(() => import('@/modules/purchase/pages/PurchaseCo
 const PurchaseComplianceRegister = lazy(() => import('@/modules/purchase/pages/PurchaseComplianceRegister'))
 const PurchaseNcr = lazy(() => import('@/modules/purchase/pages/PurchaseNcr'))
 const PurchaseCapaRegister = lazy(() => import('@/modules/purchase/pages/PurchaseCapaRegister'))
+const PurchaseAnalytics = lazy(() => import('@/modules/purchase/pages/PurchaseAnalytics'))
 const PurchaseContractDetail = lazy(() => import('@/modules/purchase/pages/PurchaseContractDetail'))
 const PurchaseCatalog = lazy(() => import('@/modules/purchase/pages/PurchaseCatalog'))
 const PurchaseVendorItems = lazy(() => import('@/modules/purchase/pages/PurchaseVendorItems'))
@@ -583,6 +584,7 @@ export default function AppRoutes() {
           <Route path="compliance-register" element={<S><PurchaseComplianceRegister /></S>} />
           <Route path="ncr" element={<S><PurchaseNcr /></S>} />
           <Route path="capa" element={<S><PurchaseCapaRegister /></S>} />
+          <Route path="analytics" element={<S><PurchaseAnalytics /></S>} />
           {/* Purchase Vendors — Purchase-owned pages on /api/purchase/* (no TPV). */}
           <Route path="vendors" element={<S><PurchaseVendors /></S>} />
           {/* Vendor Detail workspace — persistent left sidebar + deep-linkable nested tabs */}

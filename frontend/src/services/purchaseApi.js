@@ -347,6 +347,12 @@ export const purchaseApi = {
     delete:     (id)          => api.delete(`/purchase/capas/${id}`).then(r => r.data),
   },
 
+  // ── Governance analytics (mirror of TPV §33 — distinct from procurement reports) ─
+  analytics: {
+    get:    (params = {}) => api.get('/purchase/analytics', { params }).then(r => r.data),
+    export: (dataset)     => api.get('/purchase/analytics/export', { params: { dataset }, responseType: 'blob' }).then(r => r.data),
+  },
+
   onboarding: {
     list:     (params = {}) => api.get('/purchase/onboarding', { params }).then(r => r.data),
     stats:    ()            => api.get('/purchase/onboarding/stats').then(r => r.data),
