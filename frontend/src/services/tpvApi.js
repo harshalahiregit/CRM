@@ -93,6 +93,11 @@ export const tpvApi = {
     transition: (id, data)    => api.post(`/tpv/capas/${id}/transition`, data).then(r => r.data),
     delete:     (id)          => api.delete(`/tpv/capas/${id}`).then(r => r.data),
   },
+  // Unified Document Vault (Sangoe TPV §30) — read-only aggregator + expiry.
+  documentVault: {
+    list:   (params = {}) => api.get('/tpv/document-vault', { params }).then(r => r.data),
+    vendor: (vendorId)    => api.get(`/tpv/vendors/${vendorId}/vault`).then(r => r.data),
+  },
   // Unified Work Authorization (Sangoe TPV §19) — read-only composite verdict.
   workAuthorization: {
     roster: (params = {}) => api.get('/tpv/work-authorization', { params }).then(r => r.data?.data ?? r.data),

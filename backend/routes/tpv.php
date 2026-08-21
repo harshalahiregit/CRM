@@ -277,6 +277,11 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::post('/capas/{capa}/transition',               [\App\Http\Controllers\Api\Tpv\TpvCapaController::class, 'transition'])->where('capa', '[0-9]+');
     Route::delete('/capas/{capa}',                        [\App\Http\Controllers\Api\Tpv\TpvCapaController::class, 'destroy'])->where('capa', '[0-9]+');
 
+    // Document Vault (Sangoe TPV §30) — read-only unified lens over statutory
+    // docs, the evidence locker, and CAPA/NCR closure evidence, with expiry.
+    Route::get('/document-vault',                         [\App\Http\Controllers\Api\Tpv\TpvDocumentVaultController::class, 'index']);
+    Route::get('/vendors/{vendor}/vault',                 [\App\Http\Controllers\Api\Tpv\TpvDocumentVaultController::class, 'vendor'])->where('vendor', '[0-9]+');
+
     // Inspections & Audits (Sangoe TPV §22) — Plan→Inspect→Finding→Action→CAPA/NCR→Close.
     Route::get('/inspections',                            [\App\Http\Controllers\Api\Tpv\TpvInspectionController::class, 'index']);
     Route::post('/inspections',                           [\App\Http\Controllers\Api\Tpv\TpvInspectionController::class, 'store']);
