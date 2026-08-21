@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\Tpv;
 
+use App\Http\Controllers\Concerns\AssertsTenantOwnership;
 use App\Http\Controllers\Controller;
 use App\Models\Tpv\TpvVendorCompliance;
 use App\Models\Vendor\Vendor;
@@ -13,6 +14,8 @@ use Illuminate\Validation\Rule;
 /** TPV Compliance engine (Sangoe TPV §21). Tenant-scoped. */
 class TpvComplianceController extends Controller
 {
+    use AssertsTenantOwnership;
+
     public function __construct(private TpvComplianceService $service) {}
 
     public function index(Request $request)

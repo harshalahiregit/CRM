@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\Tpv;
 
+use App\Http\Controllers\Concerns\AssertsTenantOwnership;
 use App\Http\Controllers\Controller;
 use App\Models\Tpv\TpvVendorViolation;
 use App\Models\Vendor\Vendor;
@@ -13,6 +14,8 @@ use Illuminate\Validation\Rule;
 /** TPV Vendor Violations & Strike escalation (Sangoe TPV §26). Tenant-scoped. */
 class TpvViolationController extends Controller
 {
+    use AssertsTenantOwnership;
+
     public function __construct(private TpvViolationService $service) {}
 
     public function index(Request $request)
