@@ -31,6 +31,15 @@ export const tpvApi = {
     update: (id, data)    => api.put(`/tpv/work-orders/${id}`, data).then(r => r.data),
     delete: (id)          => api.delete(`/tpv/work-orders/${id}`).then(r => r.data),
   },
+  // Vendor Violations & Strike escalation (Sangoe TPV §26).
+  violations: {
+    list:       (params = {}) => api.get('/tpv/violations', { params }).then(r => r.data),
+    record:     (data)        => api.post('/tpv/violations', data).then(r => r.data),
+    update:     (id, data)    => api.put(`/tpv/violations/${id}`, data).then(r => r.data),
+    delete:     (id)          => api.delete(`/tpv/violations/${id}`).then(r => r.data),
+    escalation: (vendorId)    => api.get(`/tpv/vendors/${vendorId}/escalation`).then(r => r.data),
+    enforce:    (vendorId, data) => api.post(`/tpv/vendors/${vendorId}/enforce`, data).then(r => r.data),
+  },
   // Inspections & Audits (Sangoe TPV §22).
   inspections: {
     list:   (params = {}) => api.get('/tpv/inspections', { params }).then(r => r.data),

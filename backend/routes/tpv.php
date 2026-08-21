@@ -281,6 +281,14 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::delete('/inspection-findings/{finding}',       [\App\Http\Controllers\Api\Tpv\TpvInspectionController::class, 'destroyFinding'])->where('finding', '[0-9]+');
     Route::post('/inspection-findings/{finding}/escalate', [\App\Http\Controllers\Api\Tpv\TpvInspectionController::class, 'escalateFinding'])->where('finding', '[0-9]+');
 
+    // Vendor Violations & Strike escalation (Sangoe TPV §26). Enforcement admin-gated.
+    Route::get('/violations',                             [\App\Http\Controllers\Api\Tpv\TpvViolationController::class, 'index']);
+    Route::post('/violations',                            [\App\Http\Controllers\Api\Tpv\TpvViolationController::class, 'store']);
+    Route::put('/violations/{violation}',                 [\App\Http\Controllers\Api\Tpv\TpvViolationController::class, 'update'])->where('violation', '[0-9]+');
+    Route::delete('/violations/{violation}',              [\App\Http\Controllers\Api\Tpv\TpvViolationController::class, 'destroy'])->where('violation', '[0-9]+');
+    Route::get('/vendors/{vendor}/escalation',            [\App\Http\Controllers\Api\Tpv\TpvViolationController::class, 'escalation'])->where('vendor', '[0-9]+');
+    Route::post('/vendors/{vendor}/enforce',              [\App\Http\Controllers\Api\Tpv\TpvViolationController::class, 'enforce'])->where('vendor', '[0-9]+');
+
     // Permit-to-Work + JSA (Doc_4 Phase 5). Approval requires a JSA and refuses a
     // suspended vendor; a permit expires at its validity window.
     Route::get('/permits',                                [\App\Http\Controllers\Api\Tpv\PermitController::class, 'index']);

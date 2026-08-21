@@ -146,8 +146,16 @@ live vendor-status template, AI assist. Kickoff is now "Meetings → New → Typ
   counts) + green build. Closes the Plan→Inspect→Finding→Action→NCR chain.
 - [~] **§25 CAPA generalisation** — decouple from incident-only; link audit/inspection/NCR/meeting/
   compliance-failure/repeated-violation; add immediate-correction, root-cause, effectiveness fields + **evidence files**.
-- [~] **§26 Strikes & Violations** — configurable violation catalogue + Warning→Strike1→2→3→Suspension→
-  Blacklist escalation (per project/client) + vendor `blacklist()` action. (Today: worker-level auto-terminate only.)
+- [x] **§26 Strikes & Violations** — vendor-level violation engine added ADDITIVELY (the worker-level
+  auto-terminate strike engine is untouched): `tpv_vendor_violations` (VIO-YYYY-### ref, `ViolationType`
+  catalogue [PPE/unauthorized-worker/expired-doc/unsafe-work/gate/security/environmental/repeated-
+  non-compliance/training], severity→points, polymorphic source, Open/Closed) + a points-based
+  escalation ladder Warning→Strike-1/2/3→Suspension→Blacklist (`ViolationType::levelFor`).
+  `TpvViolationService` (record/list/escalationFor/escalations + `enforce()` = suspend/**blacklist** via the
+  shared VendorService::suspend/updateStatus) + controller (enforcement admin-gated) + routes. Frontend:
+  **Violations & Strikes** page (per-vendor escalation ladder cards with suspend/blacklist actions at
+  threshold + violations list + record modal) in the Compliance cluster. Verified via rolled-back tinker
+  (6pts→Strike 2, 14pts→Blacklist, blacklist→vendor Blacklisted) + green build. Configurable thresholds later (Settings).
 
 ## Phase 7 — Governance polish
 
