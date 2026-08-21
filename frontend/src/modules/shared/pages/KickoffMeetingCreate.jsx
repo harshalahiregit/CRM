@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams, useParams } from 'react-router-dom'
 import {
   ArrowLeft, CalendarDays, Clock, MapPin, Users, Plus, Trash2,
   AlertTriangle, ChevronRight, Laptop, Building2, CheckCircle2, Send, Download,
-  FileText, History, RotateCcw,
+  FileText, History, RotateCcw, Sparkles,
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { kickoffApi } from '@/services/kickoffApi'
@@ -466,6 +466,30 @@ export default function KickoffMeetingCreate() {
       .catch(() => { if (live) setVendorStatus(null) })
     return () => { live = false }
   }, [form.subject_id])
+
+  // §18 AI — suggest an agenda from the meeting type + vendor status + open items.
+  const [aiBusy, setAiBusy] = useState(false)
+  const suggestAgenda = async () => {
+    setAiBusy(true); setErr(null)
+    try {
+      const d = await kickoffApi.aiSuggestAgenda({
+        meeting_type: form.meeting_type,
+        subject_type: form.subject_id ? 'vendor' : undefined,
+        subject_id: form.subject_id || undefined,
+      })
+      const items = d?.items || []
+      if (items.length === 0) { setErr('The AI did not return any agenda items — try Load template.'); return }
+      setAgendaItems(prev => {
+        const seen = new Set(prev.map(a => (a.item || '').trim().toLowerCase()))
+        const add = items
+          .filter(t => t.item && !seen.has(t.item.trim().toLowerCase()))
+          .map(t => ({ ...EMPTY_AGENDA(), item: t.item, priority: t.priority || '' }))
+        return [...prev, ...add]
+      })
+    } catch (e) {
+      setErr(e?.response?.data?.message || 'AI agenda suggestion failed.')
+    } finally { setAiBusy(false) }
+  }
 
   // Append an agenda item for one live-status section (skips a duplicate topic).
   const addStatusAgenda = (line) => {
@@ -1055,6 +1079,11 @@ export default function KickoffMeetingCreate() {
                       <FileText size={13} /> Load {meetingTypes[form.meeting_type] || 'standard'} template
                     </button>
                   )}
+                  {/* §18 — AI drafts an agenda from the type, vendor status and open items. */}
+                  <button type="button" onClick={suggestAgenda} disabled={aiBusy} style={{ ...addBtn, cursor: aiBusy ? 'wait' : 'pointer' }}
+                    title="Let AI suggest an agenda from the vendor's current status and open items">
+                    <Sparkles size={13} /> {aiBusy ? 'Thinking…' : 'AI suggest'}
+                  </button>
                   <button type="button" onClick={addAgenda} style={addBtn}>
                     <Plus size={13} /> Add Item
                   </button>

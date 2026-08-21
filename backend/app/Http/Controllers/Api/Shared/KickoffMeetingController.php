@@ -12,6 +12,7 @@ use App\Models\Shared\KickoffMeeting;
 use App\Models\Shared\KickoffMomItem;
 use App\Models\Shared\MeetingIssue;
 use App\Services\Shared\KickoffMeetingService;
+use App\Services\Shared\MeetingAIService;
 use App\Services\Shared\VendorLiveStatusService;
 use App\Support\Shared\MeetingIssueStatus;
 use App\Support\Shared\MeetingTypeCatalog;
@@ -64,6 +65,31 @@ class KickoffMeetingController extends Controller
         return response()->json(
             $this->kickoffService->projectMeetings($request->user()->tenant_id, $project)
         );
+    }
+
+    /** AI: suggest an agenda for a meeting being planned (Meeting.docx §18). */
+    public function aiSuggestAgenda(Request $request, MeetingAIService $ai)
+    {
+        $data = $request->validate([
+            'meeting_type' => 'nullable|string|max:60',
+            'subject_type' => 'nullable|string|max:40',
+            'subject_id' => 'nullable|integer',
+        ]);
+
+        return response()->json($ai->suggestAgenda(
+            $request->user()->tenant_id,
+            $data['meeting_type'] ?? config('meetings.default_type', 'kickoff'),
+            $data['subject_type'] ?? null,
+            $data['subject_id'] ?? null,
+        ));
+    }
+
+    /** AI: summarise a meeting's captured minutes (Meeting.docx §18). */
+    public function aiSummary(Request $request, KickoffMeeting $kickoffMeeting, MeetingAIService $ai)
+    {
+        $this->assertTenant($request, $kickoffMeeting);
+
+        return response()->json($ai->summariseMinutes($kickoffMeeting));
     }
 
     /** The configurable meeting-type catalogue (Meeting.docx) + agenda priorities. */
