@@ -49,17 +49,25 @@ live vendor-status template, AI assist. Kickoff is now "Meetings → New → Typ
     (approvals/docs/training/medical/workforce/CAPA/MOM/permit/renewal pending+overdue, zero-rows hidden),
     and **Risk breakdown** (Critical/High/Med/Low/Unclassified). Extends `/tpv/dashboard`; NCR/contract
     KPIs render 0 until those phases land.
-- [ ] **DB hygiene** — retire the stale "unified TPV+Purchase" comment + unused `engagements` json column
-  on `vendors` (verify no readers first; additive/reversible migration).
+- [x] **DB hygiene** — investigated: the `engagements` json column is **NOT dead**. It marks which
+  modules a vendor participates in and is load-bearing — `Vendor::hasEngagement()`/`scopeForEngagement()`,
+  the vendor create/update validation (`in:purchase,tpv`), the Accounts party directory, and it's set to
+  `['tpv']` on TPV onboarding. **No change made** (dropping it would break vendor creation + scoping).
+  The DB separation is already correct as-is.
 
 ## Phase 2 — Qualification front-end (the missing left edge)
 
-- [~] **§6 Prequalification** — scoring service + columns exist; build the **top-level page + scored
-  questionnaire workflow** (areas: company/HSE/compliance/commercial → score/100 → Qualified/Conditional/Not-Qualified).
-- [~] **§7 Risk & Due Diligence** — risk scoring + columns exist; build the **top-level page**, add a
-  **due-diligence checklist entity** (company/document/licence/insurance/background/reference verification),
-  and wire **risk tier → onboarding depth / monitoring** (doc: "risk determines depth").
-- [·] **§5 Vendor Risk Classification** — `risk_level`/`risk_score` columns present; surface + drill-downs.
+- [~] **§6 Prequalification** —
+  - [x] Top-level **Prequalification** queue page (`/app/tpv/prequalification`, in Vendors cluster):
+    every vendor's status/score, worst-first, → per-vendor scored questionnaire (existing panel).
+  - [ ] (scoring engine + per-vendor questionnaire already existed; only the module-level surface was missing.)
+- [~] **§7 Risk & Due Diligence** —
+  - [x] Top-level **Risk & Due-Diligence** queue page (`/app/tpv/risk`, in Vendors cluster): tier/score,
+    worst-first, → per-vendor risk assessment (existing panel).
+  - [ ] **Due-diligence checklist entity** (company/document/licence/insurance/background/reference verification).
+  - [ ] Wire **risk tier → onboarding depth / monitoring** (doc: "risk determines depth").
+- [·] **§5 Vendor Risk Classification** — `risk_level`/`risk_score` columns present; now surfaced on the
+  Control Tower risk breakdown + the Risk queue page + drill-downs.
 
 ## Phase 3 — Vendor Master completion + Settings
 

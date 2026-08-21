@@ -257,6 +257,8 @@ const PurchaseVendorPortalGuard = lazy(() => import('@/pages/purchase-portal/Pur
 const TPVLayout = lazy(() => import('@/modules/tpv/TPVLayout'))
 const TpvVendors = lazy(() => import('@/modules/tpv/pages/TpvVendors'))
 const TpvDashboard = lazy(() => import('@/modules/tpv/pages/TpvDashboard'))
+const TpvPrequalification = lazy(() => import('@/modules/tpv/pages/TpvPrequalification'))
+const TpvRiskDueDiligence = lazy(() => import('@/modules/tpv/pages/TpvRiskDueDiligence'))
 const TpvVendorDetail = lazy(() => import('@/modules/tpv/pages/TpvVendorDetail'))
 const TpvOnboardings = lazy(() => import('@/modules/tpv/pages/TpvOnboardings'))
 const TpvTemporaryVendors = lazy(() => import('@/modules/tpv/pages/TpvTemporaryVendors'))
@@ -581,6 +583,10 @@ export default function AppRoutes() {
               route so "Dashboard" means dashboard. */}
           <Route path="dashboard" element={<S><TpvDashboard /></S>} />
           <Route path="vendors" element={<S><TpvVendors /></S>} />
+          {/* §6/§7 module-level qualification queues (per-vendor assessment lives
+              on the vendor workspace tabs). */}
+          <Route path="prequalification" element={<S><TpvPrequalification /></S>} />
+          <Route path="risk" element={<S><TpvRiskDueDiligence /></S>} />
           <Route path="view/:id" element={<S><TpvVendorDetail /></S>} />
           <Route path="kickoff" element={<S><KickoffMeetings /></S>} />
           <Route path="kickoff/new" element={<S><KickoffMeetingCreate /></S>} />
