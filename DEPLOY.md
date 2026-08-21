@@ -252,6 +252,24 @@ is harmless but signals nothing. If mail must send, `QUEUE_CONNECTION` has to be
 
 **`build-deploy-package.ps1` is PowerShell.** Use the bash version in §3.
 
+**Tests run on SQLite; production is MySQL.** MySQL rejects any identifier over
+64 characters and SQLite does not care, so an over-long index name passes the
+entire suite and then aborts `migrate` mid-file on live -- after earlier tables
+in the same migration have already been created. This happened on 2026-08-21
+with `client_vault_access_log_tenant_id_vault_entry_id_created_at_index` (65).
+
+`tests/Unit/Database/MigrationIdentifierLengthTest` now derives the names
+Laravel would generate and fails on anything too long, so it is caught when
+written. It found 13 pre-existing offenders in other modules; those are
+grandfathered because their migrations are already recorded as run on live, so
+MySQL is never asked to create the name -- **but a fresh MySQL install would
+still fail on all 13.** Worth fixing before anyone stands up a new environment.
+
+**Recovering a migration that failed mid-file:** the migration is NOT recorded,
+so re-running tries to re-create tables that already exist. Drop the tables it
+managed to create (check `count()` first -- only drop empty ones), fix the
+cause, then `migrate --force` again.
+
 **`rsync --delete` into the domain folder deletes the Laravel app.** See §8b.
 This is the single most destructive mistake available here.
 
