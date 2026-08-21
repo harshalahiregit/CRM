@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\Tpv;
 
+use App\Http\Controllers\Concerns\AssertsTenantOwnership;
 use App\Http\Controllers\Controller;
 use App\Models\Tpv\TpvNcr;
 use App\Services\Tpv\TpvNcrService;
@@ -11,6 +12,8 @@ use Illuminate\Validation\Rule;
 /** TPV Non-Conformance Reports (Sangoe TPV §24). Tenant-scoped. */
 class TpvNcrController extends Controller
 {
+    use AssertsTenantOwnership;
+
     public function __construct(private TpvNcrService $service) {}
 
     public function index(Request $request)

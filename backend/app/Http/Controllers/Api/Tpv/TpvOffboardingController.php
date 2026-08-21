@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\Tpv;
 
+use App\Http\Controllers\Concerns\AssertsTenantOwnership;
 use App\Http\Controllers\Controller;
 use App\Models\Tpv\TpvOffboarding;
 use App\Services\Tpv\TpvOffboardingService;
@@ -11,6 +12,8 @@ use Illuminate\Validation\Rule;
 /** TPV Offboarding / Closure (Sangoe TPV §29). Tenant-scoped. */
 class TpvOffboardingController extends Controller
 {
+    use AssertsTenantOwnership;
+
     public function __construct(private TpvOffboardingService $service) {}
 
     public function index(Request $request)

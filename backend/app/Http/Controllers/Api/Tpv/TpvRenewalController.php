@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\Tpv;
 
+use App\Http\Controllers\Concerns\AssertsTenantOwnership;
 use App\Http\Controllers\Controller;
 use App\Models\Tpv\TpvRenewal;
 use App\Models\Vendor\Vendor;
@@ -12,6 +13,8 @@ use Illuminate\Validation\Rule;
 /** TPV Renewal & Extension (Sangoe TPV §28). Tenant-scoped. */
 class TpvRenewalController extends Controller
 {
+    use AssertsTenantOwnership;
+
     public function __construct(private TpvRenewalService $service) {}
 
     public function index(Request $request)

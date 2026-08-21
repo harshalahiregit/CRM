@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\Tpv;
 
+use App\Http\Controllers\Concerns\AssertsTenantOwnership;
 use App\Http\Controllers\Controller;
 use App\Models\Tpv\TpvInspection;
 use App\Models\Tpv\TpvInspectionFinding;
@@ -13,6 +14,8 @@ use Illuminate\Validation\Rule;
 /** TPV Inspections & Audits (Sangoe TPV §22). Tenant-scoped. */
 class TpvInspectionController extends Controller
 {
+    use AssertsTenantOwnership;
+
     public function __construct(private TpvInspectionService $service) {}
 
     public function index(Request $request)
