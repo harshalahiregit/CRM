@@ -267,6 +267,7 @@ const TpvWorkAuthorization = lazy(() => import('@/modules/tpv/pages/TpvWorkAutho
 const TpvNcr = lazy(() => import('@/modules/tpv/pages/TpvNcr'))
 const TpvInspections = lazy(() => import('@/modules/tpv/pages/TpvInspections'))
 const TpvViolations = lazy(() => import('@/modules/tpv/pages/TpvViolations'))
+const TpvRenewals = lazy(() => import('@/modules/tpv/pages/TpvRenewals'))
 const TpvVendorDetail = lazy(() => import('@/modules/tpv/pages/TpvVendorDetail'))
 const TpvOnboardings = lazy(() => import('@/modules/tpv/pages/TpvOnboardings'))
 const TpvTemporaryVendors = lazy(() => import('@/modules/tpv/pages/TpvTemporaryVendors'))
@@ -611,6 +612,8 @@ export default function AppRoutes() {
           <Route path="inspections" element={<S><TpvInspections /></S>} />
           {/* §26 Vendor Violations & Strike escalation. */}
           <Route path="violations" element={<S><TpvViolations /></S>} />
+          {/* §28 Renewal & Extension. */}
+          <Route path="renewals" element={<S><TpvRenewals /></S>} />
           <Route path="view/:id" element={<S><TpvVendorDetail /></S>} />
           <Route path="kickoff" element={<S><KickoffMeetings /></S>} />
           <Route path="kickoff/new" element={<S><KickoffMeetingCreate /></S>} />

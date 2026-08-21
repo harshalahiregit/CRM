@@ -161,8 +161,14 @@ live vendor-status template, AI assist. Kickoff is now "Meetings → New → Typ
 
 - [~] **§21 Compliance engine** — 14 categories + 7 statuses (Compliant/Partial/Non/Expiring/Expired/Waived/Under-Review) per vendor.
 - [~] **§27 Vendor Performance (VPI)** — expand VRS from 3 → 13 dimensions, band A–E, cross-project history.
-- [ ] **§28 Renewal & Extension** — pre-expiry workflow consuming performance/compliance/incidents/NCR/
-  CAPA/strikes → Renew/Renew-with-Conditions/Extend/Requalify/Replace/Suspend/Exit. (Rule 10.)
+- [x] **§28 Renewal & Extension** — `tpv_renewals` (REN-YYYY-### ref, vendor/contract link, due date,
+  JSON assessment snapshot, Pending→Assessed→Decided) with an **assessment that pulls the VRS scorecard +
+  open NCRs/CAPAs/active-strikes/violation-level** (Rule 10: performance influences renewal).
+  `TpvRenewalService` (assess/initiate/reassess/decide) — decide applies Extend/Renew (pushes a linked
+  contract's end date → Renewed) and Suspend (via VendorService); outcomes Renew/Renew-with-Conditions/
+  Extend/Requalify/Replace/Suspend/Exit. Controller (decisions admin-gated) + routes. Frontend: **Renewal**
+  page (list with VRS + open-item snapshot, Initiate modal with live assessment preview, Decide modal) in
+  the Performance cluster. Verified via rolled-back tinker (assess VRS=77/B, initiate REN-2026-001, decide) + green build.
 - [~] **§29 Offboarding / Closure** — controlled exit **checklist** (contract/workforce/gate/ID/equipment/
   PPE/docs/open-actions/NCR-CAPA/financial/final-review) + Closed/Replaced outcomes.
 - [~] **§30 Documents** — unified Document Vault (today scattered across 4 stores; CAPA evidence unstored).
