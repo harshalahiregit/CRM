@@ -35,9 +35,12 @@ live vendor-status template, AI assist. Kickoff is now "Meetings → New → Typ
 
 ## Phase 1 — Structural foundation (nav, dashboard, cleanup)
 
-- [ ] **§38/§39 Navigation** — regroup the flat 20-tab TPV rail into the 9 clusters
+- [x] **§38/§39 Navigation** — flat 20-tab rail regrouped into the doc's clusters
   (Dashboard · Vendors · Mobilisation · Workforce · Work Control · Compliance · Performance ·
-  Intelligence · Ecosystem). Add an additive `groups` prop to shared `ModuleShell` so Purchase can adopt it too.
+  Intelligence). Added an additive two-level `groups` prop to shared `ModuleShell` (cluster row +
+  active-cluster sub-row); Purchase/Workforce/Portal keep the flat `items` path untouched. Kickoff is
+  now Meetings under Mobilisation, not a top tab. Ecosystem cluster appears once Settings lands (Phase 3);
+  clusters list only pages that exist and grow as later phases add pages.
 - [~] **§4/§37 Dashboard / Control Tower** —
   - [x] Route the real dashboard: "Dashboard" now renders `TpvDashboard` (HSSE/workforce roll-up)
     instead of the vendor list; added a dedicated **Vendor Master** tab (`/app/tpv/vendors`).
