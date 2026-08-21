@@ -262,6 +262,7 @@ const TpvRiskDueDiligence = lazy(() => import('@/modules/tpv/pages/TpvRiskDueDil
 const TpvContracts = lazy(() => import('@/modules/tpv/pages/TpvContracts'))
 const TpvWorkPackages = lazy(() => import('@/modules/tpv/pages/TpvWorkPackages'))
 const TpvApprovalRegister = lazy(() => import('@/modules/tpv/pages/TpvApprovalRegister'))
+const TpvCompetency = lazy(() => import('@/modules/tpv/pages/TpvCompetency'))
 const TpvVendorDetail = lazy(() => import('@/modules/tpv/pages/TpvVendorDetail'))
 const TpvOnboardings = lazy(() => import('@/modules/tpv/pages/TpvOnboardings'))
 const TpvTemporaryVendors = lazy(() => import('@/modules/tpv/pages/TpvTemporaryVendors'))
@@ -596,6 +597,8 @@ export default function AppRoutes() {
           <Route path="work-packages" element={<S><TpvWorkPackages /></S>} />
           {/* §12 central Approval register — generic, separate from onboarding approvals. */}
           <Route path="approval-register" element={<S><TpvApprovalRegister /></S>} />
+          {/* §15 Competency & Training. */}
+          <Route path="competency" element={<S><TpvCompetency /></S>} />
           <Route path="view/:id" element={<S><TpvVendorDetail /></S>} />
           <Route path="kickoff" element={<S><KickoffMeetings /></S>} />
           <Route path="kickoff/new" element={<S><KickoffMeetingCreate /></S>} />

@@ -31,6 +31,18 @@ export const tpvApi = {
     update: (id, data)    => api.put(`/tpv/work-orders/${id}`, data).then(r => r.data),
     delete: (id)          => api.delete(`/tpv/work-orders/${id}`).then(r => r.data),
   },
+  // Competency & Training + Skill Matrix (Sangoe TPV §15).
+  competency: {
+    roster: (params = {}) => api.get('/tpv/competency', { params }).then(r => r.data),
+    worker: (workerId)    => api.get(`/tpv/workers/${workerId}/competency`).then(r => r.data),
+    addCompetency:    (workerId, data) => api.post(`/tpv/workers/${workerId}/competencies`, data).then(r => r.data),
+    updateCompetency: (id, data)       => api.put(`/tpv/competencies/${id}`, data).then(r => r.data),
+    deleteCompetency: (id)             => api.delete(`/tpv/competencies/${id}`).then(r => r.data),
+    addTraining:      (workerId, data) => api.post(`/tpv/workers/${workerId}/trainings`, data).then(r => r.data),
+    updateTraining:   (id, data)       => api.put(`/tpv/trainings/${id}`, data).then(r => r.data),
+    deleteTraining:   (id)             => api.delete(`/tpv/trainings/${id}`).then(r => r.data),
+    skillMatrix:      (wpId)           => api.get(`/tpv/work-packages/${wpId}/skill-matrix`).then(r => r.data),
+  },
   // Central Approval register (Sangoe TPV §12) — generic, separate from the
   // onboarding-approval chain in `approvals` above.
   approvalRegister: {

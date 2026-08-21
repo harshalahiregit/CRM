@@ -246,6 +246,17 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::post('/approval-requests',                     [\App\Http\Controllers\Api\Tpv\TpvApprovalController::class, 'store']);
     Route::post('/approval-requests/{approval}/decide',   [\App\Http\Controllers\Api\Tpv\TpvApprovalController::class, 'decide'])->where('approval', '[0-9]+');
 
+    // Competency & Training + Skill Matrix (Sangoe TPV §15).
+    Route::get('/competency',                             [\App\Http\Controllers\Api\Tpv\TpvCompetencyController::class, 'index']);
+    Route::get('/workers/{worker}/competency',            [\App\Http\Controllers\Api\Tpv\TpvCompetencyController::class, 'worker'])->where('worker', '[0-9]+');
+    Route::post('/workers/{worker}/competencies',         [\App\Http\Controllers\Api\Tpv\TpvCompetencyController::class, 'addCompetency'])->where('worker', '[0-9]+');
+    Route::put('/competencies/{competency}',              [\App\Http\Controllers\Api\Tpv\TpvCompetencyController::class, 'updateCompetency'])->where('competency', '[0-9]+');
+    Route::delete('/competencies/{competency}',           [\App\Http\Controllers\Api\Tpv\TpvCompetencyController::class, 'destroyCompetency'])->where('competency', '[0-9]+');
+    Route::post('/workers/{worker}/trainings',            [\App\Http\Controllers\Api\Tpv\TpvCompetencyController::class, 'addTraining'])->where('worker', '[0-9]+');
+    Route::put('/trainings/{training}',                   [\App\Http\Controllers\Api\Tpv\TpvCompetencyController::class, 'updateTraining'])->where('training', '[0-9]+');
+    Route::delete('/trainings/{training}',                [\App\Http\Controllers\Api\Tpv\TpvCompetencyController::class, 'destroyTraining'])->where('training', '[0-9]+');
+    Route::get('/work-packages/{workPackage}/skill-matrix', [\App\Http\Controllers\Api\Tpv\TpvCompetencyController::class, 'skillMatrix'])->where('workPackage', '[0-9]+');
+
     // Permit-to-Work + JSA (Doc_4 Phase 5). Approval requires a JSA and refuses a
     // suspended vendor; a permit expires at its validity window.
     Route::get('/permits',                                [\App\Http\Controllers\Api\Tpv\PermitController::class, 'index']);

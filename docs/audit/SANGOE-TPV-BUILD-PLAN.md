@@ -108,9 +108,15 @@ live vendor-status template, AI assist. Kickoff is now "Meetings → New → Typ
 
 ## Phase 5 — Control of Work hardening (business rules 4/5/6)
 
-- [ ] **§15 Competency & Training + Skill Matrix** — typed training catalogue (site/HSE/toolbox/fire/
-  height/electrical/confined-space/lifting/…), competency records (qualification/trade-cert/licence/
-  expiry/skill-level), and **Skill Matrix** (Worker×Activity×Competency×Validity). Rule 4: no competency → no auth.
+- [x] **§15 Competency & Training + Skill Matrix** — `tpv_worker_competencies` (name/category
+  [Qualification/Trade-Cert/Licence/Certification/Skill]/authority/skill-level/validity → Valid/Expiring/
+  Expired status) + `tpv_worker_trainings` (typed catalogue: Site/HSE-Induction/Toolbox/Fire/Height/
+  Electrical/Confined-Space/Lifting/Equipment/Emergency, provider/score/validity). `TpvCompetencyService`
+  with `workerHasCompetency()` + `skillMatrix()` (Worker×Activity×Competency×Validity per work package,
+  the Rule-4 check) + controller + routes. Frontend: **Competency & Training** page (worker roster with
+  counts + expiring flag, expandable per-worker competency & training management) in the Workforce cluster.
+  Verified via rolled-back tinker (status derivation, workerHasCompetency electrical=yes/rigging=no, roster
+  counts) + green build. TODO: enforce the matrix at work-authorization (below) + surface the matrix UI on Work Packages.
 - [ ] **§19 Work Authorization (unified)** — composite check Vendor-Approval + Worker-Competency +
   Compliance + PPE + Permit + Work-Package; permit types add isolation/shutdown/critical; link Permit↔Worker↔Gate.
 - [ ] **Rule 5 PPE-at-gate** — enforce mandatory PPE at gate scan (today only at badge issue).
