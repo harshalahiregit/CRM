@@ -84,9 +84,12 @@ live vendor-status template, AI assist. Kickoff is now "Meetings → New → Typ
 
 ## Phase 4 — Commercial spine + Work Packages + central Approvals
 
-- [ ] **§8 Contracts & Work Orders** — TPV Contract entity (type/scope/dates/value/SLA/KPI/penalties/
-  insurance/HSE/compliance clauses/renewal) + Work Order entity (WO#/work-package/scope/location/
-  manpower/equipment/terms). Feed into compliance + performance.
+- [x] **§8 Contracts & Work Orders** — TPV-owned `tpv_contracts` (type/scope/dates/value/SLA/KPI/
+  penalties/insurance/HSE/compliance clauses/renewal, CT-YYYY-### ref) + `tpv_work_orders`
+  (WO-YYYY-### ref, contract link, work-package/scope/location/manpower/equipment/terms). Models +
+  `TpvContractService` (CRUD) + `TpvContractController` + routes + a two-tab **Contracts & Work Orders**
+  page with create/edit/delete. Distinct from Purchase's contracts. Verified via rolled-back tinker
+  (refs + relations + counts) + green build. TODO later: feed contract/WO expiry into Action Centre + performance.
 - [ ] **§13 Work Packages** — Vendor→Project→WorkPackage→Activity→Workforce hierarchy (the accountability spine).
 - [~] **§12 Approvals engine** — generalise onboarding-only chain into a **central engine** across the
   ~18 approval types with routing configurable by risk/project/value/work-type/workforce/site/dept.

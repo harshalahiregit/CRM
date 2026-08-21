@@ -216,6 +216,19 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::post('/incidents/{incident}/capas',            [\App\Http\Controllers\Api\Tpv\IncidentController::class, 'addCapa']);
     Route::patch('/incidents/{incident}/capas/{capa}',    [\App\Http\Controllers\Api\Tpv\IncidentController::class, 'updateCapa']);
 
+    // Contracts & Work Orders (Sangoe TPV §8) — TPV-owned commercial engagement.
+    Route::get('/contracts',                              [\App\Http\Controllers\Api\Tpv\TpvContractController::class, 'index']);
+    Route::post('/contracts',                             [\App\Http\Controllers\Api\Tpv\TpvContractController::class, 'store']);
+    // Work-order collection declared before /contracts/{contract} so the wildcard
+    // cannot swallow it (distinct prefix, but kept explicit for clarity).
+    Route::get('/work-orders',                            [\App\Http\Controllers\Api\Tpv\TpvContractController::class, 'workOrders']);
+    Route::post('/work-orders',                           [\App\Http\Controllers\Api\Tpv\TpvContractController::class, 'storeWorkOrder']);
+    Route::put('/work-orders/{workOrder}',                [\App\Http\Controllers\Api\Tpv\TpvContractController::class, 'updateWorkOrder'])->where('workOrder', '[0-9]+');
+    Route::delete('/work-orders/{workOrder}',             [\App\Http\Controllers\Api\Tpv\TpvContractController::class, 'destroyWorkOrder'])->where('workOrder', '[0-9]+');
+    Route::get('/contracts/{contract}',                   [\App\Http\Controllers\Api\Tpv\TpvContractController::class, 'show'])->where('contract', '[0-9]+');
+    Route::put('/contracts/{contract}',                   [\App\Http\Controllers\Api\Tpv\TpvContractController::class, 'update'])->where('contract', '[0-9]+');
+    Route::delete('/contracts/{contract}',                [\App\Http\Controllers\Api\Tpv\TpvContractController::class, 'destroy'])->where('contract', '[0-9]+');
+
     // Permit-to-Work + JSA (Doc_4 Phase 5). Approval requires a JSA and refuses a
     // suspended vendor; a permit expires at its validity window.
     Route::get('/permits',                                [\App\Http\Controllers\Api\Tpv\PermitController::class, 'index']);

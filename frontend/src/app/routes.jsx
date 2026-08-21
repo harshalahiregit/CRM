@@ -259,6 +259,7 @@ const TpvVendors = lazy(() => import('@/modules/tpv/pages/TpvVendors'))
 const TpvDashboard = lazy(() => import('@/modules/tpv/pages/TpvDashboard'))
 const TpvPrequalification = lazy(() => import('@/modules/tpv/pages/TpvPrequalification'))
 const TpvRiskDueDiligence = lazy(() => import('@/modules/tpv/pages/TpvRiskDueDiligence'))
+const TpvContracts = lazy(() => import('@/modules/tpv/pages/TpvContracts'))
 const TpvVendorDetail = lazy(() => import('@/modules/tpv/pages/TpvVendorDetail'))
 const TpvOnboardings = lazy(() => import('@/modules/tpv/pages/TpvOnboardings'))
 const TpvTemporaryVendors = lazy(() => import('@/modules/tpv/pages/TpvTemporaryVendors'))
@@ -587,6 +588,8 @@ export default function AppRoutes() {
               on the vendor workspace tabs). */}
           <Route path="prequalification" element={<S><TpvPrequalification /></S>} />
           <Route path="risk" element={<S><TpvRiskDueDiligence /></S>} />
+          {/* §8 Contracts & Work Orders — TPV-owned commercial spine. */}
+          <Route path="contracts" element={<S><TpvContracts /></S>} />
           <Route path="view/:id" element={<S><TpvVendorDetail /></S>} />
           <Route path="kickoff" element={<S><KickoffMeetings /></S>} />
           <Route path="kickoff/new" element={<S><KickoffMeetingCreate /></S>} />
