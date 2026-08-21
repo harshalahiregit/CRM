@@ -195,7 +195,15 @@ live vendor-status template, AI assist. Kickoff is now "Meetings → New → Typ
   **Offboarding & Closure** page (list with progress bar, Start modal, expandable interactive checklist +
   Complete with final-status + lessons) in the Performance cluster. Verified via rolled-back tinker
   (12-item checklist, complete-guard, complete→vendor Offboarded) + green build.
-- [~] **§30 Documents** — unified Document Vault (today scattered across 4 stores; CAPA evidence unstored).
+- [x] **§30 Documents** — unified Document Vault added as a read-only aggregator (`TpvDocumentVaultService`)
+  over all four stores: statutory `vendor_documents`, the `compliance_evidence` locker, and CAPA/NCR
+  closure evidence. Each source is normalised to one row shape with a computed `expiry_state`
+  (valid/expiring≤30d/expired/none); roster supports source/vendor/expiry/q filters and most-urgent-first
+  sort; per-vendor vault groups by source; summary gives by-source + expiry buckets + attention list.
+  Read-only and additive — no store's write path touched. Vault page = clickable expiry stat cards +
+  search/source/expiry filters + unified table with open-file links, under Intelligence → Document Vault.
+  Verified via rolled-back tinker (4-source seed, 25-doc summary, expiry buckets 1 expired/1 expiring,
+  uploader-name resolve, source/expiry filters, vendor vault grouping) + green build.
 - [~] **§31 Communications** — in-app feed + SMS/WhatsApp + expiry/incident/strike/CAPA/renewal notifications.
 - [~] **§32 Vendor Portal** — add respond-to-NCR, submit-CAPA-evidence, view meetings/MOM, respond-to-actions.
 - [~] **§33 Reports & Analytics** — trend/benchmark analytics + CSV/Excel export (today print-PDF only).

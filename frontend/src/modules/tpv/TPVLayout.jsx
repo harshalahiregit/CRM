@@ -60,6 +60,7 @@ const TPV_GROUPS = [
   { label: 'Intelligence', icon: Landmark, items: [
     { label: 'Reports',    path: '/app/tpv/reports',          icon: ClipboardList },
     { label: 'Governance', path: '/app/tpv/governance',       icon: ShieldCheck },
+    { label: 'Document Vault', path: '/app/tpv/document-vault', icon: FolderLock },
     { label: 'Evidence',   path: '/app/tpv/evidence',         icon: FolderLock },
     { label: 'Authority',  path: '/app/tpv/authority-matrix', icon: Landmark },
   ] },
