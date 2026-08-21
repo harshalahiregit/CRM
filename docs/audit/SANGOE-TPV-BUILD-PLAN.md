@@ -177,7 +177,16 @@ live vendor-status template, AI assist. Kickoff is now "Meetings → New → Typ
   problem/expiring counts, expandable 14-category matrix with inline status + validity editors) in the
   Compliance cluster, additive to the evidence locker. Verified via rolled-back tinker (expired→Expired
   override, 14-cat matrix, roster %) + green build.
-- [~] **§27 Vendor Performance (VPI)** — expand VRS from 3 → 13 dimensions, band A–E, cross-project history.
+- [x] **§27 Vendor Performance (VPI)** — a NEW `TpvVendorPerformanceService` added ADDITIVELY as a superset of
+  the VRS (VendorScorecardService + config/vrs.php are UNTOUCHED — Renewal Rule 10 / snapshot still key off VRS):
+  it reuses the 3 VRS dimensions and layers on 5 governance dimensions computed from the shipped entities —
+  quality (open/overdue NCRs), CAPA closure (open/overdue), conduct (open violation points + active strikes),
+  inspection (avg conducted score), documentation (statutory-doc expiry health). 8 weighted dims → 0–100 index →
+  **A–E band** (distinct from VRS A–D), weights+bands+deductions in `config/vpi.php`. Endpoints `/tpv/vpi`
+  (worst-first leaderboard) + `/tpv/vendors/{vendor}/vpi` (full breakdown). Performance-Index page = band
+  distribution + 8-column heatmap table + expandable per-dimension detail with weight note, under Performance →
+  Performance Index. Verified via rolled-back tinker (8 dims, weights sum 1.0, deductions — conduct 64 =
+  10pts×3+strike×6, band A–E, VRS band preserved, 8-vendor worst-first roster) + green build.
 - [x] **§28 Renewal & Extension** — `tpv_renewals` (REN-YYYY-### ref, vendor/contract link, due date,
   JSON assessment snapshot, Pending→Assessed→Decided) with an **assessment that pulls the VRS scorecard +
   open NCRs/CAPAs/active-strikes/violation-level** (Rule 10: performance influences renewal).
