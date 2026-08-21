@@ -359,6 +359,12 @@ export const purchaseApi = {
     vendor: (vendorId)    => api.get(`/purchase/vendors/${vendorId}/vault`).then(r => r.data),
   },
 
+  // ── Communications Centre (mirror of TPV §31 — derived alerts + send/log) ─
+  communications: {
+    get:  (params = {}) => api.get('/purchase/communications', { params }).then(r => r.data),
+    send: (data)        => api.post('/purchase/communications/send', data).then(r => r.data),
+  },
+
   onboarding: {
     list:     (params = {}) => api.get('/purchase/onboarding', { params }).then(r => r.data),
     stats:    ()            => api.get('/purchase/onboarding/stats').then(r => r.data),

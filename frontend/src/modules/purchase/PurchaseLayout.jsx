@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, ClipboardList, FileSignature, ShoppingBag,
-  Truck, Receipt, FileX, FileText, Package, Building2, CalendarDays, HardHat, ShieldCheck, FileWarning, ClipboardCheck, TrendingUp, FolderLock
+  Truck, Receipt, FileX, FileText, Package, Building2, CalendarDays, HardHat, ShieldCheck, FileWarning, ClipboardCheck, TrendingUp, FolderLock, Megaphone
 } from 'lucide-react'
 import ModuleShell from '@/components/layout/ModuleShell'
 
@@ -26,6 +26,7 @@ const PURCHASE_NAV = [
   { label: 'Catalog',        path: '/app/purchase/catalog',        icon: Package         },
   { label: 'Analytics',      path: '/app/purchase/analytics',      icon: TrendingUp      },
   { label: 'Document Vault', path: '/app/purchase/document-vault', icon: FolderLock      },
+  { label: 'Communications', path: '/app/purchase/communications', icon: Megaphone       },
 ]
 
 export default function PurchaseLayout() {

@@ -281,6 +281,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::get('/document-vault',                        [\App\Http\Controllers\Api\Purchase\PurchaseDocumentVaultController::class, 'index']);
     Route::get('/vendors/{purchaseVendor}/vault',        [\App\Http\Controllers\Api\Purchase\PurchaseDocumentVaultController::class, 'vendor'])->whereNumber('purchaseVendor');
 
+    // ── Communications Centre (mirror of TPV §31 — derived alerts + send/log) ─
+    Route::get('/communications',          [\App\Http\Controllers\Api\Purchase\PurchaseCommunicationController::class, 'index']);
+    Route::post('/communications/send',    [\App\Http\Controllers\Api\Purchase\PurchaseCommunicationController::class, 'send']);
+
     // ── Kickoff meetings (Purchase-owned engine: purchase_kickoff_* tables) ─
     Route::get('/kickoff/stats',                   [PurchaseKickoffController::class, 'stats']);
     Route::get('/kickoff',                         [PurchaseKickoffController::class, 'index']);
