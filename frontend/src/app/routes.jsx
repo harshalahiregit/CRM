@@ -265,6 +265,7 @@ const TpvApprovalRegister = lazy(() => import('@/modules/tpv/pages/TpvApprovalRe
 const TpvCompetency = lazy(() => import('@/modules/tpv/pages/TpvCompetency'))
 const TpvWorkAuthorization = lazy(() => import('@/modules/tpv/pages/TpvWorkAuthorization'))
 const TpvNcr = lazy(() => import('@/modules/tpv/pages/TpvNcr'))
+const TpvInspections = lazy(() => import('@/modules/tpv/pages/TpvInspections'))
 const TpvVendorDetail = lazy(() => import('@/modules/tpv/pages/TpvVendorDetail'))
 const TpvOnboardings = lazy(() => import('@/modules/tpv/pages/TpvOnboardings'))
 const TpvTemporaryVendors = lazy(() => import('@/modules/tpv/pages/TpvTemporaryVendors'))
@@ -605,6 +606,8 @@ export default function AppRoutes() {
           <Route path="work-authorization" element={<S><TpvWorkAuthorization /></S>} />
           {/* §24 Non-Conformance Reports. */}
           <Route path="ncr" element={<S><TpvNcr /></S>} />
+          {/* §22 Inspections & Audits. */}
+          <Route path="inspections" element={<S><TpvInspections /></S>} />
           <Route path="view/:id" element={<S><TpvVendorDetail /></S>} />
           <Route path="kickoff" element={<S><KickoffMeetings /></S>} />
           <Route path="kickoff/new" element={<S><KickoffMeetingCreate /></S>} />

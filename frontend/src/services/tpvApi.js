@@ -31,6 +31,18 @@ export const tpvApi = {
     update: (id, data)    => api.put(`/tpv/work-orders/${id}`, data).then(r => r.data),
     delete: (id)          => api.delete(`/tpv/work-orders/${id}`).then(r => r.data),
   },
+  // Inspections & Audits (Sangoe TPV §22).
+  inspections: {
+    list:   (params = {}) => api.get('/tpv/inspections', { params }).then(r => r.data),
+    get:    (id)          => api.get(`/tpv/inspections/${id}`).then(r => r.data),
+    create: (data)        => api.post('/tpv/inspections', data).then(r => r.data),
+    update: (id, data)    => api.put(`/tpv/inspections/${id}`, data).then(r => r.data),
+    delete: (id)          => api.delete(`/tpv/inspections/${id}`).then(r => r.data),
+    addFinding:     (inspId, data) => api.post(`/tpv/inspections/${inspId}/findings`, data).then(r => r.data),
+    updateFinding:  (fId, data)    => api.put(`/tpv/inspection-findings/${fId}`, data).then(r => r.data),
+    deleteFinding:  (fId)          => api.delete(`/tpv/inspection-findings/${fId}`).then(r => r.data),
+    escalateFinding:(fId)          => api.post(`/tpv/inspection-findings/${fId}/escalate`).then(r => r.data),
+  },
   // Non-Conformance Reports (Sangoe TPV §24).
   ncrs: {
     list:       (params = {}) => api.get('/tpv/ncrs', { params }).then(r => r.data),
