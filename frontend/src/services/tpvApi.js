@@ -31,6 +31,14 @@ export const tpvApi = {
     update: (id, data)    => api.put(`/tpv/work-orders/${id}`, data).then(r => r.data),
     delete: (id)          => api.delete(`/tpv/work-orders/${id}`).then(r => r.data),
   },
+  // Non-Conformance Reports (Sangoe TPV §24).
+  ncrs: {
+    list:       (params = {}) => api.get('/tpv/ncrs', { params }).then(r => r.data),
+    create:     (data)        => api.post('/tpv/ncrs', data).then(r => r.data),
+    update:     (id, data)    => api.put(`/tpv/ncrs/${id}`, data).then(r => r.data),
+    transition: (id, data)    => api.post(`/tpv/ncrs/${id}/transition`, data).then(r => r.data),
+    delete:     (id)          => api.delete(`/tpv/ncrs/${id}`).then(r => r.data),
+  },
   // Unified Work Authorization (Sangoe TPV §19) — read-only composite verdict.
   workAuthorization: {
     roster: (params = {}) => api.get('/tpv/work-authorization', { params }).then(r => r.data?.data ?? r.data),

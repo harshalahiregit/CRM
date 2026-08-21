@@ -129,8 +129,13 @@ live vendor-status template, AI assist. Kickoff is now "Meetings → New → Typ
 
 ## Phase 6 — Corrective-action completeness
 
-- [ ] **§24 NCR entity** — Raised→Assigned→Response→Corrective-Action→Verification→Closed;
-  vendor/project/requirement/finding/severity/evidence/responsible/due. (Meetings issue→NCR convert.)
+- [x] **§24 NCR entity** — `tpv_ncrs` (NCR-YYYY-### ref, vendor/project link, polymorphic source for the
+  Meetings issue→NCR target, requirement/finding/severity/responsible/due, is_overdue accessor) with the
+  ordered lifecycle Raised→Assigned→Response→Corrective_Action→Verification→Closed (close-guarded: needs a
+  corrective action; stamps verifier + closed_at). `TpvNcrService` + controller + routes + an **NCR** page
+  (list, raise/edit modal, one-click status advance, overdue flag) in the Compliance cluster. Control Tower
+  `open.ncrs` + Action Centre `ncr_overdue` now count the real table. Verified via rolled-back tinker
+  (lifecycle + close-guard) + green build.
 - [ ] **§22 Inspections & Audits** — inspection-type catalogue + Plan→Inspect→Finding→Action→CAPA→Verify→Close.
 - [~] **§25 CAPA generalisation** — decouple from incident-only; link audit/inspection/NCR/meeting/
   compliance-failure/repeated-violation; add immediate-correction, root-cause, effectiveness fields + **evidence files**.
