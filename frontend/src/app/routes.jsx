@@ -256,6 +256,7 @@ const PurchaseVendorPortalGuard = lazy(() => import('@/pages/purchase-portal/Pur
 // TPV Module (lazy) — pages land here as they're built
 const TPVLayout = lazy(() => import('@/modules/tpv/TPVLayout'))
 const TpvVendors = lazy(() => import('@/modules/tpv/pages/TpvVendors'))
+const TpvDashboard = lazy(() => import('@/modules/tpv/pages/TpvDashboard'))
 const TpvVendorDetail = lazy(() => import('@/modules/tpv/pages/TpvVendorDetail'))
 const TpvOnboardings = lazy(() => import('@/modules/tpv/pages/TpvOnboardings'))
 const TpvTemporaryVendors = lazy(() => import('@/modules/tpv/pages/TpvTemporaryVendors'))
@@ -575,7 +576,11 @@ export default function AppRoutes() {
         {/* TPV MODULE */}
         <Route path="tpv" element={<S><TPVLayout /></S>}>
           <Route index element={<Navigate to="dashboard" replace />} />
-          <Route path="dashboard" element={<S><TpvVendors /></S>} />
+          {/* Dashboard now renders the real HSSE/workforce roll-up (was the
+              vendor list). The Vendor Master list moved to its own /vendors
+              route so "Dashboard" means dashboard. */}
+          <Route path="dashboard" element={<S><TpvDashboard /></S>} />
+          <Route path="vendors" element={<S><TpvVendors /></S>} />
           <Route path="view/:id" element={<S><TpvVendorDetail /></S>} />
           <Route path="kickoff" element={<S><KickoffMeetings /></S>} />
           <Route path="kickoff/new" element={<S><KickoffMeetingCreate /></S>} />
@@ -600,7 +605,7 @@ export default function AppRoutes() {
           <Route path="approvals" element={<S><TpvApprovals /></S>} />
           {/* Was a ComingSoon placeholder with no implementation. Documents are
               managed per vendor, so send an old link to the vendor list. */}
-          <Route path="documents" element={<Navigate to="/app/tpv/dashboard" replace />} />
+          <Route path="documents" element={<Navigate to="/app/tpv/vendors" replace />} />
           <Route path="workforce" element={<S><TpvWorkers /></S>} />
           <Route path="workforce/:id" element={<S><TpvWorkerWizard /></S>} />
           <Route path="ppe" element={<S><TpvPpe /></S>} />

@@ -1,5 +1,5 @@
 import {
-  LayoutDashboard, CalendarDays, Rocket,
+  LayoutDashboard, CalendarDays, Rocket, Building2,
   UserCheck, CheckSquare, ScanLine, ShieldAlert, Clock, ShieldCheck, HardHat, ClipboardList, Siren, FileCheck2, Eye, FolderLock, Landmark, TrendingUp } from 'lucide-react'
 import ModuleShell from '@/components/layout/ModuleShell'
 
@@ -10,6 +10,7 @@ import ModuleShell from '@/components/layout/ModuleShell'
 // this module is the HSSE/onboarding workflow over those vendors.
 const TPV_NAV = [
   { label: 'Dashboard',   path: '/app/tpv/dashboard',  icon: LayoutDashboard },
+  { label: 'Vendor Master', path: '/app/tpv/vendors',  icon: Building2       },
   { label: 'Meetings',    path: '/app/tpv/kickoff',    icon: CalendarDays    },
   { label: 'Performance', path: '/app/tpv/performance', icon: TrendingUp     },
   { label: 'Onboarding',  path: '/app/tpv/onboarding', icon: Rocket          },

@@ -60,7 +60,7 @@ export function useVendorModule() {
   return cfg({
     key: 'tpv', portal: false, api: tpvApi, moduleName: 'Third Party Vendor',
     engagement: 'tpv', base: '/app/tpv', defaultVendorType: 'temporary',
-    listPath: '/app/tpv/dashboard',
+    listPath: '/app/tpv/vendors',
     viewPath: (id) => `/app/tpv/view/${id}`,
     onboardingPath: (id) => `/app/tpv/onboarding/${id}`,
   })
