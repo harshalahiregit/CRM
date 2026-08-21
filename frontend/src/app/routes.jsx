@@ -268,6 +268,7 @@ const TpvNcr = lazy(() => import('@/modules/tpv/pages/TpvNcr'))
 const TpvInspections = lazy(() => import('@/modules/tpv/pages/TpvInspections'))
 const TpvViolations = lazy(() => import('@/modules/tpv/pages/TpvViolations'))
 const TpvRenewals = lazy(() => import('@/modules/tpv/pages/TpvRenewals'))
+const TpvOffboarding = lazy(() => import('@/modules/tpv/pages/TpvOffboarding'))
 const TpvVendorDetail = lazy(() => import('@/modules/tpv/pages/TpvVendorDetail'))
 const TpvOnboardings = lazy(() => import('@/modules/tpv/pages/TpvOnboardings'))
 const TpvTemporaryVendors = lazy(() => import('@/modules/tpv/pages/TpvTemporaryVendors'))
@@ -614,6 +615,8 @@ export default function AppRoutes() {
           <Route path="violations" element={<S><TpvViolations /></S>} />
           {/* §28 Renewal & Extension. */}
           <Route path="renewals" element={<S><TpvRenewals /></S>} />
+          {/* §29 Offboarding / Closure. */}
+          <Route path="offboarding" element={<S><TpvOffboarding /></S>} />
           <Route path="view/:id" element={<S><TpvVendorDetail /></S>} />
           <Route path="kickoff" element={<S><KickoffMeetings /></S>} />
           <Route path="kickoff/new" element={<S><KickoffMeetingCreate /></S>} />
