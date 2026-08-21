@@ -1687,6 +1687,69 @@ class KickoffMeetingService
         return $issue->fresh(['owner:id,name']);
     }
 
+    /**
+     * Convert an issue into a real Sangoe Task (Meeting.docx §10 — "convert the
+     * issue into Task/…"). Mirrors the action→task push: the task is linked to the
+     * vendor and carries the issue's owner/severity/due-date; the issue records the
+     * conversion so it is not converted twice.
+     */
+    public function convertIssueToTask(MeetingIssue $issue, User $actor): MeetingIssue
+    {
+        if ($issue->is_converted) {
+            throw new BusinessException("This issue was already converted to {$issue->converted_to} ({$issue->converted_ref}).");
+        }
+
+        $meeting = $issue->meeting()->with(['kickoffable', 'attendees'])->first();
+        $title = mb_substr(trim(strip_tags((string) $issue->title)), 0, 200);
+        if ($title === '') {
+            throw new BusinessException('Add a title before converting this issue to a task.');
+        }
+
+        $relType = 'standalone';
+        $relId = null;
+        if ($meeting?->kickoffable instanceof Vendor) {
+            $relType = 'tpv_vendor';
+            $relId = $meeting->kickoffable->id;
+        }
+
+        $assigneeIds = [];
+        if ($issue->owner_attendee_id) {
+            $uid = $meeting?->attendees->firstWhere('id', $issue->owner_attendee_id)?->user_id;
+            if ($uid) {
+                $assigneeIds[] = $uid;
+            }
+        }
+
+        // Issue severity maps onto the task priority scale.
+        $priorityMap = ['Low' => 'low', 'Medium' => 'medium', 'High' => 'high', 'Critical' => 'urgent'];
+        $priority = $priorityMap[$issue->severity] ?? 'medium';
+
+        $backlink = 'From meeting '.($meeting?->meeting_no ?: ('#'.$meeting?->id)).' · issue '.$issue->issue_ref;
+
+        $task = app(TaskService::class)->create([
+            'name' => $title,
+            'description' => (string) $issue->description."\n\n<p><em>{$backlink}</em></p>",
+            'priority' => $priority,
+            'start_date' => now()->toDateString(),
+            'due_date' => optional($issue->due_date)->toDateString(),
+            'rel_type' => $relType,
+            'rel_id' => $relId,
+            'assignee_ids' => $assigneeIds,
+        ], $actor->tenant_id, $actor->id);
+
+        $issue->update([
+            'converted_to' => 'Task',
+            'converted_ref' => 'TASK-'.$task->id,
+            'converted_id' => $task->id,
+            'status' => MeetingIssueStatus::isOpen($issue->status) ? MeetingIssueStatus::IN_PROGRESS : $issue->status,
+        ]);
+
+        $issue->meeting?->recordAudit('issue_converted', $actor,
+            "Issue {$issue->issue_ref} converted to task #{$task->id}");
+
+        return $issue->fresh(['owner:id,name']);
+    }
+
     /** The vendor id behind a meeting's subject, if any (vendor or onboarding). */
     private function meetingVendorId(KickoffMeeting $meeting): ?int
     {

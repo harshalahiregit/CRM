@@ -520,6 +520,12 @@ function IssueRow({ it, meetingId, onChanged, onError }) {
     try { await kickoffApi.convertIssue(meetingId, it.id, { severity: sev }); setConv(false); onChanged() }
     catch (e) { onError(e?.response?.data?.message || 'Could not escalate the issue.'); setBusy(false) }
   }
+  // §10 — convert the issue into a real Sangoe Task.
+  const toTask = async () => {
+    setBusy(true); onError(null)
+    try { await kickoffApi.convertIssueTask(meetingId, it.id); onChanged() }
+    catch (e) { onError(e?.response?.data?.message || 'Could not create the task.'); setBusy(false) }
+  }
 
   return (
     <div style={{ padding: '12px 14px', borderRadius: 12, background: 'var(--bg-input)', border: `1px solid ${it.is_overdue ? 'rgba(239,68,68,0.4)' : 'var(--border)'}` }}>
@@ -531,7 +537,9 @@ function IssueRow({ it, meetingId, onChanged, onError }) {
             {it.severity && <span style={{ fontSize: 10, fontWeight: 800, color: it.severity === 'Critical' || it.severity === 'High' ? '#ef4444' : 'var(--text-muted)' }}>{it.severity}</span>}
             {it.category && <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>{it.category}</span>}
             {it.due_date && <span style={{ fontSize: 10.5, color: it.is_overdue ? '#ef4444' : 'var(--text-muted)' }}>due {fmtDate(it.due_date)}</span>}
-            {it.converted_to && <span style={{ fontSize: 10, fontWeight: 800, color: '#ef4444' }}>→ {it.converted_to} {it.converted_ref}</span>}
+            {it.converted_to && (it.converted_to === 'Task'
+              ? <a href={`/app/tasks/${it.converted_id}`} style={{ fontSize: 10, fontWeight: 800, color: '#10b981', textDecoration: 'none' }}>→ Task {it.converted_ref}</a>
+              : <span style={{ fontSize: 10, fontWeight: 800, color: '#ef4444' }}>→ {it.converted_to} {it.converted_ref}</span>)}
           </div>
           <div style={{ fontSize: 13, color: 'var(--text-h)', fontWeight: 600 }}>{it.title}</div>
           {it.description && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{it.description}</div>}
@@ -540,6 +548,8 @@ function IssueRow({ it, meetingId, onChanged, onError }) {
         <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
           <button onClick={() => { setOpen(!open); setConv(false) }} style={{ padding: '6px 11px', borderRadius: 8, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: '#a78bfa' }}>{open ? 'Close' : 'Update'}</button>
           {!it.converted_to && <button onClick={() => { setConv(!conv); setOpen(false) }} style={{ padding: '6px 11px', borderRadius: 8, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.3)', color: '#ef4444' }}>Escalate</button>}
+          {!it.converted_to && <button onClick={toTask} disabled={busy} title="Convert this issue into a trackable Task"
+            style={{ padding: '6px 11px', borderRadius: 8, fontSize: 11.5, fontWeight: 700, cursor: busy ? 'wait' : 'pointer', background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981' }}>Task</button>}
         </div>
       </div>
 

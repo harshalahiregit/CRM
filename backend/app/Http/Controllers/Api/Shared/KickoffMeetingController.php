@@ -304,6 +304,15 @@ class KickoffMeetingController extends Controller
         return response()->json($this->kickoffService->convertIssueToIncident($meetingIssue, $data, $request->user()));
     }
 
+    /** Convert an issue into a real Sangoe Task (Meeting.docx §10). */
+    public function convertIssueTask(Request $request, KickoffMeeting $kickoffMeeting, MeetingIssue $meetingIssue)
+    {
+        $this->assertTenant($request, $kickoffMeeting);
+        abort_unless((int) $meetingIssue->kickoff_meeting_id === (int) $kickoffMeeting->id, 404, 'Issue not found on this meeting.');
+
+        return response()->json($this->kickoffService->convertIssueToTask($meetingIssue, $request->user()));
+    }
+
     /** Generate (or regenerate) the Minutes-of-Meeting PDF from existing data. */
     public function generateMom(Request $request, KickoffMeeting $kickoffMeeting)
     {

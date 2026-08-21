@@ -91,6 +91,9 @@ export const kickoffApi = {
     api.post(`/kickoff/meetings/${meetingId}/issues/${issueId}/progress`, data).then(r => r.data),
   convertIssue: (meetingId, issueId, data) =>
     api.post(`/kickoff/meetings/${meetingId}/issues/${issueId}/convert`, data).then(r => r.data),
+  // §10 — convert an issue into a real Sangoe Task (linked to the vendor).
+  convertIssueTask: (meetingId, issueId) =>
+    api.post(`/kickoff/meetings/${meetingId}/issues/${issueId}/convert-task`).then(r => r.data),
 
   // Subject pickers — thin wrappers over shared endpoints, mirroring how each
   // module wraps /vendors itself rather than importing another module's service.
