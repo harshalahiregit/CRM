@@ -56,6 +56,9 @@ export const customerApi = {
   assignableStaff: () => api.get('/customers/assignable-staff').then(r => r.data).catch(handleErr),
   // Tenant-editable option lists for classification, contact role and note type.
   options: () => api.get('/customers/options').then(r => r.data).catch(handleErr),
+  // Portal invitation — mints a set-password token and mails it to the contact.
+  inviteContact: (clientId, contactId) =>
+    api.post(`/customers/${clientId}/contacts/${contactId}/invite`).then(r => r.data).catch(handleErr),
 
   // Contacts (per-customer)
   contacts: {

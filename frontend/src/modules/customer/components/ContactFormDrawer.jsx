@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Eye, EyeOff, RefreshCw } from 'lucide-react'
+import { X, Eye, EyeOff, RefreshCw, Send } from 'lucide-react'
 import { customerApi } from '@/services/customerApi'
 import { useToast } from '@/hooks/useToast'
+import AsyncButton from '@/components/ui/AsyncButton'
 import CustomFieldInput, { cfWidthStyle } from './CustomFieldInput'
 import ContactPermissions, { DEFAULT_PERMISSIONS, DEFAULT_NOTIFICATIONS, permissionsFromLegacy } from './ContactPermissions'
 
@@ -31,7 +32,7 @@ const EMPTY_CONTACT = {
   // role is what they are to us (and is what drives which mail they get).
   department: '', role: '', whatsapp: '',
   is_decision_maker: false, influence: '', is_secondary: false, reports_to: '',
-  is_primary: false, active: true,
+  is_primary: false, active: true, portal_status: 'inactive',
   permissions: DEFAULT_PERMISSIONS, email_notifications: DEFAULT_NOTIFICATIONS, emails_enabled: true,
   custom_fields: {},
 }
@@ -70,6 +71,7 @@ export default function ContactFormDrawer({ clientId, contact = null, siblings =
     is_decision_maker: !!editing.is_decision_maker, influence: editing.influence || '',
     is_secondary: !!editing.is_secondary, reports_to: editing.reports_to ?? '',
     is_primary: !!editing.is_primary, active: editing.active !== false,
+    portal_status: editing.portal_status || 'inactive',
     permissions: editing.permissions ?? permissionsFromLegacy(editing.email_notifications),
     email_notifications: { ...DEFAULT_NOTIFICATIONS, ...(editing.email_notifications || {}) },
     emails_enabled: editing.emails_enabled !== false,
@@ -79,6 +81,22 @@ export default function ContactFormDrawer({ clientId, contact = null, siblings =
   const sf = (k, v) => setForm(p => ({ ...p, [k]: v }))
 
   useEffect(() => { customerApi.customFields.list('contacts').then(setCfDefs).catch(() => {}) }, [])
+
+  /**
+   * Send the portal invitation.
+   *
+   * Saves nothing first: the contact must already exist to be invited, and the
+   * server refuses if they have no email or no sections granted — so the
+   * message it returns is the useful one to surface.
+   */
+  const sendInvite = async () => {
+    try {
+      const r = await customerApi.inviteContact(clientId, editing.id)
+      toast.success(r?.message || 'Invitation sent.')
+    } catch (e) {
+      toast.error(e.message || 'Could not send the invitation.')
+    }
+  }
 
   const save = async () => {
     if (!form.first_name.trim()) return toast.error('First name required')
@@ -184,6 +202,36 @@ export default function ContactFormDrawer({ clientId, contact = null, siblings =
               <option value="rtl">RTL (right-to-left)</option>
             </select>
           </div>
+          {/* Portal access. Separate from `active` on purpose: most contacts
+              are people we mail invoices to and never sign in. Inviting is an
+              explicit act rather than a side effect of creating a contact. */}
+          <div>
+            <label className="label">Portal Access</label>
+            <div className="flex items-center gap-2">
+              <select className="input-3d text-sm flex-1" value={form.portal_status} onChange={e => sf('portal_status', e.target.value)}>
+                <option value="inactive">No portal access</option>
+                <option value="invited">Invited — waiting for them to set a password</option>
+                <option value="active">Active — can sign in</option>
+                <option value="disabled">Disabled — access revoked</option>
+              </select>
+              {editing?.id && (
+                <AsyncButton
+                  onClick={sendInvite}
+                  pendingLabel="Sending…"
+                  className="px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 flex-shrink-0"
+                  style={{ border: '1px solid var(--border-purple, rgba(124,58,237,0.4))', background: 'rgba(124,58,237,0.10)', color: 'var(--accent, #a78bfa)' }}
+                  title="Email this contact a link to set their own password"
+                >
+                  <Send size={13} /> Invite
+                </AsyncButton>
+              )}
+            </div>
+            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+              Inviting emails them a link to choose their own password — you never need to know it.
+              They will only see the sections ticked below.
+            </p>
+          </div>
+
           <div>
             <label className="label">Portal Password</label>
             <div className="flex items-center gap-2">

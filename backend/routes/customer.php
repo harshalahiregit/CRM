@@ -109,6 +109,8 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('customers')->gr
     Route::post('/{client}/contacts',                      [ClientContactController::class, 'store']);
     Route::put('/{client}/contacts/{contact}',             [ClientContactController::class, 'update']);
     Route::patch('/{client}/contacts/{contact}/active',    [ClientContactController::class, 'toggleActive']);
+    // Portal invitation — mints a set-password token and mails it.
+    Route::post('/{client}/contacts/{contact}/invite',     [ClientContactController::class, 'invite']);
     Route::delete('/{client}/contacts/{contact}',          [ClientContactController::class, 'destroy']);
 
     // Notes

@@ -211,4 +211,57 @@ class ClientPortalTest extends TestCase
             'token' => $token, 'password' => 'Second@1234', 'password_confirmation' => 'Second@1234',
         ])->assertStatus(404);
     }
+
+    // ── Invitation, from the staff side ──────────────────────────────────
+
+    private function actingStaff(): void
+    {
+        Sanctum::actingAs(User::create([
+            'tenant_id' => $this->t->id, 'name' => 'Staff', 'email' => 'staff@x.test',
+            'password' => bcrypt('x'), 'role' => 'admin', 'status' => 'active',
+        ]));
+    }
+
+    public function test_staff_can_invite_a_contact_to_the_portal(): void
+    {
+        $this->actingStaff();
+
+        $this->postJson("/api/customers/{$this->mine->id}/contacts/{$this->contact->id}/invite")
+             ->assertOk();
+
+        $this->assertNotNull($this->contact->fresh()->password_reset_token);
+    }
+
+    /** An invitation to a contact with nothing granted lands on an empty portal. */
+    public function test_inviting_a_contact_with_no_permissions_is_refused(): void
+    {
+        $this->contact->update(['permissions' => []]);
+        $this->actingStaff();
+
+        $this->postJson("/api/customers/{$this->mine->id}/contacts/{$this->contact->id}/invite")
+             ->assertStatus(422);
+    }
+
+    public function test_inviting_a_contact_with_no_email_is_refused(): void
+    {
+        $this->contact->forceFill(['email' => null])->save();
+        $this->actingStaff();
+
+        $this->postJson("/api/customers/{$this->mine->id}/contacts/{$this->contact->id}/invite")
+             ->assertStatus(422);
+    }
+
+    /** A contact of another customer must not be invitable through this client. */
+    public function test_a_contact_from_another_customer_cannot_be_invited_through_this_one(): void
+    {
+        $other = ClientContact::create([
+            'tenant_id' => $this->t->id, 'client_id' => $this->theirs->id,
+            'first_name' => 'Other', 'email' => 'other@theirs.test',
+            'active' => true, 'permissions' => ['invoice'],
+        ]);
+        $this->actingStaff();
+
+        $this->postJson("/api/customers/{$this->mine->id}/contacts/{$other->id}/invite")
+             ->assertStatus(404);
+    }
 }
