@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, CalendarDays, Rocket, Building2, Boxes, GraduationCap, FileWarning, ClipboardCheck, AlertOctagon, RefreshCcw, LogOut,
-  UserCheck, CheckSquare, ScanLine, ShieldAlert, Clock, ShieldCheck, HardHat, ClipboardList, Siren, FileCheck2, Eye, FolderLock, Landmark, TrendingUp, Gauge } from 'lucide-react'
+  UserCheck, CheckSquare, ScanLine, ShieldAlert, Clock, ShieldCheck, HardHat, ClipboardList, Siren, FileCheck2, Eye, FolderLock, Landmark, TrendingUp, Gauge, Megaphone } from 'lucide-react'
 import ModuleShell from '@/components/layout/ModuleShell'
 
 // Sangoe TPV navigation — the doc's 9-cluster structure (§38/§39), replacing the
@@ -63,6 +63,7 @@ const TPV_GROUPS = [
     { label: 'Analytics',  path: '/app/tpv/analytics',        icon: TrendingUp },
     { label: 'Governance', path: '/app/tpv/governance',       icon: ShieldCheck },
     { label: 'Document Vault', path: '/app/tpv/document-vault', icon: FolderLock },
+    { label: 'Communications', path: '/app/tpv/communications', icon: Megaphone },
     { label: 'Evidence',   path: '/app/tpv/evidence',         icon: FolderLock },
     { label: 'Authority',  path: '/app/tpv/authority-matrix', icon: Landmark },
   ] },

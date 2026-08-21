@@ -108,6 +108,11 @@ export const tpvApi = {
     roster: ()         => api.get('/tpv/vpi').then(r => r.data),
     vendor: (vendorId) => api.get(`/tpv/vendors/${vendorId}/vpi`).then(r => r.data),
   },
+  // Communications Centre (Sangoe TPV §31) — derived alerts + send/log.
+  communications: {
+    get:  (params = {}) => api.get('/tpv/communications', { params }).then(r => r.data),
+    send: (data)        => api.post('/tpv/communications/send', data).then(r => r.data),
+  },
   // Unified Work Authorization (Sangoe TPV §19) — read-only composite verdict.
   workAuthorization: {
     roster: (params = {}) => api.get('/tpv/work-authorization', { params }).then(r => r.data?.data ?? r.data),

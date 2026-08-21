@@ -290,6 +290,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::get('/vpi',                                    [\App\Http\Controllers\Api\Tpv\TpvVendorPerformanceController::class, 'index']);
     Route::get('/vendors/{vendor}/vpi',                   [\App\Http\Controllers\Api\Tpv\TpvVendorPerformanceController::class, 'show'])->where('vendor', '[0-9]+');
 
+    // Communications Centre (Sangoe TPV §31) — derived alerts + send/log.
+    Route::get('/communications',                         [\App\Http\Controllers\Api\Tpv\TpvCommunicationController::class, 'index']);
+    Route::post('/communications/send',                   [\App\Http\Controllers\Api\Tpv\TpvCommunicationController::class, 'send']);
+
     // Inspections & Audits (Sangoe TPV §22) — Plan→Inspect→Finding→Action→CAPA/NCR→Close.
     Route::get('/inspections',                            [\App\Http\Controllers\Api\Tpv\TpvInspectionController::class, 'index']);
     Route::post('/inspections',                           [\App\Http\Controllers\Api\Tpv\TpvInspectionController::class, 'store']);
