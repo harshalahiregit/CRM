@@ -121,12 +121,29 @@ what you are about to run, because your deploy will run *those* too.
 
 ## 5. Deploy
 
+### Getting the package onto the server
+
+**There is normally no SSH password.** Server access is through **Plesk's web
+SSH terminal** (a login there shows `from 127.0.0.1`). `scp` from a laptop will
+prompt for a password nobody has, so use File Manager:
+
+1. Plesk -> **Files** -> `app.sangoe.in` -> **Create Directory** `deploy-<sha>`
+2. **Upload Files** -> the three zips
+3. **Do NOT use Plesk's "Extract Files".** `deploy.sh` must do the extracting --
+   it backs up every file it overwrites first, and that backup is the rollback.
+
+To make `scp` work in future (worth doing once): Plesk -> **Websites & Domains
+-> Web Hosting Access** -> shell `/bin/bash`, then add your public key under
+**SSH Keys**. After that:
+
 ```bash
-# from your machine
 scp -r ~/Desktop/sangoe_crm/deploy-<sha> \
   sangoe.in_ofmk2nob6dm@app.sangoe.in:~/app.sangoe.in/
+```
 
-# on the server
+### Then, in the Plesk SSH terminal
+
+```bash
 cd ~/app.sangoe.in/deploy-<sha>
 cp ~/app.sangoe.in/deploy-5585379/deploy.sh .        # reuse the existing script
 
@@ -234,6 +251,10 @@ is harmless but signals nothing. If mail must send, `QUEUE_CONNECTION` has to be
 `sync` or someone must run a worker.
 
 **`build-deploy-package.ps1` is PowerShell.** Use the bash version in §3.
+
+**There is no SSH password -- access is Plesk's web terminal.** `scp` from a
+laptop prompts for a password that was never set. Upload through File Manager,
+or add an SSH key once (see §5) and never think about it again.
 
 ---
 
