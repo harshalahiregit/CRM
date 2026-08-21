@@ -159,7 +159,15 @@ live vendor-status template, AI assist. Kickoff is now "Meetings → New → Typ
 
 ## Phase 7 — Governance polish
 
-- [~] **§21 Compliance engine** — 14 categories + 7 statuses (Compliant/Partial/Non/Expiring/Expired/Waived/Under-Review) per vendor.
+- [x] **§21 Compliance engine** — `tpv_vendor_compliance` (per-vendor per-category register, one row per
+  vendor+category) over the 14 categories (legal/labour/licences/statutory/contractual/HSE/training/medical/
+  risk-assessment/method-statement/PPE/environment/quality/security) × 7 statuses (Compliant/Partially/
+  Non-Compliant/Expiring/Expired/Waived/Under-Review). `effective_status` accessor makes **expiry drive
+  status (Rule 8)**. `TpvComplianceService` (vendorMatrix — always all 14, upsert, roster with compliance %).
+  Controller + routes. Frontend: **Compliance Register** page (vendor roster with compliance-% bar +
+  problem/expiring counts, expandable 14-category matrix with inline status + validity editors) in the
+  Compliance cluster, additive to the evidence locker. Verified via rolled-back tinker (expired→Expired
+  override, 14-cat matrix, roster %) + green build.
 - [~] **§27 Vendor Performance (VPI)** — expand VRS from 3 → 13 dimensions, band A–E, cross-project history.
 - [x] **§28 Renewal & Extension** — `tpv_renewals` (REN-YYYY-### ref, vendor/contract link, due date,
   JSON assessment snapshot, Pending→Assessed→Decided) with an **assessment that pulls the VRS scorecard +

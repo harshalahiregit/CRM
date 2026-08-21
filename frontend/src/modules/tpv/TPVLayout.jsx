@@ -45,6 +45,7 @@ const TPV_GROUPS = [
   ] },
   { label: 'Compliance', icon: CheckSquare, items: [
     { label: 'Compliance', path: '/app/tpv/compliance', icon: CheckSquare },
+    { label: 'Register',   path: '/app/tpv/compliance-register', icon: ShieldCheck },
     { label: 'Incidents',  path: '/app/tpv/incidents',  icon: Siren },
     { label: 'NCR',        path: '/app/tpv/ncr',        icon: FileWarning },
     { label: 'Violations', path: '/app/tpv/violations', icon: AlertOctagon },

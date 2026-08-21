@@ -305,6 +305,12 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::post('/offboardings/{offboarding}/complete',   [\App\Http\Controllers\Api\Tpv\TpvOffboardingController::class, 'complete'])->where('offboarding', '[0-9]+');
     Route::delete('/offboardings/{offboarding}',          [\App\Http\Controllers\Api\Tpv\TpvOffboardingController::class, 'destroy'])->where('offboarding', '[0-9]+');
 
+    // Compliance engine (Sangoe TPV §21) — per-vendor register across 14 categories.
+    Route::get('/vendor-compliance',                      [\App\Http\Controllers\Api\Tpv\TpvComplianceController::class, 'index']);
+    Route::get('/vendors/{vendor}/compliance',            [\App\Http\Controllers\Api\Tpv\TpvComplianceController::class, 'vendorMatrix'])->where('vendor', '[0-9]+');
+    Route::post('/vendors/{vendor}/compliance',           [\App\Http\Controllers\Api\Tpv\TpvComplianceController::class, 'upsert'])->where('vendor', '[0-9]+');
+    Route::delete('/vendor-compliance/{compliance}',      [\App\Http\Controllers\Api\Tpv\TpvComplianceController::class, 'destroy'])->where('compliance', '[0-9]+');
+
     // Permit-to-Work + JSA (Doc_4 Phase 5). Approval requires a JSA and refuses a
     // suspended vendor; a permit expires at its validity window.
     Route::get('/permits',                                [\App\Http\Controllers\Api\Tpv\PermitController::class, 'index']);
