@@ -31,6 +31,13 @@ export const tpvApi = {
     update: (id, data)    => api.put(`/tpv/work-orders/${id}`, data).then(r => r.data),
     delete: (id)          => api.delete(`/tpv/work-orders/${id}`).then(r => r.data),
   },
+  // Central Approval register (Sangoe TPV §12) — generic, separate from the
+  // onboarding-approval chain in `approvals` above.
+  approvalRegister: {
+    list:   (params = {}) => api.get('/tpv/approval-requests', { params }).then(r => r.data),
+    raise:  (data)        => api.post('/tpv/approval-requests', data).then(r => r.data),
+    decide: (id, data)    => api.post(`/tpv/approval-requests/${id}/decide`, data).then(r => r.data),
+  },
   // Work Packages & Activities (Sangoe TPV §13) — the accountability spine.
   workPackages: {
     list:   (params = {}) => api.get('/tpv/work-packages', { params }).then(r => r.data?.data ?? r.data),
