@@ -85,6 +85,14 @@ export const tpvApi = {
     transition: (id, data)    => api.post(`/tpv/ncrs/${id}/transition`, data).then(r => r.data),
     delete:     (id)          => api.delete(`/tpv/ncrs/${id}`).then(r => r.data),
   },
+  // Generalised CAPA register (Sangoe TPV §25) — cross-source corrective/preventive actions.
+  capas: {
+    list:       (params = {}) => api.get('/tpv/capas', { params }).then(r => r.data),
+    create:     (data)        => api.post('/tpv/capas', data).then(r => r.data),
+    update:     (id, data)    => api.put(`/tpv/capas/${id}`, data).then(r => r.data),
+    transition: (id, data)    => api.post(`/tpv/capas/${id}/transition`, data).then(r => r.data),
+    delete:     (id)          => api.delete(`/tpv/capas/${id}`).then(r => r.data),
+  },
   // Unified Work Authorization (Sangoe TPV §19) — read-only composite verdict.
   workAuthorization: {
     roster: (params = {}) => api.get('/tpv/work-authorization', { params }).then(r => r.data?.data ?? r.data),

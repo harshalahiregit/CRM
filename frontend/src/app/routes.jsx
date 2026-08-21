@@ -275,6 +275,7 @@ const TpvApprovalRegister = lazy(() => import('@/modules/tpv/pages/TpvApprovalRe
 const TpvCompetency = lazy(() => import('@/modules/tpv/pages/TpvCompetency'))
 const TpvWorkAuthorization = lazy(() => import('@/modules/tpv/pages/TpvWorkAuthorization'))
 const TpvNcr = lazy(() => import('@/modules/tpv/pages/TpvNcr'))
+const TpvCapaRegister = lazy(() => import('@/modules/tpv/pages/TpvCapaRegister'))
 const TpvInspections = lazy(() => import('@/modules/tpv/pages/TpvInspections'))
 const TpvViolations = lazy(() => import('@/modules/tpv/pages/TpvViolations'))
 const TpvRenewals = lazy(() => import('@/modules/tpv/pages/TpvRenewals'))
@@ -620,6 +621,7 @@ export default function AppRoutes() {
           <Route path="work-authorization" element={<S><TpvWorkAuthorization /></S>} />
           {/* §24 Non-Conformance Reports. */}
           <Route path="ncr" element={<S><TpvNcr /></S>} />
+          <Route path="capa" element={<S><TpvCapaRegister /></S>} />
           {/* §22 Inspections & Audits. */}
           <Route path="inspections" element={<S><TpvInspections /></S>} />
           {/* §26 Vendor Violations & Strike escalation. */}

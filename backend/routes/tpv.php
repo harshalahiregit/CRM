@@ -270,6 +270,13 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::post('/ncrs/{ncr}/transition',                 [\App\Http\Controllers\Api\Tpv\TpvNcrController::class, 'transition'])->where('ncr', '[0-9]+');
     Route::delete('/ncrs/{ncr}',                          [\App\Http\Controllers\Api\Tpv\TpvNcrController::class, 'destroy'])->where('ncr', '[0-9]+');
 
+    // CAPA register (Sangoe TPV §25) — cross-source Corrective/Preventive Actions.
+    Route::get('/capas',                                  [\App\Http\Controllers\Api\Tpv\TpvCapaController::class, 'index']);
+    Route::post('/capas',                                 [\App\Http\Controllers\Api\Tpv\TpvCapaController::class, 'store']);
+    Route::put('/capas/{capa}',                           [\App\Http\Controllers\Api\Tpv\TpvCapaController::class, 'update'])->where('capa', '[0-9]+');
+    Route::post('/capas/{capa}/transition',               [\App\Http\Controllers\Api\Tpv\TpvCapaController::class, 'transition'])->where('capa', '[0-9]+');
+    Route::delete('/capas/{capa}',                        [\App\Http\Controllers\Api\Tpv\TpvCapaController::class, 'destroy'])->where('capa', '[0-9]+');
+
     // Inspections & Audits (Sangoe TPV §22) — Plan→Inspect→Finding→Action→CAPA/NCR→Close.
     Route::get('/inspections',                            [\App\Http\Controllers\Api\Tpv\TpvInspectionController::class, 'index']);
     Route::post('/inspections',                           [\App\Http\Controllers\Api\Tpv\TpvInspectionController::class, 'store']);
