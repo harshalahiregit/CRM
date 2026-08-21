@@ -286,6 +286,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::get('/analytics',                              [\App\Http\Controllers\Api\Tpv\TpvAnalyticsController::class, 'index']);
     Route::get('/analytics/export',                       [\App\Http\Controllers\Api\Tpv\TpvAnalyticsController::class, 'export']);
 
+    // Vendor Performance Index (Sangoe TPV §27) — additive superset of the VRS.
+    Route::get('/vpi',                                    [\App\Http\Controllers\Api\Tpv\TpvVendorPerformanceController::class, 'index']);
+    Route::get('/vendors/{vendor}/vpi',                   [\App\Http\Controllers\Api\Tpv\TpvVendorPerformanceController::class, 'show'])->where('vendor', '[0-9]+');
+
     // Inspections & Audits (Sangoe TPV §22) — Plan→Inspect→Finding→Action→CAPA/NCR→Close.
     Route::get('/inspections',                            [\App\Http\Controllers\Api\Tpv\TpvInspectionController::class, 'index']);
     Route::post('/inspections',                           [\App\Http\Controllers\Api\Tpv\TpvInspectionController::class, 'store']);
