@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\Shared;
 
+use App\Contracts\ProjectDirectoryContract;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Shared\StoreKickoffMeetingRequest;
 use App\Http\Requests\Shared\TransitionKickoffRequest;
@@ -11,38 +12,103 @@ use App\Models\Shared\KickoffMeeting;
 use App\Models\Shared\KickoffMomItem;
 use App\Models\Shared\MeetingIssue;
 use App\Services\Shared\KickoffMeetingService;
+use App\Services\Shared\MeetingAIService;
+use App\Services\Shared\VendorLiveStatusService;
 use App\Support\Shared\MeetingIssueStatus;
+use App\Support\Shared\MeetingTypeCatalog;
 use App\Support\Shared\MomActionStatus;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
 class KickoffMeetingController extends Controller
 {
-    public function __construct(private KickoffMeetingService $kickoffService)
-    {
-    }
+    public function __construct(private KickoffMeetingService $kickoffService) {}
 
     public function index(Request $request)
     {
         return response()->json(
             $this->kickoffService->list(
                 $request->user()->tenant_id,
-                $request->only(['status', 'meeting_type', 'subject_type', 'subject_id', 'awaiting_ack', 'search'])
+                $request->only(['status', 'meeting_type', 'subject_type', 'subject_id', 'awaiting_ack', 'search', 'project_id'])
             )
         );
     }
 
-    /** The configurable meeting-type catalogue (Meeting.docx) + agenda priorities. */
-    public function meetingTypes()
+    /**
+     * Active projects for the "which project is this meeting for?" picker
+     * (Meeting.docx §16). Read-only, served from the Projects module's contract —
+     * a soft link, so no FK and consumers tolerate ids that no longer resolve.
+     */
+    public function projects(Request $request, ProjectDirectoryContract $projects)
     {
+        return response()->json($projects->listProjects($request->user()->tenant_id));
+    }
+
+    /**
+     * A vendor's live governance status (Meeting.docx §4) — workforce, training,
+     * PPE, compliance, incidents, CAPA, strikes, gate. Feeds the create form so a
+     * template load can pull the vendor's current status into the agenda.
+     */
+    public function vendorStatus(Request $request, VendorLiveStatusService $status)
+    {
+        $data = $request->validate(['vendor_id' => 'required|integer']);
+
+        return response()->json($status->snapshot($request->user()->tenant_id, (int) $data['vendor_id']));
+    }
+
+    /**
+     * A project's meeting rollup (Meeting.docx §16) — the counts + meeting list a
+     * PM sees when they open a project. Keyed on the soft project_id link.
+     */
+    public function projectMeetings(Request $request, int $project)
+    {
+        return response()->json(
+            $this->kickoffService->projectMeetings($request->user()->tenant_id, $project)
+        );
+    }
+
+    /** AI: suggest an agenda for a meeting being planned (Meeting.docx §18). */
+    public function aiSuggestAgenda(Request $request, MeetingAIService $ai)
+    {
+        $data = $request->validate([
+            'meeting_type' => 'nullable|string|max:60',
+            'subject_type' => 'nullable|string|max:40',
+            'subject_id' => 'nullable|integer',
+        ]);
+
+        return response()->json($ai->suggestAgenda(
+            $request->user()->tenant_id,
+            $data['meeting_type'] ?? config('meetings.default_type', 'kickoff'),
+            $data['subject_type'] ?? null,
+            $data['subject_id'] ?? null,
+        ));
+    }
+
+    /** AI: summarise a meeting's captured minutes (Meeting.docx §18). */
+    public function aiSummary(Request $request, KickoffMeeting $kickoffMeeting, MeetingAIService $ai)
+    {
+        $this->assertTenant($request, $kickoffMeeting);
+
+        return response()->json($ai->summariseMinutes($kickoffMeeting));
+    }
+
+    /** The configurable meeting-type catalogue (Meeting.docx) + agenda priorities. */
+    public function meetingTypes(Request $request, MeetingTypeCatalog $catalog)
+    {
+        $tenantId = $request->user()->tenant_id;
+
         return response()->json([
-            'types'             => config('meetings.types', []),
-            'default_type'      => config('meetings.default_type', 'kickoff'),
-            'priorities'        => config('meetings.priorities', ['Low', 'Medium', 'High']),
+            // Tenant catalogue = config baseline + admin-defined types/templates.
+            'types' => $catalog->types($tenantId),
+            'default_type' => config('meetings.default_type', 'kickoff'),
+            'priorities' => config('meetings.priorities', ['Low', 'Medium', 'High']),
+            // Meeting-level option lists (Meeting.docx §2).
+            'meeting_priorities' => config('meetings.meeting_priorities', ['Low', 'Medium', 'High', 'Urgent']),
+            'confidentiality' => config('meetings.confidentiality', ['Public', 'Internal', 'Confidential', 'Restricted']),
             // Per-type standard agendas the Agenda Builder can one-click load.
-            'templates'         => config('meetings.templates', []),
-            'issue_severities'  => config('meetings.issue_severities', ['Low', 'Medium', 'High', 'Critical']),
-            'issue_categories'  => config('meetings.issue_categories', []),
+            'templates' => $catalog->templates($tenantId),
+            'issue_severities' => config('meetings.issue_severities', ['Low', 'Medium', 'High', 'Critical']),
+            'issue_categories' => config('meetings.issue_categories', []),
             'decision_statuses' => config('meetings.decision_statuses', ['Active', 'Superseded', 'Rescinded']),
         ]);
     }
@@ -55,8 +121,8 @@ class KickoffMeetingController extends Controller
     public function carryForward(Request $request)
     {
         $data = $request->validate([
-            'subject_type'       => 'required|string',
-            'subject_id'         => 'required|integer',
+            'subject_type' => 'required|string',
+            'subject_id' => 'required|integer',
             'exclude_meeting_id' => 'nullable|integer',
         ]);
 
@@ -75,6 +141,12 @@ class KickoffMeetingController extends Controller
         return response()->json($this->kickoffService->stats($request->user()->tenant_id));
     }
 
+    /** The Meetings dashboard aggregate (Meeting.docx §14). */
+    public function dashboard(Request $request)
+    {
+        return response()->json($this->kickoffService->dashboard($request->user()->tenant_id));
+    }
+
     /**
      * A subject's full meeting history + rollup totals (open actions/issues,
      * status mix, acknowledgements outstanding). Drives the history card.
@@ -83,7 +155,7 @@ class KickoffMeetingController extends Controller
     {
         $data = $request->validate([
             'subject_type' => 'required|string',
-            'subject_id'   => 'required|integer',
+            'subject_id' => 'required|integer',
         ]);
 
         return response()->json(
@@ -99,11 +171,20 @@ class KickoffMeetingController extends Controller
         );
     }
 
-    public function show(Request $request, KickoffMeeting $kickoffMeeting)
+    public function show(Request $request, KickoffMeeting $kickoffMeeting, ProjectDirectoryContract $projects)
     {
         $this->assertTenant($request, $kickoffMeeting);
 
-        return response()->json($this->kickoffService->find($kickoffMeeting->id, $request->user()->tenant_id));
+        $meeting = $this->kickoffService->find($kickoffMeeting->id, $request->user()->tenant_id);
+
+        // Resolve the soft project link to a display name for the detail view.
+        // Single lookup here (not appended to every list row) keeps the list N+1-free.
+        $payload = $meeting->toArray();
+        $payload['project_label'] = $meeting->project_id
+            ? $projects->labelFor((int) $meeting->project_id, $request->user()->tenant_id)
+            : null;
+
+        return response()->json($payload);
     }
 
     public function update(UpdateKickoffMeetingRequest $request, KickoffMeeting $kickoffMeeting)
@@ -142,11 +223,11 @@ class KickoffMeetingController extends Controller
         // attendance_status instead. At least one of the two must be present —
         // an entry carrying neither would silently do nothing.
         $data = $request->validate([
-            'attendance'                     => 'required|array|min:1',
-            'attendance.*.id'                => 'required|integer',
-            'attendance.*.attended'          => 'required_without:attendance.*.attendance_status|nullable|boolean',
+            'attendance' => 'required|array|min:1',
+            'attendance.*.id' => 'required|integer',
+            'attendance.*.attended' => 'required_without:attendance.*.attendance_status|nullable|boolean',
             'attendance.*.attendance_status' => 'nullable|string|in:'.implode(',', KickoffAttendee::STATUSES),
-            'attendance.*.remark'            => 'nullable|string|max:1000',
+            'attendance.*.remark' => 'nullable|string|max:1000',
         ]);
 
         return response()->json(
@@ -172,12 +253,12 @@ class KickoffMeetingController extends Controller
         $this->assertItemBelongs($momItem, $kickoffMeeting);
 
         $data = $request->validate([
-            'status'          => 'nullable|string|in:'.implode(',', MomActionStatus::ALL),
-            'note'            => 'nullable|string|max:2000',
-            'priority'        => 'nullable|string',
+            'status' => 'nullable|string|in:'.implode(',', MomActionStatus::ALL),
+            'note' => 'nullable|string|max:2000',
+            'priority' => 'nullable|string',
             'responsible_org' => 'nullable|string|max:160',
-            'target_date'     => 'nullable|date',
-            'evidence'        => 'nullable|file|mimes:pdf,doc,docx,png,jpg,jpeg|max:10240',
+            'target_date' => 'nullable|date',
+            'evidence' => 'nullable|file|mimes:pdf,doc,docx,png,jpg,jpeg|max:10240',
         ]);
 
         // Store an uploaded evidence file (if any) and hand its path to the service.
@@ -187,6 +268,17 @@ class KickoffMeetingController extends Controller
 
         return response()->json(
             $this->kickoffService->progressAction($momItem, $data, $request->user())
+        );
+    }
+
+    /** Push a MOM action into the Task module as a real Task (Meeting.docx §8). */
+    public function pushActionTask(Request $request, KickoffMeeting $kickoffMeeting, KickoffMomItem $momItem)
+    {
+        $this->assertTenant($request, $kickoffMeeting);
+        $this->assertItemBelongs($momItem, $kickoffMeeting);
+
+        return response()->json(
+            $this->kickoffService->pushActionToTask($momItem, $request->user())
         );
     }
 
@@ -213,11 +305,11 @@ class KickoffMeetingController extends Controller
         abort_unless((int) $meetingIssue->kickoff_meeting_id === (int) $kickoffMeeting->id, 404, 'Issue not found on this meeting.');
 
         $data = $request->validate([
-            'status'      => 'nullable|string|in:'.implode(',', MeetingIssueStatus::ALL),
-            'severity'    => 'nullable|string',
-            'category'    => 'nullable|string|max:60',
+            'status' => 'nullable|string|in:'.implode(',', MeetingIssueStatus::ALL),
+            'severity' => 'nullable|string',
+            'category' => 'nullable|string|max:60',
             'owner_names' => 'nullable|string|max:300',
-            'due_date'    => 'nullable|date',
+            'due_date' => 'nullable|date',
         ]);
 
         return response()->json($this->kickoffService->progressIssue($meetingIssue, $data, $request->user()));
@@ -230,12 +322,21 @@ class KickoffMeetingController extends Controller
         abort_unless((int) $meetingIssue->kickoff_meeting_id === (int) $kickoffMeeting->id, 404, 'Issue not found on this meeting.');
 
         $data = $request->validate([
-            'type'      => 'nullable|string|max:60',
-            'severity'  => 'nullable|string|in:Minor,Moderate,Serious,Fatal',
+            'type' => 'nullable|string|max:60',
+            'severity' => 'nullable|string|in:Minor,Moderate,Serious,Fatal',
             'stop_work' => 'nullable|boolean',
         ]);
 
         return response()->json($this->kickoffService->convertIssueToIncident($meetingIssue, $data, $request->user()));
+    }
+
+    /** Convert an issue into a real Sangoe Task (Meeting.docx §10). */
+    public function convertIssueTask(Request $request, KickoffMeeting $kickoffMeeting, MeetingIssue $meetingIssue)
+    {
+        $this->assertTenant($request, $kickoffMeeting);
+        abort_unless((int) $meetingIssue->kickoff_meeting_id === (int) $kickoffMeeting->id, 404, 'Issue not found on this meeting.');
+
+        return response()->json($this->kickoffService->convertIssueToTask($meetingIssue, $request->user()));
     }
 
     /** Generate (or regenerate) the Minutes-of-Meeting PDF from existing data. */
@@ -286,7 +387,7 @@ class KickoffMeetingController extends Controller
 
         $data = $request->validate([
             'decision' => 'required|string|in:approve,return',
-            'note'     => 'nullable|string|max:2000',
+            'note' => 'nullable|string|max:2000',
         ]);
 
         return response()->json(
@@ -315,7 +416,7 @@ class KickoffMeetingController extends Controller
         $published = $this->kickoffService->publishForAck($kickoffMeeting, $request->user());
 
         return response()->json([
-            'meeting'   => $published,
+            'meeting' => $published,
             'ack_token' => $published->getRawOriginal('ack_token'),
         ]);
     }

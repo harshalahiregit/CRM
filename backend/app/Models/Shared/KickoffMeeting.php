@@ -7,6 +7,8 @@ use App\Models\Traits\BelongsToTenant;
 use App\Models\User;
 use App\Support\Shared\KickoffStatus as Status;
 use App\Support\Shared\KickoffSubject;
+use App\Support\Shared\MeetingTypeCatalog;
+use App\Support\Shared\MomApprovalStatus;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -23,48 +25,59 @@ class KickoffMeeting extends Model
     protected $table = 'kickoff_meetings';
 
     protected $fillable = [
-        'tenant_id','created_by','kickoffable_type','kickoffable_id',
+        'tenant_id', 'created_by', 'kickoffable_type', 'kickoffable_id',
         // Kickoff is now one configurable meeting type among many (config/meetings.php).
         'meeting_type',
-        'reference','title','agenda','status',
-        'scheduled_at','duration_minutes','mode','location',
-        'original_scheduled_at','delay_reason',
-        'mom_path','minutes','completed_at',
+        'reference', 'meeting_no', 'title', 'agenda', 'status',
+        // Meeting.docx §2 detail fields.
+        'end_at', 'priority', 'confidentiality', 'chairperson', 'coordinator',
+        'department', 'client_name', 'project_id', 'work_package',
+        'scheduled_at', 'duration_minutes', 'mode', 'location',
+        'original_scheduled_at', 'delay_reason',
+        'mom_path', 'minutes', 'completed_at',
         // MOM approval workflow (Meeting.docx). Distribution = the vendor send.
-        'mom_status','mom_submitted_at','mom_submitted_by','mom_approved_at',
-        'mom_approved_by','mom_approval_note','mom_distributed_at','mom_distributed_by',
+        'mom_status', 'mom_submitted_at', 'mom_submitted_by', 'mom_approved_at',
+        'mom_approved_by', 'mom_approval_note', 'mom_distributed_at', 'mom_distributed_by',
+        // Two-level approval + distribution tracking (Meeting.docx §12/§13).
+        'mom_organizer_approved_at', 'mom_organizer_approved_by', 'mom_viewed_at',
+        'acknowledgement_response_type',
         // Structured venue. `location` above stays the single displayable string
         // every existing consumer reads; these are the parts it is built from.
-        'city','venue','address',
+        'city', 'venue', 'address',
         // The date originally promised, independent of any Delayed transition.
         'planned_date',
-        'ack_token','acknowledged_at','acknowledged_by_name','acknowledged_ip',
+        'ack_token', 'acknowledged_at', 'acknowledged_by_name', 'acknowledged_ip',
         // 48-hour acknowledgement window (see KickoffMeetingService::publishForAck).
-        'acknowledgement_sent_at','acknowledgement_deadline','acknowledgement_status',
+        'acknowledgement_sent_at', 'acknowledgement_deadline', 'acknowledgement_status',
         // The vendor's free-text response captured at acknowledgement.
         'acknowledgement_comment',
         // Online meeting fields (nullable — only set when mode = 'online')
-        'meeting_platform','meeting_link','meeting_id','meeting_passcode','meeting_host_link',
+        'meeting_platform', 'meeting_link', 'meeting_id', 'meeting_passcode', 'meeting_host_link',
     ];
 
     protected $casts = [
-        'scheduled_at'             => 'datetime',
-        'original_scheduled_at'    => 'datetime',
-        'completed_at'             => 'datetime',
-        'acknowledged_at'          => 'datetime',
-        'duration_minutes'         => 'integer',
-        'planned_date'             => 'date',
-        'acknowledgement_sent_at'  => 'datetime',
+        'scheduled_at' => 'datetime',
+        'end_at' => 'datetime',
+        'original_scheduled_at' => 'datetime',
+        'completed_at' => 'datetime',
+        'acknowledged_at' => 'datetime',
+        'duration_minutes' => 'integer',
+        'planned_date' => 'date',
+        'acknowledgement_sent_at' => 'datetime',
         'acknowledgement_deadline' => 'datetime',
-        'mom_submitted_at'         => 'datetime',
-        'mom_approved_at'          => 'datetime',
-        'mom_distributed_at'       => 'datetime',
+        'mom_submitted_at' => 'datetime',
+        'mom_approved_at' => 'datetime',
+        'mom_distributed_at' => 'datetime',
+        'mom_organizer_approved_at' => 'datetime',
+        'mom_viewed_at' => 'datetime',
     ];
 
     /** Acknowledgement window states. NULL = never sent for acknowledgement. */
-    public const ACK_PENDING      = 'pending';
+    public const ACK_PENDING = 'pending';
+
     public const ACK_ACKNOWLEDGED = 'acknowledged';
-    public const ACK_EXPIRED      = 'expired';
+
+    public const ACK_EXPIRED = 'expired';
 
     /** How long a vendor has to acknowledge published minutes. */
     public const ACK_WINDOW_HOURS = 48;
@@ -75,6 +88,21 @@ class KickoffMeeting extends Model
      * audited publish-minutes response.
      */
     protected $hidden = ['ack_token'];
+
+    /** Auto-assign a human Meeting No (MTG-YYYY-NNNN) per tenant (Meeting.docx §2). */
+    protected static function booted(): void
+    {
+        static::creating(function (KickoffMeeting $m) {
+            if (empty($m->meeting_no)) {
+                $year = date('Y');
+                $n = static::withTrashed()
+                    ->where('tenant_id', $m->tenant_id)
+                    ->whereYear('created_at', $year)
+                    ->count() + 1;
+                $m->meeting_no = sprintf('MTG-%s-%04d', $year, $n);
+            }
+        });
+    }
 
     protected $appends = [
         // 'subject' stays — it is the primary vendor and existing callers read it.
@@ -87,7 +115,7 @@ class KickoffMeeting extends Model
     /** Human label for the MOM approval state. Defaults to Draft. */
     public function getMomStatusLabelAttribute(): string
     {
-        return \App\Support\Shared\MomApprovalStatus::label($this->mom_status);
+        return MomApprovalStatus::label($this->mom_status);
     }
 
     public function momSubmitter()
@@ -105,12 +133,20 @@ class KickoffMeeting extends Model
         return $this->belongsTo(User::class, 'mom_distributed_by');
     }
 
-    /** Human label for the stored meeting_type key. Falls back to the raw key. */
+    public function momOrganizerApprover()
+    {
+        return $this->belongsTo(User::class, 'mom_organizer_approved_by');
+    }
+
+    /**
+     * Human label for the stored meeting_type key. Resolved through the tenant's
+     * catalogue (config baseline + any admin-defined types), request-cached so
+     * reading it on every list row does not re-query. Falls back to the raw key.
+     */
     public function getMeetingTypeLabelAttribute(): string
     {
-        $key = $this->meeting_type ?: config('meetings.default_type', 'kickoff');
-
-        return config("meetings.types.{$key}", ucfirst(str_replace('_', ' ', (string) $key)));
+        return app(MeetingTypeCatalog::class)
+            ->label((int) $this->tenant_id, $this->meeting_type);
     }
 
     public function creator()
@@ -244,9 +280,9 @@ class KickoffMeeting extends Model
         $key = KickoffSubject::keyFor($this->kickoffable_type);
 
         return [
-            'type'  => $key,
-            'id'    => $this->kickoffable_id,
-            'name'  => KickoffSubject::nameOf($this->kickoffable),
+            'type' => $key,
+            'id' => $this->kickoffable_id,
+            'name' => KickoffSubject::nameOf($this->kickoffable),
             'label' => KickoffSubject::label($key),
         ];
     }

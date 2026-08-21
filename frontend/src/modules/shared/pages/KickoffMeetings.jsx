@@ -3,11 +3,12 @@ import { useNavigate } from 'react-router-dom'
 import {
   CalendarDays, Plus, RefreshCw, Clock, CheckCircle2, XCircle, Send,
   Users, AlertTriangle, ClipboardCheck, Pencil, BellRing, Eye, Download, Loader2, Mail, MessageCircle, Smartphone,
-  ChevronLeft, ChevronRight, List, LayoutGrid,
+  ChevronLeft, ChevronRight, List, LayoutGrid, Laptop, Building2, UserX, ListChecks, Trash2, Settings2, UserCheck,
 } from 'lucide-react'
 import { kickoffApi } from '@/services/kickoffApi'
+import { useAuth } from '@/context/AuthContext'
 import {
-  KO_STATUS, koStatusCfg, koModeLabel, fmtDate, fmtDateTime,
+  KO_STATUS, koStatusCfg, koModeLabel, fmtDate, fmtDateTime, isKoClosed,
 } from '../kickoffConstants'
 import { KIT3D_STYLE, Overlay, ModalFooter } from '@/components/ui/kit3d'
 
@@ -20,6 +21,7 @@ import { KIT3D_STYLE, Overlay, ModalFooter } from '@/components/ui/kit3d'
  */
 export default function KickoffMeetings() {
   const navigate = useNavigate()
+  const { user } = useAuth()
   const [data, setData]   = useState([])
   const [stats, setStats] = useState(null)
   const [loading, setLoad] = useState(true)
@@ -29,6 +31,9 @@ export default function KickoffMeetings() {
   const [view, setView] = useState('list')   // 'list' | 'calendar'
   const [pageSize, setPageSize] = useState(25)   // rows per page ('all' = no paging)
   const [page, setPage] = useState(1)
+  const [projects, setProjects] = useState([])   // §16 project rollup source
+  const [projectF, setProjectF] = useState('All') // '' | project id (client-side)
+  const [quickView, setQuickView] = useState('all') // all|upcoming|pending_mom|open_actions|templates
 
   // Row-action modal targets — showNew removed: create navigates to full page
   const [attendanceFor, setAttFor]    = useState(null)
@@ -38,13 +43,35 @@ export default function KickoffMeetings() {
     setLoad(true)
     Promise.all([
       kickoffApi.list(filter === 'All' ? {} : { status: filter }),
-      kickoffApi.stats(),
+      kickoffApi.dashboard(),
     ]).then(([rows, s]) => { setData(rows?.data ?? rows); setStats(s); setLoad(false) })
       .catch(() => setLoad(false))
   }
   useEffect(() => { load() }, [filter]) // eslint-disable-line react-hooks/exhaustive-deps
-  // Any change to the filter or page size sends the reader back to page 1.
-  useEffect(() => { setPage(1) }, [filter, pageSize])
+  // Projects for the §16 rollup filter — soft link, empty on failure.
+  useEffect(() => { kickoffApi.projects().then(d => { if (Array.isArray(d)) setProjects(d) }).catch(() => {}) }, [])
+  // Any change to a filter or page size sends the reader back to page 1.
+  useEffect(() => { setPage(1) }, [filter, pageSize, projectF, quickView])
+
+  // Quick views (Meeting.docx nav sub-items) + project rollup are applied
+  // client-side over the loaded rows (same pattern as the calendar's filters).
+  const now = Date.now()
+  // Mine = meetings I organise (creator) or attend (name matches an attendee).
+  const mine = (m) => (m.creator?.id && user?.id && m.creator.id === user.id)
+    || (user?.name && (m.attendees || []).some(a => a.name === user.name))
+  const quickMatch = (m) => {
+    switch (quickView) {
+      case 'my':           return mine(m)
+      case 'upcoming':     return !isKoClosed(m.status) && m.scheduled_at && new Date(m.scheduled_at).getTime() >= now
+      // Completed meetings whose minutes are not yet distributed — the MOM is owed.
+      case 'pending_mom':  return m.status === KO_STATUS.COMPLETED && m.mom_status !== 'Distributed'
+      case 'open_actions': return (m.open_actions ?? 0) > 0
+      default:             return true
+    }
+  }
+  const rows = data
+    .filter(m => projectF === 'All' || String(m.project_id) === String(projectF))
+    .filter(quickMatch)
 
   // View / Download the MOM PDF — generate on demand if none exists yet.
   const handlePdf = async (m, download) => {
@@ -69,10 +96,10 @@ export default function KickoffMeetings() {
   }
 
   // Client-side paging over the already-fetched rows (same data the calendar uses).
-  const total      = data.length
+  const total      = rows.length
   const totalPages = pageSize === 'all' ? 1 : Math.max(1, Math.ceil(total / pageSize))
   const curPage    = Math.min(page, totalPages)
-  const pageRows   = pageSize === 'all' ? data : data.slice((curPage - 1) * pageSize, curPage * pageSize)
+  const pageRows   = pageSize === 'all' ? rows : rows.slice((curPage - 1) * pageSize, curPage * pageSize)
   const rangeFrom  = total === 0 ? 0 : (pageSize === 'all' ? 1 : (curPage - 1) * pageSize + 1)
   const rangeTo    = pageSize === 'all' ? total : Math.min(curPage * pageSize, total)
 
@@ -94,14 +121,40 @@ export default function KickoffMeetings() {
         </div>
       </div>
 
-      {/* KPI strip */}
+      {/* Dashboard (Meeting.docx §14) */}
       {stats && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 18 }}>
-          <Kpi label="Scheduled" value={stats.scheduled} icon={CalendarDays} color="#0ea5e9" />
-          <Kpi label="Delayed" value={stats.delayed} icon={Clock} color="#f59e0b" danger={stats.delayed > 0} />
-          <Kpi label="Completed" value={stats.completed} icon={CheckCircle2} color="#10b981" />
-          <Kpi label="Awaiting acknowledgement" value={stats.awaiting_ack} icon={Send} color="#a78bfa" danger={stats.awaiting_ack > 0} />
-        </div>
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6,1fr)', gap: 12, marginBottom: 12 }}>
+            <Kpi label="Today" value={stats.today} icon={CalendarDays} color="#7C3AED" />
+            <Kpi label="Upcoming" value={stats.upcoming} icon={Clock} color="#0ea5e9" />
+            <Kpi label="Pending MOM" value={stats.pending_mom} icon={ClipboardCheck} color="#f59e0b" danger={stats.pending_mom > 0} />
+            <Kpi label="Overdue MOM" value={stats.overdue_mom} icon={AlertTriangle} color="#ef4444" danger={stats.overdue_mom > 0} />
+            <Kpi label="Open actions" value={stats.open_actions} icon={ListChecks} color="#a78bfa" />
+            <Kpi label="Overdue actions" value={stats.overdue_actions} icon={AlertTriangle} color="#ef4444" danger={stats.overdue_actions > 0} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1.4fr repeat(3,1fr)', gap: 12, marginBottom: 18, alignItems: 'stretch' }}>
+            {/* Meeting effectiveness — action closure rate */}
+            <div className="pr-kpi" style={{ padding: 16, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                <span style={{ fontSize: 28, fontWeight: 900, color: stats.closure_rate >= 70 ? '#10b981' : stats.closure_rate >= 40 ? '#f59e0b' : '#ef4444', lineHeight: 1 }}>{stats.closure_rate}%</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)' }}>Action closure rate</span>
+              </div>
+              <div style={{ height: 7, borderRadius: 999, background: 'var(--bg-input)', overflow: 'hidden', margin: '10px 0 6px' }}>
+                <div style={{ height: '100%', width: `${stats.closure_rate}%`, borderRadius: 999, background: stats.closure_rate >= 70 ? '#10b981' : stats.closure_rate >= 40 ? '#f59e0b' : '#ef4444' }} />
+              </div>
+              <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{stats.closed_actions}/{stats.total_actions} actions closed</span>
+            </div>
+            <Kpi label="Completed" value={stats.completed} icon={CheckCircle2} color="#10b981" />
+            <Kpi label="Awaiting ack" value={stats.awaiting_ack} icon={Send} color="#a78bfa" danger={stats.awaiting_ack > 0} />
+            <Kpi label="Decisions active" value={stats.decisions_active} icon={ClipboardCheck} color="#0ea5e9" />
+          </div>
+          {/* Breakdowns — by type / by project / by vendor (Meeting.docx §14). */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(240px,1fr))', gap: 12, marginBottom: 18 }}>
+            <BreakdownCard title="By type" rows={stats.by_type} keyField="type" />
+            <BreakdownCard title="By project" rows={stats.by_project} keyField="project_id" empty="No project-linked meetings" />
+            <BreakdownCard title="By vendor" rows={stats.by_vendor} keyField="name" empty="No vendor meetings" />
+          </div>
+        </>
       )}
 
       {banner && (
@@ -112,8 +165,30 @@ export default function KickoffMeetings() {
         </div>
       )}
 
+      {/* Quick views (Meeting.docx nav sub-items) — client-side over loaded rows. */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap', borderBottom: '1px solid var(--border)', paddingBottom: 2 }}>
+        {[
+          ['all', 'All', CalendarDays, data.length],
+          ['my', 'My Meetings', UserCheck, data.filter(mine).length],
+          ['upcoming', 'Upcoming', Clock, data.filter(m => !isKoClosed(m.status) && m.scheduled_at && new Date(m.scheduled_at).getTime() >= now).length],
+          ['pending_mom', 'Pending MOM', ClipboardCheck, data.filter(m => m.status === KO_STATUS.COMPLETED && m.mom_status !== 'Distributed').length],
+          ['open_actions', 'Open Actions', ListChecks, data.filter(m => (m.open_actions ?? 0) > 0).length],
+          ['templates', 'Templates', LayoutGrid, null],
+        ].map(([v, label, Icon, count]) => {
+          const on = quickView === v
+          return (
+            <button key={v} onClick={() => setQuickView(v)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 13px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
+                border: 'none', borderBottom: `2px solid ${on ? '#7C3AED' : 'transparent'}`, background: 'transparent', color: on ? 'var(--text-h)' : 'var(--text-muted)' }}>
+              <Icon size={14} style={{ color: on ? '#a78bfa' : 'var(--text-muted)' }} /> {label}
+              {count != null && <span style={{ fontSize: 10.5, fontWeight: 800, padding: '1px 7px', borderRadius: 999, background: on ? 'rgba(124,58,237,0.15)' : 'var(--bg-input)', color: on ? '#a78bfa' : 'var(--text-muted)' }}>{count}</span>}
+            </button>
+          )
+        })}
+      </div>
+
       {/* Filter chips + view toggle */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div style={{ display: quickView === 'templates' ? 'none' : 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {['All', KO_STATUS.SCHEDULED, KO_STATUS.DELAYED, KO_STATUS.COMPLETED, KO_STATUS.CANCELLED].map(f => {
             const on = filter === f
@@ -128,6 +203,16 @@ export default function KickoffMeetings() {
               </button>
             )
           })}
+          {/* §16 project rollup — every meeting tagged to one project. */}
+          {projects.length > 0 && (
+            <select value={projectF} onChange={e => setProjectF(e.target.value)} title="Filter by project"
+              style={{ padding: '6px 10px', borderRadius: 999, fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
+                background: projectF !== 'All' ? 'linear-gradient(145deg,#a78bfa,#7C3AED)' : 'var(--bg-card)',
+                border: projectF !== 'All' ? 'none' : '1px solid var(--border)', color: projectF !== 'All' ? '#fff' : 'var(--text-muted)' }}>
+              <option value="All">All projects</option>
+              {projects.map(p => <option key={p.id} value={String(p.id)}>{p.name}</option>)}
+            </select>
+          )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         {/* Rows per page — only meaningful for the table view. */}
@@ -159,13 +244,15 @@ export default function KickoffMeetings() {
       </div>
 
       {/* 12-column register (or calendar) */}
-      {loading ? (
+      {quickView === 'templates' ? (
+        <TemplatesPanel />
+      ) : loading ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {[1, 2, 3].map(i => <div key={i} className="skeleton" style={{ height: 64, borderRadius: 12, background: 'var(--border)' }} />)}
         </div>
       ) : view === 'calendar' ? (
-        <MeetingCalendar data={data} onOpen={(mid) => navigate(`/app/tpv/kickoff/${mid}`)} />
-      ) : data.length === 0 ? (
+        <MeetingCalendar data={rows} onOpen={(mid) => navigate(`/app/tpv/kickoff/${mid}`)} />
+      ) : rows.length === 0 ? (
         <EmptyState filter={filter} onNew={() => navigate('/app/tpv/kickoff/new')} />
       ) : (
         <div className="pr-glass" style={{ padding: 0, borderRadius: 16, overflow: 'hidden' }}>
@@ -282,6 +369,33 @@ function Kpi({ label, value, icon: Icon, color, danger }) {
   )
 }
 
+/** One dashboard breakdown (by type / project / vendor) — top rows + count. */
+function BreakdownCard({ title, rows, keyField, empty = 'No data' }) {
+  const list = rows || []
+  const max = Math.max(1, ...list.map(r => r.count || 0))
+  return (
+    <div className="pr-kpi" style={{ padding: 14 }}>
+      <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 10 }}>{title}</div>
+      {list.length === 0 ? (
+        <p style={{ fontSize: 11.5, color: 'var(--text-muted)', margin: 0, fontStyle: 'italic' }}>{empty}</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+          {list.slice(0, 6).map(r => (
+            <div key={String(r[keyField])} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: 'var(--text-h)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.label || r.name}</span>
+              <span style={{ width: 54, height: 5, borderRadius: 999, background: 'var(--bg-input)', overflow: 'hidden', flexShrink: 0 }}>
+                <span style={{ display: 'block', height: '100%', width: `${Math.round((r.count / max) * 100)}%`, background: '#a78bfa', borderRadius: 999 }} />
+              </span>
+              <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text-h)', minWidth: 22, textAlign: 'right' }}>{r.count}</span>
+            </div>
+          ))}
+          {list.length > 6 && <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>+{list.length - 6} more</span>}
+        </div>
+      )}
+    </div>
+  )
+}
+
 const Chip = ({ icon: Icon, children }) => (
   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--text-h)', fontWeight: 700 }}>
     <Icon size={13} style={{ color: 'var(--text-muted)' }} /> {children}
@@ -328,82 +442,342 @@ function EmptyState({ onNew, filter }) {
   )
 }
 
-/* ── Month calendar ─────────────────────────────────────────────────────────── */
+/* ── Templates & Types settings (Meeting.docx §4 / admin Types-Templates) ─────
+ * Reference of every meeting type's standard agenda (what the Agenda Builder's
+ * one-click "Load template" inserts), PLUS an admin editor: types live in
+ * config/meetings.php as the built-in baseline, and a tenant can add its own or
+ * override a built-in via meeting_types rows (merged by MeetingTypeCatalog). */
+function TemplatesPanel() {
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
+  const [data, setData] = useState(null)
+  const [err, setErr] = useState(null)
+  const [editing, setEditing] = useState(null) // row being edited / created
+
+  const load = () => kickoffApi.typeSettings().then(setData).catch(() => setErr('Could not load the meeting types.'))
+  useEffect(() => { load() }, [])
+
+  const remove = async (row) => {
+    if (!window.confirm(`Remove "${row.label}"? The built-in default (if any) applies again.`)) return
+    try { await kickoffApi.deleteType(row.id); load() }
+    catch (e) { setErr(e?.response?.data?.message || 'Could not remove the type.') }
+  }
+
+  if (err) return <div className="pr-glass" style={{ padding: 24, color: 'var(--text-muted)', fontSize: 13 }}>{err}</div>
+  if (!data) return <div className="skeleton" style={{ height: 200, borderRadius: 16, background: 'var(--border)' }} />
+
+  const builtins = data.builtins || []
+  const custom = data.custom || []
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
+        <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: 0, lineHeight: 1.5, maxWidth: 620 }}>
+          Standard agendas per meeting type — the Agenda Builder loads these with one click. Built-in types ship with the app;
+          {isAdmin ? ' admins can add their own or override a built-in below.' : ' an admin can add custom types.'}
+        </p>
+        {isAdmin && (
+          <button onClick={() => setEditing({ key: '', label: '', templates: [], is_active: true, sort_order: 0 })} style={solidBtn}>
+            <Plus size={15} /> Add meeting type
+          </button>
+        )}
+      </div>
+
+      {editing && <TypeEditor row={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load() }} onError={setErr} />}
+
+      {custom.length > 0 && (
+        <>
+          <div style={sectionLabel}><Settings2 size={13} /> Custom &amp; overrides ({custom.length})</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(320px,1fr))', gap: 14, marginBottom: 22 }}>
+            {custom.map(row => (
+              <TypeCard key={row.id} title={row.label} badge={row.is_active ? null : 'Hidden'} keyName={row.key} items={row.templates || []}
+                actions={isAdmin ? (
+                  <div style={{ display: 'inline-flex', gap: 4 }}>
+                    <IconBtn title="Edit" icon={Pencil} color="#a78bfa" onClick={() => setEditing({ ...row, templates: row.templates || [] })} />
+                    <IconBtn title="Remove" icon={Trash2} color="#ef4444" onClick={() => remove(row)} />
+                  </div>
+                ) : null} />
+            ))}
+          </div>
+        </>
+      )}
+
+      <div style={sectionLabel}><LayoutGrid size={13} /> Built-in types ({builtins.length})</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(320px,1fr))', gap: 14 }}>
+        {builtins.map(b => (
+          <TypeCard key={b.key} title={b.label} keyName={b.key} items={b.templates || []}
+            actions={isAdmin ? <IconBtn title="Override for this tenant" icon={Pencil} color="#a78bfa"
+              onClick={() => setEditing({ key: b.key, label: b.label, templates: b.templates || [], is_active: true, sort_order: 0 })} /> : null} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function TypeCard({ title, keyName, items, actions, badge }) {
+  return (
+    <div className="pr-glass" style={{ padding: 18 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 12 }}>
+        <div style={{ minWidth: 0 }}>
+          <h3 style={{ margin: 0, fontSize: 14.5, fontWeight: 900, color: 'var(--text-h)', display: 'flex', alignItems: 'center', gap: 7 }}>
+            {title}
+            {badge && <span style={{ fontSize: 9.5, fontWeight: 800, padding: '1px 7px', borderRadius: 999, background: 'var(--bg-input)', color: 'var(--text-muted)' }}>{badge}</span>}
+          </h3>
+          <span style={{ fontSize: 10.5, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{keyName}</span>
+        </div>
+        {actions}
+      </div>
+      {items.length === 0 ? (
+        <p style={{ fontSize: 11.5, color: 'var(--text-muted)', margin: 0, fontStyle: 'italic' }}>No template items.</p>
+      ) : (
+        <ol style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 7 }}>
+          {items.map((it, i) => (
+            <li key={i} style={{ display: 'flex', gap: 9, fontSize: 12.5, color: 'var(--text-h)', lineHeight: 1.45 }}>
+              <span style={{ fontSize: 10.5, fontWeight: 800, color: '#a78bfa', minWidth: 16 }}>{i + 1}.</span>
+              <span style={{ flex: 1 }}>
+                {it.item}
+                {(it.duration_minutes || it.priority) && (
+                  <span style={{ fontSize: 10.5, color: 'var(--text-muted)', marginLeft: 6 }}>
+                    {[it.duration_minutes && `${it.duration_minutes} min`, it.priority].filter(Boolean).join(' · ')}
+                  </span>
+                )}
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  )
+}
+
+const IconBtn = ({ title, icon: Icon, color, onClick }) => (
+  <button title={title} onClick={onClick}
+    style={{ width: 28, height: 28, borderRadius: 8, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'var(--bg-input)', border: '1px solid var(--border)', color }}>
+    <Icon size={14} />
+  </button>
+)
+
+const sectionLabel = { display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 10px' }
+
+/* Admin editor for one meeting type + its agenda template. */
+function TypeEditor({ row, onClose, onSaved, onError }) {
+  const isOverrideOfBuiltin = !row.id && row.key !== ''
+  const [key, setKey] = useState(row.key || '')
+  const [label, setLabel] = useState(row.label || '')
+  const [active, setActive] = useState(row.is_active !== false)
+  const [items, setItems] = useState(row.templates?.length ? row.templates.map(t => ({ ...t })) : [{ item: '', duration_minutes: '', priority: '' }])
+  const [busy, setBusy] = useState(false)
+
+  const setItem = (i, k, v) => setItems(a => a.map((x, j) => j === i ? { ...x, [k]: v } : x))
+  const addItem = () => setItems(a => [...a, { item: '', duration_minutes: '', priority: '' }])
+  const rmItem = (i) => setItems(a => a.filter((_, j) => j !== i))
+
+  const save = async () => {
+    onError(null)
+    const cleanKey = key.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_')
+    if (!/^[a-z][a-z0-9_]*$/.test(cleanKey)) { onError('Key must start with a letter and use only lowercase letters, digits and underscores.'); return }
+    if (!label.trim()) { onError('A label is required.'); return }
+    const payload = {
+      key: cleanKey,
+      label: label.trim(),
+      is_active: active,
+      templates: items.filter(it => it.item.trim()).map(it => ({
+        item: it.item.trim(),
+        duration_minutes: it.duration_minutes ? Number(it.duration_minutes) : undefined,
+        priority: it.priority || undefined,
+      })),
+    }
+    setBusy(true)
+    try {
+      if (row.id) await kickoffApi.updateType(row.id, payload)
+      else await kickoffApi.createType(payload)
+      onSaved()
+    } catch (e) {
+      onError(e?.response?.data?.message || 'Could not save the meeting type.')
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="pr-glass" style={{ padding: 20, marginBottom: 20, border: '1px solid rgba(124,58,237,0.35)' }}>
+      <h3 style={{ margin: '0 0 14px', fontSize: 15, fontWeight: 900, color: 'var(--text-h)' }}>
+        {row.id ? 'Edit type' : isOverrideOfBuiltin ? `Override built-in "${row.label}"` : 'New meeting type'}
+      </h3>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+        <label style={{ fontSize: 12 }}>
+          <span style={editLbl}>Key</span>
+          <input value={key} disabled={isOverrideOfBuiltin || !!row.id} onChange={e => setKey(e.target.value)}
+            placeholder="e.g. safety_standdown" style={{ ...editInput, opacity: (isOverrideOfBuiltin || row.id) ? 0.6 : 1 }} />
+        </label>
+        <label style={{ fontSize: 12 }}>
+          <span style={editLbl}>Label</span>
+          <input value={label} onChange={e => setLabel(e.target.value)} placeholder="e.g. Safety Stand-down" style={editInput} />
+        </label>
+      </div>
+      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--text-h)', marginBottom: 14, cursor: 'pointer' }}>
+        <input type="checkbox" checked={active} onChange={e => setActive(e.target.checked)} />
+        Active (unchecking hides this type — for a built-in key, removes it from the pickers)
+      </label>
+
+      <div style={editLbl}>Agenda template</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
+        {items.map((it, i) => (
+          <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 90px 110px 30px', gap: 8, alignItems: 'center' }}>
+            <input value={it.item} onChange={e => setItem(i, 'item', e.target.value)} placeholder={`Agenda item ${i + 1}`} style={editInput} />
+            <input value={it.duration_minutes} onChange={e => setItem(i, 'duration_minutes', e.target.value)} placeholder="min" type="number" style={editInput} />
+            <select value={it.priority || ''} onChange={e => setItem(i, 'priority', e.target.value)} style={editInput}>
+              <option value="">Priority…</option>
+              {['Low', 'Medium', 'High'].map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+            <button onClick={() => rmItem(i)} title="Remove" style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.06)', color: '#ef4444', cursor: 'pointer' }}><Trash2 size={12} /></button>
+          </div>
+        ))}
+        <button onClick={addItem} style={{ ...ghostBtn, alignSelf: 'flex-start' }}><Plus size={13} /> Add item</button>
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+        <button onClick={onClose} style={ghostBtn}>Cancel</button>
+        <button onClick={save} disabled={busy} style={{ ...solidBtn, opacity: busy ? 0.6 : 1 }}>{busy ? 'Saving…' : 'Save type'}</button>
+      </div>
+    </div>
+  )
+}
+
+const editLbl = { display: 'block', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)', marginBottom: 5 }
+const editInput = { width: '100%', padding: '8px 10px', borderRadius: 8, fontSize: 12.5, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }
+
+/* ── Calendar ───────────────────────────────────────────────────────────────── */
 /**
- * A month grid of meetings, placed on their scheduled_at day and coloured by
- * status. Renders the same (status-filtered) rows the table does — no separate
- * fetch — so the two views never disagree. Clicking a meeting opens its detail. */
+ * Meetings on a calendar, in one of four views — Month · Week · Day · Agenda
+ * (Meeting.docx §15) — with in-view Type and Organizer filters. Renders the same
+ * (status-filtered) rows the table does — no separate fetch — so the views never
+ * disagree. Clicking a meeting opens its detail. */
+const CAL_VIEWS = [['month', 'Month'], ['week', 'Week'], ['day', 'Day'], ['agenda', 'Agenda']]
+const dayKeyOf = (d) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+const hhmm = (d) => d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }).replace(' ', '')
+
 function MeetingCalendar({ data, onOpen }) {
-  const [cursor, setCursor] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1) })
-  const year = cursor.getFullYear(), month = cursor.getMonth()
+  const [mode, setMode]     = useState('month')          // month | week | day | agenda
+  const [cursor, setCursor] = useState(() => new Date()) // any date inside the shown range
+  const [typeF, setTypeF]   = useState('All')
+  const [orgF, setOrgF]     = useState('All')
+  const [vendorF, setVendorF] = useState('All')
+  const [deptF, setDeptF]     = useState('All')
+  const [partF, setPartF]     = useState('All')
+
+  // Distinct values present in the loaded rows, for the §15 filters.
+  const { types, orgs, vendors, depts, participants } = useMemo(() => {
+    const t = new Map(), o = new Set(), v = new Set(), d = new Set(), p = new Set()
+    ;(data || []).forEach(m => {
+      if (m.meeting_type) t.set(m.meeting_type, m.meeting_type_label || m.meeting_type)
+      if (m.creator?.name) o.add(m.creator.name)
+      if (m.subject?.name) v.add(m.subject.name)
+      if (m.department) d.add(m.department)
+      ;(m.attendees || []).forEach(a => { if (a.name) p.add(a.name) })
+    })
+    return { types: [...t.entries()], orgs: [...o], vendors: [...v], depts: [...d], participants: [...p] }
+  }, [data])
+
+  const rows = useMemo(() => (data || []).filter(m =>
+    (typeF === 'All' || m.meeting_type === typeF) &&
+    (orgF === 'All' || m.creator?.name === orgF) &&
+    (vendorF === 'All' || m.subject?.name === vendorF) &&
+    (deptF === 'All' || m.department === deptF) &&
+    (partF === 'All' || (m.attendees || []).some(a => a.name === partF)),
+  ), [data, typeF, orgF, vendorF, deptF, partF])
 
   const byDay = useMemo(() => {
     const map = {}
-    ;(data || []).forEach(m => {
+    rows.forEach(m => {
       if (!m.scheduled_at) return
       const d = new Date(m.scheduled_at)
       if (Number.isNaN(d.getTime())) return
-      const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
-      ;(map[key] = map[key] || []).push({ m, d })
+      ;(map[dayKeyOf(d)] = map[dayKeyOf(d)] || []).push({ m, d })
     })
     Object.values(map).forEach(arr => arr.sort((a, b) => a.d - b.d))
     return map
-  }, [data])
-
-  const gridStart = new Date(year, month, 1 - new Date(year, month, 1).getDay())
-  const days = Array.from({ length: 42 }, (_, i) => { const d = new Date(gridStart); d.setDate(gridStart.getDate() + i); return d })
+  }, [rows])
 
   const today = new Date()
-  const todayKey = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`
-  const monthLabel = cursor.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
-  const inMonth = (data || []).filter(m => { if (!m.scheduled_at) return false; const d = new Date(m.scheduled_at); return d.getFullYear() === year && d.getMonth() === month }).length
-  const hhmm = (d) => d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }).replace(' ', '')
+  const todayKey = dayKeyOf(today)
+
+  // Prev/next step size follows the view.
+  const step = (dir) => setCursor(c => {
+    const d = new Date(c)
+    if (mode === 'month') d.setMonth(d.getMonth() + dir)
+    else if (mode === 'week' || mode === 'agenda') d.setDate(d.getDate() + dir * 7)
+    else d.setDate(d.getDate() + dir)
+    return d
+  })
+
+  const rangeLabel = mode === 'month'
+    ? cursor.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
+    : mode === 'day'
+      ? cursor.toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'short', year: 'numeric' })
+      : (() => { const s = new Date(cursor); s.setDate(s.getDate() - s.getDay()); const e = new Date(s); e.setDate(s.getDate() + 6)
+          return `${s.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} – ${e.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}` })()
+
+  const selStyle = { height: 32, borderRadius: 8, padding: '0 8px', fontSize: 12, fontWeight: 600, background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-h)', cursor: 'pointer' }
 
   return (
     <div className="pr-glass" style={{ padding: 18 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, gap: 10, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <button onClick={() => setCursor(new Date(year, month - 1, 1))} style={navBtn} title="Previous month"><ChevronLeft size={16} /></button>
-          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 900, color: 'var(--text-h)', minWidth: 150, textAlign: 'center' }}>{monthLabel}</h3>
-          <button onClick={() => setCursor(new Date(year, month + 1, 1))} style={navBtn} title="Next month"><ChevronRight size={16} /></button>
-          <button onClick={() => { const d = new Date(); setCursor(new Date(d.getFullYear(), d.getMonth(), 1)) }}
-            style={{ ...navBtn, width: 'auto', padding: '0 12px', fontSize: 12, fontWeight: 700 }}>Today</button>
+          <button onClick={() => step(-1)} style={navBtn} title="Previous"><ChevronLeft size={16} /></button>
+          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 900, color: 'var(--text-h)', minWidth: 190, textAlign: 'center' }}>{rangeLabel}</h3>
+          <button onClick={() => step(1)} style={navBtn} title="Next"><ChevronRight size={16} /></button>
+          <button onClick={() => setCursor(new Date())} style={{ ...navBtn, width: 'auto', padding: '0 12px', fontSize: 12, fontWeight: 700 }}>Today</button>
         </div>
-        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{inMonth} meeting{inMonth === 1 ? '' : 's'} this month</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {types.length > 0 && (
+            <select value={typeF} onChange={e => setTypeF(e.target.value)} style={selStyle} title="Filter by type">
+              <option value="All">All types</option>
+              {types.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+            </select>
+          )}
+          {orgs.length > 0 && (
+            <select value={orgF} onChange={e => setOrgF(e.target.value)} style={selStyle} title="Filter by organizer">
+              <option value="All">All organizers</option>
+              {orgs.map(o => <option key={o} value={o}>{o}</option>)}
+            </select>
+          )}
+          {vendors.length > 0 && (
+            <select value={vendorF} onChange={e => setVendorF(e.target.value)} style={selStyle} title="Filter by vendor">
+              <option value="All">All vendors</option>
+              {vendors.map(v => <option key={v} value={v}>{v}</option>)}
+            </select>
+          )}
+          {depts.length > 0 && (
+            <select value={deptF} onChange={e => setDeptF(e.target.value)} style={selStyle} title="Filter by department">
+              <option value="All">All departments</option>
+              {depts.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+          )}
+          {participants.length > 0 && (
+            <select value={partF} onChange={e => setPartF(e.target.value)} style={selStyle} title="Filter by participant">
+              <option value="All">All participants</option>
+              {participants.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+          )}
+          <div style={{ display: 'inline-flex', gap: 4, background: 'var(--bg-input)', borderRadius: 9, padding: 3, border: '1px solid var(--border)' }}>
+            {CAL_VIEWS.map(([v, label]) => {
+              const on = mode === v
+              return (
+                <button key={v} onClick={() => setMode(v)}
+                  style={{ padding: '5px 11px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', border: 'none',
+                    background: on ? 'linear-gradient(135deg,#a78bfa,#7C3AED)' : 'transparent', color: on ? '#fff' : 'var(--text-muted)' }}>
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 6, marginBottom: 6 }}>
-        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(w => (
-          <div key={w} style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)', textAlign: 'center', padding: '2px 0' }}>{w}</div>
-        ))}
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 6 }}>
-        {days.map((d, i) => {
-          const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
-          const items = byDay[key] || []
-          const other = d.getMonth() !== month
-          const isToday = key === todayKey
-          return (
-            <div key={i} style={{ minHeight: 98, borderRadius: 10, padding: 6, background: other ? 'transparent' : 'var(--bg-input)', border: `1px solid ${isToday ? '#7C3AED' : 'var(--border)'}`, opacity: other ? 0.4 : 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <div style={{ fontSize: 11, fontWeight: isToday ? 800 : 600, color: isToday ? '#a78bfa' : 'var(--text-muted)', textAlign: 'right' }}>{d.getDate()}</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 3, overflow: 'hidden' }}>
-                {items.slice(0, 3).map(({ m, d: md }) => {
-                  const cfg = koStatusCfg(m.status)
-                  return (
-                    <button key={m.id} onClick={() => onOpen(m.id)} title={`${m.subject?.name || m.title} · ${hhmm(md)}`}
-                      style={{ display: 'flex', alignItems: 'center', gap: 4, textAlign: 'left', padding: '2px 5px', borderRadius: 6, cursor: 'pointer', border: 'none', background: cfg.bg, color: cfg.color, fontSize: 10.5, fontWeight: 700, overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                      <span style={{ width: 5, height: 5, borderRadius: '50%', background: cfg.color, flexShrink: 0 }} />
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{hhmm(md)} {m.subject?.name || m.title}</span>
-                    </button>
-                  )
-                })}
-                {items.length > 3 && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', paddingLeft: 3 }}>+{items.length - 3} more</span>}
-              </div>
-            </div>
-          )
-        })}
-      </div>
+      {mode === 'month' && <MonthGrid cursor={cursor} byDay={byDay} todayKey={todayKey} onOpen={onOpen} />}
+      {mode === 'week'  && <WeekGrid cursor={cursor} byDay={byDay} todayKey={todayKey} onOpen={onOpen} />}
+      {mode === 'day'   && <DayList day={cursor} items={byDay[dayKeyOf(cursor)] || []} onOpen={onOpen} />}
+      {mode === 'agenda' && <AgendaList cursor={cursor} rows={rows} onOpen={onOpen} />}
 
       <div style={{ display: 'flex', gap: 14, marginTop: 12, flexWrap: 'wrap' }}>
         {[KO_STATUS.SCHEDULED, KO_STATUS.DELAYED, KO_STATUS.COMPLETED, KO_STATUS.CANCELLED].map(s => {
@@ -411,6 +785,157 @@ function MeetingCalendar({ data, onOpen }) {
           return <span key={s} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--text-muted)' }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: c.color }} /> {c.label}</span>
         })}
       </div>
+    </div>
+  )
+}
+
+/** An event pill used across all calendar views. */
+function CalEvent({ m, d, onOpen, showDate = false }) {
+  const cfg = koStatusCfg(m.status)
+  return (
+    <button onClick={() => onOpen(m.id)} title={`${m.subject?.name || m.title} · ${hhmm(d)}`}
+      style={{ display: 'flex', alignItems: 'center', gap: 5, textAlign: 'left', padding: '3px 6px', borderRadius: 6, cursor: 'pointer', border: 'none', background: cfg.bg, color: cfg.color, fontSize: 10.5, fontWeight: 700, overflow: 'hidden', whiteSpace: 'nowrap', width: '100%' }}>
+      <span style={{ width: 5, height: 5, borderRadius: '50%', background: cfg.color, flexShrink: 0 }} />
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        {showDate ? `${d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} ` : ''}{hhmm(d)} {m.subject?.name || m.title}
+      </span>
+    </button>
+  )
+}
+
+function MonthGrid({ cursor, byDay, todayKey, onOpen }) {
+  const year = cursor.getFullYear(), month = cursor.getMonth()
+  const gridStart = new Date(year, month, 1 - new Date(year, month, 1).getDay())
+  const days = Array.from({ length: 42 }, (_, i) => { const d = new Date(gridStart); d.setDate(gridStart.getDate() + i); return d })
+  return (
+    <>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 6, marginBottom: 6 }}>
+        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(w => (
+          <div key={w} style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)', textAlign: 'center', padding: '2px 0' }}>{w}</div>
+        ))}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 6 }}>
+        {days.map((d, i) => {
+          const items = byDay[dayKeyOf(d)] || []
+          const other = d.getMonth() !== month
+          const isToday = dayKeyOf(d) === todayKey
+          return (
+            <div key={i} style={{ minHeight: 98, borderRadius: 10, padding: 6, background: other ? 'transparent' : 'var(--bg-input)', border: `1px solid ${isToday ? '#7C3AED' : 'var(--border)'}`, opacity: other ? 0.4 : 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div style={{ fontSize: 11, fontWeight: isToday ? 800 : 600, color: isToday ? '#a78bfa' : 'var(--text-muted)', textAlign: 'right' }}>{d.getDate()}</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3, overflow: 'hidden' }}>
+                {items.slice(0, 3).map(({ m, d: md }) => <CalEvent key={m.id} m={m} d={md} onOpen={onOpen} />)}
+                {items.length > 3 && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', paddingLeft: 3 }}>+{items.length - 3} more</span>}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </>
+  )
+}
+
+function WeekGrid({ cursor, byDay, todayKey, onOpen }) {
+  const start = new Date(cursor); start.setDate(start.getDate() - start.getDay())
+  const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return d })
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 6 }}>
+      {days.map((d, i) => {
+        const items = byDay[dayKeyOf(d)] || []
+        const isToday = dayKeyOf(d) === todayKey
+        return (
+          <div key={i} style={{ minHeight: 220, borderRadius: 10, padding: 7, background: 'var(--bg-input)', border: `1px solid ${isToday ? '#7C3AED' : 'var(--border)'}`, display: 'flex', flexDirection: 'column', gap: 5 }}>
+            <div style={{ textAlign: 'center', paddingBottom: 5, borderBottom: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)' }}>{d.toLocaleDateString('en-IN', { weekday: 'short' })}</div>
+              <div style={{ fontSize: 14, fontWeight: isToday ? 900 : 700, color: isToday ? '#a78bfa' : 'var(--text-h)' }}>{d.getDate()}</div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, overflow: 'hidden' }}>
+              {items.length === 0
+                ? <span style={{ fontSize: 10.5, color: 'var(--text-muted)', textAlign: 'center', marginTop: 6 }}>—</span>
+                : items.map(({ m, d: md }) => <CalEvent key={m.id} m={m} d={md} onOpen={onOpen} />)}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function DayList({ day, items, onOpen }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {items.length === 0 ? (
+        <div style={{ padding: '28px 16px', borderRadius: 12, background: 'var(--bg-input)', border: '1px dashed var(--border)', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+          No meetings on {day.toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'long' })}.
+        </div>
+      ) : items.map(({ m, d }) => {
+        const cfg = koStatusCfg(m.status)
+        return (
+          <button key={m.id} onClick={() => onOpen(m.id)}
+            style={{ display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', padding: '12px 14px', borderRadius: 12, cursor: 'pointer', background: 'var(--bg-input)', border: '1px solid var(--border)', width: '100%' }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-h)', minWidth: 66 }}>{hhmm(d)}</div>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: cfg.color, flexShrink: 0 }} />
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-h)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.subject?.name || m.title}</div>
+              <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{[m.meeting_type_label, m.creator?.name && `by ${m.creator.name}`].filter(Boolean).join(' · ')}</div>
+            </div>
+            <span style={{ fontSize: 10.5, fontWeight: 700, padding: '3px 9px', borderRadius: 999, background: cfg.bg, color: cfg.color }}>{cfg.label}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/** Upcoming meetings from the cursor date onward, grouped by day. */
+function AgendaList({ cursor, rows, onOpen }) {
+  const from = new Date(cursor); from.setHours(0, 0, 0, 0)
+  const upcoming = useMemo(() => rows
+    .filter(m => m.scheduled_at && new Date(m.scheduled_at) >= from)
+    .map(m => ({ m, d: new Date(m.scheduled_at) }))
+    .sort((a, b) => a.d - b.d), [rows, from])
+
+  const groups = useMemo(() => {
+    const g = []
+    let last = null
+    upcoming.forEach(({ m, d }) => {
+      const k = dayKeyOf(d)
+      if (k !== last) { g.push({ key: k, d, items: [] }); last = k }
+      g[g.length - 1].items.push({ m, d })
+    })
+    return g
+  }, [upcoming])
+
+  if (groups.length === 0) return (
+    <div style={{ padding: '28px 16px', borderRadius: 12, background: 'var(--bg-input)', border: '1px dashed var(--border)', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+      No upcoming meetings from this date.
+    </div>
+  )
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {groups.map(g => (
+        <div key={g.key}>
+          <div style={{ fontSize: 11.5, fontWeight: 800, color: '#a78bfa', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 7 }}>
+            {g.d.toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {g.items.map(({ m, d }) => {
+              const cfg = koStatusCfg(m.status)
+              return (
+                <button key={m.id} onClick={() => onOpen(m.id)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', padding: '10px 13px', borderRadius: 11, cursor: 'pointer', background: 'var(--bg-input)', border: '1px solid var(--border)', width: '100%' }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text-h)', minWidth: 60 }}>{hhmm(d)}</div>
+                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: cfg.color, flexShrink: 0 }} />
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-h)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.subject?.name || m.title}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{[m.meeting_type_label, m.creator?.name && `by ${m.creator.name}`].filter(Boolean).join(' · ')}</div>
+                  </div>
+                  <span style={{ fontSize: 10.5, fontWeight: 700, padding: '3px 9px', borderRadius: 999, background: cfg.bg, color: cfg.color }}>{cfg.label}</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
@@ -489,10 +1014,13 @@ function AttendanceModal({ id, onClose, onDone }) {
                     {/* Participant type · Third Party Vendor */}
                     <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{[a.role, a.organisation].filter(Boolean).join(' · ') || '—'}</div>
                   </div>
-                  <div style={{ display: 'inline-flex', borderRadius: 9, overflow: 'hidden', border: '1px solid var(--border)' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: 'flex-end' }}>
                     <SegBtn active={a.attendance_status === 'Present'} color="#10b981" icon={CheckCircle2} onClick={() => setStatus(a.id, 'Present')}>Present</SegBtn>
                     <SegBtn active={a.attendance_status === 'Late'}    color="#f59e0b" icon={Clock}        onClick={() => setStatus(a.id, 'Late')}>Late</SegBtn>
                     <SegBtn active={a.attendance_status === 'Absent'}  color="#ef4444" icon={XCircle}      onClick={() => setStatus(a.id, 'Absent')}>Absent</SegBtn>
+                    <SegBtn active={a.attendance_status === 'Excused'} color="#a78bfa" icon={UserX}        onClick={() => setStatus(a.id, 'Excused')}>Excused</SegBtn>
+                    <SegBtn active={a.attendance_status === 'Online'}  color="#0ea5e9" icon={Laptop}       onClick={() => setStatus(a.id, 'Online')}>Online</SegBtn>
+                    <SegBtn active={a.attendance_status === 'Offline'} color="#64748b" icon={Building2}    onClick={() => setStatus(a.id, 'Offline')}>Offline</SegBtn>
                   </div>
                 </div>
                 <input
@@ -530,9 +1058,10 @@ function AttendanceModal({ id, onClose, onDone }) {
 
 const SegBtn = ({ active, color, icon: Icon, onClick, children }) => (
   <button onClick={onClick}
-    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', border: 'none',
-      background: active ? `${color}22` : 'transparent', color: active ? color : 'var(--text-muted)' }}>
-    <Icon size={13} /> {children}
+    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 10px', fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
+      borderRadius: 8, border: `1px solid ${active ? color + '66' : 'var(--border)'}`,
+      background: active ? `${color}22` : 'var(--bg-card)', color: active ? color : 'var(--text-muted)' }}>
+    <Icon size={12} /> {children}
   </button>
 )
 

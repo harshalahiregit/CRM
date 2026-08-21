@@ -256,6 +256,10 @@ const PurchaseVendorPortalGuard = lazy(() => import('@/pages/purchase-portal/Pur
 // TPV Module (lazy) — pages land here as they're built
 const TPVLayout = lazy(() => import('@/modules/tpv/TPVLayout'))
 const TpvVendors = lazy(() => import('@/modules/tpv/pages/TpvVendors'))
+const TpvDashboard = lazy(() => import('@/modules/tpv/pages/TpvDashboard'))
+const TpvPrequalification = lazy(() => import('@/modules/tpv/pages/TpvPrequalification'))
+const TpvRiskDueDiligence = lazy(() => import('@/modules/tpv/pages/TpvRiskDueDiligence'))
+const TpvContracts = lazy(() => import('@/modules/tpv/pages/TpvContracts'))
 const TpvVendorDetail = lazy(() => import('@/modules/tpv/pages/TpvVendorDetail'))
 const TpvOnboardings = lazy(() => import('@/modules/tpv/pages/TpvOnboardings'))
 const TpvTemporaryVendors = lazy(() => import('@/modules/tpv/pages/TpvTemporaryVendors'))
@@ -269,6 +273,7 @@ const TpvGateLog = lazy(() => import('@/modules/tpv/pages/TpvGateLog'))
 const TpvStrikes = lazy(() => import('@/modules/tpv/pages/TpvStrikes'))
 const TpvIncidents = lazy(() => import('@/modules/tpv/pages/TpvIncidents'))
 const GovernanceDashboard = lazy(() => import('@/modules/tpv/pages/GovernanceDashboard'))
+const MeetingPerformance = lazy(() => import('@/modules/tpv/pages/MeetingPerformance'))
 const TpvPermits = lazy(() => import('@/modules/tpv/pages/TpvPermits'))
 const TpvSafetyEngagement = lazy(() => import('@/modules/tpv/pages/TpvSafetyEngagement'))
 const TpvReports = lazy(() => import('@/modules/tpv/pages/TpvReports'))
@@ -574,7 +579,17 @@ export default function AppRoutes() {
         {/* TPV MODULE */}
         <Route path="tpv" element={<S><TPVLayout /></S>}>
           <Route index element={<Navigate to="dashboard" replace />} />
-          <Route path="dashboard" element={<S><TpvVendors /></S>} />
+          {/* Dashboard now renders the real HSSE/workforce roll-up (was the
+              vendor list). The Vendor Master list moved to its own /vendors
+              route so "Dashboard" means dashboard. */}
+          <Route path="dashboard" element={<S><TpvDashboard /></S>} />
+          <Route path="vendors" element={<S><TpvVendors /></S>} />
+          {/* §6/§7 module-level qualification queues (per-vendor assessment lives
+              on the vendor workspace tabs). */}
+          <Route path="prequalification" element={<S><TpvPrequalification /></S>} />
+          <Route path="risk" element={<S><TpvRiskDueDiligence /></S>} />
+          {/* §8 Contracts & Work Orders — TPV-owned commercial spine. */}
+          <Route path="contracts" element={<S><TpvContracts /></S>} />
           <Route path="view/:id" element={<S><TpvVendorDetail /></S>} />
           <Route path="kickoff" element={<S><KickoffMeetings /></S>} />
           <Route path="kickoff/new" element={<S><KickoffMeetingCreate /></S>} />
@@ -583,6 +598,7 @@ export default function AppRoutes() {
               before :id so "edit" is never captured as a meeting id. */}
           <Route path="kickoff/:id/edit" element={<S><KickoffMeetingCreate /></S>} />
           <Route path="kickoff/:id" element={<S><KickoffMeetingDetail /></S>} />
+          <Route path="performance" element={<S><MeetingPerformance /></S>} />
           {/* The onboarding QUEUE stays — it is how staff find work. The wizard
               itself does not: Steps 1–6 are the vendor's own workflow and the
               only mount is /vendor-portal/onboarding/:id. `editable` was derived
@@ -598,7 +614,7 @@ export default function AppRoutes() {
           <Route path="approvals" element={<S><TpvApprovals /></S>} />
           {/* Was a ComingSoon placeholder with no implementation. Documents are
               managed per vendor, so send an old link to the vendor list. */}
-          <Route path="documents" element={<Navigate to="/app/tpv/dashboard" replace />} />
+          <Route path="documents" element={<Navigate to="/app/tpv/vendors" replace />} />
           <Route path="workforce" element={<S><TpvWorkers /></S>} />
           <Route path="workforce/:id" element={<S><TpvWorkerWizard /></S>} />
           <Route path="ppe" element={<S><TpvPpe /></S>} />

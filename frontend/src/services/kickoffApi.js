@@ -13,9 +13,28 @@ const upload = (url, formData) =>
 export const kickoffApi = {
   list:  (params = {}) => api.get('/kickoff/meetings', { params }).then(r => r.data),
   stats: ()            => api.get('/kickoff/meetings/stats').then(r => r.data),
+  // Richer Meetings dashboard aggregate (Meeting.docx §14).
+  dashboard: ()        => api.get('/kickoff/meetings/dashboard').then(r => r.data),
   // Configurable meeting-type catalogue + agenda priorities + per-type agenda
   // templates (config/meetings.php).
   meetingTypes: ()     => api.get('/kickoff/meeting-types').then(r => r.data),
+  // Active projects for the "which project is this for?" picker (Meeting.docx §16).
+  projects: ()         => api.get('/kickoff/projects').then(r => r.data),
+  // A project's meeting rollup (Meeting.docx §16) — counts + meeting list for the
+  // project detail page. { totals, meetings }.
+  projectMeetings: (projectId) => api.get(`/kickoff/projects/${projectId}/meetings`).then(r => r.data),
+  // A vendor's live governance status (Meeting.docx §4) — { vendor, sections }.
+  vendorStatus: (vendorId) => api.get('/kickoff/vendor-status', { params: { vendor_id: vendorId } }).then(r => r.data),
+  // AI layer (Meeting.docx §18) — suggest an agenda before, summarise minutes after.
+  aiSuggestAgenda: (data) => api.post('/kickoff/ai/suggest-agenda', data).then(r => r.data),
+  aiSummary: (meetingId) => api.post(`/kickoff/meetings/${meetingId}/ai-summary`).then(r => r.data),
+
+  // Admin Types/Templates settings — { builtins, custom, effective }. Writes are
+  // admin-gated server-side; layered over config/meetings.php (MeetingTypeCatalog).
+  typeSettings: ()          => api.get('/kickoff/meeting-type-settings').then(r => r.data),
+  createType:   (data)      => api.post('/kickoff/meeting-type-settings', data).then(r => r.data),
+  updateType:   (id, data)  => api.put(`/kickoff/meeting-type-settings/${id}`, data).then(r => r.data),
+  deleteType:   (id)        => api.delete(`/kickoff/meeting-type-settings/${id}`).then(r => r.data),
   // Still-open actions/issues from a subject's earlier meetings, to pre-load into
   // a new one. params: { subject_type, subject_id, exclude_meeting_id? }.
   carryForward: (params) => api.get('/kickoff/meetings/carry-forward', { params }).then(r => r.data),
@@ -66,12 +85,18 @@ export const kickoffApi = {
   },
   actionEvidenceBlob: (meetingId, itemId) =>
     api.get(`/kickoff/meetings/${meetingId}/mom-items/${itemId}/evidence`, { responseType: 'blob' }).then(r => r.data),
+  // §8 — turn a MOM action into a real Sangoe Task (linked to the vendor).
+  pushActionTask: (meetingId, itemId) =>
+    api.post(`/kickoff/meetings/${meetingId}/mom-items/${itemId}/push-task`).then(r => r.data),
 
   // Issue register — progress lifecycle + escalate to an Incident.
   progressIssue: (meetingId, issueId, data) =>
     api.post(`/kickoff/meetings/${meetingId}/issues/${issueId}/progress`, data).then(r => r.data),
   convertIssue: (meetingId, issueId, data) =>
     api.post(`/kickoff/meetings/${meetingId}/issues/${issueId}/convert`, data).then(r => r.data),
+  // §10 — convert an issue into a real Sangoe Task (linked to the vendor).
+  convertIssueTask: (meetingId, issueId) =>
+    api.post(`/kickoff/meetings/${meetingId}/issues/${issueId}/convert-task`).then(r => r.data),
 
   // Subject pickers — thin wrappers over shared endpoints, mirroring how each
   // module wraps /vendors itself rather than importing another module's service.

@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, CalendarDays, Clock, MapPin, Users, CheckCircle2, XCircle,
   Send, Copy, Upload, AlertTriangle, Loader2, FileText, ShieldCheck, History,
-  Sparkles, Eye, Download, Video, ExternalLink, ClipboardCheck, ThumbsUp, Undo2, RotateCcw,
+  Sparkles, Eye, Download, Video, ExternalLink, ClipboardCheck, ThumbsUp, Undo2, RotateCcw, ListChecks,
 } from 'lucide-react'
 import { kickoffApi } from '@/services/kickoffApi'
 import { meetingApi } from '@/services/meetingApi'
@@ -71,7 +71,10 @@ export default function KickoffMeetingDetail() {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <h1 style={{ color: 'var(--text-h)', fontSize: 23, fontWeight: 900, margin: 0, letterSpacing: '-0.02em' }}>{m.title}</h1>
+            {m.meeting_no && <span style={{ padding: '3px 9px', borderRadius: 7, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 11.5, fontWeight: 800, letterSpacing: '0.02em' }}>{m.meeting_no}</span>}
             <span style={{ padding: '4px 11px', borderRadius: 999, background: cfg.bg, color: cfg.color, fontSize: 12, fontWeight: 800 }}>{cfg.label}</span>
+            {m.priority && <span style={{ padding: '3px 9px', borderRadius: 7, fontSize: 11, fontWeight: 800, background: m.priority === 'Urgent' || m.priority === 'High' ? 'rgba(239,68,68,0.14)' : 'rgba(148,163,184,0.15)', color: m.priority === 'Urgent' || m.priority === 'High' ? '#ef4444' : 'var(--text-muted)' }}>{m.priority}</span>}
+            {m.confidentiality && m.confidentiality !== 'Public' && <span style={{ padding: '3px 9px', borderRadius: 7, fontSize: 11, fontWeight: 800, background: 'rgba(245,158,11,0.14)', color: '#d97706' }}>{m.confidentiality}</span>}
             {m.is_acknowledged && (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, fontWeight: 700, color: '#10b981' }}>
                 <ShieldCheck size={13} /> Acknowledged by {m.acknowledged_by_name}
@@ -129,8 +132,15 @@ export default function KickoffMeetingDetail() {
               <Detail icon={CalendarDays} label="Type" value={m.meeting_type_label || 'Kickoff Meeting'} />
               <Detail icon={Clock} label="Date & time" value={fmtDateTime(m.scheduled_at)} />
               <Detail icon={Clock} label="Duration" value={m.duration_minutes ? `${m.duration_minutes} min` : '—'} />
+              {m.end_at && <Detail icon={Clock} label="End time" value={fmtDateTime(m.end_at)} />}
               <Detail icon={MapPin} label={m.mode === 'online' ? 'Meeting link' : 'Location'} value={m.location || '—'} />
               <Detail icon={CalendarDays} label="Mode" value={koModeLabel(m.mode)} />
+              {m.chairperson && <Detail icon={Users} label="Chairperson" value={m.chairperson} />}
+              {m.coordinator && <Detail icon={Users} label="Coordinator" value={m.coordinator} />}
+              {m.department && <Detail icon={CalendarDays} label="Department" value={m.department} />}
+              {m.client_name && <Detail icon={Users} label="Client" value={m.client_name} />}
+              {m.work_package && <Detail icon={CalendarDays} label="Work package" value={m.work_package} />}
+              {(m.project_label || m.project_id) && <Detail icon={CalendarDays} label="Project" value={m.project_label || `#${m.project_id}`} />}
             </div>
             {m.status === KO_STATUS.DELAYED && m.delay_reason && (
               <div style={{ marginTop: 14, padding: '11px 13px', borderRadius: 11, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.32)' }}>
@@ -275,6 +285,9 @@ export default function KickoffMeetingDetail() {
           {/* Issues raised (§10) — track + escalate */}
           <IssuesCard m={m} meetingId={id} onChanged={load} onError={setErr} />
 
+          {/* AI summary of the captured minutes (§18) */}
+          <AiSummaryCard meetingId={id} onError={setErr} />
+
           {/* Minutes document */}
           <MomCard m={m} onUploaded={setM} onError={setErr} />
 
@@ -310,8 +323,17 @@ export default function KickoffMeetingDetail() {
 function ActionItemsCard({ m, meetingId, onChanged, onError }) {
   const items = m.mom_items || []
   const [openId, setOpenId] = useState(null)
+  const [taskBusy, setTaskBusy] = useState(null)
 
   if (items.length === 0) return null
+
+  // §8 — push an action into the Task module as a real, trackable Task.
+  const createTask = async (item) => {
+    setTaskBusy(item.id); onError(null)
+    try { onChanged(await kickoffApi.pushActionTask(meetingId, item.id)) }
+    catch (e) { onError(e?.response?.data?.message || 'Could not create the task.') }
+    finally { setTaskBusy(null) }
+  }
 
   const openCount = items.filter(i => i.is_open).length
   const overdue   = items.filter(i => i.is_overdue).length
@@ -337,16 +359,32 @@ function ActionItemsCard({ m, meetingId, onChanged, onError }) {
                     <span style={{ fontSize: 10, fontWeight: 800, padding: '1px 7px', borderRadius: 6, background: c.bg, color: c.color }}>{c.label}</span>
                     {item.priority && <span style={{ fontSize: 10, fontWeight: 800, color: item.priority === 'High' ? '#ef4444' : item.priority === 'Medium' ? '#d97706' : 'var(--text-muted)' }}>{item.priority}</span>}
                     {item.target_date && <span style={{ fontSize: 10.5, color: item.is_overdue ? '#ef4444' : 'var(--text-muted)' }}>due {fmtDate(item.target_date)}</span>}
+                    {item.agenda_item?.item && <span title="Agenda item" style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 6, background: 'rgba(124,58,237,0.12)', color: '#a78bfa' }}>▸ {item.agenda_item.item}</span>}
+                    {item.depends_on && <span title="Blocked until this action is done" style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 6, background: 'rgba(245,158,11,0.12)', color: '#d97706' }}>⛓ depends on {item.depends_on.action_ref || 'another action'}</span>}
+                    {item.task && (
+                      <a href={`/app/tasks/${item.task.id}`} title={`Linked task · ${item.task.status}`}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 6, background: 'rgba(16,185,129,0.12)', color: '#10b981', textDecoration: 'none' }}>
+                        <ListChecks size={10} /> Task: {String(item.task.status).replace(/_/g, ' ')}
+                      </a>
+                    )}
                   </div>
                   <div style={{ fontSize: 13, color: 'var(--text-h)', lineHeight: 1.5 }} dangerouslySetInnerHTML={{ __html: item.description }} />
                   {owner && <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 3 }}>Owner: {owner}</div>}
                   {item.verification_note && <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 3, fontStyle: 'italic' }}>“{item.verification_note}”</div>}
                   {item.verified_at && <div style={{ fontSize: 11, color: '#10b981', marginTop: 3 }}>Verified by {item.verifier?.name || '—'} · {fmtDate(item.verified_at)}</div>}
                 </div>
-                <button onClick={() => setOpenId(openId === item.id ? null : item.id)}
-                  style={{ padding: '6px 11px', borderRadius: 8, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: '#a78bfa', flexShrink: 0 }}>
-                  {openId === item.id ? 'Close' : 'Update'}
-                </button>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
+                  <button onClick={() => setOpenId(openId === item.id ? null : item.id)}
+                    style={{ padding: '6px 11px', borderRadius: 8, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: '#a78bfa' }}>
+                    {openId === item.id ? 'Close' : 'Update'}
+                  </button>
+                  {!item.task_id && (
+                    <button onClick={() => createTask(item)} disabled={taskBusy === item.id} title="Create a trackable Task from this action"
+                      style={{ padding: '6px 11px', borderRadius: 8, fontSize: 11.5, fontWeight: 700, cursor: taskBusy === item.id ? 'wait' : 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: '#10b981', display: 'inline-flex', alignItems: 'center', gap: 5, justifyContent: 'center' }}>
+                      <ListChecks size={12} /> {taskBusy === item.id ? '…' : 'Task'}
+                    </button>
+                  )}
+                </div>
               </div>
               {openId === item.id && (
                 <ActionProgressForm item={item} meetingId={meetingId}
@@ -433,6 +471,7 @@ function DecisionsCard({ m }) {
               {d.decision_ref && <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text-muted)' }}>{d.decision_ref}</span>}
               <span style={{ fontSize: 10, fontWeight: 800, color: d.status === 'Active' ? '#10b981' : '#94a3b8' }}>{d.status}</span>
               {d.effective_date && <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>effective {fmtDate(d.effective_date)}</span>}
+              {d.agenda_item?.item && <span title="Agenda item" style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 6, background: 'rgba(124,58,237,0.12)', color: '#a78bfa' }}>▸ {d.agenda_item.item}</span>}
             </div>
             <div style={{ fontSize: 13, color: 'var(--text-h)', lineHeight: 1.5 }}>{d.decision}</div>
             <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 3 }}>
@@ -464,6 +503,45 @@ function IssuesCard({ m, meetingId, onChanged, onError }) {
   )
 }
 
+/* ── AI summary (§18) — a narrative of the captured minutes, on demand ──────── */
+function AiSummaryCard({ meetingId, onError }) {
+  const [busy, setBusy] = useState(false)
+  const [summary, setSummary] = useState(null)
+  const [meta, setMeta] = useState(null)
+
+  const generate = async () => {
+    setBusy(true); onError(null)
+    try {
+      const d = await kickoffApi.aiSummary(meetingId)
+      setSummary(d?.summary || '')
+      setMeta(d?.meta || null)
+    } catch (e) {
+      onError(e?.response?.data?.message || 'AI summary is unavailable.')
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="pr-glass" style={{ padding: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+        <SectionTitle icon={Sparkles}>AI summary</SectionTitle>
+        <button onClick={generate} disabled={busy}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 13px', borderRadius: 9, fontSize: 12, fontWeight: 700, cursor: busy ? 'wait' : 'pointer', border: '1px solid rgba(124,58,237,0.35)', background: 'rgba(124,58,237,0.08)', color: '#a78bfa' }}>
+          {busy ? <Loader2 size={13} className="ko-spin" /> : <Sparkles size={13} />}
+          {busy ? 'Generating…' : summary ? 'Regenerate' : 'Generate summary'}
+        </button>
+      </div>
+      {summary
+        ? (
+          <>
+            <p style={{ fontSize: 13.5, color: 'var(--text-h)', lineHeight: 1.6, margin: '12px 0 0', whiteSpace: 'pre-wrap' }}>{summary}</p>
+            {meta && <p style={{ fontSize: 10.5, color: 'var(--text-muted)', margin: '10px 0 0' }}>Generated by {meta.provider}{meta.model ? ` · ${meta.model}` : ''} from the meeting's decisions, actions and issues.</p>}
+          </>
+        )
+        : <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '10px 0 0', lineHeight: 1.5 }}>Draft a plain-language summary of this meeting from its decisions, actions and issues.</p>}
+    </div>
+  )
+}
+
 function IssueRow({ it, meetingId, onChanged, onError }) {
   const [open, setOpen]     = useState(false)
   const [status, setStatus] = useState('')
@@ -484,6 +562,12 @@ function IssueRow({ it, meetingId, onChanged, onError }) {
     try { await kickoffApi.convertIssue(meetingId, it.id, { severity: sev }); setConv(false); onChanged() }
     catch (e) { onError(e?.response?.data?.message || 'Could not escalate the issue.'); setBusy(false) }
   }
+  // §10 — convert the issue into a real Sangoe Task.
+  const toTask = async () => {
+    setBusy(true); onError(null)
+    try { await kickoffApi.convertIssueTask(meetingId, it.id); onChanged() }
+    catch (e) { onError(e?.response?.data?.message || 'Could not create the task.'); setBusy(false) }
+  }
 
   return (
     <div style={{ padding: '12px 14px', borderRadius: 12, background: 'var(--bg-input)', border: `1px solid ${it.is_overdue ? 'rgba(239,68,68,0.4)' : 'var(--border)'}` }}>
@@ -495,7 +579,9 @@ function IssueRow({ it, meetingId, onChanged, onError }) {
             {it.severity && <span style={{ fontSize: 10, fontWeight: 800, color: it.severity === 'Critical' || it.severity === 'High' ? '#ef4444' : 'var(--text-muted)' }}>{it.severity}</span>}
             {it.category && <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>{it.category}</span>}
             {it.due_date && <span style={{ fontSize: 10.5, color: it.is_overdue ? '#ef4444' : 'var(--text-muted)' }}>due {fmtDate(it.due_date)}</span>}
-            {it.converted_to && <span style={{ fontSize: 10, fontWeight: 800, color: '#ef4444' }}>→ {it.converted_to} {it.converted_ref}</span>}
+            {it.converted_to && (it.converted_to === 'Task'
+              ? <a href={`/app/tasks/${it.converted_id}`} style={{ fontSize: 10, fontWeight: 800, color: '#10b981', textDecoration: 'none' }}>→ Task {it.converted_ref}</a>
+              : <span style={{ fontSize: 10, fontWeight: 800, color: '#ef4444' }}>→ {it.converted_to} {it.converted_ref}</span>)}
           </div>
           <div style={{ fontSize: 13, color: 'var(--text-h)', fontWeight: 600 }}>{it.title}</div>
           {it.description && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{it.description}</div>}
@@ -504,6 +590,8 @@ function IssueRow({ it, meetingId, onChanged, onError }) {
         <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
           <button onClick={() => { setOpen(!open); setConv(false) }} style={{ padding: '6px 11px', borderRadius: 8, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: '#a78bfa' }}>{open ? 'Close' : 'Update'}</button>
           {!it.converted_to && <button onClick={() => { setConv(!conv); setOpen(false) }} style={{ padding: '6px 11px', borderRadius: 8, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.3)', color: '#ef4444' }}>Escalate</button>}
+          {!it.converted_to && <button onClick={toTask} disabled={busy} title="Convert this issue into a trackable Task"
+            style={{ padding: '6px 11px', borderRadius: 8, fontSize: 11.5, fontWeight: 700, cursor: busy ? 'wait' : 'pointer', background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981' }}>Task</button>}
         </div>
       </div>
 
@@ -638,6 +726,9 @@ function MomApprovalCard({ m, onChanged, onError }) {
   const cfg       = momStatusCfg(status)
   const completed = m.status === KO_STATUS.COMPLETED
   const curIdx    = MOM_STAGES.indexOf(status)
+  // Both approval levels share the approve/return controls; only the label differs.
+  const isPending    = status === 'Pending_Approval' || status === 'Pending_Chairperson'
+  const approveLabel = status === 'Pending_Approval' ? 'Approve (Organizer)' : 'Approve (Chairperson)'
 
   const run = async (fn, key) => {
     setBusy(key); onError(null)
@@ -675,7 +766,7 @@ function MomApprovalCard({ m, onChanged, onError }) {
         })}
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9.5, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.02em', marginBottom: 12 }}>
-        <span>Draft</span><span>Pending</span><span>Approved</span><span>Distributed</span>
+        <span>Draft</span><span>Organizer</span><span>Chairperson</span><span>Approved</span><span>Distributed</span>
       </div>
 
       {/* Contextual actions */}
@@ -689,13 +780,13 @@ function MomApprovalCard({ m, onChanged, onError }) {
         )
       )}
 
-      {status === 'Pending_Approval' && !returning && (
+      {isPending && !returning && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          <MomBtn onClick={approve} busy={busy === 'approve'} icon={ThumbsUp} tone="#10b981">Approve</MomBtn>
+          <MomBtn onClick={approve} busy={busy === 'approve'} icon={ThumbsUp} tone="#10b981">{approveLabel}</MomBtn>
           <MomBtn onClick={() => setReturning(true)} busy={false} icon={Undo2} tone="#f59e0b">Return</MomBtn>
         </div>
       )}
-      {status === 'Pending_Approval' && returning && (
+      {isPending && returning && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <textarea value={note} onChange={e => setNote(e.target.value)} rows={3}
             placeholder="What needs to change? (required)"
@@ -728,11 +819,13 @@ function MomApprovalCard({ m, onChanged, onError }) {
       )}
 
       {/* Audit stamps */}
-      {(m.mom_submitted_at || m.mom_approved_at || m.mom_distributed_at || m.mom_approval_note) && (
+      {(m.mom_submitted_at || m.mom_organizer_approved_at || m.mom_approved_at || m.mom_distributed_at || m.mom_viewed_at || m.mom_approval_note) && (
         <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 6 }}>
           {m.mom_submitted_at && <MomStamp label="Submitted" who={m.mom_submitter?.name} when={m.mom_submitted_at} />}
-          {m.mom_approved_at && <MomStamp label="Approved" who={m.mom_approver?.name} when={m.mom_approved_at} />}
+          {m.mom_organizer_approved_at && <MomStamp label="Organizer approved" who={m.mom_organizer_approver?.name} when={m.mom_organizer_approved_at} />}
+          {m.mom_approved_at && <MomStamp label="Chairperson approved" who={m.mom_approver?.name} when={m.mom_approved_at} />}
           {m.mom_distributed_at && <MomStamp label="Distributed" who={m.mom_distributor?.name} when={m.mom_distributed_at} />}
+          {m.mom_viewed_at && <MomStamp label="Viewed by vendor" who={null} when={m.mom_viewed_at} />}
           {m.mom_approval_note && (
             <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2, lineHeight: 1.45 }}>
               <span style={{ fontWeight: 700 }}>Note:</span> {m.mom_approval_note}

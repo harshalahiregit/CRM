@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams, useParams } from 'react-router-dom'
 import {
   ArrowLeft, CalendarDays, Clock, MapPin, Users, Plus, Trash2,
   AlertTriangle, ChevronRight, Laptop, Building2, CheckCircle2, Send, Download,
-  FileText, History, RotateCcw,
+  FileText, History, RotateCcw, Sparkles,
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { kickoffApi } from '@/services/kickoffApi'
@@ -47,11 +47,12 @@ const combineDateTime = (date, time) => {
 }
 // Rich-text fields store HTML; the carry-forward list shows them as plain text.
 const stripHtml = (s) => (s || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+const truncate = (s, n) => { const t = (s || '').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t }
 
-const EMPTY_MOM = () => ({ id: Date.now() + Math.random(), description: '', responsible: '', responsible_org: '', remarks: '', target_date: '', priority: '', status: 'Open', action_ref: '', carried_from_id: null, carried_from_label: '' })
-const EMPTY_PARTICIPANT = () => ({ id: Date.now() + Math.random(), name: '', role: '', organisation: '' })
+const EMPTY_MOM = () => ({ id: Date.now() + Math.random(), description: '', responsible: '', responsible_org: '', remarks: '', target_date: '', priority: '', status: 'Open', action_ref: '', carried_from_id: null, carried_from_label: '', agenda_key: '', depends_key: '' })
+const EMPTY_PARTICIPANT = () => ({ id: Date.now() + Math.random(), name: '', role: '', organisation: '', phone: '', designation: '', side: '' })
 const EMPTY_AGENDA = () => ({ id: Date.now() + Math.random(), item: '', owner: '', duration_minutes: '', priority: '' })
-const EMPTY_DECISION = () => ({ id: Date.now() + Math.random(), decision: '', decided_by: '', impact: '', effective_date: '', status: 'Active' })
+const EMPTY_DECISION = () => ({ id: Date.now() + Math.random(), decision: '', decided_by: '', impact: '', effective_date: '', status: 'Active', agenda_key: '' })
 const EMPTY_ISSUE = () => ({ id: Date.now() + Math.random(), title: '', category: '', severity: '', owner: '', due_date: '', status: 'Open', issue_ref: '', converted_to: '', carried_from_id: null, carried_from_label: '' })
 
 // ── Section header matching KickoffMeetingDetail style ───────────────────────
@@ -151,15 +152,26 @@ export default function KickoffMeetingCreate() {
     title:            '',
     meeting_date:     '',
     meeting_time:     '09:00',
+    meeting_end_time: '',
     planned_date:     '',
     duration_minutes: 60,
     mode:             'onsite',
     location:         '',   // City / Location
     location_detail:  '',   // Venue / Address
     agenda:           '',
+    // Meeting.docx §2 detail fields.
+    priority:         '',
+    confidentiality:  '',
+    chairperson:      '',
+    coordinator:      '',
+    department:       '',
+    client_name:      '',
+    work_package:     '',
+    project_id:       '',       // soft link into the Projects module (§16)
     is_completed:     false,
     meeting_platform: 'stub',  // used when mode = 'online'
   })
+  const [projects, setProjects] = useState([])   // { id, name, project_code, client_name, ... }
   const [participants, setParticipants] = useState([])  // [{ id, name, role, organisation }]
   const [momItems,     setMomItems]     = useState([])  // [{ id, description, responsible, remarks, target_date }]
   const [agendaItems,  setAgendaItems]  = useState([])  // [{ id, item, owner, duration_minutes, priority }]
@@ -171,6 +183,8 @@ export default function KickoffMeetingCreate() {
   const [severities,   setSeverities]   = useState(['Low', 'Medium', 'High', 'Critical'])
   const [categories,   setCategories]   = useState([])
   const [templates,    setTemplates]    = useState({})   // per-type standard agendas
+  const [mtgPriorities, setMtgPriorities] = useState(['Low', 'Medium', 'High', 'Urgent'])
+  const [confLevels,    setConfLevels]    = useState(['Public', 'Internal', 'Confidential', 'Restricted'])
 
   // ── edit mode ───────────────────────────────────────────────────────────
   // /kickoff/:id/edit renders this same page. There is deliberately no second
@@ -222,6 +236,7 @@ export default function KickoffMeetingCreate() {
           title:            m.title || '',
           meeting_date:     at ? `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}` : '',
           meeting_time:     at ? `${pad(at.getHours())}:${pad(at.getMinutes())}` : '09:00',
+          meeting_end_time: m.end_at ? `${pad(new Date(m.end_at).getHours())}:${pad(new Date(m.end_at).getMinutes())}` : '',
           planned_date:     m.planned_date ? String(m.planned_date).slice(0, 10) : '',
           duration_minutes: m.duration_minutes ?? 60,
           mode:             m.mode || 'onsite',
@@ -229,12 +244,21 @@ export default function KickoffMeetingCreate() {
           location:         m.city || m.location || '',
           location_detail:  m.venue || '',
           agenda:           m.agenda || '',
+          priority:         m.priority || '',
+          confidentiality:  m.confidentiality || '',
+          chairperson:      m.chairperson || '',
+          coordinator:      m.coordinator || '',
+          department:       m.department || '',
+          client_name:      m.client_name || '',
+          work_package:     m.work_package || '',
+          project_id:       m.project_id || '',
           is_completed:     m.status === 'Completed',
           meeting_platform: m.meeting_platform || 'stub',
         })
 
         setParticipants((m.attendees || []).map(a => ({
           id: a.id, name: a.name || '', role: a.role || '', organisation: a.organisation || '',
+          phone: a.phone || '', designation: a.designation || '', side: a.side || '',
         })))
 
         setMomItems((m.mom_items || []).map(i => ({
@@ -247,6 +271,10 @@ export default function KickoffMeetingCreate() {
           remarks:         i.remark || '',
           target_date:     i.target_date ? String(i.target_date).slice(0, 10) : '',
           priority:        i.priority || '',
+          // Links are keyed by the linked row's id — on load a row's id IS its
+          // server id, so the agenda_item_id / depends_on_id map straight across.
+          agenda_key:      i.agenda_item_id || '',
+          depends_key:     i.depends_on_id || '',
         })))
 
         setAgendaItems((m.agenda_items || []).map(a => ({
@@ -263,6 +291,7 @@ export default function KickoffMeetingCreate() {
           impact: d.impact || '',
           effective_date: d.effective_date ? String(d.effective_date).slice(0, 10) : '',
           status: d.status || 'Active',
+          agenda_key: d.agenda_item_id || '',
         })))
 
         setIssues((m.issues || []).map(i => ({
@@ -302,7 +331,11 @@ export default function KickoffMeetingCreate() {
       if (Array.isArray(d?.issue_severities) && d.issue_severities.length) setSeverities(d.issue_severities)
       if (Array.isArray(d?.issue_categories)) setCategories(d.issue_categories)
       if (d?.templates && typeof d.templates === 'object') setTemplates(d.templates)
+      if (Array.isArray(d?.meeting_priorities) && d.meeting_priorities.length) setMtgPriorities(d.meeting_priorities)
+      if (Array.isArray(d?.confidentiality) && d.confidentiality.length) setConfLevels(d.confidentiality)
     }).catch(() => {})
+    // Projects for the §16 picker — a soft link, so failure just leaves it empty.
+    kickoffApi.projects().then(d => { if (Array.isArray(d)) setProjects(d) }).catch(() => {})
   }, [])
 
   // ── Fetch tenant default platform preference on mount ────────────────────
@@ -339,10 +372,12 @@ export default function KickoffMeetingCreate() {
     if (!c) return
     if (participants.some(p => p.name === c.full_name)) return  // already added
     setParticipants(p => [...p, {
-      id:           Date.now() + Math.random(),
+      ...EMPTY_PARTICIPANT(),
       name:         c.full_name ?? '',
-      role:         c.designation ?? '',
+      designation:  c.designation ?? '',
       organisation: c.company_name ?? '',
+      phone:        c.phone ?? c.mobile ?? '',
+      side:         'external',   // vendor contacts are the external side
     }])
   }
 
@@ -392,10 +427,22 @@ export default function KickoffMeetingCreate() {
     if (!templateForType.length) return
     setAgendaItems(prev => {
       const seen = new Set(prev.map(a => (a.item || '').trim().toLowerCase()))
-      const additions = templateForType
-        .filter(t => t.item && !seen.has(t.item.trim().toLowerCase()))
-        .map(t => ({ ...EMPTY_AGENDA(), item: t.item, duration_minutes: t.duration_minutes ?? '', priority: t.priority || '' }))
-      return [...prev, ...additions]
+      const push = (line, extra = {}) => {
+        const k = (line || '').trim().toLowerCase()
+        if (!line || seen.has(k)) return null
+        seen.add(k)
+        return { ...EMPTY_AGENDA(), item: line, ...extra }
+      }
+      const fromTemplate = templateForType
+        .map(t => push(t.item, { duration_minutes: t.duration_minutes ?? '', priority: t.priority || '' }))
+        .filter(Boolean)
+      // §4: the template also pulls in the vendor's current live status — one
+      // agenda line per flagged section (open incidents, pending CAPA, …).
+      const fromStatus = (vendorStatus?.sections || [])
+        .filter(s => s.flag && s.agenda)
+        .map(s => push(s.agenda))
+        .filter(Boolean)
+      return [...prev, ...fromTemplate, ...fromStatus]
     })
   }
 
@@ -406,6 +453,52 @@ export default function KickoffMeetingCreate() {
   const [carry,     setCarry]     = useState(null)   // { actions:[], issues:[] } | null
   const [carryBusy, setCarryBusy] = useState(false)
   const [carryErr,  setCarryErr]  = useState(null)
+
+  // §4 live vendor status — auto-loaded when a vendor is selected, so a template
+  // load can pull the vendor's current workforce/compliance/incident/… status
+  // straight into the agenda.
+  const [vendorStatus, setVendorStatus] = useState(null)
+  useEffect(() => {
+    if (!form.subject_id) { setVendorStatus(null); return }
+    let live = true
+    kickoffApi.vendorStatus(form.subject_id)
+      .then(d => { if (live) setVendorStatus(d) })
+      .catch(() => { if (live) setVendorStatus(null) })
+    return () => { live = false }
+  }, [form.subject_id])
+
+  // §18 AI — suggest an agenda from the meeting type + vendor status + open items.
+  const [aiBusy, setAiBusy] = useState(false)
+  const suggestAgenda = async () => {
+    setAiBusy(true); setErr(null)
+    try {
+      const d = await kickoffApi.aiSuggestAgenda({
+        meeting_type: form.meeting_type,
+        subject_type: form.subject_id ? 'vendor' : undefined,
+        subject_id: form.subject_id || undefined,
+      })
+      const items = d?.items || []
+      if (items.length === 0) { setErr('The AI did not return any agenda items — try Load template.'); return }
+      setAgendaItems(prev => {
+        const seen = new Set(prev.map(a => (a.item || '').trim().toLowerCase()))
+        const add = items
+          .filter(t => t.item && !seen.has(t.item.trim().toLowerCase()))
+          .map(t => ({ ...EMPTY_AGENDA(), item: t.item, priority: t.priority || '' }))
+        return [...prev, ...add]
+      })
+    } catch (e) {
+      setErr(e?.response?.data?.message || 'AI agenda suggestion failed.')
+    } finally { setAiBusy(false) }
+  }
+
+  // Append an agenda item for one live-status section (skips a duplicate topic).
+  const addStatusAgenda = (line) => {
+    if (!line) return
+    setAgendaItems(prev => {
+      const seen = new Set(prev.map(a => (a.item || '').trim().toLowerCase()))
+      return seen.has(line.trim().toLowerCase()) ? prev : [...prev, { ...EMPTY_AGENDA(), item: line }]
+    })
+  }
 
   const originLabel = (o) => o ? `${o.reference || o.title || 'Meeting'}${o.date ? ' · ' + o.date : ''}` : ''
 
@@ -418,10 +511,29 @@ export default function KickoffMeetingCreate() {
         subject_id: form.subject_id,
         exclude_meeting_id: editId || undefined,
       })
-      setCarry({ actions: d?.actions || [], issues: d?.issues || [] })
+      setCarry({
+        actions: d?.actions || [],
+        issues: d?.issues || [],
+        previousAgenda: d?.previous_agenda || null,
+        previousStats: d?.previous_stats || null,
+      })
     } catch (e) {
       setCarryErr(e?.response?.data?.message || 'Could not load previous items.')
     } finally { setCarryBusy(false) }
+  }
+
+  // §3 copy-agenda-from-previous: append the previous meeting's agenda items,
+  // skipping any topic already present (same rule as the template loader).
+  const copyPreviousAgenda = () => {
+    const items = carry?.previousAgenda?.items || []
+    if (!items.length) return
+    setAgendaItems(prev => {
+      const seen = new Set(prev.map(a => (a.item || '').trim().toLowerCase()))
+      const additions = items
+        .filter(t => t.item && !seen.has(t.item.trim().toLowerCase()))
+        .map(t => ({ ...EMPTY_AGENDA(), item: t.item, owner: t.owner_names || '', duration_minutes: t.duration_minutes ?? '', priority: t.priority || '' }))
+      return [...prev, ...additions]
+    })
   }
 
   const carryAction = (a) => setMomItems(prev => (
@@ -472,34 +584,57 @@ export default function KickoffMeetingCreate() {
         meeting_type:     form.meeting_type || 'kickoff',
         title:            form.title || undefined,
         scheduled_at,
+        end_at:           form.meeting_end_time ? combineDateTime(form.meeting_date, form.meeting_end_time) : undefined,
         planned_date:     form.planned_date || undefined,
         duration_minutes: Number(form.duration_minutes) || undefined,
         mode:             form.mode,
+        // On-site and hybrid both have a physical location; online does not.
         location:         form.mode !== 'online' ? form.location         : undefined,
         location_detail:  form.mode !== 'online' ? form.location_detail  : undefined,
         agenda:           form.agenda || undefined,
+        // Meeting.docx §2 detail fields.
+        priority:         form.priority || undefined,
+        confidentiality:  form.confidentiality || undefined,
+        chairperson:      form.chairperson || undefined,
+        coordinator:      form.coordinator || undefined,
+        department:       form.department || undefined,
+        client_name:      form.client_name || undefined,
+        work_package:     form.work_package || undefined,
+        project_id:       form.project_id || undefined,
         is_completed:     form.is_completed,
         // Extended fields — backend uses what it knows, ignores the rest
         attendees: participants
           .filter(p => p.name.trim())
-          .map(({ name, role, organisation }) => ({ name, role, organisation })),
+          .map(({ name, role, organisation, phone, designation, side }) => ({
+            name, role, organisation,
+            phone: phone || undefined, designation: designation || undefined, side: side || undefined,
+          })),
         mom_items: momItems
           .filter(m => m.description.replace(/<[^>]*>/g, '').trim())
-          .map(({ id, description, responsible, remarks, target_date, priority, responsible_org, carried_from_id }) => ({
+          .map(({ id, description, responsible, remarks, target_date, priority, responsible_org, carried_from_id, agenda_key, depends_key }) => ({
             // Integer id = an existing server row → the backend upserts it and
             // keeps its Action-Engine state. A client temp id (non-integer) is new.
             id: Number.isInteger(id) ? id : undefined,
+            // Stable key the backend uses to resolve agenda / dependency links
+            // (§7/§8) — the row's own id, always sent as a string.
+            client_key: String(id),
             description, responsible, remarks,
             target_date: target_date || undefined,
             priority: priority || undefined,
             responsible_org: responsible_org || undefined,
+            // Agenda link + action dependency, both keyed by the linked row's id.
+            agenda_client_key: agenda_key ? String(agenda_key) : '',
+            depends_on_client_key: depends_key ? String(depends_key) : '',
             // Provenance for a carried-forward action; the backend sets it only on
             // create and refuses to carry the same origin twice.
             carried_from_id: carried_from_id || undefined,
           })),
         agenda_items: agendaItems
           .filter(a => a.item.trim())
-          .map(({ item, owner, duration_minutes, priority }) => ({
+          .map(({ id, item, owner, duration_minutes, priority }) => ({
+            id: Number.isInteger(id) ? id : undefined,
+            // The key actions/decisions link to — the row's own id, as a string.
+            client_key: String(id),
             item,
             owner: owner || undefined,
             duration_minutes: Number(duration_minutes) || undefined,
@@ -507,10 +642,11 @@ export default function KickoffMeetingCreate() {
           })),
         decisions: decisions
           .filter(d => d.decision.trim())
-          .map(({ id, decision, decided_by, impact, effective_date, status }) => ({
+          .map(({ id, decision, decided_by, impact, effective_date, status, agenda_key }) => ({
             id: Number.isInteger(id) ? id : undefined,
             decision, decided_by: decided_by || undefined, impact: impact || undefined,
             effective_date: effective_date || undefined, status: status || undefined,
+            agenda_client_key: agenda_key ? String(agenda_key) : '',
           })),
         issues: issues
           .filter(i => i.title.trim())
@@ -532,7 +668,7 @@ export default function KickoffMeetingCreate() {
       // Auto-generate online meeting link immediately after save. On edit, only
       // when there isn't one already — regenerating would invalidate a link the
       // vendor has already been sent.
-      if (newId && form.mode === 'online' && !(isEdit && existingLink)) {
+      if (newId && (form.mode === 'online' || form.mode === 'hybrid') && !(isEdit && existingLink)) {
         setGenLink(true)
         try {
           await meetingApi.generateLink(newId, form.meeting_platform)
@@ -683,6 +819,44 @@ export default function KickoffMeetingCreate() {
                 <TextInput value={form.title} onChange={set('title')} placeholder="e.g. Kickoff — Acme Contractors" />
               </Field>
 
+              {/* Meeting details (Meeting.docx §2) */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <Field label="Priority">
+                  <SelectInput value={form.priority} onChange={set('priority')} pairs
+                    options={[['', '—'], ...mtgPriorities.map(p => [p, p])]} />
+                </Field>
+                <Field label="Confidentiality">
+                  <SelectInput value={form.confidentiality} onChange={set('confidentiality')} pairs
+                    options={[['', '—'], ...confLevels.map(c => [c, c])]} />
+                </Field>
+                <Field label="Chairperson">
+                  <TextInput value={form.chairperson} onChange={set('chairperson')} placeholder="Name" />
+                </Field>
+                <Field label="Meeting Coordinator">
+                  <TextInput value={form.coordinator} onChange={set('coordinator')} placeholder="Name" />
+                </Field>
+                <Field label="Department">
+                  <TextInput value={form.department} onChange={set('department')} placeholder="e.g. HSE / Projects" />
+                </Field>
+                <Field label="Client (optional)">
+                  <TextInput value={form.client_name} onChange={set('client_name')} placeholder="Client name" />
+                </Field>
+                {projects.length > 0 && (
+                  <Field label="Project (optional)">
+                    <SelectInput value={form.project_id} onChange={set('project_id')} pairs
+                      options={[['', '— none —'], ...projects.map(p => [
+                        String(p.id),
+                        `${p.name}${p.project_code ? ` (${p.project_code})` : ''}`,
+                      ])]} />
+                  </Field>
+                )}
+                <div style={{ gridColumn: '1/-1' }}>
+                  <Field label="Work Package (optional)">
+                    <TextInput value={form.work_package} onChange={set('work_package')} placeholder="e.g. WP-03 Structural" />
+                  </Field>
+                </div>
+              </div>
+
               {/* Participants */}
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
@@ -714,21 +888,35 @@ export default function KickoffMeetingCreate() {
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                     {participants.map((p, i) => (
-                      <div key={p.id} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 8, padding: '12px', borderRadius: 12, background: 'var(--bg-input)', border: '1px solid var(--border)', alignItems: 'end' }}>
-                        <Field label={`Name ${i + 1}`}>
-                          <TextInput value={p.name} onChange={e => setParticipant(p.id, 'name', e.target.value)} placeholder="Full name" />
-                        </Field>
-                        <Field label="Role / Designation">
-                          <TextInput value={p.role} onChange={e => setParticipant(p.id, 'role', e.target.value)} placeholder="e.g. Site Engineer" />
-                        </Field>
-                        <Field label="Organisation">
-                          <TextInput value={p.organisation} onChange={e => setParticipant(p.id, 'organisation', e.target.value)} placeholder="Company name" />
-                        </Field>
-                        <button onClick={() => removeParticipant(p.id)}
-                          title="Remove participant"
-                          style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.06)', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginBottom: 1 }}>
-                          <Trash2 size={13} />
-                        </button>
+                      <div key={p.id} style={{ padding: '12px', borderRadius: 12, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                          <span style={{ fontSize: 11, fontWeight: 800, color: '#a78bfa' }}>Participant {i + 1}</span>
+                          <button onClick={() => removeParticipant(p.id)} title="Remove participant"
+                            style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.06)', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                          <Field label="Name">
+                            <TextInput value={p.name} onChange={e => setParticipant(p.id, 'name', e.target.value)} placeholder="Full name" />
+                          </Field>
+                          <Field label="Organisation">
+                            <TextInput value={p.organisation} onChange={e => setParticipant(p.id, 'organisation', e.target.value)} placeholder="Company name" />
+                          </Field>
+                          <Field label="Side">
+                            <SelectInput value={p.side} onChange={e => setParticipant(p.id, 'side', e.target.value)} pairs
+                              options={[['', '—'], ['internal', 'Internal'], ['external', 'External']]} />
+                          </Field>
+                          <Field label="Role in meeting">
+                            <TextInput value={p.role} onChange={e => setParticipant(p.id, 'role', e.target.value)} placeholder="e.g. Chair, Note-taker" />
+                          </Field>
+                          <Field label="Designation">
+                            <TextInput value={p.designation} onChange={e => setParticipant(p.id, 'designation', e.target.value)} placeholder="e.g. Site Engineer" />
+                          </Field>
+                          <Field label="Phone">
+                            <TextInput value={p.phone} onChange={e => setParticipant(p.id, 'phone', e.target.value)} placeholder="Mobile" />
+                          </Field>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -745,8 +933,11 @@ export default function KickoffMeetingCreate() {
               <Field label="Meeting Date *">
                 <TextInput type="date" value={form.meeting_date} onChange={set('meeting_date')} />
               </Field>
-              <Field label="Meeting Time *">
+              <Field label="Start Time *">
                 <TextInput type="time" value={form.meeting_time} onChange={set('meeting_time')} />
+              </Field>
+              <Field label="End Time (optional)">
+                <TextInput type="time" value={form.meeting_end_time} onChange={set('meeting_end_time')} />
               </Field>
               <Field label="City / Location *">
                 <TextInput value={form.location} onChange={set('location')} placeholder="e.g. Mumbai" />
@@ -766,10 +957,10 @@ export default function KickoffMeetingCreate() {
           {/* Section 3 — Meeting Mode */}
           <div className="pr-glass" style={{ padding: 20 }}>
             <SectionTitle icon={MapPin}>Meeting Mode</SectionTitle>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
               {KO_MODES.map(([val, label]) => {
                 const on = form.mode === val
-                const Icon = val === 'online' ? Laptop : Building2
+                const Icon = val === 'onsite' ? Building2 : Laptop
                 return (
                   <button key={val} type="button" onClick={() => setForm(f => ({ ...f, mode: val }))}
                     className="pr-node"
@@ -791,8 +982,8 @@ export default function KickoffMeetingCreate() {
               })}
             </div>
 
-            {/* Conditional: location fields (on-site) OR platform picker (online) */}
-            {form.mode !== 'online' ? (
+            {/* On-site AND hybrid have a physical location. */}
+            {form.mode !== 'online' && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 16 }}>
                 <Field label="City / Location *">
                   <TextInput value={form.location} onChange={set('location')} placeholder="e.g. Mumbai" />
@@ -801,7 +992,9 @@ export default function KickoffMeetingCreate() {
                   <TextInput value={form.location_detail} onChange={set('location_detail')} placeholder="e.g. Site office, Gate 1" />
                 </Field>
               </div>
-            ) : (
+            )}
+            {/* Online AND hybrid have a joining platform. */}
+            {form.mode !== 'onsite' && (
               <div style={{ marginTop: 16 }}>
                 <Field label="Meeting Platform">
                   <SelectInput
@@ -846,6 +1039,34 @@ export default function KickoffMeetingCreate() {
               </div>
             )}
 
+            {/* §4 live vendor status — current workforce/compliance/incident/… state,
+                each addable as an agenda line (Load template pulls the flagged ones in). */}
+            {vendorStatus?.sections?.length > 0 && (
+              <div style={{ marginTop: 18, padding: 14, borderRadius: 12, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
+                  <History size={13} style={{ color: '#a78bfa' }} />
+                  <span style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text-h)' }}>Live vendor status</span>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>· {vendorStatus.vendor?.name}</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(190px,1fr))', gap: 8 }}>
+                  {vendorStatus.sections.map(s => (
+                    <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 9, background: 'var(--bg-card)', border: `1px solid ${s.flag ? 'rgba(245,158,11,0.35)' : 'var(--border)'}` }}>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>{s.label}</div>
+                        <div style={{ fontSize: 12.5, fontWeight: 700, color: s.flag ? '#d97706' : 'var(--text-h)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.value}</div>
+                      </div>
+                      {s.agenda && (
+                        <button type="button" onClick={() => addStatusAgenda(s.agenda)} title="Add to agenda"
+                          style={{ width: 24, height: 24, borderRadius: 7, flexShrink: 0, cursor: 'pointer', border: '1px solid var(--border)', background: 'var(--bg-input)', color: '#a78bfa', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <Plus size={12} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Agenda builder — structured items (topic · owner · duration · priority) */}
             <div style={{ marginTop: 18 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 8, flexWrap: 'wrap' }}>
@@ -858,6 +1079,11 @@ export default function KickoffMeetingCreate() {
                       <FileText size={13} /> Load {meetingTypes[form.meeting_type] || 'standard'} template
                     </button>
                   )}
+                  {/* §18 — AI drafts an agenda from the type, vendor status and open items. */}
+                  <button type="button" onClick={suggestAgenda} disabled={aiBusy} style={{ ...addBtn, cursor: aiBusy ? 'wait' : 'pointer' }}
+                    title="Let AI suggest an agenda from the vendor's current status and open items">
+                    <Sparkles size={13} /> {aiBusy ? 'Thinking…' : 'AI suggest'}
+                  </button>
                   <button type="button" onClick={addAgenda} style={addBtn}>
                     <Plus size={13} /> Add Item
                   </button>
@@ -923,6 +1149,36 @@ export default function KickoffMeetingCreate() {
                 <AlertTriangle size={13} style={{ color: '#ef4444', flexShrink: 0 }} />
                 <span style={{ fontSize: 12, color: 'var(--text-h)' }}>{carryErr}</span>
               </div>
+            )}
+
+            {/* §11 — what the previous meeting left behind, at a glance. */}
+            {carry?.previousStats && (
+              <div style={{ padding: '12px 14px', borderRadius: 12, marginBottom: 14, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-h)' }}>
+                    Last meeting: {originLabel(carry.previousStats.origin) || carry.previousStats.meeting_type_label}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    <MiniTag>{carry.previousStats.status_label}</MiniTag>
+                    <MiniTag>{carry.previousStats.mom_status_label}</MiniTag>
+                    {carry.previousStats.acknowledged && <MiniTag tone="#10b981">Acknowledged</MiniTag>}
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
+                  <PrevStat n={carry.previousStats.decisions} label="Decisions" />
+                  <PrevStat n={carry.previousStats.open_actions} label="Open actions" tone={carry.previousStats.open_actions ? '#f59e0b' : undefined} />
+                  <PrevStat n={carry.previousStats.open_issues} label="Open issues" tone={carry.previousStats.open_issues ? '#ef4444' : undefined} />
+                </div>
+              </div>
+            )}
+
+            {/* §3 — reuse the previous meeting's agenda in this one. */}
+            {carry?.previousAgenda?.items?.length > 0 && (
+              <button type="button" onClick={copyPreviousAgenda}
+                style={{ ...addBtn, width: '100%', justifyContent: 'center', marginBottom: 14 }}
+                title={`Append ${carry.previousAgenda.items.length} agenda item(s) from ${originLabel(carry.previousAgenda.origin)}`}>
+                <FileText size={13} /> Copy agenda from last meeting ({carry.previousAgenda.items.length})
+              </button>
             )}
 
             {carry && (
@@ -1047,6 +1303,19 @@ export default function KickoffMeetingCreate() {
                         <TextInput value={item.responsible_org} onChange={e => setMom(item.id, 'responsible_org', e.target.value)} placeholder="e.g. Vendor / PMC" />
                       </Field>
 
+                      {/* Agenda item this action came from (Meeting.docx §7) */}
+                      <Field label="Agenda item">
+                        <SelectInput value={item.agenda_key} onChange={e => setMom(item.id, 'agenda_key', e.target.value)} pairs
+                          options={[['', '— none —'], ...agendaItems.filter(a => a.item.trim()).map(a => [String(a.id), truncate(a.item, 40)])]} />
+                      </Field>
+
+                      {/* Depends on another action (Meeting.docx §8) */}
+                      <Field label="Depends on">
+                        <SelectInput value={item.depends_key} onChange={e => setMom(item.id, 'depends_key', e.target.value)} pairs
+                          options={[['', '— none —'], ...momItems.filter(x => x.id !== item.id && stripHtml(x.description).trim())
+                            .map(x => [String(x.id), (x.action_ref ? x.action_ref + ' · ' : '') + truncate(stripHtml(x.description), 34)])]} />
+                      </Field>
+
                       {/* Remarks — full width, rich text */}
                       <div style={{ gridColumn: '1/-1' }}>
                         <label style={{ ...labelStyle, display: 'block', marginBottom: 6 }}>Remarks / Notes</label>
@@ -1091,6 +1360,9 @@ export default function KickoffMeetingCreate() {
                       <Field label="Impact"><TextInput value={d.impact} onChange={e => setDecision(d.id, 'impact', e.target.value)} placeholder="e.g. Schedule / Cost" /></Field>
                       <Field label="Effective date"><TextInput type="date" value={d.effective_date} onChange={e => setDecision(d.id, 'effective_date', e.target.value)} /></Field>
                       <Field label="Status"><SelectInput value={d.status} onChange={e => setDecision(d.id, 'status', e.target.value)} pairs options={[['Active', 'Active'], ['Superseded', 'Superseded'], ['Rescinded', 'Rescinded']]} /></Field>
+                      {/* Agenda item this decision was taken under (Meeting.docx §7) */}
+                      <Field label="Agenda item"><SelectInput value={d.agenda_key} onChange={e => setDecision(d.id, 'agenda_key', e.target.value)} pairs
+                        options={[['', '— none —'], ...agendaItems.filter(a => a.item.trim()).map(a => [String(a.id), truncate(a.item, 40)])]} /></Field>
                     </div>
                   </div>
                 ))}
@@ -1281,6 +1553,24 @@ function CarryItem({ refCode, title, meta, overdue, added, onAdd }) {
 const carryHeadStyle = {
   fontSize: 11.5, fontWeight: 800, color: 'var(--text-muted)',
   textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8,
+}
+
+// ── previous-meeting stat helpers (§11) ───────────────────────────────────────
+function MiniTag({ children, tone }) {
+  return (
+    <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 999,
+      color: tone || 'var(--text-muted)', background: tone ? `${tone}1a` : 'var(--bg-card)', border: `1px solid ${tone ? `${tone}55` : 'var(--border)'}` }}>
+      {children}
+    </span>
+  )
+}
+function PrevStat({ n, label, tone }) {
+  return (
+    <div style={{ textAlign: 'center', padding: '8px 4px', borderRadius: 10, background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+      <div style={{ fontSize: 18, fontWeight: 900, color: tone || 'var(--text-h)', lineHeight: 1 }}>{n ?? 0}</div>
+      <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.03em', marginTop: 4 }}>{label}</div>
+    </div>
+  )
 }
 
 // ── tiny summary row ──────────────────────────────────────────────────────────

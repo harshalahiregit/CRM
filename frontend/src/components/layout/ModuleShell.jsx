@@ -1,5 +1,5 @@
 import { Fragment } from 'react'
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useTheme } from '@/context/ThemeContext'
 import { ChevronRight, ArrowLeft } from 'lucide-react'
 
@@ -8,12 +8,26 @@ import { ChevronRight, ArrowLeft } from 'lucide-react'
 // HRLayout so Purchase/TPV don't duplicate ~100 lines of nav chrome each.
 //
 // Props:
-//   label — module display name, e.g. "Purchase"
-//   badge — emoji shown in the module chip
-//   items — [{ label, path, icon }], ordered to follow the business workflow
-export default function ModuleShell({ label, badge, items }) {
+//   label  — module display name, e.g. "Purchase"
+//   badge  — emoji shown in the module chip
+//   items  — [{ label, path, icon }], ordered to follow the business workflow
+//            (the flat rail — used by HR / Purchase)
+//   groups — optional [{ label, icon, items:[{label,path,icon}] }]. When present,
+//            a TWO-LEVEL nav renders instead: a top row of clusters, and a second
+//            row with the active cluster's sub-items. `items` is ignored. Adopted
+//            by TPV for the doc's 9-cluster navigation; leaves flat modules alone.
+export default function ModuleShell({ label, badge, items, groups }) {
   const { isDark } = useTheme()
   const navigate = useNavigate()
+  const { pathname } = useLocation()
+
+  // Which cluster owns the current route? The group with the longest matching
+  // sub-item path wins, so nested routes resolve to the right cluster.
+  const activeGroup = groups
+    ? (groups.find(g => g.items.some(it => pathname.startsWith(it.path)))
+        ?? groups.find(g => g.items.some(it => pathname === it.path))
+        ?? groups[0])
+    : null
 
   return (
     <div className="space-y-0 -m-4 md:-m-6">
@@ -89,20 +103,65 @@ export default function ModuleShell({ label, badge, items }) {
             border-radius: 2px;
             background: ${isDark ? 'rgba(255,255,255,0.12)' : 'rgba(160,150,134,0.5)'};
           }
+          .modnav-sub { padding: 6px; }
+          .modnav-sub .modnav-tab { padding: 6px 13px; font-size: 11.5px; }
         `}</style>
-        <nav className="modnav-plate">
-          <div className="modnav-rail">
-            {items.map(({ label: tabLabel, path, icon: Icon }, i) => (
-              <Fragment key={path}>
-                {i > 0 && <span className="modnav-tick" aria-hidden="true" />}
-                <NavLink to={path} className={({ isActive }) => `modnav-tab${isActive ? ' on' : ''}`}>
-                  <Icon size={13} className="modnav-ico" />
-                  {tabLabel}
-                </NavLink>
-              </Fragment>
-            ))}
-          </div>
-        </nav>
+        {groups ? (
+          <>
+            {/* Cluster row — clicking a cluster jumps to its first sub-item. */}
+            <nav className="modnav-plate" style={{ marginBottom: 8 }}>
+              <div className="modnav-rail">
+                {groups.map((g, i) => {
+                  const GIcon = g.icon
+                  const on = g === activeGroup
+                  return (
+                    <Fragment key={g.label}>
+                      {i > 0 && <span className="modnav-tick" aria-hidden="true" />}
+                      <button
+                        onClick={() => navigate(g.items[0].path)}
+                        className={`modnav-tab${on ? ' on' : ''}`}
+                        style={{ border: 'none', background: on ? undefined : 'transparent' }}
+                      >
+                        {GIcon && <GIcon size={13} className="modnav-ico" />}
+                        {g.label}
+                      </button>
+                    </Fragment>
+                  )
+                })}
+              </div>
+            </nav>
+            {/* Sub-item row for the active cluster. */}
+            {activeGroup && activeGroup.items.length > 0 && (
+              <nav className="modnav-plate modnav-sub">
+                <div className="modnav-rail">
+                  {activeGroup.items.map(({ label: tabLabel, path, icon: Icon }, i) => (
+                    <Fragment key={path}>
+                      {i > 0 && <span className="modnav-tick" aria-hidden="true" />}
+                      <NavLink to={path} className={({ isActive }) => `modnav-tab${isActive ? ' on' : ''}`}>
+                        {Icon && <Icon size={13} className="modnav-ico" />}
+                        {tabLabel}
+                      </NavLink>
+                    </Fragment>
+                  ))}
+                </div>
+              </nav>
+            )}
+          </>
+        ) : (
+          <nav className="modnav-plate">
+            <div className="modnav-rail">
+              {items.map(({ label: tabLabel, path, icon: Icon }, i) => (
+                <Fragment key={path}>
+                  {i > 0 && <span className="modnav-tick" aria-hidden="true" />}
+                  <NavLink to={path} className={({ isActive }) => `modnav-tab${isActive ? ' on' : ''}`}>
+                    <Icon size={13} className="modnav-ico" />
+                    {tabLabel}
+                  </NavLink>
+                </Fragment>
+              ))}
+            </div>
+          </nav>
+        )}
       </div>
 
       <div className="p-4 md:p-6">

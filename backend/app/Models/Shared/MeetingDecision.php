@@ -18,19 +18,25 @@ class MeetingDecision extends Model
     protected $table = 'meeting_decisions';
 
     protected $fillable = [
-        'tenant_id', 'kickoff_meeting_id', 'decision_ref',
+        'tenant_id', 'kickoff_meeting_id', 'agenda_item_id', 'decision_ref',
         'decision', 'decided_by_attendee_id', 'decided_by_names',
         'impact', 'effective_date', 'status', 'sort_order',
     ];
 
     protected $casts = [
         'effective_date' => 'date',
-        'sort_order'     => 'integer',
+        'sort_order' => 'integer',
     ];
 
     public function meeting()
     {
         return $this->belongsTo(KickoffMeeting::class, 'kickoff_meeting_id');
+    }
+
+    /** The agenda item this decision was taken under, when linked (Meeting.docx §7). */
+    public function agendaItem()
+    {
+        return $this->belongsTo(MeetingAgendaItem::class, 'agenda_item_id');
     }
 
     public function decidedBy()
