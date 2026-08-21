@@ -6,7 +6,7 @@ import {
   Globe, Linkedin, Facebook, Instagram, Twitter,
   Package, Users2, UserPlus, Link2, Plus, Trash2, Eye, EyeOff, Upload,
   FileText, KeyRound, Bell, StickyNote, MapPin, Edit2, X, ChevronDown,
-  ClipboardList, FileX, IndianRupee, RefreshCw, FileSignature, Percent, Truck, LifeBuoy, Paperclip, Send, LayoutDashboard} from 'lucide-react'
+  ClipboardList, FileX, IndianRupee, RefreshCw, FileSignature, Percent, Truck, LifeBuoy, Paperclip, Send, LayoutDashboard, History, Activity, CalendarDays} from 'lucide-react'
 import { customerApi } from '@/services/customerApi'
 import { useToast } from '@/hooks/useToast'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
@@ -17,6 +17,7 @@ import StepperNav from '../components/StepperNav'
 import ConfirmIconButton from '../components/ConfirmIconButton'
 import ToggleSwitch from '../components/ToggleSwitch'
 import OverviewTab from '../components/OverviewTab'
+import AsyncButton from '@/components/ui/AsyncButton'
 import NotesTab from '../components/NotesTab'
 import RichTextEditor from '@/components/ui/RichTextEditor'
 import { MoneyToggle, useMoneyFmt } from '@/components/ui/Money'
@@ -34,29 +35,57 @@ const d10 = s => (s ? String(s).slice(0, 10) : '—')
 // Full legacy tab set, minus the excluded sections (Projects, Tasks, Delivery
 // Notes, Domain Manager, Appointments). Support = read-only Helpdesk loop-in.
 // "Attachments" is the legacy "Files" tab (renamed).
-// Tabs grouped for the profile navigation (meeting feedback: the flat list of
-// 24 buttons was hard to scan). Grouping mirrors the sidebar's mental model.
+// The document's nine-group Customer 360 navigation (§7/§17).
+//
+// The grouping is not cosmetic — it encodes §6, the "don't duplicate the
+// modules" principle. RELATIONSHIP, DOCUMENTS and CUSTOMER ADMIN are things
+// Customer genuinely owns; COMMERCIAL, FINANCE, OPERATIONS and SERVICE are
+// windows onto modules that own their own data, which is why Overview shows a
+// count and a link out rather than a second copy of their lists.
+//
+// Two tabs are kept that the document does not list: Tax belongs with Finance,
+// and TPV & Leads is the relationship link to those modules.
 const TAB_GROUPS = [
   { label: 'Overview', color: '#7c3aed', tabs: [
-    ['Overview', LayoutDashboard], ['Profile', Building2], ['Contacts', Users2], ['Notes', StickyNote], ['Reminders', Bell],
+    ['Overview', LayoutDashboard], ['Timeline', History],
+  ]},
+  { label: 'Relationship', color: '#0ea5e9', tabs: [
+    ['Contacts', Users2], ['Activities', Activity], ['Meetings', CalendarDays],
+    ['Notes', StickyNote], ['TPV & Leads', Link2],
+  ]},
+  { label: 'Commercial', color: '#8b5cf6', tabs: [
+    ['Proposals', FileText], ['Estimates', ClipboardList],
+    ['Contracts', FileSignature], ['Subscriptions', RefreshCw],
   ]},
   { label: 'Finance', color: '#0d9488', tabs: [
-    ['Statement', Wallet], ['Invoices', Receipt], ['Payments', CreditCard], ['Proposals', FileText],
-    ['Estimates', ClipboardList], ['Credit Notes', FileX], ['Expenses', IndianRupee],
-    ['Subscriptions', RefreshCw], ['Contracts', FileSignature], ['Tax', Percent],
+    ['Invoices', Receipt], ['Payments', CreditCard], ['Credit Notes', FileX],
+    ['Expenses', IndianRupee], ['Statement', Wallet], ['Tax', Percent],
   ]},
-  { label: 'Logistics', color: '#2563eb', tabs: [
-    ['Address Book', MapPin], ['Recipients', UserPlus], ['Pre-Alert', Send], ['Packages', Package], ['Shipping', Truck],
+  { label: 'Operations', color: '#2563eb', tabs: [
+    ['Packages', Package], ['Pre-Alert', Send], ['Shipping', Truck], ['Map', Globe],
   ]},
-  { label: 'More', color: '#d97706', tabs: [
-    ['Support', LifeBuoy], ['Vault', KeyRound], ['Attachments', Paperclip], ['Map', Globe], ['TPV & Leads', Link2],
+  { label: 'Service', color: '#f97316', tabs: [
+    ['Support', LifeBuoy],
+  ]},
+  { label: 'Documents', color: '#eab308', tabs: [
+    ['Attachments', Paperclip], ['Credentials', KeyRound],
+  ]},
+  { label: 'Customer Admin', color: '#64748b', tabs: [
+    ['Profile', Building2], ['Address Book', MapPin], ['Recipients', UserPlus], ['Reminders', Bell],
   ]},
 ]
 const TABS = TAB_GROUPS.flatMap(g => g.tabs.map(([t]) => t))
 
-// Tabs whose owning module isn't built in Sangoe yet — shown (to match the
-// legacy layout) with an honest placeholder instead of fake data. Value = the
-// module the feature belongs to.
+// The document's structure lists these, but they arrive with the Meetings and
+// Timeline work. Listed rather than hidden so the navigation matches the agreed
+// shape, and each says plainly what it is waiting on instead of showing an empty
+// table that looks like a customer with no data.
+const PENDING_TABS = {
+  Timeline:   'the Timeline build — it aggregates activity across every module',
+  Activities: 'the Activities log — calls, emails, visits and follow-ups',
+  Meetings:   'the Meetings build — this customer becomes a subject of the shared meeting engine',
+}
+
 // Tabs backed by the generic per-customer RecordTab (schema-driven CRUD).
 const RECORD_TABS = {
   Contracts: CONTRACTS,
@@ -110,7 +139,8 @@ export default function CustomerDetail() {
     Statement: customerApi.statement,
     Notes: customerApi.notes.list,
     Reminders: customerApi.reminders.list,
-    Vault: customerApi.vault.list,
+    // §15 — the tab is called Credentials now; the endpoint is unchanged.
+    Credentials: customerApi.vault.list,
     Attachments: customerApi.attachments.list,
     'Address Book': customerApi.addresses.list,
     Recipients: customerApi.recipients.list,
@@ -261,6 +291,14 @@ export default function CustomerDetail() {
 
         {/* ── Tab content ── */}
         <div className="flex-1 min-w-0 w-full space-y-6">
+      {PENDING_TABS[tab] && (
+        <div className="card-3d" style={{ padding: 28, textAlign: 'center' }}>
+          <p className="text-sm font-bold" style={{ color: 'var(--text-h)', margin: 0 }}>{tab}</p>
+          <p className="text-xs" style={{ color: 'var(--text-muted)', margin: '6px 0 0' }}>
+            Waiting on {PENDING_TABS[tab]}.
+          </p>
+        </div>
+      )}
       {tab === 'Overview' && <OverviewTab id={id} client={client} toast={toast} />}
       {tab === 'Profile' && <ProfileTab client={client} reload={loadClient} toast={toast} />}
       {tab === 'Contacts' && <ContactsTab id={id} contacts={data ?? client.contacts} reload={() => refreshTab('Contacts')} toast={toast} />}
@@ -280,7 +318,7 @@ export default function CustomerDetail() {
       {tab === 'Credit Notes' && data && <DocTable columns={CREDIT_COLS} rows={data} empty="No credit notes." action={createBtn('New Credit Note', `/app/sales/credit-notes?client_id=${id}&new=1`)} />}
       {tab === 'Tax' && data && <TaxTab tax={data} />}
       {tab === 'Support' && data && <SupportTab id={id} tickets={data} reload={() => refreshTab('Support')} toast={toast} />}
-      {tab === 'Vault' && <VaultTab id={id} entries={data} reload={() => refreshTab('Vault')} toast={toast} />}
+      {tab === 'Credentials' && <VaultTab id={id} entries={data} reload={() => refreshTab('Credentials')} toast={toast} />}
       {tab === 'Reminders' && <RemindersTab id={id} reminders={data} reload={() => refreshTab('Reminders')} toast={toast} />}
       {tab === 'Attachments' && <AttachmentsTab id={id} files={data} reload={() => refreshTab('Attachments')} toast={toast} />}
       {tab === 'Map' && <MapTab client={client} reload={loadClient} toast={toast} />}
@@ -313,6 +351,15 @@ function ProfileTab({ client, reload, toast }) {
   const [sub, setSub] = useState('Customer Details')
   const [saving, setSaving] = useState(false)
   const [groupOptions, setGroupOptions] = useState([])
+  // Option lists and assignable staff for the classification/ownership fields.
+  // Fetched once per mount rather than per keystroke; both are small and static
+  // enough that a stale list for the length of one edit is not worth a refetch.
+  const [options, setOptions] = useState({})
+  const [staffOptions, setStaffOptions] = useState([])
+  useEffect(() => {
+    customerApi.options().then(setOptions).catch(() => setOptions({}))
+    customerApi.assignableStaff().then(r => setStaffOptions(Array.isArray(r) ? r : (r?.data ?? []))).catch(() => setStaffOptions([]))
+  }, [])
   const [quickField, setQuickField] = useState(false)
   const [adminData, setAdminData] = useState({ assigned: [], assignable: [] })
 
@@ -330,6 +377,14 @@ function ProfileTab({ client, reload, toast }) {
       address: client.address || '', city: client.city || '', state: client.state || '', zip: client.zip || '', country: client.country || '',
       billing_street: client.billing_street || '', billing_city: client.billing_city || '', billing_state: client.billing_state || '', billing_zip: client.billing_zip || '', billing_country: client.billing_country || '',
       shipping_street: client.shipping_street || '', shipping_city: client.shipping_city || '', shipping_state: client.shipping_state || '', shipping_zip: client.shipping_zip || '', shipping_country: client.shipping_country || '',
+      // Customer 360 — classification, ownership and the Health inputs (§11–§13).
+      customer_type: client.customer_type || '', customer_tier: client.customer_tier || '',
+      industry: client.industry || '', lifecycle_status: client.lifecycle_status || '',
+      payment_terms: client.payment_terms || '',
+      relationship_started_at: client.relationship_started_at ? String(client.relationship_started_at).slice(0, 10) : '',
+      account_owner_id: client.account_owner_id ?? '', secondary_owner_id: client.secondary_owner_id ?? '',
+      customer_success_owner_id: client.customer_success_owner_id ?? '',
+      business_unit: client.business_unit || '', region: client.region || '',
       social_links: client.social_links || {},
       group_ids: (client.groups ?? []).map(g => g.id),
       custom_fields: cf,
@@ -403,6 +458,58 @@ function ProfileTab({ client, reload, toast }) {
               <div><label className="label">Balance as of</label><input type="date" className="input-3d text-sm" value={form.opening_balance_date} onChange={e => sf('opening_balance_date', e.target.value)} /></div>
               <div><label className="label">Currency</label><select className="input-3d text-sm" value={form.default_currency} onChange={e => sf('default_currency', e.target.value)}>{CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
               <div><label className="label">Default Language</label><select className="input-3d text-sm" value={form.default_language} onChange={e => sf('default_language', e.target.value)}>{LANGUAGES.map(l => <option key={l} value={l}>{l}</option>)}</select></div>
+
+            {/* Classification and ownership (§12/§13). The option lists come
+                from the server so a tenant can edit them without a deploy;
+                each is a datalist rather than a select, so a value that is no
+                longer on the list still displays instead of silently blanking. */}
+            <div>
+              <p className="label-caps" style={{ marginBottom: 8 }}>Classification</p>
+              <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+                <div><label className="label">Customer Type</label>
+                  <input className="input-3d text-sm" list="opt-customer_type" value={form.customer_type} onChange={e => sf('customer_type', e.target.value)} /></div>
+                <div><label className="label">Customer Tier</label>
+                  <input className="input-3d text-sm" list="opt-customer_tier" value={form.customer_tier} onChange={e => sf('customer_tier', e.target.value)} /></div>
+                <div><label className="label">Industry</label>
+                  <input className="input-3d text-sm" list="opt-industry" value={form.industry} onChange={e => sf('industry', e.target.value)} /></div>
+                <div><label className="label">Lifecycle</label>
+                  <input className="input-3d text-sm" list="opt-lifecycle" value={form.lifecycle_status} onChange={e => sf('lifecycle_status', e.target.value)} /></div>
+                <div><label className="label">Payment Terms</label>
+                  <input className="input-3d text-sm" list="opt-payment_terms" value={form.payment_terms} onChange={e => sf('payment_terms', e.target.value)} /></div>
+                <div><label className="label">Customer Since</label>
+                  <input type="date" className="input-3d text-sm" value={form.relationship_started_at} onChange={e => sf('relationship_started_at', e.target.value)} /></div>
+              </div>
+            </div>
+
+            <div>
+              <p className="label-caps" style={{ marginBottom: 8 }}>Ownership</p>
+              <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+                <div><label className="label">Account Owner</label>
+                  <select className="input-3d text-sm" value={form.account_owner_id} onChange={e => sf('account_owner_id', e.target.value)}>
+                    <option value="">Not assigned</option>
+                    {staffOptions.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                  </select></div>
+                <div><label className="label">Secondary Owner</label>
+                  <select className="input-3d text-sm" value={form.secondary_owner_id} onChange={e => sf('secondary_owner_id', e.target.value)}>
+                    <option value="">None</option>
+                    {staffOptions.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                  </select></div>
+                <div><label className="label">Customer Success Owner</label>
+                  <select className="input-3d text-sm" value={form.customer_success_owner_id} onChange={e => sf('customer_success_owner_id', e.target.value)}>
+                    <option value="">None</option>
+                    {staffOptions.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                  </select></div>
+                <div><label className="label">Business Unit</label>
+                  <input className="input-3d text-sm" value={form.business_unit} onChange={e => sf('business_unit', e.target.value)} /></div>
+                <div><label className="label">Region</label>
+                  <input className="input-3d text-sm" value={form.region} onChange={e => sf('region', e.target.value)} /></div>
+              </div>
+            </div>
+
+            {Object.entries(options).map(([k, list]) => (
+              <datalist key={k} id={`opt-${k}`}>{list.map(o => <option key={o} value={o} />)}</datalist>
+            ))}
+
             </div>
             <div>
               <div className="flex items-center justify-between mb-1"><label className="label mb-0">Groups</label><button type="button" onClick={addGroup} className="text-xs font-bold flex items-center gap-1" style={{ color: 'var(--accent)' }}><Plus size={12} /> New group</button></div>
@@ -592,6 +699,7 @@ function ContactsTab({ id, contacts, reload, toast }) {
 
       {modal && (
         <ContactFormDrawer
+          siblings={contacts ?? []}
           clientId={id}
           contact={editing}
           onClose={() => setModal(false)}
@@ -749,7 +857,7 @@ function VaultTab({ id, entries, reload, toast }) {
 
           <div className="flex justify-end gap-2">
             <button onClick={() => setAdding(false)} className="px-3 py-1.5 rounded-lg text-xs" style={{ color: 'var(--text-muted)' }}>Cancel</button>
-            <button onClick={add} className="px-4 py-1.5 rounded-lg text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>Save</button>
+            <AsyncButton onClick={add} pendingLabel="Saving…" className="px-4 py-1.5 rounded-lg text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>Save</AsyncButton>
           </div>
         </div>
       )}
@@ -822,7 +930,7 @@ function RemindersTab({ id, reminders, reload, toast }) {
       <div className="card-3d flex gap-3 items-end" style={{ padding: '16px' }}>
         <div className="flex-1"><label className="label">Reminder</label><input className="input-3d text-sm" placeholder="e.g. Follow up on renewal" value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} /></div>
         <div><label className="label">Date</label><input type="date" className="input-3d text-sm" value={form.remind_at} onChange={e => setForm(p => ({ ...p, remind_at: e.target.value }))} /></div>
-        <button onClick={add} className="px-4 py-2.5 rounded-xl text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>Add</button>
+        <AsyncButton onClick={add} pendingLabel="Saving…" className="px-4 py-2.5 rounded-xl text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>Add</AsyncButton>
       </div>
       {!reminders?.length ? <Empty text="No reminders set." icon={Bell} /> : reminders.map(r => (
         <div key={r.id} className="card-3d flex items-center justify-between" style={{ padding: '16px' }}>
@@ -907,7 +1015,7 @@ function AddressBookTab({ id, addresses, reload, toast }) {
           </div>
           <div className="flex justify-end gap-2">
             <button onClick={() => setAdding(false)} className="px-3 py-1.5 rounded-lg text-xs" style={{ color: 'var(--text-muted)' }}>Cancel</button>
-            <button onClick={add} className="px-4 py-1.5 rounded-lg text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>Save</button>
+            <AsyncButton onClick={add} pendingLabel="Saving…" className="px-4 py-1.5 rounded-lg text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>Save</AsyncButton>
           </div>
         </div>
       )}
@@ -957,7 +1065,7 @@ function RecipientsTab({ id, recipients, reload, toast }) {
           <input className="input-3d text-sm" placeholder="Address" value={form.address} onChange={e => sf('address', e.target.value)} />
           <div className="flex justify-end gap-2">
             <button onClick={() => setAdding(false)} className="px-3 py-1.5 rounded-lg text-xs" style={{ color: 'var(--text-muted)' }}>Cancel</button>
-            <button onClick={add} className="px-4 py-1.5 rounded-lg text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>Save</button>
+            <AsyncButton onClick={add} pendingLabel="Saving…" className="px-4 py-1.5 rounded-lg text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>Save</AsyncButton>
           </div>
         </div>
       )}

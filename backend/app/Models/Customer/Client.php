@@ -27,11 +27,20 @@ class Client extends Model
         'shipping_street', 'shipping_city', 'shipping_state', 'shipping_zip', 'shipping_country',
         'social_links', 'foundation_date', 'dob', 'anniversary_date',
         'default_currency', 'default_language', 'show_primary_contact', 'active', 'added_by',
+        // Customer 360 — ownership, classification, and the fields Health needs.
+        'account_owner_id', 'secondary_owner_id', 'customer_success_owner_id',
+        'business_unit', 'region',
+        'customer_type', 'customer_tier', 'industry',
+        'payment_terms', 'relationship_started_at', 'lifecycle_status',
+        'health_score', 'health_status', 'health_calculated_at',
+        'risk_relationship', 'risk_compliance', 'risk_overall',
     ];
 
     protected $casts = [
         'social_links'         => 'array',
         'foundation_date'      => 'date',
+        'relationship_started_at' => 'date',
+        'health_calculated_at' => 'datetime',
         'dob'                  => 'date',
         'anniversary_date'     => 'date',
         'opening_balance'      => 'decimal:2',

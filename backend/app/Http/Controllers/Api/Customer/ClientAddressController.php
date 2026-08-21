@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\Customer;
 
+use App\Rules\Pincode;
 use App\Http\Controllers\Api\Customer\Concerns\AssertsClientTenant;
 use App\Http\Controllers\Controller;
 use App\Models\Customer\Client;
@@ -49,7 +50,7 @@ class ClientAddressController extends Controller
             'address' => 'nullable|string|max:255',
             'city'    => 'nullable|string|max:100',
             'state'   => 'nullable|string|max:100',
-            'zip'     => 'nullable|string|max:20',
+            'zip'     => ['nullable', 'string', new Pincode()],
             'country' => 'nullable|string|max:100',
         ]);
     }

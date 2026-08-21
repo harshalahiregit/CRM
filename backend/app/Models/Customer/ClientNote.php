@@ -11,7 +11,7 @@ class ClientNote extends Model
     use BelongsToTenant;
 
     protected $fillable = [
-        'tenant_id', 'client_id', 'content', 'created_by',
+        'tenant_id', 'client_id', 'content', 'type', 'created_by',
         'priority', 'deadline', 'reminder_at', 'visibility',
     ];
 

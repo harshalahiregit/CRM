@@ -61,6 +61,10 @@ class ClientNoteController extends Controller
     {
         $data = $request->validate([
             'content'     => 'required|string|max:65535',
+            // §16 — the taxonomy. Visibility is already handled by the
+            // existing `visibility` field, whose 'client' value means exactly
+            // "the customer may see this"; no second flag is needed.
+            'type'             => 'nullable|string|max:30',
             'priority'    => 'nullable|in:low,medium,high,urgent',
             'deadline'    => 'nullable|date',
             'reminder_at' => 'nullable|date',

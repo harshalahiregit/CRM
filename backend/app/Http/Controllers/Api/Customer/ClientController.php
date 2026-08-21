@@ -18,6 +18,17 @@ use Symfony\Component\HttpFoundation\Response;
 
 class ClientController extends Controller
 {
+    /**
+     * The dropdown lists for classification, contact role and note type.
+     *
+     * One request rather than eight, because every customer form needs the
+     * whole set and the payload is a few hundred bytes.
+     */
+    public function options()
+    {
+        return response()->json(\App\Support\Customer\CustomerOptions::all());
+    }
+
     public function __construct(
         private ClientService $clients,
         private ClientLedgerService $ledger,
