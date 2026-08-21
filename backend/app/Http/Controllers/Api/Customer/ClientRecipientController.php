@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\Customer;
 
+use App\Rules\PhoneNumber;
 use App\Http\Controllers\Api\Customer\Concerns\AssertsClientTenant;
 use App\Http\Controllers\Controller;
 use App\Models\Customer\Client;
@@ -48,7 +49,7 @@ class ClientRecipientController extends Controller
             'name'    => 'required|string|max:255',
             'company' => 'nullable|string|max:255',
             'email'   => 'nullable|email|max:255',
-            'phone'   => 'nullable|string|max:30',
+            'phone'   => ['nullable', 'string', 'max:30', new PhoneNumber()],
             'address' => 'nullable|string|max:255',
             'city'    => 'nullable|string|max:100',
             'country' => 'nullable|string|max:100',

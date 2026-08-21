@@ -39,9 +39,10 @@ class Customer360Service
     public function overview(Client $client): array
     {
         return [
-            'kpis'   => $this->kpis($client),
-            'alerts' => $this->alerts($client),
-            'owner'  => $this->owner($client),
+            'kpis'     => $this->kpis($client),
+            'alerts'   => $this->alerts($client),
+            'recent'   => $this->recentActivity($client),
+            'owner'    => $this->owner($client),
         ];
     }
 
@@ -253,6 +254,98 @@ class Customer360Service
             ->where('remind_at', '<', now())
             ->where('is_notified', false)
             ->count();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    //  Recent activity
+    // ─────────────────────────────────────────────────────────────────────
+
+    /**
+     * The last few things that happened, newest first.
+     *
+     * A deliberately shallow read of each source rather than one big UNION: each
+     * table is asked for its own most-recent handful, then the merged set is cut
+     * to $limit. A UNION across eight tables with different shapes would be both
+     * slower and impossible to extend without touching every branch.
+     *
+     * This is the Overview's summary strip. The full Timeline (change 3) is the
+     * same idea with paging, filtering and every source — this stays small on
+     * purpose so the dashboard opens fast.
+     */
+    public function recentActivity(Client $client, int $limit = 10): array
+    {
+        $events = collect()
+            ->concat($this->recentFrom('sales_invoices', 'client_id', $client, fn ($r) => [
+                'type' => 'invoice', 'label' => 'Invoice '.$r->number.' raised', 'at' => $r->created_at,
+            ]))
+            ->concat($this->recentPayments($client))
+            ->concat($this->recentFrom('client_shipments', 'client_id', $client, fn ($r) => [
+                'type' => 'shipment', 'label' => 'Shipment '.$r->shipment_number.' '.strtolower($r->status ?: 'created'), 'at' => $r->created_at,
+            ]))
+            ->concat($this->recentFrom('client_contracts', 'client_id', $client, fn ($r) => [
+                'type' => 'contract', 'label' => 'Contract "'.$r->subject.'" added', 'at' => $r->created_at,
+            ]))
+            ->concat($this->recentFrom('client_notes', 'client_id', $client, fn ($r) => [
+                'type' => 'note', 'label' => 'Note added', 'at' => $r->created_at,
+            ]))
+            ->concat($this->recentFrom('client_attachments', 'client_id', $client, fn ($r) => [
+                'type' => 'file', 'label' => 'File uploaded: '.$r->file_name, 'at' => $r->created_at,
+            ]))
+            ->concat($this->recentFrom('tickets', 'customer_id', $client, fn ($r) => [
+                'type' => 'ticket', 'label' => 'Ticket opened: '.$r->subject, 'at' => $r->created_at,
+            ]));
+
+        return $events
+            ->filter(fn ($e) => ! empty($e['at']))
+            ->sortByDesc('at')
+            ->take($limit)
+            ->map(fn ($e) => $e + ['at' => Carbon::parse($e['at'])->toIso8601String()])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Most-recent rows from one table, mapped to an event.
+     *
+     * Schema-guarded and column-guarded: a module that is not installed, or one
+     * that renamed a column, yields nothing rather than breaking the dashboard.
+     */
+    private function recentFrom(string $table, string $fk, Client $client, callable $map, int $take = 5): array
+    {
+        if (! Schema::hasTable($table)) {
+            return [];
+        }
+
+        return DB::table($table)
+            ->where('tenant_id', $client->tenant_id)
+            ->where($fk, $client->id)
+            ->orderByDesc('created_at')
+            ->limit($take)
+            ->get()
+            ->map($map)
+            ->all();
+    }
+
+    /** Payments hang off the invoice, so they need the join rather than a client_id. */
+    private function recentPayments(Client $client): array
+    {
+        if (! Schema::hasTable('sales_payments') || ! Schema::hasTable('sales_invoices')) {
+            return [];
+        }
+
+        return DB::table('sales_payments as p')
+            ->join('sales_invoices as i', 'i.id', '=', 'p.invoice_id')
+            ->where('i.tenant_id', $client->tenant_id)
+            ->where('i.client_id', $client->id)
+            ->orderByDesc('p.created_at')
+            ->limit(5)
+            ->get(['p.amount', 'p.created_at', 'i.number'])
+            ->map(fn ($r) => [
+                'type'  => 'payment',
+                'label' => 'Payment received against '.$r->number,
+                'at'    => $r->created_at,
+            ])
+            ->all();
     }
 
     // ─────────────────────────────────────────────────────────────────────

@@ -17,6 +17,7 @@ import StepperNav from '../components/StepperNav'
 import ConfirmIconButton from '../components/ConfirmIconButton'
 import ToggleSwitch from '../components/ToggleSwitch'
 import OverviewTab from '../components/OverviewTab'
+import AsyncButton from '@/components/ui/AsyncButton'
 import NotesTab from '../components/NotesTab'
 import RichTextEditor from '@/components/ui/RichTextEditor'
 import { MoneyToggle, useMoneyFmt } from '@/components/ui/Money'
@@ -749,7 +750,7 @@ function VaultTab({ id, entries, reload, toast }) {
 
           <div className="flex justify-end gap-2">
             <button onClick={() => setAdding(false)} className="px-3 py-1.5 rounded-lg text-xs" style={{ color: 'var(--text-muted)' }}>Cancel</button>
-            <button onClick={add} className="px-4 py-1.5 rounded-lg text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>Save</button>
+            <AsyncButton onClick={add} pendingLabel="Saving…" className="px-4 py-1.5 rounded-lg text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>Save</AsyncButton>
           </div>
         </div>
       )}
@@ -822,7 +823,7 @@ function RemindersTab({ id, reminders, reload, toast }) {
       <div className="card-3d flex gap-3 items-end" style={{ padding: '16px' }}>
         <div className="flex-1"><label className="label">Reminder</label><input className="input-3d text-sm" placeholder="e.g. Follow up on renewal" value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} /></div>
         <div><label className="label">Date</label><input type="date" className="input-3d text-sm" value={form.remind_at} onChange={e => setForm(p => ({ ...p, remind_at: e.target.value }))} /></div>
-        <button onClick={add} className="px-4 py-2.5 rounded-xl text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>Add</button>
+        <AsyncButton onClick={add} pendingLabel="Saving…" className="px-4 py-2.5 rounded-xl text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>Add</AsyncButton>
       </div>
       {!reminders?.length ? <Empty text="No reminders set." icon={Bell} /> : reminders.map(r => (
         <div key={r.id} className="card-3d flex items-center justify-between" style={{ padding: '16px' }}>
@@ -907,7 +908,7 @@ function AddressBookTab({ id, addresses, reload, toast }) {
           </div>
           <div className="flex justify-end gap-2">
             <button onClick={() => setAdding(false)} className="px-3 py-1.5 rounded-lg text-xs" style={{ color: 'var(--text-muted)' }}>Cancel</button>
-            <button onClick={add} className="px-4 py-1.5 rounded-lg text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>Save</button>
+            <AsyncButton onClick={add} pendingLabel="Saving…" className="px-4 py-1.5 rounded-lg text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>Save</AsyncButton>
           </div>
         </div>
       )}
@@ -957,7 +958,7 @@ function RecipientsTab({ id, recipients, reload, toast }) {
           <input className="input-3d text-sm" placeholder="Address" value={form.address} onChange={e => sf('address', e.target.value)} />
           <div className="flex justify-end gap-2">
             <button onClick={() => setAdding(false)} className="px-3 py-1.5 rounded-lg text-xs" style={{ color: 'var(--text-muted)' }}>Cancel</button>
-            <button onClick={add} className="px-4 py-1.5 rounded-lg text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>Save</button>
+            <AsyncButton onClick={add} pendingLabel="Saving…" className="px-4 py-1.5 rounded-lg text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>Save</AsyncButton>
           </div>
         </div>
       )}
