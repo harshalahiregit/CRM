@@ -276,6 +276,14 @@ live vendor-status template, AI assist. Kickoff is now "Meetings → New → Typ
   `/analytics/export`, purchaseApi `analytics`, and an Analytics page in the Purchase nav (teal). Dimensions
   whose Purchase mirrors haven't landed yet (violations/inspections) are simply absent — additive. Verified via
   rolled-back tinker (overview, 6-month trends, benchmark, CSV header/rows) + green build. **Parity mirror #4.**
-- [ ] Remaining Purchase mirrors: Inspections · Violations/Strikes · Renewal · Offboarding · Document Vault ·
-  Performance Index (VPI) · Communications · PPE-at-gate. (Purchase has its own gate/PPE/worker stack, so those
-  mirror onto `purchase_*` equivalents.)
+- [x] **§30 Document Vault — Purchase mirror** — `PurchaseDocumentVaultService`, a read-only aggregator over
+  four Purchase stores (statutory `purchase_documents`, `purchase_worker_documents`, and CAPA/NCR closure
+  evidence), each normalised to one row shape with a computed expiry_state (valid/expiring≤30d/expired/none).
+  roster (source/vendor/expiry/q filters, most-urgent-first), per-vendor grouped vault, summary (by-source +
+  expiry buckets + attention). Routes `/purchase/document-vault` + `/purchase/vendors/{purchaseVendor}/vault`,
+  purchaseApi `documentVault`, and a Vault page in the Purchase nav (teal). Read-only, no store's write path
+  touched. Verified via rolled-back tinker (3-source seed, expiry buckets 1 expired/1 expiring, filters,
+  grouping) + green build. **Parity mirror #5.**
+- [ ] Remaining Purchase mirrors: Inspections · Violations/Strikes · Renewal · Offboarding · Performance Index
+  (VPI) · Communications · PPE-at-gate. (Purchase has its own gate/PPE/worker stack, so those mirror onto
+  `purchase_*` equivalents.)

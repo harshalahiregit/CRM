@@ -277,6 +277,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::get('/analytics',               [\App\Http\Controllers\Api\Purchase\PurchaseAnalyticsController::class, 'index']);
     Route::get('/analytics/export',        [\App\Http\Controllers\Api\Purchase\PurchaseAnalyticsController::class, 'export']);
 
+    // ── Document Vault (mirror of TPV §30 — read-only over 4 stores) ────────
+    Route::get('/document-vault',                        [\App\Http\Controllers\Api\Purchase\PurchaseDocumentVaultController::class, 'index']);
+    Route::get('/vendors/{purchaseVendor}/vault',        [\App\Http\Controllers\Api\Purchase\PurchaseDocumentVaultController::class, 'vendor'])->whereNumber('purchaseVendor');
+
     // ── Kickoff meetings (Purchase-owned engine: purchase_kickoff_* tables) ─
     Route::get('/kickoff/stats',                   [PurchaseKickoffController::class, 'stats']);
     Route::get('/kickoff',                         [PurchaseKickoffController::class, 'index']);
