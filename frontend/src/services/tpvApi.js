@@ -31,6 +31,17 @@ export const tpvApi = {
     update: (id, data)    => api.put(`/tpv/work-orders/${id}`, data).then(r => r.data),
     delete: (id)          => api.delete(`/tpv/work-orders/${id}`).then(r => r.data),
   },
+  // Work Packages & Activities (Sangoe TPV §13) — the accountability spine.
+  workPackages: {
+    list:   (params = {}) => api.get('/tpv/work-packages', { params }).then(r => r.data?.data ?? r.data),
+    get:    (id)          => api.get(`/tpv/work-packages/${id}`).then(r => r.data),
+    create: (data)        => api.post('/tpv/work-packages', data).then(r => r.data),
+    update: (id, data)    => api.put(`/tpv/work-packages/${id}`, data).then(r => r.data),
+    delete: (id)          => api.delete(`/tpv/work-packages/${id}`).then(r => r.data),
+    addActivity:    (wpId, data)      => api.post(`/tpv/work-packages/${wpId}/activities`, data).then(r => r.data),
+    updateActivity: (actId, data)     => api.put(`/tpv/activities/${actId}`, data).then(r => r.data),
+    deleteActivity: (actId)           => api.delete(`/tpv/activities/${actId}`).then(r => r.data),
+  },
 
   // ── Advanced approval workflow (Phase 3) ────────────────────────────
   approvals: {

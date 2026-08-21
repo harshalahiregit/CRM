@@ -229,6 +229,16 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::put('/contracts/{contract}',                   [\App\Http\Controllers\Api\Tpv\TpvContractController::class, 'update'])->where('contract', '[0-9]+');
     Route::delete('/contracts/{contract}',                [\App\Http\Controllers\Api\Tpv\TpvContractController::class, 'destroy'])->where('contract', '[0-9]+');
 
+    // Work Packages & Activities (Sangoe TPV §13) — Vendor→Project→WP→Activity→Workforce.
+    Route::get('/work-packages',                          [\App\Http\Controllers\Api\Tpv\TpvWorkPackageController::class, 'index']);
+    Route::post('/work-packages',                         [\App\Http\Controllers\Api\Tpv\TpvWorkPackageController::class, 'store']);
+    Route::get('/work-packages/{workPackage}',            [\App\Http\Controllers\Api\Tpv\TpvWorkPackageController::class, 'show'])->where('workPackage', '[0-9]+');
+    Route::put('/work-packages/{workPackage}',            [\App\Http\Controllers\Api\Tpv\TpvWorkPackageController::class, 'update'])->where('workPackage', '[0-9]+');
+    Route::delete('/work-packages/{workPackage}',         [\App\Http\Controllers\Api\Tpv\TpvWorkPackageController::class, 'destroy'])->where('workPackage', '[0-9]+');
+    Route::post('/work-packages/{workPackage}/activities', [\App\Http\Controllers\Api\Tpv\TpvWorkPackageController::class, 'addActivity'])->where('workPackage', '[0-9]+');
+    Route::put('/activities/{activity}',                  [\App\Http\Controllers\Api\Tpv\TpvWorkPackageController::class, 'updateActivity'])->where('activity', '[0-9]+');
+    Route::delete('/activities/{activity}',               [\App\Http\Controllers\Api\Tpv\TpvWorkPackageController::class, 'destroyActivity'])->where('activity', '[0-9]+');
+
     // Permit-to-Work + JSA (Doc_4 Phase 5). Approval requires a JSA and refuses a
     // suspended vendor; a permit expires at its validity window.
     Route::get('/permits',                                [\App\Http\Controllers\Api\Tpv\PermitController::class, 'index']);

@@ -1,5 +1,5 @@
 import {
-  LayoutDashboard, CalendarDays, Rocket, Building2,
+  LayoutDashboard, CalendarDays, Rocket, Building2, Boxes,
   UserCheck, CheckSquare, ScanLine, ShieldAlert, Clock, ShieldCheck, HardHat, ClipboardList, Siren, FileCheck2, Eye, FolderLock, Landmark, TrendingUp } from 'lucide-react'
 import ModuleShell from '@/components/layout/ModuleShell'
 
@@ -23,9 +23,10 @@ const TPV_GROUPS = [
     { label: 'Temporary',        path: '/app/tpv/temporary',       icon: Clock },
   ] },
   { label: 'Mobilisation', icon: Rocket, items: [
-    { label: 'Meetings',   path: '/app/tpv/kickoff',    icon: CalendarDays },
-    { label: 'Onboarding', path: '/app/tpv/onboarding', icon: Rocket },
-    { label: 'Approvals',  path: '/app/tpv/approvals',  icon: ShieldCheck },
+    { label: 'Meetings',      path: '/app/tpv/kickoff',       icon: CalendarDays },
+    { label: 'Onboarding',    path: '/app/tpv/onboarding',    icon: Rocket },
+    { label: 'Work Packages', path: '/app/tpv/work-packages', icon: Boxes },
+    { label: 'Approvals',     path: '/app/tpv/approvals',     icon: ShieldCheck },
   ] },
   { label: 'Workforce', icon: UserCheck, items: [
     { label: 'Workforce',  path: '/app/tpv/workforce',  icon: UserCheck },

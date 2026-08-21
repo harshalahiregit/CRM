@@ -90,7 +90,12 @@ live vendor-status template, AI assist. Kickoff is now "Meetings → New → Typ
   `TpvContractService` (CRUD) + `TpvContractController` + routes + a two-tab **Contracts & Work Orders**
   page with create/edit/delete. Distinct from Purchase's contracts. Verified via rolled-back tinker
   (refs + relations + counts) + green build. TODO later: feed contract/WO expiry into Action Centre + performance.
-- [ ] **§13 Work Packages** — Vendor→Project→WorkPackage→Activity→Workforce hierarchy (the accountability spine).
+- [x] **§13 Work Packages** — `tpv_work_packages` (WP-YYYY-### ref, vendor/project/contract link,
+  scope/location/dates/status) + `tpv_activities` (name, `required_competency` — the Skill-Matrix hook,
+  status, sort) + additive `tpv_workers.work_package_id` for deployment. Models + `TpvWorkPackageService`
+  + controller + routes + a **Work Packages** page (list + create/edit + expandable per-package activity
+  management + deployed-workers view) in the Mobilisation cluster. Verified via rolled-back tinker + green
+  build. TODO later: assign workers to a package from the worker wizard; enforce activity competency (Phase 5).
 - [~] **§12 Approvals engine** — generalise onboarding-only chain into a **central engine** across the
   ~18 approval types with routing configurable by risk/project/value/work-type/workforce/site/dept.
 
