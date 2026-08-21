@@ -321,6 +321,14 @@ export const purchaseApi = {
     trainings: (vendorId) => api.get('/purchase/workforce/trainings', { params: { vendor_id: vendorId } }).then(r => r.data),
   },
 
+  // ── Compliance register (mirror of TPV §21 — purchase_vendor_compliance) ─
+  vendorCompliance: {
+    roster: ()                  => api.get('/purchase/vendor-compliance').then(r => r.data),
+    matrix: (vendorId)          => api.get(`/purchase/vendors/${vendorId}/compliance`).then(r => r.data),
+    upsert: (vendorId, data)    => api.post(`/purchase/vendors/${vendorId}/compliance`, data).then(r => r.data),
+    delete: (complianceId)      => api.delete(`/purchase/vendor-compliance/${complianceId}`).then(r => r.data),
+  },
+
   onboarding: {
     list:     (params = {}) => api.get('/purchase/onboarding', { params }).then(r => r.data),
     stats:    ()            => api.get('/purchase/onboarding/stats').then(r => r.data),

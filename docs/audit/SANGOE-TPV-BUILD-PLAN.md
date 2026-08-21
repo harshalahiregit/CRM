@@ -253,3 +253,15 @@ live vendor-status template, AI assist. Kickoff is now "Meetings → New → Typ
 
 - [ ] Track per-feature as TPV slices land. Purchase already has: separate vendor table, workforce stack,
   onboarding→activation, Overview/Customer tabs (parity pass done earlier). Everything Phase 1–7 needs a Purchase mirror.
+- [x] **§21 Compliance Register — Purchase mirror** — `purchase_vendor_compliance` (own table keyed to
+  `purchase_vendors`), `PurchaseComplianceCatalog` (isolated copy of the 14 categories / 7 statuses),
+  `PurchaseVendorCompliance` (effective_status expiry rule 8), `PurchaseComplianceService`
+  (vendorMatrix/upsert/roster), `PurchaseComplianceController` (AssertsTenantOwnership, `{purchaseVendor}`
+  binding), routes `/purchase/vendor-compliance` + `/purchase/vendors/{purchaseVendor}/compliance`, purchaseApi
+  `vendorCompliance`, and a **Compliance** page in the Purchase nav — the exact TPV register mirrored on the
+  Purchase DB, fully module-isolated. Verified via rolled-back tinker (14 cats, HSE Compliant / expired Licences→
+  Expired / Non_Compliant Labour / untracked Under_Review, roster tracked 3 ok 1 problems 2 pct 7%, code PV-0001)
+  + green build. **Parity mirror #1.**
+- [ ] Remaining Purchase mirrors: NCR · CAPA · Inspections · Violations/Strikes · Renewal · Offboarding ·
+  Document Vault · Analytics · Performance Index (VPI) · Communications · PPE-at-gate. (Purchase has its own
+  gate/PPE/worker stack, so those mirror onto `purchase_*` equivalents.)
