@@ -213,7 +213,17 @@ live vendor-status template, AI assist. Kickoff is now "Meetings → New → Typ
   search/source/expiry filters + unified table with open-file links, under Intelligence → Document Vault.
   Verified via rolled-back tinker (4-source seed, 25-doc summary, expiry buckets 1 expired/1 expiring,
   uploader-name resolve, source/expiry filters, vendor vault grouping) + green build.
-- [~] **§31 Communications** — in-app feed + SMS/WhatsApp + expiry/incident/strike/CAPA/renewal notifications.
+- [x] **§31 Communications** — a Communications Centre added ADDITIVELY over the existing notification transport
+  (Notifications\NotificationService) + `tpv_notification_logs` + the in-app `notifications` bell: a DERIVED
+  alerts feed (`TpvCommunicationService::alerts`) computes what each vendor needs to hear from live state —
+  documents expired/expiring (30d), overdue NCRs, overdue CAPAs, open violations, renewals due/overdue — each
+  severity-ranked with a deep link + suggested message. Admin `send(vendor, channel, subject, body)` dispatches
+  over email/WhatsApp/SMS, records a `tpv_notification_logs` row (sent/failed) and a sender bell breadcrumb;
+  guards missing email/phone. Endpoints `/tpv/communications` (alerts+log+channels) + POST `/communications/send`
+  (admin-gated). Page = action feed with per-alert Notify (prefilled compose modal) + Open link, and a Sent log,
+  under Intelligence → Communications. Verified via rolled-back tinker (3 severity-sorted alerts, email send
+  logged + bell created, no-contact guard) + green build. *Follow-up:* auto-dispatch on event (today the feed is
+  pull + manual send).
 - [~] **§32 Vendor Portal** — add respond-to-NCR, submit-CAPA-evidence, view meetings/MOM, respond-to-actions.
 - [x] **§33 Reports & Analytics** — a new Analytics hub added ADDITIVELY (the DPR/WPR/MCR print report at
   `/reports` is untouched): `TpvAnalyticsService` computes cross-module overview (portfolio by status,
