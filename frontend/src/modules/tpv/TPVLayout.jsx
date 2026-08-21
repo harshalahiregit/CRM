@@ -36,6 +36,7 @@ const TPV_GROUPS = [
     { label: 'PPE Matrix',  path: '/app/tpv/ppe/matrix', icon: ClipboardList },
   ] },
   { label: 'Work Control', icon: FileCheck2, items: [
+    { label: 'Authorization', path: '/app/tpv/work-authorization', icon: ShieldCheck },
     { label: 'Permits',      path: '/app/tpv/permits',          icon: FileCheck2 },
     { label: 'Gate Log',     path: '/app/tpv/gate-log',         icon: ScanLine },
     { label: 'Observations', path: '/app/tpv/safety-engagement', icon: Eye },

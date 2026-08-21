@@ -31,6 +31,11 @@ export const tpvApi = {
     update: (id, data)    => api.put(`/tpv/work-orders/${id}`, data).then(r => r.data),
     delete: (id)          => api.delete(`/tpv/work-orders/${id}`).then(r => r.data),
   },
+  // Unified Work Authorization (Sangoe TPV §19) — read-only composite verdict.
+  workAuthorization: {
+    roster: (params = {}) => api.get('/tpv/work-authorization', { params }).then(r => r.data?.data ?? r.data),
+    worker: (workerId, params = {}) => api.get(`/tpv/workers/${workerId}/authorization`, { params }).then(r => r.data),
+  },
   // Competency & Training + Skill Matrix (Sangoe TPV §15).
   competency: {
     roster: (params = {}) => api.get('/tpv/competency', { params }).then(r => r.data),
