@@ -144,8 +144,17 @@ live vendor-status template, AI assist. Kickoff is now "Meetings → New → Typ
   create/edit + expandable per-inspection finding management + one-click "Raise NCR") in Work Control.
   Verified via rolled-back tinker (inspection, finding, finding→NCR NCR-2026-001, double-escalate guard,
   counts) + green build. Closes the Plan→Inspect→Finding→Action→NCR chain.
-- [~] **§25 CAPA generalisation** — decouple from incident-only; link audit/inspection/NCR/meeting/
-  compliance-failure/repeated-violation; add immediate-correction, root-cause, effectiveness fields + **evidence files**.
+- [x] **§25 CAPA generalisation** — a NEW generalised register added ADDITIVELY (`incident_capas` stays the
+  incident-close gate, untouched): `tpv_capas` (CAPA-YYYY-### ref, `CapaSource` catalogue — kinds
+  ncr/inspection/audit/meeting/violation/renewal/incident/manual with a class map, types
+  Corrective/Preventive, priorities, Open→In_Progress→Done→Verified). Polymorphic source pointer set from
+  kind+id; `raiseFrom(kind,id,…)` convenience for other services to call later. **Rule 12**: `transition`
+  refuses Verified without `evidence_path`. Register page = stats strip + source/status filters + evidence-gated
+  advance + full CRUD modal (root-cause/action/evidence). Wired under Compliance → CAPA.
+  Verified via rolled-back tinker (manual CAPA-2026-001 overdue, raiseFrom NCR CAPA-2026-002 linked, evidence
+  gate blocks then passes, stats, kind/overdue filters) + green build.
+  *Follow-up:* wire existing NCR/inspection/violation services to auto-`raiseFrom`; surface generalised CAPA on
+  the exec dashboard (today the KPI still counts incident_capas).
 - [x] **§26 Strikes & Violations** — vendor-level violation engine added ADDITIVELY (the worker-level
   auto-terminate strike engine is untouched): `tpv_vendor_violations` (VIO-YYYY-### ref, `ViolationType`
   catalogue [PPE/unauthorized-worker/expired-doc/unsafe-work/gate/security/environmental/repeated-
