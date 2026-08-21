@@ -26,7 +26,8 @@ const TPV_GROUPS = [
     { label: 'Meetings',      path: '/app/tpv/kickoff',       icon: CalendarDays },
     { label: 'Onboarding',    path: '/app/tpv/onboarding',    icon: Rocket },
     { label: 'Work Packages', path: '/app/tpv/work-packages', icon: Boxes },
-    { label: 'Approvals',     path: '/app/tpv/approvals',     icon: ShieldCheck },
+    { label: 'Onboarding Approvals', path: '/app/tpv/approvals', icon: ShieldCheck },
+    { label: 'Approval Register',    path: '/app/tpv/approval-register', icon: CheckSquare },
   ] },
   { label: 'Workforce', icon: UserCheck, items: [
     { label: 'Workforce',  path: '/app/tpv/workforce',  icon: UserCheck },

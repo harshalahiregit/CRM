@@ -96,8 +96,15 @@ live vendor-status template, AI assist. Kickoff is now "Meetings → New → Typ
   + controller + routes + a **Work Packages** page (list + create/edit + expandable per-package activity
   management + deployed-workers view) in the Mobilisation cluster. Verified via rolled-back tinker + green
   build. TODO later: assign workers to a package from the worker wizard; enforce activity competency (Phase 5).
-- [~] **§12 Approvals engine** — generalise onboarding-only chain into a **central engine** across the
-  ~18 approval types with routing configurable by risk/project/value/work-type/workforce/site/dept.
+- [~] **§12 Approvals engine** —
+  - [x] Central **Approval Register** built ADDITIVELY (zero risk to the working onboarding chain):
+    new `tpv_approvals` table (APR-YYYY-### ref, polymorphic subject, 18 `ApprovalType` kinds, priority,
+    Pending→Approved/Rejected/Cancelled with re-decide guard + admin-gated decisions), `TpvApprovalService`
+    (`raise()`/`decide()`/`list()` — other services can call `raise()` to route an action), controller +
+    routes (`/tpv/approval-requests`), and an **Approval Register** page (raise + admin approve/reject/cancel)
+    under Mobilisation. Onboarding approvals renamed to "Onboarding Approvals" in nav, untouched otherwise.
+  - [ ] Configurable routing by risk/project/value/work-type/site/dept (deferred — needs the Settings module, Phase 3).
+  - [ ] Wire existing flows (contract/WO/suspension/renewal/exception) to auto-raise into the register.
 
 ## Phase 5 — Control of Work hardening (business rules 4/5/6)
 

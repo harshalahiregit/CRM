@@ -239,6 +239,13 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::put('/activities/{activity}',                  [\App\Http\Controllers\Api\Tpv\TpvWorkPackageController::class, 'updateActivity'])->where('activity', '[0-9]+');
     Route::delete('/activities/{activity}',               [\App\Http\Controllers\Api\Tpv\TpvWorkPackageController::class, 'destroyActivity'])->where('activity', '[0-9]+');
 
+    // Central Approval register (Sangoe TPV §12) — generic across the ~18 approval
+    // types; SEPARATE from the onboarding-approval chain (/tpv/onboarding/*).
+    // Reads open to staff; decisions admin-gated in-controller.
+    Route::get('/approval-requests',                      [\App\Http\Controllers\Api\Tpv\TpvApprovalController::class, 'index']);
+    Route::post('/approval-requests',                     [\App\Http\Controllers\Api\Tpv\TpvApprovalController::class, 'store']);
+    Route::post('/approval-requests/{approval}/decide',   [\App\Http\Controllers\Api\Tpv\TpvApprovalController::class, 'decide'])->where('approval', '[0-9]+');
+
     // Permit-to-Work + JSA (Doc_4 Phase 5). Approval requires a JSA and refuses a
     // suspended vendor; a permit expires at its validity window.
     Route::get('/permits',                                [\App\Http\Controllers\Api\Tpv\PermitController::class, 'index']);
