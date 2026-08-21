@@ -289,6 +289,14 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::get('/vendors/{vendor}/escalation',            [\App\Http\Controllers\Api\Tpv\TpvViolationController::class, 'escalation'])->where('vendor', '[0-9]+');
     Route::post('/vendors/{vendor}/enforce',              [\App\Http\Controllers\Api\Tpv\TpvViolationController::class, 'enforce'])->where('vendor', '[0-9]+');
 
+    // Renewal & Extension (Sangoe TPV §28). Decisions admin-gated.
+    Route::get('/renewals',                               [\App\Http\Controllers\Api\Tpv\TpvRenewalController::class, 'index']);
+    Route::post('/renewals',                              [\App\Http\Controllers\Api\Tpv\TpvRenewalController::class, 'store']);
+    Route::get('/vendors/{vendor}/renewal-assessment',    [\App\Http\Controllers\Api\Tpv\TpvRenewalController::class, 'assess'])->where('vendor', '[0-9]+');
+    Route::post('/renewals/{renewal}/reassess',           [\App\Http\Controllers\Api\Tpv\TpvRenewalController::class, 'reassess'])->where('renewal', '[0-9]+');
+    Route::post('/renewals/{renewal}/decide',             [\App\Http\Controllers\Api\Tpv\TpvRenewalController::class, 'decide'])->where('renewal', '[0-9]+');
+    Route::delete('/renewals/{renewal}',                  [\App\Http\Controllers\Api\Tpv\TpvRenewalController::class, 'destroy'])->where('renewal', '[0-9]+');
+
     // Permit-to-Work + JSA (Doc_4 Phase 5). Approval requires a JSA and refuses a
     // suspended vendor; a permit expires at its validity window.
     Route::get('/permits',                                [\App\Http\Controllers\Api\Tpv\PermitController::class, 'index']);

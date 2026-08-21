@@ -1,5 +1,5 @@
 import {
-  LayoutDashboard, CalendarDays, Rocket, Building2, Boxes, GraduationCap, FileWarning, ClipboardCheck, AlertOctagon,
+  LayoutDashboard, CalendarDays, Rocket, Building2, Boxes, GraduationCap, FileWarning, ClipboardCheck, AlertOctagon, RefreshCcw,
   UserCheck, CheckSquare, ScanLine, ShieldAlert, Clock, ShieldCheck, HardHat, ClipboardList, Siren, FileCheck2, Eye, FolderLock, Landmark, TrendingUp } from 'lucide-react'
 import ModuleShell from '@/components/layout/ModuleShell'
 
@@ -52,6 +52,7 @@ const TPV_GROUPS = [
   ] },
   { label: 'Performance', icon: TrendingUp, items: [
     { label: 'Performance', path: '/app/tpv/performance', icon: TrendingUp },
+    { label: 'Renewal',     path: '/app/tpv/renewals',    icon: RefreshCcw },
   ] },
   { label: 'Intelligence', icon: Landmark, items: [
     { label: 'Reports',    path: '/app/tpv/reports',          icon: ClipboardList },
