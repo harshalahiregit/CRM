@@ -109,6 +109,30 @@ class GateScanService
             }
         }
 
+        // ── Mandatory PPE at the gate (Rule 5) ──
+        // Config-driven (tpv.gate.ppe_enforcement): warn (default) / deny / off.
+        // Wrapped so a PPE-subsystem hiccup can never turn the gate away from an
+        // otherwise-clear worker — the gate must stay resilient.
+        $mode = config('tpv.gate.ppe_enforcement', 'warn');
+        if ($mode !== 'off') {
+            try {
+                $missing = app(PpeInventoryService::class)->missingMandatoryFor($worker);
+                if ($missing->isNotEmpty()) {
+                    $names = $missing->pluck('name')->filter()->implode(', ');
+                    $reason = 'Missing mandatory PPE'.($names !== '' ? ': '.$names : '.');
+                    if ($mode === 'deny') {
+                        $deny[] = $reason;
+                    } else {
+                        $warn[] = $reason;
+                    }
+                }
+            } catch (\Throwable $e) {
+                Log::channel('tpv')->warning('Gate PPE check skipped', [
+                    'worker_id' => $worker->id, 'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
         $decision = $deny !== [] ? GateDecision::DENY : ($warn !== [] ? GateDecision::WARN : GateDecision::ADMIT);
 
         return [
