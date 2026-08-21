@@ -833,20 +833,30 @@ const ghostBtn = {
  */
 function ProfilePanel({ v, manage, api, onSaved }) {
   const FIELDS = [
-    ['legal_name', 'Legal Name'],
-    ['gst_number', 'GST Number'],
-    ['pan_number', 'PAN Number'],
-    ['category',   'Category'],
-    ['website',    'Website'],
+    ['legal_name',     'Legal Name'],
+    ['trade_name',     'Trade Name'],
+    ['vendor_class',   'Class (Contractor / Subcontractor / Consultant / Service Provider)'],
+    ['category',       'Category'],
+    ['subcategory',    'Subcategory'],
+    ['parent_company', 'Parent Company'],
+    ['gst_number',     'GST Number'],
+    ['pan_number',     'PAN Number'],
+    ['cin_number',     'CIN'],
+    ['udyam_number',   'Udyam'],
+    ['website',        'Website'],
+    ['internal_sponsor', 'Internal Sponsor'],
+    ['contract_owner', 'Contract Owner'],
   ]
   const CONTACT = [
-    ['email',   'Email'],
-    ['phone',   'Phone'],
-    ['address', 'Address'],
-    ['city',    'City'],
-    ['state',   'State'],
-    ['country', 'Country'],
-    ['pincode', 'Pincode'],
+    ['email',             'Email'],
+    ['phone',             'Phone'],
+    ['emergency_contact', 'Emergency Contact'],
+    ['address',           'Registered Address'],
+    ['site_address',      'Site Address'],
+    ['city',              'City'],
+    ['state',             'State'],
+    ['country',           'Country'],
+    ['pincode',           'Pincode'],
   ]
 
   const blank = () => [...FIELDS, ...CONTACT].reduce((a, [k]) => ({ ...a, [k]: v[k] ?? '' }), {})

@@ -2,11 +2,18 @@
 
 namespace App\Models\Vendor;
 
+use App\Models\Customer\Client;
+use App\Models\Purchase\PurchaseOnboarding;
+use App\Models\Purchase\PurchaseVendor;
+use App\Models\Tenant;
 use App\Models\Tpv\TpvOnboarding;
 use App\Models\Traits\Auditable;
 use App\Models\Traits\BelongsToTenant;
 use App\Models\User;
+use App\Support\Tpv\TpvAccessStatus;
+use App\Support\Tpv\TpvRegistrationType;
 use App\Support\Tpv\TpvRegistrationType as RegistrationType;
+use App\Support\ValidityCountdown;
 use App\Support\Vendor\VendorStatus as Status;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -17,54 +24,57 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 class Vendor extends Model
 {
-    use Auditable, SoftDeletes, BelongsToTenant;
+    use Auditable, BelongsToTenant, SoftDeletes;
 
     protected $table = 'vendors';
 
     protected $fillable = [
         // purchase_vendor_id is the OPTIONAL link to this company's Purchase
         // record, set by an explicit admin action — see linkPurchaseVendor().
-        'tenant_id','user_id','purchase_vendor_id','account_manager_id','vendor_code','company_name','legal_name',
-        'vendor_type','registration_type','engagements','email','phone','website','category',
-        'registration_number','gst_number','pan_number',
-        'address','city','state','country','pincode',
-        'status','approved_at','approved_by','notes',
+        'tenant_id', 'user_id', 'purchase_vendor_id', 'account_manager_id', 'vendor_code', 'company_name', 'legal_name',
+        'vendor_type', 'registration_type', 'engagements', 'email', 'phone', 'website', 'category',
+        // Vendor Master profile completion (§5).
+        'trade_name', 'subcategory', 'vendor_class', 'parent_company', 'cin_number', 'udyam_number',
+        'site_address', 'emergency_contact', 'internal_sponsor', 'contract_owner',
+        'registration_number', 'gst_number', 'pan_number',
+        'address', 'city', 'state', 'country', 'pincode',
+        'status', 'approved_at', 'approved_by', 'notes',
         // Vendor Risk Classification (gap report area 2) — forward-looking risk
         // tier, distinct from the VRS performance band.
-        'risk_level','risk_score','risk_factors','risk_notes','risk_assessed_at','risk_assessed_by',
+        'risk_level', 'risk_score', 'risk_factors', 'risk_notes', 'risk_assessed_at', 'risk_assessed_by',
         // Prequalification (gap report area 6) — scored questionnaire outcome.
-        'qualification_status','qualification_score','qualification_responses',
-        'qualification_notes','qualification_assessed_at','qualification_assessed_by',
-        'auto_suspended','suspended_at','suspension_reason',
-        'offboarded_at','offboarding_reason',
+        'qualification_status', 'qualification_score', 'qualification_responses',
+        'qualification_notes', 'qualification_assessed_at', 'qualification_assessed_by',
+        'auto_suspended', 'suspended_at', 'suspension_reason',
+        'offboarded_at', 'offboarding_reason',
         // Temporary TPV access (Phase 2)
-        'is_temporary','access_start_at','access_expires_at','access_status',
-        'access_extended_at','access_extended_by','extension_reason',
-        'converted_to_permanent_at','converted_by','temporary_created_by','validity_days','access_reminders_sent',
+        'is_temporary', 'access_start_at', 'access_expires_at', 'access_status',
+        'access_extended_at', 'access_extended_by', 'extension_reason',
+        'converted_to_permanent_at', 'converted_by', 'temporary_created_by', 'validity_days', 'access_reminders_sent',
     ];
 
     protected $casts = [
-        'engagements'               => 'array',
-        'approved_at'               => 'datetime',
-        'risk_factors'              => 'array',
-        'risk_score'                => 'integer',
-        'risk_assessed_at'          => 'datetime',
-        'qualification_responses'   => 'array',
-        'qualification_score'       => 'integer',
+        'engagements' => 'array',
+        'approved_at' => 'datetime',
+        'risk_factors' => 'array',
+        'risk_score' => 'integer',
+        'risk_assessed_at' => 'datetime',
+        'qualification_responses' => 'array',
+        'qualification_score' => 'integer',
         'qualification_assessed_at' => 'datetime',
-        'auto_suspended'            => 'boolean',
-        'suspended_at'              => 'datetime',
-        'offboarded_at'             => 'datetime',
-        'is_temporary'              => 'boolean',
-        'access_start_at'           => 'datetime',
-        'access_expires_at'         => 'datetime',
-        'access_extended_at'        => 'datetime',
+        'auto_suspended' => 'boolean',
+        'suspended_at' => 'datetime',
+        'offboarded_at' => 'datetime',
+        'is_temporary' => 'boolean',
+        'access_start_at' => 'datetime',
+        'access_expires_at' => 'datetime',
+        'access_extended_at' => 'datetime',
         'converted_to_permanent_at' => 'datetime',
-        'validity_days'             => 'integer',
-        'access_reminders_sent'     => 'array',
-        'first_login_at'            => 'datetime',
-        'last_login_at'             => 'datetime',
-        'login_count'               => 'integer',
+        'validity_days' => 'integer',
+        'access_reminders_sent' => 'array',
+        'first_login_at' => 'datetime',
+        'last_login_at' => 'datetime',
+        'login_count' => 'integer',
         'welcome_banner_dismissed_at' => 'datetime',
     ];
 
@@ -75,11 +85,11 @@ class Vendor extends Model
     {
         static::creating(function (Vendor $vendor) {
             if (empty($vendor->vendor_code)) {
-                $year  = date('Y');
+                $year = date('Y');
                 $count = static::withTrashed()
-                               ->where('tenant_id', $vendor->tenant_id)
-                               ->whereYear('created_at', $year)
-                               ->count() + 1;
+                    ->where('tenant_id', $vendor->tenant_id)
+                    ->whereYear('created_at', $year)
+                    ->count() + 1;
                 $vendor->vendor_code = 'VEN-'.$year.'-'.str_pad((string) $count, 3, '0', STR_PAD_LEFT);
             }
         });
@@ -124,7 +134,7 @@ class Vendor extends Model
     /** Customers directly linked to this vendor (clients.vendor_id). */
     public function customers()
     {
-        return $this->hasMany(\App\Models\Customer\Client::class, 'vendor_id');
+        return $this->hasMany(Client::class, 'vendor_id');
     }
 
     /** The TPV onboarding workflow over this vendor, if engaged for TPV. */
@@ -136,7 +146,7 @@ class Vendor extends Model
     /** The Purchase onboarding workflow over this vendor, if engaged for Purchase. */
     public function purchaseOnboarding()
     {
-        return $this->hasOne(\App\Models\Purchase\PurchaseOnboarding::class, 'vendor_id');
+        return $this->hasOne(PurchaseOnboarding::class, 'vendor_id');
     }
 
     /** The portal login (role = vendor | third_party_vendor). */
@@ -154,7 +164,7 @@ class Vendor extends Model
      */
     public function purchaseVendor()
     {
-        return $this->belongsTo(\App\Models\Purchase\PurchaseVendor::class, 'purchase_vendor_id');
+        return $this->belongsTo(PurchaseVendor::class, 'purchase_vendor_id');
     }
 
     /** Internal staff who owns this vendor account. */
@@ -165,7 +175,7 @@ class Vendor extends Model
 
     public function tenant()
     {
-        return $this->belongsTo(\App\Models\Tenant::class, 'tenant_id');
+        return $this->belongsTo(Tenant::class, 'tenant_id');
     }
 
     /* ── Helpers ────────────────────────────────────────────────────────── */
@@ -194,7 +204,7 @@ class Vendor extends Model
      */
     public function getValidityCountdownAttribute(): array
     {
-        return \App\Support\ValidityCountdown::build(
+        return ValidityCountdown::build(
             $this->isTemporary(),
             $this->access_expires_at,
             $this->isTemporary() ? $this->isAccessExpired() : null,
@@ -247,7 +257,7 @@ class Vendor extends Model
         // alone, which is unset on every row created by the admin/self-registration
         // paths, so temporary TPVs never got a countdown and never expired.
         if ($this->registration_type) {
-            return $this->registration_type === \App\Support\Tpv\TpvRegistrationType::TEMPORARY;
+            return $this->registration_type === TpvRegistrationType::TEMPORARY;
         }
 
         return (bool) $this->is_temporary || $this->vendor_type === 'temporary';
@@ -263,7 +273,7 @@ class Vendor extends Model
      */
     public function scopeTemporary($query)
     {
-        $temp = \App\Support\Tpv\TpvRegistrationType::TEMPORARY;
+        $temp = TpvRegistrationType::TEMPORARY;
 
         return $query->where(function ($q) use ($temp) {
             $q->where('registration_type', $temp)
@@ -285,17 +295,17 @@ class Vendor extends Model
 
     public function accessBand(): string
     {
-        return \App\Support\Tpv\TpvAccessStatus::band($this->accessSecondsRemaining());
+        return TpvAccessStatus::band($this->accessSecondsRemaining());
     }
 
     public function isAccessExpired(): bool
     {
-        if (! $this->isTemporary() || ! $this->access_expires_at || $this->access_status === \App\Support\Tpv\TpvAccessStatus::CONVERTED) {
+        if (! $this->isTemporary() || ! $this->access_expires_at || $this->access_status === TpvAccessStatus::CONVERTED) {
             return false;
         }
 
         // Either force-expired (status) or the clock has run out.
-        return $this->access_status === \App\Support\Tpv\TpvAccessStatus::EXPIRED
+        return $this->access_status === TpvAccessStatus::EXPIRED
             || $this->accessSecondsRemaining() <= 0;
     }
 

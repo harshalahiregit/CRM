@@ -71,9 +71,12 @@ live vendor-status template, AI assist. Kickoff is now "Meetings → New → Typ
 
 ## Phase 3 — Vendor Master completion + Settings
 
-- [~] **§5 Vendor Master fields** — add trade_name, category/subcategory, contractor/subcontractor/
-  consultant/service-provider type, parent_company, CIN, Udyam, internal_sponsor, contract_owner;
-  extend status enum (Invited/Registered/Under-Review/Expired/Closed vs current 9).
+- [~] **§5 Vendor Master fields** —
+  - [x] Added trade_name, subcategory, vendor_class (Contractor/Subcontractor/Consultant/Service-Provider),
+    parent_company, CIN, Udyam, site_address, emergency_contact, internal_sponsor, contract_owner —
+    additive migration + model fillable + both FormRequests + the vendor-workspace Profile form.
+  - [ ] Extend status enum (Invited/Registered/Under-Review/Expired/Closed vs current 9) — deferred; the
+    current 9-value enum covers the live lifecycle, extra states land with the Approvals engine (Phase 4).
 - [ ] **§34 Settings / Config module** — admin UI for the ~19 masters: vendor types, categories, risk
   levels, meeting types (done), meeting/onboarding templates, approval workflows, compliance templates,
   document types, training types, competency requirements, PPE catalogue, PPE matrix, permit types,
