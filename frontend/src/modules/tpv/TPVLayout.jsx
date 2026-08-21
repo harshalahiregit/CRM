@@ -1,5 +1,5 @@
 import {
-  LayoutDashboard, CalendarDays, Rocket, Building2, Boxes,
+  LayoutDashboard, CalendarDays, Rocket, Building2, Boxes, GraduationCap,
   UserCheck, CheckSquare, ScanLine, ShieldAlert, Clock, ShieldCheck, HardHat, ClipboardList, Siren, FileCheck2, Eye, FolderLock, Landmark, TrendingUp } from 'lucide-react'
 import ModuleShell from '@/components/layout/ModuleShell'
 
@@ -30,9 +30,10 @@ const TPV_GROUPS = [
     { label: 'Approval Register',    path: '/app/tpv/approval-register', icon: CheckSquare },
   ] },
   { label: 'Workforce', icon: UserCheck, items: [
-    { label: 'Workforce',  path: '/app/tpv/workforce',  icon: UserCheck },
-    { label: 'PPE',        path: '/app/tpv/ppe',        icon: HardHat },
-    { label: 'PPE Matrix', path: '/app/tpv/ppe/matrix', icon: ClipboardList },
+    { label: 'Workforce',   path: '/app/tpv/workforce',  icon: UserCheck },
+    { label: 'Competency',  path: '/app/tpv/competency',  icon: GraduationCap },
+    { label: 'PPE',         path: '/app/tpv/ppe',        icon: HardHat },
+    { label: 'PPE Matrix',  path: '/app/tpv/ppe/matrix', icon: ClipboardList },
   ] },
   { label: 'Work Control', icon: FileCheck2, items: [
     { label: 'Permits',      path: '/app/tpv/permits',          icon: FileCheck2 },
