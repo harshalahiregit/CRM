@@ -252,9 +252,53 @@ is harmless but signals nothing. If mail must send, `QUEUE_CONNECTION` has to be
 
 **`build-deploy-package.ps1` is PowerShell.** Use the bash version in §3.
 
+**`rsync --delete` into the domain folder deletes the Laravel app.** See §8b.
+This is the single most destructive mistake available here.
+
 **There is no SSH password -- access is Plesk's web terminal.** `scp` from a
 laptop prompts for a password that was never set. Upload through File Manager,
 or add an SSH key once (see §5) and never think about it again.
+
+---
+
+## 8b. The clone-and-rsync flow (preferred: no upload needed)
+
+The server can clone from GitHub directly (`https://github.com/harshalahiregit/CRM.git`
+is **public**), which sidesteps having no SSH password entirely. This is the
+simplest path -- but two steps are booby-trapped and have cost us a restore.
+
+**NEVER rsync the frontend into the domain folder with `--delete`:**
+
+```bash
+# CATASTROPHIC -- dist/ has no backend/, so --delete removes the Laravel app,
+# .env and storage along with it.
+rsync -av --delete frontend/dist/ /var/www/vhosts/sangoe.in/app.sangoe.in/
+```
+
+The document root is **`app.sangoe.in/backend/public`**, not the domain folder.
+The stray `index.html` sitting in the domain folder is a leftover and misleads
+people into targeting the wrong directory. Confirm before every deploy:
+
+```bash
+ls -d /var/www/vhosts/sangoe.in/app.sangoe.in/backend/public/assets
+```
+
+And rsync the frontend **without** `--delete`, or it removes Laravel's
+`index.php`, `.htaccess` and the `public/storage` symlink. Leaving old hashed
+assets behind is deliberate: users mid-session still need their chunks.
+
+When rsyncing the backend, `--delete` IS wanted (it clears stale files) but must
+exclude the runtime and frontend-owned paths:
+
+```
+--exclude='.env' --exclude='storage/' --exclude='_deploy_backup/'
+--exclude='public/assets/' --exclude='public/storage'
+--exclude='public/index.html' --exclude='public/sw.js' --exclude='public/registerSW.js'
+```
+
+Also: cloning plus `composer install` plus `node_modules` needs well over 1GB in
+`/tmp`, on a disk that has sat at 98%. Check `df -h /` first and
+`rm -rf /tmp/sangoe-master` afterwards.
 
 ---
 
