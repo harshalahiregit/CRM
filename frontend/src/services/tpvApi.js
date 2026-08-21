@@ -31,6 +31,15 @@ export const tpvApi = {
     update: (id, data)    => api.put(`/tpv/work-orders/${id}`, data).then(r => r.data),
     delete: (id)          => api.delete(`/tpv/work-orders/${id}`).then(r => r.data),
   },
+  // Offboarding / Closure (Sangoe TPV §29).
+  offboardings: {
+    list:           (params = {}) => api.get('/tpv/offboardings', { params }).then(r => r.data),
+    get:            (id)          => api.get(`/tpv/offboardings/${id}`).then(r => r.data),
+    initiate:       (data)        => api.post('/tpv/offboardings', data).then(r => r.data),
+    updateChecklist:(id, checklist) => api.put(`/tpv/offboardings/${id}/checklist`, { checklist }).then(r => r.data),
+    complete:       (id, data)    => api.post(`/tpv/offboardings/${id}/complete`, data).then(r => r.data),
+    delete:         (id)          => api.delete(`/tpv/offboardings/${id}`).then(r => r.data),
+  },
   // Renewal & Extension (Sangoe TPV §28).
   renewals: {
     list:     (params = {}) => api.get('/tpv/renewals', { params }).then(r => r.data),

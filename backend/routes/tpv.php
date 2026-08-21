@@ -297,6 +297,14 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::post('/renewals/{renewal}/decide',             [\App\Http\Controllers\Api\Tpv\TpvRenewalController::class, 'decide'])->where('renewal', '[0-9]+');
     Route::delete('/renewals/{renewal}',                  [\App\Http\Controllers\Api\Tpv\TpvRenewalController::class, 'destroy'])->where('renewal', '[0-9]+');
 
+    // Offboarding / Closure (Sangoe TPV §29). Completion admin-gated.
+    Route::get('/offboardings',                           [\App\Http\Controllers\Api\Tpv\TpvOffboardingController::class, 'index']);
+    Route::post('/offboardings',                          [\App\Http\Controllers\Api\Tpv\TpvOffboardingController::class, 'store']);
+    Route::get('/offboardings/{offboarding}',             [\App\Http\Controllers\Api\Tpv\TpvOffboardingController::class, 'show'])->where('offboarding', '[0-9]+');
+    Route::put('/offboardings/{offboarding}/checklist',   [\App\Http\Controllers\Api\Tpv\TpvOffboardingController::class, 'updateChecklist'])->where('offboarding', '[0-9]+');
+    Route::post('/offboardings/{offboarding}/complete',   [\App\Http\Controllers\Api\Tpv\TpvOffboardingController::class, 'complete'])->where('offboarding', '[0-9]+');
+    Route::delete('/offboardings/{offboarding}',          [\App\Http\Controllers\Api\Tpv\TpvOffboardingController::class, 'destroy'])->where('offboarding', '[0-9]+');
+
     // Permit-to-Work + JSA (Doc_4 Phase 5). Approval requires a JSA and refuses a
     // suspended vendor; a permit expires at its validity window.
     Route::get('/permits',                                [\App\Http\Controllers\Api\Tpv\PermitController::class, 'index']);

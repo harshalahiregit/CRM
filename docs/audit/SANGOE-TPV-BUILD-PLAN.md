@@ -169,8 +169,15 @@ live vendor-status template, AI assist. Kickoff is now "Meetings → New → Typ
   Extend/Requalify/Replace/Suspend/Exit. Controller (decisions admin-gated) + routes. Frontend: **Renewal**
   page (list with VRS + open-item snapshot, Initiate modal with live assessment preview, Decide modal) in
   the Performance cluster. Verified via rolled-back tinker (assess VRS=77/B, initiate REN-2026-001, decide) + green build.
-- [~] **§29 Offboarding / Closure** — controlled exit **checklist** (contract/workforce/gate/ID/equipment/
-  PPE/docs/open-actions/NCR-CAPA/financial/final-review) + Closed/Replaced outcomes.
+- [x] **§29 Offboarding / Closure** — `tpv_offboardings` (OFF-YYYY-### ref, 12-item exit checklist
+  [contract/workforce/gate/ID/PPE/equipment/docs/open-actions/NCR-CAPA/financial/asset/final-review],
+  progress accessor, lessons learned, In_Progress→Completed). `TpvOffboardingService`: initiate (one open
+  per vendor), updateChecklist, and complete — **gated on all items done**, then applies the final status
+  (Closed/Replaced → VendorService::offboard which terminates workers + revokes badges + locks login;
+  Suspended → suspend; Blacklisted → updateStatus). Controller (completion admin-gated) + routes. Frontend:
+  **Offboarding & Closure** page (list with progress bar, Start modal, expandable interactive checklist +
+  Complete with final-status + lessons) in the Performance cluster. Verified via rolled-back tinker
+  (12-item checklist, complete-guard, complete→vendor Offboarded) + green build.
 - [~] **§30 Documents** — unified Document Vault (today scattered across 4 stores; CAPA evidence unstored).
 - [~] **§31 Communications** — in-app feed + SMS/WhatsApp + expiry/incident/strike/CAPA/renewal notifications.
 - [~] **§32 Vendor Portal** — add respond-to-NCR, submit-CAPA-evidence, view meetings/MOM, respond-to-actions.
