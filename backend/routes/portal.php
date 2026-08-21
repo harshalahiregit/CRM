@@ -214,3 +214,38 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal'])->prefix('portal/pu
     Route::get('/debit-notes/{id}',                   [PurchasePortalCommerceController::class, 'debitNote']);
     Route::get('/payments',                           [PurchasePortalCommerceController::class, 'payments']);
 });
+
+// ── Customer Portal — public (no auth) ───────────────────────────────────
+// The old CRM's model, restored: the customer company never signs in, its
+// CONTACTS do. There is deliberately no /register — access always begins with
+// a staff member inviting a real contact of a real customer.
+Route::prefix('client-portal')->group(function () {
+    Route::post('/login',           [\App\Http\Controllers\Api\Customer\ClientPortalAuthController::class, 'login'])->middleware('throttle:20,1');
+    Route::post('/forgot-password', [\App\Http\Controllers\Api\Customer\ClientPortalAuthController::class, 'forgotPassword'])->middleware('throttle:10,1');
+    Route::post('/set-password',    [\App\Http\Controllers\Api\Customer\ClientPortalAuthController::class, 'setPassword'])->middleware('throttle:10,1');
+});
+
+// ── Customer Portal — authenticated (Sanctum + ClientContact only) ───────
+// No route here takes a client id: the contact's own client comes off the
+// token, so "show me another customer" is not expressible.
+Route::middleware(['auth:sanctum', 'client.portal'])->prefix('portal/client')->group(function () {
+    Route::post('/logout',          [\App\Http\Controllers\Api\Customer\ClientPortalAuthController::class, 'logout']);
+    Route::get('/me',               [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'me']);
+    Route::get('/dashboard',        [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'dashboard']);
+    Route::put('/profile',          [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'updateProfile']);
+    Route::post('/change-password', [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'changePassword']);
+
+    Route::get('/invoices',      [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'invoices']);
+    Route::get('/payments',      [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'payments']);
+    Route::get('/credit-notes',  [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'creditNotes']);
+    Route::get('/statement',     [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'statement']);
+    Route::get('/estimates',     [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'estimates']);
+    Route::get('/proposals',     [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'proposals']);
+    Route::get('/contracts',     [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'contracts']);
+    Route::get('/projects',      [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'projects']);
+    Route::get('/tickets',       [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'tickets']);
+    Route::get('/notes',         [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'notes']);
+    Route::get('/files',         [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'files']);
+    Route::get('/contacts',      [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'contacts']);
+});
+

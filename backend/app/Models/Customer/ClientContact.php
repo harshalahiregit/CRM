@@ -4,17 +4,21 @@ namespace App\Models\Customer;
 
 use App\Models\Traits\BelongsToTenant;
 use App\Models\User;
+use Illuminate\Contracts\Auth\Authenticatable as AuthenticatableContract;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Foundation\Auth\Access\Authorizable;
+use Illuminate\Auth\Authenticatable as AuthenticatableTrait;
+use Laravel\Sanctum\HasApiTokens;
 
 /**
  * A person under a client. Holds the portal-login link (user_id → users row
  * with role=client) when the contact has been granted portal access; a
  * contact can also be login-less (imported record).
  */
-class ClientContact extends Model
+class ClientContact extends Model implements AuthenticatableContract
 {
-    use SoftDeletes, BelongsToTenant;
+    use SoftDeletes, BelongsToTenant, AuthenticatableTrait, Authorizable, HasApiTokens;
 
     /**
      * Per-contact module ACCESS permissions — kept SEPARATE from email
@@ -40,9 +44,12 @@ class ClientContact extends Model
         'is_decision_maker', 'influence', 'is_secondary', 'reports_to', 'last_contacted_at',
         'email_notifications', 'permissions', 'emails_enabled',
         'password', 'last_password_change',
+        // Portal access — see the migration for why this is separate from `active`.
+        'portal_status', 'email_verified_at', 'email_verification_token',
+        'password_reset_token', 'password_reset_expires_at', 'last_login_at', 'last_login_ip',
     ];
 
-    protected $hidden = ['password'];
+    protected $hidden = ['password', 'email_verification_token', 'password_reset_token'];
 
     protected $casts = [
         'is_primary'           => 'boolean',
@@ -52,6 +59,9 @@ class ClientContact extends Model
         'is_decision_maker'    => 'boolean',
         'is_secondary'         => 'boolean',
         'last_contacted_at'    => 'datetime',
+        'email_verified_at'    => 'datetime',
+        'last_login_at'        => 'datetime',
+        'password_reset_expires_at' => 'datetime',
         'emails_enabled'       => 'boolean',
         'password'             => 'hashed',
         'last_password_change' => 'datetime',
