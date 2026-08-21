@@ -136,6 +136,36 @@ class Client extends Model
         return $this->hasMany(ClientContract::class)->latest();
     }
 
+    /** §4 — calls, emails, visits and every other touch, newest first. */
+    public function activities(): HasMany
+    {
+        return $this->hasMany(ClientActivity::class)->orderByDesc('occurred_at');
+    }
+
+    /** §17 SERVICE — complaints and the escalations they became. */
+    public function complaints(): HasMany
+    {
+        return $this->hasMany(ClientComplaint::class)->orderByDesc('raised_at');
+    }
+
+    /** §10 — answered CSAT and NPS surveys. */
+    public function feedback(): HasMany
+    {
+        return $this->hasMany(ClientFeedback::class)->orderByDesc('responded_at');
+    }
+
+    /** Domain Manager — ordered by expiry, because that is the whole point. */
+    public function domains(): HasMany
+    {
+        return $this->hasMany(ClientDomain::class)->orderByRaw('expires_on is null, expires_on');
+    }
+
+    /** §17 COMMERCIAL — POs the customer issued to us, not ours to vendors. */
+    public function purchaseOrders(): HasMany
+    {
+        return $this->hasMany(ClientPurchaseOrder::class)->latest('po_date');
+    }
+
     public function expenses(): HasMany
     {
         return $this->hasMany(ClientExpense::class)->latest();

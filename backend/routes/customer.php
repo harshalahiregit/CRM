@@ -3,7 +3,14 @@
 use App\Http\Controllers\Api\Customer\ClientAddressController;
 use App\Http\Controllers\Api\Customer\ClientAttachmentController;
 use App\Http\Controllers\Api\Customer\ClientContactController;
+use App\Http\Controllers\Api\Customer\ClientActivityController;
+use App\Http\Controllers\Api\Customer\ClientComplaintController;
 use App\Http\Controllers\Api\Customer\ClientContractController;
+use App\Http\Controllers\Api\Customer\ClientDomainController;
+use App\Http\Controllers\Api\Customer\ClientFeedbackController;
+use App\Http\Controllers\Api\Customer\ClientPurchaseOrderController;
+use App\Http\Controllers\Api\Customer\CustomerLinkedRecordsController;
+use App\Http\Controllers\Api\Customer\CustomerTimelineController;
 use App\Http\Controllers\Api\Customer\ClientController;
 use App\Http\Controllers\Api\Customer\ExpenseCategoryController;
 use App\Http\Controllers\Api\Customer\ClientExpenseController;
@@ -124,12 +131,23 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('customers')->gr
     Route::post('/{client}/reminders',                 [ClientReminderController::class, 'store']);
     Route::delete('/{client}/reminders/{reminder}',    [ClientReminderController::class, 'destroy']);
 
+    // §5 Timeline — read-only aggregation across every connected module.
+    Route::get('/{client}/timeline', [CustomerTimelineController::class, 'index']);
+
+    // §6 — other modules' records, shown here and edited there.
+    Route::get('/{client}/linked/projects',       [CustomerLinkedRecordsController::class, 'projects']);
+    Route::get('/{client}/linked/tasks',          [CustomerLinkedRecordsController::class, 'tasks']);
+    Route::get('/{client}/linked/delivery-notes', [CustomerLinkedRecordsController::class, 'deliveryNotes']);
+    Route::get('/{client}/linked/meetings',       [CustomerLinkedRecordsController::class, 'meetings']);
+
     // Vault (credentials)
     Route::get('/{client}/vault',                          [ClientVaultController::class, 'index']);
     Route::post('/{client}/vault',                         [ClientVaultController::class, 'store']);
     Route::put('/{client}/vault/{vaultEntry}',             [ClientVaultController::class, 'update']);
     Route::post('/{client}/vault/{vaultEntry}/reveal',     [ClientVaultController::class, 'reveal']);
     Route::delete('/{client}/vault/{vaultEntry}',          [ClientVaultController::class, 'destroy']);
+    // §15 — who revealed which credential, and when. Administrators only.
+    Route::get('/{client}/vault/{vaultEntry}/access-log',  [ClientVaultController::class, 'accessLog']);
 
     // Attachments
     Route::get('/{client}/attachments',                     [ClientAttachmentController::class, 'index']);
@@ -157,6 +175,13 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('customers')->gr
         'pre-alerts'    => ClientPreAlertController::class,
         'packages'      => ClientPackageController::class,
         'shipments'     => ClientShipmentController::class,
+        // Customer 360 — Activities (§4), Complaints/Escalations (§17 SERVICE),
+        // Customer Experience (§10), Domain Manager and customer POs.
+        'activities'      => ClientActivityController::class,
+        'complaints'      => ClientComplaintController::class,
+        'feedback'        => ClientFeedbackController::class,
+        'domains'         => ClientDomainController::class,
+        'purchase-orders' => ClientPurchaseOrderController::class,
     ] as $slug => $controller) {
         Route::get("/{client}/{$slug}",              [$controller, 'index']);
         Route::post("/{client}/{$slug}",             [$controller, 'store']);

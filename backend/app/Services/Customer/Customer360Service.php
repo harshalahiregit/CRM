@@ -75,7 +75,55 @@ class Customer360Service
             ['key' => 'contracts',  'label' => 'Active Contracts', 'value' => $this->activeContractCount($client),  'link' => null],
             ['key' => 'outstanding','label' => 'Outstanding',      'value' => $finance['outstanding'], 'money' => true, 'link' => null],
             ['key' => 'shipments',  'label' => 'Active Shipments', 'value' => $this->activeShipmentCount($client),  'link' => null],
+            ['key' => 'actions',    'label' => 'Open Actions',     'value' => $this->openActionCount($client),      'link' => null],
+            ['key' => 'meetings',   'label' => 'Meetings',         'value' => $this->meetingCount($client),         'link' => null],
         ];
+    }
+
+    /**
+     * §2 — Open Actions.
+     *
+     * Meeting action items plus promised activity follow-ups: both are things
+     * we owe this customer, and the dashboard should not make somebody check
+     * two screens to find out how many there are.
+     */
+    private function openActionCount(Client $client): int
+    {
+        $count = 0;
+
+        if (Schema::hasTable('kickoff_mom_items') && Schema::hasTable('kickoff_meeting_subjects')) {
+            $count += DB::table('kickoff_mom_items as i')
+                ->join('kickoff_meeting_subjects as s', 's.kickoff_meeting_id', '=', 'i.kickoff_meeting_id')
+                ->where('s.tenant_id', $client->tenant_id)
+                ->where('s.subject_type', Client::class)
+                ->where('s.subject_id', $client->id)
+                ->whereNull('i.closed_at')
+                ->count();
+        }
+
+        if (Schema::hasTable('client_activities')) {
+            $count += DB::table('client_activities')
+                ->where('tenant_id', $client->tenant_id)->where('client_id', $client->id)
+                ->whereNull('deleted_at')
+                ->whereNotNull('follow_up_on')->where('follow_up_done', false)
+                ->count();
+        }
+
+        return $count;
+    }
+
+    /** §2/§3 — meetings this customer is a subject of, via the shared engine. */
+    private function meetingCount(Client $client): int
+    {
+        if (! Schema::hasTable('kickoff_meeting_subjects')) {
+            return 0;
+        }
+
+        return DB::table('kickoff_meeting_subjects')
+            ->where('tenant_id', $client->tenant_id)
+            ->where('subject_type', Client::class)
+            ->where('subject_id', $client->id)
+            ->count();
     }
 
     /** SWAP POINT — Projects (Shivam). */
@@ -234,7 +282,80 @@ class Customer360Service
             ];
         }
 
+        $complaints = $this->openComplaintCount($client);
+        if ($complaints > 0) {
+            $alerts[] = [
+                'key'      => 'complaints_open',
+                'severity' => 'critical',
+                'message'  => $complaints.' open '.($complaints === 1 ? 'complaint' : 'complaints'),
+            ];
+        }
+
+        $domains = $this->domainsExpiringSoon($client);
+        if ($domains > 0) {
+            $alerts[] = [
+                'key'      => 'domains_expiring',
+                'severity' => 'warning',
+                'message'  => $domains.' '.($domains === 1 ? 'domain expires' : 'domains expire').' within 30 days',
+            ];
+        }
+
+        // An expired PO with budget left means work may be happening with no
+        // authority to bill for it — worth surfacing before the invoice bounces.
+        $lapsed = $this->lapsedPurchaseOrderCount($client);
+        if ($lapsed > 0) {
+            $alerts[] = [
+                'key'      => 'purchase_orders_lapsed',
+                'severity' => 'warning',
+                'message'  => $lapsed.' expired purchase '.($lapsed === 1 ? 'order still has' : 'orders still have').' value remaining',
+            ];
+        }
+
         return $alerts;
+    }
+
+    private function openComplaintCount(Client $client): int
+    {
+        if (! Schema::hasTable('client_complaints')) {
+            return 0;
+        }
+
+        return DB::table('client_complaints')
+            ->where('tenant_id', $client->tenant_id)->where('client_id', $client->id)
+            ->whereNull('deleted_at')
+            ->whereIn('status', ['Open', 'Investigating'])
+            ->count();
+    }
+
+    private function domainsExpiringSoon(Client $client): int
+    {
+        if (! Schema::hasTable('client_domains')) {
+            return 0;
+        }
+
+        return DB::table('client_domains')
+            ->where('tenant_id', $client->tenant_id)->where('client_id', $client->id)
+            ->whereNull('deleted_at')
+            ->whereNotNull('expires_on')
+            ->whereNotIn('status', ['Cancelled', 'Transferred'])
+            ->whereDate('expires_on', '<=', now()->addDays(30)->toDateString())
+            ->count();
+    }
+
+    private function lapsedPurchaseOrderCount(Client $client): int
+    {
+        if (! Schema::hasTable('client_purchase_orders')) {
+            return 0;
+        }
+
+        return DB::table('client_purchase_orders')
+            ->where('tenant_id', $client->tenant_id)->where('client_id', $client->id)
+            ->whereNull('deleted_at')
+            ->whereIn('status', ['Open', 'Partially Billed'])
+            ->whereNotNull('valid_until')
+            ->whereDate('valid_until', '<', now()->toDateString())
+            ->whereColumn('consumed', '<', 'value')
+            ->count();
     }
 
     private function contractsExpiringSoon(Client $client): int

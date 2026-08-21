@@ -7,14 +7,36 @@ import RichTextEditor from '@/components/ui/RichTextEditor'
 
 const fmtMoney = v => '₹' + Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const d10 = s => (s ? String(s).slice(0, 10) : '—')
+// An <input type="datetime-local"> wants 'YYYY-MM-DDTHH:MM'; the API sends
+// either that or 'YYYY-MM-DD HH:MM:SS', so normalise both directions.
+const dt16 = s => (s ? String(s).replace(' ', 'T').slice(0, 16) : '')
+const dtLabel = (s) => {
+  if (!s) return '—'
+  const d = new Date(String(s).replace(' ', 'T'))
+  return isNaN(d) ? String(s).slice(0, 16)
+    : d.toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
 const cell = (row, col) => {
   const v = row[col.key]
   if (col.type === 'money') return fmtMoney(v)
   if (col.type === 'date') return d10(v)
+  if (col.type === 'datetime') return dtLabel(v)
   if (col.type === 'bool') return v ? 'Yes' : 'No'
   return v ?? '—'
 }
-const blankForm = (fields) => Object.fromEntries(fields.map(f => [f.key, f.type === 'checkbox' ? false : '']))
+const nowLocal = () => {
+  const d = new Date()
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
+  return d.toISOString().slice(0, 16)
+}
+const blankForm = (fields) => Object.fromEntries(fields.map(f => [
+  f.key,
+  f.type === 'checkbox' ? false
+    // Logging a call almost always means one that just happened, so seeding
+    // "now" saves the click that people otherwise forget and leave blank.
+    : f.type === 'datetime' && f.defaultNow ? nowLocal()
+    : '',
+]))
 
 /**
  * Generic per-parent record tab: a list + inline add/edit form + delete,
@@ -64,7 +86,9 @@ export default function RecordTab({ clientId, schema, api: apiProp, dynamicOptio
       const f = {}
       schema.fields.forEach(fl => {
         const v = editing[fl.key]
-        f[fl.key] = fl.type === 'checkbox' ? !!v : (['date'].includes(fl.type) ? d10(v).replace('—', '') : (v ?? ''))
+        f[fl.key] = fl.type === 'checkbox' ? !!v
+          : fl.type === 'datetime' ? dt16(v)
+          : (['date'].includes(fl.type) ? d10(v).replace('—', '') : (v ?? ''))
       })
       setForm(f)
     }
@@ -162,6 +186,7 @@ function FieldInput({ field, value, onChange, dynamicOptions = {} }) {
     )
   }
   if (field.type === 'date') return <input type="date" className="input-3d text-sm" value={value} onChange={e => onChange(e.target.value)} />
+  if (field.type === 'datetime') return <input type="datetime-local" className="input-3d text-sm" value={value || ''} onChange={e => onChange(e.target.value)} />
   if (field.type === 'money' || field.type === 'number') return <input type="number" className="input-3d text-sm" value={value} onChange={e => onChange(e.target.value)} />
   return <input className="input-3d text-sm" value={value} onChange={e => onChange(e.target.value)} />
 }

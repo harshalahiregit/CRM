@@ -250,26 +250,63 @@ class CustomerHealthService
     }
 
     /** Needs the complaint classification that does not exist yet (§ decision 4). */
+    /**
+     * §8 — complaint frequency.
+     *
+     * Previously this read a `tickets.type` column that does not exist, so it
+     * returned null for every customer and the parameter was permanently
+     * unmeasurable. It now reads Customer's own complaints register (§17
+     * SERVICE), which is where complaints are actually recorded.
+     *
+     * Scored on complaints RAISED IN THE LAST YEAR rather than lifetime, because
+     * a complaint from four years ago says nothing about the relationship today,
+     * and a long-standing customer would otherwise score worse than a new one
+     * purely for having existed longer.
+     */
     private function complaintFrequency(Client $client): ?array
     {
-        if (! Schema::hasTable('tickets') || ! Schema::hasColumn('tickets', 'type')) {
+        if (! Schema::hasTable('client_complaints')) {
             return null;
         }
 
-        $total = DB::table('tickets')->where('tenant_id', $client->tenant_id)
-            ->where('customer_id', $client->id)->count();
+        $base = DB::table('client_complaints')
+            ->where('tenant_id', $client->tenant_id)
+            ->where('client_id', $client->id)
+            ->whereNull('deleted_at')
+            ->where('raised_at', '>=', now()->subYear());
 
+        $total = (clone $base)->count();
+
+        // No complaints is not the same as no data. A customer we have worked
+        // with for a year with nothing logged has genuinely had no complaints,
+        // so this only abstains when the relationship is too new to say.
         if ($total === 0) {
-            return null;
+            $known = $client->relationship_started_at
+                ? $client->relationship_started_at->lt(now()->subMonths(3))
+                : $client->created_at?->lt(now()->subMonths(3));
+
+            return $known
+                ? ['score' => 100.0, 'detail' => 'No complaints in the last 12 months']
+                : null;
         }
 
-        $complaints = DB::table('tickets')->where('tenant_id', $client->tenant_id)
-            ->where('customer_id', $client->id)->where('type', 'complaint')->count();
+        $open     = (clone $base)->whereIn('status', ['Open', 'Investigating'])->count();
+        $critical = (clone $base)->whereIn('severity', ['High', 'Critical'])->count();
 
-        return [
-            'score'  => max(0, 100 - (($complaints / max(1, $total)) * 200)),
-            'detail' => "{$complaints} complaints of {$total} tickets",
-        ];
+        // Each complaint costs 15, each still-open one another 15, each severe
+        // one another 10 — so one settled minor complaint is a scratch and three
+        // open critical ones are not survivable.
+        $score = 100 - ($total * 15) - ($open * 15) - ($critical * 10);
+
+        $detail = "{$total} in 12 months";
+        if ($open > 0) {
+            $detail .= ", {$open} still open";
+        }
+        if ($critical > 0) {
+            $detail .= ", {$critical} severe";
+        }
+
+        return ['score' => (float) max(0, min(100, $score)), 'detail' => $detail];
     }
 
     private function projectPerformance(Client $client): ?array
@@ -356,9 +393,61 @@ class CustomerHealthService
     }
 
     /** Action items from meetings — same dependency as meeting engagement. */
+    /**
+     * §8 — open actions.
+     *
+     * Two sources, because "an action owed to this customer" arises in two
+     * places: an action item from one of their meetings (§3), and a follow-up
+     * somebody promised on an activity (§4). Both are commitments we made; a
+     * customer does not care which screen ours lives on.
+     *
+     * Scored on how many are OVERDUE, not how many are open. A busy account
+     * with ten actions in hand and none late is being served well, and scoring
+     * it down for having actions would punish doing the work.
+     */
     private function openActions(Client $client): ?array
     {
-        return null;
+        $open = 0;
+        $late = 0;
+        $today = now()->toDateString();
+
+        if (Schema::hasTable('kickoff_mom_items') && Schema::hasTable('kickoff_meeting_subjects')) {
+            $items = DB::table('kickoff_mom_items as i')
+                ->join('kickoff_meeting_subjects as s', 's.kickoff_meeting_id', '=', 'i.kickoff_meeting_id')
+                ->where('s.tenant_id', $client->tenant_id)
+                ->where('s.subject_type', Client::class)
+                ->where('s.subject_id', $client->id)
+                ->whereNull('i.closed_at')
+                ->get(['i.target_date']);
+
+            $open += $items->count();
+            $late += $items->filter(fn ($r) => $r->target_date && $r->target_date < $today)->count();
+        }
+
+        if (Schema::hasTable('client_activities')) {
+            $followUps = DB::table('client_activities')
+                ->where('tenant_id', $client->tenant_id)
+                ->where('client_id', $client->id)
+                ->whereNull('deleted_at')
+                ->whereNotNull('follow_up_on')
+                ->where('follow_up_done', false)
+                ->get(['follow_up_on']);
+
+            $open += $followUps->count();
+            $late += $followUps->filter(fn ($r) => $r->follow_up_on < $today)->count();
+        }
+
+        if ($open === 0) {
+            return null;
+        }
+
+        // Each overdue action costs 20 of the 100.
+        return [
+            'score'  => (float) max(0, 100 - ($late * 20)),
+            'detail' => $late === 0
+                ? "{$open} open, none overdue"
+                : "{$late} overdue of {$open} open",
+        ];
     }
 
     private function servicePerformance(Client $client): ?array
@@ -435,9 +524,16 @@ class CustomerHealthService
     }
 
     /** No CSAT capture exists anywhere yet (§10). */
+    /**
+     * §8 — customer feedback, from the §10 Customer Experience register.
+     *
+     * Delegated rather than computed here because CSAT and NPS sit on different
+     * scales and NPS is a net score, not a percentage — normalising them is
+     * exactly the mistake this parameter would make on its own.
+     */
     private function customerFeedback(Client $client): ?array
     {
-        return null;
+        return app(CustomerExperienceService::class)->healthSignal($client);
     }
 
     // ── Risk (§9) ────────────────────────────────────────────────────────

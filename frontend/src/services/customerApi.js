@@ -14,6 +14,29 @@ export const customerApi = {
   // Customer 360 overview — live counts from the modules that own the data.
   overview: (id) => api.get(`/customers/${id}/overview`).then(r => r.data).catch(handleErr),
 
+  // §5 Timeline — one read across every connected module.
+  timeline: (id, params = {}) =>
+    api.get(`/customers/${id}/timeline`, { params }).then(r => r.data).catch(handleErr),
+
+  // §6 — records owned by other modules, shown here and edited there.
+  linked: {
+    projects:      (id) => api.get(`/customers/${id}/linked/projects`).then(r => r.data).catch(handleErr),
+    tasks:         (id) => api.get(`/customers/${id}/linked/tasks`).then(r => r.data).catch(handleErr),
+    deliveryNotes: (id) => api.get(`/customers/${id}/linked/delivery-notes`).then(r => r.data).catch(handleErr),
+    meetings:      (id) => api.get(`/customers/${id}/linked/meetings`).then(r => r.data).catch(handleErr),
+  },
+
+  // §10 Customer Experience — the list comes back with its own CSAT/NPS summary.
+  feedback: {
+    list:   (id) => api.get(`/customers/${id}/feedback`).then(r => r.data).catch(handleErr),
+    create: (id, data) => api.post(`/customers/${id}/feedback`, data).then(r => r.data).catch(handleErr),
+    remove: (id, recId) => api.delete(`/customers/${id}/feedback/${recId}`).then(r => r.data).catch(handleErr),
+  },
+
+  // §15 — who revealed which credential, and when. Administrators only.
+  vaultAccessLog: (id, entryId) =>
+    api.get(`/customers/${id}/vault/${entryId}/access-log`).then(r => r.data).catch(handleErr),
+
   // Simple per-customer record tabs
   contracts:     crud('contracts'),
   expenses:      crud('expenses'),
@@ -21,6 +44,12 @@ export const customerApi = {
   preAlerts:     crud('pre-alerts'),
   packages:      crud('packages'),
   shipments:     crud('shipments'),
+  // Customer 360 — Activities (§4), Complaints (§17), Domain Manager and the
+  // customer's own purchase orders.
+  activities:     crud('activities'),
+  complaints:     crud('complaints'),
+  domains:        crud('domains'),
+  purchaseOrders: crud('purchase-orders'),
 
   // Clients
   // Clients

@@ -2,6 +2,7 @@
 
 namespace App\Support\Shared;
 
+use App\Models\Customer\Client;
 use App\Models\Tpv\TpvOnboarding;
 use App\Models\Vendor\Vendor;
 
@@ -17,28 +18,37 @@ use App\Models\Vendor\Vendor;
  * changes. That is the whole point of building this polymorphically rather than
  * as a TPV-owned table — the brief calls for "one shared KickoffMeeting feature
  * that both TPV and Projects can attach to".
+ *
+ * Customer plugged in exactly that way (§3 of the Customer 360 document, which
+ * asks for Meetings "using the same reusable Sangoe Meeting Engine"). It needed
+ * these four lines and no change whatsoever to the engine: Client already has
+ * the forTenant scope resolveSubject() requires.
  */
 final class KickoffSubject
 {
     public const VENDOR     = 'vendor';
     public const ONBOARDING = 'onboarding';
+    public const CUSTOMER   = 'customer';
     // public const PROJECT = 'project';  // ← Shivam plugs in here.
 
     /** key => Eloquent class. */
     public const MAP = [
         self::VENDOR     => Vendor::class,
         self::ONBOARDING => TpvOnboarding::class,
+        self::CUSTOMER   => Client::class,
     ];
 
     public const LABELS = [
         self::VENDOR     => 'Vendor',
         self::ONBOARDING => 'Onboarding',
+        self::CUSTOMER   => 'Customer',
     ];
 
     /** The display-name field on each subject, used in meeting titles/listings. */
     public const TITLE_FIELD = [
         self::VENDOR     => 'company_name',
         self::ONBOARDING => null,   // resolved via the onboarding's vendor below
+        self::CUSTOMER   => 'company',
     ];
 
     public static function isValid(?string $key): bool

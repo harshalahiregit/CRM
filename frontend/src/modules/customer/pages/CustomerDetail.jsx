@@ -6,7 +6,8 @@ import {
   Globe, Linkedin, Facebook, Instagram, Twitter,
   Package, Users2, UserPlus, Link2, Plus, Trash2, Eye, EyeOff, Upload,
   FileText, KeyRound, Bell, StickyNote, MapPin, Edit2, X, ChevronDown,
-  ClipboardList, FileX, IndianRupee, RefreshCw, FileSignature, Percent, Truck, LifeBuoy, Paperclip, Send, LayoutDashboard, History, Activity, CalendarDays} from 'lucide-react'
+  ClipboardList, FileX, IndianRupee, RefreshCw, FileSignature, Percent, Truck, LifeBuoy, Paperclip, Send, LayoutDashboard, History, Activity, CalendarDays, ShoppingCart, FolderKanban, CheckSquare, AlertOctagon, Star, Globe2,
+} from 'lucide-react'
 import { customerApi } from '@/services/customerApi'
 import { useToast } from '@/hooks/useToast'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
@@ -26,7 +27,11 @@ import MapTab from '../components/MapTab'
 import CustomFieldForm from '../components/CustomFieldForm'
 import AdminOrderPicker from '../components/AdminOrderPicker'
 import RecordTab from '../components/RecordTab'
-import { CONTRACTS, EXPENSES, SUBSCRIPTIONS, PRE_ALERTS, PACKAGES, SHIPMENTS } from '../components/recordSchemas'
+import TimelineTab from '../components/TimelineTab'
+import LinkedRecordsTab from '../components/LinkedRecordsTab'
+import CustomerExperienceTab from '../components/CustomerExperienceTab'
+import { CONTRACTS, EXPENSES, SUBSCRIPTIONS, PRE_ALERTS, PACKAGES, SHIPMENTS,
+  ACTIVITIES, COMPLAINTS, DOMAINS, CUSTOMER_PURCHASE_ORDERS } from '../components/recordSchemas'
 import { CURRENCIES, LANGUAGES } from '../components/customerFormConstants'
 
 const fmt = v => '₹' + Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -54,7 +59,7 @@ const TAB_GROUPS = [
     ['Notes', StickyNote], ['TPV & Leads', Link2],
   ]},
   { label: 'Commercial', color: '#8b5cf6', tabs: [
-    ['Proposals', FileText], ['Estimates', ClipboardList],
+    ['Proposals', FileText], ['Estimates', ClipboardList], ['Purchase Orders', ShoppingCart],
     ['Contracts', FileSignature], ['Subscriptions', RefreshCw],
   ]},
   { label: 'Finance', color: '#0d9488', tabs: [
@@ -62,16 +67,18 @@ const TAB_GROUPS = [
     ['Expenses', IndianRupee], ['Statement', Wallet], ['Tax', Percent],
   ]},
   { label: 'Operations', color: '#2563eb', tabs: [
-    ['Packages', Package], ['Pre-Alert', Send], ['Shipping', Truck], ['Map', Globe],
+    ['Projects', FolderKanban], ['Tasks', CheckSquare], ['Packages', Package], ['Pre-Alert', Send],
+    ['Shipping', Truck], ['Delivery Notes', Truck], ['Map', Globe],
   ]},
   { label: 'Service', color: '#f97316', tabs: [
-    ['Support', LifeBuoy],
+    ['Support', LifeBuoy], ['Complaints', AlertOctagon], ['Experience', Star],
   ]},
   { label: 'Documents', color: '#eab308', tabs: [
     ['Attachments', Paperclip], ['Credentials', KeyRound],
   ]},
   { label: 'Customer Admin', color: '#64748b', tabs: [
-    ['Profile', Building2], ['Address Book', MapPin], ['Recipients', UserPlus], ['Reminders', Bell],
+    ['Profile', Building2], ['Address Book', MapPin], ['Recipients', UserPlus],
+    ['Domain Manager', Globe2], ['Reminders', Bell],
   ]},
 ]
 const TABS = TAB_GROUPS.flatMap(g => g.tabs.map(([t]) => t))
@@ -80,14 +87,17 @@ const TABS = TAB_GROUPS.flatMap(g => g.tabs.map(([t]) => t))
 // Timeline work. Listed rather than hidden so the navigation matches the agreed
 // shape, and each says plainly what it is waiting on instead of showing an empty
 // table that looks like a customer with no data.
-const PENDING_TABS = {
-  Timeline:   'the Timeline build — it aggregates activity across every module',
-  Activities: 'the Activities log — calls, emails, visits and follow-ups',
-  Meetings:   'the Meetings build — this customer becomes a subject of the shared meeting engine',
-}
+// Nothing is pending any more: Timeline (§5), Activities (§4) and Meetings (§3)
+// are all built. Kept as an empty map so a future gap has somewhere to go
+// rather than needing the render branch rebuilt.
+const PENDING_TABS = {}
 
 // Tabs backed by the generic per-customer RecordTab (schema-driven CRUD).
 const RECORD_TABS = {
+  Activities: ACTIVITIES,
+  Complaints: COMPLAINTS,
+  'Domain Manager': DOMAINS,
+  'Purchase Orders': CUSTOMER_PURCHASE_ORDERS,
   Contracts: CONTRACTS,
   Expenses: EXPENSES,
   Subscriptions: SUBSCRIPTIONS,
@@ -106,7 +116,7 @@ export default function CustomerDetail() {
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('Overview')
   const [tabData, setTabData] = useState({})   // { [tab]: data }
-  const [recordOptions, setRecordOptions] = useState({ expenseCategories: [], projects: [] })
+  const [recordOptions, setRecordOptions] = useState({ expenseCategories: [], projects: [], contacts: [], staff: [] })
   const [tabLoading, setTabLoading] = useState(false)
 
   const loadClient = () => customerApi.get(id).then(setClient)
@@ -166,13 +176,32 @@ export default function CustomerDetail() {
     Promise.all([
       customerApi.expenseCategories.list().catch(() => []),
       customerApi.projects.list().catch(() => []),
-    ]).then(([cats, projects]) => setRecordOptions({
+    ]).then(([cats, projects]) => setRecordOptions(prev => ({
+      ...prev,
       // Categories persist as text; projects persist as an ID so the relation
       // is real the moment the Projects module ships.
       expenseCategories: cats.filter(c => c.active).map(c => c.name),
       projects: projects.map(p => ({ value: p.id, label: p.name })),
-    }))
+    })))
   }, [tab])
+
+  // Contacts and staff for the Activities (§4) and Complaints (§17) forms.
+  // Merged rather than replaced, so this and the Expenses effect above cannot
+  // clobber each other depending on which tab was opened first.
+  useEffect(() => {
+    if (!['Activities', 'Complaints'].includes(tab) || recordOptions.staff.length) return
+    Promise.all([
+      customerApi.contacts.list(id).catch(() => []),
+      customerApi.assignableStaff().catch(() => []),
+    ]).then(([contacts, staff]) => setRecordOptions(prev => ({
+      ...prev,
+      contacts: (Array.isArray(contacts) ? contacts : []).map(c => ({
+        value: c.id,
+        label: [c.first_name, c.last_name].filter(Boolean).join(' ') || c.email || `Contact ${c.id}`,
+      })),
+      staff: (Array.isArray(staff) ? staff : (staff?.data ?? [])).map(u => ({ value: u.id, label: u.name })),
+    })))
+  }, [tab, id])
 
   useEffect(() => {
     if (!TAB_FETCHERS[tab] || tabData[tab] !== undefined) return
@@ -323,6 +352,15 @@ export default function CustomerDetail() {
       {tab === 'Attachments' && <AttachmentsTab id={id} files={data} reload={() => refreshTab('Attachments')} toast={toast} />}
       {tab === 'Map' && <MapTab client={client} reload={loadClient} toast={toast} />}
       {tab === 'TPV & Leads' && <RelatedTab client={client} />}
+
+      {/* §5 Timeline, §3 Meetings and §6 read-only views of other modules. */}
+      {tab === 'Timeline' && <TimelineTab id={id} />}
+      {tab === 'Meetings' && <LinkedRecordsTab id={id} kind="meetings" />}
+      {tab === 'Projects' && <LinkedRecordsTab id={id} kind="projects" />}
+      {tab === 'Tasks' && <LinkedRecordsTab id={id} kind="tasks" />}
+      {tab === 'Delivery Notes' && <LinkedRecordsTab id={id} kind="delivery-notes" />}
+      {/* §10 — CSAT and NPS, which also light up Health's feedback signal. */}
+      {tab === 'Experience' && <CustomerExperienceTab id={id} contacts={client.contacts ?? []} />}
 
       {RECORD_TABS[tab] && <RecordTab clientId={id} schema={RECORD_TABS[tab]} dynamicOptions={recordOptions} />}
         </div>

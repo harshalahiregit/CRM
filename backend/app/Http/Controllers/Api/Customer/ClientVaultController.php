@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Customer;
 use App\Http\Controllers\Api\Customer\Concerns\AssertsClientTenant;
 use App\Http\Controllers\Controller;
 use App\Models\Customer\Client;
+use App\Models\Customer\ClientVaultAccessLog;
 use App\Models\Customer\ClientVaultEntry;
 use App\Support\HtmlSanitizer;
 use Illuminate\Http\Request;
@@ -13,6 +14,12 @@ use Illuminate\Http\Request;
  * Per-customer credential vault. Passwords are encrypted at rest and never
  * included in list responses — the decrypted value is only returned by the
  * explicit reveal() endpoint.
+ *
+ * §15 of the Customer 360 document asks for Vault to differ from Files by
+ * having "stronger RBAC and audit trails". The RBAC is ClientVaultEntry's
+ * visibility rules; the trail is written here, on every action that changes a
+ * credential or discloses one. Listing is not logged — the list never contains
+ * a password, so a page view discloses nothing.
  */
 class ClientVaultController extends Controller
 {
@@ -39,6 +46,8 @@ class ClientVaultController extends Controller
             'created_by' => $request->user()->id,
         ]);
 
+        $this->audit($request, $entry, ClientVaultAccessLog::CREATED);
+
         return response()->json($entry, 201);
     }
 
@@ -46,6 +55,8 @@ class ClientVaultController extends Controller
     {
         $this->guardEntry($client, $vaultEntry, $request);
         $vaultEntry->update($this->validated($request));
+        $this->audit($request, $vaultEntry, ClientVaultAccessLog::UPDATED);
+
         return response()->json($vaultEntry);
     }
 
@@ -53,14 +64,69 @@ class ClientVaultController extends Controller
     public function reveal(Client $client, ClientVaultEntry $vaultEntry, Request $request)
     {
         $this->guardEntry($client, $vaultEntry, $request, manage: false);
+        // The disclosure itself is the event worth recording.
+        $this->audit($request, $vaultEntry, ClientVaultAccessLog::REVEALED);
+
         return response()->json(['password' => $vaultEntry->password]);
     }
 
     public function destroy(Client $client, ClientVaultEntry $vaultEntry, Request $request)
     {
         $this->guardEntry($client, $vaultEntry, $request);
+        // Logged BEFORE the delete, so the trail exists even if the row does not.
+        $this->audit($request, $vaultEntry, ClientVaultAccessLog::DELETED);
         $vaultEntry->delete();
+
         return response()->json(['message' => 'Vault entry deleted']);
+    }
+
+    /**
+     * The audit trail for one entry.
+     *
+     * Administrators only. The log records who looked at which credential and
+     * when, which is itself sensitive — handing it to every colleague would
+     * turn an accountability record into a surveillance feed.
+     */
+    public function accessLog(Client $client, ClientVaultEntry $vaultEntry, Request $request)
+    {
+        $this->guardEntry($client, $vaultEntry, $request);
+        abort_unless($request->user()->role === 'admin', 403,
+            'Only an administrator can read the vault audit trail.');
+
+        return response()->json(
+            ClientVaultAccessLog::forTenant($client->tenant_id)
+                ->where('vault_entry_id', $vaultEntry->id)
+                ->with('user:id,name')
+                ->orderByDesc('created_at')
+                ->limit(200)
+                ->get()
+        );
+    }
+
+    /**
+     * Append one row to the trail.
+     *
+     * Never allowed to break the action it is recording: a vault read must not
+     * 500 because the audit insert failed. The write is best-effort and the
+     * failure is logged, which is the right trade for a trail that exists to
+     * explain history rather than to gate access.
+     */
+    private function audit(Request $request, ClientVaultEntry $entry, string $action): void
+    {
+        try {
+            ClientVaultAccessLog::create([
+                'tenant_id'      => $entry->tenant_id,
+                'client_id'      => $entry->client_id,
+                'vault_entry_id' => $entry->id,
+                'user_id'        => $request->user()?->id,
+                'action'         => $action,
+                'ip'             => $request->ip(),
+                'user_agent'     => substr((string) $request->userAgent(), 0, 255),
+                'created_at'     => now(),
+            ]);
+        } catch (\Throwable $e) {
+            report($e);
+        }
     }
 
     private function validated(Request $request): array
