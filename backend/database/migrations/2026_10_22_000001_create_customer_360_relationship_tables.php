@@ -171,7 +171,12 @@ return new class extends Migration
             $table->string('user_agent', 255)->nullable();
             $table->timestamp('created_at')->nullable()->index();
 
-            $table->index(['tenant_id', 'vault_entry_id', 'created_at']);
+            // Explicit short name: the generated one would be
+            // client_vault_access_log_tenant_id_vault_entry_id_created_at_index,
+            // 65 characters, and MySQL's identifier limit is 64. SQLite has no
+            // such limit, so the test suite cannot catch this — only a real
+            // MySQL run can, which is exactly how it was found.
+            $table->index(['tenant_id', 'vault_entry_id', 'created_at'], 'cval_tenant_entry_created_idx');
         });
     }
 
