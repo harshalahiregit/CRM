@@ -65,7 +65,7 @@ export default function Contracts() {
       <ListToolbar
         className="mb-4"
         search={search} onSearch={setSearch} searchPlaceholder="Search contracts…"
-        count={matched} total={rows.length} unit="contract"
+        count={matched} total={rows?.length ?? 0} unit="contract"
         pageSize={pageSize} onPageSize={setPageSize} onRefresh={load}
         onExport={() => exportSalesList('contracts', { status: filter || undefined, search: search || undefined })
           .catch(e => toast.error(e.message))}

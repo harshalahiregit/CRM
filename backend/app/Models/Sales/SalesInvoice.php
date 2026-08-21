@@ -132,10 +132,16 @@ class SalesInvoice extends Model
         if (
             $this->balance > 0
             && $this->due_date && $this->due_date->isPast()
-            && !in_array($this->status, ['Paid', 'Cancelled', 'Overdue'])
+            && !in_array($this->status, ['Draft', 'Paid', 'Cancelled', 'Overdue'])
         ) {
             // Exclude 'Overdue' above so an already-overdue invoice isn't
             // re-written on every list() call (write-on-read).
+            //
+            // 'Draft' is excluded because a draft has never been issued to the
+            // customer, so it cannot be late. Without this, merely OPENING the
+            // invoice list promoted a stale draft to Overdue — and because
+            // Customer Health counts every non-draft invoice, that silently
+            // moved the customer's score.
             $this->status = 'Overdue';
             $this->saveQuietly();
         }
