@@ -11,6 +11,7 @@ use App\Models\Shared\KickoffMomItem;
 use App\Models\Shared\MeetingAgendaItem;
 use App\Models\Shared\MeetingDecision;
 use App\Models\Shared\MeetingIssue;
+use App\Models\Task\Task;
 use App\Models\Tenant;
 use App\Models\Tpv\TpvOnboarding;
 use App\Models\User;
@@ -18,6 +19,7 @@ use App\Models\Vendor\Vendor;
 use App\Models\Vendor\VendorContact;
 use App\Repositories\Shared\KickoffMeetingRepository;
 use App\Services\Notifications\NotificationService;
+use App\Services\Task\TaskService;
 use App\Services\Tpv\IncidentService;
 use App\Support\FrontendUrl;
 use App\Support\Shared\KickoffStatus as Status;
@@ -1358,6 +1360,7 @@ class KickoffMeetingService
     public function progressAction(KickoffMomItem $item, array $data, User $actor): KickoffMomItem
     {
         $to = $data['status'] ?? null;
+        $fromStatus = $item->status;   // captured before the update, for the §8 task sync
         if ($to !== null && $to !== $item->status && ! MomActionStatus::canTransition($item->status, $to)) {
             throw new BusinessException(
                 'Cannot move a '.MomActionStatus::label($item->status).' action to '.MomActionStatus::label($to).'.'
@@ -1411,10 +1414,93 @@ class KickoffMeetingService
 
         $item->update($changes);
 
+        // §8 two-way sync: closing/reopening the action reflects onto its linked
+        // Task, and vice-versa the Task board can move it back. Best-effort — a
+        // failure in the Task module must not fail the action update.
+        if ($item->task_id && $to !== null && $to !== $fromStatus) {
+            try {
+                if ($to === MomActionStatus::CLOSED) {
+                    Task::whereKey($item->task_id)
+                        ->update(['status' => 'finished', 'date_finished' => now()]);
+                } elseif ($to === MomActionStatus::REOPENED) {
+                    Task::whereKey($item->task_id)
+                        ->update(['status' => 'in_progress', 'date_finished' => null]);
+                }
+            } catch (\Throwable $e) {
+                Log::channel('tpv')->warning('Action→Task status sync failed', [
+                    'action_id' => $item->id, 'task_id' => $item->task_id, 'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
         $item->meeting?->recordAudit('action_updated', $actor,
             "Action {$item->action_ref} → ".MomActionStatus::label($item->status));
 
-        return $item->fresh(['responsible:id,name', 'verifier:id,name', 'agendaItem:id,item']);
+        return $item->fresh(['responsible:id,name', 'verifier:id,name', 'agendaItem:id,item', 'task:id,name,status,priority,due_date,date_finished']);
+    }
+
+    /**
+     * Turn a MOM action into a real Sangoe Task (Meeting.docx §8). The task is
+     * linked back to the vendor (rel_type=tpv_vendor) so it appears on that
+     * vendor's Tasks tab, carries the action's owner/priority/due-date, and its id
+     * is stamped on the action so the two stay connected. Idempotent: an action
+     * already pushed is refused rather than duplicated.
+     */
+    public function pushActionToTask(KickoffMomItem $item, User $actor): KickoffMomItem
+    {
+        if ($item->task_id) {
+            throw new BusinessException('This action is already linked to a task.');
+        }
+
+        $meeting = $item->meeting()->with(['kickoffable', 'attendees'])->first();
+        $title = trim(strip_tags((string) $item->description));
+        if ($title === '') {
+            throw new BusinessException('Add a description before creating a task from this action.');
+        }
+        $title = mb_substr($title, 0, 200);
+
+        // Link the task to the vendor when the meeting is about one, so it shows on
+        // the vendor's Tasks tab (VendorTaskLink reads rel_type/rel_id).
+        $relType = 'standalone';
+        $relId = null;
+        if ($meeting?->kickoffable instanceof Vendor) {
+            $relType = 'tpv_vendor';
+            $relId = $meeting->kickoffable->id;
+        }
+
+        // The responsible attendee's login becomes the assignee, when they have one.
+        $assigneeIds = [];
+        if ($item->responsible_attendee_id) {
+            $uid = $meeting?->attendees->firstWhere('id', $item->responsible_attendee_id)?->user_id;
+            if ($uid) {
+                $assigneeIds[] = $uid;
+            }
+        }
+
+        $priorityMap = ['Low' => 'low', 'Medium' => 'medium', 'High' => 'high', 'Urgent' => 'urgent'];
+        $priority = $priorityMap[$item->priority] ?? 'medium';
+
+        $backlink = 'From meeting '.($meeting?->meeting_no ?: ('#'.$meeting?->id))
+            .' · action '.$item->action_ref;
+
+        $data = [
+            'name' => $title,
+            'description' => (string) $item->description."\n\n<p><em>{$backlink}</em></p>",
+            'priority' => $priority,
+            'start_date' => now()->toDateString(),
+            'due_date' => optional($item->target_date)->toDateString(),
+            'rel_type' => $relType,
+            'rel_id' => $relId,
+            'assignee_ids' => $assigneeIds,
+        ];
+
+        $task = app(TaskService::class)->create($data, $actor->tenant_id, $actor->id);
+
+        $item->forceFill(['task_id' => $task->id])->save();
+        $meeting?->recordAudit('action_pushed_to_task', $actor,
+            "Action {$item->action_ref} pushed to task #{$task->id}");
+
+        return $item->fresh(['responsible:id,name', 'verifier:id,name', 'agendaItem:id,item', 'task:id,name,status,priority,due_date,date_finished']);
     }
 
     /* ── Decision register (Meeting.docx §9) ────────────────────────────────── */

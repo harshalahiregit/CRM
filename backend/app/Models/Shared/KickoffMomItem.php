@@ -2,6 +2,7 @@
 
 namespace App\Models\Shared;
 
+use App\Models\Task\Task;
 use App\Models\User;
 use App\Support\Shared\MomActionStatus;
 use Illuminate\Database\Eloquent\Model;
@@ -23,7 +24,7 @@ class KickoffMomItem extends Model
     protected $table = 'kickoff_mom_items';
 
     protected $fillable = [
-        'tenant_id', 'kickoff_meeting_id', 'agenda_item_id', 'depends_on_id', 'carried_from_id', 'action_ref',
+        'tenant_id', 'kickoff_meeting_id', 'agenda_item_id', 'depends_on_id', 'task_id', 'carried_from_id', 'action_ref',
         'description', 'responsible_attendee_id', 'responsible_names', 'responsible_org',
         'remark', 'notes', 'target_date', 'sort_order',
         'status', 'priority', 'evidence_path', 'verification_note',
@@ -60,6 +61,12 @@ class KickoffMomItem extends Model
     public function dependsOn()
     {
         return $this->belongsTo(self::class, 'depends_on_id');
+    }
+
+    /** The real Sangoe Task this action was pushed to (Meeting.docx §8). */
+    public function task()
+    {
+        return $this->belongsTo(Task::class, 'task_id');
     }
 
     public function verifier()
