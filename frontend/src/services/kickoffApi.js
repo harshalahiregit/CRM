@@ -82,6 +82,9 @@ export const kickoffApi = {
   },
   actionEvidenceBlob: (meetingId, itemId) =>
     api.get(`/kickoff/meetings/${meetingId}/mom-items/${itemId}/evidence`, { responseType: 'blob' }).then(r => r.data),
+  // §8 — turn a MOM action into a real Sangoe Task (linked to the vendor).
+  pushActionTask: (meetingId, itemId) =>
+    api.post(`/kickoff/meetings/${meetingId}/mom-items/${itemId}/push-task`).then(r => r.data),
 
   // Issue register — progress lifecycle + escalate to an Incident.
   progressIssue: (meetingId, issueId, data) =>

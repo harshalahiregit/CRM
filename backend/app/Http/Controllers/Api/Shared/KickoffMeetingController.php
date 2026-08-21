@@ -245,6 +245,17 @@ class KickoffMeetingController extends Controller
         );
     }
 
+    /** Push a MOM action into the Task module as a real Task (Meeting.docx §8). */
+    public function pushActionTask(Request $request, KickoffMeeting $kickoffMeeting, KickoffMomItem $momItem)
+    {
+        $this->assertTenant($request, $kickoffMeeting);
+        $this->assertItemBelongs($momItem, $kickoffMeeting);
+
+        return response()->json(
+            $this->kickoffService->pushActionToTask($momItem, $request->user())
+        );
+    }
+
     /** Stream a MOM action's evidence file inline. */
     public function actionEvidence(Request $request, KickoffMeeting $kickoffMeeting, KickoffMomItem $momItem)
     {

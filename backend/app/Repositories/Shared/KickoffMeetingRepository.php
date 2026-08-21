@@ -71,6 +71,8 @@ class KickoffMeetingRepository extends BaseRepository
                 'momItems.agendaItem:id,item',
                 // The action this one waits on (Meeting.docx §8).
                 'momItems.dependsOn:id,action_ref,description',
+                // The real Task this action was pushed to (Meeting.docx §8).
+                'momItems.task:id,name,status,priority,due_date,date_finished',
                 'agendaItems.owner:id,name,organisation',
                 'decisions.decidedBy:id,name',
                 'decisions.agendaItem:id,item',

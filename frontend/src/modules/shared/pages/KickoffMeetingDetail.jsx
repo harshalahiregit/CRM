@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, CalendarDays, Clock, MapPin, Users, CheckCircle2, XCircle,
   Send, Copy, Upload, AlertTriangle, Loader2, FileText, ShieldCheck, History,
-  Sparkles, Eye, Download, Video, ExternalLink, ClipboardCheck, ThumbsUp, Undo2, RotateCcw,
+  Sparkles, Eye, Download, Video, ExternalLink, ClipboardCheck, ThumbsUp, Undo2, RotateCcw, ListChecks,
 } from 'lucide-react'
 import { kickoffApi } from '@/services/kickoffApi'
 import { meetingApi } from '@/services/meetingApi'
@@ -320,8 +320,17 @@ export default function KickoffMeetingDetail() {
 function ActionItemsCard({ m, meetingId, onChanged, onError }) {
   const items = m.mom_items || []
   const [openId, setOpenId] = useState(null)
+  const [taskBusy, setTaskBusy] = useState(null)
 
   if (items.length === 0) return null
+
+  // §8 — push an action into the Task module as a real, trackable Task.
+  const createTask = async (item) => {
+    setTaskBusy(item.id); onError(null)
+    try { onChanged(await kickoffApi.pushActionTask(meetingId, item.id)) }
+    catch (e) { onError(e?.response?.data?.message || 'Could not create the task.') }
+    finally { setTaskBusy(null) }
+  }
 
   const openCount = items.filter(i => i.is_open).length
   const overdue   = items.filter(i => i.is_overdue).length
@@ -349,16 +358,30 @@ function ActionItemsCard({ m, meetingId, onChanged, onError }) {
                     {item.target_date && <span style={{ fontSize: 10.5, color: item.is_overdue ? '#ef4444' : 'var(--text-muted)' }}>due {fmtDate(item.target_date)}</span>}
                     {item.agenda_item?.item && <span title="Agenda item" style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 6, background: 'rgba(124,58,237,0.12)', color: '#a78bfa' }}>▸ {item.agenda_item.item}</span>}
                     {item.depends_on && <span title="Blocked until this action is done" style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 6, background: 'rgba(245,158,11,0.12)', color: '#d97706' }}>⛓ depends on {item.depends_on.action_ref || 'another action'}</span>}
+                    {item.task && (
+                      <a href={`/app/tasks/${item.task.id}`} title={`Linked task · ${item.task.status}`}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 6, background: 'rgba(16,185,129,0.12)', color: '#10b981', textDecoration: 'none' }}>
+                        <ListChecks size={10} /> Task: {String(item.task.status).replace(/_/g, ' ')}
+                      </a>
+                    )}
                   </div>
                   <div style={{ fontSize: 13, color: 'var(--text-h)', lineHeight: 1.5 }} dangerouslySetInnerHTML={{ __html: item.description }} />
                   {owner && <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 3 }}>Owner: {owner}</div>}
                   {item.verification_note && <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 3, fontStyle: 'italic' }}>“{item.verification_note}”</div>}
                   {item.verified_at && <div style={{ fontSize: 11, color: '#10b981', marginTop: 3 }}>Verified by {item.verifier?.name || '—'} · {fmtDate(item.verified_at)}</div>}
                 </div>
-                <button onClick={() => setOpenId(openId === item.id ? null : item.id)}
-                  style={{ padding: '6px 11px', borderRadius: 8, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: '#a78bfa', flexShrink: 0 }}>
-                  {openId === item.id ? 'Close' : 'Update'}
-                </button>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
+                  <button onClick={() => setOpenId(openId === item.id ? null : item.id)}
+                    style={{ padding: '6px 11px', borderRadius: 8, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: '#a78bfa' }}>
+                    {openId === item.id ? 'Close' : 'Update'}
+                  </button>
+                  {!item.task_id && (
+                    <button onClick={() => createTask(item)} disabled={taskBusy === item.id} title="Create a trackable Task from this action"
+                      style={{ padding: '6px 11px', borderRadius: 8, fontSize: 11.5, fontWeight: 700, cursor: taskBusy === item.id ? 'wait' : 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: '#10b981', display: 'inline-flex', alignItems: 'center', gap: 5, justifyContent: 'center' }}>
+                      <ListChecks size={12} /> {taskBusy === item.id ? '…' : 'Task'}
+                    </button>
+                  )}
+                </div>
               </div>
               {openId === item.id && (
                 <ActionProgressForm item={item} meetingId={meetingId}
