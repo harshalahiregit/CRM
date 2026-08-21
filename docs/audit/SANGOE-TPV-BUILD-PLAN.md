@@ -269,6 +269,13 @@ live vendor-status template, AI assist. Kickoff is now "Meetings → New → Typ
   `/purchase/capas`, purchaseApi `ncrs`/`capas`, and NCR + CAPA pages in the Purchase nav (teal). Verified via
   rolled-back tinker (PNCR-2026-001 overdue + close-guard + close, PCAPA-2026-001 raiseFrom-NCR link, evidence
   gate blocks then passes, stats, filters) + green build. **Parity mirrors #2 & #3.**
+- [x] **§33 Analytics — Purchase mirror** — `PurchaseAnalyticsService` (governance analytics, distinct from the
+  procurement `PurchaseReportService`): overview (portfolio by status, open/overdue NCR+CAPA, compliance %),
+  6-month NCR/CAPA trend series, per-vendor benchmark (compliance %, open NCRs/CAPAs, worst-first), and CSV
+  export of 4 datasets (vendors/ncrs/capas/benchmark) via an RFC-4180 writer. Routes `/purchase/analytics` +
+  `/analytics/export`, purchaseApi `analytics`, and an Analytics page in the Purchase nav (teal). Dimensions
+  whose Purchase mirrors haven't landed yet (violations/inspections) are simply absent — additive. Verified via
+  rolled-back tinker (overview, 6-month trends, benchmark, CSV header/rows) + green build. **Parity mirror #4.**
 - [ ] Remaining Purchase mirrors: Inspections · Violations/Strikes · Renewal · Offboarding · Document Vault ·
-  Analytics · Performance Index (VPI) · Communications · PPE-at-gate. (Purchase has its own gate/PPE/worker
-  stack, so those mirror onto `purchase_*` equivalents.)
+  Performance Index (VPI) · Communications · PPE-at-gate. (Purchase has its own gate/PPE/worker stack, so those
+  mirror onto `purchase_*` equivalents.)
