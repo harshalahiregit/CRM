@@ -27,6 +27,10 @@ import ContactPermissions, { DEFAULT_PERMISSIONS, DEFAULT_NOTIFICATIONS, permiss
 const EMPTY_CONTACT = {
   first_name: '', last_name: '', title: '', email: '', phone: '',
   avatar: '', direction: '', password: '',
+  // §11 — title is the designation on their card, department is where they sit,
+  // role is what they are to us (and is what drives which mail they get).
+  department: '', role: '', whatsapp: '',
+  is_decision_maker: false, influence: '', is_secondary: false, reports_to: '',
   is_primary: false, active: true,
   permissions: DEFAULT_PERMISSIONS, email_notifications: DEFAULT_NOTIFICATIONS, emails_enabled: true,
   custom_fields: {},
@@ -47,16 +51,24 @@ function seedCf(c) {
   return cf
 }
 
-export default function ContactFormDrawer({ clientId, contact = null, onSaved, onClose }) {
+export default function ContactFormDrawer({ clientId, contact = null, siblings = [], onSaved, onClose }) {
   const toast = useToast()
   const editing = contact
   const [cfDefs, setCfDefs] = useState([])
   const [showPwd, setShowPwd] = useState(false)
   const [saving, setSaving] = useState(false)
+  // Fetched here, not passed in: the drawer is a portal and the tab that owns
+  // these lists may not be mounted, and a datalist is resolved by id from the
+  // live DOM — borrowing one that isn't rendered silently yields no suggestions.
+  const [options, setOptions] = useState({})
+  useEffect(() => { customerApi.options().then(setOptions).catch(() => setOptions({})) }, [])
   const [form, setForm] = useState(() => (editing ? {
     first_name: editing.first_name || '', last_name: editing.last_name || '', title: editing.title || '',
     email: editing.email || '', phone: editing.phone || '', avatar: editing.avatar || '',
     direction: editing.direction || '', password: '',
+    department: editing.department || '', role: editing.role || '', whatsapp: editing.whatsapp || '',
+    is_decision_maker: !!editing.is_decision_maker, influence: editing.influence || '',
+    is_secondary: !!editing.is_secondary, reports_to: editing.reports_to ?? '',
     is_primary: !!editing.is_primary, active: editing.active !== false,
     permissions: editing.permissions ?? permissionsFromLegacy(editing.email_notifications),
     email_notifications: { ...DEFAULT_NOTIFICATIONS, ...(editing.email_notifications || {}) },
@@ -130,6 +142,40 @@ export default function ContactFormDrawer({ clientId, contact = null, onSaved, o
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Email</label><input className="input-3d text-sm" value={form.email} onChange={e => sf('email', e.target.value)} /></div>
             <div><label className="label">Phone</label><input className="input-3d text-sm" value={form.phone} onChange={e => sf('phone', e.target.value)} /></div>
+          </div>
+
+          {/* §11 — relationship depth. Role drives which documents they are
+              mailed; Decision Maker and Influence say who actually signs. The
+              reporting line is what makes those two mean anything, so it is a
+              picker over this customer's other contacts, never free text. */}
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="label">Department</label>
+              <input className="input-3d text-sm" value={form.department} onChange={e => sf('department', e.target.value)} /></div>
+            <div><label className="label">Role</label>
+              <input className="input-3d text-sm" list="opt-contact_role" value={form.role} onChange={e => sf('role', e.target.value)} /></div>
+            <div><label className="label">WhatsApp</label>
+              <input className="input-3d text-sm" value={form.whatsapp} onChange={e => sf('whatsapp', e.target.value)} placeholder="If different from phone" /></div>
+            <div><label className="label">Influence</label>
+              <input className="input-3d text-sm" list="opt-influence" value={form.influence} onChange={e => sf('influence', e.target.value)} /></div>
+            <datalist id="opt-contact_role">{(options.contact_role ?? []).map(o => <option key={o} value={o} />)}</datalist>
+            <datalist id="opt-influence">{(options.influence ?? []).map(o => <option key={o} value={o} />)}</datalist>
+            <div><label className="label">Reports To</label>
+              <select className="input-3d text-sm" value={form.reports_to} onChange={e => sf('reports_to', e.target.value)}>
+                <option value="">Nobody / top of the chain</option>
+                {(siblings ?? []).filter(c => c.id !== editing?.id).map(c => (
+                  <option key={c.id} value={c.id}>{[c.first_name, c.last_name].filter(Boolean).join(' ')}</option>
+                ))}
+              </select></div>
+            <div className="flex items-end gap-4 pb-1">
+              <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer" style={{ color: 'var(--text-muted)' }}>
+                <input type="checkbox" checked={form.is_decision_maker} onChange={e => sf('is_decision_maker', e.target.checked)} />
+                Decision maker
+              </label>
+              <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer" style={{ color: 'var(--text-muted)' }}>
+                <input type="checkbox" checked={form.is_secondary} onChange={e => sf('is_secondary', e.target.checked)} />
+                Secondary
+              </label>
+            </div>
           </div>
           <div><label className="label">Document Direction</label>
             <select className="input-3d text-sm" value={form.direction || ''} onChange={e => sf('direction', e.target.value)}>

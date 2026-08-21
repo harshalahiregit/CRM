@@ -5,6 +5,7 @@ namespace App\Http\Requests\Customer;
 use App\Rules\Gstin;
 use App\Rules\PhoneNumber;
 use App\Rules\Pincode;
+use Illuminate\Validation\Rule;
 use Illuminate\Foundation\Http\FormRequest;
 
 class UpdateClientRequest extends FormRequest
@@ -42,6 +43,9 @@ class UpdateClientRequest extends FormRequest
 
     public function rules(): array
     {
+        // Owners must belong to the acting tenant — no cross-tenant assignment.
+        $tenantId = $this->user()?->tenant_id;
+
         return [
             'company'          => 'sometimes|required|string|max:255',
             'gst_number'       => $this->whenChanged('gst_number', ['nullable', 'string'], new Gstin()),
@@ -100,6 +104,22 @@ class UpdateClientRequest extends FormRequest
             // (including paid). Invoices+estimates vs credit notes are separate.
             'apply_to_previous_documents'    => 'nullable|boolean',
             'apply_to_previous_credit_notes' => 'nullable|boolean',
+
+            // ── Customer 360 (§11–§13) ──────────────────────────────────
+            // Deliberately not validated against the option lists: a tenant can
+            // edit those lists, and a value that was valid when saved must stay
+            // valid afterwards. Length caps are the real guard here.
+            'account_owner_id'          => ['nullable', 'integer', Rule::exists('users', 'id')->where('tenant_id', $tenantId)],
+            'secondary_owner_id'        => ['nullable', 'integer', Rule::exists('users', 'id')->where('tenant_id', $tenantId)],
+            'customer_success_owner_id' => ['nullable', 'integer', Rule::exists('users', 'id')->where('tenant_id', $tenantId)],
+            'business_unit'             => 'nullable|string|max:80',
+            'region'                    => 'nullable|string|max:80',
+            'customer_type'             => 'nullable|string|max:40',
+            'customer_tier'             => 'nullable|string|max:40',
+            'industry'                  => 'nullable|string|max:80',
+            'payment_terms'             => 'nullable|string|max:40',
+            'relationship_started_at'   => 'nullable|date',
+            'lifecycle_status'          => 'nullable|string|max:20',
         ];
     }
 }

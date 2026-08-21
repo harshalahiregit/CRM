@@ -53,6 +53,7 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('customers')->gr
     // Assignable staff (create-stepper needs it before a client exists;
     // must stay ABOVE the /{client} wildcard routes)
     Route::get('/assignable-staff', [ClientController::class, 'assignableStaff']);
+    Route::get('/options',          [ClientController::class, 'options']);
 
     // Customer 360 overview — live counts from the owning modules, nothing stored.
     Route::get('/{client}/overview', [\App\Http\Controllers\Api\Customer\Customer360Controller::class, 'show']);

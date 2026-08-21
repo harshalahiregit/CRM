@@ -54,6 +54,8 @@ export const customerApi = {
   admins:     (id) => api.get(`/customers/${id}/admins`).then(r => r.data).catch(handleErr),
   syncAdmins: (id, userIds) => api.put(`/customers/${id}/admins`, { user_ids: userIds }).then(r => r.data).catch(handleErr),
   assignableStaff: () => api.get('/customers/assignable-staff').then(r => r.data).catch(handleErr),
+  // Tenant-editable option lists for classification, contact role and note type.
+  options: () => api.get('/customers/options').then(r => r.data).catch(handleErr),
 
   // Contacts (per-customer)
   contacts: {

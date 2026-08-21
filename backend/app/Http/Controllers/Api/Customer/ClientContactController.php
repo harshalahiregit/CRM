@@ -9,6 +9,7 @@ use App\Models\Customer\Client;
 use App\Models\Customer\ClientContact;
 use App\Services\Customer\CustomFieldService;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 /**
  * Per-customer contact management (the Contacts tab). Mirrors the legacy
@@ -93,6 +94,21 @@ class ClientContactController extends Controller
             'last_name'           => 'nullable|string|max:255',
             'email'               => 'nullable|email|max:255',
             'phone'               => ['nullable', 'string', 'max:30', new PhoneNumber()],
+            // §11 — role is what they are to us, department is where they sit,
+            // and `title` (already present) is the designation on their card.
+            'department'          => 'nullable|string|max:80',
+            'role'                => 'nullable|string|max:60',
+            'whatsapp'            => ['nullable', 'string', 'max:30', new PhoneNumber()],
+            'is_decision_maker'   => 'nullable|boolean',
+            'influence'           => 'nullable|string|max:20',
+            'is_secondary'        => 'nullable|boolean',
+            // Must be another contact of the SAME customer, or the org chart
+            // would let one customer's contact report into another's.
+            // Must be another contact of the SAME customer, and never itself —
+            // a self-reference would render the org chart as an infinite loop.
+            'reports_to'          => ['nullable', 'integer', Rule::exists('client_contacts', 'id')
+                                        ->where('client_id', $clientId)
+                                        ->when($contactId, fn ($q) => $q->whereNot('id', $contactId))],
             'title'               => 'nullable|string|max:100',
             'avatar'              => 'nullable|string|max:500000',
             'direction'           => 'nullable|in:ltr,rtl',

@@ -34,6 +34,10 @@ class ClientContact extends Model
     protected $fillable = [
         'tenant_id', 'client_id', 'user_id', 'first_name', 'last_name',
         'email', 'phone', 'title', 'avatar', 'direction', 'is_primary', 'active',
+        // §11 — role is what they are to us; department is where they sit;
+        // title stays as the designation they'd print on a card.
+        'department', 'role', 'whatsapp',
+        'is_decision_maker', 'influence', 'is_secondary', 'reports_to', 'last_contacted_at',
         'email_notifications', 'permissions', 'emails_enabled',
         'password', 'last_password_change',
     ];
@@ -45,6 +49,9 @@ class ClientContact extends Model
         'active'               => 'boolean',
         'email_notifications'  => 'array', // legacy, read-only fallback
         'permissions'          => 'array',
+        'is_decision_maker'    => 'boolean',
+        'is_secondary'         => 'boolean',
+        'last_contacted_at'    => 'datetime',
         'emails_enabled'       => 'boolean',
         'password'             => 'hashed',
         'last_password_change' => 'datetime',

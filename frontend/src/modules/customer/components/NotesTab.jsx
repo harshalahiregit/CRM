@@ -19,7 +19,7 @@ const VISIBILITIES = {
   private: { label: 'Private', icon: EyeOff },
   client: { label: 'Client-visible', icon: Eye },
 }
-const EMPTY = { content: '', priority: '', deadline: '', reminder_at: '', visibility: 'team' }
+const EMPTY = { content: '', type: '', priority: '', deadline: '', reminder_at: '', visibility: 'team' }
 
 const d10 = (v) => (v ? String(v).slice(0, 10) : '')
 const stripHtml = (html) => { const el = document.createElement('div'); el.innerHTML = html || ''; return el.textContent.trim() }
@@ -34,6 +34,7 @@ export default function NotesTab({ id, client, notes, reload, toast }) {
 
   const payload = () => ({
     content: form.content,
+    type: form.type || null,
     priority: form.priority || null,
     deadline: form.deadline || null,
     reminder_at: form.reminder_at ? form.reminder_at.replace('T', ' ') : null,
@@ -54,6 +55,7 @@ export default function NotesTab({ id, client, notes, reload, toast }) {
     setEditing(n)
     setForm({
       content: n.content || '',
+      type: n.type || '',
       priority: n.priority || '',
       deadline: d10(n.deadline),
       reminder_at: n.reminder_at ? String(n.reminder_at).slice(0, 16).replace(' ', 'T') : '',
@@ -120,6 +122,17 @@ export default function NotesTab({ id, client, notes, reload, toast }) {
           <div>
             <label className="label">Reminder</label>
             <input type="datetime-local" className="input-3d text-sm" value={form.reminder_at} onChange={e => sf('reminder_at', e.target.value)} />
+          </div>
+          <div>
+            {/* §16 — what kind of note this is. Separate from visibility, which
+                answers who may read it; this answers what it is about. */}
+            <label className="label">Type</label>
+            <select className="input-3d text-sm" value={form.type} onChange={e => sf('type', e.target.value)}>
+              <option value="">General</option>
+              {['Customer', 'Internal', 'Meeting', 'Commercial', 'Service', 'Escalation'].map(t => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="label">Visibility</label>
