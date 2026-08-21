@@ -41,9 +41,11 @@ live vendor-status template, AI assist. Kickoff is now "Meetings → New → Typ
 - [~] **§4/§37 Dashboard / Control Tower** —
   - [x] Route the real dashboard: "Dashboard" now renders `TpvDashboard` (HSSE/workforce roll-up)
     instead of the vendor list; added a dedicated **Vendor Master** tab (`/app/tpv/vendors`).
-  - [ ] Expand to the full Control Tower: ~24 executive KPIs, Risk breakdown (Critical/High/Med/Low +
-    drill-downs), **Action Centre** (approvals/docs/training/medical/PPE/CAPA/NCR/MOM/permit/contract/renewal
-    pending+overdue). Extend the `/tpv/dashboard` aggregate.
+  - [x] Full Control Tower shipped: executive KPI band (vendors by status/risk/temporary, workforce +
+    on-site, training/medical %, avg performance, open actions/CAPAs/permits/strikes), **Action Centre**
+    (approvals/docs/training/medical/workforce/CAPA/MOM/permit/renewal pending+overdue, zero-rows hidden),
+    and **Risk breakdown** (Critical/High/Med/Low/Unclassified). Extends `/tpv/dashboard`; NCR/contract
+    KPIs render 0 until those phases land.
 - [ ] **DB hygiene** — retire the stale "unified TPV+Purchase" comment + unused `engagements` json column
   on `vendors` (verify no readers first; additive/reversible migration).
 
