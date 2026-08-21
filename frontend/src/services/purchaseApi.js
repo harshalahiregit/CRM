@@ -353,6 +353,12 @@ export const purchaseApi = {
     export: (dataset)     => api.get('/purchase/analytics/export', { params: { dataset }, responseType: 'blob' }).then(r => r.data),
   },
 
+  // ── Document Vault (mirror of TPV §30 — read-only aggregator + expiry) ───
+  documentVault: {
+    list:   (params = {}) => api.get('/purchase/document-vault', { params }).then(r => r.data),
+    vendor: (vendorId)    => api.get(`/purchase/vendors/${vendorId}/vault`).then(r => r.data),
+  },
+
   onboarding: {
     list:     (params = {}) => api.get('/purchase/onboarding', { params }).then(r => r.data),
     stats:    ()            => api.get('/purchase/onboarding/stats').then(r => r.data),
