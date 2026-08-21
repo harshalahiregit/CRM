@@ -43,6 +43,9 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('kickoff')->grou
     Route::post('/meeting-type-settings', [MeetingTypeSettingsController::class, 'store']);
     Route::put('/meeting-type-settings/{meetingType}', [MeetingTypeSettingsController::class, 'update']);
     Route::delete('/meeting-type-settings/{meetingType}', [MeetingTypeSettingsController::class, 'destroy']);
+    // AI layer (Meeting.docx §18) — suggest agenda before, summarise minutes after.
+    Route::post('/ai/suggest-agenda', [KickoffMeetingController::class, 'aiSuggestAgenda']);
+    Route::post('/meetings/{kickoffMeeting}/ai-summary', [KickoffMeetingController::class, 'aiSummary']);
     Route::get('/projects', [KickoffMeetingController::class, 'projects']);
     Route::get('/projects/{project}/meetings', [KickoffMeetingController::class, 'projectMeetings'])->where('project', '[0-9]+');
     // Live vendor governance status for the §4 template auto-load.
