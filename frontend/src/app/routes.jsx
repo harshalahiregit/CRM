@@ -251,6 +251,16 @@ const PurchaseVendorRegister = lazy(() => import('@/pages/purchase-portal/Purcha
 const PurchaseVendorForgotPassword = lazy(() => import('@/pages/purchase-portal/PurchaseVendorForgotPassword'))
 const PurchaseVendorResetPassword = lazy(() => import('@/pages/purchase-portal/PurchaseVendorResetPassword'))
 const PurchaseVendorVerifyEmail = lazy(() => import('@/pages/purchase-portal/PurchaseVendorVerifyEmail'))
+// ── Customer portal (§ the old CRM's contact login, restored) ──
+const ClientPortalLogin = lazy(() => import('@/pages/client-portal/ClientPortalLogin'))
+const ClientPortalForgotPassword = lazy(() => import('@/pages/client-portal/ClientPortalForgotPassword'))
+const ClientPortalSetPassword = lazy(() => import('@/pages/client-portal/ClientPortalSetPassword'))
+const ClientPortalGuard = lazy(() => import('@/pages/client-portal/ClientPortalGuard'))
+const ClientPortalShell = lazy(() => import('@/pages/client-portal/ClientPortalShell'))
+const ClientPortalDashboard = lazy(() => import('@/pages/client-portal/ClientPortalDashboard'))
+const ClientPortalRecords = lazy(() => import('@/pages/client-portal/ClientPortalRecords'))
+const ClientPortalProfile = lazy(() => import('@/pages/client-portal/ClientPortalProfile'))
+const ClientPortalStatement = lazy(() => import('@/pages/client-portal/ClientPortalStatement'))
 const PurchaseVendorPortalGuard = lazy(() => import('@/pages/purchase-portal/PurchaseVendorPortalGuard'))
 
 // TPV Module (lazy) — pages land here as they're built
@@ -794,6 +804,24 @@ export default function AppRoutes() {
       <Route path="/purchase-portal/register"        element={<S><PurchaseVendorRegister /></S>} />
       <Route path="/purchase-portal/forgot-password" element={<S><PurchaseVendorForgotPassword /></S>} />
       <Route path="/purchase-portal/reset-password"  element={<S><PurchaseVendorResetPassword /></S>} />
+
+      {/* Customer portal. Public auth screens, then everything behind the
+          contact-token guard. The record screens share one table component —
+          they differ only in columns, and each is refused server-side if the
+          contact was never granted that section. */}
+      <Route path="/portal/login"           element={<S><ClientPortalLogin /></S>} />
+      <Route path="/portal/forgot-password" element={<S><ClientPortalForgotPassword /></S>} />
+      <Route path="/portal/set-password"    element={<S><ClientPortalSetPassword /></S>} />
+      <Route path="/portal" element={<S><ClientPortalGuard><ClientPortalShell /></ClientPortalGuard></S>}>
+        <Route index element={<Navigate to="/portal/dashboard" replace />} />
+        <Route path="dashboard"    element={<S><ClientPortalDashboard /></S>} />
+        <Route path="statement"    element={<S><ClientPortalStatement /></S>} />
+        <Route path="profile"      element={<S><ClientPortalProfile /></S>} />
+        {['invoices', 'payments', 'credit-notes', 'estimates', 'proposals',
+          'contracts', 'projects', 'tickets', 'files', 'notes', 'contacts'].map(v => (
+          <Route key={v} path={v} element={<S><ClientPortalRecords view={v} /></S>} />
+        ))}
+      </Route>
       <Route path="/purchase-portal/verify-email"    element={<S><PurchaseVendorVerifyEmail /></S>} />
 
       {/* Purchase Vendor Portal — authenticated (PurchaseVendor token only). Data

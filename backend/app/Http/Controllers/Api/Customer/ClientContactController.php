@@ -2,12 +2,15 @@
 
 namespace App\Http\Controllers\Api\Customer;
 
+use App\Rules\PhoneNumber;
 use App\Http\Controllers\Api\Customer\Concerns\AssertsClientTenant;
 use App\Http\Controllers\Controller;
 use App\Models\Customer\Client;
 use App\Models\Customer\ClientContact;
+use App\Services\Customer\ClientPortalAuthService;
 use App\Services\Customer\CustomFieldService;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 /**
  * Per-customer contact management (the Contacts tab). Mirrors the legacy
@@ -85,13 +88,65 @@ class ClientContactController extends Controller
     }
 
     /** @return array{0: array, 1: array} [contact attributes, custom-field values] */
+    /**
+     * Send this contact a portal invitation.
+     *
+     * Mints a set-password token and emails it through the tenant's own SMTP.
+     * Deliberately an explicit action rather than a side effect of creating a
+     * contact: most contacts never need a login, and silently mailing everyone
+     * added to a customer would be both noisy and a small security surprise.
+     */
+    public function invite(Client $client, ClientContact $contact, Request $request, ClientPortalAuthService $auth)
+    {
+        $this->assertClientTenant($client, $request->user()->tenant_id);
+        abort_if($contact->client_id !== $client->id, 404);
+
+        if (! $contact->email) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Add an email address before inviting this contact.',
+            ], 422);
+        }
+
+        // An invitation to a contact with no permissions would land them on an
+        // empty portal, so say so here rather than let them discover it.
+        if (empty($contact->permissions)) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Grant at least one section before inviting this contact, or they will see an empty portal.',
+            ], 422);
+        }
+
+        $auth->invite($contact);
+
+        return response()->json([
+            'status'  => 'success',
+            'message' => 'Invitation sent to '.$contact->email.'.',
+        ]);
+    }
+
     private function validated(Request $request, int $clientId, ?int $contactId = null): array
     {
         $data = $request->validate([
             'first_name'          => 'required|string|max:255',
             'last_name'           => 'nullable|string|max:255',
             'email'               => 'nullable|email|max:255',
-            'phone'               => 'nullable|string|max:30',
+            'phone'               => ['nullable', 'string', 'max:30', new PhoneNumber()],
+            // §11 — role is what they are to us, department is where they sit,
+            // and `title` (already present) is the designation on their card.
+            'department'          => 'nullable|string|max:80',
+            'role'                => 'nullable|string|max:60',
+            'whatsapp'            => ['nullable', 'string', 'max:30', new PhoneNumber()],
+            'is_decision_maker'   => 'nullable|boolean',
+            'influence'           => 'nullable|string|max:20',
+            'is_secondary'        => 'nullable|boolean',
+            // Must be another contact of the SAME customer, or the org chart
+            // would let one customer's contact report into another's.
+            // Must be another contact of the SAME customer, and never itself —
+            // a self-reference would render the org chart as an infinite loop.
+            'reports_to'          => ['nullable', 'integer', Rule::exists('client_contacts', 'id')
+                                        ->where('client_id', $clientId)
+                                        ->when($contactId, fn ($q) => $q->whereNot('id', $contactId))],
             'title'               => 'nullable|string|max:100',
             'avatar'              => 'nullable|string|max:500000',
             'direction'           => 'nullable|in:ltr,rtl',
@@ -100,6 +155,9 @@ class ClientContactController extends Controller
             'active'              => 'nullable|boolean',
             'email_notifications' => 'nullable|array',
             'permissions'         => 'nullable|array',
+            // Portal access is separate from `active`: most contacts are people
+            // we mail invoices to and nothing more.
+            'portal_status'       => 'nullable|in:inactive,invited,active,disabled',
             'permissions.*'       => 'string',
             'emails_enabled'      => 'nullable|boolean',
             'custom_fields'       => 'nullable|array',

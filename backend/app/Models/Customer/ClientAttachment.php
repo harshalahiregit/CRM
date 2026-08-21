@@ -12,7 +12,7 @@ class ClientAttachment extends Model
 
     protected $fillable = [
         'tenant_id', 'client_id', 'file_name', 'file_path', 'mime_type', 'file_size', 'created_by',
-    ];
+     'confidential', 'customer_visible',];
 
     protected $appends = ['url'];
 
