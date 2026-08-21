@@ -257,6 +257,12 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::delete('/trainings/{training}',                [\App\Http\Controllers\Api\Tpv\TpvCompetencyController::class, 'destroyTraining'])->where('training', '[0-9]+');
     Route::get('/work-packages/{workPackage}/skill-matrix', [\App\Http\Controllers\Api\Tpv\TpvCompetencyController::class, 'skillMatrix'])->where('workPackage', '[0-9]+');
 
+    // Unified Work Authorization (Sangoe TPV §19) — composite verdict over
+    // Vendor + Compliance + Medical + Induction + PPE + Competency + Permit + WP.
+    // Read-only; changes no gate/badge enforcement.
+    Route::get('/work-authorization',                     [\App\Http\Controllers\Api\Tpv\TpvWorkAuthorizationController::class, 'index']);
+    Route::get('/workers/{worker}/authorization',         [\App\Http\Controllers\Api\Tpv\TpvWorkAuthorizationController::class, 'worker'])->where('worker', '[0-9]+');
+
     // Permit-to-Work + JSA (Doc_4 Phase 5). Approval requires a JSA and refuses a
     // suspended vendor; a permit expires at its validity window.
     Route::get('/permits',                                [\App\Http\Controllers\Api\Tpv\PermitController::class, 'index']);

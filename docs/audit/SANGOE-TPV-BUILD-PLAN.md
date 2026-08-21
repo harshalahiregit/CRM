@@ -117,9 +117,15 @@ live vendor-status template, AI assist. Kickoff is now "Meetings → New → Typ
   counts + expiring flag, expandable per-worker competency & training management) in the Workforce cluster.
   Verified via rolled-back tinker (status derivation, workerHasCompetency electrical=yes/rigging=no, roster
   counts) + green build. TODO: enforce the matrix at work-authorization (below) + surface the matrix UI on Work Packages.
-- [ ] **§19 Work Authorization (unified)** — composite check Vendor-Approval + Worker-Competency +
-  Compliance + PPE + Permit + Work-Package; permit types add isolation/shutdown/critical; link Permit↔Worker↔Gate.
-- [ ] **Rule 5 PPE-at-gate** — enforce mandatory PPE at gate scan (today only at badge issue).
+- [x] **§19 Work Authorization (unified)** — `TpvWorkAuthorizationService` composes ONE verdict over
+  Vendor-Approval + Compliance + Medical + Induction + PPE + Competency (the §15 matrix, Rule 4) + Permit +
+  Work-Package. **Read-only aggregator** — reuses the same signals the badge gate uses; changes NO
+  enforcement path. Controller + routes + a **Work Authorization** page (roster with authorized/blocked +
+  expandable per-check breakdown, required vs advisory) as the first Work-Control item. Verified via tinker
+  (full check breakdown, roster) + green build.
+- [ ] **Rule 5 PPE-at-gate** — enforce mandatory PPE at gate scan (today only at badge issue). Deferred:
+  this MODIFIES GateScanService enforcement — its own slice with gate-harness verification.
+- [ ] Permit types add isolation/shutdown/critical; link Permit↔Worker↔Gate (deferred with PPE-at-gate).
 
 ## Phase 6 — Corrective-action completeness
 

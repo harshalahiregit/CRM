@@ -263,6 +263,7 @@ const TpvContracts = lazy(() => import('@/modules/tpv/pages/TpvContracts'))
 const TpvWorkPackages = lazy(() => import('@/modules/tpv/pages/TpvWorkPackages'))
 const TpvApprovalRegister = lazy(() => import('@/modules/tpv/pages/TpvApprovalRegister'))
 const TpvCompetency = lazy(() => import('@/modules/tpv/pages/TpvCompetency'))
+const TpvWorkAuthorization = lazy(() => import('@/modules/tpv/pages/TpvWorkAuthorization'))
 const TpvVendorDetail = lazy(() => import('@/modules/tpv/pages/TpvVendorDetail'))
 const TpvOnboardings = lazy(() => import('@/modules/tpv/pages/TpvOnboardings'))
 const TpvTemporaryVendors = lazy(() => import('@/modules/tpv/pages/TpvTemporaryVendors'))
@@ -599,6 +600,8 @@ export default function AppRoutes() {
           <Route path="approval-register" element={<S><TpvApprovalRegister /></S>} />
           {/* §15 Competency & Training. */}
           <Route path="competency" element={<S><TpvCompetency /></S>} />
+          {/* §19 Unified Work Authorization — read-only composite verdict. */}
+          <Route path="work-authorization" element={<S><TpvWorkAuthorization /></S>} />
           <Route path="view/:id" element={<S><TpvVendorDetail /></S>} />
           <Route path="kickoff" element={<S><KickoffMeetings /></S>} />
           <Route path="kickoff/new" element={<S><KickoffMeetingCreate /></S>} />
