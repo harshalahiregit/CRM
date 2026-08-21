@@ -321,6 +321,50 @@ export const purchaseApi = {
     trainings: (vendorId) => api.get('/purchase/workforce/trainings', { params: { vendor_id: vendorId } }).then(r => r.data),
   },
 
+  // ── Compliance register (mirror of TPV §21 — purchase_vendor_compliance) ─
+  vendorCompliance: {
+    roster: ()                  => api.get('/purchase/vendor-compliance').then(r => r.data),
+    matrix: (vendorId)          => api.get(`/purchase/vendors/${vendorId}/compliance`).then(r => r.data),
+    upsert: (vendorId, data)    => api.post(`/purchase/vendors/${vendorId}/compliance`, data).then(r => r.data),
+    delete: (complianceId)      => api.delete(`/purchase/vendor-compliance/${complianceId}`).then(r => r.data),
+  },
+
+  // ── Non-Conformance Reports (mirror of TPV §24 — purchase_ncrs) ─────────
+  ncrs: {
+    list:       (params = {}) => api.get('/purchase/ncrs', { params }).then(r => r.data),
+    create:     (data)        => api.post('/purchase/ncrs', data).then(r => r.data),
+    update:     (id, data)    => api.put(`/purchase/ncrs/${id}`, data).then(r => r.data),
+    transition: (id, data)    => api.post(`/purchase/ncrs/${id}/transition`, data).then(r => r.data),
+    delete:     (id)          => api.delete(`/purchase/ncrs/${id}`).then(r => r.data),
+  },
+
+  // ── CAPA register (mirror of TPV §25 — purchase_capas) ─────────────────
+  capas: {
+    list:       (params = {}) => api.get('/purchase/capas', { params }).then(r => r.data),
+    create:     (data)        => api.post('/purchase/capas', data).then(r => r.data),
+    update:     (id, data)    => api.put(`/purchase/capas/${id}`, data).then(r => r.data),
+    transition: (id, data)    => api.post(`/purchase/capas/${id}/transition`, data).then(r => r.data),
+    delete:     (id)          => api.delete(`/purchase/capas/${id}`).then(r => r.data),
+  },
+
+  // ── Governance analytics (mirror of TPV §33 — distinct from procurement reports) ─
+  analytics: {
+    get:    (params = {}) => api.get('/purchase/analytics', { params }).then(r => r.data),
+    export: (dataset)     => api.get('/purchase/analytics/export', { params: { dataset }, responseType: 'blob' }).then(r => r.data),
+  },
+
+  // ── Document Vault (mirror of TPV §30 — read-only aggregator + expiry) ───
+  documentVault: {
+    list:   (params = {}) => api.get('/purchase/document-vault', { params }).then(r => r.data),
+    vendor: (vendorId)    => api.get(`/purchase/vendors/${vendorId}/vault`).then(r => r.data),
+  },
+
+  // ── Communications Centre (mirror of TPV §31 — derived alerts + send/log) ─
+  communications: {
+    get:  (params = {}) => api.get('/purchase/communications', { params }).then(r => r.data),
+    send: (data)        => api.post('/purchase/communications/send', data).then(r => r.data),
+  },
+
   onboarding: {
     list:     (params = {}) => api.get('/purchase/onboarding', { params }).then(r => r.data),
     stats:    ()            => api.get('/purchase/onboarding/stats').then(r => r.data),

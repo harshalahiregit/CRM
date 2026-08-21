@@ -218,6 +218,12 @@ const PurchaseDebitNotes = lazy(() => import('@/modules/purchase/pages/PurchaseD
 const PurchaseRfqs = lazy(() => import('@/modules/purchase/pages/PurchaseRfqs'))
 const PurchaseRfqDetail = lazy(() => import('@/modules/purchase/pages/PurchaseRfqDetail'))
 const PurchaseContracts = lazy(() => import('@/modules/purchase/pages/PurchaseContracts'))
+const PurchaseComplianceRegister = lazy(() => import('@/modules/purchase/pages/PurchaseComplianceRegister'))
+const PurchaseNcr = lazy(() => import('@/modules/purchase/pages/PurchaseNcr'))
+const PurchaseCapaRegister = lazy(() => import('@/modules/purchase/pages/PurchaseCapaRegister'))
+const PurchaseAnalytics = lazy(() => import('@/modules/purchase/pages/PurchaseAnalytics'))
+const PurchaseDocumentVault = lazy(() => import('@/modules/purchase/pages/PurchaseDocumentVault'))
+const PurchaseCommunications = lazy(() => import('@/modules/purchase/pages/PurchaseCommunications'))
 const PurchaseContractDetail = lazy(() => import('@/modules/purchase/pages/PurchaseContractDetail'))
 const PurchaseCatalog = lazy(() => import('@/modules/purchase/pages/PurchaseCatalog'))
 const PurchaseVendorItems = lazy(() => import('@/modules/purchase/pages/PurchaseVendorItems'))
@@ -270,6 +276,17 @@ const TpvDashboard = lazy(() => import('@/modules/tpv/pages/TpvDashboard'))
 const TpvPrequalification = lazy(() => import('@/modules/tpv/pages/TpvPrequalification'))
 const TpvRiskDueDiligence = lazy(() => import('@/modules/tpv/pages/TpvRiskDueDiligence'))
 const TpvContracts = lazy(() => import('@/modules/tpv/pages/TpvContracts'))
+const TpvWorkPackages = lazy(() => import('@/modules/tpv/pages/TpvWorkPackages'))
+const TpvApprovalRegister = lazy(() => import('@/modules/tpv/pages/TpvApprovalRegister'))
+const TpvCompetency = lazy(() => import('@/modules/tpv/pages/TpvCompetency'))
+const TpvWorkAuthorization = lazy(() => import('@/modules/tpv/pages/TpvWorkAuthorization'))
+const TpvNcr = lazy(() => import('@/modules/tpv/pages/TpvNcr'))
+const TpvCapaRegister = lazy(() => import('@/modules/tpv/pages/TpvCapaRegister'))
+const TpvInspections = lazy(() => import('@/modules/tpv/pages/TpvInspections'))
+const TpvViolations = lazy(() => import('@/modules/tpv/pages/TpvViolations'))
+const TpvRenewals = lazy(() => import('@/modules/tpv/pages/TpvRenewals'))
+const TpvOffboarding = lazy(() => import('@/modules/tpv/pages/TpvOffboarding'))
+const TpvComplianceRegister = lazy(() => import('@/modules/tpv/pages/TpvComplianceRegister'))
 const TpvVendorDetail = lazy(() => import('@/modules/tpv/pages/TpvVendorDetail'))
 const TpvOnboardings = lazy(() => import('@/modules/tpv/pages/TpvOnboardings'))
 const TpvTemporaryVendors = lazy(() => import('@/modules/tpv/pages/TpvTemporaryVendors'))
@@ -289,6 +306,10 @@ const TpvSafetyEngagement = lazy(() => import('@/modules/tpv/pages/TpvSafetyEnga
 const TpvReports = lazy(() => import('@/modules/tpv/pages/TpvReports'))
 const TpvSiteRegisters = lazy(() => import('@/modules/tpv/pages/TpvSiteRegisters'))
 const TpvEvidenceLocker = lazy(() => import('@/modules/tpv/pages/TpvEvidenceLocker'))
+const TpvDocumentVault = lazy(() => import('@/modules/tpv/pages/TpvDocumentVault'))
+const TpvAnalytics = lazy(() => import('@/modules/tpv/pages/TpvAnalytics'))
+const TpvPerformanceIndex = lazy(() => import('@/modules/tpv/pages/TpvPerformanceIndex'))
+const TpvCommunications = lazy(() => import('@/modules/tpv/pages/TpvCommunications'))
 const TpvAuthorityMatrix = lazy(() => import('@/modules/tpv/pages/TpvAuthorityMatrix'))
 // Vendor-scoped Workforce workspace — its own rail, entered after Onboarding Step-6.
 const WorkforceLayout = lazy(() => import('@/modules/tpv/WorkforceLayout'))
@@ -562,6 +583,12 @@ export default function AppRoutes() {
           <Route path="contracts" element={<S><PurchaseContracts /></S>} />
           <Route path="contracts/:id" element={<S><PurchaseContractDetail /></S>} />
           <Route path="catalog" element={<S><PurchaseCatalog /></S>} />
+          <Route path="compliance-register" element={<S><PurchaseComplianceRegister /></S>} />
+          <Route path="ncr" element={<S><PurchaseNcr /></S>} />
+          <Route path="capa" element={<S><PurchaseCapaRegister /></S>} />
+          <Route path="analytics" element={<S><PurchaseAnalytics /></S>} />
+          <Route path="document-vault" element={<S><PurchaseDocumentVault /></S>} />
+          <Route path="communications" element={<S><PurchaseCommunications /></S>} />
           {/* Purchase Vendors — Purchase-owned pages on /api/purchase/* (no TPV). */}
           <Route path="vendors" element={<S><PurchaseVendors /></S>} />
           {/* Vendor Detail workspace — persistent left sidebar + deep-linkable nested tabs */}
@@ -600,6 +627,27 @@ export default function AppRoutes() {
           <Route path="risk" element={<S><TpvRiskDueDiligence /></S>} />
           {/* §8 Contracts & Work Orders — TPV-owned commercial spine. */}
           <Route path="contracts" element={<S><TpvContracts /></S>} />
+          {/* §13 Work Packages — Vendor→Project→WP→Activity→Workforce spine. */}
+          <Route path="work-packages" element={<S><TpvWorkPackages /></S>} />
+          {/* §12 central Approval register — generic, separate from onboarding approvals. */}
+          <Route path="approval-register" element={<S><TpvApprovalRegister /></S>} />
+          {/* §15 Competency & Training. */}
+          <Route path="competency" element={<S><TpvCompetency /></S>} />
+          {/* §19 Unified Work Authorization — read-only composite verdict. */}
+          <Route path="work-authorization" element={<S><TpvWorkAuthorization /></S>} />
+          {/* §24 Non-Conformance Reports. */}
+          <Route path="ncr" element={<S><TpvNcr /></S>} />
+          <Route path="capa" element={<S><TpvCapaRegister /></S>} />
+          {/* §22 Inspections & Audits. */}
+          <Route path="inspections" element={<S><TpvInspections /></S>} />
+          {/* §26 Vendor Violations & Strike escalation. */}
+          <Route path="violations" element={<S><TpvViolations /></S>} />
+          {/* §28 Renewal & Extension. */}
+          <Route path="renewals" element={<S><TpvRenewals /></S>} />
+          {/* §29 Offboarding / Closure. */}
+          <Route path="offboarding" element={<S><TpvOffboarding /></S>} />
+          {/* §21 Compliance register — per-vendor 14-category compliance. */}
+          <Route path="compliance-register" element={<S><TpvComplianceRegister /></S>} />
           <Route path="view/:id" element={<S><TpvVendorDetail /></S>} />
           <Route path="kickoff" element={<S><KickoffMeetings /></S>} />
           <Route path="kickoff/new" element={<S><KickoffMeetingCreate /></S>} />
@@ -641,6 +689,10 @@ export default function AppRoutes() {
           <Route path="reports" element={<S><TpvReports /></S>} />
           <Route path="site-registers" element={<S><TpvSiteRegisters /></S>} />
           <Route path="evidence" element={<S><TpvEvidenceLocker /></S>} />
+          <Route path="document-vault" element={<S><TpvDocumentVault /></S>} />
+          <Route path="analytics" element={<S><TpvAnalytics /></S>} />
+          <Route path="vpi" element={<S><TpvPerformanceIndex /></S>} />
+          <Route path="communications" element={<S><TpvCommunications /></S>} />
           <Route path="authority-matrix" element={<S><TpvAuthorityMatrix /></S>} />
         </Route>
 

@@ -31,6 +31,123 @@ export const tpvApi = {
     update: (id, data)    => api.put(`/tpv/work-orders/${id}`, data).then(r => r.data),
     delete: (id)          => api.delete(`/tpv/work-orders/${id}`).then(r => r.data),
   },
+  // Compliance engine (Sangoe TPV §21) — per-vendor 14-category register.
+  vendorCompliance: {
+    roster: ()             => api.get('/tpv/vendor-compliance').then(r => r.data),
+    matrix: (vendorId)     => api.get(`/tpv/vendors/${vendorId}/compliance`).then(r => r.data),
+    upsert: (vendorId, data) => api.post(`/tpv/vendors/${vendorId}/compliance`, data).then(r => r.data),
+    delete: (id)           => api.delete(`/tpv/vendor-compliance/${id}`).then(r => r.data),
+  },
+  // Offboarding / Closure (Sangoe TPV §29).
+  offboardings: {
+    list:           (params = {}) => api.get('/tpv/offboardings', { params }).then(r => r.data),
+    get:            (id)          => api.get(`/tpv/offboardings/${id}`).then(r => r.data),
+    initiate:       (data)        => api.post('/tpv/offboardings', data).then(r => r.data),
+    updateChecklist:(id, checklist) => api.put(`/tpv/offboardings/${id}/checklist`, { checklist }).then(r => r.data),
+    complete:       (id, data)    => api.post(`/tpv/offboardings/${id}/complete`, data).then(r => r.data),
+    delete:         (id)          => api.delete(`/tpv/offboardings/${id}`).then(r => r.data),
+  },
+  // Renewal & Extension (Sangoe TPV §28).
+  renewals: {
+    list:     (params = {}) => api.get('/tpv/renewals', { params }).then(r => r.data),
+    assess:   (vendorId)    => api.get(`/tpv/vendors/${vendorId}/renewal-assessment`).then(r => r.data),
+    initiate: (data)        => api.post('/tpv/renewals', data).then(r => r.data),
+    reassess: (id)          => api.post(`/tpv/renewals/${id}/reassess`).then(r => r.data),
+    decide:   (id, data)    => api.post(`/tpv/renewals/${id}/decide`, data).then(r => r.data),
+    delete:   (id)          => api.delete(`/tpv/renewals/${id}`).then(r => r.data),
+  },
+  // Vendor Violations & Strike escalation (Sangoe TPV §26).
+  violations: {
+    list:       (params = {}) => api.get('/tpv/violations', { params }).then(r => r.data),
+    record:     (data)        => api.post('/tpv/violations', data).then(r => r.data),
+    update:     (id, data)    => api.put(`/tpv/violations/${id}`, data).then(r => r.data),
+    delete:     (id)          => api.delete(`/tpv/violations/${id}`).then(r => r.data),
+    escalation: (vendorId)    => api.get(`/tpv/vendors/${vendorId}/escalation`).then(r => r.data),
+    enforce:    (vendorId, data) => api.post(`/tpv/vendors/${vendorId}/enforce`, data).then(r => r.data),
+  },
+  // Inspections & Audits (Sangoe TPV §22).
+  inspections: {
+    list:   (params = {}) => api.get('/tpv/inspections', { params }).then(r => r.data),
+    get:    (id)          => api.get(`/tpv/inspections/${id}`).then(r => r.data),
+    create: (data)        => api.post('/tpv/inspections', data).then(r => r.data),
+    update: (id, data)    => api.put(`/tpv/inspections/${id}`, data).then(r => r.data),
+    delete: (id)          => api.delete(`/tpv/inspections/${id}`).then(r => r.data),
+    addFinding:     (inspId, data) => api.post(`/tpv/inspections/${inspId}/findings`, data).then(r => r.data),
+    updateFinding:  (fId, data)    => api.put(`/tpv/inspection-findings/${fId}`, data).then(r => r.data),
+    deleteFinding:  (fId)          => api.delete(`/tpv/inspection-findings/${fId}`).then(r => r.data),
+    escalateFinding:(fId)          => api.post(`/tpv/inspection-findings/${fId}/escalate`).then(r => r.data),
+  },
+  // Non-Conformance Reports (Sangoe TPV §24).
+  ncrs: {
+    list:       (params = {}) => api.get('/tpv/ncrs', { params }).then(r => r.data),
+    create:     (data)        => api.post('/tpv/ncrs', data).then(r => r.data),
+    update:     (id, data)    => api.put(`/tpv/ncrs/${id}`, data).then(r => r.data),
+    transition: (id, data)    => api.post(`/tpv/ncrs/${id}/transition`, data).then(r => r.data),
+    delete:     (id)          => api.delete(`/tpv/ncrs/${id}`).then(r => r.data),
+  },
+  // Generalised CAPA register (Sangoe TPV §25) — cross-source corrective/preventive actions.
+  capas: {
+    list:       (params = {}) => api.get('/tpv/capas', { params }).then(r => r.data),
+    create:     (data)        => api.post('/tpv/capas', data).then(r => r.data),
+    update:     (id, data)    => api.put(`/tpv/capas/${id}`, data).then(r => r.data),
+    transition: (id, data)    => api.post(`/tpv/capas/${id}/transition`, data).then(r => r.data),
+    delete:     (id)          => api.delete(`/tpv/capas/${id}`).then(r => r.data),
+  },
+  // Unified Document Vault (Sangoe TPV §30) — read-only aggregator + expiry.
+  documentVault: {
+    list:   (params = {}) => api.get('/tpv/document-vault', { params }).then(r => r.data),
+    vendor: (vendorId)    => api.get(`/tpv/vendors/${vendorId}/vault`).then(r => r.data),
+  },
+  // Reports & Analytics (Sangoe TPV §33) — trend/benchmark analytics + CSV export.
+  analytics: {
+    get:    (params = {})  => api.get('/tpv/analytics', { params }).then(r => r.data),
+    export: (dataset)      => api.get('/tpv/analytics/export', { params: { dataset }, responseType: 'blob' }).then(r => r.data),
+  },
+  // Vendor Performance Index (Sangoe TPV §27) — additive superset of the VRS.
+  vpi: {
+    roster: ()         => api.get('/tpv/vpi').then(r => r.data),
+    vendor: (vendorId) => api.get(`/tpv/vendors/${vendorId}/vpi`).then(r => r.data),
+  },
+  // Communications Centre (Sangoe TPV §31) — derived alerts + send/log.
+  communications: {
+    get:  (params = {}) => api.get('/tpv/communications', { params }).then(r => r.data),
+    send: (data)        => api.post('/tpv/communications/send', data).then(r => r.data),
+  },
+  // Unified Work Authorization (Sangoe TPV §19) — read-only composite verdict.
+  workAuthorization: {
+    roster: (params = {}) => api.get('/tpv/work-authorization', { params }).then(r => r.data?.data ?? r.data),
+    worker: (workerId, params = {}) => api.get(`/tpv/workers/${workerId}/authorization`, { params }).then(r => r.data),
+  },
+  // Competency & Training + Skill Matrix (Sangoe TPV §15).
+  competency: {
+    roster: (params = {}) => api.get('/tpv/competency', { params }).then(r => r.data),
+    worker: (workerId)    => api.get(`/tpv/workers/${workerId}/competency`).then(r => r.data),
+    addCompetency:    (workerId, data) => api.post(`/tpv/workers/${workerId}/competencies`, data).then(r => r.data),
+    updateCompetency: (id, data)       => api.put(`/tpv/competencies/${id}`, data).then(r => r.data),
+    deleteCompetency: (id)             => api.delete(`/tpv/competencies/${id}`).then(r => r.data),
+    addTraining:      (workerId, data) => api.post(`/tpv/workers/${workerId}/trainings`, data).then(r => r.data),
+    updateTraining:   (id, data)       => api.put(`/tpv/trainings/${id}`, data).then(r => r.data),
+    deleteTraining:   (id)             => api.delete(`/tpv/trainings/${id}`).then(r => r.data),
+    skillMatrix:      (wpId)           => api.get(`/tpv/work-packages/${wpId}/skill-matrix`).then(r => r.data),
+  },
+  // Central Approval register (Sangoe TPV §12) — generic, separate from the
+  // onboarding-approval chain in `approvals` above.
+  approvalRegister: {
+    list:   (params = {}) => api.get('/tpv/approval-requests', { params }).then(r => r.data),
+    raise:  (data)        => api.post('/tpv/approval-requests', data).then(r => r.data),
+    decide: (id, data)    => api.post(`/tpv/approval-requests/${id}/decide`, data).then(r => r.data),
+  },
+  // Work Packages & Activities (Sangoe TPV §13) — the accountability spine.
+  workPackages: {
+    list:   (params = {}) => api.get('/tpv/work-packages', { params }).then(r => r.data?.data ?? r.data),
+    get:    (id)          => api.get(`/tpv/work-packages/${id}`).then(r => r.data),
+    create: (data)        => api.post('/tpv/work-packages', data).then(r => r.data),
+    update: (id, data)    => api.put(`/tpv/work-packages/${id}`, data).then(r => r.data),
+    delete: (id)          => api.delete(`/tpv/work-packages/${id}`).then(r => r.data),
+    addActivity:    (wpId, data)      => api.post(`/tpv/work-packages/${wpId}/activities`, data).then(r => r.data),
+    updateActivity: (actId, data)     => api.put(`/tpv/activities/${actId}`, data).then(r => r.data),
+    deleteActivity: (actId)           => api.delete(`/tpv/activities/${actId}`).then(r => r.data),
+  },
 
   // ── Advanced approval workflow (Phase 3) ────────────────────────────
   approvals: {

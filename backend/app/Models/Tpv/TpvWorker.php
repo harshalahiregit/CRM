@@ -109,6 +109,18 @@ class TpvWorker extends Model
         return $this->hasMany(TpvSafetyStrike::class, 'tpv_worker_id')->latest('occurred_at');
     }
 
+    /** Competency records (§15) — qualification/trade-cert/licence/certification/skill. */
+    public function competencies()
+    {
+        return $this->hasMany(TpvWorkerCompetency::class, 'tpv_worker_id')->latest('id');
+    }
+
+    /** Typed training records (§15). */
+    public function trainings()
+    {
+        return $this->hasMany(TpvWorkerTraining::class, 'tpv_worker_id')->latest('id');
+    }
+
     public function attendances()
     {
         return $this->hasMany(TpvGateAttendance::class, 'tpv_worker_id')->latest('work_date');

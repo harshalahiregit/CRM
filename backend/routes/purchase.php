@@ -253,6 +253,38 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::get('/workforce/medicals',                 [PurchaseWorkforceAdminController::class, 'medicals']);
     Route::get('/workforce/trainings',                [PurchaseWorkforceAdminController::class, 'trainings']);
 
+    // ── Compliance register (mirror of TPV §21 — purchase_vendor_compliance) ─
+    Route::get('/vendor-compliance',                              [\App\Http\Controllers\Api\Purchase\PurchaseComplianceController::class, 'index']);
+    Route::get('/vendors/{purchaseVendor}/compliance',            [\App\Http\Controllers\Api\Purchase\PurchaseComplianceController::class, 'vendorMatrix'])->whereNumber('purchaseVendor');
+    Route::post('/vendors/{purchaseVendor}/compliance',           [\App\Http\Controllers\Api\Purchase\PurchaseComplianceController::class, 'upsert'])->whereNumber('purchaseVendor');
+    Route::delete('/vendor-compliance/{compliance}',              [\App\Http\Controllers\Api\Purchase\PurchaseComplianceController::class, 'destroy'])->whereNumber('compliance');
+
+    // ── Non-Conformance Reports (mirror of TPV §24 — purchase_ncrs) ─────────
+    Route::get('/ncrs',                    [\App\Http\Controllers\Api\Purchase\PurchaseNcrController::class, 'index']);
+    Route::post('/ncrs',                   [\App\Http\Controllers\Api\Purchase\PurchaseNcrController::class, 'store']);
+    Route::put('/ncrs/{ncr}',              [\App\Http\Controllers\Api\Purchase\PurchaseNcrController::class, 'update'])->whereNumber('ncr');
+    Route::post('/ncrs/{ncr}/transition',  [\App\Http\Controllers\Api\Purchase\PurchaseNcrController::class, 'transition'])->whereNumber('ncr');
+    Route::delete('/ncrs/{ncr}',           [\App\Http\Controllers\Api\Purchase\PurchaseNcrController::class, 'destroy'])->whereNumber('ncr');
+
+    // ── CAPA register (mirror of TPV §25 — purchase_capas) ─────────────────
+    Route::get('/capas',                   [\App\Http\Controllers\Api\Purchase\PurchaseCapaController::class, 'index']);
+    Route::post('/capas',                  [\App\Http\Controllers\Api\Purchase\PurchaseCapaController::class, 'store']);
+    Route::put('/capas/{capa}',            [\App\Http\Controllers\Api\Purchase\PurchaseCapaController::class, 'update'])->whereNumber('capa');
+    Route::post('/capas/{capa}/transition',[\App\Http\Controllers\Api\Purchase\PurchaseCapaController::class, 'transition'])->whereNumber('capa');
+    Route::delete('/capas/{capa}',         [\App\Http\Controllers\Api\Purchase\PurchaseCapaController::class, 'destroy'])->whereNumber('capa');
+
+    // ── Governance analytics (mirror of TPV §33 — distinct from /reports/*) ─
+    Route::get('/analytics',               [\App\Http\Controllers\Api\Purchase\PurchaseAnalyticsController::class, 'index']);
+    Route::get('/analytics/export',        [\App\Http\Controllers\Api\Purchase\PurchaseAnalyticsController::class, 'export']);
+
+    // ── Document Vault (mirror of TPV §30 — read-only over 4 stores) ────────
+    Route::get('/document-vault',                        [\App\Http\Controllers\Api\Purchase\PurchaseDocumentVaultController::class, 'index']);
+    Route::get('/vendors/{purchaseVendor}/vault',        [\App\Http\Controllers\Api\Purchase\PurchaseDocumentVaultController::class, 'vendor'])->whereNumber('purchaseVendor');
+
+    // ── Communications Centre (mirror of TPV §31 — derived alerts + send/log) ─
+    Route::get('/communications',          [\App\Http\Controllers\Api\Purchase\PurchaseCommunicationController::class, 'index']);
+    Route::post('/communications/send',    [\App\Http\Controllers\Api\Purchase\PurchaseCommunicationController::class, 'send']);
+
     // ── Kickoff meetings (Purchase-owned engine: purchase_kickoff_* tables) ─
     Route::get('/kickoff/stats',                   [PurchaseKickoffController::class, 'stats']);
     Route::get('/kickoff',                         [PurchaseKickoffController::class, 'index']);

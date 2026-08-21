@@ -229,6 +229,112 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::put('/contracts/{contract}',                   [\App\Http\Controllers\Api\Tpv\TpvContractController::class, 'update'])->where('contract', '[0-9]+');
     Route::delete('/contracts/{contract}',                [\App\Http\Controllers\Api\Tpv\TpvContractController::class, 'destroy'])->where('contract', '[0-9]+');
 
+    // Work Packages & Activities (Sangoe TPV §13) — Vendor→Project→WP→Activity→Workforce.
+    Route::get('/work-packages',                          [\App\Http\Controllers\Api\Tpv\TpvWorkPackageController::class, 'index']);
+    Route::post('/work-packages',                         [\App\Http\Controllers\Api\Tpv\TpvWorkPackageController::class, 'store']);
+    Route::get('/work-packages/{workPackage}',            [\App\Http\Controllers\Api\Tpv\TpvWorkPackageController::class, 'show'])->where('workPackage', '[0-9]+');
+    Route::put('/work-packages/{workPackage}',            [\App\Http\Controllers\Api\Tpv\TpvWorkPackageController::class, 'update'])->where('workPackage', '[0-9]+');
+    Route::delete('/work-packages/{workPackage}',         [\App\Http\Controllers\Api\Tpv\TpvWorkPackageController::class, 'destroy'])->where('workPackage', '[0-9]+');
+    Route::post('/work-packages/{workPackage}/activities', [\App\Http\Controllers\Api\Tpv\TpvWorkPackageController::class, 'addActivity'])->where('workPackage', '[0-9]+');
+    Route::put('/activities/{activity}',                  [\App\Http\Controllers\Api\Tpv\TpvWorkPackageController::class, 'updateActivity'])->where('activity', '[0-9]+');
+    Route::delete('/activities/{activity}',               [\App\Http\Controllers\Api\Tpv\TpvWorkPackageController::class, 'destroyActivity'])->where('activity', '[0-9]+');
+
+    // Central Approval register (Sangoe TPV §12) — generic across the ~18 approval
+    // types; SEPARATE from the onboarding-approval chain (/tpv/onboarding/*).
+    // Reads open to staff; decisions admin-gated in-controller.
+    Route::get('/approval-requests',                      [\App\Http\Controllers\Api\Tpv\TpvApprovalController::class, 'index']);
+    Route::post('/approval-requests',                     [\App\Http\Controllers\Api\Tpv\TpvApprovalController::class, 'store']);
+    Route::post('/approval-requests/{approval}/decide',   [\App\Http\Controllers\Api\Tpv\TpvApprovalController::class, 'decide'])->where('approval', '[0-9]+');
+
+    // Competency & Training + Skill Matrix (Sangoe TPV §15).
+    Route::get('/competency',                             [\App\Http\Controllers\Api\Tpv\TpvCompetencyController::class, 'index']);
+    Route::get('/workers/{worker}/competency',            [\App\Http\Controllers\Api\Tpv\TpvCompetencyController::class, 'worker'])->where('worker', '[0-9]+');
+    Route::post('/workers/{worker}/competencies',         [\App\Http\Controllers\Api\Tpv\TpvCompetencyController::class, 'addCompetency'])->where('worker', '[0-9]+');
+    Route::put('/competencies/{competency}',              [\App\Http\Controllers\Api\Tpv\TpvCompetencyController::class, 'updateCompetency'])->where('competency', '[0-9]+');
+    Route::delete('/competencies/{competency}',           [\App\Http\Controllers\Api\Tpv\TpvCompetencyController::class, 'destroyCompetency'])->where('competency', '[0-9]+');
+    Route::post('/workers/{worker}/trainings',            [\App\Http\Controllers\Api\Tpv\TpvCompetencyController::class, 'addTraining'])->where('worker', '[0-9]+');
+    Route::put('/trainings/{training}',                   [\App\Http\Controllers\Api\Tpv\TpvCompetencyController::class, 'updateTraining'])->where('training', '[0-9]+');
+    Route::delete('/trainings/{training}',                [\App\Http\Controllers\Api\Tpv\TpvCompetencyController::class, 'destroyTraining'])->where('training', '[0-9]+');
+    Route::get('/work-packages/{workPackage}/skill-matrix', [\App\Http\Controllers\Api\Tpv\TpvCompetencyController::class, 'skillMatrix'])->where('workPackage', '[0-9]+');
+
+    // Unified Work Authorization (Sangoe TPV §19) — composite verdict over
+    // Vendor + Compliance + Medical + Induction + PPE + Competency + Permit + WP.
+    // Read-only; changes no gate/badge enforcement.
+    Route::get('/work-authorization',                     [\App\Http\Controllers\Api\Tpv\TpvWorkAuthorizationController::class, 'index']);
+    Route::get('/workers/{worker}/authorization',         [\App\Http\Controllers\Api\Tpv\TpvWorkAuthorizationController::class, 'worker'])->where('worker', '[0-9]+');
+
+    // Non-Conformance Reports (Sangoe TPV §24).
+    Route::get('/ncrs',                                   [\App\Http\Controllers\Api\Tpv\TpvNcrController::class, 'index']);
+    Route::post('/ncrs',                                  [\App\Http\Controllers\Api\Tpv\TpvNcrController::class, 'store']);
+    Route::put('/ncrs/{ncr}',                             [\App\Http\Controllers\Api\Tpv\TpvNcrController::class, 'update'])->where('ncr', '[0-9]+');
+    Route::post('/ncrs/{ncr}/transition',                 [\App\Http\Controllers\Api\Tpv\TpvNcrController::class, 'transition'])->where('ncr', '[0-9]+');
+    Route::delete('/ncrs/{ncr}',                          [\App\Http\Controllers\Api\Tpv\TpvNcrController::class, 'destroy'])->where('ncr', '[0-9]+');
+
+    // CAPA register (Sangoe TPV §25) — cross-source Corrective/Preventive Actions.
+    Route::get('/capas',                                  [\App\Http\Controllers\Api\Tpv\TpvCapaController::class, 'index']);
+    Route::post('/capas',                                 [\App\Http\Controllers\Api\Tpv\TpvCapaController::class, 'store']);
+    Route::put('/capas/{capa}',                           [\App\Http\Controllers\Api\Tpv\TpvCapaController::class, 'update'])->where('capa', '[0-9]+');
+    Route::post('/capas/{capa}/transition',               [\App\Http\Controllers\Api\Tpv\TpvCapaController::class, 'transition'])->where('capa', '[0-9]+');
+    Route::delete('/capas/{capa}',                        [\App\Http\Controllers\Api\Tpv\TpvCapaController::class, 'destroy'])->where('capa', '[0-9]+');
+
+    // Document Vault (Sangoe TPV §30) — read-only unified lens over statutory
+    // docs, the evidence locker, and CAPA/NCR closure evidence, with expiry.
+    Route::get('/document-vault',                         [\App\Http\Controllers\Api\Tpv\TpvDocumentVaultController::class, 'index']);
+    Route::get('/vendors/{vendor}/vault',                 [\App\Http\Controllers\Api\Tpv\TpvDocumentVaultController::class, 'vendor'])->where('vendor', '[0-9]+');
+
+    // Reports & Analytics (Sangoe TPV §33) — trend/benchmark analytics + CSV export.
+    Route::get('/analytics',                              [\App\Http\Controllers\Api\Tpv\TpvAnalyticsController::class, 'index']);
+    Route::get('/analytics/export',                       [\App\Http\Controllers\Api\Tpv\TpvAnalyticsController::class, 'export']);
+
+    // Vendor Performance Index (Sangoe TPV §27) — additive superset of the VRS.
+    Route::get('/vpi',                                    [\App\Http\Controllers\Api\Tpv\TpvVendorPerformanceController::class, 'index']);
+    Route::get('/vendors/{vendor}/vpi',                   [\App\Http\Controllers\Api\Tpv\TpvVendorPerformanceController::class, 'show'])->where('vendor', '[0-9]+');
+
+    // Communications Centre (Sangoe TPV §31) — derived alerts + send/log.
+    Route::get('/communications',                         [\App\Http\Controllers\Api\Tpv\TpvCommunicationController::class, 'index']);
+    Route::post('/communications/send',                   [\App\Http\Controllers\Api\Tpv\TpvCommunicationController::class, 'send']);
+
+    // Inspections & Audits (Sangoe TPV §22) — Plan→Inspect→Finding→Action→CAPA/NCR→Close.
+    Route::get('/inspections',                            [\App\Http\Controllers\Api\Tpv\TpvInspectionController::class, 'index']);
+    Route::post('/inspections',                           [\App\Http\Controllers\Api\Tpv\TpvInspectionController::class, 'store']);
+    Route::get('/inspections/{inspection}',               [\App\Http\Controllers\Api\Tpv\TpvInspectionController::class, 'show'])->where('inspection', '[0-9]+');
+    Route::put('/inspections/{inspection}',               [\App\Http\Controllers\Api\Tpv\TpvInspectionController::class, 'update'])->where('inspection', '[0-9]+');
+    Route::delete('/inspections/{inspection}',            [\App\Http\Controllers\Api\Tpv\TpvInspectionController::class, 'destroy'])->where('inspection', '[0-9]+');
+    Route::post('/inspections/{inspection}/findings',     [\App\Http\Controllers\Api\Tpv\TpvInspectionController::class, 'addFinding'])->where('inspection', '[0-9]+');
+    Route::put('/inspection-findings/{finding}',          [\App\Http\Controllers\Api\Tpv\TpvInspectionController::class, 'updateFinding'])->where('finding', '[0-9]+');
+    Route::delete('/inspection-findings/{finding}',       [\App\Http\Controllers\Api\Tpv\TpvInspectionController::class, 'destroyFinding'])->where('finding', '[0-9]+');
+    Route::post('/inspection-findings/{finding}/escalate', [\App\Http\Controllers\Api\Tpv\TpvInspectionController::class, 'escalateFinding'])->where('finding', '[0-9]+');
+
+    // Vendor Violations & Strike escalation (Sangoe TPV §26). Enforcement admin-gated.
+    Route::get('/violations',                             [\App\Http\Controllers\Api\Tpv\TpvViolationController::class, 'index']);
+    Route::post('/violations',                            [\App\Http\Controllers\Api\Tpv\TpvViolationController::class, 'store']);
+    Route::put('/violations/{violation}',                 [\App\Http\Controllers\Api\Tpv\TpvViolationController::class, 'update'])->where('violation', '[0-9]+');
+    Route::delete('/violations/{violation}',              [\App\Http\Controllers\Api\Tpv\TpvViolationController::class, 'destroy'])->where('violation', '[0-9]+');
+    Route::get('/vendors/{vendor}/escalation',            [\App\Http\Controllers\Api\Tpv\TpvViolationController::class, 'escalation'])->where('vendor', '[0-9]+');
+    Route::post('/vendors/{vendor}/enforce',              [\App\Http\Controllers\Api\Tpv\TpvViolationController::class, 'enforce'])->where('vendor', '[0-9]+');
+
+    // Renewal & Extension (Sangoe TPV §28). Decisions admin-gated.
+    Route::get('/renewals',                               [\App\Http\Controllers\Api\Tpv\TpvRenewalController::class, 'index']);
+    Route::post('/renewals',                              [\App\Http\Controllers\Api\Tpv\TpvRenewalController::class, 'store']);
+    Route::get('/vendors/{vendor}/renewal-assessment',    [\App\Http\Controllers\Api\Tpv\TpvRenewalController::class, 'assess'])->where('vendor', '[0-9]+');
+    Route::post('/renewals/{renewal}/reassess',           [\App\Http\Controllers\Api\Tpv\TpvRenewalController::class, 'reassess'])->where('renewal', '[0-9]+');
+    Route::post('/renewals/{renewal}/decide',             [\App\Http\Controllers\Api\Tpv\TpvRenewalController::class, 'decide'])->where('renewal', '[0-9]+');
+    Route::delete('/renewals/{renewal}',                  [\App\Http\Controllers\Api\Tpv\TpvRenewalController::class, 'destroy'])->where('renewal', '[0-9]+');
+
+    // Offboarding / Closure (Sangoe TPV §29). Completion admin-gated.
+    Route::get('/offboardings',                           [\App\Http\Controllers\Api\Tpv\TpvOffboardingController::class, 'index']);
+    Route::post('/offboardings',                          [\App\Http\Controllers\Api\Tpv\TpvOffboardingController::class, 'store']);
+    Route::get('/offboardings/{offboarding}',             [\App\Http\Controllers\Api\Tpv\TpvOffboardingController::class, 'show'])->where('offboarding', '[0-9]+');
+    Route::put('/offboardings/{offboarding}/checklist',   [\App\Http\Controllers\Api\Tpv\TpvOffboardingController::class, 'updateChecklist'])->where('offboarding', '[0-9]+');
+    Route::post('/offboardings/{offboarding}/complete',   [\App\Http\Controllers\Api\Tpv\TpvOffboardingController::class, 'complete'])->where('offboarding', '[0-9]+');
+    Route::delete('/offboardings/{offboarding}',          [\App\Http\Controllers\Api\Tpv\TpvOffboardingController::class, 'destroy'])->where('offboarding', '[0-9]+');
+
+    // Compliance engine (Sangoe TPV §21) — per-vendor register across 14 categories.
+    Route::get('/vendor-compliance',                      [\App\Http\Controllers\Api\Tpv\TpvComplianceController::class, 'index']);
+    Route::get('/vendors/{vendor}/compliance',            [\App\Http\Controllers\Api\Tpv\TpvComplianceController::class, 'vendorMatrix'])->where('vendor', '[0-9]+');
+    Route::post('/vendors/{vendor}/compliance',           [\App\Http\Controllers\Api\Tpv\TpvComplianceController::class, 'upsert'])->where('vendor', '[0-9]+');
+    Route::delete('/vendor-compliance/{compliance}',      [\App\Http\Controllers\Api\Tpv\TpvComplianceController::class, 'destroy'])->where('compliance', '[0-9]+');
+
     // Permit-to-Work + JSA (Doc_4 Phase 5). Approval requires a JSA and refuses a
     // suspended vendor; a permit expires at its validity window.
     Route::get('/permits',                                [\App\Http\Controllers\Api\Tpv\PermitController::class, 'index']);
