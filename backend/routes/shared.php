@@ -69,6 +69,7 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('kickoff')->grou
     // Issue register — progress lifecycle + escalate to an Incident.
     Route::post('/meetings/{kickoffMeeting}/issues/{meetingIssue}/progress', [KickoffMeetingController::class, 'progressIssue']);
     Route::post('/meetings/{kickoffMeeting}/issues/{meetingIssue}/convert', [KickoffMeetingController::class, 'convertIssue']);
+    Route::post('/meetings/{kickoffMeeting}/issues/{meetingIssue}/convert-task', [KickoffMeetingController::class, 'convertIssueTask']);
     Route::delete('/meetings/{kickoffMeeting}', [KickoffMeetingController::class, 'destroy']);
 
     // ── Online meeting link generation ────────────────────────────────────────
