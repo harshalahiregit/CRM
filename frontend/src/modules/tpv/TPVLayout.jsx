@@ -19,6 +19,7 @@ const TPV_GROUPS = [
     { label: 'Vendor Master',    path: '/app/tpv/vendors',         icon: Building2 },
     { label: 'Prequalification', path: '/app/tpv/prequalification', icon: CheckSquare },
     { label: 'Risk & Diligence', path: '/app/tpv/risk',            icon: ShieldAlert },
+    { label: 'Contracts & WO',   path: '/app/tpv/contracts',       icon: FileCheck2 },
     { label: 'Temporary',        path: '/app/tpv/temporary',       icon: Clock },
   ] },
   { label: 'Mobilisation', icon: Rocket, items: [

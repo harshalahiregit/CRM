@@ -17,6 +17,21 @@ export const tpvApi = {
     get: () => api.get('/tpv/dashboard').then(r => r.data),
   },
 
+  // ── Contracts & Work Orders (Sangoe TPV §8) — TPV-owned commercial spine ──
+  contracts: {
+    list:   (params = {}) => api.get('/tpv/contracts', { params }).then(r => r.data?.data ?? r.data),
+    get:    (id)          => api.get(`/tpv/contracts/${id}`).then(r => r.data),
+    create: (data)        => api.post('/tpv/contracts', data).then(r => r.data),
+    update: (id, data)    => api.put(`/tpv/contracts/${id}`, data).then(r => r.data),
+    delete: (id)          => api.delete(`/tpv/contracts/${id}`).then(r => r.data),
+  },
+  workOrders: {
+    list:   (params = {}) => api.get('/tpv/work-orders', { params }).then(r => r.data?.data ?? r.data),
+    create: (data)        => api.post('/tpv/work-orders', data).then(r => r.data),
+    update: (id, data)    => api.put(`/tpv/work-orders/${id}`, data).then(r => r.data),
+    delete: (id)          => api.delete(`/tpv/work-orders/${id}`).then(r => r.data),
+  },
+
   // ── Advanced approval workflow (Phase 3) ────────────────────────────
   approvals: {
     list:     ()         => api.get('/tpv/approvals').then(r => r.data),
