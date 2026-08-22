@@ -365,6 +365,19 @@ export const purchaseApi = {
     send: (data)        => api.post('/purchase/communications/send', data).then(r => r.data),
   },
 
+  // ── Inspections & Audits (mirror of TPV §22 — finding → NCR escalation) ──
+  inspections: {
+    list:           (params = {}) => api.get('/purchase/inspections', { params }).then(r => r.data),
+    get:            (id)          => api.get(`/purchase/inspections/${id}`).then(r => r.data),
+    create:         (data)        => api.post('/purchase/inspections', data).then(r => r.data),
+    update:         (id, data)    => api.put(`/purchase/inspections/${id}`, data).then(r => r.data),
+    delete:         (id)          => api.delete(`/purchase/inspections/${id}`).then(r => r.data),
+    addFinding:     (id, data)    => api.post(`/purchase/inspections/${id}/findings`, data).then(r => r.data),
+    updateFinding:  (fId, data)   => api.put(`/purchase/inspection-findings/${fId}`, data).then(r => r.data),
+    deleteFinding:  (fId)         => api.delete(`/purchase/inspection-findings/${fId}`).then(r => r.data),
+    escalateFinding:(fId)         => api.post(`/purchase/inspection-findings/${fId}/escalate`).then(r => r.data),
+  },
+
   onboarding: {
     list:     (params = {}) => api.get('/purchase/onboarding', { params }).then(r => r.data),
     stats:    ()            => api.get('/purchase/onboarding/stats').then(r => r.data),

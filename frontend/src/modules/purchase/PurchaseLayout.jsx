@@ -16,6 +16,7 @@ const PURCHASE_NAV = [
   { label: 'Compliance',     path: '/app/purchase/compliance-register', icon: ShieldCheck },
   { label: 'NCR',            path: '/app/purchase/ncr',            icon: FileWarning     },
   { label: 'CAPA',           path: '/app/purchase/capa',           icon: ClipboardCheck  },
+  { label: 'Inspections',    path: '/app/purchase/inspections',    icon: ClipboardCheck  },
   { label: 'Requests',       path: '/app/purchase/requests',       icon: ClipboardList   },
   { label: 'Quotations',     path: '/app/purchase/quotations',     icon: FileSignature   },
   { label: 'Orders',         path: '/app/purchase/orders',         icon: ShoppingBag     },
