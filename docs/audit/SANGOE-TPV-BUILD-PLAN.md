@@ -310,7 +310,8 @@ live vendor-status template, AI assist. Kickoff is now "Meetings → New → Typ
   `violations`, and a Violations & Strikes page (per-vendor escalation ladder cards + suspend/blacklist +
   violation table + record modal). Verified via rolled-back tinker (PVIO-2026-001 auto 4pts, cumulative 10 →
   Suspension, enforce suspend→On_Hold / blacklist→Blacklisted, escalations list) + green build. **Parity mirror #8.**
-  *Follow-up:* surface the now-available violations dimension in Purchase Analytics + VPI.
+  *(Done — Purchase Analytics now surfaces violations + inspections in overview KPIs, the 4-series trend, the
+  benchmark violation-points column, and CSV export; VPI already scored conduct/inspection from the start.)*
 - [x] **§27 Performance Index (VPI) — Purchase mirror** — `PurchaseVendorPerformanceService`. Purchase has no
   VRS scorecard, so the index is computed directly from the mirrored governance engines: 6 weighted dimensions
   (compliance %, quality/NCR, CAPA closure, conduct/violations, inspection avg-score, documentation expiry) →

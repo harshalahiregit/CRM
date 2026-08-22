@@ -9,8 +9,10 @@ import { KIT3D_STYLE as PURCHASE_STYLE } from '@/components/ui/kit3d'
 const SERIES = [
   { k: 'ncrs', label: 'NCRs', c: '#ef4444' },
   { k: 'capas', label: 'CAPAs', c: '#22c55e' },
+  { k: 'violations', label: 'Violations', c: '#f59e0b' },
+  { k: 'inspections', label: 'Inspections', c: '#8b5cf6' },
 ]
-const DATASET_LABEL = { vendors: 'Vendors', ncrs: 'NCRs', capas: 'CAPAs', benchmark: 'Benchmark' }
+const DATASET_LABEL = { vendors: 'Vendors', ncrs: 'NCRs', capas: 'CAPAs', violations: 'Violations', inspections: 'Inspections', benchmark: 'Benchmark' }
 const fmt = (s) => String(s || '').replace(/_/g, ' ')
 
 export default function PurchaseAnalytics() {
@@ -44,6 +46,8 @@ export default function PurchaseAnalytics() {
     { k: 'Compliance', v: `${overview?.compliance?.percent ?? 0}%`, c: '#22c55e' },
     { k: 'Open NCRs', v: gov.ncr?.open ?? 0, c: '#ef4444', sub: `${gov.ncr?.overdue ?? 0} overdue` },
     { k: 'Open CAPAs', v: gov.capa?.open ?? 0, c: '#0ea5e9', sub: `${gov.capa?.overdue ?? 0} overdue` },
+    { k: 'Open Violations', v: gov.violations?.open ?? 0, c: '#f59e0b', sub: `${gov.violations?.points ?? 0} pts` },
+    { k: 'Inspections', v: gov.inspections?.completed ?? 0, c: '#8b5cf6', sub: `${gov.inspections?.planned ?? 0} planned` },
   ]
   const maxTrend = Math.max(1, ...trends.flatMap(t => SERIES.map(s => t[s.k] || 0)))
 
@@ -81,7 +85,7 @@ export default function PurchaseAnalytics() {
             <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, minWidth: 54 }}>
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 110 }}>
                 {SERIES.map(s => (
-                  <div key={s.k} title={`${s.label}: ${t[s.k] || 0}`} style={{ width: 10, height: `${((t[s.k] || 0) / maxTrend) * 100}%`, minHeight: (t[s.k] ? 3 : 0), background: `linear-gradient(180deg,${s.c},${s.c}bb)`, borderRadius: '3px 3px 0 0' }} />
+                  <div key={s.k} title={`${s.label}: ${t[s.k] || 0}`} style={{ width: 8, height: `${((t[s.k] || 0) / maxTrend) * 100}%`, minHeight: (t[s.k] ? 3 : 0), background: `linear-gradient(180deg,${s.c},${s.c}bb)`, borderRadius: '3px 3px 0 0' }} />
                 ))}
               </div>
               <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>{t.label}</div>
@@ -107,11 +111,11 @@ export default function PurchaseAnalytics() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ textAlign: 'left', color: 'var(--text-muted)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                {['Vendor', 'Status', 'Compliance', 'Open NCRs', 'Open CAPAs'].map(h => <th key={h} style={{ padding: '11px 14px' }}>{h}</th>)}
+                {['Vendor', 'Status', 'Compliance', 'Open NCRs', 'Open CAPAs', 'Violation pts'].map(h => <th key={h} style={{ padding: '11px 14px' }}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
-              {benchmark.length === 0 ? <tr><td colSpan={5} style={{ padding: 18, color: 'var(--text-muted)' }}>No vendors.</td></tr>
+              {benchmark.length === 0 ? <tr><td colSpan={6} style={{ padding: 18, color: 'var(--text-muted)' }}>No vendors.</td></tr>
                 : benchmark.map(r => {
                   const pct = r.compliance_pct
                   const tone = pct == null ? '#6b7280' : pct >= 80 ? '#22c55e' : pct >= 50 ? '#f59e0b' : '#ef4444'
@@ -129,6 +133,7 @@ export default function PurchaseAnalytics() {
                       </td>
                       <td style={{ padding: '10px 14px' }}>{r.open_ncrs > 0 ? <b style={{ color: '#ef4444' }}>{r.open_ncrs}</b> : <span style={{ color: 'var(--text-muted)' }}>0</span>}</td>
                       <td style={{ padding: '10px 14px' }}>{r.open_capas > 0 ? <b style={{ color: '#0ea5e9' }}>{r.open_capas}</b> : <span style={{ color: 'var(--text-muted)' }}>0</span>}</td>
+                      <td style={{ padding: '10px 14px' }}>{r.violation_points > 0 ? <b style={{ color: '#f59e0b' }}>{r.violation_points}</b> : <span style={{ color: 'var(--text-muted)' }}>0</span>}</td>
                     </tr>
                   )
                 })}
