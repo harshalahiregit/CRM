@@ -76,7 +76,14 @@ class SessionService
             return $activeIdsOldestFirst;
         }
 
-        $overflow = count($activeIdsOldestFirst) + 1 - max(1, $maxDevices);
+        // 0 (or less) means unlimited — the same convention idle_minutes uses.
+        // Previously this collapsed to max(1, ...), so a cap of 0 silently
+        // behaved as "one device" and every second login kicked the first out.
+        if ($maxDevices <= 0) {
+            return [];
+        }
+
+        $overflow = count($activeIdsOldestFirst) + 1 - $maxDevices;
 
         return $overflow > 0 ? array_slice($activeIdsOldestFirst, 0, $overflow) : [];
     }

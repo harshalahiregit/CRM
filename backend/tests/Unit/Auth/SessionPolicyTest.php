@@ -29,8 +29,22 @@ class SessionPolicyTest extends TestCase
         $this->assertSame([10, 11], SessionService::evictions('multi', 2, [10, 11, 12]));
     }
 
-    public function test_multi_policy_treats_zero_max_as_one(): void
+    public function test_a_max_of_zero_means_unlimited(): void
     {
-        $this->assertSame([10], SessionService::evictions('multi', 0, [10]));
+        // This is the default, and the fix for people being signed out
+        // whenever they opened a second browser or logged in on a phone.
+        // Nothing is ever evicted, however many sessions are already active.
+        $this->assertSame([], SessionService::evictions('multi', 0, [10]));
+        $this->assertSame([], SessionService::evictions('multi', 0, range(1, 50)));
+
+        // Negative is treated the same rather than producing a negative slice.
+        $this->assertSame([], SessionService::evictions('multi', -1, [10, 11]));
+    }
+
+    public function test_an_explicit_cap_is_still_honoured(): void
+    {
+        // Unlimited must not leak into deployments that deliberately set a cap.
+        $this->assertSame([10], SessionService::evictions('multi', 1, [10]));
+        $this->assertSame([10, 11], SessionService::evictions('multi', 1, [10, 11]));
     }
 }
