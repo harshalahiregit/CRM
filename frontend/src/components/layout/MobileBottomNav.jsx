@@ -1,24 +1,34 @@
 import {
   LayoutDashboard, Users, Briefcase, CheckSquare, MoreHorizontal,
-  FolderOpen, LifeBuoy, Settings, Landmark
+  FolderOpen, LifeBuoy, Settings, Landmark, Building2, Receipt
 } from 'lucide-react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useState } from 'react'
 import clsx from 'clsx'
 
+// Every path here must reach a real screen. Three of these previously did
+// not: /app/contacts, /app/deals and /app/tickets are all ComingSoon
+// placeholders, so on a phone — where this bar IS the navigation — two of the
+// four primary tabs and one More item told the user the product was unbuilt.
+//
+// Contacts and Deals have no equivalent yet, so they are replaced with the
+// screens people actually open on a phone rather than pointed at a stub.
 const PRIMARY_TABS = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/app/dashboard' },
-  { label: 'Contacts',  icon: Users,            path: '/app/contacts'  },
-  { label: 'Deals',     icon: Briefcase,        path: '/app/deals'     },
-  { label: 'Tasks',     icon: CheckSquare,      path: '/app/tasks'     },
-  { label: 'More',      icon: MoreHorizontal,   path: null             },
+  { label: 'Customers', icon: Building2,       path: '/app/customers' },
+  { label: 'Invoices',  icon: Receipt,         path: '/app/sales/invoices' },
+  { label: 'Tasks',     icon: CheckSquare,     path: '/app/tasks'     },
+  { label: 'More',      icon: MoreHorizontal,  path: null             },
 ]
 
 const MORE_ITEMS = [
-  { label: 'Accounts',  icon: Landmark,   path: '/app/accounts'  },
-  { label: 'Projects',  icon: FolderOpen, path: '/app/projects'  },
-  { label: 'Tickets',   icon: LifeBuoy,   path: '/app/tickets'   },
-  { label: 'Settings',  icon: Settings,   path: '/app/settings'  },
+  { label: 'Accounts',  icon: Landmark,   path: '/app/accounts' },
+  { label: 'Projects',  icon: FolderOpen, path: '/app/projects' },
+  // Ticket lists live under /app/helpdesk — /app/tickets is a placeholder.
+  { label: 'Tickets',   icon: LifeBuoy,   path: '/app/helpdesk/tickets' },
+  { label: 'Leads',     icon: Briefcase,  path: '/app/sales/leads' },
+  { label: 'Contacts',  icon: Users,      path: '/app/customers' },
+  { label: 'Settings',  icon: Settings,   path: '/app/settings' },
 ]
 
 export default function MobileBottomNav() {

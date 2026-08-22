@@ -55,6 +55,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/statuses/{type}/{id}',      [StatusController::class, 'destroy'])->where('id', '[0-9]+');
 
     // Session management (Phase 3)
+    // The signed-in user's own profile. The global "My Profile" menu item
+    // navigated to /app/settings/profile, a route that never existed, so it
+    // 404'd for every user on every screen.
+    Route::put('/auth/profile',                  [AuthController::class, 'updateProfile']);
+    Route::post('/auth/change-password',         [AuthController::class, 'changePassword']);
     Route::get('/auth/sessions',                 [AuthController::class, 'sessions']);
     Route::delete('/auth/sessions/{session}',    [AuthController::class, 'revokeSession']);
     Route::post('/auth/sessions/logout-others',  [AuthController::class, 'logoutOthers']);

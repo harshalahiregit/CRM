@@ -151,6 +151,80 @@ class CustomerExperienceTest extends TestCase
         $this->assertSame(80.0, $after['score']);
     }
 
+    // ── §10's other four items ────────────────────────────────────────────
+
+    public function test_complaints_are_summarised_beside_the_scores(): void
+    {
+        $base = ['tenant_id' => $this->tenant->id, 'client_id' => $this->client->id, 'kind' => 'Complaint'];
+        \App\Models\Customer\ClientComplaint::create($base + [
+            'subject' => 'Late', 'severity' => 'Medium', 'status' => 'Resolved',
+            'raised_at' => now()->subDays(10), 'resolved_at' => now()->subDays(9),
+        ]);
+        \App\Models\Customer\ClientComplaint::create($base + [
+            'kind' => 'Escalation', 'subject' => 'Repeated', 'severity' => 'High',
+            'status' => 'Investigating', 'raised_at' => now()->subDays(2),
+        ]);
+
+        $c = $this->experience()->forClient($this->client)['complaints'];
+
+        // A 4.5 CSAT beside two open escalations tells a different story from
+        // a 4.5 on its own — which is why this belongs on the same screen.
+        $this->assertSame(2, $c['total']);
+        $this->assertSame(1, $c['open']);
+        $this->assertSame(1, $c['escalations']);
+        $this->assertSame(1, $c['severe']);
+    }
+
+    public function test_resolution_time_reports_tickets_and_complaints_separately(): void
+    {
+        \App\Models\Customer\ClientComplaint::create([
+            'tenant_id' => $this->tenant->id, 'client_id' => $this->client->id,
+            'kind' => 'Complaint', 'subject' => 'x',
+            'raised_at' => '2026-08-01 09:00:00', 'resolved_at' => '2026-08-02 09:00:00',
+        ]);
+
+        $r = $this->experience()->forClient($this->client)['resolution'];
+
+        // Kept apart deliberately: tickets measure day-to-day responsiveness,
+        // complaints measure how long something that went properly wrong took
+        // to put right. Averaged together, the second hides behind the first.
+        $this->assertSame(24.0, $r['complaints']['average_hours']);
+        $this->assertSame(1, $r['complaints']['resolved']);
+        $this->assertNull($r['tickets'], 'no tickets exist, so there is nothing honest to report');
+    }
+
+    public function test_service_quality_is_null_when_nothing_is_measurable(): void
+    {
+        // "We have not measured this" and "this is poor" are different answers.
+        $this->assertNull($this->experience()->forClient($this->client)['service_quality']);
+    }
+
+    public function test_service_quality_reuses_the_health_parameters(): void
+    {
+        \App\Models\Customer\ClientComplaint::create([
+            'tenant_id' => $this->tenant->id, 'client_id' => $this->client->id,
+            'kind' => 'Complaint', 'subject' => 'x', 'severity' => 'Critical',
+            'status' => 'Open', 'raised_at' => now()->subDays(5),
+        ]);
+
+        $sq = $this->experience()->forClient($this->client->fresh())['service_quality'];
+        $this->assertNotNull($sq);
+
+        // It must agree with Health rather than compute a second opinion —
+        // two screens disagreeing about one customer is worse than one number.
+        $health = collect(app(CustomerHealthService::class)->score($this->client->fresh())['breakdown'])
+            ->keyBy('key');
+        $expected = collect(['service_performance', 'complaint_frequency'])
+            ->map(fn ($k) => $health->get($k))
+            ->filter(fn ($p) => $p && $p['available'])
+            ->avg('score');
+
+        $this->assertSame(round($expected, 1), $sq['score']);
+        // And the inputs travel with it, so the figure is auditable.
+        $this->assertNotEmpty($sq['inputs']);
+        $this->assertArrayHasKey('detail', $sq['inputs'][0]);
+    }
+
     public function test_the_index_returns_rows_with_their_summary(): void
     {
         $this->feedback(ClientFeedback::CSAT, 4);

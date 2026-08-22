@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { ArrowUpRight, Lock } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { customerApi } from '@/services/customerApi'
 import { useToast } from '@/hooks/useToast'
 
@@ -85,10 +86,11 @@ export default function LinkedRecordsTab({ id, kind }) {
             {data.open_actions} open action{data.open_actions === 1 ? '' : 's'}
           </span>
         )}
+        {/* Link, not <a href> — an anchor reloads the whole SPA. */}
         {data?.link && (
-          <a href={data.link} className="flex items-center gap-1 text-[11px] font-bold" style={{ color: 'var(--accent)' }}>
+          <Link to={data.link} className="flex items-center gap-1 text-[11px] font-bold" style={{ color: 'var(--accent)' }}>
             Open {cfg.title} <ArrowUpRight size={12} />
-          </a>
+          </Link>
         )}
       </div>
 

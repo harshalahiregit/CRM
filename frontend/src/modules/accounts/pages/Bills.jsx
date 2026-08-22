@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -462,8 +463,8 @@ function BillDetailDrawer({ bill, bankLedgers, onClose, onApprove, onPay }) {
             ['Bill Date',  fmtDate(bill.bill_date)],
             ['Due Date',   fmtDate(bill.due_date)],
             ['Amount',     <span className="font-black" style={{ color: 'var(--text-h)' }}>{inr(bill.amount)}</span>],
-            bill.voucher?.number && ['Voucher',   <a href={`/app/accounts/vouchers/${bill.voucher?.id}`} className="inline-flex items-center gap-1 text-xs font-semibold" style={{ color: '#22d3ee' }}>{bill.voucher?.number} <ExternalLink size={10} /></a>],
-            bill.paid_voucher?.number && ['Payment Voucher', <a href={`/app/accounts/vouchers/${bill.paid_voucher?.id}`} className="inline-flex items-center gap-1 text-xs font-semibold" style={{ color: '#10b981' }}>{bill.paid_voucher?.number} <ExternalLink size={10} /></a>],
+            bill.voucher?.number && ['Voucher',   <Link to={`/app/accounts/vouchers/${bill.voucher?.id}`} className="inline-flex items-center gap-1 text-xs font-semibold" style={{ color: '#22d3ee' }}>{bill.voucher?.number} <ExternalLink size={10} /></Link>],
+            bill.paid_voucher?.number && ['Payment Voucher', <Link to={`/app/accounts/vouchers/${bill.paid_voucher?.id}`} className="inline-flex items-center gap-1 text-xs font-semibold" style={{ color: '#10b981' }}>{bill.paid_voucher?.number} <ExternalLink size={10} /></Link>],
             bill.note && ['Note', <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{bill.note}</span>],
           ].filter(Boolean).map(([label, value]) => (
             <div key={label} className="flex items-start justify-between gap-4 text-sm py-1.5" style={{ borderBottom: '1px solid var(--border)' }}>

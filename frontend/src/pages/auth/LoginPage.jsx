@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Link, useNavigate, useLocation } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { Link, useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -62,6 +62,18 @@ export default function LoginPage() {
   })
 
   const watchedRole = watch('role')
+
+  // Activation and invitation emails land here with ?role=... so the recipient
+  // does not have to guess which of six they are. Those emails previously
+  // pointed at /vendor-portal/login, which is not a route — a vendor following
+  // their own activation link got a 404 and could not get in at all.
+  const [searchParams] = useSearchParams()
+  useEffect(() => {
+    const asked = searchParams.get('role')
+    if (asked && ROLES.some((r) => r.value === asked)) {
+      setValue('role', asked, { shouldValidate: false })
+    }
+  }, [searchParams]) // eslint-disable-line react-hooks/exhaustive-deps
   const selectedRoleObj = ROLES.find(r => r.value === watchedRole)
   const isPurchaseVendor = Boolean(selectedRoleObj?.purchaseVendor)
 

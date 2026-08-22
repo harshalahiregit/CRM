@@ -170,7 +170,10 @@ class TpvActivationNotifier
             'companyName'      => config('app.name', 'Our Company'),
             'logoUrl'          => config('mail.logo_url'),
             'supportEmail'     => config('mail.support_address', config('mail.from.address', 'support@example.com')),
-            'portalUrl'        => FrontendUrl::to('/vendor-portal/login'),
+            // /vendor-portal/login is not a route. Third-party vendors are User rows
+            // with role=third_party_vendor, so they sign in at the main login; the
+            // query string pre-selects their role rather than making them guess.
+            'portalUrl'        => FrontendUrl::to('/login?role=third_party_vendor'),
             'registrationType' => TpvRegistrationType::label($vendor->registration_type),
             'activationDate'   => now()->format('d M Y, H:i'),
             'tempPassword'     => $tempPassword,

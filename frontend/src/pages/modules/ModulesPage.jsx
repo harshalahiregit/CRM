@@ -82,7 +82,8 @@ export default function ModulesPage() {
             {installedModules.map(m => (
               <button
                 key={m.id}
-                onClick={() => navigate(m.basePath + '/dashboard')}
+                onClick={() => m.launchPath && navigate(m.launchPath)}
+                disabled={!m.launchPath}
                 className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-sm font-semibold transition-all duration-200 hover-lift"
                 style={{
                   background: m.color,
@@ -190,9 +191,12 @@ export default function ModulesPage() {
               <div className="flex gap-2 mt-auto">
                 {isInstalled ? (
                   <>
-                    {module.basePath && (
+                    {/* Launch only where something exists to launch. basePath + '/dashboard'
+                        was assumed for every module and 404'd for five of them. */}
+                    {module.launchPath && (
                       <button
-                        onClick={() => navigate(module.basePath + '/dashboard')}
+                        onClick={() => module.launchPath && navigate(module.launchPath)}
+                        disabled={!module.launchPath}
                         className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white transition-all duration-200"
                         style={{
                           background: module.color,

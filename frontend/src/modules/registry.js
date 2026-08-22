@@ -12,6 +12,7 @@ export const ALL_MODULES = [
     category: 'Human Resources',
     features: ['Manpower Requests','Job Postings','Candidate Pipeline','Interview Scheduling','AI Recommendation','Offer Letters','Onboarding','Employee Records'],
     basePath: '/app/hr',
+    launchPath: '/app/hr/dashboard',
     navItems: [
       { label: 'HR Dashboard',       path: '/app/hr/dashboard',          icon: '📊' },
       { label: 'Manpower Requests',  path: '/app/hr/manpower-requests',  icon: '📋' },
@@ -35,6 +36,7 @@ export const ALL_MODULES = [
     category: 'Finance',
     features: ['Chart of Accounts', 'Vouchers (all types)', 'Trial Balance', 'Profit & Loss', 'Balance Sheet', 'Ledger Statement', 'Audit Trail'],
     basePath: '/app/accounts',
+    launchPath: '/app/accounts/dashboard',
     navItems: [
       { label: 'Chart of Accounts', path: '/app/accounts/chart-of-accounts', icon: '🏦' },
       { label: 'Vouchers',          path: '/app/accounts/vouchers',          icon: '📒' },
@@ -57,6 +59,8 @@ export const ALL_MODULES = [
     category: 'Operations',
     features: ['Stock Management','Warehouses','Bin Locations','Stock Ledger','Receiving & Delivery Vouchers','Transfers','Loss & Adjustment','Low Stock Alerts','Barcode Scanning'],
     basePath: '/app/inventory',
+    // No /dashboard child — the module index IS the dashboard.
+    launchPath: '/app/inventory',
     navItems: [
       { label: 'Inventory Dashboard',   path: '/app/inventory',                            icon: '📊' },
       { label: 'Items',                 path: '/app/inventory/products',                   icon: '📦' },
@@ -80,6 +84,8 @@ export const ALL_MODULES = [
     category: 'Finance',
     features: ['Salary Processing','Pay Slips','TDS Calculation','PF & ESI','Form 16'],
     basePath: '/app/payroll',
+    // Payroll is delivered inside HR, not as its own area.
+    launchPath: '/app/hr/payroll',
     navItems: [],
   },
   {
@@ -94,6 +100,8 @@ export const ALL_MODULES = [
     category: 'Intelligence',
     features: ['Lead Scoring','Deal Prediction','AI Follow-ups','Sentiment Analysis','Smart Reports'],
     basePath: '/app/ai',
+    // Nothing built yet — Launch is disabled rather than sending the user to a 404.
+    launchPath: null,
     navItems: [],
   },
   {
@@ -108,6 +116,7 @@ export const ALL_MODULES = [
     category: 'Communication',
     features: ['WhatsApp API','Template Messages','Broadcast Lists','Chatbot','Lead Capture'],
     basePath: '/app/whatsapp',
+    launchPath: null,
     navItems: [],
   },
   {
@@ -122,6 +131,7 @@ export const ALL_MODULES = [
     category: 'Operations',
     features: ['Kanban Board','Gantt Chart','Time Tracking','Milestones','Resource Planning'],
     basePath: '/app/projects',
+    launchPath: '/app/projects',
     navItems: [],
   },
   {
@@ -136,6 +146,7 @@ export const ALL_MODULES = [
     category: 'Operations',
     features: ['Purchase Requests','Quotation Comparison','Purchase Orders','Goods Received','Purchase Invoices','Debit Notes','Contracts','Item Catalog'],
     basePath: '/app/purchase',
+    launchPath: '/app/purchase/dashboard',
     navItems: [
       { label: 'Purchase Dashboard', path: '/app/purchase/dashboard',      icon: '📊' },
       { label: 'Purchase Requests',  path: '/app/purchase/requests',       icon: '📋' },
@@ -160,6 +171,7 @@ export const ALL_MODULES = [
     category: 'Operations',
     features: ['Kickoff Meetings','Vendor Onboarding','Document Verification','Workforce Registration','HSSE Compliance','QR Gate Access'],
     basePath: '/app/tpv',
+    launchPath: '/app/tpv/dashboard',
     navItems: [
       { label: 'TPV Dashboard',     path: '/app/tpv/dashboard',  icon: '📊' },
       { label: 'Kickoff Meetings',  path: '/app/tpv/kickoff',    icon: '📅' },

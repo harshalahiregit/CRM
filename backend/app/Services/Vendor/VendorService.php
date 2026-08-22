@@ -215,7 +215,7 @@ class VendorService
                 "Vendor Registration Number: {$registrationNumber}\n" .
                 "Account Status: ACTIVE\n\n" .
                 "Your onboarding is now fully complete and your account is active. You can log into your Vendor Portal and start adding your workforce workers, submitting medical records, induction details, and issuing site passes.\n\n" .
-                "Access Portal: " . \App\Support\FrontendUrl::to('/vendor-portal/login') . "\n\n" .
+                "Access Portal: " . \App\Support\FrontendUrl::to('/login?role=third_party_vendor') . "\n\n" .
                 "Best regards,\nTPV Vendor Management Team",
                 ['vendor_id' => $vendor->id, 'event' => 'onboarding_approved'],
                 $vendor->tenant_id,

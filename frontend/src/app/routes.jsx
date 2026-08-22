@@ -17,6 +17,7 @@ import ForgotPasswordPage from '@/pages/auth/ForgotPasswordPage'
 // Core pages (lazy)
 const DashboardPage = lazy(() => import('@/pages/dashboard/DashboardPage'))
 const ActiveSessions = lazy(() => import('@/pages/settings/ActiveSessions'))
+const MyProfile = lazy(() => import('@/pages/settings/MyProfile'))
 const ModulesPage = lazy(() => import('@/pages/modules/ModulesPage'))
 
 // Company Portal (lazy)
@@ -444,6 +445,7 @@ export default function AppRoutes() {
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="dashboard" element={<S><DashboardPage /></S>} />
         <Route path="sessions" element={<S><ActiveSessions /></S>} />
+        <Route path="profile" element={<S><MyProfile /></S>} />
         <Route path="modules" element={<S><ModulesPage /></S>} />
 
         {/* ADMIN MODULE (Admin Only) */}

@@ -195,7 +195,7 @@ export default function Header({ sidebarCollapsed, mobileMenuOpen, onMobileMenuT
               </div>
 
               {[
-                { icon: User,     label: 'My Profile', action: () => { navigate('/app/settings/profile'); setUserMenuOpen(false) } },
+                { icon: User,     label: 'My Profile', action: () => { navigate('/app/profile'); setUserMenuOpen(false) } },
                 { icon: Settings, label: 'Settings',   action: () => { navigate('/app/settings'); setUserMenuOpen(false) } },
               ].map(({ icon: Icon, label, action }) => (
                 <button key={label} onClick={action}

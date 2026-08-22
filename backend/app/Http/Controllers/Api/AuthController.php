@@ -257,6 +257,82 @@ class AuthController extends Controller
     /* ── Session management (Phase 3) ──────────────────────────────── */
 
     /** GET /api/auth/sessions — the caller's active sessions. */
+    /**
+     * The signed-in user's own profile.
+     *
+     * There was no such endpoint, and no page behind the "My Profile" item in
+     * the global user menu — it navigated to /app/settings/profile, a route
+     * that does not exist, so every user on every screen got a 404 from the
+     * most obvious thing in the header.
+     *
+     * Deliberately narrow. A user may correct how they appear to colleagues;
+     * they may not edit their own role, tenant, status or access expiry, all
+     * of which are on the same model and all of which would be a privilege
+     * escalation. Email is excluded too — it is the login identity, and
+     * changing it is an administrative act with verification attached.
+     */
+    public function updateProfile(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        $data = $request->validate([
+            'name'           => 'required|string|max:255',
+            'phone'          => ['nullable', 'string', 'max:30', new \App\Rules\PhoneNumber()],
+            'designation'    => 'nullable|string|max:120',
+            'department'     => 'nullable|string|max:120',
+            'emails_enabled' => 'nullable|boolean',
+        ]);
+
+        $user->fill($data)->save();
+
+        return response()->json([
+            'status'  => 'success',
+            'message' => 'Profile updated',
+            'data'    => $user->fresh()->only([
+                'id', 'name', 'email', 'phone', 'designation', 'department',
+                'role', 'internal_role', 'emails_enabled',
+            ]),
+        ]);
+    }
+
+    /**
+     * Change your own password.
+     *
+     * The current password is required: a token alone is not proof of the
+     * person, and an unattended session should not be enough to lock the owner
+     * out of their own account.
+     */
+    public function changePassword(Request $request, SessionService $sessions): JsonResponse
+    {
+        $user = $request->user();
+
+        $data = $request->validate([
+            'current_password' => 'required|string',
+            'password'         => 'required|string|min:8|confirmed',
+        ]);
+
+        if (! \Illuminate\Support\Facades\Hash::check($data['current_password'], $user->password)) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Your current password is not correct.',
+            ], 422);
+        }
+
+        // No last_password_change column on users — that one lives on
+        // client_contacts. The audit trail records the event instead.
+        $user->forceFill([
+            'password' => \Illuminate\Support\Facades\Hash::make($data['password']),
+        ])->save();
+
+        // Other sessions were opened with the old password and are no longer
+        // trustworthy — changing it is exactly what someone does when they
+        // fear it was known. The current session is deliberately kept, so the
+        // act of securing the account does not sign you out of it.
+        $sessions->revokeOthers($user, optional($request->user()->currentAccessToken())->id);
+
+        return response()->json(['status' => 'success', 'message' => 'Password changed']);
+    }
+
     public function sessions(Request $request, SessionService $sessions): JsonResponse
     {
         $currentTokenId = optional($request->user()->currentAccessToken())->id;
