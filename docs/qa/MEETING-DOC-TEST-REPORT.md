@@ -20,7 +20,42 @@ headless-browser (Playwright) click-through. Evidence cited per row.
 
 ---
 
-## Verdict summary (excluding §18 Future)
+## UPDATE — completeness pass (2026-08-22, master c0b2cdd)
+
+After the initial report, the buildable gaps were implemented and tested (feature
+tests + a real headless-browser click-through). Revised statuses:
+
+| § | Item | Before | Now | Evidence |
+|---|------|:--:|:--:|---|
+| 2 | Creation fields (priority, confidentiality, chairperson, coordinator, organizer, department, client, start/end, hybrid) + auto Meeting-No | 🟡 | ✅ | feature + browser |
+| 3 | Agenda Builder (structured items) | ❌ | ✅ | feature + browser |
+| 4 | Templates (load-from-type) + copy-from-previous | ❌ | ✅ | feature + browser |
+| 5 | Participants (designation, phone, internal/external) | 🟡 | ✅ | feature |
+| 6 | 6-state attendance (Present/Late/Online/Offline/Excused/Absent) | 🟡 | ✅ | feature + browser |
+| 10 | Issue → **Approval** (adds to NCR/CAPA) | 🟡 | ✅ | feature + browser (Task/Incident still module-blocked) |
+| 11 | Previous-MOM summary + carry-forward open items | ❌ | ✅ | feature + browser |
+| 14 | Meeting Dashboard (pending/overdue MOM, open/overdue actions, closure rate, by-type) | 🟡 | ✅ | feature + browser |
+
+**Tests:** `PurchaseMeetingsExtendedFlowTest` 6/43, plus the existing
+`PurchaseMeetingsFlowTest` (12/82 incl. decisions) and full Purchase suite green;
+browser click-through 15/15 features (agenda add + template = 8 rows, dashboard
+KPIs, creation fields, carry-forward, issue→Approval all confirmed).
+
+**Still open after this pass (not module-blocked):**
+- §2 admin-editable meeting types (still config-file driven, no per-tenant UI)
+- §7 structured-MOM **PDF rendering** (agenda discussion/decision fields now
+  captured, but the generated PDF doesn't yet lay them out per agenda item)
+- §12/§13 MOM acknowledge **comment/dispute/correction** + distribution to
+  client/management (still vendor-only, simple ack)
+- §15 Meeting **Calendar** view
+- §17 vendor meeting-history **aggregate counts** (list exists; counts pending)
+
+**Module-blocked (no Purchase module exists to link to):**
+- §16 Project / Work-Package linkage; §10 issue→Task and issue→Incident.
+
+---
+
+## Verdict summary (excluding §18 Future) — *as originally assessed; see update above*
 
 | Status | Count | Sections |
 |---|---|---|
