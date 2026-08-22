@@ -293,5 +293,13 @@ live vendor-status template, AI assist. Kickoff is now "Meetings → New → Typ
   and a Communications page (action feed with per-alert Notify + Open, and a Sent log). Alert kinds whose
   Purchase mirrors haven't landed (violations/renewals) are simply absent — additive. Verified via rolled-back
   tinker (2 severity-sorted alerts, email send logged + bell, no-contact guard) + green build. **Parity mirror #6.**
-- [ ] Remaining Purchase mirrors: Inspections · Violations/Strikes · Renewal · Offboarding · Performance Index
-  (VPI) · PPE-at-gate. (Purchase has its own gate/PPE/worker stack, so those mirror onto `purchase_*` equivalents.)
+- [x] **§22 Inspections & Audits — Purchase mirror** — `purchase_inspections` + `purchase_inspection_findings`
+  (PINS-YYYY-### ref, `PurchaseInspectionType` catalogue tuned for supplier audits), `PurchaseInspection` +
+  `PurchaseInspectionFinding` models, `PurchaseInspectionService` (CRUD + findings + `escalateToNcr` injecting
+  PurchaseNcrService, once-guard), `PurchaseInspectionController`. Routes `/purchase/inspections` +
+  `/purchase/inspection-findings/*`, purchaseApi `inspections`, and an Inspections page (list + expandable
+  per-inspection findings with Raise-NCR escalation) in the Purchase nav. Verified via rolled-back tinker
+  (PINS-2026-001, finding, escalate→PNCR-2026-001 link, double-guard, open-findings count) + green build.
+  **Parity mirror #7.**
+- [ ] Remaining Purchase mirrors: Violations/Strikes · Renewal · Offboarding · Performance Index (VPI) ·
+  PPE-at-gate. (Purchase has its own gate/PPE/worker stack, so those mirror onto `purchase_*` equivalents.)

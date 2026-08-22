@@ -285,6 +285,17 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::get('/communications',          [\App\Http\Controllers\Api\Purchase\PurchaseCommunicationController::class, 'index']);
     Route::post('/communications/send',    [\App\Http\Controllers\Api\Purchase\PurchaseCommunicationController::class, 'send']);
 
+    // ── Inspections & Audits (mirror of TPV §22 — escalate finding → NCR) ───
+    Route::get('/inspections',                             [\App\Http\Controllers\Api\Purchase\PurchaseInspectionController::class, 'index']);
+    Route::post('/inspections',                            [\App\Http\Controllers\Api\Purchase\PurchaseInspectionController::class, 'store']);
+    Route::get('/inspections/{inspection}',               [\App\Http\Controllers\Api\Purchase\PurchaseInspectionController::class, 'show'])->whereNumber('inspection');
+    Route::put('/inspections/{inspection}',               [\App\Http\Controllers\Api\Purchase\PurchaseInspectionController::class, 'update'])->whereNumber('inspection');
+    Route::delete('/inspections/{inspection}',            [\App\Http\Controllers\Api\Purchase\PurchaseInspectionController::class, 'destroy'])->whereNumber('inspection');
+    Route::post('/inspections/{inspection}/findings',     [\App\Http\Controllers\Api\Purchase\PurchaseInspectionController::class, 'addFinding'])->whereNumber('inspection');
+    Route::put('/inspection-findings/{finding}',          [\App\Http\Controllers\Api\Purchase\PurchaseInspectionController::class, 'updateFinding'])->whereNumber('finding');
+    Route::delete('/inspection-findings/{finding}',       [\App\Http\Controllers\Api\Purchase\PurchaseInspectionController::class, 'destroyFinding'])->whereNumber('finding');
+    Route::post('/inspection-findings/{finding}/escalate', [\App\Http\Controllers\Api\Purchase\PurchaseInspectionController::class, 'escalateFinding'])->whereNumber('finding');
+
     // ── Kickoff meetings (Purchase-owned engine: purchase_kickoff_* tables) ─
     Route::get('/kickoff/stats',                   [PurchaseKickoffController::class, 'stats']);
     Route::get('/kickoff',                         [PurchaseKickoffController::class, 'index']);
