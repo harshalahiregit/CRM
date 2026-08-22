@@ -296,10 +296,14 @@ class PurchaseWorkforceService
             return ['admit' => false, 'reason' => 'Medical certificate expired on '.$med->expiry_date->format('d M Y').'.'];
         }
 
-        // PPE at the gate (mirror of TPV Rule 5). Config-driven
-        // (purchase.gate.ppe_enforcement): warn (default) / deny / off. Wrapped so
-        // a PPE-subsystem hiccup can never turn away an otherwise-clear worker.
-        $mode = config('purchase.gate.ppe_enforcement', 'warn');
+        // PPE at the gate (mirror of TPV Rule 5): warn (default) / deny / off.
+        // The tenant's Settings value wins when they have set it; otherwise the
+        // deployment config/env default applies. Wrapped so a PPE-subsystem hiccup
+        // can never turn away an otherwise-clear worker.
+        $settings = app(PurchaseSettingService::class);
+        $mode = $settings->isConfigured((int) $worker->tenant_id, 'gate_ppe_enforcement')
+            ? $settings->get((int) $worker->tenant_id, 'gate_ppe_enforcement')
+            : config('purchase.gate.ppe_enforcement', 'warn');
         if ($mode !== 'off') {
             try {
                 $heldNone = app(PurchasePpeService::class)->heldBy($worker)->isEmpty();

@@ -184,7 +184,14 @@ class PurchaseCommunicationService
      */
     private function autoDispatch(PurchaseVendor $vendor, string $event, string $subject, string $body): void
     {
-        if (! config('purchase.communications.auto_dispatch', true)) {
+        // The tenant's Settings value wins when set; otherwise the config/env
+        // default applies (mirrors the numbering/PPE "isConfigured" pattern).
+        $tid = (int) $vendor->tenant_id;
+        $settings = app(PurchaseSettingService::class);
+        $enabled = $settings->isConfigured($tid, 'communications_auto_dispatch')
+            ? (bool) $settings->get($tid, 'communications_auto_dispatch')
+            : (bool) config('purchase.communications.auto_dispatch', true);
+        if (! $enabled) {
             return;
         }
 
