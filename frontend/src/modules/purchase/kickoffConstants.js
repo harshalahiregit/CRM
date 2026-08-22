@@ -90,7 +90,55 @@ export const pkActionNext = (s) => PK_ACTION_TRANSITIONS[s] || []
 
 export const PK_ACTION_PRIORITIES = ['Low', 'Medium', 'High', 'Urgent']
 
-export const PK_MODES = [['onsite', 'On site'], ['online', 'Online']]
+// ── MOM issue lifecycle — App\Support\Purchase\PurchaseMomIssueStatus ────────
+export const PK_ISSUE_STATUS = {
+  OPEN: 'Open',
+  IN_PROGRESS: 'In_Progress',
+  RESOLVED: 'Resolved',
+  CLOSED: 'Closed',
+  REOPENED: 'Reopened',
+  CANCELLED: 'Cancelled',
+}
+
+export const PK_ISSUE_CONFIG = {
+  [PK_ISSUE_STATUS.OPEN]:        { label: 'Open',        color: '#0ea5e9', bg: 'rgba(14,165,233,0.15)' },
+  [PK_ISSUE_STATUS.IN_PROGRESS]: { label: 'In Progress', color: '#7C3AED', bg: 'rgba(124,58,237,0.15)' },
+  [PK_ISSUE_STATUS.RESOLVED]:    { label: 'Resolved',    color: '#10b981', bg: 'rgba(16,185,129,0.15)' },
+  [PK_ISSUE_STATUS.CLOSED]:      { label: 'Closed',      color: '#10b981', bg: 'rgba(16,185,129,0.15)' },
+  [PK_ISSUE_STATUS.REOPENED]:    { label: 'Reopened',    color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
+  [PK_ISSUE_STATUS.CANCELLED]:   { label: 'Cancelled',   color: '#94a3b8', bg: 'rgba(148,163,184,0.15)' },
+}
+export const pkIssueCfg = (s) => PK_ISSUE_CONFIG[s] || PK_ISSUE_CONFIG[PK_ISSUE_STATUS.OPEN]
+
+/** Permitted moves — mirrors PurchaseMomIssueStatus::TRANSITIONS. */
+export const PK_ISSUE_TRANSITIONS = {
+  [PK_ISSUE_STATUS.OPEN]:        [PK_ISSUE_STATUS.IN_PROGRESS, PK_ISSUE_STATUS.RESOLVED, PK_ISSUE_STATUS.CANCELLED],
+  [PK_ISSUE_STATUS.IN_PROGRESS]: [PK_ISSUE_STATUS.OPEN, PK_ISSUE_STATUS.RESOLVED, PK_ISSUE_STATUS.CANCELLED],
+  [PK_ISSUE_STATUS.RESOLVED]:    [PK_ISSUE_STATUS.IN_PROGRESS, PK_ISSUE_STATUS.CLOSED, PK_ISSUE_STATUS.REOPENED],
+  [PK_ISSUE_STATUS.CLOSED]:      [PK_ISSUE_STATUS.REOPENED],
+  [PK_ISSUE_STATUS.REOPENED]:    [PK_ISSUE_STATUS.IN_PROGRESS, PK_ISSUE_STATUS.RESOLVED, PK_ISSUE_STATUS.CANCELLED],
+  [PK_ISSUE_STATUS.CANCELLED]:   [PK_ISSUE_STATUS.REOPENED],
+}
+export const pkIssueNext = (s) => PK_ISSUE_TRANSITIONS[s] || []
+
+export const PK_ISSUE_SEVERITIES = ['Low', 'Medium', 'High', 'Critical']
+export const PK_ISSUE_CATEGORIES = ['Safety', 'Compliance', 'Quality', 'Commercial', 'Workforce', 'Schedule', 'Technical', 'Environmental', 'Other']
+
+// ── MOM decision status — App\Support\Purchase\PurchaseMomDecisionStatus ──────
+export const PK_DECISION_STATUS = {
+  ACTIVE: 'Active',
+  SUPERSEDED: 'Superseded',
+  RESCINDED: 'Rescinded',
+}
+export const PK_DECISION_CONFIG = {
+  [PK_DECISION_STATUS.ACTIVE]:     { label: 'Active',     color: '#10b981', bg: 'rgba(16,185,129,0.15)' },
+  [PK_DECISION_STATUS.SUPERSEDED]: { label: 'Superseded', color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
+  [PK_DECISION_STATUS.RESCINDED]:  { label: 'Rescinded',  color: '#94a3b8', bg: 'rgba(148,163,184,0.15)' },
+}
+export const pkDecisionCfg = (s) => PK_DECISION_CONFIG[s] || PK_DECISION_CONFIG[PK_DECISION_STATUS.ACTIVE]
+export const PK_DECISION_STATUSES = [PK_DECISION_STATUS.ACTIVE, PK_DECISION_STATUS.SUPERSEDED, PK_DECISION_STATUS.RESCINDED]
+
+export const PK_MODES = [['onsite', 'On site'], ['online', 'Online'], ['hybrid', 'Hybrid']]
 export const pkModeLabel = (m) => (PK_MODES.find(([v]) => v === m) || [m, m || '—'])[1]
 
 export const fmtDateTime = (d) => (d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) : '—')

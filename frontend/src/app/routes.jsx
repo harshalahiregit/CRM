@@ -222,6 +222,7 @@ const PurchaseContracts = lazy(() => import('@/modules/purchase/pages/PurchaseCo
 const PurchaseComplianceRegister = lazy(() => import('@/modules/purchase/pages/PurchaseComplianceRegister'))
 const PurchaseNcr = lazy(() => import('@/modules/purchase/pages/PurchaseNcr'))
 const PurchaseCapaRegister = lazy(() => import('@/modules/purchase/pages/PurchaseCapaRegister'))
+const PurchaseApprovals = lazy(() => import('@/modules/purchase/pages/PurchaseApprovals'))
 const PurchaseAnalytics = lazy(() => import('@/modules/purchase/pages/PurchaseAnalytics'))
 const PurchaseDocumentVault = lazy(() => import('@/modules/purchase/pages/PurchaseDocumentVault'))
 const PurchaseCommunications = lazy(() => import('@/modules/purchase/pages/PurchaseCommunications'))
@@ -594,6 +595,8 @@ export default function AppRoutes() {
           <Route path="compliance-register" element={<S><PurchaseComplianceRegister /></S>} />
           <Route path="ncr" element={<S><PurchaseNcr /></S>} />
           <Route path="capa" element={<S><PurchaseCapaRegister /></S>} />
+          {/* Central approval register (§12) — /api/purchase/approval-requests */}
+          <Route path="approval-requests" element={<S><PurchaseApprovals /></S>} />
           <Route path="inspections" element={<S><PurchaseInspections /></S>} />
           <Route path="violations" element={<S><PurchaseViolations /></S>} />
           <Route path="vpi" element={<S><PurchasePerformanceIndex /></S>} />

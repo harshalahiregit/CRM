@@ -45,7 +45,10 @@ class PurchaseKickoffRepository extends BaseRepository
                 'creator:id,name', 'vendor:id,company_name,purchase_vendor_code',
                 'participants.contact:id,first_name,last_name,designation', 'currentMom', 'auditLogs',
                 'momSubmitter:id,name', 'momOrganizerApprover:id,name', 'momApprover:id,name', 'momDistributor:id,name',
+                'agendaItems' => fn ($q) => $q->with(['owner:id,name'])->orderBy('sort_order')->orderBy('id'),
                 'actionItems' => fn ($q) => $q->with(['responsible:id,name', 'verifier:id,name'])->orderBy('sort_order')->orderBy('id'),
+                'momIssues' => fn ($q) => $q->with(['owner:id,name'])->orderBy('sort_order')->orderBy('id'),
+                'momDecisions' => fn ($q) => $q->with(['decidedBy:id,name'])->orderBy('sort_order')->orderBy('id'),
             ])
             ->find($id);
     }

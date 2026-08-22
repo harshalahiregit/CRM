@@ -4,13 +4,16 @@ import {
   ArrowLeft, CalendarDays, Clock, MapPin, Users, CheckCircle2, XCircle,
   Send, Upload, AlertTriangle, Loader2, FileText, ShieldCheck, History,
   Sparkles, Eye, Download, Video, RotateCcw, FileCheck2,
-  ListChecks, Plus, Paperclip, Trash2, UserCheck,
+  ListChecks, Plus, Paperclip, Trash2, UserCheck, AlertOctagon, ArrowUpRight, Gavel,
+  ListOrdered, LayoutTemplate, CopyPlus,
 } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
 import {
   PK_STATUS, pkStatusCfg, pkNextStatuses, pkModeLabel, fmtDateTime, fmtDate,
   PK_MOM_STATUS, pkMomCfg, pkMomDistributable, pkMomAwaitingDecision,
   PK_ACTION_STATUS, pkActionCfg, pkActionNext, PK_ACTION_PRIORITIES,
+  pkIssueCfg, pkIssueNext, PK_ISSUE_SEVERITIES, PK_ISSUE_CATEGORIES,
+  pkDecisionCfg, PK_DECISION_STATUSES,
 } from '@/modules/purchase/kickoffConstants'
 import { KIT3D_STYLE, Overlay, ModalFooter, Field, TextInput } from '@/components/ui/kit3d'
 
@@ -103,10 +106,19 @@ export default function PurchaseKickoffDetail() {
           <div className="pr-glass" style={{ padding: 20 }}>
             <SectionTitle icon={CalendarDays}>Schedule</SectionTitle>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginTop: 12 }}>
+              {m.meeting_no && <Detail icon={FileText} label="Meeting No." value={m.meeting_no} />}
               <Detail icon={Clock} label="Date & time" value={fmtDateTime(m.scheduled_at)} />
+              {m.end_at && <Detail icon={Clock} label="End time" value={fmtDateTime(m.end_at)} />}
               <Detail icon={Clock} label="Duration" value={m.duration_minutes ? `${m.duration_minutes} min` : '—'} />
               <Detail icon={MapPin} label={m.mode === 'online' ? 'Meeting link' : 'Location'} value={m.location || '—'} />
               <Detail icon={CalendarDays} label="Mode" value={pkModeLabel(m.mode)} />
+              {m.priority && <Detail icon={AlertTriangle} label="Priority" value={m.priority} />}
+              {m.confidentiality && <Detail icon={ShieldCheck} label="Confidentiality" value={m.confidentiality} />}
+              {m.chairperson && <Detail icon={UserCheck} label="Chairperson" value={m.chairperson} />}
+              {m.coordinator && <Detail icon={UserCheck} label="Coordinator" value={m.coordinator} />}
+              {m.organizer && <Detail icon={UserCheck} label="Organizer" value={m.organizer} />}
+              {m.department && <Detail icon={Users} label="Department" value={m.department} />}
+              {m.client_name && <Detail icon={FileText} label="Client" value={m.client_name} />}
             </div>
             {m.status === PK_STATUS.DELAYED && m.delay_reason && (
               <div style={{ marginTop: 14, padding: '11px 13px', borderRadius: 11, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.32)' }}>
@@ -121,6 +133,10 @@ export default function PurchaseKickoffDetail() {
               </div>
             )}
           </div>
+
+          {/* Previous-MOM continuity + Agenda builder */}
+          <PreviousSummaryCard m={m} onError={setErr} onChanged={load} />
+          <AgendaCard m={m} onError={setErr} />
 
           {/* Online meeting details (read-only, shown when mode = 'online' and a link exists) */}
           {m.mode === 'online' && (m.meeting_link || m.meeting_platform) && (
@@ -177,6 +193,12 @@ export default function PurchaseKickoffDetail() {
 
           {/* Action items (MOM action engine) */}
           <ActionItemsCard m={m} onError={setErr} />
+
+          {/* Issue register (MOM issues → NCR/CAPA) */}
+          <IssueRegisterCard m={m} onError={setErr} />
+
+          {/* Decision register (MOM decisions) */}
+          <DecisionRegisterCard m={m} onError={setErr} />
         </div>
 
         {/* Right column */}
@@ -655,6 +677,420 @@ function ActionProgressModal({ meetingId, action, to, onClose, onDone, onError }
 
 const labelSm = { fontSize: 10.5, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 3 }
 const selStyle = { width: '100%', padding: '8px 10px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-h)', fontSize: 13, boxSizing: 'border-box' }
+
+/* ── Issue register card (MOM issues) ─────────────────────────────────────────
+ * Issues raised in the meeting, tracked to resolution and escalatable to an NCR
+ * or a CAPA. Mirrors PurchaseMomIssueStatus; conversion routes into the existing
+ * Purchase NCR / CAPA registers. */
+function IssueRegisterCard({ m, onError }) {
+  const [rows, setRows] = useState(m.mom_issues || [])
+  const [adding, setAdding] = useState(false)
+  const [busyId, setBusyId] = useState(null)
+  const [form, setForm] = useState({ title: '', description: '', category: '', severity: '', owner_participant_id: '', due_date: '' })
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => { setRows(m.mom_issues || []) }, [m.mom_issues])
+
+  const refresh = async () => {
+    try { setRows(await purchaseApi.kickoff.issues.list(m.id)) } catch { /* keep stale */ }
+  }
+
+  const add = async () => {
+    if (!form.title.trim()) { onError('An issue needs a title.'); return }
+    setSaving(true); onError(null)
+    try {
+      const payload = {
+        title: form.title, description: form.description || undefined,
+        category: form.category || undefined, severity: form.severity || undefined,
+        due_date: form.due_date || undefined,
+      }
+      if (form.owner_participant_id) payload.owner_participant_id = Number(form.owner_participant_id)
+      await purchaseApi.kickoff.issues.create(m.id, payload)
+      setForm({ title: '', description: '', category: '', severity: '', owner_participant_id: '', due_date: '' })
+      setAdding(false)
+      await refresh()
+    } catch (e) { onError(e?.response?.data?.message || 'Could not add the issue.') }
+    finally { setSaving(false) }
+  }
+
+  const progress = async (i, status) => {
+    setBusyId(i.id); onError(null)
+    try { await purchaseApi.kickoff.issues.progress(m.id, i.id, status); await refresh() }
+    catch (e) { onError(e?.response?.data?.message || 'Could not update the issue.') }
+    finally { setBusyId(null) }
+  }
+
+  const convert = async (i, target) => {
+    setBusyId(i.id); onError(null)
+    try { await purchaseApi.kickoff.issues.convert(m.id, i.id, target); await refresh() }
+    catch (e) { onError(e?.response?.data?.message || `Could not convert to ${target.toUpperCase()}.`) }
+    finally { setBusyId(null) }
+  }
+
+  const del = async (i) => {
+    onError(null)
+    try { await purchaseApi.kickoff.issues.remove(m.id, i.id); await refresh() }
+    catch (e) { onError(e?.response?.data?.message || 'Could not delete the issue.') }
+  }
+
+  const ownerLabel = (i) => i.owner?.name || i.owner_names || '—'
+  const openCount = rows.filter(r => r.is_open).length
+  const sevColor = (s) => ({ Critical: '#ef4444', High: '#f59e0b', Medium: '#0ea5e9', Low: '#94a3b8' }[s] || 'var(--text-muted)')
+
+  return (
+    <div className="pr-glass" style={{ padding: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <SectionTitle icon={AlertOctagon}>Issues <span style={{ fontWeight: 500, color: 'var(--text-muted)', fontSize: 12 }}>· {rows.length}{openCount ? ` · ${openCount} open` : ''}</span></SectionTitle>
+        <button onClick={() => setAdding(v => !v)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 11px', borderRadius: 9, cursor: 'pointer', fontSize: 12, fontWeight: 700, color: '#a78bfa', background: 'rgba(124,58,237,0.12)', border: '1px solid rgba(124,58,237,0.4)' }}>
+          <Plus size={13} /> Add
+        </button>
+      </div>
+
+      {adding && (
+        <div style={{ marginTop: 12, padding: 14, borderRadius: 12, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+          <TextInput value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="Issue title" />
+          <textarea rows={2} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Describe the issue (optional)"
+            style={{ width: '100%', marginTop: 8, padding: '9px 12px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-h)', fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
+            <div>
+              <div style={labelSm}>Category</div>
+              <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} style={selStyle}>
+                <option value="">—</option>
+                {PK_ISSUE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={labelSm}>Severity</div>
+              <select value={form.severity} onChange={e => setForm(f => ({ ...f, severity: e.target.value }))} style={selStyle}>
+                <option value="">—</option>
+                {PK_ISSUE_SEVERITIES.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={labelSm}>Owner</div>
+              <select value={form.owner_participant_id} onChange={e => setForm(f => ({ ...f, owner_participant_id: e.target.value }))} style={selStyle}>
+                <option value="">— unassigned —</option>
+                {(m.participants || []).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={labelSm}>Due date</div>
+              <TextInput type="date" value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))} />
+            </div>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
+            <MomBtn onClick={() => setAdding(false)} icon={XCircle} tone="#94a3b8">Cancel</MomBtn>
+            <MomBtn onClick={add} busy={saving} icon={Plus} tone="#7C3AED">Add issue</MomBtn>
+          </div>
+        </div>
+      )}
+
+      {rows.length === 0 ? (
+        <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '12px 0 0' }}>No issues raised.</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
+          {rows.map(i => {
+            const cfg = pkIssueCfg(i.status)
+            const nexts = pkIssueNext(i.status)
+            return (
+              <div key={i.id} style={{ padding: '12px 13px', borderRadius: 12, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                      {i.issue_ref && <span style={{ fontSize: 10.5, fontWeight: 800, color: '#a78bfa', fontFamily: 'monospace' }}>{i.issue_ref}</span>}
+                      <span style={{ padding: '2px 8px', borderRadius: 999, background: cfg.bg, color: cfg.color, fontSize: 10.5, fontWeight: 800 }}>{i.status_label}</span>
+                      {i.severity && <span style={{ fontSize: 10.5, fontWeight: 800, color: sevColor(i.severity) }}>{i.severity}</span>}
+                      {i.category && <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text-muted)' }}>{i.category}</span>}
+                      {i.is_overdue && <span style={{ fontSize: 10.5, fontWeight: 800, color: '#ef4444' }}>OVERDUE</span>}
+                      {i.is_converted && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10.5, fontWeight: 800, color: '#10b981' }}><ArrowUpRight size={11} /> {i.converted_to} {i.converted_ref}</span>}
+                    </div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-h)', marginTop: 5 }}>{i.title}</div>
+                    {i.description && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3, lineHeight: 1.4 }}>{i.description}</div>}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 5, fontSize: 11.5, color: 'var(--text-muted)' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><UserCheck size={12} /> {ownerLabel(i)}</span>
+                      {i.due_date && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><CalendarDays size={12} /> {fmtDate(i.due_date)}</span>}
+                    </div>
+                  </div>
+                  <button onClick={() => del(i)} title="Delete issue" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', flexShrink: 0, padding: 2 }}><Trash2 size={14} /></button>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 9 }}>
+                  {nexts.map(to => {
+                    const tc = pkIssueCfg(to)
+                    return (
+                      <button key={to} disabled={busyId === i.id} onClick={() => progress(i, to)}
+                        style={{ padding: '5px 10px', borderRadius: 8, cursor: busyId === i.id ? 'wait' : 'pointer', fontSize: 11, fontWeight: 700, color: tc.color, background: `${tc.color}12`, border: `1px solid ${tc.color}44` }}>
+                        {tc.label}
+                      </button>
+                    )
+                  })}
+                  {!i.is_converted && (
+                    <>
+                      <button disabled={busyId === i.id} onClick={() => convert(i, 'ncr')}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 8, cursor: busyId === i.id ? 'wait' : 'pointer', fontSize: 11, fontWeight: 700, color: '#ef4444', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)' }}>
+                        <ArrowUpRight size={12} /> To NCR
+                      </button>
+                      <button disabled={busyId === i.id} onClick={() => convert(i, 'capa')}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 8, cursor: busyId === i.id ? 'wait' : 'pointer', fontSize: 11, fontWeight: 700, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.4)' }}>
+                        <ArrowUpRight size={12} /> To CAPA
+                      </button>
+                      <button disabled={busyId === i.id} onClick={() => convert(i, 'approval')}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 8, cursor: busyId === i.id ? 'wait' : 'pointer', fontSize: 11, fontWeight: 700, color: '#0ea5e9', background: 'rgba(14,165,233,0.1)', border: '1px solid rgba(14,165,233,0.4)' }}>
+                        <ArrowUpRight size={12} /> To Approval
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ── Decision register card (MOM decisions) ───────────────────────────────────
+ * The durable record of decisions taken in the meeting — each Active until
+ * Superseded or Rescinded. Mirrors PurchaseMomDecisionStatus. */
+function DecisionRegisterCard({ m, onError }) {
+  const [rows, setRows] = useState(m.mom_decisions || [])
+  const [adding, setAdding] = useState(false)
+  const [busyId, setBusyId] = useState(null)
+  const [form, setForm] = useState({ decision: '', decided_by_participant_id: '', impact: '', effective_date: '' })
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => { setRows(m.mom_decisions || []) }, [m.mom_decisions])
+
+  const refresh = async () => {
+    try { setRows(await purchaseApi.kickoff.decisions.list(m.id)) } catch { /* keep stale */ }
+  }
+
+  const add = async () => {
+    if (!form.decision.trim()) { onError('A decision needs a description.'); return }
+    setSaving(true); onError(null)
+    try {
+      const payload = { decision: form.decision, impact: form.impact || undefined, effective_date: form.effective_date || undefined }
+      if (form.decided_by_participant_id) payload.decided_by_participant_id = Number(form.decided_by_participant_id)
+      await purchaseApi.kickoff.decisions.create(m.id, payload)
+      setForm({ decision: '', decided_by_participant_id: '', impact: '', effective_date: '' })
+      setAdding(false)
+      await refresh()
+    } catch (e) { onError(e?.response?.data?.message || 'Could not record the decision.') }
+    finally { setSaving(false) }
+  }
+
+  const setStatus = async (d, status) => {
+    setBusyId(d.id); onError(null)
+    try { await purchaseApi.kickoff.decisions.update(m.id, d.id, { status }); await refresh() }
+    catch (e) { onError(e?.response?.data?.message || 'Could not update the decision.') }
+    finally { setBusyId(null) }
+  }
+
+  const del = async (d) => {
+    onError(null)
+    try { await purchaseApi.kickoff.decisions.remove(m.id, d.id); await refresh() }
+    catch (e) { onError(e?.response?.data?.message || 'Could not delete the decision.') }
+  }
+
+  const madeBy = (d) => d.decided_by?.name || d.decided_by_names || '—'
+
+  return (
+    <div className="pr-glass" style={{ padding: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <SectionTitle icon={Gavel}>Decisions <span style={{ fontWeight: 500, color: 'var(--text-muted)', fontSize: 12 }}>· {rows.length}</span></SectionTitle>
+        <button onClick={() => setAdding(v => !v)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 11px', borderRadius: 9, cursor: 'pointer', fontSize: 12, fontWeight: 700, color: '#a78bfa', background: 'rgba(124,58,237,0.12)', border: '1px solid rgba(124,58,237,0.4)' }}>
+          <Plus size={13} /> Add
+        </button>
+      </div>
+
+      {adding && (
+        <div style={{ marginTop: 12, padding: 14, borderRadius: 12, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+          <textarea rows={2} value={form.decision} onChange={e => setForm(f => ({ ...f, decision: e.target.value }))} placeholder="What was decided?"
+            style={{ width: '100%', padding: '9px 12px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-h)', fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }} />
+          <textarea rows={2} value={form.impact} onChange={e => setForm(f => ({ ...f, impact: e.target.value }))} placeholder="Impact (optional)"
+            style={{ width: '100%', marginTop: 8, padding: '9px 12px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-h)', fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
+            <div>
+              <div style={labelSm}>Decided by</div>
+              <select value={form.decided_by_participant_id} onChange={e => setForm(f => ({ ...f, decided_by_participant_id: e.target.value }))} style={selStyle}>
+                <option value="">— unassigned —</option>
+                {(m.participants || []).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={labelSm}>Effective date</div>
+              <TextInput type="date" value={form.effective_date} onChange={e => setForm(f => ({ ...f, effective_date: e.target.value }))} />
+            </div>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
+            <MomBtn onClick={() => setAdding(false)} icon={XCircle} tone="#94a3b8">Cancel</MomBtn>
+            <MomBtn onClick={add} busy={saving} icon={Plus} tone="#7C3AED">Record decision</MomBtn>
+          </div>
+        </div>
+      )}
+
+      {rows.length === 0 ? (
+        <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '12px 0 0' }}>No decisions recorded.</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
+          {rows.map(d => {
+            const cfg = pkDecisionCfg(d.status)
+            return (
+              <div key={d.id} style={{ padding: '12px 13px', borderRadius: 12, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                      {d.decision_ref && <span style={{ fontSize: 10.5, fontWeight: 800, color: '#a78bfa', fontFamily: 'monospace' }}>{d.decision_ref}</span>}
+                      <span style={{ padding: '2px 8px', borderRadius: 999, background: cfg.bg, color: cfg.color, fontSize: 10.5, fontWeight: 800 }}>{d.status_label}</span>
+                    </div>
+                    <div style={{ fontSize: 13, color: 'var(--text-h)', marginTop: 5, lineHeight: 1.4 }}>{d.decision}</div>
+                    {d.impact && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3, lineHeight: 1.4 }}>Impact: {d.impact}</div>}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 5, fontSize: 11.5, color: 'var(--text-muted)' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><UserCheck size={12} /> {madeBy(d)}</span>
+                      {d.effective_date && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><CalendarDays size={12} /> {fmtDate(d.effective_date)}</span>}
+                    </div>
+                  </div>
+                  <button onClick={() => del(d)} title="Delete decision" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', flexShrink: 0, padding: 2 }}><Trash2 size={14} /></button>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 9 }}>
+                  {PK_DECISION_STATUSES.filter(s => s !== d.status).map(s => {
+                    const sc = pkDecisionCfg(s)
+                    return (
+                      <button key={s} disabled={busyId === d.id} onClick={() => setStatus(d, s)}
+                        style={{ padding: '5px 10px', borderRadius: 8, cursor: busyId === d.id ? 'wait' : 'pointer', fontSize: 11, fontWeight: 700, color: sc.color, background: `${sc.color}12`, border: `1px solid ${sc.color}44` }}>
+                        Mark {sc.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ── Previous-MOM continuity card (Meeting.docx §11) ─────────────────────────── */
+function PreviousSummaryCard({ m, onError, onChanged }) {
+  const [sum, setSum] = useState(undefined)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    purchaseApi.kickoff.previousSummary(m.id).then(setSum).catch(() => setSum(null))
+  }, [m.id])
+
+  if (sum === undefined || !sum?.previous) return null
+
+  const carry = async () => {
+    setBusy(true); onError(null)
+    try {
+      const r = await purchaseApi.kickoff.carryForward(m.id)
+      await onChanged()
+      alert(`Carried forward ${r.actions} action(s) and ${r.issues} issue(s) from ${r.from}.`)
+    } catch (e) { onError(e?.response?.data?.message || 'Could not carry forward.') }
+    finally { setBusy(false) }
+  }
+
+  const a = sum.actions || {}
+  return (
+    <div className="pr-glass" style={{ padding: 20 }}>
+      <SectionTitle icon={History}>Previous meeting</SectionTitle>
+      <div style={{ fontSize: 12.5, color: 'var(--text-h)', marginTop: 10 }}>
+        <strong>{sum.previous.meeting_no || sum.previous.reference}</strong> — {sum.previous.title}
+      </div>
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 10, fontSize: 12 }}>
+        <span>Actions: <strong style={{ color: 'var(--text-h)' }}>{a.total || 0}</strong></span>
+        <span style={{ color: '#10b981' }}>{a.closed || 0} closed</span>
+        <span style={{ color: '#0ea5e9' }}>{a.open || 0} open</span>
+        <span style={{ color: '#ef4444' }}>{a.overdue || 0} overdue</span>
+        <span>Issues open: <strong style={{ color: 'var(--text-h)' }}>{sum.issues?.open || 0}</strong></span>
+      </div>
+      {((a.open || 0) > 0 || (sum.issues?.open || 0) > 0) && (
+        <button onClick={carry} disabled={busy} style={{ ...solidBtn, marginTop: 12, background: 'linear-gradient(145deg,#34d399,#10b981)', boxShadow: 'none' }}>
+          <CopyPlus size={15} /> {busy ? 'Carrying…' : 'Carry forward open items'}
+        </button>
+      )}
+    </div>
+  )
+}
+
+/* ── Agenda builder card (Meeting.docx §3/§4) ─────────────────────────────────── */
+function AgendaCard({ m, onError }) {
+  const [rows, setRows] = useState(m.agenda_items || [])
+  const [adding, setAdding] = useState(false)
+  const [busy, setBusy] = useState(null)
+  const [form, setForm] = useState({ item: '', owner_names: '', duration_minutes: '', priority: '' })
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => { setRows(m.agenda_items || []) }, [m.agenda_items])
+  const refresh = async () => { try { setRows(await purchaseApi.kickoff.agenda.list(m.id)) } catch { /* keep */ } }
+
+  const add = async () => {
+    if (!form.item.trim()) { onError('An agenda item needs a title.'); return }
+    setSaving(true); onError(null)
+    try {
+      await purchaseApi.kickoff.agenda.create(m.id, {
+        item: form.item, owner_names: form.owner_names || undefined,
+        duration_minutes: form.duration_minutes ? Number(form.duration_minutes) : undefined,
+        priority: form.priority || undefined,
+      })
+      setForm({ item: '', owner_names: '', duration_minutes: '', priority: '' }); setAdding(false); await refresh()
+    } catch (e) { onError(e?.response?.data?.message || 'Could not add the agenda item.') }
+    finally { setSaving(false) }
+  }
+  const del = async (a) => { onError(null); try { await purchaseApi.kickoff.agenda.remove(m.id, a.id); await refresh() } catch (e) { onError(e?.response?.data?.message || 'Could not delete.') } }
+  const loadTemplate = async () => { setBusy('t'); onError(null); try { setRows(await purchaseApi.kickoff.agenda.loadTemplate(m.id)) } catch (e) { onError(e?.response?.data?.message || 'No template for this type.') } finally { setBusy(null) } }
+  const copyPrev = async () => { setBusy('c'); onError(null); try { setRows(await purchaseApi.kickoff.agenda.copyPrevious(m.id)) } catch (e) { onError(e?.response?.data?.message || 'No previous agenda.') } finally { setBusy(null) } }
+
+  return (
+    <div className="pr-glass" style={{ padding: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+        <SectionTitle icon={ListOrdered}>Agenda <span style={{ fontWeight: 500, color: 'var(--text-muted)', fontSize: 12 }}>· {rows.length}</span></SectionTitle>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <MomBtn onClick={loadTemplate} busy={busy === 't'} icon={LayoutTemplate} tone="#0ea5e9">Template</MomBtn>
+          <MomBtn onClick={copyPrev} busy={busy === 'c'} icon={CopyPlus} tone="#10b981">Copy previous</MomBtn>
+          <MomBtn onClick={() => setAdding(v => !v)} icon={Plus} tone="#7C3AED">Add</MomBtn>
+        </div>
+      </div>
+
+      {adding && (
+        <div style={{ marginTop: 12, padding: 14, borderRadius: 12, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+          <TextInput value={form.item} onChange={e => setForm(f => ({ ...f, item: e.target.value }))} placeholder="Agenda item" />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 8 }}>
+            <TextInput value={form.owner_names} onChange={e => setForm(f => ({ ...f, owner_names: e.target.value }))} placeholder="Owner" />
+            <TextInput type="number" value={form.duration_minutes} onChange={e => setForm(f => ({ ...f, duration_minutes: e.target.value }))} placeholder="Min" />
+            <select value={form.priority} onChange={e => setForm(f => ({ ...f, priority: e.target.value }))} style={selStyle}>
+              <option value="">Priority</option>{['Low', 'Medium', 'High'].map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
+            <MomBtn onClick={() => setAdding(false)} icon={XCircle} tone="#94a3b8">Cancel</MomBtn>
+            <MomBtn onClick={add} busy={saving} icon={Plus} tone="#7C3AED">Add item</MomBtn>
+          </div>
+        </div>
+      )}
+
+      {rows.length === 0 ? (
+        <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '12px 0 0' }}>No agenda yet. Add items, load the template, or copy the previous meeting's agenda.</p>
+      ) : (
+        <div style={{ marginTop: 12 }}>
+          {rows.map((a, idx) => (
+            <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderTop: idx ? '1px solid var(--border)' : 'none' }}>
+              <span style={{ fontSize: 12, fontWeight: 800, color: '#a78bfa', width: 20 }}>{idx + 1}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, color: 'var(--text-h)' }}>{a.item}</div>
+                <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{[a.owner?.name || a.owner_names, a.duration_minutes ? `${a.duration_minutes} min` : null, a.priority].filter(Boolean).join(' · ') || '—'}</div>
+              </div>
+              <button onClick={() => del(a)} title="Delete" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 2 }}><Trash2 size={14} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 /* ── Transition modal ─────────────────────────────────────────────────────── */
 function TransitionModal({ m, to, onClose, onDone }) {

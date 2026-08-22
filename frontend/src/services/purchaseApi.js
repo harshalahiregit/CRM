@@ -282,11 +282,32 @@ export const purchaseApi = {
     reject:  (onboardingId, stage, remarks)      => api.post(`/purchase/onboarding/${onboardingId}/approvals/${stage}/reject`, { remarks }).then(r => r.data),
   },
 
+  // ── Central approval register (§12, /purchase/approval-requests) ────────
+  // The generic register of ~18 governance approval types. Distinct from the
+  // onboarding stage chain. Deciding is admin-only server-side.
+  approvalRequests: {
+    list:   (params = {}) => api.get('/purchase/approval-requests', { params }).then(r => r.data),
+    create: (data)        => api.post('/purchase/approval-requests', data).then(r => r.data),
+    decide: (id, data)    => api.post(`/purchase/approval-requests/${id}/decide`, data).then(r => r.data),
+  },
+
   // ── Kickoff meetings (Purchase-owned engine, /purchase/kickoff) ─────────
   // Independent of the shared/TPV kickoff engine — hits only /api/purchase/kickoff.
   kickoff: {
     list:   (params = {}) => api.get('/purchase/kickoff', { params }).then(r => r.data),
     stats:  ()            => api.get('/purchase/kickoff/stats').then(r => r.data),
+    dashboard: ()         => api.get('/purchase/kickoff/dashboard').then(r => r.data),
+    previousSummary: (id) => api.get(`/purchase/kickoff/${id}/previous-summary`).then(r => r.data),
+    carryForward: (id)    => api.post(`/purchase/kickoff/${id}/carry-forward`).then(r => r.data),
+    // Agenda builder (Meeting.docx §3/§4).
+    agenda: {
+      list:         (id)          => api.get(`/purchase/kickoff/${id}/agenda`).then(r => r.data),
+      create:       (id, data)    => api.post(`/purchase/kickoff/${id}/agenda`, data).then(r => r.data),
+      update:       (id, aid, d)  => api.put(`/purchase/kickoff/${id}/agenda/${aid}`, d).then(r => r.data),
+      remove:       (id, aid)     => api.delete(`/purchase/kickoff/${id}/agenda/${aid}`).then(r => r.data),
+      loadTemplate: (id)          => api.post(`/purchase/kickoff/${id}/agenda/load-template`).then(r => r.data),
+      copyPrevious: (id)          => api.post(`/purchase/kickoff/${id}/agenda/copy-previous`).then(r => r.data),
+    },
     // Configurable meeting-type catalogue (kickoff is one type) — §9/§39.
     meetingTypes: ()      => api.get('/purchase/meeting-types').then(r => r.data),
     get:    (id)          => api.get(`/purchase/kickoff/${id}`).then(r => r.data),
@@ -328,6 +349,23 @@ export const purchaseApi = {
       },
       evidenceBlob: (id, aid) => api.get(`/purchase/kickoff/${id}/actions/${aid}/evidence`, { responseType: 'blob' }).then(r => r.data),
       remove: (id, aid)       => api.delete(`/purchase/kickoff/${id}/actions/${aid}`).then(r => r.data),
+    },
+    // MOM issue register — track to resolution; convert to NCR / CAPA.
+    issues: {
+      list:    (id)            => api.get(`/purchase/kickoff/${id}/issues`).then(r => r.data),
+      create:  (id, data)      => api.post(`/purchase/kickoff/${id}/issues`, data).then(r => r.data),
+      update:  (id, iid, data) => api.put(`/purchase/kickoff/${id}/issues/${iid}`, data).then(r => r.data),
+      progress: (id, iid, status) => api.post(`/purchase/kickoff/${id}/issues/${iid}/progress`, { status }).then(r => r.data),
+      // Escalate an issue — target: 'ncr' | 'capa'.
+      convert: (id, iid, target) => api.post(`/purchase/kickoff/${id}/issues/${iid}/convert`, { target }).then(r => r.data),
+      remove:  (id, iid)       => api.delete(`/purchase/kickoff/${id}/issues/${iid}`).then(r => r.data),
+    },
+    // MOM decision register — Active / Superseded / Rescinded.
+    decisions: {
+      list:   (id)            => api.get(`/purchase/kickoff/${id}/decisions`).then(r => r.data),
+      create: (id, data)      => api.post(`/purchase/kickoff/${id}/decisions`, data).then(r => r.data),
+      update: (id, did, data) => api.put(`/purchase/kickoff/${id}/decisions/${did}`, data).then(r => r.data),
+      remove: (id, did)       => api.delete(`/purchase/kickoff/${id}/decisions/${did}`).then(r => r.data),
     },
   },
 

@@ -15,6 +15,10 @@ use App\Http\Controllers\Api\Purchase\PurchaseVendorDocumentController;
 use App\Http\Controllers\Api\Purchase\PurchaseContactController;
 use App\Http\Controllers\Api\Purchase\PurchaseKickoffController;
 use App\Http\Controllers\Api\Purchase\PurchaseMomActionController;
+use App\Http\Controllers\Api\Purchase\PurchaseMomIssueController;
+use App\Http\Controllers\Api\Purchase\PurchaseMomDecisionController;
+use App\Http\Controllers\Api\Purchase\PurchaseApprovalRequestController;
+use App\Http\Controllers\Api\Purchase\PurchaseMomAgendaController;
 use App\Http\Controllers\Api\Purchase\PurchaseApprovalController;
 use App\Http\Controllers\Api\Purchase\PurchaseVendorController;
 use App\Http\Controllers\Api\Purchase\PurchaseVendorItemController;
@@ -329,10 +333,18 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::post('/offboardings/{offboarding}/complete', [\App\Http\Controllers\Api\Purchase\PurchaseOffboardingController::class, 'complete'])->whereNumber('offboarding');
     Route::delete('/offboardings/{offboarding}',     [\App\Http\Controllers\Api\Purchase\PurchaseOffboardingController::class, 'destroy'])->whereNumber('offboarding');
 
+    // ── Central approval register (§12): purchase_approval_requests ─────────
+    // Distinct from the onboarding stage chain (/onboarding/.../approvals). The
+    // generic register of ~18 governance approval types. Decide is admin-only.
+    Route::get('/approval-requests',                            [PurchaseApprovalRequestController::class, 'index']);
+    Route::post('/approval-requests',                           [PurchaseApprovalRequestController::class, 'store']);
+    Route::post('/approval-requests/{approvalRequest}/decide',  [PurchaseApprovalRequestController::class, 'decide'])->whereNumber('approvalRequest');
+
     // ── Meetings (Purchase-owned engine: purchase_kickoff_* tables) ─────────
     // Kickoff is one configurable meeting type here, not a separate module (§9/§39).
     Route::get('/meeting-types',                    [PurchaseKickoffController::class, 'meetingTypes']);
     Route::get('/kickoff/stats',                   [PurchaseKickoffController::class, 'stats']);
+    Route::get('/kickoff/dashboard',               [PurchaseKickoffController::class, 'dashboard']);
     Route::get('/kickoff',                         [PurchaseKickoffController::class, 'index']);
     Route::post('/kickoff',                        [PurchaseKickoffController::class, 'store']);
     Route::get('/kickoff/{kickoff}',               [PurchaseKickoffController::class, 'show']);
@@ -343,6 +355,16 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::post('/kickoff/{kickoff}/mom',          [PurchaseKickoffController::class, 'uploadMom']);
     Route::post('/kickoff/{kickoff}/mom/generate', [PurchaseKickoffController::class, 'generateMom']);
     Route::get('/kickoff/{kickoff}/mom',           [PurchaseKickoffController::class, 'momFile']);
+    // Agenda builder (Meeting.docx §3/§4) — structured items + template / copy-previous.
+    Route::get('/kickoff/{kickoff}/agenda',                       [PurchaseMomAgendaController::class, 'index']);
+    Route::post('/kickoff/{kickoff}/agenda',                      [PurchaseMomAgendaController::class, 'store']);
+    Route::post('/kickoff/{kickoff}/agenda/load-template',        [PurchaseMomAgendaController::class, 'loadTemplate']);
+    Route::post('/kickoff/{kickoff}/agenda/copy-previous',        [PurchaseMomAgendaController::class, 'copyPrevious']);
+    // Previous-MOM continuity (Meeting.docx §11).
+    Route::get('/kickoff/{kickoff}/previous-summary',            [PurchaseKickoffController::class, 'previousSummary']);
+    Route::post('/kickoff/{kickoff}/carry-forward',             [PurchaseKickoffController::class, 'carryForward']);
+    Route::put('/kickoff/{kickoff}/agenda/{agendaItem}',         [PurchaseMomAgendaController::class, 'update'])->whereNumber('agendaItem');
+    Route::delete('/kickoff/{kickoff}/agenda/{agendaItem}',      [PurchaseMomAgendaController::class, 'destroy'])->whereNumber('agendaItem');
     Route::post('/kickoff/{kickoff}/mom/submit',   [PurchaseKickoffController::class, 'momSubmit']);
     Route::post('/kickoff/{kickoff}/mom/decide',   [PurchaseKickoffController::class, 'momDecide']);
     Route::post('/kickoff/{kickoff}/mom/revise',   [PurchaseKickoffController::class, 'momRevise']);
@@ -354,6 +376,18 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::post('/kickoff/{kickoff}/actions/{action}/progress',   [PurchaseMomActionController::class, 'progress'])->whereNumber('action');
     Route::get('/kickoff/{kickoff}/actions/{action}/evidence',    [PurchaseMomActionController::class, 'evidence'])->whereNumber('action');
     Route::delete('/kickoff/{kickoff}/actions/{action}',          [PurchaseMomActionController::class, 'destroy'])->whereNumber('action');
+    // MOM issue register (track to resolution; convert to NCR / CAPA).
+    Route::get('/kickoff/{kickoff}/issues',                       [PurchaseMomIssueController::class, 'index']);
+    Route::post('/kickoff/{kickoff}/issues',                      [PurchaseMomIssueController::class, 'store']);
+    Route::put('/kickoff/{kickoff}/issues/{issue}',             [PurchaseMomIssueController::class, 'update'])->whereNumber('issue');
+    Route::post('/kickoff/{kickoff}/issues/{issue}/progress',  [PurchaseMomIssueController::class, 'progress'])->whereNumber('issue');
+    Route::post('/kickoff/{kickoff}/issues/{issue}/convert',   [PurchaseMomIssueController::class, 'convert'])->whereNumber('issue');
+    Route::delete('/kickoff/{kickoff}/issues/{issue}',         [PurchaseMomIssueController::class, 'destroy'])->whereNumber('issue');
+    // MOM decision register (Active / Superseded / Rescinded).
+    Route::get('/kickoff/{kickoff}/decisions',                    [PurchaseMomDecisionController::class, 'index']);
+    Route::post('/kickoff/{kickoff}/decisions',                   [PurchaseMomDecisionController::class, 'store']);
+    Route::put('/kickoff/{kickoff}/decisions/{decision}',        [PurchaseMomDecisionController::class, 'update'])->whereNumber('decision');
+    Route::delete('/kickoff/{kickoff}/decisions/{decision}',     [PurchaseMomDecisionController::class, 'destroy'])->whereNumber('decision');
     Route::delete('/kickoff/{kickoff}',            [PurchaseKickoffController::class, 'destroy']);
 
     // ── Vendor contacts (Purchase-owned engine: purchase_contacts) ─────────
