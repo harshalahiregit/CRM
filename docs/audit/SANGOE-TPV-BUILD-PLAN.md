@@ -328,5 +328,14 @@ live vendor-status template, AI assist. Kickoff is now "Meetings → New → Typ
   (assessment preview + decide modal) + Offboarding (expandable checklist + complete) pages in the Purchase nav.
   Verified via rolled-back tinker (PREN assess vpi 100/A + decide, POFF 10-item complete-guard then complete →
   vendor Inactive) + green build. **Parity mirrors #10 & #11.**
-- [ ] Remaining Purchase mirror: PPE-at-gate (Purchase has its own gate/PPE/worker stack). Purchase governance
-  spine is otherwise at full TPV parity.
+- [x] **Rule 5 PPE-at-gate — Purchase mirror** — `PurchaseWorkforceService::gateDecision()` now checks PPE:
+  per new config `purchase.gate.ppe_enforcement` (`warn` default / `deny` / `off`, env
+  `PURCHASE_GATE_PPE_ENFORCEMENT`), a worker holding no issued PPE (`PurchasePpeService::heldBy` empty) is
+  admitted-with-`warning` or refused. Wrapped in try/catch so a PPE-subsystem failure never turns away an
+  otherwise-clear worker (falls through to admit + logs). Backend-only — the existing gate view renders the
+  decision; the new `warning` field is additive. Gate-harness verified (rolled-back): off→admit; warn→admit +
+  warning; deny→refused; hard-refusal (inactive) still wins; PPE-service-throws → resilient admit. **Parity mirror #12.**
+
+**Purchase parity: COMPLETE.** Every TPV governance engine now has a module-isolated Purchase mirror on
+`purchase_*` tables — Compliance, NCR, CAPA, Inspections, Violations, Renewal, Offboarding, Document Vault,
+Analytics, Performance Index (VPI), Communications, and PPE-at-gate.
