@@ -394,6 +394,26 @@ export const purchaseApi = {
     vendor: (vendorId) => api.get(`/purchase/vendors/${vendorId}/vpi`).then(r => r.data),
   },
 
+  // ── Renewal & Extension (mirror of TPV §28) ─────────────────────────────
+  renewals: {
+    list:      (params = {}) => api.get('/purchase/renewals', { params }).then(r => r.data),
+    assess:    (vendorId)    => api.get(`/purchase/vendors/${vendorId}/renewal-assessment`).then(r => r.data),
+    initiate:  (data)        => api.post('/purchase/renewals', data).then(r => r.data),
+    reassess:  (id)          => api.post(`/purchase/renewals/${id}/reassess`).then(r => r.data),
+    decide:    (id, data)    => api.post(`/purchase/renewals/${id}/decide`, data).then(r => r.data),
+    delete:    (id)          => api.delete(`/purchase/renewals/${id}`).then(r => r.data),
+  },
+
+  // ── Offboarding / Closure (mirror of TPV §29) ───────────────────────────
+  offboardings: {
+    list:            (params = {}) => api.get('/purchase/offboardings', { params }).then(r => r.data),
+    get:             (id)          => api.get(`/purchase/offboardings/${id}`).then(r => r.data),
+    initiate:        (data)        => api.post('/purchase/offboardings', data).then(r => r.data),
+    updateChecklist: (id, checklist) => api.put(`/purchase/offboardings/${id}/checklist`, { checklist }).then(r => r.data),
+    complete:        (id, data)    => api.post(`/purchase/offboardings/${id}/complete`, data).then(r => r.data),
+    delete:          (id)          => api.delete(`/purchase/offboardings/${id}`).then(r => r.data),
+  },
+
   onboarding: {
     list:     (params = {}) => api.get('/purchase/onboarding', { params }).then(r => r.data),
     stats:    ()            => api.get('/purchase/onboarding/stats').then(r => r.data),

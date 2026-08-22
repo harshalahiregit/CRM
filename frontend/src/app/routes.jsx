@@ -227,6 +227,8 @@ const PurchaseCommunications = lazy(() => import('@/modules/purchase/pages/Purch
 const PurchaseInspections = lazy(() => import('@/modules/purchase/pages/PurchaseInspections'))
 const PurchaseViolations = lazy(() => import('@/modules/purchase/pages/PurchaseViolations'))
 const PurchasePerformanceIndex = lazy(() => import('@/modules/purchase/pages/PurchasePerformanceIndex'))
+const PurchaseRenewals = lazy(() => import('@/modules/purchase/pages/PurchaseRenewals'))
+const PurchaseOffboarding = lazy(() => import('@/modules/purchase/pages/PurchaseOffboarding'))
 const PurchaseContractDetail = lazy(() => import('@/modules/purchase/pages/PurchaseContractDetail'))
 const PurchaseCatalog = lazy(() => import('@/modules/purchase/pages/PurchaseCatalog'))
 const PurchaseVendorItems = lazy(() => import('@/modules/purchase/pages/PurchaseVendorItems'))
@@ -592,6 +594,8 @@ export default function AppRoutes() {
           <Route path="inspections" element={<S><PurchaseInspections /></S>} />
           <Route path="violations" element={<S><PurchaseViolations /></S>} />
           <Route path="vpi" element={<S><PurchasePerformanceIndex /></S>} />
+          <Route path="renewals" element={<S><PurchaseRenewals /></S>} />
+          <Route path="offboarding" element={<S><PurchaseOffboarding /></S>} />
           <Route path="analytics" element={<S><PurchaseAnalytics /></S>} />
           <Route path="document-vault" element={<S><PurchaseDocumentVault /></S>} />
           <Route path="communications" element={<S><PurchaseCommunications /></S>} />
