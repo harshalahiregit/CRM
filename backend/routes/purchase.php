@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\Purchase\PurchaseOnboardingController;
 use App\Http\Controllers\Api\Purchase\PurchaseVendorDocumentController;
 use App\Http\Controllers\Api\Purchase\PurchaseContactController;
 use App\Http\Controllers\Api\Purchase\PurchaseKickoffController;
+use App\Http\Controllers\Api\Purchase\PurchaseMomActionController;
 use App\Http\Controllers\Api\Purchase\PurchaseApprovalController;
 use App\Http\Controllers\Api\Purchase\PurchaseVendorController;
 use App\Http\Controllers\Api\Purchase\PurchaseVendorItemController;
@@ -346,6 +347,13 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::post('/kickoff/{kickoff}/mom/decide',   [PurchaseKickoffController::class, 'momDecide']);
     Route::post('/kickoff/{kickoff}/mom/revise',   [PurchaseKickoffController::class, 'momRevise']);
     Route::post('/kickoff/{kickoff}/publish',      [PurchaseKickoffController::class, 'publish']);
+    // MOM action engine (Meeting → Action → Owner → Due → Evidence → Verification → Closure).
+    Route::get('/kickoff/{kickoff}/actions',                        [PurchaseMomActionController::class, 'index']);
+    Route::post('/kickoff/{kickoff}/actions',                       [PurchaseMomActionController::class, 'store']);
+    Route::put('/kickoff/{kickoff}/actions/{action}',              [PurchaseMomActionController::class, 'update'])->whereNumber('action');
+    Route::post('/kickoff/{kickoff}/actions/{action}/progress',   [PurchaseMomActionController::class, 'progress'])->whereNumber('action');
+    Route::get('/kickoff/{kickoff}/actions/{action}/evidence',    [PurchaseMomActionController::class, 'evidence'])->whereNumber('action');
+    Route::delete('/kickoff/{kickoff}/actions/{action}',          [PurchaseMomActionController::class, 'destroy'])->whereNumber('action');
     Route::delete('/kickoff/{kickoff}',            [PurchaseKickoffController::class, 'destroy']);
 
     // ── Vendor contacts (Purchase-owned engine: purchase_contacts) ─────────
