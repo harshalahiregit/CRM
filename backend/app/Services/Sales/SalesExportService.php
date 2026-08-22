@@ -41,7 +41,8 @@ class SalesExportService
             'invoices' => [
                 'model'  => SalesInvoice::class,
                 'with'   => ['customer:id,company'],
-                'search' => ['number', 'reference'],
+                'search' => ['number', 'reference', 'status'],
+                'searchRelations' => ['customer' => ['company']],
                 'header' => ['Number', 'Client', 'Date', 'Due date', 'Status', 'Subtotal', 'Tax', 'Total', 'Paid', 'Balance'],
                 'row'    => fn ($r) => [
                     $r->number, $r->client ?? '', $date($r->date), $date($r->due_date), $r->status,
@@ -52,7 +53,8 @@ class SalesExportService
             'estimates' => [
                 'model'  => Estimate::class,
                 'with'   => ['customer:id,company'],
-                'search' => ['reference', 'subject'],
+                'search' => ['reference', 'subject', 'status'],
+                'searchRelations' => ['customer' => ['company']],
                 'header' => ['Reference', 'Subject', 'Client', 'Type', 'Date', 'Valid until', 'Status', 'Subtotal', 'Total'],
                 'row'    => fn ($r) => [
                     $r->reference, $r->subject, $r->client ?? '', $r->estimate_type,
@@ -73,7 +75,8 @@ class SalesExportService
             'credit-notes' => [
                 'model'  => CreditNote::class,
                 'with'   => ['customer:id,company'],
-                'search' => ['number', 'reference'],
+                'search' => ['number', 'reference', 'status'],
+                'searchRelations' => ['customer' => ['company']],
                 'header' => ['Number', 'Client', 'Date', 'Status', 'Total', 'Remaining'],
                 'row'    => fn ($r) => [
                     $r->number, $r->client ?? '', $date($r->date), $r->status,
@@ -83,7 +86,7 @@ class SalesExportService
             'delivery-notes' => [
                 'model'  => DeliveryNote::class,
                 'with'   => ['customer:id,company'],
-                'search' => ['number'],
+                'search' => ['number', 'status'],
                 'header' => ['Number', 'Client', 'Delivery date', 'Status', 'Shipping city', 'Shipping state'],
                 'row'    => fn ($r) => [
                     $r->number, $r->client ?? '', $date($r->delivery_date), $r->status,
@@ -105,7 +108,8 @@ class SalesExportService
                 // Contracts already had a client() RELATION (unlike the documents
                 // above, where `client` is a string accessor), so read .company.
                 'with'   => ['client:id,company'],
-                'search' => ['subject'],
+                'search' => ['subject', 'status'],
+                'searchRelations' => ['client' => ['company']],
                 'header' => ['Subject', 'Client', 'Start', 'End', 'Value', 'Status', 'Signed'],
                 'row'    => fn ($r) => [
                     $r->subject, $r->client->company ?? '', $date($r->start_date), $date($r->end_date),
@@ -197,9 +201,23 @@ class SalesExportService
                 $def['search'],
                 fn ($c) => Schema::hasColumn($table, $c),
             ));
-            $query->where(function ($q) use ($cols, $term) {
+            // The list pages search the JOINED client name too, because that is
+            // the column the user is looking at. Searching only own-table columns
+            // made the file disagree with the screen it was exported from.
+            $rels = $def['searchRelations'] ?? [];
+
+            $query->where(function ($q) use ($cols, $rels, $term) {
                 foreach ($cols as $c) {
                     $q->orWhere($c, 'like', $term);
+                }
+                foreach ($rels as $relation => $relCols) {
+                    $q->orWhereHas($relation, function ($r) use ($relCols, $term) {
+                        $r->where(function ($x) use ($relCols, $term) {
+                            foreach ($relCols as $rc) {
+                                $x->orWhere($rc, 'like', $term);
+                            }
+                        });
+                    });
                 }
             });
         }

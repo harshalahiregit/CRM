@@ -145,6 +145,41 @@ class ExportMatchesTheScreenTest extends TestCase
         $this->assertStringContainsString('LEAD-D', $csv);
     }
 
+    // ── Search: the file must cover the same columns as the search box ───────
+
+    public function test_searching_the_export_by_client_name_finds_the_document(): void
+    {
+        $acme  = Client::create(['tenant_id' => self::TENANT, 'company' => 'Acme Industries']);
+        $other = Client::create(['tenant_id' => self::TENANT, 'company' => 'Globex']);
+
+        foreach ([[$acme, 'EST-ACME'], [$other, 'EST-GLOBEX']] as [$client, $ref]) {
+            Estimate::create([
+                'tenant_id' => self::TENANT, 'reference' => $ref, 'subject' => 'Job',
+                'client_id' => $client->id, 'date' => '2026-01-01', 'valid_until' => '2099-01-01',
+                'status' => 'Draft', 'created_by' => $this->actor->id,
+                'subtotal' => 100, 'tax_total' => 0, 'discount_total' => 0, 'total' => 100,
+            ]);
+        }
+
+        // The on-screen box searches the joined client name; the export used to
+        // search only own-table columns, so this returned nothing.
+        $csv = implode("\n", $this->csv('estimates', ['search' => 'Acme']));
+
+        $this->assertStringContainsString('EST-ACME', $csv);
+        $this->assertStringNotContainsString('EST-GLOBEX', $csv);
+    }
+
+    public function test_searching_the_export_by_status_matches_the_screen(): void
+    {
+        $this->estimate('Draft',    '2099-01-01', 'EST-DRAFT');
+        $this->estimate('Accepted', '2099-01-01', 'EST-ACCEPTED');
+
+        $csv = implode("\n", $this->csv('estimates', ['search' => 'Accepted']));
+
+        $this->assertStringContainsString('EST-ACCEPTED', $csv);
+        $this->assertStringNotContainsString('EST-DRAFT', $csv);
+    }
+
     // ── Payments: mode never reached the exporter ────────────────────────────
 
     public function test_exporting_payments_honours_the_mode_chips(): void
