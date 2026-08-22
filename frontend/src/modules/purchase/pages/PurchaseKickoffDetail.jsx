@@ -3,11 +3,12 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, CalendarDays, Clock, MapPin, Users, CheckCircle2, XCircle,
   Send, Upload, AlertTriangle, Loader2, FileText, ShieldCheck, History,
-  Sparkles, Eye, Download, Video,
+  Sparkles, Eye, Download, Video, RotateCcw, FileCheck2,
 } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
 import {
   PK_STATUS, pkStatusCfg, pkNextStatuses, pkModeLabel, fmtDateTime, fmtDate,
+  PK_MOM_STATUS, pkMomCfg, pkMomDistributable, pkMomAwaitingDecision,
 } from '@/modules/purchase/kickoffConstants'
 import { KIT3D_STYLE, Overlay, ModalFooter, Field, TextInput } from '@/components/ui/kit3d'
 
@@ -47,6 +48,8 @@ export default function PurchaseKickoffDetail() {
   const cfg = pkStatusCfg(m.status)
   const nexts = pkNextStatuses(m.status)
   const hasMom = !!m.current_mom
+  const momApproved = pkMomDistributable(m.mom_status)
+  const canSend = hasMom && momApproved
 
   return (
     <div style={{ padding: 24, minHeight: '100vh', background: 'var(--bg-global)' }}>
@@ -173,6 +176,12 @@ export default function PurchaseKickoffDetail() {
 
         {/* Right column */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Minutes document */}
+          <MomCard m={m} onUpdated={setM} onError={setErr} />
+
+          {/* MOM approval workflow */}
+          <MomApprovalCard m={m} onUpdated={setM} onError={setErr} />
+
           {/* Acknowledgement */}
           <div className="pr-glass" style={{ padding: 20 }}>
             <SectionTitle icon={ShieldCheck}>Vendor acknowledgement</SectionTitle>
@@ -196,18 +205,17 @@ export default function PurchaseKickoffDetail() {
             ) : (
               <div style={{ marginTop: 12 }}>
                 <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '0 0 12px', lineHeight: 1.5 }}>
-                  Send the minutes to the vendor for acknowledgement. Requires a generated or uploaded MOM.
+                  Send the minutes to the vendor for acknowledgement. The MOM must be generated and approved first.
                 </p>
-                <button onClick={publish} disabled={!hasMom} style={{ ...solidBtn, width: '100%', justifyContent: 'center', opacity: hasMom ? 1 : 0.6, cursor: hasMom ? 'pointer' : 'not-allowed' }}>
+                <button onClick={publish} disabled={!canSend} style={{ ...solidBtn, width: '100%', justifyContent: 'center', opacity: canSend ? 1 : 0.6, cursor: canSend ? 'pointer' : 'not-allowed' }}>
                   <Send size={15} /> Send for acknowledgement
                 </button>
-                {!hasMom && <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: '8px 0 0' }}>Generate or upload the MOM PDF first.</p>}
+                {!hasMom
+                  ? <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: '8px 0 0' }}>Generate or upload the MOM PDF first.</p>
+                  : !momApproved && <p style={{ fontSize: 11, color: '#f59e0b', margin: '8px 0 0' }}>The minutes must be approved before they can be sent.</p>}
               </div>
             )}
           </div>
-
-          {/* Minutes document */}
-          <MomCard m={m} onUpdated={setM} onError={setErr} />
 
           {/* Audit trail */}
           {(m.audit_logs || []).length > 0 && (
@@ -327,6 +335,109 @@ function MomBtn({ onClick, busy, icon: Icon, tone, full, children }) {
         fontSize: 12.5, fontWeight: 700, color: tone, background: `${tone}14`, border: `1px solid ${tone}44` }}>
       {busy ? <Loader2 size={14} className="pk-spin" /> : <Icon size={14} />} {children}
     </button>
+  )
+}
+
+/* ── MOM approval card ────────────────────────────────────────────────────────
+ * The two-level MOM approval lifecycle (Sangoe TPV §9): Draft → Pending Organizer
+ * → Pending Chairperson → Approved → Distributed. Only an approved MOM may be sent
+ * to the vendor for acknowledgement. Mirrors PurchaseMomApprovalStatus. */
+function MomApprovalCard({ m, onUpdated, onError }) {
+  const [busy, setBusy] = useState(null)      // 'submit' | 'approve' | 'return' | 'revise'
+  const [showReturn, setShowReturn] = useState(false)
+  const [note, setNote] = useState('')
+
+  const st = m.mom_status || PK_MOM_STATUS.DRAFT
+  const cfg = pkMomCfg(st)
+  const completed = m.status === PK_STATUS.COMPLETED
+  const awaiting = pkMomAwaitingDecision(st)
+  const distributable = pkMomDistributable(st)
+
+  const run = async (fn) => {
+    onError(null)
+    try {
+      const res = await fn()
+      onUpdated(res?.data ?? res)
+      setShowReturn(false); setNote('')
+    } catch (err) {
+      onError(err?.response?.data?.message || 'Could not update the minutes.')
+    } finally { setBusy(null) }
+  }
+
+  const submit  = () => { setBusy('submit');  run(() => purchaseApi.kickoff.momSubmit(m.id)) }
+  const approve = () => { setBusy('approve'); run(() => purchaseApi.kickoff.momDecide(m.id, { decision: 'approve' })) }
+  const doReturn = () => { setBusy('return'); run(() => purchaseApi.kickoff.momDecide(m.id, { decision: 'return', note })) }
+  const revise  = () => { setBusy('revise');  run(() => purchaseApi.kickoff.momRevise(m.id)) }
+
+  const approveLabel = st === PK_MOM_STATUS.PENDING ? 'Approve (Organizer)' : 'Approve (Chairperson)'
+
+  return (
+    <div className="pr-glass" style={{ padding: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <SectionTitle icon={FileCheck2}>MOM approval</SectionTitle>
+        <span style={{ padding: '3px 10px', borderRadius: 999, background: cfg.bg, color: cfg.color, fontSize: 11.5, fontWeight: 800 }}>{cfg.label}</span>
+      </div>
+
+      {/* Approval trail */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12 }}>
+        <TrailRow ok={!!m.mom_submitted_at} label="Submitted" who={m.mom_submitter?.name} when={m.mom_submitted_at} />
+        <TrailRow ok={!!m.mom_organizer_approved_at} label="Organizer approved" who={m.mom_organizer_approver?.name} when={m.mom_organizer_approved_at} />
+        <TrailRow ok={!!m.mom_approved_at} label="Chairperson approved" who={m.mom_approver?.name} when={m.mom_approved_at} />
+        <TrailRow ok={!!m.mom_distributed_at} label="Distributed" who={m.mom_distributor?.name} when={m.mom_distributed_at} />
+      </div>
+
+      {/* Return-for-revision note (shown after a return) */}
+      {st === PK_MOM_STATUS.DRAFT && m.mom_approval_note && (
+        <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 11, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.32)' }}>
+          <div style={{ fontSize: 10.5, fontWeight: 800, color: '#f59e0b', marginBottom: 3 }}>RETURNED FOR REVISION</div>
+          <div style={{ fontSize: 12.5, color: 'var(--text-h)' }}>{m.mom_approval_note}</div>
+        </div>
+      )}
+
+      {/* Actions */}
+      <div style={{ marginTop: 14 }}>
+        {!completed ? (
+          <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: 0, lineHeight: 1.5 }}>
+            Complete the meeting and finalise its minutes before submitting them for approval.
+          </p>
+        ) : showReturn ? (
+          <div>
+            <textarea rows={3} value={note} onChange={e => setNote(e.target.value)} placeholder="What needs to change before approval?"
+              style={{ width: '100%', padding: '9px 12px', background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-h)', fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }} />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
+              <MomBtn onClick={() => { setShowReturn(false); setNote('') }} icon={XCircle} tone="#94a3b8">Cancel</MomBtn>
+              <MomBtn onClick={doReturn} busy={busy === 'return'} icon={RotateCcw} tone="#f59e0b">Return for revision</MomBtn>
+            </div>
+          </div>
+        ) : st === PK_MOM_STATUS.DRAFT ? (
+          <MomBtn onClick={submit} busy={busy === 'submit'} icon={Send} tone="#7C3AED" full>Submit for approval</MomBtn>
+        ) : awaiting ? (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <MomBtn onClick={approve} busy={busy === 'approve'} icon={CheckCircle2} tone="#10b981">{approveLabel}</MomBtn>
+            <MomBtn onClick={() => setShowReturn(true)} icon={RotateCcw} tone="#f59e0b">Return</MomBtn>
+          </div>
+        ) : distributable ? (
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, fontWeight: 700, color: cfg.color, marginBottom: 8 }}>
+              <CheckCircle2 size={15} /> {st === PK_MOM_STATUS.DISTRIBUTED ? 'Approved & distributed' : 'Approved — ready to send'}
+            </div>
+            <MomBtn onClick={revise} busy={busy === 'revise'} icon={RotateCcw} tone="#94a3b8" full>Pull back for revision</MomBtn>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function TrailRow({ ok, label, who, when }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      {ok
+        ? <CheckCircle2 size={14} style={{ color: '#10b981', flexShrink: 0 }} />
+        : <div style={{ width: 14, height: 14, borderRadius: '50%', border: '1.5px solid var(--border)', flexShrink: 0 }} />}
+      <span style={{ fontSize: 12, color: ok ? 'var(--text-h)' : 'var(--text-muted)', flex: 1 }}>{label}</span>
+      {ok && <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>{[who, fmtDateTime(when)].filter(Boolean).join(' · ')}</span>}
+    </div>
   )
 }
 

@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\Purchase\PurchaseVendor;
 use App\Support\Purchase\PurchaseKickoffStatus as Status;
 use App\Support\Purchase\PurchaseMeetingTypeCatalog;
+use App\Support\Purchase\PurchaseMomApprovalStatus as MomStatus;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -31,26 +32,56 @@ class PurchaseKickoffMeeting extends Model
         'scheduled_at', 'duration_minutes', 'mode', 'location',
         'original_scheduled_at', 'delay_reason',
         'minutes', 'completed_at',
+        'mom_status',
+        'mom_submitted_at', 'mom_submitted_by',
+        'mom_organizer_approved_at', 'mom_organizer_approved_by',
+        'mom_approved_at', 'mom_approved_by', 'mom_approval_note',
+        'mom_distributed_at', 'mom_distributed_by', 'mom_viewed_at',
         'ack_token', 'acknowledged_at', 'acknowledged_by_name', 'acknowledged_ip',
         'meeting_platform', 'meeting_link', 'meeting_id', 'meeting_passcode', 'meeting_host_link',
     ];
 
     protected $casts = [
-        'scheduled_at'          => 'datetime',
-        'original_scheduled_at' => 'datetime',
-        'completed_at'          => 'datetime',
-        'acknowledged_at'       => 'datetime',
-        'duration_minutes'      => 'integer',
+        'scheduled_at'              => 'datetime',
+        'original_scheduled_at'     => 'datetime',
+        'completed_at'              => 'datetime',
+        'acknowledged_at'          => 'datetime',
+        'mom_submitted_at'          => 'datetime',
+        'mom_organizer_approved_at' => 'datetime',
+        'mom_approved_at'           => 'datetime',
+        'mom_distributed_at'        => 'datetime',
+        'mom_viewed_at'             => 'datetime',
+        'duration_minutes'          => 'integer',
     ];
 
     /** The ack link is a bearer credential — never leak it in list/show payloads. */
     protected $hidden = ['ack_token'];
 
-    protected $appends = ['status_label', 'is_acknowledged', 'meeting_type_label'];
+    protected $appends = ['status_label', 'is_acknowledged', 'meeting_type_label', 'mom_status_label'];
 
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function momSubmitter()
+    {
+        return $this->belongsTo(User::class, 'mom_submitted_by');
+    }
+
+    public function momOrganizerApprover()
+    {
+        return $this->belongsTo(User::class, 'mom_organizer_approved_by');
+    }
+
+    public function momApprover()
+    {
+        return $this->belongsTo(User::class, 'mom_approved_by');
+    }
+
+    public function momDistributor()
+    {
+        return $this->belongsTo(User::class, 'mom_distributed_by');
     }
 
     public function vendor()
@@ -87,6 +118,11 @@ class PurchaseKickoffMeeting extends Model
     public function getMeetingTypeLabelAttribute(): string
     {
         return PurchaseMeetingTypeCatalog::label($this->meeting_type);
+    }
+
+    public function getMomStatusLabelAttribute(): string
+    {
+        return MomStatus::label($this->mom_status);
     }
 
     public function getIsAcknowledgedAttribute(): bool

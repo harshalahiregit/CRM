@@ -125,10 +125,38 @@ class PurchaseKickoffController extends Controller
         $file = $this->service->currentMomFile($kickoff);
         abort_unless($file, 404, 'MOM not available yet.');
 
+        $this->service->markMomViewed($kickoff);
+
         return response()->download($file['path'], $file['filename'], [
             'Content-Type'        => $file['mime'],
             'Content-Disposition' => 'inline; filename="'.$file['filename'].'"',
         ]);
+    }
+
+    public function momSubmit(Request $request, PurchaseKickoffMeeting $kickoff)
+    {
+        $this->assertTenant($request, $kickoff);
+
+        return response()->json($this->service->submitMomForApproval($kickoff, $request->user()));
+    }
+
+    public function momDecide(Request $request, PurchaseKickoffMeeting $kickoff)
+    {
+        $this->assertTenant($request, $kickoff);
+
+        $data = $request->validate([
+            'decision' => ['required', Rule::in(['approve', 'return'])],
+            'note'     => 'nullable|string|max:2000',
+        ]);
+
+        return response()->json($this->service->decideMom($kickoff, $data['decision'], $data['note'] ?? null, $request->user()));
+    }
+
+    public function momRevise(Request $request, PurchaseKickoffMeeting $kickoff)
+    {
+        $this->assertTenant($request, $kickoff);
+
+        return response()->json($this->service->reviseMom($kickoff, $request->user()));
     }
 
     public function publish(Request $request, PurchaseKickoffMeeting $kickoff)

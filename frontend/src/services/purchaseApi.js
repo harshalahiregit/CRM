@@ -305,6 +305,10 @@ export const purchaseApi = {
     },
     // Stored MOM PDF as a blob for inline view / download.
     momBlob: (id) => api.get(`/purchase/kickoff/${id}/mom`, { responseType: 'blob' }).then(r => r.data),
+    // MOM approval lifecycle (Draft → Pending Organizer → Pending Chairperson → Approved → Distributed).
+    momSubmit: (id)        => api.post(`/purchase/kickoff/${id}/mom/submit`).then(r => r.data),
+    momDecide: (id, data)  => api.post(`/purchase/kickoff/${id}/mom/decide`, data).then(r => r.data),
+    momRevise: (id)        => api.post(`/purchase/kickoff/${id}/mom/revise`).then(r => r.data),
     publish: (id)         => api.post(`/purchase/kickoff/${id}/publish`).then(r => r.data),
     remove:  (id)         => api.delete(`/purchase/kickoff/${id}`).then(r => r.data),
   },

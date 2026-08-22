@@ -34,6 +34,29 @@ export const PK_TRANSITIONS = {
 }
 export const pkNextStatuses = (s) => PK_TRANSITIONS[s] || []
 
+// ── MOM approval lifecycle — App\Support\Purchase\PurchaseMomApprovalStatus ──
+export const PK_MOM_STATUS = {
+  DRAFT: 'Draft',
+  PENDING: 'Pending_Approval',          // awaiting organizer
+  PENDING_CHAIR: 'Pending_Chairperson', // awaiting chairperson
+  APPROVED: 'Approved',
+  DISTRIBUTED: 'Distributed',
+}
+
+export const PK_MOM_CONFIG = {
+  [PK_MOM_STATUS.DRAFT]:         { label: 'Draft',              color: '#94a3b8', bg: 'rgba(148,163,184,0.15)' },
+  [PK_MOM_STATUS.PENDING]:       { label: 'Pending Organizer',  color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
+  [PK_MOM_STATUS.PENDING_CHAIR]: { label: 'Pending Chairperson', color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
+  [PK_MOM_STATUS.APPROVED]:      { label: 'Approved',           color: '#10b981', bg: 'rgba(16,185,129,0.15)' },
+  [PK_MOM_STATUS.DISTRIBUTED]:   { label: 'Distributed',        color: '#7C3AED', bg: 'rgba(124,58,237,0.15)' },
+}
+export const pkMomCfg = (s) => PK_MOM_CONFIG[s] || PK_MOM_CONFIG[PK_MOM_STATUS.DRAFT]
+
+/** Minutes are ready to distribute only once approved. */
+export const pkMomDistributable = (s) => s === PK_MOM_STATUS.APPROVED || s === PK_MOM_STATUS.DISTRIBUTED
+/** Awaiting an approval decision. */
+export const pkMomAwaitingDecision = (s) => s === PK_MOM_STATUS.PENDING || s === PK_MOM_STATUS.PENDING_CHAIR
+
 export const PK_MODES = [['onsite', 'On site'], ['online', 'Online']]
 export const pkModeLabel = (m) => (PK_MODES.find(([v]) => v === m) || [m, m || '—'])[1]
 
