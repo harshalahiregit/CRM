@@ -252,6 +252,31 @@ is harmless but signals nothing. If mail must send, `QUEUE_CONNECTION` has to be
 
 **`build-deploy-package.ps1` is PowerShell.** Use the bash version in §3.
 
+**`set -e` in a pasted block disconnects your SSH session.** In an interactive
+shell, `set -euo pipefail` makes ANY non-zero exit kill the shell -- and
+`grep -c` returns 1 when it finds nothing, so a harmless check like
+`migrate:status | grep -c Pending` ends the session and the rest of the block
+never runs. It looks like the server dropped the connection. Wrap multi-step
+blocks in `bash <<'EOF' ... EOF` so a failure ends the script, not the session.
+
+**BOTH SITES SHARE ONE DATABASE.** `app.sangoe.in` and `newsangoecrm.sangoe.in`
+both have `DB_DATABASE=admin_newsangoecrm12`. Running `migrate` from either one
+migrates both, and the other site is then running older code against a newer
+schema. Additive migrations are backward-compatible so this is survivable, but
+**a destructive migration from one site would take the other down with it.**
+Check which site you are in before every `migrate`.
+
+**A migration can end up recorded with none of its tables created.** Seen
+2026-08-22: the row existed in `migrations` (batch 15) while all six of its
+tables were absent, so `migrate` reported "Nothing to migrate" forever. The fix
+is to delete that one row and re-run -- do NOT `migrate:rollback`, which would
+run a `down()` against tables that do not exist:
+
+```bash
+php artisan tinker --execute="DB::table('migrations')->where('migration','<name>')->delete();"
+php artisan migrate --force
+```
+
 **Tests run on SQLite; production is MySQL.** MySQL rejects any identifier over
 64 characters and SQLite does not care, so an over-long index name passes the
 entire suite and then aborts `migrate` mid-file on live -- after earlier tables
