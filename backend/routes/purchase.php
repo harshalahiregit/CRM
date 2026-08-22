@@ -77,6 +77,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     // Goods Receipts (GRN) — receiving is operational, so staff may record + confirm.
     Route::get('/orders/{purchaseOrder}/receipts',         [GoodsReceiptController::class, 'index']);
     Route::post('/orders/{purchaseOrder}/receipts',        [GoodsReceiptController::class, 'store']);
+    // Register + stats BEFORE /receipts/{goodsReceipt} — the wildcard would
+    // otherwise match "stats" and try to resolve a GRN with that id.
+    Route::get('/receipts',                                [GoodsReceiptController::class, 'register']);
+    Route::get('/receipts/stats',                          [GoodsReceiptController::class, 'stats']);
     Route::get('/receipts/{goodsReceipt}',                 [GoodsReceiptController::class, 'show']);
     Route::post('/receipts/{goodsReceipt}/confirm',        [GoodsReceiptController::class, 'confirm']);
     Route::post('/receipts/{goodsReceipt}/cancel',         [GoodsReceiptController::class, 'cancel']);

@@ -16,6 +16,31 @@ class GoodsReceiptController extends Controller
     }
 
     /** GRNs for a given purchase order. */
+    /**
+     * The Goods Received register — every receipt for the tenant.
+     *
+     * Distinct from index(), which lists the receipts of one purchase order.
+     * Receipts are RAISED from inside a PO, but they are LOOKED UP by GRN
+     * number, delivery note or vendor, which is what this serves.
+     */
+    public function register(Request $request)
+    {
+        return response()->json(
+            $this->goodsReceiptService->list(
+                $request->user()->tenant_id,
+                $request->only([
+                    'status', 'purchase_vendor_id', 'purchase_order_id',
+                    'from', 'to', 'has_rejections', 'search',
+                ])
+            )
+        );
+    }
+
+    public function stats(Request $request)
+    {
+        return response()->json($this->goodsReceiptService->stats($request->user()->tenant_id));
+    }
+
     public function index(Request $request, PurchaseOrder $purchaseOrder)
     {
         $this->assertOrderTenant($request, $purchaseOrder);

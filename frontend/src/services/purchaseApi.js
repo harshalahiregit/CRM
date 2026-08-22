@@ -107,6 +107,10 @@ export const purchaseApi = {
 
   // ── Goods Receipts (GRN) — nested under a PO for create/list ─────────
   receipts: {
+    // Register: every receipt for the tenant, looked up by GRN / delivery note
+    // / vendor. listForOrder is the other direction — one PO's receipts.
+    list:         (params = {})   => api.get('/purchase/receipts', { params }).then(r => r.data),
+    stats:        ()              => api.get('/purchase/receipts/stats').then(r => r.data),
     listForOrder: (orderId)       => api.get(`/purchase/orders/${orderId}/receipts`).then(r => r.data),
     create:       (orderId, data) => api.post(`/purchase/orders/${orderId}/receipts`, data).then(r => r.data),
     get:          (id)            => api.get(`/purchase/receipts/${id}`).then(r => r.data),

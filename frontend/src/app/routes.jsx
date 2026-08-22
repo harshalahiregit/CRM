@@ -213,6 +213,7 @@ const PurchaseLayout = lazy(() => import('@/modules/purchase/PurchaseLayout'))
 
 const PurchaseRequests = lazy(() => import('@/modules/purchase/pages/PurchaseRequests'))
 const PurchaseOrders = lazy(() => import('@/modules/purchase/pages/PurchaseOrders'))
+const PurchaseGoodsReceived = lazy(() => import('@/modules/purchase/pages/PurchaseGoodsReceived'))
 const PurchaseInvoices = lazy(() => import('@/modules/purchase/pages/PurchaseInvoices'))
 const PurchaseDashboard = lazy(() => import('@/modules/purchase/pages/PurchaseDashboard'))
 const PurchaseDebitNotes = lazy(() => import('@/modules/purchase/pages/PurchaseDebitNotes'))
@@ -586,7 +587,7 @@ export default function AppRoutes() {
           <Route path="quotations" element={<S><PurchaseRfqs /></S>} />
           <Route path="quotations/:id" element={<S><PurchaseRfqDetail /></S>} />
           <Route path="orders" element={<S><PurchaseOrders /></S>} />
-          <Route path="goods-received" element={<ComingSoon name="Goods Received" />} />
+          <Route path="goods-received" element={<S><PurchaseGoodsReceived /></S>} />
           <Route path="invoices" element={<S><PurchaseInvoices /></S>} />
           <Route path="debit-notes" element={<S><PurchaseDebitNotes /></S>} />
           <Route path="contracts" element={<S><PurchaseContracts /></S>} />

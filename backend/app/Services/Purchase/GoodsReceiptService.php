@@ -6,6 +6,7 @@ use App\Exceptions\BusinessException;
 use App\Models\Purchase\GoodsReceipt;
 use App\Models\Purchase\PurchaseOrder;
 use App\Models\User;
+use App\Repositories\Purchase\GoodsReceiptRepository;
 use App\Support\Purchase\GoodsReceiptStatus as Status;
 use App\Support\Purchase\PurchaseOrderStatus;
 use Illuminate\Database\Eloquent\Collection;
@@ -14,6 +15,45 @@ use Illuminate\Support\Facades\Log;
 
 class GoodsReceiptService
 {
+    public function __construct(private GoodsReceiptRepository $goodsReceiptRepository) {}
+
+    /** Every receipt for the tenant — the Goods Received register. */
+    public function list(int $tenantId, array $filters): Collection
+    {
+        return $this->goodsReceiptRepository->filtered($tenantId, $filters);
+    }
+
+    /**
+     * Register headline figures.
+     *
+     * accepted/rejected sum the LINES, not the receipts, and only for confirmed
+     * receipts — a draft GRN has moved no stock, so counting its quantities
+     * would overstate what is actually on the shelf.
+     */
+    public function stats(int $tenantId): array
+    {
+        $base = fn () => GoodsReceipt::forTenant($tenantId);
+
+        $lineSum = fn (string $column) => (float) DB::table('goods_receipt_items')
+            ->join('goods_receipts', 'goods_receipts.id', '=', 'goods_receipt_items.goods_receipt_id')
+            ->where('goods_receipts.tenant_id', $tenantId)
+            ->where('goods_receipts.status', Status::CONFIRMED)
+            ->whereNull('goods_receipts.deleted_at')
+            ->sum('goods_receipt_items.'.$column);
+
+        return [
+            'total'          => $base()->count(),
+            'draft'          => $base()->where('status', Status::DRAFT)->count(),
+            'confirmed'      => $base()->where('status', Status::CONFIRMED)->count(),
+            'cancelled'      => $base()->where('status', Status::CANCELLED)->count(),
+            'accepted_qty'   => $lineSum('accepted_qty'),
+            'rejected_qty'   => $lineSum('rejected_qty'),
+            'with_rejections' => $base()->where('status', Status::CONFIRMED)
+                                        ->whereHas('items', fn ($q) => $q->where('rejected_qty', '>', 0))
+                                        ->count(),
+        ];
+    }
+
     /** GRNs for one purchase order (the PO detail view lists its receipts). */
     public function listForOrder(PurchaseOrder $po): Collection
     {
