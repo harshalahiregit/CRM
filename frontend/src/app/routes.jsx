@@ -728,6 +728,16 @@ export default function AppRoutes() {
         <Route path="projects" element={<S><ProjectList /></S>} />
         <Route path="projects/:id" element={<S><ProjectDetail /></S>} />
 
+        {/* The shared meeting engine, on a neutral path.
+            It was only ever mounted under /app/tpv/kickoff and
+            /app/purchase/kickoff, yet kickoffApi.list() is not scoped to
+            either — both mounts show the same tenant-wide list. So a meeting
+            belonging to a Customer had nowhere to be opened, and the link from
+            the customer's Meetings tab 404'd. Same components, no module
+            chrome, alongside Tasks and Projects which are equally cross-module. */}
+        <Route path="meetings" element={<S><KickoffMeetings /></S>} />
+        <Route path="meetings/:id" element={<S><KickoffMeetingDetail /></S>} />
+
         {/* Inventory OS — Phase 1 foundation */}
         <Route path="inventory" element={<S><InventoryDashboard /></S>} />
         <Route path="inventory/products" element={<S><InventoryProducts /></S>} />

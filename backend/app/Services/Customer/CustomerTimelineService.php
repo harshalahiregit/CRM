@@ -180,7 +180,7 @@ class CustomerTimelineService
             // ── SWAP POINT — Helpdesk / Projects / Tasks (Shivam) ──
             $this->from($client, 'tickets', 'customer_id', 'created_at', fn ($r) => [
                 'type' => 'ticket', 'label' => 'Ticket opened: '.$r->subject,
-                'detail' => $r->status, 'link' => '/app/tickets/'.$r->id,
+                'detail' => $r->status, 'link' => '/app/helpdesk/tickets/'.$r->id,
             ]),
             $this->from($client, 'projects', 'customer_id', 'created_at', fn ($r) => [
                 'type' => 'project', 'label' => 'Project started: '.$r->name,
