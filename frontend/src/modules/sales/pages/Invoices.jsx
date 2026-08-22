@@ -23,9 +23,19 @@ const STAFF = ['Zafar Farooque','Priya Sharma','Rohit Verma','Anjali Singh','Kar
 const PAY_MODES = ['Bank Transfer','Cash','Cheque','Stripe','Razorpay','PayPal','UPI']
 const STATUSES = ['Draft','Unpaid','Partially Paid','Paid','Overdue','Cancelled']
 
+// Today, and today + 30, as plain YYYY-MM-DD. Built from local parts rather
+// than toISOString on a shifted Date so the default does not land a day early
+// west of UTC.
+const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+const TODAY = ymd(new Date())
+const DUE_DEFAULT = ymd(new Date(Date.now() + 30 * 86400000))
+
 const EMPTY = {
-  client_id:'', project_id:'', date: new Date().toISOString().split('T')[0],
-  due_date:'', currency:'INR', sale_agent:'', discount_type:'before_tax',
+  client_id:'', project_id:'', date: TODAY,
+  // due_date is required|date server-side. It used to start empty with no
+  // asterisk and no client check, so the only feedback was a 422 the user
+  // could not attach to a field.
+  due_date: DUE_DEFAULT, currency:'INR', sale_agent:'', discount_type:'before_tax',
   discount_mode:'fixed', discount_value: 0,
   recurring: false, recur_interval:'1', recur_type:'month', cycles:'0',
   allowed_modes: ['Bank Transfer','UPI','Razorpay'],
@@ -61,13 +71,20 @@ export default function Invoices() {
   const sf = (k,v) => setForm(p=>({...p,[k]:v}))
   const toggleMode = (m) => sf('allowed_modes', form.allowed_modes.includes(m) ? form.allowed_modes.filter(x=>x!==m) : [...form.allowed_modes,m])
 
+  // Load EVERY invoice, not the active tab's.
+  //
+  // The KPI tiles were derived from this same array, so filtering on the server
+  // made "Total Invoiced" and "Outstanding" report the selected tab while still
+  // being labelled as totals, and zeroed the other five counters. The endpoint
+  // returns the whole set unpaginated either way, so applying the tab here
+  // costs no request, keeps the tiles honest, and makes switching tabs instant.
   const load = () => {
     setLoading(true)
-    salesApi.invoices.list({status: filter!=='All'?filter:undefined}).then(d => { setData(d); setLoadError(null) })
+    salesApi.invoices.list().then(d => { setData(d); setLoadError(null) })
       .catch(e => setLoadError(e))
       .finally(() => setLoading(false))
   }
-  useEffect(()=>{ load() },[filter])
+  useEffect(()=>{ load() },[])
 
   // Arriving from a customer profile's "New Invoice" button: open the create
   // drawer with that customer preselected.
@@ -125,6 +142,8 @@ export default function Invoices() {
   // apiError already spells out which line item failed, so e.message is useful.
   const handleCreate = async () => {
     if(!form.client_id) return showToast('Customer required','error')
+    if(!form.due_date) return showToast('Due date required','error')
+    if(form.date && form.due_date < form.date) return showToast('Due date cannot be before the invoice date','error')
     try {
       await salesApi.invoices.create({...form, client_id: Number(form.client_id), project_id: form.project_id ? Number(form.project_id) : null})
       showToast('Invoice created!'); setShowDrawer(false); setForm(EMPTY); load()
@@ -132,6 +151,9 @@ export default function Invoices() {
   }
   const handlePay = async () => {
     if(!payForm.amount) return showToast('Amount required','error')
+    const amt = Number(payForm.amount)
+    if(!(amt > 0)) return showToast('Amount must be greater than zero','error')
+    if(amt > Number(selectedInv.balance)) return showToast(`Amount cannot exceed the balance of ${fmt(selectedInv.balance)}`,'error')
     try {
       await salesApi.invoices.recordPayment(selectedInv.id, payForm)
       showToast('Payment recorded!'); setShowPayModal(false); setPayForm(EMPTY_PAY); setShowTds(false); load()
@@ -182,6 +204,10 @@ export default function Invoices() {
     }
   }
 
+  // The tab's rows. `data` stays the whole set so the tiles below describe the
+  // account rather than the tab.
+  const byStatus = filter === 'All' ? data : data.filter(i => i.status === filter)
+
   const stats = {
     total: data.length,
     unpaid: data.filter(i=>i.status==='Unpaid').length,
@@ -194,7 +220,7 @@ export default function Invoices() {
   // Search + rows-per-page over the (server status-filtered) list. Client-side
   // because the endpoint returns everything unpaginated, so this costs no request.
   const { search, setSearch, pageSize, setPageSize, visible, matched, pager } =
-    useListView(data, ['number', 'client', 'status', 'reference'])
+    useListView(byStatus, ['number', 'client', 'status', 'reference'])
 
   return (
     <>
@@ -232,7 +258,7 @@ export default function Invoices() {
       {/* Toolbar: search · status tabs · count · rows-per-page · refresh · export */}
       <ListToolbar
         search={search} onSearch={setSearch} searchPlaceholder="Search invoices…"
-        count={matched} total={data.length} unit="record"
+        count={matched} total={byStatus.length} unit="record"
         pageSize={pageSize} onPageSize={setPageSize} pager={pager} onRefresh={load}
         onExport={() => exportSalesList('invoices', { status: filter !== 'All' ? filter : undefined, search: search || undefined })
           .catch(e => showToast(e.message, 'error'))}
@@ -377,8 +403,9 @@ export default function Invoices() {
                       <input type="date" className="input-3d text-sm" value={form.date} onChange={e => sf('date', e.target.value)} />
                     </div>
                     <div>
-                      <label className="label">Due Date</label>
-                      <input type="date" className="input-3d text-sm" value={form.due_date} onChange={e => sf('due_date', e.target.value)} />
+                      <label className="label">Due Date *</label>
+                      <input type="date" required className="input-3d text-sm" min={form.date || undefined}
+                        value={form.due_date} onChange={e => sf('due_date', e.target.value)} />
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
@@ -560,7 +587,11 @@ export default function Invoices() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="label">Amount *</label>
+                    {/* RecordPaymentRequest enforces min 0.01 and max = balance.
+                        The box had neither, so -500 or an overpayment reached the
+                        server and came back as a 422 nothing surfaced. */}
                     <input type="number" className="input-3d text-sm" placeholder={`Max: ${selectedInv.balance}`}
+                      min="0.01" max={selectedInv.balance} step="0.01"
                       value={payForm.amount} onChange={e => setPayForm(p => ({...p, amount: e.target.value}))} />
                   </div>
                   <div>

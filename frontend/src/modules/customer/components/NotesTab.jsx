@@ -4,6 +4,7 @@ import { StickyNote, Flag, CalendarClock, Bell, Eye, EyeOff, Share2 } from 'luci
 import { customerApi } from '@/services/customerApi'
 import { taskApi } from '@/services/taskApi'
 import { helpdeskApi } from '@/services/helpdeskApi'
+import { projectApi } from '@/services/projectApi'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import RichTextEditor from '@/components/ui/RichTextEditor'
 import RowMenu from '@/modules/sales/components/RowMenu'
@@ -96,6 +97,26 @@ export default function NotesTab({ id, client, notes, reload, toast }) {
     } catch (e) { toast.error(e.message) }
   }
 
+  // The menu offered this behind a permanently-disabled "Projects module coming
+  // soon" tooltip. Projects is built, routed, and already reachable from this
+  // same customer record — the excuse had simply outlived the fact. Reached
+  // through the projects HTTP API, exactly as the two conversions above do.
+  const convertToProject = async (n) => {
+    try {
+      const project = await projectApi.create({
+        name: `Note: ${stripHtml(n.content).slice(0, 80)}`,
+        description: stripHtml(n.content),
+        link_type: 'customer',
+        customer_id: Number(id),
+        // start_date is required|date server-side; a converted note starts today.
+        start_date: new Date().toLocaleDateString('en-CA'),
+        deadline: d10(n.deadline) || undefined,
+      })
+      toast.success('Project created from note')
+      return project
+    } catch (e) { toast.error(e.message) }
+  }
+
   const share = async (n) => {
     const text = `Note on ${client?.company || 'customer'} (${n.author?.name || 'Staff'}, ${d10(n.created_at)}):\n\n${stripHtml(n.content)}`
     try { await navigator.clipboard.writeText(text); toast.success('Note copied to clipboard') }
@@ -180,7 +201,7 @@ export default function NotesTab({ id, client, notes, reload, toast }) {
                 <button className="row-menu-item" onClick={() => startEdit(n)}>Edit</button>
                 <button className="row-menu-item" onClick={() => convertToTask(n)}>Convert to Task</button>
                 <button className="row-menu-item" onClick={() => convertToTicket(n)}>Convert to Ticket</button>
-                <button className="row-menu-item" disabled title="Projects module coming soon" style={{ opacity: 0.45, cursor: 'not-allowed' }}>Convert to Project</button>
+                <button className="row-menu-item" onClick={() => convertToProject(n)}>Convert to Project</button>
                 <button className="row-menu-item" onClick={() => share(n)}><Share2 size={11} className="inline mr-1" />Share (copy)</button>
                 <button className="row-menu-item" style={{ color: '#f87171' }} onClick={() => setConfirmDel(n)}>Delete</button>
               </RowMenu>
