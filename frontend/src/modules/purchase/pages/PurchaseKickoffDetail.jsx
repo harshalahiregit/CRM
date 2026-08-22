@@ -5,6 +5,7 @@ import {
   Send, Upload, AlertTriangle, Loader2, FileText, ShieldCheck, History,
   Sparkles, Eye, Download, Video, RotateCcw, FileCheck2,
   ListChecks, Plus, Paperclip, Trash2, UserCheck, AlertOctagon, ArrowUpRight, Gavel,
+  ListOrdered, LayoutTemplate, CopyPlus,
 } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
 import {
@@ -105,10 +106,19 @@ export default function PurchaseKickoffDetail() {
           <div className="pr-glass" style={{ padding: 20 }}>
             <SectionTitle icon={CalendarDays}>Schedule</SectionTitle>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginTop: 12 }}>
+              {m.meeting_no && <Detail icon={FileText} label="Meeting No." value={m.meeting_no} />}
               <Detail icon={Clock} label="Date & time" value={fmtDateTime(m.scheduled_at)} />
+              {m.end_at && <Detail icon={Clock} label="End time" value={fmtDateTime(m.end_at)} />}
               <Detail icon={Clock} label="Duration" value={m.duration_minutes ? `${m.duration_minutes} min` : '—'} />
               <Detail icon={MapPin} label={m.mode === 'online' ? 'Meeting link' : 'Location'} value={m.location || '—'} />
               <Detail icon={CalendarDays} label="Mode" value={pkModeLabel(m.mode)} />
+              {m.priority && <Detail icon={AlertTriangle} label="Priority" value={m.priority} />}
+              {m.confidentiality && <Detail icon={ShieldCheck} label="Confidentiality" value={m.confidentiality} />}
+              {m.chairperson && <Detail icon={UserCheck} label="Chairperson" value={m.chairperson} />}
+              {m.coordinator && <Detail icon={UserCheck} label="Coordinator" value={m.coordinator} />}
+              {m.organizer && <Detail icon={UserCheck} label="Organizer" value={m.organizer} />}
+              {m.department && <Detail icon={Users} label="Department" value={m.department} />}
+              {m.client_name && <Detail icon={FileText} label="Client" value={m.client_name} />}
             </div>
             {m.status === PK_STATUS.DELAYED && m.delay_reason && (
               <div style={{ marginTop: 14, padding: '11px 13px', borderRadius: 11, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.32)' }}>
@@ -123,6 +133,10 @@ export default function PurchaseKickoffDetail() {
               </div>
             )}
           </div>
+
+          {/* Previous-MOM continuity + Agenda builder */}
+          <PreviousSummaryCard m={m} onError={setErr} onChanged={load} />
+          <AgendaCard m={m} onError={setErr} />
 
           {/* Online meeting details (read-only, shown when mode = 'online' and a link exists) */}
           {m.mode === 'online' && (m.meeting_link || m.meeting_platform) && (
@@ -819,6 +833,10 @@ function IssueRegisterCard({ m, onError }) {
                         style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 8, cursor: busyId === i.id ? 'wait' : 'pointer', fontSize: 11, fontWeight: 700, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.4)' }}>
                         <ArrowUpRight size={12} /> To CAPA
                       </button>
+                      <button disabled={busyId === i.id} onClick={() => convert(i, 'approval')}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 8, cursor: busyId === i.id ? 'wait' : 'pointer', fontSize: 11, fontWeight: 700, color: '#0ea5e9', background: 'rgba(14,165,233,0.1)', border: '1px solid rgba(14,165,233,0.4)' }}>
+                        <ArrowUpRight size={12} /> To Approval
+                      </button>
                     </>
                   )}
                 </div>
@@ -948,6 +966,126 @@ function DecisionRegisterCard({ m, onError }) {
               </div>
             )
           })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ── Previous-MOM continuity card (Meeting.docx §11) ─────────────────────────── */
+function PreviousSummaryCard({ m, onError, onChanged }) {
+  const [sum, setSum] = useState(undefined)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    purchaseApi.kickoff.previousSummary(m.id).then(setSum).catch(() => setSum(null))
+  }, [m.id])
+
+  if (sum === undefined || !sum?.previous) return null
+
+  const carry = async () => {
+    setBusy(true); onError(null)
+    try {
+      const r = await purchaseApi.kickoff.carryForward(m.id)
+      await onChanged()
+      alert(`Carried forward ${r.actions} action(s) and ${r.issues} issue(s) from ${r.from}.`)
+    } catch (e) { onError(e?.response?.data?.message || 'Could not carry forward.') }
+    finally { setBusy(false) }
+  }
+
+  const a = sum.actions || {}
+  return (
+    <div className="pr-glass" style={{ padding: 20 }}>
+      <SectionTitle icon={History}>Previous meeting</SectionTitle>
+      <div style={{ fontSize: 12.5, color: 'var(--text-h)', marginTop: 10 }}>
+        <strong>{sum.previous.meeting_no || sum.previous.reference}</strong> — {sum.previous.title}
+      </div>
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 10, fontSize: 12 }}>
+        <span>Actions: <strong style={{ color: 'var(--text-h)' }}>{a.total || 0}</strong></span>
+        <span style={{ color: '#10b981' }}>{a.closed || 0} closed</span>
+        <span style={{ color: '#0ea5e9' }}>{a.open || 0} open</span>
+        <span style={{ color: '#ef4444' }}>{a.overdue || 0} overdue</span>
+        <span>Issues open: <strong style={{ color: 'var(--text-h)' }}>{sum.issues?.open || 0}</strong></span>
+      </div>
+      {((a.open || 0) > 0 || (sum.issues?.open || 0) > 0) && (
+        <button onClick={carry} disabled={busy} style={{ ...solidBtn, marginTop: 12, background: 'linear-gradient(145deg,#34d399,#10b981)', boxShadow: 'none' }}>
+          <CopyPlus size={15} /> {busy ? 'Carrying…' : 'Carry forward open items'}
+        </button>
+      )}
+    </div>
+  )
+}
+
+/* ── Agenda builder card (Meeting.docx §3/§4) ─────────────────────────────────── */
+function AgendaCard({ m, onError }) {
+  const [rows, setRows] = useState(m.agenda_items || [])
+  const [adding, setAdding] = useState(false)
+  const [busy, setBusy] = useState(null)
+  const [form, setForm] = useState({ item: '', owner_names: '', duration_minutes: '', priority: '' })
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => { setRows(m.agenda_items || []) }, [m.agenda_items])
+  const refresh = async () => { try { setRows(await purchaseApi.kickoff.agenda.list(m.id)) } catch { /* keep */ } }
+
+  const add = async () => {
+    if (!form.item.trim()) { onError('An agenda item needs a title.'); return }
+    setSaving(true); onError(null)
+    try {
+      await purchaseApi.kickoff.agenda.create(m.id, {
+        item: form.item, owner_names: form.owner_names || undefined,
+        duration_minutes: form.duration_minutes ? Number(form.duration_minutes) : undefined,
+        priority: form.priority || undefined,
+      })
+      setForm({ item: '', owner_names: '', duration_minutes: '', priority: '' }); setAdding(false); await refresh()
+    } catch (e) { onError(e?.response?.data?.message || 'Could not add the agenda item.') }
+    finally { setSaving(false) }
+  }
+  const del = async (a) => { onError(null); try { await purchaseApi.kickoff.agenda.remove(m.id, a.id); await refresh() } catch (e) { onError(e?.response?.data?.message || 'Could not delete.') } }
+  const loadTemplate = async () => { setBusy('t'); onError(null); try { setRows(await purchaseApi.kickoff.agenda.loadTemplate(m.id)) } catch (e) { onError(e?.response?.data?.message || 'No template for this type.') } finally { setBusy(null) } }
+  const copyPrev = async () => { setBusy('c'); onError(null); try { setRows(await purchaseApi.kickoff.agenda.copyPrevious(m.id)) } catch (e) { onError(e?.response?.data?.message || 'No previous agenda.') } finally { setBusy(null) } }
+
+  return (
+    <div className="pr-glass" style={{ padding: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+        <SectionTitle icon={ListOrdered}>Agenda <span style={{ fontWeight: 500, color: 'var(--text-muted)', fontSize: 12 }}>· {rows.length}</span></SectionTitle>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <MomBtn onClick={loadTemplate} busy={busy === 't'} icon={LayoutTemplate} tone="#0ea5e9">Template</MomBtn>
+          <MomBtn onClick={copyPrev} busy={busy === 'c'} icon={CopyPlus} tone="#10b981">Copy previous</MomBtn>
+          <MomBtn onClick={() => setAdding(v => !v)} icon={Plus} tone="#7C3AED">Add</MomBtn>
+        </div>
+      </div>
+
+      {adding && (
+        <div style={{ marginTop: 12, padding: 14, borderRadius: 12, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+          <TextInput value={form.item} onChange={e => setForm(f => ({ ...f, item: e.target.value }))} placeholder="Agenda item" />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 8 }}>
+            <TextInput value={form.owner_names} onChange={e => setForm(f => ({ ...f, owner_names: e.target.value }))} placeholder="Owner" />
+            <TextInput type="number" value={form.duration_minutes} onChange={e => setForm(f => ({ ...f, duration_minutes: e.target.value }))} placeholder="Min" />
+            <select value={form.priority} onChange={e => setForm(f => ({ ...f, priority: e.target.value }))} style={selStyle}>
+              <option value="">Priority</option>{['Low', 'Medium', 'High'].map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
+            <MomBtn onClick={() => setAdding(false)} icon={XCircle} tone="#94a3b8">Cancel</MomBtn>
+            <MomBtn onClick={add} busy={saving} icon={Plus} tone="#7C3AED">Add item</MomBtn>
+          </div>
+        </div>
+      )}
+
+      {rows.length === 0 ? (
+        <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '12px 0 0' }}>No agenda yet. Add items, load the template, or copy the previous meeting's agenda.</p>
+      ) : (
+        <div style={{ marginTop: 12 }}>
+          {rows.map((a, idx) => (
+            <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderTop: idx ? '1px solid var(--border)' : 'none' }}>
+              <span style={{ fontSize: 12, fontWeight: 800, color: '#a78bfa', width: 20 }}>{idx + 1}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, color: 'var(--text-h)' }}>{a.item}</div>
+                <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{[a.owner?.name || a.owner_names, a.duration_minutes ? `${a.duration_minutes} min` : null, a.priority].filter(Boolean).join(' · ') || '—'}</div>
+              </div>
+              <button onClick={() => del(a)} title="Delete" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 2 }}><Trash2 size={14} /></button>
+            </div>
+          ))}
         </div>
       )}
     </div>

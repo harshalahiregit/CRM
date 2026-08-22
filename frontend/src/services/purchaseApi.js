@@ -296,6 +296,18 @@ export const purchaseApi = {
   kickoff: {
     list:   (params = {}) => api.get('/purchase/kickoff', { params }).then(r => r.data),
     stats:  ()            => api.get('/purchase/kickoff/stats').then(r => r.data),
+    dashboard: ()         => api.get('/purchase/kickoff/dashboard').then(r => r.data),
+    previousSummary: (id) => api.get(`/purchase/kickoff/${id}/previous-summary`).then(r => r.data),
+    carryForward: (id)    => api.post(`/purchase/kickoff/${id}/carry-forward`).then(r => r.data),
+    // Agenda builder (Meeting.docx §3/§4).
+    agenda: {
+      list:         (id)          => api.get(`/purchase/kickoff/${id}/agenda`).then(r => r.data),
+      create:       (id, data)    => api.post(`/purchase/kickoff/${id}/agenda`, data).then(r => r.data),
+      update:       (id, aid, d)  => api.put(`/purchase/kickoff/${id}/agenda/${aid}`, d).then(r => r.data),
+      remove:       (id, aid)     => api.delete(`/purchase/kickoff/${id}/agenda/${aid}`).then(r => r.data),
+      loadTemplate: (id)          => api.post(`/purchase/kickoff/${id}/agenda/load-template`).then(r => r.data),
+      copyPrevious: (id)          => api.post(`/purchase/kickoff/${id}/agenda/copy-previous`).then(r => r.data),
+    },
     // Configurable meeting-type catalogue (kickoff is one type) — §9/§39.
     meetingTypes: ()      => api.get('/purchase/meeting-types').then(r => r.data),
     get:    (id)          => api.get(`/purchase/kickoff/${id}`).then(r => r.data),
