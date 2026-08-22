@@ -197,11 +197,13 @@ export default function Estimates({ docType = 'proforma' }) {
 
   const handleCreate = async () => {
     if (!form.subject || !form.client_id) return showToast('Subject & customer required', 'error')
-    await salesApi.estimates.create({ estimate_type: docType, ...form, client_id: Number(form.client_id), project_id: form.project_id ? Number(form.project_id) : null })
-    showToast(`${DOC_LABEL} created!`)
-    setShowDrawer(false)
-    setForm(EMPTY_FORM)
-    load()
+    try {
+      await salesApi.estimates.create({ estimate_type: docType, ...form, client_id: Number(form.client_id), project_id: form.project_id ? Number(form.project_id) : null })
+      showToast(`${DOC_LABEL} created!`)
+      setShowDrawer(false)
+      setForm(EMPTY_FORM)
+      load()
+    } catch (e) { showToast(e.message, 'error') }
   }
 
   const countBy = (status) => data.filter(e => effectiveStatus(e) === status).length

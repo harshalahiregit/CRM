@@ -74,13 +74,15 @@ export default function CreditNotes() {
     if(!form.client_id||!form.amount) return showToast('Customer & amount required','error')
     // The credit-note total is derived from line items — map the entered amount
     // to a single line so it persists.
-    await salesApi.creditNotes.create({
-      ...form,
-      client_id: Number(form.client_id),
-      date: new Date().toISOString().split('T')[0], // backend requires date
-      line_items: [{ item_name: form.reason || 'Credit', qty: 1, rate: Number(form.amount), tax: 0, discount: 0 }],
-    })
-    showToast('Credit note created!'); setShowDrawer(false); setForm(EMPTY); load()
+    try {
+      await salesApi.creditNotes.create({
+        ...form,
+        client_id: Number(form.client_id),
+        date: new Date().toISOString().split('T')[0], // backend requires date
+        line_items: [{ item_name: form.reason || 'Credit', qty: 1, rate: Number(form.amount), tax: 0, discount: 0 }],
+      })
+      showToast('Credit note created!'); setShowDrawer(false); setForm(EMPTY); load()
+    } catch (e) { showToast(e.message, 'error') }
   }
   const handleRefund = async () => {
     if(!refundForm.amount) return showToast('Amount required','error')

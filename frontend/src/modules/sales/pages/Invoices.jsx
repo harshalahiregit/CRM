@@ -120,15 +120,22 @@ export default function Invoices() {
     ...(Number(t.discount_value) ? { discount_value: Number(t.discount_value) } : {}),
   }))
 
+  // Was un-caught: a 422 or 500 rejected the promise, the drawer stayed open
+  // with no message, and the user could only conclude the button was dead.
+  // apiError already spells out which line item failed, so e.message is useful.
   const handleCreate = async () => {
     if(!form.client_id) return showToast('Customer required','error')
-    await salesApi.invoices.create({...form, client_id: Number(form.client_id), project_id: form.project_id ? Number(form.project_id) : null})
-    showToast('Invoice created!'); setShowDrawer(false); setForm(EMPTY); load()
+    try {
+      await salesApi.invoices.create({...form, client_id: Number(form.client_id), project_id: form.project_id ? Number(form.project_id) : null})
+      showToast('Invoice created!'); setShowDrawer(false); setForm(EMPTY); load()
+    } catch (e) { showToast(e.message, 'error') }
   }
   const handlePay = async () => {
     if(!payForm.amount) return showToast('Amount required','error')
-    await salesApi.invoices.recordPayment(selectedInv.id, payForm)
-    showToast('Payment recorded!'); setShowPayModal(false); setPayForm(EMPTY_PAY); setShowTds(false); load()
+    try {
+      await salesApi.invoices.recordPayment(selectedInv.id, payForm)
+      showToast('Payment recorded!'); setShowPayModal(false); setPayForm(EMPTY_PAY); setShowTds(false); load()
+    } catch (e) { showToast(e.message, 'error') }
   }
   /**
    * Marks the invoice sent (status + sent_at) via PATCH /invoices/{id}/send.

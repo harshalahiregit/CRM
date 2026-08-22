@@ -73,9 +73,11 @@ export default function Items() {
 
   const handleSave = async () => {
     if(!form.name||!form.rate) return showToast('Name & rate required','error')
-    if(editing) { await salesApi.items.update(editing.id,form); showToast('Item updated!') }
-    else { await salesApi.items.create(form); showToast('Item created!') }
-    setShowDrawer(false); loadData()
+    try {
+      if(editing) { await salesApi.items.update(editing.id,form); showToast('Item updated!') }
+      else { await salesApi.items.create(form); showToast('Item created!') }
+      setShowDrawer(false); loadData()
+    } catch (e) { showToast(e.message, 'error') }
   }
 
   const handleCSV = e => {
