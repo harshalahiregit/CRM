@@ -17,9 +17,14 @@ class PurchaseKickoffParticipant extends Model
 
     protected $table = 'purchase_kickoff_participants';
 
+    /** Attendance states (Meeting.docx §6). Present/Online/Late/Offline count as attended. */
+    public const ATTENDANCE = ['Present', 'Absent', 'Late', 'Excused', 'Online', 'Offline'];
+    public const ATTENDING = ['Present', 'Late', 'Online', 'Offline'];
+
     protected $fillable = [
         'tenant_id', 'purchase_kickoff_meeting_id', 'purchase_contact_id', 'user_id',
-        'name', 'email', 'organisation', 'role', 'attended',
+        'name', 'email', 'phone', 'organisation', 'designation', 'role', 'side',
+        'attended', 'attendance_status',
     ];
 
     protected $casts = [

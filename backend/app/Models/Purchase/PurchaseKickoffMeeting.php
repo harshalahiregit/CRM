@@ -28,8 +28,9 @@ class PurchaseKickoffMeeting extends Model
 
     protected $fillable = [
         'tenant_id', 'created_by', 'purchase_vendor_id', 'purchase_onboarding_id',
-        'reference', 'title', 'meeting_type', 'agenda', 'status',
-        'scheduled_at', 'duration_minutes', 'mode', 'location',
+        'reference', 'meeting_no', 'title', 'meeting_type', 'agenda', 'status',
+        'priority', 'confidentiality', 'chairperson', 'coordinator', 'organizer', 'department', 'client_name',
+        'scheduled_at', 'end_at', 'duration_minutes', 'mode', 'location',
         'original_scheduled_at', 'delay_reason',
         'minutes', 'completed_at',
         'mom_status',
@@ -43,6 +44,7 @@ class PurchaseKickoffMeeting extends Model
 
     protected $casts = [
         'scheduled_at'              => 'datetime',
+        'end_at'                    => 'datetime',
         'original_scheduled_at'     => 'datetime',
         'completed_at'              => 'datetime',
         'acknowledged_at'          => 'datetime',
@@ -58,6 +60,21 @@ class PurchaseKickoffMeeting extends Model
     protected $hidden = ['ack_token'];
 
     protected $appends = ['status_label', 'is_acknowledged', 'meeting_type_label', 'mom_status_label'];
+
+    /** Auto-assign a Meeting-No (MTG-YYYY-NNNN) per tenant/year on create (§2). */
+    protected static function booted(): void
+    {
+        static::creating(function (self $m) {
+            if (empty($m->meeting_no)) {
+                $year = now()->year;
+                $n = static::withTrashed()
+                    ->where('tenant_id', $m->tenant_id)
+                    ->whereYear('created_at', $year)
+                    ->count() + 1;
+                $m->meeting_no = sprintf('MTG-%d-%04d', $year, $n);
+            }
+        });
+    }
 
     public function creator()
     {
@@ -102,6 +119,12 @@ class PurchaseKickoffMeeting extends Model
     public function momDocuments()
     {
         return $this->hasMany(PurchaseKickoffMom::class, 'purchase_kickoff_meeting_id');
+    }
+
+    /** Structured agenda items (Meeting.docx §3 agenda builder). */
+    public function agendaItems()
+    {
+        return $this->hasMany(PurchaseMomAgendaItem::class, 'purchase_kickoff_meeting_id');
     }
 
     /** Action items raised in this meeting's minutes (Sangoe TPV §9 action engine). */

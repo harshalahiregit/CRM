@@ -8,6 +8,7 @@ use App\Models\Purchase\PurchaseKickoffParticipant;
 use App\Models\Purchase\PurchaseMomIssue;
 use App\Models\User;
 use App\Support\Purchase\PurchaseMomIssueStatus as IssueStatus;
+use App\Services\Purchase\PurchaseApprovalRequestService;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Log;
 
@@ -23,6 +24,8 @@ class PurchaseMomIssueService
         private PurchaseNcrService $ncrs,
         private PurchaseCapaService $capas,
     ) {}
+
+    // PurchaseApprovalRequestService is resolved lazily in convertToApproval().
 
     /** All issues for a meeting, ordered for display. */
     public function forMeeting(PurchaseKickoffMeeting $meeting): Collection
@@ -123,6 +126,28 @@ class PurchaseMomIssueService
     }
 
     /**
+     * Escalate an issue to a central Approval-register entry (Meeting.docx §10).
+     * Idempotent. The issue moves to In Progress and links to the PAPR reference.
+     */
+    public function convertToApproval(PurchaseMomIssue $issue, User $actor): PurchaseMomIssue
+    {
+        $this->assertNotConverted($issue);
+        $meeting = $issue->meeting;
+
+        $approval = app(PurchaseApprovalRequestService::class)->raise([
+            'approval_type'      => 'other',
+            'title'              => 'Approval for '.$issue->issue_ref.' — '.$issue->title,
+            'description'        => $issue->description,
+            'purchase_vendor_id' => $meeting?->purchase_vendor_id,
+            'subject_type'       => PurchaseMomIssue::class,
+            'subject_id'         => $issue->id,
+            'priority'           => $this->approvalPriorityFor($issue->severity),
+        ], (int) $issue->tenant_id, (int) $actor->id);
+
+        return $this->stampConversion($issue, 'Approval', $approval->reference, $approval->id, $actor);
+    }
+
+    /**
      * Escalate an issue to a Purchase CAPA (Corrective), linked back to the issue
      * (source_kind=meeting_issue). Idempotent. The issue moves to In Progress.
      */
@@ -180,6 +205,12 @@ class PurchaseMomIssueService
     private function capaPriorityFor(?string $severity): string
     {
         return in_array($severity, ['Low', 'Medium', 'High', 'Critical'], true) ? $severity : 'Medium';
+    }
+
+    /** Issue severity → approval priority (Low/Medium/High/Urgent). */
+    private function approvalPriorityFor(?string $severity): string
+    {
+        return ['Low' => 'Low', 'Medium' => 'Medium', 'High' => 'High', 'Critical' => 'Urgent'][$severity] ?? 'Medium';
     }
 
     /** Verify a chosen participant belongs to this meeting; null clears it. */
