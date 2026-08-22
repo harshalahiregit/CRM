@@ -110,6 +110,12 @@ class PurchaseKickoffMeeting extends Model
         return $this->hasMany(PurchaseMomActionItem::class, 'purchase_kickoff_meeting_id');
     }
 
+    /** Issues raised in this meeting's minutes (Sangoe TPV §9 issue register). */
+    public function momIssues()
+    {
+        return $this->hasMany(PurchaseMomIssue::class, 'purchase_kickoff_meeting_id');
+    }
+
     /** The current MOM PDF, if any. */
     public function currentMom()
     {

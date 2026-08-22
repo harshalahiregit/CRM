@@ -10,7 +10,7 @@ namespace App\Support\Purchase;
  */
 class PurchaseCapaSource
 {
-    public const KINDS = ['ncr', 'inspection', 'audit', 'meeting', 'violation', 'renewal', 'manual'];
+    public const KINDS = ['ncr', 'inspection', 'audit', 'meeting', 'meeting_issue', 'violation', 'renewal', 'manual'];
 
     public const TYPES = ['Corrective', 'Preventive'];
 
@@ -20,9 +20,10 @@ class PurchaseCapaSource
 
     /** Which kinds resolve to a linkable Purchase model (rest are label-only). */
     public const CLASSES = [
-        'ncr'       => \App\Models\Purchase\PurchaseNcr::class,
-        'meeting'   => \App\Models\Purchase\PurchaseKickoffMeeting::class,
-        'violation' => \App\Models\Purchase\PurchaseVendorViolation::class,
+        'ncr'           => \App\Models\Purchase\PurchaseNcr::class,
+        'meeting'       => \App\Models\Purchase\PurchaseKickoffMeeting::class,
+        'meeting_issue' => \App\Models\Purchase\PurchaseMomIssue::class,
+        'violation'     => \App\Models\Purchase\PurchaseVendorViolation::class,
     ];
 
     public static function classFor(?string $kind): ?string
