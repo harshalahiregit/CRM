@@ -301,5 +301,15 @@ live vendor-status template, AI assist. Kickoff is now "Meetings → New → Typ
   per-inspection findings with Raise-NCR escalation) in the Purchase nav. Verified via rolled-back tinker
   (PINS-2026-001, finding, escalate→PNCR-2026-001 link, double-guard, open-findings count) + green build.
   **Parity mirror #7.**
-- [ ] Remaining Purchase mirrors: Violations/Strikes · Renewal · Offboarding · Performance Index (VPI) ·
-  PPE-at-gate. (Purchase has its own gate/PPE/worker stack, so those mirror onto `purchase_*` equivalents.)
+- [x] **§26 Violations & Strikes — Purchase mirror** — `purchase_vendor_violations` (PVIO-YYYY-### ref,
+  `PurchaseViolationType` catalogue tuned for supplier conduct with severity-points + escalation LADDER),
+  `PurchaseVendorViolation` model (auto ref + points), `PurchaseViolationService` (record/update/delete +
+  `escalationFor`/`escalations` cumulative open-points → level + `enforce` → suspend=On_Hold / blacklist via
+  `PurchaseVendorService::updateStatus`), `PurchaseViolationController` (admin-gated enforce). Routes
+  `/purchase/violations` + `/purchase/vendors/{purchaseVendor}/violation-{escalation,enforce}`, purchaseApi
+  `violations`, and a Violations & Strikes page (per-vendor escalation ladder cards + suspend/blacklist +
+  violation table + record modal). Verified via rolled-back tinker (PVIO-2026-001 auto 4pts, cumulative 10 →
+  Suspension, enforce suspend→On_Hold / blacklist→Blacklisted, escalations list) + green build. **Parity mirror #8.**
+  *Follow-up:* surface the now-available violations dimension in Purchase Analytics + VPI.
+- [ ] Remaining Purchase mirrors: Renewal · Offboarding · Performance Index (VPI) · PPE-at-gate.
+  (Purchase has its own gate/PPE/worker stack, so those mirror onto `purchase_*` equivalents.)

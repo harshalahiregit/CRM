@@ -378,6 +378,16 @@ export const purchaseApi = {
     escalateFinding:(fId)         => api.post(`/purchase/inspection-findings/${fId}/escalate`).then(r => r.data),
   },
 
+  // ── Vendor Violations & Strikes (mirror of TPV §26 — points → enforce) ──
+  violations: {
+    list:      (params = {}) => api.get('/purchase/violations', { params }).then(r => r.data),
+    record:    (data)        => api.post('/purchase/violations', data).then(r => r.data),
+    update:    (id, data)    => api.put(`/purchase/violations/${id}`, data).then(r => r.data),
+    delete:    (id)          => api.delete(`/purchase/violations/${id}`).then(r => r.data),
+    escalation:(vendorId)    => api.get(`/purchase/vendors/${vendorId}/violation-escalation`).then(r => r.data),
+    enforce:   (vendorId, data) => api.post(`/purchase/vendors/${vendorId}/violation-enforce`, data).then(r => r.data),
+  },
+
   onboarding: {
     list:     (params = {}) => api.get('/purchase/onboarding', { params }).then(r => r.data),
     stats:    ()            => api.get('/purchase/onboarding/stats').then(r => r.data),

@@ -296,6 +296,14 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::delete('/inspection-findings/{finding}',       [\App\Http\Controllers\Api\Purchase\PurchaseInspectionController::class, 'destroyFinding'])->whereNumber('finding');
     Route::post('/inspection-findings/{finding}/escalate', [\App\Http\Controllers\Api\Purchase\PurchaseInspectionController::class, 'escalateFinding'])->whereNumber('finding');
 
+    // ── Vendor Violations & Strikes (mirror of TPV §26 — points → enforce) ──
+    Route::get('/violations',                             [\App\Http\Controllers\Api\Purchase\PurchaseViolationController::class, 'index']);
+    Route::post('/violations',                            [\App\Http\Controllers\Api\Purchase\PurchaseViolationController::class, 'store']);
+    Route::put('/violations/{violation}',                 [\App\Http\Controllers\Api\Purchase\PurchaseViolationController::class, 'update'])->whereNumber('violation');
+    Route::delete('/violations/{violation}',              [\App\Http\Controllers\Api\Purchase\PurchaseViolationController::class, 'destroy'])->whereNumber('violation');
+    Route::get('/vendors/{purchaseVendor}/violation-escalation', [\App\Http\Controllers\Api\Purchase\PurchaseViolationController::class, 'escalation'])->whereNumber('purchaseVendor');
+    Route::post('/vendors/{purchaseVendor}/violation-enforce',   [\App\Http\Controllers\Api\Purchase\PurchaseViolationController::class, 'enforce'])->whereNumber('purchaseVendor');
+
     // ── Kickoff meetings (Purchase-owned engine: purchase_kickoff_* tables) ─
     Route::get('/kickoff/stats',                   [PurchaseKickoffController::class, 'stats']);
     Route::get('/kickoff',                         [PurchaseKickoffController::class, 'index']);
