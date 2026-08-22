@@ -10,6 +10,7 @@ import { fmtDate } from '@/modules/accounts/format'
 import { useInr } from '@/modules/accounts/useMoney'
 import { useToast } from '@/hooks/useToast'
 import DataTable from '@/components/ui/DataTable'
+import PagerBar from '@/components/ui/PagerBar'
 import Drawer from '@/components/ui/Drawer'
 import FormField, { Input, Select, Textarea } from '@/components/ui/FormField'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
@@ -58,7 +59,10 @@ export default function Bills() {
   const inr = useInr()
   const toast = useToast()
   const qc = useQueryClient()
-  const [filters, setFilters] = useState({ status: '', vendor: '' })
+  const [filters, setFiltersRaw] = useState({ status: '', vendor: '' })
+  const [pageNo, setPageNo] = useState(1)
+  // Narrowing the list must return to page 1, or you sit past the new end.
+  const setFilters = (fn) => { setFiltersRaw(fn); setPageNo(1) }
   const [drawer, setDrawer] = useState(false)
   const [manageCat, setManageCat] = useState(false)   // Bill Categories manager drawer
   const [addingCat, setAddingCat] = useState(false)   // inline "+ category" row
@@ -75,8 +79,9 @@ export default function Bills() {
   const { data: categories = [] } = useQuery({ queryKey: ['accounts', 'bill-categories'], queryFn: accountsApi.billCategories.list, retry: false })
   const { data: groupsFlat = [] } = useQuery({ queryKey: ['accounts', 'groups', 'flat'], queryFn: accountsApi.groups.flat, retry: false })
   const { data: page, isLoading } = useQuery({
-    queryKey: ['accounts', 'bills', filters],
-    queryFn: () => accountsApi.bills.list({ ...filters, per_page: 100 }),
+    queryKey: ['accounts', 'bills', filters, pageNo],
+    queryFn: () => accountsApi.bills.list({ ...filters, per_page: 100, page: pageNo }),
+    placeholderData: (prev) => prev,
   })
   const bills = page?.data ?? []
   const invalidate = () => qc.invalidateQueries({ queryKey: ['accounts', 'bills'] })
@@ -281,7 +286,10 @@ export default function Bills() {
       </div>
 
       {isLoading ? <Loader2 className="animate-spin mx-auto my-10" style={{ color: 'var(--text-muted)' }} /> : (
-        <DataTable columns={columns} rows={bills} emptyState={<p className="text-sm text-center py-8" style={{ color: 'var(--text-muted)' }}>No bills yet.</p>} keyField="id" />
+        <>
+          <DataTable columns={columns} rows={bills} emptyState={<p className="text-sm text-center py-8" style={{ color: 'var(--text-muted)' }}>No bills yet.</p>} keyField="id" />
+          <PagerBar meta={page} onPage={setPageNo} unit="bills" className="mt-3" />
+        </>
       )}
 
       {/* ── New Bill Drawer ──────────────────────────────── */}

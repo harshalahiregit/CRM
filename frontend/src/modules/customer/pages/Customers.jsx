@@ -72,20 +72,34 @@ export default function Customers() {
   const sfSocial = (k, v) => setForm(p => ({ ...p, social_links: { ...p.social_links, [k]: v } }))
 
   const [pageSize, setPageSize] = useState(25)
+  const [page, setPage] = useState(1)
+
+  // Typing a search or changing the page size must go back to page one, or you
+  // sit on page 4 of a result that now has one page and see nothing.
+  const setSearchPaged   = (v) => { setSearch(v); setPage(1) }
+  const setPageSizePaged = (v) => { setPageSize(v); setPage(1) }
 
   const load = () => {
     setLoading(true)
     // per_page was pinned at 25 with no way to change it; it now follows the
     // toolbar's selector. 0 = "All", which the API takes as a large page.
-    customerApi.list({ search: search || undefined, per_page: pageSize || 1000 })
-      .then(res => { setRows(res.data ?? []); setMeta(res) })
+    // `page` was never sent at all — the list printed "Showing 25 of 500" and
+    // gave no way to reach row 26. The API paginates and honours it.
+    customerApi.list({ search: search || undefined, per_page: pageSize || 1000, page })
+      .then(res => {
+        setRows(res.data ?? [])
+        setMeta(res)
+        // A narrowing filter can shrink the result under our feet; snap back
+        // instead of leaving the user on an empty page past the end.
+        if (res.last_page && res.current_page > res.last_page) setPage(res.last_page)
+      })
       .catch(e => toast.error(e.message))
       .finally(() => setLoading(false))
   }
   const loadStats = () => customerApi.summary().then(setStats).catch(() => {})
 
   useEffect(() => { loadStats() }, [])
-  useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t) }, [search, pageSize])
+  useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t) }, [search, pageSize, page])
 
   const openCreate = () => {
     setEditing(null); setForm(EMPTY); setTab('Details')
@@ -377,9 +391,16 @@ export default function Customers() {
 
         {/* Toolbar: search · count · rows-per-page · refresh · export */}
         <ListToolbar
-          search={search} onSearch={setSearch} searchPlaceholder="Search company, GST, phone…"
+          search={search} onSearch={setSearchPaged} searchPlaceholder="Search company, GST, phone…"
           count={rows.length} total={meta.total ?? rows.length} unit="customer"
-          pageSize={pageSize} onPageSize={setPageSize} onRefresh={load}
+          pageSize={pageSize} onPageSize={setPageSizePaged} onRefresh={load}
+          pager={meta.last_page > 1 ? {
+            page: meta.current_page ?? page,
+            pageCount: meta.last_page,
+            from: meta.from ?? 0,
+            to: meta.to ?? rows.length,
+            onPage: setPage,
+          } : null}
           onExport={() => doExport('csv')}
         />
 
@@ -434,7 +455,7 @@ export default function Customers() {
           </div>
           {meta.total > (meta.per_page ?? 25) && (
             <div className="px-4 py-3 text-xs" style={{ color: 'var(--text-muted)', borderTop: '1px solid var(--border)' }}>
-              Showing {rows.length} of {meta.total}
+              Showing {meta.from ?? 0}–{meta.to ?? rows.length} of {meta.total}
             </div>
           )}
         </div>

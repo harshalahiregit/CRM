@@ -6,6 +6,7 @@ import { fmtDate } from '@/modules/accounts/format'
 import { useInr } from '@/modules/accounts/useMoney'
 import { useToast } from '@/hooks/useToast'
 import DataTable from '@/components/ui/DataTable'
+import PagerBar from '@/components/ui/PagerBar'
 import Drawer from '@/components/ui/Drawer'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import FormField, { Input, Select } from '@/components/ui/FormField'
@@ -45,7 +46,12 @@ export default function Transfer() {
 
   const { data: accounts } = useQuery({ queryKey: ['accounts', 'transfers', 'accounts'], queryFn: accountsApi.transfers.accounts })
   const { data: categories = [] } = useQuery({ queryKey: ['accounts', 'transfer-categories'], queryFn: accountsApi.transferCategories.list })
-  const { data: page, isLoading: historyLoading } = useQuery({ queryKey: ['accounts', 'transfers', 'history'], queryFn: () => accountsApi.transfers.history({ per_page: 50 }) })
+  const [pageNo, setPageNo] = useState(1)
+  const { data: page, isLoading: historyLoading } = useQuery({
+    queryKey: ['accounts', 'transfers', 'history', pageNo],
+    queryFn: () => accountsApi.transfers.history({ per_page: 50, page: pageNo }),
+    placeholderData: (prev) => prev,
+  })
   const history = page?.data ?? []
 
   const invalidate = () => { qc.invalidateQueries({ queryKey: ['accounts', 'transfers'] }); qc.invalidateQueries({ queryKey: ['accounts', 'ledgers'] }) }
@@ -214,7 +220,10 @@ export default function Transfer() {
         <p className="label-caps mb-2">Recent Transfers</p>
         {historyLoading
           ? <div className="flex justify-center py-10"><Loader2 className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div>
-          : <DataTable columns={columns} rows={history} />}
+          : <>
+              <DataTable columns={columns} rows={history} />
+              <PagerBar meta={page} onPage={setPageNo} unit="transfers" className="mt-3" />
+            </>}
       </div>
 
       {/* Manage categories drawer */}

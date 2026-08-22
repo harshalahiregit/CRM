@@ -7,6 +7,7 @@ import { fmtDate, VOUCHER_TYPES } from '@/modules/accounts/format'
 import { useInr } from '@/modules/accounts/useMoney'
 import { useToast } from '@/hooks/useToast'
 import DataTable from '@/components/ui/DataTable'
+import PagerBar from '@/components/ui/PagerBar'
 import Drawer from '@/components/ui/Drawer'
 import FormField, { Input, Select, Textarea } from '@/components/ui/FormField'
 import { GhostButton } from '@/modules/accounts/components/Btn'
@@ -19,7 +20,10 @@ export default function Vouchers() {
   const toast = useToast()
   const qc = useQueryClient()
   const navigate = useNavigate()
-  const [filters, setFilters] = useState({ type: '', status: '', search: '' })
+  const [filters, setFiltersRaw] = useState({ type: '', status: '', search: '' })
+  const [pageNo, setPageNo] = useState(1)
+  // Narrowing the list must return to page 1, or you sit past the new end.
+  const setFilters = (fn) => { setFiltersRaw(fn); setPageNo(1) }
   const [drawer, setDrawer] = useState(false)
   const [taxDrawer, setTaxDrawer] = useState(false)
   const [manageTypes, setManageTypes] = useState(false)
@@ -27,9 +31,12 @@ export default function Vouchers() {
   const { data: voucherTypes = [] } = useQuery({ queryKey: ['accounts', 'voucher-types'], queryFn: accountsApi.voucherTypes.list, retry: false })
   const activeTypes = (voucherTypes.length ? voucherTypes.filter(t => t.active) : VOUCHER_TYPES.map(t => ({ code: t.code, name: t.label })))
 
+  // per_page was pinned at 50 with no page number and no pager, so voucher 51
+  // onward was unreachable and the journal silently looked short.
   const { data: page, isLoading } = useQuery({
-    queryKey: ['accounts', 'vouchers', filters],
-    queryFn: () => accountsApi.vouchers.list({ ...filters, per_page: 50 }),
+    queryKey: ['accounts', 'vouchers', filters, pageNo],
+    queryFn: () => accountsApi.vouchers.list({ ...filters, per_page: 50, page: pageNo }),
+    placeholderData: (prev) => prev,
   })
   const vouchers = page?.data ?? []
 
@@ -122,7 +129,10 @@ export default function Vouchers() {
 
       {isLoading
         ? <div className="flex justify-center py-10"><Loader2 className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div>
-        : <DataTable columns={columns} rows={vouchers} onRowClick={(r) => navigate(`/app/accounts/vouchers/${r.id}`)} />}
+        : <>
+            <DataTable columns={columns} rows={vouchers} onRowClick={(r) => navigate(`/app/accounts/vouchers/${r.id}`)} />
+            <PagerBar meta={page} onPage={setPageNo} unit="vouchers" className="mt-3" />
+          </>}
 
       {drawer && <VoucherDrawer types={activeTypes} saving={post.isPending} onClose={() => setDrawer(false)} onSave={(p) => post.mutate(p)} />}
       {manageTypes && (

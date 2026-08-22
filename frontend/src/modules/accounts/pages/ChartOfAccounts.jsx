@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Landmark, FolderTree, Search, Loader2, Trash2, Pencil } from 'lucide-react'
 import { accountsApi } from '@/services/accountsApi'
@@ -6,6 +6,7 @@ import { NATURE_LABEL } from '@/modules/accounts/format'
 import { useInr } from '@/modules/accounts/useMoney'
 import { useToast } from '@/hooks/useToast'
 import DataTable from '@/components/ui/DataTable'
+import PagerBar from '@/components/ui/PagerBar'
 import Drawer from '@/components/ui/Drawer'
 import FormField, { Input, Select } from '@/components/ui/FormField'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
@@ -26,9 +27,14 @@ export default function ChartOfAccounts() {
   const [confirm, setConfirm] = useState(null)
 
   const { data: groups = [] } = useQuery({ queryKey: ['accounts', 'groups', 'flat'], queryFn: accountsApi.groups.flat })
+  const [pageNo, setPageNo] = useState(1)
+  // Search and the group filter both narrow the list, so both return to page 1.
+  useEffect(() => { setPageNo(1) }, [search, groupFilter])
+
   const { data: ledgersPage, isLoading } = useQuery({
-    queryKey: ['accounts', 'ledgers', { search, groupFilter }],
-    queryFn: () => accountsApi.ledgers.list({ search, group_id: groupFilter, per_page: 100 }),
+    queryKey: ['accounts', 'ledgers', { search, groupFilter }, pageNo],
+    queryFn: () => accountsApi.ledgers.list({ search, group_id: groupFilter, per_page: 100, page: pageNo }),
+    placeholderData: (prev) => prev,
   })
   const ledgers = ledgersPage?.data ?? []
 
@@ -107,7 +113,10 @@ export default function ChartOfAccounts() {
       {/* Ledger table */}
       {isLoading
         ? <div className="flex justify-center py-10"><Loader2 className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div>
-        : <DataTable columns={columns} rows={ledgers} />}
+        : <>
+            <DataTable columns={columns} rows={ledgers} />
+            <PagerBar meta={ledgersPage} onPage={setPageNo} unit="ledgers" className="mt-3" />
+          </>}
 
       {/* Ledger drawer */}
       {ledgerDrawer && (

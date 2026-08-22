@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useInr } from '@/modules/accounts/useMoney'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -6,6 +6,7 @@ import { BookOpen, Search, Loader2, Landmark, Wallet, Scale3d, ChevronRight } fr
 import { accountsApi } from '@/services/accountsApi'
 import { Input, Select } from '@/components/ui/FormField'
 import DataTable from '@/components/ui/DataTable'
+import PagerBar from '@/components/ui/PagerBar'
 
 const NATURE_COLOR = {
   asset:     { text: '#10b981', label: 'Asset' },
@@ -33,10 +34,14 @@ export default function Registers() {
     window._regSearchTimer = setTimeout(() => setDebouncedSearch(val), 350)
   }
 
+  const [pageNo, setPageNo] = useState(1)
+  useEffect(() => { setPageNo(1) }, [debouncedSearch, nature])
+
   const { data, isLoading } = useQuery({
-    queryKey: ['accounts', 'registers', { search: debouncedSearch, nature }],
-    queryFn:  () => accountsApi.registers.list({ search: debouncedSearch, nature, per_page: 200 }),
+    queryKey: ['accounts', 'registers', { search: debouncedSearch, nature }, pageNo],
+    queryFn:  () => accountsApi.registers.list({ search: debouncedSearch, nature, per_page: 200, page: pageNo }),
     staleTime: 30_000,
+    placeholderData: (prev) => prev,
   })
 
   const rows = data?.data ?? []
@@ -126,7 +131,10 @@ export default function Registers() {
 
       {isLoading
         ? <div className="flex justify-center py-16"><Loader2 className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div>
-        : <DataTable columns={columns} rows={rows} onRowClick={(r) => navigate(`/app/accounts/registers/${r.id}`)} />}
+        : <>
+            <DataTable columns={columns} rows={rows} onRowClick={(r) => navigate(`/app/accounts/registers/${r.id}`)} />
+            <PagerBar meta={data} onPage={setPageNo} unit="registers" className="mt-3" />
+          </>}
     </div>
   )
 }

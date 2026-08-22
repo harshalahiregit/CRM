@@ -9,6 +9,7 @@ import { fmtDate } from '@/modules/accounts/format'
 import { useInr } from '@/modules/accounts/useMoney'
 import { useToast } from '@/hooks/useToast'
 import DataTable from '@/components/ui/DataTable'
+import PagerBar from '@/components/ui/PagerBar'
 import Drawer from '@/components/ui/Drawer'
 import FormField, { Input, Select, Textarea } from '@/components/ui/FormField'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
@@ -205,11 +206,14 @@ function OverviewTab({ summary, inventory, due, inr }) {
 
 /* ── Direction-scoped cheque list (Issued / Received) ─────────────────────── */
 function ChequeList({ direction, inr, banks, onView, onEdit, onDelete, onStatus }) {
-  const [filters, setFilters] = useState({ status: '', search: '', bank_account_id: '' })
+  const [filters, setFiltersRaw] = useState({ status: '', search: '', bank_account_id: '' })
+  const [pageNo, setPageNo] = useState(1)
+  const setFilters = (fn) => { setFiltersRaw(fn); setPageNo(1) }
   const today = new Date().toISOString().slice(0, 10)
   const { data: page, isLoading } = useQuery({
-    queryKey: ['accounts', 'cheques', direction, filters],
-    queryFn: () => accountsApi.cheques.list({ ...filters, direction, per_page: 100 }),
+    queryKey: ['accounts', 'cheques', direction, filters, pageNo],
+    queryFn: () => accountsApi.cheques.list({ ...filters, direction, per_page: 100, page: pageNo }),
+    placeholderData: (prev) => prev,
   })
   const rows = page?.data ?? []
 
@@ -295,7 +299,10 @@ function ChequeList({ direction, inr, banks, onView, onEdit, onDelete, onStatus 
       </div>
       {isLoading
         ? <div className="flex justify-center py-10"><Loader2 className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div>
-        : <DataTable columns={columns} rows={rows} emptyState={<p className="text-sm text-center py-8" style={{ color: 'var(--text-muted)' }}>No {direction} cheques yet.</p>} />}
+        : <>
+            <DataTable columns={columns} rows={rows} emptyState={<p className="text-sm text-center py-8" style={{ color: 'var(--text-muted)' }}>No {direction} cheques yet.</p>} />
+            <PagerBar meta={page} onPage={setPageNo} unit="cheques" className="mt-3" />
+          </>}
     </div>
   )
 }
