@@ -24,6 +24,28 @@ class EnsureUserHasRole
         }
 
         $user = $request->user();
+
+        // Only a staff User may pass a role gate.
+        //
+        // This compares $user->role as a string, and other authenticatable
+        // models have a `role` column too — client_contacts.role is a free-text
+        // field on the customer contact form, holding things like "Procurement"
+        // or "Finance". A contact whose role was typed as "admin" or "staff"
+        // would therefore satisfy role:admin,staff and reach the entire staff
+        // API with a customer-portal token.
+        //
+        // No qualifying row exists today, which is the only reason this was not
+        // already an incident: it needed one person to type one word into a
+        // field that invites free text. The portals have their own middleware
+        // (client.portal and the purchase equivalent), so nothing legitimate
+        // reaches a role: gate as anything other than a User.
+        if (! $user instanceof \App\Models\User) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'This endpoint is not available to portal accounts.',
+            ], 403);
+        }
+
         $userRole = $user->role;
         $internalRole = $user->internal_role;
 

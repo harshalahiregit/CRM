@@ -135,7 +135,22 @@ class ClientContactController extends Controller
             // §11 — role is what they are to us, department is where they sit,
             // and `title` (already present) is the designation on their card.
             'department'          => 'nullable|string|max:80',
-            'role'                => 'nullable|string|max:60',
+            // Defence in depth. The role gate now requires a staff User, so a
+            // contact cannot reach staff endpoints whatever this says — but a
+            // contact whose role reads "admin" is misleading on every screen
+            // that shows it, and the next person to write a string comparison
+            // against a role should not find one waiting for them.
+            //
+            // A rejection list, not an allow-list: CustomerOptions keeps
+            // CONTACT_ROLES deliberately open so a tenant can add "Distributor"
+            // without a migration, and enforcing that list would turn every
+            // edit of it into a data-repair job.
+            'role'                => ['nullable', 'string', 'max:60', function ($attr, $value, $fail) {
+                $reserved = ['admin', 'staff', 'third_party_vendor', 'client', 'company', 'superadmin', 'super_admin'];
+                if (in_array(strtolower(trim((string) $value)), $reserved, true)) {
+                    $fail('That word is reserved for staff accounts. Use the contact\'s role at their own company, such as Procurement or Finance.');
+                }
+            }],
             'whatsapp'            => ['nullable', 'string', 'max:30', new PhoneNumber()],
             'is_decision_maker'   => 'nullable|boolean',
             'influence'           => 'nullable|string|max:20',
