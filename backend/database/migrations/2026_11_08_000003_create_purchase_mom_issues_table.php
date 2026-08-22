@@ -39,7 +39,10 @@ return new class extends Migration
             $table->unsignedSmallInteger('sort_order')->default(0);
             $table->timestamps();
 
-            $table->index(['tenant_id', 'purchase_kickoff_meeting_id']);
+            // Explicit short name: the generated one (…tenant_id_purchase_kickoff_meeting_id_index)
+            // sits 1 char under MySQL's 64-char limit — too close to trust. Same
+            // convention as the action-items table. Guarded by MigrationIdentifierLengthTest.
+            $table->index(['tenant_id', 'purchase_kickoff_meeting_id'], 'pmi_tenant_meeting_idx');
             $table->index(['tenant_id', 'status']);
         });
     }
