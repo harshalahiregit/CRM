@@ -192,6 +192,25 @@ class PurchaseMeetingsFlowTest extends TestCase
             ->assertStatus(422);
     }
 
+    /** Decision register: record a decision, then Supersede / Rescind it. */
+    public function test_decision_register_records_and_restates(): void
+    {
+        Sanctum::actingAs($this->user('admin'));
+        $id = $this->scheduleAndComplete();
+
+        $decisionId = $this->postJson("/api/purchase/kickoff/{$id}/decisions", [
+            'decision' => 'Approve alternate gasket supplier', 'decided_by_names' => 'Procurement Head',
+        ])->assertCreated()->assertJsonPath('status', 'Active')->json('id');
+
+        // Supersede it.
+        $this->putJson("/api/purchase/kickoff/{$id}/decisions/{$decisionId}", ['status' => 'Superseded'])
+            ->assertOk()->assertJsonPath('status', 'Superseded');
+
+        // An unknown status is refused.
+        $this->putJson("/api/purchase/kickoff/{$id}/decisions/{$decisionId}", ['status' => 'Bogus'])
+            ->assertStatus(422);
+    }
+
     /** A meeting in one tenant is invisible (404) to a user in another. */
     public function test_meeting_is_tenant_isolated(): void
     {
