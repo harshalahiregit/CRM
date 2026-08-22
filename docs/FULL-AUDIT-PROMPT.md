@@ -106,27 +106,74 @@ destination component** (`useSearchParams`) and **accepted by the backend
 filter whitelist**. Check sidebar entries, breadcrumbs, KPI tiles, row
 click-throughs, "view all" links, and post-save redirects.
 
-### 4. API and contract correctness
+### 4. List surfaces — filter, search, sort, paginate, export
+Nearly every page in this app is a list, and this is where they break.
+
+**Filters:** does each filter actually filter, or is it decorative? Do two
+filters combine (AND) or does the second replace the first? Is there a clear /
+reset, and does it clear everything? Does the active filter show as a visible
+chip so the user knows why rows are missing? Does changing a filter reset to
+page 1 (a filter that leaves you on page 7 of 2 shows an empty table)? Does the
+filter survive a row click and browser Back? Do dropdown options actually
+populate, and do they come from the tenant's data rather than a hard-coded
+list? Do filters that name a relation (customer, assignee, project, vendor)
+send an id the backend whitelist accepts?
+
+**Search:** debounced or firing per keystroke? Which fields does it cover —
+and does it claim to cover more? Case/accent handling. Is there a distinct
+"no results for X" state versus "nothing here yet"? Does clearing restore?
+Client-side search over a truncated page silently searches only that page —
+flag every instance.
+
+**Sort:** is every column header sortable that looks sortable? Dates sorted as
+dates not strings, numbers as numbers, currency by value. Is the sort
+indicator correct and does it survive refetch? Null handling.
+
+**Pagination:** are the counts real ("12 of 40") or the page length? Page-size
+selector honoured? Does the total account for filters? Server-side vs
+client-side — a client-side pager over a server-limited result set lies about
+the total. Check every list against a dataset larger than one page.
+
+**Export / import:** does export respect the current filters and sort, or dump
+everything? Are the columns the ones on screen? A **failed** request must not
+be saved as the file — several exports use bare `fetch` with no `r.ok` check
+and write the JSON error body as `.xlsx`. Import: validation, preview,
+duplicate handling, partial-failure reporting, and whether a failed import
+leaves half the rows written.
+
+**Bulk actions and selection:** select-all across pages vs current page, count
+accuracy, what happens when the selection includes a row the action cannot
+apply to, and confirmation before bulk destructive actions.
+
+### 5. Data entry, files and long-running actions
+Multi-step wizards: can you go back without losing input; is progress
+preserved on refresh; does the final step actually submit. File upload: size
+and type limits enforced both sides, progress feedback, failure handling,
+download links that work, previews. Actions that email or generate a PDF:
+feedback while running, and what the user sees if it fails. Autosave and
+unsaved-change warnings — present in some modules, absent in others.
+
+### 6. API and contract correctness
 For every frontend API call: does the route exist; does the frontend read the
 keys the backend actually returns (some endpoints wrap in
 `{status,message,data}`, others return raw — mismatches render blank silently);
 array vs object shape; enum values; error envelope handling; pagination
 contracts; N+1 queries; endpoints returning 500 on ordinary input.
 
-### 5. Validation, both sides
+### 7. Validation, both sides
 Fields required in the UI but not the API, and the reverse; client rules that
 contradict server rules; phone/email/GST/PAN/IFSC/pincode format rules that
 differ between modules; numeric bounds; date ordering (`end >= start`); server
 error messages surfaced verbatim to users, including raw exception text.
 
-### 6. States: loading, empty, error
+### 8. States: loading, empty, error
 Unguarded `.length`/`.map` on `useState(null)`; missing error branches, so a
 failed fetch renders as an empty state and the user re-enters data that already
 exists; spinners that never clear; a shared loading flag across tabs; blank
 panes; `NaN`/`undefined`/`Invalid Date` rendered; retry gestures that do
 nothing.
 
-### 7. Multi-tenancy and permissions
+### 9. Multi-tenancy and permissions
 Every query scoped by `tenant_id`; every nested resource scoped to its parent;
 `exists:` validation rules tenant-scoped; role checks that string-compare
 free-text fields; portal endpoints that could return another customer's or
@@ -134,7 +181,7 @@ vendor's rows; internal-only data (health scores, risk, internal notes,
 credentials) leaking into any customer/vendor portal; files on public disks;
 IDOR on any `/{id}` route.
 
-### 8. Data and money correctness
+### 10. Data and money correctness
 Rounding, currency formatting and symbol consistency; tax and discount maths;
 balance vs total confusion; percentages with wrong denominators; division by
 zero; averages over the wrong population; **soft deletes bypassed by
@@ -143,7 +190,7 @@ than staff see); date windows with no lower bound; timezone handling —
 `config/app.php` is UTC while inputs are wall-clock, so anything entered after
 18:30 IST can display as the next day.
 
-### 9. Cross-module duplication
+### 11. Cross-module duplication
 The same concept implemented separately per module — notes, attachments,
 reminders, contacts, kickoff meetings, approvals, documents. Identify which
 should collapse onto the shared `App\Models\Shared\*` tables and which are
@@ -151,12 +198,12 @@ legitimately distinct. **Constraint: modules may share logic and shared
 infrastructure tables, but must not read or write another module's own tables
 directly** — cross-module reads go through a service seam.
 
-### 10. Portals
+### 12. Portals
 All five. Auth guard correctness, token isolation between portals, permission
 gating enforced server-side (not just hidden in the nav), session expiry
 behaviour, password reset flows, and consistency of layout between portals.
 
-### 11. Accessibility and responsiveness
+### 13. Accessibility and responsiveness
 Focus states, labels tied to inputs, colour-only status, contrast, alt text,
 Esc/Enter handling, and behaviour at 1280px, 1024px and mobile widths —
 horizontal overflow, tables that cannot scroll, unreachable actions.
