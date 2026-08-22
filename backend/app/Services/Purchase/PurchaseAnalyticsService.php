@@ -3,24 +3,26 @@
 namespace App\Services\Purchase;
 
 use App\Models\Purchase\PurchaseCapa;
+use App\Models\Purchase\PurchaseInspection;
 use App\Models\Purchase\PurchaseNcr;
 use App\Models\Purchase\PurchaseVendor;
 use App\Models\Purchase\PurchaseVendorCompliance;
+use App\Models\Purchase\PurchaseVendorViolation;
 use App\Support\Purchase\PurchaseComplianceCatalog as Catalog;
 use Illuminate\Support\Carbon;
 
 /**
  * Purchase Reports & Analytics — the Purchase-side mirror of TpvAnalyticsService
  * (parity rule). Read-only cross-module governance analytics over the Purchase
- * entities shipped so far (compliance, NCR, CAPA) plus a per-vendor benchmark and
- * flat datasets for CSV export. Distinct from the procurement PurchaseReportService.
+ * governance engines (compliance, NCR, CAPA, violations, inspections) plus a
+ * per-vendor benchmark and flat datasets for CSV export. Distinct from the
+ * procurement PurchaseReportService.
  *
- * Additive and purely computational; it never writes. Governance dimensions whose
- * Purchase mirrors haven't landed yet (violations, inspections) are simply absent.
+ * Additive and purely computational; it never writes.
  */
 class PurchaseAnalyticsService
 {
-    public const DATASETS = ['vendors', 'ncrs', 'capas', 'benchmark'];
+    public const DATASETS = ['vendors', 'ncrs', 'capas', 'violations', 'inspections', 'benchmark'];
 
     public function overview(int $tenantId): array
     {
@@ -52,6 +54,14 @@ class PurchaseAnalyticsService
                 'open'    => PurchaseCapa::forTenant($tenantId)->where('status', '!=', 'Verified')->count(),
                 'overdue' => $overdue(PurchaseCapa::forTenant($tenantId)->where('status', '!=', 'Verified'))->count(),
             ],
+            'violations' => [
+                'open'   => PurchaseVendorViolation::forTenant($tenantId)->where('status', 'Open')->count(),
+                'points' => (int) PurchaseVendorViolation::forTenant($tenantId)->where('status', 'Open')->sum('points'),
+            ],
+            'inspections' => [
+                'planned'   => PurchaseInspection::forTenant($tenantId)->whereIn('status', ['Planned', 'In_Progress'])->count(),
+                'completed' => PurchaseInspection::forTenant($tenantId)->whereIn('status', ['Completed', 'Closed'])->count(),
+            ],
         ];
     }
 
@@ -68,19 +78,21 @@ class PurchaseAnalyticsService
         ];
     }
 
-    /** Monthly counts for the last $months (oldest → newest) for NCRs and CAPAs. */
+    /** Monthly counts for the last $months (oldest → newest) across governance entities. */
     public function trends(int $tenantId, int $months = 6): array
     {
         $months = max(1, min(24, $months));
         $buckets = [];
         for ($i = $months - 1; $i >= 0; $i--) {
             $m = now()->startOfMonth()->subMonths($i);
-            $buckets[$m->format('Y-m')] = ['label' => $m->format('M Y'), 'ncrs' => 0, 'capas' => 0];
+            $buckets[$m->format('Y-m')] = ['label' => $m->format('M Y'), 'ncrs' => 0, 'capas' => 0, 'violations' => 0, 'inspections' => 0];
         }
         $start = now()->startOfMonth()->subMonths($months - 1);
 
         $this->tallyByMonth($buckets, PurchaseNcr::forTenant($tenantId)->where('created_at', '>=', $start)->get(['created_at']), 'ncrs');
         $this->tallyByMonth($buckets, PurchaseCapa::forTenant($tenantId)->where('created_at', '>=', $start)->get(['created_at']), 'capas');
+        $this->tallyByMonth($buckets, PurchaseVendorViolation::forTenant($tenantId)->where('created_at', '>=', $start)->get(['created_at']), 'violations');
+        $this->tallyByMonth($buckets, PurchaseInspection::forTenant($tenantId)->where('created_at', '>=', $start)->get(['created_at']), 'inspections');
 
         return array_values($buckets);
     }
@@ -102,6 +114,8 @@ class PurchaseAnalyticsService
 
         $ncrOpen  = $this->countByVendor(PurchaseNcr::forTenant($tenantId)->where('status', '!=', 'Closed'));
         $capaOpen = $this->countByVendor(PurchaseCapa::forTenant($tenantId)->where('status', '!=', 'Verified'));
+        $vioPts   = PurchaseVendorViolation::forTenant($tenantId)->where('status', 'Open')
+            ->selectRaw('purchase_vendor_id, sum(points) as p')->groupBy('purchase_vendor_id')->pluck('p', 'purchase_vendor_id')->toArray();
 
         $compliance = [];
         foreach (PurchaseVendorCompliance::forTenant($tenantId)->get(['purchase_vendor_id', 'status', 'valid_until']) as $c) {
@@ -112,7 +126,7 @@ class PurchaseAnalyticsService
             }
         }
 
-        $rows = $vendors->map(function ($v) use ($ncrOpen, $capaOpen, $compliance) {
+        $rows = $vendors->map(function ($v) use ($ncrOpen, $capaOpen, $vioPts, $compliance) {
             $comp = $compliance[$v->id] ?? ['tracked' => 0, 'ok' => 0];
             $pct = $comp['tracked'] ? (int) round($comp['ok'] / $comp['tracked'] * 100) : null;
 
@@ -124,6 +138,7 @@ class PurchaseAnalyticsService
                 'compliance_pct' => $pct,
                 'open_ncrs'      => $ncrOpen[$v->id] ?? 0,
                 'open_capas'     => $capaOpen[$v->id] ?? 0,
+                'violation_points' => (int) ($vioPts[$v->id] ?? 0),
             ];
         })->all();
 
@@ -160,10 +175,22 @@ class PurchaseAnalyticsService
                     $c->priority, $c->status, optional($c->due_date)->toDateString(), $c->evidence_path ? 'Yes' : 'No',
                 ])->all()],
 
-            'benchmark' => ['purchase-benchmark', ['Code', 'Vendor', 'Status', 'Compliance %', 'Open NCRs', 'Open CAPAs'],
+            'violations' => ['purchase-violations', ['Reference', 'Vendor', 'Type', 'Severity', 'Points', 'Status', 'Occurred'],
+                PurchaseVendorViolation::forTenant($tenantId)->with('vendor:id,company_name')->get()->map(fn ($v) => [
+                    $v->reference, $v->vendor?->company_name, $v->type, $v->severity, $v->points, $v->status,
+                    optional($v->occurred_at)->toDateString(),
+                ])->all()],
+
+            'inspections' => ['purchase-inspections', ['Reference', 'Type', 'Status', 'Score', 'Scheduled', 'Conducted'],
+                PurchaseInspection::forTenant($tenantId)->get()->map(fn ($i) => [
+                    $i->reference, $i->type, $i->status, $i->score,
+                    optional($i->scheduled_date)->toDateString(), optional($i->conducted_date)->toDateString(),
+                ])->all()],
+
+            'benchmark' => ['purchase-benchmark', ['Code', 'Vendor', 'Status', 'Compliance %', 'Open NCRs', 'Open CAPAs', 'Violation Points'],
                 array_map(fn ($r) => [
                     $r['vendor_code'], $r['vendor'], $r['status'], $r['compliance_pct'] ?? '—',
-                    $r['open_ncrs'], $r['open_capas'],
+                    $r['open_ncrs'], $r['open_capas'], $r['violation_points'],
                 ], $this->benchmark($tenantId))],
 
             default => throw new \App\Exceptions\BusinessException("Unknown export dataset: {$dataset}."),
