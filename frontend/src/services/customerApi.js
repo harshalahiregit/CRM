@@ -14,6 +14,11 @@ export const customerApi = {
   // Customer 360 overview — live counts from the modules that own the data.
   overview: (id) => api.get(`/customers/${id}/overview`).then(r => r.data).catch(handleErr),
 
+  // §4 Activities — the same sources as the Timeline, flat: everything
+  // attached to this customer in one scannable register.
+  activityFeed: (id, params = {}) =>
+    api.get(`/customers/${id}/activity-feed`, { params }).then(r => r.data).catch(handleErr),
+
   // §5 Timeline — one read across every connected module.
   timeline: (id, params = {}) =>
     api.get(`/customers/${id}/timeline`, { params }).then(r => r.data).catch(handleErr),

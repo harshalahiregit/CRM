@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   FolderKanban, Plus, Search, X, Pin, PinOff, Pencil, Copy, Trash2, Users, Eye, Download,
 } from 'lucide-react'
@@ -52,14 +52,22 @@ export default function ProjectList() {
     return () => clearTimeout(t)
   }, [search])
 
+  // Customer 360 links here as /app/projects?customer_id=N. The backend
+  // already accepts customer_id (ProjectController::index); without this the
+  // parameter was silently dropped and the customer's "Active Projects" tile
+  // dumped the user on every project in the tenant.
+  const [searchParams] = useSearchParams()
+  const customerId = searchParams.get('customer_id') || ''
+
   const filters = useMemo(() => {
     const f = {}
     if (debounced) f.search = debounced
     if (status) f.status = status
     if (member) f.member = member
     if (tag) f.tag = tag
+    if (customerId) f.customer_id = customerId
     return f
-  }, [debounced, status, member, tag])
+  }, [debounced, status, member, tag, customerId])
 
   const { data: projects = [], isLoading, isError, error, refetch: refetchProjects } = useQuery({
     queryKey: ['projects', filters], queryFn: () => projectApi.list(filters),

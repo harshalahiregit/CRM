@@ -64,14 +64,25 @@ class Customer360Service
      * Each tile carries the route to the owning module, so the UI never has to
      * know where a number came from — it just links where the tile says.
      */
+    /**
+     * §2 — the eight dashboard tiles.
+     *
+     * Each `link` must use the parameter name the DESTINATION reads, not a
+     * name that reads well. Tasks takes rel_type/rel_id (it is polymorphic),
+     * Projects and Helpdesk take customer_id, and ticket lists live under
+     * /app/helpdesk — /app/tickets is a "coming soon" placeholder. All three
+     * previously sent `?customer=`, which nothing consumed: the tiles landed
+     * users on the whole tenant's records with no error and no filter chip,
+     * which is harder to notice than a 404.
+     */
     public function kpis(Client $client): array
     {
         $finance = $this->financeSnapshot($client);
 
         return [
-            ['key' => 'projects',   'label' => 'Active Projects',  'value' => $this->activeProjectCount($client),   'link' => '/app/projects?customer='.$client->id],
-            ['key' => 'tasks',      'label' => 'Open Tasks',       'value' => $this->openTaskCount($client),        'link' => '/app/tasks?customer='.$client->id],
-            ['key' => 'tickets',    'label' => 'Open Tickets',     'value' => $this->openTicketCount($client),      'link' => '/app/tickets?customer='.$client->id],
+            ['key' => 'projects',   'label' => 'Active Projects',  'value' => $this->activeProjectCount($client),   'link' => '/app/projects?customer_id='.$client->id],
+            ['key' => 'tasks',      'label' => 'Open Tasks',       'value' => $this->openTaskCount($client),        'link' => '/app/tasks?rel_type=customer&rel_id='.$client->id],
+            ['key' => 'tickets',    'label' => 'Open Tickets',     'value' => $this->openTicketCount($client),      'link' => '/app/helpdesk/tickets?customer_id='.$client->id],
             ['key' => 'contracts',  'label' => 'Active Contracts', 'value' => $this->activeContractCount($client),  'link' => null],
             ['key' => 'outstanding','label' => 'Outstanding',      'value' => $finance['outstanding'], 'money' => true, 'link' => null],
             ['key' => 'shipments',  'label' => 'Active Shipments', 'value' => $this->activeShipmentCount($client),  'link' => null],

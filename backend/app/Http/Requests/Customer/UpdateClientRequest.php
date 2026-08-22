@@ -120,6 +120,14 @@ class UpdateClientRequest extends FormRequest
             'payment_terms'             => 'nullable|string|max:40',
             'relationship_started_at'   => 'nullable|date',
             'lifecycle_status'          => 'nullable|string|max:20',
+            // §9 Customer Risk — the two indicators nobody can derive.
+            // Payment, Contract, Service and Project risk are computed from
+            // real signals; Relationship and Compliance have none, so they are
+            // a judgement a human records. Without these rules the columns
+            // existed but nothing could ever write to them, and the panel
+            // showed them blank forever.
+            'risk_relationship'         => ['nullable', Rule::in(['Low', 'Medium', 'High'])],
+            'risk_compliance'           => ['nullable', Rule::in(['Low', 'Medium', 'High'])],
         ];
     }
 }

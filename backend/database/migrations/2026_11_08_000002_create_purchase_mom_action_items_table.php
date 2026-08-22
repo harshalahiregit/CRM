@@ -43,7 +43,13 @@ return new class extends Migration
             $table->unsignedSmallInteger('sort_order')->default(0);
             $table->timestamps();
 
-            $table->index(['tenant_id', 'purchase_kickoff_meeting_id']);
+            // Explicit short name: the generated one would be
+            // purchase_mom_action_items_tenant_id_purchase_kickoff_meeting_id_index,
+            // 69 characters against MySQL's 64-character limit. SQLite has no
+            // such limit so the suite passes either way — only a real MySQL
+            // migration fails, and it aborts mid-file. Caught by
+            // tests/Unit/Database/MigrationIdentifierLengthTest.
+            $table->index(['tenant_id', 'purchase_kickoff_meeting_id'], 'pmai_tenant_meeting_idx');
             $table->index(['tenant_id', 'status']);
         });
     }

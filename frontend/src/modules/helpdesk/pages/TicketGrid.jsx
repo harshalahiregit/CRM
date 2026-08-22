@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import {
   Search, Plus, Inbox, Clock, CheckCircle2, Circle, User, Zap,
   Download, Columns3, Rows3, AlignJustify, ArrowUp, ArrowDown, ChevronsUpDown,
@@ -164,10 +164,18 @@ export default function TicketGrid() {
     return fresh.reduce((a, b) => (activity(b) > activity(a) ? b : a)).id
   }, [tickets])
 
+  // Customer 360 links here as /app/helpdesk/tickets?customer_id=N. The list
+  // is loaded whole and filtered in memory, so the scope is applied here
+  // rather than as a query param. Without it the customer's "Open Tickets"
+  // tile landed on every ticket in the tenant with nothing saying why.
+  const [searchParams] = useSearchParams()
+  const customerScope = searchParams.get('customer_id')
+
   const rows = useMemo(() => {
     const term = q.trim().toLowerCase()
     const col = ALL_COLS.find(c => c.key === sort.key)
     const out = tickets.filter(t => {
+      if (customerScope && String(t.customer_id ?? '') !== String(customerScope)) return false
       if (view === 'unassigned' && t.assigned_to) return false
       if (view === 'unseen' && !t.is_new) return false
       if (view === 'reopened' && !t.is_reopened) return false
@@ -181,7 +189,7 @@ export default function TicketGrid() {
       return sort.dir === 'asc' ? r : -r
     })
     return out
-  }, [tickets, view, q, sort])
+  }, [tickets, view, q, sort, customerScope])
 
   // What the table actually renders — capped by the page-size control (0 = all).
   const pagedRows = useMemo(() => (pageSize === 0 ? rows : rows.slice(0, pageSize)), [rows, pageSize])

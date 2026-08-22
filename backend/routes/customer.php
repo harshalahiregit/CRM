@@ -133,6 +133,8 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('customers')->gr
 
     // §5 Timeline — read-only aggregation across every connected module.
     Route::get('/{client}/timeline', [CustomerTimelineController::class, 'index']);
+    // §4 Activities as a register of everything attached to this customer.
+    Route::get('/{client}/activity-feed', [CustomerTimelineController::class, 'feed']);
 
     // §6 — other modules' records, shown here and edited there.
     Route::get('/{client}/linked/projects',       [CustomerLinkedRecordsController::class, 'projects']);

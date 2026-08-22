@@ -191,9 +191,11 @@ class ClientPortalService
         }
 
         if ($this->can($contact, 'proposal') && Schema::hasTable('proposals')) {
+            // rel_type/rel_id, not client_id — proposals is polymorphic.
             $open = DB::table('proposals')
                 ->where('tenant_id', $client->tenant_id)
-                ->where('client_id', $client->id)
+                ->where('rel_type', 'customer')->where('rel_id', $client->id)
+                ->whereNull('deleted_at')
                 ->whereIn('status', ['Sent', 'Open'])
                 ->count();
             if ($open > 0) {
