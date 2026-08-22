@@ -104,6 +104,7 @@ class ClientPortalService
         }
 
         $rows = DB::table('sales_invoices')
+            ->whereNull('deleted_at')
             ->where('tenant_id', $client->tenant_id)
             ->where('client_id', $client->id)
             ->whereNotIn('status', ['Draft', 'Cancelled'])
@@ -127,6 +128,7 @@ class ClientPortalService
         }
 
         $rows = DB::table('projects')
+            ->whereNull('deleted_at')
             ->where('tenant_id', $client->tenant_id)
             ->where('customer_id', $client->id)
             ->selectRaw('status, count(*) as c')->groupBy('status')->pluck('c', 'status');
@@ -144,6 +146,7 @@ class ClientPortalService
         }
 
         $rows = DB::table('tickets')
+            ->whereNull('deleted_at')
             ->where('tenant_id', $client->tenant_id)
             ->where('customer_id', $client->id)
             ->whereNull('merged_into_id')
@@ -176,6 +179,7 @@ class ClientPortalService
 
         if ($this->can($contact, 'estimate') && Schema::hasTable('estimates')) {
             $awaiting = DB::table('estimates')
+                ->whereNull('deleted_at')
                 ->where('tenant_id', $client->tenant_id)
                 ->where('client_id', $client->id)
                 ->whereIn('status', ['Sent'])

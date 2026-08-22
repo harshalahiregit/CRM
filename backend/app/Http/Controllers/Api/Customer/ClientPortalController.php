@@ -100,6 +100,7 @@ class ClientPortalController extends Controller
         $c = $this->client($r);
 
         $q = DB::table('sales_invoices')
+            ->whereNull('deleted_at')
             ->where('tenant_id', $c->tenant_id)->where('client_id', $c->id)
             ->whereNotIn('status', ['Draft', 'Cancelled']);
 
@@ -133,6 +134,7 @@ class ClientPortalController extends Controller
         // Drafts are ours until sent — a customer seeing an unsent estimate is
         // seeing a number we have not agreed to yet.
         return response()->json(DB::table('estimates')
+            ->whereNull('deleted_at')
             ->where('tenant_id', $c->tenant_id)->where('client_id', $c->id)
             ->where('status', '!=', 'Draft')
             ->orderByDesc('date')
@@ -162,6 +164,7 @@ class ClientPortalController extends Controller
         $c = $this->client($r);
 
         return response()->json(DB::table('credit_notes')
+            ->whereNull('deleted_at')
             ->where('tenant_id', $c->tenant_id)->where('client_id', $c->id)
             ->orderByDesc('date')
             ->get(['id', 'number', 'date', 'total', 'status']));
@@ -188,6 +191,7 @@ class ClientPortalController extends Controller
         }
 
         return response()->json(DB::table('projects')
+            ->whereNull('deleted_at')
             ->where('tenant_id', $c->tenant_id)->where('customer_id', $c->id)
             ->orderByDesc('start_date')
             ->get(['id', 'name', 'status', 'start_date', 'deadline', 'progress']));
@@ -203,6 +207,7 @@ class ClientPortalController extends Controller
         }
 
         return response()->json(DB::table('tickets')
+            ->whereNull('deleted_at')
             ->where('tenant_id', $c->tenant_id)->where('customer_id', $c->id)
             ->whereNull('merged_into_id')
             ->orderByDesc('created_at')
@@ -215,6 +220,7 @@ class ClientPortalController extends Controller
         $c = $this->client($r);
 
         $invoices = DB::table('sales_invoices')
+            ->whereNull('deleted_at')
             ->where('tenant_id', $c->tenant_id)->where('client_id', $c->id)
             ->whereNotIn('status', ['Draft', 'Cancelled'])
             ->get(['number', 'date', 'total', 'paid', 'balance']);
