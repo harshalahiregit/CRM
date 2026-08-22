@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, ClipboardList, FileSignature, ShoppingBag,
-  Truck, Receipt, FileX, FileText, Package, Building2, CalendarDays, HardHat, ShieldCheck, FileWarning, ClipboardCheck, TrendingUp, FolderLock, Megaphone
+  Truck, Receipt, FileX, FileText, Package, Building2, CalendarDays, HardHat, ShieldCheck, FileWarning, ClipboardCheck, TrendingUp, FolderLock, Megaphone, AlertOctagon
 } from 'lucide-react'
 import ModuleShell from '@/components/layout/ModuleShell'
 
@@ -17,6 +17,7 @@ const PURCHASE_NAV = [
   { label: 'NCR',            path: '/app/purchase/ncr',            icon: FileWarning     },
   { label: 'CAPA',           path: '/app/purchase/capa',           icon: ClipboardCheck  },
   { label: 'Inspections',    path: '/app/purchase/inspections',    icon: ClipboardCheck  },
+  { label: 'Violations',     path: '/app/purchase/violations',     icon: AlertOctagon    },
   { label: 'Requests',       path: '/app/purchase/requests',       icon: ClipboardList   },
   { label: 'Quotations',     path: '/app/purchase/quotations',     icon: FileSignature   },
   { label: 'Orders',         path: '/app/purchase/orders',         icon: ShoppingBag     },
