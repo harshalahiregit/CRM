@@ -354,3 +354,4 @@ Record the SHA after every successful deploy — it is the next `BASE`.
 | 2026-08-17 | `968b291` | — | earlier baseline |
 | 2026-08-17 | `5585379` | vendor detail workspaces (TPV + Purchase) | |
 | 2026-08-22 | `8f6f6a7` | Customer 360 complete; draft-invoice fix; 46 commits of TPV/Purchase compliance | **LIVE.** 24 migrations ran (17 long-pending + 7 new). The Customer 360 migration failed first time on an over-long MySQL index name, then ended up recorded with no tables; recovered by deleting the row and re-running against the patched file. Live carries that patch as `5874d02` -- use `8f6f6a7` as the next BASE. |
+| 2026-08-22 | `826ccbe` | /app/meetings 404 fix; unlimited concurrent sessions; Harshal's Purchase inspections/violations/renewals/offboarding/VPI | **LIVE.** 4 additive migrations. Clean run — no failures. Next BASE = `826ccbe`. |
