@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\Purchase\PurchaseMomActionController;
 use App\Http\Controllers\Api\Purchase\PurchaseMomIssueController;
 use App\Http\Controllers\Api\Purchase\PurchaseMomDecisionController;
 use App\Http\Controllers\Api\Purchase\PurchaseApprovalRequestController;
+use App\Http\Controllers\Api\Purchase\PurchaseMomAgendaController;
 use App\Http\Controllers\Api\Purchase\PurchaseApprovalController;
 use App\Http\Controllers\Api\Purchase\PurchaseVendorController;
 use App\Http\Controllers\Api\Purchase\PurchaseVendorItemController;
@@ -343,6 +344,7 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     // Kickoff is one configurable meeting type here, not a separate module (§9/§39).
     Route::get('/meeting-types',                    [PurchaseKickoffController::class, 'meetingTypes']);
     Route::get('/kickoff/stats',                   [PurchaseKickoffController::class, 'stats']);
+    Route::get('/kickoff/dashboard',               [PurchaseKickoffController::class, 'dashboard']);
     Route::get('/kickoff',                         [PurchaseKickoffController::class, 'index']);
     Route::post('/kickoff',                        [PurchaseKickoffController::class, 'store']);
     Route::get('/kickoff/{kickoff}',               [PurchaseKickoffController::class, 'show']);
@@ -353,6 +355,16 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::post('/kickoff/{kickoff}/mom',          [PurchaseKickoffController::class, 'uploadMom']);
     Route::post('/kickoff/{kickoff}/mom/generate', [PurchaseKickoffController::class, 'generateMom']);
     Route::get('/kickoff/{kickoff}/mom',           [PurchaseKickoffController::class, 'momFile']);
+    // Agenda builder (Meeting.docx §3/§4) — structured items + template / copy-previous.
+    Route::get('/kickoff/{kickoff}/agenda',                       [PurchaseMomAgendaController::class, 'index']);
+    Route::post('/kickoff/{kickoff}/agenda',                      [PurchaseMomAgendaController::class, 'store']);
+    Route::post('/kickoff/{kickoff}/agenda/load-template',        [PurchaseMomAgendaController::class, 'loadTemplate']);
+    Route::post('/kickoff/{kickoff}/agenda/copy-previous',        [PurchaseMomAgendaController::class, 'copyPrevious']);
+    // Previous-MOM continuity (Meeting.docx §11).
+    Route::get('/kickoff/{kickoff}/previous-summary',            [PurchaseKickoffController::class, 'previousSummary']);
+    Route::post('/kickoff/{kickoff}/carry-forward',             [PurchaseKickoffController::class, 'carryForward']);
+    Route::put('/kickoff/{kickoff}/agenda/{agendaItem}',         [PurchaseMomAgendaController::class, 'update'])->whereNumber('agendaItem');
+    Route::delete('/kickoff/{kickoff}/agenda/{agendaItem}',      [PurchaseMomAgendaController::class, 'destroy'])->whereNumber('agendaItem');
     Route::post('/kickoff/{kickoff}/mom/submit',   [PurchaseKickoffController::class, 'momSubmit']);
     Route::post('/kickoff/{kickoff}/mom/decide',   [PurchaseKickoffController::class, 'momDecide']);
     Route::post('/kickoff/{kickoff}/mom/revise',   [PurchaseKickoffController::class, 'momRevise']);

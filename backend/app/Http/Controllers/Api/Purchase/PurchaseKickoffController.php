@@ -28,6 +28,11 @@ class PurchaseKickoffController extends Controller
         return response()->json($this->service->stats($request->user()->tenant_id));
     }
 
+    public function dashboard(Request $request)
+    {
+        return response()->json($this->service->dashboard($request->user()->tenant_id));
+    }
+
     /**
      * The configurable meeting-type catalogue (Sangoe TPV §9 / §39) — powers the
      * "Meeting Type" picker on the New Meeting form. Kickoff is one type here.
@@ -87,9 +92,10 @@ class PurchaseKickoffController extends Controller
         $this->assertTenant($request, $kickoff);
 
         $data = $request->validate([
-            'rows'            => 'required|array',
-            'rows.*.id'       => 'required|integer',
-            'rows.*.attended' => 'nullable|boolean',
+            'rows'                     => 'required|array',
+            'rows.*.id'                => 'required|integer',
+            'rows.*.attended'          => 'nullable|boolean',
+            'rows.*.attendance_status' => ['nullable', Rule::in(\App\Models\Purchase\PurchaseKickoffParticipant::ATTENDANCE)],
         ]);
 
         return response()->json($this->service->markAttendance($kickoff, $data['rows'], $request->user()));
@@ -131,6 +137,20 @@ class PurchaseKickoffController extends Controller
             'Content-Type'        => $file['mime'],
             'Content-Disposition' => 'inline; filename="'.$file['filename'].'"',
         ]);
+    }
+
+    public function previousSummary(Request $request, PurchaseKickoffMeeting $kickoff)
+    {
+        $this->assertTenant($request, $kickoff);
+
+        return response()->json($this->service->previousSummary($kickoff));
+    }
+
+    public function carryForward(Request $request, PurchaseKickoffMeeting $kickoff)
+    {
+        $this->assertTenant($request, $kickoff);
+
+        return response()->json($this->service->carryForwardOpenItems($kickoff, $request->user()));
     }
 
     public function momSubmit(Request $request, PurchaseKickoffMeeting $kickoff)
