@@ -41,7 +41,11 @@ class PurchaseKickoffRepository extends BaseRepository
     public function findForTenant(int $id, int $tenantId): ?PurchaseKickoffMeeting
     {
         return PurchaseKickoffMeeting::forTenant($tenantId)
-            ->with(['creator:id,name', 'vendor:id,company_name,purchase_vendor_code', 'participants.contact:id,first_name,last_name,designation', 'currentMom', 'auditLogs'])
+            ->with([
+                'creator:id,name', 'vendor:id,company_name,purchase_vendor_code',
+                'participants.contact:id,first_name,last_name,designation', 'currentMom', 'auditLogs',
+                'momSubmitter:id,name', 'momOrganizerApprover:id,name', 'momApprover:id,name', 'momDistributor:id,name',
+            ])
             ->find($id);
     }
 

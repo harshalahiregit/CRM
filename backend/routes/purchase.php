@@ -342,6 +342,9 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::post('/kickoff/{kickoff}/mom',          [PurchaseKickoffController::class, 'uploadMom']);
     Route::post('/kickoff/{kickoff}/mom/generate', [PurchaseKickoffController::class, 'generateMom']);
     Route::get('/kickoff/{kickoff}/mom',           [PurchaseKickoffController::class, 'momFile']);
+    Route::post('/kickoff/{kickoff}/mom/submit',   [PurchaseKickoffController::class, 'momSubmit']);
+    Route::post('/kickoff/{kickoff}/mom/decide',   [PurchaseKickoffController::class, 'momDecide']);
+    Route::post('/kickoff/{kickoff}/mom/revise',   [PurchaseKickoffController::class, 'momRevise']);
     Route::post('/kickoff/{kickoff}/publish',      [PurchaseKickoffController::class, 'publish']);
     Route::delete('/kickoff/{kickoff}',            [PurchaseKickoffController::class, 'destroy']);
 
