@@ -10,7 +10,7 @@ namespace App\Support\Purchase;
  */
 class PurchaseCapaSource
 {
-    public const KINDS = ['ncr', 'inspection', 'audit', 'meeting', 'renewal', 'manual'];
+    public const KINDS = ['ncr', 'inspection', 'audit', 'meeting', 'violation', 'renewal', 'manual'];
 
     public const TYPES = ['Corrective', 'Preventive'];
 
@@ -20,13 +20,28 @@ class PurchaseCapaSource
 
     /** Which kinds resolve to a linkable Purchase model (rest are label-only). */
     public const CLASSES = [
-        'ncr'     => \App\Models\Purchase\PurchaseNcr::class,
-        'meeting' => \App\Models\Purchase\PurchaseKickoffMeeting::class,
+        'ncr'       => \App\Models\Purchase\PurchaseNcr::class,
+        'meeting'   => \App\Models\Purchase\PurchaseKickoffMeeting::class,
+        'violation' => \App\Models\Purchase\PurchaseVendorViolation::class,
     ];
 
     public static function classFor(?string $kind): ?string
     {
         return self::CLASSES[$kind] ?? null;
+    }
+
+    /**
+     * Map a governance record's severity onto a CAPA priority, so an
+     * auto-raised CAPA inherits the urgency of the NCR / violation it came from.
+     */
+    public static function priorityForSeverity(?string $severity): string
+    {
+        return match ($severity) {
+            'Critical' => 'Critical',
+            'Major'    => 'High',
+            'Minor'    => 'Low',
+            default    => 'Medium',
+        };
     }
 
     public static function label(?string $v): string

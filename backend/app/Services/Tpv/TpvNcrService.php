@@ -3,16 +3,25 @@
 namespace App\Services\Tpv;
 
 use App\Exceptions\BusinessException;
+use App\Models\Tpv\TpvCapa;
 use App\Models\Tpv\TpvNcr;
 use App\Models\User;
+use App\Support\Tpv\CapaSource;
 use Illuminate\Support\Facades\Log;
 
 /**
  * TPV Non-Conformance Reports (Sangoe TPV §24). CRUD + the ordered lifecycle
  * Raised → Assigned → Response → Corrective Action → Verification → Closed.
+ *
+ * Every NCR auto-raises a linked CAPA on creation (the corrective-action tracker
+ * for the nonconformity), so an NCR is never an untracked promise — this is also
+ * how an inspection finding gets a CAPA, since escalateToNcr() routes through
+ * create() here.
  */
 class TpvNcrService
 {
+    public function __construct(private TpvCapaService $capas) {}
+
     public function list(int $tenantId, array $filters = [])
     {
         return TpvNcr::forTenant($tenantId)
@@ -37,7 +46,32 @@ class TpvNcrService
             'ncr_id' => $ncr->id, 'tenant_id' => $tenantId, 'reference' => $ncr->reference,
         ]);
 
+        $this->autoRaiseCapa($ncr);
+
         return $ncr->load('vendor:id,company_name,vendor_code', 'responsible:id,name');
+    }
+
+    /**
+     * Open a corrective-action CAPA linked to this NCR. Idempotent — one auto-CAPA
+     * per NCR — so re-runs and manually-added CAPAs never produce duplicates. The
+     * CAPA inherits the NCR's due date, responsible person and severity-mapped
+     * priority; it stays Open and is closed only on Verified-with-evidence (Rule 12).
+     */
+    private function autoRaiseCapa(TpvNcr $ncr): void
+    {
+        $exists = TpvCapa::forTenant($ncr->tenant_id)
+            ->where('source_kind', 'ncr')->where('source_id', $ncr->id)->exists();
+        if ($exists) {
+            return;
+        }
+
+        $this->capas->raiseFrom('ncr', $ncr->id, [
+            'title'       => 'Corrective action for '.$ncr->reference,
+            'type'        => 'Corrective',
+            'priority'    => CapaSource::priorityForSeverity($ncr->severity),
+            'due_date'    => $ncr->due_date,
+            'assigned_to' => $ncr->responsible_by,
+        ], (int) $ncr->tenant_id, $ncr->raised_by, $ncr->vendor_id);
     }
 
     public function update(TpvNcr $ncr, array $data): TpvNcr

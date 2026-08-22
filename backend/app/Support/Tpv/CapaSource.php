@@ -37,6 +37,20 @@ class CapaSource
         return self::CLASSES[$kind] ?? null;
     }
 
+    /**
+     * Map a governance record's severity onto a CAPA priority, so an
+     * auto-raised CAPA inherits the urgency of the NCR / violation it came from.
+     */
+    public static function priorityForSeverity(?string $severity): string
+    {
+        return match ($severity) {
+            'Critical' => 'Critical',
+            'Major'    => 'High',
+            'Minor'    => 'Low',
+            default    => 'Medium',
+        };
+    }
+
     public static function label(?string $v): string
     {
         return $v ? ucfirst(str_replace('_', ' ', $v)) : 'Manual';
