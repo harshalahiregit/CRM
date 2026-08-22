@@ -304,6 +304,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::get('/vendors/{purchaseVendor}/violation-escalation', [\App\Http\Controllers\Api\Purchase\PurchaseViolationController::class, 'escalation'])->whereNumber('purchaseVendor');
     Route::post('/vendors/{purchaseVendor}/violation-enforce',   [\App\Http\Controllers\Api\Purchase\PurchaseViolationController::class, 'enforce'])->whereNumber('purchaseVendor');
 
+    // ── Vendor Performance Index (mirror of TPV §27 — governance-scored) ────
+    Route::get('/vpi',                     [\App\Http\Controllers\Api\Purchase\PurchaseVendorPerformanceController::class, 'index']);
+    Route::get('/vendors/{purchaseVendor}/vpi', [\App\Http\Controllers\Api\Purchase\PurchaseVendorPerformanceController::class, 'show'])->whereNumber('purchaseVendor');
+
     // ── Kickoff meetings (Purchase-owned engine: purchase_kickoff_* tables) ─
     Route::get('/kickoff/stats',                   [PurchaseKickoffController::class, 'stats']);
     Route::get('/kickoff',                         [PurchaseKickoffController::class, 'index']);
