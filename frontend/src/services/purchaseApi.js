@@ -167,6 +167,16 @@ export const purchaseApi = {
     delete:    (id)          => api.delete(`/purchase/vendors/${id}`).then(r => r.data),
 
     // ── Vendor detail workspace tabs ─────────────────────────────────────
+    // Live per-vendor Overview counts (mirror of tpvApi.vendors.overview).
+    overview:  (id) => api.get(`/purchase/vendors/${id}/overview`).then(r => r.data),
+
+    // Customers directly linked to this vendor via clients.purchase_vendor_id
+    // (mirror of tpvApi.vendors.customers). Add creates a real Customer record.
+    customers: {
+      list:   (vid)       => api.get(`/purchase/vendors/${vid}/customers`).then(r => r.data),
+      create: (vid, data) => api.post(`/purchase/vendors/${vid}/customers`, data).then(r => r.data),
+    },
+
     // Commercial: native. Every purchase document already keys to
     // purchase_vendor_id, so payments and the statement need no link step.
     payments:  (id) => api.get(`/purchase/vendors/${id}/payments`).then(r => r.data),
@@ -277,6 +287,8 @@ export const purchaseApi = {
   kickoff: {
     list:   (params = {}) => api.get('/purchase/kickoff', { params }).then(r => r.data),
     stats:  ()            => api.get('/purchase/kickoff/stats').then(r => r.data),
+    // Configurable meeting-type catalogue (kickoff is one type) — §9/§39.
+    meetingTypes: ()      => api.get('/purchase/meeting-types').then(r => r.data),
     get:    (id)          => api.get(`/purchase/kickoff/${id}`).then(r => r.data),
     create: (data)        => api.post('/purchase/kickoff', data).then(r => r.data),
     update: (id, data)    => api.put(`/purchase/kickoff/${id}`, data).then(r => r.data),
@@ -293,8 +305,30 @@ export const purchaseApi = {
     },
     // Stored MOM PDF as a blob for inline view / download.
     momBlob: (id) => api.get(`/purchase/kickoff/${id}/mom`, { responseType: 'blob' }).then(r => r.data),
+    // MOM approval lifecycle (Draft → Pending Organizer → Pending Chairperson → Approved → Distributed).
+    momSubmit: (id)        => api.post(`/purchase/kickoff/${id}/mom/submit`).then(r => r.data),
+    momDecide: (id, data)  => api.post(`/purchase/kickoff/${id}/mom/decide`, data).then(r => r.data),
+    momRevise: (id)        => api.post(`/purchase/kickoff/${id}/mom/revise`).then(r => r.data),
     publish: (id)         => api.post(`/purchase/kickoff/${id}/publish`).then(r => r.data),
     remove:  (id)         => api.delete(`/purchase/kickoff/${id}`).then(r => r.data),
+    // MOM action engine — Meeting → Action → Owner → Due → Evidence → Verification → Closure.
+    actions: {
+      list:   (id)               => api.get(`/purchase/kickoff/${id}/actions`).then(r => r.data),
+      create: (id, data)         => api.post(`/purchase/kickoff/${id}/actions`, data).then(r => r.data),
+      update: (id, aid, data)    => api.put(`/purchase/kickoff/${id}/actions/${aid}`, data).then(r => r.data),
+      // Status progression; pass an evidence File to attach it (multipart).
+      progress: (id, aid, data, file) => {
+        if (file) {
+          const fd = new FormData()
+          Object.entries(data || {}).forEach(([k, v]) => { if (v != null) fd.append(k, v) })
+          fd.append('evidence', file)
+          return upload(`/purchase/kickoff/${id}/actions/${aid}/progress`, fd)
+        }
+        return api.post(`/purchase/kickoff/${id}/actions/${aid}/progress`, data).then(r => r.data)
+      },
+      evidenceBlob: (id, aid) => api.get(`/purchase/kickoff/${id}/actions/${aid}/evidence`, { responseType: 'blob' }).then(r => r.data),
+      remove: (id, aid)       => api.delete(`/purchase/kickoff/${id}/actions/${aid}`).then(r => r.data),
+    },
   },
 
   // ── Purchase onboarding — the 6-step wizard (/purchase/onboarding) ───

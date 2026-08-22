@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Repositories\Purchase\PurchaseKickoffRepository;
 use App\Services\Notifications\NotificationService;
 use App\Support\Purchase\PurchaseKickoffStatus as Status;
+use App\Support\Purchase\PurchaseMomApprovalStatus as MomStatus;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
@@ -71,6 +72,7 @@ class PurchaseKickoffService
             'purchase_vendor_id'     => $vendor->id,
             'purchase_onboarding_id' => $data['purchase_onboarding_id'] ?? $this->onboardingIdFor($vendor),
             'title'                  => $data['title'] ?? $this->defaultTitle($vendor),
+            'meeting_type'           => $data['meeting_type'] ?? \App\Support\Purchase\PurchaseMeetingTypeCatalog::DEFAULT,
             'reference'              => $data['reference'] ?? null,
             'agenda'                 => $data['agenda'] ?? null,
             'status'                 => Status::SCHEDULED,
@@ -110,6 +112,7 @@ class PurchaseKickoffService
 
         $meeting->update(array_filter([
             'title'             => $data['title'] ?? null,
+            'meeting_type'      => $data['meeting_type'] ?? null,
             'reference'         => $data['reference'] ?? null,
             'agenda'            => $data['agenda'] ?? null,
             'scheduled_at'      => $data['scheduled_at'] ?? null,
@@ -230,6 +233,126 @@ class PurchaseKickoffService
         ];
     }
 
+    /**
+     * Submit the draft minutes into the approval workflow (Draft → Pending
+     * Organizer). Requires the meeting to be Completed; generates the MOM PDF if
+     * one doesn't exist yet so approvers have something to review.
+     */
+    public function submitMomForApproval(PurchaseKickoffMeeting $meeting, User $actor): PurchaseKickoffMeeting
+    {
+        if ($meeting->status !== Status::COMPLETED) {
+            throw new BusinessException('Complete the meeting before submitting its minutes for approval.');
+        }
+        if (! MomStatus::canTransition($meeting->mom_status, MomStatus::PENDING)) {
+            throw new BusinessException('These minutes are '.MomStatus::label($meeting->mom_status).' and cannot be submitted for approval.');
+        }
+
+        // Ensure there is a document to review; a generation failure is not fatal.
+        if (! $meeting->currentMom()->exists()) {
+            try {
+                $this->generateMom($meeting, $actor);
+            } catch (\Throwable $e) {
+                Log::channel('purchase')->warning('Purchase MOM auto-generate on submit failed', [
+                    'meeting_id' => $meeting->id, 'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        $meeting->update([
+            'mom_status'        => MomStatus::PENDING,
+            'mom_submitted_at'  => now(),
+            'mom_submitted_by'  => $actor->id,
+            'mom_approval_note' => null,
+        ]);
+        $meeting->recordAudit('mom_submitted', $actor, 'Minutes submitted for approval');
+
+        return $this->find($meeting->id, $actor->tenant_id);
+    }
+
+    /**
+     * Approve or return the minutes. `approve` steps the two-level chain
+     * (Organizer → Chairperson → Approved); `return` sends them back to Draft
+     * with a mandatory reason and clears the approval stamps.
+     */
+    public function decideMom(PurchaseKickoffMeeting $meeting, string $decision, ?string $note, User $actor): PurchaseKickoffMeeting
+    {
+        if (! in_array($meeting->mom_status, [MomStatus::PENDING, MomStatus::PENDING_CHAIR], true)) {
+            throw new BusinessException('Only minutes awaiting approval can be approved or returned.');
+        }
+
+        if ($decision === 'return') {
+            if (trim((string) $note) === '') {
+                throw new BusinessException('Returning minutes for revision needs a reason.');
+            }
+            $meeting->update([
+                'mom_status'                => MomStatus::DRAFT,
+                'mom_approval_note'         => $note,
+                'mom_organizer_approved_at' => null,
+                'mom_organizer_approved_by' => null,
+                'mom_approved_at'           => null,
+                'mom_approved_by'           => null,
+            ]);
+            $meeting->recordAudit('mom_returned', $actor, 'Minutes returned for revision: '.$note);
+
+            return $this->find($meeting->id, $actor->tenant_id);
+        }
+
+        if ($decision !== 'approve') {
+            throw new BusinessException('Unknown MOM decision.');
+        }
+
+        if ($meeting->mom_status === MomStatus::PENDING) {
+            $meeting->update([
+                'mom_status'                => MomStatus::PENDING_CHAIR,
+                'mom_organizer_approved_at' => now(),
+                'mom_organizer_approved_by' => $actor->id,
+                'mom_approval_note'         => $note ?: null,
+            ]);
+            $meeting->recordAudit('mom_organizer_approved', $actor, 'Minutes approved by organizer, awaiting chairperson');
+        } else { // PENDING_CHAIR → Approved (final)
+            $meeting->update([
+                'mom_status'        => MomStatus::APPROVED,
+                'mom_approved_at'   => now(),
+                'mom_approved_by'   => $actor->id,
+                'mom_approval_note' => $note ?: null,
+            ]);
+            $meeting->recordAudit('mom_approved', $actor, 'Minutes given final approval');
+        }
+
+        return $this->find($meeting->id, $actor->tenant_id);
+    }
+
+    /** First-view stamp for approved/distributed minutes (silent). */
+    public function markMomViewed(PurchaseKickoffMeeting $meeting): void
+    {
+        if (! $meeting->mom_viewed_at) {
+            $meeting->forceFill(['mom_viewed_at' => now()])->saveQuietly();
+        }
+    }
+
+    /**
+     * Pull approved/distributed minutes back to Draft for revision. Clears the
+     * approval stamps (distribution stamps are kept as history); the minutes must
+     * be re-approved before they can be distributed again.
+     */
+    public function reviseMom(PurchaseKickoffMeeting $meeting, User $actor): PurchaseKickoffMeeting
+    {
+        if (! in_array($meeting->mom_status, [MomStatus::APPROVED, MomStatus::DISTRIBUTED], true)) {
+            throw new BusinessException('Only approved or distributed minutes can be pulled back for revision.');
+        }
+
+        $meeting->update([
+            'mom_status'                => MomStatus::DRAFT,
+            'mom_organizer_approved_at' => null,
+            'mom_organizer_approved_by' => null,
+            'mom_approved_at'           => null,
+            'mom_approved_by'           => null,
+        ]);
+        $meeting->recordAudit('mom_revised', $actor, 'Approved minutes pulled back to Draft for revision');
+
+        return $this->find($meeting->id, $actor->tenant_id);
+    }
+
     /** Publish the minutes for vendor acknowledgement — mints the public token. */
     public function publishForAck(PurchaseKickoffMeeting $meeting, User $actor): PurchaseKickoffMeeting
     {
@@ -239,11 +362,19 @@ class PurchaseKickoffService
         if (! $meeting->currentMom()->exists()) {
             throw new BusinessException('Generate or upload the MOM PDF before sending for acknowledgement.');
         }
+        if (! MomStatus::isDistributable($meeting->mom_status)) {
+            throw new BusinessException('The minutes must be approved before they can be sent to the vendor.');
+        }
         if ($meeting->acknowledged_at) {
             throw new BusinessException('This meeting has already been acknowledged.');
         }
 
-        $meeting->update(['ack_token' => Str::random(48)]);
+        $meeting->update([
+            'ack_token'          => Str::random(48),
+            'mom_status'         => MomStatus::DISTRIBUTED,
+            'mom_distributed_at' => $meeting->mom_distributed_at ?? now(),
+            'mom_distributed_by' => $meeting->mom_distributed_by ?? $actor->id,
+        ]);
         $this->sendMomNotifications($meeting);
         $meeting->recordAudit('mom_published', $actor, 'Minutes sent to the vendor for acknowledgement');
 

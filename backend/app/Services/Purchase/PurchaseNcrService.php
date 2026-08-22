@@ -3,17 +3,28 @@
 namespace App\Services\Purchase;
 
 use App\Exceptions\BusinessException;
+use App\Models\Purchase\PurchaseCapa;
 use App\Models\Purchase\PurchaseNcr;
 use App\Models\User;
+use App\Support\Purchase\PurchaseCapaSource as CapaSource;
 use Illuminate\Support\Facades\Log;
 
 /**
  * Purchase Non-Conformance Reports — the Purchase-side mirror of TpvNcrService
  * (parity rule). CRUD + the ordered lifecycle Raised → Assigned → Response →
  * Corrective Action → Verification → Closed.
+ *
+ * Every NCR auto-raises a linked CAPA on creation (also how an inspection finding
+ * gets a CAPA, since escalateToNcr() routes through create() here) and auto-notifies
+ * the vendor over Communications (mirror of TPV §31).
  */
 class PurchaseNcrService
 {
+    public function __construct(
+        private PurchaseCapaService $capas,
+        private PurchaseCommunicationService $comms,
+    ) {}
+
     public function list(int $tenantId, array $filters = [])
     {
         return PurchaseNcr::forTenant($tenantId)
@@ -38,7 +49,33 @@ class PurchaseNcrService
             'ncr_id' => $ncr->id, 'tenant_id' => $tenantId, 'reference' => $ncr->reference,
         ]);
 
+        $this->autoRaiseCapa($ncr);
+        $this->comms->onNcrRaised($ncr);
+
         return $ncr->load('vendor:id,company_name,purchase_vendor_code', 'responsible:id,name');
+    }
+
+    /**
+     * Open a corrective-action CAPA linked to this NCR. Idempotent — one auto-CAPA
+     * per NCR — so re-runs and manually-added CAPAs never produce duplicates. The
+     * CAPA inherits the NCR's due date, responsible person and severity-mapped
+     * priority; closed only on Verified-with-evidence (Rule 12). Mirrors TPV.
+     */
+    private function autoRaiseCapa(PurchaseNcr $ncr): void
+    {
+        $exists = PurchaseCapa::forTenant($ncr->tenant_id)
+            ->where('source_kind', 'ncr')->where('source_id', $ncr->id)->exists();
+        if ($exists) {
+            return;
+        }
+
+        $this->capas->raiseFrom('ncr', $ncr->id, [
+            'title'       => 'Corrective action for '.$ncr->reference,
+            'type'        => 'Corrective',
+            'priority'    => CapaSource::priorityForSeverity($ncr->severity),
+            'due_date'    => $ncr->due_date,
+            'assigned_to' => $ncr->responsible_by,
+        ], (int) $ncr->tenant_id, $ncr->raised_by, $ncr->purchase_vendor_id);
     }
 
     public function update(PurchaseNcr $ncr, array $data): PurchaseNcr

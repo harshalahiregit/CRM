@@ -130,6 +130,16 @@ class PurchaseVendor extends Model implements AuthenticatableContract
         return $this->hasOne(PurchaseOnboarding::class, 'purchase_vendor_id');
     }
 
+    /**
+     * Customers directly linked to this Purchase vendor (clients.purchase_vendor_id).
+     * The Purchase-side mirror of Vendor::customers(); its own link column, so a
+     * client can belong to a TPV vendor, a Purchase vendor, both or neither.
+     */
+    public function customers()
+    {
+        return $this->hasMany(\App\Models\Customer\Client::class, 'purchase_vendor_id');
+    }
+
     /* ── Helpers ────────────────────────────────────────────────────────── */
 
     public function getStatusLabelAttribute(): string

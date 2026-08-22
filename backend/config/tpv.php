@@ -46,4 +46,23 @@ return [
         'ppe_enforcement' => env('TPV_GATE_PPE_ENFORCEMENT', 'warn'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Communications — automatic dispatch (Sangoe TPV §31)
+    |--------------------------------------------------------------------------
+    |
+    | When true (default), a governance event that the vendor must know about —
+    | an NCR raised against them, a major/critical violation recorded — emails
+    | the vendor immediately over the tenant's own transport, in addition to
+    | appearing in the pull-based alerts feed. Dispatch is best-effort: a
+    | delivery failure never rolls back the event, and every attempt (sent /
+    | failed / skipped-no-email) is written to the notification log.
+    |
+    | Set to false to fall back to the manual "Send" workflow only.
+    |
+    */
+    'communications' => [
+        'auto_dispatch' => (bool) env('TPV_COMMS_AUTO_DISPATCH', true),
+    ],
+
 ];

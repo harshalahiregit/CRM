@@ -1,5 +1,5 @@
 import {
-  User, Users, HeartPulse, GraduationCap, ClipboardList,
+  LayoutDashboard, User, Users, Building2, HeartPulse, GraduationCap, ClipboardList,
   FileSignature, FileText, ShoppingBag, Receipt, FileX, FileBarChart2, Wallet,
   FolderKanban, ListChecks, Coins, CalendarClock, Video, CheckSquare, StickyNote,
   Paperclip, LifeBuoy, BookOpen, Lock, BellRing,
@@ -25,8 +25,10 @@ export const VENDOR_NAV_GROUPS = [
   {
     title: 'General',
     items: [
+      { key: 'overview',   label: 'Overview',   icon: LayoutDashboard, implemented: true },
       { key: 'profile',    label: 'Profile',    icon: User,          implemented: true },
       { key: 'contacts',   label: 'Contacts',   icon: Users,         implemented: true },
+      { key: 'customer',   label: 'Customer',   icon: Building2,     implemented: true },
       { key: 'medical',    label: 'Medical',    icon: HeartPulse,    implemented: true },
       { key: 'training',   label: 'Training',   icon: GraduationCap, implemented: true },
       { key: 'onboarding', label: 'Onboarding', icon: ClipboardList, implemented: true },

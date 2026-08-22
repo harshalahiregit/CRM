@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\Purchase\PurchaseOnboardingController;
 use App\Http\Controllers\Api\Purchase\PurchaseVendorDocumentController;
 use App\Http\Controllers\Api\Purchase\PurchaseContactController;
 use App\Http\Controllers\Api\Purchase\PurchaseKickoffController;
+use App\Http\Controllers\Api\Purchase\PurchaseMomActionController;
 use App\Http\Controllers\Api\Purchase\PurchaseApprovalController;
 use App\Http\Controllers\Api\Purchase\PurchaseVendorController;
 use App\Http\Controllers\Api\Purchase\PurchaseVendorItemController;
@@ -153,6 +154,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::post('/vendors',                          [PurchaseVendorController::class, 'store']);
     Route::get('/vendors/{purchaseVendor}',          [PurchaseVendorController::class, 'show'])->whereNumber('purchaseVendor');
     Route::get('/vendors/{purchaseVendor}/tasks',    [PurchaseVendorController::class, 'tasks'])->whereNumber('purchaseVendor');
+    // Workspace Overview dashboard (live per-vendor counts) + directly-linked customers.
+    Route::get('/vendors/{purchaseVendor}/overview',  [PurchaseVendorController::class, 'overview'])->whereNumber('purchaseVendor');
+    Route::get('/vendors/{purchaseVendor}/customers', [PurchaseVendorController::class, 'customers'])->whereNumber('purchaseVendor');
+    Route::post('/vendors/{purchaseVendor}/customers', [PurchaseVendorController::class, 'storeCustomer'])->whereNumber('purchaseVendor');
     Route::put('/vendors/{purchaseVendor}',          [PurchaseVendorController::class, 'update'])->whereNumber('purchaseVendor');
     Route::patch('/vendors/{purchaseVendor}/status', [PurchaseVendorController::class, 'updateStatus'])->whereNumber('purchaseVendor');
     Route::delete('/vendors/{purchaseVendor}',       [PurchaseVendorController::class, 'destroy'])->whereNumber('purchaseVendor');
@@ -324,7 +329,9 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::post('/offboardings/{offboarding}/complete', [\App\Http\Controllers\Api\Purchase\PurchaseOffboardingController::class, 'complete'])->whereNumber('offboarding');
     Route::delete('/offboardings/{offboarding}',     [\App\Http\Controllers\Api\Purchase\PurchaseOffboardingController::class, 'destroy'])->whereNumber('offboarding');
 
-    // ── Kickoff meetings (Purchase-owned engine: purchase_kickoff_* tables) ─
+    // ── Meetings (Purchase-owned engine: purchase_kickoff_* tables) ─────────
+    // Kickoff is one configurable meeting type here, not a separate module (§9/§39).
+    Route::get('/meeting-types',                    [PurchaseKickoffController::class, 'meetingTypes']);
     Route::get('/kickoff/stats',                   [PurchaseKickoffController::class, 'stats']);
     Route::get('/kickoff',                         [PurchaseKickoffController::class, 'index']);
     Route::post('/kickoff',                        [PurchaseKickoffController::class, 'store']);
@@ -336,7 +343,17 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::post('/kickoff/{kickoff}/mom',          [PurchaseKickoffController::class, 'uploadMom']);
     Route::post('/kickoff/{kickoff}/mom/generate', [PurchaseKickoffController::class, 'generateMom']);
     Route::get('/kickoff/{kickoff}/mom',           [PurchaseKickoffController::class, 'momFile']);
+    Route::post('/kickoff/{kickoff}/mom/submit',   [PurchaseKickoffController::class, 'momSubmit']);
+    Route::post('/kickoff/{kickoff}/mom/decide',   [PurchaseKickoffController::class, 'momDecide']);
+    Route::post('/kickoff/{kickoff}/mom/revise',   [PurchaseKickoffController::class, 'momRevise']);
     Route::post('/kickoff/{kickoff}/publish',      [PurchaseKickoffController::class, 'publish']);
+    // MOM action engine (Meeting → Action → Owner → Due → Evidence → Verification → Closure).
+    Route::get('/kickoff/{kickoff}/actions',                        [PurchaseMomActionController::class, 'index']);
+    Route::post('/kickoff/{kickoff}/actions',                       [PurchaseMomActionController::class, 'store']);
+    Route::put('/kickoff/{kickoff}/actions/{action}',              [PurchaseMomActionController::class, 'update'])->whereNumber('action');
+    Route::post('/kickoff/{kickoff}/actions/{action}/progress',   [PurchaseMomActionController::class, 'progress'])->whereNumber('action');
+    Route::get('/kickoff/{kickoff}/actions/{action}/evidence',    [PurchaseMomActionController::class, 'evidence'])->whereNumber('action');
+    Route::delete('/kickoff/{kickoff}/actions/{action}',          [PurchaseMomActionController::class, 'destroy'])->whereNumber('action');
     Route::delete('/kickoff/{kickoff}',            [PurchaseKickoffController::class, 'destroy']);
 
     // ── Vendor contacts (Purchase-owned engine: purchase_contacts) ─────────

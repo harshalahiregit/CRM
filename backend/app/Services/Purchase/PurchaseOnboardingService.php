@@ -10,6 +10,7 @@ use App\Services\Purchase\PurchaseApprovalService;
 use App\Services\Purchase\PurchaseDocumentService;
 use App\Support\Purchase\PurchaseApprovalStage;
 use App\Support\Purchase\PurchaseOnboardingStatus as Status;
+use App\Support\Purchase\PurchaseVendorStatus as VendorStatus;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Log;
 
@@ -305,12 +306,19 @@ class PurchaseOnboardingService
         ]);
 
         // Activate the Purchase vendor for procurement (Purchase-owned entity).
-        $onboarding->vendor->update([
-            'status'              => \App\Support\Purchase\PurchaseVendorStatus::ACTIVE,
+        // Route the activation through PurchaseVendorService::updateStatus so the
+        // FULL activation fires — portal login provisioning, the temporary access
+        // window and the logged, once-only activation e-mail — mirroring how
+        // TpvOnboardingService::approve goes through VendorService. A bare
+        // status flip here (the old behaviour) left the login unprovisioned and
+        // sent no real activation mail.
+        $vendor = $onboarding->vendor;
+        $vendor->update([
             'approved_at'         => now(),
             'approved_by'         => $actor->id,
-            'registration_number' => $onboarding->vendor->registration_number ?: $registrationNumber,
+            'registration_number' => $vendor->registration_number ?: $registrationNumber,
         ]);
+        app(PurchaseVendorService::class)->updateStatus($vendor, VendorStatus::ACTIVE, $actor, $remarks);
 
         // Record the full five-stage chain in the Purchase-owned approval engine
         // (Registration → Document → Commercial → Purchase → Final Activation).
@@ -325,7 +333,9 @@ class PurchaseOnboardingService
             'actor_id' => $actor->id, 'registration_number' => $registrationNumber,
         ]);
 
-        $this->notify($onboarding, Status::APPROVED, $remarks);
+        // The activation e-mail is sent by PurchaseVendorService (the activation
+        // notifier), so we deliberately do NOT also send the onboarding "approved"
+        // mail here — that would double-send. Reject/hold/resubmit still notify.
 
         return $onboarding;
     }
@@ -333,6 +343,10 @@ class PurchaseOnboardingService
     public function reject(PurchaseOnboarding $onboarding, User $actor, string $remarks): PurchaseOnboarding
     {
         $onboarding->update(['status' => Status::REJECTED, 'remarks' => $remarks]);
+        // Reflect the rejection on the vendor account so the portal and vendor
+        // status show Rejected — not Active, so no procurement access. Mirrors
+        // TpvOnboardingService::reject.
+        $onboarding->vendor?->update(['status' => VendorStatus::REJECTED]);
         // Record the rejection at the Final Activation stage of the Purchase-owned chain.
         $this->approvals->rejectAt($onboarding, PurchaseApprovalStage::ACTIVATION, $actor, $remarks);
         $onboarding->recordAudit('Onboarding Rejected', $actor, $remarks, ['to' => Status::REJECTED]);
@@ -344,6 +358,9 @@ class PurchaseOnboardingService
     public function hold(PurchaseOnboarding $onboarding, User $actor, string $reason): PurchaseOnboarding
     {
         $onboarding->update(['status' => Status::ON_HOLD, 'hold_reason' => $reason, 'remarks' => $reason]);
+        // Put the vendor account on hold too — not Active, so procurement/portal
+        // access is withheld until the hold is released. Mirrors TpvOnboardingService::hold.
+        $onboarding->vendor?->update(['status' => VendorStatus::ON_HOLD]);
         $onboarding->recordAudit('Onboarding On Hold', $actor, $reason, ['to' => Status::ON_HOLD]);
         $this->notify($onboarding, Status::ON_HOLD, $reason);
 
@@ -357,6 +374,11 @@ class PurchaseOnboardingService
         }
 
         $onboarding->update(['status' => Status::UNDER_REVIEW, 'hold_reason' => null]);
+        // Lift the account hold back to a reviewable (non-active) state so the
+        // onboarding decision can be taken again. Mirrors TpvOnboardingService::release.
+        if ($onboarding->vendor && $onboarding->vendor->status === VendorStatus::ON_HOLD) {
+            $onboarding->vendor->update(['status' => VendorStatus::PENDING_APPROVAL]);
+        }
         $onboarding->recordAudit('Onboarding Released', $actor, null, ['to' => Status::UNDER_REVIEW]);
 
         return $onboarding;
@@ -403,8 +425,12 @@ class PurchaseOnboardingService
             }
         }
 
+        // Only a Kickoff-typed meeting satisfies onboarding Step 1 — now that a
+        // vendor can have other meeting types (§9/§39), a Vendor Review or HSE
+        // meeting must not be mistaken for the kickoff.
         return \App\Models\Purchase\PurchaseKickoffMeeting::forTenant($onboarding->tenant_id)
             ->where('purchase_vendor_id', $onboarding->purchase_vendor_id)
+            ->where('meeting_type', \App\Support\Purchase\PurchaseMeetingTypeCatalog::DEFAULT)
             ->latest()
             ->first();
     }

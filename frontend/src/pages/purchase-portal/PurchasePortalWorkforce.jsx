@@ -28,8 +28,11 @@ export default function PurchasePortalWorkforce() {
 
   const load = useCallback(() => {
     setLoading(true)
+    // The endpoint returns { workers: [...], summary: {...} } — read .workers.
+    // Still tolerate a bare array or a { data: [...] } shape so the list never
+    // receives a non-array (which is what threw "workers.map is not a function").
     api.workers.list()
-      .then(d => setWorkers(d?.data ?? d ?? []))
+      .then(d => setWorkers(Array.isArray(d) ? d : (d?.workers ?? d?.data ?? [])))
       .catch(() => setWorkers([]))
       .finally(() => setLoading(false))
   }, [])
