@@ -296,6 +296,28 @@ class PurchaseWorkforceService
             return ['admit' => false, 'reason' => 'Medical certificate expired on '.$med->expiry_date->format('d M Y').'.'];
         }
 
+        // PPE at the gate (mirror of TPV Rule 5). Config-driven
+        // (purchase.gate.ppe_enforcement): warn (default) / deny / off. Wrapped so
+        // a PPE-subsystem hiccup can never turn away an otherwise-clear worker.
+        $mode = config('purchase.gate.ppe_enforcement', 'warn');
+        if ($mode !== 'off') {
+            try {
+                $heldNone = app(PurchasePpeService::class)->heldBy($worker)->isEmpty();
+                if ($heldNone) {
+                    if ($mode === 'deny') {
+                        return ['admit' => false, 'reason' => 'No PPE has been issued to this worker.'];
+                    }
+
+                    return ['admit' => true, 'reason' => null, 'badge_number' => $worker->badge_number,
+                        'warning' => 'No PPE has been issued to this worker.'];
+                }
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::channel('purchase')->warning('Gate PPE check skipped', [
+                    'worker_id' => $worker->id, 'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
         return ['admit' => true, 'reason' => null, 'badge_number' => $worker->badge_number];
     }
 
