@@ -3,9 +3,11 @@
 namespace App\Services\Purchase;
 
 use App\Exceptions\BusinessException;
+use App\Models\Purchase\PurchaseCapa;
 use App\Models\Purchase\PurchaseVendor;
 use App\Models\Purchase\PurchaseVendorViolation;
 use App\Models\User;
+use App\Support\Purchase\PurchaseCapaSource as CapaSource;
 use App\Support\Purchase\PurchaseVendorStatus;
 use App\Support\Purchase\PurchaseViolationType;
 use Illuminate\Support\Facades\Log;
@@ -15,10 +17,13 @@ use Illuminate\Support\Facades\Log;
  * TpvViolationService (parity rule). Records violations, computes the escalation
  * ladder from cumulative OPEN points, and applies suspension (On_Hold) /
  * blacklist actions through the shared PurchaseVendorService.
+ *
+ * A Major/Critical violation also auto-raises a linked corrective-action CAPA;
+ * Minor violations are strike-only.
  */
 class PurchaseViolationService
 {
-    public function __construct(private PurchaseVendorService $vendors) {}
+    public function __construct(private PurchaseVendorService $vendors, private PurchaseCapaService $capas) {}
 
     public function list(int $tenantId, array $filters = [])
     {
@@ -44,7 +49,32 @@ class PurchaseViolationService
             'violation_id' => $v->id, 'tenant_id' => $tenantId, 'vendor_id' => $v->purchase_vendor_id, 'reference' => $v->reference,
         ]);
 
+        $this->autoRaiseCapa($v);
+
         return $v->load('vendor:id,company_name,purchase_vendor_code,status');
+    }
+
+    /**
+     * Open a corrective-action CAPA for a significant violation. Minor violations
+     * are strike-only (points → escalation ladder); Major/Critical also warrant a
+     * tracked corrective action. Idempotent — one auto-CAPA per violation. Mirrors TPV.
+     */
+    private function autoRaiseCapa(PurchaseVendorViolation $v): void
+    {
+        if (! in_array($v->severity, ['Major', 'Critical'], true)) {
+            return;
+        }
+        $exists = PurchaseCapa::forTenant($v->tenant_id)
+            ->where('source_kind', 'violation')->where('source_id', $v->id)->exists();
+        if ($exists) {
+            return;
+        }
+
+        $this->capas->raiseFrom('violation', $v->id, [
+            'title'    => 'Corrective action for violation '.$v->reference,
+            'type'     => 'Corrective',
+            'priority' => CapaSource::priorityForSeverity($v->severity),
+        ], (int) $v->tenant_id, $v->recorded_by, $v->purchase_vendor_id);
     }
 
     public function update(PurchaseVendorViolation $violation, array $data): PurchaseVendorViolation
