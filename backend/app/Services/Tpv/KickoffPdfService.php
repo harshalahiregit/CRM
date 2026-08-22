@@ -62,6 +62,11 @@ class KickoffPdfService
                     });
                 });
             })
+            // Only a Kickoff-typed meeting satisfies onboarding Step 1 — a vendor
+            // can now hold other meeting types (§9/§39), and a completed Vendor
+            // Review or HSE meeting must not be mistaken for the kickoff. The
+            // explicit kickoff_meeting_id pointer above is honoured regardless.
+            ->where('meeting_type', config('meetings.default_type', 'kickoff'))
             ->where('status', 'Completed')
             ->whereNotNull('mom_path')
             ->latest()

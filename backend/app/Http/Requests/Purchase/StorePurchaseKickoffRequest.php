@@ -18,6 +18,7 @@ class StorePurchaseKickoffRequest extends FormRequest
             'purchase_vendor_id'     => ['required', 'integer', Rule::exists('purchase_vendors', 'id')->where('tenant_id', $this->user()->tenant_id)],
             'purchase_onboarding_id' => 'nullable|integer',
             'title'                  => 'nullable|string|max:200',
+            'meeting_type'           => ['nullable', 'string', Rule::in(\App\Support\Purchase\PurchaseMeetingTypeCatalog::keys())],
             'reference'              => 'nullable|string|max:120',
             'agenda'                 => 'nullable|string',
             'scheduled_at'           => 'nullable|date',

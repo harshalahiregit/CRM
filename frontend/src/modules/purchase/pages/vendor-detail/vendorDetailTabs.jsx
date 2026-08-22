@@ -939,13 +939,14 @@ function MeetingTab() {
 
   return (
     <VendorScopedList
-      title="Kickoff Meetings"
+      title="Meetings"
       addLabel="Add Meeting"
       onAdd={() => navigate(`/app/purchase/kickoff/new?vendor=${vendor.id}`)}
       fetcher={(vid) => purchaseApi.kickoff.list({ purchase_vendor_id: vid })}
       statusCfg={(s) => ({ label: String(s || '—').replace(/_/g, ' '), color: '#7C3AED', bg: 'rgba(124,58,237,0.15)' })}
       columns={[
         { header: 'Title', strong: true, cell: (m) => m.title || `Meeting #${m.id}` },
+        { header: 'Type', cell: (m) => m.meeting_type_label || 'Kickoff Meeting' },
         { header: 'Reference', cell: (m) => m.reference || '—' },
         { header: 'Scheduled', cell: (m) => fmtDate(m.scheduled_at) },
         { header: 'Mode', cell: (m) => m.mode || '—' },

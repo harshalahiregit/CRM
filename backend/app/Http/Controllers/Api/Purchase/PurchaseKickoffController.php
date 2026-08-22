@@ -28,6 +28,18 @@ class PurchaseKickoffController extends Controller
         return response()->json($this->service->stats($request->user()->tenant_id));
     }
 
+    /**
+     * The configurable meeting-type catalogue (Sangoe TPV §9 / §39) — powers the
+     * "Meeting Type" picker on the New Meeting form. Kickoff is one type here.
+     */
+    public function meetingTypes(Request $request)
+    {
+        return response()->json([
+            'types'    => \App\Support\Purchase\PurchaseMeetingTypeCatalog::types(),
+            'default'  => \App\Support\Purchase\PurchaseMeetingTypeCatalog::DEFAULT,
+        ]);
+    }
+
     public function index(Request $request)
     {
         return response()->json(

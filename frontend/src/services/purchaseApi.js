@@ -287,6 +287,8 @@ export const purchaseApi = {
   kickoff: {
     list:   (params = {}) => api.get('/purchase/kickoff', { params }).then(r => r.data),
     stats:  ()            => api.get('/purchase/kickoff/stats').then(r => r.data),
+    // Configurable meeting-type catalogue (kickoff is one type) — §9/§39.
+    meetingTypes: ()      => api.get('/purchase/meeting-types').then(r => r.data),
     get:    (id)          => api.get(`/purchase/kickoff/${id}`).then(r => r.data),
     create: (data)        => api.post('/purchase/kickoff', data).then(r => r.data),
     update: (id, data)    => api.put(`/purchase/kickoff/${id}`, data).then(r => r.data),

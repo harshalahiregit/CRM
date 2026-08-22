@@ -328,7 +328,9 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::post('/offboardings/{offboarding}/complete', [\App\Http\Controllers\Api\Purchase\PurchaseOffboardingController::class, 'complete'])->whereNumber('offboarding');
     Route::delete('/offboardings/{offboarding}',     [\App\Http\Controllers\Api\Purchase\PurchaseOffboardingController::class, 'destroy'])->whereNumber('offboarding');
 
-    // ── Kickoff meetings (Purchase-owned engine: purchase_kickoff_* tables) ─
+    // ── Meetings (Purchase-owned engine: purchase_kickoff_* tables) ─────────
+    // Kickoff is one configurable meeting type here, not a separate module (§9/§39).
+    Route::get('/meeting-types',                    [PurchaseKickoffController::class, 'meetingTypes']);
     Route::get('/kickoff/stats',                   [PurchaseKickoffController::class, 'stats']);
     Route::get('/kickoff',                         [PurchaseKickoffController::class, 'index']);
     Route::post('/kickoff',                        [PurchaseKickoffController::class, 'store']);

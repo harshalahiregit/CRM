@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Purchase;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class UpdatePurchaseKickoffRequest extends FormRequest
 {
@@ -15,6 +16,7 @@ class UpdatePurchaseKickoffRequest extends FormRequest
     {
         return [
             'title'             => 'sometimes|nullable|string|max:200',
+            'meeting_type'      => ['sometimes', 'nullable', 'string', Rule::in(\App\Support\Purchase\PurchaseMeetingTypeCatalog::keys())],
             'reference'         => 'sometimes|nullable|string|max:120',
             'agenda'            => 'sometimes|nullable|string',
             'scheduled_at'      => 'sometimes|nullable|date',

@@ -71,6 +71,7 @@ class PurchaseKickoffService
             'purchase_vendor_id'     => $vendor->id,
             'purchase_onboarding_id' => $data['purchase_onboarding_id'] ?? $this->onboardingIdFor($vendor),
             'title'                  => $data['title'] ?? $this->defaultTitle($vendor),
+            'meeting_type'           => $data['meeting_type'] ?? \App\Support\Purchase\PurchaseMeetingTypeCatalog::DEFAULT,
             'reference'              => $data['reference'] ?? null,
             'agenda'                 => $data['agenda'] ?? null,
             'status'                 => Status::SCHEDULED,
@@ -110,6 +111,7 @@ class PurchaseKickoffService
 
         $meeting->update(array_filter([
             'title'             => $data['title'] ?? null,
+            'meeting_type'      => $data['meeting_type'] ?? null,
             'reference'         => $data['reference'] ?? null,
             'agenda'            => $data['agenda'] ?? null,
             'scheduled_at'      => $data['scheduled_at'] ?? null,
