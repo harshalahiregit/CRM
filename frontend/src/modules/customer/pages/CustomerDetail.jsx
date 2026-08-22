@@ -28,6 +28,7 @@ import CustomFieldForm from '../components/CustomFieldForm'
 import AdminOrderPicker from '../components/AdminOrderPicker'
 import RecordTab from '../components/RecordTab'
 import TimelineTab from '../components/TimelineTab'
+import ActivitiesTab from '../components/ActivitiesTab'
 import LinkedRecordsTab from '../components/LinkedRecordsTab'
 import CustomerExperienceTab from '../components/CustomerExperienceTab'
 import { CONTRACTS, EXPENSES, SUBSCRIPTIONS, PRE_ALERTS, PACKAGES, SHIPMENTS,
@@ -94,7 +95,9 @@ const PENDING_TABS = {}
 
 // Tabs backed by the generic per-customer RecordTab (schema-driven CRUD).
 const RECORD_TABS = {
-  Activities: ACTIVITIES,
+  // Activities is deliberately absent: it is not a plain CRUD list any more.
+  // It shows every record attached to the customer, from every module, with
+  // only the manually logged ones editable. See ActivitiesTab.
   Complaints: COMPLAINTS,
   'Domain Manager': DOMAINS,
   'Purchase Orders': CUSTOMER_PURCHASE_ORDERS,
@@ -355,6 +358,7 @@ export default function CustomerDetail() {
 
       {/* §5 Timeline, §3 Meetings and §6 read-only views of other modules. */}
       {tab === 'Timeline' && <TimelineTab id={id} />}
+      {tab === 'Activities' && <ActivitiesTab id={id} contacts={client.contacts ?? []} />}
       {tab === 'Meetings' && <LinkedRecordsTab id={id} kind="meetings" />}
       {tab === 'Projects' && <LinkedRecordsTab id={id} kind="projects" />}
       {tab === 'Tasks' && <LinkedRecordsTab id={id} kind="tasks" />}

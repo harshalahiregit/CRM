@@ -144,8 +144,13 @@ class ClientPortalController extends Controller
         $this->portal->assertCan($this->contact($r), 'proposal');
         $c = $this->client($r);
 
+        // rel_type/rel_id, not client_id — proposals is polymorphic. Querying
+        // client_id returned nothing at all, so the portal always said
+        // "Nothing here yet" however many proposals the customer had.
         return response()->json(DB::table('proposals')
-            ->where('tenant_id', $c->tenant_id)->where('client_id', $c->id)
+            ->where('tenant_id', $c->tenant_id)
+            ->where('rel_type', 'customer')->where('rel_id', $c->id)
+            ->whereNull('deleted_at')
             ->where('status', '!=', 'Draft')
             ->orderByDesc('created_at')
             ->get(['id', 'subject', 'total', 'status', 'created_at']));

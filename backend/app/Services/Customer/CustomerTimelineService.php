@@ -98,6 +98,67 @@ class CustomerTimelineService
         ];
     }
 
+    /**
+     * The same events as timeline(), flat and newest-first.
+     *
+     * The Activities tab asks a different question from the Timeline. The
+     * Timeline is a narrative — "what happened, day by day". Activities is a
+     * register — "every record attached to this customer, in one list I can
+     * scan and filter". Same sources, different shape, so this shares gather()
+     * rather than duplicating nineteen queries.
+     *
+     * Rows carry `editable` so the UI knows which ones it may offer edit and
+     * delete on. Only manually logged activities are editable; everything else
+     * belongs to the module that owns it and is shown read-only with a link.
+     *
+     * @param  array<int,string>  $types
+     */
+    public function feed(
+        Client $client,
+        ?string $from = null,
+        ?string $to = null,
+        array $types = [],
+        int $limit = 300,
+    ): array {
+        $events = collect($this->gather($client));
+
+        if ($from) {
+            $events = $events->filter(fn ($e) => $e['at'] >= Carbon::parse($from)->startOfDay());
+        }
+        if ($to) {
+            $events = $events->filter(fn ($e) => $e['at'] <= Carbon::parse($to)->endOfDay());
+        }
+
+        // Counts BEFORE the type filter, so the chips keep showing what exists.
+        $counts = $events->countBy('type')->all();
+        $total  = $events->count();
+
+        if ($types !== []) {
+            $events = $events->filter(fn ($e) => in_array($e['type'], $types, true));
+        }
+
+        $rows = $events->sortByDesc('at')->take($limit)->map(fn ($e) => [
+            'id'       => $e['id'] ?? null,
+            'type'     => $e['type'],
+            'kind'     => $e['kind'] ?? null,
+            'category' => $this->categoryOf($e['type']),
+            'label'    => $e['label'],
+            'detail'   => $e['detail'] ?? null,
+            'link'     => $e['link'] ?? null,
+            'editable' => (bool) ($e['editable'] ?? false),
+            'at'       => $e['at']->toIso8601String(),
+        ])->values()->all();
+
+        return [
+            'rows'     => $rows,
+            'counts'   => $counts,
+            'total'    => $total,
+            'showing'  => count($rows),
+            'from'     => $from,
+            'to'       => $to,
+        ];
+    }
+
     private function categoryOf(string $type): string
     {
         foreach (self::CATEGORIES as $category => $types) {
@@ -114,10 +175,15 @@ class CustomerTimelineService
     {
         return array_merge(
             // ── Customer's own tables ──
+            // The only source a user can edit here — everything else is the
+            // shadow of a record owned by another screen.
             $this->from($client, 'client_activities', 'client_id', 'occurred_at', fn ($r) => [
                 'type' => 'activity',
+                'kind' => $r->type,
                 'label' => $r->type.': '.$r->subject,
                 'detail' => $r->outcome,
+                'id' => $r->id,
+                'editable' => true,
             ]),
             $this->from($client, 'client_complaints', 'client_id', 'raised_at', fn ($r) => [
                 'type' => 'complaint',
@@ -169,9 +235,7 @@ class CustomerTimelineService
             $this->from($client, 'estimates', 'client_id', 'created_at', fn ($r) => [
                 'type' => 'estimate', 'label' => 'Estimate '.($r->number ?? '').' created',
             ]),
-            $this->from($client, 'proposals', 'client_id', 'created_at', fn ($r) => [
-                'type' => 'proposal', 'label' => 'Proposal '.($r->subject ?? '').' created',
-            ]),
+            $this->proposals($client),
             $this->from($client, 'credit_notes', 'client_id', 'created_at', fn ($r) => [
                 'type' => 'credit_note', 'label' => 'Credit note '.($r->number ?? '').' issued',
             ]),
@@ -259,6 +323,38 @@ class CustomerTimelineService
             ->map(fn ($r) => [
                 'type' => 'task', 'label' => 'Task: '.$r->name, 'detail' => $r->status,
                 'link' => '/app/tasks/'.$r->id, 'at' => Carbon::parse($r->created_at),
+            ])->all();
+    }
+
+    /**
+     * Proposals for this customer.
+     *
+     * `proposals` has no client_id — it is polymorphic on rel_type/rel_id, the
+     * same shape Tasks uses. Querying client_id here made from()'s hasColumn
+     * guard skip the source entirely and SILENTLY: no error, no empty state,
+     * proposals simply never appeared on any customer's timeline or portal.
+     *
+     * That silence is the real defect. A guard meant to survive an uninstalled
+     * module also hid a typo, so the fix is paired with a test asserting every
+     * timeline source can actually return a row.
+     */
+    private function proposals(Client $client): array
+    {
+        if (! Schema::hasTable('proposals')) {
+            return [];
+        }
+
+        return DB::table('proposals')
+            ->where('tenant_id', $client->tenant_id)
+            ->where('rel_type', 'customer')->where('rel_id', $client->id)
+            ->whereNull('deleted_at')
+            ->orderByDesc('created_at')->limit(50)->get()
+            ->map(fn ($r) => [
+                'type' => 'proposal',
+                'label' => 'Proposal '.($r->subject ?? '').' created',
+                'detail' => $r->status,
+                'link' => '/app/sales/proposals/'.$r->id,
+                'at' => Carbon::parse($r->created_at),
             ])->all();
     }
 

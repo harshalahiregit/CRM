@@ -24,6 +24,34 @@ class CustomerTimelineController extends Controller
     {
     }
 
+    /**
+     * §4 Activities, as a register of everything attached to this customer.
+     *
+     * Same sources as the Timeline, flat rather than grouped by day. Separate
+     * from GET /activities, which stays the plain CRUD list the record form
+     * writes to — merging them would make the writable endpoint's shape depend
+     * on a query parameter.
+     */
+    public function feed(Client $client, Request $request)
+    {
+        $this->assertClientTenant($client, $request->user()->tenant_id);
+
+        $data = $request->validate([
+            'from'  => 'nullable|date',
+            'to'    => 'nullable|date|after_or_equal:from',
+            'types' => 'nullable|string',
+            'limit' => 'nullable|integer|min:1|max:1000',
+        ]);
+
+        return response()->json($this->timeline->feed(
+            $client,
+            $data['from'] ?? null,
+            $data['to'] ?? null,
+            array_filter(explode(',', $data['types'] ?? '')),
+            (int) ($data['limit'] ?? 300),
+        ));
+    }
+
     public function index(Client $client, Request $request)
     {
         $this->assertClientTenant($client, $request->user()->tenant_id);

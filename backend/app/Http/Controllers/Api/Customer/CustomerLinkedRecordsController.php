@@ -45,7 +45,7 @@ class CustomerLinkedRecordsController extends Controller
 
         return response()->json([
             'rows'      => $rows,
-            'link'      => '/app/projects?customer='.$client->id,
+            'link'      => '/app/projects?customer_id='.$client->id,
             'owned_by'  => 'Projects',
             'read_only' => true,
         ]);
@@ -87,7 +87,7 @@ class CustomerLinkedRecordsController extends Controller
 
         return response()->json([
             'rows'      => $rows,
-            'link'      => '/app/tasks?customer='.$client->id,
+            'link'      => '/app/tasks?rel_type=customer&rel_id='.$client->id,
             'owned_by'  => 'Tasks',
             'read_only' => true,
         ]);

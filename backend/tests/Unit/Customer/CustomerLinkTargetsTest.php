@@ -32,12 +32,18 @@ class CustomerLinkTargetsTest extends TestCase
     ];
 
     /**
-     * Full paths declared in routes.jsx.
+     * Full paths declared in routes.jsx, mapped to the component they render.
      *
      * <Route path> nests, so the file is walked keeping a stack of parents;
      * a self-closing tag contributes a leaf without opening a level.
      *
-     * @return array<int,string>
+     * The element matters as much as the path. `/app/tickets` resolves to a
+     * route — but that route is `<ComingSoon name="Tickets" />`, a 🚧
+     * placeholder, while the real grid lives at `/app/helpdesk/tickets`. An
+     * earlier version of this test only asked "does a route exist" and passed
+     * happily on a link that told users the helpdesk was unbuilt.
+     *
+     * @return array<string,string>  path => element
      */
     private function routes(): array
     {
@@ -55,23 +61,38 @@ class CustomerLinkTargetsTest extends TestCase
             }
 
             $segments = array_values(array_filter([...$stack, $m[1]], fn ($s) => $s !== ''));
-            $out[]    = '/'.implode('/', $segments);
+            $path     = '/'.implode('/', $segments);
+
+            preg_match('/element=\{<(?:S><)?([A-Za-z0-9_]+)/', $line, $e);
+            $element = $e[1] ?? '';
+
+            // A real destination wins over a stub declared at another depth.
+            if (! isset($out[$path]) || $out[$path] === 'ComingSoon') {
+                $out[$path] = $element;
+            }
 
             if (! str_ends_with(rtrim($line), '/>')) {
                 $stack[] = $m[1];
             }
         }
 
-        return array_values(array_unique($out));
+        return $out;
     }
 
-    /** Does a concrete path match a route pattern, treating :params as wildcards? */
-    private function resolves(string $link, array $routes): bool
+    /** Destinations that exist but are not a real screen. */
+    private const STUBS = ['ComingSoon'];
+
+    /**
+     * Which route a concrete path matches, treating :params as wildcards.
+     *
+     * @return string|null  the element rendered, or null if nothing matches
+     */
+    private function resolves(string $link, array $routes): ?string
     {
         $path = explode('?', $link)[0];
         $want = array_values(array_filter(explode('/', trim($path, '/')), fn ($s) => $s !== ''));
 
-        foreach ($routes as $route) {
+        foreach ($routes as $route => $element) {
             $have = array_values(array_filter(explode('/', trim($route, '/')), fn ($s) => $s !== ''));
 
             if (count($have) !== count($want)) {
@@ -84,10 +105,10 @@ class CustomerLinkTargetsTest extends TestCase
                 }
             }
 
-            return true;
+            return $element;
         }
 
-        return false;
+        return null;
     }
 
     public function test_every_app_link_the_customer_module_emits_resolves_to_a_route(): void
@@ -101,15 +122,24 @@ class CustomerLinkTargetsTest extends TestCase
             foreach (glob($dir.'/*.php') as $file) {
                 foreach (file($file) as $lineNo => $line) {
                     // '/app/projects/'.$client->id  →  probe as /app/projects/1
-                    if (! preg_match_all("#'(/app/[a-z0-9\-/]*)'#i", $line, $m)) {
+                    //
+                    // The character class must include ? = & : an earlier
+                    // version stopped at the query string, so every
+                    // '/app/tickets?customer=' link was silently never
+                    // extracted and the test passed on links it never saw.
+                    if (! preg_match_all("#'(/app/[a-z0-9\-/?=&_]*)'#i", $line, $m)) {
                         continue;
                     }
 
                     foreach ($m[1] as $link) {
-                        $probe = str_ends_with($link, '/') ? $link.'1' : $link;
+                        $probe   = str_ends_with($link, '/') ? $link.'1' : $link;
+                        $element = $this->resolves($probe, $routes);
 
-                        if (! $this->resolves($probe, $routes)) {
-                            $broken[] = sprintf('%s:%d  %s', basename($file), $lineNo + 1, $link);
+                        if ($element === null) {
+                            $broken[] = sprintf('%s:%d  %s  → no route', basename($file), $lineNo + 1, $link);
+                        } elseif (in_array($element, self::STUBS, true)) {
+                            $broken[] = sprintf('%s:%d  %s  → %s placeholder, not a real screen',
+                                basename($file), $lineNo + 1, $link, $element);
                         }
                     }
                 }
@@ -117,7 +147,7 @@ class CustomerLinkTargetsTest extends TestCase
         }
 
         $this->assertSame([], $broken, sprintf(
-            "These links have no matching route in routes.jsx and will 404:\n\n  %s\n",
+            "These links do not reach a working screen:\n\n  %s\n",
             implode("\n  ", $broken)
         ));
     }
