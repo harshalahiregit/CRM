@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\Purchase\PurchaseKickoffController;
 use App\Http\Controllers\Api\Purchase\PurchaseMomActionController;
 use App\Http\Controllers\Api\Purchase\PurchaseMomIssueController;
 use App\Http\Controllers\Api\Purchase\PurchaseMomDecisionController;
+use App\Http\Controllers\Api\Purchase\PurchaseApprovalRequestController;
 use App\Http\Controllers\Api\Purchase\PurchaseApprovalController;
 use App\Http\Controllers\Api\Purchase\PurchaseVendorController;
 use App\Http\Controllers\Api\Purchase\PurchaseVendorItemController;
@@ -330,6 +331,13 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::put('/offboardings/{offboarding}/checklist', [\App\Http\Controllers\Api\Purchase\PurchaseOffboardingController::class, 'updateChecklist'])->whereNumber('offboarding');
     Route::post('/offboardings/{offboarding}/complete', [\App\Http\Controllers\Api\Purchase\PurchaseOffboardingController::class, 'complete'])->whereNumber('offboarding');
     Route::delete('/offboardings/{offboarding}',     [\App\Http\Controllers\Api\Purchase\PurchaseOffboardingController::class, 'destroy'])->whereNumber('offboarding');
+
+    // ── Central approval register (§12): purchase_approval_requests ─────────
+    // Distinct from the onboarding stage chain (/onboarding/.../approvals). The
+    // generic register of ~18 governance approval types. Decide is admin-only.
+    Route::get('/approval-requests',                            [PurchaseApprovalRequestController::class, 'index']);
+    Route::post('/approval-requests',                           [PurchaseApprovalRequestController::class, 'store']);
+    Route::post('/approval-requests/{approvalRequest}/decide',  [PurchaseApprovalRequestController::class, 'decide'])->whereNumber('approvalRequest');
 
     // ── Meetings (Purchase-owned engine: purchase_kickoff_* tables) ─────────
     // Kickoff is one configurable meeting type here, not a separate module (§9/§39).
