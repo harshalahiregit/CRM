@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\Purchase\PurchaseVendorDocumentController;
 use App\Http\Controllers\Api\Purchase\PurchaseContactController;
 use App\Http\Controllers\Api\Purchase\PurchaseKickoffController;
 use App\Http\Controllers\Api\Purchase\PurchaseMomActionController;
+use App\Http\Controllers\Api\Purchase\PurchaseMomIssueController;
 use App\Http\Controllers\Api\Purchase\PurchaseApprovalController;
 use App\Http\Controllers\Api\Purchase\PurchaseVendorController;
 use App\Http\Controllers\Api\Purchase\PurchaseVendorItemController;
@@ -354,6 +355,13 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::post('/kickoff/{kickoff}/actions/{action}/progress',   [PurchaseMomActionController::class, 'progress'])->whereNumber('action');
     Route::get('/kickoff/{kickoff}/actions/{action}/evidence',    [PurchaseMomActionController::class, 'evidence'])->whereNumber('action');
     Route::delete('/kickoff/{kickoff}/actions/{action}',          [PurchaseMomActionController::class, 'destroy'])->whereNumber('action');
+    // MOM issue register (track to resolution; convert to NCR / CAPA).
+    Route::get('/kickoff/{kickoff}/issues',                       [PurchaseMomIssueController::class, 'index']);
+    Route::post('/kickoff/{kickoff}/issues',                      [PurchaseMomIssueController::class, 'store']);
+    Route::put('/kickoff/{kickoff}/issues/{issue}',             [PurchaseMomIssueController::class, 'update'])->whereNumber('issue');
+    Route::post('/kickoff/{kickoff}/issues/{issue}/progress',  [PurchaseMomIssueController::class, 'progress'])->whereNumber('issue');
+    Route::post('/kickoff/{kickoff}/issues/{issue}/convert',   [PurchaseMomIssueController::class, 'convert'])->whereNumber('issue');
+    Route::delete('/kickoff/{kickoff}/issues/{issue}',         [PurchaseMomIssueController::class, 'destroy'])->whereNumber('issue');
     Route::delete('/kickoff/{kickoff}',            [PurchaseKickoffController::class, 'destroy']);
 
     // ── Vendor contacts (Purchase-owned engine: purchase_contacts) ─────────

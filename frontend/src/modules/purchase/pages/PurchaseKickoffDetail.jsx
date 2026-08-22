@@ -4,13 +4,14 @@ import {
   ArrowLeft, CalendarDays, Clock, MapPin, Users, CheckCircle2, XCircle,
   Send, Upload, AlertTriangle, Loader2, FileText, ShieldCheck, History,
   Sparkles, Eye, Download, Video, RotateCcw, FileCheck2,
-  ListChecks, Plus, Paperclip, Trash2, UserCheck,
+  ListChecks, Plus, Paperclip, Trash2, UserCheck, AlertOctagon, ArrowUpRight,
 } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
 import {
   PK_STATUS, pkStatusCfg, pkNextStatuses, pkModeLabel, fmtDateTime, fmtDate,
   PK_MOM_STATUS, pkMomCfg, pkMomDistributable, pkMomAwaitingDecision,
   PK_ACTION_STATUS, pkActionCfg, pkActionNext, PK_ACTION_PRIORITIES,
+  pkIssueCfg, pkIssueNext, PK_ISSUE_SEVERITIES, PK_ISSUE_CATEGORIES,
 } from '@/modules/purchase/kickoffConstants'
 import { KIT3D_STYLE, Overlay, ModalFooter, Field, TextInput } from '@/components/ui/kit3d'
 
@@ -177,6 +178,9 @@ export default function PurchaseKickoffDetail() {
 
           {/* Action items (MOM action engine) */}
           <ActionItemsCard m={m} onError={setErr} />
+
+          {/* Issue register (MOM issues → NCR/CAPA) */}
+          <IssueRegisterCard m={m} onError={setErr} />
         </div>
 
         {/* Right column */}
@@ -655,6 +659,173 @@ function ActionProgressModal({ meetingId, action, to, onClose, onDone, onError }
 
 const labelSm = { fontSize: 10.5, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 3 }
 const selStyle = { width: '100%', padding: '8px 10px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-h)', fontSize: 13, boxSizing: 'border-box' }
+
+/* ── Issue register card (MOM issues) ─────────────────────────────────────────
+ * Issues raised in the meeting, tracked to resolution and escalatable to an NCR
+ * or a CAPA. Mirrors PurchaseMomIssueStatus; conversion routes into the existing
+ * Purchase NCR / CAPA registers. */
+function IssueRegisterCard({ m, onError }) {
+  const [rows, setRows] = useState(m.mom_issues || [])
+  const [adding, setAdding] = useState(false)
+  const [busyId, setBusyId] = useState(null)
+  const [form, setForm] = useState({ title: '', description: '', category: '', severity: '', owner_participant_id: '', due_date: '' })
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => { setRows(m.mom_issues || []) }, [m.mom_issues])
+
+  const refresh = async () => {
+    try { setRows(await purchaseApi.kickoff.issues.list(m.id)) } catch { /* keep stale */ }
+  }
+
+  const add = async () => {
+    if (!form.title.trim()) { onError('An issue needs a title.'); return }
+    setSaving(true); onError(null)
+    try {
+      const payload = {
+        title: form.title, description: form.description || undefined,
+        category: form.category || undefined, severity: form.severity || undefined,
+        due_date: form.due_date || undefined,
+      }
+      if (form.owner_participant_id) payload.owner_participant_id = Number(form.owner_participant_id)
+      await purchaseApi.kickoff.issues.create(m.id, payload)
+      setForm({ title: '', description: '', category: '', severity: '', owner_participant_id: '', due_date: '' })
+      setAdding(false)
+      await refresh()
+    } catch (e) { onError(e?.response?.data?.message || 'Could not add the issue.') }
+    finally { setSaving(false) }
+  }
+
+  const progress = async (i, status) => {
+    setBusyId(i.id); onError(null)
+    try { await purchaseApi.kickoff.issues.progress(m.id, i.id, status); await refresh() }
+    catch (e) { onError(e?.response?.data?.message || 'Could not update the issue.') }
+    finally { setBusyId(null) }
+  }
+
+  const convert = async (i, target) => {
+    setBusyId(i.id); onError(null)
+    try { await purchaseApi.kickoff.issues.convert(m.id, i.id, target); await refresh() }
+    catch (e) { onError(e?.response?.data?.message || `Could not convert to ${target.toUpperCase()}.`) }
+    finally { setBusyId(null) }
+  }
+
+  const del = async (i) => {
+    onError(null)
+    try { await purchaseApi.kickoff.issues.remove(m.id, i.id); await refresh() }
+    catch (e) { onError(e?.response?.data?.message || 'Could not delete the issue.') }
+  }
+
+  const ownerLabel = (i) => i.owner?.name || i.owner_names || '—'
+  const openCount = rows.filter(r => r.is_open).length
+  const sevColor = (s) => ({ Critical: '#ef4444', High: '#f59e0b', Medium: '#0ea5e9', Low: '#94a3b8' }[s] || 'var(--text-muted)')
+
+  return (
+    <div className="pr-glass" style={{ padding: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <SectionTitle icon={AlertOctagon}>Issues <span style={{ fontWeight: 500, color: 'var(--text-muted)', fontSize: 12 }}>· {rows.length}{openCount ? ` · ${openCount} open` : ''}</span></SectionTitle>
+        <button onClick={() => setAdding(v => !v)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 11px', borderRadius: 9, cursor: 'pointer', fontSize: 12, fontWeight: 700, color: '#a78bfa', background: 'rgba(124,58,237,0.12)', border: '1px solid rgba(124,58,237,0.4)' }}>
+          <Plus size={13} /> Add
+        </button>
+      </div>
+
+      {adding && (
+        <div style={{ marginTop: 12, padding: 14, borderRadius: 12, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+          <TextInput value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="Issue title" />
+          <textarea rows={2} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Describe the issue (optional)"
+            style={{ width: '100%', marginTop: 8, padding: '9px 12px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-h)', fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
+            <div>
+              <div style={labelSm}>Category</div>
+              <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} style={selStyle}>
+                <option value="">—</option>
+                {PK_ISSUE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={labelSm}>Severity</div>
+              <select value={form.severity} onChange={e => setForm(f => ({ ...f, severity: e.target.value }))} style={selStyle}>
+                <option value="">—</option>
+                {PK_ISSUE_SEVERITIES.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={labelSm}>Owner</div>
+              <select value={form.owner_participant_id} onChange={e => setForm(f => ({ ...f, owner_participant_id: e.target.value }))} style={selStyle}>
+                <option value="">— unassigned —</option>
+                {(m.participants || []).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={labelSm}>Due date</div>
+              <TextInput type="date" value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))} />
+            </div>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
+            <MomBtn onClick={() => setAdding(false)} icon={XCircle} tone="#94a3b8">Cancel</MomBtn>
+            <MomBtn onClick={add} busy={saving} icon={Plus} tone="#7C3AED">Add issue</MomBtn>
+          </div>
+        </div>
+      )}
+
+      {rows.length === 0 ? (
+        <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '12px 0 0' }}>No issues raised.</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
+          {rows.map(i => {
+            const cfg = pkIssueCfg(i.status)
+            const nexts = pkIssueNext(i.status)
+            return (
+              <div key={i.id} style={{ padding: '12px 13px', borderRadius: 12, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                      {i.issue_ref && <span style={{ fontSize: 10.5, fontWeight: 800, color: '#a78bfa', fontFamily: 'monospace' }}>{i.issue_ref}</span>}
+                      <span style={{ padding: '2px 8px', borderRadius: 999, background: cfg.bg, color: cfg.color, fontSize: 10.5, fontWeight: 800 }}>{i.status_label}</span>
+                      {i.severity && <span style={{ fontSize: 10.5, fontWeight: 800, color: sevColor(i.severity) }}>{i.severity}</span>}
+                      {i.category && <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text-muted)' }}>{i.category}</span>}
+                      {i.is_overdue && <span style={{ fontSize: 10.5, fontWeight: 800, color: '#ef4444' }}>OVERDUE</span>}
+                      {i.is_converted && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10.5, fontWeight: 800, color: '#10b981' }}><ArrowUpRight size={11} /> {i.converted_to} {i.converted_ref}</span>}
+                    </div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-h)', marginTop: 5 }}>{i.title}</div>
+                    {i.description && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3, lineHeight: 1.4 }}>{i.description}</div>}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 5, fontSize: 11.5, color: 'var(--text-muted)' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><UserCheck size={12} /> {ownerLabel(i)}</span>
+                      {i.due_date && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><CalendarDays size={12} /> {fmtDate(i.due_date)}</span>}
+                    </div>
+                  </div>
+                  <button onClick={() => del(i)} title="Delete issue" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', flexShrink: 0, padding: 2 }}><Trash2 size={14} /></button>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 9 }}>
+                  {nexts.map(to => {
+                    const tc = pkIssueCfg(to)
+                    return (
+                      <button key={to} disabled={busyId === i.id} onClick={() => progress(i, to)}
+                        style={{ padding: '5px 10px', borderRadius: 8, cursor: busyId === i.id ? 'wait' : 'pointer', fontSize: 11, fontWeight: 700, color: tc.color, background: `${tc.color}12`, border: `1px solid ${tc.color}44` }}>
+                        {tc.label}
+                      </button>
+                    )
+                  })}
+                  {!i.is_converted && (
+                    <>
+                      <button disabled={busyId === i.id} onClick={() => convert(i, 'ncr')}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 8, cursor: busyId === i.id ? 'wait' : 'pointer', fontSize: 11, fontWeight: 700, color: '#ef4444', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)' }}>
+                        <ArrowUpRight size={12} /> To NCR
+                      </button>
+                      <button disabled={busyId === i.id} onClick={() => convert(i, 'capa')}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 8, cursor: busyId === i.id ? 'wait' : 'pointer', fontSize: 11, fontWeight: 700, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.4)' }}>
+                        <ArrowUpRight size={12} /> To CAPA
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
 
 /* ── Transition modal ─────────────────────────────────────────────────────── */
 function TransitionModal({ m, to, onClose, onDone }) {

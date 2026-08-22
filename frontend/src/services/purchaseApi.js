@@ -329,6 +329,16 @@ export const purchaseApi = {
       evidenceBlob: (id, aid) => api.get(`/purchase/kickoff/${id}/actions/${aid}/evidence`, { responseType: 'blob' }).then(r => r.data),
       remove: (id, aid)       => api.delete(`/purchase/kickoff/${id}/actions/${aid}`).then(r => r.data),
     },
+    // MOM issue register — track to resolution; convert to NCR / CAPA.
+    issues: {
+      list:    (id)            => api.get(`/purchase/kickoff/${id}/issues`).then(r => r.data),
+      create:  (id, data)      => api.post(`/purchase/kickoff/${id}/issues`, data).then(r => r.data),
+      update:  (id, iid, data) => api.put(`/purchase/kickoff/${id}/issues/${iid}`, data).then(r => r.data),
+      progress: (id, iid, status) => api.post(`/purchase/kickoff/${id}/issues/${iid}/progress`, { status }).then(r => r.data),
+      // Escalate an issue — target: 'ncr' | 'capa'.
+      convert: (id, iid, target) => api.post(`/purchase/kickoff/${id}/issues/${iid}/convert`, { target }).then(r => r.data),
+      remove:  (id, iid)       => api.delete(`/purchase/kickoff/${id}/issues/${iid}`).then(r => r.data),
+    },
   },
 
   // ── Purchase onboarding — the 6-step wizard (/purchase/onboarding) ───

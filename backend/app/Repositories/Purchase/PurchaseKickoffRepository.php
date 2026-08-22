@@ -46,6 +46,7 @@ class PurchaseKickoffRepository extends BaseRepository
                 'participants.contact:id,first_name,last_name,designation', 'currentMom', 'auditLogs',
                 'momSubmitter:id,name', 'momOrganizerApprover:id,name', 'momApprover:id,name', 'momDistributor:id,name',
                 'actionItems' => fn ($q) => $q->with(['responsible:id,name', 'verifier:id,name'])->orderBy('sort_order')->orderBy('id'),
+                'momIssues' => fn ($q) => $q->with(['owner:id,name'])->orderBy('sort_order')->orderBy('id'),
             ])
             ->find($id);
     }
