@@ -4,7 +4,7 @@ import {
   ArrowLeft, CalendarDays, Clock, MapPin, Users, CheckCircle2, XCircle,
   Send, Upload, AlertTriangle, Loader2, FileText, ShieldCheck, History,
   Sparkles, Eye, Download, Video, RotateCcw, FileCheck2,
-  ListChecks, Plus, Paperclip, Trash2, UserCheck, AlertOctagon, ArrowUpRight,
+  ListChecks, Plus, Paperclip, Trash2, UserCheck, AlertOctagon, ArrowUpRight, Gavel,
 } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
 import {
@@ -12,6 +12,7 @@ import {
   PK_MOM_STATUS, pkMomCfg, pkMomDistributable, pkMomAwaitingDecision,
   PK_ACTION_STATUS, pkActionCfg, pkActionNext, PK_ACTION_PRIORITIES,
   pkIssueCfg, pkIssueNext, PK_ISSUE_SEVERITIES, PK_ISSUE_CATEGORIES,
+  pkDecisionCfg, PK_DECISION_STATUSES,
 } from '@/modules/purchase/kickoffConstants'
 import { KIT3D_STYLE, Overlay, ModalFooter, Field, TextInput } from '@/components/ui/kit3d'
 
@@ -181,6 +182,9 @@ export default function PurchaseKickoffDetail() {
 
           {/* Issue register (MOM issues → NCR/CAPA) */}
           <IssueRegisterCard m={m} onError={setErr} />
+
+          {/* Decision register (MOM decisions) */}
+          <DecisionRegisterCard m={m} onError={setErr} />
         </div>
 
         {/* Right column */}
@@ -817,6 +821,129 @@ function IssueRegisterCard({ m, onError }) {
                       </button>
                     </>
                   )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ── Decision register card (MOM decisions) ───────────────────────────────────
+ * The durable record of decisions taken in the meeting — each Active until
+ * Superseded or Rescinded. Mirrors PurchaseMomDecisionStatus. */
+function DecisionRegisterCard({ m, onError }) {
+  const [rows, setRows] = useState(m.mom_decisions || [])
+  const [adding, setAdding] = useState(false)
+  const [busyId, setBusyId] = useState(null)
+  const [form, setForm] = useState({ decision: '', decided_by_participant_id: '', impact: '', effective_date: '' })
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => { setRows(m.mom_decisions || []) }, [m.mom_decisions])
+
+  const refresh = async () => {
+    try { setRows(await purchaseApi.kickoff.decisions.list(m.id)) } catch { /* keep stale */ }
+  }
+
+  const add = async () => {
+    if (!form.decision.trim()) { onError('A decision needs a description.'); return }
+    setSaving(true); onError(null)
+    try {
+      const payload = { decision: form.decision, impact: form.impact || undefined, effective_date: form.effective_date || undefined }
+      if (form.decided_by_participant_id) payload.decided_by_participant_id = Number(form.decided_by_participant_id)
+      await purchaseApi.kickoff.decisions.create(m.id, payload)
+      setForm({ decision: '', decided_by_participant_id: '', impact: '', effective_date: '' })
+      setAdding(false)
+      await refresh()
+    } catch (e) { onError(e?.response?.data?.message || 'Could not record the decision.') }
+    finally { setSaving(false) }
+  }
+
+  const setStatus = async (d, status) => {
+    setBusyId(d.id); onError(null)
+    try { await purchaseApi.kickoff.decisions.update(m.id, d.id, { status }); await refresh() }
+    catch (e) { onError(e?.response?.data?.message || 'Could not update the decision.') }
+    finally { setBusyId(null) }
+  }
+
+  const del = async (d) => {
+    onError(null)
+    try { await purchaseApi.kickoff.decisions.remove(m.id, d.id); await refresh() }
+    catch (e) { onError(e?.response?.data?.message || 'Could not delete the decision.') }
+  }
+
+  const madeBy = (d) => d.decided_by?.name || d.decided_by_names || '—'
+
+  return (
+    <div className="pr-glass" style={{ padding: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <SectionTitle icon={Gavel}>Decisions <span style={{ fontWeight: 500, color: 'var(--text-muted)', fontSize: 12 }}>· {rows.length}</span></SectionTitle>
+        <button onClick={() => setAdding(v => !v)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 11px', borderRadius: 9, cursor: 'pointer', fontSize: 12, fontWeight: 700, color: '#a78bfa', background: 'rgba(124,58,237,0.12)', border: '1px solid rgba(124,58,237,0.4)' }}>
+          <Plus size={13} /> Add
+        </button>
+      </div>
+
+      {adding && (
+        <div style={{ marginTop: 12, padding: 14, borderRadius: 12, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+          <textarea rows={2} value={form.decision} onChange={e => setForm(f => ({ ...f, decision: e.target.value }))} placeholder="What was decided?"
+            style={{ width: '100%', padding: '9px 12px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-h)', fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }} />
+          <textarea rows={2} value={form.impact} onChange={e => setForm(f => ({ ...f, impact: e.target.value }))} placeholder="Impact (optional)"
+            style={{ width: '100%', marginTop: 8, padding: '9px 12px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-h)', fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
+            <div>
+              <div style={labelSm}>Decided by</div>
+              <select value={form.decided_by_participant_id} onChange={e => setForm(f => ({ ...f, decided_by_participant_id: e.target.value }))} style={selStyle}>
+                <option value="">— unassigned —</option>
+                {(m.participants || []).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={labelSm}>Effective date</div>
+              <TextInput type="date" value={form.effective_date} onChange={e => setForm(f => ({ ...f, effective_date: e.target.value }))} />
+            </div>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
+            <MomBtn onClick={() => setAdding(false)} icon={XCircle} tone="#94a3b8">Cancel</MomBtn>
+            <MomBtn onClick={add} busy={saving} icon={Plus} tone="#7C3AED">Record decision</MomBtn>
+          </div>
+        </div>
+      )}
+
+      {rows.length === 0 ? (
+        <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '12px 0 0' }}>No decisions recorded.</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
+          {rows.map(d => {
+            const cfg = pkDecisionCfg(d.status)
+            return (
+              <div key={d.id} style={{ padding: '12px 13px', borderRadius: 12, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                      {d.decision_ref && <span style={{ fontSize: 10.5, fontWeight: 800, color: '#a78bfa', fontFamily: 'monospace' }}>{d.decision_ref}</span>}
+                      <span style={{ padding: '2px 8px', borderRadius: 999, background: cfg.bg, color: cfg.color, fontSize: 10.5, fontWeight: 800 }}>{d.status_label}</span>
+                    </div>
+                    <div style={{ fontSize: 13, color: 'var(--text-h)', marginTop: 5, lineHeight: 1.4 }}>{d.decision}</div>
+                    {d.impact && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3, lineHeight: 1.4 }}>Impact: {d.impact}</div>}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 5, fontSize: 11.5, color: 'var(--text-muted)' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><UserCheck size={12} /> {madeBy(d)}</span>
+                      {d.effective_date && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><CalendarDays size={12} /> {fmtDate(d.effective_date)}</span>}
+                    </div>
+                  </div>
+                  <button onClick={() => del(d)} title="Delete decision" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', flexShrink: 0, padding: 2 }}><Trash2 size={14} /></button>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 9 }}>
+                  {PK_DECISION_STATUSES.filter(s => s !== d.status).map(s => {
+                    const sc = pkDecisionCfg(s)
+                    return (
+                      <button key={s} disabled={busyId === d.id} onClick={() => setStatus(d, s)}
+                        style={{ padding: '5px 10px', borderRadius: 8, cursor: busyId === d.id ? 'wait' : 'pointer', fontSize: 11, fontWeight: 700, color: sc.color, background: `${sc.color}12`, border: `1px solid ${sc.color}44` }}>
+                        Mark {sc.label}
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
             )

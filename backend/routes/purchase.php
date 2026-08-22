@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\Purchase\PurchaseContactController;
 use App\Http\Controllers\Api\Purchase\PurchaseKickoffController;
 use App\Http\Controllers\Api\Purchase\PurchaseMomActionController;
 use App\Http\Controllers\Api\Purchase\PurchaseMomIssueController;
+use App\Http\Controllers\Api\Purchase\PurchaseMomDecisionController;
 use App\Http\Controllers\Api\Purchase\PurchaseApprovalController;
 use App\Http\Controllers\Api\Purchase\PurchaseVendorController;
 use App\Http\Controllers\Api\Purchase\PurchaseVendorItemController;
@@ -362,6 +363,11 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::post('/kickoff/{kickoff}/issues/{issue}/progress',  [PurchaseMomIssueController::class, 'progress'])->whereNumber('issue');
     Route::post('/kickoff/{kickoff}/issues/{issue}/convert',   [PurchaseMomIssueController::class, 'convert'])->whereNumber('issue');
     Route::delete('/kickoff/{kickoff}/issues/{issue}',         [PurchaseMomIssueController::class, 'destroy'])->whereNumber('issue');
+    // MOM decision register (Active / Superseded / Rescinded).
+    Route::get('/kickoff/{kickoff}/decisions',                    [PurchaseMomDecisionController::class, 'index']);
+    Route::post('/kickoff/{kickoff}/decisions',                   [PurchaseMomDecisionController::class, 'store']);
+    Route::put('/kickoff/{kickoff}/decisions/{decision}',        [PurchaseMomDecisionController::class, 'update'])->whereNumber('decision');
+    Route::delete('/kickoff/{kickoff}/decisions/{decision}',     [PurchaseMomDecisionController::class, 'destroy'])->whereNumber('decision');
     Route::delete('/kickoff/{kickoff}',            [PurchaseKickoffController::class, 'destroy']);
 
     // ── Vendor contacts (Purchase-owned engine: purchase_contacts) ─────────

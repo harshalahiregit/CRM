@@ -124,6 +124,20 @@ export const pkIssueNext = (s) => PK_ISSUE_TRANSITIONS[s] || []
 export const PK_ISSUE_SEVERITIES = ['Low', 'Medium', 'High', 'Critical']
 export const PK_ISSUE_CATEGORIES = ['Safety', 'Compliance', 'Quality', 'Commercial', 'Workforce', 'Schedule', 'Technical', 'Environmental', 'Other']
 
+// ── MOM decision status — App\Support\Purchase\PurchaseMomDecisionStatus ──────
+export const PK_DECISION_STATUS = {
+  ACTIVE: 'Active',
+  SUPERSEDED: 'Superseded',
+  RESCINDED: 'Rescinded',
+}
+export const PK_DECISION_CONFIG = {
+  [PK_DECISION_STATUS.ACTIVE]:     { label: 'Active',     color: '#10b981', bg: 'rgba(16,185,129,0.15)' },
+  [PK_DECISION_STATUS.SUPERSEDED]: { label: 'Superseded', color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
+  [PK_DECISION_STATUS.RESCINDED]:  { label: 'Rescinded',  color: '#94a3b8', bg: 'rgba(148,163,184,0.15)' },
+}
+export const pkDecisionCfg = (s) => PK_DECISION_CONFIG[s] || PK_DECISION_CONFIG[PK_DECISION_STATUS.ACTIVE]
+export const PK_DECISION_STATUSES = [PK_DECISION_STATUS.ACTIVE, PK_DECISION_STATUS.SUPERSEDED, PK_DECISION_STATUS.RESCINDED]
+
 export const PK_MODES = [['onsite', 'On site'], ['online', 'Online']]
 export const pkModeLabel = (m) => (PK_MODES.find(([v]) => v === m) || [m, m || '—'])[1]
 

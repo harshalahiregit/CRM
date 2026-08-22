@@ -339,6 +339,13 @@ export const purchaseApi = {
       convert: (id, iid, target) => api.post(`/purchase/kickoff/${id}/issues/${iid}/convert`, { target }).then(r => r.data),
       remove:  (id, iid)       => api.delete(`/purchase/kickoff/${id}/issues/${iid}`).then(r => r.data),
     },
+    // MOM decision register — Active / Superseded / Rescinded.
+    decisions: {
+      list:   (id)            => api.get(`/purchase/kickoff/${id}/decisions`).then(r => r.data),
+      create: (id, data)      => api.post(`/purchase/kickoff/${id}/decisions`, data).then(r => r.data),
+      update: (id, did, data) => api.put(`/purchase/kickoff/${id}/decisions/${did}`, data).then(r => r.data),
+      remove: (id, did)       => api.delete(`/purchase/kickoff/${id}/decisions/${did}`).then(r => r.data),
+    },
   },
 
   // ── Purchase onboarding — the 6-step wizard (/purchase/onboarding) ───
