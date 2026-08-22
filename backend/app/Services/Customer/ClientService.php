@@ -287,6 +287,7 @@ class ClientService
         }
         if ($creditNotes) {
             $counts['credit_notes'] = DB::table('credit_notes')
+                ->whereNull('deleted_at')
                 ->where('tenant_id', $tenantId)->where('client_id', $client->id)
                 ->update($snapshot);
         }

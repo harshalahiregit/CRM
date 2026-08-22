@@ -145,6 +145,7 @@ class Customer360Service
         }
 
         return (int) DB::table('projects')
+            ->whereNull('deleted_at')
             ->where('tenant_id', $client->tenant_id)
             ->where('customer_id', $client->id)
             ->whereIn('status', ['not_started', 'in_progress', 'on_hold'])
@@ -167,12 +168,14 @@ class Customer360Service
 
         $projectIds = Schema::hasTable('projects')
             ? DB::table('projects')
+                ->whereNull('deleted_at')
                 ->where('tenant_id', $client->tenant_id)
                 ->where('customer_id', $client->id)
                 ->pluck('id')
             : collect();
 
         return (int) DB::table('tasks')
+            ->whereNull('deleted_at')
             ->where('tenant_id', $client->tenant_id)
             ->whereNull('date_finished')
             ->where(function ($q) use ($client, $projectIds) {
@@ -192,6 +195,7 @@ class Customer360Service
         }
 
         return (int) DB::table('tickets')
+            ->whereNull('deleted_at')
             ->where('tenant_id', $client->tenant_id)
             ->where('customer_id', $client->id)
             ->whereIn('status', ['open', 'in-progress'])

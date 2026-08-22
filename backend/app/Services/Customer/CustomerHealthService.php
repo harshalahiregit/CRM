@@ -202,6 +202,7 @@ class CustomerHealthService
         }
 
         $rows = DB::table('sales_invoices')
+            ->whereNull('deleted_at')
             ->where('tenant_id', $client->tenant_id)->where('client_id', $client->id)
             ->whereNotIn('status', ['Draft', 'Cancelled'])
             ->get(['balance', 'due_date', 'total']);
@@ -234,6 +235,7 @@ class CustomerHealthService
         }
 
         $total = DB::table('tickets')->where('tenant_id', $client->tenant_id)
+            ->whereNull('deleted_at')
             ->where('customer_id', $client->id)->whereNull('merged_into_id')->count();
 
         if ($total === 0) {
@@ -241,6 +243,7 @@ class CustomerHealthService
         }
 
         $open = DB::table('tickets')->where('tenant_id', $client->tenant_id)
+            ->whereNull('deleted_at')
             ->where('customer_id', $client->id)->whereNull('merged_into_id')
             ->whereIn('status', ['open', 'in-progress'])->count();
 
@@ -316,6 +319,7 @@ class CustomerHealthService
         }
 
         $rows = DB::table('projects')
+            ->whereNull('deleted_at')
             ->where('tenant_id', $client->tenant_id)->where('customer_id', $client->id)
             ->get(['status', 'deadline', 'date_finished']);
 
@@ -457,6 +461,7 @@ class CustomerHealthService
         }
 
         $resolved = DB::table('tickets')
+            ->whereNull('deleted_at')
             ->where('tenant_id', $client->tenant_id)->where('customer_id', $client->id)
             ->whereNotNull('resolved_at')->whereNotNull('created_at')
             ->get(['created_at', 'resolved_at']);
@@ -493,11 +498,13 @@ class CustomerHealthService
         }
 
         $recent = (float) DB::table('sales_invoices')
+            ->whereNull('deleted_at')
             ->where('tenant_id', $client->tenant_id)->where('client_id', $client->id)
             ->whereNotIn('status', ['Draft', 'Cancelled'])
             ->where('date', '>=', now()->subMonths(6)->toDateString())->sum('total');
 
         $prior = (float) DB::table('sales_invoices')
+            ->whereNull('deleted_at')
             ->where('tenant_id', $client->tenant_id)->where('client_id', $client->id)
             ->whereNotIn('status', ['Draft', 'Cancelled'])
             ->whereBetween('date', [now()->subMonths(12)->toDateString(), now()->subMonths(6)->toDateString()])
