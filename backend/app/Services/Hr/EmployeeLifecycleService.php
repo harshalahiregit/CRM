@@ -174,7 +174,9 @@ class EmployeeLifecycleService
                 'priority' => $t->priority,
                 'due' => optional($t->due_date)->toDateString(),
                 'done' => $t->date_finished !== null,
-                'link' => "/app/tasks?task={$t->id}",
+                // /app/tasks/{id} is the task detail route. ?task= was read by
+                // nothing, so every link opened the whole board instead.
+                'link' => "/app/tasks/{$t->id}",
             ])->all(),
             'link' => '/app/tasks',
         ];
@@ -243,7 +245,9 @@ class EmployeeLifecycleService
             'items' => $rows->map(fn ($a) => [
                 'id' => $a->id, 'title' => $a->title,
                 'published_at' => optional($a->published_at)->toDateString(),
-                'link' => "/app/helpdesk/knowledge-base?article={$a->id}",
+                // ?article= was read by nothing, so every link opened the KB
+                // home page. The article route already exists.
+                'link' => "/app/helpdesk/knowledge-base/{$a->id}",
             ])->all(),
             'link'  => '/app/helpdesk/knowledge-base',
             'basis' => $basis,

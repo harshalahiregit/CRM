@@ -563,7 +563,7 @@ class TpvOnboardingService
                 "Vendor Registration Number: {$regNo}\n" .
                 "Onboarding Status: APPROVED\n\n" .
                 "Your onboarding is now complete. You can log into your Vendor Portal and start adding your workforce workers, submitting medical records, induction details, and issuing site passes.\n\n" .
-                "Access Portal: " . \App\Support\FrontendUrl::to('/login?role=third_party_vendor') . "\n\n" .
+                "Access Portal: " . \App\Support\FrontendUrl::to('/auth/login?role=third_party_vendor') . "\n\n" .
                 "Best regards,\nTPV Vendor Management Team";
         } elseif ($status === Status::REJECTED) {
             $subject = "⚠️ TPV Onboarding Update: Application Rejected ({$companyName})";

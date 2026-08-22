@@ -754,7 +754,9 @@ class InventoryNotifier
 
         $this->bell(
             $audience, $tenantId, $type, $subject, $body,
-            count($crossed) === 1 ? "/app/inventory/products/{$first->id}" : '/app/inventory/products?alert=low',
+            // ProductList reads ?filter=low. ?alert= matched nothing, so the
+            // alert email dropped the recipient on the unfiltered catalogue.
+            count($crossed) === 1 ? "/app/inventory/products/{$first->id}" : '/app/inventory/products?filter=low',
             null,
         );
 

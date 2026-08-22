@@ -173,7 +173,7 @@ class TpvActivationNotifier
             // /vendor-portal/login is not a route. Third-party vendors are User rows
             // with role=third_party_vendor, so they sign in at the main login; the
             // query string pre-selects their role rather than making them guess.
-            'portalUrl'        => FrontendUrl::to('/login?role=third_party_vendor'),
+            'portalUrl'        => FrontendUrl::to('/auth/login?role=third_party_vendor'),
             'registrationType' => TpvRegistrationType::label($vendor->registration_type),
             'activationDate'   => now()->format('d M Y, H:i'),
             'tempPassword'     => $tempPassword,

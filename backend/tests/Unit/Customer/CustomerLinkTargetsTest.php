@@ -160,11 +160,21 @@ class CustomerLinkTargetsTest extends TestCase
                     // version stopped at the query string, so every
                     // '/app/tickets?customer=' link was silently never
                     // extracted and the test passed on links it never saw.
-                    if (! preg_match_all("#'(/(?:app|portal|vendor-portal|purchase-portal|company-portal)/[a-z0-9\\-/?=&_]*)'#i", $line, $m)) {
+                    // Two shapes count as a frontend link:
+                    //   1. a literal beginning with a known SPA prefix, and
+                    //   2. ANYTHING handed to FrontendUrl::to(), because that helper
+                    //      exists to build frontend URLs and nothing else.
+                    // The second was added after a fix pointed vendor activation emails
+                    // at '/login', which is also not a route — the real one is
+                    // /auth/login, and the prefix list could never have caught it.
+                    preg_match_all("#'(/(?:app|auth|portal|vendor-portal|purchase-portal|company-portal)/[a-z0-9\\-/?=&_]*)'#i", $line, $m);
+                    preg_match_all("#FrontendUrl::to\\('([^']+)'#", $line, $fu);
+                    $links = array_merge($m[1] ?? [], $fu[1] ?? []);
+                    if ($links === []) {
                         continue;
                     }
 
-                    foreach ($m[1] as $link) {
+                    foreach ($links as $link) {
                         $probe   = str_ends_with($link, '/') ? $link.'1' : $link;
                         $element = $this->resolves($probe, $routes);
 

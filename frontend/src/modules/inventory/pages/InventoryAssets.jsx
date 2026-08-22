@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Wrench, Plus, Search, Check, X, Trash2, Pencil, ChevronLeft, UserCircle, CalendarClock } from 'lucide-react'
 import { inventoryApi, INV_ACCENT } from '@/services/inventoryApi'
@@ -30,6 +30,15 @@ export default function InventoryAssets() {
   const [dueOnly, setDueOnly] = useState(false)
   const [editing, setEditing] = useState(null)
   const [openId, setOpenId] = useState(null)
+
+  // The "Open in Inventory" link on an employee's asset list arrives as
+  // ?asset={id}. Nothing read it, so the link landed on the unfiltered asset
+  // register and the user had to find the row themselves.
+  const [assetParams] = useSearchParams()
+  useEffect(() => {
+    const id = assetParams.get('asset')
+    if (id) setOpenId(Number(id))
+  }, [assetParams])
   const [err, setErr] = useState('')
 
   const { data: rows = [], isLoading } = useQuery({
