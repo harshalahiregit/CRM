@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Loader2, TrendingUp } from 'lucide-react'
 import { accountsApi } from '@/services/accountsApi'
+import LoadError from '@/components/ui/LoadError'
 
 
 function Section({ title, rows, total }) {
@@ -33,7 +34,7 @@ function Section({ title, rows, total }) {
 export default function ProfitAndLoss() {
   const inr = useInr()
   const [range, setRange] = useState({ from: '', to: '' })
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['accounts', 'report', 'profit-loss', range],
     queryFn: () => accountsApi.reports.profitLoss(range),
   })
@@ -59,7 +60,8 @@ export default function ProfitAndLoss() {
         </div>
       </div>
 
-      {isLoading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div> : (
+      {isError ? <LoadError error={error} onRetry={refetch} title="Could not load this report" />
+        : isLoading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div> : (
         <>
           <div className="grid gap-4 lg:grid-cols-2">
             <Section title="Income" rows={data?.income || []} total={t?.income} />

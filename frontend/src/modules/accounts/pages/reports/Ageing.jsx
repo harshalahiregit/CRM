@@ -4,13 +4,14 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Loader2, Hourglass } from 'lucide-react'
 import { accountsApi } from '@/services/accountsApi'
+import LoadError from '@/components/ui/LoadError'
 
 
 export default function Ageing() {
   const inr = useInr()
   const [type, setType] = useState('receivable')
   const [to, setTo] = useState('')
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['accounts', 'report', 'ageing', type, to],
     queryFn: () => accountsApi.reports.ageing({ type, ...(to ? { to } : {}) }),
   })
@@ -39,7 +40,8 @@ export default function Ageing() {
         </div>
       </div>
 
-      {isLoading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div> : (
+      {isError ? <LoadError error={error} onRetry={refetch} title="Could not load this report" />
+        : isLoading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div> : (
         <div className="table-wrapper">
           <table className="table">
             <thead><tr>

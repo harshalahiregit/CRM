@@ -4,12 +4,13 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Loader2, Scale } from 'lucide-react'
 import { accountsApi } from '@/services/accountsApi'
+import LoadError from '@/components/ui/LoadError'
 
 
 export default function TrialBalance() {
   const inr = useInr()
   const [to, setTo] = useState('')
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['accounts', 'report', 'trial-balance', to],
     queryFn: () => accountsApi.reports.trialBalance(to ? { to } : {}),
   })
@@ -32,7 +33,8 @@ export default function TrialBalance() {
         </label>
       </div>
 
-      {isLoading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div> : (
+      {isError ? <LoadError error={error} onRetry={refetch} title="Could not load this report" />
+        : isLoading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div> : (
         <>
           <div className="table-wrapper">
             <table className="table">

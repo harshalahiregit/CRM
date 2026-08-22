@@ -5,6 +5,7 @@ import {
   LayoutGrid, List, FileText, User, Tag, MapPin, ChevronDown
 } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
+import LoadError from '@/components/ui/LoadError'
 import { exportSalesList } from '@/services/salesApi'
 import { customerApi } from '@/services/customerApi'
 import { useClientOptions } from '@/hooks/useClientOptions'
@@ -89,6 +90,7 @@ export default function Estimates({ docType = 'proforma' }) {
   const projectOptions = useProjectOptions()
   const [data, setData]         = useState([])
   const [loading, setLoading]   = useState(true)
+  const [loadError, setLoadError] = useState(null)
   const [filter, setFilter]     = useState('All')
   const [viewMode, setViewMode] = useState('table')   // table | pipeline
   const [showDrawer, setShowDrawer] = useState(false)
@@ -109,7 +111,9 @@ export default function Estimates({ docType = 'proforma' }) {
     // and "Expired" is derived client-side (see isExpired) so the server can't
     // filter on it. The endpoint isn't paginated, so this is one request either way
     // and switching tabs no longer refetches.
-    salesApi.estimates.list({ type: docType }).then(d => { setData(d); setLoading(false) })
+    salesApi.estimates.list({ type: docType }).then(d => { setData(d); setLoadError(null) })
+      .catch(e => setLoadError(e))
+      .finally(() => setLoading(false))
   }
   useEffect(() => { load() }, [docType])
 
@@ -334,6 +338,10 @@ export default function Estimates({ docType = 'proforma' }) {
           </div>
         </ListToolbar>
       )}
+
+      {/* A failed load must not read as an empty list — that is a claim,
+          and it was the only thing this page said when the API was down. */}
+      {loadError && <LoadError error={loadError} onRetry={load} className="mb-4" />}
 
       {/* ── Table View ── */}
       {viewMode === 'table' && (

@@ -6,6 +6,7 @@ import {
   Eye, EyeOff, LayoutTemplate
 } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
+import LoadError from '@/components/ui/LoadError'
 import { leadApi } from '@/services/leadApi'
 import { useClientOptions } from '@/hooks/useClientOptions'
 import { useProjectOptions } from '@/hooks/useProjectOptions'
@@ -45,6 +46,7 @@ export default function Proposals() {
   const [data, setData]       = useState([])
   const [templates, setTemplates] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(null)
   const [filter, setFilter]   = useState('All')
   const [search, setSearch]   = useState('')
   const [showDrawer, setShowDrawer] = useState(false)
@@ -64,7 +66,9 @@ export default function Proposals() {
     salesApi.proposals.list({
       status: f !== 'All' ? f : undefined,
       search: s || undefined,
-    }).then(d => { setData(d); setLoading(false) })
+    }).then(d => { setData(d); setLoadError(null) })
+      .catch(e => setLoadError(e))
+      .finally(() => setLoading(false))
   }
 
   useEffect(() => { load() }, [filter, search])
@@ -195,6 +199,10 @@ export default function Proposals() {
       </ListToolbar>
 
       {/* Table */}
+      {/* A failed load must not read as an empty list — that is a claim,
+          and it was the only thing this page said when the API was down. */}
+      {loadError && <LoadError error={loadError} onRetry={load} className="mb-4" />}
+
       {loading ? (
         <div className="space-y-2">
           {[1,2,3,4].map(i => <div key={i} className="skeleton h-14 rounded-xl" style={{ background: 'var(--border)' }} />)}

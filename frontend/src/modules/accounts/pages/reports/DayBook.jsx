@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Loader2, CalendarDays } from 'lucide-react'
 import { accountsApi } from '@/services/accountsApi'
+import LoadError from '@/components/ui/LoadError'
 import { fmtDate } from '@/modules/accounts/format'
 import { useInr } from '@/modules/accounts/useMoney'
 
@@ -10,7 +11,7 @@ export default function DayBook() {
   const inr = useInr()
   const today = new Date().toISOString().slice(0, 10)
   const [range, setRange] = useState({ from: today, to: today })
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['accounts', 'report', 'day-book', range],
     queryFn: () => accountsApi.reports.dayBook(range),
   })
@@ -32,7 +33,8 @@ export default function DayBook() {
         </div>
       </div>
 
-      {isLoading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div> : (
+      {isError ? <LoadError error={error} onRetry={refetch} title="Could not load this report" />
+        : isLoading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div> : (
         <>
           <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{data?.vouchers?.length || 0} vouchers · total {inr(data?.total)}</p>
           <div className="space-y-3">

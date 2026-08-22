@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Plus, Search, Edit2, Copy, Trash2, X, LayoutGrid, List, Upload } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
+import LoadError from '@/components/ui/LoadError'
 import { useToast } from '@/hooks/useToast'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import ListToolbar from '@/components/ui/ListToolbar'
@@ -27,6 +28,7 @@ export default function Items() {
   const csvRef = useRef(null)
   const [data, setData]         = useState([])
   const [loading, setLoading]   = useState(true)
+  const [loadError, setLoadError] = useState(null)
   const [category, setCategory] = useState('All')
   const [search, setSearch]     = useState('')
   const [viewMode, setViewMode] = useState('grid')
@@ -56,7 +58,9 @@ export default function Items() {
   const loadData = () => {
     setLoading(true)
     salesApi.items.list({ category: category!=='All'?category:undefined, search:search||undefined })
-      .then(d=>{setData(d);setLoading(false)})
+      .then(d => { setData(d); setLoadError(null) })
+      .catch(e => setLoadError(e))
+      .finally(() => setLoading(false))
   }
   useEffect(()=>{ loadData() },[category,search])
 
@@ -142,6 +146,10 @@ export default function Items() {
       </div>
 
       {/* Grid / List */}
+      {/* A failed load must not read as an empty list — that is a claim,
+          and it was the only thing this page said when the API was down. */}
+      {loadError && <LoadError error={loadError} onRetry={loadData} className="mb-4" />}
+
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {[1,2,3,4,5,6].map(i=><div key={i} className="skeleton h-40 rounded-2xl" style={{background:'var(--border)'}}/>)}

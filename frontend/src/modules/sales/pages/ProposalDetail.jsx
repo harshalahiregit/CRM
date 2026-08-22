@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Send, Trash2, FileText,
@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { salesApi } from '@/services/salesApi'
+import LoadError from '@/components/ui/LoadError'
 import StatusBadge from '../components/StatusBadge'
 import ActivityTimeline from '../components/ActivityTimeline'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
@@ -29,6 +30,7 @@ export default function ProposalDetail() {
   const navigate = useNavigate()
   const [proposal, setProposal]       = useState(null)
   const [loading, setLoading]         = useState(true)
+  const [loadError, setLoadError] = useState(null)
   const [showPortal, setShowPortal]   = useState(false)
   const [copied, setCopied]           = useState(false)
   const [comments, setComments]       = useState(MOCK_COMMENTS)
@@ -53,9 +55,19 @@ export default function ProposalDetail() {
 
   const reload = () => salesApi.proposals.get(id).then(setProposal)
 
-  useEffect(() => {
-    salesApi.proposals.get(id).then(p => { setProposal(p); setLoading(false) })
+  // Without a .catch the skeleton animated forever on any failure.
+  const loadProposal = useCallback(() => {
+    setLoading(true); setLoadError(null)
+    salesApi.proposals.get(id)
+      .then(p => setProposal(p))
+      .catch(e => setLoadError(e))
+      .finally(() => setLoading(false))
   }, [id])
+
+  useEffect(() => { loadProposal() }, [loadProposal])
+
+  if (loadError) return <LoadError error={loadError} onRetry={loadProposal} title="Could not load this proposal" />
+
 
   if (loading) return (
     <div className="space-y-4 animate-fade-in">

@@ -3,13 +3,14 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Loader2, BookOpen } from 'lucide-react'
 import { accountsApi } from '@/services/accountsApi'
+import LoadError from '@/components/ui/LoadError'
 import { fmtDate } from '@/modules/accounts/format'
 import { useInr } from '@/modules/accounts/useMoney'
 
 export default function GeneralLedger() {
   const inr = useInr()
   const [range, setRange] = useState({ from: '', to: '' })
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['accounts', 'report', 'general-ledger', range],
     queryFn: () => accountsApi.reports.generalLedger(range),
   })
@@ -31,7 +32,8 @@ export default function GeneralLedger() {
         </div>
       </div>
 
-      {isLoading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div> : (
+      {isError ? <LoadError error={error} onRetry={refetch} title="Could not load this report" />
+        : isLoading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div> : (
         <div className="space-y-6">
           {(data?.ledgers || []).length === 0 && <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No ledger activity.</p>}
           {(data?.ledgers || []).map((l, i) => (

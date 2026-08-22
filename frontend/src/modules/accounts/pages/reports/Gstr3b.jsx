@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Loader2, FileCheck2 } from 'lucide-react'
 import { accountsApi } from '@/services/accountsApi'
+import LoadError from '@/components/ui/LoadError'
 
 
 const COMPS = ['cgst', 'sgst', 'igst', 'cess']
@@ -11,7 +12,7 @@ const COMPS = ['cgst', 'sgst', 'igst', 'cess']
 export default function Gstr3b() {
   const inr = useInr()
   const [range, setRange] = useState({ from: '', to: '' })
-  const { data, isLoading } = useQuery({ queryKey: ['accounts', 'report', 'gstr3b', range], queryFn: () => accountsApi.reports.gstr3b(range) })
+  const { data, isLoading, isError, error, refetch } = useQuery({ queryKey: ['accounts', 'report', 'gstr3b', range], queryFn: () => accountsApi.reports.gstr3b(range) })
 
   const row = (label, obj, bold) => (
     <tr style={bold ? { borderTop: '2px solid var(--border)' } : undefined}>
@@ -33,7 +34,8 @@ export default function Gstr3b() {
           <input type="date" className="input-3d text-sm" value={range.to} onChange={e => setRange(r => ({ ...r, to: e.target.value }))} />
         </div>
       </div>
-      {isLoading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div> : (
+      {isError ? <LoadError error={error} onRetry={refetch} title="Could not load this report" />
+        : isLoading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div> : (
         <div className="table-wrapper"><table className="table">
           <thead><tr><th></th><th style={{ textAlign: 'right' }}>CGST</th><th style={{ textAlign: 'right' }}>SGST</th><th style={{ textAlign: 'right' }}>IGST</th><th style={{ textAlign: 'right' }}>Cess</th></tr></thead>
           <tbody>

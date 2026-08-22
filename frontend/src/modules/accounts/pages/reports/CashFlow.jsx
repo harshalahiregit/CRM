@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Loader2, Waves } from 'lucide-react'
 import { accountsApi } from '@/services/accountsApi'
+import LoadError from '@/components/ui/LoadError'
 
 
 const LABELS = { operating: 'Operating Activities', investing: 'Investing Activities', financing: 'Financing Activities' }
@@ -11,7 +12,7 @@ const LABELS = { operating: 'Operating Activities', investing: 'Investing Activi
 export default function CashFlow() {
   const inr = useInr()
   const [range, setRange] = useState({ from: '', to: '' })
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['accounts', 'report', 'cash-flow', range],
     queryFn: () => accountsApi.reports.cashFlow(range),
   })
@@ -35,7 +36,8 @@ export default function CashFlow() {
         </div>
       </div>
 
-      {isLoading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div> : (
+      {isError ? <LoadError error={error} onRetry={refetch} title="Could not load this report" />
+        : isLoading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div> : (
         <div className="kpi-3d">
           <div className="flex justify-between py-2" style={{ borderBottom: '1px solid var(--border)' }}>
             <span style={{ color: 'var(--text-muted)' }}>Opening cash &amp; bank</span>

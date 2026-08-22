@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Plus, Trash2, RefreshCw } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
+import LoadError from '@/components/ui/LoadError'
 import Drawer from '@/components/ui/Drawer'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import EmptyState from '@/components/ui/EmptyState'
@@ -30,6 +31,7 @@ export default function RetainerInvoices() {
   const toast = useToast()
   const [data, setData] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(null)
   const [filter, setFilter] = useState('All')
   const [showDrawer, setShowDrawer] = useState(false)
   const [form, setForm] = useState(EMPTY_FORM)
@@ -40,7 +42,9 @@ export default function RetainerInvoices() {
 
   const load = () => {
     setLoading(true)
-    salesApi.retainerInvoices.list({ status: filter !== 'All' ? filter : undefined }).then(d => { setData(d); setLoading(false) })
+    salesApi.retainerInvoices.list({ status: filter !== 'All' ? filter : undefined }).then(d => { setData(d); setLoadError(null) })
+      .catch(e => setLoadError(e))
+      .finally(() => setLoading(false))
   }
   useEffect(() => { load() }, [filter])
 
@@ -118,6 +122,10 @@ export default function RetainerInvoices() {
         pageSize={pageSize} onPageSize={setPageSize} pager={pager} onRefresh={load} />
 
       {/* List */}
+      {/* A failed load must not read as an empty list — that is a claim,
+          and it was the only thing this page said when the API was down. */}
+      {loadError && <LoadError error={loadError} onRetry={load} className="mb-4" />}
+
       {loading ? (
         <div className="space-y-2">{[1, 2, 3].map(i => <div key={i} className="skeleton h-16 rounded-xl" style={{ background: 'var(--border)' }} />)}</div>
       ) : !data.length ? (

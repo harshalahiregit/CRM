@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Plus, Send, CreditCard, Trash2, X, Bell, RefreshCw, Tag, User } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
+import LoadError from '@/components/ui/LoadError'
 import { useClientOptions } from '@/hooks/useClientOptions'
 import { useProjectOptions } from '@/hooks/useProjectOptions'
 import StatusBadge from '../components/StatusBadge'
@@ -41,6 +42,7 @@ export default function Invoices() {
   const projectOptions = useProjectOptions()
   const [data, setData]         = useState([])
   const [loading, setLoading]   = useState(true)
+  const [loadError, setLoadError] = useState(null)
   const [filter, setFilter]     = useState('All')
   const [showDrawer, setShowDrawer] = useState(false)
   const [showPayModal, setShowPayModal] = useState(false)
@@ -61,7 +63,9 @@ export default function Invoices() {
 
   const load = () => {
     setLoading(true)
-    salesApi.invoices.list({status: filter!=='All'?filter:undefined}).then(d=>{setData(d);setLoading(false)})
+    salesApi.invoices.list({status: filter!=='All'?filter:undefined}).then(d => { setData(d); setLoadError(null) })
+      .catch(e => setLoadError(e))
+      .finally(() => setLoading(false))
   }
   useEffect(()=>{ load() },[filter])
 
@@ -237,6 +241,10 @@ export default function Invoices() {
       </ListToolbar>
 
       {/* Table */}
+      {/* A failed load must not read as an empty list — that is a claim,
+          and it was the only thing this page said when the API was down. */}
+      {loadError && <LoadError error={loadError} onRetry={load} className="mb-4" />}
+
       {loading ? <div className="space-y-2">{[1,2,3].map(i=><div key={i} className="skeleton h-14 rounded-xl" style={{background:'var(--border)'}}/>)}</div> : (
         <div className="card-3d overflow-hidden" style={{padding:0}}>
           <div className="overflow-x-auto">

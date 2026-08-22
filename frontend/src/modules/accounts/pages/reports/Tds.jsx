@@ -4,12 +4,13 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Loader2, Percent } from 'lucide-react'
 import { accountsApi } from '@/services/accountsApi'
+import LoadError from '@/components/ui/LoadError'
 
 
 export default function Tds() {
   const inr = useInr()
   const [range, setRange] = useState({ from: '', to: '' })
-  const { data, isLoading } = useQuery({ queryKey: ['accounts', 'report', 'tds', range], queryFn: () => accountsApi.reports.tds(range) })
+  const { data, isLoading, isError, error, refetch } = useQuery({ queryKey: ['accounts', 'report', 'tds', range], queryFn: () => accountsApi.reports.tds(range) })
 
   return (
     <div className="space-y-5 animate-fade-in max-w-3xl">
@@ -24,7 +25,8 @@ export default function Tds() {
           <input type="date" className="input-3d text-sm" value={range.to} onChange={e => setRange(r => ({ ...r, to: e.target.value }))} />
         </div>
       </div>
-      {isLoading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div> : (
+      {isError ? <LoadError error={error} onRetry={refetch} title="Could not load this report" />
+        : isLoading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div> : (
         <>
           <div className="table-wrapper"><table className="table">
             <thead><tr><th>Section</th><th style={{ textAlign: 'right' }}>Deductions</th><th style={{ textAlign: 'right' }}>Base amount</th><th style={{ textAlign: 'right' }}>TDS</th></tr></thead>

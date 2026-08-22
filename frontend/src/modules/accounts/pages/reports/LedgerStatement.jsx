@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Loader2, BookOpen } from 'lucide-react'
 import { accountsApi } from '@/services/accountsApi'
+import LoadError from '@/components/ui/LoadError'
 import { fmtDate } from '@/modules/accounts/format'
 import { useInr } from '@/modules/accounts/useMoney'
 import { Select } from '@/components/ui/FormField'
@@ -13,7 +14,7 @@ export default function LedgerStatement() {
   const [range, setRange] = useState({ from: '', to: '' })
 
   const { data: ledgers = [] } = useQuery({ queryKey: ['accounts', 'ledgers', 'options'], queryFn: accountsApi.ledgers.options })
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['accounts', 'report', 'ledger-statement', ledgerId, range],
     queryFn: () => accountsApi.reports.ledgerStatement({ ledger_id: ledgerId, ...range }),
     enabled: !!ledgerId,
@@ -44,7 +45,8 @@ export default function LedgerStatement() {
 
       {!ledgerId && <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Pick a ledger to view its statement.</p>}
 
-      {ledgerId && (isLoading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div> : data && (
+      {ledgerId && (isError ? <LoadError error={error} onRetry={refetch} title="Could not load this statement" />
+        : isLoading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div> : data && (
         <div className="table-wrapper">
           <table className="table">
             <thead><tr>

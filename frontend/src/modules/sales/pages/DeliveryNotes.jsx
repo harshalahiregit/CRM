@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Plus, Send, Check, Trash2, X, Truck, MapPin, ChevronDown } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
+import LoadError from '@/components/ui/LoadError'
 import { useClientOptions } from '@/hooks/useClientOptions'
 import StatusBadge from '../components/StatusBadge'
 import RowMenu from '../components/RowMenu'
@@ -32,6 +33,7 @@ export default function DeliveryNotes() {
   const clientOptions = useClientOptions()
   const [data, setData]           = useState([])
   const [loading, setLoading]     = useState(true)
+  const [loadError, setLoadError] = useState(null)
   const [filter, setFilter]       = useState('All')
   const [showDrawer, setShowDrawer] = useState(false)
   const [showAddr, setShowAddr]   = useState(false)
@@ -66,7 +68,9 @@ export default function DeliveryNotes() {
   const load = () => {
     setLoading(true)
     salesApi.deliveryNotes.list({ status: filter !== 'All' ? filter : undefined })
-      .then(d => { setData(d); setLoading(false) })
+      .then(d => { setData(d); setLoadError(null) })
+      .catch(e => setLoadError(e))
+      .finally(() => setLoading(false))
   }
   useEffect(() => { load() }, [filter])
 
@@ -162,6 +166,10 @@ export default function DeliveryNotes() {
         </ListToolbar>
 
         {/* Table */}
+        {/* A failed load must not read as an empty list — that is a claim,
+            and it was the only thing this page said when the API was down. */}
+        {loadError && <LoadError error={loadError} onRetry={load} className="mb-4" />}
+
         {loading ? (
           <div className="space-y-2">{[1,2,3].map(i => <div key={i} className="skeleton h-14 rounded-xl" style={{ background: 'var(--border)' }} />)}</div>
         ) : (

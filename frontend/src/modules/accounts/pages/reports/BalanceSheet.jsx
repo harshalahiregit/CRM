@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Loader2, FileBarChart2 } from 'lucide-react'
 import { accountsApi } from '@/services/accountsApi'
+import LoadError from '@/components/ui/LoadError'
 
 
 function Column({ title, rows, extraLabel, extraAmount, total }) {
@@ -39,7 +40,7 @@ function Column({ title, rows, extraLabel, extraAmount, total }) {
 export default function BalanceSheet() {
   const inr = useInr()
   const [to, setTo] = useState('')
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['accounts', 'report', 'balance-sheet', to],
     queryFn: () => accountsApi.reports.balanceSheet(to ? { to } : {}),
   })
@@ -63,7 +64,8 @@ export default function BalanceSheet() {
         </label>
       </div>
 
-      {isLoading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div> : (
+      {isError ? <LoadError error={error} onRetry={refetch} title="Could not load this report" />
+        : isLoading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div> : (
         <>
           <div className="grid gap-4 lg:grid-cols-2">
             <Column title="Liabilities & Equity" rows={[...(data?.liabilities || []), ...(data?.equity || [])]}

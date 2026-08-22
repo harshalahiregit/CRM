@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Send, Copy, Receipt, Trash2, Download, CreditCard, X, Banknote, AlertCircle } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
+import LoadError from '@/components/ui/LoadError'
 import StatusBadge from '../components/StatusBadge'
 import ActivityTimeline from '../components/ActivityTimeline'
 import { useToast } from '@/hooks/useToast'
@@ -14,6 +15,7 @@ export default function InvoiceDetail() {
   const navigate = useNavigate()
   const [invoice, setInvoice] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(null)
   const [showPayModal, setShowPayModal]       = useState(false)
   const [showCreditDrawer, setShowCreditDrawer] = useState(false)
   const [creditNotes, setCreditNotes]         = useState([])
@@ -36,9 +38,20 @@ export default function InvoiceDetail() {
   const showToast = (msg, type = 'success') =>
     type === 'error' ? toast.error(msg) : type === 'info' ? toast.info(msg) : toast.success(msg)
 
-  useEffect(() => {
-    salesApi.invoices.get(id).then(inv => { setInvoice(inv); setLoading(false) })
+  // No .catch here meant a 500, a dropped network or an expired session left
+  // `loading` true forever: three pulsing grey bars, no error, no retry.
+  const loadInvoice = useCallback(() => {
+    setLoading(true); setLoadError(null)
+    salesApi.invoices.get(id)
+      .then(inv => setInvoice(inv))
+      .catch(e => setLoadError(e))
+      .finally(() => setLoading(false))
   }, [id])
+
+  useEffect(() => { loadInvoice() }, [loadInvoice])
+
+  if (loadError) return <LoadError error={loadError} onRetry={loadInvoice} title="Could not load this invoice" />
+
 
   if (loading) return (
     <div className="space-y-4 animate-fade-in">

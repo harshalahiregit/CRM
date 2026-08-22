@@ -4,12 +4,13 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Loader2, FileText } from 'lucide-react'
 import { accountsApi } from '@/services/accountsApi'
+import LoadError from '@/components/ui/LoadError'
 
 
 export default function Gstr1() {
   const inr = useInr()
   const [range, setRange] = useState({ from: '', to: '' })
-  const { data, isLoading } = useQuery({ queryKey: ['accounts', 'report', 'gstr1', range], queryFn: () => accountsApi.reports.gstr1(range) })
+  const { data, isLoading, isError, error, refetch } = useQuery({ queryKey: ['accounts', 'report', 'gstr1', range], queryFn: () => accountsApi.reports.gstr1(range) })
   const t = data?.totals
 
   return (
@@ -25,7 +26,8 @@ export default function Gstr1() {
           <input type="date" className="input-3d text-sm" value={range.to} onChange={e => setRange(r => ({ ...r, to: e.target.value }))} />
         </div>
       </div>
-      {isLoading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div> : (
+      {isError ? <LoadError error={error} onRetry={refetch} title="Could not load this report" />
+        : isLoading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div> : (
         <div className="table-wrapper"><table className="table">
           <thead><tr><th>Rate</th><th style={{ textAlign: 'right' }}>Taxable</th><th style={{ textAlign: 'right' }}>CGST</th><th style={{ textAlign: 'right' }}>SGST</th><th style={{ textAlign: 'right' }}>IGST</th><th style={{ textAlign: 'right' }}>Cess</th></tr></thead>
           <tbody>

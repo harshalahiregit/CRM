@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Send, Receipt, Trash2, FileText,
@@ -6,6 +6,7 @@ import {
   DollarSign, Tag, CreditCard
 } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
+import LoadError from '@/components/ui/LoadError'
 import StatusBadge from '../components/StatusBadge'
 import ActivityTimeline from '../components/ActivityTimeline'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
@@ -23,6 +24,7 @@ export default function EstimateDetail() {
 
   const [estimate, setEstimate]   = useState(null)
   const [loading, setLoading]     = useState(true)
+  const [loadError, setLoadError] = useState(null)
   const [showConvert, setShowConvert] = useState(false)
   const [converting, setConverting]  = useState(false)
   const [showPayDrawer, setShowPayDrawer] = useState(false)
@@ -45,9 +47,19 @@ export default function EstimateDetail() {
     } catch (e) { showToast(e.message || 'Could not update', 'error') }
   }
 
-  useEffect(() => {
-    salesApi.estimates.get(id).then(e => { setEstimate(e); setLoading(false) })
+  // Without a .catch the skeleton animated forever on any failure.
+  const loadEstimate = useCallback(() => {
+    setLoading(true); setLoadError(null)
+    salesApi.estimates.get(id)
+      .then(est => setEstimate(est))
+      .catch(err => setLoadError(err))
+      .finally(() => setLoading(false))
   }, [id])
+
+  useEffect(() => { loadEstimate() }, [loadEstimate])
+
+  if (loadError) return <LoadError error={loadError} onRetry={loadEstimate} title="Could not load this estimate" />
+
 
   if (loading) return (
     <div className="space-y-4 animate-[tiltIn_0.35s_ease]">
