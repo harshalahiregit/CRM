@@ -15,6 +15,7 @@ import { KIT3D_STYLE as PURCHASE_STYLE, labelStyle, inputStyle, Overlay, ModalFo
 const TABS = [
   { key: 'general',    label: 'General Settings' },
   { key: 'options',    label: 'Purchase Options' },
+  { key: 'governance', label: 'Governance' },
   { key: 'categories', label: 'Vendor category' },
   { key: 'return',     label: 'Order Return' },
   // Managed elsewhere — pointers, not duplicates.
@@ -101,8 +102,9 @@ export default function PurchaseSettings() {
             : active?.linkTo ? <ElsewhereTab tab={active} />
               : tab === 'general' ? <GeneralTab s={settings} set={set} save={save} msg={msg} canEdit={isAdmin} />
                 : tab === 'options' ? <OptionsTab s={settings} set={set} save={save} msg={msg} canEdit={isAdmin} />
-                  : tab === 'return' ? <ReturnTab s={settings} set={set} save={save} msg={msg} canEdit={isAdmin} />
-                    : <CategoriesTab canEdit={isAdmin} />}
+                  : tab === 'governance' ? <GovernanceTab s={settings} set={set} save={save} msg={msg} canEdit={isAdmin} />
+                    : tab === 'return' ? <ReturnTab s={settings} set={set} save={save} msg={msg} canEdit={isAdmin} />
+                      : <CategoriesTab canEdit={isAdmin} />}
         </div>
       </div>
     </div>
@@ -194,6 +196,46 @@ function OptionsTab({ s, set, save, msg, canEdit }) {
         ))}
       </div>
       <SaveBar msg={msg} canEdit={canEdit} onSave={() => save(TOGGLES.map(([k]) => k))} />
+    </>
+  )
+}
+
+/* ── Governance (§34) ────────────────────────────────────────────────────── */
+
+function GovernanceTab({ s, set, save, msg, canEdit }) {
+  const keys = ['gate_ppe_enforcement', 'communications_auto_dispatch', 'temporary_vendor_validity_days']
+  const PPE_MODES = [
+    ['warn', 'Warn — admit, but flag missing PPE to the guard (default)'],
+    ['deny', 'Deny — refuse entry until PPE is issued'],
+    ['off',  'Off — do not check PPE at the gate'],
+  ]
+  return (
+    <>
+      <Section title="Worker Gate — PPE enforcement" />
+      <Field label="How the gate reacts when a worker holds no issued PPE" full>
+        <select value={s.gate_ppe_enforcement ?? 'warn'} onChange={set('gate_ppe_enforcement')} disabled={!canEdit} style={inputStyle}>
+          {PPE_MODES.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+        </select>
+      </Field>
+      <p style={hintStyle}>Applies to every worker scan at the site gate. A PPE-subsystem error never blocks an otherwise-clear worker.</p>
+
+      <Section title="Communications — automatic dispatch" />
+      <label style={{ display: 'flex', gap: 11, alignItems: 'flex-start', padding: '12px 4px', borderBottom: '1px solid var(--border)', cursor: canEdit ? 'pointer' : 'default' }}>
+        <input type="checkbox" checked={!!s.communications_auto_dispatch} onChange={set('communications_auto_dispatch')} disabled={!canEdit} style={{ width: 16, height: 16, marginTop: 2, cursor: canEdit ? 'pointer' : 'default' }} />
+        <span>
+          <span style={{ display: 'block', fontSize: 13, fontWeight: 700, color: 'var(--text-h)' }}>Email the vendor automatically on governance events</span>
+          <span style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>When on, an NCR raised or a violation recorded emails the vendor immediately, alongside the pull-based alerts feed. Off falls back to manual Send only.</span>
+        </span>
+      </label>
+
+      <div style={{ height: 16 }} />
+      <Section title="Temporary vendor access" />
+      <Field label="Days of portal access a Temporary Vendor gets after activation">
+        <TextInput type="number" min="1" value={s.temporary_vendor_validity_days ?? 5} onChange={set('temporary_vendor_validity_days')} disabled={!canEdit} />
+      </Field>
+      <p style={hintStyle}>Counted from the moment an admin activates the vendor, never from registration. Standard vendors never expire.</p>
+
+      <SaveBar msg={msg} canEdit={canEdit} onSave={() => save(keys)} />
     </>
   )
 }

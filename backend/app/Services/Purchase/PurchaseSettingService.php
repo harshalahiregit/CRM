@@ -61,6 +61,19 @@ class PurchaseSettingService
         // Days of portal access a Temporary Vendor gets, counted from the
         // moment an admin activates them (never from registration).
         'temporary_vendor_validity_days' => 5,
+
+        // ── Governance behaviour (§34) ───────────────────────────────────
+        // Per-tenant overrides for what used to be env/config-only. Consumers
+        // read the stored value when a row EXISTS, else fall back to config —
+        // so a tenant who never opens this tab keeps the deployment default.
+        //
+        // How the worker gate reacts to a worker holding no issued PPE:
+        //   'warn' (default) admit + surface a warning · 'deny' refuse entry ·
+        //   'off' skip the PPE check entirely.
+        'gate_ppe_enforcement' => 'warn',
+        // Push a message to the vendor the moment an NCR is raised or a violation
+        // is recorded, on top of the pull-based alerts feed.
+        'communications_auto_dispatch' => true,
     ];
 
     /** Keys whose values are booleans (so the API round-trips real bools). */
@@ -68,6 +81,7 @@ class PurchaseSettingService
         'purchase_order_setting', 'item_by_vendor', 'po_only_prefix_and_number',
         'allow_vendors_to_register', 'show_purchase_tax_column',
         'send_email_welcome_for_new_contact', 'reset_purchase_order_number_every_month',
+        'communications_auto_dispatch',
     ];
 
     private const INT_KEYS = [
