@@ -311,6 +311,24 @@ export const purchaseApi = {
     momRevise: (id)        => api.post(`/purchase/kickoff/${id}/mom/revise`).then(r => r.data),
     publish: (id)         => api.post(`/purchase/kickoff/${id}/publish`).then(r => r.data),
     remove:  (id)         => api.delete(`/purchase/kickoff/${id}`).then(r => r.data),
+    // MOM action engine — Meeting → Action → Owner → Due → Evidence → Verification → Closure.
+    actions: {
+      list:   (id)               => api.get(`/purchase/kickoff/${id}/actions`).then(r => r.data),
+      create: (id, data)         => api.post(`/purchase/kickoff/${id}/actions`, data).then(r => r.data),
+      update: (id, aid, data)    => api.put(`/purchase/kickoff/${id}/actions/${aid}`, data).then(r => r.data),
+      // Status progression; pass an evidence File to attach it (multipart).
+      progress: (id, aid, data, file) => {
+        if (file) {
+          const fd = new FormData()
+          Object.entries(data || {}).forEach(([k, v]) => { if (v != null) fd.append(k, v) })
+          fd.append('evidence', file)
+          return upload(`/purchase/kickoff/${id}/actions/${aid}/progress`, fd)
+        }
+        return api.post(`/purchase/kickoff/${id}/actions/${aid}/progress`, data).then(r => r.data)
+      },
+      evidenceBlob: (id, aid) => api.get(`/purchase/kickoff/${id}/actions/${aid}/evidence`, { responseType: 'blob' }).then(r => r.data),
+      remove: (id, aid)       => api.delete(`/purchase/kickoff/${id}/actions/${aid}`).then(r => r.data),
+    },
   },
 
   // ── Purchase onboarding — the 6-step wizard (/purchase/onboarding) ───

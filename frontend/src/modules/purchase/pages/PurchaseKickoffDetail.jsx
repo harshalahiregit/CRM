@@ -4,11 +4,13 @@ import {
   ArrowLeft, CalendarDays, Clock, MapPin, Users, CheckCircle2, XCircle,
   Send, Upload, AlertTriangle, Loader2, FileText, ShieldCheck, History,
   Sparkles, Eye, Download, Video, RotateCcw, FileCheck2,
+  ListChecks, Plus, Paperclip, Trash2, UserCheck,
 } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
 import {
   PK_STATUS, pkStatusCfg, pkNextStatuses, pkModeLabel, fmtDateTime, fmtDate,
   PK_MOM_STATUS, pkMomCfg, pkMomDistributable, pkMomAwaitingDecision,
+  PK_ACTION_STATUS, pkActionCfg, pkActionNext, PK_ACTION_PRIORITIES,
 } from '@/modules/purchase/kickoffConstants'
 import { KIT3D_STYLE, Overlay, ModalFooter, Field, TextInput } from '@/components/ui/kit3d'
 
@@ -172,6 +174,9 @@ export default function PurchaseKickoffDetail() {
               <p style={{ fontSize: 13, color: 'var(--text-h)', margin: '12px 0 0', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{m.minutes}</p>
             </div>
           )}
+
+          {/* Action items (MOM action engine) */}
+          <ActionItemsCard m={m} onError={setErr} />
         </div>
 
         {/* Right column */}
@@ -440,6 +445,216 @@ function TrailRow({ ok, label, who, when }) {
     </div>
   )
 }
+
+/* ── Action items card (MOM action engine) ───────────────────────────────────
+ * The register of actions a meeting produces — each with an owner (Rule 11) and,
+ * at closure, evidence or a verification note (Rule 12). Mirrors
+ * PurchaseMomActionStatus. */
+function ActionItemsCard({ m, onError }) {
+  const [rows, setRows] = useState(m.action_items || [])
+  const [adding, setAdding] = useState(false)
+  const [progress, setProgress] = useState(null) // { action, to }
+  const [form, setForm] = useState({ description: '', responsible_participant_id: '', responsible_names: '', priority: '', target_date: '' })
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => { setRows(m.action_items || []) }, [m.action_items])
+
+  const refresh = async () => {
+    try { setRows(await purchaseApi.kickoff.actions.list(m.id)) } catch { /* keep stale */ }
+  }
+
+  const add = async () => {
+    if (!form.description.trim()) { onError('An action needs a description.'); return }
+    setSaving(true); onError(null)
+    try {
+      const payload = { description: form.description, priority: form.priority || undefined, target_date: form.target_date || undefined }
+      if (form.responsible_participant_id) payload.responsible_participant_id = Number(form.responsible_participant_id)
+      else payload.responsible_names = form.responsible_names
+      await purchaseApi.kickoff.actions.create(m.id, payload)
+      setForm({ description: '', responsible_participant_id: '', responsible_names: '', priority: '', target_date: '' })
+      setAdding(false)
+      await refresh()
+    } catch (e) { onError(e?.response?.data?.message || 'Could not add the action.') }
+    finally { setSaving(false) }
+  }
+
+  const del = async (a) => {
+    onError(null)
+    try { await purchaseApi.kickoff.actions.remove(m.id, a.id); await refresh() }
+    catch (e) { onError(e?.response?.data?.message || 'Could not delete the action.') }
+  }
+
+  const viewEvidence = async (a) => {
+    onError(null)
+    try {
+      const blob = await purchaseApi.kickoff.actions.evidenceBlob(m.id, a.id)
+      const url = URL.createObjectURL(blob)
+      window.open(url, '_blank', 'noopener')
+      setTimeout(() => URL.revokeObjectURL(url), 60000)
+    } catch (e) { onError(e?.response?.data?.message || 'Could not open the evidence.') }
+  }
+
+  const ownerLabel = (a) => a.responsible?.name || a.responsible_names || '—'
+  const openCount = rows.filter(r => r.is_open).length
+
+  return (
+    <div className="pr-glass" style={{ padding: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <SectionTitle icon={ListChecks}>Action items <span style={{ fontWeight: 500, color: 'var(--text-muted)', fontSize: 12 }}>· {rows.length}{openCount ? ` · ${openCount} open` : ''}</span></SectionTitle>
+        <button onClick={() => setAdding(v => !v)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 11px', borderRadius: 9, cursor: 'pointer', fontSize: 12, fontWeight: 700, color: '#a78bfa', background: 'rgba(124,58,237,0.12)', border: '1px solid rgba(124,58,237,0.4)' }}>
+          <Plus size={13} /> Add
+        </button>
+      </div>
+
+      {adding && (
+        <div style={{ marginTop: 12, padding: 14, borderRadius: 12, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+          <textarea rows={2} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="What needs to be done?"
+            style={{ width: '100%', padding: '9px 12px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-h)', fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
+            <div>
+              <div style={labelSm}>Owner (Rule 11)</div>
+              <select value={form.responsible_participant_id} onChange={e => setForm(f => ({ ...f, responsible_participant_id: e.target.value }))} style={selStyle}>
+                <option value="">— someone else —</option>
+                {(m.participants || []).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={labelSm}>Priority</div>
+              <select value={form.priority} onChange={e => setForm(f => ({ ...f, priority: e.target.value }))} style={selStyle}>
+                <option value="">—</option>
+                {PK_ACTION_PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
+            {!form.responsible_participant_id && (
+              <div>
+                <div style={labelSm}>Owner name</div>
+                <TextInput value={form.responsible_names} onChange={e => setForm(f => ({ ...f, responsible_names: e.target.value }))} placeholder="Name of the owner" />
+              </div>
+            )}
+            <div>
+              <div style={labelSm}>Target date</div>
+              <TextInput type="date" value={form.target_date} onChange={e => setForm(f => ({ ...f, target_date: e.target.value }))} />
+            </div>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
+            <MomBtn onClick={() => setAdding(false)} icon={XCircle} tone="#94a3b8">Cancel</MomBtn>
+            <MomBtn onClick={add} busy={saving} icon={Plus} tone="#7C3AED">Add action</MomBtn>
+          </div>
+        </div>
+      )}
+
+      {rows.length === 0 ? (
+        <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '12px 0 0' }}>No action items yet.</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
+          {rows.map(a => {
+            const cfg = pkActionCfg(a.status)
+            const nexts = pkActionNext(a.status)
+            return (
+              <div key={a.id} style={{ padding: '12px 13px', borderRadius: 12, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                      {a.action_ref && <span style={{ fontSize: 10.5, fontWeight: 800, color: '#a78bfa', fontFamily: 'monospace' }}>{a.action_ref}</span>}
+                      <span style={{ padding: '2px 8px', borderRadius: 999, background: cfg.bg, color: cfg.color, fontSize: 10.5, fontWeight: 800 }}>{a.status_label}</span>
+                      {a.priority && <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text-muted)' }}>{a.priority}</span>}
+                      {a.is_overdue && <span style={{ fontSize: 10.5, fontWeight: 800, color: '#ef4444' }}>OVERDUE</span>}
+                    </div>
+                    <div style={{ fontSize: 13, color: 'var(--text-h)', marginTop: 5, lineHeight: 1.4 }}>{a.description}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 5, fontSize: 11.5, color: 'var(--text-muted)' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><UserCheck size={12} /> {ownerLabel(a)}</span>
+                      {a.target_date && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><CalendarDays size={12} /> {fmtDate(a.target_date)}</span>}
+                      {a.has_evidence && <button onClick={() => viewEvidence(a)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer', color: '#10b981', background: 'none', border: 'none', fontSize: 11.5, fontWeight: 700, padding: 0 }}><Paperclip size={12} /> Evidence</button>}
+                    </div>
+                    {a.verification_note && <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 4, fontStyle: 'italic' }}>“{a.verification_note}”</div>}
+                  </div>
+                  <button onClick={() => del(a)} title="Delete action" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', flexShrink: 0, padding: 2 }}><Trash2 size={14} /></button>
+                </div>
+                {nexts.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 9 }}>
+                    {nexts.map(to => {
+                      const tc = pkActionCfg(to)
+                      return (
+                        <button key={to} onClick={() => setProgress({ action: a, to })}
+                          style={{ padding: '5px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 11, fontWeight: 700, color: tc.color, background: `${tc.color}12`, border: `1px solid ${tc.color}44` }}>
+                          {tc.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {progress && (
+        <ActionProgressModal meetingId={m.id} action={progress.action} to={progress.to}
+          onClose={() => setProgress(null)}
+          onDone={async () => { setProgress(null); onError(null); await refresh() }}
+          onError={onError} />
+      )}
+    </div>
+  )
+}
+
+/* Progress an action to a new status, optionally attaching evidence / a note.
+ * Closing requires evidence or a verification note (Rule 12) — enforced here and
+ * on the server. */
+function ActionProgressModal({ meetingId, action, to, onClose, onDone, onError }) {
+  const [note, setNote] = useState('')
+  const [file, setFile] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState(null)
+  const tc = pkActionCfg(to)
+  const closing = to === PK_ACTION_STATUS.CLOSED
+  const needsProof = closing && !note.trim() && !file
+
+  const save = async () => {
+    if (needsProof) { setErr('Closing needs evidence or a verification note (Rule 12).'); return }
+    setSaving(true); setErr(null)
+    try {
+      const data = { status: to }
+      if (note.trim()) data.verification_note = note
+      await purchaseApi.kickoff.actions.progress(meetingId, action.id, data, file)
+      await onDone()
+    } catch (e) {
+      setErr(e?.response?.data?.message || 'Could not update the action.')
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Overlay onClose={onClose} width={440}>
+      <div style={{ padding: '20px 22px 6px' }}>
+        <h2 style={{ margin: 0, fontSize: 17, fontWeight: 900, color: 'var(--text-h)' }}>Move to {tc.label}</h2>
+        <p style={{ margin: '3px 0 0', fontSize: 12.5, color: 'var(--text-muted)' }}>{action.action_ref ? `${action.action_ref} · ` : ''}{action.description}</p>
+      </div>
+      <div style={{ padding: '10px 22px' }}>
+        <Field label={closing ? 'Verification note (evidence or a note is required)' : 'Note (optional)'} full>
+          <textarea rows={3} value={note} onChange={e => setNote(e.target.value)} placeholder="How was this action verified / progressed?"
+            style={{ width: '100%', padding: '9px 12px', background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-h)', fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }} />
+        </Field>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, padding: '9px 12px', borderRadius: 10, cursor: 'pointer', background: 'var(--bg-input)', border: '1px dashed var(--border)' }}>
+          <Paperclip size={14} style={{ color: '#a78bfa' }} />
+          <span style={{ fontSize: 12.5, color: file ? 'var(--text-h)' : 'var(--text-muted)', flex: 1 }}>{file ? file.name : 'Attach evidence (optional)'}</span>
+          <input type="file" onChange={e => setFile(e.target.files?.[0] || null)} style={{ display: 'none' }} />
+        </label>
+        {err && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', borderRadius: 10, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', marginTop: 8 }}>
+            <AlertTriangle size={14} style={{ color: '#ef4444', flexShrink: 0 }} />
+            <span style={{ fontSize: 12.5, color: 'var(--text-h)' }}>{err}</span>
+          </div>
+        )}
+      </div>
+      <ModalFooter onClose={onClose} onConfirm={save} loading={saving} confirmLabel={`Move to ${tc.label}`} color={tc.color === '#94a3b8' ? '#7C3AED' : tc.color} />
+    </Overlay>
+  )
+}
+
+const labelSm = { fontSize: 10.5, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 3 }
+const selStyle = { width: '100%', padding: '8px 10px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-h)', fontSize: 13, boxSizing: 'border-box' }
 
 /* ── Transition modal ─────────────────────────────────────────────────────── */
 function TransitionModal({ m, to, onClose, onDone }) {

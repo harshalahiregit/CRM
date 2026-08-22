@@ -57,6 +57,39 @@ export const pkMomDistributable = (s) => s === PK_MOM_STATUS.APPROVED || s === P
 /** Awaiting an approval decision. */
 export const pkMomAwaitingDecision = (s) => s === PK_MOM_STATUS.PENDING || s === PK_MOM_STATUS.PENDING_CHAIR
 
+// ── MOM action lifecycle — App\Support\Purchase\PurchaseMomActionStatus ──────
+export const PK_ACTION_STATUS = {
+  OPEN: 'Open',
+  IN_PROGRESS: 'In_Progress',
+  PENDING_VERIFICATION: 'Pending_Verification',
+  CLOSED: 'Closed',
+  REOPENED: 'Reopened',
+  CANCELLED: 'Cancelled',
+}
+
+export const PK_ACTION_CONFIG = {
+  [PK_ACTION_STATUS.OPEN]:                 { label: 'Open',                 color: '#0ea5e9', bg: 'rgba(14,165,233,0.15)' },
+  [PK_ACTION_STATUS.IN_PROGRESS]:          { label: 'In Progress',          color: '#7C3AED', bg: 'rgba(124,58,237,0.15)' },
+  [PK_ACTION_STATUS.PENDING_VERIFICATION]: { label: 'Pending Verification', color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
+  [PK_ACTION_STATUS.CLOSED]:               { label: 'Closed',               color: '#10b981', bg: 'rgba(16,185,129,0.15)' },
+  [PK_ACTION_STATUS.REOPENED]:             { label: 'Reopened',             color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
+  [PK_ACTION_STATUS.CANCELLED]:            { label: 'Cancelled',            color: '#94a3b8', bg: 'rgba(148,163,184,0.15)' },
+}
+export const pkActionCfg = (s) => PK_ACTION_CONFIG[s] || PK_ACTION_CONFIG[PK_ACTION_STATUS.OPEN]
+
+/** Permitted moves — mirrors PurchaseMomActionStatus::TRANSITIONS. */
+export const PK_ACTION_TRANSITIONS = {
+  [PK_ACTION_STATUS.OPEN]:                 [PK_ACTION_STATUS.IN_PROGRESS, PK_ACTION_STATUS.PENDING_VERIFICATION, PK_ACTION_STATUS.CANCELLED],
+  [PK_ACTION_STATUS.IN_PROGRESS]:          [PK_ACTION_STATUS.OPEN, PK_ACTION_STATUS.PENDING_VERIFICATION, PK_ACTION_STATUS.CANCELLED],
+  [PK_ACTION_STATUS.PENDING_VERIFICATION]: [PK_ACTION_STATUS.IN_PROGRESS, PK_ACTION_STATUS.CLOSED, PK_ACTION_STATUS.REOPENED, PK_ACTION_STATUS.CANCELLED],
+  [PK_ACTION_STATUS.CLOSED]:               [PK_ACTION_STATUS.REOPENED],
+  [PK_ACTION_STATUS.REOPENED]:             [PK_ACTION_STATUS.IN_PROGRESS, PK_ACTION_STATUS.PENDING_VERIFICATION, PK_ACTION_STATUS.CLOSED, PK_ACTION_STATUS.CANCELLED],
+  [PK_ACTION_STATUS.CANCELLED]:            [PK_ACTION_STATUS.REOPENED],
+}
+export const pkActionNext = (s) => PK_ACTION_TRANSITIONS[s] || []
+
+export const PK_ACTION_PRIORITIES = ['Low', 'Medium', 'High', 'Urgent']
+
 export const PK_MODES = [['onsite', 'On site'], ['online', 'Online']]
 export const pkModeLabel = (m) => (PK_MODES.find(([v]) => v === m) || [m, m || '—'])[1]
 
