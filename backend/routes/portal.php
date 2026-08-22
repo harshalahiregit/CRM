@@ -244,6 +244,10 @@ Route::middleware(['auth:sanctum', 'client.portal'])->prefix('portal/client')->g
     Route::get('/contracts',     [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'contracts']);
     Route::get('/projects',      [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'projects']);
     Route::get('/tickets',       [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'tickets']);
+    // §10 — the customer answers the survey, rather than staff typing in
+    // a score they were told on the phone.
+    Route::get('/feedback',      [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'myFeedback']);
+    Route::post('/feedback',     [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'submitFeedback']);
     Route::get('/notes',         [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'notes']);
     Route::get('/files',         [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'files']);
     Route::get('/contacts',      [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'contacts']);

@@ -83,6 +83,12 @@ export const clientPortalApi = {
   files: () => get('/portal/client/files'),
   contacts: () => get('/portal/client/contacts'),
 
+  // §10 — the customer's own satisfaction responses.
+  feedback: {
+    mine:   () => get('/portal/client/feedback'),
+    submit: (payload) => cpApi.post('/portal/client/feedback', payload).then((r) => r.data),
+  },
+
   token: clientToken,
 }
 

@@ -3,7 +3,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import {
   Building2, LayoutDashboard, Receipt, CreditCard, FileX, Wallet, ClipboardList,
   FileText, FileSignature, FolderKanban, LifeBuoy, Paperclip, StickyNote,
-  Users2, UserCircle2, LogOut,
+  Users2, UserCircle2, LogOut, MessageSquareHeart,
 } from 'lucide-react'
 import { clientPortalApi } from '@/lib/clientPortalApi'
 
@@ -33,6 +33,13 @@ const SECTIONS = [
   { group: 'Work', items: [
     { to: '/portal/projects', label: 'Projects', icon: FolderKanban, perm: 'project' },
     { to: '/portal/tickets',  label: 'Support',  icon: LifeBuoy,     perm: 'support' },
+  ]},
+  { group: 'Your say', items: [
+    // §10 — the customer answers the survey themselves. No permission gate:
+    // being asked what you think of the service is not a privilege somebody
+    // grants you, and gating it would silence exactly the accounts whose
+    // opinion matters most.
+    { to: '/portal/feedback', label: 'Feedback', icon: MessageSquareHeart, perm: null },
   ]},
   { group: 'Information', items: [
     { to: '/portal/files',    label: 'Files',    icon: Paperclip,    perm: null },

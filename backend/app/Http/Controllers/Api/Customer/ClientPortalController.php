@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Customer;
 use App\Http\Controllers\Controller;
 use App\Models\Customer\Client;
 use App\Models\Customer\ClientContact;
+use App\Models\Customer\ClientFeedback;
 use App\Services\Customer\ClientPortalAuthService;
 use App\Services\Customer\ClientPortalService;
 use Illuminate\Http\Request;
@@ -233,6 +234,80 @@ class ClientPortalController extends Controller
                 'outstanding' => round((float) $invoices->sum('balance'), 2),
             ],
         ]);
+    }
+
+    /**
+     * §10 — the customer answers a satisfaction survey.
+     *
+     * CSAT and NPS existed as a staff-only register: somebody typed in a score
+     * they had been told on a phone call. That is a record of a conversation,
+     * not a survey — the person whose opinion it is had no way to give it. The
+     * legacy CRM did let customers submit feedback (its feedback module carried
+     * a client-facing controller), so this was also a regression.
+     *
+     * Writes to client_feedback, which Customer owns, so no module boundary is
+     * crossed. `collected_via` distinguishes these from staff-entered scores;
+     * Health weighs them identically, but a human reading the list should be
+     * able to tell a survey response from a note of a phone call.
+     */
+    public function submitFeedback(Request $r)
+    {
+        $contact = $this->contact($r);
+        $client  = $this->client($r);
+
+        // The bound depends on the metric: 9 is a valid NPS and an impossible
+        // CSAT, and one rule for both would skew every average built on it.
+        $metric = $r->input('metric');
+        $max    = ClientFeedback::MAX[$metric] ?? 10;
+
+        $data = $r->validate([
+            'metric'   => ['required', \Illuminate\Validation\Rule::in(ClientFeedback::METRICS)],
+            'score'    => "required|integer|min:0|max:{$max}",
+            'comments' => 'nullable|string|max:2000',
+        ]);
+
+        // One response per metric per day. Enough to correct a mis-tap, not
+        // enough for a disgruntled afternoon to bury the average.
+        $recent = ClientFeedback::forTenant($client->tenant_id)
+            ->where('client_id', $client->id)
+            ->where('client_contact_id', $contact->id)
+            ->where('metric', $data['metric'])
+            ->whereDate('responded_at', now()->toDateString())
+            ->first();
+
+        $payload = [
+            'tenant_id'         => $client->tenant_id,
+            'client_id'         => $client->id,
+            'client_contact_id' => $contact->id,
+            'metric'            => $data['metric'],
+            'score'             => $data['score'],
+            'comments'          => $data['comments'] ?? null,
+            'collected_via'     => 'portal',
+            'responded_at'      => now(),
+        ];
+
+        $row = $recent ? tap($recent)->update($payload) : ClientFeedback::create($payload);
+
+        return response()->json([
+            'message' => 'Thank you — your feedback has been recorded.',
+            'id'      => $row->id,
+        ], $recent ? 200 : 201);
+    }
+
+    /** What this contact has already told us, so the form can show its state. */
+    public function myFeedback(Request $r)
+    {
+        $contact = $this->contact($r);
+        $client  = $this->client($r);
+
+        return response()->json(
+            ClientFeedback::forTenant($client->tenant_id)
+                ->where('client_id', $client->id)
+                ->where('client_contact_id', $contact->id)
+                ->orderByDesc('responded_at')
+                ->limit(20)
+                ->get(['id', 'metric', 'score', 'comments', 'responded_at'])
+        );
     }
 
     public function notes(Request $r)

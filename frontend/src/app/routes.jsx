@@ -271,6 +271,7 @@ const ClientPortalShell = lazy(() => import('@/pages/client-portal/ClientPortalS
 const ClientPortalDashboard = lazy(() => import('@/pages/client-portal/ClientPortalDashboard'))
 const ClientPortalRecords = lazy(() => import('@/pages/client-portal/ClientPortalRecords'))
 const ClientPortalProfile = lazy(() => import('@/pages/client-portal/ClientPortalProfile'))
+const ClientPortalFeedback = lazy(() => import('@/pages/client-portal/ClientPortalFeedback'))
 const ClientPortalStatement = lazy(() => import('@/pages/client-portal/ClientPortalStatement'))
 const PurchaseVendorPortalGuard = lazy(() => import('@/pages/purchase-portal/PurchaseVendorPortalGuard'))
 
@@ -862,6 +863,7 @@ export default function AppRoutes() {
         <Route path="dashboard"    element={<S><ClientPortalDashboard /></S>} />
         <Route path="statement"    element={<S><ClientPortalStatement /></S>} />
         <Route path="profile"      element={<S><ClientPortalProfile /></S>} />
+        <Route path="feedback" element={<S><ClientPortalFeedback /></S>} />
         {['invoices', 'payments', 'credit-notes', 'estimates', 'proposals',
           'contracts', 'projects', 'tickets', 'files', 'notes', 'contacts'].map(v => (
           <Route key={v} path={v} element={<S><ClientPortalRecords view={v} /></S>} />
