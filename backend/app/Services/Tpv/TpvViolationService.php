@@ -19,11 +19,16 @@ use Illuminate\Support\Facades\Log;
  * suspension / blacklist actions through the shared VendorService.
  *
  * A Major/Critical violation also auto-raises a linked corrective-action CAPA;
- * Minor violations are strike-only.
+ * Minor violations are strike-only. Every recorded violation auto-notifies the
+ * vendor over Communications (§31).
  */
 class TpvViolationService
 {
-    public function __construct(private VendorService $vendors, private TpvCapaService $capas) {}
+    public function __construct(
+        private VendorService $vendors,
+        private TpvCapaService $capas,
+        private TpvCommunicationService $comms,
+    ) {}
 
     public function list(int $tenantId, array $filters = [])
     {
@@ -50,6 +55,7 @@ class TpvViolationService
         ]);
 
         $this->autoRaiseCapa($v);
+        $this->comms->onViolationRecorded($v);
 
         return $v->load('vendor:id,company_name,vendor_code,status');
     }

@@ -16,11 +16,14 @@ use Illuminate\Support\Facades\Log;
  * Every NCR auto-raises a linked CAPA on creation (the corrective-action tracker
  * for the nonconformity), so an NCR is never an untracked promise — this is also
  * how an inspection finding gets a CAPA, since escalateToNcr() routes through
- * create() here.
+ * create() here — and auto-notifies the vendor over Communications (§31).
  */
 class TpvNcrService
 {
-    public function __construct(private TpvCapaService $capas) {}
+    public function __construct(
+        private TpvCapaService $capas,
+        private TpvCommunicationService $comms,
+    ) {}
 
     public function list(int $tenantId, array $filters = [])
     {
@@ -47,6 +50,7 @@ class TpvNcrService
         ]);
 
         $this->autoRaiseCapa($ncr);
+        $this->comms->onNcrRaised($ncr);
 
         return $ncr->load('vendor:id,company_name,vendor_code', 'responsible:id,name');
     }

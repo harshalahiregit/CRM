@@ -188,6 +188,79 @@ class TpvCommunicationService
         return $log->load('vendor:id,company_name,vendor_code');
     }
 
+    /* ── Automatic, event-driven dispatch (§31) ─────────────────────────────
+     *
+     * Push counterparts to the pull-based alerts() feed: when a governance event
+     * fires, the vendor is emailed immediately rather than waiting for someone to
+     * open the Communications Centre and hit Send. Best-effort — see autoDispatch.
+     */
+
+    /** An NCR was raised against the vendor — tell them to act. */
+    public function onNcrRaised(TpvNcr $ncr): void
+    {
+        $vendor = $ncr->vendor ?: Vendor::find($ncr->vendor_id);
+        if (! $vendor) {
+            return;
+        }
+        $by = $ncr->due_date ? ' by '.$ncr->due_date->toFormattedDateString() : '';
+        $this->autoDispatch($vendor, 'ncr_raised',
+            "Non-conformance {$ncr->reference} raised",
+            "Dear {$vendor->company_name},\n\n".
+            "A non-conformance ({$ncr->reference})".($ncr->title ? " — \"{$ncr->title}\"" : '').
+            " has been raised against your engagement. Please review it and submit your corrective action{$by}.\n\n".
+            "Regards,\nTPV Vendor Management Team");
+    }
+
+    /** A violation was recorded against the vendor — tell them to respond. */
+    public function onViolationRecorded(TpvVendorViolation $violation): void
+    {
+        $vendor = $violation->vendor ?: Vendor::find($violation->vendor_id);
+        if (! $vendor) {
+            return;
+        }
+        $this->autoDispatch($vendor, 'violation_recorded',
+            "Violation {$violation->reference} recorded",
+            "Dear {$vendor->company_name},\n\n".
+            "A {$violation->severity} violation ({$violation->type}) has been recorded against you (ref {$violation->reference}). ".
+            "Please review the details in your portal and respond.\n\n".
+            "Regards,\nTPV Vendor Management Team");
+    }
+
+    /**
+     * Best-effort email for an automatic event. Honours the auto_dispatch toggle,
+     * never throws (a comms failure must not roll back the event that triggered
+     * it), emails only when the vendor has an address, and records every attempt
+     * (sent / failed / skipped) in the notification log for the audit trail.
+     */
+    private function autoDispatch(Vendor $vendor, string $event, string $subject, string $body): void
+    {
+        if (! config('tpv.communications.auto_dispatch', true)) {
+            return;
+        }
+
+        $recipient = $vendor->email ?? $vendor->user?->email;
+        $status = 'skipped';
+        if (! empty($recipient)) {
+            $status = 'sent';
+            try {
+                $this->notifications->email($recipient, $subject, $body, ['vendor_id' => $vendor->id, 'event' => $event], $vendor->tenant_id);
+            } catch (\Throwable $e) {
+                $status = 'failed';
+            }
+        }
+
+        TpvNotificationLog::create([
+            'tenant_id' => $vendor->tenant_id,
+            'vendor_id' => $vendor->id,
+            'type'      => $event,
+            'channel'   => 'email',
+            'subject'   => $subject,
+            'recipient' => $recipient ?: null,
+            'status'    => $status,
+            'sent_at'   => $status === 'sent' ? now() : null,
+        ]);
+    }
+
     private function alert(string $kind, string $severity, Vendor $vendor, string $title, string $message, string $link, ?string $due): array
     {
         return [
