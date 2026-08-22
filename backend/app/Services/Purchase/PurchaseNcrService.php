@@ -15,11 +15,15 @@ use Illuminate\Support\Facades\Log;
  * Corrective Action → Verification → Closed.
  *
  * Every NCR auto-raises a linked CAPA on creation (also how an inspection finding
- * gets a CAPA, since escalateToNcr() routes through create() here).
+ * gets a CAPA, since escalateToNcr() routes through create() here) and auto-notifies
+ * the vendor over Communications (mirror of TPV §31).
  */
 class PurchaseNcrService
 {
-    public function __construct(private PurchaseCapaService $capas) {}
+    public function __construct(
+        private PurchaseCapaService $capas,
+        private PurchaseCommunicationService $comms,
+    ) {}
 
     public function list(int $tenantId, array $filters = [])
     {
@@ -46,6 +50,7 @@ class PurchaseNcrService
         ]);
 
         $this->autoRaiseCapa($ncr);
+        $this->comms->onNcrRaised($ncr);
 
         return $ncr->load('vendor:id,company_name,purchase_vendor_code', 'responsible:id,name');
     }
