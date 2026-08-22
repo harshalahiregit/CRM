@@ -89,34 +89,51 @@ class PurchaseVendorService
             throw new BusinessException('This vendor is already active.');
         }
 
-        $activatedAt = now();
-
         $vendor->update([
             'status'      => Status::ACTIVE,
-            'approved_at' => $activatedAt,
+            'approved_at' => now(),
             'approved_by' => $actor->id,
-            // A Temporary Vendor's access window opens NOW, not at registration.
-            // Standard vendors never receive an expiry. An already-set window is
-            // preserved so a re-activation can't silently extend access.
-            ...$this->openAccessWindow($vendor, $activatedAt),
         ]);
         $vendor->recordAudit('Purchase Vendor Activated', $actor, null, ['to' => Status::ACTIVE]);
         Log::channel('purchase')->info('Purchase vendor activated', [
             'purchase_vendor_id' => $vendor->id, 'actor_id' => $actor->id,
         ]);
 
-        // User provisioning: activate the portal account. Returns a temporary
-        // password ONLY when the system had to generate one — a vendor who chose
-        // their own password at registration gets null here and is never mailed
-        // a password.
-        $tempPassword = $this->portalAuth->provision($vendor, $actor);
-
-        // Activation notice. Fires from the activation service (never a
-        // controller), after commit, and at most once — the notification log
-        // suppresses duplicates. A delivery failure never rolls this back.
-        $this->notifier->onActivated($vendor->fresh(), $tempPassword);
+        // The FULL activation — access window, portal login and the once-only
+        // activation e-mail. Shared with updateStatus() so a direct status change
+        // to Active and an onboarding approval both activate for real.
+        $this->runActivation($vendor->fresh(), $actor);
 
         return $vendor->fresh();
+    }
+
+    /**
+     * The full activation side-effects, applied whenever a vendor first becomes
+     * Active — from approve(), from updateStatus(), or (via updateStatus) from
+     * PurchaseOnboardingService::approve. Mirrors VendorService's TPV activation:
+     *
+     *   • open a temporary vendor's access window (no-op for standard vendors and
+     *     for a window that is already open),
+     *   • stamp approved_at if it was never set (a direct status change has none),
+     *   • provision (or re-activate) the portal login — returns a one-time
+     *     password only when the system had to generate one,
+     *   • fire the logged, once-only activation e-mail.
+     *
+     * Without this the account would be Active in name only: the portal login
+     * unprovisioned and no real activation mail — the exact gap this pass closes.
+     */
+    private function runActivation(PurchaseVendor $vendor, User $actor): void
+    {
+        $patch = $this->openAccessWindow($vendor, now());
+        if ($vendor->approved_at === null) {
+            $patch['approved_at'] = now();
+        }
+        if ($patch !== []) {
+            $vendor->update($patch);
+        }
+
+        $tempPassword = $this->portalAuth->provision($vendor, $actor);
+        $this->notifier->onActivated($vendor->fresh(), $tempPassword);
     }
 
     /**
@@ -194,8 +211,18 @@ class PurchaseVendorService
             throw new BusinessException("Invalid vendor status: {$status}");
         }
 
+        $from = $vendor->status;
         $vendor->update(['status' => $status, 'notes' => $remarks ?? $vendor->notes]);
-        $vendor->recordAudit('Purchase Vendor Status Changed', $actor, $remarks, ['to' => $status]);
+        $vendor->recordAudit('Purchase Vendor Status Changed', $actor, $remarks, ['from' => $from, 'to' => $status]);
+
+        // A first-time activation runs the FULL activation (portal login + access
+        // window + once-only activation e-mail), not just a status flag — the same
+        // contract as VendorService::updateStatus on the TPV side. This is what
+        // PurchaseOnboardingService::approve routes through, so an approved vendor
+        // is genuinely activated rather than merely marked Active.
+        if ($status === Status::ACTIVE && $from !== Status::ACTIVE) {
+            $this->runActivation($vendor->fresh(), $actor);
+        }
 
         return $vendor->fresh();
     }

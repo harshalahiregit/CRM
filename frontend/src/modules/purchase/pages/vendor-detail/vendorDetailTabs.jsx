@@ -1,6 +1,6 @@
 ﻿import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Save, ExternalLink, ClipboardList, Rocket, Inbox, Plus, CalendarClock, CheckCircle2, Trash2 } from 'lucide-react'
+import { Save, ExternalLink, ClipboardList, Rocket, Inbox, Plus, CalendarClock, CheckCircle2, Trash2, Users, User, HardHat, FileText, Paperclip, StickyNote, ShieldCheck } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
 import { projectApi, PROJECT_STATUS } from '@/services/projectApi'
 import { helpdeskApi } from '@/services/helpdeskApi'
@@ -28,6 +28,11 @@ import { Overlay, ModalFooter, Field, TextInput, inputStyle } from '@/components
 import PurchaseVendorForm, { validatePurchaseVendor } from '@/modules/purchase/components/PurchaseVendorForm'
 import PurchaseVendorDocumentsReadOnly from '@/modules/purchase/components/PurchaseVendorDocumentsReadOnly'
 import PurchaseVendorContacts from '@/modules/purchase/components/PurchaseVendorContacts'
+// The customers panel is SHARED with the TPV workspace (same reasoning as Notes /
+// Reminders / Attachments): it takes the full `api` object and reads
+// api.vendors.customers, so passing purchaseApi points it at the Purchase link
+// column (clients.purchase_vendor_id). A data-source swap, not a fork.
+import { VendorCustomers } from '@/modules/tpv/components/VendorCustomersPanel'
 import { useVendorWorkspace } from './vendorWorkspaceContext'
 import VendorTasksPanel from '@/components/vendor/VendorTasksPanel'
 import {
@@ -198,6 +203,90 @@ export function ProfileTab() {
 export function ContactsTab() {
   const { vendor } = useVendorWorkspace()
   return <PurchaseVendorContacts vendorId={vendor.id} />
+}
+
+/**
+ * Overview — a live per-vendor dashboard: count cards (customers, contacts,
+ * workers, documents, attachments, notes) fetched from GET
+ * /purchase/vendors/{id}/overview, so the numbers always match the other tabs.
+ * The Purchase-side mirror of the TPV VendorOverview.
+ */
+function OverviewTab() {
+  const { vendor } = useVendorWorkspace()
+  const [data, setData] = useState(null)
+  const [err, setErr] = useState('')
+
+  useEffect(() => {
+    let alive = true
+    setData(null); setErr('')
+    purchaseApi.vendors.overview(vendor.id)
+      .then(d => { if (alive) setData(d) })
+      .catch(e => { if (alive) setErr(e?.response?.data?.message || 'Could not load the overview.') })
+    return () => { alive = false }
+  }, [vendor.id])
+
+  const c = data?.counts || {}
+  const cards = [
+    { label: 'Customers', value: c.customers, icon: Users },
+    { label: 'Contacts', value: c.contacts, icon: User },
+    { label: 'Workers', value: c.workers, icon: HardHat },
+    { label: 'Documents', value: c.documents, icon: FileText },
+    { label: 'Attachments', value: c.attachments, icon: Paperclip },
+    { label: 'Notes', value: c.notes, icon: StickyNote },
+  ]
+  const summary = [
+    ['Company', vendor.company_name],
+    ['Vendor Code', vendor.purchase_vendor_code],
+    ['Account Status', vendor.status_label || vendor.status],
+    ['Category', vendor.category || '—'],
+    ['Type', vendor.registration_type_label || vendor.vendor_type || '—'],
+    ['Created', vendor.created_at ? new Date(vendor.created_at).toLocaleDateString() : '—'],
+  ]
+
+  return (
+    <div style={{ display: 'grid', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12 }}>
+        {cards.map(card => (
+          <div key={card.label} className="card-3d" style={{ padding: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text-muted)' }}>{card.label}</span>
+              <card.icon size={16} style={{ color: '#a78bfa' }} />
+            </div>
+            <div style={{ fontSize: 26, fontWeight: 800, color: 'var(--text-h)', marginTop: 6 }}>
+              {data ? (card.value ?? 0) : '—'}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {err && <p style={{ color: '#ef4444', fontSize: 12.5, margin: 0 }}>{err}</p>}
+
+      <div className="card-3d" style={card}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+          <ShieldCheck size={16} style={{ color: '#a78bfa' }} />
+          <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-h)' }}>Vendor Summary</span>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 24px' }}>
+          {summary.map(([k, val]) => (
+            <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, borderBottom: '1px solid var(--border)', paddingBottom: 7 }}>
+              <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>{k}</span>
+              <span style={{ color: 'var(--text-h)', fontSize: 12.5, fontWeight: 600, textAlign: 'right' }}>{val || '—'}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Customer tab — customers directly linked to this Purchase vendor
+ * (clients.purchase_vendor_id). Reuses the shared VendorCustomers panel with the
+ * full purchaseApi, so Add creates a real Customer record on the Purchase link.
+ */
+function CustomerTab() {
+  const { vendor } = useVendorWorkspace()
+  return <VendorCustomers vendorId={vendor.id} vendorName={vendor.company_name} manage api={purchaseApi} />
 }
 
 export function OnboardingTab() {
@@ -1024,8 +1113,10 @@ function AppointmentModal({ vendor, onClose, onSaved }) {
 
 export const TAB_ELEMENTS = {
   // General
+  overview: <OverviewTab />,
   profile: <ProfileTab />,
   contacts: <ContactsTab />,
+  customer: <CustomerTab />,
   medical: <MedicalTab />,
   training: <TrainingTab />,
   onboarding: <OnboardingTab />,

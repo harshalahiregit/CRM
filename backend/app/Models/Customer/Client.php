@@ -20,7 +20,7 @@ class Client extends Model
 
     protected $fillable = [
         'tenant_id', 'company', 'gst_number', 'phone', 'website', 'parent_company', 'parent_client_id',
-        'opening_balance', 'opening_balance_date', 'vendor_id', 'lead_id',
+        'opening_balance', 'opening_balance_date', 'vendor_id', 'purchase_vendor_id', 'lead_id',
         'address', 'city', 'state', 'zip', 'country',
         'map_address', 'latitude', 'longitude',
         'billing_street', 'billing_city', 'billing_state', 'billing_zip', 'billing_country',
