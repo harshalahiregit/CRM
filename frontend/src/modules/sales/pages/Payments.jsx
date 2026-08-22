@@ -155,7 +155,7 @@ export default function Payments() {
             search={search} onSearch={setSearch} searchPlaceholder="Search by invoice or client…"
             count={matched} total={data.length} unit="payment"
             pageSize={pageSize} onPageSize={setPageSize} pager={pager} onRefresh={load}
-            onExport={() => exportSalesList('payments', { search: search || undefined })
+            onExport={() => exportSalesList('payments', { search: search || undefined, mode: filterMode !== 'All' ? filterMode : undefined })
               .catch(e => showToast(e.message, 'error'))}
             className="flex-1"
           />

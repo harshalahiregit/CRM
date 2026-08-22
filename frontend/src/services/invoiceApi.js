@@ -36,9 +36,22 @@ export const invoiceApi = {
 
 // Payments are derived from invoices — no dedicated backend resource yet.
 export const paymentApi = {
-  list: (params = {}) =>
+  /**
+   * There is no payments index endpoint — payments are read out of the invoice
+   * list. `mode` was being forwarded to /sales/invoices, whose controller reads
+   * only status and client_id, so it was silently dropped and the Payments
+   * screen's mode chips returned the identical unfiltered list every time.
+   *
+   * Every payment is already in hand once the invoices are flattened, so the
+   * filter belongs here rather than in a query param nothing reads.
+   */
+  list: ({ mode, ...params } = {}) =>
     api.get('/sales/invoices', { params: { ...params, include_payments: true } })
-      .then(r => r.data.flatMap(inv => (inv.payments || []).map(p => ({ ...p, invoice_number: inv.number, client: inv.client_id }))))
+      .then(r => {
+        const rows = r.data.flatMap(inv =>
+          (inv.payments || []).map(p => ({ ...p, invoice_number: inv.number, client: inv.client_id })))
+        return mode ? rows.filter(p => p.mode === mode) : rows
+      })
       .catch(handleErr),
 }
 

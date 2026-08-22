@@ -27,7 +27,7 @@ class SalesExportController extends Controller
         $rows = $this->exports->rows(
             $type,
             $request->user()->tenant_id,
-            $request->only('status', 'type', 'search'),
+            $request->only('status', 'type', 'search', 'status_id', 'mode'),
         );
 
         return Spreadsheet::download($rows, $this->exports->filename($type, $format), $format);

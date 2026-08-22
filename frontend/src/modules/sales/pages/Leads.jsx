@@ -248,7 +248,7 @@ export default function Leads() {
             search={search} onSearch={setSearch} searchPlaceholder="Search leads…"
             count={matched} total={data.length} unit="lead"
             pageSize={pageSize} onPageSize={setPageSize} pager={pager} onRefresh={load}
-            onExport={() => exportSalesList('leads', { search: search || undefined })
+            onExport={() => exportSalesList('leads', { search: search || undefined, status_id: filter !== 'all' ? filter : undefined })
               .catch(e => showToast(e.message, 'error'))}
           />
         </div>

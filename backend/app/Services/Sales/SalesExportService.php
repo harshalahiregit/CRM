@@ -153,11 +153,43 @@ class SalesExportService
         // Only apply a filter the target actually has, so one shared exporter can
         // serve lists with different column sets.
         $table = (new $model)->getTable();
+
         if (! empty($filters['status']) && $filters['status'] !== 'All' && Schema::hasColumn($table, 'status')) {
-            $query->where('status', $filters['status']);
+            // "Expired" is derived, never stored. The Estimates screen computes it
+            // as Sent + past its valid_until, and no code ever writes that status,
+            // so matching the literal string exported an empty file for the tab
+            // the user was looking at. Reproduce the screen's own rule instead.
+            if ($filters['status'] === 'Expired' && Schema::hasColumn($table, 'valid_until')) {
+                $query->where(function ($q) use ($table) {
+                    $q->where('status', 'Expired')
+                      ->orWhere(fn ($e) => $e->where('status', 'Sent')
+                                             ->whereDate('valid_until', '<', now()->toDateString()));
+                });
+            } else {
+                $query->where('status', $filters['status']);
+
+                // The same screens hide expired estimates from the plain "Sent"
+                // tab, so an export of Sent must hide them too or the file
+                // disagrees with the list it came from.
+                if ($filters['status'] === 'Sent' && Schema::hasColumn($table, 'valid_until')) {
+                    $query->where(fn ($q) => $q->whereNull('valid_until')
+                                               ->orWhereDate('valid_until', '>=', now()->toDateString()));
+                }
+            }
         }
+
         if (! empty($filters['type']) && Schema::hasColumn($table, 'estimate_type')) {
             $query->where('estimate_type', $filters['type']);
+        }
+
+        // Leads filter by pipeline status and Payments by mode. Both were
+        // narrowing the screen and neither was reaching the exporter, so the
+        // file held every row regardless of the tab being viewed.
+        if (! empty($filters['status_id']) && Schema::hasColumn($table, 'status_id')) {
+            $query->where('status_id', $filters['status_id']);
+        }
+        if (! empty($filters['mode']) && $filters['mode'] !== 'All' && Schema::hasColumn($table, 'mode')) {
+            $query->where('mode', $filters['mode']);
         }
         if (! empty($filters['search'])) {
             $term = '%' . $filters['search'] . '%';
