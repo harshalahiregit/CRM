@@ -7,10 +7,14 @@ use App\Http\Requests\Purchase\StorePurchaseVendorRequest;
 use App\Http\Requests\Purchase\UpdatePurchaseVendorRequest;
 use App\Http\Requests\Vendor\StoreVendorNoteRequest;
 use App\Http\Requests\Vendor\StoreVendorReminderRequest;
+use App\Models\Customer\Client;
+use App\Models\Purchase\PurchaseContact;
 use App\Models\Purchase\PurchaseDebitNote;
+use App\Models\Purchase\PurchaseDocument;
 use App\Models\Purchase\PurchaseInvoice;
 use App\Models\Purchase\PurchaseInvoicePayment;
 use App\Models\Purchase\PurchaseVendor;
+use App\Models\Purchase\PurchaseWorker;
 use App\Models\Sales\Appointment;
 use App\Models\Sales\Reminder;
 use App\Models\Shared\Attachment;
@@ -94,6 +98,80 @@ class PurchaseVendorController extends Controller
         $vendor->setAttribute('login_stats', $this->vendors->loginStats($purchaseVendor));
 
         return response()->json($vendor);
+    }
+
+    /* ── Overview dashboard ─────────────────────────────────────────────────
+     *
+     * Live per-vendor summary counts for the workspace Overview tab, the
+     * Purchase-side mirror of VendorController::overview. Each count matches
+     * exactly what its own tab lists, so the numbers never disagree.
+     */
+    public function overview(Request $request, PurchaseVendor $purchaseVendor)
+    {
+        $this->assertTenant($request, $purchaseVendor);
+        $tenantId = (int) $purchaseVendor->tenant_id;
+
+        return response()->json([
+            'status'       => $purchaseVendor->status,
+            'status_label' => $purchaseVendor->status_label,
+            'is_active'    => $purchaseVendor->status === PurchaseVendorStatus::ACTIVE,
+            'vendor_code'  => $purchaseVendor->purchase_vendor_code,
+            'company_name' => $purchaseVendor->company_name,
+            'counts' => [
+                'customers'   => $purchaseVendor->customers()->count(),
+                'contacts'    => PurchaseContact::where('purchase_vendor_id', $purchaseVendor->id)->count(),
+                'workers'     => PurchaseWorker::where('purchase_vendor_id', $purchaseVendor->id)->count(),
+                'notes'       => count($this->notes->listForSubject(PurchaseVendor::class, $purchaseVendor->id, $tenantId)),
+                'attachments' => Attachment::where('attachable_type', PurchaseVendor::class)->where('attachable_id', $purchaseVendor->id)->count(),
+                'documents'   => PurchaseDocument::where('purchase_vendor_id', $purchaseVendor->id)->count(),
+            ],
+        ]);
+    }
+
+    /* ── Customers directly linked to this vendor (clients.purchase_vendor_id) ─
+     *
+     * The Purchase-side mirror of VendorController::customers/storeCustomer.
+     * Reuses the Customer module's Client model on its OWN link column, so a
+     * client can belong to a TPV vendor, a Purchase vendor, both or neither.
+     */
+    public function customers(Request $request, PurchaseVendor $purchaseVendor)
+    {
+        $this->assertTenant($request, $purchaseVendor);
+
+        return response()->json(
+            $purchaseVendor->customers()
+                ->orderByDesc('id')
+                ->get(['id', 'company', 'phone', 'website', 'gst_number', 'city', 'state', 'country', 'active', 'created_at'])
+        );
+    }
+
+    public function storeCustomer(Request $request, PurchaseVendor $purchaseVendor)
+    {
+        $this->assertTenant($request, $purchaseVendor);
+
+        $data = $request->validate([
+            'company'    => 'required|string|max:191',
+            'phone'      => 'nullable|string|max:40',
+            'website'    => 'nullable|string|max:191',
+            'gst_number' => 'nullable|string|max:40',
+            'address'    => 'nullable|string|max:255',
+            'city'       => 'nullable|string|max:120',
+            'state'      => 'nullable|string|max:120',
+            'country'    => 'nullable|string|max:120',
+        ]);
+
+        // Reuse the Customer module's Client model. tenant_id is set explicitly
+        // from the caller (like every other vendor-scoped create here) rather than
+        // relying on the BelongsToTenant auto-stamp, so it never depends on ambient
+        // auth() state.
+        $client = Client::create(array_merge($data, [
+            'tenant_id'          => (int) $request->user()->tenant_id,
+            'purchase_vendor_id' => $purchaseVendor->id,
+            'added_by'           => (int) $request->user()->id,
+            'active'             => true,
+        ]));
+
+        return response()->json($client, 201);
     }
 
     /** Resend the activation e-mail. Active vendors only; every send is logged. */

@@ -167,6 +167,16 @@ export const purchaseApi = {
     delete:    (id)          => api.delete(`/purchase/vendors/${id}`).then(r => r.data),
 
     // ── Vendor detail workspace tabs ─────────────────────────────────────
+    // Live per-vendor Overview counts (mirror of tpvApi.vendors.overview).
+    overview:  (id) => api.get(`/purchase/vendors/${id}/overview`).then(r => r.data),
+
+    // Customers directly linked to this vendor via clients.purchase_vendor_id
+    // (mirror of tpvApi.vendors.customers). Add creates a real Customer record.
+    customers: {
+      list:   (vid)       => api.get(`/purchase/vendors/${vid}/customers`).then(r => r.data),
+      create: (vid, data) => api.post(`/purchase/vendors/${vid}/customers`, data).then(r => r.data),
+    },
+
     // Commercial: native. Every purchase document already keys to
     // purchase_vendor_id, so payments and the statement need no link step.
     payments:  (id) => api.get(`/purchase/vendors/${id}/payments`).then(r => r.data),

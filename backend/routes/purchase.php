@@ -153,6 +153,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::post('/vendors',                          [PurchaseVendorController::class, 'store']);
     Route::get('/vendors/{purchaseVendor}',          [PurchaseVendorController::class, 'show'])->whereNumber('purchaseVendor');
     Route::get('/vendors/{purchaseVendor}/tasks',    [PurchaseVendorController::class, 'tasks'])->whereNumber('purchaseVendor');
+    // Workspace Overview dashboard (live per-vendor counts) + directly-linked customers.
+    Route::get('/vendors/{purchaseVendor}/overview',  [PurchaseVendorController::class, 'overview'])->whereNumber('purchaseVendor');
+    Route::get('/vendors/{purchaseVendor}/customers', [PurchaseVendorController::class, 'customers'])->whereNumber('purchaseVendor');
+    Route::post('/vendors/{purchaseVendor}/customers', [PurchaseVendorController::class, 'storeCustomer'])->whereNumber('purchaseVendor');
     Route::put('/vendors/{purchaseVendor}',          [PurchaseVendorController::class, 'update'])->whereNumber('purchaseVendor');
     Route::patch('/vendors/{purchaseVendor}/status', [PurchaseVendorController::class, 'updateStatus'])->whereNumber('purchaseVendor');
     Route::delete('/vendors/{purchaseVendor}',       [PurchaseVendorController::class, 'destroy'])->whereNumber('purchaseVendor');
