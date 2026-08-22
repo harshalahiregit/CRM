@@ -1010,6 +1010,14 @@ function RemindersTab({ id, reminders, reload, toast }) {
 
 function AttachmentsTab({ id, files, reload, toast }) {
   const ref = useRef(null)
+
+  // Attachments are on a private disk, so opening one is an authenticated
+  // request rather than a link. A failure has to be surfaced — a silent one
+  // looks identical to a browser blocking the download.
+  const dl = async (f) => {
+    try { await customerApi.attachments.download(id, f.id, f.file_name) }
+    catch (e) { toast.error(e.message || 'Could not download that file.') }
+  }
   const upload = async (e) => {
     const file = e.target.files?.[0]; e.target.value = ''
     if (!file) return
@@ -1027,13 +1035,15 @@ function AttachmentsTab({ id, files, reload, toast }) {
         <div className="grid md:grid-cols-2 gap-3">
           {files.map(f => (
             <div key={f.id} className="card-3d flex items-center justify-between" style={{ padding: '14px' }}>
-              <a href={f.url} target="_blank" rel="noreferrer" className="flex items-center gap-3 min-w-0">
+              {/* Not an <a href>: the file sits on a private disk, so the
+                  request has to carry the caller's token. */}
+              <button type="button" onClick={() => dl(f)} className="flex items-center gap-3 min-w-0 text-left">
                 <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.12)' }}><FileText size={14} style={{ color: 'var(--accent)' }} /></div>
                 <div className="min-w-0">
                   <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-h)' }}>{f.file_name}</p>
                   <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{(f.file_size / 1024).toFixed(0)} KB · {d10(f.created_at)}</p>
                 </div>
-              </a>
+              </button>
               <ConfirmIconButton onConfirm={() => del(f.id)} title="Delete file?" message="This attachment will be permanently removed." />
             </div>
           ))}

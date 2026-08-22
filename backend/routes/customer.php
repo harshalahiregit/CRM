@@ -154,6 +154,8 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('customers')->gr
     // Attachments
     Route::get('/{client}/attachments',                     [ClientAttachmentController::class, 'index']);
     Route::post('/{client}/attachments',                    [ClientAttachmentController::class, 'store']);
+    // Private disk — the only way to read an attachment, and it is checked.
+    Route::get('/{client}/attachments/{attachment}/download', [ClientAttachmentController::class, 'download']);
     Route::delete('/{client}/attachments/{attachment}',     [ClientAttachmentController::class, 'destroy']);
 
     // Address book

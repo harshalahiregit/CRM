@@ -16,8 +16,19 @@ class ClientAttachment extends Model
 
     protected $appends = ['url'];
 
+    /**
+     * The authenticated download endpoint, not a storage URL.
+     *
+     * Storage::url() only means anything on a public disk, and these files are
+     * deliberately not on one. Returning a path the client must fetch WITH its
+     * token keeps the single access check in the controller — an accessor that
+     * hands out a bypass is how the files became world-readable in the first
+     * place.
+     */
     public function getUrlAttribute(): ?string
     {
-        return $this->file_path ? Storage::url($this->file_path) : null;
+        return $this->file_path
+            ? "/api/customers/{$this->client_id}/attachments/{$this->id}/download"
+            : null;
     }
 }

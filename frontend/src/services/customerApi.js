@@ -150,6 +150,20 @@ export const customerApi = {
       return api.post(`/customers/${id}/attachments`, fd, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data).catch(handleErr)
     },
     remove: (id, attId) => api.delete(`/customers/${id}/attachments/${attId}`).then(r => r.data).catch(handleErr),
+    // Attachments live on a private disk, so there is no URL a browser can
+    // simply follow — the request has to carry the caller's token. Fetched as
+    // a blob and handed to the browser as a download.
+    download: (id, attId, filename) =>
+      api.get(`/customers/${id}/attachments/${attId}/download`, { responseType: 'blob' })
+        .then((r) => {
+          const href = URL.createObjectURL(r.data)
+          const a = Object.assign(document.createElement('a'), { href, download: filename || 'download' })
+          document.body.appendChild(a); a.click(); a.remove()
+          // Revoke on the next tick — revoking synchronously can cancel the
+          // download in some browsers before it has started reading.
+          setTimeout(() => URL.revokeObjectURL(href), 1000)
+        })
+        .catch(handleErr),
   },
 
   // Address Book (customer-scoped shipping addresses)
