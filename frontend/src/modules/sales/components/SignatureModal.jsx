@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { X, PenLine, Type, Upload, Check } from 'lucide-react'
+import { useToast } from '@/components/ui/Toast'
 
 const TABS = [
   { key: 'draw', label: 'Draw', icon: PenLine },
@@ -14,6 +15,7 @@ const TABS = [
  * typed signatures rendered from the name, which we still rasterize).
  */
 export default function SignatureModal({ title = 'Sign Contract', defaultName = '', onSign, onClose, busy = false }) {
+  const toast = useToast()
   const [tab, setTab] = useState('draw')
   const [name, setName] = useState(defaultName)
   const [email, setEmail] = useState('')
@@ -52,7 +54,7 @@ export default function SignatureModal({ title = 'Sign Contract', defaultName = 
   const onFile = (e) => {
     const f = e.target.files?.[0]
     if (!f) return
-    if (f.size > 1024 * 1024) return alert('Signature image must be under 1MB')
+    if (f.size > 1024 * 1024) return toast.error('Signature image must be under 1MB')
     const reader = new FileReader()
     reader.onload = () => setUploaded(reader.result)
     reader.readAsDataURL(f)
@@ -70,16 +72,16 @@ export default function SignatureModal({ title = 'Sign Contract', defaultName = 
   }
 
   const submit = () => {
-    if (!name.trim()) return alert('Please enter the signer name')
+    if (!name.trim()) return toast.error('Please enter the signer name')
     let image = null
     if (tab === 'draw') {
-      if (!hasDrawn) return alert('Please draw your signature')
+      if (!hasDrawn) return toast.error('Please draw your signature')
       image = canvasRef.current.toDataURL('image/png')
     } else if (tab === 'type') {
-      if (!(typed || name).trim()) return alert('Type your signature')
+      if (!(typed || name).trim()) return toast.error('Type your signature')
       image = typedToImage()
     } else {
-      if (!uploaded) return alert('Upload a signature image')
+      if (!uploaded) return toast.error('Upload a signature image')
       image = uploaded
     }
     onSign({ method: tab, image, name: name.trim(), email: email.trim() || undefined })

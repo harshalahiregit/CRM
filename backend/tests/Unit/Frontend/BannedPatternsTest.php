@@ -64,8 +64,6 @@ class BannedPatternsTest extends TestCase
         'modules/purchase/pages/PurchaseViolations.jsx' => 1,
         'modules/purchase/pages/vendor-detail/PurchaseVendorDetailLayout.jsx' => 2,
         'modules/purchase/pages/vendor-detail/vendorDetailTabs.jsx' => 2,
-        'modules/sales/components/CoverEditor.jsx' => 2,
-        'modules/sales/components/SignatureModal.jsx' => 5,
         'modules/tasks/components/VendorEmployeeCascadePicker.jsx' => 2,
         'modules/tpv/components/TpvVendorContacts.jsx' => 7,
         'modules/tpv/components/TpvVendorDocuments.jsx' => 3,
@@ -95,7 +93,6 @@ class BannedPatternsTest extends TestCase
         ],
         'window.confirm' => [
         'lib/confirmClose.jsx' => 1,
-        'modules/customer/pages/Customers.jsx' => 1,
         'modules/hr/components/ExitQuestionnaires.jsx' => 1,
         'modules/hr/components/QuizBuilder.jsx' => 2,
         'modules/hr/components/QuizRunner.jsx' => 1,

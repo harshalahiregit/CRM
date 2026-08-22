@@ -1,6 +1,7 @@
 import { useRef } from 'react'
 import { Image as ImageIcon, X, LayoutTemplate } from 'lucide-react'
 import RichTextEditor from '@/components/ui/RichTextEditor'
+import { useToast } from '@/components/ui/Toast'
 
 /**
  * Cover page (Page 1) editor — a main image, a title and a heading shown
@@ -14,6 +15,7 @@ const BLANK = { enabled: true, image: '', title: '', heading: '', body: '' }
 
 export default function CoverEditor({ value, onChange }) {
   const cover = value || BLANK
+  const toast = useToast()
   const fileRef = useRef(null)
   const set = (patch) => onChange({ ...cover, ...patch })
 
@@ -21,8 +23,8 @@ export default function CoverEditor({ value, onChange }) {
     const f = e.target.files?.[0]
     e.target.value = ''
     if (!f) return
-    if (!f.type.startsWith('image/')) return alert('Only images are allowed')
-    if (f.size > MAX_COVER_IMAGE) return alert('Image too large — max 1 MB (compress it first)')
+    if (!f.type.startsWith('image/')) return toast.error('Only images are allowed')
+    if (f.size > MAX_COVER_IMAGE) return toast.error('Image too large — max 1 MB (compress it first)')
     const r = new FileReader()
     r.onload = () => set({ image: r.result })
     r.readAsDataURL(f)

@@ -64,6 +64,7 @@ export default function Customers() {
   const [fieldsMgr, setFieldsMgr] = useState(false)
 
   const [confirmDel, setConfirmDel] = useState(null)
+  const [importPreview, setImportPreview] = useState(null)  // { file, preview } awaiting confirmation
   const [exportOpen, setExportOpen] = useState(false)
   const [sampleOpen, setSampleOpen] = useState(false)
 
@@ -224,12 +225,29 @@ export default function Customers() {
     } catch (e) { toast.error(e.message) }
   }
 
+  // Import is two passes: a dry run to show what would happen, then the real
+  // one only if the user accepts it. The dry run's file is held in state
+  // because ConfirmDialog resolves through a re-render, not a return value.
   const onImportFile = async (e) => {
     const file = e.target.files?.[0]; e.target.value = ''
     if (!file) return
     try {
       const preview = await customerApi.import(file, true)
-      if (!window.confirm(`Preview: ${preview.imported} rows will import, ${preview.skipped} skipped.${preview.errors?.length ? '\n\n' + preview.errors.slice(0, 5).join('\n') : ''}\n\nProceed with import?`)) return
+      // Nothing importable — say why rather than offering an "Import 0" button.
+      if (!preview.imported) {
+        toast.error(preview.errors?.length
+          ? `No rows could be imported. First problem: ${preview.errors[0]}`
+          : 'No rows could be imported from that file.')
+        return
+      }
+      setImportPreview({ file, preview })
+    } catch (err) { toast.error(err.message) }
+  }
+
+  const doImport = async () => {
+    const { file } = importPreview
+    setImportPreview(null)
+    try {
       const res = await customerApi.import(file, false)
       toast.success(`Imported ${res.imported} customer(s)${res.skipped ? `, ${res.skipped} skipped` : ''}`)
       load(); loadStats()
@@ -714,6 +732,38 @@ export default function Customers() {
           confirmLabel="Delete"
           onConfirm={doDelete}
           onCancel={() => setConfirmDel(null)}
+        />
+      )}
+
+      {importPreview && (
+        <ConfirmDialog
+          title="Import these customers?"
+          tone="primary"
+          confirmLabel={`Import ${importPreview.preview.imported}`}
+          cancelLabel="Don't import"
+          message={<>
+            <span className="block">
+              {importPreview.preview.imported} row{importPreview.preview.imported === 1 ? '' : 's'} will be imported
+              {importPreview.preview.skipped ? `, ${importPreview.preview.skipped} skipped` : ''}.
+            </span>
+            {importPreview.preview.errors?.length > 0 && (
+              <span className="block mt-3">
+                <span className="block font-semibold" style={{ color: '#f59e0b' }}>
+                  Rows that will be skipped:
+                </span>
+                {importPreview.preview.errors.slice(0, 5).map((err, i) => (
+                  <span key={i} className="block mt-0.5">• {err}</span>
+                ))}
+                {importPreview.preview.errors.length > 5 && (
+                  <span className="block mt-0.5">
+                    …and {importPreview.preview.errors.length - 5} more
+                  </span>
+                )}
+              </span>
+            )}
+          </>}
+          onConfirm={doImport}
+          onCancel={() => setImportPreview(null)}
         />
       )}
 
