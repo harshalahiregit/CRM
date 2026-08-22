@@ -252,6 +252,27 @@ is harmless but signals nothing. If mail must send, `QUEUE_CONNECTION` has to be
 
 **`build-deploy-package.ps1` is PowerShell.** Use the bash version in §3.
 
+**The deploy clones origin/master, so PUSH FIRST and CONFIRM it landed.**
+Lost this race on 2026-08-22: the push and the deploy were started close
+together, the clone won, and live got a teammate's commits without any of the
+fixes that were supposed to ship with them — including the one that would have
+prevented the migration failure that then aborted the deploy.
+
+Verify before deploying, never assume:
+
+```bash
+git rev-parse --short HEAD                        # on your machine
+git ls-remote origin master | cut -c1-7           # on the remote — must match
+```
+
+And have the deploy prove what it cloned rather than trusting it:
+
+```bash
+cd /tmp/sangoe-master && git log -1 --oneline     # must be the SHA you pushed
+```
+
+If they differ, stop — everything after that point deploys the wrong code.
+
 **A 200 from curl proves nothing about a SPA route.** The server returns
 `index.html` for every path and React Router decides 404 in the browser, so
 `curl -o /dev/null -w '%{http_code}'` reports 200 for a route that does not
