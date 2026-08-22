@@ -282,6 +282,15 @@ export const purchaseApi = {
     reject:  (onboardingId, stage, remarks)      => api.post(`/purchase/onboarding/${onboardingId}/approvals/${stage}/reject`, { remarks }).then(r => r.data),
   },
 
+  // ── Central approval register (§12, /purchase/approval-requests) ────────
+  // The generic register of ~18 governance approval types. Distinct from the
+  // onboarding stage chain. Deciding is admin-only server-side.
+  approvalRequests: {
+    list:   (params = {}) => api.get('/purchase/approval-requests', { params }).then(r => r.data),
+    create: (data)        => api.post('/purchase/approval-requests', data).then(r => r.data),
+    decide: (id, data)    => api.post(`/purchase/approval-requests/${id}/decide`, data).then(r => r.data),
+  },
+
   // ── Kickoff meetings (Purchase-owned engine, /purchase/kickoff) ─────────
   // Independent of the shared/TPV kickoff engine — hits only /api/purchase/kickoff.
   kickoff: {
