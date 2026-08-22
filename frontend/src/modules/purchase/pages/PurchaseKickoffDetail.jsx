@@ -8,6 +8,7 @@ import {
   ListOrdered, LayoutTemplate, CopyPlus,
 } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
+import { useToast } from '@/components/ui/Toast'
 import {
   PK_STATUS, pkStatusCfg, pkNextStatuses, pkModeLabel, fmtDateTime, fmtDate,
   PK_MOM_STATUS, pkMomCfg, pkMomDistributable, pkMomAwaitingDecision,
@@ -974,6 +975,7 @@ function DecisionRegisterCard({ m, onError }) {
 
 /* ── Previous-MOM continuity card (Meeting.docx §11) ─────────────────────────── */
 function PreviousSummaryCard({ m, onError, onChanged }) {
+  const toast = useToast()
   const [sum, setSum] = useState(undefined)
   const [busy, setBusy] = useState(false)
 
@@ -988,7 +990,7 @@ function PreviousSummaryCard({ m, onError, onChanged }) {
     try {
       const r = await purchaseApi.kickoff.carryForward(m.id)
       await onChanged()
-      alert(`Carried forward ${r.actions} action(s) and ${r.issues} issue(s) from ${r.from}.`)
+      toast.success(`Carried forward ${r.actions} action(s) and ${r.issues} issue(s) from ${r.from}.`)
     } catch (e) { onError(e?.response?.data?.message || 'Could not carry forward.') }
     finally { setBusy(false) }
   }
