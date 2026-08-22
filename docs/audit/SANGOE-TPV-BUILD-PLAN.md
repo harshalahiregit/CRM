@@ -319,5 +319,14 @@ live vendor-status template, AI assist. Kickoff is now "Meetings → New → Typ
   Performance Index page (band distribution + 6-column heatmap + expandable per-dimension detail). Verified via
   rolled-back tinker (6 dims, weights sum 1.0, quality 78 / conduct 88 deductions, overall 93/A, worst-first
   roster) + green build. **Parity mirror #9.**
-- [ ] Remaining Purchase mirrors: Renewal · Offboarding · PPE-at-gate. (Purchase has its own gate/PPE/worker
-  stack, so those mirror onto `purchase_*` equivalents.)
+- [x] **§28 Renewal & §29 Offboarding — Purchase mirror** — `purchase_renewals` (PREN-YYYY-###,
+  PurchaseRenewal + service + controller; `assess()` snapshots the VPI score/band + open NCR/CAPA/violation
+  counts, `decide()` applies Renew/Extend→contract end_date, Suspend→On_Hold, admin-gated) and
+  `purchase_offboardings` (POFF-YYYY-###, 10-item supplier-closure checklist, complete-guard requires all done,
+  final status Closed/Replaced→Inactive · Suspended→On_Hold · Blacklisted→Blacklisted via PurchaseVendorService).
+  Routes `/purchase/renewals/*` + `/purchase/offboardings/*`, purchaseApi `renewals`/`offboardings`, and Renewals
+  (assessment preview + decide modal) + Offboarding (expandable checklist + complete) pages in the Purchase nav.
+  Verified via rolled-back tinker (PREN assess vpi 100/A + decide, POFF 10-item complete-guard then complete →
+  vendor Inactive) + green build. **Parity mirrors #10 & #11.**
+- [ ] Remaining Purchase mirror: PPE-at-gate (Purchase has its own gate/PPE/worker stack). Purchase governance
+  spine is otherwise at full TPV parity.
