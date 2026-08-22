@@ -67,7 +67,7 @@ class MigrationIdentifierLengthTest extends TestCase
                 // Only unnamed index/unique calls derive a name — a second
                 // argument means the author chose one, and it is used verbatim.
                 foreach ([['index', '_index'], ['unique', '_unique']] as [$method, $suffix]) {
-                    if (! preg_match('/\$table->'.$method.'\(\[([^\]]+)\]\s*\)/', $line, $m)) {
+                    if (! preg_match('/\$\w+->'.$method.'\(\[([^\]]+)\]\s*\)/', $line, $m)) {
                         continue;
                     }
 
