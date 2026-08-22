@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
-import { Landmark, AlertTriangle, ArrowRight } from 'lucide-react'
+import { Landmark, AlertTriangle } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 
 /**
@@ -42,13 +41,15 @@ export default function EmployeeLoanCard({ employeeId }) {
     // The spacing lives here, not on the host: the card renders null for most
     // employees, and a margin on the next heading would leave a gap for nothing.
     <div className="card-3d mb-5" style={{ padding:'14px 16px' }}>
+      {/* No "Open Loans" link: /app/hr/loans has no route and no page, so it
+          landed the user on the full-screen 404 and out of the app shell. The
+          figures below are the whole summary, so nothing is lost by removing
+          it. Restore the link when modules/hr/pages/Loans.jsx exists — and have
+          it read ?employee= via useSearchParams, or the param is dropped. */}
       <div className="flex items-center justify-between gap-2 mb-3">
         <p className="text-xs font-black flex items-center gap-1.5" style={{ color:'var(--text-h)' }}>
           <Landmark size={14} style={{ color:'#f59e0b' }}/> Loans &amp; Advances
         </p>
-        <Link to={`/app/hr/loans?employee=${employeeId}`} className="text-[10px] font-bold inline-flex items-center gap-1" style={{ color:'#a78bfa' }}>
-          Open Loans <ArrowRight size={11}/>
-        </Link>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">

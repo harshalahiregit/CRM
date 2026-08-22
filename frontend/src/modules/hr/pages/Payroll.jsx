@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Link } from 'react-router-dom'
 import { useTheme } from '@/context/ThemeContext'
 import {
   Wallet, Coins, Search, Plus, Pencil, X, Power, Lock, Sparkles, Layers, Users, PlayCircle, ReceiptText,
@@ -1150,9 +1149,6 @@ function LoanRecoveryRollup({ r, runId }) {
           <Landmark size={13} style={{ color:'#f59e0b' }}/>
           <p className="text-[11px] font-bold uppercase" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Loan Recovery</p>
         </div>
-        <Link to={`/app/hr/loans?run=${runId}`} className="text-[10px] font-bold" style={{ color:'#a78bfa' }}>
-          Open Loans
-        </Link>
       </div>
       <div className="grid grid-cols-2 gap-2">
         <div>

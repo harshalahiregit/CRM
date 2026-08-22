@@ -11,60 +11,63 @@ import {
  * both the sidebar (PurchaseVendorDetailLayout) and the nested routes (routes.jsx).
  * `key` is the URL segment under /app/purchase/vendors/:id/….
  *
- * NOTE: `implemented` is documentation only — nothing reads it. The real switch
- * is membership in TAB_ELEMENTS (vendorDetailTabs.jsx), which the layout indexes
- * by this key and falls back to ComingSoonTab for. Flipping a flag here without
- * adding the TAB_ELEMENTS entry ships a Coming-Soon page; the flags are kept in
- * step so the file does not mislead.
+ * This is the CATALOGUE of sections, not the list that gets rendered. The
+ * layout filters it against TAB_ELEMENTS (vendorDetailTabs.jsx) and offers only
+ * what exists, so adding an item here shows nothing until its TAB_ELEMENTS
+ * entry lands — which is the point. There used to be an `implemented` flag
+ * here that nothing read; it had drifted, and 8 items were rendering live
+ * NavLinks onto a Coming-Soon placeholder. It is gone: TAB_ELEMENTS is the
+ * single source of truth and cannot disagree with itself.
  *
- * 21 of 29 are active. The 8 without a flag have no backing table anywhere in the
- * schema — see the note against each — so they are unbuilt features, not gaps in
- * the wiring.
+ * 21 of the 29 below are built. The other 8 (todo, kb, vault, risk-score,
+ * award, penalty, feedback, referral) have no backing table anywhere in the
+ * schema — they are unbuilt features rather than gaps in the wiring, and they
+ * stay listed here so the intended shape of the workspace is still recorded.
  */
 export const VENDOR_NAV_GROUPS = [
   {
     title: 'General',
     items: [
-      { key: 'overview',   label: 'Overview',   icon: LayoutDashboard, implemented: true },
-      { key: 'profile',    label: 'Profile',    icon: User,          implemented: true },
-      { key: 'contacts',   label: 'Contacts',   icon: Users,         implemented: true },
-      { key: 'customer',   label: 'Customer',   icon: Building2,     implemented: true },
-      { key: 'medical',    label: 'Medical',    icon: HeartPulse,    implemented: true },
-      { key: 'training',   label: 'Training',   icon: GraduationCap, implemented: true },
-      { key: 'onboarding', label: 'Onboarding', icon: ClipboardList, implemented: true },
+      { key: 'overview',   label: 'Overview',   icon: LayoutDashboard },
+      { key: 'profile',    label: 'Profile',    icon: User },
+      { key: 'contacts',   label: 'Contacts',   icon: Users },
+      { key: 'customer',   label: 'Customer',   icon: Building2 },
+      { key: 'medical',    label: 'Medical',    icon: HeartPulse },
+      { key: 'training',   label: 'Training',   icon: GraduationCap },
+      { key: 'onboarding', label: 'Onboarding', icon: ClipboardList },
     ],
   },
   {
     title: 'Commercial',
     items: [
-      { key: 'quotations',        label: 'Quotations',         icon: FileSignature, implemented: true },
-      { key: 'contracts',         label: 'Contracts',          icon: FileText,      implemented: true },
-      { key: 'purchase-orders',   label: 'Purchase Order',     icon: ShoppingBag,   implemented: true },
-      { key: 'purchase-invoices', label: 'Purchase Invoice',   icon: Receipt,       implemented: true },
-      { key: 'debit-notes',       label: 'Debit Notes',        icon: FileX,         implemented: true },
-      { key: 'statement',         label: 'Purchase Statement', icon: FileBarChart2, implemented: true },
-      { key: 'payments',          label: 'Payments',           icon: Wallet,        implemented: true },
+      { key: 'quotations',        label: 'Quotations',         icon: FileSignature },
+      { key: 'contracts',         label: 'Contracts',          icon: FileText },
+      { key: 'purchase-orders',   label: 'Purchase Order',     icon: ShoppingBag },
+      { key: 'purchase-invoices', label: 'Purchase Invoice',   icon: Receipt },
+      { key: 'debit-notes',       label: 'Debit Notes',        icon: FileX },
+      { key: 'statement',         label: 'Purchase Statement', icon: FileBarChart2 },
+      { key: 'payments',          label: 'Payments',           icon: Wallet },
     ],
   },
   {
     title: 'Execution',
     items: [
-      { key: 'project',     label: 'Project',     icon: FolderKanban,  implemented: true },
-      { key: 'tasks',       label: 'Tasks',       icon: ListChecks,    implemented: true },
-      { key: 'expenses',    label: 'Expenses',    icon: Coins,         implemented: true },
-      { key: 'appointment', label: 'Appointment', icon: CalendarClock, implemented: true },
-      { key: 'meeting',     label: 'Meeting',     icon: Video,         implemented: true },
+      { key: 'project',     label: 'Project',     icon: FolderKanban },
+      { key: 'tasks',       label: 'Tasks',       icon: ListChecks },
+      { key: 'expenses',    label: 'Expenses',    icon: Coins },
+      { key: 'appointment', label: 'Appointment', icon: CalendarClock },
+      { key: 'meeting',     label: 'Meeting',     icon: Video },
       // No todo table exists. tasks/task_checklist_items belong to the Task
       // module and neither is vendor-scoped.
       { key: 'todo',        label: 'Todo Item',   icon: CheckSquare },
-      { key: 'notes',       label: 'Notes',       icon: StickyNote,    implemented: true },
-      { key: 'attachments', label: 'Attachments', icon: Paperclip,     implemented: true },
-      { key: 'ticket',      label: 'Ticket',      icon: LifeBuoy,      implemented: true },
+      { key: 'notes',       label: 'Notes',       icon: StickyNote },
+      { key: 'attachments', label: 'Attachments', icon: Paperclip },
+      { key: 'ticket',      label: 'Ticket',      icon: LifeBuoy },
       // kb_articles are tenant-wide help content with no vendor link.
       { key: 'kb',          label: 'KB',          icon: BookOpen },
       // client_vault_entries is Customer-owned; there is no vendor vault.
       { key: 'vault',       label: 'Vault',       icon: Lock },
-      { key: 'reminders',   label: 'Reminders',   icon: BellRing,      implemented: true },
+      { key: 'reminders',   label: 'Reminders',   icon: BellRing },
     ],
   },
   {

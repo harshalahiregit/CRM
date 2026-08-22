@@ -3,10 +3,32 @@ import { useParams, useNavigate, NavLink, Routes, Route, Navigate } from 'react-
 import { ArrowLeft, Building2, CheckCircle2, CheckCircle, XCircle, PauseCircle, CornerUpLeft, ShieldCheck, ChevronDown, ChevronRight, Mail } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
 import { Overlay, ModalFooter } from '@/components/ui/kit3d'
-import { VENDOR_NAV_GROUPS, VENDOR_NAV_ITEMS } from './vendorDetailNav'
-import { TAB_ELEMENTS, ComingSoonTab } from './vendorDetailTabs'
+import { VENDOR_NAV_GROUPS } from './vendorDetailNav'
+import { TAB_ELEMENTS } from './vendorDetailTabs'
 import { VendorWorkspaceContext } from './vendorWorkspaceContext'
 import PurchaseRegistrationBadge from '@/modules/purchase/components/PurchaseRegistrationBadge'
+
+/**
+ * Only offer sections that exist.
+ *
+ * The nav model carried an `implemented` flag that nothing read, and the two
+ * had drifted: 8 of 29 items rendered a live NavLink onto a Coming-Soon
+ * placeholder, and every item in the Performance group was one — so opening
+ * that heading revealed a section containing nothing at all.
+ *
+ * Deriving from TAB_ELEMENTS instead of a hand-kept flag means the sidebar
+ * cannot advertise a tab that was never built. A group left with no items
+ * disappears rather than opening empty.
+ *
+ * Routes are registered only for built tabs; a bookmarked URL for an unbuilt
+ * one falls through to the `*` route below and lands on Overview.
+ */
+const BUILT_NAV_GROUPS = VENDOR_NAV_GROUPS
+  .map((g) => ({ ...g, items: g.items.filter((it) => TAB_ELEMENTS[it.key]) }))
+  .filter((g) => g.items.length > 0)
+
+const BUILT_NAV_ITEMS = BUILT_NAV_GROUPS.flatMap((g) => g.items)
+
 import TemporaryVendorValidityBadge from '@/modules/purchase/components/TemporaryVendorValidityBadge'
 
 // Onboarding status → tint + label for the decision panel pills. Mirrors the TPV
@@ -203,7 +225,7 @@ export default function PurchaseVendorDetailLayout() {
       {/* Two-pane: sidebar + content */}
       <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
         <nav className="card-3d" style={{ width: 236, flexShrink: 0, position: 'sticky', top: 16, padding: 10, maxHeight: 'calc(100vh - 130px)', overflowY: 'auto' }}>
-          {VENDOR_NAV_GROUPS.map((group) => {
+          {BUILT_NAV_GROUPS.map((group) => {
             const isCollapsed = collapsed[group.title]
             return (
               <div key={group.title} style={{ marginBottom: 6 }}>
@@ -226,8 +248,8 @@ export default function PurchaseVendorDetailLayout() {
           <VendorWorkspaceContext.Provider value={{ vendor, onboarding, reload: load }}>
             <Routes>
               <Route index element={<Navigate to={`/app/purchase/vendors/${id}/overview`} replace />} />
-              {VENDOR_NAV_ITEMS.map((it) => (
-                <Route key={it.key} path={it.key} element={TAB_ELEMENTS[it.key] || <ComingSoonTab label={it.label} />} />
+              {BUILT_NAV_ITEMS.map((it) => (
+                <Route key={it.key} path={it.key} element={TAB_ELEMENTS[it.key]} />
               ))}
               <Route path="*" element={<Navigate to={`/app/purchase/vendors/${id}/overview`} replace />} />
             </Routes>
