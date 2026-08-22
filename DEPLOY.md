@@ -252,6 +252,29 @@ is harmless but signals nothing. If mail must send, `QUEUE_CONNECTION` has to be
 
 **`build-deploy-package.ps1` is PowerShell.** Use the bash version in §3.
 
+**A 200 from curl proves nothing about a SPA route.** The server returns
+`index.html` for every path and React Router decides 404 in the browser, so
+`curl -o /dev/null -w '%{http_code}'` reports 200 for a route that does not
+exist. To actually verify a route shipped, grep the live bundle:
+
+```bash
+HASH=$(curl -s https://app.sangoe.in/ | grep -oE 'assets/index-[A-Za-z0-9_-]+\.js' | head -1)
+curl -s "https://app.sangoe.in/$HASH" | grep -c 'path:"meetings"'
+md5sum <(curl -s "https://app.sangoe.in/$HASH") frontend/dist/"$HASH"
+```
+
+**The service worker serves a stale build after every deploy, and
+Ctrl+Shift+R does NOT bypass it.** This is a PWA with `autoUpdate`: the SW
+intercepts fetches and keeps serving its cached bundle. It installs the new
+one on the next load and activates it on the load AFTER that — so an existing
+user needs **two** page loads, and someone testing immediately will swear the
+deploy failed.
+
+Fastest way to tell a stale cache from a real failure: open the URL in a
+**private window**, which has no service worker. Works there = cache, not
+deploy. To clear it in a normal window: DevTools -> Application -> Service
+Workers -> Unregister, then reload.
+
 **`set -e` in a pasted block disconnects your SSH session.** In an interactive
 shell, `set -euo pipefail` makes ANY non-zero exit kill the shell -- and
 `grep -c` returns 1 when it finds nothing, so a harmless check like
