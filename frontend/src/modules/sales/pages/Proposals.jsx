@@ -130,7 +130,7 @@ export default function Proposals() {
 
   // Paging only: this list's search is server-side, so the hook isn't given
   // search fields — it just caps the rows and reports the count.
-  const { pageSize, setPageSize, visible, matched } = useListView(data, [])
+  const { pageSize, setPageSize, visible, matched, pager } = useListView(data, [])
 
   return (
     <>
@@ -175,7 +175,7 @@ export default function Proposals() {
       <ListToolbar
         search={search} onSearch={setSearch} searchPlaceholder="Search proposals or clients…"
         count={matched} total={data.length} unit="record"
-        pageSize={pageSize} onPageSize={setPageSize} onRefresh={() => load()}
+        pageSize={pageSize} onPageSize={setPageSize} pager={pager} onRefresh={() => load()}
         onExport={() => exportSalesList('proposals', { status: filter !== 'All' ? filter : undefined, search: search || undefined })
           .catch(e => toast.error(e.message))}
       >

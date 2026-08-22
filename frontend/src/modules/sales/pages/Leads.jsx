@@ -153,7 +153,7 @@ export default function Leads() {
   ] : []
 
   // Paging + count over the page's own search result.
-  const { pageSize, setPageSize, visible, matched } = useListView(filtered, [])
+  const { pageSize, setPageSize, visible, matched, pager } = useListView(filtered, [])
 
   if (loading) return <div className="space-y-4 animate-fade-in">{[1,2,3].map(i=><div key={i} className="skeleton h-28 rounded-2xl" style={{background:'var(--border)'}}/>)}</div>
 
@@ -247,7 +247,7 @@ export default function Leads() {
           <ListToolbar
             search={search} onSearch={setSearch} searchPlaceholder="Search leads…"
             count={matched} total={data.length} unit="lead"
-            pageSize={pageSize} onPageSize={setPageSize} onRefresh={load}
+            pageSize={pageSize} onPageSize={setPageSize} pager={pager} onRefresh={load}
             onExport={() => exportSalesList('leads', { search: search || undefined })
               .catch(e => showToast(e.message, 'error'))}
           />

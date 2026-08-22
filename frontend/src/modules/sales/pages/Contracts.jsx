@@ -37,7 +37,7 @@ export default function Contracts() {
   ] : []
 
   // Paging + count only: this list's search and status filter are server-side.
-  const { pageSize, setPageSize, visible, matched } = useListView(rows, [])
+  const { pageSize, setPageSize, visible, matched, pager } = useListView(rows, [])
 
   return (
     <div className="p-4 md:p-6 max-w-[1400px] mx-auto">
@@ -66,7 +66,7 @@ export default function Contracts() {
         className="mb-4"
         search={search} onSearch={setSearch} searchPlaceholder="Search contracts…"
         count={matched} total={rows?.length ?? 0} unit="contract"
-        pageSize={pageSize} onPageSize={setPageSize} onRefresh={load}
+        pageSize={pageSize} onPageSize={setPageSize} pager={pager} onRefresh={load}
         onExport={() => exportSalesList('contracts', { status: filter || undefined, search: search || undefined })
           .catch(e => toast.error(e.message))}
       >

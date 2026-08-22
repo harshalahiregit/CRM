@@ -60,7 +60,7 @@ export default function WebToLeadForms() {
   const copyLink = (key) => { navigator.clipboard.writeText(`${window.location.origin}/f/${key}`); toast.success('Public link copied') }
 
   // rows starts null while loading; the hook tolerates that and reports 0.
-  const { search, setSearch, pageSize, setPageSize, visible, matched } =
+  const { search, setSearch, pageSize, setPageSize, visible, matched, pager } =
     useListView(rows, ['name', 'title'])
 
   return (
@@ -78,7 +78,7 @@ export default function WebToLeadForms() {
       <ListToolbar
         search={search} onSearch={setSearch} searchPlaceholder="Search forms…"
         count={matched} total={(rows || []).length} unit="form"
-        pageSize={pageSize} onPageSize={setPageSize} onRefresh={load} className="mb-3" />
+        pageSize={pageSize} onPageSize={setPageSize} pager={pager} onRefresh={load} className="mb-3" />
 
       <div className="card-3d overflow-hidden" style={{ padding: 0 }}>
         <table className="w-full text-xs">

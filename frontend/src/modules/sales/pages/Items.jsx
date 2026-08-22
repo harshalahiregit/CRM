@@ -84,7 +84,7 @@ export default function Items() {
   // Paging + count only: this list's search and category filter are server-side.
   // No export — export columns are declared per list on the server and the item
   // catalog isn't one of them.
-  const { pageSize, setPageSize, visible, matched } = useListView(data, [])
+  const { pageSize, setPageSize, visible, matched, pager } = useListView(data, [])
 
   return (
     <>
@@ -138,7 +138,7 @@ export default function Items() {
           <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search items…" className="input-3d text-sm pl-10 w-full"/>
         </div>
         <ListToolbar count={matched} total={data.length} unit="item"
-          pageSize={pageSize} onPageSize={setPageSize} onRefresh={loadData} />
+          pageSize={pageSize} onPageSize={setPageSize} pager={pager} onRefresh={loadData} />
       </div>
 
       {/* Grid / List */}

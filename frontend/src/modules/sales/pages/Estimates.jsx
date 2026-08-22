@@ -219,7 +219,7 @@ export default function Estimates({ docType = 'proforma' }) {
   // Search + rows-per-page on top of the status filter. The KPI boxes above stay
   // on the FULL set (`data`) — they're a summary of the workspace, not of the
   // current search.
-  const { search, setSearch, pageSize, setPageSize, visible, matched } =
+  const { search, setSearch, pageSize, setPageSize, visible, matched, pager } =
     useListView(byStatus, ['reference', 'subject', 'client', 'status'])
 
   const handleConvertToProforma = async (estimate) => {
@@ -315,7 +315,7 @@ export default function Estimates({ docType = 'proforma' }) {
           search={search} onSearch={setSearch}
           searchPlaceholder={`Search ${DOC_LABEL.toLowerCase()}s…`}
           count={matched} total={data.length} unit="record"
-          pageSize={pageSize} onPageSize={setPageSize}
+          pageSize={pageSize} onPageSize={setPageSize} pager={pager}
           onRefresh={load}
           onExport={() => exportSalesList('estimates', { type: docType, status: filter !== 'All' ? filter : undefined, search: search || undefined })
             .catch(e => showToast(e.message, 'error'))}

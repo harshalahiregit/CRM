@@ -90,7 +90,7 @@ export default function PaymentLinks() {
   }
 
   // Search + rows-per-page client-side: the endpoint returns everything unpaginated.
-  const { search, setSearch, pageSize, setPageSize, visible, matched } =
+  const { search, setSearch, pageSize, setPageSize, visible, matched, pager } =
     useListView(data, ['reference','client','status'])
 
   return (
@@ -131,7 +131,7 @@ export default function PaymentLinks() {
       <ListToolbar
         search={search} onSearch={setSearch} searchPlaceholder="Search payment links…"
         count={matched} total={data.length} unit="record"
-        pageSize={pageSize} onPageSize={setPageSize} onRefresh={load} />
+        pageSize={pageSize} onPageSize={setPageSize} pager={pager} onRefresh={load} />
 
       {/* List */}
       {loading ? (

@@ -100,7 +100,7 @@ export default function DeliveryNotes() {
 
   // Search + rows-per-page over the (server status-filtered) list. Client-side
   // because the endpoint returns everything unpaginated, so this costs no request.
-  const { search, setSearch, pageSize, setPageSize, visible, matched } =
+  const { search, setSearch, pageSize, setPageSize, visible, matched, pager } =
     useListView(data, ['number', 'client', 'status'])
 
   return (
@@ -143,7 +143,7 @@ export default function DeliveryNotes() {
         <ListToolbar
           search={search} onSearch={setSearch} searchPlaceholder="Search delivery notes…"
           count={matched} total={data.length} unit="record"
-          pageSize={pageSize} onPageSize={setPageSize} onRefresh={load}
+          pageSize={pageSize} onPageSize={setPageSize} pager={pager} onRefresh={load}
           onExport={() => exportSalesList('delivery-notes', { status: filter !== 'All' ? filter : undefined, search: search || undefined })
             .catch(e => showToast(e.message, 'error'))}
         >

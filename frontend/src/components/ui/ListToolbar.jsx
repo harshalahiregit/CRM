@@ -1,4 +1,4 @@
-import { Search, Download, X } from 'lucide-react'
+import { Search, Download, X, ChevronLeft, ChevronRight } from 'lucide-react'
 import ListControls from './ListControls'
 
 /**
@@ -23,12 +23,17 @@ import ListControls from './ListControls'
  *   pageSize / onPageSize  forwarded to ListControls
  *   onRefresh              forwarded to ListControls (spins while the promise runs)
  *   onExport               shows the Export button; may return a promise
+ *   pager                  { page, pageCount, from, to, onPage } from useListView.
+ *                          Omit it and no pager renders — but then a page-size
+ *                          selector is truncation, not pagination, so pass it
+ *                          on any list that limits rows.
  *   children               extra controls (status tabs, view toggles) rendered inline
  */
 export default function ListToolbar({
   search = '', onSearch, searchPlaceholder = 'Search…',
   count = null, total = null, unit = 'record',
   pageSize, onPageSize, onRefresh, onExport,
+  pager = null,
   exportLabel = 'Export CSV',
   children, className = '',
 }) {
@@ -37,6 +42,9 @@ export default function ListToolbar({
   const showRange = count !== null && total !== null && count !== total
   const shown = showRange ? `${count} of ${total}` : (count ?? total)
   const plural = Number(shown === null ? 0 : (count ?? total)) === 1 ? unit : `${unit}s`
+
+  // Only worth drawing when there is a second page to reach.
+  const showPager = !!pager && pager.pageCount > 1
 
   return (
     <div className={`flex items-center gap-2 flex-wrap ${className}`}>
@@ -67,7 +75,37 @@ export default function ListToolbar({
           </span>
         )}
 
+        {/* Rows N-M of T, then the pager. Without this line the page-size
+            selector silently hides everything past the first page. */}
+        {showPager && (
+          <span className="text-[11px] font-bold whitespace-nowrap tabular-nums"
+            style={{ color: 'var(--text-muted)' }}>
+            {pager.from}–{pager.to}
+          </span>
+        )}
+
         <ListControls pageSize={pageSize} onPageSize={onPageSize} onRefresh={onRefresh} />
+
+        {showPager && (
+          <div className="flex items-center gap-1">
+            <button type="button" onClick={() => pager.onPage(pager.page - 1)}
+              disabled={pager.page <= 1} title="Previous page" aria-label="Previous page"
+              className="flex items-center justify-center rounded-lg disabled:opacity-40"
+              style={{ width: 32, height: 32, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }}>
+              <ChevronLeft size={14} />
+            </button>
+            <span className="text-[11px] font-bold whitespace-nowrap tabular-nums px-1"
+              style={{ color: 'var(--text-muted)' }}>
+              {pager.page} / {pager.pageCount}
+            </span>
+            <button type="button" onClick={() => pager.onPage(pager.page + 1)}
+              disabled={pager.page >= pager.pageCount} title="Next page" aria-label="Next page"
+              className="flex items-center justify-center rounded-lg disabled:opacity-40"
+              style={{ width: 32, height: 32, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }}>
+              <ChevronRight size={14} />
+            </button>
+          </div>
+        )}
 
         {onExport && (
           <button type="button" onClick={onExport} title={exportLabel}

@@ -37,7 +37,7 @@ export default function SalesTasks() {
   const refresh = () => qc.invalidateQueries({ queryKey: ['sales-tasks'] })
 
   // Paging + count over the page's own search result.
-  const { pageSize, setPageSize, visible, matched } = useListView(tasks, [])
+  const { pageSize, setPageSize, visible, matched, pager } = useListView(tasks, [])
 
   return (
     <div className="space-y-6 animate-[tiltIn_0.35s_ease]">
@@ -61,7 +61,7 @@ export default function SalesTasks() {
       <ListToolbar
         search={search} onSearch={setSearch} searchPlaceholder="Search sales tasks…"
         count={matched} total={(Array.isArray(data) ? data : data?.data ?? []).length} unit="task"
-        pageSize={pageSize} onPageSize={setPageSize} onRefresh={refresh} />
+        pageSize={pageSize} onPageSize={setPageSize} pager={pager} onRefresh={refresh} />
 
       {/* List */}
       <div className="card-3d overflow-hidden" style={{ padding: 0 }}>

@@ -38,7 +38,7 @@ export default function Commission() {
   const act = async (fn, id) => { try { await fn(id); loadEntries() } catch (e) { toast.error(e.message) } }
 
   // Entries only: the rules table below is a short config list.
-  const { search, setSearch, pageSize, setPageSize, visible, matched } =
+  const { search, setSearch, pageSize, setPageSize, visible, matched, pager } =
     useListView(entries, ['staff_name', 'status', 'source_type'])
 
   return (
@@ -65,7 +65,7 @@ export default function Commission() {
         <ListToolbar
           search={search} onSearch={setSearch} searchPlaceholder="Search by staff or status…"
           count={matched} total={(entries || []).length} unit="entry"
-          pageSize={pageSize} onPageSize={setPageSize} onRefresh={loadEntries} className="mb-3" />
+          pageSize={pageSize} onPageSize={setPageSize} pager={pager} onRefresh={loadEntries} className="mb-3" />
         <div className="card-3d overflow-hidden" style={{ padding: 0 }}>
           <table className="w-full text-xs">
             <thead><tr style={{ background: 'rgba(124,58,237,0.04)', borderBottom: '1px solid var(--border)' }}>

@@ -79,7 +79,7 @@ export default function Payments() {
   const modeBreakdown = PAY_MODES.map(m => ({ mode: m, count: data.filter(p => p.mode === m).length, total: data.filter(p => p.mode === m).reduce((s, p) => s + (p.amount || 0), 0) })).filter(m => m.count > 0)
 
   // Paging + count over the page's own search result.
-  const { pageSize, setPageSize, visible, matched } = useListView(filtered, [])
+  const { pageSize, setPageSize, visible, matched, pager } = useListView(filtered, [])
 
   return (
     <>
@@ -150,7 +150,7 @@ export default function Payments() {
           <ListToolbar
             search={search} onSearch={setSearch} searchPlaceholder="Search by invoice or client…"
             count={matched} total={data.length} unit="payment"
-            pageSize={pageSize} onPageSize={setPageSize} onRefresh={load}
+            pageSize={pageSize} onPageSize={setPageSize} pager={pager} onRefresh={load}
             onExport={() => exportSalesList('payments', { search: search || undefined })
               .catch(e => showToast(e.message, 'error'))}
             className="flex-1"
