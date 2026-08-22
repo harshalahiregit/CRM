@@ -86,6 +86,41 @@ The legacy system has a real roles/permissions engine (`Roles`,
 `advanced_permissions_management`); establish whether the new one enforces an
 equivalent, and say plainly if it does not.
 
+## ⚠️ The legacy system is not a working reference
+
+**Parts of the old CRM are broken, half-built or switched off.** A feature
+existing in legacy source does NOT mean it worked. Reporting "Sangoe is missing
+X" when X never functioned wastes everyone's time and, worse, could send a
+developer off to reproduce a bug.
+
+So **every** legacy feature must first be classified:
+
+| Status | How to tell (from source only — never execute) |
+|---|---|
+| **WORKING** | Controller method reachable, view exists, menu item registered and not commented out, referenced models/tables exist |
+| **DISABLED** | Module directory suffixed `_OFF` / `_disabled`, or has no `<module>.php` bootstrap so it never loads. Already confirmed: `advanced_permissions_management_OFF`, `file_sharing_OFF`, `prchat_disabled`, `workflow_automation` |
+| **BROKEN** | References a model, table, column, library or view that does not exist; obvious fatal (undefined variable/method); a route with no view; a form posting to a method that is absent |
+| **ORPHANED** | Code exists but nothing links to it — no menu entry, no route, no button anywhere in the views |
+| **UNKNOWN** | Cannot be determined without running it. Say so; do not guess either way |
+
+Then the parity status for that feature becomes one of:
+
+- **Gap** — worked in legacy, missing or worse in Sangoe. *This is what matters.*
+- **Improved** — Sangoe does it and legacy did not, or did it badly.
+- **Not a gap** — absent in Sangoe, but legacy's version was DISABLED, BROKEN
+  or ORPHANED. Record it, mark it clearly, and **do not** list it among the
+  things to fix. If the business still wants the capability, that is a new
+  feature to design, not a regression to restore.
+- **Out of scope** — a module nobody is rebuilding (appendix only).
+
+Two practical consequences:
+
+1. Never write "missing in Sangoe" without stating the legacy status beside it.
+2. When legacy behaviour is plainly wrong (bad tax rounding, a status machine
+   that lets you skip states, an email that never sends), say so and recommend
+   Sangoe **not** copy it. Parity with a bug is not the goal — the goal is
+   knowing exactly what changed and choosing deliberately.
+
 ## What "compare" means — do all of these
 
 For every module pair in the table above:
@@ -148,9 +183,10 @@ custom fields reach the same places (lists, forms, PDFs, exports).
 ## Output
 
 1. **A parity matrix** — one row per legacy feature, columns:
-   legacy location · Sangoe location · status (present / partial / missing /
-   deliberately dropped) · owner · impact if missing. Sortable by owner so each
-   developer gets their list.
+   legacy location · **legacy status (working/disabled/broken/orphaned/unknown)**
+   · Sangoe location · parity (gap / improved / not-a-gap / out-of-scope) ·
+   owner · impact. Sortable by owner so each developer gets their list.
+   A row may only be a **gap** if the legacy status is WORKING.
 
 2. **Gaps that matter**, ranked by business impact — things the business could
    do before and cannot now. Separate *missing feature* from *present but
