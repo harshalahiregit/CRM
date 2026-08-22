@@ -425,8 +425,12 @@ class PurchaseOnboardingService
             }
         }
 
+        // Only a Kickoff-typed meeting satisfies onboarding Step 1 — now that a
+        // vendor can have other meeting types (§9/§39), a Vendor Review or HSE
+        // meeting must not be mistaken for the kickoff.
         return \App\Models\Purchase\PurchaseKickoffMeeting::forTenant($onboarding->tenant_id)
             ->where('purchase_vendor_id', $onboarding->purchase_vendor_id)
+            ->where('meeting_type', \App\Support\Purchase\PurchaseMeetingTypeCatalog::DEFAULT)
             ->latest()
             ->first();
     }

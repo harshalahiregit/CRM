@@ -19,11 +19,13 @@ export default function PurchaseKickoffCreate() {
 
   const [vendors, setVendors]   = useState([])
   const [contacts, setContacts] = useState([])
+  const [meetingTypes, setMeetingTypes] = useState({ kickoff: 'Kickoff Meeting' })
   const [saving, setSaving]     = useState(false)
   const [err, setErr]           = useState(null)
 
   const [form, setForm] = useState({
     purchase_vendor_id: preVendorId || '',
+    meeting_type: 'kickoff',
     title: '',
     reference: '',
     scheduled_at: '',
@@ -39,6 +41,9 @@ export default function PurchaseKickoffCreate() {
 
   useEffect(() => {
     purchaseApi.vendors.list().then(r => setVendors(r?.data ?? r ?? [])).catch(() => {})
+    purchaseApi.kickoff.meetingTypes()
+      .then(r => { if (r?.types) setMeetingTypes(r.types) })
+      .catch(() => {})
   }, [])
 
   // Load the selected vendor's contacts for the participant picker.
@@ -71,6 +76,7 @@ export default function PurchaseKickoffCreate() {
     try {
       const payload = {
         purchase_vendor_id: Number(form.purchase_vendor_id),
+        meeting_type: form.meeting_type || 'kickoff',
         title: form.title || undefined,
         reference: form.reference || undefined,
         agenda: form.agenda || undefined,
@@ -106,9 +112,9 @@ export default function PurchaseKickoffCreate() {
           <ArrowLeft size={16} />
         </button>
         <div>
-          <p className="label-caps" style={{ color: '#a78bfa', margin: 0, fontSize: 11, fontWeight: 800, letterSpacing: '0.08em' }}>PRE-ONBOARDING</p>
-          <h1 style={{ color: 'var(--text-h)', fontSize: 23, fontWeight: 900, margin: '2px 0 0', letterSpacing: '-0.02em' }}>Schedule Kickoff Meeting</h1>
-          <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: '4px 0 0' }}>A pre-onboarding meeting with a purchase vendor.</p>
+          <p className="label-caps" style={{ color: '#a78bfa', margin: 0, fontSize: 11, fontWeight: 800, letterSpacing: '0.08em' }}>MEETINGS</p>
+          <h1 style={{ color: 'var(--text-h)', fontSize: 23, fontWeight: 900, margin: '2px 0 0', letterSpacing: '-0.02em' }}>Schedule Meeting</h1>
+          <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: '4px 0 0' }}>Kickoff, vendor review, HSE and more — pick a meeting type. Kickoff is the pre-onboarding meeting.</p>
         </div>
       </div>
 
@@ -127,6 +133,10 @@ export default function PurchaseKickoffCreate() {
             <Field label="Purchase Vendor *" full>
               <SelectInput value={form.purchase_vendor_id} onChange={set('purchase_vendor_id')} pairs
                 options={[['', 'Select a purchase vendor…'], ...vendors.map(v => [String(v.id), v.company_name || v.purchase_vendor_code || `Vendor #${v.id}`])]} />
+            </Field>
+            <Field label="Meeting Type *" full>
+              <SelectInput value={form.meeting_type} onChange={set('meeting_type')} pairs
+                options={Object.entries(meetingTypes).map(([k, label]) => [k, label])} />
             </Field>
             <Field label="Title (optional — defaults to the vendor name)" full>
               <TextInput value={form.title} onChange={set('title')} placeholder="Kickoff — Acme Supplies" />

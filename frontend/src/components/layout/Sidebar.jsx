@@ -189,6 +189,7 @@ const PURCHASE_SUB_ITEMS = [
   { label: 'Dashboard',        path: '/app/purchase/dashboard',     icon: LayoutDashboard },
   { label: 'Items',            path: '/app/purchase/catalog',       icon: Package },
   { label: 'Vendors',          path: '/app/purchase/vendors',       icon: Truck },
+  { label: 'Meetings',         path: '/app/purchase/kickoff',       icon: CalendarDays },
   { label: 'Vendor-Items',     path: '/app/purchase/vendor-items',  icon: Boxes },
   { label: 'Purchase request', path: '/app/purchase/requests',      icon: ClipboardList },
   { label: 'Quotations',       path: '/app/purchase/quotations',    icon: FileSignature },
@@ -204,7 +205,7 @@ const PURCHASE_SUB_ITEMS = [
 // Internal staff view of the TPV module.
 const TPV_ADMIN_ITEMS = [
   { label: 'Dashboard',       path: '/app/tpv/dashboard', icon: LayoutDashboard },
-  { label: 'Kickoff Meeting', path: '/app/tpv/kickoff',   icon: CalendarDays },
+  { label: 'Meetings',        path: '/app/tpv/kickoff',   icon: CalendarDays },
 ]
 // TPV (vendor) login view — only their onboarding + their workforce.
 const TPV_VENDOR_ITEMS = [
