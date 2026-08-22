@@ -4,8 +4,19 @@ import EmptyState from './EmptyState'
 
 /**
  * columns: [{ key, label, sortable, render(row), align }]
+ *
+ * `filtered` + `onClearFilters` separate the two empty results that were being
+ * reported identically. "Nothing to show yet" is a statement about the account;
+ * "nothing matched" is a statement about the filter, and only one of them is
+ * the user's to fix. Without them a search miss read as an empty ledger.
+ *
+ * `emptyState` still overrides everything, for callers with their own copy.
  */
-export default function DataTable({ columns, rows, keyField = 'id', onRowClick, emptyState }) {
+export default function DataTable({
+  columns, rows, keyField = 'id', onRowClick, emptyState,
+  filtered = false, onClearFilters,
+  emptyTitle = 'No data', emptyDescription = 'Nothing to show yet.',
+}) {
   const [sortKey, setSortKey] = useState(null)
   const [sortDir, setSortDir] = useState('asc')
 
@@ -31,7 +42,23 @@ export default function DataTable({ columns, rows, keyField = 'id', onRowClick, 
   }
 
   if (!rows || rows.length === 0) {
-    return emptyState || <EmptyState title="No data" description="Nothing to show yet." />
+    if (emptyState) return emptyState
+
+    // A filter that matched nothing is not an empty table. Say which it is, and
+    // offer the only action that helps in each case.
+    return filtered
+      ? <EmptyState
+          title="Nothing matched"
+          description="No rows match the current search or filters."
+          action={onClearFilters && (
+            <button type="button" onClick={onClearFilters}
+              className="text-xs font-bold rounded-lg"
+              style={{ padding: '8px 14px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#a78bfa' }}>
+              Clear filters
+            </button>
+          )}
+        />
+      : <EmptyState title={emptyTitle} description={emptyDescription} />
   }
 
   return (

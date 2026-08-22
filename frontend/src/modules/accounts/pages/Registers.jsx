@@ -132,7 +132,10 @@ export default function Registers() {
       {isLoading
         ? <div className="flex justify-center py-16"><Loader2 className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div>
         : <>
-            <DataTable columns={columns} rows={rows} onRowClick={(r) => navigate(`/app/accounts/registers/${r.id}`)} />
+            <DataTable columns={columns} rows={rows} onRowClick={(r) => navigate(`/app/accounts/registers/${r.id}`)}
+              filtered={!!(debouncedSearch || nature)}
+              onClearFilters={() => { handleSearch(''); setNature('') }}
+              emptyTitle="No registers yet" emptyDescription="Registers appear once ledgers carry entries." />
             <PagerBar meta={data} onPage={setPageNo} unit="registers" className="mt-3" />
           </>}
     </div>

@@ -221,7 +221,8 @@ export default function Transfer() {
         {historyLoading
           ? <div className="flex justify-center py-10"><Loader2 className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div>
           : <>
-              <DataTable columns={columns} rows={history} />
+              <DataTable columns={columns} rows={history}
+                emptyTitle="No transfers yet" emptyDescription="Move money between accounts to see it here." />
               <PagerBar meta={page} onPage={setPageNo} unit="transfers" className="mt-3" />
             </>}
       </div>

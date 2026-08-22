@@ -301,11 +301,23 @@ export default function Invoices() {
                     </td>
                   </tr>
                 ))}
+                {/* A search miss and an empty account are different problems.
+                    This branch offered "Create first invoice" to accounts with
+                    hundreds of invoices whose filter simply matched nothing. */}
                 {visible.length===0 && <tr><td colSpan="8" className="py-16 text-center">
                   <div className="flex flex-col items-center gap-3">
                     <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl" style={{background:'rgba(124,58,237,0.08)'}}>🧾</div>
-                    <p className="text-sm font-semibold" style={{color:'var(--text-muted)'}}>No invoices found</p>
-                    <button onClick={()=>navigate('/app/sales/invoices/new')} className="text-xs font-bold" style={{color:'#a78bfa'}}>+ Create first invoice</button>
+                    {search || filter!=='All' ? (
+                      <>
+                        <p className="text-sm font-semibold" style={{color:'var(--text-muted)'}}>No invoice matches this view</p>
+                        <button onClick={()=>{ setSearch(''); setFilter('All') }} className="text-xs font-bold" style={{color:'#a78bfa'}}>Clear search and filters</button>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-sm font-semibold" style={{color:'var(--text-muted)'}}>No invoices yet</p>
+                        <button onClick={()=>navigate('/app/sales/invoices/new')} className="text-xs font-bold" style={{color:'#a78bfa'}}>+ Create first invoice</button>
+                      </>
+                    )}
                   </div>
                 </td></tr>}
               </tbody>

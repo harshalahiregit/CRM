@@ -419,7 +419,16 @@ export default function Customers() {
                 {loading ? (
                   [1, 2, 3, 4].map(i => <tr key={i}><td colSpan="7" className="p-3"><div className="skeleton h-8 rounded-lg" style={{ background: 'var(--border)' }} /></td></tr>)
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan="7" className="py-12 text-center" style={{ color: 'var(--text-muted)' }}>No customers yet. Click “New Customer” or import a list.</td></tr>
+                  <tr><td colSpan="7" className="py-12 text-center" style={{ color: 'var(--text-muted)' }}>
+                    {/* Telling someone with 500 customers to import a list
+                        because their search missed is worse than saying nothing. */}
+                    {search ? (
+                      <>
+                        No customer matches “{search}”.{' '}
+                        <button type="button" onClick={() => setSearchPaged('')} className="font-bold" style={{ color: '#a78bfa' }}>Clear search</button>
+                      </>
+                    ) : 'No customers yet. Click “New Customer” or import a list.'}
+                  </td></tr>
                 ) : rows.map(c => (
                   <tr key={c.id} className="transition-colors cursor-pointer" style={{ borderBottom: '1px solid var(--border)' }}
                     onClick={() => nav(`/app/customers/${c.id}`)}

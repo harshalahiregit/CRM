@@ -114,7 +114,10 @@ export default function ChartOfAccounts() {
       {isLoading
         ? <div className="flex justify-center py-10"><Loader2 className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div>
         : <>
-            <DataTable columns={columns} rows={ledgers} />
+            <DataTable columns={columns} rows={ledgers}
+              filtered={!!(search || groupFilter)}
+              onClearFilters={() => { setSearch(''); setGroupFilter('') }}
+              emptyTitle="No ledgers yet" emptyDescription="Add a ledger to build the chart of accounts." />
             <PagerBar meta={ledgersPage} onPage={setPageNo} unit="ledgers" className="mt-3" />
           </>}
 

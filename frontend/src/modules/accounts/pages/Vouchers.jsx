@@ -130,7 +130,10 @@ export default function Vouchers() {
       {isLoading
         ? <div className="flex justify-center py-10"><Loader2 className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div>
         : <>
-            <DataTable columns={columns} rows={vouchers} onRowClick={(r) => navigate(`/app/accounts/vouchers/${r.id}`)} />
+            <DataTable columns={columns} rows={vouchers} onRowClick={(r) => navigate(`/app/accounts/vouchers/${r.id}`)}
+              filtered={!!(filters.search || filters.status || filters.type)}
+              onClearFilters={() => setFilters(() => ({ type: '', status: '', search: '' }))}
+              emptyTitle="No vouchers yet" emptyDescription="Post a voucher to start the journal." />
             <PagerBar meta={page} onPage={setPageNo} unit="vouchers" className="mt-3" />
           </>}
 
