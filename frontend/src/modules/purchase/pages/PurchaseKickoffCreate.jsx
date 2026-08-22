@@ -29,9 +29,17 @@ export default function PurchaseKickoffCreate() {
     title: '',
     reference: '',
     scheduled_at: '',
+    end_at: '',
     duration_minutes: 60,
     mode: 'onsite',
     location: '',
+    priority: '',
+    confidentiality: '',
+    chairperson: '',
+    coordinator: '',
+    organizer: '',
+    department: '',
+    client_name: '',
     agenda: '',
   })
   const [participants, setParticipants] = useState([]) // {key, purchase_contact_id?, name, email, role, organisation}
@@ -81,9 +89,17 @@ export default function PurchaseKickoffCreate() {
         reference: form.reference || undefined,
         agenda: form.agenda || undefined,
         scheduled_at: form.scheduled_at || undefined,
+        end_at: form.end_at || undefined,
         duration_minutes: Number(form.duration_minutes) || undefined,
         mode: form.mode,
         location: form.location || undefined,
+        priority: form.priority || undefined,
+        confidentiality: form.confidentiality || undefined,
+        chairperson: form.chairperson || undefined,
+        coordinator: form.coordinator || undefined,
+        organizer: form.organizer || undefined,
+        department: form.department || undefined,
+        client_name: form.client_name || undefined,
         participants: participants.map(p => ({
           purchase_contact_id: p.purchase_contact_id || undefined,
           name: p.name || undefined,
@@ -144,8 +160,9 @@ export default function PurchaseKickoffCreate() {
             <Field label="Reference (optional)" full>
               <TextInput value={form.reference} onChange={set('reference')} placeholder="e.g. PO-2026-0042" />
             </Field>
-            <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 12 }}>
-              <Field label="Date & time"><TextInput type="datetime-local" value={form.scheduled_at} onChange={set('scheduled_at')} /></Field>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+              <Field label="Start"><TextInput type="datetime-local" value={form.scheduled_at} onChange={set('scheduled_at')} /></Field>
+              <Field label="End"><TextInput type="datetime-local" value={form.end_at} onChange={set('end_at')} /></Field>
               <Field label="Duration (min)"><TextInput type="number" value={form.duration_minutes} onChange={set('duration_minutes')} /></Field>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.6fr', gap: 12 }}>
@@ -153,6 +170,16 @@ export default function PurchaseKickoffCreate() {
               <Field label={form.mode === 'online' ? 'Meeting link' : 'Location'}>
                 <TextInput value={form.location} onChange={set('location')} placeholder={form.mode === 'online' ? 'https://…' : 'Site office, Gate 1'} />
               </Field>
+            </div>
+            {/* Governance meta (Meeting.docx §2) */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <Field label="Priority"><SelectInput value={form.priority} onChange={set('priority')} pairs options={[['', '—'], ['Low', 'Low'], ['Medium', 'Medium'], ['High', 'High'], ['Urgent', 'Urgent']]} /></Field>
+              <Field label="Confidentiality"><SelectInput value={form.confidentiality} onChange={set('confidentiality')} pairs options={[['', '—'], ['Public', 'Public'], ['Internal', 'Internal'], ['Confidential', 'Confidential'], ['Restricted', 'Restricted']]} /></Field>
+              <Field label="Chairperson"><TextInput value={form.chairperson} onChange={set('chairperson')} placeholder="Chairperson" /></Field>
+              <Field label="Coordinator"><TextInput value={form.coordinator} onChange={set('coordinator')} placeholder="Coordinator" /></Field>
+              <Field label="Organizer"><TextInput value={form.organizer} onChange={set('organizer')} placeholder="Organizer" /></Field>
+              <Field label="Department"><TextInput value={form.department} onChange={set('department')} placeholder="Department" /></Field>
+              <Field label="Client (optional)" full><TextInput value={form.client_name} onChange={set('client_name')} placeholder="Client name" /></Field>
             </div>
             <Field label="Agenda" full>
               <textarea value={form.agenda} onChange={set('agenda')} rows={3} placeholder="Scope walk, commercial terms, document checklist"

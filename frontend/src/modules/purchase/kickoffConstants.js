@@ -138,7 +138,7 @@ export const PK_DECISION_CONFIG = {
 export const pkDecisionCfg = (s) => PK_DECISION_CONFIG[s] || PK_DECISION_CONFIG[PK_DECISION_STATUS.ACTIVE]
 export const PK_DECISION_STATUSES = [PK_DECISION_STATUS.ACTIVE, PK_DECISION_STATUS.SUPERSEDED, PK_DECISION_STATUS.RESCINDED]
 
-export const PK_MODES = [['onsite', 'On site'], ['online', 'Online']]
+export const PK_MODES = [['onsite', 'On site'], ['online', 'Online'], ['hybrid', 'Hybrid']]
 export const pkModeLabel = (m) => (PK_MODES.find(([v]) => v === m) || [m, m || '—'])[1]
 
 export const fmtDateTime = (d) => (d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) : '—')

@@ -32,7 +32,7 @@ export default function PurchaseKickoffMeetings() {
     setLoad(true)
     Promise.all([
       purchaseApi.kickoff.list(filter === 'All' ? {} : { status: filter }),
-      purchaseApi.kickoff.stats(),
+      purchaseApi.kickoff.dashboard(),
     ]).then(([rows, s]) => { setData(rows?.data ?? rows ?? []); setStats(s); setLoad(false) })
       .catch(() => setLoad(false))
   }
@@ -81,13 +81,17 @@ export default function PurchaseKickoffMeetings() {
         </div>
       </div>
 
-      {/* KPI strip */}
+      {/* Meeting dashboard (Meeting.docx §14) */}
       {stats && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 18 }}>
-          <Kpi label="Scheduled" value={stats.scheduled} icon={CalendarDays} color="#0ea5e9" />
-          <Kpi label="Delayed" value={stats.delayed} icon={Clock} color="#f59e0b" danger={stats.delayed > 0} />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 14, marginBottom: 18 }}>
+          <Kpi label="Today" value={stats.today ?? 0} icon={CalendarDays} color="#0ea5e9" />
+          <Kpi label="Upcoming" value={stats.upcoming ?? 0} icon={CalendarDays} color="#0ea5e9" />
           <Kpi label="Completed" value={stats.completed} icon={CheckCircle2} color="#10b981" />
-          <Kpi label="Awaiting acknowledgement" value={stats.awaiting_ack} icon={Send} color="#a78bfa" danger={stats.awaiting_ack > 0} />
+          <Kpi label="Pending MOM" value={stats.pending_mom ?? 0} icon={Clock} color="#f59e0b" danger={(stats.pending_mom ?? 0) > 0} />
+          <Kpi label="Overdue MOM" value={stats.overdue_mom ?? 0} icon={Clock} color="#ef4444" danger={(stats.overdue_mom ?? 0) > 0} />
+          <Kpi label="Open actions" value={stats.open_actions ?? 0} icon={Send} color="#a78bfa" />
+          <Kpi label="Overdue actions" value={stats.overdue_actions ?? 0} icon={Clock} color="#ef4444" danger={(stats.overdue_actions ?? 0) > 0} />
+          <Kpi label="Action closure" value={`${stats.closure_rate ?? 0}%`} icon={CheckCircle2} color="#10b981" />
         </div>
       )}
 
@@ -314,16 +318,16 @@ function AttendanceModal({ id, onClose, onDone }) {
     purchaseApi.kickoff.get(id).then(d => {
       const m = d?.data ?? d
       setTitle(m.title)
-      setRows((m.participants || []).map(a => ({ id: a.id, name: a.name, role: a.role, organisation: a.organisation, attended: !!a.attended })))
+      setRows((m.participants || []).map(a => ({ id: a.id, name: a.name, role: a.role, organisation: a.organisation, attendance_status: a.attendance_status || (a.attended ? 'Present' : 'Absent') })))
     }).catch(() => setErr('Could not load the participant list.'))
   }, [id])
 
-  const setAttended = (aid, val) => setRows(rs => rs.map(r => (r.id === aid ? { ...r, attended: val } : r)))
+  const setStatus = (aid, val) => setRows(rs => rs.map(r => (r.id === aid ? { ...r, attendance_status: val } : r)))
 
   const save = async () => {
     setSaving(true); setErr(null)
     try {
-      await purchaseApi.kickoff.attendance(id, rows.map(r => ({ id: r.id, attended: r.attended })))
+      await purchaseApi.kickoff.attendance(id, rows.map(r => ({ id: r.id, attendance_status: r.attendance_status })))
       onDone()
     } catch (e) {
       setErr(e?.response?.data?.message || 'Could not save attendance.')
@@ -353,10 +357,10 @@ function AttendanceModal({ id, onClose, onDone }) {
                   <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-h)' }}>{a.name}</div>
                   <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{[a.role, a.organisation].filter(Boolean).join(' · ') || '—'}</div>
                 </div>
-                <div style={{ display: 'inline-flex', borderRadius: 9, overflow: 'hidden', border: '1px solid var(--border)' }}>
-                  <SegBtn active={a.attended} color="#10b981" icon={CheckCircle2} onClick={() => setAttended(a.id, true)}>Present</SegBtn>
-                  <SegBtn active={!a.attended} color="#ef4444" icon={XCircle} onClick={() => setAttended(a.id, false)}>Absent</SegBtn>
-                </div>
+                <select value={a.attendance_status} onChange={e => setStatus(a.id, e.target.value)}
+                  style={{ padding: '7px 10px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-h)', fontSize: 12.5, fontWeight: 700 }}>
+                  {['Present', 'Late', 'Online', 'Offline', 'Excused', 'Absent'].map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
               </div>
             ))}
           </div>
