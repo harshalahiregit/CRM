@@ -311,5 +311,13 @@ live vendor-status template, AI assist. Kickoff is now "Meetings → New → Typ
   violation table + record modal). Verified via rolled-back tinker (PVIO-2026-001 auto 4pts, cumulative 10 →
   Suspension, enforce suspend→On_Hold / blacklist→Blacklisted, escalations list) + green build. **Parity mirror #8.**
   *Follow-up:* surface the now-available violations dimension in Purchase Analytics + VPI.
-- [ ] Remaining Purchase mirrors: Renewal · Offboarding · Performance Index (VPI) · PPE-at-gate.
-  (Purchase has its own gate/PPE/worker stack, so those mirror onto `purchase_*` equivalents.)
+- [x] **§27 Performance Index (VPI) — Purchase mirror** — `PurchaseVendorPerformanceService`. Purchase has no
+  VRS scorecard, so the index is computed directly from the mirrored governance engines: 6 weighted dimensions
+  (compliance %, quality/NCR, CAPA closure, conduct/violations, inspection avg-score, documentation expiry) →
+  0-100 → **A-E band**, weights/bands/deductions in `config/purchase_vpi.php`. Endpoints `/purchase/vpi`
+  (worst-first leaderboard) + `/purchase/vendors/{purchaseVendor}/vpi` (breakdown), purchaseApi `vpi`, and a
+  Performance Index page (band distribution + 6-column heatmap + expandable per-dimension detail). Verified via
+  rolled-back tinker (6 dims, weights sum 1.0, quality 78 / conduct 88 deductions, overall 93/A, worst-first
+  roster) + green build. **Parity mirror #9.**
+- [ ] Remaining Purchase mirrors: Renewal · Offboarding · PPE-at-gate. (Purchase has its own gate/PPE/worker
+  stack, so those mirror onto `purchase_*` equivalents.)

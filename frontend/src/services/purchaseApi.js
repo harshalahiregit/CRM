@@ -388,6 +388,12 @@ export const purchaseApi = {
     enforce:   (vendorId, data) => api.post(`/purchase/vendors/${vendorId}/violation-enforce`, data).then(r => r.data),
   },
 
+  // ── Vendor Performance Index (mirror of TPV §27 — governance-scored) ────
+  vpi: {
+    roster: ()         => api.get('/purchase/vpi').then(r => r.data),
+    vendor: (vendorId) => api.get(`/purchase/vendors/${vendorId}/vpi`).then(r => r.data),
+  },
+
   onboarding: {
     list:     (params = {}) => api.get('/purchase/onboarding', { params }).then(r => r.data),
     stats:    ()            => api.get('/purchase/onboarding/stats').then(r => r.data),
