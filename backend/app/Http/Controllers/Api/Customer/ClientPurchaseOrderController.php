@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Api\Customer;
 
+use App\Models\Customer\Client;
+
 use App\Models\Customer\ClientPurchaseOrder;
 use Illuminate\Validation\Rule;
 
@@ -24,7 +26,7 @@ class ClientPurchaseOrderController extends AbstractClientRecordController
         return ['scope', 'notes'];
     }
 
-    protected function rules(): array
+    protected function rules(Client $client): array
     {
         return [
             'po_number'   => 'required|string|max:100',

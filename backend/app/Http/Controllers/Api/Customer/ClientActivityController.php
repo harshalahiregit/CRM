@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Api\Customer;
 
+use App\Models\Customer\Client;
+
 use App\Models\Customer\ClientActivity;
 use Illuminate\Validation\Rule;
 
@@ -24,10 +26,15 @@ class ClientActivityController extends AbstractClientRecordController
         return ['summary'];
     }
 
-    protected function rules(): array
+    protected function rules(Client $client): array
     {
         return [
-            'client_contact_id' => 'nullable|integer|exists:client_contacts,id',
+            // Must be a contact of THIS customer — an unscoped exists() accepts any
+            // contact in the database, including another tenant's.
+            'client_contact_id' => ['nullable', 'integer',
+                Rule::exists('client_contacts', 'id')
+                    ->where('tenant_id', $client->tenant_id)
+                    ->where('client_id', $client->id)],
             'type'              => ['required', Rule::in(ClientActivity::TYPES)],
             'direction'         => ['nullable', Rule::in(ClientActivity::DIRECTIONS)],
             'subject'           => 'required|string|max:255',

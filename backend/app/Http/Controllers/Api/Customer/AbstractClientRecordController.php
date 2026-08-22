@@ -43,8 +43,21 @@ abstract class AbstractClientRecordController extends Controller
         return $data;
     }
 
-    /** Validation rules for store/update. */
-    abstract protected function rules(): array;
+    /**
+     * Validation rules for store/update.
+     *
+     * Receives the customer so a subclass can scope an `exists:` rule to the
+     * right tenant. Without it the only way to reach the tenant was
+     * $request->user(), which is not in scope here — ClientExpenseController
+     * referenced it anyway and every save of a customer expense returned 500,
+     * for every tenant, on every payload. index() and destroy() skip rules(),
+     * so the tab listed and deleted perfectly well and looked healthy right up
+     * until somebody pressed Save.
+     *
+     * Passing $client also makes the tenant-scoped exists() the easy thing to
+     * write rather than the thing you have to remember.
+     */
+    abstract protected function rules(Client $client): array;
 
     public function index(Client $client, Request $request)
     {
@@ -55,7 +68,7 @@ abstract class AbstractClientRecordController extends Controller
     public function store(Client $client, Request $request)
     {
         $this->assertClientTenant($client, $request->user()->tenant_id);
-        $data = $this->sanitizeHtml($request->validate($this->rules()));
+        $data = $this->sanitizeHtml($request->validate($this->rules($client)));
 
         $record = $client->{$this->relation()}()->create([
             ...$data,
@@ -71,7 +84,7 @@ abstract class AbstractClientRecordController extends Controller
         $this->assertClientTenant($client, $request->user()->tenant_id);
         // Resolve within the client's relation → inherently client + tenant scoped.
         $record = $client->{$this->relation()}()->findOrFail($recordId);
-        $record->update($this->sanitizeHtml($request->validate($this->rules())));
+        $record->update($this->sanitizeHtml($request->validate($this->rules($client))));
         return response()->json($record);
     }
 

@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Api\Customer;
 
+use App\Models\Customer\Client;
+
 class ClientContractController extends AbstractClientRecordController
 {
     protected function relation(): string
@@ -9,7 +11,7 @@ class ClientContractController extends AbstractClientRecordController
         return 'contracts';
     }
 
-    protected function rules(): array
+    protected function rules(Client $client): array
     {
         return [
             'subject'       => 'required|string|max:255',

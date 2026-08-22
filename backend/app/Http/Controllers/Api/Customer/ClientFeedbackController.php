@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Api\Customer;
 
+use App\Models\Customer\Client;
+
 use App\Models\Customer\ClientFeedback;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -20,14 +22,19 @@ class ClientFeedbackController extends AbstractClientRecordController
         return 'feedback';
     }
 
-    protected function rules(): array
+    protected function rules(Client $client): array
     {
         // Bound the score by the metric actually being submitted.
         $metric = request()->input('metric');
         $max    = ClientFeedback::MAX[$metric] ?? 10;
 
         return [
-            'client_contact_id' => 'nullable|integer|exists:client_contacts,id',
+            // Scoped to this customer: attributing a survey response to another
+            // company's contact would be silently wrong on every report.
+            'client_contact_id' => ['nullable', 'integer',
+                Rule::exists('client_contacts', 'id')
+                    ->where('tenant_id', $client->tenant_id)
+                    ->where('client_id', $client->id)],
             'metric'            => ['required', Rule::in(ClientFeedback::METRICS)],
             'score'             => "required|integer|min:0|max:{$max}",
             'comments'          => 'nullable|string',

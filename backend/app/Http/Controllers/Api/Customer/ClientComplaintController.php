@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Api\Customer;
 
+use App\Models\Customer\Client;
+
 use App\Models\Customer\ClientComplaint;
 use Illuminate\Validation\Rule;
 
@@ -25,7 +27,7 @@ class ClientComplaintController extends AbstractClientRecordController
         return ['description', 'resolution'];
     }
 
-    protected function rules(): array
+    protected function rules(Client $client): array
     {
         return [
             'reference'   => 'nullable|string|max:40',
@@ -35,7 +37,10 @@ class ClientComplaintController extends AbstractClientRecordController
             'category'    => ['nullable', Rule::in(ClientComplaint::CATEGORIES)],
             'severity'    => ['nullable', Rule::in(ClientComplaint::SEVERITIES)],
             'status'      => ['nullable', Rule::in(ClientComplaint::STATUSES)],
-            'owner_id'    => 'nullable|integer|exists:users,id',
+            // Scoped to the tenant — no assigning a complaint to another
+            // tenant's staff member.
+            'owner_id'    => ['nullable', 'integer',
+                Rule::exists('users', 'id')->where('tenant_id', $client->tenant_id)],
             'raised_at'   => 'required|date',
             'resolved_at' => 'nullable|date|after_or_equal:raised_at',
             'resolution'  => 'nullable|string',

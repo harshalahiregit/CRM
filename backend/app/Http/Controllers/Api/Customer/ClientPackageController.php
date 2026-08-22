@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Api\Customer;
 
+use App\Models\Customer\Client;
+
 class ClientPackageController extends AbstractClientRecordController
 {
     protected function relation(): string
@@ -9,7 +11,7 @@ class ClientPackageController extends AbstractClientRecordController
         return 'packages';
     }
 
-    protected function rules(): array
+    protected function rules(Client $client): array
     {
         return [
             'package_number'  => 'required|string|max:255',

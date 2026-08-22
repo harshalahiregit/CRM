@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Api\Customer;
 
+use App\Models\Customer\Client;
+
 class ClientShipmentController extends AbstractClientRecordController
 {
     protected function relation(): string
@@ -9,7 +11,7 @@ class ClientShipmentController extends AbstractClientRecordController
         return 'shipments';
     }
 
-    protected function rules(): array
+    protected function rules(Client $client): array
     {
         return [
             'shipment_number' => 'required|string|max:255',

@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Api\Customer;
 
+use App\Models\Customer\Client;
+
 use App\Models\Customer\ClientDomain;
 use Illuminate\Validation\Rule;
 
@@ -20,7 +22,7 @@ class ClientDomainController extends AbstractClientRecordController
         return 'domains';
     }
 
-    protected function rules(): array
+    protected function rules(Client $client): array
     {
         return [
             'domain'           => 'required|string|max:255',

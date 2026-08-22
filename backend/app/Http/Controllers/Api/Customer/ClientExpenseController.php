@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Api\Customer;
 
+use App\Models\Customer\Client;
+
 class ClientExpenseController extends AbstractClientRecordController
 {
     protected function relation(): string
@@ -15,7 +17,7 @@ class ClientExpenseController extends AbstractClientRecordController
         return ['note'];
     }
 
-    protected function rules(): array
+    protected function rules(Client $client): array
     {
         return [
             'name'         => 'required|string|max:255',
@@ -24,7 +26,7 @@ class ClientExpenseController extends AbstractClientRecordController
             'date'         => 'nullable|date',
             'payment_mode' => 'nullable|string|max:100',
             'billable'     => 'nullable|boolean',
-            'project_id'   => ['nullable', 'integer', \Illuminate\Validation\Rule::exists('projects', 'id')->where('tenant_id', $request->user()->tenant_id)],
+            'project_id'   => ['nullable', 'integer', \Illuminate\Validation\Rule::exists('projects', 'id')->where('tenant_id', $client->tenant_id)],
             'note'         => 'nullable|string',
         ];
     }
