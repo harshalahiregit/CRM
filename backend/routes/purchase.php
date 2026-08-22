@@ -304,6 +304,26 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::get('/vendors/{purchaseVendor}/violation-escalation', [\App\Http\Controllers\Api\Purchase\PurchaseViolationController::class, 'escalation'])->whereNumber('purchaseVendor');
     Route::post('/vendors/{purchaseVendor}/violation-enforce',   [\App\Http\Controllers\Api\Purchase\PurchaseViolationController::class, 'enforce'])->whereNumber('purchaseVendor');
 
+    // ── Vendor Performance Index (mirror of TPV §27 — governance-scored) ────
+    Route::get('/vpi',                     [\App\Http\Controllers\Api\Purchase\PurchaseVendorPerformanceController::class, 'index']);
+    Route::get('/vendors/{purchaseVendor}/vpi', [\App\Http\Controllers\Api\Purchase\PurchaseVendorPerformanceController::class, 'show'])->whereNumber('purchaseVendor');
+
+    // ── Renewal & Extension (mirror of TPV §28 — assess via VPI + decide) ───
+    Route::get('/renewals',                          [\App\Http\Controllers\Api\Purchase\PurchaseRenewalController::class, 'index']);
+    Route::post('/renewals',                         [\App\Http\Controllers\Api\Purchase\PurchaseRenewalController::class, 'store']);
+    Route::get('/vendors/{purchaseVendor}/renewal-assessment', [\App\Http\Controllers\Api\Purchase\PurchaseRenewalController::class, 'assess'])->whereNumber('purchaseVendor');
+    Route::post('/renewals/{renewal}/reassess',      [\App\Http\Controllers\Api\Purchase\PurchaseRenewalController::class, 'reassess'])->whereNumber('renewal');
+    Route::post('/renewals/{renewal}/decide',        [\App\Http\Controllers\Api\Purchase\PurchaseRenewalController::class, 'decide'])->whereNumber('renewal');
+    Route::delete('/renewals/{renewal}',             [\App\Http\Controllers\Api\Purchase\PurchaseRenewalController::class, 'destroy'])->whereNumber('renewal');
+
+    // ── Offboarding / Closure (mirror of TPV §29 — checklist → final status) ─
+    Route::get('/offboardings',                      [\App\Http\Controllers\Api\Purchase\PurchaseOffboardingController::class, 'index']);
+    Route::post('/offboardings',                     [\App\Http\Controllers\Api\Purchase\PurchaseOffboardingController::class, 'store']);
+    Route::get('/offboardings/{offboarding}',        [\App\Http\Controllers\Api\Purchase\PurchaseOffboardingController::class, 'show'])->whereNumber('offboarding');
+    Route::put('/offboardings/{offboarding}/checklist', [\App\Http\Controllers\Api\Purchase\PurchaseOffboardingController::class, 'updateChecklist'])->whereNumber('offboarding');
+    Route::post('/offboardings/{offboarding}/complete', [\App\Http\Controllers\Api\Purchase\PurchaseOffboardingController::class, 'complete'])->whereNumber('offboarding');
+    Route::delete('/offboardings/{offboarding}',     [\App\Http\Controllers\Api\Purchase\PurchaseOffboardingController::class, 'destroy'])->whereNumber('offboarding');
+
     // ── Kickoff meetings (Purchase-owned engine: purchase_kickoff_* tables) ─
     Route::get('/kickoff/stats',                   [PurchaseKickoffController::class, 'stats']);
     Route::get('/kickoff',                         [PurchaseKickoffController::class, 'index']);

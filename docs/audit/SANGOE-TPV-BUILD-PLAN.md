@@ -310,6 +310,33 @@ live vendor-status template, AI assist. Kickoff is now "Meetings → New → Typ
   `violations`, and a Violations & Strikes page (per-vendor escalation ladder cards + suspend/blacklist +
   violation table + record modal). Verified via rolled-back tinker (PVIO-2026-001 auto 4pts, cumulative 10 →
   Suspension, enforce suspend→On_Hold / blacklist→Blacklisted, escalations list) + green build. **Parity mirror #8.**
-  *Follow-up:* surface the now-available violations dimension in Purchase Analytics + VPI.
-- [ ] Remaining Purchase mirrors: Renewal · Offboarding · Performance Index (VPI) · PPE-at-gate.
-  (Purchase has its own gate/PPE/worker stack, so those mirror onto `purchase_*` equivalents.)
+  *(Done — Purchase Analytics now surfaces violations + inspections in overview KPIs, the 4-series trend, the
+  benchmark violation-points column, and CSV export; VPI already scored conduct/inspection from the start.)*
+- [x] **§27 Performance Index (VPI) — Purchase mirror** — `PurchaseVendorPerformanceService`. Purchase has no
+  VRS scorecard, so the index is computed directly from the mirrored governance engines: 6 weighted dimensions
+  (compliance %, quality/NCR, CAPA closure, conduct/violations, inspection avg-score, documentation expiry) →
+  0-100 → **A-E band**, weights/bands/deductions in `config/purchase_vpi.php`. Endpoints `/purchase/vpi`
+  (worst-first leaderboard) + `/purchase/vendors/{purchaseVendor}/vpi` (breakdown), purchaseApi `vpi`, and a
+  Performance Index page (band distribution + 6-column heatmap + expandable per-dimension detail). Verified via
+  rolled-back tinker (6 dims, weights sum 1.0, quality 78 / conduct 88 deductions, overall 93/A, worst-first
+  roster) + green build. **Parity mirror #9.**
+- [x] **§28 Renewal & §29 Offboarding — Purchase mirror** — `purchase_renewals` (PREN-YYYY-###,
+  PurchaseRenewal + service + controller; `assess()` snapshots the VPI score/band + open NCR/CAPA/violation
+  counts, `decide()` applies Renew/Extend→contract end_date, Suspend→On_Hold, admin-gated) and
+  `purchase_offboardings` (POFF-YYYY-###, 10-item supplier-closure checklist, complete-guard requires all done,
+  final status Closed/Replaced→Inactive · Suspended→On_Hold · Blacklisted→Blacklisted via PurchaseVendorService).
+  Routes `/purchase/renewals/*` + `/purchase/offboardings/*`, purchaseApi `renewals`/`offboardings`, and Renewals
+  (assessment preview + decide modal) + Offboarding (expandable checklist + complete) pages in the Purchase nav.
+  Verified via rolled-back tinker (PREN assess vpi 100/A + decide, POFF 10-item complete-guard then complete →
+  vendor Inactive) + green build. **Parity mirrors #10 & #11.**
+- [x] **Rule 5 PPE-at-gate — Purchase mirror** — `PurchaseWorkforceService::gateDecision()` now checks PPE:
+  per new config `purchase.gate.ppe_enforcement` (`warn` default / `deny` / `off`, env
+  `PURCHASE_GATE_PPE_ENFORCEMENT`), a worker holding no issued PPE (`PurchasePpeService::heldBy` empty) is
+  admitted-with-`warning` or refused. Wrapped in try/catch so a PPE-subsystem failure never turns away an
+  otherwise-clear worker (falls through to admit + logs). Backend-only — the existing gate view renders the
+  decision; the new `warning` field is additive. Gate-harness verified (rolled-back): off→admit; warn→admit +
+  warning; deny→refused; hard-refusal (inactive) still wins; PPE-service-throws → resilient admit. **Parity mirror #12.**
+
+**Purchase parity: COMPLETE.** Every TPV governance engine now has a module-isolated Purchase mirror on
+`purchase_*` tables — Compliance, NCR, CAPA, Inspections, Violations, Renewal, Offboarding, Document Vault,
+Analytics, Performance Index (VPI), Communications, and PPE-at-gate.
