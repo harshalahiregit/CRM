@@ -33,6 +33,53 @@ class ClientPortalAuthService
     }
 
     /**
+     * The single portal account for an email address, or null.
+     *
+     * The portal has no tenant context — login is an email and a password,
+     * nothing else — so an email that matches more than one contact is
+     * genuinely ambiguous, and `first()` silently picked whichever row the
+     * database happened to return. With the same person recorded at two
+     * customers (a shared accountant, someone who moved companies), that is a
+     * login into the wrong company's data.
+     *
+     * There is no safe guess here, so this refuses instead: an ambiguous email
+     * authenticates nobody, and the collision is logged for someone to resolve.
+     *
+     * `$enabledOnly` separates the two callers, and the distinction matters.
+     *
+     * Forgotten-password proves nothing about who is asking, so it may only
+     * find an account somebody already granted — otherwise the endpoint hands
+     * out access to any address in the CRM.
+     *
+     * Login is the opposite: it must find the contact whatever their state, so
+     * that the password is checked FIRST and a correct password can then be
+     * told plainly that their access is switched off. Those messages are not an
+     * enumeration oracle precisely because they come after proving the account
+     * is yours — and "your access was disabled" is what that person needs to
+     * read, rather than a generic failure they will retype three times.
+     */
+    private function portalAccountFor(string $email, bool $enabledOnly = true): ?ClientContact
+    {
+        $matches = ClientContact::query()
+            ->where('email', $email)
+            ->whereNotNull('email')
+            ->when($enabledOnly, fn ($q) => $q->whereIn('portal_status', ['invited', 'active']))
+            ->limit(2)
+            ->get();
+
+        if ($matches->count() > 1) {
+            Log::warning('Portal login refused: the email matches more than one portal account.', [
+                'email'       => $email,
+                'contact_ids' => $matches->pluck('id')->all(),
+            ]);
+
+            return null;
+        }
+
+        return $matches->first();
+    }
+
+    /**
      * Issue a set-password invitation.
      *
      * Used both for "invite this contact to the portal" and "they forgot their
@@ -43,6 +90,23 @@ class ClientPortalAuthService
     {
         if (! $contact->email) {
             throw new BusinessException('This contact has no email address to send an invitation to.', 422);
+        }
+
+        // Refuse to create the ambiguity rather than detect it at login. Two
+        // portal accounts on one address cannot both sign in, so the second
+        // invitation would silently lock out the first.
+        $clash = ClientContact::query()
+            ->where('email', $contact->email)
+            ->where('id', '!=', $contact->id)
+            ->whereIn('portal_status', ['invited', 'active'])
+            ->first();
+
+        if ($clash) {
+            throw new BusinessException(
+                'Another contact already uses this email address for portal access. '
+                .'Remove their access first, or give this contact their own address.',
+                422
+            );
         }
 
         $contact->forceFill([
@@ -64,9 +128,21 @@ class ClientPortalAuthService
      */
     public function forgotPassword(string $email): void
     {
-        $contact = ClientContact::where('email', $email)->whereNotNull('email')->first();
+        $contact = $this->portalAccountFor($email);
 
-        if (! $contact || $contact->portal_status === 'disabled') {
+        // Only an existing account may be reset. Previously this guarded on
+        // portal_status === 'disabled' — a value the column never holds. The
+        // default is 'inactive', so every contact nobody had invited fell
+        // straight through to invite(), which set them to 'invited' and mailed
+        // a working link. Anyone whose address was in the CRM could therefore
+        // grant themselves a login, and reach the sections with no permission
+        // gate: this company's client-visible notes and files, and the list of
+        // everyone else with access.
+        //
+        // portalAccountFor() now admits only 'invited' and 'active', so the
+        // state is decided in one place rather than by a string comparison
+        // that had drifted away from the schema.
+        if (! $contact) {
             return;
         }
 
@@ -106,7 +182,9 @@ class ClientPortalAuthService
     /** @return array{contact: ClientContact, token: string} */
     public function login(string $email, string $password, ?string $ip): array
     {
-        $contact = ClientContact::where('email', $email)->first();
+        // Any state — the password check below is the gate, and the specific
+        // messages after it are only reachable once it passes.
+        $contact = $this->portalAccountFor($email, enabledOnly: false);
 
         // One message for every failure mode. "No such account" and "wrong
         // password" told apart is the same oracle as above.
