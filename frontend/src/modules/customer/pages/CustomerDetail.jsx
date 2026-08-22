@@ -118,7 +118,16 @@ export default function CustomerDetail() {
   const [client, setClient] = useState(null)
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('Overview')
-  const [tabData, setTabData] = useState({})   // { [tab]: data }
+  // Keyed by `${id}:${tab}`, not by tab alone.
+  //
+  // Customers link to each other — the parent-company button navigates within
+  // this same component — so `id` changes without a remount. Keyed by tab
+  // only, the cache then served the PREVIOUS customer's rows under the new
+  // customer's name: their invoices, statement, vault, contacts. Not merely
+  // wrong on screen either, because the tabs receive the new id with the old
+  // rows, so revealing or deleting a vault entry fired against a customer it
+  // does not belong to and returned an unexplained not-found.
+  const [tabData, setTabData] = useState({})   // { [`${id}:${tab}`]: data }
   const [recordOptions, setRecordOptions] = useState({ expenseCategories: [], projects: [], contacts: [], staff: [] })
   const [tabLoading, setTabLoading] = useState(false)
 
@@ -162,14 +171,17 @@ export default function CustomerDetail() {
   const refreshTab = async (t) => {
     const fetcher = TAB_FETCHERS[t]
     if (!fetcher) return
+    // Captured before the await: navigating mid-flight must not let a slow
+    // response for the previous customer land under the current one's key.
+    const key = `${id}:${t}`
     try {
       const data = await fetcher(id)
-      setTabData(prev => ({ ...prev, [t]: data }))
+      setTabData(prev => ({ ...prev, [key]: data }))
     } catch (e) {
       // Surface the error and leave the tab uncached so re-entry retries it,
       // rather than silently showing a blank pane forever.
       toast.error(e.message || `Failed to load ${t}`)
-      setTabData(prev => { const next = { ...prev }; delete next[t]; return next })
+      setTabData(prev => { const next = { ...prev }; delete next[key]; return next })
     }
   }
 
@@ -207,10 +219,12 @@ export default function CustomerDetail() {
   }, [tab, id])
 
   useEffect(() => {
-    if (!TAB_FETCHERS[tab] || tabData[tab] !== undefined) return
+    if (!TAB_FETCHERS[tab] || tabData[`${id}:${tab}`] !== undefined) return
     setTabLoading(true)
     refreshTab(tab).finally(() => setTabLoading(false))
-  }, [tab])
+    // `id` belongs here: without it, switching customer left this effect
+    // dormant and the stale cache entry was rendered as though it were fresh.
+  }, [tab, id])
 
   // "Create new X" button that jumps to the Sales create flow with this
   // customer preselected.
@@ -240,7 +254,7 @@ export default function CustomerDetail() {
     { label: 'Phone', value: client.phone || '—', icon: Phone, color: '#3b82f6' },
   ]
 
-  const data = tabData[tab]
+  const data = tabData[`${id}:${tab}`]
 
   return (
     <div className="space-y-6 animate-[tiltIn_0.35s_ease]">
