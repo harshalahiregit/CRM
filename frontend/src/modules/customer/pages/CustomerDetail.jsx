@@ -422,6 +422,8 @@ function ProfileTab({ client, reload, toast }) {
       // Customer 360 — classification, ownership and the Health inputs (§11–§13).
       customer_type: client.customer_type || '', customer_tier: client.customer_tier || '',
       industry: client.industry || '', lifecycle_status: client.lifecycle_status || '',
+      // §9 — the two risk indicators no signal can derive.
+      risk_relationship: client.risk_relationship || '', risk_compliance: client.risk_compliance || '',
       payment_terms: client.payment_terms || '',
       relationship_started_at: client.relationship_started_at ? String(client.relationship_started_at).slice(0, 10) : '',
       account_owner_id: client.account_owner_id ?? '', secondary_owner_id: client.secondary_owner_id ?? '',
@@ -520,6 +522,22 @@ function ProfileTab({ client, reload, toast }) {
                   <input className="input-3d text-sm" list="opt-payment_terms" value={form.payment_terms} onChange={e => sf('payment_terms', e.target.value)} /></div>
                 <div><label className="label">Customer Since</label>
                   <input type="date" className="input-3d text-sm" value={form.relationship_started_at} onChange={e => sf('relationship_started_at', e.target.value)} /></div>
+                {/* §9 Customer Risk. Payment, Contract, Service and Project risk
+                    are derived from real signals; these two have none, so they
+                    are a judgement someone records. A guess dressed as a metric
+                    would be worse than an honest blank. */}
+                <div><label className="label">Relationship Risk</label>
+                  <select className="input-3d text-sm" value={form.risk_relationship} onChange={e => sf('risk_relationship', e.target.value)}>
+                    <option value="">Not assessed</option>
+                    <option value="Low">Low</option><option value="Medium">Medium</option><option value="High">High</option>
+                  </select>
+                  <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>Your read on the relationship — nothing in the system can measure this.</p></div>
+                <div><label className="label">Compliance Risk</label>
+                  <select className="input-3d text-sm" value={form.risk_compliance} onChange={e => sf('risk_compliance', e.target.value)}>
+                    <option value="">Not assessed</option>
+                    <option value="Low">Low</option><option value="Medium">Medium</option><option value="High">High</option>
+                  </select>
+                  <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>Documentation, statutory and contractual compliance.</p></div>
               </div>
             </div>
 

@@ -55,6 +55,13 @@ const HEALTH_TONE = {
   unknown:  { color: '#9ca3af', bg: 'rgba(156,163,175,0.08)', border: 'rgba(156,163,175,0.28)' },
 }
 
+// §9 lists the six indicators in this order; keep it stable so the panel does
+// not reshuffle as values arrive.
+const RISK_ORDER = ['payment', 'contract', 'service', 'project', 'relationship', 'compliance']
+const RISK_LABEL = {
+  payment: 'Payment Risk', contract: 'Contract Risk', service: 'Service Risk',
+  project: 'Project Risk', relationship: 'Relationship Risk', compliance: 'Compliance Risk',
+}
 const RISK_COLOR = { High: '#ef4444', Medium: '#f59e0b', Low: '#10b981', Unknown: '#6b7280' }
 
 const SEVERITY = {
@@ -204,16 +211,51 @@ export default function OverviewTab({ id, client, toast }) {
                   <ShieldAlert size={18} style={{ color: RISK_COLOR[risk.overall] ?? '#9ca3af' }} />
                 </div>
                 <div>
-                  <p className="label-caps" style={{ margin: 0 }}>Risk</p>
+                  <p className="label-caps" style={{ margin: 0 }}>Customer Risk</p>
                   <p className="text-sm font-bold" style={{ color: RISK_COLOR[risk.overall] ?? '#9ca3af', margin: '2px 0 0' }}>{risk.overall}</p>
                   <p className="text-[11px]" style={{ color: 'var(--text-muted)', margin: '2px 0 0' }}>
-                    {Object.entries({ ...risk.derived, ...risk.manual })
-                      .filter(([, v]) => v).map(([k, v]) => `${k} ${v}`).join(' · ') || 'Nothing assessed yet'}
+                    worst of {RISK_ORDER.filter(k => (risk.derived?.[k] ?? risk.manual?.[k])).length} of 6
                   </p>
                 </div>
               </div>
             )}
           </div>
+
+          {/* §9 — Customer Risk, six indicators, listed separately from Health.
+              Unassessed ones stay on screen rather than being filtered out:
+              "we have not judged this" and "this is low risk" are different
+              answers, and hiding the first makes it look like the second. */}
+          {risk && (
+            <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+              <p className="label-caps" style={{ margin: '0 0 8px' }}>Risk Indicators</p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 8 }}>
+                {RISK_ORDER.map(key => {
+                  const level = risk.derived?.[key] ?? risk.manual?.[key] ?? null
+                  const manual = Object.prototype.hasOwnProperty.call(risk.manual ?? {}, key)
+                  return (
+                    <div key={key} style={{
+                      padding: '9px 12px', borderRadius: 10,
+                      background: level ? 'var(--bg-input)' : 'transparent',
+                      border: `1px solid ${level ? (RISK_COLOR[level] ?? 'var(--border)') + '55' : 'var(--border)'}`,
+                      opacity: level ? 1 : 0.55,
+                    }}>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{RISK_LABEL[key]}</span>
+                        <span className="text-xs font-bold" style={{ color: level ? (RISK_COLOR[level] ?? '#9ca3af') : 'var(--text-faint,#6b7280)' }}>
+                          {level ?? '—'}
+                        </span>
+                      </div>
+                      {!level && (
+                        <p className="text-[10.5px]" style={{ color: 'var(--text-faint,#6b7280)', margin: '3px 0 0' }}>
+                          {manual ? 'Set it on Profile' : 'No data yet'}
+                        </p>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Each signal's own score and the share of 100 it carries. Unmeasured
               ones are listed too — knowing what could NOT be seen is the point. */}
