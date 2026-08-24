@@ -242,7 +242,7 @@ export default function ProjectDetail() {
             {canManage ? (
               <Select value={project.status} onChange={v => setStatus.mutate(v)} ariaLabel="Project status"
                 options={statusOptions(statusList, user?.role)}
-                buttonStyle={{ borderColor: s.color, color: s.color, fontWeight: 700 }} />
+                buttonStyle={{ border: `1px solid ${s.color}`, color: s.color, fontWeight: 700 }} />
             ) : (
               <span className="inline-flex items-center text-xs font-bold px-3 py-2 rounded-xl"
                 style={{ border: `1px solid ${s.color}`, color: s.color }}>{s.label}</span>
