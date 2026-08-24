@@ -234,7 +234,20 @@ class CustomerExperienceService
      */
     public function healthSignal(Client $client): ?array
     {
-        $summary = $this->forClient($client);
+        // Summarise the feedback rows DIRECTLY — do not go through forClient().
+        //
+        // forClient() also builds complaints, resolution and service_quality,
+        // and service_quality calls CustomerHealthService::score(), which calls
+        // customerFeedback(), which calls this method. That is an unbounded
+        // mutual recursion: it exhausted PHP's 128MB limit and made the whole
+        // Customer 360 overview time out with a 504, on a database whose largest
+        // table has 428 rows. It was never a volume problem.
+        //
+        // Only CSAT and NPS are wanted here, so the extra work was wrong on its
+        // own terms as well as fatal.
+        $summary = $this->summarise(
+            ClientFeedback::forTenant($client->tenant_id)->where('client_id', $client->id)->get()
+        );
         $parts   = [];
 
         if ($summary['csat']) {
