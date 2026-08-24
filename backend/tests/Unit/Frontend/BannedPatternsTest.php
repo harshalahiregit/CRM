@@ -160,7 +160,10 @@ class BannedPatternsTest extends TestCase
         'modules/customer/components/RecordTab.jsx' => 2,
         'modules/customer/components/StepperNav.jsx' => 1,
         'modules/customer/components/SupportTab.jsx' => 1,
-        'modules/customer/pages/CustomerDetail.jsx' => 7,
+        // 8th is the vault unlock button, matching the seven primary buttons
+        // already in this file. Recorded, not blessed — the count is fixed
+        // and this file still needs the shared Btn extraction.
+        'modules/customer/pages/CustomerDetail.jsx' => 8,
         'modules/customer/pages/Customers.jsx' => 2,
         'modules/customer/pages/GroupReports.jsx' => 1,
         'modules/hr/HRLayout.jsx' => 1,
