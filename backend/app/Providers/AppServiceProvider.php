@@ -10,6 +10,7 @@ use App\Services\Customer\Contracts\TicketIntakeContract;
 use App\Services\Customer\CustomerDirectoryService;
 use App\Services\Customer\TicketIntakeUnavailable;
 use App\Services\Helpdesk\Contracts\CustomerServiceContract;
+use App\Services\Helpdesk\HelpdeskTicketIntakeService;
 use App\Services\Helpdesk\SlaService;
 use App\Services\Hr\Attendance\PlaceholderAttendanceProvider;
 use App\Services\Integration\ProjectDirectoryService;
@@ -46,6 +47,11 @@ class AppServiceProvider extends ServiceProvider
         // it here too. bindIf means whichever order the two lines end up in,
         // Helpdesk's wins — this only applies when nothing else has bound it.
         // Until then the portal hides the form (see ClientPortalController::me).
+        //
+        // Helpdesk's real implementation. Registered BEFORE the placeholder
+        // below so the bindIf is a no-op; either order works, which is why the
+        // placeholder uses bindIf rather than bind.
+        $this->app->bind(TicketIntakeContract::class, HelpdeskTicketIntakeService::class);
         $this->app->bindIf(TicketIntakeContract::class, TicketIntakeUnavailable::class);
         // SlaService caches each tenant's SLA targets + paused/closed status sets
         // for the life of the request. That cache is what stops compute() from

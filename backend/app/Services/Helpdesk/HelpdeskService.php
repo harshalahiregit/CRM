@@ -360,9 +360,16 @@ class HelpdeskService
             'status'          => $data['status'] ?? 'open',
             'priority'        => $data['priority'] ?? 'medium',
             'assigned_to'     => $data['assigned_to'] ?? null,
-            // Who raised it. auth()->id() for staff/portal-created tickets; null for
-            // widget/inbound-email (no session) — those match a person by email.
-            'created_by'      => $data['created_by'] ?? auth()->id(),
+            // Who raised it. auth()->id() for staff-created tickets; null for
+            // widget/inbound-email and the customer portal — those match a person
+            // by email instead.
+            //
+            // array_key_exists, not ??: a caller passing created_by => null MEANS
+            // null. With ?? an explicit null fell through to auth()->id(), and in
+            // a customer-portal request that is the ClientContact's id — which
+            // would be written into tickets.created_by pointing at an unrelated
+            // users row. A wrong attribution is worse than a missing one.
+            'created_by'      => array_key_exists('created_by', $data) ? $data['created_by'] : auth()->id(),
             'customer_id'     => $data['customer_id'] ?? null,
             // The chosen department was being dropped here entirely, so every
             // ticket landed with no department — breaking department routing and
