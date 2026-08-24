@@ -129,7 +129,7 @@ export default function PurchaseRequests() {
   const openCreate = () => { setEditing({ ...EMPTY_FORM }); setShowModal(true) }
   const openEdit = (r) => {
     setEditing({
-      id: r.id, title: r.title || '', department: r.department || '', vendor_id: r.vendor_id ?? '',
+      id: r.id, title: r.title || '', department: r.department || '', vendor_id: r.purchase_vendor_id ?? '',
       priority: r.priority || 'Normal', required_by: r.required_by?.slice(0, 10) || '',
       currency: r.currency || 'INR', justification: r.justification || '', remarks: r.remarks || '',
       items: (r.items?.length ? r.items : [{ ...EMPTY_ITEM }]).map(it => ({
@@ -149,7 +149,7 @@ export default function PurchaseRequests() {
     setSaving(true)
     try {
       const payload = {
-        title: f.title, department: f.department || null, vendor_id: f.vendor_id || null,
+        title: f.title, department: f.department || null, purchase_vendor_id: f.vendor_id || null,
         priority: f.priority, required_by: f.required_by || null, currency: f.currency,
         justification: f.justification || null, remarks: f.remarks || null,
         items: items.map((it, i) => ({

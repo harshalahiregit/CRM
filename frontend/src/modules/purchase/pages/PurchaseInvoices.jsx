@@ -29,7 +29,7 @@ const EMPTY_FORM = {
 const invoiceLines = (f) => (f.items || []).filter(it => it.description?.trim())
 
 const invoicePayload = (f) => ({
-  title: f.title || null, vendor_id: f.vendor_id || null, vendor_invoice_ref: f.vendor_invoice_ref || null,
+  title: f.title || null, purchase_vendor_id: f.vendor_id || null, vendor_invoice_ref: f.vendor_invoice_ref || null,
   currency: f.currency, invoice_date: f.invoice_date || null, due_date: f.due_date || null,
   terms: f.terms || null, notes: f.notes || null,
   items: invoiceLines(f).map((it, i) => ({
@@ -165,7 +165,7 @@ export default function PurchaseInvoices() {
   const openCreate = () => { setEditing({ ...EMPTY_FORM }); setShowForm(true) }
   const openEdit = (r) => {
     setEditing({
-      id: r.id, title: r.title || '', vendor_id: r.vendor_id ?? '', vendor_invoice_ref: r.vendor_invoice_ref || '',
+      id: r.id, title: r.title || '', vendor_id: r.purchase_vendor_id ?? '', vendor_invoice_ref: r.vendor_invoice_ref || '',
       currency: r.currency || 'INR', invoice_date: r.invoice_date?.slice(0, 10) || '', due_date: r.due_date?.slice(0, 10) || '',
       terms: r.terms || '', notes: r.notes || '',
       items: (r.items?.length ? r.items : [{ ...EMPTY_ITEM }]).map(it => ({ description: it.description || '', qty: it.qty ?? 1, unit: it.unit || '', rate: it.rate ?? 0, tax: it.tax ?? 0 })),

@@ -241,7 +241,7 @@ function RecordQuoteModal({ rfq, onClose, onDone }) {
     setSaving(true); setErr(null)
     try {
       await purchaseApi.rfqs.recordQuote(rfq.id, {
-        vendor_id: Number(vendorId),
+        purchase_vendor_id: Number(vendorId),
         valid_until: validUntil || null,
         items: lines.map((it, i) => ({ purchase_rfq_item_id: it.id, description: it.description, qty: it.qty, unit: it.unit, rate: Number(rates[it.id]) || 0, tax: it.tax, sort_order: i })),
       })

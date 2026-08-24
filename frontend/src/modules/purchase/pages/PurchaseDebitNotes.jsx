@@ -29,7 +29,7 @@ const EMPTY_FORM = {
 const debitNoteLines = (f) => (f.items || []).filter(it => it.description?.trim() && Number(it.qty) > 0)
 
 const debitNotePayload = (f) => ({
-  vendor_id: f.vendor_id || null, purchase_order_id: f.purchase_order_id || null,
+  purchase_vendor_id: f.vendor_id || null, purchase_order_id: f.purchase_order_id || null,
   reason: f.reason || null, currency: f.currency, debit_date: f.debit_date || null,
   adjust_inventory: !!f.purchase_order_id && f.adjust_inventory, notes: f.notes || null,
   items: debitNoteLines(f).map((it, i) => ({
@@ -162,7 +162,7 @@ export default function PurchaseDebitNotes() {
   const openCreate = () => { setEditing({ ...EMPTY_FORM, items: [{ ...EMPTY_ITEM }] }); setShowForm(true) }
   const openEdit = (r) => {
     setEditing({
-      id: r.id, vendor_id: r.vendor_id ?? '', purchase_order_id: r.purchase_order_id ?? '', reason: r.reason || '',
+      id: r.id, vendor_id: r.purchase_vendor_id ?? '', purchase_order_id: r.purchase_order_id ?? '', reason: r.reason || '',
       currency: r.currency || 'INR', debit_date: r.debit_date?.slice(0, 10) || '', adjust_inventory: !!r.adjust_inventory, notes: r.notes || '',
       items: (r.items?.length ? r.items : [{ ...EMPTY_ITEM }]).map(it => ({
         description: it.description || '', qty: it.qty ?? 1, unit: it.unit || '', rate: it.rate ?? 0, tax: it.tax ?? 0,
@@ -386,7 +386,7 @@ function DebitNoteFormModal({ editing, setEditing, saving, manage, onClose, onSa
         description: it.description, unit: it.unit || '', rate: it.rate ?? 0, tax: it.tax ?? 0,
         purchase_order_item_id: it.id, on_hand: Number(it.received_qty), qty: 0,
       }))
-      setEditing(p => ({ ...p, vendor_id: d.vendor_id ?? p.vendor_id, currency: d.currency || p.currency, items: lines.length ? lines : [{ ...EMPTY_ITEM }] }))
+      setEditing(p => ({ ...p, vendor_id: d.purchase_vendor_id ?? p.vendor_id, currency: d.currency || p.currency, items: lines.length ? lines : [{ ...EMPTY_ITEM }] }))
     } catch { /* keep */ }
     finally { setPoLoading(false) }
   }

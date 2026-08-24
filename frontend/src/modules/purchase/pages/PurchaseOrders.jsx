@@ -32,7 +32,7 @@ const EMPTY_FORM = {
 const orderLines = (f) => (f.items || []).filter(it => it.description?.trim() || it.catalog_item_id)
 
 const orderPayload = (f) => ({
-  title: f.title, department: f.department || null, vendor_id: f.vendor_id || null, currency: f.currency,
+  title: f.title, department: f.department || null, purchase_vendor_id: f.vendor_id || null, currency: f.currency,
   order_date: f.order_date || null, expected_delivery_date: f.expected_delivery_date || null,
   terms: f.terms || null, notes: f.notes || null,
   items: orderLines(f).map((it, i) => ({
@@ -173,7 +173,7 @@ export default function PurchaseOrders() {
   const openCreate = () => { setEditing({ ...EMPTY_FORM }); setShowForm(true) }
   const openEdit = (r) => {
     setEditing({
-      id: r.id, title: r.title || '', department: r.department || '', vendor_id: r.vendor_id ?? '',
+      id: r.id, title: r.title || '', department: r.department || '', vendor_id: r.purchase_vendor_id ?? '',
       currency: r.currency || 'INR', order_date: r.order_date?.slice(0, 10) || '',
       expected_delivery_date: r.expected_delivery_date?.slice(0, 10) || '', terms: r.terms || '', notes: r.notes || '',
       items: (r.items?.length ? r.items : [{ ...EMPTY_ITEM }]).map(it => ({

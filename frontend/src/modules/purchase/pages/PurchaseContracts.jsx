@@ -150,7 +150,7 @@ export function NewContractModal({ onClose, onDone, presetVendorId = '' }) {
     setSaving(true); setErr(null)
     try {
       const c = await purchaseApi.contracts.create({
-        title: f.title, type: f.type, vendor_id: Number(f.vendor_id),
+        title: f.title, type: f.type, purchase_vendor_id: Number(f.vendor_id),
         start_date: f.start_date || null, end_date: f.end_date || null,
         spend_ceiling: f.spend_ceiling ? Number(f.spend_ceiling) : null, terms: f.terms || null,
         items: isRate ? cleanLines.map((l, i) => ({ description: l.description, unit: l.unit || null, rate: Number(l.rate) || 0, tax: Number(l.tax) || 0, sort_order: i })) : [],
