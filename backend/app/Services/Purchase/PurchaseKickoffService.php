@@ -613,15 +613,15 @@ class PurchaseKickoffService
 
         $email = ['sent' => 0, 'skipped' => 0, 'failed' => 0];
         foreach ($meeting->participants as $participant) {
-            $result = $this->notifications->email($participant->email, $subject, $body, [
-                'purchase_kickoff_meeting_id' => $meeting->id,
-            ]);
+            $result = $this->notifications->email($participant->email, $subject, $body,
+                ['category' => 'Purchase', 'purchase_kickoff_meeting_id' => $meeting->id]);
             $email[$result] = ($email[$result] ?? 0) + 1;
         }
 
         $phone    = $meeting->vendor?->phone;
-        $whatsapp = $this->notifications->whatsapp($phone, $body, ['purchase_kickoff_meeting_id' => $meeting->id]);
-        $sms      = $this->notifications->sms($phone, $body, ['purchase_kickoff_meeting_id' => $meeting->id]);
+        $whatsapp = $this->notifications->whatsapp($phone, $body,
+            ['category' => 'Purchase', 'purchase_kickoff_meeting_id' => $meeting->id]);
+        $sms      = $this->notifications->sms($phone, $body, ['category' => 'Purchase', 'purchase_kickoff_meeting_id' => $meeting->id]);
 
         $meeting->recordAudit('reminder_sent', $actor, "Reminder sent — email: {$email['sent']} sent, WhatsApp/SMS queued");
 
@@ -675,10 +675,11 @@ class PurchaseKickoffService
         $body = "The Minutes of Meeting (MOM) for \"{$meeting->title}\" have been published and are ready for your review and acknowledgement.\n\nPlease log into the Purchase Vendor Portal (Step 1 Onboarding) to view the document and record your acknowledgement.";
 
         if ($email) {
-            $this->notifications->email($email, $subjectTitle, $body, ['purchase_kickoff_meeting_id' => $meeting->id]);
+            $this->notifications->email($email, $subjectTitle, $body,
+                ['category' => 'Purchase', 'purchase_kickoff_meeting_id' => $meeting->id]);
         }
         if ($phone) {
-            $this->notifications->whatsapp($phone, $body, ['purchase_kickoff_meeting_id' => $meeting->id]);
+            $this->notifications->whatsapp($phone, $body, ['category' => 'Purchase', 'purchase_kickoff_meeting_id' => $meeting->id]);
         }
     }
 

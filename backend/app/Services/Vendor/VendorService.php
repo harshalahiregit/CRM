@@ -217,7 +217,7 @@ class VendorService
                 "Your onboarding is now fully complete and your account is active. You can log into your Vendor Portal and start adding your workforce workers, submitting medical records, induction details, and issuing site passes.\n\n" .
                 "Access Portal: " . \App\Support\FrontendUrl::to('/auth/login?role=third_party_vendor') . "\n\n" .
                 "Best regards,\nTPV Vendor Management Team",
-                ['vendor_id' => $vendor->id, 'event' => 'onboarding_approved'],
+                ['category' => 'Purchase', 'vendor_id' => $vendor->id, 'event' => 'onboarding_approved'],
                 $vendor->tenant_id,
             );
         }
@@ -554,7 +554,7 @@ class VendorService
     /** Send an ad-hoc email to a vendor (the Dashboard "Send Email" action). */
     public function sendEmail(Vendor $vendor, string $subject, string $body, ?User $actor = null): string
     {
-        $result = $this->notifications->email($vendor->email, $subject, $body, ['vendor_id' => $vendor->id]);
+        $result = $this->notifications->email($vendor->email, $subject, $body, ['category' => 'Purchase', 'vendor_id' => $vendor->id]);
         $vendor->recordAudit('Vendor Email Sent', $actor, $subject, ['result' => $result]);
 
         return $result;

@@ -107,9 +107,9 @@ class PurchaseCommunicationService
         $status = 'sent';
         try {
             match ($channel) {
-                'email'    => $this->notifications->email($recipient, $subject, $body, ['vendor_id' => $vendor->id, 'event' => 'purchase_communication'], $vendor->tenant_id),
-                'whatsapp' => $this->notifications->whatsapp($recipient, $body, ['vendor_id' => $vendor->id]),
-                'sms'      => $this->notifications->sms($recipient, $body, ['vendor_id' => $vendor->id]),
+                'email'    => $this->notifications->email($recipient, $subject, $body, ['category' => 'Purchase', 'vendor_id' => $vendor->id, 'event' => 'purchase_communication'], $vendor->tenant_id),
+                'whatsapp' => $this->notifications->whatsapp($recipient, $body, ['category' => 'Purchase', 'vendor_id' => $vendor->id]),
+                'sms'      => $this->notifications->sms($recipient, $body, ['category' => 'Purchase', 'vendor_id' => $vendor->id]),
             };
         } catch (\Throwable $e) {
             $status = 'failed';
@@ -200,7 +200,7 @@ class PurchaseCommunicationService
         if (! empty($recipient)) {
             $status = 'sent';
             try {
-                $this->notifications->email($recipient, $subject, $body, ['vendor_id' => $vendor->id, 'event' => $event], $vendor->tenant_id);
+                $this->notifications->email($recipient, $subject, $body, ['category' => 'Purchase', 'vendor_id' => $vendor->id, 'event' => $event], $vendor->tenant_id);
             } catch (\Throwable $e) {
                 $status = 'failed';
             }

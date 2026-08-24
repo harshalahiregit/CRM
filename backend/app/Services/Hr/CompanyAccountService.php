@@ -49,7 +49,7 @@ class CompanyAccountService
             $company->contact_email,
             'Your company account is approved',
             "Hello {$company->contact_person},\n\nYour company \"{$company->name}\" ({$company->company_code}) has been approved. You can now log in to your company portal and start creating hiring requests.\n\n— Recruitment Team",
-            ['company_id' => $company->id, 'event' => 'company_approved'],
+            ['category' => 'HR', 'company_id' => $company->id, 'event' => 'company_approved'],
         );
 
         return $company->fresh('users');
@@ -72,7 +72,7 @@ class CompanyAccountService
             $company->contact_email,
             'Update on your company registration',
             "Hello {$company->contact_person},\n\nWe're unable to approve the registration for \"{$company->name}\" at this time.".($reason ? "\n\nReason: {$reason}" : '')."\n\nPlease contact our team for assistance.\n\n— Recruitment Team",
-            ['company_id' => $company->id, 'event' => 'company_rejected'],
+            ['category' => 'HR', 'company_id' => $company->id, 'event' => 'company_rejected'],
         );
 
         return $company->fresh('users');

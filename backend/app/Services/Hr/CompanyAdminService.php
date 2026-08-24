@@ -111,7 +111,7 @@ class CompanyAdminService
 
         $this->notifications->email($user->email, 'You have been invited to '.$c->name.' portal',
             "Hello {$user->name},\n\nAn account has been created for you on the {$c->name} recruitment portal.\n\nLogin email: {$user->email}\nTemporary password: {$tempPassword}\nRole: ".(CompanyRole::LABELS[$data['role']] ?? $data['role'])."\n\nPlease log in (select the \"Company\" role) and change your password.\n\n— {$c->name}",
-            ['company_id' => $c->id, 'event' => 'team_invite']);
+            ['category' => 'Security', 'company_id' => $c->id, 'event' => 'team_invite']);
 
         return ['user' => $user, 'temp_password' => $tempPassword];
     }
@@ -185,7 +185,7 @@ class CompanyAdminService
         $c->recordAudit('Password reset for '.$target->name, $admin);
         $this->notifications->email($target->email, 'Your password was reset',
             "Hello {$target->name},\n\nYour password on the {$c->name} portal was reset.\n\nTemporary password: {$temp}\n\nPlease log in and change it.\n\n— {$c->name}",
-            ['company_id' => $c->id, 'event' => 'password_reset']);
+            ['category' => 'Security', 'company_id' => $c->id, 'event' => 'password_reset']);
 
         return $temp;
     }

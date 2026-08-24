@@ -527,9 +527,8 @@ class ManpowerRequestService
         $name = $requester?->name ?: 'there';
         $body = "Hi {$name},\n\nThe Job Description for \"{$title}\" (MR-{$mr->id}) has been published and recruitment has automatically started — the position is now Hiring in Progress.\n\nThe opening is live on the career portal, visible in the company portal, and recruiters are now tracking applicants.\n\nRegards,\nHR Team";
 
-        $this->notifications->email($requester?->email, "Job Published & Hiring Started — {$title}", $body, [
-            'event' => 'job_published_hiring_started', 'request_id' => $mr->id,
-        ]);
+        $this->notifications->email($requester?->email, "Job Published & Hiring Started — {$title}", $body,
+            ['category' => 'Recruitment', 'event' => 'job_published_hiring_started', 'request_id' => $mr->id]);
     }
 
     /** Move a posted job into active hiring. */

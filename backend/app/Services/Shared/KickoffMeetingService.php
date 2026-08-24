@@ -619,7 +619,7 @@ class KickoffMeetingService
                 $to,
                 $ackHere ? $ackSubject : $readSubject,
                 $this->renderMomEmail($meeting, $r['vendor'], $ackHere, $meetingDate, $momUrl),
-                ['kickoff_meeting_id' => $meeting->id, 'vendor_id' => $r['vendor']?->id],
+                ['category' => 'System', 'kickoff_meeting_id' => $meeting->id, 'vendor_id' => $r['vendor']?->id],
                 $this->momPlainText($meeting, $r['vendor'], $ackHere, $meetingDate, $momUrl),
                 $meeting->tenant_id,
             );
@@ -640,7 +640,7 @@ class KickoffMeetingService
                 $to,
                 $readSubject,
                 $this->renderMomEmail($meeting, null, null, $meetingDate, null),
-                ['kickoff_meeting_id' => $meeting->id],
+                ['category' => 'System', 'kickoff_meeting_id' => $meeting->id],
                 $this->momPlainText($meeting, null, null, $meetingDate, null),
                 $meeting->tenant_id,
             );
@@ -652,7 +652,7 @@ class KickoffMeetingService
                 $phone,
                 $this->momPlainText($meeting, $vendor, $ackUrl, $meetingDate,
                     $primaryToken ? FrontendUrl::to('/kickoff/mom/'.$primaryToken) : null),
-                ['kickoff_meeting_id' => $meeting->id],
+                ['category' => 'System', 'kickoff_meeting_id' => $meeting->id],
             );
         }
     }
@@ -1064,17 +1064,16 @@ class KickoffMeetingService
         // Email — one per attendee that has an address.
         $email = ['sent' => 0, 'skipped' => 0, 'failed' => 0];
         foreach ($meeting->attendees as $attendee) {
-            $result = $this->notifications->email($attendee->email, $subject, $body, [
-                'kickoff_meeting_id' => $meeting->id,
-            ]);
+            $result = $this->notifications->email($attendee->email, $subject, $body,
+                ['category' => 'System', 'kickoff_meeting_id' => $meeting->id]);
             $email[$result] = ($email[$result] ?? 0) + 1;
         }
 
         // WhatsApp / SMS — stubs. Directed at the vendor's phone (the attendee
         // registry holds no numbers). 'queued' means logged, never delivered.
         $phone = $this->subjectPhone($meeting->kickoffable);
-        $whatsapp = $this->notifications->whatsapp($phone, $body, ['kickoff_meeting_id' => $meeting->id]);
-        $sms = $this->notifications->sms($phone, $body, ['kickoff_meeting_id' => $meeting->id]);
+        $whatsapp = $this->notifications->whatsapp($phone, $body, ['category' => 'System', 'kickoff_meeting_id' => $meeting->id]);
+        $sms = $this->notifications->sms($phone, $body, ['category' => 'System', 'kickoff_meeting_id' => $meeting->id]);
 
         $meeting->recordAudit('reminder_sent', $actor, "Reminder sent — email: {$email['sent']} sent, WhatsApp/SMS queued");
         Log::channel('tpv')->info('Kickoff reminder sent', [

@@ -195,7 +195,7 @@ class EmployeeOnboardingService
                 $employee->email,
                 'Your onboarding has started',
                 "Hi {$employee->name},\n\nYour onboarding process has been initiated. Our HR team will guide you through the steps.\n\nRegards,\nHR Team",
-                ['event' => 'onboarding_started', 'onboarding_id' => $onboarding->id]
+                ['category' => 'HR', 'event' => 'onboarding_started', 'onboarding_id' => $onboarding->id]
             );
 
             Log::channel('hr')->info('Employee onboarding created', ['onboarding_id' => $onboarding->id, 'employee_id' => $employee->id, 'tenant_id' => $user->tenant_id]);
@@ -206,12 +206,12 @@ class EmployeeOnboardingService
                 if ($emp?->email) {
                     $this->notifications->email($emp->email, 'Your onboarding has started',
                         'Hello '.$emp->name.', your employee onboarding has been started. Please complete the pending sections.',
-                        ['onboarding_id' => $onboarding->id, 'event' => 'employee_onboarding_started']);
+                        ['category' => 'HR', 'onboarding_id' => $onboarding->id, 'event' => 'employee_onboarding_started']);
                 }
                 if ($user->email) {
                     $this->notifications->email($user->email, 'Employee onboarding started — '.($emp->name ?? ''),
                         'Onboarding has been opened for '.($emp->name ?? 'the employee').'.',
-                        ['onboarding_id' => $onboarding->id, 'event' => 'employee_onboarding_started']);
+                        ['category' => 'HR', 'onboarding_id' => $onboarding->id, 'event' => 'employee_onboarding_started']);
                 }
             } catch (\Throwable $e) {
                 Log::channel('hr')->warning('Onboarding start notification failed', ['onboarding_id' => $onboarding->id, 'error' => $e->getMessage()]);

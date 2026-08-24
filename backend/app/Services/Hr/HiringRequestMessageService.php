@@ -48,7 +48,7 @@ class HiringRequestMessageService
                 $request->assignedRecruiter?->email,
                 'New message on hiring request #'.$request->id,
                 "A new message was posted on \"{$request->job_title}\":\n\n{$body}",
-                ['hiring_request_id' => $request->id, 'event' => 'company_message'],
+                ['category' => 'Recruitment', 'hiring_request_id' => $request->id, 'event' => 'company_message'],
             );
         } else {
             $request->loadMissing('externalCompany:id,contact_email');
@@ -56,7 +56,7 @@ class HiringRequestMessageService
                 $request->externalCompany?->contact_email,
                 'New message on your hiring request',
                 "Your recruitment team posted a message on \"{$request->job_title}\":\n\n{$body}",
-                ['hiring_request_id' => $request->id, 'event' => 'recruiter_message'],
+                ['category' => 'Recruitment', 'hiring_request_id' => $request->id, 'event' => 'recruiter_message'],
             );
         }
 

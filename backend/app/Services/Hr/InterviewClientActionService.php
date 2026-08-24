@@ -62,7 +62,7 @@ class InterviewClientActionService
             $to,
             'Interview '.$action.' request from client',
             "The client submitted a '{$action}' action for the interview \"{$interview->round_name}\" (candidate: {$interview->candidate?->name}).".($note ? "\n\nDetails: {$note}" : ''),
-            ['interview_id' => $interview->id, 'event' => 'interview_client_'.strtolower($action)],
+            ['category' => 'Recruitment', 'interview_id' => $interview->id, 'event' => 'interview_client_'.strtolower($action)],
         );
 
         return $row;

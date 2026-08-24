@@ -578,7 +578,7 @@ class CompanyPortalService
             optional($offer->candidate?->assignedRecruiter)->email,
             'Client offer decision: '.ucfirst($decision),
             "The client {$map[$decision]} the offer for {$offer->candidate?->name} (OFR-{$offer->id}).".($comment ? "\n\nComment: {$comment}" : ''),
-            ['offer_id' => $offer->id, 'event' => 'offer_'.$decision],
+            ['category' => 'HR', 'offer_id' => $offer->id, 'event' => 'offer_'.$decision],
         );
 
         return $offer->fresh();
