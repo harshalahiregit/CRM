@@ -244,6 +244,8 @@ Route::middleware(['auth:sanctum', 'client.portal'])->prefix('portal/client')->g
     Route::get('/contracts',     [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'contracts']);
     Route::get('/projects',      [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'projects']);
     Route::get('/tickets',       [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'tickets']);
+    // Raising goes through Helpdesk's TicketIntakeContract, never a direct insert.
+    Route::post('/tickets',      [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'raiseTicket']);
     // §10 — the customer answers the survey, rather than staff typing in
     // a score they were told on the phone.
     Route::get('/feedback',      [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'myFeedback']);

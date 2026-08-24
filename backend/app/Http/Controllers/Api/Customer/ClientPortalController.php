@@ -8,6 +8,8 @@ use App\Models\Customer\ClientContact;
 use App\Models\Customer\ClientFeedback;
 use App\Services\Customer\ClientPortalAuthService;
 use App\Services\Customer\ClientPortalService;
+use App\Services\Customer\Contracts\TicketIntakeContract;
+use App\Services\Customer\TicketIntakeUnavailable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -52,6 +54,10 @@ class ClientPortalController extends Controller
             'phone'       => $c->phone,
             'permissions' => is_array($c->permissions) ? $c->permissions : [],
             'company'     => $this->client($r)->company,
+            // Whether Helpdesk has registered a real ticket intake yet. The
+            // portal hides the "raise a ticket" form when it has not, rather
+            // than offering a button that can only fail.
+            'can_raise_ticket' => $this->ticketIntakeAvailable(),
         ]);
     }
 
@@ -213,6 +219,58 @@ class ClientPortalController extends Controller
             ->whereNull('merged_into_id')
             ->orderByDesc('created_at')
             ->get(['id', 'subject', 'status', 'priority', 'created_at', 'resolved_at']));
+    }
+
+    /**
+     * Raise a support ticket from the portal.
+     *
+     * Deliberately does NOT insert into `tickets`. The read above is a guarded
+     * query builder because a SELECT cannot get a ticket wrong; a write can —
+     * the number, the SLA clock, the department routing, the manager
+     * notification and the acknowledgement email all live in Helpdesk's
+     * createTicket(). So this hands over the facts and lets Helpdesk build it.
+     *
+     * client_id is never accepted from the caller: it comes off the
+     * authenticated contact, like every other endpoint here.
+     */
+    public function raiseTicket(Request $r, TicketIntakeContract $intake)
+    {
+        $contact = $this->contact($r);
+        $client  = $this->client($r);
+
+        $this->portal->assertCan($contact, 'support');
+
+        $data = $r->validate([
+            'subject'  => 'required|string|max:191',
+            'body'     => 'required|string|max:10000',
+            // A hint only — Helpdesk caps it, so the portal cannot self-assign
+            // Urgent. Anything outside the list is rejected rather than coerced.
+            'priority' => 'nullable|in:low,medium,high',
+        ]);
+
+        $name = trim(($contact->first_name ?? '').' '.($contact->last_name ?? ''));
+
+        $ticketId = $intake->createFromCustomerPortal(
+            tenantId:        (int) $client->tenant_id,
+            clientId:        (int) $client->id,
+            clientContactId: (int) $contact->id,
+            requesterName:   $name !== '' ? $name : ($contact->email ?? 'Customer'),
+            requesterEmail:  (string) $contact->email,
+            subject:         $data['subject'],
+            body:            $data['body'],
+            priority:        $data['priority'] ?? null,
+        );
+
+        return response()->json([
+            'message' => 'Your ticket has been raised. We have emailed you a confirmation.',
+            'id'      => $ticketId,
+        ], 201);
+    }
+
+    /** True once Helpdesk has bound a real implementation over the placeholder. */
+    private function ticketIntakeAvailable(): bool
+    {
+        return ! app(TicketIntakeContract::class) instanceof TicketIntakeUnavailable;
     }
 
     public function statement(Request $r)

@@ -88,12 +88,135 @@ export const RECORD_VIEWS = {
   ]},
 }
 
+/**
+ * Raise a support ticket.
+ *
+ * The portal does not create the ticket — it asks Helpdesk to, through the
+ * server-side TicketIntakeContract, so numbering, SLA, department routing and
+ * the acknowledgement email all happen the way Helpdesk does them everywhere
+ * else. This form only collects the three things it can honestly supply.
+ *
+ * Priority is offered as a hint and labelled as one: Helpdesk caps it and
+ * agents re-triage, so promising the customer their choice sticks would be a
+ * lie. Urgent is deliberately absent from the list.
+ */
+function RaiseTicket({ onRaised }) {
+  const [open, setOpen] = useState(false)
+  const [subject, setSubject] = useState('')
+  const [body, setBody] = useState('')
+  const [priority, setPriority] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+
+  const close = () => { setOpen(false); setErr(''); setSubject(''); setBody(''); setPriority('') }
+
+  const submit = async () => {
+    if (!subject.trim() || !body.trim()) { setErr('Please give the ticket a subject and describe the problem.'); return }
+    setSaving(true); setErr('')
+    try {
+      await clientPortalApi.raiseTicket({ subject: subject.trim(), body: body.trim(), priority: priority || undefined })
+      close()
+      onRaised()
+    } catch (e) {
+      setErr(e?.response?.data?.message || 'Could not raise the ticket. Please try again.')
+    } finally { setSaving(false) }
+  }
+
+  const field = {
+    width: '100%', padding: '9px 11px', borderRadius: 9, fontSize: 13, boxSizing: 'border-box',
+    background: 'var(--bg-input,#0d0f15)', border: '1px solid var(--border,#2a2f3a)', color: 'var(--text-h,#fff)',
+  }
+  const label = { display: 'block', fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
+    letterSpacing: '.05em', color: 'var(--text-muted,#9ca3af)', margin: '0 0 5px' }
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)}
+        style={{ padding: '8px 14px', borderRadius: 10, fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
+          background: 'linear-gradient(135deg,#7C3AED,#6d28d9)', color: '#fff', border: 'none' }}>
+        Raise a ticket
+      </button>
+    )
+  }
+
+  return (
+    <div role="dialog" aria-label="Raise a support ticket"
+      style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,.6)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 18 }}
+      onClick={(e) => { if (e.target === e.currentTarget && !saving) close() }}>
+      <div style={{ width: 'min(520px,96vw)', maxHeight: '90vh', overflowY: 'auto', padding: 22, borderRadius: 16,
+        background: 'var(--bg-card,#12141b)', border: '1px solid var(--border,#2a2f3a)' }}>
+        <h2 style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-h,#fff)', margin: '0 0 4px' }}>Raise a support ticket</h2>
+        <p style={{ fontSize: 12, color: 'var(--text-muted,#9ca3af)', margin: '0 0 16px' }}>
+          We will email you a confirmation and reply to the address on your account.
+        </p>
+
+        <div style={{ marginBottom: 13 }}>
+          <label style={label} htmlFor="rt-subject">Subject *</label>
+          <input id="rt-subject" style={field} value={subject} maxLength={191}
+            onChange={(e) => setSubject(e.target.value)} placeholder="Short summary of the problem" />
+        </div>
+
+        <div style={{ marginBottom: 13 }}>
+          <label style={label} htmlFor="rt-body">What is happening? *</label>
+          <textarea id="rt-body" rows={5} style={{ ...field, resize: 'vertical' }} value={body} maxLength={10000}
+            onChange={(e) => setBody(e.target.value)}
+            placeholder="What you were doing, what you expected, and what happened instead." />
+        </div>
+
+        <div style={{ marginBottom: 16 }}>
+          <label style={label} htmlFor="rt-priority">How urgent is it?</label>
+          <select id="rt-priority" style={field} value={priority} onChange={(e) => setPriority(e.target.value)}>
+            <option value="">Let the support team decide</option>
+            <option value="low">Low — no rush</option>
+            <option value="medium">Medium — normal</option>
+            <option value="high">High — blocking work</option>
+          </select>
+          {/* Said plainly rather than discovered later. */}
+          <p style={{ fontSize: 11, color: 'var(--text-muted,#9ca3af)', margin: '5px 0 0' }}>
+            A guide for our team — they may adjust it after reading the ticket.
+          </p>
+        </div>
+
+        {err && <p style={{ fontSize: 12.5, color: '#ef4444', margin: '0 0 12px' }}>{err}</p>}
+
+        <div style={{ display: 'flex', gap: 9, justifyContent: 'flex-end' }}>
+          <button type="button" onClick={close} disabled={saving}
+            style={{ padding: '9px 15px', borderRadius: 10, fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
+              background: 'var(--bg-input,#0d0f15)', border: '1px solid var(--border,#2a2f3a)', color: 'var(--text-muted,#9ca3af)' }}>
+            Cancel
+          </button>
+          <button type="button" onClick={submit} disabled={saving}
+            style={{ padding: '9px 15px', borderRadius: 10, fontSize: 12.5, fontWeight: 700,
+              cursor: saving ? 'default' : 'pointer', opacity: saving ? .7 : 1,
+              background: 'linear-gradient(135deg,#7C3AED,#6d28d9)', color: '#fff', border: 'none' }}>
+            {saving ? 'Sending…' : 'Raise ticket'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function ClientPortalRecords({ view }) {
   const cfg = RECORD_VIEWS[view]
   const [params] = useSearchParams()
   const [rows, setRows] = useState(null)
   const [denied, setDenied] = useState(false)
   const [err, setErr] = useState('')
+  const [raised, setRaised] = useState(0)
+  // Only offered once Helpdesk has bound a real intake — otherwise the button
+  // could only ever fail, which is worse than not showing it.
+  const [canRaise, setCanRaise] = useState(false)
+
+  useEffect(() => {
+    if (view !== 'tickets') return
+    let alive = true
+    clientPortalApi.me()
+      .then((m) => { if (alive) setCanRaise(!!m?.can_raise_ticket) })
+      .catch(() => { if (alive) setCanRaise(false) })
+    return () => { alive = false }
+  }, [view])
 
   useEffect(() => {
     let alive = true
@@ -109,13 +232,18 @@ export default function ClientPortalRecords({ view }) {
     return () => { alive = false }
     // cfg is RECORD_VIEWS[view] — a module-level const, so its reference is
     // stable for a given view and cannot retrigger this on its own.
-  }, [view, params, cfg])
+  }, [view, params, cfg, raised])
 
   const card = { background: 'var(--bg-card,#12141b)', border: '1px solid var(--border,#2a2f3a)', borderRadius: 14 }
 
   return (
     <div style={{ maxWidth: 1100 }}>
-      <h1 style={{ fontSize: 21, fontWeight: 800, color: 'var(--text-h,#fff)', margin: '0 0 16px' }}>{cfg.title}</h1>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', margin: '0 0 16px' }}>
+        <h1 style={{ fontSize: 21, fontWeight: 800, color: 'var(--text-h,#fff)', margin: 0 }}>{cfg.title}</h1>
+        {view === 'tickets' && canRaise && !denied && (
+          <RaiseTicket onRaised={() => setRaised((n) => n + 1)} />
+        )}
+      </div>
 
       {denied ? (
         <div style={{ ...card, padding: 22 }}>

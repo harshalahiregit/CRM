@@ -6,7 +6,9 @@ use App\Contracts\AI\AIProviderInterface;
 use App\Contracts\Hr\AttendanceProvider;
 use App\Contracts\ProjectDirectoryContract;
 use App\Services\AI\AIProviderFactory;
+use App\Services\Customer\Contracts\TicketIntakeContract;
 use App\Services\Customer\CustomerDirectoryService;
+use App\Services\Customer\TicketIntakeUnavailable;
 use App\Services\Helpdesk\Contracts\CustomerServiceContract;
 use App\Services\Helpdesk\SlaService;
 use App\Services\Hr\Attendance\PlaceholderAttendanceProvider;
@@ -35,6 +37,16 @@ class AppServiceProvider extends ServiceProvider
         // the "billable → project" picker on expenses and the project link on
         // cheques and vendor bills.
         $this->app->bind(ProjectDirectoryContract::class, ProjectDirectoryService::class);
+        // Customer -> Helpdesk, the reverse of CustomerServiceContract above: the
+        // client portal raises tickets through this rather than inserting rows,
+        // so numbering, SLA, routing and the acknowledgement email all stay
+        // inside HelpdeskService::createTicket().
+        //
+        // bindIf, not bind: Helpdesk owns the real implementation and registers
+        // it here too. bindIf means whichever order the two lines end up in,
+        // Helpdesk's wins — this only applies when nothing else has bound it.
+        // Until then the portal hides the form (see ClientPortalController::me).
+        $this->app->bindIf(TicketIntakeContract::class, TicketIntakeUnavailable::class);
         // SlaService caches each tenant's SLA targets + paused/closed status sets
         // for the life of the request. That cache is what stops compute() from
         // querying once per ticket — a 31-ticket list costs 2 config queries

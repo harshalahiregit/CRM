@@ -79,6 +79,9 @@ export const clientPortalApi = {
   contracts: () => get('/portal/client/contracts'),
   projects: () => get('/portal/client/projects'),
   tickets: () => get('/portal/client/tickets'),
+  // Raising goes through Helpdesk's intake contract server-side, never a direct
+  // insert — so numbering, SLA, routing and the acknowledgement email all apply.
+  raiseTicket: (payload) => cpApi.post('/portal/client/tickets', payload).then((r) => r.data),
   notes: () => get('/portal/client/notes'),
   files: () => get('/portal/client/files'),
   contacts: () => get('/portal/client/contacts'),
