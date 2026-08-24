@@ -12,14 +12,14 @@ const TOGGLES = [
   ['require_special', 'Require a special character'],
   ['force_logout_after_password_change', 'Force logout after password change'],
   ['single_session_only', 'Allow only a single active session'],
-  ['two_factor_enabled', 'Two-factor authentication (feature flag)'],
+  ['two_factor_enabled', 'Two-factor authentication — not enforced yet'],
 ]
 const NUMS = [
   ['password_min_length', 'Password minimum length'],
   ['password_expiry_days', 'Password expiry (days, 0 = never)'],
   ['failed_login_lockout', 'Failed logins before lockout (0 = off)'],
   ['lockout_duration_minutes', 'Lockout duration (minutes)'],
-  ['session_timeout_minutes', 'Session timeout (minutes, 0 = never)'],
+  ['session_timeout_minutes', 'Session timeout (minutes) — not enforced yet'],
   ['remember_me_days', 'Remember-me duration (days)'],
   ['api_token_expiry_days', 'API token expiry (days, 0 = never)'],
 ]
@@ -68,6 +68,14 @@ export default function SecuritySettings() {
 
       <div className="card-3d">
         <h2 className="font-bold text-base mb-1" style={{ color: 'var(--text-h)' }}>Sessions & Lockout</h2>
+        {/* This card used to carry no caveat at all while none of it was wired,
+            so an admin got a success toast and an unchanged security posture.
+            Lockout and single-session are enforced now; the two that are not are
+            marked on their own labels rather than left looking identical. */}
+        <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
+          Lockout and single-session are enforced at sign-in. Items marked
+          “not enforced yet” are stored for when that feature lands.
+        </p>
         <div className="grid md:grid-cols-2 gap-4 mb-4">
           {NUMS.slice(2).map(([k, label]) => (
             <div key={k}><label className="label">{label}</label>

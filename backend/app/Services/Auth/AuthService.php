@@ -18,18 +18,50 @@ use App\Support\Hr\CompanyType;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 
 class AuthService
 {
     public function login(array $data): array
     {
+        // Lockout after repeated failures.
+        //
+        // The Security Settings page has always offered "Failed logins before
+        // lockout" and "Lockout duration", saved them, and read them back — while
+        // this method had no throttling of ANY kind. Ten wrong passwords cost an
+        // attacker nothing. That was a real gap, not just a decorative toggle.
+        //
+        // Keyed on email + IP so one attacker cannot lock a real user out of
+        // their own account by guessing at them from elsewhere.
+        $throttleKey = 'login:'.strtolower($data['email']).'|'.request()->ip();
+
         $user = $this->findUserForLogin($data['email'], $data['role']);
+        [$maxAttempts, $decayMinutes] = $this->lockoutPolicy($user);
+
+        if ($maxAttempts > 0 && RateLimiter::tooManyAttempts($throttleKey, $maxAttempts)) {
+            $seconds = RateLimiter::availableIn($throttleKey);
+            Log::channel('auth')->warning('Login blocked: locked out', [
+                'email' => $data['email'], 'ip' => request()->ip(), 'retry_in' => $seconds,
+            ]);
+
+            throw new BusinessException(
+                'Too many failed attempts. Try again in '.max(1, (int) ceil($seconds / 60)).' minute(s).',
+                429,
+            );
+        }
 
         if (! $user || ! Hash::check($data['password'], $user->password)) {
+            if ($maxAttempts > 0) {
+                RateLimiter::hit($throttleKey, $decayMinutes * 60);
+            }
             Log::channel('auth')->warning('Login failed: invalid credentials', ['email' => $data['email']]);
             throw new BusinessException('Invalid credentials. Please check your email and password.', 401);
         }
+
+        // A good password clears the counter — the lockout is for guessing, not
+        // for someone who mistyped twice and then got it right.
+        RateLimiter::clear($throttleKey);
 
         $this->assertUserCanLogin($user);
 
@@ -41,15 +73,6 @@ class AuthService
             (bool) ($data['remember'] ?? false),
             ['ip' => request()->ip(), 'browser' => $ua['browser'], 'device' => $ua['device']],
         );
-
-        // Track last login; company logins also get an audit-based login history.
-        $ip = request()->ip();
-        $user->forceFill(['last_login_at' => now(), 'last_login_ip' => $ip])->saveQuietly();
-        if ($user->role === 'company') {
-            app(\App\Services\AuditLogService::class)->record($user, 'Signed in', $user, null, [
-                'ip' => $ip, 'device' => request()->userAgent(), 'login' => true,
-            ]);
-        }
 
         // Track last login; company logins also get an audit-based login history.
         $ip = request()->ip();
@@ -368,6 +391,36 @@ class AuthService
     {
         app(\App\Services\Auth\SessionService::class)->endCurrent($user);
         Log::channel('auth')->info('User logged out', ['user_id' => $user->id]);
+    }
+
+    /**
+     * [attempts before lockout, lockout minutes] for this user's tenant.
+     *
+     * Read from the tenant's Security settings when the email matches a real
+     * user; an unknown email falls back to the registry default so that probing
+     * for valid addresses is still throttled. 0 attempts disables the lockout,
+     * which is what the setting's own `min:0` means.
+     */
+    private function lockoutPolicy(?User $user): array
+    {
+        $max   = 5;
+        $decay = 15;
+
+        if ($user?->tenant_id) {
+            try {
+                $security = app(\App\Services\Settings\SettingsService::class)
+                    ->getGroup((int) $user->tenant_id, 'security');
+                $max   = (int) ($security['failed_login_lockout'] ?? $max);
+                $decay = (int) ($security['lockout_duration_minutes'] ?? $decay);
+            } catch (\Throwable $e) {
+                // A settings failure must not disable the lockout; keep defaults.
+                Log::channel('auth')->warning('Security settings unreadable; using default lockout', [
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return [max(0, $max), max(1, $decay)];
     }
 
     private function findUserForLogin(string $email, string $role): ?User

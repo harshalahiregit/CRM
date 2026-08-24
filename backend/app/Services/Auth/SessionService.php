@@ -26,8 +26,34 @@ class SessionService
      */
     public function establish(User $user, bool $remember, array $meta): string
     {
-        $policy = (string) config('auth_sessions.concurrency', 'single');
-        $max    = (int) config('auth_sessions.max_devices', 1);
+        // The tenant's own Security setting wins over the deployment default.
+        //
+        // "Allow only a single active session" on the Security Settings page was
+        // saved, read back, and consulted by nothing — this method only ever
+        // looked at config/auth_sessions.php, so the toggle changed nothing and
+        // an admin who turned it on got a success toast and two live sessions.
+        $policy       = (string) config('auth_sessions.concurrency', 'single');
+        $max          = (int) config('auth_sessions.max_devices', 1);
+        $rememberDays = 0;   // 0 = "use the deployment default" (see below)
+
+        if ($user->tenant_id) {
+            try {
+                $security = app(\App\Services\Settings\SettingsService::class)
+                    ->getGroup((int) $user->tenant_id, 'security');
+
+                if (! empty($security['single_session_only'])) {
+                    $policy = 'single';
+                    $max    = 1;
+                }
+
+                $rememberDays = (int) ($security['remember_me_days'] ?? 0);
+            } catch (\Throwable $e) {
+                // Never block a login on a settings read.
+                \Illuminate\Support\Facades\Log::channel('auth')->warning(
+                    'Security settings unreadable during login', ['error' => $e->getMessage()],
+                );
+            }
+        }
 
         $active = UserSession::where('user_id', $user->id)->active()->orderBy('id')->get();
         $evict  = self::evictions($policy, $max, $active->pluck('id')->all());
@@ -39,8 +65,9 @@ class SessionService
             $user->tokens()->delete();
         }
 
+        // "Remember me for N days" is a tenant setting too; fall back to config.
         $days  = $remember
-            ? (int) config('auth_sessions.remember_me_days', 30)
+            ? ($rememberDays > 0 ? $rememberDays : (int) config('auth_sessions.remember_me_days', 30))
             : (int) config('auth_sessions.token_days', 30);
         $token = $user->createToken('crm-auth-token', ['*'], now()->addDays($days));
 
