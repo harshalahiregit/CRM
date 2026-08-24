@@ -20,7 +20,14 @@ const VISIBILITIES = {
   private: { label: 'Private', icon: EyeOff },
   client: { label: 'Client-visible', icon: Eye },
 }
-const EMPTY = { content: '', type: '', priority: '', deadline: '', reminder_at: '', visibility: 'team' }
+const EMPTY = {
+  content: '', type: '', priority: '', deadline: '', reminder_at: '', visibility: 'team',
+  // WHEN the conversation happened, as distinct from when this was typed.
+  contacted_at: '', is_pinned: false,
+}
+
+/** The seven kinds, for the filter row. */
+const NOTE_TYPES = ['Customer', 'Internal', 'Meeting', 'Commercial', 'Service', 'Escalation']
 
 const d10 = (v) => (v ? String(v).slice(0, 10) : '')
 const stripHtml = (html) => { const el = document.createElement('div'); el.innerHTML = html || ''; return el.textContent.trim() }
@@ -40,6 +47,8 @@ export default function NotesTab({ id, client, notes, reload, toast }) {
     deadline: form.deadline || null,
     reminder_at: form.reminder_at ? form.reminder_at.replace('T', ' ') : null,
     visibility: form.visibility || 'team',
+    contacted_at: form.contacted_at || null,
+    is_pinned: !!form.is_pinned,
   })
 
   const save = async () => {
@@ -61,6 +70,8 @@ export default function NotesTab({ id, client, notes, reload, toast }) {
       deadline: d10(n.deadline),
       reminder_at: n.reminder_at ? String(n.reminder_at).slice(0, 16).replace(' ', 'T') : '',
       visibility: n.visibility || 'team',
+      contacted_at: n.contacted_at ? String(n.contacted_at).slice(0, 16) : '',
+      is_pinned: !!n.is_pinned,
     })
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -136,6 +147,14 @@ export default function NotesTab({ id, client, notes, reload, toast }) {
               {Object.entries(PRIORITIES).map(([k, p]) => <option key={k} value={k}>{p.label}</option>)}
             </select>
           </div>
+          <div className="flex items-end">
+            {/* A note that matters permanently — terms agreed on a call, a
+                person's preference — otherwise sinks under routine ones. */}
+            <label className="flex items-center gap-2 text-xs cursor-pointer pb-2" style={{ color: 'var(--text-h)' }}>
+              <input type="checkbox" checked={!!form.is_pinned} onChange={e => sf('is_pinned', e.target.checked)} />
+              <span>Pin to top</span>
+            </label>
+          </div>
           <div>
             <label className="label">Deadline</label>
             <input type="date" className="input-3d text-sm" value={form.deadline} onChange={e => sf('deadline', e.target.value)} />
@@ -143,6 +162,14 @@ export default function NotesTab({ id, client, notes, reload, toast }) {
           <div>
             <label className="label">Reminder</label>
             <input type="datetime-local" className="input-3d text-sm" value={form.reminder_at} onChange={e => sf('reminder_at', e.target.value)} />
+          </div>
+          <div>
+            {/* When the conversation actually happened. Someone logs Friday's call
+                on Monday, and "when did we last speak" is unanswerable from the
+                row's own timestamp. */}
+            <label className="label">Contacted on</label>
+            <input type="datetime-local" className="input-3d text-sm" value={form.contacted_at}
+              onChange={e => sf('contacted_at', e.target.value)} />
           </div>
           <div>
             {/* §16 — what kind of note this is. Separate from visibility, which

@@ -201,6 +201,10 @@ class CustomerTimelineTest extends TestCase
             'visibility' => ClientVaultEntry::VISIBILITY_ALL, 'created_by' => $this->user->id,
         ]);
 
+        // The vault now asks who you are before it opens — the re-authentication
+        // the legacy CRM required and the port had dropped.
+        $this->postJson('/api/customers/vault/unlock', ['password' => 'x'])->assertOk();
+
         $this->postJson("/api/customers/{$this->client->id}/vault/{$entry->id}/reveal")->assertOk();
 
         $log = $this->getJson("/api/customers/{$this->client->id}/vault/{$entry->id}/access-log")

@@ -18,10 +18,30 @@ class ClientNoteController extends Controller
         $this->assertClientTenant($client, $request->user()->tenant_id);
 
         // Private notes are visible to their author only.
-        $notes = $client->notes()->with('author:id,name')
+        $query = $client->notes()->with('author:id,name')
             ->where(fn ($q) => $q->where('visibility', '!=', 'private')
-                ->orWhere('created_by', $request->user()->id))
-            ->latest()
+                ->orWhere('created_by', $request->user()->id));
+
+        // Seven types is enough that scrolling stops being a way to find one.
+        if ($type = $request->query('type')) {
+            $query->where('type', $type);
+        }
+        if ($visibility = $request->query('visibility')) {
+            $query->where('visibility', $visibility);
+        }
+        if ($request->boolean('pinned')) {
+            $query->where('is_pinned', true);
+        }
+        if ($search = $request->query('search')) {
+            $query->where('content', 'like', '%'.$search.'%');
+        }
+
+        // Pinned first, then by WHEN IT HAPPENED where that is known, falling
+        // back to when it was written. A call logged three days late belongs
+        // beside the day it happened, not at the top of the list.
+        $notes = $query
+            ->orderByDesc('is_pinned')
+            ->orderByRaw('COALESCE(contacted_at, created_at) DESC')
             ->get();
 
         return response()->json($notes);
@@ -69,6 +89,11 @@ class ClientNoteController extends Controller
             'deadline'    => 'nullable|date',
             'reminder_at' => 'nullable|date',
             'visibility'  => 'nullable|in:private,team,client',
+            // WHEN the conversation happened, not when it was typed. Someone
+            // logs Friday's call on Monday, and "when did we last speak to this
+            // customer" is unanswerable from created_at.
+            'contacted_at' => 'nullable|date',
+            'is_pinned'    => 'nullable|boolean',
         ]);
 
         $data['content'] = HtmlSanitizer::clean($data['content']);

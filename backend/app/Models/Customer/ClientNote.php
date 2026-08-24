@@ -13,11 +13,15 @@ class ClientNote extends Model
     protected $fillable = [
         'tenant_id', 'client_id', 'content', 'type', 'created_by',
         'priority', 'deadline', 'reminder_at', 'visibility',
+        'contacted_at', 'is_pinned',
     ];
 
     protected $casts = [
-        'deadline'    => 'date:Y-m-d',
-        'reminder_at' => 'datetime',
+        'deadline'     => 'date:Y-m-d',
+        'reminder_at'  => 'datetime',
+        // When the conversation happened, as distinct from when it was typed.
+        'contacted_at' => 'datetime',
+        'is_pinned'    => 'boolean',
     ];
 
     public function author()

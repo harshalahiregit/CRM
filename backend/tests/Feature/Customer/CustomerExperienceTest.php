@@ -160,10 +160,13 @@ class CustomerExperienceTest extends TestCase
             'subject' => 'Late', 'severity' => 'Medium', 'status' => 'Resolved',
             'raised_at' => now()->subDays(10), 'resolved_at' => now()->subDays(9),
         ]);
-        \App\Models\Customer\ClientComplaint::create($base + [
+        // array_merge, not `+`: PHP's array union keeps the LEFT side for a
+        // duplicate key, so `$base + ['kind' => 'Escalation']` silently left
+        // kind as 'Complaint' and this test never created an escalation at all.
+        \App\Models\Customer\ClientComplaint::create(array_merge($base, [
             'kind' => 'Escalation', 'subject' => 'Repeated', 'severity' => 'High',
             'status' => 'Investigating', 'raised_at' => now()->subDays(2),
-        ]);
+        ]));
 
         $c = $this->experience()->forClient($this->client)['complaints'];
 
