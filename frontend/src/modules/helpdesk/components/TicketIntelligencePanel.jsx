@@ -349,12 +349,16 @@ function TagsSection({ ticketId }) {
   const { data: tags = [] } = useQuery({ queryKey: key, queryFn: () => helpdeskApi.tickets.tags(ticketId) })
   const [name, setName] = useState('')
   const invalidate = () => qc.invalidateQueries({ queryKey: key })
+  // The tag name is passed as the mutate ARGUMENT, not read from `name` state:
+  // onMutate clears the input (setName('')) before the awaited mutationFn runs,
+  // and React Query invokes the latest closure — so reading `name` there sent an
+  // empty string and the API rejected it ("Provide a tag_id or a name.").
   const add = useMutation({
-    mutationFn: () => helpdeskApi.tickets.addTag(ticketId, { name }),
-    onMutate: async () => {
+    mutationFn: (tagName) => helpdeskApi.tickets.addTag(ticketId, { name: tagName }),
+    onMutate: async (tagName) => {
       await qc.cancelQueries({ queryKey: key })
       const prev = qc.getQueryData(key)
-      qc.setQueryData(key, (o = []) => [...(Array.isArray(o) ? o : []), { id: `tmp-${Date.now()}`, name, color: '#22d3ee' }])
+      qc.setQueryData(key, (o = []) => [...(Array.isArray(o) ? o : []), { id: `tmp-${Date.now()}`, name: tagName, color: '#22d3ee' }])
       setName('')
       return { prev }
     },
@@ -400,14 +404,14 @@ function TagsSection({ ticketId }) {
         <input
           value={name}
           onChange={e => setName(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && name.trim() && add.mutate()}
+          onKeyDown={e => e.key === 'Enter' && name.trim() && add.mutate(name.trim())}
           placeholder="add a tag…"
           className="flex-1 text-xs rounded-xl px-2.5 py-1.5 outline-none"
           style={INP}
         />
         <button
           disabled={!name.trim() || add.isPending}
-          onClick={() => add.mutate()}
+          onClick={() => add.mutate(name.trim())}
           className="flex items-center gap-1 text-xs font-bold px-3 rounded-xl disabled:opacity-40 transition-all hover:opacity-80"
           style={{ background: 'rgba(167,139,250,0.15)', color: '#a78bfa' }}
         >
