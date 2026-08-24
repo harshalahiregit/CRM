@@ -15,7 +15,11 @@ export default function StockMoveModal({ open, onClose, mode = 'move', product, 
   const { guard, dialog } = useDiscardGuard()
   const qc = useQueryClient()
   const adjusting = mode === 'adjust'
-  const [form, setForm] = useState({})
+  // Full shape from the first render so the inputs are controlled immediately —
+  // starting from {} left them briefly uncontrolled (value=undefined) until the
+  // open effect ran, which React warns about. The effect still fills warehouse_id
+  // once the warehouse list loads.
+  const [form, setForm] = useState({ type: 'receive', quantity: '', unit: '', warehouse_id: '', from_warehouse_id: '', to_warehouse_id: '', reason: '', notes: '' })
   const [err, setErr] = useState('')
   const [geo, setGeo] = useState(null)          // { lat, lng, address }
   const [geoBusy, setGeoBusy] = useState(false)
