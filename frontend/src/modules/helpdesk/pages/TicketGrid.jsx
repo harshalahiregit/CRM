@@ -32,6 +32,7 @@ import SlaTimer from '../components/ui/SlaTimer'
 import Select from '../components/ui/Select'
 import { ConfirmModal } from '@/components/ui/SearchPicker'
 import ListControls from '@/components/ui/ListControls'
+import PagerBar from '@/components/ui/PagerBar'
 
 /* ───────────────────────────────────────────────────────────────
    Universal Data Grid — Ticket inbox (SDS "Nova" flagship component).
@@ -110,7 +111,8 @@ export default function TicketGrid() {
   const [confirmDelete, setConfirmDelete] = useState(false)   // bulk-delete guard
   const [bulkErr, setBulkErr] = useState('')
   const [copiedId, setCopiedId] = useState(null)              // "public link" copied flash, per row
-  const [pageSize, setPageSize] = useState(25)                // rows shown; 0 = all
+  const [pageSize, setPageSize] = useState(25)                // rows per page; 0 = all
+  const [page, setPage] = useState(1)                         // 1-based
 
   // Copy a ticket's customer-facing link (/ticket/{id}-{token}) without opening
   // the row. email_token is the no-login credential — same ref the emails thread on.
@@ -192,11 +194,36 @@ export default function TicketGrid() {
   }, [tickets, view, q, sort, customerScope])
 
   // What the table actually renders — capped by the page-size control (0 = all).
-  const pagedRows = useMemo(() => (pageSize === 0 ? rows : rows.slice(0, pageSize)), [rows, pageSize])
+  // The selector used to slice from 0 with no page number and no pager, so
+  // everything past row 25 was simply unreachable and nothing said so.
+  const pageCount = pageSize === 0 ? 1 : Math.max(1, Math.ceil(rows.length / pageSize))
+  // Clamped rather than reset by an effect: a narrowing filter that leaves fewer
+  // pages than the one you are on lands you on the last real page, not a blank.
+  const safePage = Math.min(Math.max(1, page), pageCount)
+  const pagedRows = useMemo(
+    () => (pageSize === 0 ? rows : rows.slice((safePage - 1) * pageSize, safePage * pageSize)),
+    [rows, pageSize, safePage],
+  )
 
-  // Selection is scoped to what's currently visible.
-  const allSelected = rows.length > 0 && rows.every(t => selected.has(t.id))
-  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(rows.map(t => t.id)))
+  // A new filter, search or page size means starting from the top again.
+  const setPageSizePaged = (v) => { setPageSize(v); setPage(1) }
+  useEffect(() => { setPage(1) }, [view, q, sort, customerScope])
+
+  // Selection is scoped to what's currently visible — pagedRows, not rows.
+  //
+  // The header checkbox used to select `rows`, the whole filtered set, while the
+  // table renders `pagedRows`. With the default page size of 25 and 400 open
+  // tickets, ticking it reported "400 selected" above 25 visible rows, and bulk
+  // Delete then destroyed 375 tickets the operator never saw. Selecting what is
+  // on screen is the only reading of that checkbox that cannot surprise anyone.
+  const allSelected = pagedRows.length > 0 && pagedRows.every(t => selected.has(t.id))
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(pagedRows.map(t => t.id)))
+
+  // Selecting every match is still useful — it just has to be asked for. Offered
+  // only when it would actually add rows, and it says how many.
+  const hiddenMatches = rows.length - pagedRows.length
+  const allFilteredSelected = rows.length > 0 && selected.size >= rows.length
+  const selectAllFiltered = () => setSelected(new Set(rows.map(t => t.id)))
   const toggleOne = (id) => setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
 
   // Row status change — optimistic so the pill flips instantly instead of waiting
@@ -330,7 +357,7 @@ export default function TicketGrid() {
             style={{ padding: '8px 12px 8px 32px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-input)', fontSize: 13.5, outline: 'none', width: 240, color: 'var(--text-h)' }} />
         </div>
         <div className="flex-1" />
-        <ListControls pageSize={pageSize} onPageSize={setPageSize} onRefresh={refetchTickets} accent={ACCENT} />
+        <ListControls pageSize={pageSize} onPageSize={setPageSizePaged} onRefresh={refetchTickets} accent={ACCENT} />
         {/* Density */}
         <div className="flex items-center rounded-lg overflow-hidden" style={{ border: '1px solid var(--border)' }}>
           {[['comfortable', Rows3], ['dense', AlignJustify]].map(([k, Icon]) => (
@@ -372,6 +399,19 @@ export default function TicketGrid() {
         {selected.size > 0 && (
           <div className="flex items-center gap-2 px-4 py-2.5 flex-wrap" style={{ background: 'var(--bg-input)', borderBottom: '1px solid var(--border)' }}>
             <span className="text-xs font-bold" style={{ color: ACCENT }}>{selected.size} selected</span>
+            {/* The wider selection is opt-in and states its size, so a bulk
+                delete can never quietly reach rows that were never rendered. */}
+            {allSelected && hiddenMatches > 0 && !allFilteredSelected && (
+              <button type="button" onClick={selectAllFiltered}
+                className="text-xs font-bold underline" style={{ color: ACCENT }}>
+                Select all {rows.length} matching
+              </button>
+            )}
+            {allFilteredSelected && hiddenMatches > 0 && (
+              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                including {hiddenMatches} not shown
+              </span>
+            )}
             <div className="flex-1" />
             <Select
               value=""
@@ -555,6 +595,16 @@ export default function TicketGrid() {
             </tbody>
           </table>
         </div>
+          {/* Rows N-M of T plus prev/next. Without this the page-size selector
+              silently hid every ticket past the first page. */}
+          {pagedRows.length > 0 && (
+            <PagerBar
+              meta={{ current_page: safePage, last_page: pageCount, total: rows.length,
+                      from: (safePage - 1) * (pageSize || rows.length) + 1,
+                      to: Math.min(safePage * (pageSize || rows.length), rows.length) }}
+              onPage={setPage} unit="tickets" className="px-4 py-3"
+            />
+          )}
       </div>
 
       {showNew && (
