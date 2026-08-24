@@ -143,6 +143,13 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('customers')->gr
     Route::get('/{client}/linked/meetings',       [CustomerLinkedRecordsController::class, 'meetings']);
 
     // Vault (credentials)
+    // Vault unlock is per USER, not per customer — confirming your password
+    // opens the vault everywhere for a short window, so moving between
+    // customers does not mean retyping it each time.
+    Route::get('/vault/lock-state',                        [ClientVaultController::class, 'lockState']);
+    Route::post('/vault/unlock',                           [ClientVaultController::class, 'unlock'])->middleware('throttle:10,1');
+    Route::post('/vault/lock',                             [ClientVaultController::class, 'lock']);
+
     Route::get('/{client}/vault',                          [ClientVaultController::class, 'index']);
     Route::post('/{client}/vault',                         [ClientVaultController::class, 'store']);
     Route::put('/{client}/vault/{vaultEntry}',             [ClientVaultController::class, 'update']);
@@ -150,6 +157,8 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('customers')->gr
     Route::delete('/{client}/vault/{vaultEntry}',          [ClientVaultController::class, 'destroy']);
     // §15 — who revealed which credential, and when. Administrators only.
     Route::get('/{client}/vault/{vaultEntry}/access-log',  [ClientVaultController::class, 'accessLog']);
+    // A document leaving the vault is logged the same way a revealed password is.
+    Route::get('/{client}/vault/{vaultEntry}/download',    [ClientVaultController::class, 'download']);
 
     // Attachments
     Route::get('/{client}/attachments',                     [ClientAttachmentController::class, 'index']);

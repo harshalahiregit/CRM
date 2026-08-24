@@ -29,6 +29,8 @@ class ClientVaultAccessLog extends Model
     public const CREATED  = 'created';
     public const UPDATED  = 'updated';
     public const DELETED  = 'deleted';
+    /** A document leaving the vault is a disclosure, exactly like revealing a password. */
+    public const DOWNLOADED = 'downloaded';
 
     protected $fillable = [
         'tenant_id', 'client_id', 'vault_entry_id', 'user_id', 'action', 'ip', 'user_agent', 'created_at',

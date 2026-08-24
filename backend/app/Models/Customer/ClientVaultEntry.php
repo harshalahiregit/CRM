@@ -25,12 +25,35 @@ class ClientVaultEntry extends Model
     public const VISIBILITY_CREATOR = 3;   // only me (administrators not excluded)
 
     protected $fillable = [
-        'tenant_id', 'client_id', 'title', 'username', 'password', 'url', 'notes',
+        'tenant_id', 'client_id', 'kind', 'title', 'category', 'username', 'password', 'url', 'notes',
+        'file_name', 'file_path', 'mime_type', 'file_size', 'expires_at',
         'visibility', 'share_in_projects', 'created_by',
+    ];
+
+    /** A vault entry is a credential, a document, or both. */
+    public const KIND_CREDENTIAL = 'credential';
+    public const KIND_DOCUMENT   = 'document';
+    public const KINDS = [self::KIND_CREDENTIAL, self::KIND_DOCUMENT];
+
+    /**
+     * The restricted classes the vault is for.
+     *
+     * Suggestions, not a closed set — the column is a plain string so a class
+     * nobody anticipated can still be recorded rather than refused.
+     */
+    public const CATEGORIES = [
+        'Agreement',
+        'Legal',
+        'Commercial — Confidential',
+        'Sensitive Customer Information',
+        'Restricted',
+        'Other',
     ];
 
     protected $casts = [
         'password'          => 'encrypted',
+        'expires_at'        => 'date',
+        'file_size'         => 'integer',
         'visibility'        => 'integer',
         'share_in_projects' => 'boolean',
     ];

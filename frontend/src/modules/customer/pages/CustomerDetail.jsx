@@ -2,13 +2,10 @@ import { useState, useEffect, useRef, Fragment } from 'react'
 import { createPortal } from 'react-dom'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  ArrowLeft, Building2, Phone, Receipt, Wallet, CreditCard,
-  Globe, Linkedin, Facebook, Instagram, Twitter,
-  Package, Users2, UserPlus, Link2, Plus, Trash2, Eye, EyeOff, Upload,
-  FileText, KeyRound, Bell, StickyNote, MapPin, Edit2, X, ChevronDown,
-  ClipboardList, FileX, IndianRupee, RefreshCw, FileSignature, Percent, Truck, LifeBuoy, Paperclip, Send, LayoutDashboard, History, Activity, CalendarDays, ShoppingCart, FolderKanban, CheckSquare, AlertOctagon, Star, Globe2,
+  ArrowLeft, Building2, Phone, Receipt, Wallet, CreditCard, Globe, Linkedin, Facebook, Instagram, Twitter, Package, Users2, UserPlus, Link2, Plus, Trash2, Eye, EyeOff, Upload, FileText, KeyRound, Bell, StickyNote, MapPin, Edit2, X, ChevronDown, ClipboardList, FileX, IndianRupee, RefreshCw, FileSignature, Percent, Truck, LifeBuoy, Paperclip, Send, LayoutDashboard, History, Activity, CalendarDays, ShoppingCart, FolderKanban, CheckSquare, AlertOctagon, Star, Globe2, Download,
 } from 'lucide-react'
 import { customerApi } from '@/services/customerApi'
+import api from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import CustomFieldInput, { cfWidthStyle } from '../components/CustomFieldInput'
@@ -876,24 +873,119 @@ const VAULT_VISIBILITY = [
 ]
 const EMPTY_VAULT = { title: '', username: '', password: '', url: '', notes: '', visibility: 1, share_in_projects: false }
 
+/** Categories the vault is for — suggestions, not a closed list. */
+const VAULT_CATEGORIES = [
+  'Agreement', 'Legal', 'Commercial — Confidential',
+  'Sensitive Customer Information', 'Restricted', 'Other',
+]
+
 function VaultTab({ id, entries, reload, toast }) {
   const [form, setForm] = useState(EMPTY_VAULT)
   const [adding, setAdding] = useState(false)
   const [revealed, setRevealed] = useState({})
+  const [file, setFile] = useState(null)
+
+  // Re-authentication, as the legacy CRM required before opening the vault. A
+  // session left open on an unlocked laptop is the realistic way a credential
+  // store leaks, and every other control here assumes the person at the
+  // keyboard is the one who logged in.
+  const [unlocked, setUnlocked] = useState(false)
+  const [pw, setPw] = useState('')
+  const [unlocking, setUnlocking] = useState(false)
+
+  useEffect(() => {
+    customerApi.vault.lockState().then(r => setUnlocked(!!r.unlocked)).catch(() => setUnlocked(false))
+  }, [])
+
+  const doUnlock = async () => {
+    if (!pw) return toast.error('Enter your password')
+    setUnlocking(true)
+    try { await customerApi.vault.unlock(pw); setUnlocked(true); setPw('') }
+    catch (e) { toast.error(e.message) } finally { setUnlocking(false) }
+  }
+
+  const doLock = async () => {
+    try { await customerApi.vault.lock(); setUnlocked(false); setRevealed({}) } catch (e) { toast.error(e.message) }
+  }
+
   const add = async () => {
     if (!form.title.trim()) return toast.error('Title required')
-    try { await customerApi.vault.create(id, form); setForm(EMPTY_VAULT); setAdding(false); reload() }
-    catch (e) { toast.error(e.message) }
+    try {
+      if (file) {
+        // Multipart when a document is attached; the entry becomes a document
+        // rather than a credential, server-side.
+        const fd = new FormData()
+        Object.entries(form).forEach(([k, v]) => {
+          if (v !== null && v !== undefined && v !== '') fd.append(k, typeof v === 'boolean' ? (v ? 1 : 0) : v)
+        })
+        fd.append('file', file)
+        await customerApi.vault.createWithFile(id, fd)
+      } else {
+        await customerApi.vault.create(id, form)
+      }
+      setForm(EMPTY_VAULT); setFile(null); setAdding(false); reload()
+    } catch (e) { toast.error(e.message) }
   }
+
+  /**
+   * Fetch with the bearer token and hand the browser a blob.
+   *
+   * Not a plain <a href>: the route is authenticated and the download is logged
+   * server-side, so a bare link would 401 and record nothing.
+   */
+  const download = async (entry) => {
+    try {
+      const res = await api.get(customerApi.vault.downloadUrl(id, entry.id), { responseType: 'blob' })
+      const url = URL.createObjectURL(res.data)
+      const a = document.createElement('a')
+      a.href = url; a.download = entry.file_name || 'document'
+      a.click(); URL.revokeObjectURL(url)
+    } catch (e) {
+      // 423 means "you are allowed, but confirm who you are first".
+      if (e?.response?.status === 423) { setUnlocked(false); return toast.error('Confirm your password to open the vault.') }
+      toast.error(e?.response?.data?.message || 'Could not download that document.')
+    }
+  }
+
   const reveal = async (eid) => {
     try { const r = await customerApi.vault.reveal(id, eid); setRevealed(p => ({ ...p, [eid]: r.password })) }
-    catch (e) { toast.error(e.message) }
+    catch (e) {
+      if (/confirm your password/i.test(e.message || '')) setUnlocked(false)
+      toast.error(e.message)
+    }
   }
   const del = async (eid) => { try { await customerApi.vault.remove(id, eid); reload() } catch (e) { toast.error(e.message) } }
   return (
     <div className="space-y-4">
+      {/* Confirm-your-password gate. Entries are still listed — titles are not
+          the secret — but revealing a password or downloading a document needs
+          a recent confirmation that you are who the session says. */}
+      {!unlocked ? (
+        <div className="card-3d" style={{ padding: 16, border: '1px solid rgba(245,158,11,0.35)', background: 'rgba(245,158,11,0.06)' }}>
+          <p className="text-sm font-bold" style={{ color: 'var(--text-h)' }}>The vault is locked</p>
+          <p className="text-xs mt-1 mb-3" style={{ color: 'var(--text-muted)' }}>
+            Confirm your password to reveal credentials or open documents. Stays unlocked for 15 minutes.
+          </p>
+          <div className="flex gap-2 flex-wrap">
+            <input type="password" className="input-3d text-sm" style={{ maxWidth: 260 }} placeholder="Your password"
+              value={pw} onChange={e => setPw(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') doUnlock() }} />
+            <button onClick={doUnlock} disabled={unlocking}
+              className="px-4 py-2 rounded-xl text-xs font-bold text-white disabled:opacity-60"
+              style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>
+              {unlocking ? 'Checking…' : 'Unlock vault'}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between gap-2 flex-wrap px-1">
+          <span className="text-xs font-bold" style={{ color: '#10b981' }}>● Vault unlocked</span>
+          <button onClick={doLock} className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Lock now</button>
+        </div>
+      )}
+
       <div className="flex justify-end">
-        <button onClick={() => setAdding(a => !a)} className="px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1" style={{ background: 'var(--bg-input)', color: 'var(--accent)', border: '1px solid var(--border)' }}><Plus size={13} /> New credential</button>
+        <button onClick={() => setAdding(a => !a)} className="px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1" style={{ background: 'var(--bg-input)', color: 'var(--accent)', border: '1px solid var(--border)' }}><Plus size={13} /> New entry</button>
       </div>
       {adding && (
         <div className="card-3d space-y-3" style={{ padding: '16px' }}>
@@ -902,6 +994,29 @@ function VaultTab({ id, entries, reload, toast }) {
             <input className="input-3d text-sm" placeholder="URL" value={form.url} onChange={e => setForm(p => ({ ...p, url: e.target.value }))} />
             <input className="input-3d text-sm" placeholder="Username" value={form.username} onChange={e => setForm(p => ({ ...p, username: e.target.value }))} />
             <input className="input-3d text-sm" placeholder="Password" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} />
+          </div>
+
+          {/* An entry may be a credential, a document, or both. Agreements and
+              legal papers belong here rather than in Files, where there is no
+              per-entry visibility and no access log. */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Document (optional)</label>
+              <input type="file" className="input-3d text-sm" onChange={e => setFile(e.target.files?.[0] ?? null)} />
+              {file && <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>{file.name} · {Math.max(1, Math.round(file.size / 1024))} KB</p>}
+            </div>
+            <div>
+              <label className="label">Classification</label>
+              <input className="input-3d text-sm" list="opt-vault-category" placeholder="Agreement, Legal, Restricted…"
+                value={form.category || ''} onChange={e => setForm(p => ({ ...p, category: e.target.value }))} />
+              <datalist id="opt-vault-category">{VAULT_CATEGORIES.map(c => <option key={c} value={c} />)}</datalist>
+            </div>
+            <div>
+              <label className="label">Expires on (optional)</label>
+              {/* Agreements and certificates lapse; recorded so alerts can warn. */}
+              <input type="date" className="input-3d text-sm" value={form.expires_at || ''}
+                onChange={e => setForm(p => ({ ...p, expires_at: e.target.value }))} />
+            </div>
           </div>
           <div>
             <label className="label">Notes</label>
@@ -948,8 +1063,30 @@ function VaultTab({ id, entries, reload, toast }) {
                 <div className="flex items-center gap-2 flex-wrap">
                   <p className="font-bold text-sm" style={{ color: 'var(--text-h)' }}>{v.title}</p>
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background: 'var(--bg-input)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>{vis.badge}</span>
+                  {v.category && <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b' }}>{v.category}</span>}
                   {v.share_in_projects && <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background: 'rgba(124,58,237,0.1)', color: 'var(--accent)' }}>Shared in projects</span>}
                 </div>
+
+                {/* The document, when this entry carries one. Downloading is a
+                    disclosure and is logged, so it goes through the API rather
+                    than a plain link. */}
+                {v.file_name && (
+                  <div className="flex items-center gap-2 flex-wrap mt-2">
+                    <button type="button" onClick={() => download(v)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold"
+                      style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--accent)' }}>
+                      <Download size={12} /> {v.file_name}
+                    </button>
+                    {v.file_size ? <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{Math.max(1, Math.round(v.file_size / 1024))} KB</span> : null}
+                    {v.expires_at && (
+                      <span className="text-[10px] font-bold"
+                        style={{ color: new Date(v.expires_at) < new Date() ? '#ef4444' : 'var(--text-muted)' }}>
+                        {new Date(v.expires_at) < new Date() ? 'Expired ' : 'Expires '}
+                        {new Date(v.expires_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      </span>
+                    )}
+                  </div>
+                )}
 
                 {/* Credentials */}
                 <div className="flex flex-wrap items-center gap-x-5 gap-y-1 mt-2 text-xs">

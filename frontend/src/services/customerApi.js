@@ -139,6 +139,21 @@ export const customerApi = {
     update: (id, entryId, data) => api.put(`/customers/${id}/vault/${entryId}`, data).then(r => r.data).catch(handleErr),
     reveal: (id, entryId) => api.post(`/customers/${id}/vault/${entryId}/reveal`).then(r => r.data).catch(handleErr),
     remove: (id, entryId) => api.delete(`/customers/${id}/vault/${entryId}`).then(r => r.data).catch(handleErr),
+
+    // A vault entry may carry a document as well as a credential, so create and
+    // update go as multipart when a file is attached.
+    createWithFile: (id, formData) =>
+      api.post(`/customers/${id}/vault`, formData).then(r => r.data).catch(handleErr),
+
+    // The download is a disclosure and is logged server-side, so it must go
+    // through the API with the bearer token — never a bare link.
+    downloadUrl: (id, entryId) => `/customers/${id}/vault/${entryId}/download`,
+
+    // Re-authentication. Per USER, not per customer: confirming once opens the
+    // vault everywhere for a short window rather than at each customer.
+    lockState: () => api.get('/customers/vault/lock-state').then(r => r.data).catch(handleErr),
+    unlock:    (password) => api.post('/customers/vault/unlock', { password }).then(r => r.data).catch(handleErr),
+    lock:      () => api.post('/customers/vault/lock').then(r => r.data).catch(handleErr),
   },
 
   // Attachments (a.k.a. "Files" in the legacy CRM)
