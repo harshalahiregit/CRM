@@ -274,6 +274,10 @@ class BannedPatternsTest extends TestCase
         'pages/careers/ClientTrackingPortal.jsx' => 3,
         'pages/careers/HiringRequestPortal.jsx' => 2,
         'pages/client-portal/ClientPortalFeedback.jsx' => 1,
+        // Follows the portal's own button convention (the same gradient is in
+        // Feedback, Login and Shell). The portal needs the shared Btn extraction
+        // too — recorded so it cannot grow, not blessed.
+        'pages/client-portal/ClientPortalRecords.jsx' => 2,
         'pages/client-portal/ClientPortalLogin.jsx' => 1,
         'pages/client-portal/ClientPortalShell.jsx' => 1,
         'pages/company-portal/CompanyCandidates.jsx' => 4,
