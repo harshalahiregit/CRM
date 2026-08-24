@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Plus, RefreshCw, X, Pencil, Trash2, ArrowRight, Paperclip } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
+import LoadError from '@/components/ui/LoadError'
 import { useAuth } from '@/context/AuthContext'
 import { KIT3D_STYLE as PURCHASE_STYLE } from '@/components/ui/kit3d'
 
@@ -17,6 +18,7 @@ export default function PurchaseCapaRegister() {
   const { user } = useAuth()
   const admin = ['admin', 'staff'].includes(user?.role)
   const [rows, setRows] = useState(null)
+  const [loadError, setLoadError] = useState(null)
   const [meta, setMeta] = useState({ kinds: [], types: [], priorities: [], statuses: [], stats: {} })
   const [vendors, setVendors] = useState([])
   const [statusF, setStatusF] = useState('')
@@ -28,8 +30,8 @@ export default function PurchaseCapaRegister() {
     if (statusF) params.status = statusF
     if (kindF) params.source_kind = kindF
     purchaseApi.capas.list(params)
-      .then(d => { setRows(d?.data ?? []); setMeta({ kinds: d?.kinds ?? [], types: d?.types ?? [], priorities: d?.priorities ?? [], statuses: d?.statuses ?? [], stats: d?.stats ?? {} }) })
-      .catch(() => setRows([]))
+      .then(d => { setLoadError(null); setRows(d?.data ?? []); setMeta({ kinds: d?.kinds ?? [], types: d?.types ?? [], priorities: d?.priorities ?? [], statuses: d?.statuses ?? [], stats: d?.stats ?? {} }) })
+      .catch(e => { setRows([]); setLoadError(e) })
   }, [statusF, kindF])
   useEffect(() => { load() }, [load])
   useEffect(() => { purchaseApi.vendors.list().then(d => setVendors(Array.isArray(d) ? d : (d?.data ?? []))).catch(() => setVendors([])) }, [])
@@ -90,7 +92,8 @@ export default function PurchaseCapaRegister() {
               </tr>
             </thead>
             <tbody>
-              {rows === null ? <tr><td colSpan={9} style={{ padding: 18, color: 'var(--text-muted)' }}>Loading…</td></tr>
+              {loadError ? <tr><td colSpan={9} style={{ padding: 8 }}><LoadError error={loadError} onRetry={load} /></td></tr>
+                : rows === null ? <tr><td colSpan={9} style={{ padding: 18, color: 'var(--text-muted)' }}>Loading…</td></tr>
                 : rows.length === 0 ? <tr><td colSpan={9} style={{ padding: 18, color: 'var(--text-muted)' }}>No CAPAs.</td></tr>
                 : rows.map(c => {
                   const idx = (meta.statuses || []).indexOf(c.status)

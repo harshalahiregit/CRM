@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Save, Plus, Pencil, Trash2, ExternalLink, Info } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
+import LoadError from '@/components/ui/LoadError'
 import { useAuth } from '@/context/AuthContext'
 import { KIT3D_STYLE as PURCHASE_STYLE, labelStyle, inputStyle, Overlay, ModalFooter, Field, TextInput } from '@/components/ui/kit3d'
 
@@ -43,7 +44,9 @@ export default function PurchaseSettings() {
   const [settings, setSettings] = useState(null)
   const [msg, setMsg] = useState(null)
 
+  const [loadError, setLoadError] = useState(null)
   const load = useCallback(() => {
+      setLoadError(null)
     purchaseApi.settings.get().then(setSettings).catch(() => setSettings({}))
   }, [])
   useEffect(() => { load() }, [load])
@@ -264,8 +267,10 @@ function CategoriesTab({ canEdit }) {
   const [modal, setModal] = useState(null)
   const [err, setErr] = useState(null)
 
+  const [loadError, setLoadError] = useState(null)
   const load = useCallback(() => {
-    purchaseApi.vendorCategories.list().then(r => setRows(r?.data ?? r ?? [])).catch(() => setRows([]))
+      setLoadError(null)
+    purchaseApi.vendorCategories.list().then(r => setRows(r?.data ?? r ?? [])).catch(e => { setRows([]); setLoadError(e) })
   }, [])
   useEffect(() => { load() }, [load])
 
@@ -285,7 +290,8 @@ function CategoriesTab({ canEdit }) {
 
       {err && <p style={{ color: '#ef4444', fontSize: 12.5, margin: '0 0 10px' }}>{err}</p>}
 
-      {rows === null ? <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading…</p>
+      {loadError ? <LoadError error={loadError} onRetry={load} />
+        : rows === null ? <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading…</p>
         : rows.length === 0 ? <p style={{ color: 'var(--text-muted)', fontSize: 13, padding: '18px 0' }}>No categories yet. Add one so vendors can be classified.</p>
           : (
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>

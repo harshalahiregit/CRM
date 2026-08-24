@@ -2,6 +2,7 @@
 import { useNavigate } from 'react-router-dom'
 import { Save, ExternalLink, ClipboardList, Rocket, Inbox, Plus, CalendarClock, CheckCircle2, Trash2, Users, User, HardHat, FileText, Paperclip, StickyNote, ShieldCheck } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
+import LoadError from '@/components/ui/LoadError'
 import { projectApi, PROJECT_STATUS } from '@/services/projectApi'
 import { helpdeskApi } from '@/services/helpdeskApi'
 import ProjectFormDrawer from '@/modules/projects/components/ProjectFormDrawer'
@@ -100,6 +101,7 @@ function VendorScopedList({
 }) {
   const { vendor } = useVendorWorkspace()
   const [rows, setRows] = useState(null)
+  const [loadError, setLoadError] = useState(null)
   const [adding, setAdding] = useState(false)
   const [nonce, setNonce] = useState(0)
   const fetchRef = useRef(fetcher)
@@ -108,9 +110,10 @@ function VendorScopedList({
   useEffect(() => {
     let alive = true
     setRows(null)
+    setLoadError(null)
     fetchRef.current(vendor.id)
       .then((r) => { if (alive) setRows(Array.isArray(r) ? r : (r?.data ?? [])) })
-      .catch(() => { if (alive) setRows([]) })
+      .catch((e) => { if (alive) { setRows([]); setLoadError(e) } })
     return () => { alive = false }
   }, [vendor.id, nonce])
 
@@ -129,7 +132,8 @@ function VendorScopedList({
       <TabHead title={title} count={rows?.length}
         addLabel={(AddModal || onAdd) ? addLabel : null}
         onAdd={onAdd || (() => setAdding(true))} />
-      {rows === null ? <div style={{ color: 'var(--text-muted)' }}>Loading…</div>
+      {loadError ? <LoadError error={loadError} onRetry={() => setNonce(n => n + 1)} />
+        : rows === null ? <div style={{ color: 'var(--text-muted)' }}>Loading…</div>
         : rows.length === 0 ? <Empty text={emptyText || `No ${title.toLowerCase()} for this vendor`} />
           : (
             <div style={{ overflowX: 'auto' }}>
@@ -345,6 +349,7 @@ export function ContractsTab() {
   const { vendor } = useVendorWorkspace()
   const navigate = useNavigate()
   const [rows, setRows] = useState(null)
+  const [loadError, setLoadError] = useState(null)
   const [err, setErr] = useState(null)
   const [adding, setAdding] = useState(false)
   const [nonce, setNonce] = useState(0)
@@ -352,9 +357,10 @@ export function ContractsTab() {
   useEffect(() => {
     let alive = true
     setRows(null)
+    setLoadError(null)
     purchaseApi.contracts.list({ purchase_vendor_id: vendor.id })
       .then((r) => { if (alive) setRows(Array.isArray(r) ? r : (r?.data ?? [])) })
-      .catch(() => { if (alive) setRows([]) })
+      .catch((e) => { if (alive) { setRows([]); setLoadError(e) } })
     return () => { alive = false }
   }, [vendor.id, nonce])
 
@@ -387,7 +393,8 @@ export function ContractsTab() {
       )}
       <TabHead title="Contracts" count={rows?.length} addLabel="Add Contract" onAdd={() => setAdding(true)} />
       {err && <p style={{ color: '#ef4444', fontSize: 12.5, margin: '0 0 10px' }}>{err}</p>}
-      {rows === null ? <div style={{ color: 'var(--text-muted)' }}>Loading…</div>
+      {loadError ? <LoadError error={loadError} onRetry={() => setNonce(n => n + 1)} />
+        : rows === null ? <div style={{ color: 'var(--text-muted)' }}>Loading…</div>
         : rows.length === 0 ? <Empty text="No contracts for this vendor" />
           : (
             <div style={{ overflowX: 'auto' }}>
@@ -528,12 +535,13 @@ function PaymentsTab() {
   const { vendor } = useVendorWorkspace()
   const navigate = useNavigate()
   const [rows, setRows] = useState(null)
+  const [loadError, setLoadError] = useState(null)
 
   useEffect(() => {
     let alive = true
     purchaseApi.vendors.payments(vendor.id)
       .then(r => { if (alive) setRows(Array.isArray(r) ? r : (r?.data ?? [])) })
-      .catch(() => { if (alive) setRows([]) })
+      .catch((e) => { if (alive) { setRows([]); setLoadError(e) } })
     return () => { alive = false }
   }, [vendor.id])
 
@@ -545,7 +553,8 @@ function PaymentsTab() {
           own Record Payment action — there is no standalone payment form, and
           inventing one would be a second way to write the same row. */}
       <TabHead title="Payments" count={rows?.length} />
-      {rows === null ? <div style={{ color: 'var(--text-muted)' }}>Loading…</div>
+      {loadError ? <LoadError error={loadError} onRetry={null} />
+        : rows === null ? <div style={{ color: 'var(--text-muted)' }}>Loading…</div>
         : rows.length === 0 ? <Empty text="No payments recorded against this vendor's invoices" />
           : (
             <div style={{ overflowX: 'auto' }}>
@@ -698,10 +707,12 @@ function ProjectTab() {
   const [rows, setRows] = useState(null)
   const [adding, setAdding] = useState(false)
 
+  const [loadError, setLoadError] = useState(null)
   const load = useCallback(() => {
+      setLoadError(null)
     projectApi.list({ vendor_id: vendor.id, vendor_type: 'purchase_vendor' })
       .then(d => setRows(d?.data ?? d ?? []))
-      .catch(() => setRows([]))
+      .catch(e => { setRows([]); setLoadError(e) })
   }, [vendor.id])
 
   useEffect(() => { load() }, [load])
@@ -727,7 +738,8 @@ function ProjectTab() {
         </h2>
         <button onClick={() => setAdding(true)} style={primaryBtn}><Plus size={14} /> Add Project</button>
       </div>
-      {rows === null ? <div style={{ color: 'var(--text-muted)' }}>Loading…</div>
+      {loadError ? <LoadError error={loadError} onRetry={load} />
+        : rows === null ? <div style={{ color: 'var(--text-muted)' }}>Loading…</div>
         : rows.length === 0 ? <Empty text="No projects for this vendor" />
           : (
             <div style={{ overflowX: 'auto' }}>
@@ -853,6 +865,7 @@ function TicketTab() {
   const { vendor } = useVendorWorkspace()
   const navigate = useNavigate()
   const [rows, setRows] = useState(null)
+  const [loadError, setLoadError] = useState(null)
   const [projects, setProjects] = useState([])
   const [settings, setSettings] = useState(null)
   const [adding, setAdding] = useState(false)
@@ -861,9 +874,10 @@ function TicketTab() {
   useEffect(() => {
     let alive = true
     setRows(null)
+    setLoadError(null)
     helpdeskApi.tickets.list({ vendor_id: vendor.id, vendor_type: 'purchase_vendor' })
       .then(r => { if (alive) setRows(Array.isArray(r) ? r : (r?.data ?? [])) })
-      .catch(() => { if (alive) setRows([]) })
+      .catch((e) => { if (alive) { setRows([]); setLoadError(e) } })
     return () => { alive = false }
   }, [vendor.id, nonce])
 
@@ -891,7 +905,8 @@ function TicketTab() {
       )}
     <div className="card-3d" style={card}>
       <TabHead title="Tickets" count={rows?.length} addLabel="Add Ticket" onAdd={() => setAdding(true)} />
-      {rows === null ? <div style={{ color: 'var(--text-muted)' }}>Loading…</div>
+      {loadError ? <LoadError error={loadError} onRetry={() => setNonce(n => n + 1)} />
+        : rows === null ? <div style={{ color: 'var(--text-muted)' }}>Loading…</div>
         : rows.length === 0 ? <Empty text="No tickets on this vendor's projects" />
           : (
             <div style={{ overflowX: 'auto' }}>
@@ -990,10 +1005,12 @@ function PurchaseVendorAppointments() {
   const [rows, setRows] = useState(null)
   const [adding, setAdding] = useState(false)
 
+  const [loadError, setLoadError] = useState(null)
   const load = useCallback(() => {
+      setLoadError(null)
     purchaseApi.vendors.appointments.list(vendor.id)
       .then(r => setRows(Array.isArray(r) ? r : (r?.data ?? [])))
-      .catch(() => setRows([]))
+      .catch(e => { setRows([]); setLoadError(e) })
   }, [vendor.id])
 
   useEffect(() => { load() }, [load])
@@ -1023,7 +1040,8 @@ function PurchaseVendorAppointments() {
         <button onClick={() => setAdding(true)} style={primaryBtn}><Plus size={14} /> Add Appointment</button>
       </div>
 
-      {rows === null ? <div style={{ color: 'var(--text-muted)' }}>Loading…</div>
+      {loadError ? <LoadError error={loadError} onRetry={load} />
+        : rows === null ? <div style={{ color: 'var(--text-muted)' }}>Loading…</div>
         : rows.length === 0 ? <Empty text="No appointments with this vendor" />
           : (
             <div style={{ overflowX: 'auto' }}>

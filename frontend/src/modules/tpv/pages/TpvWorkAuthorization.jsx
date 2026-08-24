@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { ShieldCheck, ShieldAlert, RefreshCw, ChevronDown, ChevronRight, Check, X, Minus } from 'lucide-react'
 import { tpvApi } from '@/services/tpvApi'
+import LoadError from '@/components/ui/LoadError'
 import { KIT3D_STYLE as TPV_STYLE } from '@/components/ui/kit3d'
 
 // Sangoe TPV §19 — Unified Work Authorization. "A vendor being Active should NOT
@@ -11,8 +12,10 @@ export default function TpvWorkAuthorization() {
   const [rows, setRows] = useState(null)
   const [expanded, setExpanded] = useState(null)
 
+  const [loadError, setLoadError] = useState(null)
   const load = useCallback(() => {
-    tpvApi.workAuthorization.roster().then(d => setRows(Array.isArray(d) ? d : [])).catch(() => setRows([]))
+      setLoadError(null)
+    tpvApi.workAuthorization.roster().then(d => setRows(Array.isArray(d) ? d : [])).catch(e => { setRows([]); setLoadError(e) })
   }, [])
   useEffect(() => { load() }, [load])
 
@@ -42,7 +45,8 @@ export default function TpvWorkAuthorization() {
               </tr>
             </thead>
             <tbody>
-              {rows === null ? <tr><td colSpan={5} style={{ padding: 18, color: 'var(--text-muted)' }}>Loading…</td></tr>
+              {loadError ? <tr><td colSpan={5} style={{ padding: 8 }}><LoadError error={loadError} onRetry={load} /></td></tr>
+                : rows === null ? <tr><td colSpan={5} style={{ padding: 18, color: 'var(--text-muted)' }}>Loading…</td></tr>
                 : rows.length === 0 ? <tr><td colSpan={5} style={{ padding: 18, color: 'var(--text-muted)' }}>No active workers.</td></tr>
                 : rows.map(r => (
                   <AuthRow key={r.id} r={r} expanded={expanded === r.id} onToggle={() => setExpanded(expanded === r.id ? null : r.id)} />

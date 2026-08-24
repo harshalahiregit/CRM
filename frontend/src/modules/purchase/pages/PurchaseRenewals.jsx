@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { RefreshCcw, Plus, RefreshCw, X, Trash2, Gavel } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
+import LoadError from '@/components/ui/LoadError'
 import { useAuth } from '@/context/AuthContext'
 import { KIT3D_STYLE as PURCHASE_STYLE } from '@/components/ui/kit3d'
 
@@ -16,13 +17,14 @@ export default function PurchaseRenewals() {
   const { user } = useAuth()
   const admin = user?.role === 'admin'
   const [rows, setRows] = useState(null)
+  const [loadError, setLoadError] = useState(null)
   const [decisions, setDecisions] = useState([])
   const [vendors, setVendors] = useState([])
   const [initModal, setInitModal] = useState(false)
   const [decideRow, setDecideRow] = useState(null)
 
   const load = useCallback(() => {
-    purchaseApi.renewals.list().then(d => { setRows(d?.data ?? []); setDecisions(d?.decisions ?? []) }).catch(() => setRows([]))
+    purchaseApi.renewals.list().then(d => { setLoadError(null); setRows(d?.data ?? []); setDecisions(d?.decisions ?? []) }).catch(e => { setRows([]); setLoadError(e) })
   }, [])
   useEffect(() => { load() }, [load])
   useEffect(() => { purchaseApi.vendors.list().then(d => setVendors(Array.isArray(d) ? d : (d?.data ?? []))).catch(() => setVendors([])) }, [])
@@ -54,7 +56,8 @@ export default function PurchaseRenewals() {
               </tr>
             </thead>
             <tbody>
-              {rows === null ? <tr><td colSpan={8} style={{ padding: 18, color: 'var(--text-muted)' }}>Loading…</td></tr>
+              {loadError ? <tr><td colSpan={8} style={{ padding: 8 }}><LoadError error={loadError} onRetry={load} /></td></tr>
+                : rows === null ? <tr><td colSpan={8} style={{ padding: 18, color: 'var(--text-muted)' }}>Loading…</td></tr>
                 : rows.length === 0 ? <tr><td colSpan={8} style={{ padding: 18, color: 'var(--text-muted)' }}>No renewals.</td></tr>
                 : rows.map(r => {
                   const a = r.assessment || {}

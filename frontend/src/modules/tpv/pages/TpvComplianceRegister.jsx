@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { ShieldCheck, RefreshCw, ChevronDown, ChevronRight, Search } from 'lucide-react'
 import { tpvApi } from '@/services/tpvApi'
+import LoadError from '@/components/ui/LoadError'
 import { KIT3D_STYLE as TPV_STYLE } from '@/components/ui/kit3d'
 
 // Sangoe TPV §21 — Compliance engine. Per-vendor register across 14 categories,
@@ -13,13 +14,14 @@ const fmt = (s) => String(s || '').replace(/_/g, ' ')
 
 export default function TpvComplianceRegister() {
   const [rows, setRows] = useState(null)
+  const [loadError, setLoadError] = useState(null)
   const [meta, setMeta] = useState({ categories: [], statuses: [] })
   const [vendors, setVendors] = useState([])
   const [expanded, setExpanded] = useState(null)
   const [q, setQ] = useState('')
 
   const load = useCallback(() => {
-    tpvApi.vendorCompliance.roster().then(d => { setRows(d?.data ?? []); setMeta({ categories: d?.categories ?? [], statuses: d?.statuses ?? [] }) }).catch(() => setRows([]))
+    tpvApi.vendorCompliance.roster().then(d => { setLoadError(null); setRows(d?.data ?? []); setMeta({ categories: d?.categories ?? [], statuses: d?.statuses ?? [] }) }).catch(e => { setRows([]); setLoadError(e) })
   }, [])
   useEffect(() => { load() }, [load])
   useEffect(() => { tpvApi.vendors.list().then(d => setVendors(Array.isArray(d) ? d : (d?.data ?? []))).catch(() => setVendors([])) }, [])
@@ -57,7 +59,8 @@ export default function TpvComplianceRegister() {
               </tr>
             </thead>
             <tbody>
-              {rows === null ? <tr><td colSpan={6} style={{ padding: 18, color: 'var(--text-muted)' }}>Loading…</td></tr>
+              {loadError ? <tr><td colSpan={6} style={{ padding: 8 }}><LoadError error={loadError} onRetry={load} /></td></tr>
+                : rows === null ? <tr><td colSpan={6} style={{ padding: 18, color: 'var(--text-muted)' }}>Loading…</td></tr>
                 : allRows.length === 0 ? <tr><td colSpan={6} style={{ padding: 18, color: 'var(--text-muted)' }}>No vendors.</td></tr>
                 : allRows.map(r => (
                   <VendorRow key={r.vendor_id} r={r} meta={meta} expanded={expanded === r.vendor_id}

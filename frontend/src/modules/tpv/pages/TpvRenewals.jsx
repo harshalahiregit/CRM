@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { RefreshCcw, Plus, RefreshCw, X, Trash2, Gavel } from 'lucide-react'
 import { tpvApi } from '@/services/tpvApi'
+import LoadError from '@/components/ui/LoadError'
 import { useAuth } from '@/context/AuthContext'
 import { canApproveTpv } from '../constants'
 import { KIT3D_STYLE as TPV_STYLE } from '@/components/ui/kit3d'
@@ -21,13 +22,14 @@ export default function TpvRenewals() {
   const { user } = useAuth()
   const admin = canApproveTpv(user)
   const [rows, setRows] = useState(null)
+  const [loadError, setLoadError] = useState(null)
   const [decisions, setDecisions] = useState([])
   const [vendors, setVendors] = useState([])
   const [initModal, setInitModal] = useState(false)
   const [decideModal, setDecideModal] = useState(null)
 
   const load = useCallback(() => {
-    tpvApi.renewals.list().then(d => { setRows(d?.data ?? []); setDecisions(d?.decisions ?? []) }).catch(() => setRows([]))
+    tpvApi.renewals.list().then(d => { setLoadError(null); setRows(d?.data ?? []); setDecisions(d?.decisions ?? []) }).catch(e => { setRows([]); setLoadError(e) })
   }, [])
   useEffect(() => { load() }, [load])
   useEffect(() => { tpvApi.vendors.list().then(d => setVendors(Array.isArray(d) ? d : (d?.data ?? []))).catch(() => setVendors([])) }, [])
@@ -59,7 +61,8 @@ export default function TpvRenewals() {
               </tr>
             </thead>
             <tbody>
-              {rows === null ? <tr><td colSpan={8} style={{ padding: 18, color: 'var(--text-muted)' }}>Loading…</td></tr>
+              {loadError ? <tr><td colSpan={8} style={{ padding: 8 }}><LoadError error={loadError} onRetry={load} /></td></tr>
+                : rows === null ? <tr><td colSpan={8} style={{ padding: 18, color: 'var(--text-muted)' }}>Loading…</td></tr>
                 : rows.length === 0 ? <tr><td colSpan={8} style={{ padding: 18, color: 'var(--text-muted)' }}>No renewals initiated.</td></tr>
                 : rows.map(r => {
                   const a = r.assessment || {}

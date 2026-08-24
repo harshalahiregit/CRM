@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { FolderLock, RefreshCw, Search, FileText, ExternalLink } from 'lucide-react'
 import { tpvApi } from '@/services/tpvApi'
+import LoadError from '@/components/ui/LoadError'
 import { KIT3D_STYLE as TPV_STYLE } from '@/components/ui/kit3d'
 
 // Sangoe TPV §30 — unified Document Vault. Read-only lens over statutory vendor
@@ -13,6 +14,7 @@ const date = (d) => (d ? new Date(d).toLocaleDateString() : '—')
 
 export default function TpvDocumentVault() {
   const [rows, setRows] = useState(null)
+  const [loadError, setLoadError] = useState(null)
   const [meta, setMeta] = useState({ sources: [], expiry_states: [], summary: {} })
   const [sourceF, setSourceF] = useState('')
   const [expiryF, setExpiryF] = useState('')
@@ -24,8 +26,8 @@ export default function TpvDocumentVault() {
     if (expiryF) params.expiry = expiryF
     if (q) params.q = q
     tpvApi.documentVault.list(params)
-      .then(d => { setRows(d?.data ?? []); setMeta({ sources: d?.sources ?? [], expiry_states: d?.expiry_states ?? [], summary: d?.summary ?? {} }) })
-      .catch(() => setRows([]))
+      .then(d => { setLoadError(null); setRows(d?.data ?? []); setMeta({ sources: d?.sources ?? [], expiry_states: d?.expiry_states ?? [], summary: d?.summary ?? {} }) })
+      .catch(e => { setRows([]); setLoadError(e) })
   }, [sourceF, expiryF, q])
   useEffect(() => { const t = setTimeout(load, q ? 300 : 0); return () => clearTimeout(t) }, [load, q])
 
@@ -83,7 +85,8 @@ export default function TpvDocumentVault() {
               </tr>
             </thead>
             <tbody>
-              {rows === null ? <tr><td colSpan={7} style={{ padding: 18, color: 'var(--text-muted)' }}>Loading…</td></tr>
+              {loadError ? <tr><td colSpan={7} style={{ padding: 8 }}><LoadError error={loadError} onRetry={load} /></td></tr>
+                : rows === null ? <tr><td colSpan={7} style={{ padding: 18, color: 'var(--text-muted)' }}>Loading…</td></tr>
                 : rows.length === 0 ? <tr><td colSpan={7} style={{ padding: 18, color: 'var(--text-muted)' }}>No documents match.</td></tr>
                 : rows.map(r => (
                   <tr key={r.key} style={{ borderTop: '1px solid var(--border)' }}>

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Plus, RefreshCw, X, Trash2, Ban, PauseCircle, Check } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
+import LoadError from '@/components/ui/LoadError'
 import { useAuth } from '@/context/AuthContext'
 import { KIT3D_STYLE as PURCHASE_STYLE } from '@/components/ui/kit3d'
 
@@ -19,16 +20,17 @@ export default function PurchaseViolations() {
   const { user } = useAuth()
   const admin = user?.role === 'admin'
   const [rows, setRows] = useState(null)
+  const [loadError, setLoadError] = useState(null)
   const [esc, setEsc] = useState([])
   const [meta, setMeta] = useState({ types: [], severities: [] })
   const [vendors, setVendors] = useState([])
   const [modal, setModal] = useState(false)
 
   const load = useCallback(() => {
-    purchaseApi.violations.list().then(d => {
+    purchaseApi.violations.list().then(d => { setLoadError(null);
       setRows(d?.data ?? []); setEsc(d?.escalations ?? [])
       setMeta({ types: d?.types ?? [], severities: d?.severities ?? [] })
-    }).catch(() => setRows([]))
+    }).catch(e => { setRows([]); setLoadError(e) })
   }, [])
   useEffect(() => { load() }, [load])
   useEffect(() => { purchaseApi.vendors.list().then(d => setVendors(Array.isArray(d) ? d : (d?.data ?? []))).catch(() => setVendors([])) }, [])
@@ -92,7 +94,8 @@ export default function PurchaseViolations() {
               </tr>
             </thead>
             <tbody>
-              {rows === null ? <tr><td colSpan={7} style={{ padding: 18, color: 'var(--text-muted)' }}>Loading…</td></tr>
+              {loadError ? <tr><td colSpan={7} style={{ padding: 8 }}><LoadError error={loadError} onRetry={load} /></td></tr>
+                : rows === null ? <tr><td colSpan={7} style={{ padding: 18, color: 'var(--text-muted)' }}>Loading…</td></tr>
                 : rows.length === 0 ? <tr><td colSpan={7} style={{ padding: 18, color: 'var(--text-muted)' }}>No violations recorded.</td></tr>
                 : rows.map(v => (
                   <tr key={v.id} style={{ borderTop: '1px solid var(--border)' }}>

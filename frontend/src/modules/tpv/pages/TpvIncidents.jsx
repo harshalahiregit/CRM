@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Siren, Plus, RefreshCw, X, AlertTriangle, CheckCircle, ShieldOff, Loader2, ClipboardList } from 'lucide-react'
 import { tpvApi } from '@/services/tpvApi'
+import LoadError from '@/components/ui/LoadError'
 
 const SEVERITIES = ['Minor', 'Moderate', 'Serious', 'Fatal']
 const TYPES = ['Injury', 'Near_Miss', 'Property_Damage', 'Environmental', 'Fire', 'Fatality', 'Other']
@@ -22,9 +23,11 @@ export default function TpvIncidents() {
   const [reporting, setReporting] = useState(false)
   const [openId, setOpenId] = useState(null)
 
+  const [loadError, setLoadError] = useState(null)
   const load = useCallback(() => {
+      setLoadError(null)
     setLoading(true)
-    tpvApi.incidents.list().then(r => setRows(Array.isArray(r) ? r : [])).catch(() => setRows([])).finally(() => setLoading(false))
+    tpvApi.incidents.list().then(r => setRows(Array.isArray(r) ? r : [])).catch(e => { setRows([]); setLoadError(e) }).finally(() => setLoading(false))
   }, [])
   useEffect(() => { load() }, [load])
 
@@ -46,6 +49,8 @@ export default function TpvIncidents() {
 
       {loading ? (
         <div style={{ textAlign: 'center', padding: 48, color: 'var(--text-muted)' }}><Loader2 size={18} className="rfq-spin" /> Loading…</div>
+      ) : loadError ? (
+        <LoadError error={loadError} onRetry={load} />
       ) : rows.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 48, color: 'var(--text-muted)' }}>No incidents reported. Stay safe.</div>
       ) : (
@@ -136,7 +141,9 @@ function DetailModal({ id, onClose, onChanged }) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
 
+  const [loadError, setLoadError] = useState(null)
   const load = useCallback(() => {
+      setLoadError(null)
     tpvApi.incidents.get(id).then(d => {
       setInc(d)
       setRca({ rca_method: d.rca_method || '5-Whys', root_cause: d.root_cause || '', contributing_factors: d.contributing_factors || '' })

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { GraduationCap, RefreshCw, ChevronDown, ChevronRight, Plus, Trash2, Award, BookOpen } from 'lucide-react'
 import { tpvApi } from '@/services/tpvApi'
+import LoadError from '@/components/ui/LoadError'
 import { KIT3D_STYLE as TPV_STYLE } from '@/components/ui/kit3d'
 
 // Sangoe TPV §15 — Competency & Training. Roster of workers with competency +
@@ -10,16 +11,17 @@ const STATUS_TONE = { Valid: '#10b981', Expiring: '#f59e0b', Expired: '#ef4444',
 
 export default function TpvCompetency() {
   const [rows, setRows] = useState(null)
+  const [loadError, setLoadError] = useState(null)
   const [cats, setCats] = useState([])
   const [types, setTypes] = useState([])
   const [expanded, setExpanded] = useState(null)
 
   const load = useCallback(() => {
-    tpvApi.competency.roster().then(d => {
+    tpvApi.competency.roster().then(d => { setLoadError(null);
       setRows(d?.data ?? [])
       if (d?.categories) setCats(d.categories)
       if (d?.training_types) setTypes(d.training_types)
-    }).catch(() => setRows([]))
+    }).catch(e => { setRows([]); setLoadError(e) })
   }, [])
   useEffect(() => { load() }, [load])
 
@@ -44,7 +46,8 @@ export default function TpvCompetency() {
               </tr>
             </thead>
             <tbody>
-              {rows === null ? <tr><td colSpan={7} style={{ padding: 18, color: 'var(--text-muted)' }}>Loading…</td></tr>
+              {loadError ? <tr><td colSpan={7} style={{ padding: 8 }}><LoadError error={loadError} onRetry={load} /></td></tr>
+                : rows === null ? <tr><td colSpan={7} style={{ padding: 18, color: 'var(--text-muted)' }}>Loading…</td></tr>
                 : rows.length === 0 ? <tr><td colSpan={7} style={{ padding: 18, color: 'var(--text-muted)' }}>No workers yet.</td></tr>
                 : rows.map(w => (
                   <WorkerRow key={w.id} w={w} cats={cats} types={types}

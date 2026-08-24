@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { ShieldCheck, Plus, RefreshCw, X, CheckCircle, XCircle, Ban } from 'lucide-react'
 import { tpvApi } from '@/services/tpvApi'
+import LoadError from '@/components/ui/LoadError'
 import { useAuth } from '@/context/AuthContext'
 import { canApproveTpv } from '../constants'
 import { KIT3D_STYLE as TPV_STYLE } from '@/components/ui/kit3d'
@@ -15,6 +16,7 @@ export default function TpvApprovalRegister() {
   const { user } = useAuth()
   const admin = canApproveTpv(user)
   const [rows, setRows] = useState(null)
+  const [loadError, setLoadError] = useState(null)
   const [types, setTypes] = useState([])
   const [vendors, setVendors] = useState([])
   const [statusF, setStatusF] = useState('')
@@ -22,8 +24,8 @@ export default function TpvApprovalRegister() {
 
   const load = useCallback(() => {
     tpvApi.approvalRegister.list(statusF ? { status: statusF } : {})
-      .then(d => { setRows(d?.data ?? []); if (d?.types) setTypes(d.types) })
-      .catch(() => setRows([]))
+      .then(d => { setLoadError(null); setRows(d?.data ?? []); if (d?.types) setTypes(d.types) })
+      .catch(e => { setRows([]); setLoadError(e) })
   }, [statusF])
   useEffect(() => { load() }, [load])
   useEffect(() => { tpvApi.vendors.list().then(d => setVendors(Array.isArray(d) ? d : (d?.data ?? []))).catch(() => setVendors([])) }, [])
@@ -63,7 +65,8 @@ export default function TpvApprovalRegister() {
               </tr>
             </thead>
             <tbody>
-              {rows === null ? <tr><td colSpan={8} style={{ padding: 18, color: 'var(--text-muted)' }}>Loading…</td></tr>
+              {loadError ? <tr><td colSpan={8} style={{ padding: 8 }}><LoadError error={loadError} onRetry={load} /></td></tr>
+                : rows === null ? <tr><td colSpan={8} style={{ padding: 18, color: 'var(--text-muted)' }}>Loading…</td></tr>
                 : rows.length === 0 ? <tr><td colSpan={8} style={{ padding: 18, color: 'var(--text-muted)' }}>No approval requests.</td></tr>
                 : rows.map(r => (
                   <tr key={r.id} style={{ borderTop: '1px solid var(--border)' }}>

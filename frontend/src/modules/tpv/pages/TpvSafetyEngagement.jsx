@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Eye, Users, Plus, RefreshCw, X, Loader2, CheckCircle } from 'lucide-react'
 import { tpvApi } from '@/services/tpvApi'
+import LoadError from '@/components/ui/LoadError'
 
 const CATEGORIES = ['Unsafe_Act', 'Unsafe_Condition', 'Positive', 'Near_Miss']
 const SEVERITIES = ['Low', 'Medium', 'High']
@@ -31,13 +32,14 @@ export default function TpvSafetyEngagement() {
 
 function Observations() {
   const [rows, setRows] = useState([]); const [loading, setLoading] = useState(true); const [adding, setAdding] = useState(false)
-  const load = useCallback(() => { setLoading(true); tpvApi.safety.observations().then(r => setRows(Array.isArray(r) ? r : [])).catch(() => setRows([])).finally(() => setLoading(false)) }, [])
+  const [loadError, setLoadError] = useState(null)
+  const load = useCallback(() => { setLoadError(null); setLoading(true); tpvApi.safety.observations().then(r => setRows(Array.isArray(r) ? r : [])).catch(e => { setRows([]); setLoadError(e) }).finally(() => setLoading(false)) }, [])
   useEffect(() => { load() }, [load])
   const close = async (o) => { const a = window.prompt('Action taken (optional):') ?? ''; try { await tpvApi.safety.closeObservation(o.id, { action_taken: a.trim() || null }); load() } catch { /* ignore */ } }
   return (
     <>
       <Toolbar onRefresh={load} onAdd={() => setAdding(true)} addLabel="Log Observation" />
-      {loading ? <Loading /> : rows.length === 0 ? <Empty text="No observations logged." /> : (
+      {loading ? <Loading /> : loadError ? <LoadError error={loadError} onRetry={load} /> : rows.length === 0 ? <Empty text="No observations logged." /> : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
           {rows.map(o => (
             <div key={o.id} style={row}>
@@ -64,12 +66,13 @@ function Observations() {
 
 function Talks() {
   const [rows, setRows] = useState([]); const [loading, setLoading] = useState(true); const [adding, setAdding] = useState(false)
-  const load = useCallback(() => { setLoading(true); tpvApi.safety.talks().then(r => setRows(Array.isArray(r) ? r : [])).catch(() => setRows([])).finally(() => setLoading(false)) }, [])
+  const [loadError, setLoadError] = useState(null)
+  const load = useCallback(() => { setLoadError(null); setLoading(true); tpvApi.safety.talks().then(r => setRows(Array.isArray(r) ? r : [])).catch(e => { setRows([]); setLoadError(e) }).finally(() => setLoading(false)) }, [])
   useEffect(() => { load() }, [load])
   return (
     <>
       <Toolbar onRefresh={load} onAdd={() => setAdding(true)} addLabel="Record Talk" />
-      {loading ? <Loading /> : rows.length === 0 ? <Empty text="No toolbox talks recorded." /> : (
+      {loading ? <Loading /> : loadError ? <LoadError error={loadError} onRetry={load} /> : rows.length === 0 ? <Empty text="No toolbox talks recorded." /> : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
           {rows.map(t => (
             <div key={t.id} style={row}>

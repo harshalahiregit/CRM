@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { FileCheck2, Plus, RefreshCw, X, Loader2, CheckCircle, XCircle, PlayCircle, ClipboardList, Clock } from 'lucide-react'
 import { tpvApi } from '@/services/tpvApi'
+import LoadError from '@/components/ui/LoadError'
 
 const TYPES = ['Hot_Work', 'Work_At_Height', 'Confined_Space', 'Electrical', 'Excavation', 'Lifting', 'General']
 const RISKS = ['Low', 'Medium', 'High']
@@ -19,9 +20,11 @@ export default function TpvPermits() {
   const [creating, setCreating] = useState(false)
   const [openId, setOpenId] = useState(null)
 
+  const [loadError, setLoadError] = useState(null)
   const load = useCallback(() => {
+      setLoadError(null)
     setLoading(true)
-    tpvApi.permits.list().then(r => setRows(Array.isArray(r) ? r : [])).catch(() => setRows([])).finally(() => setLoading(false))
+    tpvApi.permits.list().then(r => setRows(Array.isArray(r) ? r : [])).catch(e => { setRows([]); setLoadError(e) }).finally(() => setLoading(false))
   }, [])
   useEffect(() => { load() }, [load])
 
@@ -42,6 +45,7 @@ export default function TpvPermits() {
       </div>
 
       {loading ? <div style={{ textAlign: 'center', padding: 48, color: 'var(--text-muted)' }}><Loader2 size={18} className="rfq-spin" /></div>
+        : loadError ? <LoadError error={loadError} onRetry={load} />
         : rows.length === 0 ? <div style={{ textAlign: 'center', padding: 48, color: 'var(--text-muted)' }}>No permits yet.</div>
         : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -107,7 +111,8 @@ function DetailModal({ id, onClose, onChanged }) {
   const [step, setStep] = useState({ activity: '', hazard: '', control: '', residual_risk: 'Low' })
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
-  const load = useCallback(() => { tpvApi.permits.get(id).then(setP).catch(() => {}) }, [id])
+  const [loadError, setLoadError] = useState(null)
+  const load = useCallback(() => { setLoadError(null); tpvApi.permits.get(id).then(setP).catch(() => {}) }, [id])
   useEffect(() => { load() }, [load])
   const act = async (fn) => { setBusy(true); setErr(''); try { await fn(); load(); onChanged() } catch (e) { setErr(e?.response?.data?.message || 'Action failed.') } finally { setBusy(false) } }
   const addStep = () => { if (!step.activity.trim()) { setErr('An activity is required.'); return } act(async () => { await tpvApi.permits.addStep(id, step); setStep({ activity: '', hazard: '', control: '', residual_risk: 'Low' }) }) }

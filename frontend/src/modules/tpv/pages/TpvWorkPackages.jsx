@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Boxes, Plus, RefreshCw, X, Pencil, Trash2, ChevronDown, ChevronRight, ListTree, Users } from 'lucide-react'
 import { tpvApi } from '@/services/tpvApi'
+import LoadError from '@/components/ui/LoadError'
 import { KIT3D_STYLE as TPV_STYLE } from '@/components/ui/kit3d'
 
 // Sangoe TPV §13 — Work Packages & Activities. The Vendor→Project→WorkPackage→
@@ -19,8 +20,10 @@ export default function TpvWorkPackages() {
   const [modal, setModal] = useState(null)
   const [expanded, setExpanded] = useState(null)
 
+  const [loadError, setLoadError] = useState(null)
   const load = useCallback(() => {
-    tpvApi.workPackages.list().then(d => setRows(Array.isArray(d) ? d : [])).catch(() => setRows([]))
+      setLoadError(null)
+    tpvApi.workPackages.list().then(d => setRows(Array.isArray(d) ? d : [])).catch(e => { setRows([]); setLoadError(e) })
   }, [])
   useEffect(() => {
     load()
@@ -56,7 +59,8 @@ export default function TpvWorkPackages() {
               </tr>
             </thead>
             <tbody>
-              {rows === null ? <tr><td colSpan={9} style={{ padding: 18, color: 'var(--text-muted)' }}>Loading…</td></tr>
+              {loadError ? <tr><td colSpan={9} style={{ padding: 8 }}><LoadError error={loadError} onRetry={load} /></td></tr>
+                : rows === null ? <tr><td colSpan={9} style={{ padding: 18, color: 'var(--text-muted)' }}>Loading…</td></tr>
                 : rows.length === 0 ? <tr><td colSpan={9} style={{ padding: 18, color: 'var(--text-muted)' }}>No work packages yet.</td></tr>
                 : rows.map(wp => (
                   <WpRow key={wp.id} wp={wp} expanded={expanded === wp.id}
@@ -111,7 +115,8 @@ function WpRow({ wp, expanded, onToggle, onEdit, onDelete, onChanged }) {
 function ActivitiesPanel({ wp, onChanged }) {
   const [detail, setDetail] = useState(null)
   const [newAct, setNewAct] = useState({ name: '', required_competency: '', status: 'Not_Started' })
-  const load = useCallback(() => { tpvApi.workPackages.get(wp.id).then(setDetail).catch(() => setDetail({ activities: [], workers: [] })) }, [wp.id])
+  const [loadError, setLoadError] = useState(null)
+  const load = useCallback(() => { setLoadError(null); tpvApi.workPackages.get(wp.id).then(setDetail).catch(() => setDetail({ activities: [], workers: [] })) }, [wp.id])
   useEffect(load, [load])
 
   const add = async () => {

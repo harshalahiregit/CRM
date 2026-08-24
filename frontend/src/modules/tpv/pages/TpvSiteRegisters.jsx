@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Flame, Users, Truck, Plus, RefreshCw, X, Loader2, LogOut } from 'lucide-react'
 import { tpvApi } from '@/services/tpvApi'
+import LoadError from '@/components/ui/LoadError'
 
 const DRILL_TYPES = ['Fire', 'Evacuation', 'Medical', 'Spill', 'Other']
 
@@ -27,18 +28,19 @@ export default function TpvSiteRegisters() {
 
 function useReg(fetcher) {
   const [rows, setRows] = useState([]); const [loading, setLoading] = useState(true)
-  const load = useCallback(() => { setLoading(true); fetcher().then(r => setRows(Array.isArray(r) ? r : [])).catch(() => setRows([])).finally(() => setLoading(false)) }, [fetcher])
+  const [loadError, setLoadError] = useState(null)
+  const load = useCallback(() => { setLoadError(null); setLoading(true); fetcher().then(r => setRows(Array.isArray(r) ? r : [])).catch(e => { setRows([]); setLoadError(e) }).finally(() => setLoading(false)) }, [fetcher])
   useEffect(() => { load() }, [load])
-  return { rows, loading, load }
+  return { rows, loading, load, loadError }
 }
 
 function Drills() {
-  const { rows, loading, load } = useReg(tpvApi.registers.drills)
+  const { rows, loading, load, loadError } = useReg(tpvApi.registers.drills)
   const [adding, setAdding] = useState(false)
   return (
     <>
       <Toolbar onRefresh={load} onAdd={() => setAdding(true)} addLabel="Record Drill" />
-      {loading ? <Loading /> : rows.length === 0 ? <Empty text="No drills recorded." /> : rows.map(d => (
+      {loading ? <Loading /> : loadError ? <LoadError error={loadError} onRetry={load} /> : rows.length === 0 ? <Empty text="No drills recorded." /> : rows.map(d => (
         <div key={d.id} style={row}>
           <Flame size={16} style={{ color: '#f97316', flexShrink: 0 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -61,13 +63,13 @@ function Drills() {
 }
 
 function Visitors() {
-  const { rows, loading, load } = useReg(tpvApi.registers.visitors)
+  const { rows, loading, load, loadError } = useReg(tpvApi.registers.visitors)
   const [adding, setAdding] = useState(false)
   const checkout = async (v) => { try { await tpvApi.registers.checkoutVisitor(v.id); load() } catch { /* ignore */ } }
   return (
     <>
       <Toolbar onRefresh={load} onAdd={() => setAdding(true)} addLabel="Check In Visitor" />
-      {loading ? <Loading /> : rows.length === 0 ? <Empty text="No visitors logged." /> : rows.map(v => (
+      {loading ? <Loading /> : loadError ? <LoadError error={loadError} onRetry={load} /> : rows.length === 0 ? <Empty text="No visitors logged." /> : rows.map(v => (
         <div key={v.id} style={row}>
           <Users size={16} style={{ color: '#a78bfa', flexShrink: 0 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -91,13 +93,13 @@ function Visitors() {
 }
 
 function Vehicles() {
-  const { rows, loading, load } = useReg(tpvApi.registers.vehicles)
+  const { rows, loading, load, loadError } = useReg(tpvApi.registers.vehicles)
   const [adding, setAdding] = useState(false)
   const checkout = async (v) => { try { await tpvApi.registers.checkoutVehicle(v.id); load() } catch { /* ignore */ } }
   return (
     <>
       <Toolbar onRefresh={load} onAdd={() => setAdding(true)} addLabel="Check In Vehicle" />
-      {loading ? <Loading /> : rows.length === 0 ? <Empty text="No vehicles logged." /> : rows.map(v => (
+      {loading ? <Loading /> : loadError ? <LoadError error={loadError} onRetry={load} /> : rows.length === 0 ? <Empty text="No vehicles logged." /> : rows.map(v => (
         <div key={v.id} style={row}>
           <Truck size={16} style={{ color: v.fitness_valid ? '#10b981' : '#ef4444', flexShrink: 0 }} />
           <div style={{ flex: 1, minWidth: 0 }}>

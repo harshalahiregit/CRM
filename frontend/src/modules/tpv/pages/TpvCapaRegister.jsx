@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { ClipboardCheck, Plus, RefreshCw, X, Pencil, Trash2, ArrowRight, Paperclip } from 'lucide-react'
 import { tpvApi } from '@/services/tpvApi'
+import LoadError from '@/components/ui/LoadError'
 import { useAuth } from '@/context/AuthContext'
 import { canApproveTpv } from '../constants'
 import { KIT3D_STYLE as TPV_STYLE } from '@/components/ui/kit3d'
@@ -19,6 +20,7 @@ export default function TpvCapaRegister() {
   const { user } = useAuth()
   const admin = canApproveTpv(user)
   const [rows, setRows] = useState(null)
+  const [loadError, setLoadError] = useState(null)
   const [meta, setMeta] = useState({ kinds: [], types: [], priorities: [], statuses: [], stats: {} })
   const [vendors, setVendors] = useState([])
   const [statusF, setStatusF] = useState('')
@@ -30,8 +32,8 @@ export default function TpvCapaRegister() {
     if (statusF) params.status = statusF
     if (kindF) params.source_kind = kindF
     tpvApi.capas.list(params)
-      .then(d => { setRows(d?.data ?? []); setMeta({ kinds: d?.kinds ?? [], types: d?.types ?? [], priorities: d?.priorities ?? [], statuses: d?.statuses ?? [], stats: d?.stats ?? {} }) })
-      .catch(() => setRows([]))
+      .then(d => { setLoadError(null); setRows(d?.data ?? []); setMeta({ kinds: d?.kinds ?? [], types: d?.types ?? [], priorities: d?.priorities ?? [], statuses: d?.statuses ?? [], stats: d?.stats ?? {} }) })
+      .catch(e => { setRows([]); setLoadError(e) })
   }, [statusF, kindF])
   useEffect(() => { load() }, [load])
   useEffect(() => { tpvApi.vendors.list().then(d => setVendors(Array.isArray(d) ? d : (d?.data ?? []))).catch(() => setVendors([])) }, [])
@@ -92,7 +94,8 @@ export default function TpvCapaRegister() {
               </tr>
             </thead>
             <tbody>
-              {rows === null ? <tr><td colSpan={9} style={{ padding: 18, color: 'var(--text-muted)' }}>Loading…</td></tr>
+              {loadError ? <tr><td colSpan={9} style={{ padding: 8 }}><LoadError error={loadError} onRetry={load} /></td></tr>
+                : rows === null ? <tr><td colSpan={9} style={{ padding: 18, color: 'var(--text-muted)' }}>Loading…</td></tr>
                 : rows.length === 0 ? <tr><td colSpan={9} style={{ padding: 18, color: 'var(--text-muted)' }}>No CAPAs.</td></tr>
                 : rows.map(c => {
                   const idx = (meta.statuses || []).indexOf(c.status)

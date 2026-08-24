@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { LogOut, Plus, RefreshCw, X, ChevronDown, ChevronRight, Trash2, CheckCircle2, Circle } from 'lucide-react'
 import { tpvApi } from '@/services/tpvApi'
+import LoadError from '@/components/ui/LoadError'
 import { useAuth } from '@/context/AuthContext'
 import { canApproveTpv } from '../constants'
 import { KIT3D_STYLE as TPV_STYLE } from '@/components/ui/kit3d'
@@ -15,13 +16,14 @@ export default function TpvOffboarding() {
   const { user } = useAuth()
   const admin = canApproveTpv(user)
   const [rows, setRows] = useState(null)
+  const [loadError, setLoadError] = useState(null)
   const [finals, setFinals] = useState([])
   const [vendors, setVendors] = useState([])
   const [expanded, setExpanded] = useState(null)
   const [initModal, setInitModal] = useState(false)
 
   const load = useCallback(() => {
-    tpvApi.offboardings.list().then(d => { setRows(d?.data ?? []); setFinals(d?.final_statuses ?? []) }).catch(() => setRows([]))
+    tpvApi.offboardings.list().then(d => { setLoadError(null); setRows(d?.data ?? []); setFinals(d?.final_statuses ?? []) }).catch(e => { setRows([]); setLoadError(e) })
   }, [])
   useEffect(() => { load() }, [load])
   useEffect(() => { tpvApi.vendors.list().then(d => setVendors(Array.isArray(d) ? d : (d?.data ?? []))).catch(() => setVendors([])) }, [])
@@ -52,7 +54,8 @@ export default function TpvOffboarding() {
               </tr>
             </thead>
             <tbody>
-              {rows === null ? <tr><td colSpan={7} style={{ padding: 18, color: 'var(--text-muted)' }}>Loading…</td></tr>
+              {loadError ? <tr><td colSpan={7} style={{ padding: 8 }}><LoadError error={loadError} onRetry={load} /></td></tr>
+                : rows === null ? <tr><td colSpan={7} style={{ padding: 18, color: 'var(--text-muted)' }}>Loading…</td></tr>
                 : rows.length === 0 ? <tr><td colSpan={7} style={{ padding: 18, color: 'var(--text-muted)' }}>No offboardings.</td></tr>
                 : rows.map(o => (
                   <OffRow key={o.id} o={o} finals={finals} admin={admin} expanded={expanded === o.id}

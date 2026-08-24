@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Gauge, RefreshCw, ChevronDown, ChevronRight } from 'lucide-react'
 import { tpvApi } from '@/services/tpvApi'
+import LoadError from '@/components/ui/LoadError'
 import { KIT3D_STYLE as TPV_STYLE } from '@/components/ui/kit3d'
 
 // Sangoe TPV §27 — Vendor Performance Index. An additive superset of the VRS
@@ -19,8 +20,10 @@ export default function TpvPerformanceIndex() {
   const [dims, setDims] = useState([])
   const [expanded, setExpanded] = useState(null)
 
+  const [loadError, setLoadError] = useState(null)
   const load = useCallback(() => {
-    tpvApi.vpi.roster().then(d => { setRows(d?.data ?? []); setDims(d?.dimensions ?? []) }).catch(() => setRows([]))
+      setLoadError(null)
+    tpvApi.vpi.roster().then(d => { setRows(d?.data ?? []); setDims(d?.dimensions ?? []) }).catch(e => { setRows([]); setLoadError(e) })
   }, [])
   useEffect(() => { load() }, [load])
 
@@ -60,7 +63,8 @@ export default function TpvPerformanceIndex() {
               </tr>
             </thead>
             <tbody>
-              {rows === null ? <tr><td colSpan={4 + dims.length} style={{ padding: 18, color: 'var(--text-muted)' }}>Loading…</td></tr>
+              {loadError ? <tr><td colSpan={4 + dims.length} style={{ padding: 8 }}><LoadError error={loadError} onRetry={load} /></td></tr>
+                : rows === null ? <tr><td colSpan={4 + dims.length} style={{ padding: 18, color: 'var(--text-muted)' }}>Loading…</td></tr>
                 : rows.length === 0 ? <tr><td colSpan={4 + dims.length} style={{ padding: 18, color: 'var(--text-muted)' }}>No vendors.</td></tr>
                 : rows.map(r => (
                   <tr key={r.vendor_id} style={{ borderTop: '1px solid var(--border)' }}>

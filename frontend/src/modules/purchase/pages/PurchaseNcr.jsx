@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { FileWarning, Plus, RefreshCw, X, Pencil, Trash2, ArrowRight } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
+import LoadError from '@/components/ui/LoadError'
 import { useAuth } from '@/context/AuthContext'
 import { KIT3D_STYLE as PURCHASE_STYLE } from '@/components/ui/kit3d'
 
@@ -18,6 +19,7 @@ export default function PurchaseNcr() {
   const { user } = useAuth()
   const admin = ['admin', 'staff'].includes(user?.role)
   const [rows, setRows] = useState(null)
+  const [loadError, setLoadError] = useState(null)
   const [meta, setMeta] = useState({ severities: [], statuses: [] })
   const [vendors, setVendors] = useState([])
   const [statusF, setStatusF] = useState('')
@@ -25,8 +27,8 @@ export default function PurchaseNcr() {
 
   const load = useCallback(() => {
     purchaseApi.ncrs.list(statusF ? { status: statusF } : {})
-      .then(d => { setRows(d?.data ?? []); setMeta({ severities: d?.severities ?? [], statuses: d?.statuses ?? [] }) })
-      .catch(() => setRows([]))
+      .then(d => { setLoadError(null); setRows(d?.data ?? []); setMeta({ severities: d?.severities ?? [], statuses: d?.statuses ?? [] }) })
+      .catch(e => { setRows([]); setLoadError(e) })
   }, [statusF])
   useEffect(() => { load() }, [load])
   useEffect(() => { purchaseApi.vendors.list().then(d => setVendors(Array.isArray(d) ? d : (d?.data ?? []))).catch(() => setVendors([])) }, [])
@@ -65,7 +67,8 @@ export default function PurchaseNcr() {
               </tr>
             </thead>
             <tbody>
-              {rows === null ? <tr><td colSpan={7} style={{ padding: 18, color: 'var(--text-muted)' }}>Loading…</td></tr>
+              {loadError ? <tr><td colSpan={7} style={{ padding: 8 }}><LoadError error={loadError} onRetry={load} /></td></tr>
+                : rows === null ? <tr><td colSpan={7} style={{ padding: 18, color: 'var(--text-muted)' }}>Loading…</td></tr>
                 : rows.length === 0 ? <tr><td colSpan={7} style={{ padding: 18, color: 'var(--text-muted)' }}>No NCRs.</td></tr>
                 : rows.map(n => {
                   const idx = (meta.statuses || []).indexOf(n.status)

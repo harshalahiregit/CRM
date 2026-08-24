@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Plus, RefreshCw, X, ChevronDown, ChevronRight, Trash2, Pencil, FileWarning } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
+import LoadError from '@/components/ui/LoadError'
 import { KIT3D_STYLE as PURCHASE_STYLE } from '@/components/ui/kit3d'
 
 // Purchase Inspections & Audits — the Purchase-side mirror of the TPV register
@@ -14,16 +15,17 @@ const date = (d) => (d ? new Date(d).toLocaleDateString() : '—')
 
 export default function PurchaseInspections() {
   const [rows, setRows] = useState(null)
+  const [loadError, setLoadError] = useState(null)
   const [meta, setMeta] = useState({ types: [], statuses: [], finding_categories: [], severities: [] })
   const [vendors, setVendors] = useState([])
   const [expanded, setExpanded] = useState(null)
   const [modal, setModal] = useState(null)
 
   const load = useCallback(() => {
-    purchaseApi.inspections.list().then(d => {
+    purchaseApi.inspections.list().then(d => { setLoadError(null);
       setRows(d?.data ?? [])
       setMeta({ types: d?.types ?? [], statuses: d?.statuses ?? [], finding_categories: d?.finding_categories ?? [], severities: d?.severities ?? [] })
-    }).catch(() => setRows([]))
+    }).catch(e => { setRows([]); setLoadError(e) })
   }, [])
   useEffect(() => { load() }, [load])
   useEffect(() => { purchaseApi.vendors.list().then(d => setVendors(Array.isArray(d) ? d : (d?.data ?? []))).catch(() => setVendors([])) }, [])
@@ -54,7 +56,8 @@ export default function PurchaseInspections() {
               </tr>
             </thead>
             <tbody>
-              {rows === null ? <tr><td colSpan={9} style={{ padding: 18, color: 'var(--text-muted)' }}>Loading…</td></tr>
+              {loadError ? <tr><td colSpan={9} style={{ padding: 8 }}><LoadError error={loadError} onRetry={load} /></td></tr>
+                : rows === null ? <tr><td colSpan={9} style={{ padding: 18, color: 'var(--text-muted)' }}>Loading…</td></tr>
                 : rows.length === 0 ? <tr><td colSpan={9} style={{ padding: 18, color: 'var(--text-muted)' }}>No inspections yet.</td></tr>
                 : rows.map(i => (
                   <InspRow key={i.id} i={i} meta={meta} expanded={expanded === i.id}
