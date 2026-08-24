@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
+import PagerBar from '@/components/ui/PagerBar'
 import PayrollReports from './PayrollReports'
 import SalaryReports from './SalaryReports'
 import StatutorySettings from './StatutorySettings'
@@ -606,16 +607,30 @@ function EmployeeSalary({ showToast }) {
   const [salaryByEmp, setSalaryByEmp] = useState({})  // employeeId -> current salary (or null)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const [meta, setMeta] = useState({})                // server paginator
   const [manage, setManage] = useState(null)          // employee being managed
+
+  // Search is a SERVER parameter now. It used to filter the 200 rows already in
+  // state, so employee 201 onward could never be found, never showed as Pending
+  // and could never be given a salary structure from this screen.
+  useEffect(() => {
+    const t = setTimeout(() => { setDebouncedSearch(search); setPage(1) }, 300)
+    return () => clearTimeout(t)
+  }, [search])
 
   useEffect(() => {
     setLoading(true)
     Promise.all([
-      hrApi.employees.list({ per_page: 200 }),
+      // 25 a page rather than 200 in one go — which also cuts the per-employee
+      // salary lookups below from 200 requests to 25.
+      hrApi.employees.list({ per_page: 25, page, search: debouncedSearch || undefined }),
       hrApi.payroll.salaryStructures.list({ status: 'Active' }),
     ]).then(([emps, str]) => {
       const list = Array.isArray(emps) ? emps : (emps?.data ?? [])
       setEmployees(list)
+      setMeta(Array.isArray(emps) ? {} : (emps || {}))
       setStructures(str.data || [])
       // Fetch each employee's current salary (small tenant; per-employee endpoint).
       return Promise.all(list.map(e =>
@@ -625,23 +640,24 @@ function EmployeeSalary({ showToast }) {
       .catch(() => showToast('Failed to load employee salaries', 'error'))
       .finally(() => setLoading(false))
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [page, debouncedSearch])
 
   const refreshOne = (employeeId, current) => setSalaryByEmp(m => ({ ...m, [employeeId]: current }))
 
-  const filtered = employees.filter(e => {
-    if (!search) return true
-    const s = search.toLowerCase()
-    return (e.name||'').toLowerCase().includes(s) || (e.employee_code||'').toLowerCase().includes(s) || (e.department||'').toLowerCase().includes(s)
-  })
+  // The server already applied the search, so this page IS the result.
+  const filtered = employees
   const assignedCount = Object.values(salaryByEmp).filter(Boolean).length
+  // meta.total is the tenant's real headcount. assigned/pending can only be
+  // counted over the rows actually loaded, so they are labelled that way
+  // rather than presented as totals they are not.
+  const totalEmployees = meta.total ?? employees.length
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="kpi-3d"><p className="text-3xl font-black" style={{ color:'#7C3AED' }}>{employees.length}</p><p className="text-xs font-medium mt-1" style={{ color:'var(--text-muted)' }}>Employees</p></div>
-        <div className="kpi-3d"><p className="text-3xl font-black" style={{ color:'#10b981' }}>{assignedCount}</p><p className="text-xs font-medium mt-1" style={{ color:'var(--text-muted)' }}>Salary Assigned</p></div>
-        <div className="kpi-3d"><p className="text-3xl font-black" style={{ color:'#f59e0b' }}>{employees.length - assignedCount}</p><p className="text-xs font-medium mt-1" style={{ color:'var(--text-muted)' }}>Pending</p></div>
+        <div className="kpi-3d"><p className="text-3xl font-black" style={{ color:'#7C3AED' }}>{totalEmployees}</p><p className="text-xs font-medium mt-1" style={{ color:'var(--text-muted)' }}>Employees</p></div>
+        <div className="kpi-3d"><p className="text-3xl font-black" style={{ color:'#10b981' }}>{assignedCount}</p><p className="text-xs font-medium mt-1" style={{ color:'var(--text-muted)' }}>Salary Assigned <span style={{ opacity:.7 }}>(this page)</span></p></div>
+        <div className="kpi-3d"><p className="text-3xl font-black" style={{ color:'#f59e0b' }}>{employees.length - assignedCount}</p><p className="text-xs font-medium mt-1" style={{ color:'var(--text-muted)' }}>Pending <span style={{ opacity:.7 }}>(this page)</span></p></div>
       </div>
 
       <div className="card-3d" style={{ padding:'16px' }}>
@@ -653,7 +669,7 @@ function EmployeeSalary({ showToast }) {
 
       {loading ? <HrLoading label="Loading employee salaries…" />
         : filtered.length === 0 ? <HrEmpty icon={Users} title="No employees found" hint="Employees are created from the recruitment lifecycle." />
-        : (
+        : (<>
           <div className="card-3d overflow-x-auto" style={{ padding:'6px' }}>
             <table className="w-full text-sm" style={{ minWidth:760 }}>
               <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{['Employee','Department','Salary Structure','Monthly CTC','Status','Actions'].map(h=><th key={h} className={`text-left px-3 py-3 label-caps whitespace-nowrap ${h==='Actions'?'text-right':''}`}>{h}</th>)}</tr></thead>
@@ -676,7 +692,10 @@ function EmployeeSalary({ showToast }) {
               </tbody>
             </table>
           </div>
-        )}
+            {/* Employee 201 onward used to be unreachable: 200 fetched, no page
+                number, no pager, and the search filtered only what was loaded. */}
+            <PagerBar meta={meta} onPage={setPage} unit="employees" className="px-3 pb-2" />
+        </>)}
 
       {/* AI-ready extension point (no AI implemented). */}
       <div className="rounded-xl p-3 flex items-start gap-2.5" style={{ background:'rgba(124,58,237,0.05)', border:'1px dashed rgba(124,58,237,0.3)' }}>
