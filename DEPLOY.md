@@ -375,13 +375,41 @@ And rsync the frontend **without** `--delete`, or it removes Laravel's
 assets behind is deliberate: users mid-session still need their chunks.
 
 When rsyncing the backend, `--delete` IS wanted (it clears stale files) but must
-exclude the runtime and frontend-owned paths:
+exclude **everything the repo does not ship**, not just the runtime paths.
+
+**`vendor/` is the one that bites.** It is gitignored, so a clone has no
+`vendor/`, and `--delete` makes the target match the source: it removes
+Laravel's entire dependency tree and the site 500s on
+`Failed opening required '.../vendor/autoload.php'`. This happened on
+2026-08-24 and took the site down. The list below used to omit it, because it
+was written for the zip flow where nothing is ever deleted.
 
 ```
---exclude='.env' --exclude='storage/' --exclude='_deploy_backup/'
---exclude='public/assets/' --exclude='public/storage'
+--exclude='vendor/'                # <-- WITHOUT THIS THE SITE GOES DOWN
+--exclude='.env' --exclude='.env.*' --exclude='auth.json'
+--exclude='storage/' --exclude='bootstrap/cache/'
+--exclude='_deploy_backup/' --exclude='node_modules/'
+--exclude='public/assets/' --exclude='public/storage' --exclude='public/build' --exclude='public/hot'
 --exclude='public/index.html' --exclude='public/sw.js' --exclude='public/registerSW.js'
 ```
+
+Derive it, do not trust it. Anything in `backend/.gitignore` is absent from a
+clone and will be deleted:
+
+```bash
+grep -vE '^\s*#|^\s*$' backend/.gitignore
+```
+
+And assert before you run it — a one-line guard that would have prevented the
+outage:
+
+```bash
+case "$RSYNC_EXCLUDES" in *vendor*) ;; *) echo "ABORT: vendor not excluded"; exit 1;; esac
+```
+
+If it does happen, the fix is `composer install --no-dev --optimize-autoloader`
+in the app root, then the migrate/cache steps that never ran. The database is
+untouched — `artisan` dies before `migrate`, which is the one mercy here.
 
 Also: cloning plus `composer install` plus `node_modules` needs well over 1GB in
 `/tmp`, on a disk that has sat at 98%. Check `df -h /` first and
@@ -398,4 +426,5 @@ Record the SHA after every successful deploy — it is the next `BASE`.
 | 2026-08-17 | `968b291` | — | earlier baseline |
 | 2026-08-17 | `5585379` | vendor detail workspaces (TPV + Purchase) | |
 | 2026-08-22 | `8f6f6a7` | Customer 360 complete; draft-invoice fix; 46 commits of TPV/Purchase compliance | **LIVE.** 24 migrations ran (17 long-pending + 7 new). The Customer 360 migration failed first time on an over-long MySQL index name, then ended up recorded with no tables; recovered by deleting the row and re-running against the patched file. Live carries that patch as `5874d02` -- use `8f6f6a7` as the next BASE. |
+| 2026-08-24 | `713f1b7` | 41 commits: 6 P0 security fixes, Customer 360, pagination across Sales/Accounts/Customer/Helpdesk/HR, error states on 60+ pages, real dashboard, notification prefs, login lockout, GRN register, portal ticket seam | **LIVE.** 10 additive migrations, clean. Deployed by clone+rsync from a throwaway `deploy/713f1b7` branch carrying a prebuilt `dist` (server had node but only 2.2G free, so no npm install). **The backend rsync `--delete` deleted `vendor/` and took the site down** — the exclude list in §8b omitted it. Recovered with `composer install --no-dev`, then migrate + caches. DB never touched: artisan dies before migrate. §8b list is now corrected and carries a guard. Next BASE = `713f1b7`. |
 | 2026-08-22 | `826ccbe` | /app/meetings 404 fix; unlimited concurrent sessions; Harshal's Purchase inspections/violations/renewals/offboarding/VPI | **LIVE.** 4 additive migrations. Clean run — no failures. Next BASE = `826ccbe`. |
