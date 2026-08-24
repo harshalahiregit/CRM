@@ -3,9 +3,15 @@ import { useAuth } from '@/context/AuthContext'
 import { useTheme } from '@/context/ThemeContext'
 import {
   Users, Briefcase, CheckSquare, Receipt, TrendingUp,
-  TrendingDown, ArrowRight, Clock, Activity, Zap, Target
+  TrendingDown, Clock, Activity, Zap, Target
 } from 'lucide-react'
 import api from '@/lib/api'
+
+// Rupees, because the system is INR — the pipeline sub-label used to render a
+// real number with a hard-coded "$" in front of it.
+const inr = (v) => new Intl.NumberFormat('en-IN', {
+  style: 'currency', currency: 'INR', maximumFractionDigits: 0,
+}).format(Number(v) || 0)
 
 // ── Skeleton ──────────────────────────────────────────────────────
 function SkeletonCard() {
@@ -25,7 +31,11 @@ function SkeletonCard() {
 
 // ── 3D KPI Card ───────────────────────────────────────────────────
 function KpiCard({ label, value, icon: Icon, gradient, shadowColor, trend, trendLabel, isDark }) {
-  const isUp = trend >= 0
+  // `trend` is optional. It used to be hard-coded per tile (+12%, +8%, -3%, -1%)
+  // with labels like "vs last month" — a comparison nothing computed. No tile
+  // passes one now, and the badge is simply absent rather than invented.
+  const hasTrend = typeof trend === 'number'
+  const isUp = hasTrend && trend >= 0
   return (
     <div
       className="kpi-3d"
@@ -50,18 +60,20 @@ function KpiCard({ label, value, icon: Icon, gradient, shadowColor, trend, trend
           <Icon size={22} className="text-white" strokeWidth={2} />
         </div>
 
-        {/* Trend badge */}
-        <div
-          className="flex items-center gap-1 text-xs font-bold px-2.5 py-1.5 rounded-xl"
-          style={{
-            background: isUp ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)',
-            color: isUp ? '#10b981' : '#ef4444',
-            border: `1px solid ${isUp ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}`,
-          }}
-        >
-          {isUp ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
-          {Math.abs(trend)}%
-        </div>
+        {/* Trend badge — only when a real trend was supplied */}
+        {hasTrend && (
+          <div
+            className="flex items-center gap-1 text-xs font-bold px-2.5 py-1.5 rounded-xl"
+            style={{
+              background: isUp ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)',
+              color: isUp ? '#10b981' : '#ef4444',
+              border: `1px solid ${isUp ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}`,
+            }}
+          >
+            {isUp ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
+            {Math.abs(trend)}%
+          </div>
+        )}
       </div>
 
       {/* Value */}
@@ -75,17 +87,32 @@ function KpiCard({ label, value, icon: Icon, gradient, shadowColor, trend, trend
         <p className="text-sm font-semibold mt-1.5" style={{ color: 'var(--text-muted)' }}>{label}</p>
       </div>
 
-      {/* Trend label */}
-      <div className="relative z-10 mt-3 flex items-center gap-1.5">
-        <div className="w-1 h-1 rounded-full" style={{ background: isUp ? '#10b981' : '#ef4444' }} />
-        <p className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>{trendLabel}</p>
-      </div>
+      {/* Sub-label */}
+      {trendLabel && (
+        <div className="relative z-10 mt-3 flex items-center gap-1.5">
+          <div className="w-1 h-1 rounded-full" style={{ background: hasTrend ? (isUp ? '#10b981' : '#ef4444') : 'var(--text-muted)' }} />
+          <p className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>{trendLabel}</p>
+        </div>
+      )}
     </div>
   )
 }
 
 // ── Activity Item ─────────────────────────────────────────────────
-function ActivityItem({ action, description, time, idx }) {
+// `at` is an ISO timestamp from the audit trail. It used to be a pre-baked
+// string ("2m ago") because the rows were hard-coded and never actually aged.
+const relative = (iso) => {
+  if (!iso) return ''
+  const secs = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000)
+  if (secs < 60)    return 'just now'
+  if (secs < 3600)  return `${Math.floor(secs / 60)}m ago`
+  if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`
+  if (secs < 2592000) return `${Math.floor(secs / 86400)}d ago`
+  return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+}
+
+function ActivityItem({ action, description, at, idx }) {
+  const time = relative(at)
   const colors = ['#7C3AED','#10b981','#f59e0b','#3b82f6','#ec4899']
   const color = colors[idx % colors.length]
   return (
@@ -126,32 +153,18 @@ export default function DashboardPage() {
   const { user } = useAuth()
   const { isDark } = useTheme()
 
+  // No placeholderData and no select.
+  //
+  // Both used to substitute invented figures — 128 contacts, 34 deals, ₹284,500
+  // pipeline, 68% win rate — whenever the real counts came back zero. So a new
+  // or quiet tenant was shown someone else's imaginary business on the screen
+  // they trust most, and a tenant with three genuine overdue invoices had that
+  // number replaced too, because the substitution swapped the whole object.
+  //
+  // The endpoint returns real counts now, so zero is allowed to mean zero.
   const { data, isLoading, isError } = useQuery({
     queryKey: ['dashboard'],
     queryFn: () => api.get('/dashboard').then(r => r.data.data),
-    // Keep showing placeholder until real modules are implemented
-    placeholderData: {
-      contacts_count: 128,
-      open_deals: 34,
-      tasks_due_today: 7,
-      overdue_invoices: 3,
-      pipeline_value: 284500,
-      win_rate: 68,
-    },
-    // Only show real data if at least one count is non-zero
-    select: (apiData) => {
-      const hasRealData = apiData.contacts_count > 0 || 
-                          apiData.open_deals > 0 || 
-                          apiData.tasks_due_today > 0
-      return hasRealData ? apiData : {
-        contacts_count: 128,
-        open_deals: 34,
-        tasks_due_today: 7,
-        overdue_invoices: 3,
-        pipeline_value: 284500,
-        win_rate: 68,
-      }
-    },
   })
 
   const kpis = [
@@ -161,8 +174,6 @@ export default function DashboardPage() {
       icon: Users,
       gradient: 'linear-gradient(145deg,#9f67ff,#7C3AED,#5b21b6)',
       shadowColor: '#7C3AED',
-      trend: 12,
-      trendLabel: 'vs last month',
     },
     {
       label: 'Open Deals',
@@ -170,8 +181,8 @@ export default function DashboardPage() {
       icon: Briefcase,
       gradient: 'linear-gradient(145deg,#34d399,#10B981,#059669)',
       shadowColor: '#10b981',
-      trend: 8,
-      trendLabel: `$${((data?.pipeline_value ?? 0) / 1000).toFixed(0)}K pipeline`,
+      // The one honest sub-label here: pipeline_value is a real sum.
+      trendLabel: `${inr(data?.pipeline_value ?? 0)} open pipeline`,
     },
     {
       label: 'Tasks Due Today',
@@ -179,8 +190,6 @@ export default function DashboardPage() {
       icon: CheckSquare,
       gradient: 'linear-gradient(145deg,#fcd34d,#F59E0B,#d97706)',
       shadowColor: '#f59e0b',
-      trend: -3,
-      trendLabel: 'vs yesterday',
     },
     {
       label: 'Overdue Invoices',
@@ -188,21 +197,20 @@ export default function DashboardPage() {
       icon: Receipt,
       gradient: 'linear-gradient(145deg,#f87171,#EF4444,#dc2626)',
       shadowColor: '#ef4444',
-      trend: -1,
-      trendLabel: 'needs attention',
     },
   ]
 
-  const recentActivity = [
-    { action: 'New deal created',  description: 'Acme Corp — $12,500',              time: '2m ago'  },
-    { action: 'Invoice sent',      description: 'INV-2024-042 to TechCorp Ltd',      time: '1h ago'  },
-    { action: 'Contact added',     description: 'Sarah Johnson — Globex Inc.',       time: '2h ago'  },
-    { action: 'Deal won 🎉',       description: 'Initech Partnership — $45,000',    time: '3h ago'  },
-    { action: 'Task completed',    description: 'Review Q2 proposal document',       time: '5h ago'  },
-  ]
+  // Both of these were hard-coded. The feed listed Acme Corp, TechCorp, Globex
+  // and Initech to every tenant on every load; the chart was twelve invented
+  // numbers under a badge reading "Live". Both come from the API now.
+  const recentActivity = data?.recent_activity ?? []
 
-  const barData = [40, 65, 30, 80, 55, 45, 70, 88, 60, 75, 50, 90]
-  const months  = ['J','F','M','A','M','J','J','A','S','O','N','D']
+  const revenueSeries = data?.revenue_by_month ?? []
+  const months  = revenueSeries.map((m) => m.label)
+  const peak    = Math.max(...revenueSeries.map((m) => m.value), 0)
+  // Bar heights as a percentage of the best month. All-zero stays flat rather
+  // than dividing by zero and rendering NaN.
+  const barData = revenueSeries.map((m) => (peak > 0 ? Math.round((m.value / peak) * 100) : 0))
 
   return (
     <div className="space-y-6">
@@ -270,14 +278,17 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h2 className="text-base font-bold" style={{ color: 'var(--text-h)' }}>Pipeline Overview</h2>
-              <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Revenue by month</p>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Payments received per month</p>
             </div>
             <div className="flex items-center gap-2">
               <span
                 className="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1.5 rounded-xl"
                 style={{ background: 'rgba(16,185,129,0.12)', color: '#10b981', border: '1px solid rgba(16,185,129,0.2)' }}
               >
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Live
+                {/* Was "Live" with a pulsing dot, over twelve hard-coded
+                    numbers. The series is real now, but it is payments per
+                    month, not a live stream — so it says what it is. */}
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> Last 12 months
               </span>
             </div>
           </div>
@@ -340,17 +351,19 @@ export default function DashboardPage() {
         <div className="card-3d" style={{ padding: '24px' }}>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-base font-bold" style={{ color: 'var(--text-h)' }}>Recent Activity</h2>
-            <button
-              className="flex items-center gap-1 text-xs font-semibold transition-all"
-              style={{ color: '#a78bfa' }}
-              onMouseEnter={e => e.currentTarget.style.gap = '4px'}
-              onMouseLeave={e => e.currentTarget.style.gap = '4px'}
-            >
-              View all <ArrowRight size={12} />
-            </button>
+            {/* "View all" removed rather than re-pointed. It had no onClick at
+                all — a live-looking button that did nothing — and there is no
+                tenant-wide audit log screen to send anyone to; the audit trail
+                is only exposed per record (AuditTimeline). Sending them to a
+                404 would be worse than the dead button. Restore this the day
+                that page exists. */}
           </div>
           <div className="space-y-0">
-            {recentActivity.map((item, i) => (
+            {recentActivity.length === 0 ? (
+              <p className="text-xs py-6 text-center" style={{ color: 'var(--text-muted)' }}>
+                {isLoading ? 'Loading…' : 'Nothing recorded yet. Activity appears here as your team works.'}
+              </p>
+            ) : recentActivity.map((item, i) => (
               <ActivityItem key={i} idx={i} {...item} />
             ))}
           </div>
@@ -375,7 +388,7 @@ export default function DashboardPage() {
         <div className="relative z-10">
           <p className="label-caps mb-1.5">Deal Win Rate</p>
           <p className="font-black" style={{ fontSize: 'clamp(2rem,4vw,3rem)', color: 'var(--text-h)', letterSpacing: '-0.03em', lineHeight: 1 }}>
-            {data?.win_rate ?? 68}<span className="text-gradient">%</span>
+            {data?.win_rate ?? '—'}<span className="text-gradient">{data?.win_rate == null ? '' : '%'}</span>
           </p>
           <div className="flex items-center gap-1.5 mt-2">
             <TrendingUp size={14} style={{ color: '#10b981' }} />
@@ -388,7 +401,7 @@ export default function DashboardPage() {
           <div
             className="w-24 h-24 rounded-full flex items-center justify-center"
             style={{
-              background: 'conic-gradient(#7C3AED 0%, #7C3AED ' + (data?.win_rate ?? 68) + '%, var(--bg-input) ' + (data?.win_rate ?? 68) + '%)',
+              background: 'conic-gradient(#7C3AED 0%, #7C3AED ' + (data?.win_rate ?? 0) + '%, var(--bg-input) ' + (data?.win_rate ?? 0) + '%)',
               padding: '4px',
             }}
           >
@@ -398,7 +411,7 @@ export default function DashboardPage() {
             >
               <div className="text-center">
                 <Target size={18} style={{ color: '#7C3AED', margin: '0 auto 2px' }} />
-                <span className="text-sm font-black" style={{ color: 'var(--text-h)' }}>{data?.win_rate ?? 68}%</span>
+                <span className="text-sm font-black" style={{ color: 'var(--text-h)' }}>{data?.win_rate == null ? '—' : `${data.win_rate}%`}</span>
               </div>
             </div>
           </div>
