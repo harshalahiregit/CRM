@@ -160,6 +160,10 @@ export default function Select({
           fontSize: fs,
           fontWeight: 600,
           background: 'var(--bg-input)',
+          // `border` shorthand — every caller that overrides the border via
+          // buttonStyle also uses the shorthand, so the two never mix shorthand
+          // with longhand (which is what makes React warn "…style property during
+          // rerender…" and can drop the coloured border).
           border: `1px solid ${open ? 'var(--color-support-500)' : 'var(--border)'}`,
           color: selected ? 'var(--text-h)' : 'var(--text-muted)',
           cursor: disabled ? 'not-allowed' : 'pointer',

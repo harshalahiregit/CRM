@@ -345,7 +345,7 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
           <div style={{ minWidth: 150 }}>
             <Select value={task.status} onChange={v => setStatus.mutate(v)} ariaLabel="Task status"
               options={statusOptions(statusList, user?.role)}
-              buttonStyle={{ borderColor: st.color, color: st.color, fontWeight: 700, background: 'var(--bg-card)' }} />
+              buttonStyle={{ border: `1px solid ${st.color}`, color: st.color, fontWeight: 700, background: 'var(--bg-card)' }} />
           </div>
           <button onClick={() => setRaising(true)} title="Raise a support ticket for this task"
             className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-2 rounded-xl"
