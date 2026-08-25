@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   IndianRupee, Wallet, ShoppingBag, TrendingUp, RefreshCw, ArrowRight,
   ClipboardList, PackageCheck, FileText, AlertTriangle, Clock, Truck, Plus,
+  Building2, Users, Gauge, ClipboardCheck, BadgeCheck, ShieldQuestion, HardHat, FileCheck,
 } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
 import { pinvStatusCfg, fmtMoney, fmtMoneyShort, fmtDate } from '../constants'
@@ -57,6 +58,11 @@ export default function PurchaseDashboard() {
           </button>
         </div>
       </div>
+
+      {/* §4/§37 Vendor Control Tower — governance parity with TPV (added above the financial view) */}
+      {data.control_tower && (
+        <PurchaseControlTower ct={data.control_tower} actions={data.action_centre || []} risk={data.risk_breakdown || []} onGo={navigate} />
+      )}
 
       {/* KPI tiles */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 16 }}>
@@ -368,6 +374,95 @@ function RecentInvoices({ rows, onGo }) {
           </tbody>
         </table>
       )}
+    </div>
+  )
+}
+
+// ── §4/§37 Vendor Control Tower (governance parity with TPV) ──────────────────
+function PurchaseControlTower({ ct, actions, risk, onGo }) {
+  const v = ct.vendors || {}, wf = ct.workforce || {}, rd = ct.readiness || {}, op = ct.open || {}, pf = ct.performance || {}, co = ct.compliance || {}
+  const pct = (n) => (n === null || n === undefined ? '—' : `${n}%`)
+
+  return (
+    <div style={{ marginBottom: 22 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <Gauge size={16} style={{ color: '#a78bfa' }} />
+        <h2 style={{ margin: 0, fontSize: 15, fontWeight: 900, color: 'var(--text-h)', letterSpacing: '-0.01em' }}>Vendor Control Tower</h2>
+        <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>third-party governance at a glance</span>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6,1fr)', gap: 10, marginBottom: 14 }}>
+        <PExecStat label="Vendors" value={v.total ?? 0} sub={`${v.active ?? 0} active · ${v.pending ?? 0} pending`} icon={Building2} tone="#7C3AED" onClick={() => onGo('/app/purchase/vendors')} />
+        <PExecStat label="Workforce" value={wf.total ?? 0} sub={`${wf.active ?? 0} active`} icon={Users} tone="#0ea5e9" onClick={() => onGo('/app/purchase/workforce')} />
+        <PExecStat label="Temporary" value={v.temporary ?? 0} sub={`${v.expiring ?? 0} expiring 30d`} icon={Clock} tone="#f59e0b" onClick={() => onGo('/app/purchase/vendors')} />
+        <PExecStat label="Pending Onboarding" value={v.pending_onboarding ?? 0} sub="not yet decided" icon={FileCheck} tone="#f59e0b" onClick={() => onGo('/app/purchase/onboarding')} />
+        <PExecStat label="Blacklisted" value={v.blacklisted ?? 0} sub={`${v.on_hold ?? 0} on hold`} icon={ShieldQuestion} tone="#f43f5e" onClick={() => onGo('/app/purchase/vendors')} danger={v.blacklisted > 0} />
+        <PExecStat label="Avg Performance" value={pf.avg_score ?? '—'} sub="VPI score" icon={Gauge} tone="#10b981" onClick={() => onGo('/app/purchase/vpi')} />
+        <PExecStat label="Training %" value={pct(rd.training_pct)} sub="active workforce" icon={BadgeCheck} tone="#22c55e" />
+        <PExecStat label="Medical %" value={pct(rd.medical_pct)} sub="active workforce" icon={FileCheck} tone="#14b8a6" />
+        <PExecStat label="PPE Compliance %" value={pct(co.ppe_pct)} sub={`${co.ppe_missing ?? 0} pending issue`} icon={HardHat} tone="#eab308" onClick={() => onGo('/app/purchase/workforce')} danger={co.ppe_missing > 0} />
+        <PExecStat label="Compliance %" value={pct(co.overall_pct)} sub={`${co.vendors_tracked ?? 0} vendors tracked`} icon={ClipboardCheck} tone="#06b6d4" onClick={() => onGo('/app/purchase/compliance-register')} />
+        <PExecStat label="Open CAPAs" value={op.capas ?? 0} sub={`${op.ncrs ?? 0} NCRs`} icon={ShieldQuestion} tone="#f97316" onClick={() => onGo('/app/purchase/capa')} />
+        <PExecStat label="Open Actions" value={op.actions ?? 0} sub={`${op.overdue_actions ?? 0} overdue`} icon={ClipboardList} tone="#8b5cf6" onClick={() => onGo('/app/purchase/kickoff')} danger={op.overdue_actions > 0} />
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 14 }}>
+        <PActionCentre rows={actions} onGo={onGo} />
+        <PRiskBands rows={risk} />
+      </div>
+    </div>
+  )
+}
+
+function PExecStat({ label, value, sub, icon: Icon, tone, onClick, danger }) {
+  return (
+    <div onClick={onClick} className="pr-glass" style={{ padding: '12px 13px', borderRadius: 12, cursor: onClick ? 'pointer' : 'default', border: danger ? `1px solid ${tone}55` : '1px solid var(--border)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+        <span style={{ fontSize: 10.5, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</span>
+        {Icon && <Icon size={14} style={{ color: tone }} />}
+      </div>
+      <div style={{ fontSize: 21, fontWeight: 900, color: 'var(--text-h)', lineHeight: 1 }}>{value}</div>
+      {sub && <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 4 }}>{sub}</div>}
+    </div>
+  )
+}
+
+function PActionCentre({ rows, onGo }) {
+  return (
+    <div className="pr-glass" style={{ padding: 14, borderRadius: 14 }}>
+      <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text-h)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>Action Centre</div>
+      {(!rows || rows.length === 0)
+        ? <div style={{ fontSize: 12.5, color: 'var(--text-muted)', padding: '8px 0' }}>Nothing waiting — all clear.</div>
+        : rows.map(r => (
+          <div key={r.key} onClick={() => onGo(r.path)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderRadius: 9, cursor: 'pointer', marginBottom: 4, background: 'var(--bg-card)', border: '1px solid var(--border)' }}
+            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-input)'} onMouseLeave={e => e.currentTarget.style.background = 'var(--bg-card)'}>
+            <span style={{ fontSize: 12.5, color: 'var(--text-h)' }}>{r.label}</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 13, fontWeight: 800, color: '#a78bfa' }}>{r.count}</span>
+              <ArrowRight size={13} style={{ color: 'var(--text-muted)' }} />
+            </span>
+          </div>
+        ))}
+    </div>
+  )
+}
+
+function PRiskBands({ rows }) {
+  const TONE = { A: '#22c55e', B: '#84cc16', C: '#f59e0b', D: '#f97316', E: '#ef4444' }
+  const max = Math.max(1, ...(rows || []).map(r => r.count))
+  return (
+    <div className="pr-glass" style={{ padding: 14, borderRadius: 14 }}>
+      <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text-h)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>Risk by Performance Band</div>
+      {(rows || []).map(r => (
+        <div key={r.level} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <span style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--text-muted)', width: 16 }}>{r.level}</span>
+          <div style={{ flex: 1, height: 10, borderRadius: 999, background: 'var(--bg-input)', overflow: 'hidden' }}>
+            <div style={{ width: `${(r.count / max) * 100}%`, height: '100%', background: TONE[r.level] || '#94a3b8', borderRadius: 999 }} />
+          </div>
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-h)', width: 24, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{r.count}</span>
+        </div>
+      ))}
+      <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 6 }}>A = best · E = highest risk (VPI band)</div>
     </div>
   )
 }
