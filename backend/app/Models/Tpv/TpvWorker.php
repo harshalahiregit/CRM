@@ -18,7 +18,7 @@ class TpvWorker extends Model
 
     protected $fillable = [
         'tenant_id','vendor_id','created_by','worker_code','work_package_id',
-        'name','dob','age','age_reason','gender','designation','skill_category','aadhar_number','mobile','email',
+        'name','dob','age','age_reason','gender','designation','skill_category','experience_years','joining_date','exit_date','aadhar_number','mobile','email',
         'blood_group','address','emergency_contact','emergency_phone','photo_path',
         'current_step','status','is_active',
         // Step 2
@@ -42,6 +42,9 @@ class TpvWorker extends Model
 
     protected $casts = [
         'dob'               => 'date',
+        'joining_date'      => 'date',
+        'exit_date'         => 'date',
+        'experience_years'  => 'decimal:1',
         'current_step'      => 'integer',
         'is_active'         => 'boolean',
         'punch_log'         => 'array',

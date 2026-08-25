@@ -116,10 +116,10 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 - [x] Wire `work_package_id` into the worker create/update service. DONE 2026-08-25: added to `$fillable` + `Store/UpdateTpvWorkerRequest`, set via service with `assertWorkPackage` (same-vendor/tenant scoping), `TpvWorker::workPackage()` relation.
 
 ## §14 Workforce
-- [ ] Worker field: Project `[M]`.
-- [ ] Worker field: Experience `[M]`.
-- [ ] Worker field: Joining date `[M]`.
-- [ ] Worker field: Exit date `[M]`.
+- [ ] Worker field: Project `[M]` — deferred: crosses into the Projects module; needs a cross-module decision (kept out of this slice).
+- [x] Worker field: Experience — `experience_years` (decimal) column + wizard field + validation [2026-08-25].
+- [x] Worker field: Joining date — `joining_date` column + wizard field + validation [2026-08-25].
+- [x] Worker field: Exit date — `exit_date` column + wizard field + `after_or_equal:joining_date` validation [2026-08-25]. _Guarded by `WorkerEmploymentFieldsTest` (2)._
 - [x] Work Package field on the worker. DONE 2026-08-25: assignable in the worker wizard (Step 1) via a vendor-scoped Work Package selector; persisted + gates the badge.
 - [ ] Explicit Trade field `[P]` (proxied by skill_category + certs).
 - [ ] Single training_status `[P]` (represented via induction flag + training records).
@@ -299,7 +299,7 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 ---
 
 ### Progress counter (update as you tick)
-- **Completed:** 16 — the 6 §34 settings groups; **Rule 4** competency enforcement + worker→work-package wiring (§13) + Work Package field (§14); **Rule 6** permit-for-high-risk (+ activity `requires_permit`/`permit_type` + editor); **Rule 11 (CAPA + NCR)** owner-required-to-progress; **Rule 9** auto-escalate vendor violations; **§18 PPE Matrix rebuild** (Job/Hazard/Activity context + Mandatory/Optional/Conditional class + replacement frequency + verification requirement; only Mandatory gates the badge); **§19 permit-type vocabulary** (Isolation/Shutdown/Critical Work added, General→Other with legacy accepted); **§23 incident-type vocabulary** (First Aid/Medical Treatment/LTI/Security/Unsafe Act/Unsafe Condition added); **§25 CAPA fields** (problem statement, immediate correction, separate preventive action, compliance-failure source) [2026-08-25].
+- **Completed:** 17 — the 6 §34 settings groups; **Rule 4** competency enforcement + worker→work-package wiring (§13) + Work Package field (§14); **Rule 6** permit-for-high-risk (+ activity `requires_permit`/`permit_type` + editor); **Rule 11 (CAPA + NCR)** owner-required-to-progress; **Rule 9** auto-escalate vendor violations; **§18 PPE Matrix rebuild** (Job/Hazard/Activity context + Mandatory/Optional/Conditional class + replacement frequency + verification requirement; only Mandatory gates the badge); **§19 permit-type vocabulary** (Isolation/Shutdown/Critical Work added, General→Other with legacy accepted); **§23 incident-type vocabulary** (First Aid/Medical Treatment/LTI/Security/Unsafe Act/Unsafe Condition added); **§25 CAPA fields** (problem statement, immediate correction, separate preventive action, compliance-failure source); **§14 worker employment fields** (experience/joining date/exit date) [2026-08-25].
 - **★ tier remaining:** the PPE-Matrix Job+Hazard+Activity rebuild; the Rule 11 MOM/inspection follow-on.
 - **Open:** everything else above (§3–§35 depth items).
 - **Note:** all of this is implemented & verified locally (feature tests green: CompetencyGate 5, PermitGate 6, ActionOwnerRule 5, ViolationEscalation 3, TpvSettings 5) but **not yet committed**.

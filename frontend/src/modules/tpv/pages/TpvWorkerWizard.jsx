@@ -215,6 +215,7 @@ function StepProfile({ worker, editable, onSaved, onNext, api }) {
   const [f, setF] = useState({
     name: worker.name || '', dob: worker.dob?.slice(0, 10) || '', gender: worker.gender || '',
     designation: worker.designation || '', skill_category: worker.skill_category || '',
+    experience_years: worker.experience_years ?? '', joining_date: worker.joining_date?.slice(0, 10) || '', exit_date: worker.exit_date?.slice(0, 10) || '',
     work_package_id: worker.work_package_id ? String(worker.work_package_id) : '',
     aadhar_number: worker.aadhar_number || '', mobile: worker.mobile || '', blood_group: worker.blood_group || '',
     address: worker.address || '', emergency_contact: worker.emergency_contact || '', emergency_phone: worker.emergency_phone || '',
@@ -284,6 +285,9 @@ function StepProfile({ worker, editable, onSaved, onNext, api }) {
             options={[['', 'Unassigned'], ...wps.map(w => [String(w.id), w.reference ? `${w.reference} · ${w.name}` : w.name])]} />
           <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>Deploys the worker; their activities' required competencies gate the badge.</span>
         </Field>
+        <Field label="Experience (years)"><TextInput type="number" min="0" step="0.5" value={f.experience_years} onChange={set('experience_years')} disabled={!editable} placeholder="e.g. 5" /></Field>
+        <Field label="Joining Date"><TextInput type="date" value={f.joining_date} onChange={set('joining_date')} disabled={!editable} /></Field>
+        <Field label="Exit Date"><TextInput type="date" value={f.exit_date} onChange={set('exit_date')} disabled={!editable} /></Field>
         <Field label="Emergency Contact"><TextInput value={f.emergency_contact} onChange={set('emergency_contact')} disabled={!editable} placeholder="Name" /></Field>
         <Field label="Emergency Phone"><TextInput value={f.emergency_phone} onChange={set('emergency_phone')} disabled={!editable} /></Field>
         <Field label="Address" full><textarea value={f.address} onChange={set('address')} disabled={!editable} rows={2} style={{ ...inputStyle, resize: 'vertical' }} /></Field>
