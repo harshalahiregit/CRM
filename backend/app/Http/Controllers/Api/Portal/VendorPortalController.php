@@ -54,7 +54,25 @@ class VendorPortalController extends Controller
         private VendorDocumentService $documentService,
         private KickoffPdfService    $kickoffPdfService,
         private PpeInventoryService  $ppeService,
+        private \App\Services\Tpv\TpvComplianceService $complianceService,
     ) {
+    }
+
+    /**
+     * §32 "View compliance" — the vendor's own compliance register (read-only).
+     * Scoped to the caller's vendor; the vendor never sees anyone else's status.
+     */
+    public function compliance(Request $request)
+    {
+        $vendor = $this->portalVendor($request);
+        if (! $vendor) {
+            return response()->json(['status' => 'error', 'message' => 'Vendor profile not found'], 404);
+        }
+
+        return response()->json([
+            'matrix' => $this->complianceService->vendorMatrix((int) $vendor->tenant_id, (int) $vendor->id),
+            'score'  => $this->complianceService->scoreFor((int) $vendor->tenant_id, (int) $vendor->id),
+        ]);
     }
 
     /** The caller's own vendor profile + headline account state. */

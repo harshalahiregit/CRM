@@ -260,6 +260,7 @@ const PurchasePortalPpe = lazy(() => import('@/pages/purchase-portal/PurchasePor
 const PurchasePortalSupport = lazy(() => import('@/pages/purchase-portal/PurchasePortalSupport'))
 const PurchasePortalProfile = lazy(() => import('@/pages/purchase-portal/PurchasePortalProfile'))
 const PurchasePortalWorkforce = lazy(() => import('@/pages/purchase-portal/PurchasePortalWorkforce'))
+const PurchasePortalCompliance = lazy(() => import('@/pages/purchase-portal/PurchasePortalCompliance'))
 const PurchaseVendorLogin = lazy(() => import('@/pages/purchase-portal/PurchaseVendorLogin'))
 const PurchaseVendorRegister = lazy(() => import('@/pages/purchase-portal/PurchaseVendorRegister'))
 const PurchaseVendorForgotPassword = lazy(() => import('@/pages/purchase-portal/PurchaseVendorForgotPassword'))
@@ -351,6 +352,7 @@ const KickoffMom = lazy(() => import('@/pages/kickoff/KickoffMom'))
 // Vendor Self-Service Portal — its own chrome, gated to vendor roles. Every
 // endpoint resolves the vendor from the token (EnsureVendorPortalAccess).
 const VendorPortalShell = lazy(() => import('@/pages/vendor-portal/VendorPortalShell'))
+const VendorPortalCompliance = lazy(() => import('@/pages/vendor-portal/VendorPortalCompliance'))
 const MyRegistrationStatus = lazy(() => import('@/pages/vendor-portal/MyRegistrationStatus'))
 const PortalOnboardingEntry = lazy(() => import('@/pages/vendor-portal/PortalOnboardingEntry'))
 const PortalDashboard = lazy(() => import('@/pages/vendor-portal/PortalDashboard'))
@@ -837,6 +839,7 @@ export default function AppRoutes() {
             The portal has no LIST — a vendor has exactly one onboarding, which
             PortalOnboardingEntry resolves from the token. */}
         <Route path="registration"      element={<S><MyRegistrationStatus /></S>} />
+        <Route path="compliance"        element={<S><VendorPortalCompliance /></S>} />
         <Route path="support"           element={<S><PortalSupport /></S>} />
         <Route path="onboarding"        element={<S><PortalOnboardingEntry /></S>} />
         <Route path="onboarding/:id"    element={<S><TpvOnboardingWizard /></S>} />
@@ -903,6 +906,7 @@ export default function AppRoutes() {
             onboarding.self() — no id in the URL. */}
         <Route path="onboarding" element={<S><PurchasePortalOnboarding /></S>} />
         <Route path="documents"  element={<S><PurchasePortalDocuments /></S>} />
+        <Route path="compliance" element={<S><PurchasePortalCompliance /></S>} />
         <Route path="approval"   element={<S><PurchasePortalApproval /></S>} />
         <Route path="kickoff"    element={<S><PurchasePortalKickoff /></S>} />
         {/* My Workforce — unlocked once the vendor is Active. The 5-step worker

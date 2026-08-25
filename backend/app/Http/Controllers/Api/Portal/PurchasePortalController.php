@@ -43,7 +43,22 @@ class PurchasePortalController extends Controller
         private PurchaseOnboardingService $onboardingService,
         private PurchaseDocumentService $documentService,
         private PurchaseKickoffService $kickoffService,
+        private \App\Services\Purchase\PurchaseComplianceService $complianceService,
     ) {
+    }
+
+    /**
+     * §32 "View compliance" — the Purchase vendor's own compliance register
+     * (read-only), scoped to the caller.
+     */
+    public function compliance(Request $request)
+    {
+        $vendor = $this->purchaseVendor($request);
+
+        return response()->json([
+            'matrix' => $this->complianceService->vendorMatrix((int) $vendor->tenant_id, (int) $vendor->id),
+            'score'  => $this->complianceService->scoreFor((int) $vendor->tenant_id, (int) $vendor->id),
+        ]);
     }
 
     /** The caller's own vendor profile. */
