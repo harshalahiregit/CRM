@@ -4,7 +4,7 @@ import { tpvApi } from '@/services/tpvApi'
 import LoadError from '@/components/ui/LoadError'
 import { KIT3D_STYLE as TPV_STYLE } from '@/components/ui/kit3d'
 
-// Sangoe TPV §21 — Compliance engine. Per-vendor register across 14 categories,
+// Sangoe TPV §21 — Compliance engine. Per-vendor register across the doc's categories,
 // each with a status; expiry drives status (Rule 8). Additive to the evidence locker.
 const STATUS_TONE = {
   Compliant: '#10b981', Partially_Compliant: '#f59e0b', Non_Compliant: '#ef4444',
@@ -40,7 +40,7 @@ export default function TpvComplianceRegister() {
         <div>
           <p className="label-caps" style={{ color: '#a78bfa', margin: 0, fontSize: 11, fontWeight: 800, letterSpacing: '0.08em' }}>COMPLIANCE</p>
           <h1 style={{ color: 'var(--text-h)', fontSize: 22, fontWeight: 900, margin: '2px 0 0' }}>Compliance Register</h1>
-          <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: '4px 0 0' }}>Every vendor across 14 categories — expiry drives status automatically.</p>
+          <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: '4px 0 0' }}>Every vendor across {meta.categories.length || 'all'} categories — expiry drives status automatically.</p>
         </div>
         <button onClick={load} style={btnGhost}><RefreshCw size={14} /> Refresh</button>
       </div>

@@ -8,6 +8,9 @@ class ComplianceCatalog
     public const CATEGORIES = [
         'Legal', 'Labour', 'Licences', 'Statutory', 'Contractual', 'HSE', 'Training',
         'Medical', 'Risk_Assessment', 'Method_Statement', 'PPE', 'Environment', 'Quality', 'Security',
+        // §21 additions — the doc's fuller category set.
+        'Environmental_Requirements', 'Waste', 'Chemicals', 'Pollution', 'Certifications',
+        'Inspection', 'QA_QC', 'Identification', 'Background_Verification', 'Access',
     ];
 
     public const STATUSES = [

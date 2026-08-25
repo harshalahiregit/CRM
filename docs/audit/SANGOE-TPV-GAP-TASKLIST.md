@@ -166,17 +166,17 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 - [ ] Live-view filter: Location `[M]`.
 - [ ] Roster server-side vendor filter `[P]` (client-side only today).
 
-## §21 Compliance — missing categories (14/23 today)
-- [ ] Waste `[M]`.
-- [ ] Chemicals `[M]`.
-- [ ] Pollution `[M]`.
-- [ ] Environmental requirements (distinct from generic Environment) `[M]`.
-- [ ] Certifications `[M]`.
-- [ ] Inspection `[M]`.
-- [ ] QA/QC (distinct from generic Quality) `[M]`.
-- [ ] Identification `[M]`.
-- [ ] Background verification `[M]`.
-- [ ] Access `[M]`.
+## §21 Compliance — categories (now 24; all added to `ComplianceCatalog::CATEGORIES`, flow to matrix + roster % + register API) [2026-08-25]
+- [x] Waste — `Waste`.
+- [x] Chemicals — `Chemicals`.
+- [x] Pollution — `Pollution`.
+- [x] Environmental requirements (distinct from generic Environment) — `Environmental_Requirements`.
+- [x] Certifications — `Certifications`.
+- [x] Inspection — `Inspection`.
+- [x] QA/QC (distinct from generic Quality) — `QA_QC`.
+- [x] Identification — `Identification`.
+- [x] Background verification — `Background_Verification`.
+- [x] Access — `Access`. _Guarded by `ComplianceCategoryVocabularyTest` (3). Note: the compliance % denominator now counts all categories, so vendors that haven't recorded the new ones will show a lower % until filled — correct per the doc._
 
 ## §23 Incidents
 - [x] Type: First Aid — `First_Aid` added to `HsseIncident::TYPES` [2026-08-25].
@@ -299,7 +299,7 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 ---
 
 ### Progress counter (update as you tick)
-- **Completed:** 17 — the 6 §34 settings groups; **Rule 4** competency enforcement + worker→work-package wiring (§13) + Work Package field (§14); **Rule 6** permit-for-high-risk (+ activity `requires_permit`/`permit_type` + editor); **Rule 11 (CAPA + NCR)** owner-required-to-progress; **Rule 9** auto-escalate vendor violations; **§18 PPE Matrix rebuild** (Job/Hazard/Activity context + Mandatory/Optional/Conditional class + replacement frequency + verification requirement; only Mandatory gates the badge); **§19 permit-type vocabulary** (Isolation/Shutdown/Critical Work added, General→Other with legacy accepted); **§23 incident-type vocabulary** (First Aid/Medical Treatment/LTI/Security/Unsafe Act/Unsafe Condition added); **§25 CAPA fields** (problem statement, immediate correction, separate preventive action, compliance-failure source); **§14 worker employment fields** (experience/joining date/exit date) [2026-08-25].
+- **Completed:** 18 — the 6 §34 settings groups; **Rule 4** competency enforcement + worker→work-package wiring (§13) + Work Package field (§14); **Rule 6** permit-for-high-risk (+ activity `requires_permit`/`permit_type` + editor); **Rule 11 (CAPA + NCR)** owner-required-to-progress; **Rule 9** auto-escalate vendor violations; **§18 PPE Matrix rebuild** (Job/Hazard/Activity context + Mandatory/Optional/Conditional class + replacement frequency + verification requirement; only Mandatory gates the badge); **§19 permit-type vocabulary** (Isolation/Shutdown/Critical Work added, General→Other with legacy accepted); **§23 incident-type vocabulary** (First Aid/Medical Treatment/LTI/Security/Unsafe Act/Unsafe Condition added); **§25 CAPA fields** (problem statement, immediate correction, separate preventive action, compliance-failure source); **§14 worker employment fields** (experience/joining date/exit date); **§21 compliance categories** (+10 → 24, doc's fuller set) [2026-08-25].
 - **★ tier remaining:** the PPE-Matrix Job+Hazard+Activity rebuild; the Rule 11 MOM/inspection follow-on.
 - **Open:** everything else above (§3–§35 depth items).
 - **Note:** all of this is implemented & verified locally (feature tests green: CompetencyGate 5, PermitGate 6, ActionOwnerRule 5, ViolationEscalation 3, TpvSettings 5) but **not yet committed**.
