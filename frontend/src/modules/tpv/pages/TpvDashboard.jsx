@@ -135,7 +135,6 @@ function ControlTower({ ct, actions, risk, onGo }) {
         <ExecStat label="Workforce" value={wf.total ?? 0} sub={`${wf.on_site_now ?? 0} on site now`} icon={Users} tone="#0ea5e9" onClick={() => onGo('/app/tpv/workforce')} />
         <ExecStat label="High Risk" value={v.high_risk ?? 0} sub="High + Critical" icon={ShieldAlert} tone="#ef4444" onClick={() => onGo('/app/tpv/vendors')} danger={v.high_risk > 0} />
         <ExecStat label="Temporary" value={v.temporary ?? 0} sub={`${v.expiring ?? 0} expiring 30d`} icon={Clock} tone="#f59e0b" onClick={() => onGo('/app/tpv/temporary')} />
-        <ExecStat label="Pending Onboarding" value={v.pending_onboarding ?? 0} sub="not yet decided" icon={FileCheck} tone="#f59e0b" onClick={() => onGo('/app/tpv/onboarding')} />
         <ExecStat label="Suspended" value={v.suspended ?? 0} sub={`${v.blacklisted ?? 0} blacklisted`} icon={Ban} tone="#f43f5e" onClick={() => onGo('/app/tpv/vendors')} danger={v.suspended > 0} />
         <ExecStat label="Avg Performance" value={pf.avg_score ?? '—'} sub={pf.period ? `period ${pf.period}` : 'no scores yet'} icon={Gauge} tone="#10b981" onClick={() => onGo('/app/tpv/performance')} />
         <ExecStat label="Training %" value={pct(rd.training_pct)} sub="active workforce" icon={BadgeCheck} tone="#22c55e" />
@@ -146,7 +145,6 @@ function ControlTower({ ct, actions, risk, onGo }) {
         <ExecStat label="Open CAPAs" value={op.capas ?? 0} sub={`${op.ncrs ?? 0} NCRs`} icon={ShieldQuestion} tone="#f97316" onClick={() => onGo('/app/tpv/incidents')} />
         <ExecStat label="Active Permits" value={op.active_permits ?? 0} sub="currently valid" icon={FileCheck} tone="#0ea5e9" onClick={() => onGo('/app/tpv/permits')} />
         <ExecStat label="Active Strikes" value={op.total_strikes ?? 0} sub="outstanding" icon={ShieldAlert} tone="#a78bfa" onClick={() => onGo('/app/tpv/strikes')} danger={op.total_strikes > 0} />
-        <ExecStat label="Gate Violations" value={op.gate_violations ?? 0} sub="entries refused" icon={ShieldX} tone="#ef4444" onClick={() => onGo('/app/tpv/gate-log')} danger={op.gate_violations > 0} />
       </div>
 
       {/* Action Centre + Risk breakdown */}
