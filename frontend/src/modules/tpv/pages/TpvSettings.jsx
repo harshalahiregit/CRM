@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import {
   SlidersHorizontal, ShieldAlert, Gauge, ShieldCheck, Landmark, ListChecks, ScanLine,
-  HardHat, CalendarDays, Plus, Trash2, RotateCcw, Save, ExternalLink, CheckCircle2,
+  HardHat, CalendarDays, Plus, Trash2, RotateCcw, Save, ExternalLink, CheckCircle2, TrendingUp,
 } from 'lucide-react'
 import { tpvApi } from '@/services/tpvApi'
 
@@ -25,6 +25,7 @@ const TABS = [
   { key: 'authority_matrix',  label: 'Authority Matrix',  icon: Landmark },
   { key: 'approval_types',    label: 'Approval Types',    icon: ListChecks },
   { key: 'gate',              label: 'Gate (PPE)',        icon: ScanLine },
+  { key: 'violation_ladder',  label: 'Violation Ladder',  icon: TrendingUp },
 ]
 
 export default function TpvSettings() {
@@ -73,6 +74,7 @@ export default function TpvSettings() {
           {tab === 'authority_matrix'  && <AuthorityEditor grp={bundle.authority_matrix}  onSaved={reload} />}
           {tab === 'approval_types'    && <TypesEditor     grp={bundle.approval_types}    onSaved={reload} />}
           {tab === 'gate'              && <GateEditor      grp={bundle.gate}              onSaved={reload} />}
+          {tab === 'violation_ladder'  && <ViolationLadderEditor grp={bundle.violation_ladder} onSaved={reload} />}
         </div>
       )}
 
@@ -391,6 +393,61 @@ function GateEditor({ grp, onSaved }) {
       </div>
       <SaveBar ctl={ctl} isCustom={grp.custom != null} onSave={() => ctl.save.mutate({ ppe_enforcement: mode })} />
     </Card>
+  )
+}
+
+/* ── 7 · Violation escalation ladder (§26, Rule 9) ───────────────────────── */
+
+function ViolationLadderEditor({ grp, onSaved }) {
+  const ctl = useGroupSave('violation_ladder', onSaved)
+  const [f, setF] = useState(grp.effective)
+  useEffect(() => { setF(grp.effective) }, [grp])
+
+  const setPts = (k, v) => setF({ ...f, severity_points: { ...f.severity_points, [k]: Number(v) } })
+  const setStep = (i, key, val) => { const steps = f.steps.map((s, j) => j === i ? { ...s, [key]: key === 'points' ? Number(val) : val } : s); setF({ ...f, steps }) }
+  const addStep = () => setF({ ...f, steps: [...(f.steps || []), { points: 0, level: 'New_Level' }] })
+  const rmStep = (i) => setF({ ...f, steps: f.steps.filter((_, j) => j !== i) })
+
+  const hasZero = (f.steps || []).some(s => Number(s.points) === 0)
+  const allNamed = (f.steps || []).every(s => String(s.level || '').trim() !== '')
+  const valid = hasZero && allNamed && (f.steps || []).length >= 1
+
+  return (
+    <>
+      <Card title="Severity points" hint="Points a single violation contributes, by severity. Cumulative OPEN points drive the escalation level below.">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 12 }}>
+          {Object.entries(f.severity_points || {}).map(([k, v]) => (
+            <div key={k}>
+              <label style={lbl}>{k}</label>
+              <input type="number" min="0" max="100" value={v} onChange={e => setPts(k, e.target.value)} style={inp} />
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      <Card title="Escalation ladder" hint="Cumulative open-points thresholds → level. The highest threshold a vendor reaches wins; 'Suspension' and 'Blacklist' auto-apply that action (Rule 9). A step at 0 points is required as the baseline.">
+        <ul className="space-y-2">
+          {(f.steps || []).map((s, i) => (
+            <li key={i} className="flex items-center gap-2">
+              <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', width: 30 }}>≥</span>
+              <input type="number" min="0" value={s.points} onChange={e => setStep(i, 'points', e.target.value)} placeholder="points" style={{ ...inp, flex: '0 0 100px' }} />
+              <input value={s.level} onChange={e => setStep(i, 'level', e.target.value)} placeholder="level (e.g. Suspension)" style={{ ...inp, flex: 1 }} />
+              <button onClick={() => rmStep(i)} style={{ padding: 6, background: 'none', border: 'none', cursor: 'pointer', color: '#d03b3b' }}><Trash2 size={13} /></button>
+            </li>
+          ))}
+        </ul>
+        <button onClick={addStep} className="flex items-center gap-1 text-xs font-bold mt-2" style={{ color: ACCENT, background: 'none', border: 'none', cursor: 'pointer' }}>
+          <Plus size={13} /> Add step
+        </button>
+        {!hasZero && <p style={{ margin: '8px 0 0', fontSize: 11, color: '#d03b3b' }}>Add a step at 0 points — it is the baseline level.</p>}
+        {!allNamed && <p style={{ margin: '5px 0 0', fontSize: 11, color: '#d03b3b' }}>Every step needs a level name.</p>}
+        <SaveBar ctl={ctl} isCustom={grp.custom != null} canSave={valid}
+          onSave={() => ctl.save.mutate({
+            severity_points: Object.fromEntries(Object.entries(f.severity_points || {}).map(([k, v]) => [k, Number(v)])),
+            steps: (f.steps || []).map(s => ({ points: Number(s.points), level: String(s.level).trim() })),
+          })} />
+      </Card>
+    </>
   )
 }
 

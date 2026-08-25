@@ -53,7 +53,10 @@ class TpvRenewalService
             'active_strikes' => TpvSafetyStrike::forTenant($tenantId)->active()
                 ->whereHas('worker', fn ($q) => $q->where('vendor_id', $vendor->id))->count(),
             'violation_points' => $violPoints,
-            'violation_level' => ViolationType::levelFor($violPoints),
+            'violation_level' => ViolationType::levelForSteps(
+                $violPoints,
+                app(\App\Support\Tpv\TpvSettings::class)->violationLadder($tenantId)['steps'] ?? null
+            ),
             'vendor_status' => $vendor->status,
             'assessed_at' => now()->toIso8601String(),
         ];

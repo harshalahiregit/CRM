@@ -58,6 +58,12 @@ class TpvSettings
         return $this->effective('gate', $tenantId);
     }
 
+    /** Vendor violation escalation ladder — severity points + thresholds (§26, Rule 9). */
+    public function violationLadder(?int $tenantId = null): array
+    {
+        return $this->effective('violation_ladder', $tenantId);
+    }
+
     /* ── Core merge ─────────────────────────────────────────────────────── */
 
     /** The shipped defaults for a group (no tenant involved). */
@@ -94,6 +100,10 @@ class TpvSettings
             ],
             'gate' => [
                 'ppe_enforcement' => (string) config('tpv.gate.ppe_enforcement', 'warn'),
+            ],
+            'violation_ladder' => [
+                'severity_points' => ViolationType::SEVERITY_POINTS,
+                'steps'           => ViolationType::ladderSteps(),
             ],
             default => [],
         };

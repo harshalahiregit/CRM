@@ -109,8 +109,26 @@ class TpvSettingsController extends Controller
             'gate' => $request->validate([
                 'ppe_enforcement' => ['required', Rule::in(['warn', 'deny', 'off'])],
             ]),
+            'violation_ladder' => $this->validateViolationLadder($request),
             default => abort(404, 'Unknown settings group.'),
         };
+    }
+
+    private function validateViolationLadder(Request $request): array
+    {
+        $data = $request->validate([
+            'severity_points'          => 'required|array|min:1',
+            'severity_points.*'        => 'required|integer|min:0|max:100',
+            'steps'                    => 'required|array|min:1',
+            'steps.*.points'           => 'required|integer|min:0|max:1000',
+            'steps.*.level'            => 'required|string|max:40',
+        ]);
+
+        // A ladder has to start at zero, or a vendor with no points has no level.
+        $minPoints = min(array_map(fn ($s) => (int) $s['points'], $data['steps']));
+        abort_if($minPoints !== 0, 422, 'The ladder must include a step at 0 points (the baseline level).');
+
+        return $data;
     }
 
     private function validateVpi(Request $request): array

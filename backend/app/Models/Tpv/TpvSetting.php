@@ -26,6 +26,7 @@ class TpvSetting extends Model
         'authority_matrix',
         'approval_types',
         'gate',
+        'violation_ladder',
     ];
 
     protected $fillable = ['tenant_id', 'group', 'payload', 'updated_by'];

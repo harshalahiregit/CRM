@@ -30,6 +30,7 @@ class TpvViolationService
         private VendorService $vendors,
         private TpvCapaService $capas,
         private TpvCommunicationService $comms,
+        private \App\Support\Tpv\TpvSettings $settings,
     ) {}
 
     public function list(int $tenantId, array $filters = [])
@@ -104,7 +105,8 @@ class TpvViolationService
         $open = TpvVendorViolation::forTenant($tenantId)->where('vendor_id', $vendorId)->where('status', 'Open');
         $points = (int) (clone $open)->sum('points');
         $count = (clone $open)->count();
-        $level = ViolationType::levelFor($points);
+        $steps = $this->settings->violationLadder($tenantId)['steps'] ?? null;
+        $level = ViolationType::levelForSteps($points, $steps);
 
         return [
             'vendor_id' => $vendorId,
@@ -120,13 +122,15 @@ class TpvViolationService
     /** Per-vendor escalation summary for every vendor carrying open violations. */
     public function escalations(int $tenantId): array
     {
+        $steps = $this->settings->violationLadder($tenantId)['steps'] ?? null;
+
         return TpvVendorViolation::forTenant($tenantId)->where('status', 'Open')
             ->selectRaw('vendor_id, COUNT(*) as c, SUM(points) as pts')
             ->groupBy('vendor_id')
             ->with('vendor:id,company_name,vendor_code,status')
             ->get()
-            ->map(function ($r) {
-                $level = ViolationType::levelFor((int) $r->pts);
+            ->map(function ($r) use ($steps) {
+                $level = ViolationType::levelForSteps((int) $r->pts, $steps);
 
                 return [
                     'vendor_id' => $r->vendor_id,

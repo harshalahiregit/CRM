@@ -197,7 +197,7 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 - [ ] Reconcile the two CAPA registers (`TpvCapa` vs `IncidentCapa`) `[P]`.
 
 ## §26 Strikes & Violations
-- [ ] Vendor violation ladder configurable (tenant/settings) `[P]` (hardcoded in `ViolationType`).
+- [x] Vendor violation ladder configurable (tenant/settings) — new `violation_ladder` settings group (severity points + threshold→level steps) edited via a Settings tab; `TpvViolationService`, the `TpvVendorViolation` points hook, and `TpvRenewalService` all read the tenant ladder through `TpvSettings`. Because Rule 9 auto-suspend/blacklist is driven by the ladder levels, those thresholds are now configurable too. Guarded by `ViolationLadderConfigTest` (3); existing `ViolationEscalationTest` still green [2026-08-25].
 - [ ] Per-project / per-client rule config `[M]` (settings are tenant-level only).
 
 ## §27 Vendor Performance (VPI)
@@ -265,6 +265,7 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 - [x] Authority matrix — _TpvSettings `authority_matrix`_
 - [x] Approval types (label/active/custom) — _TpvSettings `approval_types`_
 - [x] Gate PPE enforcement (warn/deny/off) — _TpvSettings `gate`_
+- [x] Violation escalation ladder (severity points + thresholds) — _TpvSettings `violation_ladder`_ (added 2026-08-25, see §26)
 
 **Still hardcoded / config-only (not yet tenant-editable):**
 - [ ] Vendor types `[M]`.
@@ -299,7 +300,7 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 ---
 
 ### Progress counter (update as you tick)
-- **Completed:** 18 — the 6 §34 settings groups; **Rule 4** competency enforcement + worker→work-package wiring (§13) + Work Package field (§14); **Rule 6** permit-for-high-risk (+ activity `requires_permit`/`permit_type` + editor); **Rule 11 (CAPA + NCR)** owner-required-to-progress; **Rule 9** auto-escalate vendor violations; **§18 PPE Matrix rebuild** (Job/Hazard/Activity context + Mandatory/Optional/Conditional class + replacement frequency + verification requirement; only Mandatory gates the badge); **§19 permit-type vocabulary** (Isolation/Shutdown/Critical Work added, General→Other with legacy accepted); **§23 incident-type vocabulary** (First Aid/Medical Treatment/LTI/Security/Unsafe Act/Unsafe Condition added); **§25 CAPA fields** (problem statement, immediate correction, separate preventive action, compliance-failure source); **§14 worker employment fields** (experience/joining date/exit date); **§21 compliance categories** (+10 → 24, doc's fuller set) [2026-08-25].
+- **Completed:** 19 — the 6 §34 settings groups; **Rule 4** competency enforcement + worker→work-package wiring (§13) + Work Package field (§14); **Rule 6** permit-for-high-risk (+ activity `requires_permit`/`permit_type` + editor); **Rule 11 (CAPA + NCR)** owner-required-to-progress; **Rule 9** auto-escalate vendor violations; **§18 PPE Matrix rebuild** (Job/Hazard/Activity context + Mandatory/Optional/Conditional class + replacement frequency + verification requirement; only Mandatory gates the badge); **§19 permit-type vocabulary** (Isolation/Shutdown/Critical Work added, General→Other with legacy accepted); **§23 incident-type vocabulary** (First Aid/Medical Treatment/LTI/Security/Unsafe Act/Unsafe Condition added); **§25 CAPA fields** (problem statement, immediate correction, separate preventive action, compliance-failure source); **§14 worker employment fields** (experience/joining date/exit date); **§21 compliance categories** (+10 → 24, doc's fuller set); **§26 configurable violation ladder** (7th settings group; severity points + thresholds; drives Rule 9 auto-escalation) [2026-08-25].
 - **★ tier remaining:** the PPE-Matrix Job+Hazard+Activity rebuild; the Rule 11 MOM/inspection follow-on.
 - **Open:** everything else above (§3–§35 depth items).
 - **Note:** all of this is implemented & verified locally (feature tests green: CompetencyGate 5, PermitGate 6, ActionOwnerRule 5, ViolationEscalation 3, TpvSettings 5) but **not yet committed**.
