@@ -4,7 +4,7 @@ import { tpvApi } from '@/services/tpvApi'
 import LoadError from '@/components/ui/LoadError'
 
 const SEVERITIES = ['Minor', 'Moderate', 'Serious', 'Fatal']
-const TYPES = ['Injury', 'Near_Miss', 'Property_Damage', 'Environmental', 'Fire', 'Fatality', 'Other']
+const TYPES = ['Injury', 'First_Aid', 'Medical_Treatment', 'LTI', 'Near_Miss', 'Property_Damage', 'Environmental', 'Fire', 'Security', 'Unsafe_Act', 'Unsafe_Condition', 'Fatality', 'Other']
 const CAPA_STATUSES = ['Open', 'In_Progress', 'Done', 'Verified']
 
 const sevColor = (s) => ({ Minor: '#10b981', Moderate: '#f59e0b', Serious: '#f97316', Fatal: '#ef4444' }[s] || '#94a3b8')
