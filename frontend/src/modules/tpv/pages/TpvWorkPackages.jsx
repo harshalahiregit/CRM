@@ -9,7 +9,7 @@ import { KIT3D_STYLE as TPV_STYLE } from '@/components/ui/kit3d'
 const WP_STATUSES = ['Planned', 'Active', 'On_Hold', 'Completed', 'Closed']
 const ACT_STATUSES = ['Not_Started', 'In_Progress', 'Completed', 'On_Hold']
 // Permit-to-Work types (mirror App\Models\Tpv\WorkPermit::TYPES) for the high-risk activity flag (Rule 6).
-const PERMIT_TYPES = ['Hot_Work', 'Work_At_Height', 'Confined_Space', 'Electrical', 'Excavation', 'Lifting', 'General']
+const PERMIT_TYPES = ['Hot_Work', 'Work_At_Height', 'Confined_Space', 'Electrical', 'Excavation', 'Lifting', 'Isolation', 'Shutdown', 'Critical_Work', 'Other']
 const TONE = {
   Planned: '#94a3b8', Active: '#10b981', In_Progress: '#0ea5e9', Not_Started: '#94a3b8',
   On_Hold: '#f59e0b', Completed: '#22c55e', Closed: '#6b7280',

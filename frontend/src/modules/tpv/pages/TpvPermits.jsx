@@ -3,7 +3,7 @@ import { FileCheck2, Plus, RefreshCw, X, Loader2, CheckCircle, XCircle, PlayCirc
 import { tpvApi } from '@/services/tpvApi'
 import LoadError from '@/components/ui/LoadError'
 
-const TYPES = ['Hot_Work', 'Work_At_Height', 'Confined_Space', 'Electrical', 'Excavation', 'Lifting', 'General']
+const TYPES = ['Hot_Work', 'Work_At_Height', 'Confined_Space', 'Electrical', 'Excavation', 'Lifting', 'Isolation', 'Shutdown', 'Critical_Work', 'Other']
 const RISKS = ['Low', 'Medium', 'High']
 const statusColor = (s) => ({ Requested: '#f59e0b', Approved: '#0ea5e9', Active: '#10b981', Closed: '#94a3b8', Rejected: '#ef4444', Expired: '#f97316' }[s] || '#94a3b8')
 const riskColor = (r) => ({ Low: '#10b981', Medium: '#f59e0b', High: '#ef4444' }[r] || '#94a3b8')

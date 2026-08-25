@@ -151,11 +151,11 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 - [x] Verification requirement — `verification_required` boolean captured per rule + surfaced in the compliance view [2026-08-25].
 
 ## §19 Permits & Work Authorization
-- [ ] Permit type: Isolation `[M]`.
-- [ ] Permit type: Shutdown `[M]`.
-- [ ] Permit type: Critical Work `[M]`.
-- [ ] Rename/add "Other" (currently "General") `[P]`.
-- [ ] (Rule 6 gate enforcement — see ★ priority tier.)
+- [x] Permit type: Isolation — added to `WorkPermit::TYPES` [2026-08-25].
+- [x] Permit type: Shutdown — added to `WorkPermit::TYPES` [2026-08-25].
+- [x] Permit type: Critical Work — added as `Critical_Work` to `WorkPermit::TYPES` [2026-08-25].
+- [x] Rename/add "Other" (was "General") — `Other` now the offered catch-all; retired `General` kept in `WorkPermit::acceptedTypes()` so historical rows still validate. Flows through PermitController + activity permit_type validation + both frontend pickers (TpvPermits, TpvWorkPackages). Guarded by `PermitTypeVocabularyTest` (4 tests) [2026-08-25].
+- [x] (Rule 6 gate enforcement — done, see ★ priority tier.)
 
 ## §20 Gate Log / Access
 - [ ] Equipment Entry/Exit events `[M]`.
@@ -299,7 +299,7 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 ---
 
 ### Progress counter (update as you tick)
-- **Completed:** 13 — the 6 §34 settings groups; **Rule 4** competency enforcement + worker→work-package wiring (§13) + Work Package field (§14); **Rule 6** permit-for-high-risk (+ activity `requires_permit`/`permit_type` + editor); **Rule 11 (CAPA + NCR)** owner-required-to-progress; **Rule 9** auto-escalate vendor violations; **§18 PPE Matrix rebuild** (Job/Hazard/Activity context + Mandatory/Optional/Conditional class + replacement frequency + verification requirement; only Mandatory gates the badge) [2026-08-25].
+- **Completed:** 14 — the 6 §34 settings groups; **Rule 4** competency enforcement + worker→work-package wiring (§13) + Work Package field (§14); **Rule 6** permit-for-high-risk (+ activity `requires_permit`/`permit_type` + editor); **Rule 11 (CAPA + NCR)** owner-required-to-progress; **Rule 9** auto-escalate vendor violations; **§18 PPE Matrix rebuild** (Job/Hazard/Activity context + Mandatory/Optional/Conditional class + replacement frequency + verification requirement; only Mandatory gates the badge); **§19 permit-type vocabulary** (Isolation/Shutdown/Critical Work added, General→Other with legacy accepted) [2026-08-25].
 - **★ tier remaining:** the PPE-Matrix Job+Hazard+Activity rebuild; the Rule 11 MOM/inspection follow-on.
 - **Open:** everything else above (§3–§35 depth items).
 - **Note:** all of this is implemented & verified locally (feature tests green: CompetencyGate 5, PermitGate 6, ActionOwnerRule 5, ViolationEscalation 3, TpvSettings 5) but **not yet committed**.
