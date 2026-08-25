@@ -4,12 +4,10 @@ namespace App\Services\Tpv;
 
 use App\Models\Shared\KickoffMomItem;
 use App\Models\Tpv\IncidentCapa;
-use App\Models\Tpv\TpvContract;
 use App\Models\Tpv\TpvGateAttendance;
 use App\Models\Tpv\TpvGateScan;
 use App\Models\Tpv\TpvNcr;
 use App\Models\Tpv\TpvOnboarding;
-use App\Models\Tpv\TpvRenewal;
 use App\Models\Tpv\TpvSafetyStrike;
 use App\Models\Tpv\TpvWorker;
 use App\Models\Tpv\WorkPermit;
@@ -101,9 +99,6 @@ class TpvDashboardService
                 'expiring' => (clone $v())->temporary()
                     ->whereNotNull('access_expires_at')
                     ->whereBetween('access_expires_at', [$today, $soon])->count(),
-                // §4 KPI — onboardings still in flight (not yet approved or rejected).
-                'pending_onboarding' => TpvOnboarding::forTenant($tenantId)
-                    ->whereNotIn('status', [OnbStatus::APPROVED, OnbStatus::REJECTED])->count(),
             ],
             'workforce' => [
                 'total' => TpvWorker::forTenant($tenantId)->count(),
@@ -129,8 +124,6 @@ class TpvDashboardService
                     ->whereIn('status', ['Approved', 'Active'])
                     ->where(fn ($q) => $q->whereNull('valid_to')->orWhereDate('valid_to', '>=', $today))->count(),
                 'total_strikes' => TpvSafetyStrike::forTenant($tenantId)->active()->count(),
-                // §4 KPI — cumulative gate violations (entries the gate refused).
-                'gate_violations' => TpvGateScan::forTenant($tenantId)->denied()->count(),
             ],
             'performance' => [
                 'avg_score' => $avgPerf,
@@ -202,16 +195,9 @@ class TpvDashboardService
             ['key' => 'ncr_overdue', 'label' => 'NCR overdue', 'path' => '/app/tpv/ncr',
                 'count' => TpvNcr::forTenant($tenantId)->where('status', '!=', 'Closed')
                     ->whereNotNull('due_date')->whereDate('due_date', '<', $today)->count()],
-            ['key' => 'mom_pending', 'label' => 'MOM actions pending', 'path' => '/app/tpv/kickoff',
-                'count' => KickoffMomItem::where('tenant_id', $tenantId)->whereIn('status', MomActionStatus::OPEN_STATES)->count()],
             ['key' => 'mom_actions_overdue', 'label' => 'Meeting actions overdue', 'path' => '/app/tpv/kickoff',
                 'count' => KickoffMomItem::where('tenant_id', $tenantId)->whereIn('status', MomActionStatus::OPEN_STATES)
                     ->whereNotNull('target_date')->whereDate('target_date', '<', $today)->count()],
-            ['key' => 'contract_expiry', 'label' => 'Contracts expiring (30d)', 'path' => '/app/tpv/contracts',
-                'count' => TpvContract::forTenant($tenantId)->whereIn('status', ['Active', 'Expiring'])
-                    ->whereNotNull('end_date')->whereBetween('end_date', [$today, $soon])->count()],
-            ['key' => 'renewal_assessment_due', 'label' => 'Vendor renewals to assess', 'path' => '/app/tpv/renewals',
-                'count' => TpvRenewal::forTenant($tenantId)->where('status', 'Pending')->count()],
             ['key' => 'permit_expiry', 'label' => 'Permits expiring (7d)', 'path' => '/app/tpv/permits',
                 'count' => WorkPermit::where('tenant_id', $tenantId)->whereIn('status', ['Approved', 'Active'])
                     ->whereNotNull('valid_to')->whereBetween('valid_to', [$today, $week])->count()],
