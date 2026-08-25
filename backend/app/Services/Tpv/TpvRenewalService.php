@@ -3,6 +3,7 @@
 namespace App\Services\Tpv;
 
 use App\Models\Tpv\IncidentCapa;
+use App\Models\Tpv\TpvCapa;
 use App\Models\Tpv\TpvContract;
 use App\Models\Tpv\TpvNcr;
 use App\Models\Tpv\TpvRenewal;
@@ -23,6 +24,7 @@ class TpvRenewalService
     public function __construct(
         private VendorScorecardService $vrs,
         private VendorService $vendors,
+        private TpvComplianceService $compliance,
     ) {}
 
     public function list(int $tenantId, array $filters = [])
@@ -50,6 +52,11 @@ class TpvRenewalService
             'open_ncrs' => TpvNcr::forTenant($tenantId)->where('vendor_id', $vendor->id)->where('status', '!=', 'Closed')->count(),
             'open_capas' => IncidentCapa::where('tenant_id', $tenantId)->whereNotIn('status', ['Done', 'Verified'])
                 ->whereHas('incident', fn ($q) => $q->where('vendor_id', $vendor->id))->count(),
+            // §28 input — the §25 cross-source CAPA register (distinct from incident CAPAs above).
+            'open_tpv_capas' => TpvCapa::forTenant($tenantId)->where('vendor_id', $vendor->id)
+                ->whereNotIn('status', ['Done', 'Verified'])->count(),
+            // §28 input — the §21 compliance register score for this vendor.
+            'compliance' => $this->compliance->scoreFor($tenantId, $vendor->id),
             'active_strikes' => TpvSafetyStrike::forTenant($tenantId)->active()
                 ->whereHas('worker', fn ($q) => $q->where('vendor_id', $vendor->id))->count(),
             'violation_points' => $violPoints,

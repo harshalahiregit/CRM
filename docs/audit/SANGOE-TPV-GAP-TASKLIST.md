@@ -212,12 +212,12 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 - [ ] Band C label "Watch" `[P]` (currently "Fair").
 
 ## §28 Renewal & Extension (assessment inputs)
-- [ ] Input: Compliance (from §21 register) `[M]`.
-- [ ] Input: Contract performance `[M]`.
-- [ ] Input: Commercial performance `[M]`.
-- [ ] Input: Workforce performance `[M]`.
-- [ ] Input: Client feedback `[M]`.
-- [ ] Read the §25 CAPA register (not `IncidentCapa`) `[P]`.
+- [x] Input: Compliance (from §21 register) — `assessment.compliance` (score + problem/expiring counts) via new `TpvComplianceService::scoreFor`; shown on the renewal modal [2026-08-25].
+- [ ] Input: Contract performance `[M]` — no performance metric/data source yet (TpvContract exists but has no scored performance); left rather than showing an empty placeholder.
+- [ ] Input: Commercial performance `[M]` — no data source.
+- [ ] Input: Workforce performance `[M]` — proxied by VRS/strikes today; no standalone metric.
+- [ ] Input: Client feedback `[M]` — no data source.
+- [x] Read the §25 CAPA register (not `IncidentCapa`) — `assessment.open_tpv_capas` counts open `TpvCapa` for the vendor, alongside the existing incident-CAPA count [2026-08-25]. _Guarded by `RenewalAssessmentInputsTest` (1)._
 
 ## §30 Documents (Vault)
 - [ ] Surface worker documents in the vault `[P]`.
@@ -300,7 +300,7 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 ---
 
 ### Progress counter (update as you tick)
-- **Completed:** 22 — the 6 §34 settings groups; **Rule 4** competency enforcement + worker→work-package wiring (§13) + Work Package field (§14); **Rule 6** permit-for-high-risk (+ activity `requires_permit`/`permit_type` + editor); **Rule 11 (CAPA + NCR)** owner-required-to-progress; **Rule 9** auto-escalate vendor violations; **§18 PPE Matrix rebuild** (Job/Hazard/Activity context + Mandatory/Optional/Conditional class + replacement frequency + verification requirement; only Mandatory gates the badge); **§19 permit-type vocabulary** (Isolation/Shutdown/Critical Work added, General→Other with legacy accepted); **§23 incident-type vocabulary** (First Aid/Medical Treatment/LTI/Security/Unsafe Act/Unsafe Condition added); **§25 CAPA fields** (problem statement, immediate correction, separate preventive action, compliance-failure source); **§14 worker employment fields** (experience/joining date/exit date); **§21 compliance categories** (+10 → 24, doc's fuller set); **§26 configurable violation ladder** (7th settings group; severity points + thresholds; drives Rule 9 auto-escalation); **§4 dashboard compliance KPIs** (PPE Compliance %, Overall Compliance %, Action Centre PPE-pending row) [2026-08-25].
+- **Completed:** 24 — the 6 §34 settings groups; **Rule 4** competency enforcement + worker→work-package wiring (§13) + Work Package field (§14); **Rule 6** permit-for-high-risk (+ activity `requires_permit`/`permit_type` + editor); **Rule 11 (CAPA + NCR)** owner-required-to-progress; **Rule 9** auto-escalate vendor violations; **§18 PPE Matrix rebuild** (Job/Hazard/Activity context + Mandatory/Optional/Conditional class + replacement frequency + verification requirement; only Mandatory gates the badge); **§19 permit-type vocabulary** (Isolation/Shutdown/Critical Work added, General→Other with legacy accepted); **§23 incident-type vocabulary** (First Aid/Medical Treatment/LTI/Security/Unsafe Act/Unsafe Condition added); **§25 CAPA fields** (problem statement, immediate correction, separate preventive action, compliance-failure source); **§14 worker employment fields** (experience/joining date/exit date); **§21 compliance categories** (+10 → 24, doc's fuller set); **§26 configurable violation ladder** (7th settings group; severity points + thresholds; drives Rule 9 auto-escalation); **§4 dashboard compliance KPIs** (PPE Compliance %, Overall Compliance %, Action Centre PPE-pending row); **§28 renewal inputs** (compliance score + §25 CAPA register) [2026-08-25].
 - **★ tier remaining:** the PPE-Matrix Job+Hazard+Activity rebuild; the Rule 11 MOM/inspection follow-on.
 - **Open:** everything else above (§3–§35 depth items).
 - **Note:** all of this is implemented & verified locally (feature tests green: CompetencyGate 5, PermitGate 6, ActionOwnerRule 5, ViolationEscalation 3, TpvSettings 5) but **not yet committed**.
