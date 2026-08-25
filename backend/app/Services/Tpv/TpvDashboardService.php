@@ -36,6 +36,11 @@ class TpvDashboardService
     /** Badges inside this many days of expiry are worth chasing. */
     private const EXPIRY_WINDOW_DAYS = 30;
 
+    public function __construct(
+        private PpeInventoryService $ppe,
+        private TpvComplianceService $compliance,
+    ) {}
+
     public function getDashboard(int $tenantId): array
     {
         return [
@@ -104,6 +109,8 @@ class TpvDashboardService
                 'training_pct' => $activeCount ? (int) round($trainingOk / $activeCount * 100) : null,
                 'medical_pct' => $activeCount ? (int) round($medicalOk / $activeCount * 100) : null,
             ],
+            // §4 executive compliance KPIs — PPE equipping and the §21 register.
+            'compliance' => $this->complianceKpis($tenantId),
             'open' => [
                 'actions' => KickoffMomItem::where('tenant_id', $tenantId)
                     ->whereIn('status', MomActionStatus::OPEN_STATES)->count(),
@@ -122,6 +129,32 @@ class TpvDashboardService
                 'avg_score' => $avgPerf,
                 'period' => $latestPeriod,
             ],
+        ];
+    }
+
+    /**
+     * §4 executive compliance KPIs. PPE compliance % is over workers that have a
+     * PPE rule at all (unconfigured workers are excluded, not counted as 0%); the
+     * overall compliance % is the mean of the §21 per-vendor register scores.
+     * Both are null when there is nothing to measure, so a tile never shows a fake 0%.
+     */
+    private function complianceKpis(int $tenantId): array
+    {
+        $ppe = $this->ppe->complianceSummary($tenantId);
+        $configured = (int) $ppe['workers'] - (int) $ppe['not_configured'];
+        $ppePct = $configured > 0 ? (int) round(((int) $ppe['fully_equipped'] / $configured) * 100) : null;
+
+        $roster = $this->compliance->roster($tenantId);
+        $overallPct = count($roster) > 0
+            ? (int) round(array_sum(array_column($roster, 'percent')) / count($roster))
+            : null;
+
+        return [
+            'ppe_pct'          => $ppePct,
+            'ppe_missing'      => (int) $ppe['missing_ppe'],
+            'ppe_configured'   => $configured,
+            'overall_pct'      => $overallPct,
+            'vendors_tracked'  => count($roster),
         ];
     }
 
@@ -151,6 +184,8 @@ class TpvDashboardService
             ['key' => 'training', 'label' => 'Training pending', 'path' => '/app/tpv/workforce',
                 'count' => TpvWorker::forTenant($tenantId)->where('status', TpvWorkerStatus::ACTIVE)
                     ->whereDoesntHave('induction', fn ($q) => $q->where('passed', true))->count()],
+            ['key' => 'ppe_pending', 'label' => 'PPE pending issue', 'path' => '/app/tpv/ppe',
+                'count' => (int) $this->ppe->complianceSummary($tenantId)['missing_ppe']],
             ['key' => 'medical', 'label' => 'Medical expiring/expired', 'path' => '/app/tpv/workforce',
                 'count' => TpvWorker::forTenant($tenantId)->where('status', TpvWorkerStatus::ACTIVE)
                     ->whereDoesntHave('medical', fn ($q) => $q->whereDate('valid_until', '>=', $soon))->count()],

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   HardHat, Users, ShieldAlert, ScanLine, RefreshCw, ArrowRight, Rocket,
   FileCheck, BadgeCheck, AlertTriangle, Clock, UserX, ShieldX,
-  Building2, Gauge, ListChecks, ShieldQuestion, Ban,
+  Building2, Gauge, ListChecks, ShieldQuestion, Ban, ClipboardCheck,
 } from 'lucide-react'
 import { tpvApi } from '@/services/tpvApi'
 import { severityCfg, obStatusCfg, STRIKE_LIMIT, fmtDateTime } from '../constants'
@@ -118,7 +118,7 @@ const RISK_TONE = {
 }
 
 function ControlTower({ ct, actions, risk, onGo }) {
-  const v = ct.vendors || {}, wf = ct.workforce || {}, rd = ct.readiness || {}, op = ct.open || {}, pf = ct.performance || {}
+  const v = ct.vendors || {}, wf = ct.workforce || {}, rd = ct.readiness || {}, op = ct.open || {}, pf = ct.performance || {}, co = ct.compliance || {}
   const pct = (n) => (n === null || n === undefined ? '—' : `${n}%`)
 
   return (
@@ -139,6 +139,8 @@ function ControlTower({ ct, actions, risk, onGo }) {
         <ExecStat label="Avg Performance" value={pf.avg_score ?? '—'} sub={pf.period ? `period ${pf.period}` : 'no scores yet'} icon={Gauge} tone="#10b981" onClick={() => onGo('/app/tpv/performance')} />
         <ExecStat label="Training %" value={pct(rd.training_pct)} sub="active workforce" icon={BadgeCheck} tone="#22c55e" />
         <ExecStat label="Medical %" value={pct(rd.medical_pct)} sub="active workforce" icon={FileCheck} tone="#14b8a6" />
+        <ExecStat label="PPE Compliance %" value={pct(co.ppe_pct)} sub={`${co.ppe_missing ?? 0} pending issue`} icon={HardHat} tone="#eab308" onClick={() => onGo('/app/tpv/ppe')} danger={co.ppe_missing > 0} />
+        <ExecStat label="Compliance %" value={pct(co.overall_pct)} sub={`${co.vendors_tracked ?? 0} vendors tracked`} icon={ClipboardCheck} tone="#06b6d4" onClick={() => onGo('/app/tpv/compliance')} />
         <ExecStat label="Open Actions" value={op.actions ?? 0} sub={`${op.overdue_actions ?? 0} overdue`} icon={ListChecks} tone="#8b5cf6" onClick={() => onGo('/app/tpv/kickoff')} danger={op.overdue_actions > 0} />
         <ExecStat label="Open CAPAs" value={op.capas ?? 0} sub={`${op.ncrs ?? 0} NCRs`} icon={ShieldQuestion} tone="#f97316" onClick={() => onGo('/app/tpv/incidents')} />
         <ExecStat label="Active Permits" value={op.active_permits ?? 0} sub="currently valid" icon={FileCheck} tone="#0ea5e9" onClick={() => onGo('/app/tpv/permits')} />

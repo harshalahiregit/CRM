@@ -32,15 +32,15 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 - [ ] Vendor Portal / "Ecosystem" entry in TPV nav `[P]` — portal is a separate app area (may be by design).
 
 ## §4 Dashboard (Control Tower)
-- [ ] PPE Compliance % KPI `[M]` (capability exists in `PpeInventoryService`, not wired to dashboard).
-- [ ] Overall Compliance % KPI `[P]` (computed per-vendor elsewhere, no exec tile).
-- [ ] Pending Approvals headline tile `[P]`.
-- [ ] Pending Onboarding headline tile `[P]`.
-- [ ] Gate Violations count KPI `[P]`.
-- [ ] Risk drill-down by Vendor/Project/Site/Department/Work Package/Risk Category `[M]` (only tier counts today).
-- [ ] Action Centre row: PPE pending `[M]`.
-- [ ] Action Centre row: MOM pending `[M]`.
-- [ ] Action Centre row: Contract expiry `[M]`.
+- [x] PPE Compliance % KPI — Control Tower `compliance.ppe_pct` (fully-equipped ÷ configured workers) + exec tile [2026-08-25].
+- [x] Overall Compliance % KPI — Control Tower `compliance.overall_pct` (mean of the §21 per-vendor register scores) + exec tile [2026-08-25]. _Guarded by `DashboardComplianceKpiTest` (2); null-safe on empty tenants._
+- [ ] Pending Approvals headline tile `[P]` (surfaced via `awaiting_review` KPI + Action Centre `approvals` row; no dedicated headline tile yet).
+- [ ] Pending Onboarding headline tile `[P]` (onboarding funnel exists; no headline tile).
+- [ ] Gate Violations count KPI `[P]` (`denied_today` KPI exists; no cumulative gate-violations tile).
+- [ ] Risk drill-down by Vendor/Project/Site/Department/Work Package/Risk Category `[M]` (only risk_level tier counts today).
+- [x] Action Centre row: PPE pending — `ppe_pending` row (workers missing mandatory PPE → `/app/tpv/ppe`) [2026-08-25].
+- [ ] Action Centre row: MOM pending `[M]` (only `mom_actions_overdue` today, not general pending).
+- [ ] Action Centre row: Contract expiry `[M]` (no contracts model wired).
 - [ ] Action Centre row: general Vendor renewal due `[P]` (only temp-access expiry now).
 
 ## §5 Vendor Master
@@ -300,7 +300,7 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 ---
 
 ### Progress counter (update as you tick)
-- **Completed:** 19 — the 6 §34 settings groups; **Rule 4** competency enforcement + worker→work-package wiring (§13) + Work Package field (§14); **Rule 6** permit-for-high-risk (+ activity `requires_permit`/`permit_type` + editor); **Rule 11 (CAPA + NCR)** owner-required-to-progress; **Rule 9** auto-escalate vendor violations; **§18 PPE Matrix rebuild** (Job/Hazard/Activity context + Mandatory/Optional/Conditional class + replacement frequency + verification requirement; only Mandatory gates the badge); **§19 permit-type vocabulary** (Isolation/Shutdown/Critical Work added, General→Other with legacy accepted); **§23 incident-type vocabulary** (First Aid/Medical Treatment/LTI/Security/Unsafe Act/Unsafe Condition added); **§25 CAPA fields** (problem statement, immediate correction, separate preventive action, compliance-failure source); **§14 worker employment fields** (experience/joining date/exit date); **§21 compliance categories** (+10 → 24, doc's fuller set); **§26 configurable violation ladder** (7th settings group; severity points + thresholds; drives Rule 9 auto-escalation) [2026-08-25].
+- **Completed:** 22 — the 6 §34 settings groups; **Rule 4** competency enforcement + worker→work-package wiring (§13) + Work Package field (§14); **Rule 6** permit-for-high-risk (+ activity `requires_permit`/`permit_type` + editor); **Rule 11 (CAPA + NCR)** owner-required-to-progress; **Rule 9** auto-escalate vendor violations; **§18 PPE Matrix rebuild** (Job/Hazard/Activity context + Mandatory/Optional/Conditional class + replacement frequency + verification requirement; only Mandatory gates the badge); **§19 permit-type vocabulary** (Isolation/Shutdown/Critical Work added, General→Other with legacy accepted); **§23 incident-type vocabulary** (First Aid/Medical Treatment/LTI/Security/Unsafe Act/Unsafe Condition added); **§25 CAPA fields** (problem statement, immediate correction, separate preventive action, compliance-failure source); **§14 worker employment fields** (experience/joining date/exit date); **§21 compliance categories** (+10 → 24, doc's fuller set); **§26 configurable violation ladder** (7th settings group; severity points + thresholds; drives Rule 9 auto-escalation); **§4 dashboard compliance KPIs** (PPE Compliance %, Overall Compliance %, Action Centre PPE-pending row) [2026-08-25].
 - **★ tier remaining:** the PPE-Matrix Job+Hazard+Activity rebuild; the Rule 11 MOM/inspection follow-on.
 - **Open:** everything else above (§3–§35 depth items).
 - **Note:** all of this is implemented & verified locally (feature tests green: CompetencyGate 5, PermitGate 6, ActionOwnerRule 5, ViolationEscalation 3, TpvSettings 5) but **not yet committed**.
