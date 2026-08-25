@@ -50,8 +50,22 @@ const stripHtml = (s) => (s || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ')
 const truncate = (s, n) => { const t = (s || '').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t }
 
 const EMPTY_MOM = () => ({ id: Date.now() + Math.random(), description: '', responsible: '', responsible_org: '', remarks: '', target_date: '', priority: '', status: 'Open', action_ref: '', carried_from_id: null, carried_from_label: '', agenda_key: '', depends_key: '' })
-const EMPTY_PARTICIPANT = () => ({ id: Date.now() + Math.random(), name: '', role: '', organisation: '', phone: '', designation: '', side: '' })
-const EMPTY_AGENDA = () => ({ id: Date.now() + Math.random(), item: '', owner: '', duration_minutes: '', priority: '' })
+// Meeting.docx §5: e-mail is a participant field, and it is the one that makes
+// the invitation and the MOM distribution actually reach the person. user_id
+// links the row to a Sangoe identity so in-app notifications and action
+// auto-assignment work; vendor_contact_id does the same on the vendor side.
+const EMPTY_PARTICIPANT = () => ({ id: Date.now() + Math.random(), name: '', email: '', role: '', organisation: '', phone: '', designation: '', side: '', user_id: '', vendor_contact_id: '' })
+// §7's chain is Agenda -> Discussion -> Decision -> Action; discussion and
+// decision belong to the agenda item, not to one meeting-level minutes blob.
+// Meeting.docx §5's participant roles — internal first, then external.
+const PARTICIPANT_ROLES = [
+  'Project Manager', 'HSE Manager', 'Site Manager', 'Procurement', 'HR',
+  'Security', 'Finance', 'Client representative', 'Management',
+  'Vendor representative', 'Contractor', 'Subcontractor', 'Consultant',
+  'Chairperson', 'Coordinator', 'Note-taker',
+]
+
+const EMPTY_AGENDA = () => ({ id: Date.now() + Math.random(), item: '', owner: '', duration_minutes: '', priority: '', discussion: '', decision: '' })
 const EMPTY_DECISION = () => ({ id: Date.now() + Math.random(), decision: '', decided_by: '', impact: '', effective_date: '', status: 'Active', agenda_key: '' })
 const EMPTY_ISSUE = () => ({ id: Date.now() + Math.random(), title: '', category: '', severity: '', owner: '', due_date: '', status: 'Open', issue_ref: '', converted_to: '', carried_from_id: null, carried_from_label: '' })
 
@@ -163,15 +177,22 @@ export default function KickoffMeetingCreate() {
     priority:         '',
     confidentiality:  '',
     chairperson:      '',
+    organizer:        '',
     coordinator:      '',
     department:       '',
     client_name:      '',
+    client_id:        '',      // soft link into the Customer module (§2/§16)
     work_package:     '',
     project_id:       '',       // soft link into the Projects module (§16)
     is_completed:     false,
     meeting_platform: 'stub',  // used when mode = 'online'
   })
   const [projects, setProjects] = useState([])   // { id, name, project_code, client_name, ... }
+  // Meeting.docx §2 wants a real Customer on the meeting, and §5 wants
+  // participants linked to Sangoe identities. Both are read through the owning
+  // module's contract, so this page never touches their tables.
+  const [customers, setCustomers] = useState([])
+  const [staff, setStaff] = useState([])
   const [participants, setParticipants] = useState([])  // [{ id, name, role, organisation }]
   const [momItems,     setMomItems]     = useState([])  // [{ id, description, responsible, remarks, target_date }]
   const [agendaItems,  setAgendaItems]  = useState([])  // [{ id, item, owner, duration_minutes, priority }]
@@ -247,9 +268,11 @@ export default function KickoffMeetingCreate() {
           priority:         m.priority || '',
           confidentiality:  m.confidentiality || '',
           chairperson:      m.chairperson || '',
+          organizer:        m.organizer || '',
           coordinator:      m.coordinator || '',
           department:       m.department || '',
           client_name:      m.client_name || '',
+          client_id:        m.client_id || '',
           work_package:     m.work_package || '',
           project_id:       m.project_id || '',
           is_completed:     m.status === 'Completed',
@@ -259,6 +282,10 @@ export default function KickoffMeetingCreate() {
         setParticipants((m.attendees || []).map(a => ({
           id: a.id, name: a.name || '', role: a.role || '', organisation: a.organisation || '',
           phone: a.phone || '', designation: a.designation || '', side: a.side || '',
+          // The identity links must survive an edit — dropping them here would
+          // silently unlink every participant the moment the meeting is re-saved,
+          // and the roster would go back to being unreachable typed names.
+          email: a.email || '', user_id: a.user_id || '', vendor_contact_id: a.vendor_contact_id || '',
         })))
 
         setMomItems((m.mom_items || []).map(i => ({
@@ -283,6 +310,8 @@ export default function KickoffMeetingCreate() {
           owner:            a.owner_names || a.owner?.name || '',
           duration_minutes: a.duration_minutes ?? '',
           priority:         a.priority || '',
+          discussion:       a.discussion || '',
+          decision:         a.decision || '',
         })))
 
         setDecisions((m.decisions || []).map(d => ({
@@ -336,6 +365,10 @@ export default function KickoffMeetingCreate() {
     }).catch(() => {})
     // Projects for the §16 picker — a soft link, so failure just leaves it empty.
     kickoffApi.projects().then(d => { if (Array.isArray(d)) setProjects(d) }).catch(() => {})
+    // Customers and staff for the two new pickers. Soft loads: a failure leaves
+    // the picker empty rather than blocking the whole form.
+    kickoffApi.customers().then(d => { if (Array.isArray(d)) setCustomers(d) }).catch(() => {})
+    kickoffApi.staff().then(d => { if (Array.isArray(d)) setStaff(d) }).catch(() => {})
   }, [])
 
   // ── Fetch tenant default platform preference on mount ────────────────────
@@ -374,10 +407,30 @@ export default function KickoffMeetingCreate() {
     setParticipants(p => [...p, {
       ...EMPTY_PARTICIPANT(),
       name:         c.full_name ?? '',
+      // The contact id and e-mail were being dropped here, which is why every
+      // attendee ended up unlinked and unreachable. The server re-resolves the
+      // id and copies the master's canonical name/e-mail over whatever is typed.
+      vendor_contact_id: c.id,
+      email:        c.email ?? '',
       designation:  c.designation ?? '',
       organisation: c.company_name ?? '',
       phone:        c.phone ?? c.mobile ?? '',
       side:         'external',   // vendor contacts are the external side
+    }])
+  }
+
+  /** Add a colleague from the staff directory — a real Sangoe identity (§5). */
+  const addFromStaff = (userId) => {
+    const u = staff.find(x => String(x.id) === String(userId))
+    if (!u) return
+    if (participants.some(p => String(p.user_id) === String(u.id))) return
+    setParticipants(p => [...p, {
+      ...EMPTY_PARTICIPANT(),
+      name:        u.name ?? '',
+      user_id:     u.id,
+      email:       u.email ?? '',
+      designation: u.designation ?? '',
+      side:        'internal',
     }])
   }
 
@@ -596,17 +649,25 @@ export default function KickoffMeetingCreate() {
         priority:         form.priority || undefined,
         confidentiality:  form.confidentiality || undefined,
         chairperson:      form.chairperson || undefined,
+        organizer:        form.organizer || undefined,
         coordinator:      form.coordinator || undefined,
         department:       form.department || undefined,
         client_name:      form.client_name || undefined,
+        client_id:        form.client_id || undefined,
         work_package:     form.work_package || undefined,
         project_id:       form.project_id || undefined,
         is_completed:     form.is_completed,
         // Extended fields — backend uses what it knows, ignores the rest
         attendees: participants
           .filter(p => p.name.trim())
-          .map(({ name, role, organisation, phone, designation, side }) => ({
+          .map(({ name, email, role, organisation, phone, designation, side, user_id, vendor_contact_id }) => ({
             name, role, organisation,
+            // Without these two the roster is a list of typed names: no invitation
+            // reaches anyone, the minutes go nowhere, and an action assigned to a
+            // participant can never resolve to a login (Meeting.docx §5).
+            email: email || undefined,
+            user_id: user_id || undefined,
+            vendor_contact_id: vendor_contact_id || undefined,
             phone: phone || undefined, designation: designation || undefined, side: side || undefined,
           })),
         mom_items: momItems
@@ -631,7 +692,7 @@ export default function KickoffMeetingCreate() {
           })),
         agenda_items: agendaItems
           .filter(a => a.item.trim())
-          .map(({ id, item, owner, duration_minutes, priority }) => ({
+          .map(({ id, item, owner, duration_minutes, priority, discussion, decision }) => ({
             id: Number.isInteger(id) ? id : undefined,
             // The key actions/decisions link to — the row's own id, as a string.
             client_key: String(id),
@@ -639,6 +700,8 @@ export default function KickoffMeetingCreate() {
             owner: owner || undefined,
             duration_minutes: Number(duration_minutes) || undefined,
             priority: priority || undefined,
+            discussion: discussion || undefined,
+            decision: decision || undefined,
           })),
         decisions: decisions
           .filter(d => d.decision.trim())
@@ -829,6 +892,9 @@ export default function KickoffMeetingCreate() {
                   <SelectInput value={form.confidentiality} onChange={set('confidentiality')} pairs
                     options={[['', '—'], ...confLevels.map(c => [c, c])]} />
                 </Field>
+                <Field label="Meeting Organizer">
+                  <TextInput value={form.organizer} onChange={set('organizer')} placeholder="Name (defaults to you)" />
+                </Field>
                 <Field label="Chairperson">
                   <TextInput value={form.chairperson} onChange={set('chairperson')} placeholder="Name" />
                 </Field>
@@ -838,7 +904,23 @@ export default function KickoffMeetingCreate() {
                 <Field label="Department">
                   <TextInput value={form.department} onChange={set('department')} placeholder="e.g. HSE / Projects" />
                 </Field>
-                <Field label="Client (optional)">
+                {/* The customer this meeting is for. Picking one links the meeting
+                    to the Customer module and puts that customer on the §13
+                    distribution list; the free-text field below still takes a
+                    name for anyone not in the master. */}
+                <Field label="Customer">
+                  <SelectInput
+                    value={form.client_id}
+                    onChange={e => {
+                      const id = e.target.value
+                      const c = customers.find(x => String(x.id) === String(id))
+                      setForm(f => ({ ...f, client_id: id, client_name: c ? (c.company || c.name || f.client_name) : f.client_name }))
+                    }}
+                    pairs
+                    options={[['', customers.length ? '— none —' : 'No customers found'],
+                      ...customers.map(c => [String(c.id), c.company || c.name || `Customer #${c.id}`])]} />
+                </Field>
+                <Field label="Client name (free text)">
                   <TextInput value={form.client_name} onChange={set('client_name')} placeholder="Client name" />
                 </Field>
                 {projects.length > 0 && (
@@ -862,6 +944,19 @@ export default function KickoffMeetingCreate() {
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                   <label style={labelStyle}>Participants</label>
                   <div style={{ display: 'flex', gap: 8 }}>
+                    {/* Quick-add from the staff directory — this is what links a
+                        participant to a Sangoe identity (Meeting.docx §5), and
+                        it fills the e-mail the invitation needs. */}
+                    {staff.length > 0 && (
+                      <select
+                        onChange={e => { addFromStaff(e.target.value); e.target.value = '' }}
+                        style={{ ...inputStyle, width: 'auto', fontSize: 12, padding: '5px 10px' }}>
+                        <option value="">+ Add staff</option>
+                        {staff.map(u => (
+                          <option key={u.id} value={u.id}>{u.name}{u.designation ? ` (${u.designation})` : ''}</option>
+                        ))}
+                      </select>
+                    )}
                     {/* Quick-add from vendor contacts */}
                     {contacts.length > 0 && (
                       <select
@@ -890,7 +985,17 @@ export default function KickoffMeetingCreate() {
                     {participants.map((p, i) => (
                       <div key={p.id} style={{ padding: '12px', borderRadius: 12, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                          <span style={{ fontSize: 11, fontWeight: 800, color: '#a78bfa' }}>Participant {i + 1}</span>
+                          <span style={{ fontSize: 11, fontWeight: 800, color: '#a78bfa' }}>
+                            Participant {i + 1}
+                            {(p.user_id || p.vendor_contact_id) && (
+                              <span title="Linked to a Sangoe identity — invitations, minutes and action assignment all reach this person"
+                                style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, color: '#10b981' }}>● linked</span>
+                            )}
+                            {!p.email && !p.user_id && (
+                              <span title="No e-mail: this person will not receive the invitation or the minutes"
+                                style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, color: '#f59e0b' }}>no e-mail</span>
+                            )}
+                          </span>
                           <button onClick={() => removeParticipant(p.id)} title="Remove participant"
                             style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.06)', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             <Trash2 size={12} />
@@ -908,7 +1013,24 @@ export default function KickoffMeetingCreate() {
                               options={[['', '—'], ['internal', 'Internal'], ['external', 'External']]} />
                           </Field>
                           <Field label="Role in meeting">
-                            <TextInput value={p.role} onChange={e => setParticipant(p.id, 'role', e.target.value)} placeholder="e.g. Chair, Note-taker" />
+                            {/* Meeting.docx §5's internal/external role lists. Free
+                                text is still allowed via "Other" so an unusual role
+                                is not blocked by the catalogue. */}
+                            <SelectInput value={PARTICIPANT_ROLES.includes(p.role) ? p.role : (p.role ? '__other' : '')}
+                              onChange={e => setParticipant(p.id, 'role', e.target.value === '__other' ? (p.role || ' ') : e.target.value)}
+                              pairs
+                              options={[['', '— select —'],
+                                ...PARTICIPANT_ROLES.map(r => [r, r]),
+                                ['__other', 'Other (type below)']]} />
+                            {!PARTICIPANT_ROLES.includes(p.role) && p.role !== '' && (
+                              <div style={{ marginTop: 6 }}>
+                                <TextInput value={p.role} onChange={e => setParticipant(p.id, 'role', e.target.value)} placeholder="Role in meeting" />
+                              </div>
+                            )}
+                          </Field>
+                          <Field label="Email">
+                            <TextInput type="email" value={p.email} onChange={e => setParticipant(p.id, 'email', e.target.value)}
+                              placeholder="name@company.com" />
                           </Field>
                           <Field label="Designation">
                             <TextInput value={p.designation} onChange={e => setParticipant(p.id, 'designation', e.target.value)} placeholder="e.g. Site Engineer" />
@@ -1099,17 +1221,31 @@ export default function KickoffMeetingCreate() {
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {agendaItems.map((a, i) => (
-                    <div key={a.id} style={{ display: 'grid', gridTemplateColumns: '22px 1fr 0.9fr 0.7fr 0.8fr 30px', gap: 8, alignItems: 'center' }}>
-                      <span style={{ fontSize: 12, fontWeight: 800, color: '#a78bfa', textAlign: 'center' }}>{i + 1}</span>
-                      <TextInput value={a.item} onChange={e => setAgenda(a.id, 'item', e.target.value)} placeholder="Agenda item / topic" />
-                      <TextInput value={a.owner} onChange={e => setAgenda(a.id, 'owner', e.target.value)} placeholder="Owner" />
-                      <TextInput type="number" min="1" value={a.duration_minutes} onChange={e => setAgenda(a.id, 'duration_minutes', e.target.value)} placeholder="min" />
-                      <SelectInput value={a.priority} onChange={e => setAgenda(a.id, 'priority', e.target.value)} pairs
-                        options={[['', 'Priority'], ...priorities.map(p => [p, p])]} />
-                      <button type="button" onClick={() => removeAgenda(a.id)} title="Remove item"
-                        style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.06)', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <Trash2 size={12} />
-                      </button>
+                    <div key={a.id} style={{ padding: '10px 12px', borderRadius: 12, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '22px 1fr 0.9fr 0.7fr 0.8fr 30px', gap: 8, alignItems: 'center' }}>
+                        <span style={{ fontSize: 12, fontWeight: 800, color: '#a78bfa', textAlign: 'center' }}>{i + 1}</span>
+                        <TextInput value={a.item} onChange={e => setAgenda(a.id, 'item', e.target.value)} placeholder="Agenda item / topic" />
+                        <TextInput value={a.owner} onChange={e => setAgenda(a.id, 'owner', e.target.value)} placeholder="Owner" />
+                        <TextInput type="number" min="1" value={a.duration_minutes} onChange={e => setAgenda(a.id, 'duration_minutes', e.target.value)} placeholder="min" />
+                        <SelectInput value={a.priority} onChange={e => setAgenda(a.id, 'priority', e.target.value)} pairs
+                          options={[['', 'Priority'], ...priorities.map(p => [p, p])]} />
+                        <button type="button" onClick={() => removeAgenda(a.id)} title="Remove item"
+                          style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.06)', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                      {/* Meeting.docx §7 — what was discussed under this item and what
+                          was settled. Filled in during/after the meeting; the action
+                          that comes out of it is captured in the Minutes section and
+                          linked back to this row. */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8, paddingLeft: 30 }}>
+                        <textarea value={a.discussion} onChange={e => setAgenda(a.id, 'discussion', e.target.value)}
+                          rows={2} placeholder="Discussion — what was said under this item"
+                          style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit', fontSize: 12, lineHeight: 1.5 }} />
+                        <textarea value={a.decision} onChange={e => setAgenda(a.id, 'decision', e.target.value)}
+                          rows={2} placeholder="Decision taken on this item"
+                          style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit', fontSize: 12, lineHeight: 1.5 }} />
+                      </div>
                     </div>
                   ))}
                 </div>

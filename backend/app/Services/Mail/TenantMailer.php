@@ -82,15 +82,23 @@ class TenantMailer
         string $subject,
         string $html,
         ?string $text = null,
+        array $attachments = [],
     ): void {
         $settings   = $tenantId ? $this->settingsFor($tenantId) : null;
         $mailerName = $this->configureMailer($settings);
 
-        Mail::mailer($mailerName)->send([], [], function ($m) use ($to, $subject, $html, $text, $settings) {
+        Mail::mailer($mailerName)->send([], [], function ($m) use ($to, $subject, $html, $text, $settings, $attachments) {
             $m->to($to)->subject($subject)->html($html);
 
             if ($text !== null && $text !== '') {
                 $m->text($text);
+            }
+            // Raw in-memory attachments — the calendar invite that rides along
+            // with a meeting invitation has no file on disk to attach.
+            foreach ($attachments as $a) {
+                if (! empty($a['data']) && ! empty($a['name'])) {
+                    $m->attachData($a['data'], $a['name'], ['mime' => $a['mime'] ?? 'application/octet-stream']);
+                }
             }
             if ($settings) {
                 $m->from($settings->from_email, $settings->from_name ?: $settings->from_email);

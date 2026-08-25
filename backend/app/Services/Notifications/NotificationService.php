@@ -148,7 +148,7 @@ class NotificationService
      * email(): never throws, returns 'sent'|'skipped'|'failed'. Kept separate
      * from email() because that one escapes its body for plain-text callers.
      */
-    public function emailHtml(?string $to, string $subject, string $html, array $context = [], ?string $text = null, ?int $tenantId = null): string
+    public function emailHtml(?string $to, string $subject, string $html, array $context = [], ?string $text = null, ?int $tenantId = null, array $attachments = []): string
     {
         if (! $to) {
             Log::channel('hr')->warning('Notification skipped: no recipient', ['subject' => $subject] + $context);
@@ -164,7 +164,7 @@ class NotificationService
         try {
             // multipart/alternative when a text part is supplied, so clients that
             // refuse HTML (and screen readers) still get readable content.
-            $this->mailer->sendRawHtml($this->resolveTenantId($tenantId), $to, $subject, $html, $text);
+            $this->mailer->sendRawHtml($this->resolveTenantId($tenantId), $to, $subject, $html, $text, $attachments);
 
             return 'sent';
         } catch (\Throwable $e) {

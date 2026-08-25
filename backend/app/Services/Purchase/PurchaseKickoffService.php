@@ -340,7 +340,12 @@ class PurchaseKickoffService
      */
     public function generateMom(PurchaseKickoffMeeting $meeting, User $actor): PurchaseKickoffMeeting
     {
-        $meeting->loadMissing('participants', 'vendor', 'creator');
+        // The structured registers are loaded too — the MOM prints them, and a
+        // lazy-load inside the Blade would be a query per row.
+        $meeting->loadMissing(
+            'participants', 'vendor', 'creator',
+            'agendaItems.owner', 'actionItems.responsible', 'momDecisions.decidedBy', 'momIssues.owner',
+        );
 
         $pdf = Pdf::loadView('pdf.purchase_kickoff_mom', [
             'meeting'     => $meeting,

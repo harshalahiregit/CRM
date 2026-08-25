@@ -353,11 +353,23 @@ class KickoffEnhancementsTest extends TestCase
         $this->assertNull($acked->acknowledgement_comment, 'blank input must not masquerade as a response');
     }
 
+    /**
+     * A meeting whose minutes are ready to distribute.
+     *
+     * Meeting.docx §12 puts an approval chain in front of distribution — Draft ->
+     * Organizer -> Chairperson -> Approved — and publishForAck enforces it. These
+     * tests are about the acknowledgement WINDOW, not the approval workflow, so
+     * the helper walks the chain rather than each test restating it.
+     */
     private function completedWithMom(): KickoffMeeting
     {
         $m = $this->meeting(['scheduled_at' => now()->subHour()->toDateTimeString()]);
         $this->svc()->transition($m, KickoffStatus::COMPLETED, [], $this->actor);
         $m->fresh()->update(['mom_path' => 'fake/mom.pdf']);
+
+        $this->svc()->submitMomForApproval($m->fresh(), $this->actor);   // Draft -> Organizer
+        $this->svc()->decideMom($m->fresh(), 'approve', null, $this->actor);   // -> Chairperson
+        $this->svc()->decideMom($m->fresh(), 'approve', null, $this->actor);   // -> Approved
 
         return $m->fresh();
     }

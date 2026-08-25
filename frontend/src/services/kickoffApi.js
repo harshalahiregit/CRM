@@ -23,6 +23,27 @@ export const kickoffApi = {
   // A project's meeting rollup (Meeting.docx §16) — counts + meeting list for the
   // project detail page. { totals, meetings }.
   projectMeetings: (projectId) => api.get(`/kickoff/projects/${projectId}/meetings`).then(r => r.data),
+  // Customers + staff for the meeting pickers (Meeting.docx §2 / §5). Both are
+  // read through the owning module's contract, never its tables.
+  customers: ()        => api.get('/kickoff/customers').then(r => r.data),
+  staff: ()            => api.get('/kickoff/staff').then(r => r.data),
+
+  // Cross-meeting registers (Meeting.docx §8 / §9 / §10) — the searchable
+  // Decision Register, Issue Register and Open Action Items backlog.
+  registers: {
+    options:   ()             => api.get('/kickoff/registers/options').then(r => r.data),
+    decisions: (params = {})  => api.get('/kickoff/registers/decisions', { params }).then(r => r.data),
+    issues:    (params = {})  => api.get('/kickoff/registers/issues', { params }).then(r => r.data),
+    actions:   (params = {})  => api.get('/kickoff/registers/actions', { params }).then(r => r.data),
+  },
+
+  // §1 Send Invitation — also fired automatically when a dated meeting is
+  // scheduled. Returns { sent, skipped, failed, in_app, recipients }.
+  invite: (id) => api.post(`/kickoff/meetings/${id}/invite`).then(r => r.data),
+
+  // §13 per-recipient Sent / Viewed / Acknowledged tracker.
+  distribution: (id) => api.get(`/kickoff/meetings/${id}/distribution`).then(r => r.data),
+
   // A vendor's live governance status (Meeting.docx §4) — { vendor, sections }.
   vendorStatus: (vendorId) => api.get('/kickoff/vendor-status', { params: { vendor_id: vendorId } }).then(r => r.data),
   // AI layer (Meeting.docx §18) — suggest an agenda before, summarise minutes after.
@@ -97,6 +118,14 @@ export const kickoffApi = {
   // §10 — convert an issue into a real Sangoe Task (linked to the vendor).
   convertIssueTask: (meetingId, issueId) =>
     api.post(`/kickoff/meetings/${meetingId}/issues/${issueId}/convert-task`).then(r => r.data),
+  // §10's remaining escalation targets — each creates a real record in its own
+  // module and stamps the issue so it cannot be escalated twice.
+  convertIssueNcr: (meetingId, issueId, data = {}) =>
+    api.post(`/kickoff/meetings/${meetingId}/issues/${issueId}/convert-ncr`, data).then(r => r.data),
+  convertIssueCapa: (meetingId, issueId, data = {}) =>
+    api.post(`/kickoff/meetings/${meetingId}/issues/${issueId}/convert-capa`, data).then(r => r.data),
+  convertIssueApproval: (meetingId, issueId, data = {}) =>
+    api.post(`/kickoff/meetings/${meetingId}/issues/${issueId}/convert-approval`, data).then(r => r.data),
 
   // Subject pickers — thin wrappers over shared endpoints, mirroring how each
   // module wraps /vendors itself rather than importing another module's service.

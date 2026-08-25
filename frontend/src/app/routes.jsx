@@ -320,6 +320,7 @@ const TpvAnalytics = lazy(() => import('@/modules/tpv/pages/TpvAnalytics'))
 const TpvPerformanceIndex = lazy(() => import('@/modules/tpv/pages/TpvPerformanceIndex'))
 const TpvCommunications = lazy(() => import('@/modules/tpv/pages/TpvCommunications'))
 const TpvAuthorityMatrix = lazy(() => import('@/modules/tpv/pages/TpvAuthorityMatrix'))
+const TpvSettings = lazy(() => import('@/modules/tpv/pages/TpvSettings'))
 // Vendor-scoped Workforce workspace — its own rail, entered after Onboarding Step-6.
 const WorkforceLayout = lazy(() => import('@/modules/tpv/WorkforceLayout'))
 const WorkforceDashboard = lazy(() => import('@/modules/tpv/pages/WorkforceDashboard'))
@@ -339,6 +340,9 @@ const ChecklistDetail = lazy(() => import('@/modules/compliance/pages/ChecklistD
 // Built polymorphically so Shivam's Project&Task module can attach without a
 // second table.
 const KickoffMeetings = lazy(() => import('@/modules/shared/pages/KickoffMeetings'))
+// Cross-meeting registers (Meeting.docx §8 / §9 / §10) — Decisions, Issues and
+// the Open Action Items backlog, in one screen with three tabs.
+const MeetingRegisters = lazy(() => import('@/modules/shared/pages/MeetingRegisters'))
 const KickoffMeetingCreate = lazy(() => import('@/modules/shared/pages/KickoffMeetingCreate'))
 const KickoffMeetingDetail = lazy(() => import('@/modules/shared/pages/KickoffMeetingDetail'))
 const KickoffAck = lazy(() => import('@/pages/kickoff/KickoffAck'))
@@ -673,6 +677,10 @@ export default function AppRoutes() {
               before :id so "edit" is never captured as a meeting id. */}
           <Route path="kickoff/:id/edit" element={<S><KickoffMeetingCreate /></S>} />
           <Route path="kickoff/:id" element={<S><KickoffMeetingDetail /></S>} />
+          {/* Meeting.docx §9's "searchable Decision Register", §10's issue
+              register and §8's action backlog — across every meeting, not one. */}
+          <Route path="meetings/registers" element={<S><MeetingRegisters /></S>} />
+          <Route path="meetings/registers/:register" element={<S><MeetingRegisters /></S>} />
           <Route path="performance" element={<S><MeetingPerformance /></S>} />
           {/* The onboarding QUEUE stays — it is how staff find work. The wizard
               itself does not: Steps 1–6 are the vendor's own workflow and the
@@ -711,6 +719,7 @@ export default function AppRoutes() {
           <Route path="vpi" element={<S><TpvPerformanceIndex /></S>} />
           <Route path="communications" element={<S><TpvCommunications /></S>} />
           <Route path="authority-matrix" element={<S><TpvAuthorityMatrix /></S>} />
+          <Route path="settings" element={<S><TpvSettings /></S>} />
         </Route>
 
         {/* WORKFORCE — vendor-scoped workspace (own rail), entered from Onboarding Step-6.

@@ -33,7 +33,12 @@ export default function KickoffMeetings() {
   const [page, setPage] = useState(1)
   const [projects, setProjects] = useState([])   // §16 project rollup source
   const [projectF, setProjectF] = useState('All') // '' | project id (client-side)
-  const [quickView, setQuickView] = useState('all') // all|upcoming|pending_mom|open_actions|templates
+  // ?view=templates deep-links straight to Types & Templates, which is where TPV
+  // Settings sends an admin who wants to add or remove a meeting type.
+  const [quickView, setQuickView] = useState(() => {
+    const v = new URLSearchParams(window.location.search).get('view')
+    return ['all', 'my', 'upcoming', 'pending_mom', 'open_actions', 'templates'].includes(v) ? v : 'all'
+  })
 
   // Row-action modal targets — showNew removed: create navigates to full page
   const [attendanceFor, setAttFor]    = useState(null)
@@ -273,7 +278,11 @@ export default function KickoffMeetings() {
                   const busyDl   = pdfBusy === `${m.id}:dl`
                   return (
                     <tr key={m.id} className="ko-row" onClick={() => navigate(`/app/tpv/kickoff/${m.id}`)} style={{ cursor: 'pointer', borderTop: '1px solid var(--border)' }}>
-                      <td style={td}><span style={{ fontWeight: 800, color: 'var(--text-h)' }}>#{m.id}</span></td>
+                      {/* The meeting's own reference (MTG-YYYY-NNNN), not the row
+                          id: it is what the MOM prints and what a vendor quotes. */}
+                      <td style={td}>
+                        <span style={{ fontWeight: 800, color: 'var(--text-h)', fontSize: 12 }}>{m.meeting_no || `#${m.id}`}</span>
+                      </td>
                       <td style={td}>
                         <div style={{ fontWeight: 700, color: 'var(--text-h)', maxWidth: 190, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                           title={(m.subject_list || []).map(s => s.name).join(', ') || undefined}>

@@ -41,9 +41,14 @@ class UpdateKickoffMeetingRequest extends FormRequest
             'priority' => 'nullable|string|in:'.implode(',', config('meetings.meeting_priorities', ['Low', 'Medium', 'High', 'Urgent'])),
             'confidentiality' => 'nullable|string|in:'.implode(',', config('meetings.confidentiality', ['Public', 'Internal', 'Confidential', 'Restricted'])),
             'chairperson' => 'nullable|string|max:160',
+            'organizer' => 'nullable|string|max:160',
             'coordinator' => 'nullable|string|max:160',
             'department' => 'nullable|string|max:120',
             'client_name' => 'nullable|string|max:200',
+            // Soft link into the Customer module (Meeting.docx §2/§16). Scoped to
+            // the tenant; the picker is served from CustomerServiceContract, so the
+            // meetings engine still never queries the customers table.
+            'client_id' => ['nullable', 'integer', Rule::exists('clients', 'id')->where('tenant_id', $this->user()->tenant_id)],
             'work_package' => 'nullable|string|max:200',
             // Soft link into Shivam's Projects module (Meeting.docx §16).
             'project_id' => ['nullable', 'integer', Rule::exists('projects', 'id')->where('tenant_id', $this->user()->tenant_id)],
@@ -76,6 +81,10 @@ class UpdateKickoffMeetingRequest extends FormRequest
             'agenda_items' => 'nullable|array',
             'agenda_items.*.item' => 'required|string|max:255',
             'agenda_items.*.description' => 'nullable|string|max:2000',
+            // Meeting.docx §7 — Agenda -> Discussion -> Decision -> Action, captured
+            // per agenda item instead of one meeting-level minutes blob.
+            'agenda_items.*.discussion' => 'nullable|string|max:5000',
+            'agenda_items.*.decision' => 'nullable|string|max:2000',
             'agenda_items.*.owner_attendee_id' => 'nullable|integer',
             'agenda_items.*.owner_names' => 'nullable|string|max:500',
             'agenda_items.*.owner' => 'nullable|string|max:500',
@@ -114,6 +123,10 @@ class UpdateKickoffMeetingRequest extends FormRequest
             'attendees.*.vendor_contact_id' => 'nullable|integer',
             'attendees.*.name' => 'required_without:attendees.*.vendor_contact_id|nullable|string|max:120',
             'attendees.*.email' => 'nullable|email|max:180',
+            // Meeting.docx §5 — "participants should be linked to Sangoe
+            // identities wherever possible". Verified against the tenant in the
+            // service before it is stored.
+            'attendees.*.user_id' => 'nullable|integer',
             'attendees.*.phone' => 'nullable|string|max:40',
             'attendees.*.organisation' => 'nullable|string|max:120',
             'attendees.*.role' => 'nullable|string|max:60',

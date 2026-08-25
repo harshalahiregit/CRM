@@ -30,8 +30,10 @@ class KickoffMeeting extends Model
         'meeting_type',
         'reference', 'meeting_no', 'title', 'agenda', 'status',
         // Meeting.docx §2 detail fields.
-        'end_at', 'priority', 'confidentiality', 'chairperson', 'coordinator',
-        'department', 'client_name', 'project_id', 'work_package',
+        'end_at', 'priority', 'confidentiality', 'chairperson', 'organizer', 'coordinator',
+        // client_name stays the displayable string; client_id is the soft link
+        // into the Customer module, resolved through CustomerServiceContract.
+        'department', 'client_name', 'client_id', 'project_id', 'work_package',
         'scheduled_at', 'duration_minutes', 'mode', 'location',
         'original_scheduled_at', 'delay_reason',
         'mom_path', 'minutes', 'completed_at',
@@ -176,6 +178,13 @@ class KickoffMeeting extends Model
     public function attendees()
     {
         return $this->hasMany(KickoffAttendee::class, 'kickoff_meeting_id');
+    }
+
+    /** Per-recipient send ledger — invitation and minutes (Meeting.docx §13). */
+    public function distributions()
+    {
+        return $this->hasMany(MeetingDistribution::class, 'kickoff_meeting_id')
+            ->orderByDesc('id');
     }
 
     /** Itemised minutes, in the order they were captured. */

@@ -4,6 +4,7 @@ import {
   ArrowLeft, CalendarDays, Clock, MapPin, Users, CheckCircle2, XCircle,
   Send, Copy, Upload, AlertTriangle, Loader2, FileText, ShieldCheck, History,
   Sparkles, Eye, Download, Video, ExternalLink, ClipboardCheck, ThumbsUp, Undo2, RotateCcw, ListChecks,
+  Plus, Mail, MailCheck, Pencil, Building2, UserCheck, Briefcase, UserX,
 } from 'lucide-react'
 import { kickoffApi } from '@/services/kickoffApi'
 import { meetingApi } from '@/services/meetingApi'
@@ -142,34 +143,30 @@ export default function KickoffMeetingDetail() {
               {m.work_package && <Detail icon={CalendarDays} label="Work package" value={m.work_package} />}
               {(m.project_label || m.project_id) && <Detail icon={CalendarDays} label="Project" value={m.project_label || `#${m.project_id}`} />}
             </div>
+            {/* Meeting.docx §2's detail fields. They were captured on the form and
+                then never shown again anywhere in the app. */}
+            {(m.meeting_type_label || m.chairperson || m.organizer || m.coordinator
+              || m.department || m.client_name || m.work_package || m.priority || m.confidentiality) && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 14px', marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+                <MetaDetail icon={ClipboardCheck} label="Type" value={m.meeting_type_label} />
+                <MetaDetail icon={UserCheck} label="Chairperson" value={m.chairperson} />
+                <MetaDetail icon={UserCheck} label="Organizer" value={m.organizer || m.creator?.name} />
+                <MetaDetail icon={UserCheck} label="Coordinator" value={m.coordinator} />
+                <MetaDetail icon={Briefcase} label="Department" value={m.department} />
+                <MetaDetail icon={Building2} label="Customer" value={m.client_name} />
+                <MetaDetail icon={Briefcase} label="Work package" value={m.work_package} />
+                <MetaDetail icon={AlertTriangle} label="Priority" value={m.priority} />
+                <MetaDetail icon={ShieldCheck} label="Confidentiality" value={m.confidentiality} />
+              </div>
+            )}
             {m.status === KO_STATUS.DELAYED && m.delay_reason && (
               <div style={{ marginTop: 14, padding: '11px 13px', borderRadius: 11, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.32)' }}>
                 <div style={{ fontSize: 11, fontWeight: 800, color: '#f59e0b', marginBottom: 3 }}>DELAYED · originally {fmtDate(m.original_scheduled_at)}</div>
                 <div style={{ fontSize: 12.5, color: 'var(--text-h)' }}>{m.delay_reason}</div>
               </div>
             )}
-            {Array.isArray(m.agenda_items) && m.agenda_items.length > 0 && (
-              <div style={{ marginTop: 14 }}>
-                <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Agenda</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {m.agenda_items.map((a, i) => (
-                    <div key={a.id} style={{ display: 'flex', alignItems: 'baseline', gap: 8, fontSize: 13, color: 'var(--text-h)' }}>
-                      <span style={{ fontWeight: 800, color: '#a78bfa', minWidth: 16 }}>{i + 1}.</span>
-                      <span style={{ flex: 1 }}>{a.item}</span>
-                      {(a.owner_names || a.owner?.name) && <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{a.owner_names || a.owner?.name}</span>}
-                      {a.duration_minutes ? <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{a.duration_minutes}m</span> : null}
-                      {a.priority && <span style={{ fontSize: 10.5, fontWeight: 800, padding: '1px 7px', borderRadius: 6, background: a.priority === 'High' ? 'rgba(239,68,68,0.12)' : a.priority === 'Medium' ? 'rgba(245,158,11,0.12)' : 'rgba(148,163,184,0.15)', color: a.priority === 'High' ? '#ef4444' : a.priority === 'Medium' ? '#d97706' : 'var(--text-muted)' }}>{a.priority}</span>}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            {m.agenda && (
-              <div style={{ marginTop: 14 }}>
-                <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5 }}>Agenda notes</div>
-                <p style={{ fontSize: 13, color: 'var(--text-h)', margin: 0, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{m.agenda}</p>
-              </div>
-            )}
+            {/* The agenda now has its own card below (Meeting.docx §7): it carries
+                each item's Discussion and Decision, which do not fit here. */}
           </div>
 
           {/* Online meeting link (shown only when mode = 'online') */}
@@ -205,13 +202,22 @@ export default function KickoffMeetingDetail() {
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-h)' }}>{a.name}
-                        {a.vendor_contact_id && <span title="Linked to vendor master" style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#10b981' }}>● linked</span>}
+                        {/* Linked to a Sangoe identity — a vendor contact OR a
+                            login. Only the first was checked before, so an
+                            internal colleague picked from the staff directory
+                            never showed as linked. */}
+                        {(a.vendor_contact_id || a.user_id) && (
+                          <span title={a.user_id ? 'Linked to a Sangoe login' : 'Linked to vendor master'}
+                            style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#10b981' }}>● linked</span>
+                        )}
+                        {!a.email && (
+                          <span title="No e-mail address — this person cannot receive the invitation or the minutes"
+                            style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#f59e0b' }}>no e-mail</span>
+                        )}
                       </div>
                       <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{[a.role, a.organisation].filter(Boolean).join(' · ') || '—'}</div>
                     </div>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, color: a.attended ? '#10b981' : 'var(--text-muted)' }}>
-                      {a.attended ? <><CheckCircle2 size={13} /> Attended</> : <><XCircle size={13} /> Absent</>}
-                    </span>
+                    <AttendancePill attendee={a} />
                   </div>
                 ))}
               </div>
@@ -279,11 +285,18 @@ export default function KickoffMeetingDetail() {
           {/* Action items — the Action Engine (Meeting.docx §8) */}
           <ActionItemsCard m={m} meetingId={id} onChanged={load} onError={setErr} />
 
+          {/* Agenda with its per-item discussion + decision (§7) */}
+          <AgendaCard m={m} onEdit={() => navigate(`/app/tpv/kickoff/${id}/edit`)} />
+
           {/* Decision register (§9) */}
-          <DecisionsCard m={m} />
+          <DecisionsCard m={m} onEdit={() => navigate(`/app/tpv/kickoff/${id}/edit`)} />
 
           {/* Issues raised (§10) — track + escalate */}
-          <IssuesCard m={m} meetingId={id} onChanged={load} onError={setErr} />
+          <IssuesCard m={m} meetingId={id} onChanged={load} onError={setErr}
+            onEdit={() => navigate(`/app/tpv/kickoff/${id}/edit`)} />
+
+          {/* Who the invitation and the minutes actually reached (§13) */}
+          <DistributionCard meetingId={id} m={m} onError={setErr} />
 
           {/* AI summary of the captured minutes (§18) */}
           <AiSummaryCard meetingId={id} onError={setErr} />
@@ -457,13 +470,184 @@ function ActionProgressForm({ item, meetingId, onDone, onError }) {
   )
 }
 
-/* ── Decision register (§9) ───────────────────────────────────────────────── */
-function DecisionsCard({ m }) {
-  const rows = m.decisions || []
-  if (rows.length === 0) return null
+/* ── Agenda (§7 — Agenda -> Discussion -> Decision -> Action) ─────────────── */
+function AgendaCard({ m, onEdit }) {
+  const rows = m.agenda_items || []
+  if (rows.length === 0 && !m.agenda) return null
+
   return (
     <div className="pr-glass" style={{ padding: 20 }}>
-      <SectionTitle icon={ShieldCheck}>Decisions</SectionTitle>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+        <SectionTitle icon={ListChecks}>Agenda <span style={{ fontWeight: 500, color: 'var(--text-muted)', fontSize: 12 }}>· {rows.length}</span></SectionTitle>
+        {onEdit && <button onClick={onEdit} style={addOnFormBtn}><Pencil size={12} /> Edit</button>}
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
+        {rows.map((a, i) => (
+          <div key={a.id} style={{ padding: '11px 13px', borderRadius: 11, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 11, fontWeight: 800, color: '#a78bfa' }}>{i + 1}</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-h)' }}>{a.item}</span>
+              {a.priority && <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--text-muted)' }}>{a.priority}</span>}
+              {a.duration_minutes ? <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>{a.duration_minutes} min</span> : null}
+              {(a.owner_names || a.owner?.name) && (
+                <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>· {a.owner_names || a.owner?.name}</span>
+              )}
+            </div>
+            {a.description && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>{a.description}</div>}
+            {/* The doc's chain: what was said, then what was settled. The action
+                that came out of it sits in Action Items, tagged with this item. */}
+            {a.discussion && (
+              <div style={{ fontSize: 12, color: 'var(--text-body)', marginTop: 6, lineHeight: 1.55 }}>
+                <strong style={{ color: 'var(--text-muted)', fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.04em' }}>Discussion</strong>
+                <div>{a.discussion}</div>
+              </div>
+            )}
+            {a.decision && (
+              <div style={{ fontSize: 12, color: 'var(--text-body)', marginTop: 6, lineHeight: 1.55 }}>
+                <strong style={{ color: '#10b981', fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.04em' }}>Decision</strong>
+                <div>{a.decision}</div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {m.agenda && (
+        <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '12px 0 0', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{m.agenda}</p>
+      )}
+    </div>
+  )
+}
+
+/* ── Distribution tracker (§13 — Sent / Viewed / Acknowledged, per person) ── */
+const PARTY_LABEL = {
+  internal: 'Internal', vendor: 'Vendor', client: 'Client',
+  management: 'Management', other: 'Other stakeholder',
+}
+const STATE_COLOUR = {
+  Acknowledged: '#10b981', Viewed: '#0ea5e9', Sent: '#a78bfa',
+  'No address': '#f59e0b', Failed: '#ef4444',
+}
+
+function DistributionCard({ meetingId, m, onError }) {
+  const [data, setData] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [note, setNote] = useState(null)
+
+  const load = useCallback(() => {
+    kickoffApi.distribution(meetingId).then(setData).catch(() => setData(null))
+  }, [meetingId])
+  useEffect(() => { load() }, [load, m.mom_status])
+
+  // §1 "Send Invitation". Fired automatically when a dated meeting is scheduled;
+  // this re-sends after the roster or the time changes.
+  const invite = async () => {
+    setBusy(true); setNote(null); onError(null)
+    try {
+      const r = await kickoffApi.invite(meetingId)
+      setNote(`Invitation sent to ${r.sent} recipient(s)`
+        + (r.in_app ? `, ${r.in_app} in-app` : '')
+        + (r.skipped ? ` · ${r.skipped} had no e-mail address` : ''))
+      load()
+    } catch (e) {
+      onError(e?.response?.data?.message || 'Could not send the invitation.')
+    } finally { setBusy(false) }
+  }
+
+  const invites = data?.invite || []
+  const mom = data?.mom || []
+  const totals = data?.totals
+
+  return (
+    <div className="pr-glass" style={{ padding: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+        <SectionTitle icon={Mail}>Invitation &amp; distribution</SectionTitle>
+        <button onClick={invite} disabled={busy || !m.scheduled_at} style={addOnFormBtn}
+          title={m.scheduled_at ? 'Send the invitation to everyone on the roster' : 'Set the meeting date first'}>
+          {busy ? <Loader2 size={12} className="ko-spin" /> : <Send size={12} />}
+          {invites.length ? 'Re-send invitation' : 'Send invitation'}
+        </button>
+      </div>
+
+      {note && (
+        <p style={{ fontSize: 12, color: '#10b981', margin: '8px 0 0', fontWeight: 600 }}>{note}</p>
+      )}
+
+      {totals && mom.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, margin: '12px 0 4px' }}>
+          <Tot label="Sent" value={totals.sent} colour="#a78bfa" />
+          <Tot label="Viewed" value={totals.viewed} colour="#0ea5e9" />
+          <Tot label="Acknowledged" value={totals.acknowledged} colour="#10b981" />
+          <Tot label="No address" value={totals.no_address} colour="#f59e0b" />
+        </div>
+      )}
+
+      <RecipientList title="Minutes" rows={mom} empty="The minutes have not been distributed yet — approve them, then Send for acknowledgement." />
+      <RecipientList title="Invitation" rows={invites} empty="No invitation has been sent for this meeting yet." />
+    </div>
+  )
+}
+
+const Tot = ({ label, value, colour }) => (
+  <div style={{ padding: '8px 10px', borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+    <div style={{ fontSize: 17, fontWeight: 900, color: value ? colour : 'var(--text-muted)', lineHeight: 1.1 }}>{value ?? 0}</div>
+    <div style={{ fontSize: 10.5, color: 'var(--text-muted)', fontWeight: 700 }}>{label}</div>
+  </div>
+)
+
+function RecipientList({ title, rows, empty }) {
+  return (
+    <div style={{ marginTop: 14 }}>
+      <div style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text-muted)', marginBottom: 6 }}>
+        {title}
+      </div>
+      {rows.length === 0 ? (
+        <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: 0, lineHeight: 1.5 }}>{empty}</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {rows.map(r => (
+            <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 11px', borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-h)' }}>{r.name || '—'}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                  {PARTY_LABEL[r.party] || r.party}{r.email ? ` · ${r.email}` : ' · no e-mail address'}
+                </div>
+              </div>
+              <span style={{ padding: '2px 9px', borderRadius: 999, fontSize: 10.5, fontWeight: 800, whiteSpace: 'nowrap',
+                background: `${STATE_COLOUR[r.state_label] || '#94a3b8'}1f`, color: STATE_COLOUR[r.state_label] || '#94a3b8' }}>
+                {r.state_label}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ── Decision register (§9) ───────────────────────────────────────────────── */
+function DecisionsCard({ m, onEdit }) {
+  const rows = m.decisions || []
+  // Rendered even when empty. Returning null meant the Decision Register the doc
+  // asks for was invisible on any meeting that had not recorded one yet, so
+  // there was no way to discover that decisions are captured here at all.
+  return (
+    <div className="pr-glass" style={{ padding: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+        <SectionTitle icon={ShieldCheck}>Decisions <span style={{ fontWeight: 500, color: 'var(--text-muted)', fontSize: 12 }}>· {rows.length}</span></SectionTitle>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <a href="/app/tpv/meetings/registers/decisions" style={registerLink}>Decision Register</a>
+          {onEdit && <button onClick={onEdit} style={addOnFormBtn}><Plus size={12} /> Add</button>}
+        </div>
+      </div>
+      {rows.length === 0 && (
+        <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '10px 0 0', lineHeight: 1.6 }}>
+          No decisions recorded for this meeting yet. Decisions are captured on the meeting form —
+          click <strong>Add</strong> to open it, then fill in the <em>Decisions</em> section.
+          Everything recorded here also appears in the cross-meeting Decision Register.
+        </p>
+      )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
         {rows.map(d => (
           <div key={d.id} style={{ padding: '11px 13px', borderRadius: 11, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
@@ -486,16 +670,27 @@ function DecisionsCard({ m }) {
 }
 
 /* ── Issues raised (§10) — track lifecycle + escalate to an Incident ────────── */
-function IssuesCard({ m, meetingId, onChanged, onError }) {
+function IssuesCard({ m, meetingId, onChanged, onError, onEdit }) {
   const rows = m.issues || []
-  if (rows.length === 0) return null
   const open = rows.filter(i => i.is_open).length
+  // Always rendered, for the same reason as the decisions card above.
   return (
     <div className="pr-glass" style={{ padding: 20 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-        <SectionTitle icon={AlertTriangle}>Issues Raised</SectionTitle>
-        <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{open} open</span>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, gap: 10, flexWrap: 'wrap' }}>
+        <SectionTitle icon={AlertTriangle}>Issues Raised <span style={{ fontWeight: 500, color: 'var(--text-muted)', fontSize: 12 }}>· {rows.length}</span></SectionTitle>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          {rows.length > 0 && <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{open} open</span>}
+          <a href="/app/tpv/meetings/registers/issues" style={registerLink}>Issue Register</a>
+          {onEdit && <button onClick={onEdit} style={addOnFormBtn}><Plus size={12} /> Add</button>}
+        </div>
       </div>
+      {rows.length === 0 && (
+        <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '4px 0 0', lineHeight: 1.6 }}>
+          No issues raised in this meeting. Issues are captured on the meeting form —
+          click <strong>Add</strong> to open it, then fill in the <em>Issues</em> section.
+          From here an issue can be escalated into an Incident, NCR, CAPA, Task or Approval.
+        </p>
+      )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 6 }}>
         {rows.map(it => <IssueRow key={it.id} it={it} meetingId={meetingId} onChanged={onChanged} onError={onError} />)}
       </div>
@@ -568,6 +763,14 @@ function IssueRow({ it, meetingId, onChanged, onError }) {
     try { await kickoffApi.convertIssueTask(meetingId, it.id); onChanged() }
     catch (e) { onError(e?.response?.data?.message || 'Could not create the task.'); setBusy(false) }
   }
+  // §10's remaining targets. Each creates a real record in its own module and
+  // stamps the issue, so it can only be escalated once.
+  const convertTo = (kind) => async () => {
+    setBusy(true); onError(null)
+    const call = { ncr: kickoffApi.convertIssueNcr, capa: kickoffApi.convertIssueCapa, approval: kickoffApi.convertIssueApproval }[kind]
+    try { await call(meetingId, it.id); onChanged() }
+    catch (e) { onError(e?.response?.data?.message || `Could not raise the ${kind.toUpperCase()}.`); setBusy(false) }
+  }
 
   return (
     <div style={{ padding: '12px 14px', borderRadius: 12, background: 'var(--bg-input)', border: `1px solid ${it.is_overdue ? 'rgba(239,68,68,0.4)' : 'var(--border)'}` }}>
@@ -591,7 +794,13 @@ function IssueRow({ it, meetingId, onChanged, onError }) {
           <button onClick={() => { setOpen(!open); setConv(false) }} style={{ padding: '6px 11px', borderRadius: 8, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: '#a78bfa' }}>{open ? 'Close' : 'Update'}</button>
           {!it.converted_to && <button onClick={() => { setConv(!conv); setOpen(false) }} style={{ padding: '6px 11px', borderRadius: 8, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.3)', color: '#ef4444' }}>Escalate</button>}
           {!it.converted_to && <button onClick={toTask} disabled={busy} title="Convert this issue into a trackable Task"
-            style={{ padding: '6px 11px', borderRadius: 8, fontSize: 11.5, fontWeight: 700, cursor: busy ? 'wait' : 'pointer', background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981' }}>Task</button>}
+            style={convBtn('#10b981')}>Task</button>}
+          {!it.converted_to && <button onClick={convertTo('ncr')} disabled={busy} title="Raise this issue as a Non-Conformance Report"
+            style={convBtn('#f59e0b')}>NCR</button>}
+          {!it.converted_to && <button onClick={convertTo('capa')} disabled={busy} title="Raise a Corrective / Preventive Action from this issue"
+            style={convBtn('#0ea5e9')}>CAPA</button>}
+          {!it.converted_to && <button onClick={convertTo('approval')} disabled={busy} title="Raise this issue as an approval request"
+            style={convBtn('#a78bfa')}>Approval</button>}
         </div>
       </div>
 
@@ -1114,6 +1323,68 @@ function actionLabel(from, to) {
   if (to === KO_STATUS.CANCELLED) return 'Cancel meeting'
   if (to === KO_STATUS.SCHEDULED) return from === KO_STATUS.CANCELLED ? 'Reopen' : 'Reschedule'
   return to
+}
+
+/** The convert-to buttons on an issue row — one shape, one colour per target. */
+const convBtn = (colour) => ({
+  padding: '6px 11px', borderRadius: 8, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
+  background: `${colour}14`, border: `1px solid ${colour}4d`, color: colour,
+})
+
+const registerLink = {
+  display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 8,
+  fontSize: 11.5, fontWeight: 700, textDecoration: 'none',
+  background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)',
+}
+
+const addOnFormBtn = {
+  display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 8,
+  fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
+  background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.35)', color: '#a78bfa',
+}
+
+/**
+ * One label/value pair in the meeting's §2 detail grid. Hidden when there is no
+ * value, so a meeting that never set a coordinator does not show an empty row.
+ * Distinct from `Detail` below, which stacks its label above a always-present
+ * value in the header strip.
+ */
+const MetaDetail = ({ icon: Icon, label, value }) => value ? (
+  <div style={{ display: 'flex', alignItems: 'baseline', gap: 7 }}>
+    <Icon size={11} style={{ color: 'var(--text-muted)', flexShrink: 0, position: 'relative', top: 1 }} />
+    <span style={{ fontSize: 11, color: 'var(--text-muted)', minWidth: 92 }}>{label}</span>
+    <span style={{ fontSize: 12.5, color: 'var(--text-h)', fontWeight: 600 }}>{value}</span>
+  </div>
+) : null
+
+/**
+ * One attendee's recorded attendance (Meeting.docx §6).
+ *
+ * Six states, not a boolean. This row used to read `attended` alone, so Late,
+ * Excused, Online and Offline all collapsed into "Attended"/"Absent" — and,
+ * worse, anyone not yet marked was shown as **Absent**, asserting they missed a
+ * meeting nobody had marked. NULL is its own state: "Not marked".
+ */
+const ATTENDANCE_TONE = {
+  Present: '#10b981', Late: '#f59e0b', Absent: '#ef4444',
+  Excused: '#a78bfa', Online: '#0ea5e9', Offline: '#64748b',
+}
+
+const AttendancePill = ({ attendee: a }) => {
+  // attendance_status is the truth; the legacy boolean is the fallback for rows
+  // marked before that column existed.
+  const status = a.attendance_status || (a.attended ? 'Present' : null)
+  const tone = status ? (ATTENDANCE_TONE[status] || 'var(--text-muted)') : 'var(--text-muted)'
+  const Icon = status
+    ? (status === 'Absent' ? XCircle : status === 'Excused' ? UserX : CheckCircle2)
+    : Clock
+
+  return (
+    <span title={a.remark || undefined}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, color: tone, whiteSpace: 'nowrap' }}>
+      <Icon size={13} /> {status || 'Not marked'}
+    </span>
+  )
 }
 
 const SectionTitle = ({ icon: Icon, children }) => (

@@ -1,11 +1,11 @@
 import {
   LayoutDashboard, CalendarDays, Rocket, Building2, Boxes, GraduationCap, FileWarning, ClipboardCheck, AlertOctagon, RefreshCcw, LogOut,
-  UserCheck, CheckSquare, ScanLine, ShieldAlert, Clock, ShieldCheck, HardHat, ClipboardList, Siren, FileCheck2, Eye, FolderLock, Landmark, TrendingUp, Gauge, Megaphone } from 'lucide-react'
+  UserCheck, CheckSquare, ScanLine, ShieldAlert, Clock, ShieldCheck, HardHat, ClipboardList, Siren, FileCheck2, Eye, FolderLock, Landmark, TrendingUp, Gauge, Megaphone, SlidersHorizontal } from 'lucide-react'
 import ModuleShell from '@/components/layout/ModuleShell'
 
 // Sangoe TPV navigation — the doc's 9-cluster structure (§38/§39), replacing the
 // old flat 20-tab rail. Kickoff is no longer a top tab: it is Meetings → New →
-// Type = Kickoff, under Mobilisation.
+// Type = Kickoff, and Meetings is its own cluster (Meeting.docx's nav change).
 //
 // Only pages that exist today are listed; each cluster grows as later build-plan
 // phases land (Prequalification, Risk, Contracts, Work Packages, Competency,
@@ -22,8 +22,18 @@ const TPV_GROUPS = [
     { label: 'Contracts & WO',   path: '/app/tpv/contracts',       icon: FileCheck2 },
     { label: 'Temporary',        path: '/app/tpv/temporary',       icon: Clock },
   ] },
+  // Meeting.docx's nav: "Replace Kickoff Meeting with Meetings", and inside it
+  // All Meetings / Calendar / Pending MOM / Open Action Items / Types &
+  // Templates. The list itself carries the quick-view chips and the calendar
+  // toggle; the three registers are their own screens because they read across
+  // every meeting rather than filtering one list.
+  { label: 'Meetings', icon: CalendarDays, items: [
+    { label: 'All Meetings',      path: '/app/tpv/kickoff',                              icon: CalendarDays },
+    { label: 'Decision Register', path: '/app/tpv/meetings/registers/decisions',         icon: ShieldCheck },
+    { label: 'Issue Register',    path: '/app/tpv/meetings/registers/issues',            icon: AlertOctagon },
+    { label: 'Open Action Items', path: '/app/tpv/meetings/registers/actions',           icon: ClipboardList },
+  ] },
   { label: 'Mobilisation', icon: Rocket, items: [
-    { label: 'Meetings',      path: '/app/tpv/kickoff',       icon: CalendarDays },
     { label: 'Onboarding',    path: '/app/tpv/onboarding',    icon: Rocket },
     { label: 'Work Packages', path: '/app/tpv/work-packages', icon: Boxes },
     { label: 'Onboarding Approvals', path: '/app/tpv/approvals', icon: ShieldCheck },
@@ -67,7 +77,9 @@ const TPV_GROUPS = [
     { label: 'Evidence',   path: '/app/tpv/evidence',         icon: FolderLock },
     { label: 'Authority',  path: '/app/tpv/authority-matrix', icon: Landmark },
   ] },
-  // Ecosystem (Vendor Portal / Settings) renders once Settings lands (Phase 3).
+  { label: 'Configuration', icon: SlidersHorizontal, items: [
+    { label: 'Settings', path: '/app/tpv/settings', icon: SlidersHorizontal },
+  ] },
 ].filter(g => g.items.length > 0)
 
 export default function TPVLayout() {
