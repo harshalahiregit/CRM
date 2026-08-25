@@ -112,7 +112,12 @@ export default function TpvPpeMatrix() {
                     <span className="flex-1 min-w-0">
                       <span className="block text-xs font-bold truncate" style={{ color: 'var(--text-h)' }}>{r.product}</span>
                       <span className="block text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                        {r.sku}{r.qty > 1 && ` · ×${r.qty}`}{!r.is_active && ' · inactive'}
+                        {r.sku}{r.qty > 1 && ` · ×${r.qty}`}
+                        {r.ppe_class && r.ppe_class !== 'mandatory' && ` · ${r.ppe_class}`}
+                        {(r.hazard || r.activity) && ` · ${[r.activity, r.hazard].filter(Boolean).join(' / ')}`}
+                        {r.verification_required && ' · verify'}
+                        {r.replacement_frequency_days && ` · every ${r.replacement_frequency_days}d`}
+                        {!r.is_active && ' · inactive'}
                       </span>
                     </span>
                     <button onClick={() => toggle.mutate({ id: r.id, is_active: !r.is_active })}
@@ -187,6 +192,13 @@ function AddDialog({ initial, meta, onClose, onDone, onError }) {
   const [scopeValue, setScopeValue] = useState(initial.scope_value || '')
   const [productId, setProductId] = useState('')
   const [qty, setQty] = useState(1)
+  // §18 — Job + Hazard + Activity → PPE, with a class + governance attributes.
+  const [ppeClass, setPpeClass] = useState('mandatory')
+  const [hazard, setHazard] = useState('')
+  const [activity, setActivity] = useState('')
+  const [condition, setCondition] = useState('')
+  const [replFreq, setReplFreq] = useState('')
+  const [verify, setVerify] = useState(false)
 
   const roles = meta?.roles?.[scopeType] || []
   const needsValue = scopeType !== 'all'
@@ -196,8 +208,14 @@ function AddDialog({ initial, meta, onClose, onDone, onError }) {
     mutationFn: () => tpvApi.ppe.addRequirement({
       scope_type: scopeType,
       scope_value: needsValue ? scopeValue : null,
+      hazard: hazard || null,
+      activity: activity || null,
+      ppe_class: ppeClass,
+      condition: ppeClass === 'conditional' ? (condition || null) : null,
       product_id: Number(productId),
       qty: Number(qty) || 1,
+      replacement_frequency_days: replFreq ? Number(replFreq) : null,
+      verification_required: verify,
     }),
     onSuccess: onDone,
     onError,
@@ -246,8 +264,34 @@ function AddDialog({ initial, meta, onClose, onDone, onError }) {
           </p>
         )}
 
+        <label style={{ ...lbl, marginTop: 12 }}>Hazard</label>
+        <input value={hazard} onChange={e => setHazard(e.target.value)} placeholder="e.g. Arc / Heat" style={inp} />
+
+        <label style={{ ...lbl, marginTop: 12 }}>Activity</label>
+        <input value={activity} onChange={e => setActivity(e.target.value)} placeholder="e.g. Welding" style={inp} />
+
+        <label style={{ ...lbl, marginTop: 12 }}>Requirement class</label>
+        <select value={ppeClass} onChange={e => setPpeClass(e.target.value)} style={inp}>
+          <option value="mandatory">Mandatory — blocks the badge if not issued</option>
+          <option value="optional">Optional — advisory only</option>
+          <option value="conditional">Conditional — required only when a condition holds</option>
+        </select>
+        {ppeClass === 'conditional' && (
+          <>
+            <label style={{ ...lbl, marginTop: 12 }}>Condition</label>
+            <input value={condition} onChange={e => setCondition(e.target.value)} placeholder="e.g. When working above 2m" style={inp} />
+          </>
+        )}
+
         <label style={{ ...lbl, marginTop: 12 }}>Quantity required</label>
         <input type="number" min="1" value={qty} onChange={e => setQty(e.target.value)} style={inp} />
+
+        <label style={{ ...lbl, marginTop: 12 }}>Replacement frequency (days)</label>
+        <input type="number" min="1" value={replFreq} onChange={e => setReplFreq(e.target.value)} placeholder="Optional" style={inp} />
+
+        <label className="flex items-center gap-2" style={{ marginTop: 12, cursor: 'pointer', fontSize: 12.5, color: 'var(--text-h)', fontWeight: 600 }}>
+          <input type="checkbox" checked={verify} onChange={e => setVerify(e.target.checked)} /> Verification required (not just issued)
+        </label>
 
         <div style={{ display: 'flex', gap: 8, marginTop: 18 }}>
           <button onClick={onClose} style={{ flex: 1, padding: 9, borderRadius: 9, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}>Cancel</button>

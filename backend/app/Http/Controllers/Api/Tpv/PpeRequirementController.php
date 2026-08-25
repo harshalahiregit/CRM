@@ -35,10 +35,16 @@ class PpeRequirementController extends Controller
                 'id'          => $r->id,
                 'scope_type'  => $r->scope_type,
                 'scope_value' => $r->scope_value,
+                'hazard'      => $r->hazard,
+                'activity'    => $r->activity,
+                'ppe_class'   => $r->ppe_class ?? 'mandatory',
+                'condition'   => $r->condition,
                 'product_id'  => $r->product_id,
                 'product'     => $r->product?->name,
                 'sku'         => $r->product?->sku,
                 'qty'         => $r->qty,
+                'replacement_frequency_days' => $r->replacement_frequency_days,
+                'verification_required'      => (bool) $r->verification_required,
                 'is_active'   => $r->is_active,
             ]);
 
@@ -81,7 +87,13 @@ class PpeRequirementController extends Controller
                 'product_id'  => $data['product_id'],
             ],
             [
+                'hazard'     => $data['hazard'] ?? null,
+                'activity'   => $data['activity'] ?? null,
+                'ppe_class'  => $data['ppe_class'] ?? 'mandatory',
+                'condition'  => $data['condition'] ?? null,
                 'qty'        => $data['qty'] ?? 1,
+                'replacement_frequency_days' => $data['replacement_frequency_days'] ?? null,
+                'verification_required'      => $data['verification_required'] ?? false,
                 'is_active'  => $data['is_active'] ?? true,
                 'created_by' => $request->user()->id,
             ]
@@ -96,7 +108,13 @@ class PpeRequirementController extends Controller
         $this->assertTenant($request, $requirement);
 
         $requirement->update($request->validate([
+            'hazard'    => 'sometimes|nullable|string|max:120',
+            'activity'  => 'sometimes|nullable|string|max:120',
+            'ppe_class' => 'sometimes|in:'.implode(',', TpvPpeRequirement::CLASSES),
+            'condition' => 'sometimes|nullable|string|max:200',
             'qty'       => 'sometimes|integer|min:1',
+            'replacement_frequency_days' => 'sometimes|nullable|integer|min:1',
+            'verification_required'      => 'sometimes|boolean',
             'is_active' => 'sometimes|boolean',
         ]));
 
@@ -132,8 +150,14 @@ class PpeRequirementController extends Controller
         return $request->validate([
             'scope_type'  => 'required|in:'.implode(',', array_keys(TpvPpeRequirement::SCOPES)),
             'scope_value' => 'required_unless:scope_type,all|nullable|string|max:120',
+            'hazard'      => 'nullable|string|max:120',
+            'activity'    => 'nullable|string|max:120',
+            'ppe_class'   => 'nullable|in:'.implode(',', TpvPpeRequirement::CLASSES),
+            'condition'   => 'nullable|string|max:200',
             'product_id'  => 'required|integer|min:1',
             'qty'         => 'nullable|integer|min:1',
+            'replacement_frequency_days' => 'nullable|integer|min:1',
+            'verification_required'      => 'nullable|boolean',
             'is_active'   => 'nullable|boolean',
         ]);
     }

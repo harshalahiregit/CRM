@@ -379,10 +379,16 @@ class PpeInventoryService
             'sku'        => $r->product->sku,
             'qty'        => $r->qty,
             'scope'      => $r->scope_type === 'all' ? 'All Workers' : $r->scope_value,
+            'hazard'     => $r->hazard,
+            'activity'   => $r->activity,
+            'ppe_class'  => $r->ppe_class ?? 'mandatory',
+            'replacement_frequency_days' => $r->replacement_frequency_days,
+            'verification_required'      => (bool) $r->verification_required,
             'issued'     => $held->contains($r->product_id),
         ])->values()->all();
 
-        $missing = collect($items)->reject(fn ($i) => $i['issued'])->values();
+        // Only unheld MANDATORY items count as non-compliance (§18).
+        $missing = collect($items)->filter(fn ($i) => $i['ppe_class'] === 'mandatory' && ! $i['issued'])->values();
 
         return [
             'role'       => $worker->designation,
@@ -395,12 +401,16 @@ class PpeInventoryService
         ];
     }
 
-    /** Required PPE this worker is NOT holding. Empty = cleared to badge. */
+    /**
+     * MANDATORY PPE this worker is NOT holding. Empty = cleared to badge.
+     * Optional/conditional rules (§18) are advisory and never block the badge.
+     */
     public function missingMandatoryFor(TpvWorker $worker): Collection
     {
         $held = $this->heldProductIds($worker);
 
         return $this->requiredFor($worker)
+            ->filter(fn (TpvPpeRequirement $r) => $r->isMandatory())
             ->reject(fn (TpvPpeRequirement $r) => $held->contains($r->product_id))
             ->map(fn (TpvPpeRequirement $r) => $r->product)
             ->values();
