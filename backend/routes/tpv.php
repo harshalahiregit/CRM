@@ -375,6 +375,12 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
 // Admin approval — activates the vendor for site access.
 Route::middleware(['auth:sanctum', 'role:admin'])->prefix('tpv')->group(function () {
 
+    // System Configuration (§34) — the config-file/constant baselines made
+    // tenant-editable. Read returns {builtins, custom, effective} per group.
+    Route::get('/settings',            [\App\Http\Controllers\Api\Tpv\TpvSettingsController::class, 'index']);
+    Route::put('/settings/{group}',    [\App\Http\Controllers\Api\Tpv\TpvSettingsController::class, 'update']);
+    Route::delete('/settings/{group}', [\App\Http\Controllers\Api\Tpv\TpvSettingsController::class, 'reset']);
+
     Route::post('/onboarding/{onboarding}/approve',   [TpvOnboardingController::class, 'approve']);
     Route::post('/onboarding/{onboarding}/reject',    [TpvOnboardingController::class, 'reject']);
     Route::post('/onboarding/{onboarding}/hold',      [TpvOnboardingController::class, 'hold']);

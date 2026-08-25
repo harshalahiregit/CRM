@@ -15,6 +15,7 @@ class UpdateTpvWorkerRequest extends FormRequest
     {
         return [
             'vendor_id'         => 'nullable|integer',
+            'work_package_id'   => 'nullable|integer',
             'name'              => 'sometimes|required|string|max:120',
             'dob'               => 'nullable|date',
             'gender'            => 'nullable|string',

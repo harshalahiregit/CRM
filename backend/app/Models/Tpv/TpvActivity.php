@@ -20,11 +20,12 @@ class TpvActivity extends Model
 
     protected $fillable = [
         'tenant_id', 'work_package_id', 'name', 'description',
-        'required_competency', 'status', 'sort_order',
+        'required_competency', 'requires_permit', 'permit_type', 'status', 'sort_order',
     ];
 
     protected $casts = [
-        'sort_order' => 'integer',
+        'sort_order'      => 'integer',
+        'requires_permit' => 'boolean',
     ];
 
     public function workPackage()

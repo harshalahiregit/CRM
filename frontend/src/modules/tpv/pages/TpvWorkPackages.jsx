@@ -8,6 +8,8 @@ import { KIT3D_STYLE as TPV_STYLE } from '@/components/ui/kit3d'
 // Activity→Workforce spine. List + create/edit + expandable activity management.
 const WP_STATUSES = ['Planned', 'Active', 'On_Hold', 'Completed', 'Closed']
 const ACT_STATUSES = ['Not_Started', 'In_Progress', 'Completed', 'On_Hold']
+// Permit-to-Work types (mirror App\Models\Tpv\WorkPermit::TYPES) for the high-risk activity flag (Rule 6).
+const PERMIT_TYPES = ['Hot_Work', 'Work_At_Height', 'Confined_Space', 'Electrical', 'Excavation', 'Lifting', 'General']
 const TONE = {
   Planned: '#94a3b8', Active: '#10b981', In_Progress: '#0ea5e9', Not_Started: '#94a3b8',
   On_Hold: '#f59e0b', Completed: '#22c55e', Closed: '#6b7280',
@@ -114,7 +116,7 @@ function WpRow({ wp, expanded, onToggle, onEdit, onDelete, onChanged }) {
 
 function ActivitiesPanel({ wp, onChanged }) {
   const [detail, setDetail] = useState(null)
-  const [newAct, setNewAct] = useState({ name: '', required_competency: '', status: 'Not_Started' })
+  const [newAct, setNewAct] = useState({ name: '', required_competency: '', requires_permit: false, permit_type: '', status: 'Not_Started' })
   const [loadError, setLoadError] = useState(null)
   const load = useCallback(() => { setLoadError(null); tpvApi.workPackages.get(wp.id).then(setDetail).catch(() => setDetail({ activities: [], workers: [] })) }, [wp.id])
   useEffect(load, [load])
@@ -144,6 +146,7 @@ function ActivitiesPanel({ wp, onChanged }) {
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-h)' }}>{a.name}</div>
                 {a.required_competency && <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>needs: {a.required_competency}</div>}
+                {a.requires_permit && <div style={{ fontSize: 10.5, color: '#d97706', fontWeight: 700 }}>⚠ high-risk — permit required{a.permit_type ? `: ${a.permit_type.replace(/_/g, ' ')}` : ''}</div>}
               </div>
               <select value={a.status} onChange={e => setStatus(a, e.target.value)} style={{ ...inp, width: 'auto', padding: '4px 6px', fontSize: 11 }}>
                 {ACT_STATUSES.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
@@ -156,6 +159,20 @@ function ActivitiesPanel({ wp, onChanged }) {
           <input value={newAct.name} onChange={e => setNewAct(p => ({ ...p, name: e.target.value }))} placeholder="Activity name" style={{ ...inp, flex: 2 }} />
           <input value={newAct.required_competency} onChange={e => setNewAct(p => ({ ...p, required_competency: e.target.value }))} placeholder="Required competency" style={{ ...inp, flex: 2 }} />
           <button onClick={add} style={{ ...btnPrimary, padding: '7px 12px' }}><Plus size={14} /></button>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: 'var(--text-muted)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={newAct.requires_permit}
+              onChange={e => setNewAct(p => ({ ...p, requires_permit: e.target.checked, permit_type: e.target.checked ? p.permit_type : '' }))} />
+            High-risk — requires permit (Rule 6)
+          </label>
+          {newAct.requires_permit && (
+            <select value={newAct.permit_type} onChange={e => setNewAct(p => ({ ...p, permit_type: e.target.value }))}
+              style={{ ...inp, width: 'auto', padding: '4px 6px', fontSize: 11 }}>
+              <option value="">Any permit type</option>
+              {PERMIT_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
+            </select>
+          )}
         </div>
       </div>
       <div>

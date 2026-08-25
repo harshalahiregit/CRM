@@ -25,7 +25,10 @@ use App\Support\Tpv\ComplianceCatalog;
  */
 class TpvVendorPerformanceService
 {
-    public function __construct(private VendorScorecardService $vrs) {}
+    public function __construct(
+        private VendorScorecardService $vrs,
+        private \App\Support\Tpv\TpvSettings $settings,
+    ) {}
 
     /** Dimension keys in display order. */
     public const DIMENSIONS = ['safety', 'compliance', 'workforce', 'quality', 'capa', 'conduct', 'inspection', 'documentation'];
@@ -34,7 +37,10 @@ class TpvVendorPerformanceService
     public function compute(Vendor $vendor): array
     {
         $vrs = $this->vrs->compute($vendor);
-        $ded = config('vpi.deductions');
+        // Weights / deductions / bands / window are tenant-configurable (§34);
+        // with no override this is exactly config/vpi.php.
+        $vpi = $this->settings->vpi($vendor->tenant_id);
+        $ded = $vpi['deductions'];
 
         $dims = [
             'safety'        => $this->fromVrs($vrs, 'safety', 'Safety'),
@@ -44,10 +50,10 @@ class TpvVendorPerformanceService
             'capa'          => $this->capaDim($vendor, $ded),
             'conduct'       => $this->conductDim($vendor, $ded),
             'inspection'    => $this->inspectionDim($vendor),
-            'documentation' => $this->documentationDim($vendor),
+            'documentation' => $this->documentationDim($vendor, (int) $vpi['doc_expiring_window_days']),
         ];
 
-        $w = config('vpi.weights');
+        $w = $vpi['weights'];
         $overall = 0.0;
         foreach ($w as $k => $weight) {
             $overall += ($dims[$k]['score'] ?? 0) * $weight;
@@ -59,7 +65,7 @@ class TpvVendorPerformanceService
             'company_name'  => $vendor->company_name,
             'vendor_code'   => $vendor->vendor_code,
             'overall_score' => $overall,
-            'band'          => $this->band($overall),
+            'band'          => $this->band($overall, $vpi['bands']),
             'vrs_band'      => $vrs['band'] ?? null,
             'dimensions'    => $dims,
             'weights'       => $w,
@@ -159,9 +165,8 @@ class TpvVendorPerformanceService
         return ['score' => (int) round($scores->avg()), 'label' => 'Inspection', 'detail' => ['conducted' => $scores->count(), 'avg' => round($scores->avg(), 1)]];
     }
 
-    private function documentationDim(Vendor $vendor): array
+    private function documentationDim(Vendor $vendor, int $window): array
     {
-        $window = (int) config('vpi.doc_expiring_window_days', 30);
         $docs = $vendor->documents()->get(['status', 'expires_at']);
         if ($docs->isEmpty()) {
             return ['score' => 100, 'label' => 'Documentation', 'detail' => ['docs' => 0]];
@@ -185,9 +190,8 @@ class TpvVendorPerformanceService
         return ['score' => $score, 'label' => 'Documentation', 'detail' => ['docs' => $total, 'expired' => $expired, 'expiring' => $expiring]];
     }
 
-    private function band(int $overall): string
+    private function band(int $overall, array $b): string
     {
-        $b = config('vpi.bands');
         foreach (['A', 'B', 'C', 'D'] as $letter) {
             if ($overall >= $b[$letter]) {
                 return $letter;

@@ -18,15 +18,19 @@ use Illuminate\Support\Facades\Log;
  */
 class OnboardingApprovalService
 {
-    public function __construct(private TpvOnboardingService $onboarding)
-    {
+    public function __construct(
+        private TpvOnboardingService $onboarding,
+        private \App\Support\Tpv\TpvSettings $settings,
+    ) {
     }
 
     /* ── Config ─────────────────────────────────────────────────────── */
+    // Mode / levels / SLA are tenant-configurable (§34); with no override these
+    // return exactly the config/tpv.php defaults.
 
     public function mode(): string
     {
-        return (string) config('tpv.approval.mode', 'single');
+        return (string) $this->settings->approvalWorkflow()['mode'];
     }
 
     /** Ordered level definitions; a single admin level when mode is 'single'. */
@@ -36,12 +40,13 @@ class OnboardingApprovalService
             return [['level' => 1, 'role' => 'admin', 'label' => 'Approval']];
         }
 
-        return config('tpv.approval.levels', [['level' => 1, 'role' => 'admin', 'label' => 'Approval']]);
+        return $this->settings->approvalWorkflow()['levels']
+            ?: [['level' => 1, 'role' => 'admin', 'label' => 'Approval']];
     }
 
     private function slaHours(): int
     {
-        return (int) config('tpv.approval.sla_hours', 48);
+        return (int) $this->settings->approvalWorkflow()['sla_hours'];
     }
 
     /* ── Chain ──────────────────────────────────────────────────────── */

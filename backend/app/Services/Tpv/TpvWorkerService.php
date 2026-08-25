@@ -3,9 +3,11 @@
 namespace App\Services\Tpv;
 
 use App\Exceptions\BusinessException;
+use App\Models\Tpv\TpvActivity;
 use App\Models\Tpv\TpvGateAttendance;
 use App\Models\Tpv\TpvWorker;
 use App\Models\Tpv\TpvWorkerPpeIssue;
+use App\Models\Tpv\WorkPermit;
 use App\Models\User;
 use App\Models\Vendor\Vendor;
 use App\Repositories\Tpv\TpvWorkerRepository;
@@ -42,6 +44,7 @@ class TpvWorkerService
     {
         $tenantId = $actor->tenant_id;
         $this->assertVendor($data['vendor_id'], $tenantId);
+        $this->assertWorkPackage($data['work_package_id'] ?? null, $tenantId, $data['vendor_id'] ?? null);
         $this->assertAadharUnique($data['aadhar_number'] ?? null, $tenantId);
 
         $worker = TpvWorker::create([
@@ -68,6 +71,9 @@ class TpvWorkerService
         }
         if (! empty($data['vendor_id'])) {
             $this->assertVendor($data['vendor_id'], $worker->tenant_id);
+        }
+        if (array_key_exists('work_package_id', $data)) {
+            $this->assertWorkPackage($data['work_package_id'], $worker->tenant_id, $data['vendor_id'] ?? $worker->vendor_id);
         }
         $this->assertAadharUnique($data['aadhar_number'] ?? null, $worker->tenant_id, $worker->id);
 
@@ -388,6 +394,48 @@ class TpvWorkerService
         $missing = app(PpeInventoryService::class)->missingMandatoryFor($worker);
         if ($missing->isNotEmpty()) {
             $b[] = 'Mandatory PPE not issued: '.$missing->pluck('name')->implode(', ').'.';
+        }
+
+        // 6. Competency (Rule 4 — "No Competency, No Work Authorization"). A worker
+        // deployed on a work package must hold every competency its activities name,
+        // or they cannot receive a gate pass. No package ⇒ no activity context to
+        // enforce (the rule bites once a worker is assigned to work).
+        if ($worker->work_package_id) {
+            $required = TpvActivity::where('tenant_id', $worker->tenant_id)
+                ->where('work_package_id', $worker->work_package_id)
+                ->whereNotNull('required_competency')
+                ->pluck('required_competency')->unique();
+            if ($required->isNotEmpty()) {
+                $competency = app(TpvCompetencyService::class);
+                $missingComp = $required->reject(fn ($r) => $competency->workerHasCompetency($worker->id, $r));
+                if ($missingComp->isNotEmpty()) {
+                    $b[] = 'Competency missing for assigned work: '.$missingComp->implode(', ').'.';
+                }
+            }
+        }
+
+        // 7. Permit (Rule 6 — "No Permit, No High-Risk Work"). If any activity of
+        // the worker's package is flagged high-risk (requires_permit), the employing
+        // vendor must hold a valid Permit-to-Work covering it — matching the pinned
+        // type where the activity names one. Defaults keep every activity un-flagged,
+        // so this bites only once an admin marks work high-risk.
+        if ($worker->work_package_id && $vendor) {
+            $permitActs = TpvActivity::where('tenant_id', $worker->tenant_id)
+                ->where('work_package_id', $worker->work_package_id)
+                ->where('requires_permit', true)
+                ->get(['name', 'permit_type']);
+            foreach ($permitActs as $act) {
+                $has = WorkPermit::where('tenant_id', $worker->tenant_id)
+                    ->where('vendor_id', $vendor->id)
+                    ->whereIn('status', ['Approved', 'Active'])
+                    ->when($act->permit_type, fn ($q, $t) => $q->where('type', $t))
+                    ->where(fn ($q) => $q->whereNull('valid_to')->orWhere('valid_to', '>=', now()))
+                    ->exists();
+                if (! $has) {
+                    $need = $act->permit_type ? str_replace('_', ' ', $act->permit_type).' permit' : 'a valid permit';
+                    $b[] = "High-risk activity \"{$act->name}\" requires {$need} — none active for the vendor.";
+                }
+            }
         }
 
         return $b;
@@ -902,6 +950,25 @@ class TpvWorkerService
         }
 
         return $vendor;
+    }
+
+    /**
+     * A worker may only be deployed on a work package of THEIR OWN vendor, in the
+     * same tenant (§13 Vendor→Project→WP→Worker). A cross-vendor assignment would
+     * silently break the competency/authorization spine that reads through it.
+     */
+    private function assertWorkPackage(?int $workPackageId, int $tenantId, ?int $vendorId): void
+    {
+        if (empty($workPackageId)) {
+            return;
+        }
+        $wp = \App\Models\Tpv\TpvWorkPackage::forTenant($tenantId)->find($workPackageId);
+        if (! $wp) {
+            throw new BusinessException('That work package does not exist.');
+        }
+        if ($vendorId && (int) $wp->vendor_id !== (int) $vendorId) {
+            throw new BusinessException('That work package belongs to a different vendor.');
+        }
     }
 
     /** One Aadhar per tenant — catches the same worker registered twice. */

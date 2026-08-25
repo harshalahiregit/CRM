@@ -215,6 +215,7 @@ function StepProfile({ worker, editable, onSaved, onNext, api }) {
   const [f, setF] = useState({
     name: worker.name || '', dob: worker.dob?.slice(0, 10) || '', gender: worker.gender || '',
     designation: worker.designation || '', skill_category: worker.skill_category || '',
+    work_package_id: worker.work_package_id ? String(worker.work_package_id) : '',
     aadhar_number: worker.aadhar_number || '', mobile: worker.mobile || '', blood_group: worker.blood_group || '',
     address: worker.address || '', emergency_contact: worker.emergency_contact || '', emergency_phone: worker.emergency_phone || '',
     awards: worker.awards || '', bocw_number: worker.bocw_number || '',
@@ -222,6 +223,16 @@ function StepProfile({ worker, editable, onSaved, onNext, api }) {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved]   = useState(false)
   const set = (k) => (e) => { setF(p => ({ ...p, [k]: e.target.value })); setSaved(false) }
+
+  // Work packages this worker can be deployed on — their own vendor's, so the
+  // competency gate (Rule 4) reads the right activities. Read-only if unbadgeable.
+  const [wps, setWps] = useState([])
+  useEffect(() => {
+    if (!worker.vendor_id) return
+    api.workPackages.list({ vendor_id: worker.vendor_id })
+      .then(rows => setWps(Array.isArray(rows) ? rows : (rows?.data ?? [])))
+      .catch(() => setWps([]))
+  }, [worker.vendor_id])
 
   // Mirror the backend's statutory floor so the user sees it before saving.
   const age = f.dob ? Math.floor((Date.now() - new Date(f.dob)) / 31557600000) : null
@@ -268,6 +279,11 @@ function StepProfile({ worker, editable, onSaved, onNext, api }) {
         </Field>
         <Field label="Gender"><SelectInput value={f.gender} onChange={set('gender')} disabled={!editable} options={['', ...GENDERS]} /></Field>
         <Field label="Designation *"><TextInput value={f.designation} onChange={set('designation')} disabled={!editable} placeholder="e.g. Fitter" /></Field>
+        <Field label="Work Package">
+          <SelectInput value={f.work_package_id} onChange={set('work_package_id')} disabled={!editable} pairs
+            options={[['', 'Unassigned'], ...wps.map(w => [String(w.id), w.reference ? `${w.reference} · ${w.name}` : w.name])]} />
+          <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>Deploys the worker; their activities' required competencies gate the badge.</span>
+        </Field>
         <Field label="Emergency Contact"><TextInput value={f.emergency_contact} onChange={set('emergency_contact')} disabled={!editable} placeholder="Name" /></Field>
         <Field label="Emergency Phone"><TextInput value={f.emergency_phone} onChange={set('emergency_phone')} disabled={!editable} /></Field>
         <Field label="Address" full><textarea value={f.address} onChange={set('address')} disabled={!editable} rows={2} style={{ ...inputStyle, resize: 'vertical' }} /></Field>

@@ -17,7 +17,7 @@ class TpvWorker extends Model
     protected $table = 'tpv_workers';
 
     protected $fillable = [
-        'tenant_id','vendor_id','created_by','worker_code',
+        'tenant_id','vendor_id','created_by','worker_code','work_package_id',
         'name','dob','age','age_reason','gender','designation','skill_category','aadhar_number','mobile','email',
         'blood_group','address','emergency_contact','emergency_phone','photo_path',
         'current_step','status','is_active',
@@ -87,6 +87,12 @@ class TpvWorker extends Model
     public function vendor()
     {
         return $this->belongsTo(Vendor::class, 'vendor_id');
+    }
+
+    /** The work package this worker is deployed on (§13 — Vendor→Project→WP→Worker). */
+    public function workPackage()
+    {
+        return $this->belongsTo(TpvWorkPackage::class, 'work_package_id');
     }
 
     public function medical()

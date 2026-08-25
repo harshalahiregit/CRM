@@ -104,6 +104,8 @@ class TpvWorkPackageController extends Controller
             'name' => "$req|string|max:200",
             'description' => 'nullable|string',
             'required_competency' => 'nullable|string|max:150',
+            'requires_permit' => 'nullable|boolean',
+            'permit_type' => ['nullable', Rule::in(\App\Models\Tpv\WorkPermit::TYPES)],
             'status' => ['nullable', Rule::in(TpvActivity::STATUSES)],
             'sort_order' => 'nullable|integer|min:0',
         ]);
