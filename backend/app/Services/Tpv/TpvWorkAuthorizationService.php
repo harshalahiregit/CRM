@@ -15,9 +15,12 @@ use App\Support\Vendor\VendorStatus;
  * This composes the six factors the doc names — Vendor Approval + Compliance +
  * Worker Competency + PPE + Permit + Work Package — into ONE verdict.
  *
- * READ-ONLY and additive: it aggregates existing signals (the same medical/
- * induction/PPE checks the badge gate uses, plus the §15 competency matrix). It
- * changes NO enforcement path — GateScanService and badge issuance are untouched.
+ * This service is a READ verdict (roster + per-worker view). The hard enforcement
+ * of Rule 4 (competency) and Rule 6 (permit for high-risk work) lives in
+ * TpvWorkerService::blockers() — badge issuance is refused when a worker lacks a
+ * required competency, or when their package has a high-risk activity with no valid
+ * permit. This verdict mirrors those two as REQUIRED checks so the roster agrees
+ * with the gate; medical/induction/PPE are the same signals the badge gate uses.
  */
 class TpvWorkAuthorizationService
 {
@@ -68,14 +71,11 @@ class TpvWorkAuthorizationService
         $checks[] = $this->check('work_package', 'Work package', false, $wpOk,
             $wpOk ? 'Assigned' : 'Not assigned to a work package');
 
-        // 8 — Permit (advisory — a valid PTW for the vendor covers high-risk work).
-        $permit = $vendor ? WorkPermit::where('tenant_id', $worker->tenant_id)
-            ->where('vendor_id', $vendor->id)
-            ->whereIn('status', ['Approved', 'Active'])
-            ->where(fn ($q) => $q->whereNull('valid_to')->orWhere('valid_to', '>=', now()))
-            ->latest('id')->first() : null;
-        $checks[] = $this->check('permit', 'Active permit', false, (bool) $permit,
-            $permit ? $permit->reference.' ('.$permit->type.')' : 'No active permit on file');
+        // 8 — Permit (Rule 6). REQUIRED only where the activity/package is flagged
+        // high-risk (requires_permit); otherwise advisory. A valid PTW for the vendor
+        // — matching the pinned type where one is named — covers high-risk work.
+        [$permReq, $permOk, $permDetail] = $this->permitCheck($worker, $activity, $vendor);
+        $checks[] = $this->check('permit', 'Permit-to-Work', $permReq, $permOk, $permDetail);
 
         // Authorized when every REQUIRED check passes.
         $authorized = collect($checks)->every(fn ($c) => ! $c['required'] || $c['passed']);
@@ -138,6 +138,55 @@ class TpvWorkAuthorizationService
         $missing = $required->reject(fn ($r) => $this->competency->workerHasCompetency($worker->id, $r));
 
         return [true, $missing->isEmpty(), $missing->isEmpty() ? 'Meets all package competencies' : 'Missing: '.$missing->implode(', ')];
+    }
+
+    /**
+     * Rule 6 — is a valid Permit-to-Work required and present? Required only where
+     * the specific activity (or, with no activity, any package activity) is flagged
+     * requires_permit. Passes when the vendor holds an Approved/Active, non-expired
+     * permit of the pinned type (or any type where none is pinned).
+     */
+    private function permitCheck(TpvWorker $worker, ?TpvActivity $activity, $vendor): array
+    {
+        $hasValidPermit = function (?string $type) use ($worker, $vendor): bool {
+            if (! $vendor) {
+                return false;
+            }
+
+            return WorkPermit::where('tenant_id', $worker->tenant_id)
+                ->where('vendor_id', $vendor->id)
+                ->whereIn('status', ['Approved', 'Active'])
+                ->when($type, fn ($q, $t) => $q->where('type', $t))
+                ->where(fn ($q) => $q->whereNull('valid_to')->orWhere('valid_to', '>=', now()))
+                ->exists();
+        };
+
+        // Specific activity in view.
+        if ($activity) {
+            if (! $activity->requires_permit) {
+                return [false, $hasValidPermit(null), $hasValidPermit(null) ? 'Active permit on file' : 'Not high-risk — no permit required'];
+            }
+            $ok = $hasValidPermit($activity->permit_type);
+            $need = $activity->permit_type ? str_replace('_', ' ', $activity->permit_type).' permit' : 'a valid permit';
+
+            return [true, $ok, $ok ? 'Valid '.$need.' held' : 'Missing '.$need];
+        }
+
+        // Whole package: any high-risk activity ⇒ required.
+        if (empty($worker->work_package_id)) {
+            return [false, $hasValidPermit(null), 'No activity / package context'];
+        }
+        $permitActs = TpvActivity::where('tenant_id', $worker->tenant_id)
+            ->where('work_package_id', $worker->work_package_id)
+            ->where('requires_permit', true)
+            ->get(['name', 'permit_type']);
+        if ($permitActs->isEmpty()) {
+            return [false, $hasValidPermit(null), 'No high-risk activity in package'];
+        }
+        $missing = $permitActs->reject(fn ($a) => $hasValidPermit($a->permit_type));
+
+        return [true, $missing->isEmpty(),
+            $missing->isEmpty() ? 'Permits cover all high-risk activities' : 'Missing permit for: '.$missing->pluck('name')->implode(', ')];
     }
 
     private function check(string $key, string $label, bool $required, bool $passed, string $detail): array

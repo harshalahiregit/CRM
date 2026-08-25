@@ -17,6 +17,15 @@ export const tpvApi = {
     get: () => api.get('/tpv/dashboard').then(r => r.data),
   },
 
+  // ── System Configuration (Sangoe TPV §34) ──────────────────────────
+  // Each group returns {builtins, custom, effective}; an admin saves or resets
+  // one group at a time. Empty override == the shipped defaults.
+  settings: {
+    get:    ()             => api.get('/tpv/settings').then(r => r.data?.data ?? r.data),
+    update: (group, payload) => api.put(`/tpv/settings/${group}`, payload).then(r => r.data),
+    reset:  (group)        => api.delete(`/tpv/settings/${group}`).then(r => r.data),
+  },
+
   // ── Contracts & Work Orders (Sangoe TPV §8) — TPV-owned commercial spine ──
   contracts: {
     list:   (params = {}) => api.get('/tpv/contracts', { params }).then(r => r.data?.data ?? r.data),

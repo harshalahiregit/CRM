@@ -71,6 +71,12 @@ class AppServiceProvider extends ServiceProvider
         // is dropped at the request boundary so an admin edit is seen next request.
         $this->app->scoped(MeetingTypeCatalog::class);
 
+        // TPV settings catalogue (§34) — merges the config/constant baselines with
+        // the tenant's tpv_settings override rows. `scoped` for the same reason as
+        // above: it memoises the per-request merge and is dropped at the request
+        // boundary, so an admin's settings edit is seen on the next request.
+        $this->app->scoped(\App\Support\Tpv\TpvSettings::class);
+
         // Vendor-neutral AI provider — resolved from config('ai.provider').
         $this->app->bind(
             AIProviderInterface::class,

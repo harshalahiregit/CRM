@@ -55,6 +55,28 @@ class TpvComplianceService
         $record->delete();
     }
 
+    /**
+     * One vendor's compliance score — % in good standing + problem/expiring counts,
+     * over the full category set. Shared by the roster and the renewal assessment so
+     * both read the same number.
+     */
+    public function scoreFor(int $tenantId, int $vendorId): array
+    {
+        $records = TpvVendorCompliance::forTenant($tenantId)->where('vendor_id', $vendorId)->get();
+        $total = count(ComplianceCatalog::CATEGORIES);
+        $ok = $records->filter(fn ($r) => in_array($r->effective_status, ComplianceCatalog::OK_STATUSES, true))->count();
+        $problems = $records->filter(fn ($r) => in_array($r->effective_status, ['Non_Compliant', 'Expired'], true))->count();
+        $expiring = $records->filter(fn ($r) => $r->effective_status === 'Expiring')->count();
+
+        return [
+            'tracked'  => $records->count(),
+            'ok'       => $ok,
+            'problems' => $problems,
+            'expiring' => $expiring,
+            'percent'  => $total > 0 ? (int) round($ok / $total * 100) : 0,
+        ];
+    }
+
     /** Per-vendor compliance roster — % in good standing + problem counts. */
     public function roster(int $tenantId): array
     {

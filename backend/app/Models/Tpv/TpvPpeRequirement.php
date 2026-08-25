@@ -31,14 +31,30 @@ class TpvPpeRequirement extends Model
         'skill_category' => 'Skill Category',
     ];
 
+    /**
+     * §18 PPE classes. Only 'mandatory' gates the badge/gate; 'optional' and
+     * 'conditional' are advisory (conditional carries a `condition` note).
+     */
+    public const CLASSES = ['mandatory', 'optional', 'conditional'];
+
     protected $fillable = [
-        'tenant_id', 'scope_type', 'scope_value', 'product_id', 'qty', 'is_active', 'created_by',
+        'tenant_id', 'scope_type', 'scope_value', 'hazard', 'activity',
+        'ppe_class', 'condition', 'product_id', 'qty', 'replacement_frequency_days',
+        'verification_required', 'is_active', 'created_by',
     ];
 
     protected $casts = [
-        'qty'       => 'integer',
-        'is_active' => 'boolean',
+        'qty'                        => 'integer',
+        'replacement_frequency_days' => 'integer',
+        'verification_required'      => 'boolean',
+        'is_active'                  => 'boolean',
     ];
+
+    /** Only mandatory rules block a badge (Rule 5); optional/conditional never do. */
+    public function isMandatory(): bool
+    {
+        return ($this->ppe_class ?? 'mandatory') === 'mandatory';
+    }
 
     public function product()
     {

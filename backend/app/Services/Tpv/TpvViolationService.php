@@ -14,9 +14,11 @@ use App\Support\Vendor\VendorStatus;
 use Illuminate\Support\Facades\Log;
 
 /**
- * TPV vendor violations & strike escalation (Sangoe TPV §26). Records violations,
- * computes the escalation ladder from cumulative OPEN points, and applies the
- * suspension / blacklist actions through the shared VendorService.
+ * TPV vendor violations & strike escalation (Sangoe TPV §26, Rule 9). Records
+ * violations, computes the escalation ladder from cumulative OPEN points, and
+ * AUTOMATICALLY applies the suspension / blacklist action through the shared
+ * VendorService the moment a threshold is crossed (enforce() remains for manual
+ * admin action / re-application).
  *
  * A Major/Critical violation also auto-raises a linked corrective-action CAPA;
  * Minor violations are strike-only. Every recorded violation auto-notifies the
@@ -28,6 +30,7 @@ class TpvViolationService
         private VendorService $vendors,
         private TpvCapaService $capas,
         private TpvCommunicationService $comms,
+        private \App\Support\Tpv\TpvSettings $settings,
     ) {}
 
     public function list(int $tenantId, array $filters = [])
@@ -56,6 +59,7 @@ class TpvViolationService
 
         $this->autoRaiseCapa($v);
         $this->comms->onViolationRecorded($v);
+        $this->autoEscalate($v, $userId);   // Rule 9 — repeated violations escalate automatically.
 
         return $v->load('vendor:id,company_name,vendor_code,status');
     }
@@ -101,7 +105,8 @@ class TpvViolationService
         $open = TpvVendorViolation::forTenant($tenantId)->where('vendor_id', $vendorId)->where('status', 'Open');
         $points = (int) (clone $open)->sum('points');
         $count = (clone $open)->count();
-        $level = ViolationType::levelFor($points);
+        $steps = $this->settings->violationLadder($tenantId)['steps'] ?? null;
+        $level = ViolationType::levelForSteps($points, $steps);
 
         return [
             'vendor_id' => $vendorId,
@@ -117,13 +122,15 @@ class TpvViolationService
     /** Per-vendor escalation summary for every vendor carrying open violations. */
     public function escalations(int $tenantId): array
     {
+        $steps = $this->settings->violationLadder($tenantId)['steps'] ?? null;
+
         return TpvVendorViolation::forTenant($tenantId)->where('status', 'Open')
             ->selectRaw('vendor_id, COUNT(*) as c, SUM(points) as pts')
             ->groupBy('vendor_id')
             ->with('vendor:id,company_name,vendor_code,status')
             ->get()
-            ->map(function ($r) {
-                $level = ViolationType::levelFor((int) $r->pts);
+            ->map(function ($r) use ($steps) {
+                $level = ViolationType::levelForSteps((int) $r->pts, $steps);
 
                 return [
                     'vendor_id' => $r->vendor_id,
@@ -137,6 +144,44 @@ class TpvViolationService
                 ];
             })
             ->sortByDesc('open_points')->values()->all();
+    }
+
+    /**
+     * Rule 9 — Repeated Violations Escalate. After a violation is recorded, if the
+     * vendor's cumulative OPEN points cross a ladder threshold, apply the escalation
+     * automatically (Suspension / Blacklist) rather than waiting for an admin.
+     * Best-effort: a failure here never rolls back the recorded violation, and we
+     * never re-apply a state the vendor is already in (or downgrade a blacklist).
+     */
+    private function autoEscalate(TpvVendorViolation $v, ?int $userId): void
+    {
+        try {
+            $vendor = $v->vendor;
+            if (! $vendor) {
+                return;
+            }
+            $esc = $this->escalationFor((int) $v->tenant_id, (int) $v->vendor_id);
+            $actor = $userId ? User::find($userId) : null;
+            $reason = "Auto-escalated (Rule 9): {$esc['open_count']} open violations / {$esc['open_points']} points → {$esc['level_label']} — triggered by {$v->reference}.";
+
+            if ($esc['level'] === 'Blacklist' && $vendor->status !== VendorStatus::BLACKLISTED && $actor) {
+                $this->vendors->updateStatus($vendor, VendorStatus::BLACKLISTED, $actor, $reason);
+            } elseif ($esc['level'] === 'Suspension'
+                && ! in_array($vendor->status, [VendorStatus::SUSPENDED, VendorStatus::BLACKLISTED], true)) {
+                $this->vendors->suspend($vendor, $reason, $actor, true);
+            } else {
+                return;
+            }
+
+            Log::channel('tpv')->warning('TPV vendor auto-escalated', [
+                'vendor_id' => $vendor->id, 'tenant_id' => $v->tenant_id, 'level' => $esc['level'],
+                'points' => $esc['open_points'], 'trigger' => $v->reference,
+            ]);
+        } catch (\Throwable $e) {
+            Log::channel('tpv')->warning('TPV auto-escalation failed', [
+                'violation_id' => $v->id, 'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /** Apply the escalation action (suspend / blacklist) via the shared VendorService. */

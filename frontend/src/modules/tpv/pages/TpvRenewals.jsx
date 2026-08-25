@@ -147,8 +147,10 @@ function InitiateModal({ vendors, onClose, onSaved }) {
             <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Assessment (Rule 10)</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8, fontSize: 12 }}>
               <Stat label="VRS" value={assessment.vrs_score != null ? `${assessment.vrs_score} (${assessment.vrs_band})` : '—'} />
+              <Stat label="Compliance %" value={assessment.compliance?.percent != null ? `${assessment.compliance.percent}%` : '—'} />
               <Stat label="Open NCRs" value={assessment.open_ncrs ?? 0} />
               <Stat label="Open CAPAs" value={assessment.open_capas ?? 0} />
+              <Stat label="Open CAPAs (§25)" value={assessment.open_tpv_capas ?? 0} />
               <Stat label="Active strikes" value={assessment.active_strikes ?? 0} />
               <Stat label="Violation level" value={fmt(assessment.violation_level)} />
               <Stat label="Status" value={fmt(assessment.vendor_status)} />

@@ -42,7 +42,8 @@ class TpvVendorViolation extends Model
                 $v->reference = 'VIO-'.$year.'-'.str_pad((string) $n, 3, '0', STR_PAD_LEFT);
             }
             if (empty($v->points)) {
-                $v->points = ViolationType::pointsFor($v->severity);
+                $map = app(\App\Support\Tpv\TpvSettings::class)->violationLadder($v->tenant_id)['severity_points'] ?? null;
+                $v->points = ViolationType::pointsForWith($v->severity, $map);
             }
         });
     }

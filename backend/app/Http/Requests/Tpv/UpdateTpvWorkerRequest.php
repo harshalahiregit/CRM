@@ -15,11 +15,15 @@ class UpdateTpvWorkerRequest extends FormRequest
     {
         return [
             'vendor_id'         => 'nullable|integer',
+            'work_package_id'   => 'nullable|integer',
             'name'              => 'sometimes|required|string|max:120',
             'dob'               => 'nullable|date',
             'gender'            => 'nullable|string',
             'designation'       => 'nullable|string|max:120',
             'skill_category'    => 'nullable|string',
+            'experience_years'  => 'nullable|numeric|min:0|max:80',
+            'joining_date'      => 'nullable|date',
+            'exit_date'         => 'nullable|date|after_or_equal:joining_date',
             'aadhar_number'     => 'nullable|string',
             'mobile'            => 'nullable|string|max:20',
             'blood_group'       => 'nullable|string|max:8',

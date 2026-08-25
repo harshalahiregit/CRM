@@ -110,10 +110,10 @@ class GateScanService
         }
 
         // ── Mandatory PPE at the gate (Rule 5) ──
-        // Config-driven (tpv.gate.ppe_enforcement): warn (default) / deny / off.
-        // Wrapped so a PPE-subsystem hiccup can never turn the gate away from an
-        // otherwise-clear worker — the gate must stay resilient.
-        $mode = config('tpv.gate.ppe_enforcement', 'warn');
+        // Tenant-configurable (§34, tpv_settings 'gate'): warn (default)/deny/off;
+        // falls back to config/tpv.php when unset. Wrapped so a PPE-subsystem
+        // hiccup can never turn the gate away from an otherwise-clear worker.
+        $mode = app(\App\Support\Tpv\TpvSettings::class)->gate($worker->tenant_id)['ppe_enforcement'];
         if ($mode !== 'off') {
             try {
                 $missing = app(PpeInventoryService::class)->missingMandatoryFor($worker);

@@ -18,8 +18,25 @@ class WorkPermit extends Model
 
     protected $table = 'work_permits';
 
-    public const TYPES = ['Hot_Work', 'Work_At_Height', 'Confined_Space', 'Electrical', 'Excavation', 'Lifting', 'General'];
+    /**
+     * §19 permit types offered in the pickers. 'General' was renamed to 'Other';
+     * see LEGACY_TYPES for values that historical rows may still carry.
+     */
+    public const TYPES = [
+        'Hot_Work', 'Work_At_Height', 'Confined_Space', 'Electrical', 'Excavation',
+        'Lifting', 'Isolation', 'Shutdown', 'Critical_Work', 'Other',
+    ];
+
+    /** Retired type values still accepted on write so old permits validate; not offered in pickers. */
+    public const LEGACY_TYPES = ['General'];
+
     public const STATUSES = ['Requested', 'Approved', 'Active', 'Closed', 'Rejected', 'Expired'];
+
+    /** Types a write may carry: the current set plus retired values for backward compatibility. */
+    public static function acceptedTypes(): array
+    {
+        return array_merge(self::TYPES, self::LEGACY_TYPES);
+    }
 
     protected $fillable = [
         'tenant_id', 'reference', 'vendor_id', 'requested_by', 'type', 'title',

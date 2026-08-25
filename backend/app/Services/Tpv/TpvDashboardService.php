@@ -4,10 +4,12 @@ namespace App\Services\Tpv;
 
 use App\Models\Shared\KickoffMomItem;
 use App\Models\Tpv\IncidentCapa;
+use App\Models\Tpv\TpvContract;
 use App\Models\Tpv\TpvGateAttendance;
 use App\Models\Tpv\TpvGateScan;
 use App\Models\Tpv\TpvNcr;
 use App\Models\Tpv\TpvOnboarding;
+use App\Models\Tpv\TpvRenewal;
 use App\Models\Tpv\TpvSafetyStrike;
 use App\Models\Tpv\TpvWorker;
 use App\Models\Tpv\WorkPermit;
@@ -35,6 +37,11 @@ class TpvDashboardService
 {
     /** Badges inside this many days of expiry are worth chasing. */
     private const EXPIRY_WINDOW_DAYS = 30;
+
+    public function __construct(
+        private PpeInventoryService $ppe,
+        private TpvComplianceService $compliance,
+    ) {}
 
     public function getDashboard(int $tenantId): array
     {
@@ -94,6 +101,9 @@ class TpvDashboardService
                 'expiring' => (clone $v())->temporary()
                     ->whereNotNull('access_expires_at')
                     ->whereBetween('access_expires_at', [$today, $soon])->count(),
+                // §4 KPI — onboardings still in flight (not yet approved or rejected).
+                'pending_onboarding' => TpvOnboarding::forTenant($tenantId)
+                    ->whereNotIn('status', [OnbStatus::APPROVED, OnbStatus::REJECTED])->count(),
             ],
             'workforce' => [
                 'total' => TpvWorker::forTenant($tenantId)->count(),
@@ -104,6 +114,8 @@ class TpvDashboardService
                 'training_pct' => $activeCount ? (int) round($trainingOk / $activeCount * 100) : null,
                 'medical_pct' => $activeCount ? (int) round($medicalOk / $activeCount * 100) : null,
             ],
+            // §4 executive compliance KPIs — PPE equipping and the §21 register.
+            'compliance' => $this->complianceKpis($tenantId),
             'open' => [
                 'actions' => KickoffMomItem::where('tenant_id', $tenantId)
                     ->whereIn('status', MomActionStatus::OPEN_STATES)->count(),
@@ -117,11 +129,39 @@ class TpvDashboardService
                     ->whereIn('status', ['Approved', 'Active'])
                     ->where(fn ($q) => $q->whereNull('valid_to')->orWhereDate('valid_to', '>=', $today))->count(),
                 'total_strikes' => TpvSafetyStrike::forTenant($tenantId)->active()->count(),
+                // §4 KPI — cumulative gate violations (entries the gate refused).
+                'gate_violations' => TpvGateScan::forTenant($tenantId)->denied()->count(),
             ],
             'performance' => [
                 'avg_score' => $avgPerf,
                 'period' => $latestPeriod,
             ],
+        ];
+    }
+
+    /**
+     * §4 executive compliance KPIs. PPE compliance % is over workers that have a
+     * PPE rule at all (unconfigured workers are excluded, not counted as 0%); the
+     * overall compliance % is the mean of the §21 per-vendor register scores.
+     * Both are null when there is nothing to measure, so a tile never shows a fake 0%.
+     */
+    private function complianceKpis(int $tenantId): array
+    {
+        $ppe = $this->ppe->complianceSummary($tenantId);
+        $configured = (int) $ppe['workers'] - (int) $ppe['not_configured'];
+        $ppePct = $configured > 0 ? (int) round(((int) $ppe['fully_equipped'] / $configured) * 100) : null;
+
+        $roster = $this->compliance->roster($tenantId);
+        $overallPct = count($roster) > 0
+            ? (int) round(array_sum(array_column($roster, 'percent')) / count($roster))
+            : null;
+
+        return [
+            'ppe_pct'          => $ppePct,
+            'ppe_missing'      => (int) $ppe['missing_ppe'],
+            'ppe_configured'   => $configured,
+            'overall_pct'      => $overallPct,
+            'vendors_tracked'  => count($roster),
         ];
     }
 
@@ -151,6 +191,8 @@ class TpvDashboardService
             ['key' => 'training', 'label' => 'Training pending', 'path' => '/app/tpv/workforce',
                 'count' => TpvWorker::forTenant($tenantId)->where('status', TpvWorkerStatus::ACTIVE)
                     ->whereDoesntHave('induction', fn ($q) => $q->where('passed', true))->count()],
+            ['key' => 'ppe_pending', 'label' => 'PPE pending issue', 'path' => '/app/tpv/ppe',
+                'count' => (int) $this->ppe->complianceSummary($tenantId)['missing_ppe']],
             ['key' => 'medical', 'label' => 'Medical expiring/expired', 'path' => '/app/tpv/workforce',
                 'count' => TpvWorker::forTenant($tenantId)->where('status', TpvWorkerStatus::ACTIVE)
                     ->whereDoesntHave('medical', fn ($q) => $q->whereDate('valid_until', '>=', $soon))->count()],
@@ -160,9 +202,16 @@ class TpvDashboardService
             ['key' => 'ncr_overdue', 'label' => 'NCR overdue', 'path' => '/app/tpv/ncr',
                 'count' => TpvNcr::forTenant($tenantId)->where('status', '!=', 'Closed')
                     ->whereNotNull('due_date')->whereDate('due_date', '<', $today)->count()],
+            ['key' => 'mom_pending', 'label' => 'MOM actions pending', 'path' => '/app/tpv/kickoff',
+                'count' => KickoffMomItem::where('tenant_id', $tenantId)->whereIn('status', MomActionStatus::OPEN_STATES)->count()],
             ['key' => 'mom_actions_overdue', 'label' => 'Meeting actions overdue', 'path' => '/app/tpv/kickoff',
                 'count' => KickoffMomItem::where('tenant_id', $tenantId)->whereIn('status', MomActionStatus::OPEN_STATES)
                     ->whereNotNull('target_date')->whereDate('target_date', '<', $today)->count()],
+            ['key' => 'contract_expiry', 'label' => 'Contracts expiring (30d)', 'path' => '/app/tpv/contracts',
+                'count' => TpvContract::forTenant($tenantId)->whereIn('status', ['Active', 'Expiring'])
+                    ->whereNotNull('end_date')->whereBetween('end_date', [$today, $soon])->count()],
+            ['key' => 'renewal_assessment_due', 'label' => 'Vendor renewals to assess', 'path' => '/app/tpv/renewals',
+                'count' => TpvRenewal::forTenant($tenantId)->where('status', 'Pending')->count()],
             ['key' => 'permit_expiry', 'label' => 'Permits expiring (7d)', 'path' => '/app/tpv/permits',
                 'count' => WorkPermit::where('tenant_id', $tenantId)->whereIn('status', ['Approved', 'Active'])
                     ->whereNotNull('valid_to')->whereBetween('valid_to', [$today, $week])->count()],
