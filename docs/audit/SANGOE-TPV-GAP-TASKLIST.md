@@ -236,18 +236,17 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 - [x] Trigger: Suspension — suspended/on-hold/auto-suspended vendor alert.
 - [ ] Dedicated in-app inbox for vendors `[P]` (pull-based alerts only).
 
-## §32 Vendor Portal — governance-response half
-- [ ] Respond to NCR `[M]`.
-- [ ] Submit CAPA evidence `[M]`.
-- [ ] Request approvals `[M]`.
-- [ ] Request extensions `[M]`.
-- [ ] View meeting invitations (general, not just kickoff) `[P]`.
-- [ ] View MOM (general) `[P]`.
-- [ ] Respond to actions `[M]`.
-- [ ] Upload training/competency certificates `[P]` (medical/induction only today).
-- [ ] View compliance register `[P]`.
-- [ ] View PPE requirement matrix `[P]`.
-- [ ] Self-registration `[M]` (may be by design — TPV vendor is staff-created).
+## §32 Vendor Portal — governance-response half — [2026-08-26] BOTH portals (TPV + Purchase, separate DBs); guarded by `VendorPortalGovernanceTest` (5) + `PurchasePortalGovernanceTest` (4); UI on both portals, prod build green
+- [x] Respond to NCR — `POST /portal/ncrs/{ncr}/respond` (+ Purchase `/portal/purchase/...`); inline UI.
+- [x] Submit CAPA evidence — `POST /portal/capas/{capa}/evidence` (file/base64 + note).
+- [x] Request approvals — `POST /portal/approvals/request` (raises a vendor-origin approval).
+- [x] Request extensions — `POST /portal/extensions/request` (new EXTENSION ApprovalType on both sides).
+- [x] View meeting invitations + MOM — `GET /portal/meetings` + `/meetings/{id}/mom` (vendor-scoped).
+- [x] Respond to actions — `POST /portal/actions/{id}/respond` (appends a vendor note).
+- [x] Upload training/competency certificates — `POST /portal/workers/{worker}/certificates`.
+- [x] View compliance register — shipped earlier (commit 82b29064).
+- [x] View PPE requirement matrix — `GET /portal/ppe-matrix` (TPV only; Purchase has no matrix by design).
+- [ ] Self-registration `[P]` — by design (TPV vendor is staff-created; Purchase vendor already self-registers via its own auth).
 
 ## §33 Reports & Analytics
 - [x] Unified Reports hub enumerating the doc's named reports — `GET /tpv/reports` catalogue (operational + management) [2026-08-26].

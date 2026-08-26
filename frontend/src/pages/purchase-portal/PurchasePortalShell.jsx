@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, ClipboardList, FileText, ShieldCheck, CalendarDays,
-  LogOut, Building2, Sun, Moon, Bell, User, HelpCircle, Menu, HardHat, ClipboardCheck,
+  LogOut, Building2, Sun, Moon, Bell, User, HelpCircle, Menu, HardHat, ClipboardCheck, Gavel,
 } from 'lucide-react'
 import { purchasePortalApi } from '@/services/purchasePortalApi'
 import { purchaseVendorAuthApi } from '@/services/purchaseVendorAuthApi'
@@ -38,6 +38,7 @@ export default function PurchasePortalShell() {
     { to: '/purchase-portal/onboarding', label: 'My Onboarding',    icon: ClipboardList },
     { to: '/purchase-portal/documents',  label: 'My Documents',     icon: FileText },
     { to: '/purchase-portal/compliance', label: 'My Compliance',    icon: ClipboardCheck },
+    { to: '/purchase-portal/governance', label: 'Governance',       icon: Gavel },
     { to: '/purchase-portal/kickoff',    label: 'Kickoff Meeting',  icon: CalendarDays },
     { to: '/purchase-portal/approval',   label: 'Approval Status',  icon: ShieldCheck },
     // Unlocked once the vendor is Active — the workforce only matters after the

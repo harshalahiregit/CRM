@@ -17,7 +17,7 @@ use Tests\TestCase;
  * reject-needs-a-reason rule, the terminal lock, and tenant isolation.
  *
  * Doc-flow map (§12):
- *   list exposes the 18 types → raise (Pending) → staff CANNOT decide (admin-only)
+ *   list exposes the type catalogue → raise (Pending) → staff CANNOT decide (admin-only)
  *   → admin approves / rejects (reject needs remarks) → a decided entry is locked.
  */
 class PurchaseApprovalRegisterFlowTest extends TestCase
@@ -63,13 +63,14 @@ class PurchaseApprovalRegisterFlowTest extends TestCase
         ], $overrides))->assertCreated()->assertJsonPath('status', 'Pending')->json('id');
     }
 
-    public function test_register_exposes_the_eighteen_types(): void
+    public function test_register_exposes_the_type_catalogue(): void
     {
         Sanctum::actingAs($this->user('admin'));
 
+        // 19 types: the original 18 + EXTENSION (added for §32 portal parity).
         $this->getJson('/api/purchase/approval-requests')
             ->assertOk()
-            ->assertJsonCount(18, 'types')
+            ->assertJsonCount(19, 'types')
             ->assertJsonPath('data', []);
     }
 
