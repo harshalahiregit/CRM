@@ -165,6 +165,8 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::get('/ppe/workers/{worker}',                     [\App\Http\Controllers\Api\Tpv\PpeController::class, 'worker']);
     Route::post('/ppe/workers/{worker}/issue',              [\App\Http\Controllers\Api\Tpv\PpeController::class, 'issue']);
     Route::post('/ppe/issues/{issue}/return',             [\App\Http\Controllers\Api\Tpv\PpeController::class, 'returnIssue']);
+    Route::post('/ppe/issues/{issue}/replace',            [\App\Http\Controllers\Api\Tpv\PpeController::class, 'replaceIssue']);
+    Route::post('/ppe/issues/{issue}/use',                [\App\Http\Controllers\Api\Tpv\PpeController::class, 'markUsed']);
     Route::get('/workers/stats',                          [TpvWorkerController::class, 'stats']);
     Route::get('/workers',                                [TpvWorkerController::class, 'index']);
     Route::post('/workers',                               [TpvWorkerController::class, 'store']);

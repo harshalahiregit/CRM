@@ -8,12 +8,18 @@ namespace App\Support\Tpv;
  */
 final class TpvMedicalFitness
 {
+    public const PENDING              = 'Pending';
     public const FIT                  = 'Fit';
     public const FIT_WITH_RESTRICTIONS = 'Fit_With_Restrictions';
     public const UNFIT                = 'Unfit';
+    // A stored terminal state for a lapsed certificate. The record can still be
+    // DERIVED as expired from valid_until (see TpvWorkerMedical::isExpired), but
+    // capturing it as an explicit outcome lets a sign-off be marked expired
+    // without disturbing the original fitness verdict.
+    public const EXPIRED              = 'Expired';
 
     public const ALL = [
-        self::FIT, self::FIT_WITH_RESTRICTIONS, self::UNFIT,
+        self::PENDING, self::FIT, self::FIT_WITH_RESTRICTIONS, self::UNFIT, self::EXPIRED,
     ];
 
     /** Outcomes that allow a badge to be issued. */
@@ -22,9 +28,11 @@ final class TpvMedicalFitness
     ];
 
     public const LABELS = [
+        self::PENDING               => 'Pending',
         self::FIT                   => 'Fit',
         self::FIT_WITH_RESTRICTIONS => 'Fit with Restrictions',
         self::UNFIT                 => 'Unfit',
+        self::EXPIRED               => 'Expired',
     ];
 
     /** Mental-health screening bands (informational triage, not a hard gate). */

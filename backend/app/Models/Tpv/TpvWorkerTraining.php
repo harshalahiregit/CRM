@@ -18,7 +18,9 @@ class TpvWorkerTraining extends Model
 
     public const TYPES = [
         'Site_Induction', 'HSE_Induction', 'Toolbox', 'Fire', 'Work_At_Height',
-        'Electrical', 'Confined_Space', 'Lifting', 'Equipment', 'Emergency_Response', 'Other',
+        'Electrical', 'Confined_Space', 'Lifting', 'Equipment', 'Emergency_Response',
+        // §15 — an explicit job-specific training type (was folded into 'Other').
+        'Job_Specific', 'Other',
     ];
 
     protected $fillable = [

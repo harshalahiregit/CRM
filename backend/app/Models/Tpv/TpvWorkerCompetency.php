@@ -20,13 +20,14 @@ class TpvWorkerCompetency extends Model
 
     protected $fillable = [
         'tenant_id', 'tpv_worker_id', 'name', 'category', 'authority', 'reference_no', 'skill_level',
-        'issued_date', 'valid_until', 'evidence_path', 'verified_by', 'verified_at', 'notes',
+        'experience_years', 'issued_date', 'valid_until', 'evidence_path', 'verified_by', 'verified_at', 'notes',
     ];
 
     protected $casts = [
-        'issued_date' => 'date',
-        'valid_until' => 'date',
-        'verified_at' => 'datetime',
+        'issued_date'      => 'date',
+        'valid_until'      => 'date',
+        'verified_at'      => 'datetime',
+        'experience_years' => 'decimal:1',
     ];
 
     protected $appends = ['status'];
