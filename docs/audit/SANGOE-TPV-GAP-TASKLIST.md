@@ -114,7 +114,7 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 - [x] Wire `work_package_id` into the worker create/update service. DONE 2026-08-25: added to `$fillable` + `Store/UpdateTpvWorkerRequest`, set via service with `assertWorkPackage` (same-vendor/tenant scoping), `TpvWorker::workPackage()` relation.
 
 ## §14 Workforce
-- [ ] Worker field: Project `[M]` — deferred: crosses into the Projects module; needs a cross-module decision (kept out of this slice).
+- [x] Worker field: Project (+ Site + Department) — TPV-local `project`/`site`/`department` columns + request validation [2026-08-25]. _Guarded by `DimensionFieldsTest`._
 - [x] Worker field: Experience — `experience_years` (decimal) column + wizard field + validation [2026-08-25].
 - [x] Worker field: Joining date — `joining_date` column + wizard field + validation [2026-08-25].
 - [x] Worker field: Exit date — `exit_date` column + wizard field + `after_or_equal:joining_date` validation [2026-08-25]. _Guarded by `WorkerEmploymentFieldsTest` (2)._
@@ -183,9 +183,9 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 - [x] Type: Security — `Security` [2026-08-25].
 - [x] Type: Unsafe Act — `Unsafe_Act` [2026-08-25].
 - [x] Type: Unsafe Condition — `Unsafe_Condition` [2026-08-25]. _All flow through IncidentController validation + the TpvIncidents type picker; original event types retained. Guarded by `IncidentTypeVocabularyTest` (2)._
-- [ ] Field: Project `[M]`.
-- [ ] Field: Work Package `[M]`.
-- [ ] Field: Activity `[M]`.
+- [x] Field: Project (+ Site + Department) — TPV-local columns + store validation [2026-08-25].
+- [x] Field: Work Package — `work_package_id` on incidents + store validation [2026-08-25].
+- [x] Field: Activity — `activity` on incidents + store validation [2026-08-25]. _Guarded by `DimensionFieldsTest`._
 
 ## §25 CAPA
 - [x] "Immediate correction" field — `immediate_correction` column + form field (containment) [2026-08-25].
