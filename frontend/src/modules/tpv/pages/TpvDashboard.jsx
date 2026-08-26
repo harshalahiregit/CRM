@@ -57,7 +57,9 @@ export default function TpvDashboard() {
         <div>
           <p className="label-caps" style={{ color: '#a78bfa', margin: 0, fontSize: 11, fontWeight: 800, letterSpacing: '0.08em' }}>HSSE &amp; WORKFORCE</p>
           <h1 style={{ color: 'var(--text-h)', fontSize: 24, fontWeight: 900, margin: '2px 0 0', letterSpacing: '-0.02em' }}>Vendor Overview</h1>
-          <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: '4px 0 0' }}>Onboarding → Workforce → Badge → Gate → Strikes, unified.</p>
+          {/* §40 — full positioning label. */}
+          <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: '4px 0 0', fontWeight: 600 }}>Third-Party Vendor, Contractor &amp; Workforce Governance</p>
+          <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: '2px 0 0' }}>Onboarding → Workforce → Badge → Gate → Strikes, unified.</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <RaiseTicketButton source="tpv" />
