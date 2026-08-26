@@ -414,6 +414,7 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('tpv')->group(function
     Route::get('/vendors/{vendor}/access/status',     [TpvAccessController::class, 'status']);
 
     // Approving/rejecting a statutory document is an admin gate.
+    Route::post('/documents/{document}/verify',       [VendorDocumentController::class, 'verify']);
     Route::post('/documents/{document}/review',       [VendorDocumentController::class, 'review']);
 
     // Setting a vendor's risk classification is an admin authority decision.

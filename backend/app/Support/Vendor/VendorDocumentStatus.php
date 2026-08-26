@@ -15,18 +15,22 @@ namespace App\Support\Vendor;
 final class VendorDocumentStatus
 {
     public const UNDER_REVIEW = 'Under_Review';
+    // §30 — an intermediate state: the reviewer has verified the file is genuine
+    // and legible, but the authority has not yet approved it.
+    public const VERIFIED     = 'Verified';
     public const APPROVED     = 'Approved';
     public const REJECTED     = 'Rejected';
     public const EXPIRED      = 'Expired';
 
     /** All persisted statuses. */
     public const ALL = [
-        self::UNDER_REVIEW, self::APPROVED, self::REJECTED, self::EXPIRED,
+        self::UNDER_REVIEW, self::VERIFIED, self::APPROVED, self::REJECTED, self::EXPIRED,
     ];
 
     /** Human-readable labels. */
     public const LABELS = [
         self::UNDER_REVIEW => 'Under Review',
+        self::VERIFIED     => 'Verified',
         self::APPROVED     => 'Approved',
         self::REJECTED     => 'Rejected',
         self::EXPIRED      => 'Expired',
