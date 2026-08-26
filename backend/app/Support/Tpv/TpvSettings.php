@@ -76,6 +76,18 @@ class TpvSettings
         return $this->effective('approval_routing', $tenantId);
     }
 
+    /** Admin-configurable catalogues — vendor/document/training/etc. vocab (§34). */
+    public function catalogs(?int $tenantId = null): array
+    {
+        return $this->effective('catalogs', $tenantId);
+    }
+
+    /** One named catalogue's effective list (§34). */
+    public function catalog(string $name, ?int $tenantId = null): array
+    {
+        return $this->catalogs($tenantId)[$name] ?? [];
+    }
+
     /**
      * §10 — the onboarding checklist items that apply to a vendor given its
      * dimensions. The general checklist always applies; matching rules add their
@@ -181,6 +193,20 @@ class TpvSettings
                 'dimensions'     => config('tpv_approval_routing.dimensions', []),
                 'rules'          => config('tpv_approval_routing.rules', []),
                 'default_levels' => config('tpv_approval_routing.default_levels', []),
+            ],
+            // §34 — admin-configurable catalogues. Baselines come from the shipped
+            // constants/config; a tenant can extend or replace each list.
+            'catalogs' => [
+                'vendor_types'            => config('tpv.vendor_types', ['permanent', 'temporary']),
+                'vendor_categories'       => config('tpv.vendor_categories', ['Contractor', 'Supplier', 'Service Provider', 'Consultant']),
+                'vendor_classes'          => \App\Support\Vendor\VendorClass::ALL,
+                'risk_levels'             => \App\Support\Vendor\RiskTier::ALL,
+                'document_types'          => config('tpv.document_types', ['GST', 'PAN', 'PF', 'ESIC', 'Insurance', 'Licence', 'ISO Certificate']),
+                'training_types'          => \App\Models\Tpv\TpvWorkerTraining::TYPES,
+                'competency_requirements' => \App\Models\Tpv\TpvWorkerCompetency::CATEGORIES,
+                'permit_types'            => \App\Models\Tpv\WorkPermit::TYPES,
+                'violation_types'         => ViolationType::TYPES,
+                'compliance_categories'   => ComplianceCatalog::CATEGORIES,
             ],
             default => [],
         };
