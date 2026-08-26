@@ -17,10 +17,10 @@ class TpvWorker extends Model
     protected $table = 'tpv_workers';
 
     protected $fillable = [
-        'tenant_id','vendor_id','created_by','worker_code','work_package_id',
-        'name','dob','age','age_reason','gender','designation','skill_category','experience_years','joining_date','exit_date','project','site','department','aadhar_number','mobile','email',
+        'tenant_id','vendor_id','created_by','worker_code','work_package_id','activity_id',
+        'name','dob','age','age_reason','gender','designation','skill_category','trade','experience_years','joining_date','exit_date','project','site','department','aadhar_number','mobile','email',
         'blood_group','address','emergency_contact','emergency_phone','photo_path',
-        'current_step','status','is_active',
+        'current_step','status','lifecycle_state','training_status','is_active',
         // Step 2
         'medical_status','medical_type','doctor_name','organization_name','doctor_registration','doctor_designation',
         'eyesight','height','weight','blood_pressure','height_phobia','heart_disease','habits','handicapped',
@@ -96,6 +96,12 @@ class TpvWorker extends Model
     public function workPackage()
     {
         return $this->belongsTo(TpvWorkPackage::class, 'work_package_id');
+    }
+
+    /** The specific activity within the work package this worker is assigned to (§13). */
+    public function activity()
+    {
+        return $this->belongsTo(TpvActivity::class, 'activity_id');
     }
 
     public function medical()

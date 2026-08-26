@@ -45,6 +45,7 @@ class TpvWorkerService
         $tenantId = $actor->tenant_id;
         $this->assertVendor($data['vendor_id'], $tenantId);
         $this->assertWorkPackage($data['work_package_id'] ?? null, $tenantId, $data['vendor_id'] ?? null);
+        $this->assertActivity($data['activity_id'] ?? null, $tenantId, $data['work_package_id'] ?? null);
         $this->assertAadharUnique($data['aadhar_number'] ?? null, $tenantId);
 
         $worker = TpvWorker::create([
@@ -74,6 +75,9 @@ class TpvWorkerService
         }
         if (array_key_exists('work_package_id', $data)) {
             $this->assertWorkPackage($data['work_package_id'], $worker->tenant_id, $data['vendor_id'] ?? $worker->vendor_id);
+        }
+        if (array_key_exists('activity_id', $data)) {
+            $this->assertActivity($data['activity_id'], $worker->tenant_id, $data['work_package_id'] ?? $worker->work_package_id);
         }
         $this->assertAadharUnique($data['aadhar_number'] ?? null, $worker->tenant_id, $worker->id);
 
@@ -968,6 +972,22 @@ class TpvWorkerService
         }
         if ($vendorId && (int) $wp->vendor_id !== (int) $vendorId) {
             throw new BusinessException('That work package belongs to a different vendor.');
+        }
+    }
+
+    /** The assigned activity must exist in this tenant and belong to the worker's
+     *  work package where one is set (§13). */
+    private function assertActivity(?int $activityId, int $tenantId, ?int $workPackageId): void
+    {
+        if (empty($activityId)) {
+            return;
+        }
+        $activity = \App\Models\Tpv\TpvActivity::forTenant($tenantId)->find($activityId);
+        if (! $activity) {
+            throw new BusinessException('That activity does not exist.');
+        }
+        if ($workPackageId && (int) $activity->work_package_id !== (int) $workPackageId) {
+            throw new BusinessException('That activity belongs to a different work package.');
         }
     }
 

@@ -32,4 +32,10 @@ class TpvActivity extends Model
     {
         return $this->belongsTo(TpvWorkPackage::class, 'work_package_id');
     }
+
+    /** Workers assigned to this activity (§13/§35). */
+    public function workers()
+    {
+        return $this->hasMany(TpvWorker::class, 'activity_id');
+    }
 }

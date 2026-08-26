@@ -33,6 +33,7 @@ class TpvAccessService
     public function __construct(
         private NotificationService $notifications,
         private RegistrationNumberService $registrationNumbers,
+        private TpvApprovalService $approvals,
     ) {
     }
 
@@ -72,6 +73,14 @@ class TpvAccessService
                 'validity_days'        => $validity,
                 'temporary_created_by' => $actor->id,
                 'access_reminders_sent' => [],
+                // §11 — engagement capture for the temporary vendor.
+                'temp_purpose'            => $data['temp_purpose'] ?? null,
+                'temp_sponsor'            => $data['temp_sponsor'] ?? null,
+                'temp_project'            => $data['temp_project'] ?? null,
+                'temp_scope'              => $data['temp_scope'] ?? null,
+                'temp_workforce'          => $data['temp_workforce'] ?? null,
+                'temp_risk_level'         => $data['temp_risk_level'] ?? null,
+                'temp_required_documents' => $data['temp_required_documents'] ?? null,
             ]);
 
             // Accept an admin-supplied password, else mint one — mirroring
@@ -91,6 +100,25 @@ class TpvAccessService
             $vendor->update(['user_id' => $user->id]);
 
             $this->sendCredentials($vendor, $password, $expires);
+
+            // §11 — a temporary vendor is a governed engagement: raise an approval
+            // request on creation so it enters the same review queue as any other.
+            $this->approvals->raise([
+                'approval_type' => \App\Support\Tpv\ApprovalType::TEMPORARY_VENDOR,
+                'subject_type'  => Vendor::class,
+                'subject_id'    => $vendor->id,
+                'vendor_id'     => $vendor->id,
+                'title'         => 'Temporary vendor: '.$vendor->company_name,
+                'description'   => $data['temp_purpose'] ?? null,
+                'priority'      => ($data['temp_risk_level'] ?? null) === 'High' ? 'High' : 'Medium',
+                'meta'          => [
+                    'sponsor'   => $data['temp_sponsor'] ?? null,
+                    'project'   => $data['temp_project'] ?? null,
+                    'workforce' => $data['temp_workforce'] ?? null,
+                    'expires'   => $expires->toDateString(),
+                ],
+            ], $tid, $actor->id);
+
             $vendor->recordAudit('Temporary TPV Created', $actor, null, [
                 'access_expires_at' => $expires->toIso8601String(), 'validity_days' => $validity,
             ]);
@@ -178,6 +206,20 @@ class TpvAccessService
         $vendor->recordAudit('Temporary Access Extended', $actor, $data['extension_reason'], [
             'access_expires_at' => $expires->toIso8601String(),
         ]);
+
+        // §11 — the extension enters the approval trail as an EXTENSION request so
+        // it is governed the same way a fresh temporary engagement is, rather than
+        // being an untracked manual edit.
+        $this->approvals->raise([
+            'approval_type' => \App\Support\Tpv\ApprovalType::EXTENSION,
+            'subject_type'  => Vendor::class,
+            'subject_id'    => $vendor->id,
+            'vendor_id'     => $vendor->id,
+            'title'         => 'Access extension: '.$vendor->company_name,
+            'description'   => $data['extension_reason'],
+            'meta'          => ['new_expiry' => $expires->toDateString()],
+        ], $vendor->tenant_id, $actor->id);
+
         $this->notify($vendor, 'Temporary access extended', "Your temporary access has been extended to {$expires->format('d M Y')}.");
 
         return $vendor->fresh();

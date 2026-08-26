@@ -52,6 +52,9 @@ class Vendor extends Model
         'is_temporary', 'access_start_at', 'access_expires_at', 'access_status',
         'access_extended_at', 'access_extended_by', 'extension_reason',
         'converted_to_permanent_at', 'converted_by', 'temporary_created_by', 'validity_days', 'access_reminders_sent',
+        // Temporary-vendor engagement capture (§11) — TPV-local, nullable.
+        'temp_purpose', 'temp_sponsor', 'temp_project', 'temp_scope', 'temp_workforce',
+        'temp_risk_level', 'temp_required_documents',
     ];
 
     protected $casts = [
@@ -67,6 +70,8 @@ class Vendor extends Model
         'suspended_at' => 'datetime',
         'offboarded_at' => 'datetime',
         'is_temporary' => 'boolean',
+        'temp_required_documents' => 'array',
+        'temp_workforce' => 'integer',
         'access_start_at' => 'datetime',
         'access_expires_at' => 'datetime',
         'access_extended_at' => 'datetime',
