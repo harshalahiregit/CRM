@@ -225,12 +225,14 @@ class GateScanService
     /* ── Reads (authed side) ────────────────────────────────────────────── */
 
     /** The attendance roster for a date — who was on site, and who still is. */
-    public function roster(int $tenantId, ?string $date = null): array
+    public function roster(int $tenantId, ?string $date = null, ?int $vendorId = null): array
     {
         $date = $date ?: now()->toDateString();
 
         $rows = TpvGateAttendance::forTenant($tenantId)->forDate($date)
             ->with(['worker:id,name,worker_code,designation,vendor_id,status', 'worker.vendor:id,company_name'])
+            // §20 — server-side vendor filter (was client-side only).
+            ->when($vendorId, fn ($q, $vid) => $q->whereHas('worker', fn ($w) => $w->where('vendor_id', $vid)))
             ->orderByDesc('check_in_at')->get();
 
         return [

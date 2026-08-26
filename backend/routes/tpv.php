@@ -371,6 +371,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::post('/site-vehicles',                         [$sr, 'storeVehicle']);
     Route::post('/site-vehicles/{vehicle}/checkout',      [$sr, 'checkoutVehicle']);
 
+    // §20 Unified gate events — Equipment / Material / Vehicle / Visitor / Person.
+    Route::get('/gate-events',                            [\App\Http\Controllers\Api\Tpv\TpvGateEventController::class, 'index']);
+    Route::post('/gate-events',                           [\App\Http\Controllers\Api\Tpv\TpvGateEventController::class, 'store']);
+
     // Evidence locker (Doc 6) — central compliance-evidence register.
     $el = \App\Http\Controllers\Api\Tpv\EvidenceLockerController::class;
     Route::get('/evidence',                               [$el, 'index']);
