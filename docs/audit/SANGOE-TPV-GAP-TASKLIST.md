@@ -44,15 +44,13 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 - [ ] Action Centre row: general Vendor renewal due `[P]` (only temp-access expiry now).
 
 ## §5 Vendor Master
-- [ ] Vendor Status vocabulary — add **Invited, Registered, Under Review, Approved, Expired**; reconcile Closed vs `Offboarded` `[M]` (_VendorStatus.php_).
-- [ ] Vendor profile field: **Project** `[M]`.
-- [ ] Vendor profile field: **Department** `[M]`.
-- [ ] Vendor profile field: **Client** on the profile `[P]` (reverse relation only via `clients.vendor_id`).
-- [ ] `vendor_class` enum constraint `[P]` (free string today).
-- [ ] Risk factor: Regulatory requirements `[M]`.
-- [ ] Risk factor: Previous incidents `[M]`.
-- [ ] Risk factor: Compliance history `[M]`.
-- [ ] Risk factor: Vendor performance `[M]` (deliberately kept separate as VRS — confirm intent).
+- [x] Vendor Status vocabulary — added Invited, Registered, Under_Review, Approved, Expired to `VendorStatus::ALL`+LABELS; Offboarded remains the terminal "Closed" [2026-08-25].
+- [x] Vendor profile field: **Project** — `vendors.project` (TPV-local nullable, no cross-module FK) [2026-08-25].
+- [x] Vendor profile field: **Department** — `vendors.department` [2026-08-25].
+- [x] Vendor profile field: **Site** — `vendors.site` (added alongside for §20/§4 drill-down) [2026-08-25].
+- [x] Vendor profile field: **Client** — `vendors.client_id` (TPV-local reference, no FK into Customer module) [2026-08-25].
+- [x] `vendor_class` enum constraint — new `VendorClass` catalogue (Manufacturer/Distributor/Service Provider/Contractor/Consultant/Supplier/Other) [2026-08-25].
+- [x] Risk factors: Regulatory requirements, Previous incidents, Compliance history, Vendor performance — new `VendorRiskFactor` catalogue (stored in the existing `risk_factors` JSON) [2026-08-25]. _Guarded by `VendorMasterFieldsTest` (3). Frontend surfacing of these fields on the vendor profile form is a follow-up pass._
 
 ## §6 Prequalification (taxonomy depth)
 - [ ] Company: regional capability `[M]`.

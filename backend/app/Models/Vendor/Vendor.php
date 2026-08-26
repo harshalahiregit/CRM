@@ -34,7 +34,8 @@ class Vendor extends Model
         'tenant_id', 'user_id', 'purchase_vendor_id', 'account_manager_id', 'vendor_code', 'company_name', 'legal_name',
         'vendor_type', 'registration_type', 'engagements', 'email', 'phone', 'website', 'category',
         // Vendor Master profile completion (§5).
-        'trade_name', 'subcategory', 'vendor_class', 'parent_company', 'cin_number', 'udyam_number',
+        'trade_name', 'subcategory', 'vendor_class', 'project', 'site', 'department', 'client_id',
+        'parent_company', 'cin_number', 'udyam_number',
         'site_address', 'emergency_contact', 'internal_sponsor', 'contract_owner',
         'registration_number', 'gst_number', 'pan_number',
         'address', 'city', 'state', 'country', 'pincode',
