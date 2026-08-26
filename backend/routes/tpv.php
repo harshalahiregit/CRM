@@ -288,6 +288,7 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
 
     // Reports & Analytics (Sangoe TPV §33) — trend/benchmark analytics + CSV export.
     Route::get('/analytics',                              [\App\Http\Controllers\Api\Tpv\TpvAnalyticsController::class, 'index']);
+    Route::get('/reports',                                [\App\Http\Controllers\Api\Tpv\TpvAnalyticsController::class, 'reports']);
     Route::get('/analytics/export',                       [\App\Http\Controllers\Api\Tpv\TpvAnalyticsController::class, 'export']);
 
     // Vendor Performance Index (Sangoe TPV §27) — additive superset of the VRS.

@@ -25,6 +25,15 @@ class TpvAnalyticsController extends Controller
         ]);
     }
 
+    /** §33 — the Reports hub: the doc's named reports enumerated as a catalogue. */
+    public function reports(Request $request)
+    {
+        return response()->json([
+            'reports'  => $this->service->catalogue(),
+            'datasets' => TpvAnalyticsService::DATASETS,
+        ]);
+    }
+
     public function export(Request $request)
     {
         $data = $request->validate([
