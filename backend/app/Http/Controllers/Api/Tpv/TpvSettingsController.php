@@ -110,6 +110,28 @@ class TpvSettingsController extends Controller
                 'ppe_enforcement' => ['required', Rule::in(['warn', 'deny', 'off'])],
             ]),
             'violation_ladder' => $this->validateViolationLadder($request),
+            'onboarding_checklists' => $request->validate([
+                'dimensions'          => 'nullable|array',
+                'dimensions.*'        => 'string|max:40',
+                'rules'               => 'present|array',
+                'rules.*.match'       => 'required|array|min:1',
+                'rules.*.items'       => 'required|array|min:1',
+                'rules.*.items.*'     => 'string|max:200',
+                'general'             => 'required|array',
+                'general.gates_activation' => 'required|boolean',
+                'general.items'       => 'required|array',
+                'general.items.*'     => 'string|max:200',
+            ]),
+            'approval_routing' => $request->validate([
+                'dimensions'        => 'nullable|array',
+                'dimensions.*'      => 'string|max:40',
+                'rules'             => 'present|array',
+                'rules.*.match'     => 'required|array|min:1',
+                'rules.*.levels'    => 'required|array|min:1',
+                'rules.*.levels.*'  => 'string|max:40',
+                'default_levels'    => 'required|array|min:1',
+                'default_levels.*'  => 'string|max:40',
+            ]),
             default => abort(404, 'Unknown settings group.'),
         };
     }
