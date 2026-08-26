@@ -83,4 +83,36 @@ class PpeMatrixClassTest extends TestCase
         $this->assertSame('mandatory', $c['items'][0]['ppe_class']);
         $this->assertSame('Arc/Heat', $c['items'][0]['hazard']);
     }
+
+    /* ── §18 Job + Hazard + Activity matching ─────────────────────────────── */
+
+    private function assignActivity(TpvWorker $w, string $name, ?string $hazard): void
+    {
+        $wp = \App\Models\Tpv\TpvWorkPackage::create([
+            'tenant_id' => self::TENANT, 'vendor_id' => $w->vendor_id, 'name' => 'WP', 'status' => 'Active',
+        ]);
+        $act = \App\Models\Tpv\TpvActivity::create([
+            'tenant_id' => self::TENANT, 'work_package_id' => $wp->id, 'name' => $name, 'hazard' => $hazard,
+        ]);
+        $w->update(['work_package_id' => $wp->id, 'activity_id' => $act->id]);
+    }
+
+    public function test_activity_scoped_rule_applies_to_a_worker_on_that_activity(): void
+    {
+        $w = $this->worker();
+        $this->assignActivity($w, 'Welding', 'Arc/Heat');
+        $this->rule($this->ppeProduct()->id, 'mandatory');   // activity 'Welding', hazard 'Arc/Heat'
+
+        $this->assertCount(1, app(PpeInventoryService::class)->missingMandatoryFor($w->fresh()));
+    }
+
+    public function test_activity_scoped_rule_does_not_apply_off_that_activity(): void
+    {
+        $w = $this->worker();
+        $this->assignActivity($w, 'Grinding', 'Abrasive');   // a different activity/hazard
+        $this->rule($this->ppeProduct()->id, 'mandatory');   // rule is Welding / Arc-Heat
+
+        // The welding-specific PPE must not be required of a grinding worker.
+        $this->assertCount(0, app(PpeInventoryService::class)->missingMandatoryFor($w->fresh()));
+    }
 }

@@ -103,6 +103,7 @@ class TpvWorkPackageController extends Controller
         return $request->validate([
             'name' => "$req|string|max:200",
             'description' => 'nullable|string',
+            'hazard' => 'nullable|string|max:160',
             'required_competency' => 'nullable|string|max:150',
             'requires_permit' => 'nullable|boolean',
             'permit_type' => ['nullable', Rule::in(\App\Models\Tpv\WorkPermit::TYPES)],

@@ -19,7 +19,7 @@ class TpvActivity extends Model
     public const STATUSES = ['Not_Started', 'In_Progress', 'Completed', 'On_Hold'];
 
     protected $fillable = [
-        'tenant_id', 'work_package_id', 'name', 'description',
+        'tenant_id', 'work_package_id', 'name', 'description', 'hazard',
         'required_competency', 'requires_permit', 'permit_type', 'status', 'sort_order',
     ];
 
