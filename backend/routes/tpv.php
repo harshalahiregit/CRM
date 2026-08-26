@@ -53,6 +53,7 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
 
     // Dashboard — read-only aggregation across the whole module.
     Route::get('/dashboard',                          [TpvDashboardController::class, 'index']);
+    Route::get('/dashboard/risk-drilldown',           [TpvDashboardController::class, 'riskDrilldown']);
 
     // Advanced approval workflow — staff can decide their own level (e.g. L1).
     Route::get('/approvals',                           [OnboardingApprovalController::class, 'index']);

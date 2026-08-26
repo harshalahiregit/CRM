@@ -3,6 +3,7 @@
 namespace App\Services\Tpv;
 
 use App\Models\Shared\KickoffMomItem;
+use App\Models\Tpv\HsseIncident;
 use App\Models\Tpv\IncidentCapa;
 use App\Models\Tpv\TpvGateAttendance;
 use App\Models\Tpv\TpvGateScan;
@@ -224,6 +225,58 @@ class TpvDashboardService
         return collect(['Critical', 'High', 'Medium', 'Low', 'Unclassified'])
             ->map(fn ($lvl) => ['level' => $lvl, 'count' => (int) ($rows[$lvl] ?? 0)])
             ->all();
+    }
+
+    /**
+     * §4 — Risk drill-down by dimension. Groups vendors (with a risk-level
+     * breakdown) and open HSSE incidents by the requested dimension, so the
+     * Control Tower can slice risk by Vendor / Project / Site / Department /
+     * Work Package / Risk Category. Dimension fields are TPV-local columns added
+     * for §5/§14/§23.
+     *
+     * @return array{dimension:string, groups:array<int,array>}
+     */
+    public function riskDrilldown(int $tenantId, string $dimension): array
+    {
+        // Which vendor / incident column each dimension maps to.
+        [$vendorCol, $incidentCol] = match ($dimension) {
+            'project'       => ['project', 'project'],
+            'site'          => ['site', 'site'],
+            'department'    => ['department', 'department'],
+            'risk_category' => ['risk_level', null],
+            'work_package'  => [null, 'work_package_id'],
+            default         => ['risk_level', null],   // 'vendor'/'risk' fall back to risk level
+        };
+
+        $groups = [];
+
+        if ($vendorCol !== null) {
+            $rows = Vendor::forTenant($tenantId)
+                ->selectRaw("COALESCE(NULLIF({$vendorCol}, ''), 'Unassigned') as grp, risk_level, COUNT(*) as count")
+                ->groupBy('grp', 'risk_level')->get();
+
+            foreach ($rows as $r) {
+                $g = $r->grp;
+                $groups[$g] ??= ['group' => $g, 'vendors' => 0, 'risk' => ['Critical' => 0, 'High' => 0, 'Medium' => 0, 'Low' => 0, 'Unclassified' => 0], 'open_incidents' => 0];
+                $groups[$g]['vendors'] += (int) $r->count;
+                $groups[$g]['risk'][$r->risk_level ?: 'Unclassified'] = (int) $r->count;
+            }
+        }
+
+        if ($incidentCol !== null) {
+            $rows = HsseIncident::forTenant($tenantId)
+                ->where('status', '!=', 'Closed')
+                ->selectRaw("COALESCE(NULLIF(CAST({$incidentCol} AS CHAR), ''), 'Unassigned') as grp, COUNT(*) as count")
+                ->groupBy('grp')->get();
+
+            foreach ($rows as $r) {
+                $g = (string) $r->grp;
+                $groups[$g] ??= ['group' => $g, 'vendors' => 0, 'risk' => ['Critical' => 0, 'High' => 0, 'Medium' => 0, 'Low' => 0, 'Unclassified' => 0], 'open_incidents' => 0];
+                $groups[$g]['open_incidents'] = (int) $r->count;
+            }
+        }
+
+        return ['dimension' => $dimension, 'groups' => array_values($groups)];
     }
 
     /** Headline numbers. */
