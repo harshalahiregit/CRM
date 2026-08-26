@@ -121,6 +121,23 @@ Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access'])->prefix('por
     Route::get('/gate-log',                               [VendorPortalController::class, 'gateLog']);
     Route::get('/attendance',                             [VendorPortalController::class, 'attendance']);
     Route::get('/strikes',                                [VendorPortalController::class, 'strikes']);
+
+    // §32 Governance-response half — view + respond to NCRs/CAPAs/actions,
+    // request approvals/extensions, view meetings/MOM + the PPE matrix, upload
+    // worker certificates. All scoped to the caller's own vendor.
+    $gov = \App\Http\Controllers\Api\Portal\VendorPortalGovernanceController::class;
+    Route::get('/ncrs',                                   [$gov, 'ncrs']);
+    Route::post('/ncrs/{ncr}/respond',                    [$gov, 'respondNcr']);
+    Route::get('/capas',                                  [$gov, 'capas']);
+    Route::post('/capas/{capa}/evidence',                 [$gov, 'submitCapaEvidence']);
+    Route::post('/approvals/request',                     [$gov, 'requestApproval']);
+    Route::post('/extensions/request',                    [$gov, 'requestExtension']);
+    Route::get('/meetings',                               [$gov, 'meetings']);
+    Route::get('/meetings/{kickoffMeeting}/mom',          [$gov, 'meetingMom']);
+    Route::get('/actions',                                [$gov, 'actions']);
+    Route::post('/actions/{momItem}/respond',             [$gov, 'respondAction']);
+    Route::get('/ppe-matrix',                             [$gov, 'ppeMatrix']);
+    Route::post('/workers/{worker}/certificates',         [$gov, 'uploadCertificate']);
 });
 
 // ── Purchase Vendor Portal — auth (public) ──────────────────────────────
