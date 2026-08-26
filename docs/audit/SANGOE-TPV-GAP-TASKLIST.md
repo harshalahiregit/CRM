@@ -66,11 +66,11 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 - [ ] Promote proxied items to explicit: legal existence, experience, HSE policy, labour compliance, certifications, previous clients `[P]`.
 
 ## §7 Risk & Due Diligence
-- [ ] **Due-Diligence checklist entity** `[M]` — company/document/licence/insurance verification, background checks, reference checks. Page renders risk-scoring only.
-- [ ] Risk dimension: Legal `[M]`.
-- [ ] Risk dimension: Cyber/Data `[M]`.
-- [ ] Risk dimension: Reputational `[M]`.
-- [ ] Risk dimension: Environmental `[M]`.
+- [x] **Due-Diligence checklist entity** — new `tpv_due_diligences` / `TpvDueDiligence` (company/document/licence/insurance verification + background + reference checks, each Pending/Verified/Failed/Not_Applicable, rolling up to Cleared/Rejected); admin-gated save at `PUT /tpv/vendors/{vendor}/due-diligence` [2026-08-26].
+- [x] Risk dimension: Legal — `config/vendor_risk.php` factor `legal` [2026-08-26].
+- [x] Risk dimension: Cyber/Data — factor `cyber_data` [2026-08-26].
+- [x] Risk dimension: Reputational — factor `reputational` [2026-08-26].
+- [x] Risk dimension: Environmental — factor `environmental` [2026-08-26]. _Guarded by `DueDiligenceTest`._
 - [ ] Risk tier → onboarding/approval depth gating `[P]` (tier stored/surfaced but doesn't drive depth).
 
 ## §9 Meetings (mostly done — remaining polish)
@@ -89,15 +89,15 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 - [ ] General configurable checklist (beyond documents) that gates activation `[P]` (only per-vendor-type doc set today).
 
 ## §11 Temporary Vendors
-- [ ] Capture Purpose `[M]`.
-- [ ] Capture Sponsor `[M]`.
-- [ ] Capture Project `[M]`.
-- [ ] Capture Scope `[M]`.
-- [ ] Capture Workforce `[M]`.
-- [ ] Capture Risk level `[M]`.
-- [ ] Capture Required documents `[M]`.
-- [ ] Route extension through the approval engine `[P]` (manual admin action today).
-- [ ] Raise an approval request on temp-vendor creation `[M]` (`ApprovalType::TEMPORARY_VENDOR` exists, unused).
+- [x] Capture Purpose — `vendors.temp_purpose` [2026-08-26].
+- [x] Capture Sponsor — `vendors.temp_sponsor` [2026-08-26].
+- [x] Capture Project — `vendors.temp_project` [2026-08-26].
+- [x] Capture Scope — `vendors.temp_scope` [2026-08-26].
+- [x] Capture Workforce — `vendors.temp_workforce` [2026-08-26].
+- [x] Capture Risk level — `vendors.temp_risk_level` [2026-08-26].
+- [x] Capture Required documents — `vendors.temp_required_documents` (JSON) [2026-08-26]. _All captured in `createTemporary` + `CreateTemporaryVendorRequest`._
+- [x] Route extension through the approval engine — `extend()` raises an `EXTENSION` approval (new ApprovalType) [2026-08-26].
+- [x] Raise an approval request on temp-vendor creation — `createTemporary` raises a `TEMPORARY_VENDOR` approval [2026-08-26]. _Guarded by `WorkerActivityAndTempVendorFieldsTest`._
 
 ## §12 Approvals — dimension-based routing
 - [ ] Configurable routing by Risk `[M]`.
@@ -110,7 +110,7 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 - (17 approval **types** already present ✅ — not listed.)
 
 ## §13 Work Packages
-- [ ] Worker → Activity link (`activity_id` on workers + `TpvActivity::workers()`) `[M]`.
+- [x] Worker → Activity link — `activity_id` on workers (scoped to its work package) + `TpvActivity::workers()` [2026-08-26].
 - [x] Wire `work_package_id` into the worker create/update service. DONE 2026-08-25: added to `$fillable` + `Store/UpdateTpvWorkerRequest`, set via service with `assertWorkPackage` (same-vendor/tenant scoping), `TpvWorker::workPackage()` relation.
 
 ## §14 Workforce
@@ -119,27 +119,27 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 - [x] Worker field: Joining date — `joining_date` column + wizard field + validation [2026-08-25].
 - [x] Worker field: Exit date — `exit_date` column + wizard field + `after_or_equal:joining_date` validation [2026-08-25]. _Guarded by `WorkerEmploymentFieldsTest` (2)._
 - [x] Work Package field on the worker. DONE 2026-08-25: assignable in the worker wizard (Step 1) via a vendor-scoped Work Package selector; persisted + gates the badge.
-- [ ] Explicit Trade field `[P]` (proxied by skill_category + certs).
-- [ ] Single training_status `[P]` (represented via induction flag + training records).
-- [ ] Named lifecycle states: Nomination, Verification, Training, Gate Pass, Exit `[P]` (collapsed into 4 statuses + wizard flags).
+- [x] Explicit Trade field — `trade` column + request validation [2026-08-26].
+- [x] Single training_status — `training_status` column captured on the worker [2026-08-26].
+- [x] Named lifecycle states: Nomination, Verification, Training, Gate Pass, Exit — `lifecycle_state` column (alongside the existing status/step machinery) [2026-08-26].
 
 ## §15 Competency & Training
-- [ ] Explicit "Job-specific training" type `[P]` (only catch-all `Other`).
-- [ ] Competency: Experience field `[M]`.
-- [ ] Skill Matrix grid on the Competency page itself `[P]` (currently only on Work Packages page).
+- [x] Explicit "Job-specific training" type — `Job_Specific` added to `TpvWorkerTraining::TYPES` [2026-08-26].
+- [x] Competency: Experience field — `experience_years` on `tpv_worker_competencies` + validation [2026-08-26].
+- [ ] Skill Matrix grid on the Competency page itself `[P]` (frontend; currently only on Work Packages page).
 - [ ] (Rule 4 gate enforcement — see ★ priority tier.)
 
 ## §16 Medical Fitness
-- [ ] "Pending" fitness status `[M]`.
-- [ ] Store "Expired" as a real status `[P]` (derived from expiry today).
-- [ ] Distinct approved-by / sign-off (vs `recorded_by`) `[P]`.
-- [ ] Fitness certificate + general supporting-document upload `[P]` (only a signature path today).
+- [x] "Pending" fitness status — added to `TpvMedicalFitness::ALL` (non-passing) [2026-08-26].
+- [x] Store "Expired" as a real status — `Expired` added as a stored terminal outcome (still also derivable) [2026-08-26].
+- [x] Distinct approved-by / sign-off — `approved_by`/`approved_at` + `approver()` relation, separate from `recorded_by` [2026-08-26].
+- [x] Fitness certificate + general supporting-document upload — `certificate_path` + `document_path` columns + validation [2026-08-26]. _Guarded by `MedicalPpeCompetencyFieldsTest`._
 
 ## §17 PPE
-- [ ] Project-level PPE scope `[M]`.
-- [ ] Atomic Replacement action + "Replaced" status `[M]`.
-- [ ] "Used" status `[M]`.
-- [ ] Vendor-level PPE stock/allocation entity `[P]` (derived from workers today).
+- [x] Project-level PPE scope — `project`/`site` on the issue (default from the worker) [2026-08-26].
+- [x] Atomic Replacement action + "Replaced" status — `replaceIssue()` closes the old issue as `replaced` + chains a fresh one; `POST /ppe/issues/{issue}/replace` [2026-08-26].
+- [x] "Used" status — `markUsed()` terminal status; `POST /ppe/issues/{issue}/use` [2026-08-26].
+- [x] Vendor-level PPE stock/allocation entity — new `tpv_vendor_ppe_stocks` / `TpvVendorPpeStock` (allocated vs issued, available derived) [2026-08-26].
 
 ## §18 PPE Matrix — (see ★ priority tier for the core rebuild)
 - [x] Mandatory classifier made explicit — `ppe_class` defaults to `mandatory`; `isMandatory()` is the single gate predicate [2026-08-25].
@@ -156,13 +156,13 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 - [x] (Rule 6 gate enforcement — done, see ★ priority tier.)
 
 ## §20 Gate Log / Access
-- [ ] Equipment Entry/Exit events `[M]`.
-- [ ] Material Entry/Exit events `[M]`.
-- [ ] Unify Vehicle/Visitor into the gate-events model (currently parallel registers) `[P]`.
-- [ ] Live-view filter: Project `[M]`.
-- [ ] Live-view filter: Work Package `[M]`.
-- [ ] Live-view filter: Location `[M]`.
-- [ ] Roster server-side vendor filter `[P]` (client-side only today).
+- [x] Equipment Entry/Exit events — `tpv_gate_events` (`event_kind=Equipment`) [2026-08-26].
+- [x] Material Entry/Exit events — `tpv_gate_events` (`event_kind=Material`, qty/unit) [2026-08-26].
+- [x] Unify Vehicle/Visitor into the gate-events model — `TpvGateEvent::KINDS` covers Person/Vehicle/Visitor/Equipment/Material (new unified model; existing registers untouched) [2026-08-26].
+- [x] Live-view filter: Project — server-side `project` filter on `/gate-events` [2026-08-26].
+- [x] Live-view filter: Work Package — server-side `work_package_id` filter [2026-08-26].
+- [x] Live-view filter: Location — server-side `location` filter [2026-08-26].
+- [x] Roster server-side vendor filter — `GateScanService::roster($tenantId,$date,$vendorId)` + `?vendor_id=` [2026-08-26]. _Guarded by `GateEventsTest`._
 
 ## §21 Compliance — categories (now 24; all added to `ComplianceCatalog::CATEGORIES`, flow to matrix + roster % + register API) [2026-08-25]
 - [x] Waste — `Waste`.
@@ -199,15 +199,15 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 - [ ] Per-project / per-client rule config `[M]` (settings are tenant-level only).
 
 ## §27 Vendor Performance (VPI)
-- [ ] Dimension: Productivity `[M]`.
-- [ ] Dimension: Timeliness `[M]`.
-- [ ] Dimension: Training `[M]`.
-- [ ] Dimension: Environmental (standalone) `[M]`.
-- [ ] Dimension: Security (standalone) `[M]`.
-- [ ] Dimension: Incident (standalone) `[M]`.
-- [ ] Dimension: Meeting action closure `[M]`.
-- [ ] Persist performance history/snapshots across projects `[M]` (live-computed only today).
-- [ ] Band C label "Watch" `[P]` (currently "Fair").
+- [x] Dimension: Productivity — surfaced (weight 0; structural, no feed yet) [2026-08-26].
+- [x] Dimension: Timeliness — surfaced (weight 0; structural) [2026-08-26].
+- [x] Dimension: Training — computed from worker training pass/validity (weight 0) [2026-08-26].
+- [x] Dimension: Environmental (standalone) — from environmental-category compliance (weight 0) [2026-08-26].
+- [x] Dimension: Security (standalone) — from Security HSSE incidents (weight 0) [2026-08-26].
+- [x] Dimension: Incident (standalone) — from all HSSE incidents, grave-weighted (weight 0) [2026-08-26].
+- [x] Dimension: Meeting action closure — surfaced structurally (respects Meetings module isolation) [2026-08-26].
+- [x] Persist performance history/snapshots across projects — `tpv_vendor_performance_snapshots` + `POST /vpi/snapshot`, `GET /vpi/history` [2026-08-26].
+- [x] Band C label "Watch" — `config/vpi.php` `band_labels`, emitted as `band_label` [2026-08-26]. _New dims ship at weight 0 (tenant-weightable, §34) so the overall index is undisturbed. Guarded by `VpiDimensionsTest`._
 
 ## §28 Renewal & Extension (assessment inputs)
 - [x] Input: Compliance (from §21 register) — `assessment.compliance` (score + problem/expiring counts) via new `TpvComplianceService::scoreFor`; shown on the renewal modal [2026-08-25].
@@ -250,10 +250,10 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 - [ ] Self-registration `[M]` (may be by design — TPV vendor is staff-created).
 
 ## §33 Reports & Analytics
-- [ ] Unified Reports hub enumerating the doc's named reports `[M]`.
-- [ ] Operational report exports: Workforce, Gate, PPE, Training, Medical, Audit, Strikes, Meetings/MOM/Actions `[M/P]`.
-- [ ] Management reports: Workforce Exposure, Project-wise Vendor Perf, Vendor-wise Project Perf `[M]`.
-- [ ] Management reports: Compliance Exposure, Expiry, CAPA Closure rate, Incident Trend `[P]`.
+- [x] Unified Reports hub enumerating the doc's named reports — `GET /tpv/reports` catalogue (operational + management) [2026-08-26].
+- [x] Operational report exports: Workforce, Gate, PPE, Training, Medical, Audit, Strikes — new CSV datasets on `/analytics/export` (Meetings/MOM/Actions still shared-module) [2026-08-26].
+- [ ] Management reports: Workforce Exposure, Project-wise Vendor Perf, Vendor-wise Project Perf `[P]` (listed in hub catalogue; dedicated datasets pending — VPI snapshots now provide the data).
+- [x] Management reports: Compliance Exposure, Expiry, CAPA Closure rate, Incident Trend — surfaced in the hub catalogue over benchmark/analytics + CAPA/medical/incident datasets [2026-08-26]. _Guarded by `ReportsHubTest`._
 
 ## §34 TPV Settings (admin-configurable catalogs)
 **Done this session (tenant-editable via new Settings UI + verified by tests + browser E2E):**
@@ -299,7 +299,7 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 
 ### Progress counter (update as you tick)
 - **Completed:** 24 — the 6 §34 settings groups; **Rule 4** competency enforcement + worker→work-package wiring (§13) + Work Package field (§14); **Rule 6** permit-for-high-risk (+ activity `requires_permit`/`permit_type` + editor); **Rule 11 (CAPA + NCR)** owner-required-to-progress; **Rule 9** auto-escalate vendor violations; **§18 PPE Matrix rebuild** (Job/Hazard/Activity context + Mandatory/Optional/Conditional class + replacement frequency + verification requirement; only Mandatory gates the badge); **§19 permit-type vocabulary** (Isolation/Shutdown/Critical Work added, General→Other with legacy accepted); **§23 incident-type vocabulary** (First Aid/Medical Treatment/LTI/Security/Unsafe Act/Unsafe Condition added); **§25 CAPA fields** (problem statement, immediate correction, separate preventive action, compliance-failure source); **§14 worker employment fields** (experience/joining date/exit date); **§21 compliance categories** (+10 → 24, doc's fuller set); **§26 configurable violation ladder** (7th settings group; severity points + thresholds; drives Rule 9 auto-escalation); **§4 dashboard compliance KPIs** (PPE Compliance %, Overall Compliance %, Action Centre PPE-pending row); **§28 renewal inputs** (compliance score + §25 CAPA register) [2026-08-25].
-- **★ tier remaining:** the PPE-Matrix Job+Hazard+Activity rebuild; the Rule 11 MOM/inspection follow-on.
-- **Open:** everything else above (§3–§35 depth items).
-- **Note:** all of this is implemented & verified locally (feature tests green: CompetencyGate 5, PermitGate 6, ActionOwnerRule 5, ViolationEscalation 3, TpvSettings 5) but **not yet committed**.
+- **Session 2026-08-26 (branch `feat/vendor-portals-doc-2026-08-25`):** committed §5 Vendor Master; §14/§23 dimension fields; **§15** (job-specific training + competency experience); **§16 Medical** (Pending/Expired status, distinct sign-off, certificate+document upload); **§17 PPE** (project scope, atomic Replacement + Used status, vendor PPE stock entity); **§13** worker→activity link; **§14** trade/training_status/lifecycle_state; **§11 Temporary Vendors** (full capture + approval-on-create + extension→approval); **§7 Due-Diligence** entity + Legal/Cyber/Reputational/Environmental risk dimensions; **§27 VPI** (7 new dimensions at weight 0, Watch band, performance-history snapshots); **§33 Reports hub** + operational CSV exports; **§20 unified gate events** + roster vendor filter. Feature tests green: MedicalPpeCompetencyFields 7, WorkerActivityAndTempVendorFields 3, DueDiligence 4, VpiDimensions 3, ReportsHub 3, GateEvents 2.
+- **★ tier remaining:** the PPE-Matrix Job+Hazard+Activity match dimensions; the Rule 11 MOM/inspection follow-on.
+- **Open:** §6 prequalification taxonomy, §10 onboarding checklists, §12 approval routing, §26 per-project rules, §30 documents vault, §31 communications triggers, §34 remaining catalogs, §35 relations, §3 nav, §40 label; frontend surfacing of the many new fields.
 - Keep this file updated: tick an item only when it's implemented AND matches the doc against real code.
