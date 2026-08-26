@@ -234,6 +234,21 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal'])->prefix('portal/pu
     Route::get('/debit-notes',                        [PurchasePortalCommerceController::class, 'debitNotes']);
     Route::get('/debit-notes/{id}',                   [PurchasePortalCommerceController::class, 'debitNote']);
     Route::get('/payments',                           [PurchasePortalCommerceController::class, 'payments']);
+
+    // §32 Governance-response half — mirror of the TPV portal on Purchase-owned
+    // models (separate DB). No PPE requirement matrix (Purchase has none).
+    $pgov = \App\Http\Controllers\Api\Portal\PurchasePortalGovernanceController::class;
+    Route::get('/ncrs',                               [$pgov, 'ncrs']);
+    Route::post('/ncrs/{ncr}/respond',                [$pgov, 'respondNcr']);
+    Route::get('/capas',                              [$pgov, 'capas']);
+    Route::post('/capas/{capa}/evidence',             [$pgov, 'submitCapaEvidence']);
+    Route::post('/approvals/request',                 [$pgov, 'requestApproval']);
+    Route::post('/extensions/request',                [$pgov, 'requestExtension']);
+    Route::get('/meetings',                           [$pgov, 'meetings']);
+    Route::get('/meetings/{kickoff}/mom',             [$pgov, 'meetingMom']);
+    Route::get('/actions',                            [$pgov, 'actions']);
+    Route::post('/actions/{action}/respond',          [$pgov, 'respondAction']);
+    Route::post('/workers/{worker}/certificates',     [$pgov, 'uploadCertificate']);
 });
 
 // ── Customer Portal — public (no auth) ───────────────────────────────────
