@@ -166,6 +166,12 @@ class TpvSettingsController extends Controller
             'steps'                    => 'required|array|min:1',
             'steps.*.points'           => 'required|integer|min:0|max:1000',
             'steps.*.level'            => 'required|string|max:40',
+            // §26 — optional per-project overrides { project: { severity_points?, steps? } }.
+            'project_overrides'                    => 'sometimes|array',
+            'project_overrides.*.severity_points'  => 'sometimes|array',
+            'project_overrides.*.steps'            => 'sometimes|array',
+            'project_overrides.*.steps.*.points'   => 'required_with:project_overrides.*.steps|integer|min:0|max:1000',
+            'project_overrides.*.steps.*.level'    => 'required_with:project_overrides.*.steps|string|max:40',
         ]);
 
         // A ladder has to start at zero, or a vendor with no points has no level.

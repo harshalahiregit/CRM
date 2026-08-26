@@ -99,13 +99,14 @@ class TpvViolationService
         $violation->delete();
     }
 
-    /** Cumulative escalation for one vendor from its OPEN violations. */
-    public function escalationFor(int $tenantId, int $vendorId): array
+    /** Cumulative escalation for one vendor from its OPEN violations. An optional
+     *  project applies that project's ladder override (§26). */
+    public function escalationFor(int $tenantId, int $vendorId, ?string $project = null): array
     {
         $open = TpvVendorViolation::forTenant($tenantId)->where('vendor_id', $vendorId)->where('status', 'Open');
         $points = (int) (clone $open)->sum('points');
         $count = (clone $open)->count();
-        $steps = $this->settings->violationLadder($tenantId)['steps'] ?? null;
+        $steps = $this->settings->violationLadderFor($project, $tenantId)['steps'] ?? null;
         $level = ViolationType::levelForSteps($points, $steps);
 
         return [

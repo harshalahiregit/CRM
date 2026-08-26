@@ -64,6 +64,28 @@ class TpvSettings
         return $this->effective('violation_ladder', $tenantId);
     }
 
+    /**
+     * §26 — the violation ladder for a specific project/client, applying any
+     * per-project override on top of the tenant ladder. With no project, or no
+     * override for it, this is exactly the tenant ladder.
+     */
+    public function violationLadderFor(?string $project, ?int $tenantId = null): array
+    {
+        $ladder = $this->violationLadder($tenantId);
+        $override = $project !== null ? ($ladder['project_overrides'][$project] ?? null) : null;
+
+        if (is_array($override)) {
+            if (isset($override['severity_points'])) {
+                $ladder['severity_points'] = $override['severity_points'];
+            }
+            if (isset($override['steps'])) {
+                $ladder['steps'] = $override['steps'];
+            }
+        }
+
+        return $ladder;
+    }
+
     /** Configurable onboarding checklists by risk/project/site/work-type (§10). */
     public function onboardingChecklists(?int $tenantId = null): array
     {
@@ -183,6 +205,10 @@ class TpvSettings
             'violation_ladder' => [
                 'severity_points' => ViolationType::SEVERITY_POINTS,
                 'steps'           => ViolationType::ladderSteps(),
+                // §26 — per-project (or per-client) rule overrides. Keyed by project
+                // name; each may override `severity_points` and/or `steps`. Empty by
+                // default, so the tenant ladder applies everywhere until set.
+                'project_overrides' => [],
             ],
             'onboarding_checklists' => [
                 'dimensions' => config('tpv_onboarding_checklists.dimensions', []),
