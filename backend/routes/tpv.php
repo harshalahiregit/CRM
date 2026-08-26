@@ -94,6 +94,8 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::get('/vendors/{vendor}/risk',                      [\App\Http\Controllers\Api\Tpv\VendorRiskController::class, 'show']);
     // Vendor Prequalification (gap report area 6) — read the outcome + questionnaire.
     Route::get('/vendors/{vendor}/prequalification',          [\App\Http\Controllers\Api\Tpv\VendorPrequalificationController::class, 'show']);
+    // §7 Due-Diligence checklist — read the verification record.
+    Route::get('/vendors/{vendor}/due-diligence',             [\App\Http\Controllers\Api\Tpv\VendorDueDiligenceController::class, 'show']);
     Route::get('/vendors/{vendor}/customers',                 [\App\Http\Controllers\Api\Vendor\VendorController::class, 'customers']);
     Route::post('/vendors/{vendor}/customers',                [\App\Http\Controllers\Api\Vendor\VendorController::class, 'storeCustomer']);
     // Employees (enhancement #2/#9/#10) — the vendor's assignable people. index()
@@ -406,6 +408,8 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('tpv')->group(function
     Route::put('/vendors/{vendor}/risk',              [\App\Http\Controllers\Api\Tpv\VendorRiskController::class, 'assess']);
     // Scoring a vendor's prequalification is likewise an admin authority decision.
     Route::put('/vendors/{vendor}/prequalification',  [\App\Http\Controllers\Api\Tpv\VendorPrequalificationController::class, 'assess']);
+    // Recording due-diligence verification is an admin authority decision (§7).
+    Route::put('/vendors/{vendor}/due-diligence',     [\App\Http\Controllers\Api\Tpv\VendorDueDiligenceController::class, 'save']);
 
     // Granting or revoking site access is admin authority.
     Route::post('/workers/{worker}/activate',         [TpvWorkerController::class, 'activate']);

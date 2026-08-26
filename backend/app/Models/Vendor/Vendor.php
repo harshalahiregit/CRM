@@ -149,6 +149,12 @@ class Vendor extends Model
         return $this->hasOne(TpvOnboarding::class, 'vendor_id');
     }
 
+    /** §7 Due-Diligence checklist for this vendor. */
+    public function dueDiligence()
+    {
+        return $this->hasOne(\App\Models\Tpv\TpvDueDiligence::class, 'vendor_id');
+    }
+
     /** The Purchase onboarding workflow over this vendor, if engaged for Purchase. */
     public function purchaseOnboarding()
     {

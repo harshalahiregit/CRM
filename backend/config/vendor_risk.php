@@ -68,6 +68,39 @@ return [
                 'multi'  => ['label' => 'Multi-tier',                   'points' => 3],
             ],
         ],
+        // §7 risk dimensions the doc calls out explicitly.
+        'legal' => [
+            'label'   => 'Legal risk',
+            'options' => [
+                'low'    => ['label' => 'Low — clean legal standing',            'points' => 1],
+                'medium' => ['label' => 'Medium — minor disputes',              'points' => 2],
+                'high'   => ['label' => 'High — active litigation / sanctions', 'points' => 4],
+            ],
+        ],
+        'cyber_data' => [
+            'label'   => 'Cyber / data risk',
+            'options' => [
+                'low'    => ['label' => 'Low — no system/data access',      'points' => 1],
+                'medium' => ['label' => 'Medium — limited data access',     'points' => 2],
+                'high'   => ['label' => 'High — sensitive systems/data',    'points' => 4],
+            ],
+        ],
+        'reputational' => [
+            'label'   => 'Reputational risk',
+            'options' => [
+                'low'    => ['label' => 'Low — no adverse history',         'points' => 1],
+                'medium' => ['label' => 'Medium — some concerns',          'points' => 2],
+                'high'   => ['label' => 'High — public / brand exposure',   'points' => 3],
+            ],
+        ],
+        'environmental' => [
+            'label'   => 'Environmental risk',
+            'options' => [
+                'low'    => ['label' => 'Low — negligible impact',              'points' => 1],
+                'medium' => ['label' => 'Medium — managed emissions/waste',     'points' => 2],
+                'high'   => ['label' => 'High — significant environmental impact', 'points' => 4],
+            ],
+        ],
     ],
 
     /*
