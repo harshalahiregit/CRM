@@ -154,8 +154,10 @@ export const purchasePortalApi = {
     requestApproval: (payload)     => api.post('/portal/purchase/approvals/request', payload).then(r => r.data),
     requestExtension:(payload)     => api.post('/portal/purchase/extensions/request', payload).then(r => r.data),
     meetings:        ()            => api.get('/portal/purchase/meetings').then(r => r.data),
+    meetingMom:      (id)          => api.get(`/portal/purchase/meetings/${id}/mom`).then(r => r.data),
     actions:         ()            => api.get('/portal/purchase/actions').then(r => r.data),
     respondAction:   (id, payload) => api.post(`/portal/purchase/actions/${id}/respond`, payload).then(r => r.data),
+    uploadCertificate: (workerId, fd) => upload(`/portal/purchase/workers/${workerId}/certificates`, fd),
   },
 }
 

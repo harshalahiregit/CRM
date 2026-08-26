@@ -37,7 +37,7 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 - [ ] Pending Approvals headline tile `[P]` (surfaced via `awaiting_review` KPI + Action Centre `approvals` row; no dedicated headline tile yet).
 - [ ] Pending Onboarding headline tile `[P]` (onboarding funnel exists; no headline tile).
 - [ ] Gate Violations count KPI `[P]` (`denied_today` KPI exists; no cumulative gate-violations tile).
-- [x] Risk drill-down by Vendor/Project/Site/Department/Work Package/Risk Category — `GET /dashboard/risk-drilldown?dimension=`; groups vendors (risk breakdown) + open incidents by dimension; guarded by `RiskDrilldownTest` [2026-08-26].
+- [x] Risk drill-down by Vendor/Project/Site/Department/Work Package/Risk Category — `GET /dashboard/risk-drilldown?dimension=`; groups vendors (risk breakdown) + open incidents by dimension; guarded by `RiskDrilldownTest` [2026-08-26]. **[audit-fix 2026-08-26]** the endpoint had no UI consumer — the dashboard Risk card only linked to `/vendors`. Now the Risk Classification card has a "Drill down by" dimension switcher that calls `tpvApi.dashboard.riskDrilldown()` and renders the per-group slice (vendors, risk mix, open incidents). Prod build green.
 - [x] Action Centre row: PPE pending — `ppe_pending` row (workers missing mandatory PPE → `/app/tpv/ppe`) [2026-08-25].
 - [ ] Action Centre row: MOM pending `[M]` (only `mom_actions_overdue` today, not general pending).
 - [ ] Action Centre row: Contract expiry `[M]` (no contracts model wired).
@@ -66,11 +66,12 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 - [ ] Promote proxied items to explicit: legal existence, experience, HSE policy, labour compliance, certifications, previous clients `[P]` (already covered via legal/technical/track_record sections).
 
 ## §7 Risk & Due Diligence
-- [x] **Due-Diligence checklist entity** — new `tpv_due_diligences` / `TpvDueDiligence` (company/document/licence/insurance verification + background + reference checks, each Pending/Verified/Failed/Not_Applicable, rolling up to Cleared/Rejected); admin-gated save at `PUT /tpv/vendors/{vendor}/due-diligence` [2026-08-26].
+- [x] **Due-Diligence checklist entity** — new `tpv_due_diligences` / `TpvDueDiligence` (company/document/licence/insurance verification + background + reference checks, each Pending/Verified/Failed/Not_Applicable, rolling up to Cleared/Rejected); admin-gated save at `PUT /tpv/vendors/{vendor}/due-diligence` [2026-08-26]. **[audit-fix 2026-08-26]** the doc's `previous_performance`, `incident_history` and `compliance_history` checks were missing — now added as columns + to `CHECKS`/`$fillable` (validation + the checklist UI are driven off `CHECKS`, so they flow through automatically) and roll into `deriveStatus()`.
 - [x] Risk dimension: Legal — `config/vendor_risk.php` factor `legal` [2026-08-26].
 - [x] Risk dimension: Cyber/Data — factor `cyber_data` [2026-08-26].
 - [x] Risk dimension: Reputational — factor `reputational` [2026-08-26].
-- [x] Risk dimension: Environmental — factor `environmental` [2026-08-26]. _Guarded by `DueDiligenceTest`._
+- [x] Risk dimension: Environmental — factor `environmental` [2026-08-26].
+- [x] Risk dimension: Security — factor `security` [audit-fix 2026-08-26] (the doc names it; was missing). _Guarded by `DueDiligenceTest`._
 - [ ] Risk tier → onboarding/approval depth gating `[P]` (tier stored/surfaced but doesn't drive depth).
 
 ## §9 Meetings (mostly done — remaining polish)
@@ -86,7 +87,7 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 - [x] …by Project — rule `match.project`.
 - [x] …by Site — rule `match.site`.
 - [x] …by Work Type — rule `match.work_type`.
-- [x] General configurable checklist (beyond documents) that gates activation — `general.items` + `general.gates_activation`.
+- [x] General configurable checklist (beyond documents) that **actually gates activation** — `general.items` + `general.gates_activation`. **[audit-fix 2026-08-26]** the earlier tick was premature: the resolver existed but nothing consumed it. Now wired end-to-end: `TpvOnboarding.checklist_state` stores per-item ticks (`GET`/`PATCH /onboarding/{id}/checklist`, admin-only), and `TpvOnboardingService::approve()` **refuses to activate** while any resolved gated item is unticked (skipped once already Active, so re-approval stays idempotent). Guarded by `OnboardingChecklistGateTest` (3 — blocked-when-incomplete, succeeds-when-complete, names-the-missing-item) + `OnboardingActivationTest`/`WorkforcePpeIsolationTest` updated to tick the checklist before activating.
 
 ## §11 Temporary Vendors
 - [x] Capture Purpose — `vendors.temp_purpose` [2026-08-26].
@@ -100,7 +101,8 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 - [x] Raise an approval request on temp-vendor creation — `createTemporary` raises a `TEMPORARY_VENDOR` approval [2026-08-26]. _Guarded by `WorkerActivityAndTempVendorFieldsTest`._
 
 ## §12 Approvals — dimension-based routing — [2026-08-26] `approval_routing` TpvSettings group; `routeFor($context)`; guarded by `ChecklistAndRoutingConfigTest`
-- [x] Configurable routing by Risk — dimension `risk`.
+**[audit-fix 2026-08-26]** the earlier ticks covered only the *resolver* (`routeFor` returns levels) — a raised approval did NOT carry or thread through the route. Now wired end-to-end: `tpv_approvals.route` + `route_index` columns; `TpvApprovalService::raise()` resolves the route from the request's dimensions (risk derived from the vendor + any explicit `route_context`) and stores it; `decide()` **threads the approval through each level in turn** — an intermediate "approve" advances to the next level and stays Pending; only the final level marks it Approved; a reject/cancel at any level is terminal (single-level default = one-shot, unchanged). Guarded by `ApprovalRoutingFlowTest` (4 — High→manager/head, Low→one-step, Critical reject terminal, explicit value override).
+- [x] Configurable routing by Risk — dimension `risk` (derived from the vendor, drives the route).
 - [x] …Project — dimension `project`.
 - [x] …Value — dimension `value`.
 - [x] …Work type — dimension `work_type`.
@@ -196,18 +198,19 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 
 ## §26 Strikes & Violations
 - [x] Vendor violation ladder configurable (tenant/settings) — new `violation_ladder` settings group (severity points + threshold→level steps) edited via a Settings tab; `TpvViolationService`, the `TpvVendorViolation` points hook, and `TpvRenewalService` all read the tenant ladder through `TpvSettings`. Because Rule 9 auto-suspend/blacklist is driven by the ladder levels, those thresholds are now configurable too. Guarded by `ViolationLadderConfigTest` (3); existing `ViolationEscalationTest` still green [2026-08-25].
-- [x] Per-project / per-client rule config — `violation_ladder.project_overrides` + `TpvSettings::violationLadderFor($project)`; guarded by `ViolationLadderPerProjectTest` [2026-08-26].
+- [x] Per-project / per-client rule config — `violation_ladder.project_overrides` + `TpvSettings::violationLadderFor($project)`. **[audit-fix 2026-08-26]** the earlier tick covered only the resolver; `autoEscalate()` called `escalationFor()` **without** the project, so per-project overrides never affected the automatic Rule 9 suspend/blacklist. Now `autoEscalate()` passes the violation's project (`project_id` as the override key), so auto-escalation genuinely honours the project ladder. Guarded by `ViolationLadderPerProjectTest::test_auto_escalation_applies_the_project_override` (suspends on the project override at a point total the tenant default would leave Active).
 
 ## §27 Vendor Performance (VPI)
-- [x] Dimension: Productivity — surfaced (weight 0; structural, no feed yet) [2026-08-26].
-- [x] Dimension: Timeliness — surfaced (weight 0; structural) [2026-08-26].
-- [x] Dimension: Training — computed from worker training pass/validity (weight 0) [2026-08-26].
-- [x] Dimension: Environmental (standalone) — from environmental-category compliance (weight 0) [2026-08-26].
-- [x] Dimension: Security (standalone) — from Security HSSE incidents (weight 0) [2026-08-26].
-- [x] Dimension: Incident (standalone) — from all HSSE incidents, grave-weighted (weight 0) [2026-08-26].
-- [x] Dimension: Meeting action closure — surfaced structurally (respects Meetings module isolation) [2026-08-26].
+**[audit-fix 2026-08-26]** the earlier ticks shipped all seven dimensions at **weight 0**, so they were *displayed but never moved the index* — the doc's anti-thesis (§36 "enforce, don't display"). The four dimensions computed from live data now **carry real weight and genuinely move the VPI**; the original eight were rebalanced down so the set still sums to 1.0. The three with no data feed stay weightless (structural stubs).
+- [x] Dimension: Productivity — surfaced (weight 0; structural stub, no feed yet) [2026-08-26].
+- [x] Dimension: Timeliness — surfaced (weight 0; structural stub) [2026-08-26].
+- [x] Dimension: Training — computed from worker training pass/validity, **weight 0.05** [audit-fix 2026-08-26].
+- [x] Dimension: Environmental (standalone) — from environmental-category compliance, **weight 0.03** [audit-fix 2026-08-26].
+- [x] Dimension: Security (standalone) — from Security HSSE incidents, **weight 0.04** [audit-fix 2026-08-26].
+- [x] Dimension: Incident (standalone) — from all HSSE incidents, grave-weighted, **weight 0.06** [audit-fix 2026-08-26].
+- [x] Dimension: Meeting action closure — surfaced structurally, weight 0 (respects Meetings module isolation) [2026-08-26].
 - [x] Persist performance history/snapshots across projects — `tpv_vendor_performance_snapshots` + `POST /vpi/snapshot`, `GET /vpi/history` [2026-08-26].
-- [x] Band C label "Watch" — `config/vpi.php` `band_labels`, emitted as `band_label` [2026-08-26]. _New dims ship at weight 0 (tenant-weightable, §34) so the overall index is undisturbed. Guarded by `VpiDimensionsTest`._
+- [x] Band C label "Watch" — `config/vpi.php` `band_labels`, emitted as `band_label` [2026-08-26]. _The 4 computed dims now carry weight (index stays a weighted average summing to 1.0); the weight-sum guard (`TpvSettingsTest`) still holds. Guarded by `VpiDimensionsTest` (asserts the 4 computed dims weight > 0, the 3 stubs = 0, weights sum 1.0)._
 
 ## §28 Renewal & Extension (assessment inputs)
 - [x] Input: Compliance (from §21 register) — `assessment.compliance` (score + problem/expiring counts) via new `TpvComplianceService::scoreFor`; shown on the renewal modal [2026-08-25].
@@ -241,9 +244,9 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 - [x] Submit CAPA evidence — `POST /portal/capas/{capa}/evidence` (file/base64 + note).
 - [x] Request approvals — `POST /portal/approvals/request` (raises a vendor-origin approval).
 - [x] Request extensions — `POST /portal/extensions/request` (new EXTENSION ApprovalType on both sides).
-- [x] View meeting invitations + MOM — `GET /portal/meetings` + `/meetings/{id}/mom` (vendor-scoped).
-- [x] Respond to actions — `POST /portal/actions/{id}/respond` (appends a vendor note).
-- [x] Upload training/competency certificates — `POST /portal/workers/{worker}/certificates`.
+- [x] View meeting invitations + MOM — `GET /portal/meetings` + `/meetings/{id}/mom` (vendor-scoped). **[audit-fix 2026-08-26]** backend existed but no UI rendered it — now a **Meetings & MOM** tab on both portals (expandable agenda/MOM items/decisions).
+- [x] Respond to actions — `POST /portal/actions/{id}/respond` (appends a vendor note). **[audit-fix 2026-08-26]** now an **Action Items** tab on both portals (per-action progress note).
+- [x] Upload training/competency certificates — `POST /portal/workers/{worker}/certificates`. **[audit-fix 2026-08-26]** now a **Certificates** tab on both portals (worker picker + kind/name/category/valid-until + file). Shared UI in `components/portal/GovernanceTabs.jsx` (API-agnostic; each portal passes its own governance API + workers fetcher). Prod build green.
 - [x] View compliance register — shipped earlier (commit 82b29064).
 - [x] View PPE requirement matrix — `GET /portal/ppe-matrix` (TPV only; Purchase has no matrix by design).
 - [ ] Self-registration `[P]` — by design (TPV vendor is staff-created; Purchase vendor already self-registers via its own auth).
@@ -302,6 +305,16 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 - **Session 2026-08-26 (branch `feat/vendor-portals-doc-2026-08-25`):** committed §5 Vendor Master; §14/§23 dimension fields; **§15** (job-specific training + competency experience); **§16 Medical** (Pending/Expired status, distinct sign-off, certificate+document upload); **§17 PPE** (project scope, atomic Replacement + Used status, vendor PPE stock entity); **§13** worker→activity link; **§14** trade/training_status/lifecycle_state; **§11 Temporary Vendors** (full capture + approval-on-create + extension→approval); **§7 Due-Diligence** entity + Legal/Cyber/Reputational/Environmental risk dimensions; **§27 VPI** (7 new dimensions at weight 0, Watch band, performance-history snapshots); **§33 Reports hub** + operational CSV exports; **§20 unified gate events** + roster vendor filter; **§10 onboarding checklists** + **§12 approval routing** (two new settings groups); **§6 prequalification** taxonomy depth; **§31 communications** triggers; **§34 catalogs** settings group; **§30** worker certs in the vault; **§35** vendor↔project pivot; **§4 risk drill-down**. Feature tests green: MedicalPpeCompetencyFields 7, WorkerActivityAndTempVendorFields 3, DueDiligence 4, VpiDimensions 3, ReportsHub 3, GateEvents 2, ChecklistAndRoutingConfig 2, PrequalificationTaxonomy 2, CommunicationTriggers 3, CatalogsSettings 2, DocumentVaultWorkerCerts 1, VendorProjectPivot 1, RiskDrilldown 2. Whole Feature/Tpv dir: 248 green; Purchase+Portal: 85 green.
 - **Session 2026-08-26 (part 2):** **§9** agenda supporting-docs + prev-ref (and confirmed the global Decisions/Issues registers + Organizer already shipped); **Rule 11** inspection-finding owner gate; **§30** verify-vs-approve step + renewal-due; **§26** per-project violation ladder overrides; **§40** positioning label. New tests: MeetingDocCompliance +1, InspectionFindingOwnerGate 2, DocumentVerifyStep 2, ViolationLadderPerProject 1. Broad regression: TPV+Shared+Purchase+Portal **378 green**.
 - **Session 2026-08-26 (part 3 — closing the last items):** **§18** real Job+Hazard+Activity PPE matching (the last ★ item — activities carry a hazard, worker→activity supplies activity+hazard, rules narrow to it); **Rule 11 MOM-action** owner gate + **§35** first-class MeetingAction owner; **§3** dedicated Medical Fitness register (TPVLayout nav + `/app/tpv/medical` page + `GET /tpv/medical`). New tests: PpeMatrixClass +2 (6), MeetingDocCompliance +1, MedicalRegister 2. Frontend production build green.
+- **Session 2026-08-26 (part 4 — audit-fix pass, branch `fix/tpv-audit-wiring-2026-08-26`):** a skeptical doc-vs-code audit found several items that had been ticked prematurely — *built + unit-tested in isolation, but not actually wired end-to-end* (the resolver existed but the live flow never consumed it, or the feature was surfaced but weightless/UI-less). These are now genuinely closed and verified at the behaviour level, not just the resolver:
+  - **§12 approval routing** — `raise()` now stores the derived route and `decide()` threads through each level (`ApprovalRoutingFlowTest`, 4).
+  - **§10 activation checklist** — `approve()` now actually refuses activation until the gated checklist is ticked (`OnboardingChecklistGateTest`, 3; existing activation tests updated to tick first).
+  - **§26 per-project ladder** — `autoEscalate()` now passes the project so auto-suspend/blacklist honours the override (`ViolationLadderPerProjectTest::test_auto_escalation_applies_the_project_override`).
+  - **§27 VPI** — the 4 computed dimensions now carry real weight (were all 0); weights still sum to 1.0 (`VpiDimensionsTest`).
+  - **§7** — added the missing Security risk factor + the `previous_performance`/`incident_history`/`compliance_history` DD checks.
+  - **§4 risk drill-down** — dashboard UI now consumes the endpoint (dimension switcher + per-group slice).
+  - **§32 portal** — Meetings & MOM, Action Items, and Certificates tabs now render the existing backend on **both** portals (shared `components/portal/GovernanceTabs.jsx`).
+  Regression after the pass: targeted behaviour tests green; TPV+Purchase+Unit/Tpv 379 + Portal/Governance 156 green; frontend prod build green.
+- **Lesson recorded:** "green unit test on a resolver" ≠ "doc requirement met." Tick only after tracing the *live flow* (or an actor/HTTP/behaviour test that exercises the real path), never an isolated resolver.
 - **★ tier: COMPLETE.** All six priority-tier rules are enforced end-to-end.
-- **Sangoe TPV doc: COMPLETE.** Every section §3–§40 is implemented and tested (§41 AI layer is explicitly out of scope for v1). No `[M]`/`[P]` items remain that belong to the TPV doc. The only follow-on is **§32 the vendor-portal governance half** — a separate portal build, not a TPV-admin doc gap.
+- **Sangoe TPV doc — implemented across §3–§40** (§41 AI layer out of scope for v1), with the above audit-fix pass closing the end-to-end gaps. **Genuinely still open / deferred** (data source or shared-module dependency, not yet built): §25 CAPA-register reconciliation (`TpvCapa` vs `IncidentCapa`); §28 Contract/Commercial/Workforce/Client-feedback renewal inputs (no data source); §31 Meeting-invitation / MOM-distribution / action-reminder comms triggers (shared Meetings module owns dispatch); §33 dedicated management-report datasets; §34 remaining catalogs (Meeting types, PPE catalogue/matrix in settings, notification/expiry rules). These are listed `[P]`/`[M]` above and were **not** over-claimed as done.
 - Keep this file updated: tick an item only when it's implemented AND matches the doc against real code.

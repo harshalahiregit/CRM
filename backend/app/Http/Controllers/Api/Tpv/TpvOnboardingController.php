@@ -185,6 +185,29 @@ class TpvOnboardingController extends Controller
         );
     }
 
+    /** §10 — the activation-gating checklist for this onboarding (resolved + ticked state). */
+    public function checklist(Request $request, TpvOnboarding $onboarding)
+    {
+        $this->assertTenant($request, $onboarding);
+
+        return response()->json($this->tpvOnboardingService->checklist($onboarding));
+    }
+
+    /** §10 — admin ticks/unticks checklist items ({ item: bool, ... }). */
+    public function saveChecklist(Request $request, TpvOnboarding $onboarding)
+    {
+        $this->assertTenant($request, $onboarding);
+
+        $data = $request->validate([
+            'state'   => 'required|array|min:1',
+            'state.*' => 'boolean',
+        ]);
+
+        $this->tpvOnboardingService->setChecklist($onboarding, $data['state']);
+
+        return response()->json($this->tpvOnboardingService->checklist($onboarding));
+    }
+
     public function requestResubmit(Request $request, TpvOnboarding $onboarding)
     {
         $this->assertTenant($request, $onboarding);

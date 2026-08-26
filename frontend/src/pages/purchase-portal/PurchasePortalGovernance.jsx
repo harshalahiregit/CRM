@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Send, Upload, Clock } from 'lucide-react'
 import { purchasePortalApi } from '@/services/purchasePortalApi'
+import { MeetingsTab, ActionsTab, CertificatesTab } from '@/components/portal/GovernanceTabs'
 
 // §32 Purchase Vendor Portal — governance-response half. Mirror of the TPV
 // portal (separate Purchase-owned data). No PPE matrix — Purchase has none.
@@ -9,7 +10,10 @@ const SEV = { Minor: '#0891b2', Major: '#d97706', Critical: '#dc2626' }
 const TABS = [
   { key: 'ncrs', label: 'NCRs' },
   { key: 'capas', label: 'CAPAs' },
+  { key: 'meetings', label: 'Meetings & MOM' },
+  { key: 'actions', label: 'Action Items' },
   { key: 'requests', label: 'Requests' },
+  { key: 'certificates', label: 'Certificates' },
 ]
 
 export default function PurchasePortalGovernance() {
@@ -30,7 +34,10 @@ export default function PurchasePortalGovernance() {
 
       {tab === 'ncrs' && <Ncrs />}
       {tab === 'capas' && <Capas />}
+      {tab === 'meetings' && <MeetingsTab gov={purchasePortalApi.governance} />}
+      {tab === 'actions' && <ActionsTab gov={purchasePortalApi.governance} />}
       {tab === 'requests' && <Requests />}
+      {tab === 'certificates' && <CertificatesTab gov={purchasePortalApi.governance} listWorkers={purchasePortalApi.workers.list} />}
     </div>
   )
 }

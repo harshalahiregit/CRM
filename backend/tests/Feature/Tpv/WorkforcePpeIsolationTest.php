@@ -100,6 +100,14 @@ class WorkforcePpeIsolationTest extends TestCase
         ]);
     }
 
+    /** §10 — tick the resolved activation checklist so approve() can activate. */
+    private function completeChecklist(TpvOnboarding $ob): void
+    {
+        $svc   = app(\App\Services\Tpv\TpvOnboardingService::class);
+        $items = array_column($svc->checklist($ob)['items'], 'item');
+        $svc->setChecklist($ob, array_fill_keys($items, true));
+    }
+
     /** A PPE product with a known opening balance at the default warehouse. */
     private function product(float $qty = 100): Product
     {
@@ -418,6 +426,7 @@ class WorkforcePpeIsolationTest extends TestCase
             'tenant_id' => self::TENANT, 'vendor_id' => $vendor->id,
             'current_step' => 6, 'status' => ObStatus::SUBMITTED,
         ]);
+        $this->completeChecklist($ob);
 
         Sanctum::actingAs($this->user('admin'));
 
@@ -439,6 +448,7 @@ class WorkforcePpeIsolationTest extends TestCase
             'tenant_id' => self::TENANT, 'vendor_id' => $vendor->id,
             'current_step' => 6, 'status' => ObStatus::SUBMITTED,
         ]);
+        $this->completeChecklist($ob);
         $worker = $this->worker($vendor);
         $svc    = app(\App\Services\Tpv\TpvWorkerService::class);
 

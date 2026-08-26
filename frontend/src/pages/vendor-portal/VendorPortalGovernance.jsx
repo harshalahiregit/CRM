@@ -1,15 +1,20 @@
 import { useState, useEffect } from 'react'
 import { Gavel, RefreshCw, Send, Upload, Clock, HardHat } from 'lucide-react'
 import { portalApi } from '@/services/portalApi'
+import { MeetingsTab, ActionsTab, CertificatesTab } from '@/components/portal/GovernanceTabs'
 
 // §32 Vendor Portal — governance-response half. The vendor views + responds to
-// its own NCRs/CAPAs, requests approvals/extensions, and views the PPE matrix.
+// its own NCRs/CAPAs, meetings/MOM and action items, requests approvals/extensions,
+// uploads worker certificates, and views the PPE matrix.
 const label = (s) => String(s || '').replace(/_/g, ' ')
 const SEV = { Minor: '#0891b2', Major: '#d97706', Critical: '#dc2626' }
 const TABS = [
   { key: 'ncrs', label: 'NCRs' },
   { key: 'capas', label: 'CAPAs' },
+  { key: 'meetings', label: 'Meetings & MOM' },
+  { key: 'actions', label: 'Action Items' },
   { key: 'requests', label: 'Requests' },
+  { key: 'certificates', label: 'Certificates' },
   { key: 'ppe', label: 'PPE Matrix' },
 ]
 
@@ -34,7 +39,10 @@ export default function VendorPortalGovernance() {
 
       {tab === 'ncrs' && <Ncrs />}
       {tab === 'capas' && <Capas />}
+      {tab === 'meetings' && <MeetingsTab gov={portalApi.governance} />}
+      {tab === 'actions' && <ActionsTab gov={portalApi.governance} />}
       {tab === 'requests' && <Requests />}
+      {tab === 'certificates' && <CertificatesTab gov={portalApi.governance} listWorkers={portalApi.workers.list} />}
       {tab === 'ppe' && <PpeMatrix />}
     </div>
   )

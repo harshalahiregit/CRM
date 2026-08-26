@@ -416,8 +416,69 @@ class TpvOnboardingService
     /**
      * Admin approval — approves onboarding and generates Registration Number.
      */
+    /**
+     * §10 — the effective onboarding checklist for this vendor, resolved from its
+     * dimensions (risk level) and merged with what the admin has ticked so far.
+     * Returns the per-item done state, whether it gates activation, and what is
+     * still missing.
+     */
+    public function checklist(TpvOnboarding $onboarding): array
+    {
+        $resolved = app(\App\Support\Tpv\TpvSettings::class)
+            ->checklistFor($this->checklistContext($onboarding), (int) $onboarding->tenant_id);
+        $state = $onboarding->checklist_state ?? [];
+
+        $items = array_map(fn ($label) => [
+            'item' => $label,
+            'done' => (bool) ($state[$label] ?? false),
+        ], $resolved['items']);
+        $missing = array_values(array_filter($resolved['items'], fn ($l) => empty($state[$l])));
+
+        return [
+            'items'            => $items,
+            'gates_activation' => (bool) $resolved['gates_activation'],
+            'complete'         => $missing === [],
+            'missing'          => $missing,
+        ];
+    }
+
+    /** The [dimension => value] context the checklist rules match against (§10). */
+    private function checklistContext(TpvOnboarding $onboarding): array
+    {
+        $vendor = $onboarding->vendor;
+
+        return array_filter([
+            'risk_level' => $vendor?->risk_level,
+        ], fn ($v) => $v !== null && $v !== '');
+    }
+
+    /** Admin ticks (or unticks) checklist items; merges onto the stored state (§10). */
+    public function setChecklist(TpvOnboarding $onboarding, array $state): TpvOnboarding
+    {
+        $current = $onboarding->checklist_state ?? [];
+        foreach ($state as $item => $done) {
+            $current[(string) $item] = (bool) $done;
+        }
+        $onboarding->update(['checklist_state' => $current]);
+
+        return $onboarding->fresh() ?? $onboarding;
+    }
+
     public function approve(TpvOnboarding $onboarding, User $actor, ?string $remarks = null): TpvOnboarding
     {
+        // §10 — the general onboarding checklist gates activation. If it is
+        // configured to gate and any required item is still unticked, refuse to
+        // activate (the doc's "checklist must be complete before activation"). Skip
+        // the gate when the vendor is already Active so re-approval stays idempotent.
+        $checklist = $this->checklist($onboarding);
+        if ($checklist['gates_activation'] && ! $checklist['complete']
+            && $onboarding->vendor?->status !== VendorStatus::ACTIVE) {
+            throw new BusinessException(
+                'Onboarding checklist incomplete — the following must be ticked before activation: '
+                .implode(', ', $checklist['missing']).'.'
+            );
+        }
+
         $registrationNumber = $onboarding->registration_number
             ?: $this->registrationNumbers->generate($onboarding->tenant_id);
 

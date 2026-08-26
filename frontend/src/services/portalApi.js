@@ -206,9 +206,11 @@ export const portalApi = {
     requestApproval: (payload)     => api.post('/portal/approvals/request', payload).then(r => r.data),
     requestExtension:(payload)     => api.post('/portal/extensions/request', payload).then(r => r.data),
     meetings:        ()            => api.get('/portal/meetings').then(r => r.data),
+    meetingMom:      (id)          => api.get(`/portal/meetings/${id}/mom`).then(r => r.data),
     actions:         ()            => api.get('/portal/actions').then(r => r.data),
     respondAction:   (id, payload) => api.post(`/portal/actions/${id}/respond`, payload).then(r => r.data),
     ppeMatrix:       ()            => api.get('/portal/ppe-matrix').then(r => r.data),
+    uploadCertificate: (workerId, fd) => upload(`/portal/workers/${workerId}/certificates`, fd),
   },
 
 }

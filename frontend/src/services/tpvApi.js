@@ -15,6 +15,8 @@ export const tpvApi = {
   // ── Dashboard — one read-only roll-up across the whole module ───────
   dashboard: {
     get: () => api.get('/tpv/dashboard').then(r => r.data),
+    // §4 — risk drill-down by dimension (vendor/project/site/department/work_package/risk_category).
+    riskDrilldown: (dimension) => api.get('/tpv/dashboard/risk-drilldown', { params: { dimension } }).then(r => r.data),
   },
 
   // ── System Configuration (Sangoe TPV §34) ──────────────────────────

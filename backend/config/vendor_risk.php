@@ -101,6 +101,14 @@ return [
                 'high'   => ['label' => 'High — significant environmental impact', 'points' => 4],
             ],
         ],
+        'security' => [
+            'label'   => 'Security risk',
+            'options' => [
+                'low'    => ['label' => 'Low — no physical/asset security exposure',   'points' => 1],
+                'medium' => ['label' => 'Medium — general site / asset access',         'points' => 2],
+                'high'   => ['label' => 'High — critical assets / security operations',  'points' => 4],
+            ],
+        ],
     ],
 
     /*

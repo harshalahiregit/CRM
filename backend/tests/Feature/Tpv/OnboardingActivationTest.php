@@ -76,11 +76,20 @@ class OnboardingActivationTest extends TestCase
 
     private function submittedOnboarding(Vendor $v): TpvOnboarding
     {
-        return TpvOnboarding::create([
+        $ob = TpvOnboarding::create([
             'tenant_id' => self::TENANT, 'vendor_id' => $v->id,
             'current_step' => Status::TOTAL_STEPS, 'status' => Status::SUBMITTED,
             'profile' => ['company_name' => $v->company_name],
         ]);
+
+        // §10 — the general checklist gates activation, so a vendor ready for the
+        // approve decision has its resolved checklist ticked. Seed it complete here;
+        // the gate itself is exercised in OnboardingChecklistGateTest.
+        $svc = app(TpvOnboardingService::class);
+        $items = array_column($svc->checklist($ob)['items'], 'item');
+        $svc->setChecklist($ob, array_fill_keys($items, true));
+
+        return $ob->fresh();
     }
 
     public function test_approve_activates_the_vendor_and_its_portal_login(): void

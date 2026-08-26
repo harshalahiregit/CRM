@@ -71,6 +71,7 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::post('/onboarding',                        [TpvOnboardingController::class, 'store']);
     Route::get('/onboarding/{onboarding}',            [TpvOnboardingController::class, 'show']);
     Route::get('/onboarding/{onboarding}/progress',   [TpvOnboardingController::class, 'progress']);
+    Route::get('/onboarding/{onboarding}/checklist',  [TpvOnboardingController::class, 'checklist']); // §10 activation checklist
     // Step 1 — Kickoff PDF: stream, acknowledge, and log view/download/print.
     Route::get('/onboarding/{onboarding}/kickoff',         [TpvOnboardingController::class, 'kickoffPdf']);
     Route::get('/onboarding/{onboarding}/work-start-letter', [TpvOnboardingController::class, 'workStartLetter']);
@@ -399,6 +400,7 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('tpv')->group(function
     Route::put('/settings/{group}',    [\App\Http\Controllers\Api\Tpv\TpvSettingsController::class, 'update']);
     Route::delete('/settings/{group}', [\App\Http\Controllers\Api\Tpv\TpvSettingsController::class, 'reset']);
 
+    Route::patch('/onboarding/{onboarding}/checklist', [TpvOnboardingController::class, 'saveChecklist']); // §10 tick items
     Route::post('/onboarding/{onboarding}/approve',   [TpvOnboardingController::class, 'approve']);
     Route::post('/onboarding/{onboarding}/reject',    [TpvOnboardingController::class, 'reject']);
     Route::post('/onboarding/{onboarding}/hold',      [TpvOnboardingController::class, 'hold']);
