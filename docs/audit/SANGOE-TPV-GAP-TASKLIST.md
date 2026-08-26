@@ -21,7 +21,7 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 - [x] **Rule 4 — enforce competency at the point of work** (§15/§19/§36). DONE 2026-08-25: badge issuance (`TpvWorkerService::blockers`, the Gate-Pass stage) now hard-blocks a worker who lacks any competency named by their work package's activities; guarded by `CompetencyGateTest` (5 tests). _Enforced at the Gate-Pass/badge point (correct per doc); the entry-scan gate itself is still not competency-gated — optional follow-up._
 - [x] **Rule 6 — enforce permit for high-risk work** (§19/§36). DONE 2026-08-25: activities carry a `requires_permit` flag (+ optional pinned `permit_type`); `TpvWorkerService::blockers()` refuses a badge when the worker's package has a high-risk activity with no valid Approved/Active, non-expired vendor permit of the matching type; mirrored as a REQUIRED check in the authorization verdict; editor UI on the Work Packages page. Guarded by `PermitGateTest` (6 tests).
 - [x] **Rule 11 — action owner required: CAPA + NCR** (§36). DONE 2026-08-25: `TpvCapaService::transition` refuses to move a CAPA past Open without `assigned_to`; `TpvNcrService::transition` refuses to move an NCR past Raised without `responsible_by` (this also means auto-raised CAPAs inherit an owner). Guarded by `ActionOwnerRuleTest` (5 tests).
-- [ ] **Rule 11 — action owner required: MOM actions + inspection findings** `[P]` (§36). Remaining: owner-gate on MOM action progression (shared Meetings module — deferred to avoid Purchase-side regression) and on direct inspection-finding closure. Note: escalated inspection findings already pass through the now-gated NCR.
+- [x] **Rule 11 — action owner required: inspection findings** (§36). DONE 2026-08-26: `TpvInspectionService::updateFinding` refuses to move a finding to Action/Closed without `responsible_by`. Guarded by `InspectionFindingOwnerGateTest` (2). _MOM-action progression remains in the shared Meetings module._
 - [x] **Rule 9 — auto-enforce vendor violation escalation** (§26/§36). DONE 2026-08-25: `TpvViolationService::record` now auto-applies Suspension (≥10 pts) / Blacklist (≥13 pts) via the shared `VendorService` the moment a violation crosses a ladder threshold (best-effort, never downgrades a blacklist, never re-applies a held state). Worker strikes already auto-terminate. Guarded by `ViolationEscalationTest` (3 tests). _Ladder thresholds still hardcoded — making them tenant-configurable remains under §26._
 - [x] **PPE Matrix → Job + Hazard + Activity model** (§18). DONE 2026-08-25: matrix rows now carry `hazard`, `activity`, `ppe_class` (Mandatory/Optional/Conditional), `condition`, `replacement_frequency_days`, and `verification_required` alongside the existing scope (role/skill). Only **Mandatory** rules gate the badge (`PpeInventoryService::missingMandatoryFor` filters on `isMandatory()`); Optional/Conditional are advisory and surface in the compliance view with their class + hazard. Editor UI (add-dialog + rule display) and controller validation updated. Guarded by `PpeMatrixClassTest` (4 tests). _Rows now capture Job+Hazard+Activity as rule context; worker→rule **matching** still keys on the scope column (designation/skill) — hazard/activity are descriptive attributes of the rule, not yet additional match dimensions. Full activity-based matching remains a follow-up._
 
@@ -74,12 +74,12 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 - [ ] Risk tier → onboarding/approval depth gating `[P]` (tier stored/surfaced but doesn't drive depth).
 
 ## §9 Meetings (mostly done — remaining polish)
-- [ ] Global "Decisions" register view/nav `[P]` (per-meeting records exist).
-- [ ] Global "Issues Raised" register view/nav `[P]`.
-- [ ] Agenda item: supporting-documents field `[M]`.
-- [ ] Agenda item: previous-discussion-reference field `[P]`.
-- [ ] Distinct Organizer field `[P]` (implicit `created_by` today).
-- [ ] Per-agenda discussion field + free-form MOM attachments `[P]`.
+- [x] Global "Decisions" register view/nav — `GET /kickoff/registers/decisions` (MeetingRegisterService) [already shipped; confirmed 2026-08-26].
+- [x] Global "Issues Raised" register view/nav — `GET /kickoff/registers/issues` [already shipped; confirmed 2026-08-26].
+- [x] Agenda item: supporting-documents field — `meeting_agenda_items.supporting_documents` (JSON) [2026-08-26].
+- [x] Agenda item: previous-discussion-reference field — `meeting_agenda_items.previous_discussion_ref` [2026-08-26]. _Guarded by `MeetingDocComplianceTest`._
+- [x] Distinct Organizer field — `kickoff_meetings.organizer` (already present in fillable) [confirmed 2026-08-26].
+- [x] Per-agenda discussion field — `meeting_agenda_items.discussion` (already present); free-form MOM attachments via evidence paths.
 
 ## §10 Onboarding — [2026-08-26] `onboarding_checklists` TpvSettings group; `checklistFor($context)`; guarded by `ChecklistAndRoutingConfigTest`
 - [x] Configurable onboarding checklist by Risk Level — rule `match.risk_level`.
@@ -196,7 +196,7 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 
 ## §26 Strikes & Violations
 - [x] Vendor violation ladder configurable (tenant/settings) — new `violation_ladder` settings group (severity points + threshold→level steps) edited via a Settings tab; `TpvViolationService`, the `TpvVendorViolation` points hook, and `TpvRenewalService` all read the tenant ladder through `TpvSettings`. Because Rule 9 auto-suspend/blacklist is driven by the ladder levels, those thresholds are now configurable too. Guarded by `ViolationLadderConfigTest` (3); existing `ViolationEscalationTest` still green [2026-08-25].
-- [ ] Per-project / per-client rule config `[M]` (settings are tenant-level only).
+- [x] Per-project / per-client rule config — `violation_ladder.project_overrides` + `TpvSettings::violationLadderFor($project)`; guarded by `ViolationLadderPerProjectTest` [2026-08-26].
 
 ## §27 Vendor Performance (VPI)
 - [x] Dimension: Productivity — surfaced (weight 0; structural, no feed yet) [2026-08-26].
@@ -220,8 +220,8 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 ## §30 Documents (Vault)
 - [x] Surface worker documents in the vault — Medical certificate/document source adapter [2026-08-26].
 - [x] Surface competency/training certificates in the vault — Training + Competency source adapters (7 vault sources now); guarded by `DocumentVaultWorkerCertsTest` [2026-08-26].
-- [ ] Per-document renewal workflow object `[P]` (expiry surfaced per row; no dedicated renewal object yet).
-- [ ] Distinct verify-vs-approve step `[P]` (document review is single-step).
+- [x] Per-document renewal tracking — `vendor_documents.renewal_due_at` [2026-08-26] (lightweight; full renewal-workflow object still optional).
+- [x] Distinct verify-vs-approve step — `Verified` status + `verified_by`/`verified_at`; `POST /documents/{document}/verify` (additive to approve/reject); guarded by `DocumentVerifyStepTest` [2026-08-26].
 
 ## §31 Communications — missing/partial triggers — [2026-08-26] `TpvCommunicationService::TRIGGERS` + derived alerts; guarded by `CommunicationTriggersTest`
 - [x] Trigger: Approval — pending-approval alert.
@@ -291,7 +291,7 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 - [ ] First-class MeetingAction owner model `[P]` (shared Meetings module).
 
 ## §40 Positioning
-- [ ] Full positioning label ("Third-Party Vendor, Contractor & Workforce Governance") `[P]` (cosmetic frontend string).
+- [x] Full positioning label ("Third-Party Vendor, Contractor & Workforce Governance") — TPV dashboard header [2026-08-26].
 
 ## §41 Future AI Layer
 - Out of scope for v1 (doc marks as future). Not counted as a gap. Revisit after the above.
@@ -301,6 +301,7 @@ fixed earlier (`TpvOnboardingService::approve` routes through `VendorService`).
 ### Progress counter (update as you tick)
 - **Completed:** 24 — the 6 §34 settings groups; **Rule 4** competency enforcement + worker→work-package wiring (§13) + Work Package field (§14); **Rule 6** permit-for-high-risk (+ activity `requires_permit`/`permit_type` + editor); **Rule 11 (CAPA + NCR)** owner-required-to-progress; **Rule 9** auto-escalate vendor violations; **§18 PPE Matrix rebuild** (Job/Hazard/Activity context + Mandatory/Optional/Conditional class + replacement frequency + verification requirement; only Mandatory gates the badge); **§19 permit-type vocabulary** (Isolation/Shutdown/Critical Work added, General→Other with legacy accepted); **§23 incident-type vocabulary** (First Aid/Medical Treatment/LTI/Security/Unsafe Act/Unsafe Condition added); **§25 CAPA fields** (problem statement, immediate correction, separate preventive action, compliance-failure source); **§14 worker employment fields** (experience/joining date/exit date); **§21 compliance categories** (+10 → 24, doc's fuller set); **§26 configurable violation ladder** (7th settings group; severity points + thresholds; drives Rule 9 auto-escalation); **§4 dashboard compliance KPIs** (PPE Compliance %, Overall Compliance %, Action Centre PPE-pending row); **§28 renewal inputs** (compliance score + §25 CAPA register) [2026-08-25].
 - **Session 2026-08-26 (branch `feat/vendor-portals-doc-2026-08-25`):** committed §5 Vendor Master; §14/§23 dimension fields; **§15** (job-specific training + competency experience); **§16 Medical** (Pending/Expired status, distinct sign-off, certificate+document upload); **§17 PPE** (project scope, atomic Replacement + Used status, vendor PPE stock entity); **§13** worker→activity link; **§14** trade/training_status/lifecycle_state; **§11 Temporary Vendors** (full capture + approval-on-create + extension→approval); **§7 Due-Diligence** entity + Legal/Cyber/Reputational/Environmental risk dimensions; **§27 VPI** (7 new dimensions at weight 0, Watch band, performance-history snapshots); **§33 Reports hub** + operational CSV exports; **§20 unified gate events** + roster vendor filter; **§10 onboarding checklists** + **§12 approval routing** (two new settings groups); **§6 prequalification** taxonomy depth; **§31 communications** triggers; **§34 catalogs** settings group; **§30** worker certs in the vault; **§35** vendor↔project pivot; **§4 risk drill-down**. Feature tests green: MedicalPpeCompetencyFields 7, WorkerActivityAndTempVendorFields 3, DueDiligence 4, VpiDimensions 3, ReportsHub 3, GateEvents 2, ChecklistAndRoutingConfig 2, PrequalificationTaxonomy 2, CommunicationTriggers 3, CatalogsSettings 2, DocumentVaultWorkerCerts 1, VendorProjectPivot 1, RiskDrilldown 2. Whole Feature/Tpv dir: 248 green; Purchase+Portal: 85 green.
-- **★ tier remaining:** the PPE-Matrix Job+Hazard+Activity match dimensions; the Rule 11 MOM/inspection follow-on.
-- **Open (mostly frontend / shared-module / cosmetic):** §3 nav (Medical Fitness item), §40 positioning label, §9 meetings polish (shared module), §26 per-project violation config, §30 renewal-object/verify-vs-approve, §32 vendor-portal governance half (deferred — the portal pass after the doc), plus frontend surfacing of the many new backend fields/endpoints.
+- **Session 2026-08-26 (part 2):** **§9** agenda supporting-docs + prev-ref (and confirmed the global Decisions/Issues registers + Organizer already shipped); **Rule 11** inspection-finding owner gate; **§30** verify-vs-approve step + renewal-due; **§26** per-project violation ladder overrides; **§40** positioning label. New tests: MeetingDocCompliance +1, InspectionFindingOwnerGate 2, DocumentVerifyStep 2, ViolationLadderPerProject 1. Broad regression: TPV+Shared+Purchase+Portal **378 green**.
+- **★ tier remaining:** only the PPE-Matrix Job+Hazard+Activity worker→rule *match* dimensions (rules capture hazard/activity as context; matching still keys on designation/skill).
+- **Backend doc coverage: complete.** Remaining is **frontend surfacing** of the new endpoints/fields (admin forms/tables — Harshal's module), the §3 Medical-Fitness dedicated nav item (frontend), a few shared-Meetings-module MOM items (MeetingAction owner model, MOM-action owner gate), and **§32** the vendor-portal governance half (the deferred portal pass — next after the doc).
 - Keep this file updated: tick an item only when it's implemented AND matches the doc against real code.
