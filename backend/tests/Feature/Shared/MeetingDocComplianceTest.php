@@ -188,6 +188,19 @@ class MeetingDocComplianceTest extends TestCase
         $this->assertSame('Vendor to mobilise 8 additional workers.', $item->decision);
     }
 
+    public function test_supporting_documents_and_previous_reference_persist_on_the_agenda_item(): void
+    {
+        $m = $this->meeting(['agenda_items' => [[
+            'item' => 'Workforce shortage',
+            'supporting_documents' => ['mobilisation-plan.pdf', 'roster.xlsx'],
+            'previous_discussion_ref' => 'MOM-2026-014 item 3',
+        ]]]);
+
+        $item = $m->agendaItems->first();
+        $this->assertSame(['mobilisation-plan.pdf', 'roster.xlsx'], $item->supporting_documents);
+        $this->assertSame('MOM-2026-014 item 3', $item->previous_discussion_ref);
+    }
+
     /* ── §8 / §9 / §10 — the cross-meeting registers ──────────────────── */
 
     public function test_the_registers_read_across_meetings_with_their_context(): void

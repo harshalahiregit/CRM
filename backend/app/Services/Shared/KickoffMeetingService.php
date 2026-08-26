@@ -2472,6 +2472,9 @@ class KickoffMeetingService
                 // Agenda -> Discussion -> Decision -> Action chain at step two.
                 'discussion' => $item['discussion'] ?? null,
                 'decision' => $item['decision'] ?? null,
+                // §9 — supporting documents + previous-discussion reference.
+                'supporting_documents' => $item['supporting_documents'] ?? null,
+                'previous_discussion_ref' => $item['previous_discussion_ref'] ?? null,
                 'owner_attendee_id' => $owner,
                 'owner_names' => $names !== '' ? $names : null,
                 'duration_minutes' => $item['duration_minutes'] ?? null,
