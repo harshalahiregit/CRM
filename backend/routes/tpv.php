@@ -96,6 +96,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::get('/vendors/{vendor}/prequalification',          [\App\Http\Controllers\Api\Tpv\VendorPrequalificationController::class, 'show']);
     // §7 Due-Diligence checklist — read the verification record.
     Route::get('/vendors/{vendor}/due-diligence',             [\App\Http\Controllers\Api\Tpv\VendorDueDiligenceController::class, 'show']);
+    // §35 explicit vendor↔project engagements.
+    Route::get('/vendors/{vendor}/projects',                  [\App\Http\Controllers\Api\Tpv\TpvVendorProjectController::class, 'index']);
+    Route::post('/vendors/{vendor}/projects',                 [\App\Http\Controllers\Api\Tpv\TpvVendorProjectController::class, 'store']);
+    Route::delete('/vendors/{vendor}/projects/{project}',     [\App\Http\Controllers\Api\Tpv\TpvVendorProjectController::class, 'destroy']);
     Route::get('/vendors/{vendor}/customers',                 [\App\Http\Controllers\Api\Vendor\VendorController::class, 'customers']);
     Route::post('/vendors/{vendor}/customers',                [\App\Http\Controllers\Api\Vendor\VendorController::class, 'storeCustomer']);
     // Employees (enhancement #2/#9/#10) — the vendor's assignable people. index()

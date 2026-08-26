@@ -155,6 +155,12 @@ class Vendor extends Model
         return $this->hasOne(\App\Models\Tpv\TpvDueDiligence::class, 'vendor_id');
     }
 
+    /** §35 explicit vendor↔project engagements (TPV-local). */
+    public function tpvProjects()
+    {
+        return $this->hasMany(\App\Models\Tpv\TpvVendorProject::class, 'vendor_id');
+    }
+
     /** The Purchase onboarding workflow over this vendor, if engaged for Purchase. */
     public function purchaseOnboarding()
     {
