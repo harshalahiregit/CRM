@@ -34,7 +34,8 @@ class Vendor extends Model
         'tenant_id', 'user_id', 'purchase_vendor_id', 'account_manager_id', 'vendor_code', 'company_name', 'legal_name',
         'vendor_type', 'registration_type', 'engagements', 'email', 'phone', 'website', 'category',
         // Vendor Master profile completion (§5).
-        'trade_name', 'subcategory', 'vendor_class', 'parent_company', 'cin_number', 'udyam_number',
+        'trade_name', 'subcategory', 'vendor_class', 'project', 'site', 'department', 'client_id',
+        'parent_company', 'cin_number', 'udyam_number',
         'site_address', 'emergency_contact', 'internal_sponsor', 'contract_owner',
         'registration_number', 'gst_number', 'pan_number',
         'address', 'city', 'state', 'country', 'pincode',
@@ -51,6 +52,9 @@ class Vendor extends Model
         'is_temporary', 'access_start_at', 'access_expires_at', 'access_status',
         'access_extended_at', 'access_extended_by', 'extension_reason',
         'converted_to_permanent_at', 'converted_by', 'temporary_created_by', 'validity_days', 'access_reminders_sent',
+        // Temporary-vendor engagement capture (§11) — TPV-local, nullable.
+        'temp_purpose', 'temp_sponsor', 'temp_project', 'temp_scope', 'temp_workforce',
+        'temp_risk_level', 'temp_required_documents',
     ];
 
     protected $casts = [
@@ -66,6 +70,8 @@ class Vendor extends Model
         'suspended_at' => 'datetime',
         'offboarded_at' => 'datetime',
         'is_temporary' => 'boolean',
+        'temp_required_documents' => 'array',
+        'temp_workforce' => 'integer',
         'access_start_at' => 'datetime',
         'access_expires_at' => 'datetime',
         'access_extended_at' => 'datetime',
@@ -141,6 +147,18 @@ class Vendor extends Model
     public function tpvOnboarding()
     {
         return $this->hasOne(TpvOnboarding::class, 'vendor_id');
+    }
+
+    /** §7 Due-Diligence checklist for this vendor. */
+    public function dueDiligence()
+    {
+        return $this->hasOne(\App\Models\Tpv\TpvDueDiligence::class, 'vendor_id');
+    }
+
+    /** §35 explicit vendor↔project engagements (TPV-local). */
+    public function tpvProjects()
+    {
+        return $this->hasMany(\App\Models\Tpv\TpvVendorProject::class, 'vendor_id');
     }
 
     /** The Purchase onboarding workflow over this vendor, if engaged for Purchase. */

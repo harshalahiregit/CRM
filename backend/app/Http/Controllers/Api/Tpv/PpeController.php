@@ -103,6 +103,8 @@ class PpeController extends Controller
             'inventory_item_id' => 'required|integer|min:1',
             'qty'               => 'required|numeric|min:0.001',
             'size'              => 'nullable|string|max:40',
+            'project'           => 'nullable|string|max:160',
+            'site'              => 'nullable|string|max:160',
             'issued_date'       => 'nullable|date',
             'warehouse_id'      => 'nullable|integer|min:1',
             'notes'             => 'nullable|string|max:500',
@@ -127,6 +129,35 @@ class PpeController extends Controller
         ]);
 
         return response()->json($this->ppe->returnIssue($issue, $data, $request->user()));
+    }
+
+    /** §17 — atomically replace worn-out kit: close this issue, draw fresh stock. */
+    public function replaceIssue(Request $request, TpvWorkerPpeIssue $issue)
+    {
+        $this->assertTenant($request, $issue);
+
+        $data = $request->validate([
+            'qty'          => 'nullable|numeric|min:0.001',
+            'size'         => 'nullable|string|max:40',
+            'project'      => 'nullable|string|max:160',
+            'site'         => 'nullable|string|max:160',
+            'warehouse_id' => 'nullable|integer|min:1',
+            'notes'        => 'nullable|string|max:500',
+        ]);
+
+        return response()->json($this->ppe->replaceIssue($issue, $data, $request->user()), 201);
+    }
+
+    /** §17 — mark a consumable issue as used (spent on site). */
+    public function markUsed(Request $request, TpvWorkerPpeIssue $issue)
+    {
+        $this->assertTenant($request, $issue);
+
+        $data = $request->validate([
+            'notes' => 'nullable|string|max:500',
+        ]);
+
+        return response()->json($this->ppe->markUsed($issue, $data, $request->user()));
     }
 
     /** 404 rather than 403 — the codebase hides other tenants' records. */

@@ -85,6 +85,10 @@ class UpdateKickoffMeetingRequest extends FormRequest
             // per agenda item instead of one meeting-level minutes blob.
             'agenda_items.*.discussion' => 'nullable|string|max:5000',
             'agenda_items.*.decision' => 'nullable|string|max:2000',
+            // §9 — supporting documents + previous-discussion reference.
+            'agenda_items.*.supporting_documents' => 'nullable|array',
+            'agenda_items.*.supporting_documents.*' => 'string|max:255',
+            'agenda_items.*.previous_discussion_ref' => 'nullable|string|max:200',
             'agenda_items.*.owner_attendee_id' => 'nullable|integer',
             'agenda_items.*.owner_names' => 'nullable|string|max:500',
             'agenda_items.*.owner' => 'nullable|string|max:500',

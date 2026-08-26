@@ -128,6 +128,11 @@ export const tpvApi = {
     worker: (workerId, params = {}) => api.get(`/tpv/workers/${workerId}/authorization`, { params }).then(r => r.data),
   },
   // Competency & Training + Skill Matrix (Sangoe TPV §15).
+  // §3/§16 Medical Fitness register.
+  medical: {
+    list: (params = {}) => api.get('/tpv/medical', { params }).then(r => r.data),
+  },
+
   competency: {
     roster: (params = {}) => api.get('/tpv/competency', { params }).then(r => r.data),
     worker: (workerId)    => api.get(`/tpv/workers/${workerId}/competency`).then(r => r.data),

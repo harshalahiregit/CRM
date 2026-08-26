@@ -2,11 +2,17 @@
 
 namespace App\Services\Tpv;
 
+use App\Models\Tpv\HsseIncident;
 use App\Models\Tpv\TpvCapa;
 use App\Models\Tpv\TpvInspection;
 use App\Models\Tpv\TpvNcr;
+use App\Models\Tpv\TpvSafetyStrike;
 use App\Models\Tpv\TpvVendorCompliance;
 use App\Models\Tpv\TpvVendorViolation;
+use App\Models\Tpv\TpvWorker;
+use App\Models\Tpv\TpvWorkerMedical;
+use App\Models\Tpv\TpvWorkerPpeIssue;
+use App\Models\Tpv\TpvWorkerTraining;
 use App\Models\Vendor\Vendor;
 use App\Support\Tpv\ComplianceCatalog;
 use Illuminate\Support\Carbon;
@@ -22,7 +28,47 @@ use Illuminate\Support\Carbon;
 class TpvAnalyticsService
 {
     /** Datasets the export endpoint can emit. */
-    public const DATASETS = ['vendors', 'ncrs', 'capas', 'violations', 'inspections', 'benchmark'];
+    public const DATASETS = [
+        'vendors', 'ncrs', 'capas', 'violations', 'inspections', 'benchmark',
+        // §33 operational report datasets.
+        'workers', 'gate', 'ppe', 'training', 'medical', 'strikes', 'incidents',
+    ];
+
+    /**
+     * §33 — the Reports & Analytics hub: the doc's named reports enumerated as a
+     * catalogue. Each entry says whether it exports a flat dataset (CSV via the
+     * export endpoint) or is an on-screen analytics view. This is the structure
+     * the doc asks for; management reports that have no dedicated dataset yet are
+     * listed as views over the benchmark/trends analytics.
+     */
+    public function catalogue(): array
+    {
+        $op = fn ($key, $name, $dataset) => [
+            'key' => $key, 'name' => $name, 'category' => 'Operational', 'dataset' => $dataset,
+        ];
+        $mgmt = fn ($key, $name, $dataset = null) => [
+            'key' => $key, 'name' => $name, 'category' => 'Management', 'dataset' => $dataset,
+        ];
+
+        return [
+            $op('workforce', 'Workforce Report', 'workers'),
+            $op('gate', 'Gate Log Report', 'gate'),
+            $op('ppe', 'PPE Issuance Report', 'ppe'),
+            $op('training', 'Training Report', 'training'),
+            $op('medical', 'Medical Fitness Report', 'medical'),
+            $op('audit', 'Audit / Inspection Report', 'inspections'),
+            $op('strikes', 'Strikes & Violations Report', 'strikes'),
+            $op('incidents', 'Incident Report', 'incidents'),
+            $mgmt('vendor_benchmark', 'Vendor Benchmark', 'benchmark'),
+            $mgmt('compliance_exposure', 'Compliance Exposure', 'benchmark'),
+            $mgmt('expiry', 'Expiry Report', 'medical'),
+            $mgmt('capa_closure', 'CAPA Closure Rate', 'capas'),
+            $mgmt('incident_trend', 'Incident Trend'),
+            $mgmt('workforce_exposure', 'Workforce Exposure'),
+            $mgmt('project_vendor_perf', 'Project-wise Vendor Performance'),
+            $mgmt('vendor_project_perf', 'Vendor-wise Project Performance'),
+        ];
+    }
 
     public function overview(int $tenantId): array
     {
@@ -209,6 +255,49 @@ class TpvAnalyticsService
                     $r['vendor_code'], $r['vendor'], $r['status'], $r['compliance_pct'] ?? '—',
                     $r['open_ncrs'], $r['open_capas'], $r['violation_points'],
                 ], $this->benchmark($tenantId))],
+
+            'workers' => ['tpv-workforce', ['Code', 'Name', 'Vendor', 'Designation', 'Trade', 'Project', 'Site', 'Status', 'Lifecycle'],
+                TpvWorker::forTenant($tenantId)->with('vendor:id,company_name')->get()->map(fn ($w) => [
+                    $w->worker_code, $w->name, $w->vendor?->company_name, $w->designation, $w->trade,
+                    $w->project, $w->site, $w->status, $w->lifecycle_state,
+                ])->all()],
+
+            'gate' => ['tpv-gate', ['Worker', 'Vendor', 'Decision', 'Action', 'Gate', 'Scanned At'],
+                \App\Models\Tpv\TpvGateScan::forTenant($tenantId)->with(['worker:id,name,vendor_id', 'worker.vendor:id,company_name'])
+                    ->latest('scanned_at')->limit(5000)->get()->map(fn ($s) => [
+                        $s->worker?->name, $s->worker?->vendor?->company_name, $s->decision,
+                        $s->action, $s->gate, optional($s->scanned_at)->toDateTimeString(),
+                    ])->all()],
+
+            'ppe' => ['tpv-ppe', ['Worker', 'Item', 'Qty', 'Size', 'Project', 'Status', 'Issued'],
+                TpvWorkerPpeIssue::forTenant($tenantId)->with('worker:id,name')->latest('issued_date')->get()->map(fn ($p) => [
+                    $p->worker?->name, $p->item, $p->qty, $p->size, $p->project, $p->status,
+                    optional($p->issued_date)->toDateString(),
+                ])->all()],
+
+            'training' => ['tpv-training', ['Worker', 'Type', 'Provider', 'Passed', 'Completed', 'Valid Until', 'Status'],
+                TpvWorkerTraining::forTenant($tenantId)->with('worker:id,name')->get()->map(fn ($t) => [
+                    $t->worker?->name, $t->training_type, $t->provider, $t->passed ? 'Yes' : 'No',
+                    optional($t->completed_date)->toDateString(), optional($t->valid_until)->toDateString(), $t->status,
+                ])->all()],
+
+            'medical' => ['tpv-medical', ['Worker', 'Fitness', 'Exam Date', 'Valid Until', 'Expired', 'Examiner'],
+                TpvWorkerMedical::forTenant($tenantId)->with('worker:id,name')->get()->map(fn ($m) => [
+                    $m->worker?->name, $m->fitness_status, optional($m->exam_date)->toDateString(),
+                    optional($m->valid_until)->toDateString(), $m->is_expired ? 'Yes' : 'No', $m->examiner_name,
+                ])->all()],
+
+            'strikes' => ['tpv-strikes', ['Worker', 'Severity', 'Reason', 'Occurred', 'Voided'],
+                TpvSafetyStrike::forTenant($tenantId)->with('worker:id,name')->latest('occurred_at')->get()->map(fn ($s) => [
+                    $s->worker?->name, $s->severity, $s->reason,
+                    optional($s->occurred_at)->toDateString(), $s->voided_at ? 'Yes' : 'No',
+                ])->all()],
+
+            'incidents' => ['tpv-incidents', ['Reference', 'Title', 'Vendor', 'Type', 'Severity', 'Status', 'Occurred'],
+                HsseIncident::forTenant($tenantId)->with('vendor:id,company_name')->latest('occurred_at')->get()->map(fn ($i) => [
+                    $i->reference, $i->title, $i->vendor?->company_name, $i->type, $i->severity, $i->status,
+                    optional($i->occurred_at)->toDateString(),
+                ])->all()],
 
             default => throw new \App\Exceptions\BusinessException("Unknown export dataset: {$dataset}."),
         };

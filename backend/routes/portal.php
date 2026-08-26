@@ -92,6 +92,8 @@ Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access'])->prefix('por
     // the ADMIN PpeController/PpeRequirementController, which guard on tenant
     // ALONE — any vendor could read, issue against and write off another vendor's
     // workers, moving shared Inventory stock. The summary is scoped the same way.
+    // §32 "View compliance" — the vendor's own compliance register (read-only).
+    Route::get('/compliance',                             [VendorPortalController::class, 'compliance']);
     Route::get('/ppe/summary',                            [VendorPortalController::class, 'ppeSummary']);
     Route::get('/ppe/compliance/workers/{worker}',        [VendorPortalController::class, 'workerPpeCompliance']);
     Route::get('/ppe/workers/{worker}',                   [VendorPortalController::class, 'workerPpe']);
@@ -161,6 +163,8 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal'])->prefix('portal/pu
     Route::patch('/onboarding/{onboarding}/step',     [PurchasePortalController::class, 'setStep']);
     Route::post('/onboarding/{onboarding}/submit',    [PurchasePortalController::class, 'submitOnboarding']);
 
+    // §32 "View compliance" — the vendor's own compliance register (read-only).
+    Route::get('/compliance',                         [PurchasePortalController::class, 'compliance']);
     Route::get('/documents',                          [PurchasePortalController::class, 'documents']);
     Route::post('/documents',                         [PurchasePortalController::class, 'uploadDocument']);
     Route::post('/documents/{document}/resubmit',     [PurchasePortalController::class, 'resubmitDocument']);

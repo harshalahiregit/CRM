@@ -133,6 +133,29 @@ class VendorDocumentService
     }
 
     /** Admin review — approve or reject a document with remarks. */
+    /**
+     * §30 — the verify step, distinct from approve. The reviewer confirms the
+     * uploaded file is genuine and legible; the document moves to Verified and
+     * awaits authority approval. Additive to the single-step approve/reject path.
+     */
+    public function verify(VendorDocument $doc, ?string $remarks, User $actor): VendorDocument
+    {
+        if ($doc->status === Status::APPROVED) {
+            throw new BusinessException('An approved document is already past verification.');
+        }
+
+        $doc->update([
+            'status'      => Status::VERIFIED,
+            'remarks'     => $remarks ?: $doc->remarks,
+            'verified_by' => $actor->id,
+            'verified_at' => now(),
+        ]);
+
+        $doc->recordAudit('Document Verified', $actor, $remarks, ['type' => $doc->type]);
+
+        return $doc->fresh(['reviewer:id,name']);
+    }
+
     public function review(VendorDocument $doc, string $decision, ?string $remarks, User $actor): VendorDocument
     {
         if ($doc->status === Status::APPROVED && $decision === 'approve') {

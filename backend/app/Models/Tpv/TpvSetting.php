@@ -27,6 +27,9 @@ class TpvSetting extends Model
         'approval_types',
         'gate',
         'violation_ladder',
+        'onboarding_checklists',
+        'approval_routing',
+        'catalogs',
     ];
 
     protected $fillable = ['tenant_id', 'group', 'payload', 'updated_by'];

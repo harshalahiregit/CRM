@@ -297,6 +297,8 @@ class PpeInventoryService
                 'tpv_worker_id'     => $worker->id,
                 'inventory_item_id' => $product->id,
                 'item'              => $product->name,   // snapshot: survives a rename
+                'project'           => $data['project'] ?? $worker->project,   // §17 project scope
+                'site'              => $data['site'] ?? $worker->site,
                 'qty'               => $qty,
                 'size'              => $data['size'] ?? null,
                 'issued_date'       => $data['issued_date'] ?? now()->toDateString(),
@@ -605,5 +607,68 @@ class PpeInventoryService
 
             return $issue->fresh(['product']);
         });
+    }
+
+    /**
+     * §17 — atomic Replacement. Worn-out kit is swapped for fresh in one action:
+     * the old issue is closed as 'replaced' and a brand-new issue is drawn from
+     * stock for the same worker/item, chained back via replaced_by_id so the
+     * lineage is traceable. The old kit does not return to stock (it is discarded),
+     * mirroring the lost/damaged write-off — only the new issue moves stock out.
+     */
+    public function replaceIssue(TpvWorkerPpeIssue $issue, array $data, ?User $actor = null): TpvWorkerPpeIssue
+    {
+        if ($issue->status !== TpvWorkerPpeIssue::STATUS_ISSUED) {
+            throw new BusinessException('Only a live issue can be replaced.', 422);
+        }
+        $worker = $issue->worker ?? throw new BusinessException('This issue has no worker.', 422);
+
+        return DB::transaction(function () use ($issue, $worker, $data, $actor) {
+            // Draw the fresh kit first — same product/size/project by default — so
+            // a stock shortfall aborts before the old issue is touched.
+            $fresh = $this->issue($worker, [
+                'inventory_item_id' => $issue->inventory_item_id,
+                'qty'               => $data['qty'] ?? (float) $issue->qty,
+                'size'              => $data['size'] ?? $issue->size,
+                'project'           => $data['project'] ?? $issue->project,
+                'site'              => $data['site'] ?? $issue->site,
+                'warehouse_id'      => $data['warehouse_id'] ?? null,
+                'notes'             => $data['notes'] ?? 'Replacement for issue #'.$issue->id,
+            ], $actor);
+
+            $issue->update([
+                'status'         => TpvWorkerPpeIssue::STATUS_REPLACED,
+                'returned_at'    => now(),
+                'returned_by'    => $actor?->id,
+                'return_notes'   => $data['notes'] ?? $issue->return_notes,
+                'replaced_by_id' => $fresh->id,
+            ]);
+
+            return $fresh->fresh(['product']);
+        });
+    }
+
+    /**
+     * §17 — mark a live issue 'used' (a consumable spent on site). Terminal, like
+     * a write-off: the kit never returns, so no stock moves back.
+     */
+    public function markUsed(TpvWorkerPpeIssue $issue, array $data = [], ?User $actor = null): TpvWorkerPpeIssue
+    {
+        if ($issue->status !== TpvWorkerPpeIssue::STATUS_ISSUED) {
+            throw new BusinessException('Only a live issue can be marked used.', 422);
+        }
+
+        $issue->update([
+            'status'       => TpvWorkerPpeIssue::STATUS_USED,
+            'returned_at'  => now(),
+            'returned_by'  => $actor?->id,
+            'return_notes' => $data['notes'] ?? $issue->return_notes,
+        ]);
+
+        if ($issue->worker) {
+            $this->syncWorkerPpeState($issue->worker);
+        }
+
+        return $issue->fresh(['product']);
     }
 }

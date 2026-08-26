@@ -14,15 +14,16 @@ class TpvWorkerMedical extends Model
     protected $table = 'tpv_worker_medicals';
 
     protected $fillable = [
-        'tenant_id','tpv_worker_id','recorded_by','exam_type','exam_date','valid_until','examiner_name','clinic_name',
+        'tenant_id','tpv_worker_id','recorded_by','approved_by','approved_at','exam_type','exam_date','valid_until','examiner_name','clinic_name',
         'height_cm','weight_kg','bp_systolic','bp_diastolic','vision',
         'screening_responses','screening_score','screening_band',
-        'fitness_status','restrictions','signature_path',
+        'fitness_status','restrictions','signature_path','certificate_path','document_path',
     ];
 
     protected $casts = [
         'exam_date'           => 'date',
         'valid_until'         => 'date',
+        'approved_at'         => 'datetime',
         'height_cm'           => 'decimal:1',
         'weight_kg'           => 'decimal:1',
         'screening_responses' => 'array',
@@ -39,6 +40,13 @@ class TpvWorkerMedical extends Model
     public function recorder()
     {
         return $this->belongsTo(User::class, 'recorded_by');
+    }
+
+    /** The medical officer who signed off the fitness verdict (§16) — distinct
+     *  from the clerk who keyed the exam in (recorded_by). */
+    public function approver()
+    {
+        return $this->belongsTo(User::class, 'approved_by');
     }
 
     public function getFitnessLabelAttribute(): string

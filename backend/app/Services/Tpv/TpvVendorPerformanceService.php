@@ -30,8 +30,12 @@ class TpvVendorPerformanceService
         private \App\Support\Tpv\TpvSettings $settings,
     ) {}
 
-    /** Dimension keys in display order. */
-    public const DIMENSIONS = ['safety', 'compliance', 'workforce', 'quality', 'capa', 'conduct', 'inspection', 'documentation'];
+    /** Dimension keys in display order. The last seven are the §27 dimensions
+     *  layered on at weight 0 by default (surfaced, tenant-weightable). */
+    public const DIMENSIONS = [
+        'safety', 'compliance', 'workforce', 'quality', 'capa', 'conduct', 'inspection', 'documentation',
+        'productivity', 'timeliness', 'training', 'environmental', 'security', 'incident', 'meeting_action',
+    ];
 
     /** Live VPI for one vendor. */
     public function compute(Vendor $vendor): array
@@ -51,6 +55,14 @@ class TpvVendorPerformanceService
             'conduct'       => $this->conductDim($vendor, $ded),
             'inspection'    => $this->inspectionDim($vendor),
             'documentation' => $this->documentationDim($vendor, (int) $vpi['doc_expiring_window_days']),
+            // §27 dimensions.
+            'productivity'   => $this->structuralDim('Productivity', 'No productivity feed yet'),
+            'timeliness'     => $this->structuralDim('Timeliness', 'No schedule feed yet'),
+            'training'       => $this->trainingDim($vendor),
+            'environmental'  => $this->environmentalDim($vendor),
+            'security'       => $this->securityDim($vendor, $ded),
+            'incident'       => $this->incidentDim($vendor, $ded),
+            'meeting_action' => $this->meetingActionDim($vendor, $ded),
         ];
 
         $w = $vpi['weights'];
@@ -59,18 +71,39 @@ class TpvVendorPerformanceService
             $overall += ($dims[$k]['score'] ?? 0) * $weight;
         }
         $overall = (int) round($overall);
+        $band = $this->band($overall, $vpi['bands']);
 
         return [
             'vendor_id'     => $vendor->id,
             'company_name'  => $vendor->company_name,
             'vendor_code'   => $vendor->vendor_code,
             'overall_score' => $overall,
-            'band'          => $this->band($overall, $vpi['bands']),
+            'band'          => $band,
+            'band_label'    => config('vpi.band_labels.'.$band, $band),
             'vrs_band'      => $vrs['band'] ?? null,
             'dimensions'    => $dims,
             'weights'       => $w,
             'computed_at'   => now()->toIso8601String(),
         ];
+    }
+
+    /**
+     * §27 — persist a point-in-time snapshot of a vendor's index so performance
+     * history can be tracked across projects, rather than only ever recomputed live.
+     */
+    public function snapshot(Vendor $vendor, ?string $project = null): \App\Models\Tpv\TpvVendorPerformanceSnapshot
+    {
+        $c = $this->compute($vendor);
+
+        return \App\Models\Tpv\TpvVendorPerformanceSnapshot::create([
+            'tenant_id'     => $vendor->tenant_id,
+            'vendor_id'     => $vendor->id,
+            'project'       => $project,
+            'overall_score' => $c['overall_score'],
+            'band'          => $c['band'],
+            'dimensions'    => array_map(fn ($d) => $d['score'], $c['dimensions']),
+            'captured_at'   => now(),
+        ]);
     }
 
     /** VPI leaderboard across all tenant vendors — worst index first. */
@@ -188,6 +221,77 @@ class TpvVendorPerformanceService
         $score = (int) round(max(0, ($total - $expired - $expiring * 0.5) / $total) * 100);
 
         return ['score' => $score, 'label' => 'Documentation', 'detail' => ['docs' => $total, 'expired' => $expired, 'expiring' => $expiring]];
+    }
+
+    /** A dimension the doc lists but for which no data feed exists yet — surfaced
+     *  at a neutral 100 with an explicit note, so the structure is present (§27). */
+    private function structuralDim(string $label, string $note): array
+    {
+        return ['score' => 100, 'label' => $label, 'detail' => ['note' => $note]];
+    }
+
+    /** Training — share of this vendor's training records that are passed & valid. */
+    private function trainingDim(Vendor $vendor): array
+    {
+        $rows = \App\Models\Tpv\TpvWorkerTraining::whereIn(
+            'tpv_worker_id', TpvWorker::where('vendor_id', $vendor->id)->select('id')
+        )->get(['passed', 'valid_until']);
+
+        if ($rows->isEmpty()) {
+            return ['score' => 100, 'label' => 'Training', 'detail' => ['records' => 0]];
+        }
+        $ok = $rows->filter(fn ($r) => $r->passed && (! $r->valid_until || ! $r->valid_until->isPast()))->count();
+        $score = (int) round($ok / $rows->count() * 100);
+
+        return ['score' => $score, 'label' => 'Training', 'detail' => ['records' => $rows->count(), 'valid' => $ok]];
+    }
+
+    /** Environmental — driven by environmental-category compliance where tracked. */
+    private function environmentalDim(Vendor $vendor): array
+    {
+        $rows = TpvVendorCompliance::where('vendor_id', $vendor->id)
+            ->whereIn('category', ['Environment', 'Environmental_Requirements', 'Waste', 'Pollution', 'Chemicals'])
+            ->get(['status', 'valid_until']);
+        if ($rows->isEmpty()) {
+            return ['score' => 100, 'label' => 'Environmental', 'detail' => ['tracked' => 0]];
+        }
+        $ok  = $rows->filter(fn ($r) => in_array($r->effective_status, ComplianceCatalog::OK_STATUSES, true))->count();
+        $pct = (int) round($ok / $rows->count() * 100);
+
+        return ['score' => $pct, 'label' => 'Environmental', 'detail' => ['tracked' => $rows->count(), 'ok' => $ok]];
+    }
+
+    /** Security — HSSE incidents of type Security count against the vendor. */
+    private function securityDim(Vendor $vendor, array $ded): array
+    {
+        $count = \App\Models\Tpv\HsseIncident::where('vendor_id', $vendor->id)
+            ->where('type', 'Security')->count();
+        $score = max(0, 100 - $count * ($ded['security'] ?? 12));
+
+        return ['score' => $score, 'label' => 'Security', 'detail' => ['incidents' => $count]];
+    }
+
+    /** Incident — all HSSE incidents, with grave events costing more. */
+    private function incidentDim(Vendor $vendor, array $ded): array
+    {
+        $rows  = \App\Models\Tpv\HsseIncident::where('vendor_id', $vendor->id)->get(['severity']);
+        $grave = $rows->filter(fn ($r) => in_array($r->severity, \App\Models\Tpv\HsseIncident::SUSPENDING_SEVERITIES, true))->count();
+        $minor = $rows->count() - $grave;
+        $score = max(0, 100 - $minor * ($ded['incident'] ?? 10) - $grave * ($ded['incident_grave'] ?? 20));
+
+        return ['score' => $score, 'label' => 'Incident', 'detail' => ['total' => $rows->count(), 'grave' => $grave]];
+    }
+
+    /**
+     * Meeting-action closure — the doc lists this VPI dimension, but MOM actions
+     * live in the shared Meetings module and carry no direct vendor link (they
+     * resolve a vendor only through the meeting's subject). Rather than couple VPI
+     * into another team's module, the dimension is surfaced structurally; a future
+     * vendor-scoped MOM-action feed can supply the real score.
+     */
+    private function meetingActionDim(Vendor $vendor, array $ded): array
+    {
+        return $this->structuralDim('Meeting action closure', 'No vendor-scoped MOM-action feed yet');
     }
 
     private function band(int $overall, array $b): string

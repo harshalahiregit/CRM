@@ -1575,10 +1575,20 @@ class KickoffMeetingService
         }
 
         $changes = [];
-        foreach (['responsible_org', 'target_date'] as $field) {
+        foreach (['responsible_org', 'target_date', 'responsible_attendee_id', 'responsible_names'] as $field) {
             if (array_key_exists($field, $data)) {
                 $changes[$field] = $data[$field];
             }
+        }
+
+        // Rule 11 (§36) — a MOM action cannot progress past Open without a named
+        // owner (an attendee id or free-text responsible name). Mirrors the
+        // CAPA / NCR / inspection-finding owner gates.
+        $nextStatus = $to ?? $item->status;
+        $ownerId    = $changes['responsible_attendee_id'] ?? $item->responsible_attendee_id;
+        $ownerNames = $changes['responsible_names'] ?? $item->responsible_names;
+        if ($nextStatus !== MomActionStatus::OPEN && empty($ownerId) && empty(trim((string) $ownerNames))) {
+            throw new BusinessException('A responsible owner is required before an action can be progressed past Open.');
         }
         // The verifier's note lives in verification_note — a field the meeting form
         // does not own — so a later form edit can never overwrite it.
@@ -2472,6 +2482,9 @@ class KickoffMeetingService
                 // Agenda -> Discussion -> Decision -> Action chain at step two.
                 'discussion' => $item['discussion'] ?? null,
                 'decision' => $item['decision'] ?? null,
+                // §9 — supporting documents + previous-discussion reference.
+                'supporting_documents' => $item['supporting_documents'] ?? null,
+                'previous_discussion_ref' => $item['previous_discussion_ref'] ?? null,
                 'owner_attendee_id' => $owner,
                 'owner_names' => $names !== '' ? $names : null,
                 'duration_minutes' => $item['duration_minutes'] ?? null,

@@ -24,6 +24,9 @@ class TpvPpeRequirement extends Model
      * 'all' has no value and applies to every worker. The rest name a column on
      * tpv_workers — a scope whose column does not exist could never match, so the
      * list is deliberately short and tied to what a worker actually records.
+     *
+     * Job (scope) is the base dimension; Activity and Hazard narrow it further —
+     * see matches() — completing the §18 Job + Hazard + Activity matrix.
      */
     public const SCOPES = [
         'all'            => 'All Workers',
@@ -61,16 +64,39 @@ class TpvPpeRequirement extends Model
         return $this->belongsTo(Product::class, 'product_id');
     }
 
-    /** Does this rule apply to the given worker? */
+    /**
+     * Does this rule apply to the given worker? (§18 Job + Hazard + Activity.)
+     *
+     * Job/skill scope is the base dimension. Activity and Hazard then NARROW the
+     * rule — but only for a worker who is actually assigned to an activity: the
+     * worker's assigned activity carries both the activity name and its hazard, so
+     * an activity/hazard-scoped rule applies only when they match. A worker with no
+     * activity assigned matches on scope alone, so a rule's descriptive
+     * activity/hazard context never over-excludes an unassigned worker.
+     */
     public function matches(TpvWorker $worker): bool
     {
-        if ($this->scope_type === 'all') {
-            return true;
+        // 1) Job / skill scope.
+        if ($this->scope_type !== 'all') {
+            $actual = $worker->{$this->scope_type} ?? null;
+            if ($actual === null || strcasecmp(trim((string) $actual), trim((string) $this->scope_value)) !== 0) {
+                return false;
+            }
         }
 
-        $actual = $worker->{$this->scope_type} ?? null;
+        // 2) Activity + hazard — enforced only when the worker has an activity.
+        $activity = $worker->activity;
+        if ($activity) {
+            if (filled($this->activity)
+                && strcasecmp(trim((string) $this->activity), trim((string) $activity->name)) !== 0) {
+                return false;
+            }
+            if (filled($this->hazard) && filled($activity->hazard)
+                && strcasecmp(trim((string) $this->hazard), trim((string) $activity->hazard)) !== 0) {
+                return false;
+            }
+        }
 
-        return $actual !== null
-            && strcasecmp(trim((string) $actual), trim((string) $this->scope_value)) === 0;
+        return true;
     }
 }

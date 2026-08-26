@@ -39,6 +39,7 @@ class HsseIncident extends Model
 
     protected $fillable = [
         'tenant_id', 'reference', 'vendor_id', 'tpv_worker_id', 'reported_by',
+        'project', 'site', 'department', 'activity', 'work_package_id',
         'title', 'type', 'severity', 'status', 'occurred_at', 'location',
         'description', 'immediate_action', 'stop_work', 'triggered_suspension',
         'rca_method', 'root_cause', 'contributing_factors', 'rca_completed_at',

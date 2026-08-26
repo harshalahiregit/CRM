@@ -274,6 +274,9 @@ class KickoffMeetingController extends Controller
             'note' => 'nullable|string|max:2000',
             'priority' => 'nullable|string',
             'responsible_org' => 'nullable|string|max:160',
+            // Rule 11 — the action owner can be (re)assigned as it is progressed.
+            'responsible_attendee_id' => 'nullable|integer',
+            'responsible_names' => 'nullable|string|max:500',
             'target_date' => 'nullable|date',
             'evidence' => 'nullable|file|mimes:pdf,doc,docx,png,jpg,jpeg|max:10240',
         ]);

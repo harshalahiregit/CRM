@@ -19,7 +19,7 @@ class TpvActivity extends Model
     public const STATUSES = ['Not_Started', 'In_Progress', 'Completed', 'On_Hold'];
 
     protected $fillable = [
-        'tenant_id', 'work_package_id', 'name', 'description',
+        'tenant_id', 'work_package_id', 'name', 'description', 'hazard',
         'required_competency', 'requires_permit', 'permit_type', 'status', 'sort_order',
     ];
 
@@ -31,5 +31,11 @@ class TpvActivity extends Model
     public function workPackage()
     {
         return $this->belongsTo(TpvWorkPackage::class, 'work_package_id');
+    }
+
+    /** Workers assigned to this activity (§13/§35). */
+    public function workers()
+    {
+        return $this->hasMany(TpvWorker::class, 'activity_id');
     }
 }

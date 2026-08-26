@@ -37,6 +37,13 @@ class SaveWorkerMedicalRequest extends FormRequest
             'fitness_status'      => ['required', Rule::in(TpvMedicalFitness::ALL)],
             'restrictions'        => 'nullable|string',
 
+            // §16 — sign-off is distinct from the clerk who recorded the exam.
+            'approved_by'         => 'nullable|integer',
+            'approved_at'         => 'nullable|date',
+            // §16 — fitness certificate + a general supporting document, stored as paths.
+            'certificate_path'    => 'nullable|string|max:255',
+            'document_path'       => 'nullable|string|max:255',
+
             // Examiner's signature captured in-browser as a base64 PNG data URL.
             // Decoded to a stored file (signature_path) in the service.
             'signature_data'      => 'nullable|string',

@@ -64,6 +64,107 @@ class TpvSettings
         return $this->effective('violation_ladder', $tenantId);
     }
 
+    /**
+     * §26 — the violation ladder for a specific project/client, applying any
+     * per-project override on top of the tenant ladder. With no project, or no
+     * override for it, this is exactly the tenant ladder.
+     */
+    public function violationLadderFor(?string $project, ?int $tenantId = null): array
+    {
+        $ladder = $this->violationLadder($tenantId);
+        $override = $project !== null ? ($ladder['project_overrides'][$project] ?? null) : null;
+
+        if (is_array($override)) {
+            if (isset($override['severity_points'])) {
+                $ladder['severity_points'] = $override['severity_points'];
+            }
+            if (isset($override['steps'])) {
+                $ladder['steps'] = $override['steps'];
+            }
+        }
+
+        return $ladder;
+    }
+
+    /** Configurable onboarding checklists by risk/project/site/work-type (§10). */
+    public function onboardingChecklists(?int $tenantId = null): array
+    {
+        return $this->effective('onboarding_checklists', $tenantId);
+    }
+
+    /** Dimension-based approval routing rules (§12). */
+    public function approvalRouting(?int $tenantId = null): array
+    {
+        return $this->effective('approval_routing', $tenantId);
+    }
+
+    /** Admin-configurable catalogues — vendor/document/training/etc. vocab (§34). */
+    public function catalogs(?int $tenantId = null): array
+    {
+        return $this->effective('catalogs', $tenantId);
+    }
+
+    /** One named catalogue's effective list (§34). */
+    public function catalog(string $name, ?int $tenantId = null): array
+    {
+        return $this->catalogs($tenantId)[$name] ?? [];
+    }
+
+    /**
+     * §10 — the onboarding checklist items that apply to a vendor given its
+     * dimensions. The general checklist always applies; matching rules add their
+     * items. `$context` is a [dimension => value] map (e.g. ['risk_level'=>'High']).
+     *
+     * @return array{items: list<string>, gates_activation: bool}
+     */
+    public function checklistFor(array $context, ?int $tenantId = null): array
+    {
+        $cfg   = $this->onboardingChecklists($tenantId);
+        $items = $cfg['general']['items'] ?? [];
+
+        foreach ($cfg['rules'] ?? [] as $rule) {
+            if ($this->matches($rule['match'] ?? [], $context)) {
+                $items = array_merge($items, $rule['items'] ?? []);
+            }
+        }
+
+        return [
+            'items'            => array_values(array_unique($items)),
+            'gates_activation' => (bool) ($cfg['general']['gates_activation'] ?? false),
+        ];
+    }
+
+    /**
+     * §12 — the approver levels an approval must pass, given its dimensions. The
+     * first matching rule wins; falls back to `default_levels`.
+     *
+     * @return list<string>
+     */
+    public function routeFor(array $context, ?int $tenantId = null): array
+    {
+        $cfg = $this->approvalRouting($tenantId);
+
+        foreach ($cfg['rules'] ?? [] as $rule) {
+            if ($this->matches($rule['match'] ?? [], $context)) {
+                return $rule['levels'] ?? $cfg['default_levels'] ?? [];
+            }
+        }
+
+        return $cfg['default_levels'] ?? [];
+    }
+
+    /** Every key/value in $match is present and equal in $context. */
+    private function matches(array $match, array $context): bool
+    {
+        foreach ($match as $k => $v) {
+            if (($context[$k] ?? null) !== $v) {
+                return false;
+            }
+        }
+
+        return $match !== [];
+    }
+
     /* ── Core merge ─────────────────────────────────────────────────────── */
 
     /** The shipped defaults for a group (no tenant involved). */
@@ -104,6 +205,34 @@ class TpvSettings
             'violation_ladder' => [
                 'severity_points' => ViolationType::SEVERITY_POINTS,
                 'steps'           => ViolationType::ladderSteps(),
+                // §26 — per-project (or per-client) rule overrides. Keyed by project
+                // name; each may override `severity_points` and/or `steps`. Empty by
+                // default, so the tenant ladder applies everywhere until set.
+                'project_overrides' => [],
+            ],
+            'onboarding_checklists' => [
+                'dimensions' => config('tpv_onboarding_checklists.dimensions', []),
+                'rules'      => config('tpv_onboarding_checklists.rules', []),
+                'general'    => config('tpv_onboarding_checklists.general', []),
+            ],
+            'approval_routing' => [
+                'dimensions'     => config('tpv_approval_routing.dimensions', []),
+                'rules'          => config('tpv_approval_routing.rules', []),
+                'default_levels' => config('tpv_approval_routing.default_levels', []),
+            ],
+            // §34 — admin-configurable catalogues. Baselines come from the shipped
+            // constants/config; a tenant can extend or replace each list.
+            'catalogs' => [
+                'vendor_types'            => config('tpv.vendor_types', ['permanent', 'temporary']),
+                'vendor_categories'       => config('tpv.vendor_categories', ['Contractor', 'Supplier', 'Service Provider', 'Consultant']),
+                'vendor_classes'          => \App\Support\Vendor\VendorClass::ALL,
+                'risk_levels'             => \App\Support\Vendor\RiskTier::ALL,
+                'document_types'          => config('tpv.document_types', ['GST', 'PAN', 'PF', 'ESIC', 'Insurance', 'Licence', 'ISO Certificate']),
+                'training_types'          => \App\Models\Tpv\TpvWorkerTraining::TYPES,
+                'competency_requirements' => \App\Models\Tpv\TpvWorkerCompetency::CATEGORIES,
+                'permit_types'            => \App\Models\Tpv\WorkPermit::TYPES,
+                'violation_types'         => ViolationType::TYPES,
+                'compliance_categories'   => ComplianceCatalog::CATEGORIES,
             ],
             default => [],
         };

@@ -3,11 +3,17 @@
 namespace App\Services\Tpv;
 
 use App\Exceptions\BusinessException;
+use App\Models\Tpv\TpvApproval;
 use App\Models\Tpv\TpvCapa;
+use App\Models\Tpv\TpvContract;
 use App\Models\Tpv\TpvNcr;
 use App\Models\Tpv\TpvNotificationLog;
 use App\Models\Tpv\TpvRenewal;
+use App\Models\Tpv\TpvSafetyStrike;
 use App\Models\Tpv\TpvVendorViolation;
+use App\Models\Tpv\TpvWorkerMedical;
+use App\Models\Tpv\TpvWorkerTraining;
+use App\Models\Tpv\WorkPermit;
 use App\Models\User;
 use App\Models\Vendor\Vendor;
 use App\Models\Vendor\VendorDocument;
@@ -31,6 +37,19 @@ use App\Services\Notifications\NotificationService;
 class TpvCommunicationService
 {
     public const CHANNELS = ['email', 'whatsapp', 'sms'];
+
+    /**
+     * §31 — the full trigger catalogue the doc lists. Those marked derived are
+     * generated live in alerts(); the meeting/MOM/action triggers belong to the
+     * shared Meetings module and are enumerated here so the catalogue is complete
+     * even though this service does not couple into that module.
+     */
+    public const TRIGGERS = [
+        'approval', 'document_expiry', 'training_expiry', 'medical_expiry',
+        'contract_expiry', 'permit_expiry', 'ncr_overdue', 'capa_overdue',
+        'renewal_due', 'violation_open', 'strike', 'suspension',
+        'meeting_invitation', 'mom_distribution', 'action_reminder',
+    ];
 
     /** Days-ahead a document expiry or renewal due-date becomes an alert. */
     public const HORIZON_DAYS = 30;
@@ -115,6 +134,96 @@ class TpvCommunicationService
                 "Renewal {$r->reference} ".($overdue ? 'overdue' : 'due soon'),
                 "Your engagement renewal {$r->reference} is due on {$r->due_date->toFormattedDateString()}.",
                 '/app/tpv/renewals', $r->due_date->toDateString());
+        }
+
+        // Pending approvals (§31 Approval trigger).
+        foreach (TpvApproval::forTenant($tenantId)->where('status', 'Pending')
+            ->whereNotNull('vendor_id')->with('vendor:id,company_name,vendor_code')->get() as $a) {
+            if (! $a->vendor) {
+                continue;
+            }
+            $alerts[] = $this->alert('approval_pending', 'medium', $a->vendor,
+                'Approval pending: '.$a->title,
+                "An approval — \"{$a->title}\" — is awaiting a decision.",
+                '/app/tpv/approvals', null);
+        }
+
+        // Training expiring / expired (§31 Training expiry).
+        foreach (TpvWorkerTraining::forTenant($tenantId)->whereNotNull('valid_until')
+            ->whereDate('valid_until', '<=', $horizon)->with('worker:id,name,vendor_id')->get() as $t) {
+            $vendor = $t->worker?->vendor;
+            if (! $vendor) {
+                continue;
+            }
+            $expired = $t->valid_until->isPast();
+            $alerts[] = $this->alert('training_expiry', $expired ? 'high' : 'medium', $vendor,
+                ($expired ? 'Training expired: ' : 'Training expiring: ').$t->worker->name,
+                "Training ({$t->training_type}) for {$t->worker->name} ".($expired ? 'expired on ' : 'expires on ').$t->valid_until->toFormattedDateString().'.',
+                '/app/tpv/competency', $t->valid_until->toDateString());
+        }
+
+        // Medical fitness expiring / expired (§31 Medical expiry).
+        foreach (TpvWorkerMedical::forTenant($tenantId)->whereNotNull('valid_until')
+            ->whereDate('valid_until', '<=', $horizon)->with('worker:id,name,vendor_id')->get() as $m) {
+            $vendor = $m->worker?->vendor;
+            if (! $vendor) {
+                continue;
+            }
+            $expired = $m->valid_until->isPast();
+            $alerts[] = $this->alert('medical_expiry', $expired ? 'high' : 'medium', $vendor,
+                ($expired ? 'Medical expired: ' : 'Medical expiring: ').$m->worker->name,
+                "Medical fitness for {$m->worker->name} ".($expired ? 'expired on ' : 'expires on ').$m->valid_until->toFormattedDateString().'.',
+                '/app/tpv/workforce', $m->valid_until->toDateString());
+        }
+
+        // Contract expiry (§31 Contract expiry).
+        foreach (TpvContract::forTenant($tenantId)->whereNotNull('end_date')
+            ->whereDate('end_date', '<=', $horizon)->with('vendor:id,company_name,vendor_code')->get() as $ct) {
+            if (! $ct->vendor) {
+                continue;
+            }
+            $expired = $ct->end_date->isPast();
+            $alerts[] = $this->alert('contract_expiry', $expired ? 'high' : 'medium', $ct->vendor,
+                "Contract {$ct->reference} ".($expired ? 'expired' : 'expiring'),
+                "Contract {$ct->reference} ends on {$ct->end_date->toFormattedDateString()}.",
+                '/app/tpv/contracts', $ct->end_date->toDateString());
+        }
+
+        // Permit expiry (§31 Permit expiry).
+        foreach (WorkPermit::forTenant($tenantId)->whereNotNull('valid_to')
+            ->whereDate('valid_to', '<=', $horizon)->whereIn('status', ['Approved', 'Active'])
+            ->with('vendor:id,company_name,vendor_code')->get() as $p) {
+            if (! $p->vendor) {
+                continue;
+            }
+            $expired = $p->valid_to->isPast();
+            $alerts[] = $this->alert('permit_expiry', $expired ? 'high' : 'medium', $p->vendor,
+                "Permit {$p->reference} ".($expired ? 'expired' : 'expiring'),
+                "Work permit {$p->reference} ({$p->type}) is valid to {$p->valid_to->toFormattedDateString()}.",
+                '/app/tpv/permits', $p->valid_to->toDateString());
+        }
+
+        // Recent strikes (§31 Strike).
+        foreach (TpvSafetyStrike::forTenant($tenantId)->whereNull('voided_at')
+            ->whereDate('occurred_at', '>=', now()->subDays(self::HORIZON_DAYS))
+            ->with('worker:id,name,vendor_id')->get() as $s) {
+            $vendor = $s->worker?->vendor;
+            if (! $vendor) {
+                continue;
+            }
+            $alerts[] = $this->alert('strike', 'high', $vendor,
+                "Safety strike: {$s->worker->name}",
+                "A {$s->severity} safety strike was recorded against {$s->worker->name}.",
+                '/app/tpv/strikes', null);
+        }
+
+        // Suspended vendors (§31 Suspension).
+        foreach (Vendor::forTenant($tenantId)->where(fn ($q) => $q
+            ->whereIn('status', ['Suspended', 'On_Hold'])->orWhere('auto_suspended', true))->get() as $v) {
+            $alerts[] = $this->alert('suspension', 'high', $v,
+                'Account suspended',
+                'Your account is currently suspended. Please contact the administrator.',
+                '/app/tpv/vendors', null);
         }
 
         $rank = ['high' => 0, 'medium' => 1, 'low' => 2];

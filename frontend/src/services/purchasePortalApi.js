@@ -139,6 +139,11 @@ export const purchasePortalApi = {
     get:    () => api.get('/portal/purchase/kickoff').then(r => r.data),
     accept: () => api.post('/portal/purchase/kickoff/accept').then(r => r.data),
   },
+
+  // §32 "View compliance" — the vendor's own compliance register (read-only).
+  compliance: {
+    get: () => api.get('/portal/purchase/compliance').then(r => r.data),
+  },
 }
 
 export default purchasePortalApi

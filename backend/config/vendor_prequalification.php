@@ -83,6 +83,52 @@ return [
                         'excellent' => ['label' => 'Excellent', 'points' => 3],
                     ],
                 ],
+                // §6 — HSE taxonomy depth.
+                'hse_organization' => [
+                    'label'   => 'HSE organization & staffing',
+                    'options' => [
+                        'none'     => ['label' => 'No dedicated HSE staff', 'points' => 0],
+                        'shared'   => ['label' => 'Shared responsibility',  'points' => 1],
+                        'dedicated' => ['label' => 'Dedicated HSE officer', 'points' => 2],
+                        'team'     => ['label' => 'Full HSE team',          'points' => 3],
+                    ],
+                ],
+                'safety_statistics' => [
+                    'label'   => 'Safety statistics (TRIR / LTIFR)',
+                    'options' => [
+                        'unavailable' => ['label' => 'Not maintained', 'points' => 0],
+                        'high'        => ['label' => 'Above industry',  'points' => 1],
+                        'average'     => ['label' => 'At industry',     'points' => 2],
+                        'low'         => ['label' => 'Below industry',  'points' => 3],
+                    ],
+                ],
+                'training_system' => [
+                    'label'   => 'HSE training system',
+                    'options' => [
+                        'none'       => ['label' => 'None',        'points' => 0],
+                        'adhoc'      => ['label' => 'Ad-hoc',      'points' => 1],
+                        'structured' => ['label' => 'Structured',  'points' => 2],
+                        'certified'  => ['label' => 'Accredited',  'points' => 3],
+                    ],
+                ],
+                'risk_assessment_system' => [
+                    'label'   => 'Risk-assessment system (JSA/HIRA)',
+                    'options' => [
+                        'none'       => ['label' => 'None',       'points' => 0],
+                        'basic'      => ['label' => 'Basic',      'points' => 1],
+                        'documented' => ['label' => 'Documented', 'points' => 2],
+                        'mature'     => ['label' => 'Mature',     'points' => 3],
+                    ],
+                ],
+                'emergency_preparedness' => [
+                    'label'   => 'Emergency preparedness',
+                    'options' => [
+                        'none'       => ['label' => 'None',       'points' => 0],
+                        'plan'       => ['label' => 'Plan only',  'points' => 1],
+                        'drilled'    => ['label' => 'Plan + drills', 'points' => 2],
+                        'integrated' => ['label' => 'Integrated with site', 'points' => 3],
+                    ],
+                ],
             ],
         ],
         'track_record' => [
@@ -150,6 +196,69 @@ return [
                         'expiring'   => ['label' => 'Expiring soon',      'points' => 1],
                         'valid'      => ['label' => 'Valid',              'points' => 2],
                         'valid_long' => ['label' => 'Valid > 6 months',   'points' => 3],
+                    ],
+                ],
+            ],
+        ],
+        // §6 — Company capability.
+        'company' => [
+            'label'     => 'Company capability',
+            'questions' => [
+                'regional_capability' => [
+                    'label'   => 'Regional / geographic capability',
+                    'options' => [
+                        'none'     => ['label' => 'No local presence',  'points' => 0],
+                        'limited'  => ['label' => 'Limited',            'points' => 1],
+                        'regional' => ['label' => 'Regional coverage',  'points' => 2],
+                        'national' => ['label' => 'National / multi-region', 'points' => 3],
+                    ],
+                ],
+                'manpower_capability' => [
+                    'label'   => 'Manpower capability / bench strength',
+                    'options' => [
+                        'inadequate' => ['label' => 'Inadequate', 'points' => 0],
+                        'partial'    => ['label' => 'Partial',    'points' => 1],
+                        'adequate'   => ['label' => 'Adequate',   'points' => 2],
+                        'strong'     => ['label' => 'Strong',     'points' => 3],
+                    ],
+                ],
+            ],
+        ],
+        // §6 — Commercial.
+        'commercial' => [
+            'label'     => 'Commercial',
+            'questions' => [
+                'commercial_capability' => [
+                    'label'   => 'Commercial / financial capability',
+                    'options' => [
+                        'weak'     => ['label' => 'Weak',     'points' => 0],
+                        'moderate' => ['label' => 'Moderate', 'points' => 1],
+                        'sound'    => ['label' => 'Sound',    'points' => 2],
+                        'strong'   => ['label' => 'Strong',   'points' => 3],
+                    ],
+                ],
+                'contract_history' => [
+                    'label'   => 'Contract history / repeat business',
+                    'options' => [
+                        'none'      => ['label' => 'None',            'points' => 0],
+                        'some'      => ['label' => 'Some',            'points' => 1],
+                        'good'      => ['label' => 'Good',            'points' => 2],
+                        'extensive' => ['label' => 'Extensive',       'points' => 3],
+                    ],
+                ],
+            ],
+        ],
+        // §6 — Compliance (licences as a discrete prequal item).
+        'compliance' => [
+            'label'     => 'Compliance',
+            'questions' => [
+                'licences' => [
+                    'label'   => 'Statutory / trade licences',
+                    'options' => [
+                        'missing'  => ['label' => 'Missing',  'points' => 0],
+                        'partial'  => ['label' => 'Partial',  'points' => 1],
+                        'most'     => ['label' => 'Most',     'points' => 2],
+                        'complete' => ['label' => 'Complete', 'points' => 3],
                     ],
                 ],
             ],

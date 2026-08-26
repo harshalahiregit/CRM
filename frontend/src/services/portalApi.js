@@ -192,6 +192,11 @@ export const portalApi = {
     imageBlob:   (productId)      => api.get(`/portal/ppe/item/${productId}/image`, { responseType: 'blob' }).then(r => URL.createObjectURL(r.data)),
   },
 
+  // §32 "View compliance" — the vendor's own compliance register (read-only).
+  compliance: {
+    get: () => api.get('/portal/compliance').then(r => r.data),
+  },
+
 }
 
 export default portalApi
