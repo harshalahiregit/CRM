@@ -197,6 +197,20 @@ export const portalApi = {
     get: () => api.get('/portal/compliance').then(r => r.data),
   },
 
+  // §32 Governance-response half.
+  governance: {
+    ncrs:            ()            => api.get('/portal/ncrs').then(r => r.data),
+    respondNcr:      (id, payload) => api.post(`/portal/ncrs/${id}/respond`, payload).then(r => r.data),
+    capas:           ()            => api.get('/portal/capas').then(r => r.data),
+    submitCapa:      (id, payload) => api.post(`/portal/capas/${id}/evidence`, payload).then(r => r.data),
+    requestApproval: (payload)     => api.post('/portal/approvals/request', payload).then(r => r.data),
+    requestExtension:(payload)     => api.post('/portal/extensions/request', payload).then(r => r.data),
+    meetings:        ()            => api.get('/portal/meetings').then(r => r.data),
+    actions:         ()            => api.get('/portal/actions').then(r => r.data),
+    respondAction:   (id, payload) => api.post(`/portal/actions/${id}/respond`, payload).then(r => r.data),
+    ppeMatrix:       ()            => api.get('/portal/ppe-matrix').then(r => r.data),
+  },
+
 }
 
 export default portalApi

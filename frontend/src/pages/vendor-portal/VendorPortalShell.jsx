@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, ClipboardList, ClipboardCheck, HardHat, LogOut, Building2,
-  Sun, Moon, Bell, User, FileText, HelpCircle, ChevronRight, Menu, X, ShieldCheck,
+  Sun, Moon, Bell, User, FileText, HelpCircle, ChevronRight, Menu, X, ShieldCheck, Gavel,
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { portalApi } from '@/services/portalApi'
@@ -69,6 +69,7 @@ export default function VendorPortalShell() {
       : []),
     { to: '/vendor-portal/documents',    label: 'My Documents',    icon: FileText },
     { to: '/vendor-portal/compliance',   label: 'My Compliance',   icon: ShieldCheck },
+    { to: '/vendor-portal/governance',   label: 'Governance',      icon: Gavel },
   ]
 
   const bottomNavItems = [
