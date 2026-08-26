@@ -293,6 +293,8 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     // Vendor Performance Index (Sangoe TPV §27) — additive superset of the VRS.
     Route::get('/vpi',                                    [\App\Http\Controllers\Api\Tpv\TpvVendorPerformanceController::class, 'index']);
     Route::get('/vendors/{vendor}/vpi',                   [\App\Http\Controllers\Api\Tpv\TpvVendorPerformanceController::class, 'show'])->where('vendor', '[0-9]+');
+    Route::get('/vendors/{vendor}/vpi/history',           [\App\Http\Controllers\Api\Tpv\TpvVendorPerformanceController::class, 'history'])->where('vendor', '[0-9]+');
+    Route::post('/vendors/{vendor}/vpi/snapshot',         [\App\Http\Controllers\Api\Tpv\TpvVendorPerformanceController::class, 'snapshot'])->where('vendor', '[0-9]+');
 
     // Communications Centre (Sangoe TPV §31) — derived alerts + send/log.
     Route::get('/communications',                         [\App\Http\Controllers\Api\Tpv\TpvCommunicationController::class, 'index']);
