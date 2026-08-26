@@ -289,6 +289,7 @@ const TpvContracts = lazy(() => import('@/modules/tpv/pages/TpvContracts'))
 const TpvWorkPackages = lazy(() => import('@/modules/tpv/pages/TpvWorkPackages'))
 const TpvApprovalRegister = lazy(() => import('@/modules/tpv/pages/TpvApprovalRegister'))
 const TpvCompetency = lazy(() => import('@/modules/tpv/pages/TpvCompetency'))
+const TpvMedicalFitness = lazy(() => import('@/modules/tpv/pages/TpvMedicalFitness'))
 const TpvWorkAuthorization = lazy(() => import('@/modules/tpv/pages/TpvWorkAuthorization'))
 const TpvNcr = lazy(() => import('@/modules/tpv/pages/TpvNcr'))
 const TpvCapaRegister = lazy(() => import('@/modules/tpv/pages/TpvCapaRegister'))
@@ -656,6 +657,8 @@ export default function AppRoutes() {
           <Route path="approval-register" element={<S><TpvApprovalRegister /></S>} />
           {/* §15 Competency & Training. */}
           <Route path="competency" element={<S><TpvCompetency /></S>} />
+          {/* §3/§16 Medical Fitness register. */}
+          <Route path="medical" element={<S><TpvMedicalFitness /></S>} />
           {/* §19 Unified Work Authorization — read-only composite verdict. */}
           <Route path="work-authorization" element={<S><TpvWorkAuthorization /></S>} />
           {/* §24 Non-Conformance Reports. */}
