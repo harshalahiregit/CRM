@@ -188,6 +188,27 @@ class MeetingDocComplianceTest extends TestCase
         $this->assertSame('Vendor to mobilise 8 additional workers.', $item->decision);
     }
 
+    public function test_a_mom_action_cannot_progress_past_open_without_an_owner(): void
+    {
+        $m = $this->meeting(['mom_items' => [['description' => 'Mobilise workers', 'priority' => 'High']]]);
+        $item = $m->momItems->first();
+        $this->assertEmpty($item->responsible_attendee_id);
+        $this->assertEmpty($item->responsible_names);
+
+        // No owner → Rule 11 refuses progression.
+        try {
+            $this->svc()->progressAction($item, ['status' => 'In_Progress'], $this->actor);
+            $this->fail('Expected a Rule 11 owner-gate failure.');
+        } catch (\App\Exceptions\BusinessException $e) {
+            $this->assertStringContainsString('responsible owner', $e->getMessage());
+        }
+
+        // Assigning an owner in the same call lets it progress.
+        $out = $this->svc()->progressAction($item, ['status' => 'In_Progress', 'responsible_names' => 'Asha'], $this->actor);
+        $this->assertSame('In_Progress', $out->status);
+        $this->assertSame('Asha', $out->responsible_names);
+    }
+
     public function test_supporting_documents_and_previous_reference_persist_on_the_agenda_item(): void
     {
         $m = $this->meeting(['agenda_items' => [[
