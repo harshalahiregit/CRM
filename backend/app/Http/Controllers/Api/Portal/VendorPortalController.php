@@ -75,6 +75,21 @@ class VendorPortalController extends Controller
         ]);
     }
 
+    /** General › Customer — the customers linked to this vendor (read-only). */
+    public function customers(Request $request)
+    {
+        $vendor = $this->portalVendor($request);
+        if (! $vendor) {
+            return response()->json(['status' => 'error', 'message' => 'Vendor profile not found'], 404);
+        }
+
+        return response()->json([
+            'data' => $vendor->customers()
+                ->orderByDesc('id')
+                ->get(['id', 'company', 'phone', 'website', 'gst_number', 'city', 'state', 'country', 'active']),
+        ]);
+    }
+
     /**
      * Performance › Risk Score — the vendor's OWN risk classification (read-only).
      * A vendor may see its score, tier and the factor breakdown, but never set it

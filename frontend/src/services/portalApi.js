@@ -204,6 +204,9 @@ export const portalApi = {
     get: () => api.get('/portal/compliance').then(r => r.data),
   },
 
+  // General › Customer — the customers linked to this vendor (read-only).
+  customers: () => api.get('/portal/customers').then(r => r.data?.data ?? r.data),
+
   // Compliance & HSSE — the vendor requests permits + reports incidents.
   hsse: {
     permits:        () => api.get('/portal/permits').then(r => r.data),

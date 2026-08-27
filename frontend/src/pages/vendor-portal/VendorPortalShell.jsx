@@ -30,8 +30,10 @@ export default function VendorPortalShell() {
       builtRoutes={{
         dashboard:  'dashboard',
         onboarding: 'onboarding',
+        overview:   'overview',
         profile:    'registration',   // "My Company"
         contact:    'contacts',
+        customer:   'customers',
         comply:     'compliance',
         documents:  'documents',      // statutory documents / files
         // Compliance & HSSE — request permits + report incidents (writes).

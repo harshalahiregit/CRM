@@ -365,6 +365,8 @@ const PortalOnboardingEntry = lazy(() => import('@/pages/vendor-portal/PortalOnb
 const PortalDashboard = lazy(() => import('@/pages/vendor-portal/PortalDashboard'))
 const PortalComingSoon = lazy(() => import('@/pages/vendor-portal/PortalComingSoon'))
 const MyContacts = lazy(() => import('@/pages/vendor-portal/MyContacts'))
+const MyOverview = lazy(() => import('@/pages/vendor-portal/MyOverview'))
+const MyCustomers = lazy(() => import('@/pages/vendor-portal/MyCustomers'))
 const MyKb = lazy(() => import('@/pages/vendor-portal/MyKb'))
 const MyWork = lazy(() => import('@/pages/vendor-portal/MyWork'))
 const MyPerformance = lazy(() => import('@/pages/vendor-portal/MyPerformance'))
@@ -878,6 +880,8 @@ export default function AppRoutes() {
         {/* Purchase-side vendor routes (vendor role only) */}
         <Route path="documents"         element={<S><PortalDocuments /></S>} />
         <Route path="contacts"          element={<S><MyContacts /></S>} />
+        <Route path="overview"          element={<S><MyOverview /></S>} />
+        <Route path="customers"         element={<S><MyCustomers /></S>} />
         <Route path="kb"                element={<S><MyKb /></S>} />
         <Route path="projects"          element={<S><MyWork view="projects" /></S>} />
         <Route path="tasks"             element={<S><MyWork view="tasks" /></S>} />

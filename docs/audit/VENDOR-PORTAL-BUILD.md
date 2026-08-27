@@ -36,8 +36,8 @@ Last updated: 2026-08-27.
 - [x] **Contact** — shared `PortalContacts.jsx` (api-prop driven), on BOTH portals. TPV
   uses `name`; Purchase uses first/last + more (each passes a `fields` descriptor). Add/
   edit/primary/status. Backends already existed.
-- [ ] Overview — portal summary page (note: overlaps existing Dashboard; low priority).
-- [ ] Customer — needs a portal endpoint (admin has `/vendors/{id}/customers`).
+- [x] Overview — `MyOverview.jsx`: account status + work counts (projects/tasks/open/tickets) + company header, from `me` + my-work `summary`.
+- [x] Customer — `MyCustomers.jsx` (read-only, own linked clients) + `GET /portal/customers`. Linking stays an admin action.
 - [~] Medical / Training — already exist under Workforce; revisit surfacing as General items.
 
 ## Phase 2 — Execution (surface existing backends)
