@@ -212,9 +212,26 @@ class SangoeTrackClient
 
         $response = $this->http()->withToken($this->login())->{$verb}($url, $payload);
 
-        if ($response->status() === 401) {
-            // Cached token outlived its real validity — re-login once and retry.
-            Log::channel('hr')->info('SangoeTrack token rejected, re-authenticating', ['endpoint' => $endpointKey]);
+        // 401 is the obvious "token expired". 403 is here because SangoeTrack
+        // answers a token it no longer recognises with "Permission denied", not
+        // with a 401: its admin check resolves the user to null and refuses on
+        // that basis, so a dead session is indistinguishable from a real
+        // permission problem by status code alone.
+        //
+        // That matters because SangoeTrack appears to invalidate the previous
+        // token when the same account logs in again. Two clients sharing one
+        // account — which is what we do today — knock each other out, and
+        // without this the CRM would serve a dead token for the full cache TTL
+        // before recovering. Observed in production: every screen returned
+        // "Permission denied" for the better part of an hour.
+        //
+        // Retrying a genuine permission failure costs one extra request and
+        // returns the same error, which is the cheaper mistake of the two.
+        if (in_array($response->status(), [401, 403], true)) {
+            Log::channel('hr')->info('SangoeTrack token rejected, re-authenticating', [
+                'endpoint' => $endpointKey,
+                'status'   => $response->status(),
+            ]);
             $response = $this->http()->withToken($this->login(true))->{$verb}($url, $payload);
         }
 
