@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Send, Receipt, Trash2, FileText,
   CheckCircle, XCircle, Download, X, User, Calendar,
-  DollarSign, Tag, CreditCard
+  DollarSign, Tag, CreditCard, ListTodo
 } from 'lucide-react'
 import { salesApi } from '@/services/salesApi'
 import LoadError from '@/components/ui/LoadError'
@@ -38,6 +38,14 @@ export default function EstimateDetail() {
     type === 'error' ? toast.error(msg) : type === 'info' ? toast.info(msg) : toast.success(msg)
 
   const reload = () => salesApi.estimates.get(id).then(setEstimate)
+
+  // PI10 — create a Task from each line item (under the linked project if any).
+  const convertToTasks = async () => {
+    try {
+      const r = await salesApi.estimates.convertToTasks(estimate.id)
+      showToast(`${r.created} task${r.created === 1 ? '' : 's'} created from this document`)
+    } catch (e) { showToast(e.message || 'Could not create tasks', 'error') }
+  }
 
   const markSent = async () => {
     try {
@@ -192,6 +200,7 @@ export default function EstimateDetail() {
                 label no longer claims the customer received it. The PDF button was
                 removed: no estimate PDF endpoint exists and it produced nothing. */}
             {[
+              { icon: ListTodo, label: 'Convert to Tasks', action: convertToTasks },
               { icon: Send, label: 'Mark as Sent', action: markSent },
             ].map(a => (
               <button key={a.label} onClick={a.action}

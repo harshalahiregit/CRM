@@ -150,6 +150,7 @@ Route::middleware('auth:sanctum')->prefix('sales')->group(function () {
     Route::patch('/estimates/{estimate}/send',                 [EstimateController::class, 'send']);
     Route::post('/estimates/{estimate}/convert-to-invoice',    [EstimateController::class, 'convertToInvoice']);
     Route::post('/estimates/{estimate}/convert-to-proforma', [EstimateController::class, 'convertToProforma']);
+    Route::post('/estimates/{estimate}/convert-to-tasks',    [EstimateController::class, 'convertToTasks']);
     Route::post('/estimates/{estimate}/payments',              [EstimateController::class, 'recordPayment']);
 
     // Invoices

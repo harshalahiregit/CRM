@@ -91,4 +91,19 @@ class EstimateController extends Controller
 
         return response()->json($proforma, 201);
     }
+
+    /** PI10 — create a Task from each of this document's line items. */
+    public function convertToTasks(Request $request, Estimate $estimate)
+    {
+        $tenantId = (int) $request->user()->tenant_id;
+        abort_unless((int) $estimate->tenant_id === $tenantId, 404, 'Estimate not found.');
+
+        $tasks = app(\App\Services\Sales\EstimateToTasksService::class)
+            ->convert($estimate, $tenantId, $request->user()->id);
+
+        return response()->json([
+            'created'  => count($tasks),
+            'task_ids' => collect($tasks)->pluck('id'),
+        ], 201);
+    }
 }

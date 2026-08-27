@@ -35,7 +35,7 @@ Last updated: 2026-08-27.
 - [ ] ⚠ **PI7. Use important features from the OLD CRM invoice.** NEEDS DECISION: which features / which old CRM reference.
 - [x] **PI8. T&C — render as bullets** — terms is rich-text HTML; now rendered as markup (was a run-on paragraph). Fixed on the PI detail.
 - [ ] **PI9. Received-payment section:** TDS box (% selection + GST amount box); the button persists until full payment is received (not after any partial); a "Partial Paid" tag on the PI index.
-- [ ] **PI10. Convert invoice items/services → Task** (create tasks from PI line items).
+- [x] **PI10. Convert invoice items/services → Tasks.** `EstimateToTasksService` creates one Task per line item (line value → the task's fixed billable amount), linked to the document's project when set; via `POST /sales/estimates/{id}/convert-to-tasks` + a "Convert to Tasks" button on the PI/Estimate detail. Guarded by `EstimateConvertToTasksTest` (3).
 - [ ] ⚠ **PI11. Dedicated settings page for all sections/subsections.** NEEDS DECISION: which sections exactly (very broad as written).
 
 ## Tax Invoice (Sales)
@@ -59,7 +59,7 @@ Last updated: 2026-08-27.
 ---
 
 ### Progress
-- **Done (18):** T1, T2, V1, V2, V3, V4, PI4, PI6, PI8, TI1, TI3, RP1, RP2, PR1, PR2, ST1, ST2 — plus V2 (pre-existing).
+- **Done (19):** T1, T2, V1, V2, V3, V4, PI4, PI6, PI8, PI10, TI1, TI3, RP1, RP2, PR1, PR2, ST1, ST2.
 - **Deferred:** C1, C2 (Call CRM).
-- **Open — clear, remaining:** PI1 (item search — mostly exists), PI2 (HSN/SAC + govt import), PI3 (GST auto-detect), PI5 (edit PI — full build), PI9 (partial-pay + TDS + tag on PI), PI10 (items→task), PR3 (feedback full flow — decided, task-vs-project + WhatsApp-config to confirm).
+- **Open — clear, remaining:** PI1 (item search — mostly exists), PI2 (HSN/SAC + govt import), PI3 (GST auto-detect), PI5 (edit PI — full build), PI9 (partial-pay + TDS + tag on PI), PR3 (feedback full flow — decided, task-vs-project + WhatsApp-config to confirm).
 - **Open — needs a decision (⚠):** V5, PI7, PI11, TI2.
