@@ -1,0 +1,65 @@
+# Senior Feedback — Master Task List
+
+The full list of senior-review points, tracked to completion. **Tick `- [x]` only
+when the item is genuinely built AND verified (test and/or build green).** Nothing
+here may be dropped — this file is the memory across sessions.
+
+**Legend:** `[ ]` open · `[x]` done · `[~]` deferred (with reason) · ⚠ needs a decision from the user before building.
+
+Last updated: 2026-08-27.
+
+---
+
+## TPV
+- [x] **T1. Add customer — search & link existing registered customers** (not create-only). Modal defaults to search; one-click Link; "Create new" kept. Endpoints `GET /tpv/vendors/{v}/customers/search`, `POST /tpv/vendors/{v}/customers/link`. Guarded by `TpvVendorCustomerLinkTest` (6). — commit 41f5d65d.
+- [x] **T2. Shed requirement form** (the senior's 9 fields: site location, size L×W, height, purpose, side wall, flooring, gate/shutter size, footing, office/toilet) on the TPV-local vendor↔project engagement. New "Shed Projects" tab + create/edit. Guarded by `TpvVendorShedProjectTest` (5). — commit 41f5d65d.
+
+## Vendor
+- [ ] **V1. State → dropdown** in the vendor registration form (+ the add-customer form). `INDIAN_STATES` list already exists; wire it in.
+- [x] **V2. Resend activation email** — already exists (button on the vendor detail page; `POST /vendors/{v}/resend-activation`).
+- [ ] **V3. First-login dashboard guide** for a newly-registered vendor (getting-started hint on the portal dashboard).
+- [ ] **V4. Reg-status card → "Start submitting info/docs" button** (CTA on the read-only Registration Status card → documents/onboarding).
+- [ ] ⚠ **V5. Attach Agreement / NDA / Policy / SOP** for the vendor to acknowledge/sign. NEEDS DECISION: e-sign vs tick-acknowledge; admin-uploaded templates?; shown during registration or in the portal?
+
+## Call CRM — DEFERRED (per user, 2026-08-27)
+- [~] **C1. Detect restricted words during a call** — no telephony exists in the product; greenfield. Skipped for now.
+- [~] **C2. Detect/flag if …** — original point was blank + depends on C1. Skipped.
+
+## Proforma Invoice (Sales module)
+- [ ] **PI1. Item/Services — add & search** on the line items (catalogue exists); also manageable from settings.
+- [ ] **PI2. HSN/SAC — search by product/service + link the govt list** (import the official HSN/SAC dataset). Search endpoint already exists.
+- [ ] **PI3. GST auto-detect** by the customer's billing address (state → CGST/SGST vs IGST + rate).
+- [ ] **PI4. Back button → redirect to Estimate.**
+- [ ] **PI5. Enable Edit of a created PI** (edit exists but is gated by status — expose it correctly).
+- [ ] **PI6. Record Payment hidden until "Mark Accepted".**
+- [ ] ⚠ **PI7. Use important features from the OLD CRM invoice.** NEEDS DECISION: which features / which old CRM reference.
+- [ ] **PI8. T&C — pointers render as bullet points** (fix the list rendering in preview/PDF).
+- [ ] **PI9. Received-payment section:** TDS box (% selection + GST amount box); the button persists until full payment is received (not after any partial); a "Partial Paid" tag on the PI index.
+- [ ] **PI10. Convert invoice items/services → Task** (create tasks from PI line items).
+- [ ] ⚠ **PI11. Dedicated settings page for all sections/subsections.** NEEDS DECISION: which sections exactly (very broad as written).
+
+## Tax Invoice (Sales)
+- [ ] **TI1. Copy public link — fix (not working).**
+- [ ] ⚠ **TI2. Mark-as-sent shows the number of actual clicks.** NEEDS DECISION: count sends (button clicks) vs opens (customer opening the public link).
+- [ ] **TI3. Delete icon should not be highlighted** (avoid accidental click).
+
+## Record Payment (Sales)
+- [ ] **RP1. While capturing a payment, the PI / Tax Invoice / Estimate is a dropdown / reflects on search.**
+- [ ] **RP2. Separate TDS deduction box.**
+
+## Project (my module)
+- [ ] ⚠ **PR1. Billable — reflect each task's amount, hidden by default; only permitted users see the hidden amount.** NEEDS DECISION: a task's amount = rate × logged hours, or a new fixed-amount field? which permission unlocks it?
+- [ ] **PR2. Convert task / project / milestone → PI.**
+- [ ] ⚠ **PR3. Feedback gate:** share feedback via WhatsApp/email when set to "awaiting feedback"; a task/project can't be "Completed" until feedback is received; once received & completed, a PI is generated. NEEDS DECISION: how "feedback received" is recorded (customer reply link vs admin marks received).
+
+## Settings
+- [ ] ⚠ **ST1. Email for each and every account.** NEEDS DECISION: per-tenant SMTP already exists — do you mean a per-staff-user sender identity?
+- [ ] **ST2. Recover deleted items** (invoice, task, project, ticket, everything) — a global recycle bin / restore.
+
+---
+
+### Progress
+- **Done:** T1, T2, V2 (already existed). 
+- **Deferred:** C1, C2 (Call CRM).
+- **Open — clear (no decision needed):** V1, V3, V4, PI1–PI6, PI8, PI9, PI10, TI1, TI3, RP1, RP2, PR2, ST2.
+- **Open — needs a decision (⚠):** V5, PI7, PI11, TI2, PR1, PR3, ST1.
