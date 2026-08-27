@@ -54,7 +54,7 @@ Last updated: 2026-08-27.
 
 ## Settings
 - [ ] ⚠ **ST1. Email for each and every account.** NEEDS DECISION: per-tenant SMTP already exists — do you mean a per-staff-user sender identity?
-- [ ] **ST2. Recover deleted items** (invoice, task, project, ticket, everything) — a global recycle bin / restore.
+- [x] **ST2. Recover deleted items** — a global **Recycle Bin** settings page (admin-only) listing soft-deleted Tax Invoices, Estimates/PIs, Projects, Tasks and Tickets, each restorable in one click. `GET /settings/recycle-bin` + `POST /settings/recycle-bin/restore`, tenant-scoped. Guarded by `RecycleBinTest` (3).
 
 ---
 

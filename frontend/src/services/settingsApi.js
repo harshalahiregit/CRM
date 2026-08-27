@@ -7,6 +7,11 @@ export const settingsApi = {
     get: () => api.get('/settings/general').then(r => r.data).catch(handleErr),
     update: (data) => api.put('/settings/general', data).then(r => r.data).catch(handleErr),
   },
+  // ST2 — global recycle bin: list soft-deleted records + restore one.
+  recycleBin: {
+    list:    () => api.get('/settings/recycle-bin').then(r => r.data).catch(handleErr),
+    restore: (type, id) => api.post('/settings/recycle-bin/restore', { type, id }).then(r => r.data).catch(handleErr),
+  },
   // Document Numbering Engine — configuration, preview, reset, validation.
   numbering: {
     list:     () => api.get('/settings/numbering').then(r => r.data).catch(handleErr),

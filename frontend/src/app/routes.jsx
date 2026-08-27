@@ -123,6 +123,7 @@ const CompanyFinanceSettings = lazy(() => import('@/modules/settings/pages/Compa
 const TaxRatesSettings = lazy(() => import('@/modules/settings/pages/TaxRatesSettings'))
 const ExpenseCategoriesSettings = lazy(() => import('@/modules/settings/pages/ExpenseCategoriesSettings'))
 const AccountGroupsSettings = lazy(() => import('@/modules/settings/pages/AccountGroupsSettings'))
+const RecycleBinSettings = lazy(() => import('@/modules/settings/pages/RecycleBinSettings'))
 const PublicLeadForm = lazy(() => import('@/modules/sales/public/PublicLeadForm'))
 
 // Customer Module (lazy)
@@ -808,6 +809,7 @@ export default function AppRoutes() {
           <Route path="upload" element={<S><UploadSettings /></S>} />
           <Route path="security" element={<S><SecuritySettings /></S>} />
           <Route path="notification-preferences" element={<S><NotificationPreferences /></S>} />
+          <Route path="recycle-bin" element={<S><RecycleBinSettings /></S>} />
           <Route path="statuses" element={<S><StatusManager /></S>} />
         </Route>
       </Route>
