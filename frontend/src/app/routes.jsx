@@ -360,6 +360,7 @@ const VendorPortalGovernance = lazy(() => import('@/pages/vendor-portal/VendorPo
 const MyRegistrationStatus = lazy(() => import('@/pages/vendor-portal/MyRegistrationStatus'))
 const PortalOnboardingEntry = lazy(() => import('@/pages/vendor-portal/PortalOnboardingEntry'))
 const PortalDashboard = lazy(() => import('@/pages/vendor-portal/PortalDashboard'))
+const PortalComingSoon = lazy(() => import('@/pages/vendor-portal/PortalComingSoon'))
 const PortalDocuments = lazy(() => import('@/pages/vendor-portal/PortalDocuments'))
 const PortalSupport = lazy(() => import('@/pages/vendor-portal/PortalSupport'))
 const PortalOrderDetail = lazy(() => import('@/pages/vendor-portal/PortalOrderDetail'))
@@ -869,6 +870,9 @@ export default function AppRoutes() {
         <Route path="documents"         element={<S><PortalDocuments /></S>} />
         <Route path="orders/:id"        element={<S><PortalOrderDetail /></S>} />
         <Route path="invoices/:id"      element={<S><PortalInvoiceDetail /></S>} />
+
+        {/* Roadmap sections not yet built — the full nav tree stays navigable. */}
+        <Route path="s/:key"            element={<S><PortalComingSoon /></S>} />
       </Route>
 
       {/* Purchase Vendor Portal — auth (public, independent PurchaseVendor login) */}
@@ -924,6 +928,9 @@ export default function AppRoutes() {
         <Route path="ppe"        element={<S><PurchasePortalPpe /></S>} />
         <Route path="profile"    element={<S><PurchasePortalProfile /></S>} />
         <Route path="support"    element={<S><PurchasePortalSupport /></S>} />
+
+        {/* Roadmap sections not yet built — the full nav tree stays navigable. */}
+        <Route path="s/:key"     element={<S><PortalComingSoon /></S>} />
       </Route>
 
       {/* External Company Portal — company accounts only. Sprint 1: Dashboard live;

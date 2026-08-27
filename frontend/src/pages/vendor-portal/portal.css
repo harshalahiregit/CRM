@@ -138,6 +138,10 @@
   color: var(--portal-purple);
 }
 
+/* Roadmap sections that are not built yet — visible but visibly muted. */
+.portal-nav-item.portal-nav-soon { opacity: 0.5; }
+.portal-nav-item.portal-nav-soon:hover { opacity: 0.85; }
+
 .portal-nav-badge {
   margin-left: auto;
   min-width: 20px;
