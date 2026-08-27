@@ -71,6 +71,15 @@ Route::middleware(['auth:sanctum', 'role:admin,hr,manager'])
         /* ── holidays ─────────────────────────────────────────────── */
         Route::get('holidays', [SangoeTrackAdminController::class, 'holidays']);
 
+        /* ── history ──────────────────────────────────────────────── */
+        // Read-only. The queues above are pending-only and attendance is
+        // today-only; these are the only way to see what already happened.
+        Route::get('history/attendance',     [SangoeTrackAdminController::class, 'attendanceHistory']);
+        Route::get('history/corrections',    [SangoeTrackAdminController::class, 'correctionHistory']);
+        Route::get('history/leaves',         [SangoeTrackAdminController::class, 'leaveHistory']);
+        Route::get('history/reimbursements', [SangoeTrackAdminController::class, 'reimbursementHistory']);
+        Route::get('history/advances',       [SangoeTrackAdminController::class, 'advanceHistory']);
+
         /* ── settings ─────────────────────────────────────────────── */
         // These relay to endpoints added on SangoeTrack for this CRM, not ones
         // it shipped with. They will 404 until that side is deployed — the

@@ -19,8 +19,9 @@
  */
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { RefreshCw, MapPin, Clock, CalendarDays } from 'lucide-react'
+import { RefreshCw, MapPin, Clock, CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
 import { sangoeTrackApi } from '@/services/sangoeTrackApi'
+import { isoDate } from './useTrackHistory'
 import LoadError from '@/components/ui/LoadError'
 import EmptyState from '@/components/ui/EmptyState'
 
@@ -41,6 +42,13 @@ const FILTERS = [
   { key: 'On Leave', label: 'On Leave' },
 ]
 
+/** Move a YYYY-MM-DD string by n days without touching timezones. */
+function shiftDay(iso, n) {
+  const d = new Date(iso + 'T00:00:00')
+  d.setDate(d.getDate() + n)
+  return isoDate(d)
+}
+
 /** '09:15:00' → '09:15'. Null and their '00:00:00' placeholder both mean "no". */
 function time(value) {
   if (!value || value === '00:00:00') return null
@@ -53,21 +61,52 @@ export default function TrackAttendance() {
   const [error, setError]     = useState(null)
   const [filter, setFilter]   = useState('all')
   const [selfie, setSelfie]   = useState(null)
+  const [date, setDate]       = useState(() => isoDate(new Date()))
+
+  const today = isoDate(new Date())
+  const isToday = date === today
 
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      // Always fetch everyone and filter here — their status filter would cost a
-      // round trip per chip and make the counts flicker as you switch.
-      const res = await sangoeTrackApi.attendance.today('all')
-      setRows(Array.isArray(res?.data) ? res.data : [])
+      if (date === isoDate(new Date())) {
+        // Today comes from the live board, which lists EVERY employee — including
+        // the ones with no attendance row, who are the absent ones. Always the
+        // whole set; filtering happens below so the counts do not flicker.
+        const res = await sangoeTrackApi.attendance.today('all')
+        setRows(Array.isArray(res?.data) ? res.data : [])
+      } else {
+        // Any other day comes from history, which returns attendance ROWS. Someone
+        // who never clocked in has no row, so they simply are not here — see the
+        // note rendered under the counters.
+        const res = await sangoeTrackApi.history.attendance({ from: date, to: date, per_page: 100 })
+        setRows((res?.data?.rows ?? []).map(r => ({
+          user_id: r.employee_id,
+          name: r.employee_name,
+          email: null,
+          avatar: null,
+          status: r.status,
+          clock_in: r.clock_in,
+          clock_out: r.clock_out,
+          late_time: r.late,
+          clock_in_selfie: r.clock_in_selfie,
+          // History carries the clock-OUT selfie too, which the live board does
+          // not return at all.
+          clock_out_selfie: r.clock_out_selfie,
+          clock_in_lat: r.clock_in_lat,
+          clock_in_lng: r.clock_in_lng,
+          early_leaving: r.early_leaving,
+          overtime: r.overtime,
+          ip_address: r.ip_address,
+        })))
+      }
     } catch (err) {
       setError(err)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [date])
 
   useEffect(() => { load() }, [load])
 
@@ -82,7 +121,7 @@ export default function TrackAttendance() {
     [rows, filter]
   )
 
-  const today = new Date().toLocaleDateString('en-IN', {
+  const shown = new Date(date + 'T00:00:00').toLocaleDateString('en-IN', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
   })
 
@@ -95,26 +134,48 @@ export default function TrackAttendance() {
           <h1 className="text-xl font-bold" style={{ color: 'var(--text-h)' }}>Attendance</h1>
           <p className="text-xs mt-1 flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
             <CalendarDays size={12} />
-            {today}
-            <span aria-hidden="true">·</span>
-            {/* Said plainly, because the table looking identical tomorrow is
-                otherwise indistinguishable from the data being stale. */}
-            <span>Today only — SangoeTrack keeps the history</span>
+            {shown}
           </p>
         </div>
 
-        <button
-          onClick={load}
-          disabled={loading}
-          className="rounded-lg text-xs font-semibold flex items-center gap-1.5 disabled:opacity-50"
-          style={{
-            padding: '7px 12px', background: 'var(--bg-input)',
-            border: '1px solid var(--border)', color: 'var(--text-h)',
-          }}
-        >
-          <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
-          Refresh
-        </button>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button onClick={() => setDate(shiftDay(date, -1))} title="Previous day"
+            className="rounded-lg flex items-center justify-center"
+            style={{ width: 30, height: 30, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }}>
+            <ChevronLeft size={14} />
+          </button>
+
+          <input type="date" value={date} max={today} onChange={e => setDate(e.target.value || today)}
+            className="rounded-lg text-xs"
+            style={{ padding: '6px 10px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }} />
+
+          <button onClick={() => setDate(shiftDay(date, 1))} disabled={isToday} title={isToday ? 'That day has not happened yet' : 'Next day'}
+            className="rounded-lg flex items-center justify-center disabled:opacity-35"
+            style={{ width: 30, height: 30, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }}>
+            <ChevronRight size={14} />
+          </button>
+
+          {!isToday && (
+            <button onClick={() => setDate(today)}
+              className="rounded-lg text-xs font-semibold"
+              style={{ padding: '6px 12px', background: 'transparent', border: '1px solid var(--border)', color: '#a78bfa' }}>
+              Today
+            </button>
+          )}
+
+          <button
+            onClick={load}
+            disabled={loading}
+            className="rounded-lg text-xs font-semibold flex items-center gap-1.5 disabled:opacity-50"
+            style={{
+              padding: '7px 12px', background: 'var(--bg-input)',
+              border: '1px solid var(--border)', color: 'var(--text-h)',
+            }}
+          >
+            <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* ── counters, doubling as filters ────────────────────────── */}
@@ -145,6 +206,16 @@ export default function TrackAttendance() {
           )
         })}
       </div>
+
+      {/* The two feeds differ in a way that would otherwise mislead: today lists
+          every employee, a past day lists only recorded attendance. Someone
+          absent last Tuesday has no row and simply is not there. */}
+      {!isToday && !loading && !error && (
+        <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+          Showing recorded attendance for this day. Anyone with no record — absent, on leave,
+          or not yet employed — does not appear, so these counts are not a headcount.
+        </p>
+      )}
 
       {/* ── the board ────────────────────────────────────────────── */}
       {error ? (

@@ -12,10 +12,14 @@
  * clock-out is corrected by the employee raising it and someone approving here.
  */
 
-import { PenLine } from 'lucide-react'
+import { useState } from 'react'
 import { sangoeTrackApi } from '@/services/sangoeTrackApi'
 import useTrackApprovals from './useTrackApprovals'
-import { TrackHeader, TrackList, TrackCard, FieldGrid, Field, DecisionBar } from './TrackShell'
+import useTrackHistory from './useTrackHistory'
+import {
+  TrackHeader, TrackList, TrackCard, FieldGrid, Field, DecisionBar,
+  QueueTabs, HistoryFilters, HistoryPager, Outcome, DecidedBy,
+} from './TrackShell'
 
 /** '09:15:00' → '09:15'. */
 const hhmm = v => (v ? String(v).slice(0, 5) : null)
@@ -31,35 +35,64 @@ function span(from, to) {
 }
 
 export default function TrackCorrections() {
+  const [tab, setTab] = useState('pending')
   const { rows, loading, error, reload } = useTrackApprovals('raises')
+  const past = useTrackHistory('corrections')
 
   return (
     <div className="p-5 md:p-7 flex flex-col gap-5">
       <TrackHeader
         title="Attendance Corrections"
         subtitle="Requests to fix a clock-in or clock-out. Approving writes the attendance row and notifies the employee."
-        onRefresh={reload}
-        loading={loading}
+        onRefresh={tab === 'pending' ? reload : past.reload}
+        loading={tab === 'pending' ? loading : past.loading}
       />
 
-      <TrackList loading={loading} error={error} rows={rows} onRetry={reload} noun="corrections">
-        {rows.map(r => (
-          <TrackCard key={r.id} who={r.employee_name} when={r.applied_on}>
-            <FieldGrid>
-              <Field label="Date"      value={r.attendance_date} />
-              <Field label="Clock in"  value={hhmm(r.login_time)} />
-              <Field label="Clock out" value={hhmm(r.logout_time)} />
-              <Field label="Total"     value={span(r.login_time, r.logout_time)} />
-              <Field label="Their reason" value={r.reason} wide />
-            </FieldGrid>
+      <QueueTabs tab={tab} onChange={setTab} pendingCount={rows.length} />
 
-            <DecisionBar
-              onDecide={(status, remark) => sangoeTrackApi.corrections.decide(r.id, status, remark)}
-              onDone={reload}
-            />
-          </TrackCard>
-        ))}
-      </TrackList>
+      {tab === 'pending' ? (
+        <TrackList loading={loading} error={error} rows={rows} onRetry={reload} noun="corrections">
+          {rows.map(r => (
+            <TrackCard key={r.id} who={r.employee_name} when={r.applied_on}>
+              <FieldGrid>
+                <Field label="Date"      value={r.attendance_date} />
+                <Field label="Clock in"  value={hhmm(r.login_time)} />
+                <Field label="Clock out" value={hhmm(r.logout_time)} />
+                <Field label="Total"     value={span(r.login_time, r.logout_time)} />
+                <Field label="Their reason" value={r.reason} wide />
+              </FieldGrid>
+
+              <DecisionBar
+                onDecide={(status, remark) => sangoeTrackApi.corrections.decide(r.id, status, remark)}
+                onDone={reload}
+              />
+            </TrackCard>
+          ))}
+        </TrackList>
+      ) : (
+        <>
+          <HistoryFilters {...past} setFilter={past.setFilter} clear={past.clear} />
+
+          <TrackList loading={past.loading} error={past.error} rows={past.rows} onRetry={past.reload} noun="corrections">
+            {past.rows.map(r => (
+              <TrackCard key={r.id} who={r.employee_name} when={r.applied_on}>
+                <Outcome status={r.status} />
+                <FieldGrid>
+                  <Field label="Date"      value={r.attendance_date} />
+                  <Field label="Clock in"  value={hhmm(r.login_time)} />
+                  <Field label="Clock out" value={hhmm(r.logout_time)} />
+                  <Field label="Total"     value={span(r.login_time, r.logout_time)} />
+                  <Field label="Their reason" value={r.reason} wide />
+                </FieldGrid>
+                {/* No DecisionBar — this is a record, not a worklist. */}
+                <DecidedBy by={r.decided_by} at={r.decided_at} remarks={r.admin_remarks} />
+              </TrackCard>
+            ))}
+          </TrackList>
+
+          <HistoryPager meta={past.meta} page={past.page} setPage={past.setPage} noun="corrections" />
+        </>
+      )}
     </div>
   )
 }

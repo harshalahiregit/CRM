@@ -26,7 +26,11 @@ import { Banknote, AlertTriangle } from 'lucide-react'
 import { sangoeTrackApi, trackErrorMessage } from '@/services/sangoeTrackApi'
 import { useToast } from '@/hooks/useToast'
 import useTrackApprovals from './useTrackApprovals'
-import { TrackHeader, TrackList, TrackCard, FieldGrid, Field, DecisionBar } from './TrackShell'
+import useTrackHistory from './useTrackHistory'
+import {
+  TrackHeader, TrackList, TrackCard, FieldGrid, Field, DecisionBar,
+  QueueTabs, HistoryFilters, HistoryPager, Outcome,
+} from './TrackShell'
 
 const inr = n =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })
@@ -222,7 +226,9 @@ function Settlements({ rows, loading, error, reload }) {
 /* ── page ────────────────────────────────────────────────────────────── */
 
 export default function TrackAdvances() {
+  const [tab, setTab] = useState('pending')
   const { rows, loading, error, reload } = useTrackApprovals('advances')
+  const past = useTrackHistory('advances')
   const [amounts, setAmounts] = useState({})
 
   const [settlements, setSettlements] = useState([])
@@ -254,11 +260,56 @@ export default function TrackAdvances() {
       <TrackHeader
         title="Advances"
         subtitle="Requests, approvals and disbursement. Money leaves the company here."
-        onRefresh={refreshAll}
-        loading={loading || sLoading}
+        onRefresh={tab === 'pending' ? refreshAll : past.reload}
+        loading={tab === 'pending' ? (loading || sLoading) : past.loading}
       />
 
-      <TrackList loading={loading} error={error} rows={rows} onRetry={reload} noun="advance requests">
+      <QueueTabs tab={tab} onChange={setTab} pendingCount={rows.length} />
+
+      {tab === 'history' && (
+        <>
+          {/* Advances move through a longer chain than approved/rejected, so the
+              filter uses their vocabulary rather than the generic one. */}
+          <HistoryFilters {...past} setFilter={past.setFilter} clear={past.clear} statuses="advance" />
+
+          <TrackList loading={past.loading} error={past.error} rows={past.rows} onRetry={past.reload} noun="advances">
+            {past.rows.map(a => (
+              <TrackCard key={a.id} who={a.employee_name} when={a.submitted_on}>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Outcome status={a.status} />
+                  {a.advance_id && (
+                    <span className="text-[11px]" style={{ color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums' }}>
+                      {a.advance_id}
+                    </span>
+                  )}
+                </div>
+                <FieldGrid>
+                  <Field label="Requested" value={inr(a.amount_requested)} />
+                  {a.amount_approved != null && Number(a.amount_approved) !== Number(a.amount_requested) && (
+                    <Field label="Approved for" value={inr(a.amount_approved)} tone="#fbbf24" />
+                  )}
+                  <Field label="Type"       value={a.advance_type} />
+                  <Field label="Category"   value={a.category} />
+                  <Field label="Department" value={a.department} />
+                  <Field label="Needed by"  value={a.required_date} />
+                  <Field label="Purpose"    value={a.purpose} wide />
+                </FieldGrid>
+                {a.attachment && (
+                  <a href={a.attachment} target="_blank" rel="noopener noreferrer"
+                    className="rounded-lg text-xs font-semibold self-start"
+                    style={{ padding: '6px 12px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#a78bfa' }}>
+                    View attachment
+                  </a>
+                )}
+              </TrackCard>
+            ))}
+          </TrackList>
+
+          <HistoryPager meta={past.meta} page={past.page} setPage={past.setPage} noun="advances" />
+        </>
+      )}
+
+      {tab === 'pending' && <TrackList loading={loading} error={error} rows={rows} onRetry={reload} noun="advance requests">
         {rows.map(a => {
           const stage = STAGE[a.status] ?? { label: a.status, fg: 'var(--text-muted)' }
           const override = amounts[a.id] ?? ''
@@ -315,15 +366,18 @@ export default function TrackAdvances() {
             </TrackCard>
           )
         })}
-      </TrackList>
+      </TrackList>}
 
-      <Settlements rows={settlements} loading={sLoading} error={sError} reload={loadSettlements} />
+      {tab === 'pending' && (
+        <Settlements rows={settlements} loading={sLoading} error={sError} reload={loadSettlements} />
+      )}
 
-      {/* The one thing this screen cannot tell you. */}
+      {/* Two things this screen still cannot do. Both are real, so both are said. */}
       <p className="text-[11px] flex items-start gap-1.5" style={{ color: 'var(--text-muted)' }}>
         <AlertTriangle size={12} style={{ marginTop: 2, flexShrink: 0 }} />
-        Disbursed and settled advances are not listed — SangoeTrack returns only what is still
-        open. Its own records hold the full ledger.
+        SangoeTrack approves advances through three stages — manager, accounts, then director.
+        This screen approves without choosing a stage, and has no per-employee ledger, so an
+        employee's existing outstanding balance is not shown before a new advance is granted.
       </p>
     </div>
   )

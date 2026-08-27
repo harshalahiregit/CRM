@@ -105,6 +105,158 @@ export function FieldGrid({ children }) {
   )
 }
 
+/* ── pending vs history ──────────────────────────────────────────────── */
+
+/**
+ * The two halves of every approval screen.
+ *
+ * Kept as a visible switch rather than one merged list because they are
+ * genuinely different things: one is a worklist you act on, the other is a
+ * record you read. Merging them would put approve/reject buttons next to
+ * decisions already made.
+ */
+export function QueueTabs({ tab, onChange, pendingCount }) {
+  const tabs = [
+    { key: 'pending', label: 'Waiting on you', count: pendingCount },
+    { key: 'history', label: 'History' },
+  ]
+  return (
+    <div className="flex gap-1.5">
+      {tabs.map(t => {
+        const on = tab === t.key
+        return (
+          <button key={t.key} onClick={() => onChange(t.key)} aria-pressed={on}
+            className="rounded-lg text-xs font-semibold flex items-center gap-1.5"
+            style={{
+              padding: '7px 14px',
+              background: on ? 'rgba(124,58,237,0.14)' : 'transparent',
+              border: `1px solid ${on ? '#7C3AED' : 'var(--border)'}`,
+              color: on ? '#a78bfa' : 'var(--text-muted)',
+            }}>
+            {t.label}
+            {t.count != null && t.count > 0 && (
+              <span style={{ fontVariantNumeric: 'tabular-nums', opacity: 0.8 }}>{t.count}</span>
+            )}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+const STATUS_SETS = {
+  decision: [['', 'Any outcome'], ['approved', 'Approved'], ['rejected', 'Rejected'], ['pending', 'Still pending']],
+  advance:  [['', 'Any status'], ['pending', 'Pending'], ['manager_approved', 'Manager approved'],
+             ['accounts_approved', 'Accounts approved'], ['approved', 'Ready to disburse'],
+             ['disbursed', 'Disbursed'], ['rejected', 'Rejected']],
+}
+
+/**
+ * Date range and outcome. `statuses` picks the vocabulary — advances move
+ * through a longer chain than a simple approved/rejected.
+ */
+export function HistoryFilters({ filters, setFilter, clear, active, statuses = 'decision', children }) {
+  const options = STATUS_SETS[statuses] ?? STATUS_SETS.decision
+  const field = {
+    background: 'var(--bg-input)', border: '1px solid var(--border)',
+    color: 'var(--text-h)', padding: '6px 10px', borderRadius: 8, fontSize: 13,
+  }
+  return (
+    <div className="flex flex-wrap items-end gap-2">
+      <label className="flex flex-col gap-1">
+        <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>From</span>
+        <input type="date" value={filters.from} onChange={e => setFilter('from', e.target.value)} style={field} />
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>To</span>
+        <input type="date" value={filters.to} onChange={e => setFilter('to', e.target.value)} style={field} />
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Outcome</span>
+        <select value={filters.status} onChange={e => setFilter('status', e.target.value)} style={field}>
+          {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+      </label>
+      {children}
+      {active > 0 && (
+        <button onClick={clear}
+          className="rounded-lg text-xs font-semibold"
+          style={{ padding: '7px 12px', background: 'transparent', border: '1px solid var(--border)', color: '#a78bfa' }}>
+          Clear filters
+        </button>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Page controls plus the honest count.
+ *
+ * Shows the total from the server rather than the rows on screen — "25 shown"
+ * when there are 400 is the kind of number people quote in meetings.
+ */
+export function HistoryPager({ meta, page, setPage, noun }) {
+  if (!meta) return null
+  const pages = meta.pages ?? 1
+  const total = meta.total ?? 0
+  const from  = total === 0 ? 0 : (page - 1) * (meta.per_page ?? 25) + 1
+  const to    = Math.min(page * (meta.per_page ?? 25), total)
+
+  const btn = (label, target, disabled) => (
+    <button onClick={() => setPage(target)} disabled={disabled}
+      className="rounded-lg text-xs font-semibold disabled:opacity-35"
+      style={{ padding: '6px 12px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }}>
+      {label}
+    </button>
+  )
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+      <span className="text-xs" style={{ color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums' }}>
+        {total === 0 ? `No ${noun}` : `${from}–${to} of ${total} ${noun}`}
+        {meta.from && meta.to && ` · ${meta.from} to ${meta.to}`}
+      </span>
+      {pages > 1 && (
+        <div className="flex items-center gap-1.5">
+          {btn('Previous', page - 1, page <= 1)}
+          <span className="text-xs px-1" style={{ color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums' }}>
+            {page} / {pages}
+          </span>
+          {btn('Next', page + 1, page >= pages)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** The outcome of a past decision, said the way a person would. */
+export function Outcome({ status }) {
+  const tone = {
+    approved: { fg: '#34d399', label: 'Approved' },
+    rejected: { fg: '#f87171', label: 'Rejected' },
+    pending:  { fg: '#fbbf24', label: 'Still pending' },
+  }[String(status ?? '').toLowerCase()]
+    ?? { fg: 'var(--text-muted)', label: String(status ?? '—').replace(/_/g, ' ') }
+
+  return (
+    <span className="rounded-md text-[11px] font-bold px-2 py-1 self-start"
+      style={{ color: tone.fg, background: 'var(--bg-input)', whiteSpace: 'nowrap', textTransform: 'capitalize' }}>
+      {tone.label}
+    </span>
+  )
+}
+
+/** Who decided and when — absent while a request is still open. */
+export function DecidedBy({ by, at, remarks }) {
+  if (!by && !at && !remarks) return null
+  return (
+    <div className="text-[11px] rounded-lg px-2.5 py-1.5" style={{ background: 'var(--bg-input)', color: 'var(--text-muted)' }}>
+      {(by || at) && <span>{by ?? 'Someone'}{at ? ` · ${at}` : ''}</span>}
+      {remarks && <span style={{ color: 'var(--text-h)' }}>{by || at ? ' — ' : ''}{remarks}</span>}
+    </div>
+  )
+}
+
 /* ── the decision ────────────────────────────────────────────────────── */
 
 /**

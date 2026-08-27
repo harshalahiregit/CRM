@@ -221,6 +221,47 @@ class SangoeTrackAdmin
         return $this->client->call('holidays', $this->scope());
     }
 
+    /* ─────────────────────────── history ──────────────────────────── */
+
+    /**
+     * The records SangoeTrack's mobile API cannot reach.
+     *
+     * Its endpoints answer "what is waiting on me" — pending only, today only —
+     * which is right for a phone and leaves this CRM unable to say what happened
+     * last month. These five are read-only endpoints added on their side.
+     *
+     * Every one accepts: status, employee, from, to, page, per_page.
+     * Advances also takes `type`; leaves also takes `leave_type`.
+     * Omitting the range defaults to this month (attendance) or this year.
+     *
+     * @param  array<string, mixed>  $filters
+     */
+    public function attendanceHistory(array $filters = []): array
+    {
+        return $this->client->call('history_attendance', $this->scope($filters));
+    }
+
+    public function correctionHistory(array $filters = []): array
+    {
+        return $this->client->call('history_corrections', $this->scope($filters));
+    }
+
+    public function leaveHistory(array $filters = []): array
+    {
+        return $this->client->call('history_leaves', $this->scope($filters));
+    }
+
+    /** Also returns whole-set totals per status, not per-page ones. */
+    public function reimbursementHistory(array $filters = []): array
+    {
+        return $this->client->call('history_reimbursements', $this->scope($filters));
+    }
+
+    public function advanceHistory(array $filters = []): array
+    {
+        return $this->client->call('history_advances', $this->scope($filters));
+    }
+
     /* ─────────────────────────── settings ─────────────────────────── */
 
     /**

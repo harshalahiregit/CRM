@@ -233,6 +233,49 @@ class SangoeTrackAdminController extends Controller
         return $this->relay(fn () => $this->track->holidays());
     }
 
+    /* ─────────────────────────── history ──────────────────────────── */
+
+    /**
+     * All five history endpoints share one shape, so they share one method.
+     *
+     * `which` is fixed by the route, never taken from the request — otherwise
+     * the URL would decide which table gets read, and each of these has its own
+     * permission on SangoeTrack's side.
+     */
+    private function history(Request $request, string $which): JsonResponse
+    {
+        $filters = $request->validate([
+            'status'     => 'nullable|string|max:30',
+            'employee'   => 'nullable|integer',
+            'type'       => 'nullable|string|max:40',
+            'leave_type' => 'nullable|integer',
+            'from'       => 'nullable|date_format:Y-m-d',
+            'to'         => 'nullable|date_format:Y-m-d',
+            'page'       => 'nullable|integer|min:1',
+            'per_page'   => 'nullable|integer|min:1|max:100',
+        ]);
+
+        // Blank query params arrive as '' and would be sent as real filters,
+        // narrowing the result to rows whose status is the empty string.
+        $filters = array_filter($filters, static fn ($v) => $v !== null && $v !== '');
+
+        $call = [
+            'attendance'     => fn () => $this->track->attendanceHistory($filters),
+            'corrections'    => fn () => $this->track->correctionHistory($filters),
+            'leaves'         => fn () => $this->track->leaveHistory($filters),
+            'reimbursements' => fn () => $this->track->reimbursementHistory($filters),
+            'advances'       => fn () => $this->track->advanceHistory($filters),
+        ][$which];
+
+        return $this->relay($call);
+    }
+
+    public function attendanceHistory(Request $request): JsonResponse     { return $this->history($request, 'attendance'); }
+    public function correctionHistory(Request $request): JsonResponse     { return $this->history($request, 'corrections'); }
+    public function leaveHistory(Request $request): JsonResponse          { return $this->history($request, 'leaves'); }
+    public function reimbursementHistory(Request $request): JsonResponse  { return $this->history($request, 'reimbursements'); }
+    public function advanceHistory(Request $request): JsonResponse        { return $this->history($request, 'advances'); }
+
     /* ─────────────────────────── settings ─────────────────────────── */
 
     public function settings(): JsonResponse

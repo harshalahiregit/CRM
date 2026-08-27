@@ -12,10 +12,15 @@
  * accident.
  */
 
+import { useState } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { sangoeTrackApi } from '@/services/sangoeTrackApi'
 import useTrackApprovals from './useTrackApprovals'
-import { TrackHeader, TrackList, TrackCard, FieldGrid, Field, DecisionBar } from './TrackShell'
+import useTrackHistory from './useTrackHistory'
+import {
+  TrackHeader, TrackList, TrackCard, FieldGrid, Field, DecisionBar,
+  QueueTabs, HistoryFilters, HistoryPager, Outcome, DecidedBy,
+} from './TrackShell'
 
 function BalanceStrip({ balance }) {
   if (!balance) return null
@@ -66,18 +71,46 @@ function BalanceStrip({ balance }) {
 }
 
 export default function TrackLeave() {
+  const [tab, setTab] = useState('pending')
   const { rows, loading, error, reload } = useTrackApprovals('leaves')
+  const past = useTrackHistory('leaves')
 
   return (
     <div className="p-5 md:p-7 flex flex-col gap-5">
       <TrackHeader
         title="Leave"
         subtitle="Applications waiting on a decision, with each employee's balance."
-        onRefresh={reload}
-        loading={loading}
+        onRefresh={tab === 'pending' ? reload : past.reload}
+        loading={tab === 'pending' ? loading : past.loading}
       />
 
-      <TrackList loading={loading} error={error} rows={rows} onRetry={reload} noun="leave applications">
+      <QueueTabs tab={tab} onChange={setTab} pendingCount={rows.length} />
+
+      {tab === 'history' && (
+        <>
+          <HistoryFilters {...past} setFilter={past.setFilter} clear={past.clear} />
+          <TrackList loading={past.loading} error={past.error} rows={past.rows} onRetry={past.reload} noun="leave applications">
+            {past.rows.map(l => (
+              <TrackCard key={l.id} who={l.employee_name} when={l.applied_on}>
+                <Outcome status={l.status} />
+                <FieldGrid>
+                  <Field label="Type"  value={l.leave_type} />
+                  <Field label="From"  value={l.start_date} />
+                  <Field label="To"    value={l.end_date} />
+                  <Field label="Days"  value={l.total_leave_days} />
+                  <Field label="Their reason" value={l.reason} wide />
+                </FieldGrid>
+                {/* Balance is not returned for past leave — it is a live figure,
+                    and showing today's against last year's request would mislead. */}
+                <DecidedBy remarks={l.remark} />
+              </TrackCard>
+            ))}
+          </TrackList>
+          <HistoryPager meta={past.meta} page={past.page} setPage={past.setPage} noun="leave applications" />
+        </>
+      )}
+
+      {tab === 'pending' && <TrackList loading={loading} error={error} rows={rows} onRetry={reload} noun="leave applications">
         {rows.map(r => (
           <TrackCard key={r.id} who={r.employee_name} when={r.applied_on}>
             <FieldGrid>
@@ -96,7 +129,7 @@ export default function TrackLeave() {
             />
           </TrackCard>
         ))}
-      </TrackList>
+      </TrackList>}
     </div>
   )
 }

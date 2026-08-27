@@ -113,6 +113,19 @@ return [
         'crm_hrm_settings_save'      => '/Hrm/crm/hrm-settings/save',
         'crm_whatsapp_settings'      => '/Hrm/crm/whatsapp-settings',
         'crm_whatsapp_settings_save' => '/Hrm/crm/whatsapp-settings/save',
+
+        // ── history ─────────────────────────────────────────────────────────
+        // Read-only, added on their side for this CRM. The mobile API answers
+        // "what is waiting on me" — pending only, today only — so these are the
+        // only way to see what actually happened.
+        //
+        // All accept status / employee / from / to / page / per_page.
+        // Advances also takes `type`; leaves also takes `leave_type`.
+        'history_attendance'     => '/Hrm/crm/history/attendance',
+        'history_corrections'    => '/Hrm/crm/history/corrections',
+        'history_leaves'         => '/Hrm/crm/history/leaves',
+        'history_reimbursements' => '/Hrm/crm/history/reimbursements',
+        'history_advances'       => '/Hrm/crm/history/advances',
     ],
 
     /*

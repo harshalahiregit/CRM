@@ -14,14 +14,20 @@ import { useState } from 'react'
 import { Receipt as ReceiptIcon, ExternalLink } from 'lucide-react'
 import { sangoeTrackApi } from '@/services/sangoeTrackApi'
 import useTrackApprovals from './useTrackApprovals'
-import { TrackHeader, TrackList, TrackCard, FieldGrid, Field, DecisionBar } from './TrackShell'
+import useTrackHistory from './useTrackHistory'
+import {
+  TrackHeader, TrackList, TrackCard, FieldGrid, Field, DecisionBar,
+  QueueTabs, HistoryFilters, HistoryPager, Outcome, DecidedBy,
+} from './TrackShell'
 
 const inr = n =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 })
     .format(Number(n) || 0)
 
 export default function TrackReimbursements() {
+  const [tab, setTab] = useState('pending')
   const { rows, loading, error, reload } = useTrackApprovals('reimbursements')
+  const past = useTrackHistory('reimbursements')
   const [viewing, setViewing] = useState(null)
 
   const total = rows.reduce((sum, r) => sum + (Number(r.amount) || 0), 0)
@@ -35,11 +41,61 @@ export default function TrackReimbursements() {
             ? `${rows.length} claim${rows.length === 1 ? '' : 's'} pending, ${inr(total)} in total.`
             : 'Expense claims waiting on a decision.'
         }
-        onRefresh={reload}
-        loading={loading}
+        onRefresh={tab === 'pending' ? reload : past.reload}
+        loading={tab === 'pending' ? loading : past.loading}
       />
 
-      <TrackList loading={loading} error={error} rows={rows} onRetry={reload} noun="claims">
+      <QueueTabs tab={tab} onChange={setTab} pendingCount={rows.length} />
+
+      {tab === 'history' && (
+        <>
+          <HistoryFilters {...past} setFilter={past.setFilter} clear={past.clear} />
+
+          {/* Totals across the WHOLE filtered set, sent by the server — a footer
+              summing the 25 rows on screen would look like an answer and not be one. */}
+          {past.meta?.totals && (
+            <div className="flex flex-wrap gap-x-6 gap-y-1 rounded-xl px-3.5 py-2.5"
+              style={{ border: '1px solid var(--border)', background: 'var(--bg-card)' }}>
+              {[['Approved', 'approved', '#34d399'], ['Pending', 'pending', '#fbbf24'], ['Rejected', 'rejected', '#f87171']]
+                .map(([label, key, fg]) => (
+                  <div key={key}>
+                    <span className="text-[10px] uppercase tracking-wider font-bold" style={{ color: 'var(--text-muted)' }}>{label} </span>
+                    <span className="text-sm font-bold" style={{ color: fg, fontVariantNumeric: 'tabular-nums' }}>
+                      {inr(past.meta.totals[key]?.amount)}
+                    </span>
+                    <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}> · {past.meta.totals[key]?.count ?? 0}</span>
+                  </div>
+                ))}
+            </div>
+          )}
+
+          <TrackList loading={past.loading} error={past.error} rows={past.rows} onRetry={past.reload} noun="claims">
+            {past.rows.map(r => (
+              <TrackCard key={r.id} who={r.employee_name} when={r.submitted_on}>
+                <Outcome status={r.status} />
+                <FieldGrid>
+                  <Field label="Claim"    value={r.title} />
+                  <Field label="Amount"   value={inr(r.amount)} />
+                  <Field label="Spent on" value={r.expense_date} />
+                  <Field label="What it was for" value={r.description} wide />
+                </FieldGrid>
+                {r.receipt && (
+                  <button onClick={() => setViewing({ src: r.receipt, who: r.employee_name, title: r.title })}
+                    className="rounded-lg text-xs font-semibold flex items-center gap-1.5 self-start"
+                    style={{ padding: '6px 12px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#a78bfa' }}>
+                    <ReceiptIcon size={13} /> View receipt
+                  </button>
+                )}
+                <DecidedBy by={r.decided_by} at={r.decided_at} remarks={r.admin_remarks} />
+              </TrackCard>
+            ))}
+          </TrackList>
+
+          <HistoryPager meta={past.meta} page={past.page} setPage={past.setPage} noun="claims" />
+        </>
+      )}
+
+      {tab === 'pending' && <TrackList loading={loading} error={error} rows={rows} onRetry={reload} noun="claims">
         {rows.map(r => (
           <TrackCard key={r.id} who={r.employee_name} when={r.applied_on}>
             <FieldGrid>
@@ -72,7 +128,7 @@ export default function TrackReimbursements() {
             />
           </TrackCard>
         ))}
-      </TrackList>
+      </TrackList>}
 
       {viewing && (
         <div

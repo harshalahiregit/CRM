@@ -139,6 +139,26 @@ export const sangoeTrackApi = {
     list: () => api.get('/hr/track/holidays').then(r => r.data),
   },
 
+  // ── History ─────────────────────────────────────────────────────────
+  // The queues above are PENDING-only and attendance is TODAY-only. These are
+  // the only way to see what already happened.
+  //
+  // params: { status, employee, from, to, page, per_page }
+  //   advances also takes `type`; leaves also takes `leave_type`.
+  // Omitting from/to defaults to this month (attendance) or this year.
+  //
+  // Every one returns { rows: [...], meta: { page, per_page, total, pages, ... } }
+  // — so `total` is the real count, not the length of the page you were given.
+  history: {
+    attendance:     (params = {}) => api.get('/hr/track/history/attendance', { params }).then(r => r.data),
+    corrections:    (params = {}) => api.get('/hr/track/history/corrections', { params }).then(r => r.data),
+    leaves:         (params = {}) => api.get('/hr/track/history/leaves', { params }).then(r => r.data),
+    // Also returns meta.totals — counts and amounts per status across the whole
+    // filtered set, not just the current page.
+    reimbursements: (params = {}) => api.get('/hr/track/history/reimbursements', { params }).then(r => r.data),
+    advances:       (params = {}) => api.get('/hr/track/history/advances', { params }).then(r => r.data),
+  },
+
   // ── Settings ────────────────────────────────────────────────────────
   // These relay to endpoints added ON SangoeTrack for this CRM. Unlike
   // everything above, they do not exist until that side is deployed — so the
