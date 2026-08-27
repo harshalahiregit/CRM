@@ -4,7 +4,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft, RefreshCw, Plus, Users, Flag, Paperclip, Trash2, ListTodo, LifeBuoy,
   Pencil, Copy, Pin, PinOff, MoreHorizontal, Download, Upload, ExternalLink, Check, FileText,
-  Play, Search, Clock, GitBranch, X,
+  Play, Search, Clock, GitBranch, X, Receipt,
 } from 'lucide-react'
 import { projectApi, PROJECT_STATUS, PROJECT_ACCENT } from '@/services/projectApi'
 import { useDiscardGuard } from '@/lib/confirmClose'
@@ -142,6 +142,12 @@ export default function ProjectDetail() {
 
   const setStatus = useMutation({ mutationFn: (s) => projectApi.setStatus(id, s), onSuccess: () => { setErr(''); invalidate() }, onError: onErr })
   const pin = useMutation({ mutationFn: () => projectApi.pin(id), onSuccess: invalidate, onError: onErr })
+  // PR2 — build a Sales Proforma Invoice from this project's billable tasks, then open it.
+  const convertPI = useMutation({
+    mutationFn: () => projectApi.convertToProforma(id),
+    onSuccess: (pi) => { setErr(''); if (pi?.id) navigate(`/app/sales/estimates/${pi.id}`) },
+    onError: onErr,
+  })
   const copy = useMutation({
     mutationFn: () => projectApi.copy(id, { copy_members: true, copy_milestones: true }),
     onSuccess: (p) => { qc.invalidateQueries({ queryKey: ['projects'] }); navigate(`/app/projects/${p.id}`) },
@@ -228,6 +234,13 @@ export default function ProjectDetail() {
             style={{ border: '1px solid var(--border)', color: 'var(--text-body)' }}>
             <FileText size={13} /> Invoice Project
           </button>
+          {canManage && (
+            <button onClick={() => convertPI.mutate()} disabled={convertPI.isPending}
+              className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl disabled:opacity-60"
+              style={{ border: '1px solid var(--border)', color: 'var(--text-body)' }}>
+              <Receipt size={13} /> {convertPI.isPending ? 'Converting…' : 'Convert to PI'}
+            </button>
+          )}
           <button onClick={() => exportProjectData(project)}
             className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl"
             style={{ border: '1px solid var(--border)', color: 'var(--text-body)' }}>

@@ -49,7 +49,7 @@ Last updated: 2026-08-27.
 
 ## Project (my module)
 - [x] **PR1. Billable — each task's amount, hidden by default, admin-only.** DECISION: fixed `billable_amount` field if set, else rate × logged hours (`Task::effectiveBillableAmount()`). API hides the amount from non-admins; Task detail shows it masked with an admin-only Show/Hide toggle; a fixed-amount field added to the task form. Guarded by `TaskBillableAmountTest` (4).
-- [ ] **PR2. Convert task / project / milestone → PI.**
+- [x] **PR2. Convert project / milestone / selected-tasks → PI.** `ProjectProformaService` builds a proforma Estimate from billable tasks (each task's effective amount → a line), via `POST /projects/{id}/convert-to-proforma` (scope: project|milestone|tasks). "Convert to PI" button on the project detail opens the created PI. Guarded by `ProjectConvertToProformaTest` (3).
 - [ ] ⚠ **PR3. Feedback gate:** share feedback via WhatsApp/email when set to "awaiting feedback"; a task/project can't be "Completed" until feedback is received; once received & completed, a PI is generated. NEEDS DECISION: how "feedback received" is recorded (customer reply link vs admin marks received).
 
 ## Settings

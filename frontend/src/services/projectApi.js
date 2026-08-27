@@ -58,6 +58,8 @@ export const projectApi = {
   // Invoice Project — list drafts / generate one by the project's billing type
   invoices: (id) => api.get(`/projects/${id}/invoices`).then(unwrap).catch(handleErr),
   generateInvoice: (id) => api.post(`/projects/${id}/invoices`).then(unwrap).catch(handleErr),
+  // PR2 — convert the project (or a milestone / selected tasks) into a Sales PI.
+  convertToProforma: (id, opts = {}) => api.post(`/projects/${id}/convert-to-proforma`, opts).then(unwrap).catch(handleErr),
 
   // Notes / Activity / Timesheets tabs
   notes: (id) => api.get(`/projects/${id}/notes`).then(unwrap).catch(handleErr),
