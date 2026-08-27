@@ -284,6 +284,56 @@ class SangoeTrackAdminController extends Controller
     public function reimbursementHistory(Request $request): JsonResponse  { return $this->history($request, 'reimbursements'); }
     public function advanceHistory(Request $request): JsonResponse        { return $this->history($request, 'advances'); }
 
+    /* ─────────────────────────── holidays ─────────────────────────── */
+
+    public function holidayList(Request $request): JsonResponse
+    {
+        $data = $request->validate(['year' => 'nullable|integer|min:2000|max:2100']);
+
+        return $this->relay(fn () => $this->track->holidayList($data['year'] ?? null));
+    }
+
+    public function createHoliday(Request $request): JsonResponse
+    {
+        $data = $this->holidayRules($request);
+
+        return $this->relay(fn () => $this->track->createHoliday($data), 'holiday created', $data);
+    }
+
+    public function updateHoliday(Request $request): JsonResponse
+    {
+        $data = $this->holidayRules($request, ['id' => 'required|integer']);
+        $id   = $data['id'];
+        unset($data['id']);
+
+        return $this->relay(fn () => $this->track->updateHoliday($id, $data), 'holiday updated', $data + ['id' => $id]);
+    }
+
+    public function deleteHoliday(Request $request): JsonResponse
+    {
+        $data = $request->validate(['id' => 'required|integer']);
+
+        return $this->relay(fn () => $this->track->deleteHoliday($data['id']), 'holiday deleted', $data);
+    }
+
+    /**
+     * Matches SangoeTrack's own rules so a rejection arrives before the round
+     * trip rather than after it. `after:yesterday` is theirs — a holiday that
+     * has already passed is a record, not a plan, and the import path is where
+     * backfilling belongs.
+     *
+     * @param  array<string, string>  $extra
+     * @return array<string, mixed>
+     */
+    private function holidayRules(Request $request, array $extra = []): array
+    {
+        return $request->validate($extra + [
+            'occasion'   => 'required|string|max:190',
+            'start_date' => 'required|date_format:Y-m-d|after:yesterday',
+            'end_date'   => 'required|date_format:Y-m-d|after_or_equal:start_date',
+        ]);
+    }
+
     /* ─────────────────────────── settings ─────────────────────────── */
 
     public function settings(): JsonResponse

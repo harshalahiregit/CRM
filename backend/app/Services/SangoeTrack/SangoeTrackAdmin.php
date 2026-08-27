@@ -280,6 +280,36 @@ class SangoeTrackAdmin
         return $this->client->call('history_advances', $this->scope($filters));
     }
 
+    /* ─────────────────────────── holidays ─────────────────────────── */
+
+    /**
+     * The write half. SangoeTrack's own holiday endpoint is one read shaped for
+     * the phone's calendar — title/start/end, no id — so nothing could be edited
+     * or removed from it. These return rows with ids and accept changes.
+     *
+     * Their permissions apply per action: holiday create / edit / delete.
+     */
+    public function holidayList(?int $year = null): array
+    {
+        return $this->client->call('crm_holidays', $this->scope(array_filter(['year' => $year])));
+    }
+
+    /** @param array{occasion: string, start_date: string, end_date: string} $data */
+    public function createHoliday(array $data): array
+    {
+        return $this->client->call('crm_holiday_create', $this->scope($data));
+    }
+
+    public function updateHoliday(int $id, array $data): array
+    {
+        return $this->client->call('crm_holiday_update', $this->scope($data + ['id' => $id]));
+    }
+
+    public function deleteHoliday(int $id): array
+    {
+        return $this->client->call('crm_holiday_delete', $this->scope(['id' => $id]));
+    }
+
     /* ─────────────────────────── settings ─────────────────────────── */
 
     /**

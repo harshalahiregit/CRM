@@ -137,8 +137,18 @@ export const sangoeTrackApi = {
   },
 
   // ── Holidays ────────────────────────────────────────────────────────
+  //
+  // `calendar` is SangoeTrack's own read — title/start/end, no id, so nothing
+  // can be edited from it. `list` is ours and returns rows WITH ids.
+  //
+  // These write company-wide reference data: one wrong holiday shifts everyone's
+  // leave calculation, which is why delete asks first on the screen.
   holidays: {
-    list: () => api.get('/hr/track/holidays').then(r => r.data),
+    calendar: ()        => api.get('/hr/track/holidays').then(r => r.data),
+    list:     (year)    => api.get('/hr/track/holidays/list', { params: year ? { year } : {} }).then(r => r.data),
+    create:   (data)    => api.post('/hr/track/holidays', data).then(r => r.data),
+    update:   (id, data) => api.put('/hr/track/holidays', { id, ...data }).then(r => r.data),
+    remove:   (id)      => api.delete('/hr/track/holidays', { data: { id } }).then(r => r.data),
   },
 
   // ── History ─────────────────────────────────────────────────────────

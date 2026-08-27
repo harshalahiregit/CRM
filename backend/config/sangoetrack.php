@@ -126,6 +126,16 @@ return [
         'history_leaves'         => '/Hrm/crm/history/leaves',
         'history_reimbursements' => '/Hrm/crm/history/reimbursements',
         'history_advances'       => '/Hrm/crm/history/advances',
+
+        // ── holidays ────────────────────────────────────────────────────────
+        // The write half their API never had. `holidays` (read-only, calendar
+        // shaped) is theirs; these are ours and return rows with ids, so a
+        // holiday can actually be edited or removed.
+        'crm_holidays'        => '/Hrm/crm/holidays',
+        'crm_holiday_create'  => '/Hrm/crm/holidays/create',
+        'crm_holiday_update'  => '/Hrm/crm/holidays/update',
+        'crm_holiday_delete'  => '/Hrm/crm/holidays/delete',
+        'crm_holiday_import'  => '/Hrm/crm/holidays/import',
     ],
 
     /*

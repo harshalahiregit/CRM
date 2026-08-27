@@ -69,7 +69,16 @@ Route::middleware(['auth:sanctum', 'role:admin,hr,manager'])
         Route::post('demo-requests', [SangoeTrackAdminController::class, 'updateDemoRequest']);
 
         /* ── holidays ─────────────────────────────────────────────── */
+        // The original read, still used by the calendar-shaped view.
         Route::get('holidays', [SangoeTrackAdminController::class, 'holidays']);
+        // The editable set: rows with ids, and the three writes. These change
+        // company-wide reference data — one wrong holiday moves everybody's
+        // leave calculation — so they are gated the same as everything else and
+        // the actions are logged with who did them.
+        Route::get('holidays/list',      [SangoeTrackAdminController::class, 'holidayList']);
+        Route::post('holidays',          [SangoeTrackAdminController::class, 'createHoliday']);
+        Route::put('holidays',           [SangoeTrackAdminController::class, 'updateHoliday']);
+        Route::delete('holidays',        [SangoeTrackAdminController::class, 'deleteHoliday']);
 
         /* ── history ──────────────────────────────────────────────── */
         // Read-only. The queues above are pending-only and attendance is
