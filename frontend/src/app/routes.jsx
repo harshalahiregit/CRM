@@ -882,6 +882,7 @@ export default function AppRoutes() {
         <Route path="projects"          element={<S><MyWork view="projects" /></S>} />
         <Route path="tasks"             element={<S><MyWork view="tasks" /></S>} />
         <Route path="tickets"           element={<S><MyWork view="tickets" /></S>} />
+        <Route path="expenses"          element={<S><MyWork view="expenses" /></S>} />
         <Route path="risk-score"        element={<S><MyPerformance view="risk" /></S>} />
         <Route path="feedback"          element={<S><MyPerformance view="feedback" /></S>} />
         <Route path="penalty"           element={<S><MyPerformance view="penalty" /></S>} />

@@ -44,9 +44,11 @@ Last updated: 2026-08-27.
 - [x] **KB** — shared `PortalKb.jsx` browse (grouped by category) + search + article reader,
   on BOTH portals. Added `PurchasePortalController::kbArticles/kbArticle` + routes for parity
   (TPV KB was under the role-gated my-work group). Guarded by `PurchasePortalKbTest` (2).
-- [x] Project — TPV portal read list (`MyWork.jsx` view=projects). [Purchase parity + detail page: follow-up]
-- [x] Tasks — TPV portal read list (view=tasks). [ **vendor status update** + Purchase parity: follow-up]
-- [x] Ticket — TPV portal read list (view=tickets). [ **vendor raise & reply** (client-portal pattern) + Purchase parity: follow-up]
+- [x] Project — TPV portal read list (`MyWork.jsx` view=projects).
+- [x] Tasks — TPV portal list + **vendor advances status** (tenant status set via `/portal/my-work/task-statuses`).
+- [x] Ticket — TPV portal list + **vendor raises & replies** (`/portal/my-work/tickets` create + `/{id}` detail + `/{id}/reply`; HelpdeskService, sender_type client).
+- [x] Expenses — **vendor logs** an expense on its own project + list (`/portal/my-work/expenses`). Visible to admin in project expenses.
+- Execution writes guarded by `PortalExecutionWritesTest` (4).
 - [ ] Meeting — portal (exists via Governance; give it its own section)
 - [ ] Notes — ownership-scoped `portal/*` endpoint + page
 - [ ] Attachments — ownership-scoped `portal/*` endpoint + page

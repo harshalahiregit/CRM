@@ -46,6 +46,7 @@ export default function VendorPortalShell() {
         project:    'projects',
         tasks:      'tasks',
         ticket:     'tickets',
+        expenses:   'expenses',
         // Performance — own risk score, rating, penalties, awards, referrals.
         'risk-score': 'risk-score',
         feedback:     'feedback',

@@ -17,7 +17,16 @@ Route::middleware(['auth:sanctum', 'role:vendor,third_party_vendor'])->prefix('p
     Route::get('/summary',  [VendorWorkController::class, 'summary']);
     Route::get('/projects', [VendorWorkController::class, 'projects']);
     Route::get('/tasks',    [VendorWorkController::class, 'tasks']);
+    Route::get('/task-statuses', [VendorWorkController::class, 'taskStatuses']);
+    // Vendor writes: advance an own task's status; log/list expenses on own projects.
+    Route::patch('/tasks/{task}/status', [VendorWorkController::class, 'updateTaskStatus'])->where('task', '[0-9]+');
+    Route::get('/expenses', [VendorWorkController::class, 'expenses']);
+    Route::post('/expenses', [VendorWorkController::class, 'storeExpense']);
     Route::get('/tickets',  [VendorWorkController::class, 'tickets']);
+    // Vendor raises + replies to its own support tickets.
+    Route::post('/tickets', [VendorWorkController::class, 'raiseTicket']);
+    Route::get('/tickets/{ticket}', [VendorWorkController::class, 'ticket'])->where('ticket', '[0-9]+');
+    Route::post('/tickets/{ticket}/reply', [VendorWorkController::class, 'replyTicket'])->where('ticket', '[0-9]+');
     // Knowledge Base (enhancement #6) — published, tenant-scoped help content the
     // dashboard shows next to Projects/Tasks/Tickets. Role-only gate, same as above.
     Route::get('/kb',            [VendorPortalController::class, 'kbArticles']);
