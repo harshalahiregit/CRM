@@ -187,17 +187,30 @@ function CreateStaff({ roles, onCreated, onClose }) {
 
 /* ── password reset ──────────────────────────────────────────────────── */
 
+/**
+ * Reset a password — matched to what SangoeTrack's endpoint actually does.
+ *
+ * It takes no password. It generates one, sets it, EMAILS it to the employee,
+ * and returns it as `temp_password`. This dialog previously offered a field to
+ * type a password into and then told the admin to pass it on themselves — both
+ * halves were wrong. Whatever was typed was discarded, so the admin handed over
+ * something that could not work, and nobody mentioned the employee had already
+ * been emailed the real one.
+ *
+ * So: confirm, then show what was generated, with the same copy affordance the
+ * create-employee flow uses.
+ */
 function ResetPassword({ person, onClose }) {
-  const [pw, setPw]     = useState('')
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy]   = useState(false)
+  const [done, setDone]   = useState(null)
+  const [copied, setCopied] = useState(false)
   const toast = useToast()
 
   async function submit() {
     setBusy(true)
     try {
-      await sangoeTrackApi.staff.resetPassword(person.user_id, pw)
-      toast.success(`Password reset for ${person.name}`, 'Give it to them directly — it is not emailed.')
-      onClose()
+      const res = await sangoeTrackApi.staff.resetPassword(person.user_id)
+      setDone(res?.temp_password ?? null)
     } catch (err) {
       toast.error(trackErrorMessage(err, 'Could not reset the password.'))
     } finally {
@@ -207,38 +220,69 @@ function ResetPassword({ person, onClose }) {
 
   return (
     <div role="dialog" aria-modal="true" aria-label={`Reset password for ${person.name}`}
-      onClick={onClose}
+      onClick={done ? undefined : onClose}
       className="fixed inset-0 z-50 flex items-center justify-center p-6"
       style={{ background: 'rgba(0,0,0,0.65)' }}>
       <div onClick={e => e.stopPropagation()}
         className="rounded-xl p-5 flex flex-col gap-3"
-        style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', width: 'min(420px, 100%)' }}>
+        style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', width: 'min(440px, 100%)' }}>
+
         <div>
-          <p className="font-bold text-sm" style={{ color: 'var(--text-h)' }}>Reset password</p>
+          <p className="font-bold text-sm" style={{ color: 'var(--text-h)' }}>
+            {done ? 'Password reset' : 'Reset password?'}
+          </p>
           <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{person.name} · {person.email}</p>
         </div>
 
-        <input type="text" value={pw} onChange={e => setPw(e.target.value)} autoFocus
-          placeholder="New password (min 8 characters)"
-          className="rounded-lg text-sm px-2.5 py-2"
-          style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }} />
-
-        <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-          They are not told automatically — pass it on yourself.
-        </p>
-
-        <div className="flex gap-2">
-          <button onClick={submit} disabled={busy || pw.trim().length < 8}
-            className="rounded-lg text-xs font-bold disabled:opacity-50"
-            style={{ padding: '7px 14px', background: '#7C3AED', color: '#fff' }}>
-            {busy ? 'Resetting…' : 'Reset password'}
-          </button>
-          <button onClick={onClose} disabled={busy}
-            className="rounded-lg text-xs font-semibold disabled:opacity-50"
-            style={{ padding: '7px 14px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
-            Cancel
-          </button>
-        </div>
+        {done ? (
+          <>
+            <div className="rounded-lg p-3 flex flex-col gap-2" style={{ background: 'var(--bg-input)' }}>
+              <p className="text-[11px] font-semibold" style={{ color: '#fbbf24' }}>
+                SangoeTrack generated this and has emailed it to {person.email}. It is shown once.
+              </p>
+              <div className="flex items-center gap-2">
+                <code className="text-sm font-mono flex-1 px-2.5 py-1.5 rounded"
+                  style={{ background: 'var(--bg-card)', color: 'var(--text-h)', wordBreak: 'break-all' }}>
+                  {done}
+                </code>
+                <button
+                  onClick={() => {
+                    navigator.clipboard?.writeText(done)
+                    setCopied(true); setTimeout(() => setCopied(false), 1800)
+                  }}
+                  className="rounded-lg text-xs font-semibold flex items-center gap-1.5"
+                  style={{ padding: '7px 12px', background: 'var(--bg-card)', border: '1px solid var(--border)', color: copied ? '#34d399' : '#a78bfa' }}>
+                  {copied ? <Check size={13} /> : <Copy size={13} />}
+                  {copied ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+            </div>
+            <button onClick={onClose}
+              className="rounded-lg text-xs font-bold self-start"
+              style={{ padding: '7px 14px', background: '#059669', color: '#fff' }}>
+              Done
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              SangoeTrack will generate a new password, set it, and email it to the employee.
+              You cannot choose it, and their current password stops working immediately.
+            </p>
+            <div className="flex gap-2">
+              <button onClick={submit} disabled={busy}
+                className="rounded-lg text-xs font-bold disabled:opacity-50"
+                style={{ padding: '7px 14px', background: '#7C3AED', color: '#fff' }}>
+                {busy ? 'Resetting…' : 'Reset password'}
+              </button>
+              <button onClick={onClose} disabled={busy}
+                className="rounded-lg text-xs font-semibold disabled:opacity-50"
+                style={{ padding: '7px 14px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+                Cancel
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )

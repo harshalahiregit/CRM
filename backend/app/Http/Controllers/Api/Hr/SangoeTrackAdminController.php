@@ -112,15 +112,20 @@ class SangoeTrackAdminController extends Controller
     public function disburseAdvance(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'advance_id' => 'required|integer',
-            'mode'       => 'required|in:cash,cheque,bank_transfer',
-            // The cheque number or UTR. Required for everything except cash,
-            // because a bank transfer with no reference cannot be reconciled.
-            'reference'  => 'required_unless:mode,cash|nullable|string|max:120',
+            'advance_id'   => 'required|integer',
+            // UPI was missing and is how most of these actually get paid.
+            'mode'         => 'required|in:cash,bank_transfer,cheque,upi',
+            // The cheque number, UTR or UPI reference. Required for everything
+            // except cash, because a transfer with no reference cannot be
+            // reconciled. Their column caps at 100, not 120.
+            'reference'    => 'required_unless:mode,cash|nullable|string|max:100',
+            'disbursed_on' => 'nullable|date_format:Y-m-d',
+            'notes'        => 'nullable|string|max:500',
         ]);
 
         return $this->relay(fn () => $this->track->disburseAdvance(
-            $data['advance_id'], $data['mode'], $data['reference'] ?? null
+            $data['advance_id'], $data['mode'], $data['reference'] ?? null,
+            $data['disbursed_on'] ?? null, $data['notes'] ?? null
         ), 'advance disbursement', $data);
     }
 
@@ -152,7 +157,9 @@ class SangoeTrackAdminController extends Controller
             'email'     => 'required|email|max:190',
             'mobile_no' => 'nullable|string|max:30',
             'role'      => 'nullable|string|max:60',
-            'password'  => 'nullable|string|min:8|max:100',
+            // 72, not 100 — that is bcrypt's limit and their validator's cap.
+            // A longer one passed here and failed there.
+            'password'  => 'nullable|string|min:8|max:72',
         ]);
 
         return $this->relay(fn () => $this->track->createEmployee($data), 'employee creation', [
@@ -164,14 +171,15 @@ class SangoeTrackAdminController extends Controller
     {
         $data = $request->validate([
             'employee_user_id' => 'required|integer',
-            'password'         => 'required|string|min:8|max:100',
         ]);
 
-        // The password itself is deliberately kept out of the audit context.
+        // No password is accepted. SangoeTrack generates one, sets it, emails it
+        // to the employee and returns it — it ignores anything sent. Taking one
+        // here would mean promising something we cannot deliver.
         return $this->relay(
-            fn () => $this->track->resetPassword($data['employee_user_id'], $data['password']),
+            fn () => $this->track->resetPassword($data['employee_user_id']),
             'password reset',
-            ['employee_user_id' => $data['employee_user_id']]
+            $data
         );
     }
 

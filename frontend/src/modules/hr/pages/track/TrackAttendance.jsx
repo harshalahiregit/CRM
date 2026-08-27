@@ -74,14 +74,22 @@ const CSV_COLUMNS = [
   { key: 'break_time',    label: 'Break' },
   { key: 'ip_address',    label: 'IP address' },
   { key: 'location',      label: 'Location' },
-  { label: 'Latitude',  value: r => r.in_lat ?? '' },
-  { label: 'Longitude', value: r => r.in_lng ?? '' },
+  { label: 'Clock-in latitude',   value: r => r.in_lat ?? '' },
+  { label: 'Clock-in longitude',  value: r => r.in_lng ?? '' },
+  { label: 'Clock-out latitude',  value: r => r.out_lat ?? '' },
+  { label: 'Clock-out longitude', value: r => r.out_lng ?? '' },
   // The URLs, so a row in the spreadsheet can still be traced back to its photo.
   { label: 'Clock-in selfie',  value: r => r.in_selfie ?? '' },
   { label: 'Clock-out selfie', value: r => r.out_selfie ?? '' },
 ]
 
 const FILTERS = [
+  // Default. "Who is actually here" is the question this screen gets asked, and
+  // a full roster buries the answer under everyone who is not.
+  //
+  // Keyed on the presence of a clock-in rather than the status string: someone
+  // marked Late is still at work, and status alone would exclude them.
+  { key: 'in',       label: 'Checked in' },
   { key: 'all',      label: 'All' },
   { key: 'Present',  label: 'Present' },
   { key: 'Late',     label: 'Late' },
@@ -121,6 +129,9 @@ function merge(live, rich) {
   }
 }
 
+/** Anyone with a clock-in, regardless of what their status string says. */
+const checkedIn = r => !!time(r.clock_in)
+
 /** Move a YYYY-MM-DD string by n days without touching timezones. */
 function shiftDay(iso, n) {
   const d = new Date(iso + 'T00:00:00')
@@ -138,7 +149,7 @@ export default function TrackAttendance() {
   const [rows, setRows]       = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState(null)
-  const [filter, setFilter]   = useState('all')
+  const [filter, setFilter]   = useState('in')
   const [selfie, setSelfie]   = useState(null)
   const [date, setDate]       = useState(() => isoDate(new Date()))
 
@@ -150,33 +161,52 @@ export default function TrackAttendance() {
     setError(null)
     try {
       const today = isoDate(new Date())
+      const isNow = date === today
 
-      // History is the only feed that carries early leaving, overtime, break
-      // time, the clock-OUT selfie and the IP — the live board returns none of
-      // them. So it is fetched for EVERY day, including today.
-      const detail = sangoeTrackApi.history.attendance({ from: date, to: date, per_page: 200 })
-        .then(r => r?.data?.rows ?? [])
-        // Detail is an enrichment, not the point: if it fails, the board should
-        // still show who is in rather than the whole screen erroring.
-        .catch(() => [])
+      // History is the only feed carrying early leaving, overtime, break time,
+      // the clock-OUT selfie and the IP, so it is fetched for EVERY day.
+      //
+      // Page size is capped at 100 on both sides, so a workspace with more than
+      // a hundred staff needs more than one call. Previously this asked for 200
+      // in one go, which failed validation and — because the error was swallowed
+      // below — showed an empty board for every past date.
+      const fetchAllDetail = async () => {
+        const first = await sangoeTrackApi.history.attendance({ from: date, to: date, per_page: 100 })
+        const rows  = first?.data?.rows ?? []
+        const pages = first?.data?.meta?.pages ?? 1
 
-      if (date === today) {
+        if (pages <= 1) return rows
+
+        const rest = await Promise.all(
+          Array.from({ length: pages - 1 }, (_, i) =>
+            sangoeTrackApi.history.attendance({ from: date, to: date, per_page: 100, page: i + 2 })
+              .then(r => r?.data?.rows ?? []))
+        )
+        return rows.concat(...rest)
+      }
+
+      if (isNow) {
         // Today ALSO needs the live board, because that one lists every employee
         // — including the ones with no attendance row, who are the absent ones.
-        // History alone would silently drop them.
+        //
+        // Here detail is an enrichment: if it fails the board still shows who is
+        // in, minus the extra columns. That trade is only safe TODAY.
         const [live, rich] = await Promise.all([
           sangoeTrackApi.attendance.today('all').then(r => (Array.isArray(r?.data) ? r.data : [])),
-          detail,
+          fetchAllDetail().catch(() => []),
         ])
         const byId = new Map(rich.map(r => [r.employee_id, r]))
         setRows(live.map(l => merge(l, byId.get(l.user_id))))
       } else {
-        // Any other day is history only. Someone who never clocked in has no row,
-        // so they simply are not here — see the note under the counters.
-        setRows((await detail).map(r => merge(null, r)))
+        // On any other day history is the ONLY source, so a failure here is the
+        // failure — it must reach the error state rather than being caught and
+        // rendered as "nobody was here".
+        const rich = await fetchAllDetail()
+        setRows(rich.map(r => merge(null, r)))
       }
     } catch (err) {
       setError(err)
+      setRows([])
     } finally {
       setLoading(false)
     }
@@ -185,15 +215,19 @@ export default function TrackAttendance() {
   useEffect(() => { load() }, [load])
 
   const counts = useMemo(() => {
-    const c = { all: rows.length, 'Present': 0, 'Late': 0, 'Absent': 0, 'On Leave': 0 }
-    rows.forEach(r => { if (c[r.status] !== undefined) c[r.status] += 1 })
+    const c = { in: 0, all: rows.length, 'Present': 0, 'Late': 0, 'Absent': 0, 'On Leave': 0 }
+    rows.forEach(r => {
+      if (checkedIn(r)) c.in += 1
+      if (c[r.status] !== undefined) c[r.status] += 1
+    })
     return c
   }, [rows])
 
-  const visible = useMemo(
-    () => (filter === 'all' ? rows : rows.filter(r => r.status === filter)),
-    [rows, filter]
-  )
+  const visible = useMemo(() => {
+    if (filter === 'all') return rows
+    if (filter === 'in')  return rows.filter(checkedIn)
+    return rows.filter(r => r.status === filter)
+  }, [rows, filter])
 
   const shown = new Date(date + 'T00:00:00').toLocaleDateString('en-IN', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
@@ -310,9 +344,20 @@ export default function TrackAttendance() {
       ) : visible.length === 0 ? (
         <EmptyState
           icon={Clock}
-          title={filter === 'all' ? 'Nobody on the board yet' : `No one is ${FILTERS.find(f => f.key === filter)?.label.toLowerCase()}`}
-          description={filter === 'all'
-            ? 'No employees came back from SangoeTrack for today.'
+          title={
+            filter === 'in'  ? 'Nobody has clocked in yet'
+            : filter === 'all' ? 'Nobody on the board yet'
+            : `No one is ${FILTERS.find(f => f.key === filter)?.label.toLowerCase()}`
+          }
+          description={
+            filter === 'in'
+              ? (rows.length > 0
+                  ? `${rows.length} employees are listed, none with a clock-in. Switch to All to see them.`
+                  : 'No attendance has come back from SangoeTrack for this day.')
+            : filter === 'all'
+              ? (isToday
+                  ? 'No employees came back from SangoeTrack for today.'
+                  : 'SangoeTrack has no attendance recorded for this day.')
             : 'Try another filter.'}
         />
       ) : (
@@ -402,19 +447,29 @@ export default function TrackAttendance() {
                               style={{ border: `1px solid ${which === 'out' ? '#f8717155' : 'var(--border)'}` }} />
                           </button>
                         ))}
-                        {hasGps && (
-                          <a
-                            href={`https://www.google.com/maps?q=${r.in_lat},${r.in_lng}`}
-                            target="_blank" rel="noopener noreferrer"
-                            className="text-[11px] flex items-center gap-1 rounded-md px-1.5 py-1"
-                            style={{ color: '#a78bfa', background: 'var(--bg-input)', whiteSpace: 'nowrap' }}
-                            title={r.location || `${r.in_lat}, ${r.in_lng}`}
-                          >
-                            <MapPin size={11} />
-                            Map
-                          </a>
-                        )}
-                        {!r.in_selfie && !r.out_selfie && !hasGps && (
+                        {/* IN and OUT location are different places and that
+                            is the point — someone who clocks in on site and out
+                            from home is only visible if both are shown. */}
+                        {[['in', r.in_lat, r.in_lng], ['out', r.out_lat, r.out_lng]]
+                          .filter(([, lat, lng]) => lat && lng)
+                          .map(([which, lat, lng]) => (
+                            <a key={which}
+                              href={`https://www.google.com/maps?q=${lat},${lng}`}
+                              target="_blank" rel="noopener noreferrer"
+                              className="text-[11px] flex items-center gap-1 rounded-md px-1.5 py-1"
+                              style={{
+                                color: which === 'out' ? '#f87171' : '#a78bfa',
+                                background: 'var(--bg-input)', whiteSpace: 'nowrap',
+                              }}
+                              title={which === 'in'
+                                ? (r.location || `Clock-in · ${lat}, ${lng}`)
+                                : `Clock-out · ${lat}, ${lng}`}
+                            >
+                              <MapPin size={11} />
+                              {which === 'in' ? 'In' : 'Out'}
+                            </a>
+                          ))}
+                        {!r.in_selfie && !r.out_selfie && !hasGps && !hasOutGps && (
                           <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>—</span>
                         )}
                       </div>

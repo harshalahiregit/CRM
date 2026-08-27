@@ -107,8 +107,10 @@ export const sangoeTrackApi = {
     list:  ()     => api.get('/hr/track/employees').then(r => r.data),
     roles: ()     => api.get('/hr/track/roles').then(r => r.data),
     create: (data) => api.post('/hr/track/employees', data).then(r => r.data),
-    resetPassword: (employeeUserId, password) =>
-      api.post('/hr/track/employees/password', { employee_user_id: employeeUserId, password })
+    // No password argument: SangoeTrack generates one, emails it to the employee,
+    // and returns it as `temp_password`. Anything sent here was discarded.
+    resetPassword: (employeeUserId) =>
+      api.post('/hr/track/employees/password', { employee_user_id: employeeUserId })
         .then(r => r.data),
   },
 

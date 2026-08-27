@@ -113,15 +113,29 @@ class SangoeTrackAdmin
     }
 
     /**
-     * @param  string  $mode  cash | cheque | bank_transfer
+     * Record money actually leaving the company.
+     *
+     * The field names are THEIRS: payment_mode and utr_reference. This used to
+     * send `mode` and `reference`, which their validator rejected — so every
+     * disbursement failed, and nobody noticed because nobody had released money
+     * through the CRM yet.
+     *
+     * @param  string  $mode  cash | bank_transfer | cheque | upi
      */
-    public function disburseAdvance(int $advanceId, string $mode, ?string $reference = null): array
-    {
-        return $this->client->call('admin_disburse_advance', $this->scope([
-            'advance_id' => $advanceId,
-            'mode'       => $mode,
-            'reference'  => $reference,
-        ]));
+    public function disburseAdvance(
+        int $advanceId,
+        string $mode,
+        ?string $reference = null,
+        ?string $disbursedOn = null,
+        ?string $notes = null,
+    ): array {
+        return $this->client->call('admin_disburse_advance', $this->scope(array_filter([
+            'advance_id'    => $advanceId,
+            'payment_mode'  => $mode,
+            'utr_reference' => $reference,
+            'disbursed_on'  => $disbursedOn,
+            'notes'         => $notes,
+        ], static fn ($v) => $v !== null)));
     }
 
     public function reviewSettlement(int $settlementId, string $status, ?string $remark = null): array
@@ -154,11 +168,15 @@ class SangoeTrackAdmin
         return $this->client->call('admin_create_employee', $this->scope($data));
     }
 
-    public function resetPassword(int $employeeUserId, string $password): array
+    /**
+     * SangoeTrack generates the password itself, emails it to the employee, and
+     * returns it as `temp_password`. It takes no password — one sent here was
+     * silently discarded, so the admin handed over something that never worked.
+     */
+    public function resetPassword(int $employeeUserId): array
     {
         return $this->client->call('admin_reset_password', $this->scope([
             'employee_user_id' => $employeeUserId,
-            'password'         => $password,
         ]));
     }
 

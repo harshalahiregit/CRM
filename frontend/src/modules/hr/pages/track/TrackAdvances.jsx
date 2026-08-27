@@ -87,7 +87,7 @@ function DisburseForm({ advance, onDone }) {
       </div>
 
       <div className="flex flex-wrap gap-1.5">
-        {[['bank_transfer', 'Bank transfer'], ['cheque', 'Cheque'], ['cash', 'Cash']].map(([value, label]) => (
+        {[['upi', 'UPI'], ['bank_transfer', 'Bank transfer'], ['cheque', 'Cheque'], ['cash', 'Cash']].map(([value, label]) => (
           <button key={value} onClick={() => setMode(value)} aria-pressed={mode === value}
             className="rounded-lg text-xs font-semibold"
             style={{
@@ -107,7 +107,12 @@ function DisburseForm({ advance, onDone }) {
           onChange={e => setRef(e.target.value)}
           maxLength={120}
           autoFocus
-          placeholder={mode === 'cheque' ? 'Cheque number' : 'UTR / transaction reference'}
+          maxLength={100}
+          placeholder={
+            mode === 'cheque' ? 'Cheque number'
+            : mode === 'upi'  ? 'UPI reference'
+            : 'UTR / transaction reference'
+          }
           className="rounded-lg text-sm px-2.5 py-2"
           style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-h)' }}
         />

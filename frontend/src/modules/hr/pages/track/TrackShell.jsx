@@ -179,9 +179,20 @@ export function QueueTabs({ tab, onChange, pendingCount }) {
 
 const STATUS_SETS = {
   decision: [['', 'Any outcome'], ['approved', 'Approved'], ['rejected', 'Rejected'], ['pending', 'Still pending']],
-  advance:  [['', 'Any status'], ['pending', 'Pending'], ['manager_approved', 'Manager approved'],
-             ['accounts_approved', 'Accounts approved'], ['approved', 'Ready to disburse'],
-             ['disbursed', 'Disbursed'], ['rejected', 'Rejected']],
+  // All ten of SangoeTrack's advance statuses. Four were missing — settled and
+  // closed among them — so the advances that matter most at month end could be
+  // seen under "Any status" and never isolated.
+  advance:  [['', 'Any status'],
+             ['pending', 'Pending'],
+             ['manager_approved', 'Manager approved'],
+             ['accounts_approved', 'Accounts approved'],
+             ['approved', 'Ready to disburse'],
+             ['disbursed', 'Disbursed'],
+             ['settlement_submitted', 'Settlement submitted'],
+             ['settlement_rejected', 'Settlement rejected'],
+             ['settled', 'Settled'],
+             ['closed', 'Closed'],
+             ['rejected', 'Rejected']],
 }
 
 /**
@@ -265,9 +276,16 @@ export function HistoryPager({ meta, page, setPage, noun }) {
 /** The outcome of a past decision, said the way a person would. */
 export function Outcome({ status }) {
   const tone = {
-    approved: { fg: '#34d399', label: 'Approved' },
-    rejected: { fg: '#f87171', label: 'Rejected' },
-    pending:  { fg: '#fbbf24', label: 'Still pending' },
+    approved:  { fg: '#34d399', label: 'Approved' },
+    rejected:  { fg: '#f87171', label: 'Rejected' },
+    pending:   { fg: '#fbbf24', label: 'Still pending' },
+    // The advance chain. Settled and closed are the finished states and read as
+    // such; the two settlement ones are still waiting on somebody.
+    disbursed:              { fg: '#60a5fa', label: 'Disbursed' },
+    settlement_submitted:   { fg: '#fbbf24', label: 'Settlement submitted' },
+    settlement_rejected:    { fg: '#f87171', label: 'Settlement rejected' },
+    settled:                { fg: '#34d399', label: 'Settled' },
+    closed:                 { fg: '#8894a2', label: 'Closed' },
   }[String(status ?? '').toLowerCase()]
     ?? { fg: 'var(--text-muted)', label: String(status ?? '—').replace(/_/g, ' ') }
 
