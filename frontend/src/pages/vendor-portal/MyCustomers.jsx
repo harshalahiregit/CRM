@@ -7,9 +7,9 @@ import { portalApi } from '@/services/portalApi'
  * (clients.vendor_id), read-only. Linking/creating a customer is an admin action
  * in the Vendor section.
  */
-export default function MyCustomers() {
+export default function MyCustomers({ api = portalApi }) {
   const [rows, setRows] = useState(null)
-  useEffect(() => { portalApi.customers().then(d => setRows(d || [])).catch(() => setRows([])) }, [])
+  useEffect(() => { api.customers().then(d => setRows(d || [])).catch(() => setRows([])) }, [api])
 
   return (
     <div style={{ maxWidth: 900, margin: '0 auto' }}>

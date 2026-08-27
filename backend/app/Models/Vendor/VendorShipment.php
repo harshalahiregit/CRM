@@ -15,7 +15,7 @@ class VendorShipment extends Model
     public const STATUSES = ['Pre-Alert', 'Dispatched', 'In-Transit', 'Delivered', 'Cancelled'];
 
     protected $fillable = [
-        'tenant_id', 'vendor_id', 'reference', 'courier', 'tracking_number',
+        'tenant_id', 'vendor_id', 'purchase_vendor_id', 'reference', 'courier', 'tracking_number',
         'status', 'expected_date', 'dispatched_on', 'delivered_on', 'notes', 'created_by',
     ];
 

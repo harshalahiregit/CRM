@@ -270,6 +270,26 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal'])->prefix('portal/pu
     Route::get('/payments',                            [PurchasePortalCommerceController::class, 'payments']);
     Route::get('/statement',                          [PurchasePortalCommerceController::class, 'statement']);
 
+    // ── Parity with the TPV portal (General/Execution/Performance/Compliance) ──
+    $ppar = \App\Http\Controllers\Api\Portal\PurchasePortalParityController::class;
+    Route::get('/customers',                          [$ppar, 'customers']);
+    Route::get('/projects',                           [$ppar, 'projects']);
+    Route::get('/work-tasks',                         [$ppar, 'tasks']);
+    Route::get('/task-statuses',                      [$ppar, 'taskStatuses']);
+    Route::patch('/tasks/{task}/status',              [$ppar, 'updateTaskStatus'])->where('task', '[0-9]+');
+    Route::get('/work-tickets',                       [$ppar, 'tickets']);
+    Route::get('/expenses',                           [$ppar, 'expenses']);
+    Route::post('/expenses',                          [$ppar, 'storeExpense']);
+    Route::get('/feedback',                           [$ppar, 'feedback']);
+    Route::get('/violations',                         [$ppar, 'violations']);
+    Route::get('/awards',                             [$ppar, 'awards']);
+    Route::get('/referrals',                          [$ppar, 'referrals']);
+    Route::post('/referrals',                         [$ppar, 'storeReferral']);
+    Route::get('/shipments',                          [$ppar, 'shipments']);
+    Route::post('/shipments',                         [$ppar, 'storeShipment']);
+    Route::patch('/shipments/{shipment}/status',      [$ppar, 'updateShipmentStatus'])->where('shipment', '[0-9]+');
+    Route::get('/shipment-packages',                  [$ppar, 'shipmentPackages']);
+
     // §32 Governance-response half — mirror of the TPV portal on Purchase-owned
     // models (separate DB). No PPE requirement matrix (Purchase has none).
     $pgov = \App\Http\Controllers\Api\Portal\PurchasePortalGovernanceController::class;

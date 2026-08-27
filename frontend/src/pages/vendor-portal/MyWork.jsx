@@ -8,12 +8,12 @@ import { portalApi } from '@/services/portalApi'
  * replied to; Expenses can be logged against the vendor's own projects. Data
  * comes from the role-gated my-work endpoints.
  */
-export default function MyWork({ view }) {
+export default function MyWork({ view, api = portalApi, caps = { ticketWrite: true } }) {
   switch (view) {
-    case 'tasks':    return <Tasks />
-    case 'tickets':  return <Tickets />
-    case 'expenses': return <Expenses />
-    default:         return <Projects />
+    case 'tasks':    return <Tasks api={api} />
+    case 'tickets':  return <Tickets api={api} caps={caps} />
+    case 'expenses': return <Expenses api={api} />
+    default:         return <Projects api={api} />
   }
 }
 
@@ -27,9 +27,9 @@ function Pill({ value }) {
 }
 
 /* ── Projects (read) ──────────────────────────────────────────────────────── */
-function Projects() {
+function Projects({ api }) {
   const [rows, setRows] = useState(null)
-  useEffect(() => { portalApi.myWork.projects().then(d => setRows(d || [])).catch(() => setRows([])) }, [])
+  useEffect(() => { api.myWork.projects().then(d => setRows(d || [])).catch(() => setRows([])) }, [])
   return (
     <Wrap>
       <style>{CSS}</style>
@@ -46,16 +46,16 @@ function Projects() {
 }
 
 /* ── Tasks (status write) ─────────────────────────────────────────────────── */
-function Tasks() {
+function Tasks({ api }) {
   const [rows, setRows] = useState(null)
   const [statuses, setStatuses] = useState({})
   useEffect(() => {
-    portalApi.myWork.tasks().then(d => setRows(d || [])).catch(() => setRows([]))
-    portalApi.myWork.taskStatuses().then(s => setStatuses(s || {})).catch(() => setStatuses({}))
+    api.myWork.tasks().then(d => setRows(d || [])).catch(() => setRows([]))
+    api.myWork.taskStatuses().then(s => setStatuses(s || {})).catch(() => setStatuses({}))
   }, [])
   const change = async (id, status) => {
     setRows(rs => rs.map(r => r.id === id ? { ...r, status, _saving: true } : r))
-    try { await portalApi.myWork.updateTaskStatus(id, status) } catch { /* keep optimistic */ }
+    try { await api.myWork.updateTaskStatus(id, status) } catch { /* keep optimistic */ }
     setRows(rs => rs.map(r => r.id === id ? { ...r, _saving: false } : r))
   }
   const keys = Object.keys(statuses)
@@ -84,35 +84,35 @@ function Tasks() {
 }
 
 /* ── Tickets (raise + reply) ──────────────────────────────────────────────── */
-function Tickets() {
+function Tickets({ api, caps }) {
   const [rows, setRows] = useState(null)
   const [raising, setRaising] = useState(false)
   const [openId, setOpenId] = useState(null)
-  const reload = () => portalApi.myWork.tickets().then(d => setRows(d || [])).catch(() => setRows([]))
+  const reload = () => api.myWork.tickets().then(d => setRows(d || [])).catch(() => setRows([]))
   useEffect(() => { reload() }, [])
   return (
     <Wrap>
       <style>{CSS}</style>
-      <div className="mw-head"><h2 className="mw-h2" style={{ margin: 0 }}>My Tickets</h2><button className="mw-btn mw-btn-primary" onClick={() => setRaising(true)}><Plus size={15} /> Raise Ticket</button></div>
+      <div className="mw-head"><h2 className="mw-h2" style={{ margin: 0 }}>My Tickets</h2>{caps?.ticketWrite && <button className="mw-btn mw-btn-primary" onClick={() => setRaising(true)}><Plus size={15} /> Raise Ticket</button>}</div>
       {rows === null ? <Center /> : rows.length === 0 ? <Empty text="No tickets yet. Raise one if you need help." /> : (
         <Table head={['Subject', 'Priority', 'Status']}>
           {rows.map(r => (
-            <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => setOpenId(r.id)}><td className="mw-strong">{r.subject}</td><td>{r.priority || '—'}</td><td><Pill value={r.status} /></td></tr>
+            <tr key={r.id} style={{ cursor: caps?.ticketWrite ? 'pointer' : 'default' }} onClick={caps?.ticketWrite ? () => setOpenId(r.id) : undefined}><td className="mw-strong">{r.subject}</td><td>{r.priority || '—'}</td><td><Pill value={r.status} /></td></tr>
           ))}
         </Table>
       )}
-      {raising && <RaiseForm onClose={() => setRaising(false)} onDone={() => { setRaising(false); reload() }} />}
-      {openId != null && <TicketModal id={openId} onClose={() => setOpenId(null)} />}
+      {raising && <RaiseForm api={api} onClose={() => setRaising(false)} onDone={() => { setRaising(false); reload() }} />}
+      {openId != null && <TicketModal api={api} id={openId} onClose={() => setOpenId(null)} />}
     </Wrap>
   )
 }
-function RaiseForm({ onClose, onDone }) {
+function RaiseForm({ api, onClose, onDone }) {
   const [f, setF] = useState({ subject: '', body: '', priority: 'medium' })
   const [saving, setSaving] = useState(false); const [error, setError] = useState('')
   const submit = async () => {
     if (!f.subject.trim() || !f.body.trim()) { setError('Subject and message are required.'); return }
     setSaving(true)
-    try { await portalApi.myWork.raiseTicket(f); onDone() } catch (e) { setError(e?.response?.data?.message || 'Could not raise the ticket.') } finally { setSaving(false) }
+    try { await api.myWork.raiseTicket(f); onDone() } catch (e) { setError(e?.response?.data?.message || 'Could not raise the ticket.') } finally { setSaving(false) }
   }
   return (
     <Modal title="Raise a Ticket" onClose={onClose}>
@@ -123,14 +123,14 @@ function RaiseForm({ onClose, onDone }) {
     </Modal>
   )
 }
-function TicketModal({ id, onClose }) {
+function TicketModal({ api, id, onClose }) {
   const [t, setT] = useState(null); const [msg, setMsg] = useState(''); const [sending, setSending] = useState(false)
-  const load = () => portalApi.myWork.ticket(id).then(setT).catch(() => setT(null))
+  const load = () => api.myWork.ticket(id).then(setT).catch(() => setT(null))
   useEffect(() => { load() }, [id]) // eslint-disable-line react-hooks/exhaustive-deps
   const send = async () => {
     if (!msg.trim()) return
     setSending(true)
-    try { await portalApi.myWork.replyTicket(id, msg); setMsg(''); await load() } finally { setSending(false) }
+    try { await api.myWork.replyTicket(id, msg); setMsg(''); await load() } finally { setSending(false) }
   }
   return (
     <Modal title={t?.subject || 'Ticket'} onClose={onClose}>
@@ -157,12 +157,12 @@ function TicketModal({ id, onClose }) {
 }
 
 /* ── Expenses (log) ───────────────────────────────────────────────────────── */
-function Expenses() {
+function Expenses({ api }) {
   const [rows, setRows] = useState(null)
   const [projects, setProjects] = useState([])
   const [adding, setAdding] = useState(false)
-  const reload = () => portalApi.myWork.expenses().then(d => setRows(d || [])).catch(() => setRows([]))
-  useEffect(() => { reload(); portalApi.myWork.projects().then(p => setProjects(p || [])).catch(() => setProjects([])) }, [])
+  const reload = () => api.myWork.expenses().then(d => setRows(d || [])).catch(() => setRows([]))
+  useEffect(() => { reload(); api.myWork.projects().then(p => setProjects(p || [])).catch(() => setProjects([])) }, [])
   return (
     <Wrap>
       <style>{CSS}</style>
@@ -174,17 +174,17 @@ function Expenses() {
           ))}
         </Table>
       )}
-      {adding && <ExpenseForm projects={projects} onClose={() => setAdding(false)} onDone={() => { setAdding(false); reload() }} />}
+      {adding && <ExpenseForm api={api} projects={projects} onClose={() => setAdding(false)} onDone={() => { setAdding(false); reload() }} />}
     </Wrap>
   )
 }
-function ExpenseForm({ projects, onClose, onDone }) {
+function ExpenseForm({ api, projects, onClose, onDone }) {
   const [f, setF] = useState({ project_id: projects[0]?.id || '', title: '', category: '', amount: '', expense_date: '', note: '' })
   const [saving, setSaving] = useState(false); const [error, setError] = useState('')
   const submit = async () => {
     if (!f.project_id || !f.title.trim() || f.amount === '') { setError('Project, title and amount are required.'); return }
     setSaving(true)
-    try { await portalApi.myWork.logExpense({ ...f, amount: Number(f.amount) }); onDone() } catch (e) { setError(e?.response?.data?.message || 'Could not log the expense.') } finally { setSaving(false) }
+    try { await api.myWork.logExpense({ ...f, amount: Number(f.amount) }); onDone() } catch (e) { setError(e?.response?.data?.message || 'Could not log the expense.') } finally { setSaving(false) }
   }
   return (
     <Modal title="Log an Expense" onClose={onClose}>

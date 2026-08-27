@@ -131,8 +131,14 @@ Last updated: 2026-08-27.
   violations) + Compliance Shipments (Pre Alert/Package → VendorShipmentsAdminPanel). `VendorAdminMirrorTest` (3).
 - **Execution vendor-writes DONE** (TPV): ticket raise/reply, task status, expenses. `PortalExecutionWritesTest` (4).
 - **General DONE** (TPV): Overview + Customer.
-- **Purchase parity STARTED:** Contact ✅, KB ✅, Commercial ✅ (full), **Overview ✅** (dashboard-backed).
-  Remaining Purchase parity (Customer, Execution, Performance, HSSE writes) needs PurchaseVendor-scoped
-  endpoints — the separate identity means each is a fresh port, tracked as a large follow-up.
+- **Purchase parity — LARGELY DONE.** Contact ✅ · KB ✅ · Commercial ✅ · Overview ✅, plus (this pass)
+  Customer · Projects · Tasks (status write) · Tickets (read) · Expenses (log) · Feedback (VPI) ·
+  Penalty (PurchaseVendorViolation) · Award · Referral · Pre-Alert/Packages/Shipping. New
+  `PurchasePortalParityController` + the Award/Referral/Shipment tables made polymorphic
+  (nullable owner + purchase_vendor_id). The TPV feature pages (MyWork/MyPerformance/MyShipments/
+  MyCustomers) were refactored to be `api`-prop driven and now serve BOTH portals. Guarded by
+  `PurchasePortalParityTest` (6); all 45 Portal tests green.
+  **Purchase greenfield still ComingSoon:** Risk Score, PTW, Incidents (no Purchase model — new
+  model+service+table each; genuinely large).
 - **Next queued:** Phase 6 Extra (Apps/Widgets/Ecommerce — needs scope). Follow-ups: Purchase-portal parity
   (Execution/Performance/HSSE) · Execution vendor-writes (ticket raise/reply, task status, expenses) · General Overview/Customer.

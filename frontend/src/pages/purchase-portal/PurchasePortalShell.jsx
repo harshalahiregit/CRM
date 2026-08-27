@@ -41,6 +41,21 @@ export default function PurchasePortalShell() {
         'debit-notes':        'debit-notes',
         'purchase-statement': 'statement',
         'payments':           'payments',
+        // Parity with the TPV portal (shared pages, Purchase api).
+        customer:    'customers',
+        project:     'projects',
+        tasks:       'tasks',
+        ticket:      'tickets',
+        expenses:    'expenses',
+        feedback:    'feedback',
+        penalty:     'penalty',
+        award:       'awards',
+        referral:    'referrals',
+        'pre-alert': 'pre-alert',
+        packages:    'packages',
+        shipping:    'shipping',
+        'hsse-documents': 'documents',
+        // Risk Score, PTW, Incidents stay ComingSoon — no Purchase model yet.
       }}
       extraGroups={[
         {

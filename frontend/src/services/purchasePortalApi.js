@@ -165,6 +165,31 @@ export const purchasePortalApi = {
     submitQuote: (id, body)  => api.post(`/portal/purchase/rfqs/${id}/quotation`, body).then(r => r.data),
   },
 
+  // ── Parity with the TPV portal (General/Execution/Performance/Compliance) ──
+  customers: () => api.get('/portal/purchase/customers').then(r => r.data?.data ?? r.data),
+  myWork: {
+    projects:         () => api.get('/portal/purchase/projects').then(r => r.data?.data ?? r.data),
+    tasks:            () => api.get('/portal/purchase/work-tasks').then(r => r.data?.data ?? r.data),
+    taskStatuses:     () => api.get('/portal/purchase/task-statuses').then(r => r.data?.data ?? r.data),
+    updateTaskStatus: (id, status) => api.patch(`/portal/purchase/tasks/${id}/status`, { status }).then(r => r.data?.data ?? r.data),
+    tickets:          () => api.get('/portal/purchase/work-tickets').then(r => r.data?.data ?? r.data),
+    expenses:         () => api.get('/portal/purchase/expenses').then(r => r.data?.data ?? r.data),
+    logExpense:       (body) => api.post('/portal/purchase/expenses', body).then(r => r.data),
+  },
+  performance: {
+    feedback:       () => api.get('/portal/purchase/feedback').then(r => r.data),
+    violations:     () => api.get('/portal/purchase/violations').then(r => r.data),
+    awards:         () => api.get('/portal/purchase/awards').then(r => r.data),
+    referrals:      () => api.get('/portal/purchase/referrals').then(r => r.data),
+    submitReferral: (body) => api.post('/portal/purchase/referrals', body).then(r => r.data),
+  },
+  logistics: {
+    shipments:      () => api.get('/portal/purchase/shipments').then(r => r.data),
+    createShipment: (body) => api.post('/portal/purchase/shipments', body).then(r => r.data),
+    updateStatus:   (id, status) => api.patch(`/portal/purchase/shipments/${id}/status`, { status }).then(r => r.data),
+    packages:       () => api.get('/portal/purchase/shipment-packages').then(r => r.data),
+  },
+
   // ── Knowledge Base (tenant-published, read-only) — parity with TPV portal ──
   kb: {
     list:    ()     => api.get('/portal/purchase/kb').then(r => r.data?.data ?? r.data),

@@ -3,6 +3,7 @@ import { ProtectedRoute, GuestRoute } from '@/router/ProtectedRoute'
 import AppShell from '@/components/layout/AppShell'
 import { Suspense, lazy } from 'react'
 import { useAuth } from '@/context/AuthContext'
+import { purchasePortalApi } from '@/services/purchasePortalApi'
 
 // Auth pages (eager)
 import LoginPage from '@/pages/auth/LoginPage'
@@ -257,6 +258,8 @@ const PurchasePortalCommercial = lazy(() => import('@/pages/purchase-portal/Purc
 const PurchaseMyContacts = lazy(() => import('@/pages/purchase-portal/PurchaseMyContacts'))
 const PurchaseMyKb = lazy(() => import('@/pages/purchase-portal/PurchaseMyKb'))
 const PurchasePortalOverview = lazy(() => import('@/pages/purchase-portal/PurchasePortalOverview'))
+// Shared feature pages, driven by the Purchase portal's api client for parity.
+const PP_API = purchasePortalApi
 const PurchasePortalOnboarding = lazy(() => import('@/pages/purchase-portal/PurchasePortalOnboarding'))
 const PurchasePortalDocuments = lazy(() => import('@/pages/purchase-portal/PurchasePortalDocuments'))
 const PurchasePortalApproval = lazy(() => import('@/pages/purchase-portal/PurchasePortalApproval'))
@@ -970,6 +973,20 @@ export default function AppRoutes() {
         <Route path="contacts"    element={<S><PurchaseMyContacts /></S>} />
         <Route path="kb"          element={<S><PurchaseMyKb /></S>} />
         <Route path="overview"    element={<S><PurchasePortalOverview /></S>} />
+
+        {/* Parity with the TPV portal — same shared pages, Purchase api client. */}
+        <Route path="customers"   element={<S><MyCustomers api={PP_API} /></S>} />
+        <Route path="projects"    element={<S><MyWork view="projects" api={PP_API} caps={{ ticketWrite: false }} /></S>} />
+        <Route path="tasks"       element={<S><MyWork view="tasks" api={PP_API} /></S>} />
+        <Route path="tickets"     element={<S><MyWork view="tickets" api={PP_API} caps={{ ticketWrite: false }} /></S>} />
+        <Route path="expenses"    element={<S><MyWork view="expenses" api={PP_API} /></S>} />
+        <Route path="feedback"    element={<S><MyPerformance view="feedback" api={PP_API} /></S>} />
+        <Route path="penalty"     element={<S><MyPerformance view="penalty" api={PP_API} /></S>} />
+        <Route path="awards"      element={<S><MyPerformance view="award" api={PP_API} /></S>} />
+        <Route path="referrals"   element={<S><MyPerformance view="referral" api={PP_API} /></S>} />
+        <Route path="pre-alert"   element={<S><MyShipments view="pre-alert" api={PP_API} /></S>} />
+        <Route path="packages"    element={<S><MyShipments view="packages" api={PP_API} /></S>} />
+        <Route path="shipping"    element={<S><MyShipments view="shipping" api={PP_API} /></S>} />
 
         {/* Roadmap sections not yet built — the full nav tree stays navigable. */}
         <Route path="s/:key"     element={<S><PortalComingSoon /></S>} />

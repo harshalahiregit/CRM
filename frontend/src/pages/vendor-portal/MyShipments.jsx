@@ -8,11 +8,11 @@ import { portalApi } from '@/services/portalApi'
  * `view="packages"`: a flat list of the vendor's packages.
  * `view="shipping"`: track shipment status, advance it as it moves.
  */
-export default function MyShipments({ view }) {
+export default function MyShipments({ view, api = portalApi }) {
   switch (view) {
-    case 'packages': return <Packages />
-    case 'shipping': return <Shipping />
-    default:         return <PreAlert />
+    case 'packages': return <Packages api={api} />
+    case 'shipping': return <Shipping api={api} />
+    default:         return <PreAlert api={api} />
   }
 }
 
@@ -26,10 +26,10 @@ function Pill({ value }) {
 }
 
 /* ── Pre Alert — create + list ────────────────────────────────────────────── */
-function PreAlert() {
+function PreAlert({ api }) {
   const [data, setData] = useState(null)
   const [adding, setAdding] = useState(false)
-  const reload = () => portalApi.logistics.shipments().then(setData).catch(() => setData({ data: [], statuses: [] }))
+  const reload = () => api.logistics.shipments().then(setData).catch(() => setData({ data: [], statuses: [] }))
   useEffect(() => { reload() }, [])
   const rows = data?.data || []
   return (
@@ -49,12 +49,12 @@ function PreAlert() {
             ))}
           </Table>
         )}
-      {adding && <ShipmentForm onClose={() => setAdding(false)} onDone={() => { setAdding(false); reload() }} />}
+      {adding && <ShipmentForm api={api} onClose={() => setAdding(false)} onDone={() => { setAdding(false); reload() }} />}
     </Wrap>
   )
 }
 
-function ShipmentForm({ onClose, onDone }) {
+function ShipmentForm({ api, onClose, onDone }) {
   const [f, setF] = useState({ courier: '', tracking_number: '', expected_date: '', notes: '' })
   const [pkgs, setPkgs] = useState([{ description: '', qty: 1, weight: '', dimensions: '' }])
   const [saving, setSaving] = useState(false)
@@ -68,7 +68,7 @@ function ShipmentForm({ onClose, onDone }) {
     setError('')
     const packages = pkgs.filter(p => p.description.trim()).map(p => ({ description: p.description, qty: Number(p.qty || 1), weight: p.weight || null, dimensions: p.dimensions || null }))
     setSaving(true)
-    try { await portalApi.logistics.createShipment({ ...f, packages }); onDone() }
+    try { await api.logistics.createShipment({ ...f, packages }); onDone() }
     catch (e) { setError(e?.response?.data?.message || 'Could not create the pre-alert.') }
     finally { setSaving(false) }
   }
@@ -99,9 +99,9 @@ function ShipmentForm({ onClose, onDone }) {
 }
 
 /* ── Packages — flat list ─────────────────────────────────────────────────── */
-function Packages() {
+function Packages({ api }) {
   const [rows, setRows] = useState(null)
-  useEffect(() => { portalApi.logistics.packages().then(d => setRows(d?.data || [])).catch(() => setRows([])) }, [])
+  useEffect(() => { api.logistics.packages().then(d => setRows(d?.data || [])).catch(() => setRows([])) }, [])
   return (
     <Wrap>
       <style>{CSS}</style>
@@ -123,13 +123,13 @@ function Packages() {
 }
 
 /* ── Shipping — status tracking + advance ─────────────────────────────────── */
-function Shipping() {
+function Shipping({ api }) {
   const [data, setData] = useState(null)
-  const reload = () => portalApi.logistics.shipments().then(setData).catch(() => setData({ data: [], statuses: [] }))
+  const reload = () => api.logistics.shipments().then(setData).catch(() => setData({ data: [], statuses: [] }))
   useEffect(() => { reload() }, [])
   const rows = data?.data || []
   const statuses = data?.statuses || []
-  const advance = async (id, status) => { await portalApi.logistics.updateStatus(id, status).catch(() => {}); reload() }
+  const advance = async (id, status) => { await api.logistics.updateStatus(id, status).catch(() => {}); reload() }
   return (
     <Wrap>
       <style>{CSS}</style>

@@ -14,7 +14,7 @@ class VendorAward extends Model
     protected $table = 'vendor_awards';
 
     protected $fillable = [
-        'tenant_id', 'vendor_id', 'title', 'category', 'description', 'awarded_on', 'granted_by',
+        'tenant_id', 'vendor_id', 'purchase_vendor_id', 'title', 'category', 'description', 'awarded_on', 'granted_by',
     ];
 
     protected $casts = [

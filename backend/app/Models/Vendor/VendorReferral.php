@@ -15,7 +15,7 @@ class VendorReferral extends Model
     public const STATUSES = ['New', 'Contacted', 'Converted', 'Declined'];
 
     protected $fillable = [
-        'tenant_id', 'referred_by_vendor_id', 'company_name', 'contact_name',
+        'tenant_id', 'referred_by_vendor_id', 'referred_by_purchase_vendor_id', 'company_name', 'contact_name',
         'contact_email', 'contact_phone', 'note', 'status',
     ];
 

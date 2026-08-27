@@ -8,22 +8,22 @@ import { portalApi } from '@/services/portalApi'
  * (the vendor submits companies it recommends). Nothing here lets a vendor change
  * its own score — assessment/awards/violations are admin authority.
  */
-export default function MyPerformance({ view }) {
+export default function MyPerformance({ view, api = portalApi }) {
   switch (view) {
-    case 'penalty':  return <Penalty />
-    case 'feedback': return <Feedback />
-    case 'award':    return <Awards />
-    case 'referral': return <Referrals />
-    default:         return <Risk />
+    case 'penalty':  return <Penalty api={api} />
+    case 'feedback': return <Feedback api={api} />
+    case 'award':    return <Awards api={api} />
+    case 'referral': return <Referrals api={api} />
+    default:         return <Risk api={api} />
   }
 }
 
 const TIER_TONE = { critical: '#ef4444', high: '#f59e0b', medium: '#3b82f6', low: '#22c55e' }
 
-function Risk() {
+function Risk({ api }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
-  useEffect(() => { portalApi.performance.risk().then(setData).finally(() => setLoading(false)) }, [])
+  useEffect(() => { api.performance.risk().then(setData).finally(() => setLoading(false)) }, [])
 
   if (loading) return <Center><Loader2 className="mp-spin" size={22} /></Center>
 
@@ -83,10 +83,10 @@ function Gauge({ score, tone }) {
 }
 
 const SEV_TONE = { critical: '#ef4444', major: '#f59e0b', minor: '#3b82f6', low: '#22c55e' }
-function Penalty() {
+function Penalty({ api }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
-  useEffect(() => { portalApi.performance.violations().then(setData).finally(() => setLoading(false)) }, [])
+  useEffect(() => { api.performance.violations().then(setData).finally(() => setLoading(false)) }, [])
   if (loading) return <Center><Loader2 className="mp-spin" size={22} /></Center>
 
   const rows = data?.data || []
@@ -128,10 +128,10 @@ function Penalty() {
 }
 
 /* ── Feedback — the vendor's own performance rating (read-only) ─────────── */
-function Feedback() {
+function Feedback({ api }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
-  useEffect(() => { portalApi.performance.feedback().then(setData).finally(() => setLoading(false)) }, [])
+  useEffect(() => { api.performance.feedback().then(setData).finally(() => setLoading(false)) }, [])
   if (loading) return <Center><Loader2 className="mp-spin" size={22} /></Center>
 
   const live = data?.live || {}
@@ -178,9 +178,9 @@ function Bar({ label, score }) {
 }
 
 /* ── Award / Reward — read-only recognitions the vendor earned ──────────── */
-function Awards() {
+function Awards({ api }) {
   const [rows, setRows] = useState(null)
-  useEffect(() => { portalApi.performance.awards().then(d => setRows(d?.data || [])).catch(() => setRows([])) }, [])
+  useEffect(() => { api.performance.awards().then(d => setRows(d?.data || [])).catch(() => setRows([])) }, [])
   if (rows === null) return <Center><Loader2 className="mp-spin" size={22} /></Center>
 
   return (
@@ -209,10 +209,10 @@ function Awards() {
 }
 
 /* ── Referral — the vendor submits companies it recommends (write) ──────── */
-function Referrals() {
+function Referrals({ api }) {
   const [rows, setRows] = useState(null)
   const [adding, setAdding] = useState(false)
-  const reload = () => portalApi.performance.referrals().then(d => setRows(d?.data || [])).catch(() => setRows([]))
+  const reload = () => api.performance.referrals().then(d => setRows(d?.data || [])).catch(() => setRows([]))
   useEffect(() => { reload() }, [])
 
   return (
@@ -243,11 +243,11 @@ function Referrals() {
             </div>
           </div>
         )}
-      {adding && <ReferralForm onClose={() => setAdding(false)} onDone={() => { setAdding(false); reload() }} />}
+      {adding && <ReferralForm api={api} onClose={() => setAdding(false)} onDone={() => { setAdding(false); reload() }} />}
     </Wrap>
   )
 }
-function ReferralForm({ onClose, onDone }) {
+function ReferralForm({ api, onClose, onDone }) {
   const [form, setForm] = useState({ company_name: '', contact_name: '', contact_email: '', contact_phone: '', note: '' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -256,7 +256,7 @@ function ReferralForm({ onClose, onDone }) {
     setError('')
     if (!form.company_name.trim()) { setError('Company name is required.'); return }
     setSaving(true)
-    try { await portalApi.performance.submitReferral(form); onDone() }
+    try { await api.performance.submitReferral(form); onDone() }
     catch (e) { setError(e?.response?.data?.message || 'Could not submit the referral.') }
     finally { setSaving(false) }
   }
