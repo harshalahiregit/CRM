@@ -36,6 +36,8 @@ import { VendorAttachments } from '@/modules/tpv/components/VendorAttachmentsPan
 import { VendorRiskPanel } from '@/modules/tpv/components/VendorRiskPanel'
 import { VendorPrequalificationPanel } from '@/modules/tpv/components/VendorPrequalificationPanel'
 import { VendorMeetingsPanel } from '@/modules/tpv/components/VendorMeetingsPanel'
+import { VendorAwardsPanel, VendorReferralsPanel, VendorFeedbackPanel, VendorPenaltyPanel } from '@/modules/tpv/components/VendorPerformancePanels'
+import { VendorShipmentsAdminPanel } from '@/modules/tpv/components/VendorShipmentsAdminPanel'
 
 /**
  * The Vendor Detail navigation — 6 groups, 38 sections. This drives BOTH the left
@@ -79,8 +81,6 @@ const NAV_GROUPS = [
  */
 const NOT_APPLICABLE = {
   'ToDo':               'Vendor to-dos are tracked in Tasks.',
-  'Pre Alert':          'Pre-alerts are a Customer module concept (client_pre_alerts).',
-  'Package':            'Packages are a Customer module concept (client_packages).',
   'Job':                'No vendor job concept exists — the `jobs` table is the queue, and hr_job_* is recruitment.',
 }
 
@@ -508,6 +508,19 @@ function SectionContent({ tab, v, isActive, manage, api, moduleName, onDecision,
     // distinct from the VRS performance scorecard shown on Overview.
     case 'Risk Score':
       return <VendorRiskPanel vendorId={v.id} vendor={v} manage={manage} api={api} />
+    // Performance — the admin mirror of the vendor portal's Performance section.
+    case 'Award / Reward':
+      return <VendorAwardsPanel vendorId={v.id} manage={manage} api={api} />
+    case 'Referrals':
+      return <VendorReferralsPanel vendorId={v.id} manage={manage} api={api} />
+    case 'Feedback':
+      return <VendorFeedbackPanel vendorId={v.id} api={api} />
+    case 'Penalty':
+      return <VendorPenaltyPanel vendorId={v.id} api={api} />
+    // Compliance & HSSE — the vendor's dispatch notices (portal Pre-Alert/Packages/Shipping).
+    case 'Pre Alert':
+    case 'Package':
+      return <VendorShipmentsAdminPanel vendorId={v.id} api={api} />
     // Prequalification (gap report area 6) — scored questionnaire → Qualified /
     // Conditional / Not Qualified; gates approval (slice B4).
     case 'Prequalification':

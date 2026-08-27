@@ -413,6 +413,21 @@ export const tpvApi = {
     // Vendor Prequalification (gap report area 6) — scored questionnaire → outcome.
     prequalification:       (id)       => api.get(`/tpv/vendors/${id}/prequalification`).then(r => r.data),
     assessPrequalification: (id, data) => api.put(`/tpv/vendors/${id}/prequalification`, data).then(r => r.data),
+    // Performance › Award / Reward — admin grants; vendor views in its portal.
+    awards: {
+      list:   (vid)       => api.get(`/tpv/vendors/${vid}/awards`).then(r => r.data),
+      grant:  (vid, data) => api.post(`/tpv/vendors/${vid}/awards`, data).then(r => r.data),
+      delete: (vid, id)   => api.delete(`/tpv/vendors/${vid}/awards/${id}`).then(r => r.data),
+    },
+    // Performance › Referral — the vendor submits; admin works the prospect.
+    referrals: {
+      list:      (vid)             => api.get(`/tpv/vendors/${vid}/referrals`).then(r => r.data),
+      setStatus: (vid, id, status) => api.patch(`/tpv/vendors/${vid}/referrals/${id}/status`, { status }).then(r => r.data),
+    },
+    // Performance › Penalty — this vendor's violations (the /tpv/violations register, filtered).
+    violations: (vid) => api.get('/tpv/violations', { params: { vendor_id: vid } }).then(r => r.data),
+    // Compliance & HSSE › Shipments — the vendor's dispatch notices (admin tracks).
+    shipments:  (vid) => api.get(`/tpv/vendors/${vid}/shipments`).then(r => r.data),
     // Customers directly linked to this vendor (clients.vendor_id).
     customers: {
       list:   (vid)       => api.get(`/tpv/vendors/${vid}/customers`).then(r => r.data),

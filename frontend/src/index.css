@@ -818,6 +818,7 @@ html.light .header-3d {
 @keyframes float     { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
 @keyframes swipePulse{ 0%,100%{transform:translateX(0)} 50%{transform:translateX(4px)} }
 @keyframes spin      { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+.tpv-spin { animation: spin .9s linear infinite; }
 @keyframes spin3d    { from{transform:rotateY(0deg)} to{transform:rotateY(360deg)} }
 @keyframes tiltIn    { from{transform:perspective(600px) rotateX(8deg);opacity:0} to{transform:perspective(600px) rotateX(0);opacity:1} }
 @keyframes slideInRight { from{transform:translateX(100%);opacity:0} to{transform:translateX(0);opacity:1} }

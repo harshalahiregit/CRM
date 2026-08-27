@@ -105,7 +105,9 @@ Last updated: 2026-08-27.
   table + `VendorReferral` model. Portal: `GET/POST /portal/referrals` + submit form. Admin:
   `GET /tpv/vendors/{v}/referrals` + `PATCH .../{r}/status`.
 - Phase 5 guarded by `PortalPerformanceViewTest` (6): risk, unassessed, violations, award grant→view, referral submit/isolation, feedback scorecard.
-- [ ] Admin UI panels in TpvVendorDetail for Awards (grant form) + Referrals (status) — backend done, panel wiring is the follow-up.
+- [x] **Admin UI panels** (TpvVendorDetail): Award/Reward (grant form + delete), Referrals (list +
+  status select), Feedback (VRS scorecard), Penalty (this vendor's violations + points). New
+  `VendorPerformancePanels.jsx`; wired into the Performance nav group. Guarded by `VendorAdminMirrorTest` (3).
 - [ ] Purchase-portal parity for the Performance section (Purchase has its own perf/violation stack).
 
 ## Phase 6 — EXTRA (define with user, build last)
@@ -123,6 +125,7 @@ Last updated: 2026-08-27.
 - **General follow-ups:** Overview, Customer, Medical/Training surfacing.
 - **Phase 5 Performance DONE** (TPV portal): Risk Score · Feedback · Penalty · Award · Referral.
 - **Phase 4 Compliance & HSSE DONE** (TPV portal): Comply · Documents · PTW · Incidents · Pre-Alert · Packages · Shipping.
-- **Next queued:** Phase 6 Extra (Apps/Widgets/Ecommerce — needs scope). Follow-ups: admin UI panels
-  (Award/Referral/Shipments) · Purchase-portal parity (Execution/Performance/HSSE) · Execution vendor-writes
-  (ticket raise/reply, task status, expenses) · General Overview/Customer.
+- **Admin panels DONE:** Performance (Award grant/delete, Referral status, Feedback scorecard, Penalty
+  violations) + Compliance Shipments (Pre Alert/Package → VendorShipmentsAdminPanel). `VendorAdminMirrorTest` (3).
+- **Next queued:** Phase 6 Extra (Apps/Widgets/Ecommerce — needs scope). Follow-ups: Purchase-portal parity
+  (Execution/Performance/HSSE) · Execution vendor-writes (ticket raise/reply, task status, expenses) · General Overview/Customer.
