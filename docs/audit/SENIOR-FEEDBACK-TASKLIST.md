@@ -53,13 +53,13 @@ Last updated: 2026-08-27.
 - [ ] ⚠ **PR3. Feedback gate:** share feedback via WhatsApp/email when set to "awaiting feedback"; a task/project can't be "Completed" until feedback is received; once received & completed, a PI is generated. NEEDS DECISION: how "feedback received" is recorded (customer reply link vs admin marks received).
 
 ## Settings
-- [ ] ⚠ **ST1. Email for each and every account.** NEEDS DECISION: per-tenant SMTP already exists — do you mean a per-staff-user sender identity?
+- [x] **ST1. Per-user sender identity.** DECISION: each staff user sets their own From name/email (My Profile → Email sender identity); `TenantMailer` uses the signed-in user's identity as the From (over the tenant default) for mail they trigger, falling back to the tenant/config default when unset. Guarded by `PerUserSenderIdentityTest` (4).
 - [x] **ST2. Recover deleted items** — a global **Recycle Bin** settings page (admin-only) listing soft-deleted Tax Invoices, Estimates/PIs, Projects, Tasks and Tickets, each restorable in one click. `GET /settings/recycle-bin` + `POST /settings/recycle-bin/restore`, tenant-scoped. Guarded by `RecycleBinTest` (3).
 
 ---
 
 ### Progress
-- **Done:** T1, T2, V1, V2, V3, V4, PI4, PI6, PI8, TI1, TI3, RP1, RP2.
+- **Done (18):** T1, T2, V1, V2, V3, V4, PI4, PI6, PI8, TI1, TI3, RP1, RP2, PR1, PR2, ST1, ST2 — plus V2 (pre-existing).
 - **Deferred:** C1, C2 (Call CRM).
-- **Open — clear, remaining (larger builds):** PI1 (item search — mostly exists), PI2 (HSN/SAC + govt import), PI3 (GST auto-detect), PI5 (edit PI — full build), PI9 (partial-pay + TDS + tag on PI), PI10 (items→task), PR2 (project→PI), ST2 (recover deleted / recycle bin).
-- **Open — needs a decision (⚠):** V5, PI7, PI11, TI2, PR1, PR3, ST1.
+- **Open — clear, remaining:** PI1 (item search — mostly exists), PI2 (HSN/SAC + govt import), PI3 (GST auto-detect), PI5 (edit PI — full build), PI9 (partial-pay + TDS + tag on PI), PI10 (items→task), PR3 (feedback full flow — decided, task-vs-project + WhatsApp-config to confirm).
+- **Open — needs a decision (⚠):** V5, PI7, PI11, TI2.

@@ -14,6 +14,7 @@ class User extends Authenticatable
 
     protected $fillable = [
         'tenant_id', 'external_company_id', 'name', 'email', 'password',
+        'mail_from_name', 'mail_from_email',
         'role', 'internal_role', 'department', 'status',
         'vendor_type', 'tpv_type', 'access_expires_at',
         'phone', 'company', 'designation', 'avatar', 'meta', 'emails_enabled',

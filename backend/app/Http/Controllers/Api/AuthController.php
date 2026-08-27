@@ -276,11 +276,14 @@ class AuthController extends Controller
         $user = $request->user();
 
         $data = $request->validate([
-            'name'           => 'required|string|max:255',
-            'phone'          => ['nullable', 'string', 'max:30', new \App\Rules\PhoneNumber()],
-            'designation'    => 'nullable|string|max:120',
-            'department'     => 'nullable|string|max:120',
-            'emails_enabled' => 'nullable|boolean',
+            'name'            => 'required|string|max:255',
+            'phone'           => ['nullable', 'string', 'max:30', new \App\Rules\PhoneNumber()],
+            'designation'     => 'nullable|string|max:120',
+            'department'      => 'nullable|string|max:120',
+            'emails_enabled'  => 'nullable|boolean',
+            // ST1 — the user's own outgoing-mail sender identity.
+            'mail_from_name'  => 'nullable|string|max:120',
+            'mail_from_email' => 'nullable|email|max:191',
         ]);
 
         $user->fill($data)->save();
@@ -290,7 +293,7 @@ class AuthController extends Controller
             'message' => 'Profile updated',
             'data'    => $user->fresh()->only([
                 'id', 'name', 'email', 'phone', 'designation', 'department',
-                'role', 'internal_role', 'emails_enabled',
+                'role', 'internal_role', 'emails_enabled', 'mail_from_name', 'mail_from_email',
             ]),
         ]);
     }
