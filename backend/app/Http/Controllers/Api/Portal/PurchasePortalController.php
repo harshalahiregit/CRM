@@ -100,6 +100,51 @@ class PurchasePortalController extends Controller
         return response()->json(['dismissed' => true]);
     }
 
+    /**
+     * Knowledge Base — the tenant's published articles (read-only). KB is
+     * tenant-global; scoped here to the caller vendor's tenant. Mirrors the TPV
+     * portal KB so both portals stay at parity.
+     */
+    public function kbArticles(Request $request)
+    {
+        $vendor = $this->purchaseVendor($request);
+
+        $articles = \App\Models\Helpdesk\KbArticle::where('tenant_id', $vendor->tenant_id)
+            ->published()
+            ->with('category:id,name')
+            ->latest('published_at')
+            ->limit((int) $request->integer('limit', 50))
+            ->get(['id', 'category_id', 'title', 'excerpt', 'public_slug', 'published_at']);
+
+        return response()->json(['data' => $articles->map(fn ($a) => [
+            'id'           => $a->id,
+            'title'        => $a->title,
+            'excerpt'      => $a->excerpt,
+            'slug'         => $a->public_slug,
+            'category'     => $a->category?->name,
+            'published_at' => optional($a->published_at)->toDateString(),
+        ])]);
+    }
+
+    public function kbArticle(Request $request, string $slug)
+    {
+        $vendor = $this->purchaseVendor($request);
+
+        $article = \App\Models\Helpdesk\KbArticle::where('tenant_id', $vendor->tenant_id)
+            ->published()
+            ->with('category:id,name')
+            ->where('public_slug', $slug)
+            ->firstOrFail(['id', 'category_id', 'title', 'excerpt', 'content', 'public_slug', 'published_at']);
+
+        return response()->json(['data' => [
+            'id'       => $article->id,
+            'title'    => $article->title,
+            'excerpt'  => $article->excerpt,
+            'content'  => $article->content,
+            'category' => $article->category?->name,
+        ]]);
+    }
+
     /** Rich dashboard for the caller's own Purchase vendor. */
     public function dashboard(Request $request)
     {

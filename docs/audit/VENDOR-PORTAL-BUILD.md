@@ -33,14 +33,20 @@ Last updated: 2026-08-27.
 **Built-route map today** — TPV: dashboard, onboarding, profile(registration), comply(compliance), documents + extras {workforce, governance, support}. Purchase: dashboard, onboarding, profile, comply, documents, meeting(kickoff) + extras {workforce, ppe, governance, approval, support}. Everything else in the tree → ComingSoon until its phase ships.
 
 ## Phase 1 — General
-- [~] Overview, Customer — mostly done (T1 + earlier plan); verify in portal + admin.
-- [ ] Overview dashboard counts surfaced in portal.
+- [x] **Contact** — shared `PortalContacts.jsx` (api-prop driven), on BOTH portals. TPV
+  uses `name`; Purchase uses first/last + more (each passes a `fields` descriptor). Add/
+  edit/primary/status. Backends already existed.
+- [ ] Overview — portal summary page (note: overlaps existing Dashboard; low priority).
+- [ ] Customer — needs a portal endpoint (admin has `/vendors/{id}/customers`).
+- [~] Medical / Training — already exist under Workforce; revisit surfacing as General items.
 
 ## Phase 2 — Execution (surface existing backends)
-- [ ] Project — portal detail page (read-only)
-- [ ] Tasks — portal detail + **vendor can update status**
-- [ ] Ticket — portal list + **vendor can raise & reply**
-- [ ] KB — portal browse/search + reader
+- [x] **KB** — shared `PortalKb.jsx` browse (grouped by category) + search + article reader,
+  on BOTH portals. Added `PurchasePortalController::kbArticles/kbArticle` + routes for parity
+  (TPV KB was under the role-gated my-work group). Guarded by `PurchasePortalKbTest` (2).
+- [ ] Project — portal detail page (read-only) [TPV my-work data exists]
+- [ ] Tasks — portal detail + **vendor can update status** [VendorTaskLink powers both portals]
+- [ ] Ticket — portal list + **vendor can raise & reply** (client-portal pattern to copy)
 - [ ] Meeting — portal (exists via Governance; give it its own section)
 - [ ] Notes — ownership-scoped `portal/*` endpoint + page
 - [ ] Attachments — ownership-scoped `portal/*` endpoint + page

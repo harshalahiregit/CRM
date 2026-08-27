@@ -31,8 +31,10 @@ export default function VendorPortalShell() {
         dashboard:  'dashboard',
         onboarding: 'onboarding',
         profile:    'registration',   // "My Company"
+        contact:    'contacts',
         comply:     'compliance',
         documents:  'documents',      // statutory documents / files
+        kb:         'kb',
       }}
       extraGroups={[
         {

@@ -254,6 +254,8 @@ const PurchaseKickoffDetail = lazy(() => import('@/modules/purchase/pages/Purcha
 const PurchasePortalShell = lazy(() => import('@/pages/purchase-portal/PurchasePortalShell'))
 const PurchasePortalDashboard = lazy(() => import('@/pages/purchase-portal/PurchasePortalDashboard'))
 const PurchasePortalCommercial = lazy(() => import('@/pages/purchase-portal/PurchasePortalCommercial'))
+const PurchaseMyContacts = lazy(() => import('@/pages/purchase-portal/PurchaseMyContacts'))
+const PurchaseMyKb = lazy(() => import('@/pages/purchase-portal/PurchaseMyKb'))
 const PurchasePortalOnboarding = lazy(() => import('@/pages/purchase-portal/PurchasePortalOnboarding'))
 const PurchasePortalDocuments = lazy(() => import('@/pages/purchase-portal/PurchasePortalDocuments'))
 const PurchasePortalApproval = lazy(() => import('@/pages/purchase-portal/PurchasePortalApproval'))
@@ -362,6 +364,8 @@ const MyRegistrationStatus = lazy(() => import('@/pages/vendor-portal/MyRegistra
 const PortalOnboardingEntry = lazy(() => import('@/pages/vendor-portal/PortalOnboardingEntry'))
 const PortalDashboard = lazy(() => import('@/pages/vendor-portal/PortalDashboard'))
 const PortalComingSoon = lazy(() => import('@/pages/vendor-portal/PortalComingSoon'))
+const MyContacts = lazy(() => import('@/pages/vendor-portal/MyContacts'))
+const MyKb = lazy(() => import('@/pages/vendor-portal/MyKb'))
 const PortalDocuments = lazy(() => import('@/pages/vendor-portal/PortalDocuments'))
 const PortalSupport = lazy(() => import('@/pages/vendor-portal/PortalSupport'))
 const PortalOrderDetail = lazy(() => import('@/pages/vendor-portal/PortalOrderDetail'))
@@ -869,6 +873,8 @@ export default function AppRoutes() {
 
         {/* Purchase-side vendor routes (vendor role only) */}
         <Route path="documents"         element={<S><PortalDocuments /></S>} />
+        <Route path="contacts"          element={<S><MyContacts /></S>} />
+        <Route path="kb"                element={<S><MyKb /></S>} />
         <Route path="orders/:id"        element={<S><PortalOrderDetail /></S>} />
         <Route path="invoices/:id"      element={<S><PortalInvoiceDetail /></S>} />
 
@@ -938,6 +944,8 @@ export default function AppRoutes() {
         <Route path="debit-notes" element={<S><PurchasePortalCommercial view="debit-notes" /></S>} />
         <Route path="statement"   element={<S><PurchasePortalCommercial view="statement" /></S>} />
         <Route path="payments"    element={<S><PurchasePortalCommercial view="payments" /></S>} />
+        <Route path="contacts"    element={<S><PurchaseMyContacts /></S>} />
+        <Route path="kb"          element={<S><PurchaseMyKb /></S>} />
 
         {/* Roadmap sections not yet built — the full nav tree stays navigable. */}
         <Route path="s/:key"     element={<S><PortalComingSoon /></S>} />

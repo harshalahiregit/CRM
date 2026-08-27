@@ -162,6 +162,12 @@ export const purchasePortalApi = {
     submitQuote: (id, body)  => api.post(`/portal/purchase/rfqs/${id}/quotation`, body).then(r => r.data),
   },
 
+  // ── Knowledge Base (tenant-published, read-only) — parity with TPV portal ──
+  kb: {
+    list:    ()     => api.get('/portal/purchase/kb').then(r => r.data?.data ?? r.data),
+    article: (slug) => api.get(`/portal/purchase/kb/${slug}`).then(r => r.data?.data ?? r.data),
+  },
+
   // §32 "View compliance" — the vendor's own compliance register (read-only).
   compliance: {
     get: () => api.get('/portal/purchase/compliance').then(r => r.data),

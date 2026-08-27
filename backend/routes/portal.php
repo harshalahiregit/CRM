@@ -165,6 +165,9 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal'])->prefix('portal/pu
     Route::get('/ppe/summary',                        [PurchasePortalController::class, 'ppeSummary']);
     Route::get('/ppe/item/{product}/image',           [\App\Http\Controllers\Api\Tpv\PpeController::class, 'image']);
     Route::get('/tasks',                              [PurchasePortalController::class, 'tasks']);
+    // Knowledge Base (tenant-published, read-only) — parity with the TPV portal.
+    Route::get('/kb',                                 [PurchasePortalController::class, 'kbArticles']);
+    Route::get('/kb/{slug}',                          [PurchasePortalController::class, 'kbArticle']);
     Route::get('/me',                                 [PurchasePortalController::class, 'me']);
     // One-time post-activation welcome banner (dismissal persisted server-side).
     Route::post('/welcome/dismiss',                   [PurchasePortalController::class, 'dismissWelcomeBanner']);

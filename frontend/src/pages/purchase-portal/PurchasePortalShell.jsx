@@ -27,8 +27,10 @@ export default function PurchasePortalShell() {
         dashboard:  'dashboard',
         onboarding: 'onboarding',
         profile:    'profile',
+        contact:    'contacts',
         comply:     'compliance',
         documents:  'documents',
+        kb:         'kb',
         meeting:    'kickoff',   // Purchase kickoff meeting
         // Commercial — read-only documents raised against this vendor.
         'quotation':          'quotations',
