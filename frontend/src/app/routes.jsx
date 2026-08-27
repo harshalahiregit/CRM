@@ -41,6 +41,18 @@ const PublicScanAccess = lazy(() => import('@/pages/public/PublicScanAccess'))
 
 // HR Module (lazy)
 const HRLayout = lazy(() => import('@/modules/hr/HRLayout'))
+// SangoeTrack screens — read and write track.sangoe.in, store nothing here.
+const TrackAttendance     = lazy(() => import('@/modules/hr/pages/track/TrackAttendance'))
+const TrackCorrections    = lazy(() => import('@/modules/hr/pages/track/TrackCorrections'))
+const TrackLeave          = lazy(() => import('@/modules/hr/pages/track/TrackLeave'))
+const TrackReimbursements = lazy(() => import('@/modules/hr/pages/track/TrackReimbursements'))
+const TrackAdvances       = lazy(() => import('@/modules/hr/pages/track/TrackAdvances'))
+const TrackStaff          = lazy(() => import('@/modules/hr/pages/track/TrackStaff'))
+const TrackPayroll        = lazy(() => import('@/modules/hr/pages/track/TrackPayroll'))
+const TrackDemoRequests   = lazy(() => import('@/modules/hr/pages/track/TrackDemoRequests'))
+const TrackReports        = lazy(() => import('@/modules/hr/pages/track/TrackReports'))
+const TrackHolidays       = lazy(() => import('@/modules/hr/pages/track/TrackHolidays'))
+const TrackSettings       = lazy(() => import('@/modules/hr/pages/track/TrackSettings'))
 const HRDashboard = lazy(() => import('@/modules/hr/pages/HRDashboard'))
 const ManpowerRequests = lazy(() => import('@/modules/hr/pages/ManpowerRequests'))
 const JobPostings = lazy(() => import('@/modules/hr/pages/JobPostings'))
@@ -475,6 +487,19 @@ export default function AppRoutes() {
           <Route path="recruiter-workspace" element={<S><RecruiterWorkspace /></S>} />
           <Route path="company-approvals" element={<S><CompanyApprovals /></S>} />
           <Route path="attendance" element={<S><Attendance /></S>} />
+            {/* SangoeTrack — live from track.sangoe.in. Namespaced under track/
+                so the CRM's own attendance page above keeps its route. */}
+            <Route path="track/attendance" element={<S><TrackAttendance /></S>} />
+            <Route path="track/corrections" element={<S><TrackCorrections /></S>} />
+            <Route path="track/leave" element={<S><TrackLeave /></S>} />
+            <Route path="track/reimbursements" element={<S><TrackReimbursements /></S>} />
+            <Route path="track/advances" element={<S><TrackAdvances /></S>} />
+            <Route path="track/staff" element={<S><TrackStaff /></S>} />
+            <Route path="track/payroll" element={<S><TrackPayroll /></S>} />
+            <Route path="track/demo-requests" element={<S><TrackDemoRequests /></S>} />
+            <Route path="track/reports" element={<S><TrackReports /></S>} />
+            <Route path="track/holidays" element={<S><TrackHolidays /></S>} />
+            <Route path="track/settings" element={<S><TrackSettings /></S>} />
           <Route path="organization-setup" element={<S><OrganizationSetup /></S>} />
           <Route path="org-chart" element={<S><OrgChart /></S>} />
           <Route path="interview-questions" element={<S><InterviewQuestionBank /></S>} />
