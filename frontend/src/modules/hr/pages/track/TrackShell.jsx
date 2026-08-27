@@ -9,7 +9,8 @@
  */
 
 import { useState } from 'react'
-import { RefreshCw, Inbox, Check, X } from 'lucide-react'
+import { RefreshCw, Inbox, Check, X, Download } from 'lucide-react'
+import { exportCsv } from '@/lib/exportCsv'
 import LoadError from '@/components/ui/LoadError'
 import EmptyState from '@/components/ui/EmptyState'
 import { trackErrorMessage } from '@/services/sangoeTrackApi'
@@ -102,6 +103,38 @@ export function FieldGrid({ children }) {
     <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))' }}>
       {children}
     </div>
+  )
+}
+
+/* ── export ──────────────────────────────────────────────────────────── */
+
+/**
+ * CSV of exactly what is on screen — same filters, same date range.
+ *
+ * "Export this" means the thing you are looking at, so it takes the already
+ * filtered rows rather than re-fetching everything. The one thing to be careful
+ * of: on a paginated history view this exports the CURRENT PAGE, and the button
+ * says so rather than letting someone believe they have the lot.
+ */
+export function ExportButton({ filename, rows, columns, total }) {
+  const n = rows?.length ?? 0
+  const partial = total != null && total > n
+
+  return (
+    <button
+      onClick={() => exportCsv(filename, rows, columns)}
+      disabled={n === 0}
+      title={
+        n === 0 ? 'Nothing to export'
+          : partial ? `Exports the ${n} rows on this page, not all ${total}`
+          : `Export ${n} rows`
+      }
+      className="rounded-lg text-xs font-semibold flex items-center gap-1.5 disabled:opacity-40"
+      style={{ padding: '7px 12px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }}
+    >
+      <Download size={13} />
+      {partial ? `Export page (${n})` : 'Export'}
+    </button>
   )
 }
 

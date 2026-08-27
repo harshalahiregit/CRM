@@ -18,7 +18,7 @@ import useTrackApprovals from './useTrackApprovals'
 import useTrackHistory from './useTrackHistory'
 import {
   TrackHeader, TrackList, TrackCard, FieldGrid, Field, DecisionBar,
-  QueueTabs, HistoryFilters, HistoryPager, Outcome, DecidedBy,
+  QueueTabs, HistoryFilters, HistoryPager, Outcome, DecidedBy, ExportButton,
 } from './TrackShell'
 
 /** '09:15:00' → '09:15'. */
@@ -33,6 +33,19 @@ function span(from, to) {
   if (mins < 0) mins += 24 * 60          // crossed midnight
   return `${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, '0')}m`
 }
+
+const CSV = [
+  { key: 'employee_name',   label: 'Employee' },
+  { key: 'attendance_date', label: 'Date' },
+  { key: 'login_time',      label: 'Clock in' },
+  { key: 'logout_time',     label: 'Clock out' },
+  { key: 'reason',          label: 'Their reason' },
+  { key: 'status',          label: 'Outcome' },
+  { key: 'decided_by',      label: 'Decided by' },
+  { key: 'decided_at',      label: 'Decided at' },
+  { key: 'admin_remarks',   label: 'Remarks' },
+  { key: 'applied_on',      label: 'Applied on' },
+]
 
 export default function TrackCorrections() {
   const [tab, setTab] = useState('pending')
@@ -71,7 +84,11 @@ export default function TrackCorrections() {
         </TrackList>
       ) : (
         <>
-          <HistoryFilters {...past} setFilter={past.setFilter} clear={past.clear} />
+          <HistoryFilters {...past} setFilter={past.setFilter} clear={past.clear}>
+            <ExportButton
+              filename={`corrections-${past.filters.from || "all"}-to-${past.filters.to || "now"}`}
+              rows={past.rows} columns={CSV} total={past.meta?.total} />
+          </HistoryFilters>
 
           <TrackList loading={past.loading} error={past.error} rows={past.rows} onRetry={past.reload} noun="corrections">
             {past.rows.map(r => (

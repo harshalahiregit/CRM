@@ -19,7 +19,7 @@ import useTrackApprovals from './useTrackApprovals'
 import useTrackHistory from './useTrackHistory'
 import {
   TrackHeader, TrackList, TrackCard, FieldGrid, Field, DecisionBar,
-  QueueTabs, HistoryFilters, HistoryPager, Outcome, DecidedBy,
+  QueueTabs, HistoryFilters, HistoryPager, Outcome, DecidedBy, ExportButton,
 } from './TrackShell'
 
 function BalanceStrip({ balance }) {
@@ -70,6 +70,18 @@ function BalanceStrip({ balance }) {
   )
 }
 
+const CSV = [
+  { key: 'employee_name',    label: 'Employee' },
+  { key: 'leave_type',       label: 'Type' },
+  { key: 'start_date',       label: 'From' },
+  { key: 'end_date',         label: 'To' },
+  { key: 'total_leave_days', label: 'Days' },
+  { key: 'reason',           label: 'Their reason' },
+  { key: 'status',           label: 'Outcome' },
+  { key: 'remark',           label: 'Remark' },
+  { key: 'applied_on',       label: 'Applied on' },
+]
+
 export default function TrackLeave() {
   const [tab, setTab] = useState('pending')
   const { rows, loading, error, reload } = useTrackApprovals('leaves')
@@ -88,7 +100,11 @@ export default function TrackLeave() {
 
       {tab === 'history' && (
         <>
-          <HistoryFilters {...past} setFilter={past.setFilter} clear={past.clear} />
+          <HistoryFilters {...past} setFilter={past.setFilter} clear={past.clear}>
+            <ExportButton
+              filename={`leave-${past.filters.from || "all"}-to-${past.filters.to || "now"}`}
+              rows={past.rows} columns={CSV} total={past.meta?.total} />
+          </HistoryFilters>
           <TrackList loading={past.loading} error={past.error} rows={past.rows} onRetry={past.reload} noun="leave applications">
             {past.rows.map(l => (
               <TrackCard key={l.id} who={l.employee_name} when={l.applied_on}>

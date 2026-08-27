@@ -17,12 +17,28 @@ import useTrackApprovals from './useTrackApprovals'
 import useTrackHistory from './useTrackHistory'
 import {
   TrackHeader, TrackList, TrackCard, FieldGrid, Field, DecisionBar,
-  QueueTabs, HistoryFilters, HistoryPager, Outcome, DecidedBy,
+  QueueTabs, HistoryFilters, HistoryPager, Outcome, DecidedBy, ExportButton,
 } from './TrackShell'
 
 const inr = n =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 })
     .format(Number(n) || 0)
+
+const CSV = [
+  { key: 'employee_name', label: 'Employee' },
+  { key: 'title',         label: 'Claim' },
+  { key: 'description',   label: 'Description' },
+  // The raw number, not the formatted string — a spreadsheet has to be able to
+  // sum this column, which it cannot do with a rupee symbol in the cell.
+  { key: 'amount',        label: 'Amount' },
+  { key: 'expense_date',  label: 'Spent on' },
+  { key: 'status',        label: 'Outcome' },
+  { key: 'decided_by',    label: 'Decided by' },
+  { key: 'decided_at',    label: 'Decided at' },
+  { key: 'admin_remarks', label: 'Remarks' },
+  { key: 'receipt',       label: 'Receipt URL' },
+  { key: 'submitted_on',  label: 'Submitted on' },
+]
 
 export default function TrackReimbursements() {
   const [tab, setTab] = useState('pending')
@@ -49,7 +65,11 @@ export default function TrackReimbursements() {
 
       {tab === 'history' && (
         <>
-          <HistoryFilters {...past} setFilter={past.setFilter} clear={past.clear} />
+          <HistoryFilters {...past} setFilter={past.setFilter} clear={past.clear}>
+            <ExportButton
+              filename={`reimbursements-${past.filters.from || "all"}-to-${past.filters.to || "now"}`}
+              rows={past.rows} columns={CSV} total={past.meta?.total} />
+          </HistoryFilters>
 
           {/* Totals across the WHOLE filtered set, sent by the server — a footer
               summing the 25 rows on screen would look like an answer and not be one. */}

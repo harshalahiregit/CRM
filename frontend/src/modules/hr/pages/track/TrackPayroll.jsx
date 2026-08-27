@@ -20,11 +20,28 @@ import { sangoeTrackApi, trackErrorMessage } from '@/services/sangoeTrackApi'
 import { useToast } from '@/hooks/useToast'
 import LoadError from '@/components/ui/LoadError'
 import EmptyState from '@/components/ui/EmptyState'
-import { TrackHeader } from './TrackShell'
+import { TrackHeader, ExportButton } from './TrackShell'
 
 const inr = n =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })
     .format(Number(n) || 0)
+
+/**
+ * Salaries as a spreadsheet. Raw numbers, not formatted currency — a payroll
+ * export that cannot be summed is not much of an export.
+ */
+const CSV = [
+  { key: 'name',             label: 'Name' },
+  { key: 'employee_code',    label: 'Employee code' },
+  { key: 'department',       label: 'Department' },
+  { key: 'designation',      label: 'Designation' },
+  { key: 'branch',           label: 'Branch' },
+  { key: 'joining_date',     label: 'Joined' },
+  { key: 'salary_type_name', label: 'Payslip type' },
+  { key: 'salary',           label: 'Monthly salary' },
+  { key: 'annual_salary',    label: 'Annual salary' },
+  { label: 'Salary set', value: r => (r.salary_set ? 'Yes' : 'No') },
+]
 
 /* ── set a salary ────────────────────────────────────────────────────── */
 
@@ -206,6 +223,7 @@ export default function TrackPayroll() {
                 placeholder="Search name, code, department"
                 className="text-sm py-2 flex-1 bg-transparent outline-none" style={{ color: 'var(--text-h)' }} />
             </div>
+            <ExportButton filename="sangoetrack-salaries" rows={visible} columns={CSV} />
             <button onClick={() => setOnlyMissing(v => !v)} aria-pressed={onlyMissing}
               className="rounded-lg text-xs font-semibold"
               style={{

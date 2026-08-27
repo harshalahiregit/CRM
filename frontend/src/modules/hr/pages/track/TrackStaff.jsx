@@ -14,11 +14,30 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { UserPlus, KeyRound, Search, Copy, Check, Users } from 'lucide-react'
+import { exportCsv } from '@/lib/exportCsv'
 import { sangoeTrackApi, trackErrorMessage } from '@/services/sangoeTrackApi'
 import { useToast } from '@/hooks/useToast'
 import LoadError from '@/components/ui/LoadError'
 import EmptyState from '@/components/ui/EmptyState'
-import { TrackHeader } from './TrackShell'
+import { TrackHeader, ExportButton } from './TrackShell'
+
+/**
+ * The directory as a spreadsheet.
+ *
+ * Includes the fields the table has no room for — mobile, branch, role type —
+ * because those are exactly what someone exporting a staff list needs.
+ */
+const CSV = [
+  { key: 'name',        label: 'Name' },
+  { key: 'email',       label: 'Email' },
+  { key: 'mobile_no',   label: 'Mobile' },
+  { key: 'employee_id', label: 'Employee code' },
+  { key: 'type',        label: 'Role' },
+  { key: 'department',  label: 'Department' },
+  { key: 'designation', label: 'Designation' },
+  { key: 'branch',      label: 'Branch' },
+  { key: 'company_doj', label: 'Joined' },
+]
 
 /* ── new account ─────────────────────────────────────────────────────── */
 
@@ -284,6 +303,7 @@ export default function TrackStaff() {
             className="text-sm py-2 flex-1 bg-transparent outline-none"
             style={{ color: 'var(--text-h)' }} />
         </div>
+        <ExportButton filename="sangoetrack-staff" rows={visible} columns={CSV} />
         {!adding && (
           <button onClick={() => setAdding(true)}
             className="rounded-lg text-xs font-bold flex items-center gap-1.5"

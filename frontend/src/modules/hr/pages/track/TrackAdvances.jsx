@@ -29,7 +29,7 @@ import useTrackApprovals from './useTrackApprovals'
 import useTrackHistory from './useTrackHistory'
 import {
   TrackHeader, TrackList, TrackCard, FieldGrid, Field, DecisionBar,
-  QueueTabs, HistoryFilters, HistoryPager, Outcome,
+  QueueTabs, HistoryFilters, HistoryPager, Outcome, ExportButton,
 } from './TrackShell'
 
 const inr = n =>
@@ -225,6 +225,23 @@ function Settlements({ rows, loading, error, reload }) {
 
 /* ── page ────────────────────────────────────────────────────────────── */
 
+const CSV = [
+  { key: 'employee_name',    label: 'Employee' },
+  { key: 'advance_id',       label: 'Advance ID' },
+  { key: 'advance_type',     label: 'Type' },
+  { key: 'category',         label: 'Category' },
+  { key: 'department',       label: 'Department' },
+  { key: 'project_site',     label: 'Project / site' },
+  { key: 'purpose',          label: 'Purpose' },
+  { key: 'amount_requested', label: 'Requested' },
+  { key: 'amount_approved',  label: 'Approved' },
+  { key: 'status',           label: 'Status' },
+  { key: 'required_date',    label: 'Needed by' },
+  { key: 'expected_settlement_date', label: 'Settle by' },
+  { key: 'attachment',       label: 'Attachment URL' },
+  { key: 'submitted_on',     label: 'Submitted on' },
+]
+
 export default function TrackAdvances() {
   const [tab, setTab] = useState('pending')
   const { rows, loading, error, reload } = useTrackApprovals('advances')
@@ -270,7 +287,11 @@ export default function TrackAdvances() {
         <>
           {/* Advances move through a longer chain than approved/rejected, so the
               filter uses their vocabulary rather than the generic one. */}
-          <HistoryFilters {...past} setFilter={past.setFilter} clear={past.clear} statuses="advance" />
+          <HistoryFilters {...past} setFilter={past.setFilter} clear={past.clear} statuses="advance">
+            <ExportButton
+              filename={`advances-${past.filters.from || "all"}-to-${past.filters.to || "now"}`}
+              rows={past.rows} columns={CSV} total={past.meta?.total} />
+          </HistoryFilters>
 
           <TrackList loading={past.loading} error={past.error} rows={past.rows} onRetry={past.reload} noun="advances">
             {past.rows.map(a => (
