@@ -26,6 +26,7 @@ export default function PurchasePortalShell() {
       builtRoutes={{
         dashboard:  'dashboard',
         onboarding: 'onboarding',
+        overview:   'overview',
         profile:    'profile',
         contact:    'contacts',
         comply:     'compliance',

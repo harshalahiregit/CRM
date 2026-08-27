@@ -256,6 +256,7 @@ const PurchasePortalDashboard = lazy(() => import('@/pages/purchase-portal/Purch
 const PurchasePortalCommercial = lazy(() => import('@/pages/purchase-portal/PurchasePortalCommercial'))
 const PurchaseMyContacts = lazy(() => import('@/pages/purchase-portal/PurchaseMyContacts'))
 const PurchaseMyKb = lazy(() => import('@/pages/purchase-portal/PurchaseMyKb'))
+const PurchasePortalOverview = lazy(() => import('@/pages/purchase-portal/PurchasePortalOverview'))
 const PurchasePortalOnboarding = lazy(() => import('@/pages/purchase-portal/PurchasePortalOnboarding'))
 const PurchasePortalDocuments = lazy(() => import('@/pages/purchase-portal/PurchasePortalDocuments'))
 const PurchasePortalApproval = lazy(() => import('@/pages/purchase-portal/PurchasePortalApproval'))
@@ -968,6 +969,7 @@ export default function AppRoutes() {
         <Route path="payments"    element={<S><PurchasePortalCommercial view="payments" /></S>} />
         <Route path="contacts"    element={<S><PurchaseMyContacts /></S>} />
         <Route path="kb"          element={<S><PurchaseMyKb /></S>} />
+        <Route path="overview"    element={<S><PurchasePortalOverview /></S>} />
 
         {/* Roadmap sections not yet built — the full nav tree stays navigable. */}
         <Route path="s/:key"     element={<S><PortalComingSoon /></S>} />

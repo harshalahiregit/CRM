@@ -15,6 +15,9 @@ export const purchasePortalApi = {
 
   me: () => api.get('/portal/purchase/me').then(r => r.data),
 
+  // Rich dashboard payload (vendor, onboarding %, pending items, commercial counts).
+  dashboard: () => api.get('/portal/purchase/dashboard').then(r => r.data),
+
   // Self-service profile + commercial fields (business fields only; never
   // code/category/status/auth). Maps to PUT /portal/purchase/profile.
   updateProfile: (payload) => api.put('/portal/purchase/profile', payload).then(r => r.data),
