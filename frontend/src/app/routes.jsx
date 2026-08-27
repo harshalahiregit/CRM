@@ -368,6 +368,7 @@ const MyContacts = lazy(() => import('@/pages/vendor-portal/MyContacts'))
 const MyKb = lazy(() => import('@/pages/vendor-portal/MyKb'))
 const MyWork = lazy(() => import('@/pages/vendor-portal/MyWork'))
 const MyPerformance = lazy(() => import('@/pages/vendor-portal/MyPerformance'))
+const MyHsse = lazy(() => import('@/pages/vendor-portal/MyHsse'))
 const PortalDocuments = lazy(() => import('@/pages/vendor-portal/PortalDocuments'))
 const PortalSupport = lazy(() => import('@/pages/vendor-portal/PortalSupport'))
 const PortalOrderDetail = lazy(() => import('@/pages/vendor-portal/PortalOrderDetail'))
@@ -885,6 +886,8 @@ export default function AppRoutes() {
         <Route path="penalty"           element={<S><MyPerformance view="penalty" /></S>} />
         <Route path="awards"            element={<S><MyPerformance view="award" /></S>} />
         <Route path="referrals"         element={<S><MyPerformance view="referral" /></S>} />
+        <Route path="ptw"               element={<S><MyHsse view="ptw" /></S>} />
+        <Route path="incidents"         element={<S><MyHsse view="incidents" /></S>} />
         <Route path="orders/:id"        element={<S><PortalOrderDetail /></S>} />
         <Route path="invoices/:id"      element={<S><PortalInvoiceDetail /></S>} />
 

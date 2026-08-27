@@ -77,13 +77,17 @@ Last updated: 2026-08-27.
   advances RFQ Sent→Under_Review, marks recipient Responded). +3 tests (7 total).
 
 ## Phase 4 — Compliance & HSSE
-- [x] Comply — vendor read-only register (exists; verify)
-- [x] Documents — vendor upload/version (exists; verify)
-- [ ] PTW — surface to vendor + **vendor request** (admin approves)
-- [ ] Incidents — surface to vendor + **vendor report**
-- [ ] Pre Alert — 🔴 greenfield (model on customer-side analog)
-- [ ] Packages — 🔴 greenfield (customer-side analog)
-- [ ] Shipping — 🔴 greenfield (customer-side analog)
+- [x] Comply — vendor read-only register (exists)
+- [x] Documents — vendor upload/version (exists)
+- [x] **PTW** — TPV portal: list own permits + **request** (WorkPermit/PermitService; lands 'Requested'
+  for admin approval). `GET/POST /portal/permits`.
+- [x] **Incidents** — TPV portal: list own + **report** (HsseIncident/IncidentService; 'Reported'). `stop_work`
+  kept admin-only; Serious/Fatal self-report still trips the safety hold (fail-safe). `GET/POST /portal/incidents`.
+  PTW+Incidents guarded by `PortalHsseTest` (3).
+- [ ] Pre Alert — 🔴 greenfield — NEEDS DECISION (logistics; see Q)
+- [ ] Packages — 🔴 greenfield — NEEDS DECISION
+- [ ] Shipping — 🔴 greenfield — NEEDS DECISION
+- [ ] Purchase-portal parity for PTW/Incidents (Purchase has its own HSSE stack).
 
 ## Phase 5 — Performance
 - [x] **Risk Score** — TPV portal page: own score gauge + tier + monitoring + factor

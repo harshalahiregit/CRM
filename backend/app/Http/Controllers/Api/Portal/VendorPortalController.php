@@ -198,6 +198,97 @@ class VendorPortalController extends Controller
         return response()->json($referral, 201);
     }
 
+    /* ── Compliance & HSSE › PTW (Permit To Work) ────────────────────────── */
+
+    /** The vendor's own permits (read), plus the pickers it needs to request one. */
+    public function permits(Request $request)
+    {
+        $vendor = $this->portalVendor($request);
+        if (! $vendor) {
+            return response()->json(['status' => 'error', 'message' => 'Vendor profile not found'], 404);
+        }
+
+        return response()->json([
+            'data'  => \App\Models\Tpv\WorkPermit::where('tenant_id', $vendor->tenant_id)
+                ->where('vendor_id', $vendor->id)
+                ->latest('id')
+                ->get(['id', 'reference', 'type', 'title', 'location', 'valid_from', 'valid_to', 'status']),
+            'types' => \App\Models\Tpv\WorkPermit::TYPES,
+        ]);
+    }
+
+    /** The vendor requests a Permit To Work; it lands as 'Requested' for admin approval. */
+    public function requestPermit(Request $request, \App\Services\Tpv\PermitService $permits)
+    {
+        $vendor = $this->portalVendor($request);
+        if (! $vendor) {
+            return response()->json(['status' => 'error', 'message' => 'Vendor profile not found'], 404);
+        }
+
+        $data = $request->validate([
+            'type'        => ['required', \Illuminate\Validation\Rule::in(\App\Models\Tpv\WorkPermit::TYPES)],
+            'title'       => 'required|string|max:200',
+            'location'    => 'nullable|string|max:200',
+            'description' => 'nullable|string|max:2000',
+            'hazards'     => 'nullable|string|max:2000',
+            'precautions' => 'nullable|string|max:2000',
+            'valid_from'  => 'nullable|date',
+            'valid_to'    => 'nullable|date|after_or_equal:valid_from',
+        ]);
+
+        $permit = $permits->create($vendor->tenant_id, array_merge($data, ['vendor_id' => $vendor->id]), $request->user());
+
+        return response()->json($permit, 201);
+    }
+
+    /* ── Compliance & HSSE › Incidents ───────────────────────────────────── */
+
+    /** The vendor's own reported incidents (read), plus the pickers to report one. */
+    public function incidents(Request $request)
+    {
+        $vendor = $this->portalVendor($request);
+        if (! $vendor) {
+            return response()->json(['status' => 'error', 'message' => 'Vendor profile not found'], 404);
+        }
+
+        return response()->json([
+            'data'       => \App\Models\Tpv\HsseIncident::where('tenant_id', $vendor->tenant_id)
+                ->where('vendor_id', $vendor->id)
+                ->latest('occurred_at')
+                ->get(['id', 'reference', 'type', 'severity', 'title', 'location', 'occurred_at', 'status']),
+            'types'      => \App\Models\Tpv\HsseIncident::TYPES,
+            'severities' => \App\Models\Tpv\HsseIncident::SEVERITIES,
+        ]);
+    }
+
+    /**
+     * The vendor reports an incident. It is created as 'Reported' for the HSSE team.
+     * `stop_work` is deliberately NOT accepted from the portal (a site-authority
+     * decision); a Serious/Fatal self-report still triggers the safety hold, which
+     * is the intended fail-safe behaviour.
+     */
+    public function reportIncident(Request $request, \App\Services\Tpv\IncidentService $incidents)
+    {
+        $vendor = $this->portalVendor($request);
+        if (! $vendor) {
+            return response()->json(['status' => 'error', 'message' => 'Vendor profile not found'], 404);
+        }
+
+        $data = $request->validate([
+            'title'            => 'required|string|max:200',
+            'type'             => ['required', \Illuminate\Validation\Rule::in(\App\Models\Tpv\HsseIncident::TYPES)],
+            'severity'         => ['required', \Illuminate\Validation\Rule::in(\App\Models\Tpv\HsseIncident::SEVERITIES)],
+            'occurred_at'      => 'nullable|date',
+            'location'         => 'nullable|string|max:200',
+            'description'      => 'nullable|string|max:2000',
+            'immediate_action' => 'nullable|string|max:2000',
+        ]);
+
+        $incident = $incidents->create($vendor->tenant_id, array_merge($data, ['vendor_id' => $vendor->id]), $request->user());
+
+        return response()->json($incident, 201);
+    }
+
     /** The caller's own vendor profile + headline account state. */
     /** Dismiss the post-activation welcome banner permanently for this vendor. */
     public function dismissWelcomeBanner(Request $request)

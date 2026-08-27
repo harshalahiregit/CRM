@@ -197,6 +197,14 @@ export const portalApi = {
     get: () => api.get('/portal/compliance').then(r => r.data),
   },
 
+  // Compliance & HSSE — the vendor requests permits + reports incidents.
+  hsse: {
+    permits:        () => api.get('/portal/permits').then(r => r.data),
+    requestPermit:  (body) => api.post('/portal/permits', body).then(r => r.data),
+    incidents:      () => api.get('/portal/incidents').then(r => r.data),
+    reportIncident: (body) => api.post('/portal/incidents', body).then(r => r.data),
+  },
+
   // Performance — the vendor's own risk score, rating, penalties, awards, referrals.
   performance: {
     risk:           () => api.get('/portal/risk').then(r => r.data),

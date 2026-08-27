@@ -101,6 +101,11 @@ Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access'])->prefix('por
     Route::get('/awards',                                 [VendorPortalController::class, 'awards']);
     Route::get('/referrals',                              [VendorPortalController::class, 'referrals']);
     Route::post('/referrals',                             [VendorPortalController::class, 'storeReferral']);
+    // Compliance & HSSE — the vendor requests permits + reports incidents (writes).
+    Route::get('/permits',                                [VendorPortalController::class, 'permits']);
+    Route::post('/permits',                               [VendorPortalController::class, 'requestPermit']);
+    Route::get('/incidents',                              [VendorPortalController::class, 'incidents']);
+    Route::post('/incidents',                             [VendorPortalController::class, 'reportIncident']);
     Route::get('/ppe/summary',                            [VendorPortalController::class, 'ppeSummary']);
     Route::get('/ppe/compliance/workers/{worker}',        [VendorPortalController::class, 'workerPpeCompliance']);
     Route::get('/ppe/workers/{worker}',                   [VendorPortalController::class, 'workerPpe']);
