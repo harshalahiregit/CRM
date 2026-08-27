@@ -44,8 +44,8 @@ Last updated: 2026-08-27.
 - [x] **TI3. Delete icon no longer highlighted** — de-emphasised to neutral (was alarming red) to avoid an accidental click.
 
 ## Record Payment (Sales)
-- [ ] **RP1. While capturing a payment, the PI / Tax Invoice / Estimate is a dropdown / reflects on search.**
-- [ ] **RP2. Separate TDS deduction box.**
+- [x] **RP1. Invoice picker is a searchable typeahead** on the Record Payment page (type to filter by number/customer). NOTE: cross-document-type payments (paying a PI/Estimate from this page) would need separate backend routing — deferred; the page stays invoice-centric as it was.
+- [x] **RP2. Separate TDS deduction box** on the Record Payment page (TDS % auto-computes the amount; TDS section field). Backend already persisted TDS on `sales_payments`.
 
 ## Project (my module)
 - [ ] ⚠ **PR1. Billable — reflect each task's amount, hidden by default; only permitted users see the hidden amount.** NEEDS DECISION: a task's amount = rate × logged hours, or a new fixed-amount field? which permission unlocks it?
@@ -59,7 +59,7 @@ Last updated: 2026-08-27.
 ---
 
 ### Progress
-- **Done:** T1, T2, V1, V2, V3, V4, PI4, PI6, PI8, TI1, TI3.
+- **Done:** T1, T2, V1, V2, V3, V4, PI4, PI6, PI8, TI1, TI3, RP1, RP2.
 - **Deferred:** C1, C2 (Call CRM).
-- **Open — clear (no decision needed):** PI1, PI2, PI3, PI5 (real build), PI9, PI10, RP1, RP2, PR2, ST2.
+- **Open — clear, remaining (larger builds):** PI1 (item search — mostly exists), PI2 (HSN/SAC + govt import), PI3 (GST auto-detect), PI5 (edit PI — full build), PI9 (partial-pay + TDS + tag on PI), PI10 (items→task), PR2 (project→PI), ST2 (recover deleted / recycle bin).
 - **Open — needs a decision (⚠):** V5, PI7, PI11, TI2, PR1, PR3, ST1.
