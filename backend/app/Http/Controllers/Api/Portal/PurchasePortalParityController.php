@@ -295,4 +295,85 @@ class PurchasePortalParityController extends Controller
 
         return response()->json(['data' => $rows]);
     }
+
+    /* ── Compliance & HSSE › PTW / Incidents (Purchase-native) ───────────── */
+    public function permits(Request $request)
+    {
+        $v = $this->vendor($request);
+
+        return response()->json([
+            'data'  => \App\Models\Purchase\PurchaseWorkPermit::where('tenant_id', $v->tenant_id)->where('purchase_vendor_id', $v->id)
+                ->latest('id')->get(['id', 'reference', 'type', 'title', 'location', 'valid_from', 'valid_to', 'status']),
+            'types' => \App\Models\Purchase\PurchaseWorkPermit::TYPES,
+        ]);
+    }
+
+    public function requestPermit(Request $request)
+    {
+        $v = $this->vendor($request);
+        $data = $request->validate([
+            'type'        => ['required', Rule::in(\App\Models\Purchase\PurchaseWorkPermit::TYPES)],
+            'title'       => 'required|string|max:200',
+            'location'    => 'nullable|string|max:200',
+            'description' => 'nullable|string|max:2000',
+            'hazards'     => 'nullable|string|max:2000',
+            'precautions' => 'nullable|string|max:2000',
+            'valid_from'  => 'nullable|date',
+            'valid_to'    => 'nullable|date|after_or_equal:valid_from',
+        ]);
+
+        $permit = \App\Models\Purchase\PurchaseWorkPermit::create(array_merge($data, [
+            'tenant_id' => $v->tenant_id, 'purchase_vendor_id' => $v->id, 'status' => 'Requested',
+        ]));
+
+        return response()->json($permit, 201);
+    }
+
+    public function incidents(Request $request)
+    {
+        $v = $this->vendor($request);
+
+        return response()->json([
+            'data'       => \App\Models\Purchase\PurchaseHsseIncident::where('tenant_id', $v->tenant_id)->where('purchase_vendor_id', $v->id)
+                ->latest('occurred_at')->get(['id', 'reference', 'type', 'severity', 'title', 'location', 'occurred_at', 'status']),
+            'types'      => \App\Models\Purchase\PurchaseHsseIncident::TYPES,
+            'severities' => \App\Models\Purchase\PurchaseHsseIncident::SEVERITIES,
+        ]);
+    }
+
+    public function reportIncident(Request $request)
+    {
+        $v = $this->vendor($request);
+        $data = $request->validate([
+            'title'            => 'required|string|max:200',
+            'type'             => ['required', Rule::in(\App\Models\Purchase\PurchaseHsseIncident::TYPES)],
+            'severity'         => ['required', Rule::in(\App\Models\Purchase\PurchaseHsseIncident::SEVERITIES)],
+            'occurred_at'      => 'nullable|date',
+            'location'         => 'nullable|string|max:200',
+            'description'      => 'nullable|string|max:2000',
+            'immediate_action' => 'nullable|string|max:2000',
+        ]);
+
+        $incident = \App\Models\Purchase\PurchaseHsseIncident::create(array_merge($data, [
+            'tenant_id' => $v->tenant_id, 'purchase_vendor_id' => $v->id, 'status' => 'Reported',
+            'occurred_at' => $data['occurred_at'] ?? now(),
+        ]));
+
+        return response()->json($incident, 201);
+    }
+
+    /* ── Performance › Risk Score (Purchase-native, read-only) ───────────── */
+    public function risk(Request $request)
+    {
+        $v = $this->vendor($request);
+
+        return response()->json([
+            'assessed'    => $v->risk_assessed_at !== null,
+            'level'       => $v->risk_level,
+            'score'       => $v->risk_score,
+            'monitoring'  => null,
+            'breakdown'   => [],
+            'assessed_at' => $v->risk_assessed_at,
+        ]);
+    }
 }

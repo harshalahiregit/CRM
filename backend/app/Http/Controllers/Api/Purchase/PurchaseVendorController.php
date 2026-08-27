@@ -649,6 +649,44 @@ class PurchaseVendorController extends Controller
         );
     }
 
+    /* ── Compliance & HSSE / Performance mirror (Purchase-native) ────────── */
+
+    public function permits(Request $request, PurchaseVendor $purchaseVendor)
+    {
+        $this->assertTenant($request, $purchaseVendor);
+
+        return response()->json([
+            'data' => \App\Models\Purchase\PurchaseWorkPermit::where('tenant_id', $purchaseVendor->tenant_id)
+                ->where('purchase_vendor_id', $purchaseVendor->id)->latest('id')->get(),
+        ]);
+    }
+
+    public function incidents(Request $request, PurchaseVendor $purchaseVendor)
+    {
+        $this->assertTenant($request, $purchaseVendor);
+
+        return response()->json([
+            'data' => \App\Models\Purchase\PurchaseHsseIncident::where('tenant_id', $purchaseVendor->tenant_id)
+                ->where('purchase_vendor_id', $purchaseVendor->id)->latest('occurred_at')->get(),
+        ]);
+    }
+
+    /** Admin sets the vendor's lean risk tier + score (the portal shows it read-only). */
+    public function assessRisk(Request $request, PurchaseVendor $purchaseVendor)
+    {
+        $this->assertTenant($request, $purchaseVendor);
+
+        $data = $request->validate([
+            'risk_level' => 'required|string|in:Low,Medium,High,Critical',
+            'risk_score' => 'required|integer|min:0|max:100',
+            'risk_notes' => 'nullable|string|max:2000',
+        ]);
+
+        $purchaseVendor->update(array_merge($data, ['risk_assessed_at' => now()]));
+
+        return response()->json($purchaseVendor->only(['id', 'risk_level', 'risk_score', 'risk_notes', 'risk_assessed_at']));
+    }
+
     private function assertTenant(Request $request, PurchaseVendor $purchaseVendor): void
     {
         abort_unless((int) $purchaseVendor->tenant_id === (int) $request->user()->tenant_id, 404, 'Purchase vendor not found');

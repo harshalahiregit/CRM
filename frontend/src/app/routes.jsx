@@ -987,6 +987,9 @@ export default function AppRoutes() {
         <Route path="pre-alert"   element={<S><MyShipments view="pre-alert" api={PP_API} /></S>} />
         <Route path="packages"    element={<S><MyShipments view="packages" api={PP_API} /></S>} />
         <Route path="shipping"    element={<S><MyShipments view="shipping" api={PP_API} /></S>} />
+        <Route path="risk-score"  element={<S><MyPerformance view="risk" api={PP_API} /></S>} />
+        <Route path="ptw"         element={<S><MyHsse view="ptw" api={PP_API} /></S>} />
+        <Route path="incidents"   element={<S><MyHsse view="incidents" api={PP_API} /></S>} />
 
         {/* Roadmap sections not yet built — the full nav tree stays navigable. */}
         <Route path="s/:key"     element={<S><PortalComingSoon /></S>} />

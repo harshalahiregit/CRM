@@ -96,6 +96,27 @@ class PurchasePortalParityTest extends TestCase
         $this->getJson('/api/portal/purchase/feedback')->assertOk()->assertJsonStructure(['live' => ['overall_score', 'band']]);
     }
 
+    public function test_ptw_request_and_incident_report(): void
+    {
+        Sanctum::actingAs($this->vendor);
+        $this->postJson('/api/portal/purchase/permits', ['type' => 'Hot_Work', 'title' => 'Welding'])
+            ->assertCreated()->assertJsonPath('status', 'Requested');
+        $this->getJson('/api/portal/purchase/permits')->assertOk()->assertJsonPath('data.0.title', 'Welding');
+
+        $this->postJson('/api/portal/purchase/incidents', ['title' => 'Spill', 'type' => 'Environmental', 'severity' => 'Minor'])
+            ->assertCreated()->assertJsonPath('status', 'Reported');
+        $this->getJson('/api/portal/purchase/incidents')->assertOk()->assertJsonPath('data.0.title', 'Spill');
+    }
+
+    public function test_risk_score_read(): void
+    {
+        $this->vendor->update(['risk_level' => 'Medium', 'risk_score' => 55, 'risk_assessed_at' => now()]);
+
+        Sanctum::actingAs($this->vendor);
+        $this->getJson('/api/portal/purchase/risk')->assertOk()
+            ->assertJsonPath('assessed', true)->assertJsonPath('level', 'Medium')->assertJsonPath('score', 55);
+    }
+
     public function test_isolation_between_purchase_vendors(): void
     {
         $other = PurchaseVendor::create(['tenant_id' => self::TENANT, 'company_name' => 'Other', 'purchase_vendor_code' => 'PV-'.uniqid(), 'status' => PurchaseVendorStatus::ACTIVE, 'portal_status' => 'active']);

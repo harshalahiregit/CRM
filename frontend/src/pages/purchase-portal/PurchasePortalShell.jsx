@@ -55,7 +55,10 @@ export default function PurchasePortalShell() {
         packages:    'packages',
         shipping:    'shipping',
         'hsse-documents': 'documents',
-        // Risk Score, PTW, Incidents stay ComingSoon — no Purchase model yet.
+        // Purchase-native greenfield: risk (lean tier/score), PTW, Incidents.
+        'risk-score': 'risk-score',
+        ptw:          'ptw',
+        incidents:    'incidents',
       }}
       extraGroups={[
         {

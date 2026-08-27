@@ -43,6 +43,8 @@ class PurchaseVendor extends Model implements AuthenticatableContract
         // Portal auth (Purchase-owned)
         'password', 'portal_status', 'email_verified_at', 'email_verification_token',
         'password_reset_token', 'password_reset_expires_at', 'last_login_at', 'last_login_ip',
+        // Risk Score (Purchase-native, admin-set)
+        'risk_level', 'risk_score', 'risk_notes', 'risk_assessed_at',
     ];
 
     protected $casts = [
@@ -56,6 +58,8 @@ class PurchaseVendor extends Model implements AuthenticatableContract
         'first_login_at'            => 'datetime',
         'login_count'               => 'integer',
         'welcome_banner_dismissed_at' => 'datetime',
+        'risk_assessed_at'          => 'datetime',
+        'risk_score'                => 'integer',
     ];
 
     /** Credentials/tokens are never disclosed in payloads. */

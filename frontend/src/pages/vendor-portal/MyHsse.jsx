@@ -9,8 +9,8 @@ import { portalApi } from '@/services/portalApi'
  * investigates incidents). A Serious/Fatal incident report triggers a safety hold
  * on site access — flagged in the form.
  */
-export default function MyHsse({ view }) {
-  return view === 'incidents' ? <Incidents /> : <Ptw />
+export default function MyHsse({ view, api = portalApi }) {
+  return view === 'incidents' ? <Incidents api={api} /> : <Ptw api={api} />
 }
 
 const label = v => String(v ?? '—').replace(/_/g, ' ')
@@ -28,10 +28,10 @@ function Pill({ value }) {
 }
 
 /* ── PTW ──────────────────────────────────────────────────────────────────── */
-function Ptw() {
+function Ptw({ api }) {
   const [data, setData] = useState(null)
   const [adding, setAdding] = useState(false)
-  const reload = () => portalApi.hsse.permits().then(setData).catch(() => setData({ data: [], types: [] }))
+  const reload = () => api.hsse.permits().then(setData).catch(() => setData({ data: [], types: [] }))
   useEffect(() => { reload() }, [])
 
   const rows = data?.data || []
@@ -53,12 +53,12 @@ function Ptw() {
             ))}
           </Table>
         )}
-      {adding && <PermitForm types={data?.types || []} onClose={() => setAdding(false)} onDone={() => { setAdding(false); reload() }} />}
+      {adding && <PermitForm api={api} types={data?.types || []} onClose={() => setAdding(false)} onDone={() => { setAdding(false); reload() }} />}
     </Wrap>
   )
 }
 
-function PermitForm({ types, onClose, onDone }) {
+function PermitForm({ api, types, onClose, onDone }) {
   const [f, setF] = useState({ type: types[0] || 'Other', title: '', location: '', description: '', hazards: '', precautions: '', valid_from: '', valid_to: '' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -67,7 +67,7 @@ function PermitForm({ types, onClose, onDone }) {
     setError('')
     if (!f.title.trim()) { setError('A title is required.'); return }
     setSaving(true)
-    try { await portalApi.hsse.requestPermit(f); onDone() }
+    try { await api.hsse.requestPermit(f); onDone() }
     catch (e) { setError(e?.response?.data?.message || 'Could not submit the request.') }
     finally { setSaving(false) }
   }
@@ -89,10 +89,10 @@ function PermitForm({ types, onClose, onDone }) {
 }
 
 /* ── Incidents ────────────────────────────────────────────────────────────── */
-function Incidents() {
+function Incidents({ api }) {
   const [data, setData] = useState(null)
   const [adding, setAdding] = useState(false)
-  const reload = () => portalApi.hsse.incidents().then(setData).catch(() => setData({ data: [], types: [], severities: [] }))
+  const reload = () => api.hsse.incidents().then(setData).catch(() => setData({ data: [], types: [], severities: [] }))
   useEffect(() => { reload() }, [])
 
   const rows = data?.data || []
@@ -113,12 +113,12 @@ function Incidents() {
             ))}
           </Table>
         )}
-      {adding && <IncidentForm types={data?.types || []} severities={data?.severities || []} onClose={() => setAdding(false)} onDone={() => { setAdding(false); reload() }} />}
+      {adding && <IncidentForm api={api} types={data?.types || []} severities={data?.severities || []} onClose={() => setAdding(false)} onDone={() => { setAdding(false); reload() }} />}
     </Wrap>
   )
 }
 
-function IncidentForm({ types, severities, onClose, onDone }) {
+function IncidentForm({ api, types, severities, onClose, onDone }) {
   const [f, setF] = useState({ title: '', type: types[0] || 'Other', severity: severities[0] || 'Minor', occurred_at: '', location: '', description: '', immediate_action: '' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -128,7 +128,7 @@ function IncidentForm({ types, severities, onClose, onDone }) {
     setError('')
     if (!f.title.trim()) { setError('A title is required.'); return }
     setSaving(true)
-    try { await portalApi.hsse.reportIncident(f); onDone() }
+    try { await api.hsse.reportIncident(f); onDone() }
     catch (e) { setError(e?.response?.data?.message || 'Could not submit the report.') }
     finally { setSaving(false) }
   }

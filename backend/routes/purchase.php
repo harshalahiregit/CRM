@@ -179,6 +179,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     // already keys to purchase_vendor_id, so there is no link step.
     Route::get('/vendors/{purchaseVendor}/payments',  [PurchaseVendorController::class, 'payments'])->whereNumber('purchaseVendor');
     Route::get('/vendors/{purchaseVendor}/statement', [PurchaseVendorController::class, 'statement'])->whereNumber('purchaseVendor');
+    // Compliance/HSSE + Risk mirror (Purchase-native) — admin tracks/sets.
+    Route::get('/vendors/{purchaseVendor}/permits',   [PurchaseVendorController::class, 'permits'])->whereNumber('purchaseVendor');
+    Route::get('/vendors/{purchaseVendor}/incidents', [PurchaseVendorController::class, 'incidents'])->whereNumber('purchaseVendor');
+    Route::put('/vendors/{purchaseVendor}/risk',      [PurchaseVendorController::class, 'assessRisk'])->whereNumber('purchaseVendor');
 
     // Appointments — shared `appointments` table, mirrored here because
     // /api/sales/appointments carries no role gate and takes subject_type as a

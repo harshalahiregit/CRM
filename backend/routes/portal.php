@@ -289,6 +289,11 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal'])->prefix('portal/pu
     Route::post('/shipments',                         [$ppar, 'storeShipment']);
     Route::patch('/shipments/{shipment}/status',      [$ppar, 'updateShipmentStatus'])->where('shipment', '[0-9]+');
     Route::get('/shipment-packages',                  [$ppar, 'shipmentPackages']);
+    Route::get('/permits',                            [$ppar, 'permits']);
+    Route::post('/permits',                           [$ppar, 'requestPermit']);
+    Route::get('/incidents',                          [$ppar, 'incidents']);
+    Route::post('/incidents',                         [$ppar, 'reportIncident']);
+    Route::get('/risk',                               [$ppar, 'risk']);
 
     // §32 Governance-response half — mirror of the TPV portal on Purchase-owned
     // models (separate DB). No PPE requirement matrix (Purchase has none).

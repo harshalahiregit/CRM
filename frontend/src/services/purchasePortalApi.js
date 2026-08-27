@@ -177,11 +177,18 @@ export const purchasePortalApi = {
     logExpense:       (body) => api.post('/portal/purchase/expenses', body).then(r => r.data),
   },
   performance: {
+    risk:           () => api.get('/portal/purchase/risk').then(r => r.data),
     feedback:       () => api.get('/portal/purchase/feedback').then(r => r.data),
     violations:     () => api.get('/portal/purchase/violations').then(r => r.data),
     awards:         () => api.get('/portal/purchase/awards').then(r => r.data),
     referrals:      () => api.get('/portal/purchase/referrals').then(r => r.data),
     submitReferral: (body) => api.post('/portal/purchase/referrals', body).then(r => r.data),
+  },
+  hsse: {
+    permits:        () => api.get('/portal/purchase/permits').then(r => r.data),
+    requestPermit:  (body) => api.post('/portal/purchase/permits', body).then(r => r.data),
+    incidents:      () => api.get('/portal/purchase/incidents').then(r => r.data),
+    reportIncident: (body) => api.post('/portal/purchase/incidents', body).then(r => r.data),
   },
   logistics: {
     shipments:      () => api.get('/portal/purchase/shipments').then(r => r.data),

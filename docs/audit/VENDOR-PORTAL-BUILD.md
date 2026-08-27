@@ -138,7 +138,12 @@ Last updated: 2026-08-27.
   (nullable owner + purchase_vendor_id). The TPV feature pages (MyWork/MyPerformance/MyShipments/
   MyCustomers) were refactored to be `api`-prop driven and now serve BOTH portals. Guarded by
   `PurchasePortalParityTest` (6); all 45 Portal tests green.
-  **Purchase greenfield still ComingSoon:** Risk Score, PTW, Incidents (no Purchase model — new
-  model+service+table each; genuinely large).
+- **Purchase greenfield — DONE.** Built Purchase-native: `PurchaseWorkPermit` + `PurchaseHsseIncident`
+  tables/models, and risk columns on `purchase_vendors`. Portal: request permit / report incident /
+  read own risk (shared MyHsse + MyPerformance pages via api-prop). Admin: `GET /purchase/vendors/{v}/permits`,
+  `.../incidents`, `PUT .../risk` (set tier+score). Guarded by `PurchasePortalParityTest` (8); 47 Portal tests green.
+  **Purchase = full parity with TPV now** (every nav section lit).
+- [ ] Follow-up: Purchase admin-workspace UI panels for the greenfield (permits/incidents/risk) —
+  endpoints exist; wiring the Purchase vendor-detail tabs is the last small piece.
 - **Next queued:** Phase 6 Extra (Apps/Widgets/Ecommerce — needs scope). Follow-ups: Purchase-portal parity
   (Execution/Performance/HSSE) · Execution vendor-writes (ticket raise/reply, task status, expenses) · General Overview/Customer.
