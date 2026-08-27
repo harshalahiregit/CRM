@@ -75,6 +75,54 @@ class VendorPortalController extends Controller
         ]);
     }
 
+    /**
+     * Performance › Risk Score — the vendor's OWN risk classification (read-only).
+     * A vendor may see its score, tier and the factor breakdown, but never set it
+     * (assessment is an admin authority decision). Internal config (catalogue/bands)
+     * is stripped from the vendor-facing payload.
+     */
+    public function risk(Request $request, \App\Services\Vendor\VendorRiskService $riskService)
+    {
+        $vendor = $this->portalVendor($request);
+        if (! $vendor) {
+            return response()->json(['status' => 'error', 'message' => 'Vendor profile not found'], 404);
+        }
+
+        $snap = $riskService->snapshot($vendor);
+
+        return response()->json([
+            'assessed'    => $snap['assessed'],
+            'level'       => $snap['level'],
+            'score'       => $snap['score'],
+            'monitoring'  => $snap['monitoring'],
+            'breakdown'   => $snap['breakdown'],
+            'assessed_at' => $snap['assessed_at'],
+        ]);
+    }
+
+    /**
+     * Performance › Penalty — the vendor's OWN violations/strikes (read-only), with
+     * the running penalty-point total. Raising/voiding a violation is admin-only.
+     */
+    public function violations(Request $request)
+    {
+        $vendor = $this->portalVendor($request);
+        if (! $vendor) {
+            return response()->json(['status' => 'error', 'message' => 'Vendor profile not found'], 404);
+        }
+
+        $rows = \App\Models\Tpv\TpvVendorViolation::where('tenant_id', $vendor->tenant_id)
+            ->where('vendor_id', $vendor->id)
+            ->latest('occurred_at')
+            ->get(['id', 'reference', 'type', 'severity', 'description', 'occurred_at', 'points', 'status']);
+
+        return response()->json([
+            'data'         => $rows,
+            'total_points' => (int) $rows->sum('points'),
+            'open_count'   => $rows->where('status', '!=', 'Closed')->count(),
+        ]);
+    }
+
     /** The caller's own vendor profile + headline account state. */
     /** Dismiss the post-activation welcome banner permanently for this vendor. */
     public function dismissWelcomeBanner(Request $request)

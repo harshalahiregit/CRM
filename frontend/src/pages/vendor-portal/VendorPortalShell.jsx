@@ -39,6 +39,9 @@ export default function VendorPortalShell() {
         project:    'projects',
         tasks:      'tasks',
         ticket:     'tickets',
+        // Performance — own risk score + penalty points (read-only).
+        'risk-score': 'risk-score',
+        penalty:      'penalty',
       }}
       extraGroups={[
         {

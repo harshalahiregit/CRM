@@ -197,6 +197,12 @@ export const portalApi = {
     get: () => api.get('/portal/compliance').then(r => r.data),
   },
 
+  // Performance — the vendor's own risk score + penalty points (read-only).
+  performance: {
+    risk:       () => api.get('/portal/risk').then(r => r.data),
+    violations: () => api.get('/portal/violations').then(r => r.data),
+  },
+
   // §32 Governance-response half.
   governance: {
     ncrs:            ()            => api.get('/portal/ncrs').then(r => r.data),

@@ -86,11 +86,14 @@ Last updated: 2026-08-27.
 - [ ] Shipping — 🔴 greenfield (customer-side analog)
 
 ## Phase 5 — Performance
-- [ ] Risk Score — surface vendor's own score (read-only)
-- [ ] Penalty — 🟡 wrap strikes/violations or new construct
-- [ ] Award / Reward — 🔴 greenfield
-- [ ] Feedback — 🔴 greenfield
-- [ ] Referral — 🔴 greenfield
+- [x] **Risk Score** — TPV portal page: own score gauge + tier + monitoring + factor
+  breakdown (read-only; assessment stays admin). `GET /portal/risk` → VendorRiskService::snapshot (subset).
+- [x] **Penalty** — TPV portal page: own violations table + running penalty points + open
+  count (read-only). `GET /portal/violations`. Guarded by `PortalPerformanceViewTest` (3).
+- [ ] Award / Reward — 🔴 greenfield — NEEDS DECISION on meaning
+- [ ] Feedback — 🔴 greenfield — NEEDS DECISION (view perf scorecard vs submit feedback)
+- [ ] Referral — 🔴 greenfield — NEEDS DECISION
+- [ ] Purchase-portal parity for Risk/Penalty (Purchase has its own perf/violation stack).
 
 ## Phase 6 — EXTRA (define with user, build last)
 - [ ] Apps
