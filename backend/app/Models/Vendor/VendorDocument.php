@@ -22,13 +22,15 @@ class VendorDocument extends Model
 
     protected $fillable = [
         'tenant_id','vendor_id','type','file_path','original_name','mime','size',
-        'status','remarks','reviewed_by','reviewed_at','expires_at',
+        'status','remarks','reviewed_by','reviewed_at','verified_by','verified_at','expires_at','renewal_due_at',
     ];
 
     protected $casts = [
-        'reviewed_at' => 'datetime',
-        'expires_at'  => 'date',
-        'size'        => 'integer',
+        'reviewed_at'    => 'datetime',
+        'verified_at'    => 'datetime',
+        'expires_at'     => 'date',
+        'renewal_due_at' => 'date',
+        'size'           => 'integer',
     ];
 
     protected $appends = ['status_label', 'type_label'];

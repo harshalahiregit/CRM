@@ -2,7 +2,11 @@
 
 namespace App\Services\Shared;
 
+use App\Models\Shared\KickoffMeeting;
+use App\Models\Shared\KickoffMomItem;
+use App\Models\Shared\MeetingIssue;
 use App\Models\Tpv\HsseIncident;
+use App\Models\Tpv\TpvNcr;
 use App\Models\Tpv\IncidentCapa;
 use App\Models\Tpv\TpvGateScan;
 use App\Models\Tpv\TpvSafetyStrike;
@@ -10,6 +14,8 @@ use App\Models\Tpv\TpvWorker;
 use App\Models\Tpv\TpvWorkerInduction;
 use App\Models\Tpv\TpvWorkerPpeIssue;
 use App\Models\Vendor\Vendor;
+use App\Support\Shared\MeetingIssueStatus;
+use App\Support\Shared\MomActionStatus;
 use App\Support\Tpv\GateDecision;
 use App\Support\Tpv\TpvWorkerStatus;
 
@@ -46,7 +52,9 @@ class VendorLiveStatusService
             $this->compliance($vendor),
             $this->performance($vendor),
             $this->incidents($tenantId, $vendorId),
+            $this->ncr($tenantId, $vendorId),
             $this->capa($tenantId, $vendorId),
+            $this->openMeetingItems($tenantId, $vendorId),
             $this->strikes($workerIds),
             $this->gate($workerIds),
         ]));
@@ -136,6 +144,57 @@ class VendorLiveStatusService
 
             return $this->section('incidents', 'Incidents', "{$open} open",
                 "Incident review — {$open} open incident(s)", $open > 0);
+        });
+    }
+
+    /**
+     * Open NCRs (Meeting.docx §4 lists NCR/CAPA together in the review template).
+     * CAPA was already here; NCR was not, so a Weekly TPV Review loaded the
+     * corrective actions without the non-conformities that caused them.
+     */
+    private function ncr(int $tenantId, int $vendorId): ?array
+    {
+        return $this->safe(function () use ($tenantId, $vendorId) {
+            $open = TpvNcr::where('tenant_id', $tenantId)->where('vendor_id', $vendorId)
+                ->whereNotIn('status', ['Closed', 'Verified'])->count();
+
+            if ($open === 0) {
+                return null;
+            }
+
+            return $this->section('ncr', 'NCR', "{$open} open",
+                "NCR review — {$open} open non-conformity report(s)", true);
+        });
+    }
+
+    /**
+     * What earlier meetings left behind (Meeting.docx §4 — "Previous MOM" and
+     * "Open actions" are the first two lines of the review template).
+     *
+     * Counted straight off the meeting registers for this vendor, so the agenda
+     * that loads already knows what is still owed from last time.
+     */
+    private function openMeetingItems(int $tenantId, int $vendorId): ?array
+    {
+        return $this->safe(function () use ($tenantId, $vendorId) {
+            $meetingIds = KickoffMeeting::forTenant($tenantId)
+                ->where('kickoffable_type', Vendor::class)
+                ->where('kickoffable_id', $vendorId)
+                ->pluck('id');
+
+            if ($meetingIds->isEmpty()) {
+                return null;
+            }
+
+            $actions = KickoffMomItem::whereIn('kickoff_meeting_id', $meetingIds)
+                ->whereIn('status', MomActionStatus::OPEN_STATES)->count();
+            $issues = MeetingIssue::whereIn('kickoff_meeting_id', $meetingIds)
+                ->whereIn('status', MeetingIssueStatus::OPEN_STATES)->count();
+
+            return $this->section('previous_mom', 'Previous MOM',
+                "{$actions} open action(s), {$issues} open issue(s)",
+                'Review of previous MOM — open actions and issues',
+                $actions > 0 || $issues > 0);
         });
     }
 

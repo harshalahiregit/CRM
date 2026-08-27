@@ -5,6 +5,9 @@ namespace App\Services\Tpv;
 use App\Models\Tpv\ComplianceEvidence;
 use App\Models\Tpv\TpvCapa;
 use App\Models\Tpv\TpvNcr;
+use App\Models\Tpv\TpvWorkerCompetency;
+use App\Models\Tpv\TpvWorkerMedical;
+use App\Models\Tpv\TpvWorkerTraining;
 use App\Models\User;
 use App\Models\Vendor\Vendor;
 use App\Models\Vendor\VendorDocument;
@@ -24,7 +27,7 @@ class TpvDocumentVaultService
     /** Days-out that counts a document as "expiring soon". */
     public const EXPIRING_WINDOW_DAYS = 30;
 
-    public const SOURCES = ['Statutory', 'Evidence', 'CAPA', 'NCR'];
+    public const SOURCES = ['Statutory', 'Evidence', 'CAPA', 'NCR', 'Medical', 'Training', 'Competency'];
 
     public const EXPIRY_STATES = ['valid', 'expiring', 'expired', 'none'];
 
@@ -40,6 +43,10 @@ class TpvDocumentVaultService
             $this->evidence($tenantId, $vendorId),
             $this->actionEvidence($tenantId, $vendorId, 'CAPA'),
             $this->actionEvidence($tenantId, $vendorId, 'NCR'),
+            // §30 — worker certificates surfaced in the vault.
+            $this->workerMedical($tenantId, $vendorId),
+            $this->workerTraining($tenantId, $vendorId),
+            $this->workerCompetency($tenantId, $vendorId),
         );
 
         if (! empty($filters['source'])) {
@@ -158,6 +165,74 @@ class TpvDocumentVaultService
                 uploaderId: $m->raised_by,
                 uploadedAt: $m->created_at,
                 expiresAt: null,
+            ))->all();
+    }
+
+    /**
+     * §30 — worker certificates. These live on the worker sub-models and resolve
+     * their vendor through the worker; the vault surfaces them read-only alongside
+     * the vendor-level documents.
+     */
+    private function workerMedical(int $tenantId, ?int $vendorId): array
+    {
+        return TpvWorkerMedical::forTenant($tenantId)
+            ->where(fn ($q) => $q->whereNotNull('certificate_path')->orWhereNotNull('document_path'))
+            ->with('worker:id,name,vendor_id', 'worker.vendor:id,company_name,vendor_code')
+            ->when($vendorId, fn ($q) => $q->whereHas('worker', fn ($w) => $w->where('vendor_id', $vendorId)))
+            ->get()
+            ->map(fn (TpvWorkerMedical $m) => $this->row(
+                source: 'Medical',
+                id: $m->id,
+                reference: $m->worker?->name,
+                title: 'Medical certificate — '.($m->worker?->name ?? 'Worker'),
+                vendor: $m->worker?->vendor,
+                file: $m->certificate_path ?: $m->document_path,
+                status: $m->fitness_status,
+                uploaderId: $m->approved_by ?: $m->recorded_by,
+                uploadedAt: $m->created_at,
+                expiresAt: $m->valid_until,
+            ))->all();
+    }
+
+    private function workerTraining(int $tenantId, ?int $vendorId): array
+    {
+        return TpvWorkerTraining::forTenant($tenantId)
+            ->whereNotNull('certificate_path')
+            ->with('worker:id,name,vendor_id', 'worker.vendor:id,company_name,vendor_code')
+            ->when($vendorId, fn ($q) => $q->whereHas('worker', fn ($w) => $w->where('vendor_id', $vendorId)))
+            ->get()
+            ->map(fn (TpvWorkerTraining $t) => $this->row(
+                source: 'Training',
+                id: $t->id,
+                reference: $t->training_type,
+                title: ($t->training_type ?? 'Training').' — '.($t->worker?->name ?? 'Worker'),
+                vendor: $t->worker?->vendor,
+                file: $t->certificate_path,
+                status: $t->status,
+                uploaderId: null,
+                uploadedAt: $t->created_at,
+                expiresAt: $t->valid_until,
+            ))->all();
+    }
+
+    private function workerCompetency(int $tenantId, ?int $vendorId): array
+    {
+        return TpvWorkerCompetency::forTenant($tenantId)
+            ->whereNotNull('evidence_path')
+            ->with('worker:id,name,vendor_id', 'worker.vendor:id,company_name,vendor_code')
+            ->when($vendorId, fn ($q) => $q->whereHas('worker', fn ($w) => $w->where('vendor_id', $vendorId)))
+            ->get()
+            ->map(fn (TpvWorkerCompetency $c) => $this->row(
+                source: 'Competency',
+                id: $c->id,
+                reference: $c->name,
+                title: ($c->name ?? 'Competency').' — '.($c->worker?->name ?? 'Worker'),
+                vendor: $c->worker?->vendor,
+                file: $c->evidence_path,
+                status: $c->status,
+                uploaderId: $c->verified_by,
+                uploadedAt: $c->created_at,
+                expiresAt: $c->valid_until,
             ))->all();
     }
 

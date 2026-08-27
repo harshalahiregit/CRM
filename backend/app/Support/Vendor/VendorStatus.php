@@ -20,6 +20,14 @@ final class VendorStatus
     public const ON_HOLD          = 'On_Hold';
     public const REJECTED         = 'Rejected';
     public const BLACKLISTED      = 'Blacklisted';
+    // §5 lifecycle stages the doc names before a vendor is fully active. All
+    // additive and optional — the core Draft→Pending_Approval→Active flow is
+    // unchanged; these give finer-grained states where a tenant wants them.
+    public const INVITED          = 'Invited';
+    public const REGISTERED       = 'Registered';
+    public const UNDER_REVIEW     = 'Under_Review';
+    public const APPROVED         = 'Approved';
+    public const EXPIRED          = 'Expired';
     // Compliance suspension — an active vendor whose statutory cover lapsed
     // (expired insurance/licence, a fatal incident, a stop-work). Reversible:
     // Suspended → Active once the breach is cleared. Offboarded is terminal
@@ -29,8 +37,10 @@ final class VendorStatus
 
     /** All persisted statuses. */
     public const ALL = [
-        self::DRAFT, self::PENDING_APPROVAL, self::ACTIVE, self::INACTIVE,
-        self::ON_HOLD, self::REJECTED, self::BLACKLISTED, self::SUSPENDED, self::OFFBOARDED,
+        self::INVITED, self::REGISTERED, self::DRAFT, self::PENDING_APPROVAL,
+        self::UNDER_REVIEW, self::APPROVED, self::ACTIVE, self::INACTIVE,
+        self::ON_HOLD, self::REJECTED, self::BLACKLISTED, self::SUSPENDED,
+        self::EXPIRED, self::OFFBOARDED,
     ];
 
     /** Statuses where the vendor may be transacted with (PR/PO, site access). */
@@ -40,14 +50,19 @@ final class VendorStatus
 
     /** Human-readable labels. */
     public const LABELS = [
+        self::INVITED          => 'Invited',
+        self::REGISTERED       => 'Registered',
         self::DRAFT            => 'Draft',
         self::PENDING_APPROVAL => 'Pending Approval',
+        self::UNDER_REVIEW     => 'Under Review',
+        self::APPROVED         => 'Approved',
         self::ACTIVE           => 'Active',
         self::INACTIVE         => 'Inactive',
         self::ON_HOLD          => 'On Hold',
         self::REJECTED         => 'Rejected',
         self::BLACKLISTED      => 'Blacklisted',
         self::SUSPENDED        => 'Suspended',
+        self::EXPIRED          => 'Expired',
         self::OFFBOARDED       => 'Offboarded',
     ];
 

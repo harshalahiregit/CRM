@@ -53,6 +53,7 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
 
     // Dashboard — read-only aggregation across the whole module.
     Route::get('/dashboard',                          [TpvDashboardController::class, 'index']);
+    Route::get('/dashboard/risk-drilldown',           [TpvDashboardController::class, 'riskDrilldown']);
 
     // Advanced approval workflow — staff can decide their own level (e.g. L1).
     Route::get('/approvals',                           [OnboardingApprovalController::class, 'index']);
@@ -94,6 +95,12 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::get('/vendors/{vendor}/risk',                      [\App\Http\Controllers\Api\Tpv\VendorRiskController::class, 'show']);
     // Vendor Prequalification (gap report area 6) — read the outcome + questionnaire.
     Route::get('/vendors/{vendor}/prequalification',          [\App\Http\Controllers\Api\Tpv\VendorPrequalificationController::class, 'show']);
+    // §7 Due-Diligence checklist — read the verification record.
+    Route::get('/vendors/{vendor}/due-diligence',             [\App\Http\Controllers\Api\Tpv\VendorDueDiligenceController::class, 'show']);
+    // §35 explicit vendor↔project engagements.
+    Route::get('/vendors/{vendor}/projects',                  [\App\Http\Controllers\Api\Tpv\TpvVendorProjectController::class, 'index']);
+    Route::post('/vendors/{vendor}/projects',                 [\App\Http\Controllers\Api\Tpv\TpvVendorProjectController::class, 'store']);
+    Route::delete('/vendors/{vendor}/projects/{project}',     [\App\Http\Controllers\Api\Tpv\TpvVendorProjectController::class, 'destroy']);
     Route::get('/vendors/{vendor}/customers',                 [\App\Http\Controllers\Api\Vendor\VendorController::class, 'customers']);
     Route::post('/vendors/{vendor}/customers',                [\App\Http\Controllers\Api\Vendor\VendorController::class, 'storeCustomer']);
     // Employees (enhancement #2/#9/#10) — the vendor's assignable people. index()
@@ -165,6 +172,8 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::get('/ppe/workers/{worker}',                     [\App\Http\Controllers\Api\Tpv\PpeController::class, 'worker']);
     Route::post('/ppe/workers/{worker}/issue',              [\App\Http\Controllers\Api\Tpv\PpeController::class, 'issue']);
     Route::post('/ppe/issues/{issue}/return',             [\App\Http\Controllers\Api\Tpv\PpeController::class, 'returnIssue']);
+    Route::post('/ppe/issues/{issue}/replace',            [\App\Http\Controllers\Api\Tpv\PpeController::class, 'replaceIssue']);
+    Route::post('/ppe/issues/{issue}/use',                [\App\Http\Controllers\Api\Tpv\PpeController::class, 'markUsed']);
     Route::get('/workers/stats',                          [TpvWorkerController::class, 'stats']);
     Route::get('/workers',                                [TpvWorkerController::class, 'index']);
     Route::post('/workers',                               [TpvWorkerController::class, 'store']);
@@ -247,6 +256,8 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::post('/approval-requests/{approval}/decide',   [\App\Http\Controllers\Api\Tpv\TpvApprovalController::class, 'decide'])->where('approval', '[0-9]+');
 
     // Competency & Training + Skill Matrix (Sangoe TPV §15).
+    // §3/§16 Medical Fitness register — cross-workforce medical view.
+    Route::get('/medical',                                [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'index']);
     Route::get('/competency',                             [\App\Http\Controllers\Api\Tpv\TpvCompetencyController::class, 'index']);
     Route::get('/workers/{worker}/competency',            [\App\Http\Controllers\Api\Tpv\TpvCompetencyController::class, 'worker'])->where('worker', '[0-9]+');
     Route::post('/workers/{worker}/competencies',         [\App\Http\Controllers\Api\Tpv\TpvCompetencyController::class, 'addCompetency'])->where('worker', '[0-9]+');
@@ -284,11 +295,14 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
 
     // Reports & Analytics (Sangoe TPV §33) — trend/benchmark analytics + CSV export.
     Route::get('/analytics',                              [\App\Http\Controllers\Api\Tpv\TpvAnalyticsController::class, 'index']);
+    Route::get('/reports',                                [\App\Http\Controllers\Api\Tpv\TpvAnalyticsController::class, 'reports']);
     Route::get('/analytics/export',                       [\App\Http\Controllers\Api\Tpv\TpvAnalyticsController::class, 'export']);
 
     // Vendor Performance Index (Sangoe TPV §27) — additive superset of the VRS.
     Route::get('/vpi',                                    [\App\Http\Controllers\Api\Tpv\TpvVendorPerformanceController::class, 'index']);
     Route::get('/vendors/{vendor}/vpi',                   [\App\Http\Controllers\Api\Tpv\TpvVendorPerformanceController::class, 'show'])->where('vendor', '[0-9]+');
+    Route::get('/vendors/{vendor}/vpi/history',           [\App\Http\Controllers\Api\Tpv\TpvVendorPerformanceController::class, 'history'])->where('vendor', '[0-9]+');
+    Route::post('/vendors/{vendor}/vpi/snapshot',         [\App\Http\Controllers\Api\Tpv\TpvVendorPerformanceController::class, 'snapshot'])->where('vendor', '[0-9]+');
 
     // Communications Centre (Sangoe TPV §31) — derived alerts + send/log.
     Route::get('/communications',                         [\App\Http\Controllers\Api\Tpv\TpvCommunicationController::class, 'index']);
@@ -364,6 +378,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::post('/site-vehicles',                         [$sr, 'storeVehicle']);
     Route::post('/site-vehicles/{vehicle}/checkout',      [$sr, 'checkoutVehicle']);
 
+    // §20 Unified gate events — Equipment / Material / Vehicle / Visitor / Person.
+    Route::get('/gate-events',                            [\App\Http\Controllers\Api\Tpv\TpvGateEventController::class, 'index']);
+    Route::post('/gate-events',                           [\App\Http\Controllers\Api\Tpv\TpvGateEventController::class, 'store']);
+
     // Evidence locker (Doc 6) — central compliance-evidence register.
     $el = \App\Http\Controllers\Api\Tpv\EvidenceLockerController::class;
     Route::get('/evidence',                               [$el, 'index']);
@@ -374,6 +392,12 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
 
 // Admin approval — activates the vendor for site access.
 Route::middleware(['auth:sanctum', 'role:admin'])->prefix('tpv')->group(function () {
+
+    // System Configuration (§34) — the config-file/constant baselines made
+    // tenant-editable. Read returns {builtins, custom, effective} per group.
+    Route::get('/settings',            [\App\Http\Controllers\Api\Tpv\TpvSettingsController::class, 'index']);
+    Route::put('/settings/{group}',    [\App\Http\Controllers\Api\Tpv\TpvSettingsController::class, 'update']);
+    Route::delete('/settings/{group}', [\App\Http\Controllers\Api\Tpv\TpvSettingsController::class, 'reset']);
 
     Route::post('/onboarding/{onboarding}/approve',   [TpvOnboardingController::class, 'approve']);
     Route::post('/onboarding/{onboarding}/reject',    [TpvOnboardingController::class, 'reject']);
@@ -392,12 +416,15 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('tpv')->group(function
     Route::get('/vendors/{vendor}/access/status',     [TpvAccessController::class, 'status']);
 
     // Approving/rejecting a statutory document is an admin gate.
+    Route::post('/documents/{document}/verify',       [VendorDocumentController::class, 'verify']);
     Route::post('/documents/{document}/review',       [VendorDocumentController::class, 'review']);
 
     // Setting a vendor's risk classification is an admin authority decision.
     Route::put('/vendors/{vendor}/risk',              [\App\Http\Controllers\Api\Tpv\VendorRiskController::class, 'assess']);
     // Scoring a vendor's prequalification is likewise an admin authority decision.
     Route::put('/vendors/{vendor}/prequalification',  [\App\Http\Controllers\Api\Tpv\VendorPrequalificationController::class, 'assess']);
+    // Recording due-diligence verification is an admin authority decision (§7).
+    Route::put('/vendors/{vendor}/due-diligence',     [\App\Http\Controllers\Api\Tpv\VendorDueDiligenceController::class, 'save']);
 
     // Granting or revoking site access is admin authority.
     Route::post('/workers/{worker}/activate',         [TpvWorkerController::class, 'activate']);

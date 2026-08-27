@@ -37,6 +37,18 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('kickoff')->grou
     Route::get('/meetings/carry-forward', [KickoffMeetingController::class, 'carryForward']);
     Route::get('/meetings/history', [KickoffMeetingController::class, 'history']);
     Route::get('/meeting-types', [KickoffMeetingController::class, 'meetingTypes']);
+    // Customers for the meeting's "which customer is this for?" picker (§2).
+    // Read through CustomerServiceContract — the meetings engine never queries
+    // the customers table itself.
+    Route::get('/customers', [KickoffMeetingController::class, 'customers']);
+    // Staff for the participant picker (§5 identity linking).
+    Route::get('/staff', [KickoffMeetingController::class, 'staff']);
+    // Cross-meeting registers (Meeting.docx §8 / §9 / §10). Declared before the
+    // /meetings/{kickoffMeeting} wildcard so it cannot swallow them.
+    Route::get('/registers/options', [KickoffMeetingController::class, 'registerOptions']);
+    Route::get('/registers/decisions', [KickoffMeetingController::class, 'decisionRegister']);
+    Route::get('/registers/issues', [KickoffMeetingController::class, 'issueRegister']);
+    Route::get('/registers/actions', [KickoffMeetingController::class, 'actionRegister']);
     // Admin Types/Templates settings — reads open to staff, writes admin-gated
     // in-controller. Layers over config/meetings.php (MeetingTypeCatalog).
     Route::get('/meeting-type-settings', [MeetingTypeSettingsController::class, 'index']);
@@ -57,6 +69,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('kickoff')->grou
     Route::post('/meetings/{kickoffMeeting}/transition', [KickoffMeetingController::class, 'transition']);
     Route::patch('/meetings/{kickoffMeeting}/attendance', [KickoffMeetingController::class, 'attendance']);
     Route::post('/meetings/{kickoffMeeting}/remind', [KickoffMeetingController::class, 'remind']);
+    // §1 "Send Invitation" — also fired automatically when a meeting is scheduled.
+    Route::post('/meetings/{kickoffMeeting}/invite', [KickoffMeetingController::class, 'sendInvitations']);
+    // §13 per-recipient Sent / Viewed / Acknowledged tracker.
+    Route::get('/meetings/{kickoffMeeting}/distribution', [KickoffMeetingController::class, 'distribution']);
     Route::post('/meetings/{kickoffMeeting}/mom', [KickoffMeetingController::class, 'uploadMom']);
     Route::post('/meetings/{kickoffMeeting}/mom/generate', [KickoffMeetingController::class, 'generateMom']);
     Route::get('/meetings/{kickoffMeeting}/mom', [KickoffMeetingController::class, 'momFile']);
@@ -73,6 +89,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('kickoff')->grou
     Route::post('/meetings/{kickoffMeeting}/issues/{meetingIssue}/progress', [KickoffMeetingController::class, 'progressIssue']);
     Route::post('/meetings/{kickoffMeeting}/issues/{meetingIssue}/convert', [KickoffMeetingController::class, 'convertIssue']);
     Route::post('/meetings/{kickoffMeeting}/issues/{meetingIssue}/convert-task', [KickoffMeetingController::class, 'convertIssueTask']);
+    // The rest of §10's escalation targets — NCR, CAPA and Approval.
+    Route::post('/meetings/{kickoffMeeting}/issues/{meetingIssue}/convert-ncr', [KickoffMeetingController::class, 'convertIssueNcr']);
+    Route::post('/meetings/{kickoffMeeting}/issues/{meetingIssue}/convert-capa', [KickoffMeetingController::class, 'convertIssueCapa']);
+    Route::post('/meetings/{kickoffMeeting}/issues/{meetingIssue}/convert-approval', [KickoffMeetingController::class, 'convertIssueApproval']);
     Route::delete('/meetings/{kickoffMeeting}', [KickoffMeetingController::class, 'destroy']);
 
     // ── Online meeting link generation ────────────────────────────────────────

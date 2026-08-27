@@ -68,6 +68,15 @@ class TpvInspectionService
 
     public function updateFinding(TpvInspectionFinding $finding, array $data): TpvInspectionFinding
     {
+        // Rule 11 (§36) — an inspection finding cannot progress past Open (to
+        // Action or Closed) without a named responsible owner. Mirrors the
+        // owner-gate already enforced on CAPA and NCR progression.
+        $nextStatus = $data['status'] ?? $finding->status;
+        $owner = array_key_exists('responsible_by', $data) ? $data['responsible_by'] : $finding->responsible_by;
+        if (in_array($nextStatus, ['Action', 'Closed'], true) && empty($owner)) {
+            throw new \App\Exceptions\BusinessException('A responsible owner is required before an inspection finding can be actioned or closed.');
+        }
+
         $finding->update($data);
 
         return $finding;

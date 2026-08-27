@@ -3,6 +3,7 @@
 namespace App\Services\Tpv;
 
 use App\Models\Shared\KickoffMomItem;
+use App\Models\Tpv\HsseIncident;
 use App\Models\Tpv\IncidentCapa;
 use App\Models\Tpv\TpvGateAttendance;
 use App\Models\Tpv\TpvGateScan;
@@ -35,6 +36,11 @@ class TpvDashboardService
 {
     /** Badges inside this many days of expiry are worth chasing. */
     private const EXPIRY_WINDOW_DAYS = 30;
+
+    public function __construct(
+        private PpeInventoryService $ppe,
+        private TpvComplianceService $compliance,
+    ) {}
 
     public function getDashboard(int $tenantId): array
     {
@@ -104,6 +110,8 @@ class TpvDashboardService
                 'training_pct' => $activeCount ? (int) round($trainingOk / $activeCount * 100) : null,
                 'medical_pct' => $activeCount ? (int) round($medicalOk / $activeCount * 100) : null,
             ],
+            // §4 executive compliance KPIs — PPE equipping and the §21 register.
+            'compliance' => $this->complianceKpis($tenantId),
             'open' => [
                 'actions' => KickoffMomItem::where('tenant_id', $tenantId)
                     ->whereIn('status', MomActionStatus::OPEN_STATES)->count(),
@@ -122,6 +130,32 @@ class TpvDashboardService
                 'avg_score' => $avgPerf,
                 'period' => $latestPeriod,
             ],
+        ];
+    }
+
+    /**
+     * §4 executive compliance KPIs. PPE compliance % is over workers that have a
+     * PPE rule at all (unconfigured workers are excluded, not counted as 0%); the
+     * overall compliance % is the mean of the §21 per-vendor register scores.
+     * Both are null when there is nothing to measure, so a tile never shows a fake 0%.
+     */
+    private function complianceKpis(int $tenantId): array
+    {
+        $ppe = $this->ppe->complianceSummary($tenantId);
+        $configured = (int) $ppe['workers'] - (int) $ppe['not_configured'];
+        $ppePct = $configured > 0 ? (int) round(((int) $ppe['fully_equipped'] / $configured) * 100) : null;
+
+        $roster = $this->compliance->roster($tenantId);
+        $overallPct = count($roster) > 0
+            ? (int) round(array_sum(array_column($roster, 'percent')) / count($roster))
+            : null;
+
+        return [
+            'ppe_pct'          => $ppePct,
+            'ppe_missing'      => (int) $ppe['missing_ppe'],
+            'ppe_configured'   => $configured,
+            'overall_pct'      => $overallPct,
+            'vendors_tracked'  => count($roster),
         ];
     }
 
@@ -151,6 +185,8 @@ class TpvDashboardService
             ['key' => 'training', 'label' => 'Training pending', 'path' => '/app/tpv/workforce',
                 'count' => TpvWorker::forTenant($tenantId)->where('status', TpvWorkerStatus::ACTIVE)
                     ->whereDoesntHave('induction', fn ($q) => $q->where('passed', true))->count()],
+            ['key' => 'ppe_pending', 'label' => 'PPE pending issue', 'path' => '/app/tpv/ppe',
+                'count' => (int) $this->ppe->complianceSummary($tenantId)['missing_ppe']],
             ['key' => 'medical', 'label' => 'Medical expiring/expired', 'path' => '/app/tpv/workforce',
                 'count' => TpvWorker::forTenant($tenantId)->where('status', TpvWorkerStatus::ACTIVE)
                     ->whereDoesntHave('medical', fn ($q) => $q->whereDate('valid_until', '>=', $soon))->count()],
@@ -189,6 +225,58 @@ class TpvDashboardService
         return collect(['Critical', 'High', 'Medium', 'Low', 'Unclassified'])
             ->map(fn ($lvl) => ['level' => $lvl, 'count' => (int) ($rows[$lvl] ?? 0)])
             ->all();
+    }
+
+    /**
+     * §4 — Risk drill-down by dimension. Groups vendors (with a risk-level
+     * breakdown) and open HSSE incidents by the requested dimension, so the
+     * Control Tower can slice risk by Vendor / Project / Site / Department /
+     * Work Package / Risk Category. Dimension fields are TPV-local columns added
+     * for §5/§14/§23.
+     *
+     * @return array{dimension:string, groups:array<int,array>}
+     */
+    public function riskDrilldown(int $tenantId, string $dimension): array
+    {
+        // Which vendor / incident column each dimension maps to.
+        [$vendorCol, $incidentCol] = match ($dimension) {
+            'project'       => ['project', 'project'],
+            'site'          => ['site', 'site'],
+            'department'    => ['department', 'department'],
+            'risk_category' => ['risk_level', null],
+            'work_package'  => [null, 'work_package_id'],
+            default         => ['risk_level', null],   // 'vendor'/'risk' fall back to risk level
+        };
+
+        $groups = [];
+
+        if ($vendorCol !== null) {
+            $rows = Vendor::forTenant($tenantId)
+                ->selectRaw("COALESCE(NULLIF({$vendorCol}, ''), 'Unassigned') as grp, risk_level, COUNT(*) as count")
+                ->groupBy('grp', 'risk_level')->get();
+
+            foreach ($rows as $r) {
+                $g = $r->grp;
+                $groups[$g] ??= ['group' => $g, 'vendors' => 0, 'risk' => ['Critical' => 0, 'High' => 0, 'Medium' => 0, 'Low' => 0, 'Unclassified' => 0], 'open_incidents' => 0];
+                $groups[$g]['vendors'] += (int) $r->count;
+                $groups[$g]['risk'][$r->risk_level ?: 'Unclassified'] = (int) $r->count;
+            }
+        }
+
+        if ($incidentCol !== null) {
+            $rows = HsseIncident::forTenant($tenantId)
+                ->where('status', '!=', 'Closed')
+                ->selectRaw("COALESCE(NULLIF(CAST({$incidentCol} AS CHAR), ''), 'Unassigned') as grp, COUNT(*) as count")
+                ->groupBy('grp')->get();
+
+            foreach ($rows as $r) {
+                $g = (string) $r->grp;
+                $groups[$g] ??= ['group' => $g, 'vendors' => 0, 'risk' => ['Critical' => 0, 'High' => 0, 'Medium' => 0, 'Low' => 0, 'Unclassified' => 0], 'open_incidents' => 0];
+                $groups[$g]['open_incidents'] = (int) $r->count;
+            }
+        }
+
+        return ['dimension' => $dimension, 'groups' => array_values($groups)];
     }
 
     /** Headline numbers. */

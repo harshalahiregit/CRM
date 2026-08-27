@@ -139,6 +139,24 @@ export const purchasePortalApi = {
     get:    () => api.get('/portal/purchase/kickoff').then(r => r.data),
     accept: () => api.post('/portal/purchase/kickoff/accept').then(r => r.data),
   },
+
+  // §32 "View compliance" — the vendor's own compliance register (read-only).
+  compliance: {
+    get: () => api.get('/portal/purchase/compliance').then(r => r.data),
+  },
+
+  // §32 Governance-response half (no PPE matrix — Purchase has none).
+  governance: {
+    ncrs:            ()            => api.get('/portal/purchase/ncrs').then(r => r.data),
+    respondNcr:      (id, payload) => api.post(`/portal/purchase/ncrs/${id}/respond`, payload).then(r => r.data),
+    capas:           ()            => api.get('/portal/purchase/capas').then(r => r.data),
+    submitCapa:      (id, payload) => api.post(`/portal/purchase/capas/${id}/evidence`, payload).then(r => r.data),
+    requestApproval: (payload)     => api.post('/portal/purchase/approvals/request', payload).then(r => r.data),
+    requestExtension:(payload)     => api.post('/portal/purchase/extensions/request', payload).then(r => r.data),
+    meetings:        ()            => api.get('/portal/purchase/meetings').then(r => r.data),
+    actions:         ()            => api.get('/portal/purchase/actions').then(r => r.data),
+    respondAction:   (id, payload) => api.post(`/portal/purchase/actions/${id}/respond`, payload).then(r => r.data),
+  },
 }
 
 export default purchasePortalApi

@@ -16,12 +16,11 @@ class GovernanceController extends Controller
     }
 
     /** HSSE authority matrix (Doc 1) — the named authorities + who owns what. */
-    public function authorityMatrix()
+    public function authorityMatrix(Request $request, \App\Support\Tpv\TpvSettings $settings)
     {
-        return response()->json([
-            'authorities' => config('authority.authorities'),
-            'matrix'      => config('authority.matrix'),
-        ]);
+        // Tenant-configurable (§34); the shipped config/authority.php is the
+        // baseline returned when a tenant has not overridden it.
+        return response()->json($settings->authority($request->user()->tenant_id));
     }
 
     /** DPR / WPR / MCR periodic compliance report. */

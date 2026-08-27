@@ -85,6 +85,11 @@ class TpvCapaService
         if (! in_array($to, CapaSource::STATUSES, true)) {
             throw new BusinessException("Unknown CAPA status: {$to}.");
         }
+        // Rule 11 — Every Action Has an Owner. A CAPA may be raised (Open) before an
+        // owner is named, but it cannot be worked or closed while ownerless.
+        if ($to !== 'Open' && empty($capa->assigned_to)) {
+            throw new BusinessException('Assign an owner before progressing this CAPA (Rule 11 — every action has an owner).');
+        }
         if ($to === 'Verified' && empty($capa->evidence_path)) {
             throw new BusinessException('Attach closure evidence before verifying this CAPA.');
         }

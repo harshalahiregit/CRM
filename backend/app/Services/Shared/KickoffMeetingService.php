@@ -10,6 +10,7 @@ use App\Models\Shared\KickoffMeetingSubject;
 use App\Models\Shared\KickoffMomItem;
 use App\Models\Shared\MeetingAgendaItem;
 use App\Models\Shared\MeetingDecision;
+use App\Models\Shared\MeetingDistribution;
 use App\Models\Shared\MeetingIssue;
 use App\Models\Task\Task;
 use App\Models\Tenant;
@@ -21,6 +22,9 @@ use App\Repositories\Shared\KickoffMeetingRepository;
 use App\Services\Notifications\NotificationService;
 use App\Services\Task\TaskService;
 use App\Services\Tpv\IncidentService;
+use App\Services\Tpv\TpvApprovalService;
+use App\Services\Tpv\TpvCapaService;
+use App\Services\Tpv\TpvNcrService;
 use App\Support\FrontendUrl;
 use App\Support\Shared\KickoffStatus as Status;
 use App\Support\Shared\KickoffSubject;
@@ -41,6 +45,7 @@ class KickoffMeetingService
     public function __construct(
         private KickoffMeetingRepository $repo,
         private NotificationService $notifications,
+        private MeetingInviteService $invites,
     ) {}
 
     public function list(int $tenantId, array $filters)
@@ -172,9 +177,11 @@ class KickoffMeetingService
             'priority' => $data['priority'] ?? null,
             'confidentiality' => $data['confidentiality'] ?? null,
             'chairperson' => $data['chairperson'] ?? null,
+            'organizer' => $data['organizer'] ?? null,
             'coordinator' => $data['coordinator'] ?? null,
             'department' => $data['department'] ?? null,
             'client_name' => $data['client_name'] ?? null,
+            'client_id' => $data['client_id'] ?? null,
             'work_package' => $data['work_package'] ?? null,
             'project_id' => $data['project_id'] ?? null,
             'mode' => $data['mode'] ?? null,
@@ -224,7 +231,37 @@ class KickoffMeetingService
             'meeting_id' => $meeting->id, 'tenant_id' => $actor->tenant_id, 'actor_id' => $actor->id,
         ]);
 
+        // Meeting.docx §1 puts "Send Invitation" in the lifecycle immediately
+        // after scheduling. Nobody was ever told a meeting existed; the roster
+        // only found out if a coordinator remembered to press Remind.
+        //
+        // Only when there is a date to invite people TO — a meeting drafted
+        // without one is not ready to go out, and $data['send_invitations']
+        // === false lets a caller draft one deliberately.
+        if ($meeting->scheduled_at && ($data['send_invitations'] ?? true)) {
+            $this->invites->sendInvitations($meeting->fresh(['attendees', 'agendaItems']), $actor);
+        }
+
         return $this->find($meeting->id, $actor->tenant_id);
+    }
+
+    /**
+     * Send (or re-send) the invitation on demand (Meeting.docx §1).
+     *
+     * Separate from the automatic send at scheduling because the roster and the
+     * time both change after a meeting is first created, and the people added
+     * afterwards must still be told.
+     */
+    public function sendInvitations(KickoffMeeting $meeting, User $actor): array
+    {
+        if (! $meeting->scheduled_at) {
+            throw new BusinessException('Set the meeting date and time before sending invitations.');
+        }
+        if (Status::isClosed($meeting->status)) {
+            throw new BusinessException('A '.Status::label($meeting->status).' meeting cannot send invitations.');
+        }
+
+        return $this->invites->sendInvitations($meeting, $actor);
     }
 
     /** Edit an open meeting's details (not its status — that goes through the transitions). */
@@ -245,9 +282,11 @@ class KickoffMeetingService
             'priority' => $data['priority'] ?? null,
             'confidentiality' => $data['confidentiality'] ?? null,
             'chairperson' => $data['chairperson'] ?? null,
+            'organizer' => $data['organizer'] ?? null,
             'coordinator' => $data['coordinator'] ?? null,
             'department' => $data['department'] ?? null,
             'client_name' => $data['client_name'] ?? null,
+            'client_id' => $data['client_id'] ?? null,
             'work_package' => $data['work_package'] ?? null,
             'project_id' => $data['project_id'] ?? null,
             'mode' => $data['mode'] ?? null,
@@ -469,11 +508,60 @@ class KickoffMeetingService
     }
 
     /** First-view stamp for the distribution Sent → Viewed → Acknowledged trail. */
-    public function markMomViewed(KickoffMeeting $meeting): void
+    public function markMomViewed(KickoffMeeting $meeting, ?string $token = null): void
     {
         if ($meeting->mom_viewed_at === null) {
             $meeting->forceFill(['mom_viewed_at' => now()])->saveQuietly();
         }
+
+        // Per-recipient view (Meeting.docx §13). The meeting-level stamp above is
+        // kept as the headline "somebody has read it"; this says who.
+        if ($token) {
+            $row = MeetingDistribution::where('token', $token)
+                ->where('kickoff_meeting_id', $meeting->id)->first();
+            if ($row) {
+                $this->invites->markViewed($row);
+            }
+        }
+    }
+
+    /**
+     * The per-recipient delivery tracker for one meeting (Meeting.docx §13).
+     *
+     * Grouped by what was sent, so the detail page can show the invitation and
+     * the minutes as two separate lists rather than one undifferentiated pile.
+     *
+     * @return array{invite: array<int,mixed>, mom: array<int,mixed>, totals: array<string,int>}
+     */
+    public function distributionTracker(KickoffMeeting $meeting): array
+    {
+        $rows = $meeting->distributions()->get();
+
+        $shape = fn ($r) => [
+            'id' => $r->id,
+            'name' => $r->name,
+            'email' => $r->email,
+            'party' => $r->party,
+            'channel' => $r->channel,
+            'status' => $r->status,
+            'state_label' => $r->state_label,
+            'sent_at' => $r->sent_at,
+            'viewed_at' => $r->viewed_at,
+            'acknowledged_at' => $r->acknowledged_at,
+        ];
+
+        $mom = $rows->where('kind', MeetingDistribution::KIND_MOM);
+
+        return [
+            'invite' => $rows->where('kind', MeetingDistribution::KIND_INVITE)->map($shape)->values()->all(),
+            'mom' => $mom->map($shape)->values()->all(),
+            'totals' => [
+                'sent' => $mom->where('status', MeetingDistribution::SENT)->count(),
+                'viewed' => $mom->whereNotNull('viewed_at')->count(),
+                'acknowledged' => $mom->whereNotNull('acknowledged_at')->count(),
+                'no_address' => $mom->where('status', MeetingDistribution::SKIPPED)->count(),
+            ],
+        ];
     }
 
     /**
@@ -556,6 +644,11 @@ class KickoffMeetingService
     {
         $meeting->loadMissing(['attendees', 'kickoffable']);
 
+        // A re-distribution replaces the previous ledger: those rows describe an
+        // earlier send of an earlier document, and keeping them would double-count
+        // the Sent/Viewed/Acknowledged tracker (Meeting.docx §13).
+        $this->invites->resetMomLedger($meeting);
+
         $subject = $meeting->kickoffable;
         $vendor = null;
         $onboarding = null;
@@ -623,27 +716,78 @@ class KickoffMeetingService
                 $this->momPlainText($meeting, $r['vendor'], $ackHere, $meetingDate, $momUrl),
                 $meeting->tenant_id,
             );
+
+            $this->invites->recordMomRecipient(
+                $meeting, MeetingDistribution::PARTY_VENDOR,
+                $r['vendor']?->company_name ?? 'Vendor', $to,
+            );
+        }
+
+        // The customer the meeting is for (Meeting.docx §13 lists Client as its
+        // own distribution group). Resolved through CustomerServiceContract, so
+        // the meetings engine still never queries the customers table.
+        if ($client = $this->invites->clientRecipient($meeting)) {
+            $to = $client['email'];
+            if ($to && ! isset($sent[strtolower($to)])) {
+                $sent[strtolower($to)] = true;
+                $row = $this->invites->recordMomRecipient(
+                    $meeting, MeetingDistribution::PARTY_CLIENT, $client['name'], $to,
+                );
+                $readUrl = FrontendUrl::to('/kickoff/mom/'.$row->token);
+                $this->notifications->emailHtml(
+                    $to, $readSubject,
+                    $this->renderMomEmail($meeting, null, null, $meetingDate, $readUrl),
+                    ['category' => 'System', 'kickoff_meeting_id' => $meeting->id],
+                    $this->momPlainText($meeting, null, null, $meetingDate, $readUrl),
+                    $meeting->tenant_id,
+                );
+            }
         }
 
         // Distribute a read copy to the internal side too (Meeting.docx §13 — the
         // minutes go to the organisation's own attendees, not only the vendor).
         // No acknowledge button and no public read token: internal staff read it in
         // the app; this is a courtesy notification that the minutes were issued.
+        //
+        // Every group §13 names gets a copy, not only the internal side: an
+        // external consultant or a client representative on the roster was
+        // previously left out of their own meeting's minutes entirely.
         foreach ($meeting->attendees as $a) {
+            $party = $this->invites->partyFor($a);
             $to = $a->email;
-            if (! $to || strtolower((string) $a->side) !== 'internal' || isset($sent[strtolower($to)])) {
-                continue;
-            }
-            $sent[strtolower($to)] = true;
 
-            $this->notifications->emailHtml(
-                $to,
-                $readSubject,
-                $this->renderMomEmail($meeting, null, null, $meetingDate, null),
-                ['category' => 'System', 'kickoff_meeting_id' => $meeting->id],
-                $this->momPlainText($meeting, null, null, $meetingDate, null),
-                $meeting->tenant_id,
+            if ($to && isset($sent[strtolower($to)])) {
+                continue;   // already covered as the vendor or the client
+            }
+
+            // A roster row with no address is still recorded — as 'skipped', so
+            // the tracker says "no address" rather than implying delivery.
+            $row = $this->invites->recordMomRecipient(
+                $meeting, $party, $a->name, $to, $a->id, $a->user_id,
             );
+
+            if ($to) {
+                $sent[strtolower($to)] = true;
+                $readUrl = FrontendUrl::to('/kickoff/mom/'.$row->token);
+                $this->notifications->emailHtml(
+                    $to,
+                    $readSubject,
+                    $this->renderMomEmail($meeting, null, null, $meetingDate, $readUrl),
+                    ['category' => 'System', 'kickoff_meeting_id' => $meeting->id],
+                    $this->momPlainText($meeting, null, null, $meetingDate, $readUrl),
+                    $meeting->tenant_id,
+                );
+            }
+
+            // §13's "Sangoe notification" — the in-app copy, which is how an
+            // internal participant whose e-mail we do not hold hears about it.
+            if ($a->user_id) {
+                $this->invites->notifyInApp(
+                    $meeting, (int) $a->user_id,
+                    'Minutes issued: '.$meeting->title,
+                    'The minutes of meeting '.($meeting->meeting_no ?: '#'.$meeting->id).' have been distributed.',
+                );
+            }
         }
 
         if ($phone) {
@@ -824,6 +968,19 @@ class KickoffMeetingService
         $meeting = $subject
             ? KickoffMeeting::find($subject->kickoff_meeting_id)
             : KickoffMeeting::where('ack_token', $token)->first();
+
+        // A per-recipient read token (Meeting.docx §13). Every non-vendor
+        // recipient now gets one of these instead of a shared link, which is
+        // what makes "who has actually viewed the minutes" answerable.
+        if (! $meeting) {
+            $dist = MeetingDistribution::where('token', $token)->first();
+            if ($dist) {
+                $meeting = KickoffMeeting::find($dist->kickoff_meeting_id);
+                if ($meeting && (int) $dist->tenant_id !== (int) $meeting->tenant_id) {
+                    throw new BusinessException('This link is not valid.', 404);
+                }
+            }
+        }
 
         // One message for every miss — unknown, tampered, or deleted. Telling them
         // apart would let someone probe which tokens exist.
@@ -1095,7 +1252,12 @@ class KickoffMeetingService
      */
     public function generateMom(KickoffMeeting $meeting, User $actor): KickoffMeeting
     {
-        $meeting->loadMissing('attendees', 'kickoffable', 'creator', 'subjects.subject');
+        // The structured registers are loaded too — the MOM prints them, and a
+        // lazy-load inside the Blade would be a query per row.
+        $meeting->loadMissing(
+            'attendees', 'kickoffable', 'creator', 'subjects.subject',
+            'agendaItems.owner', 'momItems.responsible', 'decisions.decidedBy', 'issues.owner',
+        );
 
         // Every vendor on the meeting, primary first. Falls back to the single
         // kickoffable so a record predating multi-vendor still names its vendor.
@@ -1103,9 +1265,16 @@ class KickoffMeetingService
             ? $meeting->subjects->map(fn ($s) => KickoffSubject::nameOf($s->subject))->filter()->values()->all()
             : array_filter([KickoffSubject::nameOf($meeting->kickoffable)]);
 
+        // The project label for the MOM header (Meeting.docx §7). Soft link, so a
+        // project that no longer resolves simply prints as a dash.
+        $projectName = $meeting->project_id
+            ? app(ProjectDirectoryContract::class)->labelFor((int) $meeting->project_id, (int) $meeting->tenant_id)
+            : null;
+
         $pdf = Pdf::loadView('pdf.kickoff_mom', [
             'meeting' => $meeting,
             'tenant' => Tenant::find($meeting->tenant_id),
+            'projectName' => $projectName,
             'subjectNames' => $subjectNames,
             'subjectName' => KickoffSubject::nameOf($meeting->kickoffable),
             'generatedBy' => $actor->name,
@@ -1126,6 +1295,45 @@ class KickoffMeetingService
 
         return $this->find($meeting->id, $actor->tenant_id);
     }
+
+    /**
+     * The additional "Related To" links a meeting-born task should carry
+     * (Meeting.docx §8) - project, customer and the meeting itself, minus
+     * whichever one is already the primary link.
+     *
+     * A task has ONE primary link, so everything else in the doc's chain
+     * (Meeting -> Project -> Vendor -> Work Package -> Person) has to ride as an
+     * additional relation. TaskRepository's scope matches those too, so the same
+     * action now shows on the project's board as well as the vendor's.
+     *
+     * @return array<int, array{rel_type:string, rel_id:int}>
+     */
+    private function taskRelationsFor(?KickoffMeeting $meeting, string $relType, ?int $relId): array
+    {
+        if (! $meeting) {
+            return [];
+        }
+
+        $rel = [];
+        if ($meeting->project_id) {
+            $rel[] = ['rel_type' => 'project', 'rel_id' => (int) $meeting->project_id];
+        }
+        if ($meeting->client_id) {
+            $rel[] = ['rel_type' => 'customer', 'rel_id' => (int) $meeting->client_id];
+        }
+        if ($meeting->kickoffable instanceof Vendor) {
+            $rel[] = ['rel_type' => 'tpv_vendor', 'rel_id' => (int) $meeting->kickoffable->id];
+        }
+        $rel[] = ['rel_type' => 'meeting', 'rel_id' => (int) $meeting->id];
+
+        // The primary link is already on the task; repeating it as a relation
+        // would show the same chip twice.
+        return array_values(array_filter(
+            $rel,
+            fn ($r) => ! ($r['rel_type'] === $relType && $relId !== null && $r['rel_id'] === $relId)
+        ));
+    }
+
 
     /* ── internals ─────────────────────────────────────────────── */
 
@@ -1367,10 +1575,20 @@ class KickoffMeetingService
         }
 
         $changes = [];
-        foreach (['responsible_org', 'target_date'] as $field) {
+        foreach (['responsible_org', 'target_date', 'responsible_attendee_id', 'responsible_names'] as $field) {
             if (array_key_exists($field, $data)) {
                 $changes[$field] = $data[$field];
             }
+        }
+
+        // Rule 11 (§36) — a MOM action cannot progress past Open without a named
+        // owner (an attendee id or free-text responsible name). Mirrors the
+        // CAPA / NCR / inspection-finding owner gates.
+        $nextStatus = $to ?? $item->status;
+        $ownerId    = $changes['responsible_attendee_id'] ?? $item->responsible_attendee_id;
+        $ownerNames = $changes['responsible_names'] ?? $item->responsible_names;
+        if ($nextStatus !== MomActionStatus::OPEN && empty($ownerId) && empty(trim((string) $ownerNames))) {
+            throw new BusinessException('A responsible owner is required before an action can be progressed past Open.');
         }
         // The verifier's note lives in verification_note — a field the meeting form
         // does not own — so a later form edit can never overwrite it.
@@ -1491,6 +1709,7 @@ class KickoffMeetingService
             'rel_type' => $relType,
             'rel_id' => $relId,
             'assignee_ids' => $assigneeIds,
+            'relations' => $this->taskRelationsFor($meeting, $relType, $relId),
         ];
 
         $task = app(TaskService::class)->create($data, $actor->tenant_id, $actor->id);
@@ -1687,6 +1906,117 @@ class KickoffMeetingService
     }
 
     /**
+     * Escalate a meeting issue into a real NCR (Meeting.docx §10).
+     *
+     * The issue's own words carry over — a re-typed NCR drifts from the issue it
+     * came from — and the conversion is stamped so it cannot be raised twice.
+     */
+    public function convertIssueToNcr(MeetingIssue $issue, array $data, User $actor): MeetingIssue
+    {
+        $this->assertConvertible($issue);
+
+        $vendorId = $this->meetingVendorId($issue->meeting);
+        if (! $vendorId) {
+            throw new BusinessException('This meeting is not linked to a vendor, so its issues cannot be raised as NCRs.');
+        }
+
+        // Issue severity and NCR severity are the same four-step scale; only the
+        // Critical/Major wording differs.
+        $severity = ['Low' => 'Minor', 'Medium' => 'Major', 'High' => 'Major', 'Critical' => 'Critical'][$issue->severity] ?? 'Major';
+
+        $ncr = app(TpvNcrService::class)->create([
+            'vendor_id' => $vendorId,
+            'project_id' => $issue->meeting?->project_id,
+            'title' => $issue->title,
+            'finding' => $issue->description ?: $issue->title,
+            'requirement' => $data['requirement'] ?? null,
+            'severity' => $data['severity'] ?? $severity,
+            'due_date' => optional($issue->due_date)->toDateString(),
+        ], $actor->tenant_id, $actor->id);
+
+        return $this->stampConversion($issue, 'NCR', $ncr->reference, $ncr->id, $actor);
+    }
+
+    /** Escalate a meeting issue into a CAPA (Meeting.docx §10). */
+    public function convertIssueToCapa(MeetingIssue $issue, array $data, User $actor): MeetingIssue
+    {
+        $this->assertConvertible($issue);
+
+        $vendorId = $this->meetingVendorId($issue->meeting);
+        if (! $vendorId) {
+            throw new BusinessException('This meeting is not linked to a vendor, so its issues cannot be raised as CAPAs.');
+        }
+
+        $priority = ['Low' => 'Low', 'Medium' => 'Medium', 'High' => 'High', 'Critical' => 'Critical'][$issue->severity] ?? 'Medium';
+
+        $capa = app(TpvCapaService::class)->create([
+            'vendor_id' => $vendorId,
+            // CapaSource::CLASSES maps 'meeting' onto KickoffMeeting, so the CAPA
+            // links back to the meeting the issue was raised in.
+            'source_kind' => 'meeting',
+            'source_id' => $issue->kickoff_meeting_id,
+            'title' => $issue->title,
+            'type' => $data['type'] ?? 'Corrective',
+            'root_cause' => $data['root_cause'] ?? null,
+            'action' => $issue->description ?: $issue->title,
+            'priority' => $data['priority'] ?? $priority,
+            'due_date' => optional($issue->due_date)->toDateString(),
+        ], $actor->tenant_id, $actor->id);
+
+        return $this->stampConversion($issue, 'CAPA', $capa->reference, $capa->id, $actor);
+    }
+
+    /** Raise a meeting issue as an approval request (Meeting.docx §10). */
+    public function convertIssueToApproval(MeetingIssue $issue, array $data, User $actor): MeetingIssue
+    {
+        $this->assertConvertible($issue);
+
+        $priority = ['Low' => 'Low', 'Medium' => 'Medium', 'High' => 'High', 'Critical' => 'Urgent'][$issue->severity] ?? 'Medium';
+
+        $approval = app(TpvApprovalService::class)->raise([
+            'approval_type' => $data['approval_type'] ?? 'Other',
+            'subject_type' => MeetingIssue::class,
+            'subject_id' => $issue->id,
+            'vendor_id' => $this->meetingVendorId($issue->meeting),
+            'title' => $issue->title,
+            'description' => $issue->description
+                ?: ('Raised from meeting '.($issue->meeting?->meeting_no ?: '#'.$issue->kickoff_meeting_id)),
+            'priority' => $data['priority'] ?? $priority,
+        ], $actor->tenant_id, $actor->id);
+
+        return $this->stampConversion($issue, 'Approval', $approval->reference, $approval->id, $actor);
+    }
+
+    /** One conversion per issue — a second would duplicate the escalation. */
+    private function assertConvertible(MeetingIssue $issue): void
+    {
+        if ($issue->is_converted) {
+            throw new BusinessException("This issue was already converted to {$issue->converted_to} ({$issue->converted_ref}).");
+        }
+    }
+
+    /**
+     * Record what an issue became. An escalated issue moves into progress: it is
+     * now tracked in the record it became, not sitting untouched in the register.
+     */
+    private function stampConversion(MeetingIssue $issue, string $kind, ?string $ref, ?int $id, User $actor): MeetingIssue
+    {
+        $issue->update([
+            'converted_to' => $kind,
+            'converted_ref' => $ref,
+            'converted_id' => $id,
+            'status' => MeetingIssueStatus::isOpen($issue->status)
+                ? MeetingIssueStatus::IN_PROGRESS
+                : $issue->status,
+        ]);
+
+        $issue->meeting?->recordAudit('issue_converted', $actor,
+            "Issue {$issue->issue_ref} raised as {$kind} {$ref}");
+
+        return $issue->fresh(['owner:id,name']);
+    }
+
+    /**
      * Convert an issue into a real Sangoe Task (Meeting.docx §10 — "convert the
      * issue into Task/…"). Mirrors the action→task push: the task is linked to the
      * vendor and carries the issue's owner/severity/due-date; the issue records the
@@ -1734,6 +2064,7 @@ class KickoffMeetingService
             'rel_type' => $relType,
             'rel_id' => $relId,
             'assignee_ids' => $assigneeIds,
+            'relations' => $this->taskRelationsFor($meeting, $relType, $relId),
         ], $actor->tenant_id, $actor->id);
 
         $issue->update([
@@ -1890,6 +2221,14 @@ class KickoffMeetingService
                 'momItems as open_actions' => fn ($q) => $q->whereIn('status', MomActionStatus::OPEN_STATES),
                 'issues as open_issues' => fn ($q) => $q->whereIn('status', MeetingIssueStatus::OPEN_STATES),
                 'decisions as decisions_count',
+                // Meeting.docx §11 shows the previous MOM as "12 Actions · 7 Closed
+                // · 3 In Progress · 2 Overdue" — the split is the point, an open
+                // count alone does not say whether last time went well.
+                'momItems as total_actions',
+                'momItems as closed_actions' => fn ($q) => $q->where('status', MomActionStatus::CLOSED),
+                'momItems as in_progress_actions' => fn ($q) => $q->where('status', MomActionStatus::IN_PROGRESS),
+                'momItems as overdue_actions' => fn ($q) => $q->whereIn('status', MomActionStatus::OPEN_STATES)
+                    ->whereNotNull('target_date')->whereDate('target_date', '<', now()),
             ])
             ->find($priorMeetings->first()->id);
 
@@ -1904,6 +2243,10 @@ class KickoffMeetingService
             'open_actions' => (int) $last->open_actions,
             'open_issues' => (int) $last->open_issues,
             'decisions' => (int) $last->decisions_count,
+            'total_actions' => (int) $last->total_actions,
+            'closed_actions' => (int) $last->closed_actions,
+            'in_progress_actions' => (int) $last->in_progress_actions,
+            'overdue_actions' => (int) $last->overdue_actions,
         ] : null;
 
         return [
@@ -2133,6 +2476,15 @@ class KickoffMeetingService
                 'kickoff_meeting_id' => $meeting->id,
                 'item' => $topic,
                 'description' => $item['description'] ?? null,
+                // Meeting.docx §7 — what was actually said under this item, and
+                // what was settled. Previously both collapsed into the single
+                // meeting-level `minutes` field, which broke the doc's
+                // Agenda -> Discussion -> Decision -> Action chain at step two.
+                'discussion' => $item['discussion'] ?? null,
+                'decision' => $item['decision'] ?? null,
+                // §9 — supporting documents + previous-discussion reference.
+                'supporting_documents' => $item['supporting_documents'] ?? null,
+                'previous_discussion_ref' => $item['previous_discussion_ref'] ?? null,
                 'owner_attendee_id' => $owner,
                 'owner_names' => $names !== '' ? $names : null,
                 'duration_minutes' => $item['duration_minutes'] ?? null,
@@ -2160,6 +2512,11 @@ class KickoffMeetingService
 
         foreach ($attendees as $a) {
             $contact = null;
+            $user = null;
+            if (! empty($a['user_id'])) {
+                $user = User::where('tenant_id', $tenantId)->find($a['user_id']);
+            }
+
             if (! empty($a['vendor_contact_id'])) {
                 $contact = VendorContact::forTenant($tenantId)->find($a['vendor_contact_id']);
                 if (! $contact) {
@@ -2171,8 +2528,13 @@ class KickoffMeetingService
                 'tenant_id' => $tenantId,
                 'kickoff_meeting_id' => $meeting->id,
                 'vendor_contact_id' => $contact?->id,
-                'name' => $contact?->name ?? ($a['name'] ?? 'Unnamed attendee'),
-                'email' => $contact?->email ?? ($a['email'] ?? null),
+                // Meeting.docx §5 — an internal participant picked from the staff
+                // directory is a Sangoe identity, not a retyped name: it is what
+                // makes the in-app notification, the auto-assignee on an action
+                // and "my meetings" work at all. Verified against the tenant.
+                'user_id' => $user?->id,
+                'name' => $contact?->name ?? $user?->name ?? ($a['name'] ?? 'Unnamed attendee'),
+                'email' => $contact?->email ?? $user?->email ?? ($a['email'] ?? null),
                 'phone' => $contact?->phone ?? ($a['phone'] ?? null),
                 'organisation' => $a['organisation'] ?? null,
                 'role' => $a['role'] ?? null,

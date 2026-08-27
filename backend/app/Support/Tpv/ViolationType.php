@@ -22,7 +22,9 @@ class ViolationType
 
     /**
      * Cumulative open-points → escalation level. Ordered ascending; the highest
-     * threshold not exceeding the total wins.
+     * threshold not exceeding the total wins. This is the shipped default; a tenant
+     * may override it through TpvSettings ('violation_ladder'), which is why the
+     * `*Steps` helpers below take a ladder rather than reading this constant.
      */
     public const LADDER = [
         0 => 'None',
@@ -44,13 +46,48 @@ class ViolationType
         return self::SEVERITY_POINTS[$severity] ?? 1;
     }
 
-    /** Map a cumulative open-points total to its escalation level. */
+    /** Points for a severity from a configurable map (falls back to the default). */
+    public static function pointsForWith(?string $severity, ?array $map): int
+    {
+        $map = $map ?: self::SEVERITY_POINTS;
+
+        return (int) ($map[$severity] ?? self::SEVERITY_POINTS[$severity] ?? 1);
+    }
+
+    /** Map a cumulative open-points total to its escalation level (default ladder). */
     public static function levelFor(int $points): string
     {
+        return self::levelForSteps($points, self::ladderSteps());
+    }
+
+    /** The default ladder as an ordered list of {points, level} steps (for editing). */
+    public static function ladderSteps(): array
+    {
+        $steps = [];
+        foreach (self::LADDER as $points => $level) {
+            $steps[] = ['points' => (int) $points, 'level' => $level];
+        }
+
+        return $steps;
+    }
+
+    /**
+     * Map a cumulative open-points total to its escalation level using a steps
+     * list (the tenant-configurable form). The highest step whose points the total
+     * meets or exceeds wins; an empty/invalid ladder falls back to the default.
+     */
+    public static function levelForSteps(int $points, ?array $steps): string
+    {
+        $steps = array_values(array_filter($steps ?: [], fn ($s) => isset($s['points'], $s['level'])));
+        if (empty($steps)) {
+            $steps = self::ladderSteps();
+        }
+        usort($steps, fn ($a, $b) => (int) $a['points'] <=> (int) $b['points']);
+
         $level = 'None';
-        foreach (self::LADDER as $threshold => $name) {
-            if ($points >= $threshold) {
-                $level = $name;
+        foreach ($steps as $s) {
+            if ($points >= (int) $s['points']) {
+                $level = (string) $s['level'];
             }
         }
 

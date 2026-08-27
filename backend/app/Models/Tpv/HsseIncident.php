@@ -20,14 +20,26 @@ class HsseIncident extends Model
     protected $table = 'hsse_incidents';
 
     public const SEVERITIES = ['Minor', 'Moderate', 'Serious', 'Fatal'];
-    public const TYPES      = ['Injury', 'Near_Miss', 'Property_Damage', 'Environmental', 'Fire', 'Fatality', 'Other'];
-    public const STATUSES   = ['Reported', 'Investigating', 'Closed'];
+
+    /**
+     * §23 incident taxonomy. Injury outcomes (First Aid / Medical Treatment / LTI),
+     * observations (Unsafe Act / Unsafe Condition) and Security join the original
+     * event types. Earlier rows may carry only the original values — all remain valid.
+     */
+    public const TYPES = [
+        'Injury', 'First_Aid', 'Medical_Treatment', 'LTI', 'Near_Miss',
+        'Property_Damage', 'Environmental', 'Fire', 'Security',
+        'Unsafe_Act', 'Unsafe_Condition', 'Fatality', 'Other',
+    ];
+
+    public const STATUSES = ['Reported', 'Investigating', 'Closed'];
 
     /** Severities grave enough to withhold the vendor's site access on report. */
     public const SUSPENDING_SEVERITIES = ['Serious', 'Fatal'];
 
     protected $fillable = [
         'tenant_id', 'reference', 'vendor_id', 'tpv_worker_id', 'reported_by',
+        'project', 'site', 'department', 'activity', 'work_package_id',
         'title', 'type', 'severity', 'status', 'occurred_at', 'location',
         'description', 'immediate_action', 'stop_work', 'triggered_suspension',
         'rca_method', 'root_cause', 'contributing_factors', 'rca_completed_at',

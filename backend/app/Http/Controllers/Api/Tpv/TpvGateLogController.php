@@ -20,9 +20,11 @@ class TpvGateLogController extends Controller
     /** Who was on site on a given date (defaults to today). */
     public function roster(Request $request)
     {
-        $data = $request->validate(['date' => 'nullable|date']);
+        $data = $request->validate(['date' => 'nullable|date', 'vendor_id' => 'nullable|integer']);
 
-        return response()->json($this->gateService->roster($request->user()->tenant_id, $data['date'] ?? null));
+        return response()->json($this->gateService->roster(
+            $request->user()->tenant_id, $data['date'] ?? null, $data['vendor_id'] ?? null
+        ));
     }
 
     public function workerAttendance(Request $request, TpvWorker $worker)

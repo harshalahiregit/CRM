@@ -39,9 +39,11 @@ class PublicKickoffController extends Controller
     {
         $meeting = $this->kickoffService->resolveMomByToken($token);
 
-        // Sent → Viewed → Acknowledged: the vendor opening the minutes is the
-        // "viewed" signal (Meeting.docx §13). First view only; idempotent.
-        $this->kickoffService->markMomViewed($meeting);
+        // Sent → Viewed → Acknowledged: opening the minutes is the "viewed"
+        // signal (Meeting.docx §13). First view only; idempotent. The token is
+        // passed through so the stamp lands on THAT recipient, not just the
+        // meeting — which is what makes the tracker answer "who has read it".
+        $this->kickoffService->markMomViewed($meeting, $token);
 
         return Storage::disk('kickoff_docs')->response(
             $meeting->mom_path,
@@ -57,7 +59,7 @@ class PublicKickoffController extends Controller
         $meeting = $this->kickoffService->resolveByToken($token);
 
         // Opening the acknowledgement page is a "viewed" signal too. Idempotent.
-        $this->kickoffService->markMomViewed($meeting);
+        $this->kickoffService->markMomViewed($meeting, $token);
 
         return response()->json([
             'id' => $meeting->id,

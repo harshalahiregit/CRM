@@ -71,12 +71,15 @@ class TpvCapaController extends Controller
 
         return $request->validate([
             'title' => "$req|string|max:200",
+            'problem_statement' => 'nullable|string',
             'vendor_id' => 'nullable|integer|exists:vendors,id',
             'source_kind' => ['nullable', Rule::in(CapaSource::KINDS)],
             'source_id' => 'nullable|integer',
             'type' => ['nullable', Rule::in(CapaSource::TYPES)],
             'root_cause' => 'nullable|string',
+            'immediate_correction' => 'nullable|string',
             'action' => 'nullable|string',
+            'preventive_action' => 'nullable|string',
             'priority' => ['nullable', Rule::in(CapaSource::PRIORITIES)],
             'status' => ['nullable', Rule::in(CapaSource::STATUSES)],
             'assigned_to' => 'nullable|integer|exists:users,id',

@@ -30,6 +30,15 @@ class CreateTemporaryVendorRequest extends FormRequest
             'access_start_at'   => 'nullable|date',
             'access_expires_at' => 'nullable|date|required_without:validity_days',
             'validity_days'     => 'nullable|integer|min:1|max:365|required_without:access_expires_at',
+            // §11 — temporary-engagement capture. All optional.
+            'temp_purpose'            => 'nullable|string|max:255',
+            'temp_sponsor'            => 'nullable|string|max:160',
+            'temp_project'            => 'nullable|string|max:160',
+            'temp_scope'              => 'nullable|string|max:2000',
+            'temp_workforce'          => 'nullable|integer|min:0|max:100000',
+            'temp_risk_level'         => 'nullable|string|max:40',
+            'temp_required_documents' => 'nullable|array',
+            'temp_required_documents.*' => 'string|max:160',
         ];
     }
 }

@@ -24,6 +24,7 @@ class TpvCommunicationController extends Controller
             'alerts'   => $this->service->alerts($tenantId),
             'log'      => $this->service->log($tenantId, $request->only(['vendor_id', 'channel', 'limit'])),
             'channels' => TpvCommunicationService::CHANNELS,
+            'triggers' => TpvCommunicationService::TRIGGERS,
         ]);
     }
 

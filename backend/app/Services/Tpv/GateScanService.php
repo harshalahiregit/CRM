@@ -110,10 +110,10 @@ class GateScanService
         }
 
         // ── Mandatory PPE at the gate (Rule 5) ──
-        // Config-driven (tpv.gate.ppe_enforcement): warn (default) / deny / off.
-        // Wrapped so a PPE-subsystem hiccup can never turn the gate away from an
-        // otherwise-clear worker — the gate must stay resilient.
-        $mode = config('tpv.gate.ppe_enforcement', 'warn');
+        // Tenant-configurable (§34, tpv_settings 'gate'): warn (default)/deny/off;
+        // falls back to config/tpv.php when unset. Wrapped so a PPE-subsystem
+        // hiccup can never turn the gate away from an otherwise-clear worker.
+        $mode = app(\App\Support\Tpv\TpvSettings::class)->gate($worker->tenant_id)['ppe_enforcement'];
         if ($mode !== 'off') {
             try {
                 $missing = app(PpeInventoryService::class)->missingMandatoryFor($worker);
@@ -225,12 +225,14 @@ class GateScanService
     /* ── Reads (authed side) ────────────────────────────────────────────── */
 
     /** The attendance roster for a date — who was on site, and who still is. */
-    public function roster(int $tenantId, ?string $date = null): array
+    public function roster(int $tenantId, ?string $date = null, ?int $vendorId = null): array
     {
         $date = $date ?: now()->toDateString();
 
         $rows = TpvGateAttendance::forTenant($tenantId)->forDate($date)
             ->with(['worker:id,name,worker_code,designation,vendor_id,status', 'worker.vendor:id,company_name'])
+            // §20 — server-side vendor filter (was client-side only).
+            ->when($vendorId, fn ($q, $vid) => $q->whereHas('worker', fn ($w) => $w->where('vendor_id', $vid)))
             ->orderByDesc('check_in_at')->get();
 
         return [

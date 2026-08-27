@@ -46,8 +46,29 @@ class TaskRepository extends BaseRepository
             $query->with('assignees.user:id,name');
         }
 
-        foreach (['status', 'priority', 'rel_type'] as $col) {
-            if (! empty($filters[$col])) {
+        // A scope of BOTH type and id ("this project's tasks", "this vendor's
+        // tasks") matches the primary link OR an additional "Related To" row.
+        //
+        // Meeting.docx §8 requires a MOM action to appear on the relevant
+        // Project dashboard AND stay on the vendor it came from; a task has only
+        // one primary link, so the second one has to be an additional relation,
+        // and a scope that ignored those would never show it.
+        if (! empty($filters['rel_type']) && ! empty($filters['rel_id']) && Schema::hasTable('task_relations')) {
+            $type = $filters['rel_type'];
+            $id = $filters['rel_id'];
+            $query->where(function ($q) use ($type, $id) {
+                $q->where(fn ($x) => $x->where('rel_type', $type)->where('rel_id', $id))
+                    ->orWhereHas('relations', fn ($x) => $x->where('rel_type', $type)->where('rel_id', $id));
+            });
+        } else {
+            foreach (['status', 'priority', 'rel_type'] as $col) {
+                if (! empty($filters[$col])) {
+                    $query->where($col, $filters[$col]);
+                }
+            }
+        }
+        foreach (['status', 'priority'] as $col) {
+            if (! empty($filters[$col]) && ! empty($filters['rel_type']) && ! empty($filters['rel_id'])) {
                 $query->where($col, $filters[$col]);
             }
         }
@@ -60,7 +81,7 @@ class TaskRepository extends BaseRepository
                 $query->whereIn('rel_type', $types);
             }
         }
-        if (! empty($filters['rel_id'])) {
+        if (! empty($filters['rel_id']) && empty($filters['rel_type'])) {
             $query->where('rel_id', $filters['rel_id']);
         }
 

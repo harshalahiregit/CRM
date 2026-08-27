@@ -95,6 +95,18 @@ class VendorDocumentController extends Controller
         return response()->json($doc);
     }
 
+    /** §30 — verify a document (distinct intermediate step before approval). */
+    public function verify(Request $request, VendorDocument $document)
+    {
+        $this->assertDocumentTenant($request, $document);
+
+        $data = $request->validate(['remarks' => 'nullable|string|max:2000']);
+
+        return response()->json(
+            $this->documentService->verify($document, $data['remarks'] ?? null, $request->user())
+        );
+    }
+
     public function resubmit(ResubmitVendorDocumentRequest $request, VendorDocument $document)
     {
         $this->assertDocumentTenant($request, $document);

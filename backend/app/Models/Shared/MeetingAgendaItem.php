@@ -23,13 +23,20 @@ class MeetingAgendaItem extends Model
     protected $fillable = [
         'tenant_id', 'kickoff_meeting_id',
         'item', 'description',
+        // Meeting.docx §7 — Agenda -> Discussion -> Decision -> Action, captured
+        // against the agenda item itself rather than one meeting-level blob.
+        'discussion', 'decision',
+        // §9 — supporting documents for the item + a reference back to where it
+        // was previously discussed.
+        'supporting_documents', 'previous_discussion_ref',
         'owner_attendee_id', 'owner_names',
         'duration_minutes', 'priority', 'sort_order',
     ];
 
     protected $casts = [
-        'duration_minutes' => 'integer',
-        'sort_order'       => 'integer',
+        'duration_minutes'     => 'integer',
+        'sort_order'           => 'integer',
+        'supporting_documents' => 'array',
     ];
 
     public function meeting()

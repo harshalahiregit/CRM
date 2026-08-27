@@ -11,8 +11,11 @@ use App\Models\Shared\KickoffAttendee;
 use App\Models\Shared\KickoffMeeting;
 use App\Models\Shared\KickoffMomItem;
 use App\Models\Shared\MeetingIssue;
+use App\Models\User;
 use App\Services\Shared\KickoffMeetingService;
+use App\Services\Helpdesk\Contracts\CustomerServiceContract;
 use App\Services\Shared\MeetingAIService;
+use App\Services\Shared\MeetingRegisterService;
 use App\Services\Shared\VendorLiveStatusService;
 use App\Support\Shared\MeetingIssueStatus;
 use App\Support\Shared\MeetingTypeCatalog;
@@ -222,13 +225,27 @@ class KickoffMeetingController extends Controller
         // `attended` was required here; it is now optional so a caller can send
         // attendance_status instead. At least one of the two must be present —
         // an entry carrying neither would silently do nothing.
+        //
+        // The presence check is deliberately NOT `required_without`: that rule
+        // reads a NULL attendance_status as absent, and null is a real value
+        // here — "not marked yet" (Meeting.docx §6). The form posts every row on
+        // save, so one unmarked attendee made the whole request 422 and you could
+        // only save attendance by marking every single person.
         $data = $request->validate([
             'attendance' => 'required|array|min:1',
             'attendance.*.id' => 'required|integer',
-            'attendance.*.attended' => 'required_without:attendance.*.attendance_status|nullable|boolean',
+            'attendance.*.attended' => 'nullable|boolean',
             'attendance.*.attendance_status' => 'nullable|string|in:'.implode(',', KickoffAttendee::STATUSES),
             'attendance.*.remark' => 'nullable|string|max:1000',
         ]);
+
+        // Presence by KEY, so an explicit null still counts as an instruction.
+        foreach ($request->input('attendance', []) as $i => $row) {
+            if (! is_array($row)
+                || (! array_key_exists('attended', $row) && ! array_key_exists('attendance_status', $row))) {
+                abort(422, "attendance.{$i} must carry either attended or attendance_status.");
+            }
+        }
 
         return response()->json(
             $this->kickoffService->markAttendance($kickoffMeeting, $data['attendance'], $request->user())
@@ -257,6 +274,9 @@ class KickoffMeetingController extends Controller
             'note' => 'nullable|string|max:2000',
             'priority' => 'nullable|string',
             'responsible_org' => 'nullable|string|max:160',
+            // Rule 11 — the action owner can be (re)assigned as it is progressed.
+            'responsible_attendee_id' => 'nullable|integer',
+            'responsible_names' => 'nullable|string|max:500',
             'target_date' => 'nullable|date',
             'evidence' => 'nullable|file|mimes:pdf,doc,docx,png,jpg,jpeg|max:10240',
         ]);
@@ -337,6 +357,120 @@ class KickoffMeetingController extends Controller
         abort_unless((int) $meetingIssue->kickoff_meeting_id === (int) $kickoffMeeting->id, 404, 'Issue not found on this meeting.');
 
         return response()->json($this->kickoffService->convertIssueToTask($meetingIssue, $request->user()));
+    }
+
+    /** Escalate a meeting issue into an NCR (Meeting.docx §10). */
+    public function convertIssueNcr(Request $request, KickoffMeeting $kickoffMeeting, MeetingIssue $meetingIssue)
+    {
+        $this->assertTenant($request, $kickoffMeeting);
+        abort_unless((int) $meetingIssue->kickoff_meeting_id === (int) $kickoffMeeting->id, 404, 'Issue not found on this meeting.');
+
+        $data = $request->validate([
+            'severity' => 'nullable|string|in:Minor,Major,Critical',
+            'requirement' => 'nullable|string|max:2000',
+        ]);
+
+        return response()->json($this->kickoffService->convertIssueToNcr($meetingIssue, $data, $request->user()));
+    }
+
+    /** Escalate a meeting issue into a CAPA (Meeting.docx §10). */
+    public function convertIssueCapa(Request $request, KickoffMeeting $kickoffMeeting, MeetingIssue $meetingIssue)
+    {
+        $this->assertTenant($request, $kickoffMeeting);
+        abort_unless((int) $meetingIssue->kickoff_meeting_id === (int) $kickoffMeeting->id, 404, 'Issue not found on this meeting.');
+
+        $data = $request->validate([
+            'type' => 'nullable|string|in:Corrective,Preventive',
+            'priority' => 'nullable|string|in:Low,Medium,High,Critical',
+            'root_cause' => 'nullable|string|max:2000',
+        ]);
+
+        return response()->json($this->kickoffService->convertIssueToCapa($meetingIssue, $data, $request->user()));
+    }
+
+    /** Raise a meeting issue as an approval request (Meeting.docx §10). */
+    public function convertIssueApproval(Request $request, KickoffMeeting $kickoffMeeting, MeetingIssue $meetingIssue)
+    {
+        $this->assertTenant($request, $kickoffMeeting);
+        abort_unless((int) $meetingIssue->kickoff_meeting_id === (int) $kickoffMeeting->id, 404, 'Issue not found on this meeting.');
+
+        $data = $request->validate([
+            'approval_type' => 'nullable|string|max:60',
+            'priority' => 'nullable|string|in:Low,Medium,High,Urgent',
+        ]);
+
+        return response()->json($this->kickoffService->convertIssueToApproval($meetingIssue, $data, $request->user()));
+    }
+
+    /** Send (or re-send) the meeting invitation (Meeting.docx §1). */
+    public function sendInvitations(Request $request, KickoffMeeting $kickoffMeeting)
+    {
+        $this->assertTenant($request, $kickoffMeeting);
+
+        return response()->json($this->kickoffService->sendInvitations($kickoffMeeting, $request->user()));
+    }
+
+    /** Per-recipient Sent / Viewed / Acknowledged tracker (Meeting.docx §13). */
+    public function distribution(Request $request, KickoffMeeting $kickoffMeeting)
+    {
+        $this->assertTenant($request, $kickoffMeeting);
+
+        return response()->json($this->kickoffService->distributionTracker($kickoffMeeting));
+    }
+
+    /** Customers for the "which customer is this meeting for?" picker (§2). */
+    public function customers(Request $request, CustomerServiceContract $customers)
+    {
+        return response()->json($customers->listCustomers($request->user()->tenant_id));
+    }
+
+    /**
+     * Staff for the participant picker (Meeting.docx §5 — "participants should be
+     * linked to Sangoe identities wherever possible").
+     *
+     * Name, e-mail and designation only, and only inside the caller's tenant: a
+     * picker needs to identify a colleague, not expose the staff table.
+     */
+    public function staff(Request $request)
+    {
+        return response()->json(
+            User::where('tenant_id', $request->user()->tenant_id)
+                ->whereIn('role', ['admin', 'staff'])
+                ->orderBy('name')
+                ->get(['id', 'name', 'email', 'designation'])
+        );
+    }
+
+    /* ── Cross-meeting registers (Meeting.docx §8 / §9 / §10) ─────────────── */
+
+    public function decisionRegister(Request $request, MeetingRegisterService $registers)
+    {
+        return response()->json($registers->decisions(
+            $request->user()->tenant_id,
+            $request->only(['status', 'project_id', 'vendor', 'meeting_id', 'search', 'from', 'to']),
+        ));
+    }
+
+    public function issueRegister(Request $request, MeetingRegisterService $registers)
+    {
+        return response()->json($registers->issues(
+            $request->user()->tenant_id,
+            $request->only(['status', 'severity', 'category', 'project_id', 'vendor', 'meeting_id', 'search', 'from', 'to']),
+        ));
+    }
+
+    public function actionRegister(Request $request, MeetingRegisterService $registers)
+    {
+        return response()->json($registers->actions(
+            $request->user()->tenant_id,
+            $request->only(['status', 'priority', 'project_id', 'vendor', 'meeting_id', 'search', 'from', 'to']),
+        ));
+    }
+
+    /** The filter options the three registers offer. */
+    public function registerOptions(Request $request, MeetingRegisterService $registers)
+    {
+        return response()->json($registers->options($request->user()->tenant_id));
     }
 
     /** Generate (or regenerate) the Minutes-of-Meeting PDF from existing data. */

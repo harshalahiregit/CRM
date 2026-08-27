@@ -30,6 +30,7 @@ final class PurchaseApprovalType
     public const VENDOR_SUSPENSION    = 'vendor_suspension';
     public const VENDOR_REACTIVATION  = 'vendor_reactivation';
     public const VENDOR_RENEWAL       = 'vendor_renewal';
+    public const EXTENSION            = 'extension';
     public const VENDOR_CLOSURE       = 'vendor_closure';
     public const OTHER                = 'other';
 
@@ -50,6 +51,7 @@ final class PurchaseApprovalType
         self::VENDOR_SUSPENSION    => 'Vendor Suspension',
         self::VENDOR_REACTIVATION  => 'Vendor Reactivation',
         self::VENDOR_RENEWAL       => 'Vendor Renewal',
+        self::EXTENSION            => 'Access Extension',
         self::VENDOR_CLOSURE       => 'Vendor Closure',
         self::OTHER                => 'Other',
     ];
@@ -60,7 +62,7 @@ final class PurchaseApprovalType
         self::WORK_ORDER, self::WORKFORCE, self::WORKER_REPLACEMENT,
         self::DOCUMENT_EXCEPTION, self::COMPLIANCE_DEVIATION, self::PPE_EXCEPTION,
         self::PERMIT, self::VENDOR_SUSPENSION, self::VENDOR_REACTIVATION,
-        self::VENDOR_RENEWAL, self::VENDOR_CLOSURE, self::OTHER,
+        self::VENDOR_RENEWAL, self::EXTENSION, self::VENDOR_CLOSURE, self::OTHER,
     ];
 
     public static function label(?string $v): string

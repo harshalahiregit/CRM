@@ -272,6 +272,8 @@ const PurchasePortalPpe = lazy(() => import('@/pages/purchase-portal/PurchasePor
 const PurchasePortalSupport = lazy(() => import('@/pages/purchase-portal/PurchasePortalSupport'))
 const PurchasePortalProfile = lazy(() => import('@/pages/purchase-portal/PurchasePortalProfile'))
 const PurchasePortalWorkforce = lazy(() => import('@/pages/purchase-portal/PurchasePortalWorkforce'))
+const PurchasePortalCompliance = lazy(() => import('@/pages/purchase-portal/PurchasePortalCompliance'))
+const PurchasePortalGovernance = lazy(() => import('@/pages/purchase-portal/PurchasePortalGovernance'))
 const PurchaseVendorLogin = lazy(() => import('@/pages/purchase-portal/PurchaseVendorLogin'))
 const PurchaseVendorRegister = lazy(() => import('@/pages/purchase-portal/PurchaseVendorRegister'))
 const PurchaseVendorForgotPassword = lazy(() => import('@/pages/purchase-portal/PurchaseVendorForgotPassword'))
@@ -300,6 +302,7 @@ const TpvContracts = lazy(() => import('@/modules/tpv/pages/TpvContracts'))
 const TpvWorkPackages = lazy(() => import('@/modules/tpv/pages/TpvWorkPackages'))
 const TpvApprovalRegister = lazy(() => import('@/modules/tpv/pages/TpvApprovalRegister'))
 const TpvCompetency = lazy(() => import('@/modules/tpv/pages/TpvCompetency'))
+const TpvMedicalFitness = lazy(() => import('@/modules/tpv/pages/TpvMedicalFitness'))
 const TpvWorkAuthorization = lazy(() => import('@/modules/tpv/pages/TpvWorkAuthorization'))
 const TpvNcr = lazy(() => import('@/modules/tpv/pages/TpvNcr'))
 const TpvCapaRegister = lazy(() => import('@/modules/tpv/pages/TpvCapaRegister'))
@@ -332,6 +335,7 @@ const TpvAnalytics = lazy(() => import('@/modules/tpv/pages/TpvAnalytics'))
 const TpvPerformanceIndex = lazy(() => import('@/modules/tpv/pages/TpvPerformanceIndex'))
 const TpvCommunications = lazy(() => import('@/modules/tpv/pages/TpvCommunications'))
 const TpvAuthorityMatrix = lazy(() => import('@/modules/tpv/pages/TpvAuthorityMatrix'))
+const TpvSettings = lazy(() => import('@/modules/tpv/pages/TpvSettings'))
 // Vendor-scoped Workforce workspace — its own rail, entered after Onboarding Step-6.
 const WorkforceLayout = lazy(() => import('@/modules/tpv/WorkforceLayout'))
 const WorkforceDashboard = lazy(() => import('@/modules/tpv/pages/WorkforceDashboard'))
@@ -351,6 +355,9 @@ const ChecklistDetail = lazy(() => import('@/modules/compliance/pages/ChecklistD
 // Built polymorphically so Shivam's Project&Task module can attach without a
 // second table.
 const KickoffMeetings = lazy(() => import('@/modules/shared/pages/KickoffMeetings'))
+// Cross-meeting registers (Meeting.docx §8 / §9 / §10) — Decisions, Issues and
+// the Open Action Items backlog, in one screen with three tabs.
+const MeetingRegisters = lazy(() => import('@/modules/shared/pages/MeetingRegisters'))
 const KickoffMeetingCreate = lazy(() => import('@/modules/shared/pages/KickoffMeetingCreate'))
 const KickoffMeetingDetail = lazy(() => import('@/modules/shared/pages/KickoffMeetingDetail'))
 const KickoffAck = lazy(() => import('@/pages/kickoff/KickoffAck'))
@@ -359,6 +366,8 @@ const KickoffMom = lazy(() => import('@/pages/kickoff/KickoffMom'))
 // Vendor Self-Service Portal — its own chrome, gated to vendor roles. Every
 // endpoint resolves the vendor from the token (EnsureVendorPortalAccess).
 const VendorPortalShell = lazy(() => import('@/pages/vendor-portal/VendorPortalShell'))
+const VendorPortalCompliance = lazy(() => import('@/pages/vendor-portal/VendorPortalCompliance'))
+const VendorPortalGovernance = lazy(() => import('@/pages/vendor-portal/VendorPortalGovernance'))
 const MyRegistrationStatus = lazy(() => import('@/pages/vendor-portal/MyRegistrationStatus'))
 const PortalOnboardingEntry = lazy(() => import('@/pages/vendor-portal/PortalOnboardingEntry'))
 const PortalDashboard = lazy(() => import('@/pages/vendor-portal/PortalDashboard'))
@@ -675,6 +684,8 @@ export default function AppRoutes() {
           <Route path="approval-register" element={<S><TpvApprovalRegister /></S>} />
           {/* §15 Competency & Training. */}
           <Route path="competency" element={<S><TpvCompetency /></S>} />
+          {/* §3/§16 Medical Fitness register. */}
+          <Route path="medical" element={<S><TpvMedicalFitness /></S>} />
           {/* §19 Unified Work Authorization — read-only composite verdict. */}
           <Route path="work-authorization" element={<S><TpvWorkAuthorization /></S>} />
           {/* §24 Non-Conformance Reports. */}
@@ -698,6 +709,10 @@ export default function AppRoutes() {
               before :id so "edit" is never captured as a meeting id. */}
           <Route path="kickoff/:id/edit" element={<S><KickoffMeetingCreate /></S>} />
           <Route path="kickoff/:id" element={<S><KickoffMeetingDetail /></S>} />
+          {/* Meeting.docx §9's "searchable Decision Register", §10's issue
+              register and §8's action backlog — across every meeting, not one. */}
+          <Route path="meetings/registers" element={<S><MeetingRegisters /></S>} />
+          <Route path="meetings/registers/:register" element={<S><MeetingRegisters /></S>} />
           <Route path="performance" element={<S><MeetingPerformance /></S>} />
           {/* The onboarding QUEUE stays — it is how staff find work. The wizard
               itself does not: Steps 1–6 are the vendor's own workflow and the
@@ -736,6 +751,7 @@ export default function AppRoutes() {
           <Route path="vpi" element={<S><TpvPerformanceIndex /></S>} />
           <Route path="communications" element={<S><TpvCommunications /></S>} />
           <Route path="authority-matrix" element={<S><TpvAuthorityMatrix /></S>} />
+          <Route path="settings" element={<S><TpvSettings /></S>} />
         </Route>
 
         {/* WORKFORCE — vendor-scoped workspace (own rail), entered from Onboarding Step-6.
@@ -853,6 +869,8 @@ export default function AppRoutes() {
             The portal has no LIST — a vendor has exactly one onboarding, which
             PortalOnboardingEntry resolves from the token. */}
         <Route path="registration"      element={<S><MyRegistrationStatus /></S>} />
+        <Route path="compliance"        element={<S><VendorPortalCompliance /></S>} />
+        <Route path="governance"        element={<S><VendorPortalGovernance /></S>} />
         <Route path="support"           element={<S><PortalSupport /></S>} />
         <Route path="onboarding"        element={<S><PortalOnboardingEntry /></S>} />
         <Route path="onboarding/:id"    element={<S><TpvOnboardingWizard /></S>} />
@@ -919,6 +937,8 @@ export default function AppRoutes() {
             onboarding.self() — no id in the URL. */}
         <Route path="onboarding" element={<S><PurchasePortalOnboarding /></S>} />
         <Route path="documents"  element={<S><PurchasePortalDocuments /></S>} />
+        <Route path="compliance" element={<S><PurchasePortalCompliance /></S>} />
+        <Route path="governance" element={<S><PurchasePortalGovernance /></S>} />
         <Route path="approval"   element={<S><PurchasePortalApproval /></S>} />
         <Route path="kickoff"    element={<S><PurchasePortalKickoff /></S>} />
         {/* My Workforce — unlocked once the vendor is Active. The 5-step worker

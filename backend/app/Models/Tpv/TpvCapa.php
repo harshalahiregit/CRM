@@ -26,7 +26,8 @@ class TpvCapa extends Model
 
     protected $fillable = [
         'tenant_id', 'reference', 'vendor_id', 'source_kind', 'source_type', 'source_id',
-        'title', 'type', 'root_cause', 'action', 'priority', 'status', 'assigned_to',
+        'title', 'problem_statement', 'type', 'root_cause', 'immediate_correction',
+        'action', 'preventive_action', 'priority', 'status', 'assigned_to',
         'due_date', 'completed_at', 'evidence_path', 'verification_notes',
         'verified_at', 'verified_by', 'raised_by', 'notes',
     ];

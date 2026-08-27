@@ -16,10 +16,29 @@ class TpvWorkerPpeIssue extends Model
 
     protected $fillable = [
         'tenant_id','tpv_worker_id','issued_by','inventory_item_id',
+        'project','site',
         'item','qty','size','issued_date','notes',
         // Return lifecycle. Quantities still live in Inventory — these only record
         // how much of THIS issue has come back and in what condition.
         'status','returned_qty','returned_at','returned_by','return_notes',
+        // §17 — a replacement chains a new issue to the one it superseded.
+        'replaced_by_id',
+    ];
+
+    /**
+     * Issue lifecycle statuses (§17). 'issued' is the live/held state; the rest
+     * are terminal outcomes of a return, write-off, replacement, or consumption.
+     */
+    public const STATUS_ISSUED   = 'issued';
+    public const STATUS_RETURNED = 'returned';
+    public const STATUS_DAMAGED  = 'damaged';
+    public const STATUS_LOST     = 'lost';
+    public const STATUS_REPLACED = 'replaced';   // worn out and swapped for fresh kit
+    public const STATUS_USED     = 'used';        // consumable spent — never coming back
+
+    public const STATUSES = [
+        self::STATUS_ISSUED, self::STATUS_RETURNED, self::STATUS_DAMAGED,
+        self::STATUS_LOST, self::STATUS_REPLACED, self::STATUS_USED,
     ];
 
     protected $casts = [
@@ -45,6 +64,12 @@ class TpvWorkerPpeIssue extends Model
     public function issuer()
     {
         return $this->belongsTo(User::class, 'issued_by');
+    }
+
+    /** The fresh issue that superseded this one when it was replaced (§17). */
+    public function replacement()
+    {
+        return $this->belongsTo(self::class, 'replaced_by_id');
     }
 
     public function getItemLabelAttribute(): string

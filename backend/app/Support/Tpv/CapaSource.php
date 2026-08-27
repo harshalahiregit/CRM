@@ -11,7 +11,7 @@ namespace App\Support\Tpv;
  */
 class CapaSource
 {
-    public const KINDS = ['ncr', 'inspection', 'audit', 'meeting', 'violation', 'renewal', 'incident', 'manual'];
+    public const KINDS = ['ncr', 'inspection', 'audit', 'meeting', 'violation', 'renewal', 'incident', 'compliance_failure', 'manual'];
 
     public const TYPES = ['Corrective', 'Preventive'];
 

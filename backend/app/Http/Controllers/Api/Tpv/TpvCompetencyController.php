@@ -101,6 +101,7 @@ class TpvCompetencyController extends Controller
             'authority' => 'nullable|string|max:150',
             'reference_no' => 'nullable|string|max:100',
             'skill_level' => 'nullable|string|max:50',
+            'experience_years' => 'nullable|numeric|min:0|max:80',
             'issued_date' => 'nullable|date',
             'valid_until' => 'nullable|date',
             'notes' => 'nullable|string',

@@ -29,4 +29,28 @@ class TpvVendorPerformanceController extends Controller
 
         return response()->json($this->service->compute($vendor));
     }
+
+    /** §27 — capture a point-in-time snapshot into the performance history. */
+    public function snapshot(Request $request, Vendor $vendor)
+    {
+        $this->assertTenant($request, $vendor);
+
+        $data = $request->validate(['project' => 'nullable|string|max:160']);
+
+        return response()->json($this->service->snapshot($vendor, $data['project'] ?? null), 201);
+    }
+
+    /** §27 — the persisted VPI history for a vendor, newest first. */
+    public function history(Request $request, Vendor $vendor)
+    {
+        $this->assertTenant($request, $vendor);
+
+        $rows = \App\Models\Tpv\TpvVendorPerformanceSnapshot::where('tenant_id', $vendor->tenant_id)
+            ->where('vendor_id', $vendor->id)
+            ->when($request->query('project'), fn ($q, $p) => $q->where('project', $p))
+            ->latest('captured_at')
+            ->get();
+
+        return response()->json(['data' => $rows]);
+    }
 }

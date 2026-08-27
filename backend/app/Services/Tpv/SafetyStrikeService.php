@@ -7,6 +7,7 @@ use App\Models\Tpv\TpvSafetyStrike;
 use App\Models\Tpv\TpvWorker;
 use App\Models\User;
 use App\Support\Tpv\StrikeSeverity as Severity;
+use App\Support\Tpv\TpvSettings;
 use App\Support\Tpv\TpvWorkerStatus;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
@@ -22,8 +23,10 @@ use Illuminate\Support\Facades\Log;
  */
 class SafetyStrikeService
 {
-    public function __construct(private TpvWorkerService $workerService)
-    {
+    public function __construct(
+        private TpvWorkerService $workerService,
+        private TpvSettings $settings,
+    ) {
     }
 
     public function listForWorker(TpvWorker $worker): Collection
@@ -78,7 +81,13 @@ class SafetyStrikeService
         $strike = null;
         $terminated = false;
 
-        DB::transaction(function () use ($worker, $data, $actor, &$strike, &$terminated) {
+        // Thresholds are tenant-configurable (§34); an absent override yields the
+        // shipped policy (limit 3, Critical terminates on its own).
+        $rules = $this->settings->strike($worker->tenant_id);
+        $limit = (int) $rules['limit'];
+        $criticalImmediate = (bool) $rules['critical_terminates_immediately'];
+
+        DB::transaction(function () use ($worker, $data, $actor, $limit, $criticalImmediate, &$strike, &$terminated) {
             $strike = $worker->strikes()->create([
                 'tenant_id'   => $worker->tenant_id,
                 'issued_by'   => $actor->id,
@@ -90,13 +99,13 @@ class SafetyStrikeService
             ]);
 
             $active = $this->activeCount($worker);
-            $critical = Severity::terminatesImmediately($data['severity']);
+            $critical = $criticalImmediate && Severity::terminatesImmediately($data['severity']);
 
             // Either policy trips termination: one Critical, or reaching the limit.
-            if ($critical || $active >= Severity::LIMIT) {
+            if ($critical || $active >= $limit) {
                 $why = $critical
                     ? "Critical safety violation: {$data['reason']}"
-                    : "Reached {$active} active safety strikes (limit ".Severity::LIMIT.').';
+                    : "Reached {$active} active safety strikes (limit {$limit}).";
 
                 $this->workerService->terminate($worker, $actor, $why);
                 $strike->update(['triggered_termination' => true]);
@@ -160,7 +169,7 @@ class SafetyStrikeService
             // Workers one strike away from termination — the watch list.
             'at_risk'    => TpvWorker::forTenant($tenantId)
                 ->where('status', TpvWorkerStatus::ACTIVE)
-                ->whereHas('strikes', fn ($q) => $q->whereNull('voided_at'), '>=', Severity::WARN_AT)
+                ->whereHas('strikes', fn ($q) => $q->whereNull('voided_at'), '>=', (int) $this->settings->strike($tenantId)['warn_at'])
                 ->count(),
         ];
     }

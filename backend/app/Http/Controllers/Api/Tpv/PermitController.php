@@ -32,7 +32,7 @@ class PermitController extends Controller
     {
         $data = $request->validate([
             'title'       => 'required|string|max:200',
-            'type'        => ['required', Rule::in(WorkPermit::TYPES)],
+            'type'        => ['required', Rule::in(WorkPermit::acceptedTypes())],
             'vendor_id'   => 'nullable|integer',
             'location'    => 'nullable|string|max:200',
             'description' => 'nullable|string',

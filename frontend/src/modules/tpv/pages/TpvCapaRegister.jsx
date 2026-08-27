@@ -12,7 +12,7 @@ import { KIT3D_STYLE as TPV_STYLE } from '@/components/ui/kit3d'
 // be Verified without closure evidence (Rule 12).
 const STATUS_TONE = { Open: '#f59e0b', In_Progress: '#0ea5e9', Done: '#8b5cf6', Verified: '#22c55e' }
 const PRIO_TONE = { Low: '#6b7280', Medium: '#0ea5e9', High: '#f59e0b', Critical: '#ef4444' }
-const KIND_TONE = { manual: '#6b7280', ncr: '#ef4444', inspection: '#0ea5e9', audit: '#0ea5e9', meeting: '#8b5cf6', violation: '#f59e0b', renewal: '#22c55e', incident: '#ef4444' }
+const KIND_TONE = { manual: '#6b7280', ncr: '#ef4444', inspection: '#0ea5e9', audit: '#0ea5e9', meeting: '#8b5cf6', violation: '#f59e0b', renewal: '#22c55e', incident: '#ef4444', compliance_failure: '#eab308' }
 const fmt = (s) => String(s || '').replace(/_/g, ' ')
 const date = (d) => (d ? new Date(d).toLocaleDateString() : '—')
 
@@ -142,8 +142,11 @@ function Pill({ tone, text }) {
 function CapaModal({ row, meta, vendors, onClose, onSaved }) {
   const fields = [
     { k: 'title', label: 'Title', req: true },
+    { k: 'problem_statement', label: 'Problem statement', area: true },
     { k: 'root_cause', label: 'Root cause', area: true },
-    { k: 'action', label: 'Action to take', area: true },
+    { k: 'immediate_correction', label: 'Immediate correction (containment)', area: true },
+    { k: 'action', label: 'Corrective action', area: true },
+    { k: 'preventive_action', label: 'Preventive action', area: true },
     { k: 'evidence_path', label: 'Closure evidence (path/URL)' },
     { k: 'notes', label: 'Notes', area: true },
   ]

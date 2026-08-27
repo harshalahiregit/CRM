@@ -19,16 +19,23 @@ class TpvActivity extends Model
     public const STATUSES = ['Not_Started', 'In_Progress', 'Completed', 'On_Hold'];
 
     protected $fillable = [
-        'tenant_id', 'work_package_id', 'name', 'description',
-        'required_competency', 'status', 'sort_order',
+        'tenant_id', 'work_package_id', 'name', 'description', 'hazard',
+        'required_competency', 'requires_permit', 'permit_type', 'status', 'sort_order',
     ];
 
     protected $casts = [
-        'sort_order' => 'integer',
+        'sort_order'      => 'integer',
+        'requires_permit' => 'boolean',
     ];
 
     public function workPackage()
     {
         return $this->belongsTo(TpvWorkPackage::class, 'work_package_id');
+    }
+
+    /** Workers assigned to this activity (§13/§35). */
+    public function workers()
+    {
+        return $this->hasMany(TpvWorker::class, 'activity_id');
     }
 }
