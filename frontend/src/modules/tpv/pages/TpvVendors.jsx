@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { fmtDate } from '../constants'
+import { INDIAN_STATES } from '@/lib/indianStates'
 import { useVendorModule } from '../useVendorModule'
 import TpvRegistrationBadge from '../components/TpvRegistrationBadge'
 import TemporaryTpvValidityBadge from '../components/TemporaryTpvValidityBadge'
@@ -463,7 +464,7 @@ function VendorModal({ form, cfg, onClose, onDone }) {
         <Field label="Address" full><TextInput value={f.address} onChange={set('address')} placeholder="Street address" /></Field>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
           <Field label="City"><TextInput value={f.city} onChange={set('city')} placeholder="City" /></Field>
-          <Field label="State"><TextInput value={f.state} onChange={set('state')} placeholder="State" /></Field>
+          <Field label="State"><SelectInput value={f.state} onChange={set('state')} pairs options={[['', 'Select State'], ...INDIAN_STATES.map(s => [s, s])]} /></Field>
           <Field label="Pincode"><TextInput value={f.pincode} onChange={set('pincode')} placeholder="Pincode" /></Field>
         </div>
 

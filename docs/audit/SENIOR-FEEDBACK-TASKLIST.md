@@ -15,10 +15,10 @@ Last updated: 2026-08-27.
 - [x] **T2. Shed requirement form** (the senior's 9 fields: site location, size L×W, height, purpose, side wall, flooring, gate/shutter size, footing, office/toilet) on the TPV-local vendor↔project engagement. New "Shed Projects" tab + create/edit. Guarded by `TpvVendorShedProjectTest` (5). — commit 41f5d65d.
 
 ## Vendor
-- [ ] **V1. State → dropdown** in the vendor registration form (+ the add-customer form). `INDIAN_STATES` list already exists; wire it in.
+- [x] **V1. State → dropdown** wired into the public vendor reg form (`VendorRegisterPage`), the admin vendor form (`TpvVendors`), and the add-customer form — all from `INDIAN_STATES`.
 - [x] **V2. Resend activation email** — already exists (button on the vendor detail page; `POST /vendors/{v}/resend-activation`).
-- [ ] **V3. First-login dashboard guide** for a newly-registered vendor (getting-started hint on the portal dashboard).
-- [ ] **V4. Reg-status card → "Start submitting info/docs" button** (CTA on the read-only Registration Status card → documents/onboarding).
+- [x] **V3. First-login dashboard guide** — dismissible `GettingStartedGuide` on the portal dashboard (shown while not Active; remembered per-browser).
+- [x] **V4. Reg-status card → "Start submitting your documents" button** — optional CTA added to `RegistrationStatusCard`, wired on the TPV portal dashboard → documents.
 - [ ] ⚠ **V5. Attach Agreement / NDA / Policy / SOP** for the vendor to acknowledge/sign. NEEDS DECISION: e-sign vs tick-acknowledge; admin-uploaded templates?; shown during registration or in the portal?
 
 ## Call CRM — DEFERRED (per user, 2026-08-27)
@@ -59,7 +59,7 @@ Last updated: 2026-08-27.
 ---
 
 ### Progress
-- **Done:** T1, T2, V2 (already existed). 
+- **Done:** T1, T2, V1, V2, V3, V4.
 - **Deferred:** C1, C2 (Call CRM).
-- **Open — clear (no decision needed):** V1, V3, V4, PI1–PI6, PI8, PI9, PI10, TI1, TI3, RP1, RP2, PR2, ST2.
+- **Open — clear (no decision needed):** PI1–PI6, PI8, PI9, PI10, TI1, TI3, RP1, RP2, PR2, ST2.
 - **Open — needs a decision (⚠):** V5, PI7, PI11, TI2, PR1, PR3, ST1.

@@ -1,4 +1,5 @@
 import RegistrationStatusCard from '@/components/vendor/RegistrationStatusCard'
+import GettingStartedGuide from '@/components/vendor/GettingStartedGuide'
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import {
@@ -218,6 +219,12 @@ export default function PortalDashboard() {
         </div>
       </div>
 
+      {/* First-login getting-started guide — shown until the vendor is Active,
+          dismissible and remembered per-browser. */}
+      {vendorStatus !== 'Active' && (
+        <GettingStartedGuide vendorName={vendorName} onGo={(to) => navigate(to)} />
+      )}
+
       {/* ── Stat Cards ────────────────────────────────────────────────── */}
       <div style={{ display: 'grid', gridTemplateColumns: `repeat(${statCards.length},1fr)`, gap: 14, marginBottom: 24 }}>
         {statCards.map((s, i) => {
@@ -253,7 +260,11 @@ export default function PortalDashboard() {
         {/* Read-only registration status — replaces the actionable onboarding
             widgets. Information only; the admin owns the decisions. */}
         <div style={{ marginTop: 4, marginBottom: 16 }}>
-          <RegistrationStatusCard steps={regSteps} />
+          <RegistrationStatusCard
+            steps={regSteps}
+            actionLabel="Start submitting your documents"
+            onAction={() => navigate('/vendor-portal/documents')}
+          />
         </div>
 
         <div className="portal-dash-grid" style={{ marginTop: 4 }}>

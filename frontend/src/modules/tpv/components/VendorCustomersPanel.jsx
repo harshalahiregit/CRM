@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Building2, Plus, Loader2, Inbox, Search, Link2 } from 'lucide-react'
 import { tpvApi } from '@/services/tpvApi'
+import { INDIAN_STATES } from '@/lib/indianStates'
 import { Overlay, ModalFooter, Field, TextInput } from '@/components/ui/kit3d'
 
 /**
@@ -208,7 +209,13 @@ function CreateNew({ api, vendorId, setErr, busy, setBusy, onCreated, onClose })
         <Field label="Website"><TextInput value={form.website} onChange={e => set('website', e.target.value)} placeholder="https://" /></Field>
         <Field label="GST Number"><TextInput value={form.gst_number} onChange={e => set('gst_number', e.target.value)} placeholder="GSTIN" /></Field>
         <Field label="City"><TextInput value={form.city} onChange={e => set('city', e.target.value)} placeholder="City" /></Field>
-        <Field label="State"><TextInput value={form.state} onChange={e => set('state', e.target.value)} placeholder="State" /></Field>
+        <Field label="State">
+          <select value={form.state} onChange={e => set('state', e.target.value)}
+            style={{ width: '100%', padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-h)', fontSize: 13 }}>
+            <option value="">Select State</option>
+            {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </Field>
         <Field label="Country"><TextInput value={form.country} onChange={e => set('country', e.target.value)} placeholder="Country" /></Field>
       </div>
       <ModalFooter onClose={onClose} onConfirm={save} loading={busy} disabled={!form.company.trim()} confirmLabel="Add Customer" />

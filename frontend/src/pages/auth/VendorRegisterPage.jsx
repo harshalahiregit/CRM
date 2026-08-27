@@ -4,6 +4,7 @@ import { Eye, EyeOff, AlertTriangle, CheckCircle, Loader2 } from 'lucide-react'
 import { useState } from 'react'
 import api from '@/lib/api'
 import sangoeIcon from '@/assets/sangoe-icon.png'
+import { INDIAN_STATES } from '@/lib/indianStates'
 
 // ── Reusable Field ────────────────────────────────────────────────────
 function Field({ label, required, error, children }) {
@@ -238,7 +239,10 @@ export default function VendorRegisterPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <Field label="State">
-                  <input {...register('state')} placeholder="e.g. Maharashtra" className={inputCls} />
+                  <select {...register('state')} className={selectCls}>
+                    <option value="">Select State</option>
+                    {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
                 </Field>
                 <Field label="Country">
                   <select {...register('country')} className={selectCls}>
