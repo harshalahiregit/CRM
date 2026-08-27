@@ -90,7 +90,7 @@ function ContactForm({ api, fields, contact, onClose, onSaved }) {
   }
 
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 60, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '5vh 16px', overflowY: 'auto' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 60, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '5vh 16px', overflowY: 'auto' }}>
       <div onClick={e => e.stopPropagation()} className="pc-modal">
         <div className="pc-modal-head">
           <strong style={{ color: 'var(--text-h)', flex: 1 }}>{isNew ? 'Add Contact' : 'Edit Contact'}</strong>

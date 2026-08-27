@@ -261,7 +261,7 @@ function ReferralForm({ api, onClose, onDone }) {
     finally { setSaving(false) }
   }
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 60, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '5vh 16px', overflowY: 'auto' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 60, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '5vh 16px', overflowY: 'auto' }}>
       <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 560, background: 'var(--bg-card,#14161c)', border: '1px solid var(--border,rgba(255,255,255,0.1))', borderRadius: 14, overflow: 'hidden' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: '1px solid var(--border,rgba(255,255,255,0.08))' }}>
           <Send size={16} /><strong style={{ color: 'var(--text-h)', flex: 1 }}>Refer a company</strong>

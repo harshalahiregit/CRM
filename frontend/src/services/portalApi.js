@@ -131,9 +131,11 @@ export const portalApi = {
       if (vendor_id) fd.append('vendor_id', vendor_id)
       return upload('/tpv/workers/upload', fd)
     },
+    // Read-only: the vendor VIEWS the admin-issued badge and, until it is issued,
+    // sees exactly what is still blocking it. Issuing itself stays admin-only.
+    badge:     (id) => api.get(`/portal/workers/${id}/badge`).then(r => r.data),
     // Admin-only
     activate:  () => Promise.reject(new Error('Requires admin approval')),
-    badge:     () => Promise.reject(new Error('Requires admin approval')),
     suspend:   () => Promise.reject(new Error('Admin only')),
     reinstate: () => Promise.reject(new Error('Admin only')),
     terminate: () => Promise.reject(new Error('Admin only')),

@@ -130,6 +130,7 @@ Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access'])->prefix('por
     Route::get('/workers',                                [VendorPortalController::class, 'workers']);
     Route::post('/workers',                               [VendorPortalController::class, 'storeWorker']);
     Route::get('/workers/{worker}',                       [VendorPortalController::class, 'showWorker']);
+    Route::get('/workers/{worker}/badge',                 [VendorPortalController::class, 'workerBadge']);
     Route::get('/workers/{worker}/progress',              [VendorPortalController::class, 'workerProgress']);
     Route::put('/workers/{worker}',                       [VendorPortalController::class, 'updateWorker']);
     Route::post('/workers/{worker}/medical',              [VendorPortalController::class, 'saveMedical']);

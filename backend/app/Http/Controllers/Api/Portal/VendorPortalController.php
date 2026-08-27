@@ -850,6 +850,35 @@ class VendorPortalController extends Controller
         ]);
     }
 
+    /**
+     * Read-only view of a worker's site badge. Issuing a badge is an ADMIN decision
+     * (Step 5 approval), so the vendor never issues one here — but it must be able
+     * to SEE the badge the admin issued, and, while it is not yet issued, exactly
+     * what is still blocking it (missing Aadhar, medical, induction, PPE, …). That
+     * gap is why the badge step read as "not issuing" on this portal.
+     */
+    public function workerBadge(Request $request, TpvWorker $worker)
+    {
+        $this->assertWorkerOwned($request, $worker);
+
+        $activated = $worker->status === 'Active' && ! empty($worker->badge_number);
+
+        return response()->json([
+            'worker_id'         => $worker->id,
+            'status'            => $worker->status,
+            'current_step'      => (int) $worker->current_step,
+            'activated'         => $activated,
+            'badge_number'      => $worker->badge_number,
+            'badge_issued_at'   => optional($worker->badge_issued_at)->toIso8601String(),
+            'badge_valid_until' => optional($worker->badge_valid_until)->toDateString(),
+            // The gate credential — surfaced to the owning vendor so it can hand the
+            // worker their pass. Null until the admin issues the badge.
+            'qr_token'          => $activated ? $worker->qr_token : null,
+            // Empty once the badge is issued; otherwise the reasons it cannot be yet.
+            'blockers'          => $activated ? [] : $this->workerService->blockers($worker),
+        ]);
+    }
+
     public function workerProgress(Request $request, TpvWorker $worker)
     {
         $this->assertWorkerOwned($request, $worker);

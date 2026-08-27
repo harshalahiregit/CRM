@@ -66,7 +66,7 @@ function ArticleModal({ loadArticle, slug, onClose }) {
   useEffect(() => { let live = true; loadArticle(slug).then(d => live && setArt(d?.data || d)).finally(() => live && setLoading(false)); return () => { live = false } }, [slug])
 
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 60, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '5vh 16px', overflowY: 'auto' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 60, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '5vh 16px', overflowY: 'auto' }}>
       <div onClick={e => e.stopPropagation()} className="kb-modal">
         <div className="kb-modal-head">
           <BookOpen size={17} />
