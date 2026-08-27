@@ -30,6 +30,14 @@ export default function PurchasePortalShell() {
         comply:     'compliance',
         documents:  'documents',
         meeting:    'kickoff',   // Purchase kickoff meeting
+        // Commercial — read-only documents raised against this vendor.
+        'quotation':          'quotations',
+        'contracts':          'contracts',
+        'purchase-order':     'orders',
+        'purchase-invoice':   'invoices',
+        'debit-notes':        'debit-notes',
+        'purchase-statement': 'statement',
+        'payments':           'payments',
       }}
       extraGroups={[
         {

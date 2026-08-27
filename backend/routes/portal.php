@@ -233,7 +233,8 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal'])->prefix('portal/pu
     Route::get('/invoices/{id}',                      [PurchasePortalCommerceController::class, 'invoice']);
     Route::get('/debit-notes',                        [PurchasePortalCommerceController::class, 'debitNotes']);
     Route::get('/debit-notes/{id}',                   [PurchasePortalCommerceController::class, 'debitNote']);
-    Route::get('/payments',                           [PurchasePortalCommerceController::class, 'payments']);
+    Route::get('/payments',                            [PurchasePortalCommerceController::class, 'payments']);
+    Route::get('/statement',                          [PurchasePortalCommerceController::class, 'statement']);
 
     // §32 Governance-response half — mirror of the TPV portal on Purchase-owned
     // models (separate DB). No PPE requirement matrix (Purchase has none).

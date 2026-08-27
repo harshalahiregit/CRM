@@ -253,6 +253,7 @@ const PurchaseKickoffDetail = lazy(() => import('@/modules/purchase/pages/Purcha
 // Purchase Vendor Portal (lazy) — independent PurchaseVendor auth.
 const PurchasePortalShell = lazy(() => import('@/pages/purchase-portal/PurchasePortalShell'))
 const PurchasePortalDashboard = lazy(() => import('@/pages/purchase-portal/PurchasePortalDashboard'))
+const PurchasePortalCommercial = lazy(() => import('@/pages/purchase-portal/PurchasePortalCommercial'))
 const PurchasePortalOnboarding = lazy(() => import('@/pages/purchase-portal/PurchasePortalOnboarding'))
 const PurchasePortalDocuments = lazy(() => import('@/pages/purchase-portal/PurchasePortalDocuments'))
 const PurchasePortalApproval = lazy(() => import('@/pages/purchase-portal/PurchasePortalApproval'))
@@ -928,6 +929,15 @@ export default function AppRoutes() {
         <Route path="ppe"        element={<S><PurchasePortalPpe /></S>} />
         <Route path="profile"    element={<S><PurchasePortalProfile /></S>} />
         <Route path="support"    element={<S><PurchasePortalSupport /></S>} />
+
+        {/* Commercial (read-only) — one component, driven by the view prop. */}
+        <Route path="orders"      element={<S><PurchasePortalCommercial view="orders" /></S>} />
+        <Route path="quotations"  element={<S><PurchasePortalCommercial view="quotations" /></S>} />
+        <Route path="contracts"   element={<S><PurchasePortalCommercial view="contracts" /></S>} />
+        <Route path="invoices"    element={<S><PurchasePortalCommercial view="invoices" /></S>} />
+        <Route path="debit-notes" element={<S><PurchasePortalCommercial view="debit-notes" /></S>} />
+        <Route path="statement"   element={<S><PurchasePortalCommercial view="statement" /></S>} />
+        <Route path="payments"    element={<S><PurchasePortalCommercial view="payments" /></S>} />
 
         {/* Roadmap sections not yet built — the full nav tree stays navigable. */}
         <Route path="s/:key"     element={<S><PortalComingSoon /></S>} />

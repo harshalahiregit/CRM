@@ -52,13 +52,19 @@ Last updated: 2026-08-27.
 - [⚪] ToDo — folded into Tasks by design
 
 ## Phase 3 — Commercial (build portal UI on done backend)
-- [ ] Quotation — portal list/detail + **vendor submit RFQ response**
-- [ ] Contracts — portal list/detail (+ acknowledge/sign?)
-- [ ] Purchase Order — portal list/detail (read-only)
-- [ ] Purchase Invoice — portal list/detail (read-only)
-- [ ] Debit Notes — portal list/detail (read-only)
-- [ ] Purchase Statement — add portal endpoint + page
-- [ ] Payments — portal list (read-only)
+> Commercial docs are **Purchase-DB-native** (TPV has no PO/Invoice tables — it reads
+> them only via the purchase-vendor link). So Commercial is built on the **Purchase
+> portal**; TPV portal shows ComingSoon for these. One component `PurchasePortalCommercial.jsx`
+> drives all views via a `view` prop; detail modal shows line items (+ invoice payments).
+> Guarded by `PurchasePortalCommerceTest` (4).
+- [x] Quotation — portal list + detail (read). **Vendor RFQ-response submit → 3b (next).**
+- [x] Contracts — portal list + detail (read).
+- [x] Purchase Order — portal list + detail (read).
+- [x] Purchase Invoice — portal list + detail (read, with payments).
+- [x] Debit Notes — portal list + detail (read).
+- [x] Purchase Statement — **new** portal endpoint (`GET /portal/purchase/statement`) + ledger page.
+- [x] Payments — portal list (read).
+- [ ] **3b — Vendor submits Quotation / RFQ response** (write path; approved by user).
 
 ## Phase 4 — Compliance & HSSE
 - [x] Comply — vendor read-only register (exists; verify)

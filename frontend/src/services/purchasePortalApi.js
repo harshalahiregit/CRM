@@ -140,6 +140,24 @@ export const purchasePortalApi = {
     accept: () => api.post('/portal/purchase/kickoff/accept').then(r => r.data),
   },
 
+  // ── Commercial — own vendor only, read-only lists + detail (with items) ──
+  // The vendor sees the documents raised against them: orders, quotations,
+  // contracts, invoices, debit notes, payments, and a running statement.
+  commercial: {
+    orders:      ()   => api.get('/portal/purchase/orders').then(r => r.data),
+    order:       (id) => api.get(`/portal/purchase/orders/${id}`).then(r => r.data),
+    quotations:  ()   => api.get('/portal/purchase/quotations').then(r => r.data),
+    quotation:   (id) => api.get(`/portal/purchase/quotations/${id}`).then(r => r.data),
+    contracts:   ()   => api.get('/portal/purchase/contracts').then(r => r.data),
+    contract:    (id) => api.get(`/portal/purchase/contracts/${id}`).then(r => r.data),
+    invoices:    ()   => api.get('/portal/purchase/invoices').then(r => r.data),
+    invoice:     (id) => api.get(`/portal/purchase/invoices/${id}`).then(r => r.data),
+    debitNotes:  ()   => api.get('/portal/purchase/debit-notes').then(r => r.data),
+    debitNote:   (id) => api.get(`/portal/purchase/debit-notes/${id}`).then(r => r.data),
+    payments:    ()   => api.get('/portal/purchase/payments').then(r => r.data),
+    statement:   ()   => api.get('/portal/purchase/statement').then(r => r.data),
+  },
+
   // §32 "View compliance" — the vendor's own compliance register (read-only).
   compliance: {
     get: () => api.get('/portal/purchase/compliance').then(r => r.data),
