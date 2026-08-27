@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Send, Copy, Receipt, Trash2, Download, CreditCard, X, Banknote, AlertCircle } from 'lucide-react'
+import { copyText } from '@/lib/clipboard'
 import { salesApi } from '@/services/salesApi'
 import LoadError from '@/components/ui/LoadError'
 import StatusBadge from '../components/StatusBadge'
@@ -88,10 +89,14 @@ export default function InvoiceDetail() {
     try {
       const { token } = await salesApi.invoices.generatePublicLink(invoice.id)
       const url = `${window.location.origin}/portal/invoices/${invoice.id}?token=${token}`
-      await navigator.clipboard.writeText(url)
-      const fresh = await salesApi.invoices.get(id)
-      setInvoice(fresh)
-      showToast('Public link copied to clipboard!')
+      // Refresh so the button flips to "Copy Public Link" and the token persists.
+      setInvoice(await salesApi.invoices.get(id))
+      // Copy is separate from generation — a clipboard failure (e.g. plain-http
+      // LAN, where navigator.clipboard is unavailable) must NOT read as "link
+      // failed". Fall back gracefully and, if even that fails, surface the URL.
+      const ok = await copyText(url)
+      if (ok) showToast('Public link copied to clipboard!')
+      else window.prompt('Copy this public link:', url)
     } catch (e) {
       showToast(e.message || 'Failed to generate link', 'error')
     }
@@ -189,8 +194,10 @@ export default function InvoiceDetail() {
               <a.icon size={13} /> {a.label}
             </button>
           ))}
-          <button className="p-2 rounded-xl transition-colors hover:bg-[rgba(239,68,68,0.08)]" style={{ border: '1px solid rgba(239,68,68,0.2)' }}>
-            <Trash2 size={14} style={{ color: '#f87171' }} />
+          {/* Deliberately understated — a delete control should not sit here as an
+              eye-catching red target inviting an accidental click (senior review). */}
+          <button title="Delete" className="p-2 rounded-xl transition-colors hover:bg-[rgba(239,68,68,0.08)]" style={{ border: '1px solid var(--border)' }}>
+            <Trash2 size={14} style={{ color: 'var(--text-muted)' }} />
           </button>
         </div>
       </div>

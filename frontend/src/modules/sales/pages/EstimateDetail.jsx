@@ -79,6 +79,10 @@ export default function EstimateDetail() {
   const grandTotal = Number(estimate.total || 0)
 
   const isEditable = !['Accepted', 'Declined', 'Expired'].includes(estimate.status)
+  // A proforma belongs to the Proforma-Invoices list; a plain estimate to Estimates.
+  // Back should return to the list the document actually lives in.
+  const isProforma = estimate.estimate_type === 'proforma'
+  const backTo = isProforma ? '/app/sales/proforma-invoices' : '/app/sales/estimates'
 
   const events = [
     { type: 'created', label: 'Estimate created', date: estimate.created_at },
@@ -142,7 +146,7 @@ export default function EstimateDetail() {
         {/* Top bar */}
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3">
-            <button onClick={() => navigate('/app/sales/estimates')}
+            <button onClick={() => navigate(backTo)}
               className="w-9 h-9 rounded-xl flex items-center justify-center transition-colors hover:bg-[rgba(124,58,237,0.08)]"
               style={{ border: '1px solid var(--border)' }}>
               <ArrowLeft size={16} style={{ color: 'var(--text-muted)' }} />
@@ -173,7 +177,9 @@ export default function EstimateDetail() {
                 <Receipt size={14} /> Convert to Tax Invoice
               </button>
             )}
-            {!estimate.payment_received && (
+            {/* Record Payment appears only once the proforma is Accepted — you don't
+                collect against a document the customer hasn't agreed to yet. */}
+            {estimate.status === 'Accepted' && !estimate.payment_received && (
               <button
                 onClick={() => setShowPayDrawer(true)}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all hover:scale-[1.02]"
@@ -366,11 +372,13 @@ export default function EstimateDetail() {
                 </div>
               )}
 
-              {/* Terms */}
+              {/* Terms — stored as sanitized rich-text HTML, so render it as markup
+                  (a plain {terms} showed bullet lists as a run-on paragraph). */}
               {estimate.terms && (
                 <div className="p-4 rounded-2xl mt-3" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+                  <style>{`.tc-html ul{list-style:disc;margin:0;padding-left:1.25rem}.tc-html ol{list-style:decimal;margin:0;padding-left:1.25rem}.tc-html li{margin:2px 0}.tc-html p{margin:0 0 4px}`}</style>
                   <p className="label-caps mb-1">Terms &amp; Conditions</p>
-                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{estimate.terms}</p>
+                  <div className="text-xs tc-html" style={{ color: 'var(--text-muted)' }} dangerouslySetInnerHTML={{ __html: estimate.terms }} />
                 </div>
               )}
             </div>

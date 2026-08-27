@@ -29,19 +29,19 @@ Last updated: 2026-08-27.
 - [ ] **PI1. Item/Services — add & search** on the line items (catalogue exists); also manageable from settings.
 - [ ] **PI2. HSN/SAC — search by product/service + link the govt list** (import the official HSN/SAC dataset). Search endpoint already exists.
 - [ ] **PI3. GST auto-detect** by the customer's billing address (state → CGST/SGST vs IGST + rate).
-- [ ] **PI4. Back button → redirect to Estimate.**
-- [ ] **PI5. Enable Edit of a created PI** (edit exists but is gated by status — expose it correctly).
-- [ ] **PI6. Record Payment hidden until "Mark Accepted".**
+- [x] **PI4. Back button → the correct list** (proforma → Proforma-Invoices, estimate → Estimates), via `estimate_type`.
+- [ ] **PI5. Enable Edit of a created PI.** NOTE: no edit path exists in the frontend at all (list drawer is create-only) — this is a real build, not a quick fix. `PUT /sales/estimates/{id}` exists on the backend.
+- [x] **PI6. Record Payment hidden until "Mark Accepted"** — button now shows only when status = Accepted and not yet paid.
 - [ ] ⚠ **PI7. Use important features from the OLD CRM invoice.** NEEDS DECISION: which features / which old CRM reference.
-- [ ] **PI8. T&C — pointers render as bullet points** (fix the list rendering in preview/PDF).
+- [x] **PI8. T&C — render as bullets** — terms is rich-text HTML; now rendered as markup (was a run-on paragraph). Fixed on the PI detail.
 - [ ] **PI9. Received-payment section:** TDS box (% selection + GST amount box); the button persists until full payment is received (not after any partial); a "Partial Paid" tag on the PI index.
 - [ ] **PI10. Convert invoice items/services → Task** (create tasks from PI line items).
 - [ ] ⚠ **PI11. Dedicated settings page for all sections/subsections.** NEEDS DECISION: which sections exactly (very broad as written).
 
 ## Tax Invoice (Sales)
-- [ ] **TI1. Copy public link — fix (not working).**
+- [x] **TI1. Copy public link — fixed.** Root cause: `navigator.clipboard` is unavailable in a non-secure context (plain http/LAN) and threw, reading as "failed". Added a robust `copyText()` helper (secure-context + legacy `execCommand` fallback); copy is now separate from link generation and, if all else fails, surfaces the URL to copy manually.
 - [ ] ⚠ **TI2. Mark-as-sent shows the number of actual clicks.** NEEDS DECISION: count sends (button clicks) vs opens (customer opening the public link).
-- [ ] **TI3. Delete icon should not be highlighted** (avoid accidental click).
+- [x] **TI3. Delete icon no longer highlighted** — de-emphasised to neutral (was alarming red) to avoid an accidental click.
 
 ## Record Payment (Sales)
 - [ ] **RP1. While capturing a payment, the PI / Tax Invoice / Estimate is a dropdown / reflects on search.**
@@ -59,7 +59,7 @@ Last updated: 2026-08-27.
 ---
 
 ### Progress
-- **Done:** T1, T2, V1, V2, V3, V4.
+- **Done:** T1, T2, V1, V2, V3, V4, PI4, PI6, PI8, TI1, TI3.
 - **Deferred:** C1, C2 (Call CRM).
-- **Open — clear (no decision needed):** PI1–PI6, PI8, PI9, PI10, TI1, TI3, RP1, RP2, PR2, ST2.
+- **Open — clear (no decision needed):** PI1, PI2, PI3, PI5 (real build), PI9, PI10, RP1, RP2, PR2, ST2.
 - **Open — needs a decision (⚠):** V5, PI7, PI11, TI2, PR1, PR3, ST1.
