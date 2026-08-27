@@ -25,6 +25,7 @@ import {
   VendorWorkforce, VendorMedical, VendorTraining, VendorGateLog, VendorStrikes,
 } from '@/modules/tpv/components/VendorWorkforcePanels'
 import { VendorProjects } from '@/modules/tpv/components/VendorProjectsPanel'
+import { VendorShedProjects } from '@/modules/tpv/components/VendorShedProjectsPanel'
 import { VendorTickets } from '@/modules/tpv/components/VendorTicketsPanel'
 import { VendorExpenses } from '@/modules/tpv/components/VendorExpensesPanel'
 import { VendorCustomers } from '@/modules/tpv/components/VendorCustomersPanel'
@@ -58,7 +59,7 @@ const NAV_GROUPS = [
   { group: 'General',     icon: User,           items: ['Overview', 'Profile', 'Contact', 'Customer', 'Meetings'] },
   { group: 'Workforce',   icon: HardHat,        items: ['Workforce', 'Medical', 'Training', 'Gate Log', 'Strikes'] },
   { group: 'Commercial',  icon: IndianRupee,    items: ['Quotation', 'Contracts', 'Purchase Order', 'Purchase Invoice', 'Debit Note', 'Purchase Statement', 'Payments'] },
-  { group: 'Operations',  icon: Briefcase,      items: ['Projects', 'Tasks', 'Expenses', 'Attachments', 'ToDo', 'Notes', 'Technical File Maintenance', 'Ticket', 'Job', 'Reminders'] },
+  { group: 'Operations',  icon: Briefcase,      items: ['Projects', 'Shed Projects', 'Tasks', 'Expenses', 'Attachments', 'ToDo', 'Notes', 'Technical File Maintenance', 'Ticket', 'Job', 'Reminders'] },
   { group: 'Compliance',  icon: ClipboardCheck, items: ['Documents', 'Prequalification', 'Survey', 'PTW', 'Incidents', 'Pre Alert', 'Package', 'Visitors'] },
   { group: 'Performance', icon: BarChart3,      items: ['Risk Score', 'Award / Reward', 'Penalty', 'Feedback', 'Referrals'] },
 ]
@@ -474,6 +475,9 @@ function SectionContent({ tab, v, isActive, manage, api, moduleName, onDecision,
     // link_type) — this reads that existing list, filtered to this vendor.
     case 'Projects':
       return <VendorProjects vendorId={v.id} vendorName={v.company_name} manage={manage} />
+    // TPV-local vendor project engagements carrying the shed requirement (§35).
+    case 'Shed Projects':
+      return <VendorShedProjects vendorId={v.id} vendorName={v.company_name} manage={manage} api={api} />
     // Tickets and Expenses have no vendor column of their own — both reach this
     // vendor through its PROJECTS, resolved server-side.
     case 'Ticket':

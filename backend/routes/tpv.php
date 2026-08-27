@@ -101,8 +101,13 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     // §35 explicit vendor↔project engagements.
     Route::get('/vendors/{vendor}/projects',                  [\App\Http\Controllers\Api\Tpv\TpvVendorProjectController::class, 'index']);
     Route::post('/vendors/{vendor}/projects',                 [\App\Http\Controllers\Api\Tpv\TpvVendorProjectController::class, 'store']);
+    Route::put('/vendors/{vendor}/projects/{project}',        [\App\Http\Controllers\Api\Tpv\TpvVendorProjectController::class, 'update']);
     Route::delete('/vendors/{vendor}/projects/{project}',     [\App\Http\Controllers\Api\Tpv\TpvVendorProjectController::class, 'destroy']);
     Route::get('/vendors/{vendor}/customers',                 [\App\Http\Controllers\Api\Vendor\VendorController::class, 'customers']);
+    // Search existing (registered) customers + link one to this vendor — static
+    // segments ahead of any future wildcard.
+    Route::get('/vendors/{vendor}/customers/search',          [\App\Http\Controllers\Api\Vendor\VendorController::class, 'searchCustomers']);
+    Route::post('/vendors/{vendor}/customers/link',           [\App\Http\Controllers\Api\Vendor\VendorController::class, 'linkCustomer']);
     Route::post('/vendors/{vendor}/customers',                [\App\Http\Controllers\Api\Vendor\VendorController::class, 'storeCustomer']);
     // Employees (enhancement #2/#9/#10) — the vendor's assignable people. index()
     // feeds the assignee cascade; grant-access provisions a login so an employee

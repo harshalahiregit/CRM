@@ -417,6 +417,17 @@ export const tpvApi = {
     customers: {
       list:   (vid)       => api.get(`/tpv/vendors/${vid}/customers`).then(r => r.data),
       create: (vid, data) => api.post(`/tpv/vendors/${vid}/customers`, data).then(r => r.data),
+      // Search existing registered customers (unlinked, or already this vendor's).
+      search: (vid, q)    => api.get(`/tpv/vendors/${vid}/customers/search`, { params: { q } }).then(r => r.data),
+      // Link an existing customer to this vendor (sets clients.vendor_id).
+      link:   (vid, clientId) => api.post(`/tpv/vendors/${vid}/customers/link`, { client_id: clientId }).then(r => r.data),
+    },
+    // TPV-local vendor↔project engagements (§35) with the shed requirement.
+    shedProjects: {
+      list:   (vid)           => api.get(`/tpv/vendors/${vid}/projects`).then(r => r.data),
+      create: (vid, data)     => api.post(`/tpv/vendors/${vid}/projects`, data).then(r => r.data),
+      update: (vid, id, data) => api.put(`/tpv/vendors/${vid}/projects/${id}`, data).then(r => r.data),
+      remove: (vid, id)       => api.delete(`/tpv/vendors/${vid}/projects/${id}`).then(r => r.data),
     },
     // Follow-ups and notes on the shared polymorphic reminders/notes tables.
     // Under /tpv/* (role:admin,staff) rather than /sales/reminders, which has no

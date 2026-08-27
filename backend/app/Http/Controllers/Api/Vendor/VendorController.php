@@ -572,6 +572,66 @@ class VendorController extends Controller
         return response()->json($client, 201);
     }
 
+    /**
+     * Search existing (registered) customers that can be linked to this vendor —
+     * tenant-scoped clients not already tied to a vendor, matching q on company /
+     * phone / GST. Lets the admin add an existing customer instead of re-creating.
+     */
+    public function searchCustomers(Request $request, Vendor $vendor)
+    {
+        $this->assertTenant($request, $vendor);
+
+        $data = $request->validate(['q' => 'nullable|string|max:120']);
+        $q = trim((string) ($data['q'] ?? ''));
+
+        $rows = Client::query()
+            ->where('tenant_id', (int) $request->user()->tenant_id)
+            // Only unlinked customers, or ones already on THIS vendor (idempotent).
+            ->where(function ($w) use ($vendor) {
+                $w->whereNull('vendor_id')->orWhere('vendor_id', $vendor->id);
+            })
+            ->when($q !== '', function ($query) use ($q) {
+                $query->where(function ($w) use ($q) {
+                    $w->where('company', 'like', "%{$q}%")
+                        ->orWhere('phone', 'like', "%{$q}%")
+                        ->orWhere('gst_number', 'like', "%{$q}%");
+                });
+            })
+            ->orderBy('company')
+            ->limit(20)
+            ->get(['id', 'company', 'phone', 'gst_number', 'city', 'state', 'country', 'vendor_id']);
+
+        return response()->json($rows);
+    }
+
+    /**
+     * Link an existing customer to this vendor (set clients.vendor_id). Idempotent
+     * if already linked to this vendor; refuses to steal a customer already tied to
+     * a different vendor.
+     */
+    public function linkCustomer(Request $request, Vendor $vendor)
+    {
+        $this->assertTenant($request, $vendor);
+
+        $data = $request->validate(['client_id' => 'required|integer']);
+
+        $client = Client::query()
+            ->where('tenant_id', (int) $request->user()->tenant_id)
+            ->find($data['client_id']);
+
+        abort_unless($client, 404, 'Customer not found.');
+
+        if ($client->vendor_id && (int) $client->vendor_id !== (int) $vendor->id) {
+            abort(422, 'That customer is already linked to another vendor.');
+        }
+
+        if ((int) $client->vendor_id !== (int) $vendor->id) {
+            $client->update(['vendor_id' => $vendor->id]);
+        }
+
+        return response()->json($client->fresh() ?? $client, 200);
+    }
+
     public function storeNote(StoreVendorNoteRequest $request, Vendor $vendor)
     {
         $this->assertTenant($request, $vendor);
