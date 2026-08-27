@@ -35,6 +35,10 @@ export default function VendorPortalShell() {
         comply:     'compliance',
         documents:  'documents',      // statutory documents / files
         kb:         'kb',
+        // Execution — my-work read lists (Projects / Tasks / Tickets).
+        project:    'projects',
+        tasks:      'tasks',
+        ticket:     'tickets',
       }}
       extraGroups={[
         {

@@ -44,9 +44,9 @@ Last updated: 2026-08-27.
 - [x] **KB** — shared `PortalKb.jsx` browse (grouped by category) + search + article reader,
   on BOTH portals. Added `PurchasePortalController::kbArticles/kbArticle` + routes for parity
   (TPV KB was under the role-gated my-work group). Guarded by `PurchasePortalKbTest` (2).
-- [ ] Project — portal detail page (read-only) [TPV my-work data exists]
-- [ ] Tasks — portal detail + **vendor can update status** [VendorTaskLink powers both portals]
-- [ ] Ticket — portal list + **vendor can raise & reply** (client-portal pattern to copy)
+- [x] Project — TPV portal read list (`MyWork.jsx` view=projects). [Purchase parity + detail page: follow-up]
+- [x] Tasks — TPV portal read list (view=tasks). [ **vendor status update** + Purchase parity: follow-up]
+- [x] Ticket — TPV portal read list (view=tickets). [ **vendor raise & reply** (client-portal pattern) + Purchase parity: follow-up]
 - [ ] Meeting — portal (exists via Governance; give it its own section)
 - [ ] Notes — ownership-scoped `portal/*` endpoint + page
 - [ ] Attachments — ownership-scoped `portal/*` endpoint + page
@@ -100,5 +100,9 @@ Last updated: 2026-08-27.
 ---
 
 ### Progress
-- **Done:** Phase 0 (Foundation) · Phase 3 Commercial (3a read views + 3b vendor RFQ-quote submission). Purchase portal Commercial fully live.
-- **Next:** Phase 2 Execution (surface Projects/Tasks/Tickets/Notes/Docs/Reminders + vendor writes) — user to direct.
+- **Done:** Phase 0 (Foundation) · Phase 3 Commercial (read + RFQ submit) · Phase 1 General→Contact · Phase 2 Execution→KB + Projects/Tasks/Tickets read lists (TPV).
+- **Execution follow-ups (tracked, not dropped):** vendor writes (ticket raise/reply, task
+  status, log expenses) · Purchase parity for Projects/Tickets · Notes/Attachments/Reminders/
+  Vault portal endpoints · Meeting as its own section.
+- **General follow-ups:** Overview, Customer, Medical/Training surfacing.
+- **Next queued phases:** 4 Compliance & HSSE · 5 Performance · 6 Extra.
