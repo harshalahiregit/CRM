@@ -14,7 +14,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react'
-import { sangoeTrackApi, trackErrorMessage } from '@/services/sangoeTrackApi'
+import { sangoeTrackApi } from '@/services/sangoeTrackApi'
 
 /** @param slice 'leaves' | 'raises' | 'reimbursements' | 'advances' */
 export default function useTrackApprovals(slice) {
@@ -30,7 +30,7 @@ export default function useTrackApprovals(slice) {
       const list = res?.data?.[slice]
       setRows(Array.isArray(list) ? list : [])
     } catch (err) {
-      setError(trackErrorMessage(err, 'Could not reach SangoeTrack.'))
+      setError(err)
     } finally {
       setLoading(false)
     }

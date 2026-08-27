@@ -236,7 +236,7 @@ export default function TrackAdvances() {
       const res = await sangoeTrackApi.approvals.settlements()
       setSettlements(Array.isArray(res?.data) ? res.data : [])
     } catch (err) {
-      setSError(trackErrorMessage(err, 'Could not load settlements.'))
+      setSError(err)
     } finally {
       setSLoading(false)
     }

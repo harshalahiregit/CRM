@@ -88,7 +88,7 @@ export default function TrackSettings() {
       setHrm(res?.hrm ?? {})
       setWhatsapp(res?.whatsapp ?? null)
     } catch (err) {
-      setError(trackErrorMessage(err, 'Could not load settings.'))
+      setError(err)
     } finally {
       setLoading(false)
     }

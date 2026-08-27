@@ -135,7 +135,7 @@ export default function TrackPayroll() {
       const res = await sangoeTrackApi.payroll.overview()
       setData(res?.data ?? null)
     } catch (err) {
-      setError(trackErrorMessage(err, 'Could not reach SangoeTrack.'))
+      setError(err)
     } finally {
       setLoading(false)
     }

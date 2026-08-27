@@ -7,7 +7,7 @@ import {
   ArrowLeftRight, BookOpen, Boxes, PackagePlus, PackageMinus, Warehouse, History, Network, FileQuestion,
   BarChart3, Activity, Layers3, ScanLine, ClipboardCheck, ShoppingCart, Hourglass, Wrench,
   CalendarRange, Handshake, Factory, Undo2, Wallet, Award, GraduationCap, ShieldCheck, Bell, Search, X,
-  Settings2
+  Settings2, Clock, PenLine, CalendarOff, Contact, MessageSquare, PartyPopper
 } from 'lucide-react'
 import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -103,7 +103,40 @@ const HR_RECORDS_ITEMS = [
 ]
 
 // Flat list of every HR leaf — used only for the collapsed icon rail.
-const HR_ALL_LEAVES = [HR_DASHBOARD, ...HR_RECRUITMENT_ITEMS, HR_EMPLOYEES, ...HR_RECORDS_ITEMS]
+// ── SangoeTrack ────────────────────────────────────────────────────────────
+//
+// Live from track.sangoe.in — the app people actually clock into. These read and
+// write THEIR data; the CRM stores none of it, so nothing here can drift out of
+// step with what an employee sees on their phone.
+//
+// Flat, under their own names, rather than behind a collapsible group: they are
+// things HR does daily, not a sub-system to go hunting for.
+//
+// Two labels differ from the obvious choice, because HR already owns the word:
+//
+//   'Staff Directory'  not Employees — /app/hr/employees is the recruitment-side
+//                      record. These are the people who punch in, a different
+//                      list, and two identical labels is how somebody ends up
+//                      trusting the wrong screen.
+//   'Salaries'         not Payroll — HR Records already has Payroll, and this
+//                      screen only sets a monthly figure. SangoeTrack has no API
+//                      for payslips or components, so 'Salaries' is also the
+//                      more honest name for what it does.
+const HR_TRACK_ITEMS = [
+  { label: 'Attendance',      path: '/app/hr/track/attendance',     icon: Clock },
+  { label: 'Corrections',     path: '/app/hr/track/corrections',    icon: PenLine },
+  { label: 'Leave',           path: '/app/hr/track/leave',          icon: CalendarOff },
+  { label: 'Reimbursements',  path: '/app/hr/track/reimbursements', icon: Receipt },
+  { label: 'Advances',        path: '/app/hr/track/advances',       icon: Wallet },
+  { label: 'Salaries',        path: '/app/hr/track/payroll',        icon: IndianRupee },
+  { label: 'Staff Directory', path: '/app/hr/track/staff',          icon: Contact },
+  { label: 'Demo Requests',   path: '/app/hr/track/demo-requests',  icon: MessageSquare },
+  { label: 'Reports',         path: '/app/hr/track/reports',        icon: BarChart3 },
+  { label: 'Holidays',        path: '/app/hr/track/holidays',       icon: PartyPopper },
+  { label: 'Settings',        path: '/app/hr/track/settings',       icon: Settings2 },
+]
+
+const HR_ALL_LEAVES = [HR_DASHBOARD, ...HR_RECRUITMENT_ITEMS, HR_EMPLOYEES, ...HR_RECORDS_ITEMS, ...HR_TRACK_ITEMS]
 
 // Grouped so the ~17 sales micro-modules stay scannable instead of rendering
 // as one long flat list. A muted mini-header is emitted whenever `group`
@@ -220,6 +253,7 @@ const SUBMODULE_SEARCH = [
   ...HR_RECRUITMENT_ITEMS.map(i => ({ ...i, module: 'HR' })),
   { ...HR_EMPLOYEES, module: 'HR' },
   ...HR_RECORDS_ITEMS.map(i => ({ ...i, module: 'HR' })),
+  ...HR_TRACK_ITEMS.map(i => ({ ...i, module: 'HR' })),
   ...SALES_SUB_ITEMS.map(i => ({ ...i, module: 'Sales' })),
   ...ACCOUNTS_SUB_ITEMS.map(i => ({ ...i, module: 'Accounts' })),
   ...HELPDESK_SUB_ITEMS.map(i => ({ ...i, module: 'Helpdesk' })),
@@ -549,6 +583,12 @@ export default function Sidebar({ collapsed, onToggle }) {
                   {/* HR Records group */}
                   <HrGroupHeader label="HR Records" icon={FolderOpen} expanded={hrRecordsExpanded} onToggle={() => setHrRecordsExpanded(e => !e)} />
                   {hrRecordsExpanded && HR_RECORDS_ITEMS.map(item => <HrLeaf key={item.path} item={item} indent="44px" />)}
+
+                  {/* SangoeTrack — flat, no group header, by request. A rule
+                      above the set separates it from HR's own records without
+                      making it something to expand before it can be seen. */}
+                  <div className="mx-5 my-2" style={{ height: 1, background: 'var(--border)' }} aria-hidden="true" />
+                  {HR_TRACK_ITEMS.map(item => <HrLeaf key={item.path} item={item} />)}
                 </>
               )}
           </div>

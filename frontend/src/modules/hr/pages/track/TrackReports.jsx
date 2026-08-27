@@ -17,7 +17,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { ChevronLeft, ChevronRight, BarChart3 } from 'lucide-react'
-import { sangoeTrackApi, trackErrorMessage } from '@/services/sangoeTrackApi'
+import { sangoeTrackApi } from '@/services/sangoeTrackApi'
 import LoadError from '@/components/ui/LoadError'
 import EmptyState from '@/components/ui/EmptyState'
 import { TrackHeader } from './TrackShell'
@@ -117,7 +117,7 @@ export default function TrackReports() {
       const res = await sangoeTrackApi.reports.get(month)
       setData(res?.data ?? null)
     } catch (err) {
-      setError(trackErrorMessage(err, 'Could not build the reports.'))
+      setError(err)
     } finally {
       setLoading(false)
     }

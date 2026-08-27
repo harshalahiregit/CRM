@@ -147,7 +147,7 @@ export default function TrackDemoRequests() {
       const res = await sangoeTrackApi.demoRequests.list()
       setRows(Array.isArray(res?.data) ? res.data : [])
     } catch (err) {
-      setError(trackErrorMessage(err, 'Could not reach SangoeTrack.'))
+      setError(err)
     } finally {
       setLoading(false)
     }

@@ -70,7 +70,7 @@ const TRACK = [
   { label: 'Leave',           path: '/app/hr/track/leave',          icon: CalendarOff,   ready: true  },
   { label: 'Reimbursements',  path: '/app/hr/track/reimbursements', icon: Receipt,       ready: true  },
   { label: 'Advances',        path: '/app/hr/track/advances',       icon: Wallet,        ready: true  },
-  { label: 'Payroll',         path: '/app/hr/track/payroll',        icon: IndianRupee,   ready: true  },
+  { label: 'Salaries',        path: '/app/hr/track/payroll',        icon: IndianRupee,   ready: true  },
   { label: 'Staff Directory', path: '/app/hr/track/staff',          icon: Contact,       ready: true  },
   { label: 'Demo Requests',   path: '/app/hr/track/demo-requests',  icon: MessageSquare, ready: true  },
   { label: 'Reports',         path: '/app/hr/track/reports',        icon: BarChart3,     ready: true  },

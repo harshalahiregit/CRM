@@ -12,7 +12,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { PartyPopper, ExternalLink } from 'lucide-react'
-import { sangoeTrackApi, trackErrorMessage } from '@/services/sangoeTrackApi'
+import { sangoeTrackApi } from '@/services/sangoeTrackApi'
 import LoadError from '@/components/ui/LoadError'
 import EmptyState from '@/components/ui/EmptyState'
 import { TrackHeader } from './TrackShell'
@@ -47,7 +47,7 @@ export default function TrackHolidays() {
       const res = await sangoeTrackApi.holidays.list()
       setRows(Array.isArray(res?.data) ? res.data : [])
     } catch (err) {
-      setError(trackErrorMessage(err, 'Could not reach SangoeTrack.'))
+      setError(err)
     } finally {
       setLoading(false)
     }

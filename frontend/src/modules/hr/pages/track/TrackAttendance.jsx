@@ -20,7 +20,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { RefreshCw, MapPin, Clock, CalendarDays } from 'lucide-react'
-import { sangoeTrackApi, trackErrorMessage } from '@/services/sangoeTrackApi'
+import { sangoeTrackApi } from '@/services/sangoeTrackApi'
 import LoadError from '@/components/ui/LoadError'
 import EmptyState from '@/components/ui/EmptyState'
 
@@ -63,7 +63,7 @@ export default function TrackAttendance() {
       const res = await sangoeTrackApi.attendance.today('all')
       setRows(Array.isArray(res?.data) ? res.data : [])
     } catch (err) {
-      setError(trackErrorMessage(err, 'Could not reach SangoeTrack.'))
+      setError(err)
     } finally {
       setLoading(false)
     }

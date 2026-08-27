@@ -249,7 +249,7 @@ export default function TrackStaff() {
       setRows(Array.isArray(people?.data) ? people.data : [])
       setRoles(Array.isArray(roleList?.data) ? roleList.data : [{ value: 'staff', label: 'Staff Member' }])
     } catch (err) {
-      setError(trackErrorMessage(err, 'Could not reach SangoeTrack.'))
+      setError(err)
     } finally {
       setLoading(false)
     }
