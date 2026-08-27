@@ -61,7 +61,13 @@ class TaskController extends Controller
     public function show(Request $request, int $task)
     {
         $this->guard($request, $task);
-        return $this->success($this->tasks->show($task, $request->user()->tenant_id), 'Task retrieved');
+        $model = $this->tasks->show($task, $request->user()->tenant_id);
+        // PR1 — billable amounts are hidden from non-admins entirely; only a
+        // permitted (admin) user can see them (the UI still masks them by default).
+        if ($request->user()?->role !== 'admin') {
+            $model->makeHidden(['billable_amount', 'billable_amount_effective']);
+        }
+        return $this->success($model, 'Task retrieved');
     }
 
     public function update(UpdateTaskRequest $request, int $task)

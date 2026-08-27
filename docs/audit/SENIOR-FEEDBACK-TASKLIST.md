@@ -48,7 +48,7 @@ Last updated: 2026-08-27.
 - [x] **RP2. Separate TDS deduction box** on the Record Payment page (TDS % auto-computes the amount; TDS section field). Backend already persisted TDS on `sales_payments`.
 
 ## Project (my module)
-- [ ] ⚠ **PR1. Billable — reflect each task's amount, hidden by default; only permitted users see the hidden amount.** NEEDS DECISION: a task's amount = rate × logged hours, or a new fixed-amount field? which permission unlocks it?
+- [x] **PR1. Billable — each task's amount, hidden by default, admin-only.** DECISION: fixed `billable_amount` field if set, else rate × logged hours (`Task::effectiveBillableAmount()`). API hides the amount from non-admins; Task detail shows it masked with an admin-only Show/Hide toggle; a fixed-amount field added to the task form. Guarded by `TaskBillableAmountTest` (4).
 - [ ] **PR2. Convert task / project / milestone → PI.**
 - [ ] ⚠ **PR3. Feedback gate:** share feedback via WhatsApp/email when set to "awaiting feedback"; a task/project can't be "Completed" until feedback is received; once received & completed, a PI is generated. NEEDS DECISION: how "feedback received" is recorded (customer reply link vs admin marks received).
 
