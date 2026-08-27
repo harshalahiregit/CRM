@@ -156,6 +156,10 @@ export const purchasePortalApi = {
     debitNote:   (id) => api.get(`/portal/purchase/debit-notes/${id}`).then(r => r.data),
     payments:    ()   => api.get('/portal/purchase/payments').then(r => r.data),
     statement:   ()   => api.get('/portal/purchase/statement').then(r => r.data),
+    // RFQs the vendor was invited to, + submitting a quotation against one.
+    rfqs:        ()          => api.get('/portal/purchase/rfqs').then(r => r.data),
+    rfq:         (id)        => api.get(`/portal/purchase/rfqs/${id}`).then(r => r.data),
+    submitQuote: (id, body)  => api.post(`/portal/purchase/rfqs/${id}/quotation`, body).then(r => r.data),
   },
 
   // §32 "View compliance" — the vendor's own compliance register (read-only).

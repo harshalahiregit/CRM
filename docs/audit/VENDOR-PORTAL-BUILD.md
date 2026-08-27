@@ -64,7 +64,11 @@ Last updated: 2026-08-27.
 - [x] Debit Notes — portal list + detail (read).
 - [x] Purchase Statement — **new** portal endpoint (`GET /portal/purchase/statement`) + ledger page.
 - [x] Payments — portal list (read).
-- [ ] **3b — Vendor submits Quotation / RFQ response** (write path; approved by user).
+- [x] **3b — Vendor submits Quotation / RFQ response** (write). Portal shows RFQs the
+  vendor was invited to; "Submit Quote" form (rate per line, tax, valid-until, notes) →
+  `POST /portal/purchase/rfqs/{id}/quotation`. `PurchaseQuotationService::submitByVendor`
+  (created_by null, audited by vendor label; guards open-RFQ + invited + one-submission;
+  advances RFQ Sent→Under_Review, marks recipient Responded). +3 tests (7 total).
 
 ## Phase 4 — Compliance & HSSE
 - [x] Comply — vendor read-only register (exists; verify)
@@ -90,5 +94,5 @@ Last updated: 2026-08-27.
 ---
 
 ### Progress
-- **Done:** Phase 0 (Foundation skeleton) — shared shell + registry + ComingSoon, both portals wrapped, build green.
-- **Next:** Phase 2 Execution (surface existing backends) or Phase 3 Commercial (build UI on done backend) — user to direct.
+- **Done:** Phase 0 (Foundation) · Phase 3 Commercial (3a read views + 3b vendor RFQ-quote submission). Purchase portal Commercial fully live.
+- **Next:** Phase 2 Execution (surface Projects/Tasks/Tickets/Notes/Docs/Reminders + vendor writes) — user to direct.

@@ -227,6 +227,10 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal'])->prefix('portal/pu
     Route::get('/orders/{id}',                        [PurchasePortalCommerceController::class, 'order']);
     Route::get('/quotations',                         [PurchasePortalCommerceController::class, 'quotations']);
     Route::get('/quotations/{id}',                    [PurchasePortalCommerceController::class, 'quotation']);
+    // RFQs the vendor was invited to + submitting a quotation against one (write).
+    Route::get('/rfqs',                               [PurchasePortalCommerceController::class, 'rfqs']);
+    Route::get('/rfqs/{id}',                          [PurchasePortalCommerceController::class, 'rfq']);
+    Route::post('/rfqs/{id}/quotation',               [PurchasePortalCommerceController::class, 'submitQuotation']);
     Route::get('/contracts',                          [PurchasePortalCommerceController::class, 'contracts']);
     Route::get('/contracts/{id}',                     [PurchasePortalCommerceController::class, 'contract']);
     Route::get('/invoices',                           [PurchasePortalCommerceController::class, 'invoices']);

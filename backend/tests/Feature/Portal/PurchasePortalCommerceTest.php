@@ -6,9 +6,14 @@ use App\Models\Purchase\PurchaseDebitNote;
 use App\Models\Purchase\PurchaseInvoice;
 use App\Models\Purchase\PurchaseInvoiceItem;
 use App\Models\Purchase\PurchaseInvoicePayment;
+use App\Models\Purchase\PurchaseRfq;
+use App\Models\Purchase\PurchaseRfqItem;
+use App\Models\Purchase\PurchaseRfqVendor;
 use App\Models\Purchase\PurchaseVendor;
 use App\Models\Tenant;
+use App\Support\Purchase\PurchaseRfqStatus;
 use App\Support\Purchase\PurchaseVendorStatus;
+use App\Support\Purchase\RfqVendorStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -113,5 +118,72 @@ class PurchasePortalCommerceTest extends TestCase
 
         Sanctum::actingAs($a);
         $this->getJson("/api/portal/purchase/invoices/{$invB->id}")->assertStatus(404);
+    }
+
+    /* ── RFQ → vendor quotation submission ─────────────────────────────── */
+
+    private function openRfqInviting(PurchaseVendor $v): PurchaseRfq
+    {
+        $rfq = PurchaseRfq::create([
+            'tenant_id' => self::TENANT, 'rfq_number' => 'RFQ-'.uniqid(),
+            'title' => 'Fasteners', 'currency' => 'INR', 'status' => PurchaseRfqStatus::SENT,
+        ]);
+        PurchaseRfqItem::create([
+            'tenant_id' => self::TENANT, 'purchase_rfq_id' => $rfq->id,
+            'description' => 'M12 bolt', 'qty' => 100, 'unit' => 'nos', 'sort_order' => 1,
+        ]);
+        PurchaseRfqVendor::create([
+            'tenant_id' => self::TENANT, 'purchase_rfq_id' => $rfq->id,
+            'purchase_vendor_id' => $v->id, 'status' => RfqVendorStatus::INVITED,
+        ]);
+
+        return $rfq;
+    }
+
+    public function test_vendor_sees_and_submits_a_quote_for_an_invited_rfq(): void
+    {
+        $v = $this->vendor('AlphaCo');
+        $rfq = $this->openRfqInviting($v);
+        $item = $rfq->items()->first();
+
+        Sanctum::actingAs($v);
+        $this->getJson('/api/portal/purchase/rfqs')->assertOk()
+            ->assertJsonPath('0.id', $rfq->id)
+            ->assertJsonPath('0.can_quote', true);
+
+        $this->postJson("/api/portal/purchase/rfqs/{$rfq->id}/quotation", [
+            'items' => [['purchase_rfq_item_id' => $item->id, 'description' => 'M12 bolt', 'qty' => 100, 'rate' => 12, 'unit' => 'nos', 'tax' => 0]],
+            'valid_until' => '2026-03-01',
+        ])->assertCreated()->assertJsonPath('purchase_vendor_id', $v->id);
+
+        // Invited row flips to Responded; RFQ advances to Under_Review.
+        $this->assertSame(RfqVendorStatus::RESPONDED, $rfq->rfqVendors()->first()->status);
+        $this->assertSame(PurchaseRfqStatus::UNDER_REVIEW, $rfq->fresh()->status);
+    }
+
+    public function test_vendor_cannot_submit_twice(): void
+    {
+        $v = $this->vendor('AlphaCo');
+        $rfq = $this->openRfqInviting($v);
+        $item = $rfq->items()->first();
+        $body = ['items' => [['purchase_rfq_item_id' => $item->id, 'qty' => 100, 'rate' => 12]]];
+
+        Sanctum::actingAs($v);
+        $this->postJson("/api/portal/purchase/rfqs/{$rfq->id}/quotation", $body)->assertCreated();
+        $this->postJson("/api/portal/purchase/rfqs/{$rfq->id}/quotation", $body)->assertStatus(422);
+    }
+
+    public function test_uninvited_vendor_cannot_submit(): void
+    {
+        $a = $this->vendor('AlphaCo');
+        $b = $this->vendor('BetaCo');
+        $rfq = $this->openRfqInviting($b);          // invites B only
+        $item = $rfq->items()->first();
+
+        Sanctum::actingAs($a);
+        // A is not on the recipient list → the service refuses the submission (422).
+        $this->postJson("/api/portal/purchase/rfqs/{$rfq->id}/quotation", [
+            'items' => [['purchase_rfq_item_id' => $item->id, 'qty' => 100, 'rate' => 12]],
+        ])->assertStatus(422);
     }
 }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { X, FileText, Loader2 } from 'lucide-react'
+import { X, FileText, Loader2, Send, CheckCircle2 } from 'lucide-react'
 import { purchasePortalApi } from '@/services/purchasePortalApi'
 
 /**
@@ -232,6 +232,122 @@ function StatementView() {
 function Center({ children }) { return <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}>{children}</div> }
 function Empty() { return <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 48, fontSize: 14 }}>Nothing here yet.</div> }
 
+/* ── RFQ invitations + quote submission (vendor write path) ───────────────── */
+function RfqPanel({ onSubmitted }) {
+  const [rfqs, setRfqs] = useState(null)
+  const [quoting, setQuoting] = useState(null)   // the RFQ being quoted
+  const reload = () => purchasePortalApi.commercial.rfqs().then(d => setRfqs(Array.isArray(d) ? d : [])).catch(() => setRfqs([]))
+  useEffect(() => { reload() }, [])
+
+  if (rfqs === null) return <div className="pp-card" style={{ marginBottom: 16 }}><Center><Loader2 className="spin" size={20} /></Center></div>
+  if (rfqs.length === 0) return null
+
+  return (
+    <div className="pp-card" style={{ marginBottom: 16 }}>
+      <h2 style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-h)', margin: '0 0 4px' }}>Requests for Quotation</h2>
+      <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '0 0 12px' }}>RFQs you were invited to. Submit your prices while the RFQ is open.</p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {rfqs.map(r => (
+          <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', border: '1px solid var(--border, rgba(255,255,255,0.08))', borderRadius: 10 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 700, color: 'var(--text-h)', fontSize: 13.5 }}>{r.rfq_number} · {r.title || 'RFQ'}</div>
+              <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                {r.items?.length || 0} item(s){r.closes_at ? ` · closes ${r.closes_at}` : ''} · {r.status_label || r.status}
+              </div>
+            </div>
+            {r.already_responded ? (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, color: '#22c55e' }}><CheckCircle2 size={14} /> Submitted</span>
+            ) : r.can_quote ? (
+              <button onClick={() => setQuoting(r)} className="pp-btn pp-btn-primary"><Send size={13} /> Submit Quote</button>
+            ) : (
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Closed</span>
+            )}
+          </div>
+        ))}
+      </div>
+      {quoting && <QuoteFormModal rfq={quoting} onClose={() => setQuoting(null)} onDone={() => { setQuoting(null); reload(); onSubmitted?.() }} />}
+    </div>
+  )
+}
+
+function QuoteFormModal({ rfq, onClose, onDone }) {
+  const [lines, setLines] = useState(() => (rfq.items || []).map(it => ({
+    purchase_rfq_item_id: it.id, description: it.description, qty: it.qty ?? 1, unit: it.unit || '', rate: '', tax: '',
+  })))
+  const [validUntil, setValidUntil] = useState('')
+  const [notes, setNotes] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const setLine = (i, k, v) => setLines(ls => ls.map((l, j) => j === i ? { ...l, [k]: v } : l))
+  const total = lines.reduce((s, l) => s + (Number(l.qty || 0) * Number(l.rate || 0)) * (1 + Number(l.tax || 0) / 100), 0)
+
+  const submit = async () => {
+    setError('')
+    if (lines.some(l => l.rate === '' || Number(l.rate) < 0)) { setError('Enter a rate for every line item.'); return }
+    setSaving(true)
+    try {
+      await purchasePortalApi.commercial.submitQuote(rfq.id, {
+        items: lines.map(l => ({
+          purchase_rfq_item_id: l.purchase_rfq_item_id, description: l.description,
+          qty: Number(l.qty || 0), rate: Number(l.rate || 0), unit: l.unit || null, tax: Number(l.tax || 0),
+        })),
+        valid_until: validUntil || null, notes: notes || null,
+      })
+      onDone()
+    } catch (e) {
+      setError(e?.response?.data?.message || e?.message || 'Could not submit the quotation.')
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 60, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '5vh 16px', overflowY: 'auto' }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 720, background: 'var(--bg-card, #14161c)', border: '1px solid var(--border, rgba(255,255,255,0.1))', borderRadius: 14, overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: '1px solid var(--border, rgba(255,255,255,0.08))' }}>
+          <Send size={16} />
+          <strong style={{ color: 'var(--text-h)', flex: 1 }}>Submit Quote — {rfq.rfq_number}</strong>
+          <button onClick={onClose} className="portal-icon-btn"><X size={16} /></button>
+        </div>
+        <div style={{ padding: 18 }}>
+          <div style={{ overflowX: 'auto' }}>
+            <table className="pp-table">
+              <thead><tr><th>Item</th><th style={{ textAlign: 'right' }}>Qty</th><th>Unit</th><th style={{ textAlign: 'right', width: 120 }}>Rate *</th><th style={{ textAlign: 'right', width: 90 }}>Tax %</th><th style={{ textAlign: 'right' }}>Amount</th></tr></thead>
+              <tbody>
+                {lines.map((l, i) => (
+                  <tr key={i}>
+                    <td>{l.description || `Item ${i + 1}`}</td>
+                    <td style={{ textAlign: 'right' }}>{l.qty}</td>
+                    <td>{l.unit || '—'}</td>
+                    <td><input type="number" min="0" step="0.01" value={l.rate} onChange={e => setLine(i, 'rate', e.target.value)} className="pp-input" /></td>
+                    <td><input type="number" min="0" step="0.01" value={l.tax} onChange={e => setLine(i, 'tax', e.target.value)} className="pp-input" /></td>
+                    <td style={{ textAlign: 'right' }}>{money((Number(l.qty || 0) * Number(l.rate || 0)) * (1 + Number(l.tax || 0) / 100), rfq.currency)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 14 }}>
+            <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Valid until<br /><input type="date" value={validUntil} onChange={e => setValidUntil(e.target.value)} className="pp-input" style={{ marginTop: 4 }} /></label>
+            <label style={{ flex: 1, minWidth: 200, fontSize: 12, color: 'var(--text-muted)' }}>Notes<br /><input value={notes} onChange={e => setNotes(e.target.value)} className="pp-input" style={{ marginTop: 4, width: '100%' }} placeholder="Optional" /></label>
+            <div style={{ textAlign: 'right', marginLeft: 'auto' }}>
+              <div style={{ fontSize: 10.5, textTransform: 'uppercase', color: 'var(--text-muted)' }}>Quote Total</div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-h)' }}>{money(total, rfq.currency)}</div>
+            </div>
+          </div>
+
+          {error && <div style={{ marginTop: 12, color: '#ef4444', fontSize: 13 }}>{error}</div>}
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18 }}>
+            <button onClick={onClose} className="pp-btn">Cancel</button>
+            <button onClick={submit} disabled={saving} className="pp-btn pp-btn-primary">{saving ? <Loader2 className="spin" size={14} /> : <Send size={14} />} Submit Quotation</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /* ── List page ────────────────────────────────────────────────────────────── */
 export default function PurchasePortalCommercial({ view }) {
   if (view === 'statement') return <PageWrap><StatementView /></PageWrap>
@@ -241,16 +357,15 @@ export default function PurchasePortalCommercial({ view }) {
   const [openId, setOpenId] = useState(null)
   const cols = useMemo(() => cfg?.cols || [], [cfg])
 
-  useEffect(() => {
-    setRows(null); setOpenId(null)
-    cfg?.list().then(d => setRows(Array.isArray(d) ? d : (d?.data || []))).catch(() => setRows([]))
-  }, [view])
+  const reload = () => cfg?.list().then(d => setRows(Array.isArray(d) ? d : (d?.data || []))).catch(() => setRows([]))
+  useEffect(() => { setRows(null); setOpenId(null); reload() }, [view])
 
   if (!cfg) return <PageWrap><Empty /></PageWrap>
 
   return (
     <PageWrap>
       <style>{PP_TABLE_CSS}</style>
+      {view === 'quotations' && <RfqPanel onSubmitted={reload} />}
       <div className="pp-card">
         <h2 style={{ fontSize: 17, fontWeight: 800, color: 'var(--text-h)', margin: '0 0 14px' }}>{cfg.title}</h2>
         {rows === null ? <Center><Loader2 className="spin" size={22} /></Center>
@@ -289,6 +404,12 @@ const PP_TABLE_CSS = `
 .pp-table th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); padding: 8px 12px; border-bottom: 1px solid var(--border, rgba(255,255,255,0.08)); white-space: nowrap; }
 .pp-table td { padding: 10px 12px; border-bottom: 1px solid var(--border, rgba(255,255,255,0.05)); color: var(--text-body, #cbd5e1); vertical-align: middle; }
 .pp-table tbody tr:hover { background: var(--bg-input, rgba(255,255,255,0.03)); }
+.pp-input { background: var(--bg-input, rgba(255,255,255,0.05)); border: 1px solid var(--border, rgba(255,255,255,0.12)); border-radius: 8px; padding: 6px 9px; color: var(--text-h); font-size: 13px; width: 100%; }
+.pp-input:focus { outline: none; border-color: var(--portal-purple, #7c3aed); }
+.pp-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 9px; font-size: 13px; font-weight: 700; cursor: pointer; border: 1px solid var(--border, rgba(255,255,255,0.14)); background: transparent; color: var(--text-h); }
+.pp-btn:hover { background: var(--bg-input, rgba(255,255,255,0.05)); }
+.pp-btn-primary { background: var(--portal-purple, #7c3aed); border-color: var(--portal-purple, #7c3aed); color: #fff; }
+.pp-btn-primary:disabled { opacity: 0.6; cursor: default; }
 .spin { animation: pp-spin 0.9s linear infinite; }
 @keyframes pp-spin { to { transform: rotate(360deg); } }
 `
