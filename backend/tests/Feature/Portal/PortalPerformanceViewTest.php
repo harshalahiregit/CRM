@@ -74,4 +74,45 @@ class PortalPerformanceViewTest extends TestCase
         $refs = collect($res->json('data'))->pluck('reference')->all();
         $this->assertSame(['V-1'], $refs);
     }
+
+    public function test_admin_grants_an_award_and_the_vendor_sees_it(): void
+    {
+        $vendor = $this->portalVendor('Acme');
+        $admin = User::create([
+            'tenant_id' => self::TENANT, 'name' => 'Admin', 'role' => 'admin',
+            'email' => 'admin@test.local', 'password' => bcrypt('secret'), 'status' => 'active',
+        ]);
+
+        Sanctum::actingAs($admin);
+        $this->postJson("/api/tpv/vendors/{$vendor->id}/awards", ['title' => 'Safety Star', 'category' => 'Safety'])
+            ->assertCreated()->assertJsonPath('title', 'Safety Star');
+
+        Sanctum::actingAs($vendor->user);
+        $this->getJson('/api/portal/awards')->assertOk()->assertJsonPath('data.0.title', 'Safety Star');
+    }
+
+    public function test_vendor_submits_a_referral_and_sees_only_its_own(): void
+    {
+        $mine  = $this->portalVendor('Acme');
+        $other = $this->portalVendor('BetaCo');
+        \App\Models\Vendor\VendorReferral::create(['tenant_id' => self::TENANT, 'referred_by_vendor_id' => $other->id, 'company_name' => 'Not Mine', 'status' => 'New']);
+
+        Sanctum::actingAs($mine->user);
+        $this->postJson('/api/portal/referrals', ['company_name' => 'Good Corp', 'contact_name' => 'Ravi'])
+            ->assertCreated()->assertJsonPath('company_name', 'Good Corp');
+
+        $res = $this->getJson('/api/portal/referrals')->assertOk();
+        $names = collect($res->json('data'))->pluck('company_name')->all();
+        $this->assertSame(['Good Corp'], $names);
+    }
+
+    public function test_feedback_returns_a_live_scorecard(): void
+    {
+        $vendor = $this->portalVendor('Acme');
+
+        Sanctum::actingAs($vendor->user);
+        $this->getJson('/api/portal/feedback')
+            ->assertOk()
+            ->assertJsonStructure(['live' => ['overall_score', 'band', 'dimensions']]);
+    }
 }

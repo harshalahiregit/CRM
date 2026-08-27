@@ -197,10 +197,14 @@ export const portalApi = {
     get: () => api.get('/portal/compliance').then(r => r.data),
   },
 
-  // Performance — the vendor's own risk score + penalty points (read-only).
+  // Performance — the vendor's own risk score, rating, penalties, awards, referrals.
   performance: {
-    risk:       () => api.get('/portal/risk').then(r => r.data),
-    violations: () => api.get('/portal/violations').then(r => r.data),
+    risk:           () => api.get('/portal/risk').then(r => r.data),
+    feedback:       () => api.get('/portal/feedback').then(r => r.data),
+    violations:     () => api.get('/portal/violations').then(r => r.data),
+    awards:         () => api.get('/portal/awards').then(r => r.data),
+    referrals:      () => api.get('/portal/referrals').then(r => r.data),
+    submitReferral: (body) => api.post('/portal/referrals', body).then(r => r.data),
   },
 
   // §32 Governance-response half.

@@ -19,7 +19,9 @@ use App\Models\Shared\Note;
 use App\Models\Tpv\TpvContact;
 use App\Models\Tpv\TpvWorker;
 use App\Models\Vendor\Vendor;
+use App\Models\Vendor\VendorAward;
 use App\Models\Vendor\VendorDocument;
+use App\Models\Vendor\VendorReferral;
 use App\Support\Vendor\VendorStatus;
 use App\Services\Purchase\PurchaseVendorService;
 use App\Services\Sales\ReminderService;
@@ -838,6 +840,79 @@ class VendorController extends Controller
         abort_unless($request->user()->canManageHrQueue(), 403, 'You are not authorised to issue portal logins');
 
         return response()->json($this->vendorService->buildLoginLink($vendor));
+    }
+
+    /* ── Performance › Award / Reward (admin grants; vendor views) ───────── */
+
+    public function awardsIndex(Request $request, Vendor $vendor)
+    {
+        $this->assertTenant($request, $vendor);
+
+        return response()->json([
+            'data' => VendorAward::where('tenant_id', $vendor->tenant_id)
+                ->where('vendor_id', $vendor->id)
+                ->with('grantedBy:id,name')
+                ->latest('awarded_on')
+                ->get(),
+        ]);
+    }
+
+    public function grantAward(Request $request, Vendor $vendor)
+    {
+        $this->assertTenant($request, $vendor);
+
+        $data = $request->validate([
+            'title'       => 'required|string|max:200',
+            'category'    => 'nullable|string|max:100',
+            'description' => 'nullable|string|max:2000',
+            'awarded_on'  => 'nullable|date',
+        ]);
+
+        $award = VendorAward::create([
+            'tenant_id'   => $vendor->tenant_id,
+            'vendor_id'   => $vendor->id,
+            'title'       => $data['title'],
+            'category'    => $data['category'] ?? null,
+            'description' => $data['description'] ?? null,
+            'awarded_on'  => $data['awarded_on'] ?? now()->toDateString(),
+            'granted_by'  => $request->user()->id,
+        ]);
+
+        return response()->json($award->fresh('grantedBy:id,name'), 201);
+    }
+
+    public function deleteAward(Request $request, Vendor $vendor, VendorAward $award)
+    {
+        $this->assertTenant($request, $vendor);
+        abort_unless((int) $award->vendor_id === (int) $vendor->id && (int) $award->tenant_id === (int) $vendor->tenant_id, 404, 'Award not found');
+        $award->delete();
+
+        return response()->json(['deleted' => true]);
+    }
+
+    /* ── Performance › Referral (vendor submits; admin works the prospect) ── */
+
+    public function referralsIndex(Request $request, Vendor $vendor)
+    {
+        $this->assertTenant($request, $vendor);
+
+        return response()->json([
+            'data' => VendorReferral::where('tenant_id', $vendor->tenant_id)
+                ->where('referred_by_vendor_id', $vendor->id)
+                ->latest('id')
+                ->get(),
+        ]);
+    }
+
+    public function setReferralStatus(Request $request, Vendor $vendor, VendorReferral $referral)
+    {
+        $this->assertTenant($request, $vendor);
+        abort_unless((int) $referral->referred_by_vendor_id === (int) $vendor->id && (int) $referral->tenant_id === (int) $vendor->tenant_id, 404, 'Referral not found');
+
+        $data = $request->validate(['status' => ['required', \Illuminate\Validation\Rule::in(VendorReferral::STATUSES)]]);
+        $referral->update(['status' => $data['status']]);
+
+        return response()->json($referral->fresh());
     }
 
     private function assertTenant(Request $request, Vendor $vendor): void

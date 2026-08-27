@@ -881,7 +881,10 @@ export default function AppRoutes() {
         <Route path="tasks"             element={<S><MyWork view="tasks" /></S>} />
         <Route path="tickets"           element={<S><MyWork view="tickets" /></S>} />
         <Route path="risk-score"        element={<S><MyPerformance view="risk" /></S>} />
+        <Route path="feedback"          element={<S><MyPerformance view="feedback" /></S>} />
         <Route path="penalty"           element={<S><MyPerformance view="penalty" /></S>} />
+        <Route path="awards"            element={<S><MyPerformance view="award" /></S>} />
+        <Route path="referrals"         element={<S><MyPerformance view="referral" /></S>} />
         <Route path="orders/:id"        element={<S><PortalOrderDetail /></S>} />
         <Route path="invoices/:id"      element={<S><PortalInvoiceDetail /></S>} />
 

@@ -90,6 +90,13 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::get('/vendors/{vendor}/overview',                  [\App\Http\Controllers\Api\Vendor\VendorController::class, 'overview']);
     // Vendor Rating System scorecard (Doc 5) — live score + persisted history.
     Route::get('/vendors/{vendor}/scorecard',                 [\App\Http\Controllers\Api\Vendor\VendorController::class, 'scorecard']);
+    // Performance › Award / Reward — admin grants; vendor views in its portal.
+    Route::get('/vendors/{vendor}/awards',                    [\App\Http\Controllers\Api\Vendor\VendorController::class, 'awardsIndex']);
+    Route::post('/vendors/{vendor}/awards',                   [\App\Http\Controllers\Api\Vendor\VendorController::class, 'grantAward']);
+    Route::delete('/vendors/{vendor}/awards/{award}',         [\App\Http\Controllers\Api\Vendor\VendorController::class, 'deleteAward'])->where('award', '[0-9]+');
+    // Performance › Referral — the vendor submits; admin works the prospect.
+    Route::get('/vendors/{vendor}/referrals',                 [\App\Http\Controllers\Api\Vendor\VendorController::class, 'referralsIndex']);
+    Route::patch('/vendors/{vendor}/referrals/{referral}/status', [\App\Http\Controllers\Api\Vendor\VendorController::class, 'setReferralStatus'])->where('referral', '[0-9]+');
     // The five mandated onboarding gates (Doc 2/4), computed per vendor.
     Route::get('/vendors/{vendor}/gates',                     [\App\Http\Controllers\Api\Vendor\VendorController::class, 'gates']);
     // Vendor Risk Classification (gap report area 2) — read the tier + factors.

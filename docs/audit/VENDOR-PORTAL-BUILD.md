@@ -90,10 +90,16 @@ Last updated: 2026-08-27.
   breakdown (read-only; assessment stays admin). `GET /portal/risk` → VendorRiskService::snapshot (subset).
 - [x] **Penalty** — TPV portal page: own violations table + running penalty points + open
   count (read-only). `GET /portal/violations`. Guarded by `PortalPerformanceViewTest` (3).
-- [ ] Award / Reward — 🔴 greenfield — NEEDS DECISION on meaning
-- [ ] Feedback — 🔴 greenfield — NEEDS DECISION (view perf scorecard vs submit feedback)
-- [ ] Referral — 🔴 greenfield — NEEDS DECISION
-- [ ] Purchase-portal parity for Risk/Penalty (Purchase has its own perf/violation stack).
+- [x] **Feedback** — TPV portal page: vendor's own performance rating (VRS scorecard —
+  overall score gauge + band + dimension bars), read-only. `GET /portal/feedback`.
+- [x] **Award / Reward** — DECISION: admin grants, vendor views. New `vendor_awards` table +
+  `VendorAward` model. Admin: `GET/POST/DELETE /tpv/vendors/{v}/awards`. Portal: `GET /portal/awards` + card page.
+- [x] **Referral** — DECISION: vendor submits companies, admin works them. New `vendor_referrals`
+  table + `VendorReferral` model. Portal: `GET/POST /portal/referrals` + submit form. Admin:
+  `GET /tpv/vendors/{v}/referrals` + `PATCH .../{r}/status`.
+- Phase 5 guarded by `PortalPerformanceViewTest` (6): risk, unassessed, violations, award grant→view, referral submit/isolation, feedback scorecard.
+- [ ] Admin UI panels in TpvVendorDetail for Awards (grant form) + Referrals (status) — backend done, panel wiring is the follow-up.
+- [ ] Purchase-portal parity for the Performance section (Purchase has its own perf/violation stack).
 
 ## Phase 6 — EXTRA (define with user, build last)
 - [ ] Apps
@@ -108,4 +114,5 @@ Last updated: 2026-08-27.
   status, log expenses) · Purchase parity for Projects/Tickets · Notes/Attachments/Reminders/
   Vault portal endpoints · Meeting as its own section.
 - **General follow-ups:** Overview, Customer, Medical/Training surfacing.
-- **Next queued phases:** 4 Compliance & HSSE · 5 Performance · 6 Extra.
+- **Phase 5 Performance DONE** (TPV portal): Risk Score · Feedback · Penalty · Award · Referral, + admin grant/referral endpoints.
+- **Next queued phases:** 4 Compliance & HSSE · 6 Extra. Plus follow-ups: admin UI panels for Award/Referral, Purchase-portal Performance parity, Execution vendor-writes.

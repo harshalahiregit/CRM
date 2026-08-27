@@ -101,6 +101,24 @@ class VendorPortalController extends Controller
     }
 
     /**
+     * Performance › Feedback — the vendor's OWN performance rating/scorecard
+     * (read-only): the live VRS score, band and per-dimension breakdown, plus the
+     * persisted history. This is the performance feedback the vendor receives.
+     */
+    public function feedback(Request $request, \App\Services\Vendor\VendorScorecardService $vrs)
+    {
+        $vendor = $this->portalVendor($request);
+        if (! $vendor) {
+            return response()->json(['status' => 'error', 'message' => 'Vendor profile not found'], 404);
+        }
+
+        return response()->json([
+            'live'    => $vrs->compute($vendor),
+            'history' => $vrs->history($vendor),
+        ]);
+    }
+
+    /**
      * Performance › Penalty — the vendor's OWN violations/strikes (read-only), with
      * the running penalty-point total. Raising/voiding a violation is admin-only.
      */
@@ -121,6 +139,63 @@ class VendorPortalController extends Controller
             'total_points' => (int) $rows->sum('points'),
             'open_count'   => $rows->where('status', '!=', 'Closed')->count(),
         ]);
+    }
+
+    /** Performance › Award / Reward — the recognitions the vendor has earned (read-only). */
+    public function awards(Request $request)
+    {
+        $vendor = $this->portalVendor($request);
+        if (! $vendor) {
+            return response()->json(['status' => 'error', 'message' => 'Vendor profile not found'], 404);
+        }
+
+        $rows = \App\Models\Vendor\VendorAward::where('tenant_id', $vendor->tenant_id)
+            ->where('vendor_id', $vendor->id)
+            ->latest('awarded_on')
+            ->get(['id', 'title', 'category', 'description', 'awarded_on']);
+
+        return response()->json(['data' => $rows]);
+    }
+
+    /** Performance › Referral — the companies this vendor has referred (own only). */
+    public function referrals(Request $request)
+    {
+        $vendor = $this->portalVendor($request);
+        if (! $vendor) {
+            return response()->json(['status' => 'error', 'message' => 'Vendor profile not found'], 404);
+        }
+
+        $rows = \App\Models\Vendor\VendorReferral::where('tenant_id', $vendor->tenant_id)
+            ->where('referred_by_vendor_id', $vendor->id)
+            ->latest('id')
+            ->get(['id', 'company_name', 'contact_name', 'contact_email', 'contact_phone', 'note', 'status', 'created_at']);
+
+        return response()->json(['data' => $rows]);
+    }
+
+    /** The vendor submits a new referral (a company it recommends to us). */
+    public function storeReferral(Request $request)
+    {
+        $vendor = $this->portalVendor($request);
+        if (! $vendor) {
+            return response()->json(['status' => 'error', 'message' => 'Vendor profile not found'], 404);
+        }
+
+        $data = $request->validate([
+            'company_name'  => 'required|string|max:200',
+            'contact_name'  => 'nullable|string|max:150',
+            'contact_email' => 'nullable|email|max:180',
+            'contact_phone' => 'nullable|string|max:40',
+            'note'          => 'nullable|string|max:2000',
+        ]);
+
+        $referral = \App\Models\Vendor\VendorReferral::create(array_merge($data, [
+            'tenant_id'             => $vendor->tenant_id,
+            'referred_by_vendor_id' => $vendor->id,
+            'status'                => 'New',
+        ]));
+
+        return response()->json($referral, 201);
     }
 
     /** The caller's own vendor profile + headline account state. */

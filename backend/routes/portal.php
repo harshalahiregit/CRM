@@ -94,9 +94,13 @@ Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access'])->prefix('por
     // workers, moving shared Inventory stock. The summary is scoped the same way.
     // §32 "View compliance" — the vendor's own compliance register (read-only).
     Route::get('/compliance',                             [VendorPortalController::class, 'compliance']);
-    // Performance — the vendor's own risk score + penalty points (read-only).
+    // Performance — the vendor's own risk score, rating, penalties, awards, referrals.
     Route::get('/risk',                                   [VendorPortalController::class, 'risk']);
+    Route::get('/feedback',                               [VendorPortalController::class, 'feedback']);
     Route::get('/violations',                             [VendorPortalController::class, 'violations']);
+    Route::get('/awards',                                 [VendorPortalController::class, 'awards']);
+    Route::get('/referrals',                              [VendorPortalController::class, 'referrals']);
+    Route::post('/referrals',                             [VendorPortalController::class, 'storeReferral']);
     Route::get('/ppe/summary',                            [VendorPortalController::class, 'ppeSummary']);
     Route::get('/ppe/compliance/workers/{worker}',        [VendorPortalController::class, 'workerPpeCompliance']);
     Route::get('/ppe/workers/{worker}',                   [VendorPortalController::class, 'workerPpe']);
