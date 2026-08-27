@@ -1,0 +1,1 @@
+import{j as i}from"./index-nurQAzB8.js";import{Q as o}from"./QualificationQueue-CgfFm6Ar.js";import"./tpvApi-DFUJ_OTL.js";import"./kit3d-CXq9Xm6g.js";import"./arrow-right-Ntk2V5Bq.js";function p(){return i.jsx(o,{mode:"prequalification"})}export{p as default};
