@@ -97,6 +97,8 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     // Performance › Referral — the vendor submits; admin works the prospect.
     Route::get('/vendors/{vendor}/referrals',                 [\App\Http\Controllers\Api\Vendor\VendorController::class, 'referralsIndex']);
     Route::patch('/vendors/{vendor}/referrals/{referral}/status', [\App\Http\Controllers\Api\Vendor\VendorController::class, 'setReferralStatus'])->where('referral', '[0-9]+');
+    // Compliance & HSSE › Shipments — the vendor's dispatch notices (admin tracks).
+    Route::get('/vendors/{vendor}/shipments',                 [\App\Http\Controllers\Api\Vendor\VendorController::class, 'shipmentsIndex']);
     // The five mandated onboarding gates (Doc 2/4), computed per vendor.
     Route::get('/vendors/{vendor}/gates',                     [\App\Http\Controllers\Api\Vendor\VendorController::class, 'gates']);
     // Vendor Risk Classification (gap report area 2) — read the tier + factors.

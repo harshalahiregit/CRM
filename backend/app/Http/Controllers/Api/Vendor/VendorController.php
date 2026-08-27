@@ -915,6 +915,21 @@ class VendorController extends Controller
         return response()->json($referral->fresh());
     }
 
+    /* ── Compliance & HSSE › Shipments (vendor dispatches; admin tracks) ─── */
+
+    public function shipmentsIndex(Request $request, Vendor $vendor)
+    {
+        $this->assertTenant($request, $vendor);
+
+        return response()->json([
+            'data' => \App\Models\Vendor\VendorShipment::where('tenant_id', $vendor->tenant_id)
+                ->where('vendor_id', $vendor->id)
+                ->with('packages')
+                ->latest('id')
+                ->get(),
+        ]);
+    }
+
     private function assertTenant(Request $request, Vendor $vendor): void
     {
         abort_unless((int) $vendor->tenant_id === (int) $request->user()->tenant_id, 404, 'Vendor not found');

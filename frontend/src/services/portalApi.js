@@ -205,6 +205,14 @@ export const portalApi = {
     reportIncident: (body) => api.post('/portal/incidents', body).then(r => r.data),
   },
 
+  // Pre Alert / Packages / Shipping — the vendor's dispatch notices.
+  logistics: {
+    shipments:      () => api.get('/portal/shipments').then(r => r.data),
+    createShipment: (body) => api.post('/portal/shipments', body).then(r => r.data),
+    updateStatus:   (id, status) => api.patch(`/portal/shipments/${id}/status`, { status }).then(r => r.data),
+    packages:       () => api.get('/portal/shipment-packages').then(r => r.data),
+  },
+
   // Performance — the vendor's own risk score, rating, penalties, awards, referrals.
   performance: {
     risk:           () => api.get('/portal/risk').then(r => r.data),

@@ -106,6 +106,11 @@ Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access'])->prefix('por
     Route::post('/permits',                               [VendorPortalController::class, 'requestPermit']);
     Route::get('/incidents',                              [VendorPortalController::class, 'incidents']);
     Route::post('/incidents',                             [VendorPortalController::class, 'reportIncident']);
+    // Pre Alert / Packages / Shipping — the vendor's dispatch notices.
+    Route::get('/shipments',                              [VendorPortalController::class, 'shipments']);
+    Route::post('/shipments',                             [VendorPortalController::class, 'storeShipment']);
+    Route::patch('/shipments/{shipment}/status',          [VendorPortalController::class, 'updateShipmentStatus'])->where('shipment', '[0-9]+');
+    Route::get('/shipment-packages',                      [VendorPortalController::class, 'shipmentPackages']);
     Route::get('/ppe/summary',                            [VendorPortalController::class, 'ppeSummary']);
     Route::get('/ppe/compliance/workers/{worker}',        [VendorPortalController::class, 'workerPpeCompliance']);
     Route::get('/ppe/workers/{worker}',                   [VendorPortalController::class, 'workerPpe']);

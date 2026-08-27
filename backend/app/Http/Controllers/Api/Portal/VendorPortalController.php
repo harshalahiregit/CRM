@@ -289,6 +289,113 @@ class VendorPortalController extends Controller
         return response()->json($incident, 201);
     }
 
+    /* ── Compliance & HSSE › Pre Alert / Packages / Shipping ─────────────── */
+
+    /** The vendor's own dispatch notices (shipments) with package counts. */
+    public function shipments(Request $request)
+    {
+        $vendor = $this->portalVendor($request);
+        if (! $vendor) {
+            return response()->json(['status' => 'error', 'message' => 'Vendor profile not found'], 404);
+        }
+
+        return response()->json([
+            'data'     => \App\Models\Vendor\VendorShipment::where('tenant_id', $vendor->tenant_id)
+                ->where('vendor_id', $vendor->id)
+                ->withCount('packages')
+                ->latest('id')
+                ->get(['id', 'reference', 'courier', 'tracking_number', 'status', 'expected_date', 'dispatched_on', 'delivered_on', 'notes']),
+            'statuses' => \App\Models\Vendor\VendorShipment::STATUSES,
+        ]);
+    }
+
+    /** The vendor creates a dispatch notice (pre-alert) with its packages. */
+    public function storeShipment(Request $request)
+    {
+        $vendor = $this->portalVendor($request);
+        if (! $vendor) {
+            return response()->json(['status' => 'error', 'message' => 'Vendor profile not found'], 404);
+        }
+
+        $data = $request->validate([
+            'courier'                 => 'nullable|string|max:120',
+            'tracking_number'         => 'nullable|string|max:120',
+            'expected_date'           => 'nullable|date',
+            'dispatched_on'           => 'nullable|date',
+            'notes'                   => 'nullable|string|max:2000',
+            'packages'                => 'array',
+            'packages.*.description'  => 'required_with:packages|string|max:255',
+            'packages.*.qty'          => 'nullable|integer|min:1',
+            'packages.*.weight'       => 'nullable|string|max:40',
+            'packages.*.dimensions'   => 'nullable|string|max:80',
+        ]);
+
+        $shipment = \Illuminate\Support\Facades\DB::transaction(function () use ($vendor, $data, $request) {
+            $shipment = \App\Models\Vendor\VendorShipment::create([
+                'tenant_id'       => $vendor->tenant_id,
+                'vendor_id'       => $vendor->id,
+                'courier'         => $data['courier'] ?? null,
+                'tracking_number' => $data['tracking_number'] ?? null,
+                'status'          => 'Pre-Alert',
+                'expected_date'   => $data['expected_date'] ?? null,
+                'dispatched_on'   => $data['dispatched_on'] ?? null,
+                'notes'           => $data['notes'] ?? null,
+                'created_by'      => $request->user()->id,
+            ]);
+
+            foreach ($data['packages'] ?? [] as $p) {
+                $shipment->packages()->create([
+                    'tenant_id'   => $vendor->tenant_id,
+                    'description' => $p['description'],
+                    'qty'         => $p['qty'] ?? 1,
+                    'weight'      => $p['weight'] ?? null,
+                    'dimensions'  => $p['dimensions'] ?? null,
+                ]);
+            }
+
+            return $shipment;
+        });
+
+        return response()->json($shipment->fresh('packages'), 201);
+    }
+
+    /** The vendor advances its own shipment's status (dispatched / delivered …). */
+    public function updateShipmentStatus(Request $request, \App\Models\Vendor\VendorShipment $shipment)
+    {
+        $vendor = $this->portalVendor($request);
+        abort_unless($vendor && (int) $shipment->vendor_id === (int) $vendor->id && (int) $shipment->tenant_id === (int) $vendor->tenant_id, 404, 'Shipment not found');
+
+        $data = $request->validate(['status' => ['required', \Illuminate\Validation\Rule::in(\App\Models\Vendor\VendorShipment::STATUSES)]]);
+
+        $patch = ['status' => $data['status']];
+        if ($data['status'] === 'Dispatched' && ! $shipment->dispatched_on) {
+            $patch['dispatched_on'] = now()->toDateString();
+        }
+        if ($data['status'] === 'Delivered' && ! $shipment->delivered_on) {
+            $patch['delivered_on'] = now()->toDateString();
+        }
+        $shipment->update($patch);
+
+        return response()->json($shipment->fresh());
+    }
+
+    /** A flat list of the vendor's own packages across all its shipments. */
+    public function shipmentPackages(Request $request)
+    {
+        $vendor = $this->portalVendor($request);
+        if (! $vendor) {
+            return response()->json(['status' => 'error', 'message' => 'Vendor profile not found'], 404);
+        }
+
+        $rows = \App\Models\Vendor\VendorShipmentPackage::where('tenant_id', $vendor->tenant_id)
+            ->whereIn('vendor_shipment_id', \App\Models\Vendor\VendorShipment::where('tenant_id', $vendor->tenant_id)->where('vendor_id', $vendor->id)->select('id'))
+            ->with('shipment:id,reference,status')
+            ->latest('id')
+            ->get(['id', 'vendor_shipment_id', 'description', 'qty', 'weight', 'dimensions']);
+
+        return response()->json(['data' => $rows]);
+    }
+
     /** The caller's own vendor profile + headline account state. */
     /** Dismiss the post-activation welcome banner permanently for this vendor. */
     public function dismissWelcomeBanner(Request $request)

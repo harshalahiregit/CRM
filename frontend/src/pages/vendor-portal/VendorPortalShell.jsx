@@ -35,9 +35,13 @@ export default function VendorPortalShell() {
         comply:     'compliance',
         documents:  'documents',      // statutory documents / files
         // Compliance & HSSE — request permits + report incidents (writes).
-        ptw:        'ptw',
-        incidents:  'incidents',
-        kb:         'kb',
+        ptw:            'ptw',
+        incidents:      'incidents',
+        'hsse-documents': 'documents',   // HSSE doc library → statutory documents
+        'pre-alert':    'pre-alert',
+        packages:       'packages',
+        shipping:       'shipping',
+        kb:             'kb',
         // Execution — my-work read lists (Projects / Tasks / Tickets).
         project:    'projects',
         tasks:      'tasks',

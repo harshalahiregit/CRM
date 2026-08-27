@@ -84,10 +84,13 @@ Last updated: 2026-08-27.
 - [x] **Incidents** — TPV portal: list own + **report** (HsseIncident/IncidentService; 'Reported'). `stop_work`
   kept admin-only; Serious/Fatal self-report still trips the safety hold (fail-safe). `GET/POST /portal/incidents`.
   PTW+Incidents guarded by `PortalHsseTest` (3).
-- [ ] Pre Alert — 🔴 greenfield — NEEDS DECISION (logistics; see Q)
-- [ ] Packages — 🔴 greenfield — NEEDS DECISION
-- [ ] Shipping — 🔴 greenfield — NEEDS DECISION
-- [ ] Purchase-portal parity for PTW/Incidents (Purchase has its own HSSE stack).
+- [x] **Pre Alert / Packages / Shipping** — DECISION: vendor dispatch notices. New `vendor_shipments`
+  + `vendor_shipment_packages` tables + models. Pre-Alert = create shipment (courier/tracking/expected +
+  packages repeater); Packages = flat package list; Shipping = status tracking + vendor advances status
+  (auto-stamps dispatched/delivered). Portal `GET/POST /portal/shipments`, `PATCH .../{id}/status`,
+  `GET /portal/shipment-packages`. Admin mirror `GET /tpv/vendors/{v}/shipments`. Guarded by `PortalShipmentsTest` (3).
+  (Compliance→Documents nav mapped to the statutory docs page.)
+- [ ] Purchase-portal parity for PTW/Incidents/Shipments (Purchase has its own HSSE stack).
 
 ## Phase 5 — Performance
 - [x] **Risk Score** — TPV portal page: own score gauge + tier + monitoring + factor
@@ -118,5 +121,8 @@ Last updated: 2026-08-27.
   status, log expenses) · Purchase parity for Projects/Tickets · Notes/Attachments/Reminders/
   Vault portal endpoints · Meeting as its own section.
 - **General follow-ups:** Overview, Customer, Medical/Training surfacing.
-- **Phase 5 Performance DONE** (TPV portal): Risk Score · Feedback · Penalty · Award · Referral, + admin grant/referral endpoints.
-- **Next queued phases:** 4 Compliance & HSSE · 6 Extra. Plus follow-ups: admin UI panels for Award/Referral, Purchase-portal Performance parity, Execution vendor-writes.
+- **Phase 5 Performance DONE** (TPV portal): Risk Score · Feedback · Penalty · Award · Referral.
+- **Phase 4 Compliance & HSSE DONE** (TPV portal): Comply · Documents · PTW · Incidents · Pre-Alert · Packages · Shipping.
+- **Next queued:** Phase 6 Extra (Apps/Widgets/Ecommerce — needs scope). Follow-ups: admin UI panels
+  (Award/Referral/Shipments) · Purchase-portal parity (Execution/Performance/HSSE) · Execution vendor-writes
+  (ticket raise/reply, task status, expenses) · General Overview/Customer.
