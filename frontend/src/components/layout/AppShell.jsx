@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Outlet } from 'react-router-dom'
+import { Outlet, useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import Header from './Header'
 import MobileBottomNav from './MobileBottomNav'
@@ -12,8 +12,23 @@ export default function AppShell() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const { isDark } = useTheme()
+  const { pathname } = useLocation()
 
   const sidebarW = sidebarCollapsed ? 72 : 260
+
+  // HR runs edge to edge, from the sidebar to the right of the window.
+  //
+  // Every other module sits in a 1440px column so long text stays readable. HR
+  // opens with a full-bleed header band — the numbered pipeline rail and the
+  // business-phase strip — and inside that column the band could only ever reach
+  // 1440, leaving a strip of dead page on each side of it. The wider the monitor
+  // the worse it looked, which is why it seemed to differ from page to page when
+  // it was really differing from screen to screen.
+  //
+  // Capping the column and then asking one child to escape it takes fragile
+  // margin arithmetic that has to know the sidebar width. Not capping HR at all
+  // is one line and needs to know nothing.
+  const fullBleed = pathname.startsWith('/app/hr')
 
   return (
     <div
@@ -59,7 +74,7 @@ export default function AppShell() {
         className="transition-all duration-300 pt-16 pb-20 md:pb-6 min-h-screen"
         style={{ paddingLeft: `${sidebarW}px` }}
       >
-        <div className="p-4 md:p-6 max-w-[1440px] mx-auto">
+        <div className={clsx('p-4 md:p-6', !fullBleed && 'max-w-[1440px] mx-auto')}>
           <Outlet />
         </div>
       </main>
