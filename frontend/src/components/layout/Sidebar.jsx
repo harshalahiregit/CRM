@@ -288,13 +288,18 @@ export default function Sidebar({ collapsed, onToggle }) {
   const activeModule = PINNED_MODULES.find(m => pathname.startsWith(m.base))
   // Its sub-pages, shown under the pin so you can move around the open module
   // without scrolling. Modules that are a single page (Tasks, Customers…) have none.
+  //
+  // HR is deliberately absent. It has a three-level tree — Recruitment, HR
+  // Records, then the SangoeTrack set below a rule — and the pin renders a FLAT
+  // list, so pinning it dropped both the grouping and the separator. The result
+  // was 24 undifferentiated rows with no line between the CRM's own HR and
+  // SangoeTrack's. Its block below renders the real tree in both cases.
   const activeSubItems = {
     '/app/helpdesk': HELPDESK_SUB_ITEMS,
     '/app/inventory': INVENTORY_SUB_ITEMS,
     '/app/sales': SALES_SUB_ITEMS,
     '/app/accounts': ACCOUNTS_SUB_ITEMS,
     '/app/purchase': PURCHASE_SUB_ITEMS,
-    '/app/hr': HR_ALL_LEAVES,
     '/app/tpv': tpvItems,
   }[activeModule?.base] || []
   // Which module's normal block to hide (it's shown in the pin instead). Only in
@@ -547,22 +552,28 @@ export default function Sidebar({ collapsed, onToggle }) {
           </NavLink>
         ))}
 
-        {/* ── HRMS sub-nav (when installed) ── */}
-        {/* Hidden while HR is the pinned module — it's shown in the pin above. */}
-        {hrInstalled && pinnedBase !== '/app/hr' && (
+        {/* ── HR sub-nav (when installed) ── */}
+        {/* Always rendered now. It used to hide itself while HR was pinned, on the
+            grounds that the pin showed the same thing — but the pin showed a
+            FLATTENED version, so being on an HR page silently swapped the grouped
+            tree for a long undifferentiated list. One tree, one name, either way. */}
+        {hrInstalled && (
           <div className="mt-2">
             {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>HR Module</p>}
             {/* HRMS parent toggle */}
             <button
               onClick={() => setHrExpanded(e => !e)}
-              title={collapsed ? 'HRMS' : ''}
+              title={collapsed ? 'HR' : ''}
               className="nav-3d mb-0.5 w-full"
               style={{ justifyContent: collapsed ? 'center' : undefined, color: '#a78bfa' }}
             >
               <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.15)' }}>
                 <span style={{ fontSize: 13 }}>👥</span>
               </div>
-              {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">HRMS</span><ChevronDown size={13} className={clsx('transition-transform duration-200', hrExpanded && 'rotate-180')} /></>}
+              {/* "HR", matching PINNED_MODULES. This said HRMS while the pinned
+                  header said HR, so the same module had two names depending on
+                  which page you happened to be standing on. */}
+              {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">HR</span><ChevronDown size={13} className={clsx('transition-transform duration-200', hrExpanded && 'rotate-180')} /></>}
             </button>
 
             {/* Collapsed rail: flatten every leaf to an icon (all pages reachable). */}
