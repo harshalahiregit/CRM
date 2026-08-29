@@ -133,7 +133,7 @@ function ControlTower({ ct, actions, risk, onGo }) {
 
       {/* Executive KPI grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6,1fr)', gap: 10, marginBottom: 14 }}>
-        <ExecStat label="Vendors" value={v.total ?? 0} sub={`${v.active ?? 0} active · ${v.pending ?? 0} pending`} icon={Building2} tone="#7C3AED" onClick={() => onGo('/app/tpv/vendors')} />
+        <ExecStat label="Vendors" value={v.total ?? 0} sub={`${v.active ?? 0} active · ${v.pending_approval ?? 0} to approve · ${v.pending_onboarding ?? 0} in review`} icon={Building2} tone="#7C3AED" onClick={() => onGo('/app/tpv/vendors')} />
         <ExecStat label="Workforce" value={wf.total ?? 0} sub={`${wf.on_site_now ?? 0} on site now`} icon={Users} tone="#0ea5e9" onClick={() => onGo('/app/tpv/workforce')} />
         <ExecStat label="High Risk" value={v.high_risk ?? 0} sub="High + Critical" icon={ShieldAlert} tone="#ef4444" onClick={() => onGo('/app/tpv/vendors')} danger={v.high_risk > 0} />
         <ExecStat label="Temporary" value={v.temporary ?? 0} sub={`${v.expiring ?? 0} expiring 30d`} icon={Clock} tone="#f59e0b" onClick={() => onGo('/app/tpv/temporary')} />
@@ -147,6 +147,7 @@ function ControlTower({ ct, actions, risk, onGo }) {
         <ExecStat label="Open CAPAs" value={op.capas ?? 0} sub={`${op.ncrs ?? 0} NCRs`} icon={ShieldQuestion} tone="#f97316" onClick={() => onGo('/app/tpv/incidents')} />
         <ExecStat label="Active Permits" value={op.active_permits ?? 0} sub="currently valid" icon={FileCheck} tone="#0ea5e9" onClick={() => onGo('/app/tpv/permits')} />
         <ExecStat label="Active Strikes" value={op.total_strikes ?? 0} sub="outstanding" icon={ShieldAlert} tone="#a78bfa" onClick={() => onGo('/app/tpv/strikes')} danger={op.total_strikes > 0} />
+        <ExecStat label="Gate Violations" value={op.gate_violations ?? 0} sub="open" icon={Ban} tone="#f43f5e" onClick={() => onGo('/app/tpv/violations')} danger={op.gate_violations > 0} />
       </div>
 
       {/* Action Centre + Risk breakdown */}
@@ -208,9 +209,32 @@ function ActionCentre({ rows, onGo }) {
 
 // Directly-labelled rows — each bar carries its level name + count, so the warm
 // risk ramp (red→amber→green) is reinforcement, never the sole identity carrier.
+// §4 — the risk dimensions the Control Tower can slice by (TPV-local fields).
+const RISK_DIMENSIONS = [
+  { key: 'project', label: 'Project' },
+  { key: 'site', label: 'Site' },
+  { key: 'department', label: 'Department' },
+  { key: 'work_package', label: 'Work Package' },
+  { key: 'risk_category', label: 'Risk Category' },
+  { key: 'vendor', label: 'Vendor' },
+]
+
 function RiskBreakdown({ rows, onGo }) {
   const total = rows.reduce((s, r) => s + r.count, 0)
   const max = Math.max(1, ...rows.map(r => r.count))
+  const [dim, setDim] = useState(null)          // active drill-down dimension
+  const [groups, setGroups] = useState(null)    // loaded slice
+  const [busy, setBusy] = useState(false)
+
+  const drill = (key) => {
+    if (dim === key) { setDim(null); setGroups(null); return }
+    setDim(key); setBusy(true); setGroups(null)
+    tpvApi.dashboard.riskDrilldown(key)
+      .then(d => setGroups(d?.groups ?? []))
+      .catch(() => setGroups([]))
+      .finally(() => setBusy(false))
+  }
+
   return (
     <div className="pr-glass" style={{ padding: 18 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
@@ -234,6 +258,59 @@ function RiskBreakdown({ rows, onGo }) {
             </div>
           )
         })}
+      </div>
+
+      {/* §4 — drill risk down by a chosen dimension */}
+      <div style={{ marginTop: 16, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+        <div style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: 8 }}>Drill down by</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {RISK_DIMENSIONS.map(dd => (
+            <button key={dd.key} onClick={() => drill(dd.key)}
+              style={{
+                padding: '5px 10px', borderRadius: 8, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
+                border: '1px solid var(--border)',
+                background: dim === dd.key ? '#7C3AED' : 'transparent',
+                color: dim === dd.key ? '#fff' : 'var(--text-muted)',
+              }}>{dd.label}</button>
+          ))}
+        </div>
+
+        {dim && (
+          <div style={{ marginTop: 12 }}>
+            {busy && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Loading…</div>}
+            {!busy && groups && groups.length === 0 && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>No data for this dimension.</div>}
+            {!busy && groups && groups.length > 0 && (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ textAlign: 'left', color: 'var(--text-muted)', fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      <th style={{ padding: '6px 8px' }}>{RISK_DIMENSIONS.find(d => d.key === dim)?.label}</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'right' }}>Vendors</th>
+                      <th style={{ padding: '6px 8px' }}>Risk mix</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'right' }}>Open inc.</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {groups.map((g, i) => (
+                      <tr key={i} style={{ borderTop: '1px solid var(--border)' }}>
+                        <td style={{ padding: '6px 8px', color: 'var(--text-h)', fontWeight: 600 }}>{g.group || '—'}</td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right', color: 'var(--text-h)', fontVariantNumeric: 'tabular-nums' }}>{g.vendors}</td>
+                        <td style={{ padding: '6px 8px' }}>
+                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                            {Object.entries(g.risk || {}).filter(([, c]) => c > 0).map(([lvl, c]) => (
+                              <span key={lvl} style={{ fontSize: 10.5, fontWeight: 700, padding: '1px 6px', borderRadius: 999, background: `${RISK_TONE[lvl] || '#94a3b8'}22`, color: RISK_TONE[lvl] || '#94a3b8' }}>{lvl} {c}</span>
+                            ))}
+                          </div>
+                        </td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right', color: g.open_incidents > 0 ? '#ef4444' : 'var(--text-muted)', fontVariantNumeric: 'tabular-nums', fontWeight: 700 }}>{g.open_incidents}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

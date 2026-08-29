@@ -94,6 +94,11 @@ class PurchaseNcrService
         if (! in_array($to, PurchaseNcr::STATUSES, true)) {
             throw new BusinessException("Unknown NCR status: {$to}.");
         }
+        // Rule 11 (parity with TpvNcrService) — beyond "Raised" an NCR must name a
+        // responsible person; it cannot be assigned/actioned/closed while ownerless.
+        if ($to !== 'Raised' && empty($ncr->responsible_by)) {
+            throw new BusinessException('Assign a responsible person before progressing this NCR (Rule 11 — every action has an owner).');
+        }
         if ($to === 'Closed' && empty($ncr->corrective_action)) {
             throw new BusinessException('Record the corrective action before closing the NCR.');
         }

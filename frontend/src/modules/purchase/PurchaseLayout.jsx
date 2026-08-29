@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, ClipboardList, FileSignature, ShoppingBag,
-  Truck, Receipt, FileX, FileText, Package, Building2, CalendarDays, HardHat, ShieldCheck, FileWarning, ClipboardCheck, TrendingUp, FolderLock, Megaphone, AlertOctagon, Gauge, RefreshCcw, LogOut, Stamp
+  Truck, Receipt, FileX, FileText, Package, Building2, CalendarDays, HardHat, ShieldCheck, FileWarning, ClipboardCheck, TrendingUp, FolderLock, Megaphone, AlertOctagon, Gauge, RefreshCcw, LogOut, Stamp, Siren, Award
 } from 'lucide-react'
 import ModuleShell from '@/components/layout/ModuleShell'
 
@@ -13,12 +13,14 @@ const PURCHASE_NAV = [
   { label: 'Vendor Onboarding', path: '/app/purchase/onboarding',  icon: ClipboardList   },
   { label: 'Kickoff Meetings', path: '/app/purchase/kickoff',      icon: CalendarDays    },
   { label: 'Workforce',      path: '/app/purchase/workforce',      icon: HardHat         },
+  { label: 'Competency',     path: '/app/purchase/competency',     icon: Award           },
   { label: 'Compliance',     path: '/app/purchase/compliance-register', icon: ShieldCheck },
   { label: 'NCR',            path: '/app/purchase/ncr',            icon: FileWarning     },
   { label: 'CAPA',           path: '/app/purchase/capa',           icon: ClipboardCheck  },
   { label: 'Approvals',      path: '/app/purchase/approval-requests', icon: Stamp        },
   { label: 'Inspections',    path: '/app/purchase/inspections',    icon: ClipboardCheck  },
   { label: 'Violations',     path: '/app/purchase/violations',     icon: AlertOctagon    },
+  { label: 'Incidents',      path: '/app/purchase/incidents',      icon: Siren           },
   { label: 'Performance',    path: '/app/purchase/vpi',            icon: Gauge           },
   { label: 'Renewals',       path: '/app/purchase/renewals',       icon: RefreshCcw      },
   { label: 'Offboarding',    path: '/app/purchase/offboarding',    icon: LogOut          },

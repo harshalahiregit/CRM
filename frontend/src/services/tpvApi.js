@@ -15,6 +15,8 @@ export const tpvApi = {
   // ── Dashboard — one read-only roll-up across the whole module ───────
   dashboard: {
     get: () => api.get('/tpv/dashboard').then(r => r.data),
+    // §4 — risk drill-down by dimension (vendor/project/site/department/work_package/risk_category).
+    riskDrilldown: (dimension) => api.get('/tpv/dashboard/risk-drilldown', { params: { dimension } }).then(r => r.data),
   },
 
   // ── System Configuration (Sangoe TPV §34) ──────────────────────────
@@ -411,10 +413,36 @@ export const tpvApi = {
     // Vendor Prequalification (gap report area 6) — scored questionnaire → outcome.
     prequalification:       (id)       => api.get(`/tpv/vendors/${id}/prequalification`).then(r => r.data),
     assessPrequalification: (id, data) => api.put(`/tpv/vendors/${id}/prequalification`, data).then(r => r.data),
+    // Performance › Award / Reward — admin grants; vendor views in its portal.
+    awards: {
+      list:   (vid)       => api.get(`/tpv/vendors/${vid}/awards`).then(r => r.data),
+      grant:  (vid, data) => api.post(`/tpv/vendors/${vid}/awards`, data).then(r => r.data),
+      delete: (vid, id)   => api.delete(`/tpv/vendors/${vid}/awards/${id}`).then(r => r.data),
+    },
+    // Performance › Referral — the vendor submits; admin works the prospect.
+    referrals: {
+      list:      (vid)             => api.get(`/tpv/vendors/${vid}/referrals`).then(r => r.data),
+      setStatus: (vid, id, status) => api.patch(`/tpv/vendors/${vid}/referrals/${id}/status`, { status }).then(r => r.data),
+    },
+    // Performance › Penalty — this vendor's violations (the /tpv/violations register, filtered).
+    violations: (vid) => api.get('/tpv/violations', { params: { vendor_id: vid } }).then(r => r.data),
+    // Compliance & HSSE › Shipments — the vendor's dispatch notices (admin tracks).
+    shipments:  (vid) => api.get(`/tpv/vendors/${vid}/shipments`).then(r => r.data),
     // Customers directly linked to this vendor (clients.vendor_id).
     customers: {
       list:   (vid)       => api.get(`/tpv/vendors/${vid}/customers`).then(r => r.data),
       create: (vid, data) => api.post(`/tpv/vendors/${vid}/customers`, data).then(r => r.data),
+      // Search existing registered customers (unlinked, or already this vendor's).
+      search: (vid, q)    => api.get(`/tpv/vendors/${vid}/customers/search`, { params: { q } }).then(r => r.data),
+      // Link an existing customer to this vendor (sets clients.vendor_id).
+      link:   (vid, clientId) => api.post(`/tpv/vendors/${vid}/customers/link`, { client_id: clientId }).then(r => r.data),
+    },
+    // TPV-local vendor↔project engagements (§35) with the shed requirement.
+    shedProjects: {
+      list:   (vid)           => api.get(`/tpv/vendors/${vid}/projects`).then(r => r.data),
+      create: (vid, data)     => api.post(`/tpv/vendors/${vid}/projects`, data).then(r => r.data),
+      update: (vid, id, data) => api.put(`/tpv/vendors/${vid}/projects/${id}`, data).then(r => r.data),
+      remove: (vid, id)       => api.delete(`/tpv/vendors/${vid}/projects/${id}`).then(r => r.data),
     },
     // Follow-ups and notes on the shared polymorphic reminders/notes tables.
     // Under /tpv/* (role:admin,staff) rather than /sales/reminders, which has no

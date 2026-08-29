@@ -38,11 +38,12 @@ class TenantMailer
         $settings = $this->settingsFor($tenantId);
         $mailerName = $this->configureMailer($settings);
 
-        if ($settings) {
-            $mailable->from($settings->from_email, $settings->from_name ?: $settings->from_email);
-            if ($settings->reply_to) {
-                $mailable->replyTo($settings->reply_to);
-            }
+        $from = $this->effectiveFrom($settings);
+        if ($from) {
+            $mailable->from($from['email'], $from['name']);
+        }
+        if ($settings && $settings->reply_to) {
+            $mailable->replyTo($settings->reply_to);
         }
 
         try {
@@ -86,8 +87,9 @@ class TenantMailer
     ): void {
         $settings   = $tenantId ? $this->settingsFor($tenantId) : null;
         $mailerName = $this->configureMailer($settings);
+        $from       = $this->effectiveFrom($settings);
 
-        Mail::mailer($mailerName)->send([], [], function ($m) use ($to, $subject, $html, $text, $settings, $attachments) {
+        Mail::mailer($mailerName)->send([], [], function ($m) use ($to, $subject, $html, $text, $settings, $from, $attachments) {
             $m->to($to)->subject($subject)->html($html);
 
             if ($text !== null && $text !== '') {
@@ -100,11 +102,11 @@ class TenantMailer
                     $m->attachData($a['data'], $a['name'], ['mime' => $a['mime'] ?? 'application/octet-stream']);
                 }
             }
-            if ($settings) {
-                $m->from($settings->from_email, $settings->from_name ?: $settings->from_email);
-                if ($settings->reply_to) {
-                    $m->replyTo($settings->reply_to);
-                }
+            if ($from) {
+                $m->from($from['email'], $from['name']);
+            }
+            if ($settings && $settings->reply_to) {
+                $m->replyTo($settings->reply_to);
             }
         });
     }
@@ -119,6 +121,26 @@ class TenantMailer
      * load-bearing: Laravel caches resolved mailers, so without it a previous
      * tenant's transport would be silently reused.
      */
+    /**
+     * ST1 — the effective From for an outgoing message. A signed-in user's own
+     * sender identity (mail_from_email/name) overrides the tenant default; with
+     * neither set this returns null and the mailer's config default From applies.
+     *
+     * @return array{email:string, name:string}|null
+     */
+    private function effectiveFrom(?TenantMailSetting $settings): ?array
+    {
+        $actor = auth()->user();
+        if ($actor && ! empty($actor->mail_from_email)) {
+            return ['email' => $actor->mail_from_email, 'name' => $actor->mail_from_name ?: $actor->mail_from_email];
+        }
+        if ($settings && ! empty($settings->from_email)) {
+            return ['email' => $settings->from_email, 'name' => $settings->from_name ?: $settings->from_email];
+        }
+
+        return null;
+    }
+
     private function configureMailer(?TenantMailSetting $settings): string
     {
         if (! $settings) {

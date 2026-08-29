@@ -22,7 +22,7 @@ export default function MyProfile() {
   const navigate = useNavigate()
   const { user, setUser } = useAuth() ?? {}
 
-  const [form, setForm] = useState({ name: '', phone: '', designation: '', department: '', emails_enabled: true })
+  const [form, setForm] = useState({ name: '', phone: '', designation: '', department: '', emails_enabled: true, mail_from_name: '', mail_from_email: '' })
   const [pw, setPw] = useState({ current_password: '', password: '', password_confirmation: '' })
   const [saving, setSaving] = useState(false)
   const [changing, setChanging] = useState(false)
@@ -35,6 +35,7 @@ export default function MyProfile() {
       if (u) setForm({
         name: u.name || '', phone: u.phone || '', designation: u.designation || '',
         department: u.department || '', emails_enabled: u.emails_enabled ?? true,
+        mail_from_name: u.mail_from_name || '', mail_from_email: u.mail_from_email || '',
       })
     }).catch(() => setMe(null))
   }, [])
@@ -117,6 +118,16 @@ export default function MyProfile() {
               Send me email notifications
             </label>
           </div>
+
+          {/* ST1 — the user's own outgoing-mail sender identity. */}
+          <div className="md:col-span-2 pt-2 mt-1" style={{ borderTop: '1px solid var(--border)' }}>
+            <p className="label-caps mb-1" style={{ color: 'var(--text-muted)' }}>Email sender identity</p>
+            <p className="text-[11px] mb-3" style={{ color: 'var(--text-muted)' }}>
+              Optional. When set, mail you send shows this as the sender (over the workspace default).
+            </p>
+          </div>
+          {field('From name', 'mail_from_name', 'text', 'e.g. Priya from Sangoe')}
+          {field('From email', 'mail_from_email', 'email', 'you@company.com')}
         </div>
         <div className="flex justify-end mt-4">
           <button onClick={save} disabled={saving}

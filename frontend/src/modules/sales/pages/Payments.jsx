@@ -28,6 +28,9 @@ const EMPTY_FORM = {
   paymentmode: 'Bank Transfer',
   transactionid: '',
   note: '',
+  tds_percentage: '',
+  tds_amount: '',
+  tds_section: '',
 }
 
 export default function Payments() {
@@ -39,6 +42,7 @@ export default function Payments() {
   const [showDrawer, setShowDrawer] = useState(false)
   const [form, setForm]           = useState(EMPTY_FORM)
   const [invoices, setInvoices]   = useState([])
+  const [pickSearch, setPickSearch] = useState('')   // typeahead over the invoice picker
 
   // Routed through the shared Toast so every module notifies identically
   // (and error toasts get the per-field validation detail + tip).
@@ -67,10 +71,14 @@ export default function Payments() {
         mode: form.paymentmode,
         transaction_id: form.transactionid || null,
         note: form.note || null,
+        tds_percentage: form.tds_percentage === '' ? null : Number(form.tds_percentage),
+        tds_amount: form.tds_amount === '' ? null : Number(form.tds_amount),
+        tds_section: form.tds_section || null,
       })
       showToast('Payment recorded successfully!')
       setShowDrawer(false)
       setForm(EMPTY_FORM)
+      setPickSearch('')
       load()
     } catch (e) { showToast(e.message, 'error') }
   }
@@ -258,13 +266,25 @@ export default function Payments() {
 
                   <div>
                     <label className="label">Invoice *</label>
+                    {/* Typeahead — the picker reflects what you search/type, then the
+                        dropdown lists only the matches (senior review). */}
+                    <input className="input-3d text-sm mb-2" placeholder="Search invoice by number or customer…"
+                      value={pickSearch} onChange={e => setPickSearch(e.target.value)} />
                     <select className="input-3d text-sm" value={form.invoiceid} onChange={e => sf('invoiceid', e.target.value)}>
                       <option value="">Select an invoice…</option>
-                      {invoices.filter(inv => Number(inv.balance) > 0).map(inv => (
-                        <option key={inv.id} value={inv.id}>
-                          {inv.number} — {inv.client?.company || inv.client_name || 'Customer'} (bal {fmt(inv.balance)})
-                        </option>
-                      ))}
+                      {invoices
+                        .filter(inv => Number(inv.balance) > 0)
+                        .filter(inv => {
+                          const q = pickSearch.trim().toLowerCase()
+                          if (!q) return true
+                          const name = (inv.client?.company || inv.client_name || '').toLowerCase()
+                          return (inv.number || '').toLowerCase().includes(q) || name.includes(q)
+                        })
+                        .map(inv => (
+                          <option key={inv.id} value={inv.id}>
+                            {inv.number} — {inv.client?.company || inv.client_name || 'Customer'} (bal {fmt(inv.balance)})
+                          </option>
+                        ))}
                     </select>
                   </div>
 
@@ -278,6 +298,30 @@ export default function Payments() {
                       <label className="label">Payment Date</label>
                       <input type="date" className="input-3d text-sm"
                         value={form.date} onChange={e => sf('date', e.target.value)} />
+                    </div>
+                  </div>
+
+                  {/* TDS deduction — % auto-computes the amount from the payment, both editable. */}
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <label className="label">TDS %</label>
+                      <input type="number" className="input-3d text-sm" placeholder="e.g. 2"
+                        value={form.tds_percentage}
+                        onChange={e => {
+                          const pct = e.target.value
+                          const amt = pct !== '' && form.amount !== '' ? Number((Number(form.amount) * Number(pct) / 100).toFixed(2)) : form.tds_amount
+                          setForm(p => ({ ...p, tds_percentage: pct, tds_amount: amt }))
+                        }} />
+                    </div>
+                    <div>
+                      <label className="label">TDS Amount</label>
+                      <input type="number" className="input-3d text-sm" placeholder="0.00"
+                        value={form.tds_amount} onChange={e => sf('tds_amount', e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="label">TDS Section</label>
+                      <input className="input-3d text-sm" placeholder="e.g. 194C"
+                        value={form.tds_section} onChange={e => sf('tds_section', e.target.value)} />
                     </div>
                   </div>
 

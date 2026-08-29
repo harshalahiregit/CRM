@@ -22,7 +22,7 @@ class TpvOnboarding extends Model
     protected $table = 'tpv_onboardings';
 
     protected $fillable = [
-        'tenant_id','vendor_id','kickoff_meeting_id','current_step','profile',
+        'tenant_id','vendor_id','kickoff_meeting_id','current_step','profile','checklist_state',
         'status','submitted_at','approved_at','approved_by','remarks','work_start_letter_path',
         'registration_number','hold_reason',
         'kickoff_pdf_path','acknowledged','acknowledged_by','acknowledged_at','acknowledged_ip','acknowledged_browser','acknowledged_device',
@@ -32,6 +32,7 @@ class TpvOnboarding extends Model
     protected $casts = [
         'current_step'            => 'integer',
         'profile'                 => 'array',
+        'checklist_state'         => 'array',
         'submitted_at'            => 'datetime',
         'approved_at'             => 'datetime',
         'acknowledged'            => 'boolean',

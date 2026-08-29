@@ -74,9 +74,21 @@ class ImageCompressor {
 }
 Quill.register('modules/imageCompressor', ImageCompressor)
 
-// Custom image button: read the picked file, DOWNSCALE + RECOMPRESS it, then
-// embed the (now small) result. Quill's default handler embeds the raw file as
-// base64 — a few phone photos would bloat the stored HTML into megabytes. Bound
+// Insert-image size choice — mirrors the TPV RichTextEditor "notepad": on insert
+// the user picks Small / Medium / Full and the image embeds at that width. The
+// values are percentages the server HtmlSanitizer keeps (img `width` attribute,
+// pattern \d{1,4}%?), so the size survives save + reload.
+const IMAGE_WIDTHS = { Small: '33%', Medium: '66%', Full: '100%' }
+
+function resolveImageWidth(choice) {
+  const key = Object.keys(IMAGE_WIDTHS).find((k) => k.toLowerCase() === String(choice || '').trim().toLowerCase())
+  return IMAGE_WIDTHS[key || 'Full']
+}
+
+// Custom image button: read the picked file, ASK THE SIZE, DOWNSCALE + RECOMPRESS
+// it, then embed the (now small) result at the chosen width. Quill's default
+// handler embeds the raw file as base64 at full width — a few phone photos would
+// bloat the stored HTML into megabytes and there'd be no way to shrink one. Bound
 // as a toolbar handler so `this` is the toolbar module and `this.quill` is the
 // editor it belongs to (shared safely across every editor using RICH_MODULES).
 export function quillImageHandler() {
@@ -88,11 +100,15 @@ export function quillImageHandler() {
   input.onchange = async () => {
     const file = input.files && input.files[0]
     if (!file) return
+    // Ask the size the same way the TPV notepad does (Small / Medium / Full).
+    const width = resolveImageWidth(window.prompt('Image size — Small / Medium / Full', 'Full') || 'Full')
     try {
       const dataUrl = await compressImage(file, { maxDim: 1600, quality: 0.82 })
       if (!dataUrl) return
       const range = quill.getSelection(true) || { index: quill.getLength() }
-      quill.insertEmbed(range.index, 'image', dataUrl, 'user')
+      // Paste as HTML so the width attribute rides along on the <img> — the blot
+      // keeps `width` (in RICH_FORMATS) and the sanitizer keeps the attribute.
+      quill.clipboard.dangerouslyPasteHTML(range.index, `<img src="${dataUrl}" width="${width}">`, 'user')
       quill.setSelection(range.index + 1, 0, 'user')
     } catch { /* ignore — a failed compress just means no insert */ }
   }
@@ -122,4 +138,7 @@ export const RICH_FORMATS = [
   'header', 'size', 'bold', 'italic', 'underline', 'strike',
   'color', 'background', 'list', 'bullet', 'indent', 'align',
   'blockquote', 'code-block', 'link', 'image',
+  // Keep the inserted image's chosen size (Small/Medium/Full) — without these in
+  // the whitelist Quill strips the width/height off the <img> on the next update.
+  'width', 'height',
 ]

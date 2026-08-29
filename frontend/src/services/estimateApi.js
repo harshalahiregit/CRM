@@ -26,6 +26,9 @@ export const estimateApi = {
 
   convertToInvoice: (id, data = {}) =>
     api.post(`/sales/estimates/${id}/convert-to-invoice`, data).then(r => r.data).catch(handleErr),
+  // PI10 — create a Task from each line item (under the linked project if any).
+  convertToTasks: (id) =>
+    api.post(`/sales/estimates/${id}/convert-to-tasks`).then(r => r.data).catch(handleErr),
 
   recordPayment: (id, data) =>
     api.post(`/sales/estimates/${id}/payments`, data).then(r => r.data).catch(handleErr),

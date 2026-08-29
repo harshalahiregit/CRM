@@ -68,6 +68,11 @@ class PurchaseWorker extends Model
         return $this->hasMany(PurchaseWorkerInduction::class, 'purchase_worker_id');
     }
 
+    public function competencies()
+    {
+        return $this->hasMany(PurchaseWorkerCompetency::class, 'purchase_worker_id');
+    }
+
     /** The most recent medical / induction rows drive readiness. */
     public function latestMedical()
     {

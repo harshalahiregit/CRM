@@ -17,7 +17,7 @@ class Task extends Model
         'tenant_id', 'parent_id', 'root_id', 'depth',
         'name', 'description', 'priority', 'status',
         'start_date', 'due_date', 'date_finished', 'rel_type', 'rel_id',
-        'milestone_id', 'billable', 'billed', 'hourly_rate', 'rate_unit',
+        'milestone_id', 'billable', 'billed', 'hourly_rate', 'billable_amount', 'rate_unit',
         'is_public', 'visible_to_client', 'kanban_order', 'created_by',
         'recurring', 'recurring_type', 'repeat_every', 'cycles', 'total_cycles',
         'last_recurring_date', 'is_recurring_from', 'deadline_notified',
@@ -34,6 +34,7 @@ class Task extends Model
         'visible_to_client'   => 'boolean',
         'kanban_order'        => 'integer',
         'hourly_rate'         => 'decimal:2',
+        'billable_amount'     => 'decimal:2',
         'recurring'           => 'boolean',
         'repeat_every'        => 'integer',
         'cycles'              => 'integer',
@@ -76,6 +77,31 @@ class Task extends Model
     public function timers()
     {
         return $this->hasMany(TaskTimer::class);
+    }
+
+    /* ── Billing (PR1) ──────────────────────────────────────────── */
+
+    /** Total logged seconds across completed timers (uses the loaded relation if present). */
+    public function loggedSeconds(): int
+    {
+        $timers = $this->relationLoaded('timers')
+            ? $this->timers->whereNotNull('end_time')
+            : $this->timers()->whereNotNull('end_time')->get();
+
+        return (int) $timers->sum(fn ($t) => $t->durationSeconds());
+    }
+
+    /**
+     * The task's effective billable amount: the FIXED billable_amount when set,
+     * otherwise hourly_rate × logged hours. Returns 0.0 when neither applies.
+     */
+    public function effectiveBillableAmount(): float
+    {
+        if ($this->billable_amount !== null && (float) $this->billable_amount > 0) {
+            return round((float) $this->billable_amount, 2);
+        }
+
+        return round((float) $this->hourly_rate * ($this->loggedSeconds() / 3600), 2);
     }
 
     public function files()

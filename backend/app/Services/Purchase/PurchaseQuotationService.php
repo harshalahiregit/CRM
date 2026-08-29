@@ -86,6 +86,67 @@ class PurchaseQuotationService
         return $quotation->fresh(['items', 'vendor']);
     }
 
+    /**
+     * A vendor submits its OWN quotation against an open RFQ, from the portal.
+     *
+     * Unlike record() (staff-entered, with a User actor), the actor here is the
+     * PurchaseVendor itself: created_by is null and the audit is attributed by
+     * label. One submission per vendor per RFQ — a vendor that has already
+     * responded is blocked (they cannot edit a submitted quote from the portal).
+     */
+    public function submitByVendor(PurchaseRfq $rfq, \App\Models\Purchase\PurchaseVendor $vendor, array $data): PurchaseQuotation
+    {
+        if (! $rfq->isOpenForQuotes()) {
+            throw new BusinessException("This RFQ is not open for quotes (status: {$rfq->status_label}).");
+        }
+
+        $invited = $rfq->rfqVendors()->where('purchase_vendor_id', $vendor->id)->first();
+        if (! $invited) {
+            throw new BusinessException('You are not on this RFQ’s recipient list.');
+        }
+        if ($invited->status === RfqVendorStatus::RESPONDED) {
+            throw new BusinessException('You have already submitted a quotation for this RFQ.');
+        }
+
+        $items = $data['items'] ?? [];
+        if ($items === []) {
+            throw new BusinessException('A quotation needs at least one line item.');
+        }
+
+        $quotation = DB::transaction(function () use ($rfq, $data, $items, $vendor, $invited) {
+            $quotation = PurchaseQuotation::create([
+                'tenant_id'          => $rfq->tenant_id,
+                'purchase_rfq_id'    => $rfq->id,
+                'purchase_vendor_id' => $vendor->id,
+                'created_by'         => null,   // submitted by the vendor, not a staff user
+                'currency'           => $data['currency'] ?? $rfq->currency,
+                'status'             => Status::RECEIVED,
+                'valid_until'        => $data['valid_until'] ?? null,
+                'received_at'        => now(),
+                'notes'              => $data['notes'] ?? null,
+            ]);
+            $this->syncItems($quotation, $items);
+            $quotation->recalcTotals();
+
+            $invited->update(['status' => RfqVendorStatus::RESPONDED, 'responded_at' => now()]);
+            if ($rfq->status === RfqStatus::SENT) {
+                $rfq->update(['status' => RfqStatus::UNDER_REVIEW]);
+            }
+
+            return $quotation;
+        });
+
+        $quotation->recordAudit('Quotation Submitted (portal)', null, null, [
+            'quotation_number' => $quotation->quotation_number, 'rfq' => $rfq->rfq_number, 'total' => $quotation->total,
+        ], $vendor->company_name);
+        Log::channel('purchase')->info('Quotation submitted by vendor (portal)', [
+            'purchase_quotation_id' => $quotation->id, 'purchase_rfq_id' => $rfq->id,
+            'purchase_vendor_id' => $vendor->id, 'tenant_id' => $rfq->tenant_id,
+        ]);
+
+        return $quotation->fresh(['items']);
+    }
+
     public function update(PurchaseQuotation $quotation, array $data, User $actor): PurchaseQuotation
     {
         $this->guardMutable($quotation);

@@ -25,6 +25,7 @@ import {
   VendorWorkforce, VendorMedical, VendorTraining, VendorGateLog, VendorStrikes,
 } from '@/modules/tpv/components/VendorWorkforcePanels'
 import { VendorProjects } from '@/modules/tpv/components/VendorProjectsPanel'
+import { VendorShedProjects } from '@/modules/tpv/components/VendorShedProjectsPanel'
 import { VendorTickets } from '@/modules/tpv/components/VendorTicketsPanel'
 import { VendorExpenses } from '@/modules/tpv/components/VendorExpensesPanel'
 import { VendorCustomers } from '@/modules/tpv/components/VendorCustomersPanel'
@@ -35,13 +36,19 @@ import { VendorAttachments } from '@/modules/tpv/components/VendorAttachmentsPan
 import { VendorRiskPanel } from '@/modules/tpv/components/VendorRiskPanel'
 import { VendorPrequalificationPanel } from '@/modules/tpv/components/VendorPrequalificationPanel'
 import { VendorMeetingsPanel } from '@/modules/tpv/components/VendorMeetingsPanel'
+import { VendorAwardsPanel, VendorReferralsPanel, VendorFeedbackPanel, VendorPenaltyPanel } from '@/modules/tpv/components/VendorPerformancePanels'
+import { VendorShipmentsAdminPanel } from '@/modules/tpv/components/VendorShipmentsAdminPanel'
+import {
+  VendorVpiPanel, VendorRenewalPanel, VendorOffboardingPanel, VendorComplianceRegisterPanel,
+  VendorInspectionsPanel, VendorNcrPanel, VendorCapaPanel, VendorWorkPackagesPanel, VendorVaultPanel,
+} from '@/modules/tpv/components/VendorGovernancePanels'
 
 /**
- * The Vendor Detail navigation — 6 groups, 38 sections. This drives BOTH the left
+ * The Vendor Detail navigation — 6 groups, 47 sections. This drives BOTH the left
  * nav and the content router below, so a section exists in exactly one of three
  * states and the three partition the list with no overlap:
  *
- *   ACTIVE       a `case` in SectionContent — 24 sections, each reading an
+ *   ACTIVE       a `case` in SectionContent — 33 sections, each reading an
  *                EXISTING module scoped to this vendor. None owns a TPV table:
  *                Reminders and Notes ride the SHARED polymorphic `reminders` and
  *                `notes` tables, the same way Projects rides projects.vendor_id.
@@ -58,9 +65,9 @@ const NAV_GROUPS = [
   { group: 'General',     icon: User,           items: ['Overview', 'Profile', 'Contact', 'Customer', 'Meetings'] },
   { group: 'Workforce',   icon: HardHat,        items: ['Workforce', 'Medical', 'Training', 'Gate Log', 'Strikes'] },
   { group: 'Commercial',  icon: IndianRupee,    items: ['Quotation', 'Contracts', 'Purchase Order', 'Purchase Invoice', 'Debit Note', 'Purchase Statement', 'Payments'] },
-  { group: 'Operations',  icon: Briefcase,      items: ['Projects', 'Tasks', 'Expenses', 'Attachments', 'ToDo', 'Notes', 'Technical File Maintenance', 'Ticket', 'Job', 'Reminders'] },
-  { group: 'Compliance',  icon: ClipboardCheck, items: ['Documents', 'Prequalification', 'Survey', 'PTW', 'Incidents', 'Pre Alert', 'Package', 'Visitors'] },
-  { group: 'Performance', icon: BarChart3,      items: ['Risk Score', 'Award / Reward', 'Penalty', 'Feedback', 'Referrals'] },
+  { group: 'Operations',  icon: Briefcase,      items: ['Projects', 'Shed Projects', 'Work Packages', 'Tasks', 'Expenses', 'Attachments', 'ToDo', 'Notes', 'Technical File Maintenance', 'Ticket', 'Job', 'Reminders'] },
+  { group: 'Compliance',  icon: ClipboardCheck, items: ['Documents', 'Prequalification', 'Compliance Register', 'Inspections', 'NCR', 'CAPA', 'Vault', 'Survey', 'PTW', 'Incidents', 'Pre Alert', 'Package', 'Visitors'] },
+  { group: 'Performance', icon: BarChart3,      items: ['Risk Score', 'Performance Index', 'Renewal', 'Offboarding', 'Award / Reward', 'Penalty', 'Feedback', 'Referrals'] },
 ]
 
 /**
@@ -78,8 +85,6 @@ const NAV_GROUPS = [
  */
 const NOT_APPLICABLE = {
   'ToDo':               'Vendor to-dos are tracked in Tasks.',
-  'Pre Alert':          'Pre-alerts are a Customer module concept (client_pre_alerts).',
-  'Package':            'Packages are a Customer module concept (client_packages).',
   'Job':                'No vendor job concept exists — the `jobs` table is the queue, and hr_job_* is recruitment.',
 }
 
@@ -474,6 +479,9 @@ function SectionContent({ tab, v, isActive, manage, api, moduleName, onDecision,
     // link_type) — this reads that existing list, filtered to this vendor.
     case 'Projects':
       return <VendorProjects vendorId={v.id} vendorName={v.company_name} manage={manage} />
+    // TPV-local vendor project engagements carrying the shed requirement (§35).
+    case 'Shed Projects':
+      return <VendorShedProjects vendorId={v.id} vendorName={v.company_name} manage={manage} api={api} />
     // Tickets and Expenses have no vendor column of their own — both reach this
     // vendor through its PROJECTS, resolved server-side.
     case 'Ticket':
@@ -504,10 +512,44 @@ function SectionContent({ tab, v, isActive, manage, api, moduleName, onDecision,
     // distinct from the VRS performance scorecard shown on Overview.
     case 'Risk Score':
       return <VendorRiskPanel vendorId={v.id} vendor={v} manage={manage} api={api} />
+    // Performance — the admin mirror of the vendor portal's Performance section.
+    case 'Award / Reward':
+      return <VendorAwardsPanel vendorId={v.id} manage={manage} api={api} />
+    case 'Referrals':
+      return <VendorReferralsPanel vendorId={v.id} manage={manage} api={api} />
+    case 'Feedback':
+      return <VendorFeedbackPanel vendorId={v.id} api={api} />
+    case 'Penalty':
+      return <VendorPenaltyPanel vendorId={v.id} api={api} />
+    // Compliance & HSSE — the vendor's dispatch notices (portal Pre-Alert/Packages/Shipping).
+    case 'Pre Alert':
+    case 'Package':
+      return <VendorShipmentsAdminPanel vendorId={v.id} api={api} />
     // Prequalification (gap report area 6) — scored questionnaire → Qualified /
     // Conditional / Not Qualified; gates approval (slice B4).
     case 'Prequalification':
       return <VendorPrequalificationPanel vendorId={v.id} manage={manage} api={api} />
+    // Vendor-360 governance reads — each surfaces, on the vendor record, a register
+    // that used to live only on its own module page. Read-only here; management
+    // stays in the dedicated page. tpvApi passed explicitly (these are TPV-only).
+    case 'Performance Index':
+      return <VendorVpiPanel vendorId={v.id} api={tpvApi} />
+    case 'Renewal':
+      return <VendorRenewalPanel vendorId={v.id} api={tpvApi} />
+    case 'Offboarding':
+      return <VendorOffboardingPanel vendorId={v.id} api={tpvApi} />
+    case 'Compliance Register':
+      return <VendorComplianceRegisterPanel vendorId={v.id} api={tpvApi} />
+    case 'Inspections':
+      return <VendorInspectionsPanel vendorId={v.id} api={tpvApi} />
+    case 'NCR':
+      return <VendorNcrPanel vendorId={v.id} api={tpvApi} />
+    case 'CAPA':
+      return <VendorCapaPanel vendorId={v.id} api={tpvApi} />
+    case 'Work Packages':
+      return <VendorWorkPackagesPanel vendorId={v.id} api={tpvApi} />
+    case 'Vault':
+      return <VendorVaultPanel vendorId={v.id} api={tpvApi} />
     default:
       // Everything else is either settled as out of scope for a TPV vendor, or
       // genuinely unbacked — no table, awaiting a business definition.
@@ -846,6 +888,11 @@ function ProfilePanel({ v, manage, api, onSaved }) {
     ['website',        'Website'],
     ['internal_sponsor', 'Internal Sponsor'],
     ['contract_owner', 'Contract Owner'],
+    // Context fields — columns existed but the master screen never exposed them.
+    // project + site also drive the onboarding-checklist dimensions (§10).
+    ['project',        'Project'],
+    ['department',     'Department'],
+    ['site',           'Site'],
   ]
   const CONTACT = [
     ['email',             'Email'],

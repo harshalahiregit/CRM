@@ -10,7 +10,7 @@ namespace App\Support\Purchase;
  */
 class PurchaseCapaSource
 {
-    public const KINDS = ['ncr', 'inspection', 'audit', 'meeting', 'meeting_issue', 'violation', 'renewal', 'manual'];
+    public const KINDS = ['ncr', 'inspection', 'audit', 'meeting', 'meeting_issue', 'violation', 'renewal', 'incident', 'manual'];
 
     public const TYPES = ['Corrective', 'Preventive'];
 
@@ -24,6 +24,7 @@ class PurchaseCapaSource
         'meeting'       => \App\Models\Purchase\PurchaseKickoffMeeting::class,
         'meeting_issue' => \App\Models\Purchase\PurchaseMomIssue::class,
         'violation'     => \App\Models\Purchase\PurchaseVendorViolation::class,
+        'incident'      => \App\Models\Purchase\PurchaseHsseIncident::class,
     ];
 
     public static function classFor(?string $kind): ?string

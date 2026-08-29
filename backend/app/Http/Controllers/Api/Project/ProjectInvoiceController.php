@@ -46,4 +46,27 @@ class ProjectInvoiceController extends Controller
 
         return $this->success($invoice, 'Invoice generated', 201);
     }
+
+    /**
+     * PR2 — convert this project (or a milestone / selected tasks) into a Sales
+     * Proforma Invoice built from its billable tasks.
+     */
+    public function convertToProforma(Request $request, int $project)
+    {
+        $this->projects->assertProjectManage($project, $request->user()->tenant_id, $request->user()->id, $this->isAdmin($request));
+
+        $data = $request->validate([
+            'scope'        => 'nullable|in:project,milestone,tasks',
+            'milestone_id' => 'nullable|integer',
+            'task_ids'     => 'nullable|array',
+            'task_ids.*'   => 'integer',
+        ]);
+
+        $model = \App\Models\Project\Project::where('tenant_id', $request->user()->tenant_id)->findOrFail($project);
+
+        $estimate = app(\App\Services\Project\ProjectProformaService::class)
+            ->fromProject($model, $request->user()->tenant_id, $request->user()->id, $data);
+
+        return $this->success($estimate, 'Proforma invoice created', 201);
+    }
 }

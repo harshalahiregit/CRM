@@ -23,6 +23,12 @@ final class VendorStatus
     // §5 lifecycle stages the doc names before a vendor is fully active. All
     // additive and optional — the core Draft→Pending_Approval→Active flow is
     // unchanged; these give finer-grained states where a tenant wants them.
+    //
+    // Intentionally NOT auto-assigned by the standard flow: the mid-registration
+    // granularity (Submitted → Under_Review → Approved) lives on the ONBOARDING
+    // record (TpvOnboardingStatus), which is the system of record for review
+    // progress; the vendor's own status stays coarse. Kept here as reserved,
+    // valid target states for tenants/integrations that drive them explicitly.
     public const INVITED          = 'Invited';
     public const REGISTERED       = 'Registered';
     public const UNDER_REVIEW     = 'Under_Review';

@@ -80,6 +80,8 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('projects')->gro
     // Invoice Project — generate/list project invoice drafts by billing type
     Route::get('/{project}/invoices',  [ProjectInvoiceController::class, 'index']);
     Route::post('/{project}/invoices', [ProjectInvoiceController::class, 'generate']);
+    // PR2 — convert the project (or a milestone / selected tasks) into a Sales PI.
+    Route::post('/{project}/convert-to-proforma', [ProjectInvoiceController::class, 'convertToProforma']);
 
     // Integration 3a: tickets linked to this project
     Route::get('/{project}/tickets',   [ProjectController::class, 'tickets']);

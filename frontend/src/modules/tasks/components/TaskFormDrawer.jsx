@@ -52,7 +52,7 @@ const DESC_EDITOR_CSS = `
 const EMPTY = {
   name: '', description: '', priority: 'medium', status: '',
   start_date: today(), due_date: '', rel_type: 'standalone', rel_id: '', milestone_id: '',
-  billable: false, hourly_rate: '', rate_unit: 'hourly', is_public: false, visible_to_client: false,
+  billable: false, hourly_rate: '', billable_amount: '', rate_unit: 'hourly', is_public: false, visible_to_client: false,
   assignee_ids: [], follower_ids: [], tags: [], template_ids: [],
   relations: [],   // additional "Related To" links: [{rel_type, rel_id, label}]
   repeat_preset: '', recurring: false, recurring_type: 'month', repeat_every: 1, cycles: 0,
@@ -115,6 +115,7 @@ export default function TaskFormDrawer({
           due_date: task.due_date ? String(task.due_date).split('T')[0] : '',
           start_date: task.start_date ? String(task.start_date).split('T')[0] : today(),
           hourly_rate: task.hourly_rate ?? '',
+          billable_amount: task.billable_amount ?? '',
           rel_id: task.rel_id ?? '',
           milestone_id: task.milestone_id ?? '',
           assignee_ids: (task.assignees || []).map(a => a.user_id),
@@ -283,6 +284,7 @@ export default function TaskFormDrawer({
     // Quill leaves "<p><br></p>" behind in an untouched editor — treat that as no description.
     if (p.description && p.description.replace(/<[^>]*>/g, '').replace(/&nbsp;/gi, ' ').trim() === '') p.description = ''
     if (p.hourly_rate === '') delete p.hourly_rate
+    if (p.billable_amount === '') delete p.billable_amount
     if (p.due_date === '') delete p.due_date
     if (!p.recurring) { delete p.recurring_type; delete p.repeat_every; delete p.cycles }
     if (editing) delete p.assignees
@@ -374,6 +376,14 @@ export default function TaskFormDrawer({
               </Field>
               <Field label="Rate unit">
                 <Select value={form.rate_unit || 'hourly'} onChange={v => sf('rate_unit', v)} options={RATE_UNITS} />
+              </Field>
+              {/* PR1 — a fixed billable amount overrides rate × hours for this task. */}
+              <Field label="Fixed billable amount">
+                <div className="relative">
+                  <IndianRupee size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                  <input type="number" min="0" step="0.01" value={form.billable_amount}
+                    onChange={e => sf('billable_amount', e.target.value)} className={INPUT} style={{ ...INPUT_S, paddingLeft: 32 }} placeholder="Blank = rate × hours" />
+                </div>
               </Field>
             </div>
           )}

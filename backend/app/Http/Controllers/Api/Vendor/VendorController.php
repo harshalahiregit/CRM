@@ -19,7 +19,9 @@ use App\Models\Shared\Note;
 use App\Models\Tpv\TpvContact;
 use App\Models\Tpv\TpvWorker;
 use App\Models\Vendor\Vendor;
+use App\Models\Vendor\VendorAward;
 use App\Models\Vendor\VendorDocument;
+use App\Models\Vendor\VendorReferral;
 use App\Support\Vendor\VendorStatus;
 use App\Services\Purchase\PurchaseVendorService;
 use App\Services\Sales\ReminderService;
@@ -572,6 +574,66 @@ class VendorController extends Controller
         return response()->json($client, 201);
     }
 
+    /**
+     * Search existing (registered) customers that can be linked to this vendor —
+     * tenant-scoped clients not already tied to a vendor, matching q on company /
+     * phone / GST. Lets the admin add an existing customer instead of re-creating.
+     */
+    public function searchCustomers(Request $request, Vendor $vendor)
+    {
+        $this->assertTenant($request, $vendor);
+
+        $data = $request->validate(['q' => 'nullable|string|max:120']);
+        $q = trim((string) ($data['q'] ?? ''));
+
+        $rows = Client::query()
+            ->where('tenant_id', (int) $request->user()->tenant_id)
+            // Only unlinked customers, or ones already on THIS vendor (idempotent).
+            ->where(function ($w) use ($vendor) {
+                $w->whereNull('vendor_id')->orWhere('vendor_id', $vendor->id);
+            })
+            ->when($q !== '', function ($query) use ($q) {
+                $query->where(function ($w) use ($q) {
+                    $w->where('company', 'like', "%{$q}%")
+                        ->orWhere('phone', 'like', "%{$q}%")
+                        ->orWhere('gst_number', 'like', "%{$q}%");
+                });
+            })
+            ->orderBy('company')
+            ->limit(20)
+            ->get(['id', 'company', 'phone', 'gst_number', 'city', 'state', 'country', 'vendor_id']);
+
+        return response()->json($rows);
+    }
+
+    /**
+     * Link an existing customer to this vendor (set clients.vendor_id). Idempotent
+     * if already linked to this vendor; refuses to steal a customer already tied to
+     * a different vendor.
+     */
+    public function linkCustomer(Request $request, Vendor $vendor)
+    {
+        $this->assertTenant($request, $vendor);
+
+        $data = $request->validate(['client_id' => 'required|integer']);
+
+        $client = Client::query()
+            ->where('tenant_id', (int) $request->user()->tenant_id)
+            ->find($data['client_id']);
+
+        abort_unless($client, 404, 'Customer not found.');
+
+        if ($client->vendor_id && (int) $client->vendor_id !== (int) $vendor->id) {
+            abort(422, 'That customer is already linked to another vendor.');
+        }
+
+        if ((int) $client->vendor_id !== (int) $vendor->id) {
+            $client->update(['vendor_id' => $vendor->id]);
+        }
+
+        return response()->json($client->fresh() ?? $client, 200);
+    }
+
     public function storeNote(StoreVendorNoteRequest $request, Vendor $vendor)
     {
         $this->assertTenant($request, $vendor);
@@ -778,6 +840,94 @@ class VendorController extends Controller
         abort_unless($request->user()->canManageHrQueue(), 403, 'You are not authorised to issue portal logins');
 
         return response()->json($this->vendorService->buildLoginLink($vendor));
+    }
+
+    /* ── Performance › Award / Reward (admin grants; vendor views) ───────── */
+
+    public function awardsIndex(Request $request, Vendor $vendor)
+    {
+        $this->assertTenant($request, $vendor);
+
+        return response()->json([
+            'data' => VendorAward::where('tenant_id', $vendor->tenant_id)
+                ->where('vendor_id', $vendor->id)
+                ->with('grantedBy:id,name')
+                ->latest('awarded_on')
+                ->get(),
+        ]);
+    }
+
+    public function grantAward(Request $request, Vendor $vendor)
+    {
+        $this->assertTenant($request, $vendor);
+
+        $data = $request->validate([
+            'title'       => 'required|string|max:200',
+            'category'    => 'nullable|string|max:100',
+            'description' => 'nullable|string|max:2000',
+            'awarded_on'  => 'nullable|date',
+        ]);
+
+        $award = VendorAward::create([
+            'tenant_id'   => $vendor->tenant_id,
+            'vendor_id'   => $vendor->id,
+            'title'       => $data['title'],
+            'category'    => $data['category'] ?? null,
+            'description' => $data['description'] ?? null,
+            'awarded_on'  => $data['awarded_on'] ?? now()->toDateString(),
+            'granted_by'  => $request->user()->id,
+        ]);
+
+        return response()->json($award->fresh('grantedBy:id,name'), 201);
+    }
+
+    public function deleteAward(Request $request, Vendor $vendor, VendorAward $award)
+    {
+        $this->assertTenant($request, $vendor);
+        abort_unless((int) $award->vendor_id === (int) $vendor->id && (int) $award->tenant_id === (int) $vendor->tenant_id, 404, 'Award not found');
+        $award->delete();
+
+        return response()->json(['deleted' => true]);
+    }
+
+    /* ── Performance › Referral (vendor submits; admin works the prospect) ── */
+
+    public function referralsIndex(Request $request, Vendor $vendor)
+    {
+        $this->assertTenant($request, $vendor);
+
+        return response()->json([
+            'data' => VendorReferral::where('tenant_id', $vendor->tenant_id)
+                ->where('referred_by_vendor_id', $vendor->id)
+                ->latest('id')
+                ->get(),
+        ]);
+    }
+
+    public function setReferralStatus(Request $request, Vendor $vendor, VendorReferral $referral)
+    {
+        $this->assertTenant($request, $vendor);
+        abort_unless((int) $referral->referred_by_vendor_id === (int) $vendor->id && (int) $referral->tenant_id === (int) $vendor->tenant_id, 404, 'Referral not found');
+
+        $data = $request->validate(['status' => ['required', \Illuminate\Validation\Rule::in(VendorReferral::STATUSES)]]);
+        $referral->update(['status' => $data['status']]);
+
+        return response()->json($referral->fresh());
+    }
+
+    /* ── Compliance & HSSE › Shipments (vendor dispatches; admin tracks) ─── */
+
+    public function shipmentsIndex(Request $request, Vendor $vendor)
+    {
+        $this->assertTenant($request, $vendor);
+
+        return response()->json([
+            'data' => \App\Models\Vendor\VendorShipment::where('tenant_id', $vendor->tenant_id)
+                ->where('vendor_id', $vendor->id)
+                ->with('packages')
+                ->latest('id')
+                ->get(),
+        ]);
     }
 
     private function assertTenant(Request $request, Vendor $vendor): void

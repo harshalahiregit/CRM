@@ -205,9 +205,10 @@ class TpvSettings
             'violation_ladder' => [
                 'severity_points' => ViolationType::SEVERITY_POINTS,
                 'steps'           => ViolationType::ladderSteps(),
-                // §26 — per-project (or per-client) rule overrides. Keyed by project
-                // name; each may override `severity_points` and/or `steps`. Empty by
-                // default, so the tenant ladder applies everywhere until set.
+                // §26 — per-project rule overrides. Keyed by the project key a
+                // violation carries (project_id as string); each may override
+                // `severity_points` and/or `steps`. Empty by default, so the tenant
+                // ladder applies everywhere until an override is set.
                 'project_overrides' => [],
             ],
             'onboarding_checklists' => [

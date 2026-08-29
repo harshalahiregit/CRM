@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { Mail, MailOpen, SlidersHorizontal, IndianRupee, Tags, Building2, Network, Palette, UploadCloud, ShieldCheck, Bell, Globe, Coins, Hash } from 'lucide-react'
+import { Mail, MailOpen, SlidersHorizontal, IndianRupee, Tags, Building2, Network, Palette, UploadCloud, ShieldCheck, Bell, Globe, Coins, Hash, Trash2 } from 'lucide-react'
 
 // Section registry — new settings pages plug in here (tax rates, expense
 // categories, company/finance land with their tracks).
@@ -18,6 +18,7 @@ const SECTIONS = [
   { label: 'Upload', path: 'upload', icon: UploadCloud, ready: true },
   { label: 'Security', path: 'security', icon: ShieldCheck, ready: true },
   { label: 'Notifications', path: 'notification-preferences', icon: Bell, ready: true },
+  { label: 'Recycle Bin', path: 'recycle-bin', icon: Trash2, ready: true },
 ]
 
 export default function SettingsLayout() {

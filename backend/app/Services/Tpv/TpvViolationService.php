@@ -161,7 +161,12 @@ class TpvViolationService
             if (! $vendor) {
                 return;
             }
-            $esc = $this->escalationFor((int) $v->tenant_id, (int) $v->vendor_id);
+            // §26 — apply this violation's project ladder override, if the tenant set
+            // one. The override map is keyed by the project key the violation carries
+            // (project_id as string); with no project or no override this is exactly
+            // the tenant ladder, so behaviour is unchanged until an override exists.
+            $project = $v->project_id !== null ? (string) $v->project_id : null;
+            $esc = $this->escalationFor((int) $v->tenant_id, (int) $v->vendor_id, $project);
             $actor = $userId ? User::find($userId) : null;
             $reason = "Auto-escalated (Rule 9): {$esc['open_count']} open violations / {$esc['open_points']} points → {$esc['level_label']} — triggered by {$v->reference}.";
 

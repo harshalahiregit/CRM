@@ -22,7 +22,7 @@ const STATUS = {
   out_of_stock: { label: 'Out of Stock', tone: '#d03b3b', icon: XCircle },
 }
 
-export default function PpeCatalogue({ api, workers = [], canIssue = false, accent = '#7C3AED', onIssued }) {
+export default function PpeCatalogue({ api, workers = [], canIssue = false, accent = '#7C3AED', onIssued, linkInventory = false }) {
   const qc = useQueryClient()
   const [issuing, setIssuing] = useState(null)   // the catalogue row being issued
 
@@ -107,10 +107,14 @@ export default function PpeCatalogue({ api, workers = [], canIssue = false, acce
                       }}
                     >Issue</button>
                   )}
-                  {/* PPE → Inventory: item detail, stock ledger and movement history. */}
-                  <Link to={`/app/inventory/products/${it.product_id}`} style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-muted)', textDecoration: 'none' }}>
-                    Inventory ↗
-                  </Link>
+                  {/* PPE → Inventory: item detail, stock ledger and movement history.
+                      Admin-only — the /app/inventory route is the admin app, so it
+                      must never render for a vendor/portal viewer (linkInventory=false). */}
+                  {linkInventory && (
+                    <Link to={`/app/inventory/products/${it.product_id}`} style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-muted)', textDecoration: 'none' }}>
+                      Inventory ↗
+                    </Link>
+                  )}
                 </div>
               </div>
             )

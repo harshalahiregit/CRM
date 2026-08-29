@@ -39,7 +39,7 @@ export default function TpvPpe() {
         Live from Inventory. Issuing here moves real stock and writes a movement — there is no separate PPE store.
       </p>
 
-      <PpeCatalogue api={api} workers={workers} canIssue={canIssue} accent="#f59e0b" />
+      <PpeCatalogue api={api} workers={workers} canIssue={canIssue} accent="#f59e0b" linkInventory={!isPortal} />
     </div>
   )
 }

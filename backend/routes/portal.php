@@ -17,7 +17,16 @@ Route::middleware(['auth:sanctum', 'role:vendor,third_party_vendor'])->prefix('p
     Route::get('/summary',  [VendorWorkController::class, 'summary']);
     Route::get('/projects', [VendorWorkController::class, 'projects']);
     Route::get('/tasks',    [VendorWorkController::class, 'tasks']);
+    Route::get('/task-statuses', [VendorWorkController::class, 'taskStatuses']);
+    // Vendor writes: advance an own task's status; log/list expenses on own projects.
+    Route::patch('/tasks/{task}/status', [VendorWorkController::class, 'updateTaskStatus'])->where('task', '[0-9]+');
+    Route::get('/expenses', [VendorWorkController::class, 'expenses']);
+    Route::post('/expenses', [VendorWorkController::class, 'storeExpense']);
     Route::get('/tickets',  [VendorWorkController::class, 'tickets']);
+    // Vendor raises + replies to its own support tickets.
+    Route::post('/tickets', [VendorWorkController::class, 'raiseTicket']);
+    Route::get('/tickets/{ticket}', [VendorWorkController::class, 'ticket'])->where('ticket', '[0-9]+');
+    Route::post('/tickets/{ticket}/reply', [VendorWorkController::class, 'replyTicket'])->where('ticket', '[0-9]+');
     // Knowledge Base (enhancement #6) — published, tenant-scoped help content the
     // dashboard shows next to Projects/Tasks/Tickets. Role-only gate, same as above.
     Route::get('/kb',            [VendorPortalController::class, 'kbArticles']);
@@ -94,15 +103,36 @@ Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access'])->prefix('por
     // workers, moving shared Inventory stock. The summary is scoped the same way.
     // §32 "View compliance" — the vendor's own compliance register (read-only).
     Route::get('/compliance',                             [VendorPortalController::class, 'compliance']);
+    Route::get('/customers',                              [VendorPortalController::class, 'customers']);
+    // Performance — the vendor's own risk score, rating, penalties, awards, referrals.
+    Route::get('/risk',                                   [VendorPortalController::class, 'risk']);
+    Route::get('/feedback',                               [VendorPortalController::class, 'feedback']);
+    Route::get('/violations',                             [VendorPortalController::class, 'violations']);
+    Route::get('/awards',                                 [VendorPortalController::class, 'awards']);
+    Route::get('/referrals',                              [VendorPortalController::class, 'referrals']);
+    Route::post('/referrals',                             [VendorPortalController::class, 'storeReferral']);
+    // Compliance & HSSE — the vendor requests permits + reports incidents (writes).
+    Route::get('/permits',                                [VendorPortalController::class, 'permits']);
+    Route::post('/permits',                               [VendorPortalController::class, 'requestPermit']);
+    Route::get('/incidents',                              [VendorPortalController::class, 'incidents']);
+    Route::post('/incidents',                             [VendorPortalController::class, 'reportIncident']);
+    // Pre Alert / Packages / Shipping — the vendor's dispatch notices.
+    Route::get('/shipments',                              [VendorPortalController::class, 'shipments']);
+    Route::post('/shipments',                             [VendorPortalController::class, 'storeShipment']);
+    Route::patch('/shipments/{shipment}/status',          [VendorPortalController::class, 'updateShipmentStatus'])->where('shipment', '[0-9]+');
+    Route::get('/shipment-packages',                      [VendorPortalController::class, 'shipmentPackages']);
     Route::get('/ppe/summary',                            [VendorPortalController::class, 'ppeSummary']);
     Route::get('/ppe/compliance/workers/{worker}',        [VendorPortalController::class, 'workerPpeCompliance']);
     Route::get('/ppe/workers/{worker}',                   [VendorPortalController::class, 'workerPpe']);
     Route::post('/ppe/workers/{worker}/issue',            [VendorPortalController::class, 'issueWorkerPpe']);
     Route::post('/ppe/issues/{issue}/return',             [VendorPortalController::class, 'returnWorkerPpe']);
+    // The vendor's own work packages — read-only, for the worker-wizard deploy field.
+    Route::get('/work-packages',                          [VendorPortalController::class, 'workPackages']);
     Route::get('/workers/stats',                          [VendorPortalController::class, 'workerStats']);
     Route::get('/workers',                                [VendorPortalController::class, 'workers']);
     Route::post('/workers',                               [VendorPortalController::class, 'storeWorker']);
     Route::get('/workers/{worker}',                       [VendorPortalController::class, 'showWorker']);
+    Route::get('/workers/{worker}/badge',                 [VendorPortalController::class, 'workerBadge']);
     Route::get('/workers/{worker}/progress',              [VendorPortalController::class, 'workerProgress']);
     Route::put('/workers/{worker}',                       [VendorPortalController::class, 'updateWorker']);
     Route::post('/workers/{worker}/medical',              [VendorPortalController::class, 'saveMedical']);
@@ -165,6 +195,9 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal'])->prefix('portal/pu
     Route::get('/ppe/summary',                        [PurchasePortalController::class, 'ppeSummary']);
     Route::get('/ppe/item/{product}/image',           [\App\Http\Controllers\Api\Tpv\PpeController::class, 'image']);
     Route::get('/tasks',                              [PurchasePortalController::class, 'tasks']);
+    // Knowledge Base (tenant-published, read-only) — parity with the TPV portal.
+    Route::get('/kb',                                 [PurchasePortalController::class, 'kbArticles']);
+    Route::get('/kb/{slug}',                          [PurchasePortalController::class, 'kbArticle']);
     Route::get('/me',                                 [PurchasePortalController::class, 'me']);
     // One-time post-activation welcome banner (dismissal persisted server-side).
     Route::post('/welcome/dismiss',                   [PurchasePortalController::class, 'dismissWelcomeBanner']);
@@ -227,13 +260,43 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal'])->prefix('portal/pu
     Route::get('/orders/{id}',                        [PurchasePortalCommerceController::class, 'order']);
     Route::get('/quotations',                         [PurchasePortalCommerceController::class, 'quotations']);
     Route::get('/quotations/{id}',                    [PurchasePortalCommerceController::class, 'quotation']);
+    // RFQs the vendor was invited to + submitting a quotation against one (write).
+    Route::get('/rfqs',                               [PurchasePortalCommerceController::class, 'rfqs']);
+    Route::get('/rfqs/{id}',                          [PurchasePortalCommerceController::class, 'rfq']);
+    Route::post('/rfqs/{id}/quotation',               [PurchasePortalCommerceController::class, 'submitQuotation']);
     Route::get('/contracts',                          [PurchasePortalCommerceController::class, 'contracts']);
     Route::get('/contracts/{id}',                     [PurchasePortalCommerceController::class, 'contract']);
     Route::get('/invoices',                           [PurchasePortalCommerceController::class, 'invoices']);
     Route::get('/invoices/{id}',                      [PurchasePortalCommerceController::class, 'invoice']);
     Route::get('/debit-notes',                        [PurchasePortalCommerceController::class, 'debitNotes']);
     Route::get('/debit-notes/{id}',                   [PurchasePortalCommerceController::class, 'debitNote']);
-    Route::get('/payments',                           [PurchasePortalCommerceController::class, 'payments']);
+    Route::get('/payments',                            [PurchasePortalCommerceController::class, 'payments']);
+    Route::get('/statement',                          [PurchasePortalCommerceController::class, 'statement']);
+
+    // ── Parity with the TPV portal (General/Execution/Performance/Compliance) ──
+    $ppar = \App\Http\Controllers\Api\Portal\PurchasePortalParityController::class;
+    Route::get('/customers',                          [$ppar, 'customers']);
+    Route::get('/projects',                           [$ppar, 'projects']);
+    Route::get('/work-tasks',                         [$ppar, 'tasks']);
+    Route::get('/task-statuses',                      [$ppar, 'taskStatuses']);
+    Route::patch('/tasks/{task}/status',              [$ppar, 'updateTaskStatus'])->where('task', '[0-9]+');
+    Route::get('/work-tickets',                       [$ppar, 'tickets']);
+    Route::get('/expenses',                           [$ppar, 'expenses']);
+    Route::post('/expenses',                          [$ppar, 'storeExpense']);
+    Route::get('/feedback',                           [$ppar, 'feedback']);
+    Route::get('/violations',                         [$ppar, 'violations']);
+    Route::get('/awards',                             [$ppar, 'awards']);
+    Route::get('/referrals',                          [$ppar, 'referrals']);
+    Route::post('/referrals',                         [$ppar, 'storeReferral']);
+    Route::get('/shipments',                          [$ppar, 'shipments']);
+    Route::post('/shipments',                         [$ppar, 'storeShipment']);
+    Route::patch('/shipments/{shipment}/status',      [$ppar, 'updateShipmentStatus'])->where('shipment', '[0-9]+');
+    Route::get('/shipment-packages',                  [$ppar, 'shipmentPackages']);
+    Route::get('/permits',                            [$ppar, 'permits']);
+    Route::post('/permits',                           [$ppar, 'requestPermit']);
+    Route::get('/incidents',                          [$ppar, 'incidents']);
+    Route::post('/incidents',                         [$ppar, 'reportIncident']);
+    Route::get('/risk',                               [$ppar, 'risk']);
 
     // §32 Governance-response half — mirror of the TPV portal on Purchase-owned
     // models (separate DB). No PPE requirement matrix (Purchase has none).

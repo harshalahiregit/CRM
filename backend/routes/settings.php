@@ -25,6 +25,10 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('settings')->group(fun
     Route::get('/general', [GeneralSettingController::class, 'show']);
     Route::put('/general', [GeneralSettingController::class, 'update']);
 
+    // ST2 — global recycle bin: list soft-deleted records + restore one.
+    Route::get('/recycle-bin', [\App\Http\Controllers\Api\Settings\RecycleBinController::class, 'index']);
+    Route::post('/recycle-bin/restore', [\App\Http\Controllers\Api\Settings\RecycleBinController::class, 'restore']);
+
     // Generic settings groups — Upload / Security / Notification preferences.
     // One controller + one registry; add a group by registering it + the constraint.
     Route::get('/group/{group}', [SettingsGroupController::class, 'show'])

@@ -33,6 +33,13 @@ class UpdateVendorRequest extends FormRequest
             'cin_number' => 'nullable|string',
             'udyam_number' => 'nullable|string',
             'site_address' => 'nullable|string',
+            // Master-edit context fields — columns + fillable already existed, they
+            // were just missing from the request so the master screen couldn't set
+            // them. `site`/`project` also feed the onboarding checklist dimensions.
+            'project' => 'nullable|string',
+            'site' => 'nullable|string',
+            'department' => 'nullable|string',
+            'client_id' => 'nullable|integer|exists:clients,id',
             'emergency_contact' => 'nullable|string',
             'internal_sponsor' => 'nullable|string',
             'contract_owner' => 'nullable|string',

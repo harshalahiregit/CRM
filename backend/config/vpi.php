@@ -10,30 +10,32 @@
 */
 return [
 
-    // Dimension weights for the overall index (should sum to 1.0).
+    // Dimension weights for the overall index (must sum to 1.0).
     //
-    // The §27 dimensions the doc names beyond the original eight — productivity,
-    // timeliness, training, environmental, security, incident and meeting-action
-    // closure — ship at weight 0 by default: they are computed and surfaced on
-    // every scorecard, but do not disturb the established overall index until a
-    // tenant chooses to weight them (weights are tenant-editable, §34). Rebalance
-    // the original eight down if you raise them so the set still sums to 1.0.
+    // §27 — the four governance dimensions the program actually computes from live
+    // data (training currency, environmental conduct, security incidents, HSSE
+    // incidents) now CARRY WEIGHT and genuinely move the index; the original eight
+    // were rebalanced down to make room so the set still sums to 1.0. The three
+    // remaining doc dimensions — productivity, timeliness and meeting-action
+    // closure — stay at weight 0 because they have no real data feed yet (they are
+    // structural stubs scoring a flat 100); a tenant can weight them once a feed
+    // exists (weights are tenant-editable, §34).
     'weights' => [
-        'safety'         => (float) env('VPI_W_SAFETY', 0.20),
-        'compliance'     => (float) env('VPI_W_COMPLIANCE', 0.18),
-        'workforce'      => (float) env('VPI_W_WORKFORCE', 0.12),
-        'quality'        => (float) env('VPI_W_QUALITY', 0.14),   // NCRs
-        'capa'           => (float) env('VPI_W_CAPA', 0.10),      // corrective-action closure
-        'conduct'        => (float) env('VPI_W_CONDUCT', 0.12),   // violations + strikes
-        'inspection'     => (float) env('VPI_W_INSPECTION', 0.08),
-        'documentation'  => (float) env('VPI_W_DOCUMENTATION', 0.06),
-        'productivity'   => (float) env('VPI_W_PRODUCTIVITY', 0.0),
-        'timeliness'     => (float) env('VPI_W_TIMELINESS', 0.0),
-        'training'       => (float) env('VPI_W_TRAINING', 0.0),
-        'environmental'  => (float) env('VPI_W_ENVIRONMENTAL', 0.0),
-        'security'       => (float) env('VPI_W_SECURITY', 0.0),
-        'incident'       => (float) env('VPI_W_INCIDENT', 0.0),
-        'meeting_action' => (float) env('VPI_W_MEETING_ACTION', 0.0),
+        'safety'         => (float) env('VPI_W_SAFETY', 0.16),
+        'compliance'     => (float) env('VPI_W_COMPLIANCE', 0.15),
+        'workforce'      => (float) env('VPI_W_WORKFORCE', 0.10),
+        'quality'        => (float) env('VPI_W_QUALITY', 0.12),   // NCRs
+        'capa'           => (float) env('VPI_W_CAPA', 0.08),      // corrective-action closure
+        'conduct'        => (float) env('VPI_W_CONDUCT', 0.10),   // violations + strikes
+        'inspection'     => (float) env('VPI_W_INSPECTION', 0.06),
+        'documentation'  => (float) env('VPI_W_DOCUMENTATION', 0.05),
+        'productivity'   => (float) env('VPI_W_PRODUCTIVITY', 0.0),   // no feed yet
+        'timeliness'     => (float) env('VPI_W_TIMELINESS', 0.0),     // no feed yet
+        'training'       => (float) env('VPI_W_TRAINING', 0.05),
+        'environmental'  => (float) env('VPI_W_ENVIRONMENTAL', 0.03),
+        'security'       => (float) env('VPI_W_SECURITY', 0.04),
+        'incident'       => (float) env('VPI_W_INCIDENT', 0.06),
+        'meeting_action' => (float) env('VPI_W_MEETING_ACTION', 0.0), // no feed yet
     ],
 
     // Per-item deductions from a dimension that starts at 100.

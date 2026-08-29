@@ -3,6 +3,7 @@ import { ProtectedRoute, GuestRoute } from '@/router/ProtectedRoute'
 import AppShell from '@/components/layout/AppShell'
 import { Suspense, lazy } from 'react'
 import { useAuth } from '@/context/AuthContext'
+import { purchasePortalApi } from '@/services/purchasePortalApi'
 
 // Auth pages (eager)
 import LoginPage from '@/pages/auth/LoginPage'
@@ -123,6 +124,7 @@ const CompanyFinanceSettings = lazy(() => import('@/modules/settings/pages/Compa
 const TaxRatesSettings = lazy(() => import('@/modules/settings/pages/TaxRatesSettings'))
 const ExpenseCategoriesSettings = lazy(() => import('@/modules/settings/pages/ExpenseCategoriesSettings'))
 const AccountGroupsSettings = lazy(() => import('@/modules/settings/pages/AccountGroupsSettings'))
+const RecycleBinSettings = lazy(() => import('@/modules/settings/pages/RecycleBinSettings'))
 const PublicLeadForm = lazy(() => import('@/modules/sales/public/PublicLeadForm'))
 
 // Customer Module (lazy)
@@ -223,6 +225,7 @@ const PurchaseContracts = lazy(() => import('@/modules/purchase/pages/PurchaseCo
 const PurchaseComplianceRegister = lazy(() => import('@/modules/purchase/pages/PurchaseComplianceRegister'))
 const PurchaseNcr = lazy(() => import('@/modules/purchase/pages/PurchaseNcr'))
 const PurchaseCapaRegister = lazy(() => import('@/modules/purchase/pages/PurchaseCapaRegister'))
+const PurchaseIncidents = lazy(() => import('@/modules/purchase/pages/PurchaseIncidents'))
 const PurchaseApprovals = lazy(() => import('@/modules/purchase/pages/PurchaseApprovals'))
 const PurchaseAnalytics = lazy(() => import('@/modules/purchase/pages/PurchaseAnalytics'))
 const PurchaseDocumentVault = lazy(() => import('@/modules/purchase/pages/PurchaseDocumentVault'))
@@ -244,6 +247,7 @@ const PurchaseVendorDetailLayout = lazy(() => import('@/modules/purchase/pages/v
 const PurchaseVendorOnboardings = lazy(() => import('@/modules/purchase/pages/PurchaseVendorOnboardings'))
 const PurchaseVendorOnboardingWizard = lazy(() => import('@/modules/purchase/pages/PurchaseVendorOnboardingWizard'))
 const PurchaseWorkforce = lazy(() => import('@/modules/purchase/pages/PurchaseWorkforce'))
+const PurchaseCompetency = lazy(() => import('@/modules/purchase/pages/PurchaseCompetency'))
 // Purchase Kickoff — Purchase-owned pages on /api/purchase/kickoff (no TPV/shared reuse).
 const PurchaseKickoffMeetings = lazy(() => import('@/modules/purchase/pages/PurchaseKickoffMeetings'))
 const PurchaseKickoffCreate = lazy(() => import('@/modules/purchase/pages/PurchaseKickoffCreate'))
@@ -252,6 +256,12 @@ const PurchaseKickoffDetail = lazy(() => import('@/modules/purchase/pages/Purcha
 // Purchase Vendor Portal (lazy) — independent PurchaseVendor auth.
 const PurchasePortalShell = lazy(() => import('@/pages/purchase-portal/PurchasePortalShell'))
 const PurchasePortalDashboard = lazy(() => import('@/pages/purchase-portal/PurchasePortalDashboard'))
+const PurchasePortalCommercial = lazy(() => import('@/pages/purchase-portal/PurchasePortalCommercial'))
+const PurchaseMyContacts = lazy(() => import('@/pages/purchase-portal/PurchaseMyContacts'))
+const PurchaseMyKb = lazy(() => import('@/pages/purchase-portal/PurchaseMyKb'))
+const PurchasePortalOverview = lazy(() => import('@/pages/purchase-portal/PurchasePortalOverview'))
+// Shared feature pages, driven by the Purchase portal's api client for parity.
+const PP_API = purchasePortalApi
 const PurchasePortalOnboarding = lazy(() => import('@/pages/purchase-portal/PurchasePortalOnboarding'))
 const PurchasePortalDocuments = lazy(() => import('@/pages/purchase-portal/PurchasePortalDocuments'))
 const PurchasePortalApproval = lazy(() => import('@/pages/purchase-portal/PurchasePortalApproval'))
@@ -359,6 +369,15 @@ const VendorPortalGovernance = lazy(() => import('@/pages/vendor-portal/VendorPo
 const MyRegistrationStatus = lazy(() => import('@/pages/vendor-portal/MyRegistrationStatus'))
 const PortalOnboardingEntry = lazy(() => import('@/pages/vendor-portal/PortalOnboardingEntry'))
 const PortalDashboard = lazy(() => import('@/pages/vendor-portal/PortalDashboard'))
+const PortalComingSoon = lazy(() => import('@/pages/vendor-portal/PortalComingSoon'))
+const MyContacts = lazy(() => import('@/pages/vendor-portal/MyContacts'))
+const MyOverview = lazy(() => import('@/pages/vendor-portal/MyOverview'))
+const MyCustomers = lazy(() => import('@/pages/vendor-portal/MyCustomers'))
+const MyKb = lazy(() => import('@/pages/vendor-portal/MyKb'))
+const MyWork = lazy(() => import('@/pages/vendor-portal/MyWork'))
+const MyPerformance = lazy(() => import('@/pages/vendor-portal/MyPerformance'))
+const MyHsse = lazy(() => import('@/pages/vendor-portal/MyHsse'))
+const MyShipments = lazy(() => import('@/pages/vendor-portal/MyShipments'))
 const PortalDocuments = lazy(() => import('@/pages/vendor-portal/PortalDocuments'))
 const PortalSupport = lazy(() => import('@/pages/vendor-portal/PortalSupport'))
 const PortalOrderDetail = lazy(() => import('@/pages/vendor-portal/PortalOrderDetail'))
@@ -450,8 +469,10 @@ export default function AppRoutes() {
       {/* Read-only view of the same minutes — the e-mail's View MOM PDF link. */}
       <Route path="/kickoff/mom/:token" element={<S><KickoffMom /></S>} />
 
-      {/* Protected app routes */}
-      <Route path="/app" element={<ProtectedRoute><AppShell /></ProtectedRoute>}>
+      {/* Protected app routes — internal staff/admin only. Portal-only roles
+          (TPV vendor, vendor, company) are bounced to their own portal, so a
+          vendor can never reach the admin shell by link or by typing a URL. */}
+      <Route path="/app" element={<ProtectedRoute blockRoles={['third_party_vendor', 'vendor', 'company']}><AppShell /></ProtectedRoute>}>
 
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="dashboard" element={<S><DashboardPage /></S>} />
@@ -605,6 +626,7 @@ export default function AppRoutes() {
           <Route path="compliance-register" element={<S><PurchaseComplianceRegister /></S>} />
           <Route path="ncr" element={<S><PurchaseNcr /></S>} />
           <Route path="capa" element={<S><PurchaseCapaRegister /></S>} />
+          <Route path="incidents" element={<S><PurchaseIncidents /></S>} />
           {/* Central approval register (§12) — /api/purchase/approval-requests */}
           <Route path="approval-requests" element={<S><PurchaseApprovals /></S>} />
           <Route path="inspections" element={<S><PurchaseInspections /></S>} />
@@ -624,6 +646,8 @@ export default function AppRoutes() {
           {/* Admin/staff review of vendor-supplied workers. Activation inside is
               admin-only — the button is hidden for staff and the endpoint refuses them. */}
           <Route path="workforce" element={<S><PurchaseWorkforce /></S>} />
+          {/* Workforce Competency & Skill Matrix — "No Competency, No Work" (mirror of TPV §15). */}
+          <Route path="competency" element={<S><PurchaseCompetency /></S>} />
           {/* Kickoff Meetings — Purchase-owned pages on /api/purchase/kickoff (no TPV reuse) */}
           <Route path="kickoff" element={<S><PurchaseKickoffMeetings /></S>} />
           <Route path="kickoff/new" element={<S><PurchaseKickoffCreate /></S>} />
@@ -808,6 +832,7 @@ export default function AppRoutes() {
           <Route path="upload" element={<S><UploadSettings /></S>} />
           <Route path="security" element={<S><SecuritySettings /></S>} />
           <Route path="notification-preferences" element={<S><NotificationPreferences /></S>} />
+          <Route path="recycle-bin" element={<S><RecycleBinSettings /></S>} />
           <Route path="statuses" element={<S><StatusManager /></S>} />
         </Route>
       </Route>
@@ -865,8 +890,29 @@ export default function AppRoutes() {
 
         {/* Purchase-side vendor routes (vendor role only) */}
         <Route path="documents"         element={<S><PortalDocuments /></S>} />
+        <Route path="contacts"          element={<S><MyContacts /></S>} />
+        <Route path="overview"          element={<S><MyOverview /></S>} />
+        <Route path="customers"         element={<S><MyCustomers /></S>} />
+        <Route path="kb"                element={<S><MyKb /></S>} />
+        <Route path="projects"          element={<S><MyWork view="projects" /></S>} />
+        <Route path="tasks"             element={<S><MyWork view="tasks" /></S>} />
+        <Route path="tickets"           element={<S><MyWork view="tickets" /></S>} />
+        <Route path="expenses"          element={<S><MyWork view="expenses" /></S>} />
+        <Route path="risk-score"        element={<S><MyPerformance view="risk" /></S>} />
+        <Route path="feedback"          element={<S><MyPerformance view="feedback" /></S>} />
+        <Route path="penalty"           element={<S><MyPerformance view="penalty" /></S>} />
+        <Route path="awards"            element={<S><MyPerformance view="award" /></S>} />
+        <Route path="referrals"         element={<S><MyPerformance view="referral" /></S>} />
+        <Route path="ptw"               element={<S><MyHsse view="ptw" /></S>} />
+        <Route path="incidents"         element={<S><MyHsse view="incidents" /></S>} />
+        <Route path="pre-alert"         element={<S><MyShipments view="pre-alert" /></S>} />
+        <Route path="packages"          element={<S><MyShipments view="packages" /></S>} />
+        <Route path="shipping"          element={<S><MyShipments view="shipping" /></S>} />
         <Route path="orders/:id"        element={<S><PortalOrderDetail /></S>} />
         <Route path="invoices/:id"      element={<S><PortalInvoiceDetail /></S>} />
+
+        {/* Roadmap sections not yet built — the full nav tree stays navigable. */}
+        <Route path="s/:key"            element={<S><PortalComingSoon /></S>} />
       </Route>
 
       {/* Purchase Vendor Portal — auth (public, independent PurchaseVendor login) */}
@@ -922,6 +968,38 @@ export default function AppRoutes() {
         <Route path="ppe"        element={<S><PurchasePortalPpe /></S>} />
         <Route path="profile"    element={<S><PurchasePortalProfile /></S>} />
         <Route path="support"    element={<S><PurchasePortalSupport /></S>} />
+
+        {/* Commercial (read-only) — one component, driven by the view prop. */}
+        <Route path="orders"      element={<S><PurchasePortalCommercial view="orders" /></S>} />
+        <Route path="quotations"  element={<S><PurchasePortalCommercial view="quotations" /></S>} />
+        <Route path="contracts"   element={<S><PurchasePortalCommercial view="contracts" /></S>} />
+        <Route path="invoices"    element={<S><PurchasePortalCommercial view="invoices" /></S>} />
+        <Route path="debit-notes" element={<S><PurchasePortalCommercial view="debit-notes" /></S>} />
+        <Route path="statement"   element={<S><PurchasePortalCommercial view="statement" /></S>} />
+        <Route path="payments"    element={<S><PurchasePortalCommercial view="payments" /></S>} />
+        <Route path="contacts"    element={<S><PurchaseMyContacts /></S>} />
+        <Route path="kb"          element={<S><PurchaseMyKb /></S>} />
+        <Route path="overview"    element={<S><PurchasePortalOverview /></S>} />
+
+        {/* Parity with the TPV portal — same shared pages, Purchase api client. */}
+        <Route path="customers"   element={<S><MyCustomers api={PP_API} /></S>} />
+        <Route path="projects"    element={<S><MyWork view="projects" api={PP_API} caps={{ ticketWrite: false }} /></S>} />
+        <Route path="tasks"       element={<S><MyWork view="tasks" api={PP_API} /></S>} />
+        <Route path="tickets"     element={<S><MyWork view="tickets" api={PP_API} caps={{ ticketWrite: false }} /></S>} />
+        <Route path="expenses"    element={<S><MyWork view="expenses" api={PP_API} /></S>} />
+        <Route path="feedback"    element={<S><MyPerformance view="feedback" api={PP_API} /></S>} />
+        <Route path="penalty"     element={<S><MyPerformance view="penalty" api={PP_API} /></S>} />
+        <Route path="awards"      element={<S><MyPerformance view="award" api={PP_API} /></S>} />
+        <Route path="referrals"   element={<S><MyPerformance view="referral" api={PP_API} /></S>} />
+        <Route path="pre-alert"   element={<S><MyShipments view="pre-alert" api={PP_API} /></S>} />
+        <Route path="packages"    element={<S><MyShipments view="packages" api={PP_API} /></S>} />
+        <Route path="shipping"    element={<S><MyShipments view="shipping" api={PP_API} /></S>} />
+        <Route path="risk-score"  element={<S><MyPerformance view="risk" api={PP_API} /></S>} />
+        <Route path="ptw"         element={<S><MyHsse view="ptw" api={PP_API} /></S>} />
+        <Route path="incidents"   element={<S><MyHsse view="incidents" api={PP_API} /></S>} />
+
+        {/* Roadmap sections not yet built — the full nav tree stays navigable. */}
+        <Route path="s/:key"     element={<S><PortalComingSoon /></S>} />
       </Route>
 
       {/* External Company Portal — company accounts only. Sprint 1: Dashboard live;

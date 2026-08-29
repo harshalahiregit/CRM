@@ -15,6 +15,9 @@ export const purchasePortalApi = {
 
   me: () => api.get('/portal/purchase/me').then(r => r.data),
 
+  // Rich dashboard payload (vendor, onboarding %, pending items, commercial counts).
+  dashboard: () => api.get('/portal/purchase/dashboard').then(r => r.data),
+
   // Self-service profile + commercial fields (business fields only; never
   // code/category/status/auth). Maps to PUT /portal/purchase/profile.
   updateProfile: (payload) => api.put('/portal/purchase/profile', payload).then(r => r.data),
@@ -140,6 +143,66 @@ export const purchasePortalApi = {
     accept: () => api.post('/portal/purchase/kickoff/accept').then(r => r.data),
   },
 
+  // ── Commercial — own vendor only, read-only lists + detail (with items) ──
+  // The vendor sees the documents raised against them: orders, quotations,
+  // contracts, invoices, debit notes, payments, and a running statement.
+  commercial: {
+    orders:      ()   => api.get('/portal/purchase/orders').then(r => r.data),
+    order:       (id) => api.get(`/portal/purchase/orders/${id}`).then(r => r.data),
+    quotations:  ()   => api.get('/portal/purchase/quotations').then(r => r.data),
+    quotation:   (id) => api.get(`/portal/purchase/quotations/${id}`).then(r => r.data),
+    contracts:   ()   => api.get('/portal/purchase/contracts').then(r => r.data),
+    contract:    (id) => api.get(`/portal/purchase/contracts/${id}`).then(r => r.data),
+    invoices:    ()   => api.get('/portal/purchase/invoices').then(r => r.data),
+    invoice:     (id) => api.get(`/portal/purchase/invoices/${id}`).then(r => r.data),
+    debitNotes:  ()   => api.get('/portal/purchase/debit-notes').then(r => r.data),
+    debitNote:   (id) => api.get(`/portal/purchase/debit-notes/${id}`).then(r => r.data),
+    payments:    ()   => api.get('/portal/purchase/payments').then(r => r.data),
+    statement:   ()   => api.get('/portal/purchase/statement').then(r => r.data),
+    // RFQs the vendor was invited to, + submitting a quotation against one.
+    rfqs:        ()          => api.get('/portal/purchase/rfqs').then(r => r.data),
+    rfq:         (id)        => api.get(`/portal/purchase/rfqs/${id}`).then(r => r.data),
+    submitQuote: (id, body)  => api.post(`/portal/purchase/rfqs/${id}/quotation`, body).then(r => r.data),
+  },
+
+  // ── Parity with the TPV portal (General/Execution/Performance/Compliance) ──
+  customers: () => api.get('/portal/purchase/customers').then(r => r.data?.data ?? r.data),
+  myWork: {
+    projects:         () => api.get('/portal/purchase/projects').then(r => r.data?.data ?? r.data),
+    tasks:            () => api.get('/portal/purchase/work-tasks').then(r => r.data?.data ?? r.data),
+    taskStatuses:     () => api.get('/portal/purchase/task-statuses').then(r => r.data?.data ?? r.data),
+    updateTaskStatus: (id, status) => api.patch(`/portal/purchase/tasks/${id}/status`, { status }).then(r => r.data?.data ?? r.data),
+    tickets:          () => api.get('/portal/purchase/work-tickets').then(r => r.data?.data ?? r.data),
+    expenses:         () => api.get('/portal/purchase/expenses').then(r => r.data?.data ?? r.data),
+    logExpense:       (body) => api.post('/portal/purchase/expenses', body).then(r => r.data),
+  },
+  performance: {
+    risk:           () => api.get('/portal/purchase/risk').then(r => r.data),
+    feedback:       () => api.get('/portal/purchase/feedback').then(r => r.data),
+    violations:     () => api.get('/portal/purchase/violations').then(r => r.data),
+    awards:         () => api.get('/portal/purchase/awards').then(r => r.data),
+    referrals:      () => api.get('/portal/purchase/referrals').then(r => r.data),
+    submitReferral: (body) => api.post('/portal/purchase/referrals', body).then(r => r.data),
+  },
+  hsse: {
+    permits:        () => api.get('/portal/purchase/permits').then(r => r.data),
+    requestPermit:  (body) => api.post('/portal/purchase/permits', body).then(r => r.data),
+    incidents:      () => api.get('/portal/purchase/incidents').then(r => r.data),
+    reportIncident: (body) => api.post('/portal/purchase/incidents', body).then(r => r.data),
+  },
+  logistics: {
+    shipments:      () => api.get('/portal/purchase/shipments').then(r => r.data),
+    createShipment: (body) => api.post('/portal/purchase/shipments', body).then(r => r.data),
+    updateStatus:   (id, status) => api.patch(`/portal/purchase/shipments/${id}/status`, { status }).then(r => r.data),
+    packages:       () => api.get('/portal/purchase/shipment-packages').then(r => r.data),
+  },
+
+  // ── Knowledge Base (tenant-published, read-only) — parity with TPV portal ──
+  kb: {
+    list:    ()     => api.get('/portal/purchase/kb').then(r => r.data?.data ?? r.data),
+    article: (slug) => api.get(`/portal/purchase/kb/${slug}`).then(r => r.data?.data ?? r.data),
+  },
+
   // §32 "View compliance" — the vendor's own compliance register (read-only).
   compliance: {
     get: () => api.get('/portal/purchase/compliance').then(r => r.data),
@@ -154,8 +217,10 @@ export const purchasePortalApi = {
     requestApproval: (payload)     => api.post('/portal/purchase/approvals/request', payload).then(r => r.data),
     requestExtension:(payload)     => api.post('/portal/purchase/extensions/request', payload).then(r => r.data),
     meetings:        ()            => api.get('/portal/purchase/meetings').then(r => r.data),
+    meetingMom:      (id)          => api.get(`/portal/purchase/meetings/${id}/mom`).then(r => r.data),
     actions:         ()            => api.get('/portal/purchase/actions').then(r => r.data),
     respondAction:   (id, payload) => api.post(`/portal/purchase/actions/${id}/respond`, payload).then(r => r.data),
+    uploadCertificate: (workerId, fd) => upload(`/portal/purchase/workers/${workerId}/certificates`, fd),
   },
 }
 

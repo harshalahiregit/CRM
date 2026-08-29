@@ -95,6 +95,7 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
   const embedded = Boolean(onClose)
   const navigate = useNavigate()
   const { user } = useAuth()
+  const [showAmount, setShowAmount] = useState(false)   // PR1 — reveal masked billable amount
   const qc = useQueryClient()
 
   const invalidate = () => {
@@ -673,6 +674,22 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
                     {task.billable ? (task.billed ? 'Billed' : 'Billable (Not billed)') : 'Non-billable'}
                   </span>
                 </InfoRow>
+                {/* PR1 — the effective billable amount (fixed if set, else rate × hours).
+                    Only admins receive this field; it stays masked until revealed. */}
+                {task.billable_amount_effective != null && (
+                  <InfoRow label="Billable Amount">
+                    <span className="inline-flex items-center gap-2">
+                      <span className="tabular-nums" style={{ color: 'var(--text-body)' }}>
+                        {showAmount ? `₹${Number(task.billable_amount_effective).toLocaleString('en-IN')}` : '••••••'}
+                      </span>
+                      <button onClick={() => setShowAmount(v => !v)}
+                        className="text-[10px] font-bold px-1.5 py-0.5 rounded-md"
+                        style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+                        {showAmount ? 'Hide' : 'Show'}
+                      </button>
+                    </span>
+                  </InfoRow>
+                )}
                 {(time?.my_seconds != null || time?.user_seconds != null) && (
                   <InfoRow label="Your logged time">
                     <span className="tabular-nums" style={{ color: 'var(--text-body)' }}>{fmtDuration(time?.my_seconds ?? time?.user_seconds)}</span>

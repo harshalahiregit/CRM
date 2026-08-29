@@ -186,6 +186,14 @@ export const purchaseApi = {
     payments:  (id) => api.get(`/purchase/vendors/${id}/payments`).then(r => r.data),
     statement: (id) => api.get(`/purchase/vendors/${id}/statement`).then(r => r.data),
 
+    // Prequalification (scored questionnaire) + Due-Diligence checklist — the
+    // Purchase-side mirror of tpvApi.vendors.prequalification / due-diligence.
+    // GET is admin+staff; the write is admin-only server-side.
+    prequalification:       (id)       => api.get(`/purchase/vendors/${id}/prequalification`).then(r => r.data),
+    assessPrequalification: (id, data) => api.put(`/purchase/vendors/${id}/prequalification`, data).then(r => r.data),
+    dueDiligence:           (id)       => api.get(`/purchase/vendors/${id}/due-diligence`).then(r => r.data),
+    saveDueDiligence:       (id, data) => api.put(`/purchase/vendors/${id}/due-diligence`, data).then(r => r.data),
+
     // Notes / reminders / attachments ride the SHARED polymorphic engines,
     // addressed by model class — one table each, not a Purchase copy.
     notes: {
@@ -397,6 +405,18 @@ export const purchaseApi = {
     trainings: (vendorId) => api.get('/purchase/workforce/trainings', { params: { vendor_id: vendorId } }).then(r => r.data),
   },
 
+  // ── Workforce Competency & Skill Matrix (mirror of TPV §15) ─────────────
+  // "No Competency, No Work" — records of what a worker holds; the badge gate
+  // matches these against the tenant Settings requirement.
+  competency: {
+    roster:           (params = {})     => api.get('/purchase/workforce/competency', { params }).then(r => r.data),
+    worker:           (workerId)        => api.get(`/purchase/workforce/workers/${workerId}/competency`).then(r => r.data),
+    addCompetency:    (workerId, data)  => api.post(`/purchase/workforce/workers/${workerId}/competencies`, data).then(r => r.data),
+    updateCompetency: (id, data)        => api.put(`/purchase/workforce/competencies/${id}`, data).then(r => r.data),
+    deleteCompetency: (id)              => api.delete(`/purchase/workforce/competencies/${id}`).then(r => r.data),
+    skillMatrix:      (vendorId)        => api.get(`/purchase/workforce/vendors/${vendorId}/skill-matrix`).then(r => r.data),
+  },
+
   // ── Compliance register (mirror of TPV §21 — purchase_vendor_compliance) ─
   vendorCompliance: {
     roster: ()                  => api.get('/purchase/vendor-compliance').then(r => r.data),
@@ -421,6 +441,18 @@ export const purchaseApi = {
     update:     (id, data)    => api.put(`/purchase/capas/${id}`, data).then(r => r.data),
     transition: (id, data)    => api.post(`/purchase/capas/${id}/transition`, data).then(r => r.data),
     delete:     (id)          => api.delete(`/purchase/capas/${id}`).then(r => r.data),
+  },
+
+  // ── HSSE incidents → RCA → CAPA (mirror of TPV Doc_4 Phase 5). Serious/Fatal or
+  // stop-work incidents auto-suspend the vendor; close requires RCA + all CAPAs verified. ──
+  incidents: {
+    list:       (params = {}) => api.get('/purchase/incidents', { params }).then(r => r.data?.data ?? r.data),
+    get:        (id)          => api.get(`/purchase/incidents/${id}`).then(r => r.data),
+    create:     (data)        => api.post('/purchase/incidents', data).then(r => r.data),
+    recordRca:  (id, data)    => api.post(`/purchase/incidents/${id}/rca`, data).then(r => r.data),
+    close:      (id)          => api.post(`/purchase/incidents/${id}/close`).then(r => r.data),
+    addCapa:    (id, data)    => api.post(`/purchase/incidents/${id}/capas`, data).then(r => r.data),
+    updateCapa: (id, capaId, data) => api.patch(`/purchase/incidents/${id}/capas/${capaId}`, data).then(r => r.data),
   },
 
   // ── Governance analytics (mirror of TPV §33 — distinct from procurement reports) ─

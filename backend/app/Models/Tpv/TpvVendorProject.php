@@ -23,11 +23,20 @@ class TpvVendorProject extends Model
     protected $fillable = [
         'tenant_id', 'vendor_id', 'project', 'site', 'role',
         'start_date', 'end_date', 'status', 'notes',
+        // Shed requirement (the business builds industrial sheds).
+        'shed_site_location', 'shed_length', 'shed_width', 'shed_height', 'shed_purpose',
+        'shed_side_wall', 'shed_flooring', 'shed_gate_shutter_size', 'shed_footing_done', 'shed_office_toilet',
     ];
 
     protected $casts = [
-        'start_date' => 'date',
-        'end_date'   => 'date',
+        'start_date'         => 'date',
+        'end_date'           => 'date',
+        'shed_length'        => 'decimal:2',
+        'shed_width'         => 'decimal:2',
+        'shed_side_wall'     => 'boolean',
+        'shed_flooring'      => 'boolean',
+        'shed_footing_done'  => 'boolean',
+        'shed_office_toilet' => 'boolean',
     ];
 
     public function vendor()

@@ -29,6 +29,10 @@ import { Overlay, ModalFooter, Field, TextInput, inputStyle } from '@/components
 import PurchaseVendorForm, { validatePurchaseVendor } from '@/modules/purchase/components/PurchaseVendorForm'
 import PurchaseVendorDocumentsReadOnly from '@/modules/purchase/components/PurchaseVendorDocumentsReadOnly'
 import PurchaseVendorContacts from '@/modules/purchase/components/PurchaseVendorContacts'
+// Purchase-owned Prequalification + Due-Diligence panels (mirror the TPV ones).
+// Both hit only /api/purchase/vendors/* — no TPV table or endpoint is touched.
+import PurchasePrequalificationPanel from '@/modules/purchase/components/PurchasePrequalificationPanel'
+import PurchaseDueDiligencePanel from '@/modules/purchase/components/PurchaseDueDiligencePanel'
 // The customers panel is SHARED with the TPV workspace (same reasoning as Notes /
 // Reminders / Attachments): it takes the full `api` object and reads
 // api.vendors.customers, so passing purchaseApi points it at the Purchase link
@@ -207,6 +211,27 @@ export function ProfileTab() {
 export function ContactsTab() {
   const { vendor } = useVendorWorkspace()
   return <PurchaseVendorContacts vendorId={vendor.id} />
+}
+
+/**
+ * Prequalification — a Purchase-native scored questionnaire → Qualified /
+ * Conditional / Not Qualified, the mirror of the TPV VendorPrequalificationPanel.
+ * `manage` is on: this is the admin/staff surface; the write is admin-gated
+ * server-side, so staff see the form but the PUT refuses them.
+ */
+function PrequalificationTab() {
+  const { vendor } = useVendorWorkspace()
+  return <PurchasePrequalificationPanel vendorId={vendor.id} manage />
+}
+
+/**
+ * Due Diligence — the Purchase-native verification checklist (company / document
+ * / licence / insurance verification, background & reference checks, prior
+ * performance / incident / compliance history) rolling up to Cleared / Rejected.
+ */
+function DueDiligenceTab() {
+  const { vendor } = useVendorWorkspace()
+  return <PurchaseDueDiligencePanel vendorId={vendor.id} manage />
 }
 
 /**
@@ -1139,6 +1164,9 @@ export const TAB_ELEMENTS = {
   medical: <MedicalTab />,
   training: <TrainingTab />,
   onboarding: <OnboardingTab />,
+  // Compliance — Purchase-native prequalification + due-diligence (mirror TPV)
+  prequalification: <PrequalificationTab />,
+  'due-diligence': <DueDiligenceTab />,
   // Commercial — all native to purchase_vendor_id
   quotations: <QuotationsTab />,
   contracts: <ContractsTab />,

@@ -232,6 +232,21 @@ class VendorService
         }
 
         $from = $vendor->status;
+
+        // Rule 1 — "No Approval, No Activation." A vendor may only be activated once
+        // its onboarding has actually been approved. This closes the
+        // PATCH /vendors/{id}/status bypass that flipped a vendor Active with no
+        // approval check. The sanctioned path (TpvOnboardingService::approve) sets the
+        // onboarding Approved *before* it calls this, so it passes; a raw status flip
+        // on an unapproved vendor is refused. Read the status fresh so the just-set
+        // Approved value is seen rather than a stale loaded relation.
+        if ($status === Status::ACTIVE && $from !== Status::ACTIVE) {
+            $obStatus = $vendor->tpvOnboarding()->value('status');
+            if ($obStatus !== \App\Support\Tpv\TpvOnboardingStatus::APPROVED) {
+                throw new BusinessException('Vendor cannot be activated until its onboarding is approved — "No Approval, No Activation".');
+            }
+        }
+
         $vendor->update(['status' => $status]);
 
         // Mirror the toggle onto the portal login so an Inactive vendor is locked

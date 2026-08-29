@@ -26,7 +26,14 @@ export const portalApi = {
     summary:  () => api.get('/portal/my-work/summary').then(r => r.data?.data ?? r.data),
     projects: () => api.get('/portal/my-work/projects').then(r => r.data?.data ?? r.data),
     tasks:    () => api.get('/portal/my-work/tasks').then(r => r.data?.data ?? r.data),
+    taskStatuses:    () => api.get('/portal/my-work/task-statuses').then(r => r.data?.data ?? r.data),
+    updateTaskStatus:(id, status) => api.patch(`/portal/my-work/tasks/${id}/status`, { status }).then(r => r.data?.data ?? r.data),
     tickets:  () => api.get('/portal/my-work/tickets').then(r => r.data?.data ?? r.data),
+    raiseTicket:  (body) => api.post('/portal/my-work/tickets', body).then(r => r.data),
+    ticket:       (id) => api.get(`/portal/my-work/tickets/${id}`).then(r => r.data),
+    replyTicket:  (id, message) => api.post(`/portal/my-work/tickets/${id}/reply`, { message }).then(r => r.data),
+    expenses:     () => api.get('/portal/my-work/expenses').then(r => r.data?.data ?? r.data),
+    logExpense:   (body) => api.post('/portal/my-work/expenses', body).then(r => r.data),
     kb:       () => api.get('/portal/my-work/kb').then(r => r.data?.data ?? r.data),
     kbArticle: (slug) => api.get(`/portal/my-work/kb/${slug}`).then(r => r.data?.data ?? r.data),
   },
@@ -103,6 +110,12 @@ export const portalApi = {
     setStatus: (_vendorId, id, status)=> api.patch(`/portal/contacts/${id}/status`, { status }).then(r => r.data),
   },
 
+  // Read-only: the vendor's own work packages (for the worker-wizard deploy
+  // field). Mirrors tpvApi.workPackages.list; vendor_id forced server-side.
+  workPackages: {
+    list: (params = {}) => api.get('/portal/work-packages', { params }).then(r => r.data?.data ?? r.data),
+  },
+
   // ── Workers — mirrors tpvApi.workers shape ──────────────────────────────
   // vendor_id in params is silently overridden server-side.
   workers: {
@@ -124,9 +137,11 @@ export const portalApi = {
       if (vendor_id) fd.append('vendor_id', vendor_id)
       return upload('/tpv/workers/upload', fd)
     },
+    // Read-only: the vendor VIEWS the admin-issued badge and, until it is issued,
+    // sees exactly what is still blocking it. Issuing itself stays admin-only.
+    badge:     (id) => api.get(`/portal/workers/${id}/badge`).then(r => r.data),
     // Admin-only
     activate:  () => Promise.reject(new Error('Requires admin approval')),
-    badge:     () => Promise.reject(new Error('Requires admin approval')),
     suspend:   () => Promise.reject(new Error('Admin only')),
     reinstate: () => Promise.reject(new Error('Admin only')),
     terminate: () => Promise.reject(new Error('Admin only')),
@@ -197,6 +212,35 @@ export const portalApi = {
     get: () => api.get('/portal/compliance').then(r => r.data),
   },
 
+  // General › Customer — the customers linked to this vendor (read-only).
+  customers: () => api.get('/portal/customers').then(r => r.data?.data ?? r.data),
+
+  // Compliance & HSSE — the vendor requests permits + reports incidents.
+  hsse: {
+    permits:        () => api.get('/portal/permits').then(r => r.data),
+    requestPermit:  (body) => api.post('/portal/permits', body).then(r => r.data),
+    incidents:      () => api.get('/portal/incidents').then(r => r.data),
+    reportIncident: (body) => api.post('/portal/incidents', body).then(r => r.data),
+  },
+
+  // Pre Alert / Packages / Shipping — the vendor's dispatch notices.
+  logistics: {
+    shipments:      () => api.get('/portal/shipments').then(r => r.data),
+    createShipment: (body) => api.post('/portal/shipments', body).then(r => r.data),
+    updateStatus:   (id, status) => api.patch(`/portal/shipments/${id}/status`, { status }).then(r => r.data),
+    packages:       () => api.get('/portal/shipment-packages').then(r => r.data),
+  },
+
+  // Performance — the vendor's own risk score, rating, penalties, awards, referrals.
+  performance: {
+    risk:           () => api.get('/portal/risk').then(r => r.data),
+    feedback:       () => api.get('/portal/feedback').then(r => r.data),
+    violations:     () => api.get('/portal/violations').then(r => r.data),
+    awards:         () => api.get('/portal/awards').then(r => r.data),
+    referrals:      () => api.get('/portal/referrals').then(r => r.data),
+    submitReferral: (body) => api.post('/portal/referrals', body).then(r => r.data),
+  },
+
   // §32 Governance-response half.
   governance: {
     ncrs:            ()            => api.get('/portal/ncrs').then(r => r.data),
@@ -206,9 +250,11 @@ export const portalApi = {
     requestApproval: (payload)     => api.post('/portal/approvals/request', payload).then(r => r.data),
     requestExtension:(payload)     => api.post('/portal/extensions/request', payload).then(r => r.data),
     meetings:        ()            => api.get('/portal/meetings').then(r => r.data),
+    meetingMom:      (id)          => api.get(`/portal/meetings/${id}/mom`).then(r => r.data),
     actions:         ()            => api.get('/portal/actions').then(r => r.data),
     respondAction:   (id, payload) => api.post(`/portal/actions/${id}/respond`, payload).then(r => r.data),
     ppeMatrix:       ()            => api.get('/portal/ppe-matrix').then(r => r.data),
+    uploadCertificate: (workerId, fd) => upload(`/portal/workers/${workerId}/certificates`, fd),
   },
 
 }

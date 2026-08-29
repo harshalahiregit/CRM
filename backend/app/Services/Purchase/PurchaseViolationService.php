@@ -56,8 +56,50 @@ class PurchaseViolationService
 
         $this->autoRaiseCapa($v);
         $this->comms->onViolationRecorded($v);
+        $this->autoEscalate($v, $userId);   // Rule 9 — repeated violations escalate automatically.
 
         return $v->load('vendor:id,company_name,purchase_vendor_code,status');
+    }
+
+    /**
+     * Rule 9 — Repeated Violations Escalate (parity with TpvViolationService). After
+     * a violation is recorded, if the vendor's cumulative OPEN points cross a ladder
+     * threshold, apply the escalation automatically (On_Hold / Blacklist) instead of
+     * waiting for a manual enforce(). Best-effort: a failure never rolls back the
+     * recorded violation, and a state the vendor is already in is never re-applied.
+     */
+    private function autoEscalate(PurchaseVendorViolation $v, ?int $userId): void
+    {
+        try {
+            $vendor = $v->vendor;
+            if (! $vendor) {
+                return;
+            }
+            $esc = $this->escalationFor((int) $v->tenant_id, (int) $v->purchase_vendor_id);
+            $actor = $userId ? User::find($userId) : null;
+            if (! $actor) {
+                return;
+            }
+            $reason = "Auto-escalated (Rule 9): {$esc['open_count']} open violations / {$esc['open_points']} points → {$esc['level_label']} — triggered by {$v->reference}.";
+
+            if ($esc['level'] === 'Blacklist' && $vendor->status !== PurchaseVendorStatus::BLACKLISTED) {
+                $this->vendors->updateStatus($vendor, PurchaseVendorStatus::BLACKLISTED, $actor, $reason);
+            } elseif ($esc['level'] === 'Suspension'
+                && ! in_array($vendor->status, [PurchaseVendorStatus::ON_HOLD, PurchaseVendorStatus::BLACKLISTED], true)) {
+                $this->vendors->updateStatus($vendor, PurchaseVendorStatus::ON_HOLD, $actor, $reason);
+            } else {
+                return;
+            }
+
+            Log::channel('purchase')->warning('Purchase vendor auto-escalated', [
+                'vendor_id' => $vendor->id, 'tenant_id' => $v->tenant_id, 'level' => $esc['level'],
+                'points' => $esc['open_points'], 'trigger' => $v->reference,
+            ]);
+        } catch (\Throwable $e) {
+            Log::channel('purchase')->warning('Purchase auto-escalation failed', [
+                'violation_id' => $v->id, 'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

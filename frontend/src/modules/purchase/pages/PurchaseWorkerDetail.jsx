@@ -160,7 +160,9 @@ export default function PurchaseWorkerDetail({ workerId, onBack }) {
             rows={w.medicals || []}
             cols={[
               ['Exam date', m => m.exam_date],
-              ['Result', m => m.fitness_status],
+              ['Result', m => m.fitness_label || m.fitness_status],
+              ['Restrictions', m => m.restrictions || '—'],
+              ['Examiner', m => m.examiner_name || '—'],
               ['Expires', m => m.expiry_date || '—'],
               ['Remarks', m => m.remarks || '—'],
             ]}
@@ -175,9 +177,11 @@ export default function PurchaseWorkerDetail({ workerId, onBack }) {
           <RecordTable
             rows={w.trainings || []}
             cols={[
-              ['Title', t => t.title],
+              ['Type', t => (t.training_type ? t.training_type.replace(/_/g, ' ') : '—')],
+              ['Title', t => t.title || '—'],
               ['Date', t => t.training_date || '—'],
-              ['Status', t => t.status],
+              ['Valid until', t => t.valid_until || t.expiry_date || '—'],
+              ['Status', t => t.derived_status || t.status],
               ['Score', t => t.score ?? '—'],
             ]}
             empty="No training recorded."

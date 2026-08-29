@@ -13,7 +13,9 @@ import {
   actStatusCfg, actNextStatuses, issueStatusCfg, issueNextStatuses, ISSUE_TO_INCIDENT_SEVERITY,
   MOM_STATUS_CONFIG, momStatusCfg, MOM_STAGES,
 } from '../kickoffConstants'
-import { KIT3D_STYLE, Overlay, ModalFooter, Field, TextInput, SelectInput } from '@/components/ui/kit3d'
+import { KIT3D_STYLE, Overlay, ModalFooter, Field, TextInput } from '@/components/ui/kit3d'
+// Searchable dropdowns (same as Tickets), keeping the kit3d SelectInput API.
+import SelectInput from '@/components/ui/SearchableSelectInput'
 
 /**
  * Kickoff meeting detail — schedule, attendee registry, status transitions,
@@ -1142,6 +1144,8 @@ function TransitionModal({ m, to, onClose, onDone }) {
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState(null)
   const tc = koStatusCfg(to)
+  // A meeting can't be (re)scheduled in the past — native picker floor, local now.
+  const minDateTime = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)
 
   const save = async () => {
     setSaving(true); setErr(null)
@@ -1171,13 +1175,13 @@ function TransitionModal({ m, to, onClose, onDone }) {
               <TextInput value={form.delay_reason} onChange={e => setForm(f => ({ ...f, delay_reason: e.target.value }))} placeholder="Vendor representative travelling" />
             </Field>
             <Field label="New date & time (optional)" full>
-              <TextInput type="datetime-local" value={form.scheduled_at} onChange={e => setForm(f => ({ ...f, scheduled_at: e.target.value }))} />
+              <TextInput type="datetime-local" min={minDateTime} value={form.scheduled_at} onChange={e => setForm(f => ({ ...f, scheduled_at: e.target.value }))} />
             </Field>
           </>
         )}
         {to === KO_STATUS.SCHEDULED && (
           <Field label="New date & time" full>
-            <TextInput type="datetime-local" value={form.scheduled_at} onChange={e => setForm(f => ({ ...f, scheduled_at: e.target.value }))} />
+            <TextInput type="datetime-local" min={minDateTime} value={form.scheduled_at} onChange={e => setForm(f => ({ ...f, scheduled_at: e.target.value }))} />
           </Field>
         )}
         {to === KO_STATUS.COMPLETED && (

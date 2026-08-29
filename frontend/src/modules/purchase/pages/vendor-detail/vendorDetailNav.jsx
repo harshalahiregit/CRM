@@ -4,6 +4,7 @@ import {
   FolderKanban, ListChecks, Coins, CalendarClock, Video, CheckSquare, StickyNote,
   Paperclip, LifeBuoy, BookOpen, Lock, BellRing,
   Gauge, Trophy, Gavel, MessageSquare, Share2,
+  ClipboardCheck, ShieldCheck,
 } from 'lucide-react'
 
 /**
@@ -19,10 +20,11 @@ import {
  * NavLinks onto a Coming-Soon placeholder. It is gone: TAB_ELEMENTS is the
  * single source of truth and cannot disagree with itself.
  *
- * 21 of the 29 below are built. The other 8 (todo, kb, vault, risk-score,
- * award, penalty, feedback, referral) have no backing table anywhere in the
- * schema — they are unbuilt features rather than gaps in the wiring, and they
- * stay listed here so the intended shape of the workspace is still recorded.
+ * 23 of the 31 below are built (incl. the Compliance group's Prequalification
+ * and Due Diligence). The other 8 (todo, kb, vault, risk-score, award, penalty,
+ * feedback, referral) have no backing table anywhere in the schema — they are
+ * unbuilt features rather than gaps in the wiring, and they stay listed here so
+ * the intended shape of the workspace is still recorded.
  */
 export const VENDOR_NAV_GROUPS = [
   {
@@ -68,6 +70,16 @@ export const VENDOR_NAV_GROUPS = [
       // client_vault_entries is Customer-owned; there is no vendor vault.
       { key: 'vault',       label: 'Vault',       icon: Lock },
       { key: 'reminders',   label: 'Reminders',   icon: BellRing },
+    ],
+  },
+  {
+    // Compliance — Purchase-native prequalification (scored questionnaire) and
+    // the due-diligence verification checklist, the mirror of the TPV workspace's
+    // Compliance group. Both are backed by their own Purchase tables/columns.
+    title: 'Compliance',
+    items: [
+      { key: 'prequalification', label: 'Prequalification', icon: ClipboardCheck },
+      { key: 'due-diligence',    label: 'Due Diligence',    icon: ShieldCheck },
     ],
   },
   {

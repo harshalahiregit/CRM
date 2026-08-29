@@ -154,6 +154,12 @@ function InitiateModal({ vendors, onClose, onSaved }) {
               <Stat label="Active strikes" value={assessment.active_strikes ?? 0} />
               <Stat label="Violation level" value={fmt(assessment.violation_level)} />
               <Stat label="Status" value={fmt(assessment.vendor_status)} />
+              {/* §28 dimensions — contract / commercial / workforce / client feedback */}
+              <Stat label="Active contracts" value={assessment.contract ? `${assessment.contract.active}/${assessment.contract.total}` : '—'} />
+              <Stat label="Contracts expiring 30d" value={assessment.contract?.expiring_30d ?? '—'} />
+              <Stat label="Committed value" value={assessment.commercial?.active_contract_value != null ? `₹${Number(assessment.commercial.active_contract_value).toLocaleString('en-IN')}` : '—'} />
+              <Stat label="Workforce (active)" value={assessment.workforce ? `${assessment.workforce.active_workers}/${assessment.workforce.total_workers}` : '—'} />
+              <Stat label="Client feedback (VRS)" value={assessment.client_feedback?.vrs_band ? `Band ${assessment.client_feedback.vrs_band}` : '—'} />
             </div>
           </div>
         )}

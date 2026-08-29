@@ -6,8 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Http\Controllers\Traits\ApiResponse;
 use App\Models\Helpdesk\Ticket;
 use App\Models\Project\Project;
+use App\Models\Project\ProjectExpense;
 use App\Models\Task\Task;
+use App\Services\StatusService;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 /**
  * A vendor / third-party-vendor's own work: the projects raised for them, the
@@ -136,8 +139,9 @@ class VendorWorkController extends Controller
     {
         $user = $request->user();
 
+        // Tickets assigned to the vendor OR raised by the vendor from the portal.
         $rows = Ticket::forTenant($user->tenant_id)
-            ->where('assigned_to', $user->id)
+            ->where(fn ($q) => $q->where('assigned_to', $user->id)->orWhere('created_by', $user->id))
             ->orderByDesc('id')
             ->get(['id', 'subject', 'status', 'priority', 'created_at'])
             ->map(fn (Ticket $t) => [
@@ -148,5 +152,148 @@ class VendorWorkController extends Controller
             ]);
 
         return $this->success($rows, 'Tickets retrieved');
+    }
+
+    /** The vendor raises a support ticket from the portal (lands in the open queue). */
+    public function raiseTicket(Request $request, \App\Services\Helpdesk\HelpdeskService $helpdesk)
+    {
+        $user = $request->user();
+        $data = $request->validate([
+            'subject'  => 'required|string|max:191',
+            'body'     => 'required|string|max:10000',
+            'priority' => 'nullable|in:low,medium,high',
+        ]);
+
+        $ticket = $helpdesk->createTicket([
+            'subject'         => $data['subject'],
+            'description'     => $data['body'],
+            'created_by'      => $user->id,
+            'requester_name'  => $user->name,
+            'requester_email' => $user->email,
+            'source'          => 'portal',
+            'assigned_to'     => null,
+            'priority'        => $data['priority'] ?? 'medium',
+        ], (int) $user->tenant_id);
+
+        return response()->json(['id' => $ticket->id, 'message' => 'Your ticket has been raised.'], 201);
+    }
+
+    /** One of the vendor's own tickets, with its reply thread. */
+    public function ticket(Request $request, Ticket $ticket)
+    {
+        $this->assertOwnTicket($request, $ticket);
+
+        $replies = $ticket->replies()->orderBy('id')->get(['id', 'sender_type', 'message', 'created_at'])
+            ->map(fn ($r) => [
+                'id'      => $r->id,
+                'mine'    => $r->sender_type === 'client',
+                'author'  => $r->sender_type === 'client' ? 'You' : 'Support',
+                'message' => $r->message,
+                'at'      => optional($r->created_at)->toIso8601String(),
+            ]);
+
+        return response()->json([
+            'id' => $ticket->id, 'subject' => $ticket->subject, 'status' => $ticket->status,
+            'priority' => $ticket->priority, 'description' => $ticket->description,
+            'replies' => $replies,
+        ]);
+    }
+
+    /** The vendor posts a reply on its own ticket. */
+    public function replyTicket(Request $request, Ticket $ticket, \App\Services\Helpdesk\HelpdeskService $helpdesk)
+    {
+        $this->assertOwnTicket($request, $ticket);
+        $data = $request->validate(['message' => 'required|string|max:10000']);
+
+        $helpdesk->addReply($ticket->id, [
+            'sender_type' => 'client',   // external requester (shown as the vendor)
+            'sender_id'   => null,
+            'message'     => $data['message'],
+        ], (int) $request->user()->tenant_id);
+
+        return response()->json(['message' => 'Reply sent'], 201);
+    }
+
+    private function assertOwnTicket(Request $request, Ticket $ticket): void
+    {
+        $uid = (int) $request->user()->id;
+        $owns = (int) $ticket->assigned_to === $uid || (int) $ticket->created_by === $uid;
+        abort_unless($owns && (int) $ticket->tenant_id === (int) $request->user()->tenant_id, 404, 'Ticket not found');
+    }
+
+    /* ── Vendor writes ───────────────────────────────────────────────────── */
+
+    /** The tenant's task-status options (key → label) for the portal's status picker. */
+    public function taskStatuses(Request $request)
+    {
+        return $this->success(app(StatusService::class)->labels('task', (int) $request->user()->tenant_id), 'Statuses retrieved');
+    }
+
+    /** The vendor advances the status of one of its OWN tasks (tenant status set). */
+    public function updateTaskStatus(Request $request, Task $task)
+    {
+        $this->assertOwnTask($request, $task);
+
+        $keys = app(StatusService::class)->keys('task', (int) $request->user()->tenant_id);
+        $data = $request->validate(['status' => ['required', Rule::in($keys)]]);
+
+        $task->update(['status' => $data['status']]);
+
+        return $this->success(['id' => $task->id, 'status' => $task->status], 'Task updated');
+    }
+
+    /** A flat list of expenses logged against the vendor's own projects. */
+    public function expenses(Request $request)
+    {
+        $projectIds = $this->scopeVendorProjects(Project::where('tenant_id', $request->user()->tenant_id), $request)->pluck('id');
+
+        $rows = ProjectExpense::whereIn('project_id', $projectIds)
+            ->latest('expense_date')
+            ->get(['id', 'project_id', 'title', 'category', 'amount', 'expense_date', 'note', 'billable']);
+
+        return $this->success($rows, 'Expenses retrieved');
+    }
+
+    /** The vendor logs an expense against a project it is on (visible to admin). */
+    public function storeExpense(Request $request)
+    {
+        $data = $request->validate([
+            'project_id'   => 'required|integer',
+            'title'        => 'required|string|max:200',
+            'category'     => 'nullable|string|max:100',
+            'amount'       => 'required|numeric|min:0',
+            'expense_date' => 'nullable|date',
+            'note'         => 'nullable|string|max:1000',
+        ]);
+
+        // The project must be one of the caller's own — else 404 (existence-hiding).
+        $ownProjectIds = $this->scopeVendorProjects(Project::where('tenant_id', $request->user()->tenant_id), $request)->pluck('id')->all();
+        abort_unless(in_array((int) $data['project_id'], array_map('intval', $ownProjectIds), true), 404, 'Project not found');
+
+        $expense = ProjectExpense::create([
+            'tenant_id'    => $request->user()->tenant_id,
+            'project_id'   => $data['project_id'],
+            'title'        => $data['title'],
+            'category'     => $data['category'] ?? null,
+            'amount'       => $data['amount'],
+            'expense_date' => $data['expense_date'] ?? now()->toDateString(),
+            'note'         => $data['note'] ?? null,
+            'billable'     => true,
+            'created_by'   => $request->user()->id,
+        ]);
+
+        return response()->json($expense, 201);
+    }
+
+    /** 404 unless the task is the caller's (assignee) or its vendor's (rel link). */
+    private function assertOwnTask(Request $request, Task $task): void
+    {
+        $user = $request->user();
+        $vendorId = $this->ownVendorId($request);
+
+        $owns = $task->assignees()->where('user_id', $user->id)->exists()
+            || ($vendorId && $task->rel_type === 'tpv_vendor' && (int) $task->rel_id === (int) $vendorId);
+
+        abort_unless($owns && (int) $task->tenant_id === (int) $user->tenant_id, 404, 'Task not found');
     }
 }

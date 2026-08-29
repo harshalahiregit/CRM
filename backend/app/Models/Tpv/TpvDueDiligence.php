@@ -23,6 +23,7 @@ class TpvDueDiligence extends Model
     public const CHECKS = [
         'company_verification', 'document_verification', 'licence_verification',
         'insurance_verification', 'background_check', 'reference_check',
+        'previous_performance', 'incident_history', 'compliance_history',
     ];
 
     public const CHECK_STATES = ['Pending', 'Verified', 'Failed', 'Not_Applicable'];
@@ -33,6 +34,7 @@ class TpvDueDiligence extends Model
         'tenant_id', 'vendor_id',
         'company_verification', 'document_verification', 'licence_verification',
         'insurance_verification', 'background_check', 'reference_check',
+        'previous_performance', 'incident_history', 'compliance_history',
         'findings', 'notes', 'status', 'verified_by', 'verified_at',
     ];
 

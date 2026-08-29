@@ -26,16 +26,33 @@ class TpvApproval extends Model
 
     protected $fillable = [
         'tenant_id', 'reference', 'approval_type', 'subject_type', 'subject_id', 'vendor_id',
-        'title', 'description', 'priority', 'status', 'requested_by', 'decided_by',
-        'decided_at', 'decision_remarks', 'meta',
+        'title', 'description', 'priority', 'status', 'route', 'route_index', 'requested_by',
+        'decided_by', 'decided_at', 'decision_remarks', 'meta',
     ];
 
     protected $casts = [
         'decided_at' => 'datetime',
         'meta' => 'array',
+        'route' => 'array',
+        'route_index' => 'integer',
     ];
 
-    protected $appends = ['type_label'];
+    protected $appends = ['type_label', 'current_level'];
+
+    /**
+     * §12 — the approver level currently awaiting sign-off, or null when the route
+     * is exhausted / the approval is already decided. Drives the register's "waiting
+     * on" display and the multi-level stepping in TpvApprovalService::decide().
+     */
+    public function getCurrentLevelAttribute(): ?string
+    {
+        $route = $this->route ?? [];
+        if ($this->status !== 'Pending' || $route === []) {
+            return null;
+        }
+
+        return $route[$this->route_index] ?? null;
+    }
 
     protected static function booted(): void
     {

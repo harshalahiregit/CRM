@@ -234,6 +234,9 @@ class TaskService
         // for the same work.
         $task->setAttribute('progress', $this->tree->progressForTask($task, $tenantId));
         $task->setAttribute('ancestry', $this->tree->ancestryOf($task, $tenantId));
+        // PR1 — the effective billable amount (fixed if set, else rate × hours).
+        // Visibility is gated to admins in the controller.
+        $task->setAttribute('billable_amount_effective', $task->effectiveBillableAmount());
 
         return $this->decorateRelation($task, $tenantId);
     }

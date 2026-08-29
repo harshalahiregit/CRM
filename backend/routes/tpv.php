@@ -71,6 +71,7 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::post('/onboarding',                        [TpvOnboardingController::class, 'store']);
     Route::get('/onboarding/{onboarding}',            [TpvOnboardingController::class, 'show']);
     Route::get('/onboarding/{onboarding}/progress',   [TpvOnboardingController::class, 'progress']);
+    Route::get('/onboarding/{onboarding}/checklist',  [TpvOnboardingController::class, 'checklist']); // §10 activation checklist
     // Step 1 — Kickoff PDF: stream, acknowledge, and log view/download/print.
     Route::get('/onboarding/{onboarding}/kickoff',         [TpvOnboardingController::class, 'kickoffPdf']);
     Route::get('/onboarding/{onboarding}/work-start-letter', [TpvOnboardingController::class, 'workStartLetter']);
@@ -89,6 +90,15 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::get('/vendors/{vendor}/overview',                  [\App\Http\Controllers\Api\Vendor\VendorController::class, 'overview']);
     // Vendor Rating System scorecard (Doc 5) — live score + persisted history.
     Route::get('/vendors/{vendor}/scorecard',                 [\App\Http\Controllers\Api\Vendor\VendorController::class, 'scorecard']);
+    // Performance › Award / Reward — admin grants; vendor views in its portal.
+    Route::get('/vendors/{vendor}/awards',                    [\App\Http\Controllers\Api\Vendor\VendorController::class, 'awardsIndex']);
+    Route::post('/vendors/{vendor}/awards',                   [\App\Http\Controllers\Api\Vendor\VendorController::class, 'grantAward']);
+    Route::delete('/vendors/{vendor}/awards/{award}',         [\App\Http\Controllers\Api\Vendor\VendorController::class, 'deleteAward'])->where('award', '[0-9]+');
+    // Performance › Referral — the vendor submits; admin works the prospect.
+    Route::get('/vendors/{vendor}/referrals',                 [\App\Http\Controllers\Api\Vendor\VendorController::class, 'referralsIndex']);
+    Route::patch('/vendors/{vendor}/referrals/{referral}/status', [\App\Http\Controllers\Api\Vendor\VendorController::class, 'setReferralStatus'])->where('referral', '[0-9]+');
+    // Compliance & HSSE › Shipments — the vendor's dispatch notices (admin tracks).
+    Route::get('/vendors/{vendor}/shipments',                 [\App\Http\Controllers\Api\Vendor\VendorController::class, 'shipmentsIndex']);
     // The five mandated onboarding gates (Doc 2/4), computed per vendor.
     Route::get('/vendors/{vendor}/gates',                     [\App\Http\Controllers\Api\Vendor\VendorController::class, 'gates']);
     // Vendor Risk Classification (gap report area 2) — read the tier + factors.
@@ -100,8 +110,13 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     // §35 explicit vendor↔project engagements.
     Route::get('/vendors/{vendor}/projects',                  [\App\Http\Controllers\Api\Tpv\TpvVendorProjectController::class, 'index']);
     Route::post('/vendors/{vendor}/projects',                 [\App\Http\Controllers\Api\Tpv\TpvVendorProjectController::class, 'store']);
+    Route::put('/vendors/{vendor}/projects/{project}',        [\App\Http\Controllers\Api\Tpv\TpvVendorProjectController::class, 'update']);
     Route::delete('/vendors/{vendor}/projects/{project}',     [\App\Http\Controllers\Api\Tpv\TpvVendorProjectController::class, 'destroy']);
     Route::get('/vendors/{vendor}/customers',                 [\App\Http\Controllers\Api\Vendor\VendorController::class, 'customers']);
+    // Search existing (registered) customers + link one to this vendor — static
+    // segments ahead of any future wildcard.
+    Route::get('/vendors/{vendor}/customers/search',          [\App\Http\Controllers\Api\Vendor\VendorController::class, 'searchCustomers']);
+    Route::post('/vendors/{vendor}/customers/link',           [\App\Http\Controllers\Api\Vendor\VendorController::class, 'linkCustomer']);
     Route::post('/vendors/{vendor}/customers',                [\App\Http\Controllers\Api\Vendor\VendorController::class, 'storeCustomer']);
     // Employees (enhancement #2/#9/#10) — the vendor's assignable people. index()
     // feeds the assignee cascade; grant-access provisions a login so an employee
@@ -399,6 +414,7 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('tpv')->group(function
     Route::put('/settings/{group}',    [\App\Http\Controllers\Api\Tpv\TpvSettingsController::class, 'update']);
     Route::delete('/settings/{group}', [\App\Http\Controllers\Api\Tpv\TpvSettingsController::class, 'reset']);
 
+    Route::patch('/onboarding/{onboarding}/checklist', [TpvOnboardingController::class, 'saveChecklist']); // §10 tick items
     Route::post('/onboarding/{onboarding}/approve',   [TpvOnboardingController::class, 'approve']);
     Route::post('/onboarding/{onboarding}/reject',    [TpvOnboardingController::class, 'reject']);
     Route::post('/onboarding/{onboarding}/hold',      [TpvOnboardingController::class, 'hold']);
