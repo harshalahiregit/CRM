@@ -229,7 +229,9 @@ function StepProfile({ worker, editable, onSaved, onNext, api }) {
   // competency gate (Rule 4) reads the right activities. Read-only if unbadgeable.
   const [wps, setWps] = useState([])
   useEffect(() => {
-    if (!worker.vendor_id) return
+    // Guard: not every api surface exposes workPackages (e.g. a slimmer portal
+    // api). Missing namespace must degrade to an empty list, never white-screen.
+    if (!worker.vendor_id || typeof api.workPackages?.list !== 'function') { setWps([]); return }
     api.workPackages.list({ vendor_id: worker.vendor_id })
       .then(rows => setWps(Array.isArray(rows) ? rows : (rows?.data ?? [])))
       .catch(() => setWps([]))
@@ -280,6 +282,13 @@ function StepProfile({ worker, editable, onSaved, onNext, api }) {
         </Field>
         <Field label="Gender"><SelectInput value={f.gender} onChange={set('gender')} disabled={!editable} options={['', ...GENDERS]} /></Field>
         <Field label="Designation *"><TextInput value={f.designation} onChange={set('designation')} disabled={!editable} placeholder="e.g. Fitter" /></Field>
+        <Field label="Aadhaar Number *">
+          <TextInput value={f.aadhar_number} onChange={set('aadhar_number')} disabled={!editable} placeholder="12-digit ID"
+            inputMode="numeric" maxLength={12}
+            style={f.aadhar_number && !/^\d{12}$/.test(f.aadhar_number) ? { ...inputStyle, borderColor: '#ef4444' } : undefined} />
+          {f.aadhar_number && !/^\d{12}$/.test(f.aadhar_number) && <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 600 }}>Must be exactly 12 digits</span>}
+        </Field>
+        <Field label="Mobile *"><TextInput value={f.mobile} onChange={set('mobile')} disabled={!editable} placeholder="10-digit mobile" inputMode="numeric" maxLength={10} /></Field>
         <Field label="Work Package">
           <SelectInput value={f.work_package_id} onChange={set('work_package_id')} disabled={!editable} pairs
             options={[['', 'Unassigned'], ...wps.map(w => [String(w.id), w.reference ? `${w.reference} · ${w.name}` : w.name])]} />
@@ -1564,6 +1573,7 @@ function StepPpe({ worker, editable, manage, onChanged, onNext, api, compliance 
         api={api}
         accent="#f59e0b"
         canIssue={editable}
+        linkInventory={api === tpvApi}
         workers={[{ id: worker.id, name: worker.name, full_name: worker.name, worker_code: worker.worker_code }]}
         onIssued={onChanged}
       />

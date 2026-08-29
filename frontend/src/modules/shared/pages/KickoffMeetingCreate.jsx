@@ -11,8 +11,11 @@ import { meetingApi } from '@/services/meetingApi'
 import { tpvApi } from '@/services/tpvApi'
 import { KO_MODES, actStatusCfg, issueStatusCfg } from '../kickoffConstants'
 import {
-  KIT3D_STYLE, labelStyle, inputStyle, Field, TextInput, SelectInput,
+  KIT3D_STYLE, labelStyle, inputStyle, Field, TextInput,
 } from '@/components/ui/kit3d'
+// Kickoff dropdowns are searchable (same as Tickets) — this adapter keeps the
+// kit3d SelectInput API but renders the type-to-search popover Select.
+import SelectInput from '@/components/ui/SearchableSelectInput'
 import RichTextEditor from '@/components/ui/RichTextEditor'
 // Reused, not rebuilt: the same type-to-search combobox the HR module uses, so
 // there is one dropdown look across the app.
@@ -65,7 +68,7 @@ const PARTICIPANT_ROLES = [
   'Chairperson', 'Coordinator', 'Note-taker',
 ]
 
-const EMPTY_AGENDA = () => ({ id: Date.now() + Math.random(), item: '', owner: '', duration_minutes: '', priority: '', discussion: '', decision: '' })
+const EMPTY_AGENDA = () => ({ id: Date.now() + Math.random(), item: '', owner: '', duration_minutes: '', priority: '', discussion: '', decision: '', previous_discussion_ref: '', supporting_documents: [] })
 const EMPTY_DECISION = () => ({ id: Date.now() + Math.random(), decision: '', decided_by: '', impact: '', effective_date: '', status: 'Active', agenda_key: '' })
 const EMPTY_ISSUE = () => ({ id: Date.now() + Math.random(), title: '', category: '', severity: '', owner: '', due_date: '', status: 'Open', issue_ref: '', converted_to: '', carried_from_id: null, carried_from_label: '' })
 
@@ -312,6 +315,8 @@ export default function KickoffMeetingCreate() {
           priority:         a.priority || '',
           discussion:       a.discussion || '',
           decision:         a.decision || '',
+          previous_discussion_ref: a.previous_discussion_ref || '',
+          supporting_documents: Array.isArray(a.supporting_documents) ? a.supporting_documents : [],
         })))
 
         setDecisions((m.decisions || []).map(d => ({
@@ -692,7 +697,7 @@ export default function KickoffMeetingCreate() {
           })),
         agenda_items: agendaItems
           .filter(a => a.item.trim())
-          .map(({ id, item, owner, duration_minutes, priority, discussion, decision }) => ({
+          .map(({ id, item, owner, duration_minutes, priority, discussion, decision, previous_discussion_ref, supporting_documents }) => ({
             id: Number.isInteger(id) ? id : undefined,
             // The key actions/decisions link to — the row's own id, as a string.
             client_key: String(id),
@@ -702,6 +707,8 @@ export default function KickoffMeetingCreate() {
             priority: priority || undefined,
             discussion: discussion || undefined,
             decision: decision || undefined,
+            previous_discussion_ref: previous_discussion_ref || undefined,
+            supporting_documents: (supporting_documents && supporting_documents.length) ? supporting_documents : undefined,
           })),
         decisions: decisions
           .filter(d => d.decision.trim())
@@ -1053,7 +1060,9 @@ export default function KickoffMeetingCreate() {
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
               <Field label="Meeting Date *">
-                <TextInput type="date" value={form.meeting_date} onChange={set('meeting_date')} />
+                {/* A meeting cannot be scheduled in the past — the native picker
+                    blocks earlier dates via min (local today, YYYY-MM-DD). */}
+                <TextInput type="date" min={new Date().toLocaleDateString('en-CA')} value={form.meeting_date} onChange={set('meeting_date')} />
               </Field>
               <Field label="Start Time *">
                 <TextInput type="time" value={form.meeting_time} onChange={set('meeting_time')} />
@@ -1245,6 +1254,19 @@ export default function KickoffMeetingCreate() {
                         <textarea value={a.decision} onChange={e => setAgenda(a.id, 'decision', e.target.value)}
                           rows={2} placeholder="Decision taken on this item"
                           style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit', fontSize: 12, lineHeight: 1.5 }} />
+                      </div>
+                      {/* Meeting.docx §7 — reference to where this topic was last
+                          discussed (a prior meeting no. / MOM item), so a recurring
+                          item carries its history. Backend already stored it; there
+                          was just no input. */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8, paddingLeft: 30 }}>
+                        <TextInput value={a.previous_discussion_ref || ''} onChange={e => setAgenda(a.id, 'previous_discussion_ref', e.target.value)}
+                          placeholder="Previous discussion reference (e.g. MTG-2026-0007 · item 3)" />
+                        {/* Meeting.docx §7 — supporting documents for this item, as a
+                            comma-separated list of names/links. Stored as an array. */}
+                        <TextInput value={(a.supporting_documents || []).join(', ')}
+                          onChange={e => setAgenda(a.id, 'supporting_documents', e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
+                          placeholder="Supporting documents (comma-separated)" />
                       </div>
                     </div>
                   ))}

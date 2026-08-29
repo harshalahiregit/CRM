@@ -237,11 +237,20 @@ function ProfileStep({ worker }) {
   )
 }
 
+// TPV-parity fitness catalogue. 'Fit with Restrictions' passes readiness.
+const FITNESS = [
+  ['Fit', 'Fit'],
+  ['Fit_With_Restrictions', 'Fit with Restrictions'],
+  ['Unfit', 'Unfit'],
+  ['Pending', 'Pending'],
+]
+
 function MedicalStep({ workerId, readiness, onSaved }) {
-  const [f, setF] = useState({ fitness_status: 'Fit', exam_date: '', expiry_date: '', remarks: '' })
+  const [f, setF] = useState({ fitness_status: 'Fit', exam_date: '', expiry_date: '', examiner_name: '', restrictions: '', remarks: '' })
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
   const set = k => e => setF(p => ({ ...p, [k]: e.target.value }))
+  const withRestrictions = f.fitness_status === 'Fit_With_Restrictions'
 
   const save = async () => {
     setBusy(true); setErr(null)
@@ -254,16 +263,24 @@ function MedicalStep({ workerId, readiness, onSaved }) {
     <div style={card}>
       <h2 style={h2}>Step 2 — Medical</h2>
       {readiness && !readiness.medical_ok && (
-        <Note tone="warn">A <strong>Fit</strong> examination is required before this step is cleared.</Note>
+        <Note tone="warn">A <strong>Fit</strong> or <strong>Fit with Restrictions</strong> examination (still in date) is required before this step is cleared.</Note>
       )}
       <div style={grid}>
         <Field label="Fitness result">
           <select style={input} value={f.fitness_status} onChange={set('fitness_status')}>
-            <option>Fit</option><option>Unfit</option><option>Pending</option>
+            {FITNESS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
         </Field>
         <Field label="Examination date"><input type="date" style={input} value={f.exam_date} onChange={set('exam_date')} /></Field>
         <Field label="Expiry date"><input type="date" style={input} value={f.expiry_date} onChange={set('expiry_date')} /></Field>
+        <Field label="Examiner / clinic"><input style={input} value={f.examiner_name} onChange={set('examiner_name')} /></Field>
+      </div>
+      {withRestrictions && (
+        <div style={{ marginTop: 12 }}>
+          <Field label="Restrictions"><input style={input} placeholder="e.g. no work at height; light duties only" value={f.restrictions} onChange={set('restrictions')} /></Field>
+        </div>
+      )}
+      <div style={{ ...grid, marginTop: 12 }}>
         <Field label="Remarks"><input style={input} value={f.remarks} onChange={set('remarks')} /></Field>
       </div>
       {err && <p style={{ color: '#ef4444', fontSize: 12.5, margin: '10px 0 0' }}>{err}</p>}
@@ -274,8 +291,16 @@ function MedicalStep({ workerId, readiness, onSaved }) {
   )
 }
 
+// §15 typed training catalogue — kept in step with PurchaseWorkerTraining::TYPES.
+const TRAINING_TYPES = [
+  'Site_Induction', 'HSE_Induction', 'Toolbox', 'Fire', 'Work_At_Height',
+  'Electrical', 'Confined_Space', 'Lifting', 'Equipment', 'Emergency_Response',
+  'Job_Specific', 'Other',
+]
+const typeLabel = (t) => t.replace(/_/g, ' ')
+
 function InductionStep({ workerId, readiness, onSaved }) {
-  const [t, setT] = useState({ title: '', status: 'Completed', training_date: '' })
+  const [t, setT] = useState({ training_type: 'Site_Induction', title: '', status: 'Completed', training_date: '', valid_until: '' })
   const [i, setI] = useState({ status: 'Completed', induction_date: '', conducted_by: '' })
   const [busy, setBusy] = useState(null)
   const [err, setErr] = useState(null)
@@ -283,8 +308,10 @@ function InductionStep({ workerId, readiness, onSaved }) {
   const run = async (which) => {
     setBusy(which); setErr(null)
     try {
-      if (which === 'training') await api.workers.training(workerId, t)
-      else await api.workers.induction(workerId, i)
+      if (which === 'training') {
+        // Fall back to the type's label as the title so back-compat rows stay named.
+        await api.workers.training(workerId, { ...t, title: t.title || typeLabel(t.training_type) })
+      } else await api.workers.induction(workerId, i)
       await onSaved()
     } catch (e) { setErr(e?.response?.data?.message || 'Could not save.') }
     finally { setBusy(null) }
@@ -299,15 +326,21 @@ function InductionStep({ workerId, readiness, onSaved }) {
 
       <h3 style={h3}>Training</h3>
       <div style={grid}>
-        <Field label="Title"><input style={input} value={t.title} onChange={e => setT(p => ({ ...p, title: e.target.value }))} /></Field>
+        <Field label="Training type">
+          <select style={input} value={t.training_type} onChange={e => setT(p => ({ ...p, training_type: e.target.value }))}>
+            {TRAINING_TYPES.map(v => <option key={v} value={v}>{typeLabel(v)}</option>)}
+          </select>
+        </Field>
+        <Field label="Title (optional)"><input style={input} placeholder={typeLabel(t.training_type)} value={t.title} onChange={e => setT(p => ({ ...p, title: e.target.value }))} /></Field>
         <Field label="Date"><input type="date" style={input} value={t.training_date} onChange={e => setT(p => ({ ...p, training_date: e.target.value }))} /></Field>
+        <Field label="Valid until"><input type="date" style={input} value={t.valid_until} onChange={e => setT(p => ({ ...p, valid_until: e.target.value }))} /></Field>
         <Field label="Result">
           <select style={input} value={t.status} onChange={e => setT(p => ({ ...p, status: e.target.value }))}>
             <option>Completed</option><option>Pending</option><option>Failed</option>
           </select>
         </Field>
       </div>
-      <button onClick={() => run('training')} disabled={busy || !t.title} style={{ ...primaryBtn, marginTop: 10 }}>
+      <button onClick={() => run('training')} disabled={busy} style={{ ...primaryBtn, marginTop: 10 }}>
         {busy === 'training' && <Loader2 size={14} className="animate-spin" />} Save training
       </button>
 

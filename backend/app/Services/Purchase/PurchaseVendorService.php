@@ -212,6 +212,17 @@ class PurchaseVendorService
         }
 
         $from = $vendor->status;
+
+        // Rule 1 — "No Approval, No Activation" (parity with VendorService). Block a
+        // raw status flip to Active unless the onboarding has been approved; the
+        // sanctioned path (PurchaseOnboardingService::approve) sets it Approved first.
+        if ($status === Status::ACTIVE && $from !== Status::ACTIVE) {
+            $obStatus = $vendor->onboarding()->value('status');
+            if ($obStatus !== \App\Support\Purchase\PurchaseOnboardingStatus::APPROVED) {
+                throw new BusinessException('Purchase vendor cannot be activated until its onboarding is approved — "No Approval, No Activation".');
+            }
+        }
+
         $vendor->update(['status' => $status, 'notes' => $remarks ?? $vendor->notes]);
         $vendor->recordAudit('Purchase Vendor Status Changed', $actor, $remarks, ['from' => $from, 'to' => $status]);
 

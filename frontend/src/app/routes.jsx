@@ -225,6 +225,7 @@ const PurchaseContracts = lazy(() => import('@/modules/purchase/pages/PurchaseCo
 const PurchaseComplianceRegister = lazy(() => import('@/modules/purchase/pages/PurchaseComplianceRegister'))
 const PurchaseNcr = lazy(() => import('@/modules/purchase/pages/PurchaseNcr'))
 const PurchaseCapaRegister = lazy(() => import('@/modules/purchase/pages/PurchaseCapaRegister'))
+const PurchaseIncidents = lazy(() => import('@/modules/purchase/pages/PurchaseIncidents'))
 const PurchaseApprovals = lazy(() => import('@/modules/purchase/pages/PurchaseApprovals'))
 const PurchaseAnalytics = lazy(() => import('@/modules/purchase/pages/PurchaseAnalytics'))
 const PurchaseDocumentVault = lazy(() => import('@/modules/purchase/pages/PurchaseDocumentVault'))
@@ -246,6 +247,7 @@ const PurchaseVendorDetailLayout = lazy(() => import('@/modules/purchase/pages/v
 const PurchaseVendorOnboardings = lazy(() => import('@/modules/purchase/pages/PurchaseVendorOnboardings'))
 const PurchaseVendorOnboardingWizard = lazy(() => import('@/modules/purchase/pages/PurchaseVendorOnboardingWizard'))
 const PurchaseWorkforce = lazy(() => import('@/modules/purchase/pages/PurchaseWorkforce'))
+const PurchaseCompetency = lazy(() => import('@/modules/purchase/pages/PurchaseCompetency'))
 // Purchase Kickoff — Purchase-owned pages on /api/purchase/kickoff (no TPV/shared reuse).
 const PurchaseKickoffMeetings = lazy(() => import('@/modules/purchase/pages/PurchaseKickoffMeetings'))
 const PurchaseKickoffCreate = lazy(() => import('@/modules/purchase/pages/PurchaseKickoffCreate'))
@@ -467,8 +469,10 @@ export default function AppRoutes() {
       {/* Read-only view of the same minutes — the e-mail's View MOM PDF link. */}
       <Route path="/kickoff/mom/:token" element={<S><KickoffMom /></S>} />
 
-      {/* Protected app routes */}
-      <Route path="/app" element={<ProtectedRoute><AppShell /></ProtectedRoute>}>
+      {/* Protected app routes — internal staff/admin only. Portal-only roles
+          (TPV vendor, vendor, company) are bounced to their own portal, so a
+          vendor can never reach the admin shell by link or by typing a URL. */}
+      <Route path="/app" element={<ProtectedRoute blockRoles={['third_party_vendor', 'vendor', 'company']}><AppShell /></ProtectedRoute>}>
 
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="dashboard" element={<S><DashboardPage /></S>} />
@@ -622,6 +626,7 @@ export default function AppRoutes() {
           <Route path="compliance-register" element={<S><PurchaseComplianceRegister /></S>} />
           <Route path="ncr" element={<S><PurchaseNcr /></S>} />
           <Route path="capa" element={<S><PurchaseCapaRegister /></S>} />
+          <Route path="incidents" element={<S><PurchaseIncidents /></S>} />
           {/* Central approval register (§12) — /api/purchase/approval-requests */}
           <Route path="approval-requests" element={<S><PurchaseApprovals /></S>} />
           <Route path="inspections" element={<S><PurchaseInspections /></S>} />
@@ -641,6 +646,8 @@ export default function AppRoutes() {
           {/* Admin/staff review of vendor-supplied workers. Activation inside is
               admin-only — the button is hidden for staff and the endpoint refuses them. */}
           <Route path="workforce" element={<S><PurchaseWorkforce /></S>} />
+          {/* Workforce Competency & Skill Matrix — "No Competency, No Work" (mirror of TPV §15). */}
+          <Route path="competency" element={<S><PurchaseCompetency /></S>} />
           {/* Kickoff Meetings — Purchase-owned pages on /api/purchase/kickoff (no TPV reuse) */}
           <Route path="kickoff" element={<S><PurchaseKickoffMeetings /></S>} />
           <Route path="kickoff/new" element={<S><PurchaseKickoffCreate /></S>} />

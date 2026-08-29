@@ -74,6 +74,13 @@ class PurchaseSettingService
         // Push a message to the vendor the moment an NCR is raised or a violation
         // is recorded, on top of the pull-based alerts feed.
         'communications_auto_dispatch' => true,
+        // "No Competency, No Work" (mirror of TPV Rule 4). Purchase has no
+        // work-package/activity model to carry a per-activity required_competency,
+        // so the requirement is site-wide: a comma-separated list of competency
+        // names EVERY badged worker must hold (valid, non-expired). Empty (the
+        // default) means the gate does not bite — it degrades gracefully and only
+        // enforces once a tenant configures a requirement here.
+        'workforce_required_competencies' => '',
     ];
 
     /** Keys whose values are booleans (so the API round-trips real bools). */

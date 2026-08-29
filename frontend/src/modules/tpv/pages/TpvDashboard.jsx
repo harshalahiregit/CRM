@@ -133,7 +133,7 @@ function ControlTower({ ct, actions, risk, onGo }) {
 
       {/* Executive KPI grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6,1fr)', gap: 10, marginBottom: 14 }}>
-        <ExecStat label="Vendors" value={v.total ?? 0} sub={`${v.active ?? 0} active · ${v.pending ?? 0} pending`} icon={Building2} tone="#7C3AED" onClick={() => onGo('/app/tpv/vendors')} />
+        <ExecStat label="Vendors" value={v.total ?? 0} sub={`${v.active ?? 0} active · ${v.pending_approval ?? 0} to approve · ${v.pending_onboarding ?? 0} in review`} icon={Building2} tone="#7C3AED" onClick={() => onGo('/app/tpv/vendors')} />
         <ExecStat label="Workforce" value={wf.total ?? 0} sub={`${wf.on_site_now ?? 0} on site now`} icon={Users} tone="#0ea5e9" onClick={() => onGo('/app/tpv/workforce')} />
         <ExecStat label="High Risk" value={v.high_risk ?? 0} sub="High + Critical" icon={ShieldAlert} tone="#ef4444" onClick={() => onGo('/app/tpv/vendors')} danger={v.high_risk > 0} />
         <ExecStat label="Temporary" value={v.temporary ?? 0} sub={`${v.expiring ?? 0} expiring 30d`} icon={Clock} tone="#f59e0b" onClick={() => onGo('/app/tpv/temporary')} />
@@ -147,6 +147,7 @@ function ControlTower({ ct, actions, risk, onGo }) {
         <ExecStat label="Open CAPAs" value={op.capas ?? 0} sub={`${op.ncrs ?? 0} NCRs`} icon={ShieldQuestion} tone="#f97316" onClick={() => onGo('/app/tpv/incidents')} />
         <ExecStat label="Active Permits" value={op.active_permits ?? 0} sub="currently valid" icon={FileCheck} tone="#0ea5e9" onClick={() => onGo('/app/tpv/permits')} />
         <ExecStat label="Active Strikes" value={op.total_strikes ?? 0} sub="outstanding" icon={ShieldAlert} tone="#a78bfa" onClick={() => onGo('/app/tpv/strikes')} danger={op.total_strikes > 0} />
+        <ExecStat label="Gate Violations" value={op.gate_violations ?? 0} sub="open" icon={Ban} tone="#f43f5e" onClick={() => onGo('/app/tpv/violations')} danger={op.gate_violations > 0} />
       </div>
 
       {/* Action Centre + Risk breakdown */}

@@ -26,6 +26,7 @@ use App\Services\Tpv\WorkStartLetterService;
 use App\Services\Tpv\PpeInventoryService;
 use App\Services\Tpv\TpvOnboardingService;
 use App\Services\Tpv\TpvWorkerService;
+use App\Services\Tpv\TpvWorkPackageService;
 use App\Services\Vendor\VendorDocumentService;
 use App\Support\Purchase\PurchaseInvoiceStatus as InvStatus;
 use App\Support\Purchase\PurchaseOrderStatus as PoStatus;
@@ -55,7 +56,25 @@ class VendorPortalController extends Controller
         private KickoffPdfService    $kickoffPdfService,
         private PpeInventoryService  $ppeService,
         private \App\Services\Tpv\TpvComplianceService $complianceService,
+        private TpvWorkPackageService $workPackageService,
     ) {
+    }
+
+    /**
+     * The caller vendor's OWN work packages (read-only) — used by the worker
+     * wizard to deploy a worker onto a package whose activities gate the badge.
+     * vendor_id is forced from the token; no other vendor's packages are visible.
+     */
+    public function workPackages(Request $request)
+    {
+        $vendor = $this->portalVendor($request);
+
+        return response()->json(
+            $this->workPackageService->list(
+                $vendor->tenant_id,
+                array_merge($request->only(['status']), ['vendor_id' => $vendor->id])
+            )
+        );
     }
 
     /**

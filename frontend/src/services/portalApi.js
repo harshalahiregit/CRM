@@ -110,6 +110,12 @@ export const portalApi = {
     setStatus: (_vendorId, id, status)=> api.patch(`/portal/contacts/${id}/status`, { status }).then(r => r.data),
   },
 
+  // Read-only: the vendor's own work packages (for the worker-wizard deploy
+  // field). Mirrors tpvApi.workPackages.list; vendor_id forced server-side.
+  workPackages: {
+    list: (params = {}) => api.get('/portal/work-packages', { params }).then(r => r.data?.data ?? r.data),
+  },
+
   // ── Workers — mirrors tpvApi.workers shape ──────────────────────────────
   // vendor_id in params is silently overridden server-side.
   workers: {

@@ -46,9 +46,41 @@ class TpvRenewalService
         $violPoints = (int) TpvVendorViolation::forTenant($tenantId)->where('vendor_id', $vendor->id)
             ->where('status', 'Open')->sum('points');
 
+        // §28 Rule-10 inputs the assessment previously omitted — all derived from
+        // existing data, nothing fabricated:
+        //  • contract performance  → the vendor's contracts (active / expiring)
+        //  • commercial performance→ committed value on active contracts
+        //  • workforce performance → the vendor's workers (total / active)
+        //  • client feedback       → the standing VRS band the client rating rolls into
+        $contracts = TpvContract::forTenant($tenantId)->where('vendor_id', $vendor->id)
+            ->get(['status', 'end_date', 'contract_value']);
+        $activeContracts = $contracts->where('status', 'Active');
+        $expiring30 = $activeContracts->filter(fn ($c) => $c->end_date
+            && \Carbon\Carbon::parse($c->end_date)->lessThanOrEqualTo(now()->addDays(30)))->count();
+        $workersTotal = \App\Models\Tpv\TpvWorker::forTenant($tenantId)->where('vendor_id', $vendor->id)->count();
+        $workersActive = \App\Models\Tpv\TpvWorker::forTenant($tenantId)->where('vendor_id', $vendor->id)
+            ->where('status', \App\Support\Tpv\TpvWorkerStatus::ACTIVE)->count();
+
         return [
             'vrs_score' => $card['overall_score'] ?? null,
             'vrs_band' => $card['band'] ?? null,
+            'contract' => [
+                'total'        => $contracts->count(),
+                'active'       => $activeContracts->count(),
+                'expiring_30d' => $expiring30,
+                'nearest_end'  => optional($activeContracts->pluck('end_date')->filter()->min()) ?: null,
+            ],
+            'commercial' => [
+                'active_contract_value' => (float) $activeContracts->sum('contract_value'),
+            ],
+            'workforce' => [
+                'total_workers'  => $workersTotal,
+                'active_workers' => $workersActive,
+            ],
+            'client_feedback' => [
+                'vrs_band'  => $card['band'] ?? null,
+                'vrs_score' => $card['overall_score'] ?? null,
+            ],
             'open_ncrs' => TpvNcr::forTenant($tenantId)->where('vendor_id', $vendor->id)->where('status', '!=', 'Closed')->count(),
             'open_capas' => IncidentCapa::where('tenant_id', $tenantId)->whereNotIn('status', ['Done', 'Verified'])
                 ->whereHas('incident', fn ($q) => $q->where('vendor_id', $vendor->id))->count(),

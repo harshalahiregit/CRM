@@ -38,13 +38,17 @@ import { VendorPrequalificationPanel } from '@/modules/tpv/components/VendorPreq
 import { VendorMeetingsPanel } from '@/modules/tpv/components/VendorMeetingsPanel'
 import { VendorAwardsPanel, VendorReferralsPanel, VendorFeedbackPanel, VendorPenaltyPanel } from '@/modules/tpv/components/VendorPerformancePanels'
 import { VendorShipmentsAdminPanel } from '@/modules/tpv/components/VendorShipmentsAdminPanel'
+import {
+  VendorVpiPanel, VendorRenewalPanel, VendorOffboardingPanel, VendorComplianceRegisterPanel,
+  VendorInspectionsPanel, VendorNcrPanel, VendorCapaPanel, VendorWorkPackagesPanel, VendorVaultPanel,
+} from '@/modules/tpv/components/VendorGovernancePanels'
 
 /**
- * The Vendor Detail navigation — 6 groups, 38 sections. This drives BOTH the left
+ * The Vendor Detail navigation — 6 groups, 47 sections. This drives BOTH the left
  * nav and the content router below, so a section exists in exactly one of three
  * states and the three partition the list with no overlap:
  *
- *   ACTIVE       a `case` in SectionContent — 24 sections, each reading an
+ *   ACTIVE       a `case` in SectionContent — 33 sections, each reading an
  *                EXISTING module scoped to this vendor. None owns a TPV table:
  *                Reminders and Notes ride the SHARED polymorphic `reminders` and
  *                `notes` tables, the same way Projects rides projects.vendor_id.
@@ -61,9 +65,9 @@ const NAV_GROUPS = [
   { group: 'General',     icon: User,           items: ['Overview', 'Profile', 'Contact', 'Customer', 'Meetings'] },
   { group: 'Workforce',   icon: HardHat,        items: ['Workforce', 'Medical', 'Training', 'Gate Log', 'Strikes'] },
   { group: 'Commercial',  icon: IndianRupee,    items: ['Quotation', 'Contracts', 'Purchase Order', 'Purchase Invoice', 'Debit Note', 'Purchase Statement', 'Payments'] },
-  { group: 'Operations',  icon: Briefcase,      items: ['Projects', 'Shed Projects', 'Tasks', 'Expenses', 'Attachments', 'ToDo', 'Notes', 'Technical File Maintenance', 'Ticket', 'Job', 'Reminders'] },
-  { group: 'Compliance',  icon: ClipboardCheck, items: ['Documents', 'Prequalification', 'Survey', 'PTW', 'Incidents', 'Pre Alert', 'Package', 'Visitors'] },
-  { group: 'Performance', icon: BarChart3,      items: ['Risk Score', 'Award / Reward', 'Penalty', 'Feedback', 'Referrals'] },
+  { group: 'Operations',  icon: Briefcase,      items: ['Projects', 'Shed Projects', 'Work Packages', 'Tasks', 'Expenses', 'Attachments', 'ToDo', 'Notes', 'Technical File Maintenance', 'Ticket', 'Job', 'Reminders'] },
+  { group: 'Compliance',  icon: ClipboardCheck, items: ['Documents', 'Prequalification', 'Compliance Register', 'Inspections', 'NCR', 'CAPA', 'Vault', 'Survey', 'PTW', 'Incidents', 'Pre Alert', 'Package', 'Visitors'] },
+  { group: 'Performance', icon: BarChart3,      items: ['Risk Score', 'Performance Index', 'Renewal', 'Offboarding', 'Award / Reward', 'Penalty', 'Feedback', 'Referrals'] },
 ]
 
 /**
@@ -525,6 +529,27 @@ function SectionContent({ tab, v, isActive, manage, api, moduleName, onDecision,
     // Conditional / Not Qualified; gates approval (slice B4).
     case 'Prequalification':
       return <VendorPrequalificationPanel vendorId={v.id} manage={manage} api={api} />
+    // Vendor-360 governance reads — each surfaces, on the vendor record, a register
+    // that used to live only on its own module page. Read-only here; management
+    // stays in the dedicated page. tpvApi passed explicitly (these are TPV-only).
+    case 'Performance Index':
+      return <VendorVpiPanel vendorId={v.id} api={tpvApi} />
+    case 'Renewal':
+      return <VendorRenewalPanel vendorId={v.id} api={tpvApi} />
+    case 'Offboarding':
+      return <VendorOffboardingPanel vendorId={v.id} api={tpvApi} />
+    case 'Compliance Register':
+      return <VendorComplianceRegisterPanel vendorId={v.id} api={tpvApi} />
+    case 'Inspections':
+      return <VendorInspectionsPanel vendorId={v.id} api={tpvApi} />
+    case 'NCR':
+      return <VendorNcrPanel vendorId={v.id} api={tpvApi} />
+    case 'CAPA':
+      return <VendorCapaPanel vendorId={v.id} api={tpvApi} />
+    case 'Work Packages':
+      return <VendorWorkPackagesPanel vendorId={v.id} api={tpvApi} />
+    case 'Vault':
+      return <VendorVaultPanel vendorId={v.id} api={tpvApi} />
     default:
       // Everything else is either settled as out of scope for a TPV vendor, or
       // genuinely unbacked — no table, awaiting a business definition.
@@ -863,6 +888,11 @@ function ProfilePanel({ v, manage, api, onSaved }) {
     ['website',        'Website'],
     ['internal_sponsor', 'Internal Sponsor'],
     ['contract_owner', 'Contract Owner'],
+    // Context fields — columns existed but the master screen never exposed them.
+    // project + site also drive the onboarding-checklist dimensions (§10).
+    ['project',        'Project'],
+    ['department',     'Department'],
+    ['site',           'Site'],
   ]
   const CONTACT = [
     ['email',             'Email'],

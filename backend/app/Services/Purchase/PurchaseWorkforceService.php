@@ -11,6 +11,7 @@ use App\Models\Purchase\PurchaseWorkerMedical;
 use App\Models\Purchase\PurchaseWorkerTraining;
 use App\Models\User;
 use App\Repositories\Purchase\PurchaseWorkerRepository;
+use App\Support\Purchase\PurchaseMedicalFitness;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -93,16 +94,23 @@ class PurchaseWorkforceService
     public function saveMedical(PurchaseWorker $worker, array $data): PurchaseWorkerMedical
     {
         $medical = PurchaseWorkerMedical::create(array_merge($this->tenantKeys($worker), [
-            'exam_date'      => $data['exam_date'] ?? null,
-            'expiry_date'    => $data['expiry_date'] ?? null,
-            'fitness_status' => $data['fitness_status'] ?? 'Pending',
-            'blood_group'    => $data['blood_group'] ?? null,
-            'remarks'        => $data['remarks'] ?? null,
+            'exam_date'        => $data['exam_date'] ?? null,
+            'expiry_date'      => $data['expiry_date'] ?? null,
+            'fitness_status'   => $data['fitness_status'] ?? 'Pending',
+            'blood_group'      => $data['blood_group'] ?? null,
+            'remarks'          => $data['remarks'] ?? null,
+            // Depth (TPV §16 parity).
+            'restrictions'     => $data['restrictions'] ?? null,
+            'examiner_name'    => $data['examiner_name'] ?? null,
+            'approved_by'      => $data['approved_by'] ?? null,
+            'approved_at'      => ! empty($data['approved_by']) ? now() : null,
+            'certificate_path' => $data['certificate_path'] ?? null,
+            'document_path'    => $data['document_path'] ?? null,
         ]));
 
-        // Step 2 clears only on a FIT result. Recording an Unfit examination is a
-        // valid thing to do — it just is not progress, and the pointer must not
-        // claim it is.
+        // Step 2 clears on a PASSING result (Fit OR Fit-with-restrictions).
+        // Recording an Unfit examination is a valid thing to do — it just is not
+        // progress, and the pointer must not claim it is.
         $this->advanceTo($worker, 2, $this->readiness($worker->fresh())['medical_ok']);
 
         return $medical;
@@ -110,10 +118,22 @@ class PurchaseWorkforceService
 
     public function saveTraining(PurchaseWorker $worker, array $data): PurchaseWorkerTraining
     {
+        // Typed catalogue (§15). training_type is optional — a legacy free-text
+        // title still records a valid training; an unknown type is normalised to
+        // 'Other' so the row always carries a catalogue key when one is supplied.
+        $type = $data['training_type'] ?? null;
+        if ($type !== null && ! in_array($type, PurchaseWorkerTraining::TYPES, true)) {
+            $type = 'Other';
+        }
+
         $training = PurchaseWorkerTraining::create(array_merge($this->tenantKeys($worker), [
-            'title'         => $data['title'],
+            'title'         => $data['title'] ?? ($type ? str_replace('_', ' ', $type) : null),
+            'training_type' => $type,
+            'provider'      => $data['provider'] ?? null,
             'training_date' => $data['training_date'] ?? null,
             'expiry_date'   => $data['expiry_date'] ?? null,
+            // TPV-parity currency window; falls back to expiry_date when absent.
+            'valid_until'   => $data['valid_until'] ?? ($data['expiry_date'] ?? null),
             'status'        => $data['status'] ?? 'Pending',
             'score'         => $data['score'] ?? null,
             'remarks'       => $data['remarks'] ?? null,
@@ -194,7 +214,14 @@ class PurchaseWorkforceService
             $missing = collect([
                 'documents' => $r['documents_ok'], 'medical' => $r['medical_ok'],
                 'training'  => $r['training_ok'],  'induction' => $r['induction_ok'],
+                'competency' => $r['competency_ok'],
             ])->reject(fn ($ok) => $ok)->keys()->implode(', ');
+
+            // Name the specific competencies the worker is short of (Rule 4), so the
+            // badge refusal says exactly what to record, not just "competency".
+            if (! $r['competency_ok'] && ! empty($r['missing_competencies'])) {
+                $missing .= ' ('.implode(', ', $r['missing_competencies']).')';
+            }
 
             throw new BusinessException("This worker is not ready for a badge — outstanding: {$missing}.", 422);
         }
@@ -341,20 +368,49 @@ class PurchaseWorkforceService
         $ind = $worker->relationLoaded('latestInduction') ? $worker->latestInduction : $worker->latestInduction()->first();
 
         $documentsOk = ($worker->documents_count ?? $worker->documents()->count()) > 0;
-        $medicalOk   = $med && $med->fitness_status === 'Fit' && (! $med->expiry_date || $med->expiry_date->gte($today));
-        $trainingOk  = $worker->trainings()->where('status', 'Completed')->exists();
+        // Medical clears on any PASSING verdict (Fit OR Fit-with-restrictions) that
+        // is still within its currency window — TPV parity. A "Fit with
+        // Restrictions" worker is fit subject to the recorded restrictions, so it
+        // must not fail readiness the way the old exact-'Fit' match did.
+        $medicalOk   = $med
+            && PurchaseMedicalFitness::isPassing($med->fitness_status)
+            && (! $med->expiry_date || $med->expiry_date->gte($today));
+        // Training clears when a Completed, unexpired record exists — honouring the
+        // TPV-parity valid_until window and the legacy expiry_date alike. Typed or
+        // free-text titles both count.
+        $trainingOk  = $worker->trainings()
+            ->where('status', 'Completed')
+            ->where(function ($q) use ($today) {
+                $q->where(function ($q) use ($today) {
+                    $q->whereNull('valid_until')->orWhere('valid_until', '>=', $today);
+                })->where(function ($q) use ($today) {
+                    $q->whereNull('expiry_date')->orWhere('expiry_date', '>=', $today);
+                });
+            })
+            ->exists();
         $inductionOk = $ind && $ind->status === 'Completed';
 
-        $checks = [$documentsOk, $medicalOk, $trainingOk, $inductionOk];
+        // "No Competency, No Work" (mirror of TPV Rule 4). Purchase carries no
+        // per-activity required_competency, so the requirement is the site-wide
+        // Settings list (workforce_required_competencies). missingFor() returns an
+        // empty collection when nothing is required, so competency_ok defaults true
+        // and the gate degrades gracefully — it only bites once a tenant configures
+        // a requirement.
+        $missingComp  = app(PurchaseCompetencyService::class)->missingFor($worker);
+        $competencyOk = $missingComp->isEmpty();
+
+        $checks = [$documentsOk, $medicalOk, $trainingOk, $inductionOk, $competencyOk];
         $passed = count(array_filter($checks));
 
         return [
-            'documents_ok'  => $documentsOk,
-            'medical_ok'    => $medicalOk,
-            'training_ok'   => $trainingOk,
-            'induction_ok'  => $inductionOk,
-            'ready'         => $passed === count($checks),
-            'readiness_pct' => (int) round(($passed / count($checks)) * 100),
+            'documents_ok'         => $documentsOk,
+            'medical_ok'           => $medicalOk,
+            'training_ok'          => $trainingOk,
+            'induction_ok'         => $inductionOk,
+            'competency_ok'        => $competencyOk,
+            'missing_competencies' => $missingComp->all(),
+            'ready'                => $passed === count($checks),
+            'readiness_pct'        => (int) round(($passed / count($checks)) * 100),
         ];
     }
 

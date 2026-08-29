@@ -45,6 +45,9 @@ class PurchaseVendor extends Model implements AuthenticatableContract
         'password_reset_token', 'password_reset_expires_at', 'last_login_at', 'last_login_ip',
         // Risk Score (Purchase-native, admin-set)
         'risk_level', 'risk_score', 'risk_notes', 'risk_assessed_at',
+        // Prequalification (Purchase-native scored questionnaire, mirrors TPV)
+        'qualification_status', 'qualification_score', 'qualification_responses',
+        'qualification_notes', 'qualified_at', 'qualified_by',
     ];
 
     protected $casts = [
@@ -60,6 +63,9 @@ class PurchaseVendor extends Model implements AuthenticatableContract
         'welcome_banner_dismissed_at' => 'datetime',
         'risk_assessed_at'          => 'datetime',
         'risk_score'                => 'integer',
+        'qualification_responses'   => 'array',
+        'qualification_score'       => 'integer',
+        'qualified_at'              => 'datetime',
     ];
 
     /** Credentials/tokens are never disclosed in payloads. */
@@ -117,6 +123,18 @@ class PurchaseVendor extends Model implements AuthenticatableContract
     public function accountManager()
     {
         return $this->belongsTo(User::class, 'account_manager_id');
+    }
+
+    /** Who last prequalified this vendor (Purchase-native scored questionnaire). */
+    public function qualificationAssessor()
+    {
+        return $this->belongsTo(User::class, 'qualified_by');
+    }
+
+    /** The Purchase-side due-diligence checklist for this vendor (one per vendor). */
+    public function dueDiligence()
+    {
+        return $this->hasOne(PurchaseDueDiligence::class, 'purchase_vendor_id');
     }
 
     public function contacts()

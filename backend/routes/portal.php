@@ -126,6 +126,8 @@ Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access'])->prefix('por
     Route::get('/ppe/workers/{worker}',                   [VendorPortalController::class, 'workerPpe']);
     Route::post('/ppe/workers/{worker}/issue',            [VendorPortalController::class, 'issueWorkerPpe']);
     Route::post('/ppe/issues/{issue}/return',             [VendorPortalController::class, 'returnWorkerPpe']);
+    // The vendor's own work packages — read-only, for the worker-wizard deploy field.
+    Route::get('/work-packages',                          [VendorPortalController::class, 'workPackages']);
     Route::get('/workers/stats',                          [VendorPortalController::class, 'workerStats']);
     Route::get('/workers',                                [VendorPortalController::class, 'workers']);
     Route::post('/workers',                               [VendorPortalController::class, 'storeWorker']);

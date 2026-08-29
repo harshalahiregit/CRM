@@ -404,6 +404,15 @@ function StepKickoff({ onboarding, editable, onAcknowledged, onContinue, api }) 
   const isCompleted = meeting?.status === 'Completed'
   const hasMom = !!meeting?.mom_path
   const readyForAck = (isCompleted && hasMom) || !!pdfUrl
+  // A terminally decided onboarding (approved/rejected) can no longer be
+  // acknowledged — signing is moot and the backend rejects it. Mirror that here.
+  const decided = ['Approved', 'Rejected'].includes(onboarding?.status)
+  // Acknowledging the MINUTES is separate from editing onboarding DATA — the MOM
+  // often arrives after the vendor has already submitted (onboarding no longer
+  // "editable"), yet Step 1 still needs sign-off. So the tick + submit depend on
+  // the MOM being ready and unsigned, not on isOnboardingEditable. The vendor
+  // (portal) can always sign; an admin only when the record is still editable.
+  const canAck = readyForAck && !acknowledged && !decided && (isPortal || editable)
 
   const tbBtn = { display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 11px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', background: 'var(--bg-input)', border: '1px solid var(--border)' }
 
@@ -515,7 +524,18 @@ function StepKickoff({ onboarding, editable, onAcknowledged, onContinue, api }) 
 
           {/* Acknowledgement Controls or Navigation */}
           <div style={{ marginTop: 18, padding: '16px 18px', borderRadius: 14, background: acknowledged ? 'rgba(16,185,129,0.06)' : 'var(--bg-input)', border: `1px solid ${acknowledged ? 'rgba(16,185,129,0.3)' : 'var(--border)'}` }}>
-            {acknowledged ? (
+            {!acknowledged && decided ? (
+              /* Approved/rejected before the minutes were signed — signing is moot
+                 now, so show the outcome instead of a button that the server rejects. */
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+                <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                  This onboarding is already <strong style={{ color: 'var(--text-h)' }}>{obStatusCfg(onboarding.status).label}</strong> — the kickoff minutes no longer need acknowledgement.
+                </span>
+                <button onClick={onContinue} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '10px 18px', borderRadius: 10, cursor: 'pointer', fontSize: 13, fontWeight: 700, color: '#fff', border: 'none', background: 'linear-gradient(145deg,#a78bfa,#7C3AED)', boxShadow: '0 6px 18px -4px rgba(124,58,237,.5)' }}>
+                  Continue <ArrowRight size={15} />
+                </button>
+              </div>
+            ) : acknowledged ? (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
                 <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
                   Step 1 complete. Proceed to Company Profile in Step 2.
@@ -535,7 +555,7 @@ function StepKickoff({ onboarding, editable, onAcknowledged, onContinue, api }) 
                   <textarea
                     value={comment}
                     onChange={e => setComment(e.target.value)}
-                    disabled={!editable}
+                    disabled={!canAck}
                     rows={3}
                     maxLength={5000}
                     placeholder="Add your feedback or required changes"
@@ -544,21 +564,21 @@ function StepKickoff({ onboarding, editable, onAcknowledged, onContinue, api }) 
                   />
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: editable ? 'pointer' : 'not-allowed', flex: 1, minWidth: 260 }}>
-                  <input type="checkbox" checked={checked} disabled={!editable} onChange={e => setChecked(e.target.checked)} style={{ width: 18, height: 18, accentColor: '#7C3AED' }} />
+                <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: canAck ? 'pointer' : 'not-allowed', flex: 1, minWidth: 260 }}>
+                  <input type="checkbox" checked={checked} disabled={!canAck} onChange={e => setChecked(e.target.checked)} style={{ width: 18, height: 18, accentColor: '#7C3AED' }} />
                   <span style={{ fontSize: 13.5, color: 'var(--text-h)', fontWeight: 600 }}>
                     I have read and understood the Minutes of Meeting.
                   </span>
                 </label>
                 <button
                   onClick={handleContinue}
-                  disabled={!checked || accepting || !editable}
+                  disabled={!checked || accepting || !canAck}
                   style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 7, padding: '10px 20px', borderRadius: 11, cursor: (!checked || !editable) ? 'not-allowed' : 'pointer',
+                    display: 'inline-flex', alignItems: 'center', gap: 7, padding: '10px 20px', borderRadius: 11, cursor: (!checked || !canAck) ? 'not-allowed' : 'pointer',
                     fontSize: 13.5, fontWeight: 800, color: '#fff', border: 'none',
-                    background: (!checked || !editable) ? 'rgba(124,58,237,0.4)' : 'linear-gradient(145deg,#a78bfa,#7C3AED)',
-                    boxShadow: (!checked || !editable) ? 'none' : '0 8px 22px -6px rgba(124,58,237,.6)',
-                    opacity: (!checked || !editable) ? 0.7 : 1,
+                    background: (!checked || !canAck) ? 'rgba(124,58,237,0.4)' : 'linear-gradient(145deg,#a78bfa,#7C3AED)',
+                    boxShadow: (!checked || !canAck) ? 'none' : '0 8px 22px -6px rgba(124,58,237,.6)',
+                    opacity: (!checked || !canAck) ? 0.7 : 1,
                   }}
                 >
                   {accepting ? <Loader size={15} /> : <Check size={15} />} Submit Acknowledgement →

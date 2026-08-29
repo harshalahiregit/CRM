@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\Purchase\PurchaseMomAgendaController;
 use App\Http\Controllers\Api\Purchase\PurchaseApprovalController;
 use App\Http\Controllers\Api\Purchase\PurchaseVendorController;
 use App\Http\Controllers\Api\Purchase\PurchaseVendorItemController;
+use App\Http\Controllers\Api\Purchase\PurchaseCompetencyController;
 use App\Http\Controllers\Api\Purchase\PurchaseWorkforceAdminController;
 use App\Http\Controllers\Api\Purchase\PurchaseOrderReturnController;
 use App\Http\Controllers\Api\Purchase\PurchaseReportController;
@@ -183,6 +184,11 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::get('/vendors/{purchaseVendor}/permits',   [PurchaseVendorController::class, 'permits'])->whereNumber('purchaseVendor');
     Route::get('/vendors/{purchaseVendor}/incidents', [PurchaseVendorController::class, 'incidents'])->whereNumber('purchaseVendor');
     Route::put('/vendors/{purchaseVendor}/risk',      [PurchaseVendorController::class, 'assessRisk'])->whereNumber('purchaseVendor');
+    // Prequalification (scored questionnaire) + Due-Diligence checklist — reading
+    // is admin+staff; the write (re-assess / record verification) is an admin
+    // authority decision mounted in the role:admin group below, mirroring TPV.
+    Route::get('/vendors/{purchaseVendor}/prequalification', [\App\Http\Controllers\Api\Purchase\PurchasePrequalificationController::class, 'show'])->whereNumber('purchaseVendor');
+    Route::get('/vendors/{purchaseVendor}/due-diligence',    [\App\Http\Controllers\Api\Purchase\PurchaseDueDiligenceController::class, 'show'])->whereNumber('purchaseVendor');
 
     // Appointments — shared `appointments` table, mirrored here because
     // /api/sales/appointments carries no role gate and takes subject_type as a
@@ -270,6 +276,16 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::get('/workforce/medicals',                 [PurchaseWorkforceAdminController::class, 'medicals']);
     Route::get('/workforce/trainings',                [PurchaseWorkforceAdminController::class, 'trainings']);
 
+    // ── Workforce Competency & Skill Matrix (mirror of TPV §15) ────────────
+    // "No Competency, No Work" — the gate reads the tenant Settings requirement
+    // (workforce_required_competencies) and these records of what a worker holds.
+    Route::get('/workforce/competency',                        [PurchaseCompetencyController::class, 'index']);
+    Route::get('/workforce/workers/{worker}/competency',       [PurchaseCompetencyController::class, 'worker'])->whereNumber('worker');
+    Route::post('/workforce/workers/{worker}/competencies',    [PurchaseCompetencyController::class, 'addCompetency'])->whereNumber('worker');
+    Route::put('/workforce/competencies/{competency}',         [PurchaseCompetencyController::class, 'updateCompetency'])->whereNumber('competency');
+    Route::delete('/workforce/competencies/{competency}',      [PurchaseCompetencyController::class, 'destroyCompetency'])->whereNumber('competency');
+    Route::get('/workforce/vendors/{purchaseVendor}/skill-matrix', [PurchaseCompetencyController::class, 'skillMatrix'])->whereNumber('purchaseVendor');
+
     // ── Compliance register (mirror of TPV §21 — purchase_vendor_compliance) ─
     Route::get('/vendor-compliance',                              [\App\Http\Controllers\Api\Purchase\PurchaseComplianceController::class, 'index']);
     Route::get('/vendors/{purchaseVendor}/compliance',            [\App\Http\Controllers\Api\Purchase\PurchaseComplianceController::class, 'vendorMatrix'])->whereNumber('purchaseVendor');
@@ -289,6 +305,18 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::put('/capas/{capa}',            [\App\Http\Controllers\Api\Purchase\PurchaseCapaController::class, 'update'])->whereNumber('capa');
     Route::post('/capas/{capa}/transition',[\App\Http\Controllers\Api\Purchase\PurchaseCapaController::class, 'transition'])->whereNumber('capa');
     Route::delete('/capas/{capa}',         [\App\Http\Controllers\Api\Purchase\PurchaseCapaController::class, 'destroy'])->whereNumber('capa');
+
+    // ── HSSE incidents → RCA → CAPA (mirror of TPV Doc_4 Phase 5). A Serious/
+    // Fatal or stop-work incident auto-suspends (On_Hold) the vendor; an incident
+    // closes only once its root cause is recorded and every CAPA is verified
+    // (enforced in the service). Distinct from the read-only vendor incidents tab.
+    Route::get('/incidents',                            [\App\Http\Controllers\Api\Purchase\PurchaseIncidentController::class, 'index']);
+    Route::post('/incidents',                           [\App\Http\Controllers\Api\Purchase\PurchaseIncidentController::class, 'store']);
+    Route::get('/incidents/{incident}',                 [\App\Http\Controllers\Api\Purchase\PurchaseIncidentController::class, 'show'])->whereNumber('incident');
+    Route::post('/incidents/{incident}/rca',            [\App\Http\Controllers\Api\Purchase\PurchaseIncidentController::class, 'recordRca'])->whereNumber('incident');
+    Route::post('/incidents/{incident}/close',          [\App\Http\Controllers\Api\Purchase\PurchaseIncidentController::class, 'close'])->whereNumber('incident');
+    Route::post('/incidents/{incident}/capas',          [\App\Http\Controllers\Api\Purchase\PurchaseIncidentController::class, 'addCapa'])->whereNumber('incident');
+    Route::patch('/incidents/{incident}/capas/{capa}',  [\App\Http\Controllers\Api\Purchase\PurchaseIncidentController::class, 'updateCapa'])->whereNumber('incident')->whereNumber('capa');
 
     // ── Governance analytics (mirror of TPV §33 — distinct from /reports/*) ─
     Route::get('/analytics',               [\App\Http\Controllers\Api\Purchase\PurchaseAnalyticsController::class, 'index']);
@@ -485,4 +513,9 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('purchase')->group(fun
 
     // Admin approve/reject a purchase vendor's statutory document.
     Route::post('/documents/{document}/review',      [PurchaseVendorDocumentController::class, 'review']);
+
+    // Scoring a vendor's prequalification and recording its due-diligence
+    // verification are admin authority decisions (mirror the TPV route shapes).
+    Route::put('/vendors/{purchaseVendor}/prequalification', [\App\Http\Controllers\Api\Purchase\PurchasePrequalificationController::class, 'assess'])->whereNumber('purchaseVendor');
+    Route::put('/vendors/{purchaseVendor}/due-diligence',    [\App\Http\Controllers\Api\Purchase\PurchaseDueDiligenceController::class, 'save'])->whereNumber('purchaseVendor');
 });

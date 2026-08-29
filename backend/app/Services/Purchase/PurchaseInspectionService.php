@@ -68,6 +68,14 @@ class PurchaseInspectionService
 
     public function updateFinding(PurchaseInspectionFinding $finding, array $data): PurchaseInspectionFinding
     {
+        // Rule 11 (parity with TpvInspectionService) — a finding cannot progress
+        // past Open (to Action or Closed) without a named responsible owner.
+        $nextStatus = $data['status'] ?? $finding->status;
+        $owner = array_key_exists('responsible_by', $data) ? $data['responsible_by'] : $finding->responsible_by;
+        if (in_array($nextStatus, ['Action', 'Closed'], true) && empty($owner)) {
+            throw new BusinessException('A responsible owner is required before an inspection finding can be actioned or closed.');
+        }
+
         $finding->update($data);
 
         return $finding;

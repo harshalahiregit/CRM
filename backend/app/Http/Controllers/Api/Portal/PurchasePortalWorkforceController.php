@@ -88,9 +88,14 @@ class PurchasePortalWorkforceController extends Controller
         $data = $request->validate([
             'exam_date'      => 'nullable|date',
             'expiry_date'    => 'nullable|date',
-            'fitness_status' => 'required|in:Fit,Unfit,Pending',
+            // TPV-parity fitness states — 'Fit_With_Restrictions' passes readiness.
+            'fitness_status' => 'required|in:Fit,Fit_With_Restrictions,Unfit,Pending,Expired',
             'blood_group'    => 'nullable|string|max:10',
             'remarks'        => 'nullable|string|max:500',
+            // Depth (§16).
+            'restrictions'   => 'nullable|string|max:1000',
+            'examiner_name'  => 'nullable|string|max:150',
+            'approved_by'    => 'nullable|integer',
         ]);
 
         return response()->json($this->service->saveMedical($w, $data), 201);
@@ -100,10 +105,15 @@ class PurchasePortalWorkforceController extends Controller
     {
         $w = $this->owned($request, $worker);
         $data = $request->validate([
-            'title'         => 'required|string|max:150',
+            // title OR a typed training_type — at least one identifies the course.
+            'title'         => 'required_without:training_type|nullable|string|max:150',
+            'training_type' => ['nullable', \Illuminate\Validation\Rule::in(\App\Models\Purchase\PurchaseWorkerTraining::TYPES)],
+            'provider'      => 'nullable|string|max:150',
             'training_date' => 'nullable|date',
             'expiry_date'   => 'nullable|date',
-            'status'        => 'required|in:Completed,Pending,Expired',
+            // TPV-parity currency window.
+            'valid_until'   => 'nullable|date',
+            'status'        => 'required|in:Completed,Pending,Expired,Failed',
             'score'         => 'nullable|string|max:30',
             'remarks'       => 'nullable|string|max:500',
         ]);

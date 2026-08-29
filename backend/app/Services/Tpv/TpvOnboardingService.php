@@ -254,8 +254,14 @@ class TpvOnboardingService
      */
     public function acknowledgeKickoff(TpvOnboarding $onboarding, User $actor, array $meta): TpvOnboarding
     {
-        if (! $onboarding->isEditable()) {
-            throw new BusinessException('This onboarding is no longer editable.');
+        // Acknowledging the MINUTES is a distinct act from editing onboarding DATA.
+        // The kickoff MOM is frequently sent AFTER the vendor has already submitted
+        // (so the onboarding is no longer "editable"), yet Step 1 still needs their
+        // sign-off — gating this on isEditable() left vendors able to SEE the MOM but
+        // unable to acknowledge it. Only a terminally decided onboarding can no longer
+        // acknowledge.
+        if (in_array($onboarding->status, [Status::APPROVED, Status::REJECTED], true)) {
+            throw new BusinessException('This onboarding is already decided — the minutes can no longer be acknowledged.');
         }
 
         /** @var KickoffPdfService $kickoffPdfService */
@@ -447,8 +453,14 @@ class TpvOnboardingService
     {
         $vendor = $onboarding->vendor;
 
+        // Previously only risk_level was threaded, so project/site checklist rules
+        // could never fire even though checklistFor() supports them. Pass the
+        // vendor's project + site too. (work_type has no vendor column yet, so
+        // rules keyed on it stay dormant by design rather than mismatching.)
         return array_filter([
             'risk_level' => $vendor?->risk_level,
+            'project'    => $vendor?->project,
+            'site'       => $vendor?->site,
         ], fn ($v) => $v !== null && $v !== '');
     }
 

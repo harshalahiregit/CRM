@@ -9,7 +9,9 @@ use App\Models\Tpv\TpvGateAttendance;
 use App\Models\Tpv\TpvGateScan;
 use App\Models\Tpv\TpvNcr;
 use App\Models\Tpv\TpvOnboarding;
+use App\Models\Tpv\TpvContract;
 use App\Models\Tpv\TpvSafetyStrike;
+use App\Models\Tpv\TpvVendorViolation;
 use App\Models\Tpv\TpvWorker;
 use App\Models\Tpv\WorkPermit;
 use App\Models\Vendor\Vendor;
@@ -92,6 +94,12 @@ class TpvDashboardService
                 'total' => (clone $v())->count(),
                 'active' => (clone $v())->where('status', VendorStatus::ACTIVE)->count(),
                 'pending' => (clone $v())->whereIn('status', [VendorStatus::DRAFT, VendorStatus::PENDING_APPROVAL])->count(),
+                // Split the combined "pending" into the two distinct queues the doc
+                // names: vendors awaiting the activation decision vs onboardings
+                // submitted and awaiting review.
+                'pending_approval' => (clone $v())->where('status', VendorStatus::PENDING_APPROVAL)->count(),
+                'pending_onboarding' => TpvOnboarding::forTenant($tenantId)
+                    ->whereIn('status', [OnbStatus::SUBMITTED, OnbStatus::UNDER_REVIEW])->count(),
                 'suspended' => (clone $v())->where('status', VendorStatus::SUSPENDED)->count(),
                 'blacklisted' => (clone $v())->where('status', VendorStatus::BLACKLISTED)->count(),
                 'offboarded' => (clone $v())->where('status', VendorStatus::OFFBOARDED)->count(),
@@ -125,6 +133,9 @@ class TpvDashboardService
                     ->whereIn('status', ['Approved', 'Active'])
                     ->where(fn ($q) => $q->whereNull('valid_to')->orWhereDate('valid_to', '>=', $today))->count(),
                 'total_strikes' => TpvSafetyStrike::forTenant($tenantId)->active()->count(),
+                // §45 — a distinct Gate-Violations KPI (open gate violations).
+                'gate_violations' => TpvVendorViolation::forTenant($tenantId)
+                    ->where('type', 'Gate_Violation')->where('status', 'Open')->count(),
             ],
             'performance' => [
                 'avg_score' => $avgPerf,
@@ -205,6 +216,10 @@ class TpvDashboardService
             ['key' => 'renewal_due', 'label' => 'Temporary vendors expiring (7d)', 'path' => '/app/tpv/temporary',
                 'count' => Vendor::forTenant($tenantId)->temporary()->whereNotNull('access_expires_at')
                     ->whereBetween('access_expires_at', [$today, $week])->count()],
+            // §45 — contracts approaching their end date (renewal trigger).
+            ['key' => 'contract_expiry', 'label' => 'Contracts expiring (30d)', 'path' => '/app/tpv/contracts',
+                'count' => TpvContract::forTenant($tenantId)->where('status', 'Active')
+                    ->whereNotNull('end_date')->whereBetween('end_date', [$today, $soon])->count()],
         ];
 
         // Surface only what needs attention; a zeroed row is noise on a to-do list.
