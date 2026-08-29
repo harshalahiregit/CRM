@@ -1,0 +1,1 @@
+import{j as r,bK as a}from"./index-CgMu9dVw.js";import{a as e}from"./clientPortalApi-BEYzLjbt.js";function n({children:t}){return e.has()?t:r.jsx(a,{to:"/portal/login",replace:!0})}export{n as default};

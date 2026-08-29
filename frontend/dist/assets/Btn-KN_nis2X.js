@@ -1,0 +1,1 @@
+import{j as e}from"./index-CgMu9dVw.js";function n({children:t,className:o="",...r}){return e.jsx("button",{className:`px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${o}`,style:{background:"var(--bg-hover)",border:"1px solid var(--border)",color:"var(--text-muted)"},...r,children:t})}export{n as G};
