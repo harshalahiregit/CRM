@@ -1,0 +1,1 @@
+import{j as i}from"./index-YFpM2CDI.js";import{Q as o}from"./QualificationQueue-D0g9Hkb1.js";import"./tpvApi-C3VvFpK0.js";import"./kit3d-B_k9_9OX.js";import"./arrow-right-CeGfQ1Wf.js";function s(){return i.jsx(o,{mode:"risk"})}export{s as default};

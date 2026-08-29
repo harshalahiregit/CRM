@@ -1,0 +1,1 @@
+import{r as i,b7 as s}from"./index-YFpM2CDI.js";function u(){const[o,e]=i.useState([]);return i.useEffect(()=>{let a=!0;return s.list().then(t=>{const c=Array.isArray(t)?t:(t==null?void 0:t.data)??[];a&&e(c.map(r=>({id:r.id,name:r.name})))}).catch(()=>{a&&e([])}),()=>{a=!1}},[]),o}export{u};

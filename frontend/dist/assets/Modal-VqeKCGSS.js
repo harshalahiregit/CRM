@@ -1,0 +1,1 @@
+import{ao as n,j as o}from"./index-YFpM2CDI.js";function d({open:a,onClose:r,children:t,className:s="",style:e,closeOnBackdrop:i=!1}){return a?n.createPortal(o.jsx("div",{className:"modal-backdrop",onClick:i?r:void 0,children:o.jsx("div",{className:`modal-box ${s}`.trim(),onClick:l=>l.stopPropagation(),style:e,children:t})}),document.body):null}export{d as M};

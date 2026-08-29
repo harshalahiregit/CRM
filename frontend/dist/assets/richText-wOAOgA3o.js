@@ -1,0 +1,1 @@
+const l=t=>t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");function c(t){const e=t==null?"":String(t);return e.trim()?{__html:/<[a-z][\s\S]*>/i.test(e)?e:l(e).replace(/\n/g,"<br>")}:{__html:""}}export{c as r};
