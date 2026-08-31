@@ -35,6 +35,28 @@ export function readStoredSection() {
   }
 }
 
+/**
+ * HR's inner groups — Recruitment and HR Records.
+ *
+ * These are NOT an accordion. The module level allows one open section because
+ * the whole point there is to keep the sidebar short; inside a single open
+ * module both groups can be open at once, and clicking one must leave the other
+ * exactly as it was. Hence a set of ids rather than a single id.
+ */
+export const SIDEBAR_GROUPS_KEY = 'sangoe_sidebar_groups'
+export const GROUP_IDS = ['recruitment', 'hr-records']
+
+export function readStoredGroups() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SIDEBAR_GROUPS_KEY) || '[]')
+    // Whatever comes back is untrusted: hand-edited, left over from an older
+    // build, or not an array at all. Keep only ids that still name a group.
+    return Array.isArray(raw) ? raw.filter(id => GROUP_IDS.includes(id)) : []
+  } catch {
+    return []
+  }
+}
+
 export function useSidebarSection() {
   const [openSection, setOpenSection] = useState(readStoredSection)
 
@@ -49,5 +71,18 @@ export function useSidebarSection() {
     } catch { /* not remembering is fine; crashing is not */ }
   }, [openSection])
 
-  return { openSection, toggleSection }
+  // Both groups start closed and open only on a click, each independently of
+  // the other. Stored as a list because both may be open at the same time.
+  const [openGroups, setOpenGroups] = useState(readStoredGroups)
+  const toggleGroup = (id) =>
+    setOpenGroups(cur => (cur.includes(id) ? cur.filter(g => g !== id) : [...cur, id]))
+  const isGroupOpen = (id) => openGroups.includes(id)
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_GROUPS_KEY, JSON.stringify(openGroups))
+    } catch { /* not remembering is fine; crashing is not */ }
+  }, [openGroups])
+
+  return { openSection, toggleSection, isGroupOpen, toggleGroup }
 }

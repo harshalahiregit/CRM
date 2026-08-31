@@ -247,7 +247,7 @@ const SUBMODULE_SEARCH = [
   ...TPV_ADMIN_ITEMS.map(i => ({ ...i, module: 'TPV' })),
 ]
 
-export default function Sidebar({ collapsed, onToggle, openSection, toggleSection }) {
+export default function Sidebar({ collapsed, onToggle, openSection, toggleSection, isGroupOpen, toggleGroup }) {
   const { user, tenant, logout } = useAuth()
   const { isDark } = useTheme()
   const navigate = useNavigate()
@@ -275,28 +275,49 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
    * only on a click; the last click is what gets remembered.
    */
   const navRef = useRef(null)
+  /**
+   * Bring the open section into view — on a reload AND on a click.
+   *
+   * This used to run on mount only, so clicking a section never scrolled. That
+   * left the LAST section unusable: click "Thirdparty Vendor" and its header is
+   * already visible (you just clicked it), so everything it opens lands below
+   * the fold with nothing bringing it back.
+   *
+   * Measuring the header alone is what made it useless here — the header being
+   * on screen says nothing about whether its ITEMS are. So measure the section's
+   * whole block: header plus everything the click revealed. If that block does
+   * not fit, pull the header up towards the top of the nav, which shows as many
+   * of its items as the space allows.
+   *
+   * Only on opening. Scrolling when a section CLOSES would jump the list under
+   * someone who just clicked to collapse it.
+   */
   useEffect(() => {
-    if (!openSection) return
+    if (!openSection) return          // closing: leave the scroll alone
     const nav = navRef.current
-    const el = nav?.querySelector(`[data-section="${openSection}"]`)
-    if (!nav || !el) return
-    const navBox = nav.getBoundingClientRect()
-    const elBox = el.getBoundingClientRect()
-    // Only move if it is actually out of view — a section already on screen
-    // must not twitch on every load.
-    if (elBox.top < navBox.top || elBox.bottom > navBox.bottom) {
-      nav.scrollTop += elBox.top - navBox.top - 8   // 8px of breathing room above
-    }
-    // Mount only: this restores your place on a reload. Re-running it on every
-    // toggle would yank the list around while you are clicking through it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    const header = nav?.querySelector(`[data-section="${openSection}"]`)
+    if (!nav || !header) return
 
-  // HR's inner groups sit INSIDE the HR section, so they are not part of the
-  // accordion — they stay open so that opening HR reveals its pages rather than
-  // two more headers to click through.
-  const [recruitExpanded, setRecruitExpanded] = useState(true)
-  const [hrRecordsExpanded, setHrRecordsExpanded] = useState(true)
+    // The block wrapping this section's header and its items. Falling back to
+    // the header keeps this a no-op rather than a crash if the markup changes.
+    const block = header.closest('[data-section-block]') || header
+    const navBox = nav.getBoundingClientRect()
+    const blockBox = block.getBoundingClientRect()
+    const headBox = header.getBoundingClientRect()
+
+    const fits = blockBox.top >= navBox.top && blockBox.bottom <= navBox.bottom
+    if (fits) return                  // already fully visible: do not twitch
+
+    // Header towards the top, so the items below it get the remaining space.
+    // The browser clamps to the real scroll range, so a short last section
+    // simply stops where the content ends.
+    nav.scrollTop += headBox.top - navBox.top - 8
+  }, [openSection])
+
+  // HR's inner groups (Recruitment, HR Records) start closed and open only on a
+  // click — and independently of each other, unlike the module accordion above.
+  // State is owned by AppShell so the two mounted Sidebars agree, and persisted
+  // so a refresh does not undo the click. See sidebarSection.js.
   // Admin/staff see Dashboard + Kickoff; a TPV (vendor) login sees Onboarding + Workforce.
   const tpvItems = ['third_party_vendor', 'vendor'].includes(user?.role)
     ? TPV_VENDOR_ITEMS
@@ -537,7 +558,7 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
             /app/hr/dashboard always loaded regardless. Removing it makes HR behave
             like the other eleven modules. Per-tenant module entitlement, if it is
             wanted, belongs in the database and not in one browser's storage. */}
-          <div className="mt-2">
+          <div data-section-block className="mt-2">
             {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>HR Module</p>}
             {/* HRMS parent toggle */}
             <button
@@ -565,15 +586,15 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
                   <HrLeaf item={HR_DASHBOARD} />
 
                   {/* Recruitment group */}
-                  <HrGroupHeader label="Recruitment" icon={Briefcase} expanded={recruitExpanded} onToggle={() => setRecruitExpanded(e => !e)} />
-                  {recruitExpanded && HR_RECRUITMENT_ITEMS.map(item => <HrLeaf key={item.path} item={item} indent="44px" />)}
+                  <HrGroupHeader label="Recruitment" icon={Briefcase} expanded={isGroupOpen('recruitment')} onToggle={() => toggleGroup('recruitment')} />
+                  {isGroupOpen('recruitment') && HR_RECRUITMENT_ITEMS.map(item => <HrLeaf key={item.path} item={item} indent="44px" />)}
 
                   {/* Employees (top-level) */}
                   <HrLeaf item={HR_EMPLOYEES} />
 
                   {/* HR Records group */}
-                  <HrGroupHeader label="HR Records" icon={FolderOpen} expanded={hrRecordsExpanded} onToggle={() => setHrRecordsExpanded(e => !e)} />
-                  {hrRecordsExpanded && HR_RECORDS_ITEMS.map(item => <HrLeaf key={item.path} item={item} indent="44px" />)}
+                  <HrGroupHeader label="HR Records" icon={FolderOpen} expanded={isGroupOpen('hr-records')} onToggle={() => toggleGroup('hr-records')} />
+                  {isGroupOpen('hr-records') && HR_RECORDS_ITEMS.map(item => <HrLeaf key={item.path} item={item} indent="44px" />)}
 
                   {/* SangoeTrack — flat, no group header, by request. A rule
                       above the set separates it from HR's own records without
@@ -632,7 +653,7 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
         </div>
 
         {/* ── Accounts Module sub-nav ── */}
-        <div className={clsx('mt-2')}>
+        <div data-section-block className={clsx('mt-2')}>
           {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>Accounts & Finance</p>}
           <button
             onClick={() => toggleSection('accounts')}
@@ -662,7 +683,7 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
         </div>
 
         {/* ── Sales Module sub-nav ── */}
-        <div className={clsx('mt-2')}>
+        <div data-section-block className={clsx('mt-2')}>
           {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>Sales & Revenue</p>}
           <button
             onClick={() => toggleSection('sales')}
@@ -703,7 +724,7 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
         </div>
 
         {/* ── Helpdesk Module sub-nav ── */}
-        <div className={clsx('mt-2')}>
+        <div data-section-block className={clsx('mt-2')}>
           {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#22d3ee' }}>Helpdesk & Support</p>}
           <button
             onClick={() => toggleSection('helpdesk')}
@@ -755,7 +776,7 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
         </div>
 
         {/* ── Inventory Module sub-nav ── */}
-        <div className={clsx('mt-2')}>
+        <div data-section-block className={clsx('mt-2')}>
           {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#10b981' }}>Inventory</p>}
           <button
             onClick={() => toggleSection('inventory')}
@@ -787,7 +808,7 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
         </div>
 
         {/* ── Purchase Module sub-nav ── */}
-        <div className={clsx('mt-2')}>
+        <div data-section-block className={clsx('mt-2')}>
           {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>Purchase</p>}
           <button
             onClick={() => toggleSection('purchase')}
@@ -817,7 +838,7 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
         </div>
 
         {/* ── TPV Module sub-nav ── */}
-        <div className={clsx('mt-2')}>
+        <div data-section-block className={clsx('mt-2')}>
           {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>Thirdparty Vendor</p>}
           <button
             onClick={() => toggleSection('tpv')}

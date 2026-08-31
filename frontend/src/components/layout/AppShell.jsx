@@ -14,7 +14,7 @@ export default function AppShell() {
   // Owned here, not inside Sidebar: two Sidebars are mounted (the off-canvas
   // mobile drawer and the desktop one) and they must not disagree about which
   // accordion section is open. See sidebarSection.js.
-  const { openSection, toggleSection } = useSidebarSection()
+  const { openSection, toggleSection, isGroupOpen, toggleGroup } = useSidebarSection()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const { isDark } = useTheme()
   const { pathname } = useLocation()
@@ -57,7 +57,7 @@ export default function AppShell() {
         )}
         style={{ filter: isDark ? 'none' : 'drop-shadow(4px 0 24px rgba(124,58,237,0.12))' }}
       >
-        <Sidebar collapsed={false} onToggle={() => {}} openSection={openSection} toggleSection={toggleSection} />
+        <Sidebar collapsed={false} onToggle={() => {}} openSection={openSection} toggleSection={toggleSection} isGroupOpen={isGroupOpen} toggleGroup={toggleGroup} />
       </div>
 
       {/* Desktop sidebar */}
@@ -66,6 +66,8 @@ export default function AppShell() {
         onToggle={() => setSidebarCollapsed(c => !c)}
         openSection={openSection}
         toggleSection={toggleSection}
+        isGroupOpen={isGroupOpen}
+        toggleGroup={toggleGroup}
       />
 
       {/* Header */}
