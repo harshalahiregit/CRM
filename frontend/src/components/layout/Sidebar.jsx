@@ -50,23 +50,9 @@ const MODULE_SEARCH = [
   { label: 'Compliance', path: '/app/tpv/compliance',   icon: ShieldCheck,     kw: 'hsse checklists' },
 ]
 
-// Which module the current route belongs to — used to PIN that module's header
-// at the top of the sidebar. Ordered longest-prefix-first so e.g.
-// /app/tpv/compliance resolves to Compliance, not TPV.
-const PINNED_MODULES = [
-  { base: '/app/tpv/compliance', label: 'Compliance', icon: ShieldCheck,     path: '/app/tpv/compliance' },
-  { base: '/app/dashboard',      label: 'Dashboard',  icon: LayoutDashboard, path: '/app/dashboard' },
-  { base: '/app/tasks',          label: 'Tasks',      icon: CheckSquare,     path: '/app/tasks' },
-  { base: '/app/projects',       label: 'Projects',   icon: FolderOpen,      path: '/app/projects' },
-  { base: '/app/helpdesk',       label: 'Helpdesk',   icon: LifeBuoy,        path: '/app/helpdesk/tickets' },
-  { base: '/app/inventory',      label: 'Inventory',  icon: Boxes,           path: '/app/inventory' },
-  { base: '/app/sales',          label: 'Sales',      icon: TrendingUp,      path: '/app/sales/dashboard' },
-  { base: '/app/accounts',       label: 'Accounts',   icon: Landmark,        path: '/app/accounts' },
-  { base: '/app/hr',             label: 'HR',         icon: Users,           path: '/app/hr/dashboard' },
-  { base: '/app/purchase',       label: 'Purchase',   icon: ShoppingCart,    path: '/app/purchase/dashboard' },
-  { base: '/app/tpv',            label: 'TPV',        icon: UserCheck,       path: '/app/tpv/dashboard' },
-  { base: '/app/customers',      label: 'Customers',  icon: Building2,       path: '/app/customers' },
-]
+// NOTE: PINNED_MODULES was removed with the pinned-header block it fed. The
+// sidebar no longer derives anything from the current route — sections open on
+// a click and only on a click.
 
 // ── HRMS sidebar structure (paths/APIs/permissions unchanged) ──
 //   HRMS
@@ -265,16 +251,33 @@ export default function Sidebar({ collapsed, onToggle }) {
   const { user, tenant, logout } = useAuth()
   const { isDark } = useTheme()
   const navigate = useNavigate()
-  const [hrExpanded, setHrExpanded] = useState(true)
+  /**
+   * ONE open module at a time, and nothing open to begin with.
+   *
+   * This used to be nine independent booleans, every one defaulting to true, so
+   * the sidebar rendered every module's sub-nav at once — several hundred rows
+   * in one scroller. Navigating then shifted content above the scroll position
+   * and you lost your place on every click.
+   *
+   * Holding a single id instead makes the accordion true by construction: there
+   * is nowhere to record a second open section, so opening one closes the other
+   * without any bookkeeping. `null` means all closed, which is both the initial
+   * state and what clicking an open header returns you to.
+   *
+   * Deliberately NOT auto-opened from the current route: the ask was that
+   * everything starts closed and only opens on a click. Reloading inside a
+   * module therefore shows it closed — the trade for a sidebar that always
+   * starts the same way. React state, so it survives navigation within a
+   * session and only resets on a full page load.
+   */
+  const [openSection, setOpenSection] = useState(null)
+  const toggleSection = (id) => setOpenSection(cur => (cur === id ? null : id))
+
+  // HR's inner groups sit INSIDE the HR section, so they are not part of the
+  // accordion — they stay open so that opening HR reveals its pages rather than
+  // two more headers to click through.
   const [recruitExpanded, setRecruitExpanded] = useState(true)
   const [hrRecordsExpanded, setHrRecordsExpanded] = useState(true)
-  const [salesExpanded, setSalesExpanded] = useState(true)
-  const [accountsExpanded, setAccountsExpanded] = useState(true)
-  const [helpdeskExpanded, setHelpdeskExpanded] = useState(true)
-  const [inventoryExpanded, setInventoryExpanded] = useState(true)
-  const [tpvExpanded, setTpvExpanded] = useState(true)
-  const [purchaseExpanded, setPurchaseExpanded] = useState(true)
-  const [pinOpen, setPinOpen] = useState(true)   // pinned module's sub-list open?
   // Admin/staff see Dashboard + Kickoff; a TPV (vendor) login sees Onboarding + Workforce.
   const tpvItems = ['third_party_vendor', 'vendor'].includes(user?.role)
     ? TPV_VENDOR_ITEMS
@@ -282,27 +285,6 @@ export default function Sidebar({ collapsed, onToggle }) {
   const [activeLeadsCount, setActiveLeadsCount] = useState(null)
   const [moduleQuery, setModuleQuery] = useState('')
   const { pathname } = useLocation()
-  // The module the current route lives in — pinned at the top of the sidebar.
-  const activeModule = PINNED_MODULES.find(m => pathname.startsWith(m.base))
-  // Its sub-pages, shown under the pin so you can move around the open module
-  // without scrolling. Modules that are a single page (Tasks, Customers…) have none.
-  //
-  // HR is deliberately absent. It has a three-level tree — Recruitment, HR
-  // Records, then the SangoeTrack set below a rule — and the pin renders a FLAT
-  // list, so pinning it dropped both the grouping and the separator. The result
-  // was 24 undifferentiated rows with no line between the CRM's own HR and
-  // SangoeTrack's. Its block below renders the real tree in both cases.
-  const activeSubItems = {
-    '/app/helpdesk': HELPDESK_SUB_ITEMS,
-    '/app/inventory': INVENTORY_SUB_ITEMS,
-    '/app/sales': SALES_SUB_ITEMS,
-    '/app/accounts': ACCOUNTS_SUB_ITEMS,
-    '/app/purchase': PURCHASE_SUB_ITEMS,
-    '/app/tpv': tpvItems,
-  }[activeModule?.base] || []
-  // Which module's normal block to hide (it's shown in the pin instead). Only in
-  // the expanded sidebar — the collapsed icon rail shows no pin, so hide nothing.
-  const pinnedBase = !collapsed && activeSubItems.length > 0 ? activeModule?.base : null
   const q = moduleQuery.trim().toLowerCase()
   // Modules first, then any sub-page whose name matches — one combined list.
   const moduleResults = q ? [
@@ -463,42 +445,14 @@ export default function Sidebar({ collapsed, onToggle }) {
       {/* min-h-0 lets this flex child shrink so its own overflow scrolls, even
           with the fixed logo/search blocks taking space above it. */}
       <nav className="flex-1 min-h-0 pb-3 overflow-y-auto scrollbar-hide">
-        {/* Pinned open-module — its header is sticky (stays put at the top while
-            you scroll), and its sub-pages sit right under it. Both live INSIDE
-            this scroll container, so the sidebar scrolls normally and the fixed
-            footer can never squeeze the scroll area to nothing. The module's
-            duplicate further down is hidden (see the per-module guards below). */}
-        {!collapsed && activeModule && activeSubItems.length > 0 && (
-          <>
-            <div className="sb-pin-head sticky top-0 z-20 flex items-center gap-2 px-3 py-2 mb-0.5" style={{ background: 'var(--bg-sidebar)' }}>
-              <button onClick={() => navigate(activeModule.path)} className="flex items-center gap-2 min-w-0 flex-1">
-                <activeModule.icon size={15} style={{ color: '#a78bfa' }} className="shrink-0" />
-                <span className="text-sm font-semibold truncate" style={{ color: 'var(--text-h)' }}>{activeModule.label}</span>
-                <span className="text-[9px] font-black px-1.5 py-0.5 rounded shrink-0" style={{ background: 'rgba(124,58,237,0.22)', color: '#a78bfa' }}>OPEN</span>
-              </button>
-              <button onClick={() => setPinOpen(o => !o)} className="shrink-0 p-0.5" aria-label={pinOpen ? 'Collapse' : 'Expand'} title={pinOpen ? 'Collapse' : 'Expand'}>
-                <ChevronDown size={14} className={clsx('transition-transform duration-200', !pinOpen && '-rotate-90')} style={{ color: '#a78bfa' }} />
-              </button>
-            </div>
-            {pinOpen && activeSubItems.map(item => {
-              const Icon = item.icon
-              return (
-                <NavLink key={`pin-${item.path}`} to={item.path} end={item.end}>
-                  {({ isActive }) => (
-                    <div className={clsx('nav-3d mb-0.5', isActive && 'nav-3d-active')} style={{ paddingLeft: '28px' }}>
-                      <div className="flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: isActive ? 'rgba(255,255,255,0.15)' : 'rgba(124,58,237,0.06)' }}>
-                        <Icon size={12} />
-                      </div>
-                      <span className="truncate text-xs">{item.label}</span>
-                      {isActive && <div className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: '#c4b5fd' }} />}
-                    </div>
-                  )}
-                </NavLink>
-              )
-            })}
-            <div className="mx-3 my-2" style={{ borderTop: '1px solid var(--border)' }} />
-          </>
-        )}
+        {/* The pinned open-module block was removed here.
+            It duplicated the module's own sub-nav lower down (which is why a
+            `pinnedBase` guard existed to hide that copy), and because it was
+            inserted at the TOP of this scroll container, entering or leaving a
+            module changed the number of rows above the scroll position. The
+            browser keeps scrollTop, so the content slid under you and you had to
+            scroll to find where you were. With the accordion below, the list is
+            short enough that the pin has nothing left to solve. */}
 
         {/* Section label */}
         {!collapsed && <p className="label-caps px-5 mb-2">Main Menu</p>}
@@ -568,7 +522,7 @@ export default function Sidebar({ collapsed, onToggle }) {
             {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>HR Module</p>}
             {/* HRMS parent toggle */}
             <button
-              onClick={() => setHrExpanded(e => !e)}
+              onClick={() => toggleSection('hr')}
               title={collapsed ? 'HR' : ''}
               className="nav-3d mb-0.5 w-full"
               style={{ justifyContent: collapsed ? 'center' : undefined, color: '#a78bfa' }}
@@ -576,16 +530,16 @@ export default function Sidebar({ collapsed, onToggle }) {
               <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.15)' }}>
                 <span style={{ fontSize: 13 }}>👥</span>
               </div>
-              {/* "HR", matching PINNED_MODULES. This said HRMS while the pinned
+              {/* "HR". This said HRMS while the old pinned
                   header said HR, so the same module had two names depending on
                   which page you happened to be standing on. */}
-              {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">HR</span><ChevronDown size={13} className={clsx('transition-transform duration-200', hrExpanded && 'rotate-180')} /></>}
+              {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">HR</span><ChevronDown size={13} className={clsx('transition-transform duration-200', openSection === 'hr' && 'rotate-180')} /></>}
             </button>
 
             {/* Collapsed rail: flatten every leaf to an icon (all pages reachable). */}
             {collapsed
               ? HR_ALL_LEAVES.map(item => <HrLeaf key={item.path} item={item} />)
-              : hrExpanded && (
+              : openSection === 'hr' && (
                 <>
                   {/* Dashboard */}
                   <HrLeaf item={HR_DASHBOARD} />
@@ -658,10 +612,10 @@ export default function Sidebar({ collapsed, onToggle }) {
         </div>
 
         {/* ── Accounts Module sub-nav ── */}
-        <div className={clsx('mt-2', pinnedBase === '/app/accounts' && 'hidden')}>
+        <div className={clsx('mt-2')}>
           {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>Accounts & Finance</p>}
           <button
-            onClick={() => setAccountsExpanded(e => !e)}
+            onClick={() => toggleSection('accounts')}
             title={collapsed ? 'Accounts & Finance' : ''}
             className="nav-3d mb-0.5 w-full"
             style={{ justifyContent: collapsed ? 'center' : undefined, color: '#a78bfa' }}
@@ -669,9 +623,9 @@ export default function Sidebar({ collapsed, onToggle }) {
             <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.15)' }}>
               <Landmark size={13} style={{ color: '#a78bfa' }} />
             </div>
-            {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Accounts & Finance</span><ChevronDown size={13} className={clsx('transition-transform duration-200', accountsExpanded && 'rotate-180')} /></>}
+            {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Accounts & Finance</span><ChevronDown size={13} className={clsx('transition-transform duration-200', openSection === 'accounts' && 'rotate-180')} /></>}
           </button>
-          {(accountsExpanded || collapsed) && ACCOUNTS_SUB_ITEMS.map(({ label, path, icon: Icon }) => (
+          {(openSection === 'accounts' || collapsed) && ACCOUNTS_SUB_ITEMS.map(({ label, path, icon: Icon }) => (
             <NavLink key={path} to={path}>
               {({ isActive }) => (
                 <div title={collapsed ? label : ''} className={clsx('nav-3d mb-0.5', isActive && 'nav-3d-active')} style={{ justifyContent: collapsed ? 'center' : undefined, paddingLeft: collapsed ? undefined : '28px' }}>
@@ -687,10 +641,10 @@ export default function Sidebar({ collapsed, onToggle }) {
         </div>
 
         {/* ── Sales Module sub-nav ── */}
-        <div className={clsx('mt-2', pinnedBase === '/app/sales' && 'hidden')}>
+        <div className={clsx('mt-2')}>
           {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>Sales & Revenue</p>}
           <button
-            onClick={() => setSalesExpanded(e => !e)}
+            onClick={() => toggleSection('sales')}
             title={collapsed ? 'Sales & Revenue' : ''}
             className="nav-3d mb-0.5 w-full"
             style={{ justifyContent: collapsed ? 'center' : undefined, color: '#a78bfa' }}
@@ -698,9 +652,9 @@ export default function Sidebar({ collapsed, onToggle }) {
             <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.15)' }}>
               <IndianRupee size={13} style={{ color: '#a78bfa' }} />
             </div>
-            {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Sales & Revenue</span><ChevronDown size={13} className={clsx('transition-transform duration-200', salesExpanded && 'rotate-180')} /></>}
+            {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Sales & Revenue</span><ChevronDown size={13} className={clsx('transition-transform duration-200', openSection === 'sales' && 'rotate-180')} /></>}
           </button>
-          {(salesExpanded || collapsed) && SALES_SUB_ITEMS.map(({ group, label, path, icon: Icon }, i) => (
+          {(openSection === 'sales' || collapsed) && SALES_SUB_ITEMS.map(({ group, label, path, icon: Icon }, i) => (
             <div key={path}>
             {/* Mini group header — only when the group changes, and never in the collapsed icon rail */}
             {!collapsed && group && group !== SALES_SUB_ITEMS[i - 1]?.group && (
@@ -727,10 +681,10 @@ export default function Sidebar({ collapsed, onToggle }) {
         </div>
 
         {/* ── Helpdesk Module sub-nav ── */}
-        <div className={clsx('mt-2', pinnedBase === '/app/helpdesk' && 'hidden')}>
+        <div className={clsx('mt-2')}>
           {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#22d3ee' }}>Helpdesk & Support</p>}
           <button
-            onClick={() => setHelpdeskExpanded(e => !e)}
+            onClick={() => toggleSection('helpdesk')}
             title={collapsed ? 'Helpdesk & Support' : ''}
             className="nav-3d mb-0.5 w-full"
             style={{ justifyContent: collapsed ? 'center' : undefined, color: '#22d3ee' }}
@@ -738,9 +692,9 @@ export default function Sidebar({ collapsed, onToggle }) {
             <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(6,182,212,0.15)' }}>
               <LifeBuoy size={13} style={{ color: '#22d3ee' }} />
             </div>
-            {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Helpdesk & Support</span><ChevronDown size={13} className={clsx('transition-transform duration-200', helpdeskExpanded && 'rotate-180')} /></>}
+            {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Helpdesk & Support</span><ChevronDown size={13} className={clsx('transition-transform duration-200', openSection === 'helpdesk' && 'rotate-180')} /></>}
           </button>
-          {(helpdeskExpanded || collapsed) && HELPDESK_SUB_ITEMS.map(({ label, path, icon: Icon }) => {
+          {(openSection === 'helpdesk' || collapsed) && HELPDESK_SUB_ITEMS.map(({ label, path, icon: Icon }) => {
             // The Tickets row shows Open / Closed counts (colour-coded) plus a
             // small "new" dot when there are unseen tickets.
             const isTickets = label === 'Tickets'
@@ -778,10 +732,10 @@ export default function Sidebar({ collapsed, onToggle }) {
         </div>
 
         {/* ── Inventory Module sub-nav ── */}
-        <div className={clsx('mt-2', pinnedBase === '/app/inventory' && 'hidden')}>
+        <div className={clsx('mt-2')}>
           {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#10b981' }}>Inventory</p>}
           <button
-            onClick={() => setInventoryExpanded(e => !e)}
+            onClick={() => toggleSection('inventory')}
             title={collapsed ? 'Inventory' : ''}
             className="nav-3d mb-0.5 w-full"
             style={{ justifyContent: collapsed ? 'center' : undefined, color: '#10b981' }}
@@ -789,9 +743,9 @@ export default function Sidebar({ collapsed, onToggle }) {
             <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(16,185,129,0.15)' }}>
               <Boxes size={13} style={{ color: '#10b981' }} />
             </div>
-            {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Inventory</span><ChevronDown size={13} className={clsx('transition-transform duration-200', inventoryExpanded && 'rotate-180')} /></>}
+            {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Inventory</span><ChevronDown size={13} className={clsx('transition-transform duration-200', openSection === 'inventory' && 'rotate-180')} /></>}
           </button>
-          {(inventoryExpanded || collapsed) && INVENTORY_SUB_ITEMS.map(({ label, path, icon: Icon, end }) => (
+          {(openSection === 'inventory' || collapsed) && INVENTORY_SUB_ITEMS.map(({ label, path, icon: Icon, end }) => (
             // `end` on the dashboard row — without it /app/inventory stays
             // highlighted while you're on any of its child pages.
             <NavLink key={path} to={path} end={end}>
@@ -809,10 +763,10 @@ export default function Sidebar({ collapsed, onToggle }) {
         </div>
 
         {/* ── Purchase Module sub-nav ── */}
-        <div className={clsx('mt-2', pinnedBase === '/app/purchase' && 'hidden')}>
+        <div className={clsx('mt-2')}>
           {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>Purchase</p>}
           <button
-            onClick={() => setPurchaseExpanded(e => !e)}
+            onClick={() => toggleSection('purchase')}
             title={collapsed ? 'Purchase' : ''}
             className="nav-3d mb-0.5 w-full"
             style={{ justifyContent: collapsed ? 'center' : undefined, color: '#a78bfa' }}
@@ -820,9 +774,9 @@ export default function Sidebar({ collapsed, onToggle }) {
             <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.15)' }}>
               <ShoppingCart size={13} style={{ color: '#a78bfa' }} />
             </div>
-            {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Purchase</span><ChevronDown size={13} className={clsx('transition-transform duration-200', purchaseExpanded && 'rotate-180')} /></>}
+            {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Purchase</span><ChevronDown size={13} className={clsx('transition-transform duration-200', openSection === 'purchase' && 'rotate-180')} /></>}
           </button>
-          {(purchaseExpanded || collapsed) && PURCHASE_SUB_ITEMS.map(({ label, path, icon: Icon }) => (
+          {(openSection === 'purchase' || collapsed) && PURCHASE_SUB_ITEMS.map(({ label, path, icon: Icon }) => (
             <NavLink key={path} to={path}>
               {({ isActive }) => (
                 <div title={collapsed ? label : ''} className={clsx('nav-3d mb-0.5', isActive && 'nav-3d-active')} style={{ justifyContent: collapsed ? 'center' : undefined, paddingLeft: collapsed ? undefined : '28px' }}>
@@ -838,10 +792,10 @@ export default function Sidebar({ collapsed, onToggle }) {
         </div>
 
         {/* ── TPV Module sub-nav ── */}
-        <div className={clsx('mt-2', pinnedBase === '/app/tpv' && 'hidden')}>
+        <div className={clsx('mt-2')}>
           {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>Thirdparty Vendor</p>}
           <button
-            onClick={() => setTpvExpanded(e => !e)}
+            onClick={() => toggleSection('tpv')}
             title={collapsed ? 'Thirdparty Vendor' : ''}
             className="nav-3d mb-0.5 w-full"
             style={{ justifyContent: collapsed ? 'center' : undefined, color: '#a78bfa' }}
@@ -849,9 +803,9 @@ export default function Sidebar({ collapsed, onToggle }) {
             <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.15)' }}>
               <Shield size={13} style={{ color: '#a78bfa' }} />
             </div>
-            {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Thirdparty Vendor</span><ChevronDown size={13} className={clsx('transition-transform duration-200', tpvExpanded && 'rotate-180')} /></>}
+            {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Thirdparty Vendor</span><ChevronDown size={13} className={clsx('transition-transform duration-200', openSection === 'tpv' && 'rotate-180')} /></>}
           </button>
-          {(tpvExpanded || collapsed) && tpvItems.map(({ label, path, icon: Icon }) => (
+          {(openSection === 'tpv' || collapsed) && tpvItems.map(({ label, path, icon: Icon }) => (
             <NavLink key={path} to={path}>
               {({ isActive }) => (
                 <div title={collapsed ? label : ''} className={clsx('nav-3d mb-0.5', isActive && 'nav-3d-active')} style={{ justifyContent: collapsed ? 'center' : undefined, paddingLeft: collapsed ? undefined : '28px' }}>

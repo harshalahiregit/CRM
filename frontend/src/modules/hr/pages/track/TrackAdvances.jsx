@@ -105,7 +105,6 @@ function DisburseForm({ advance, onDone }) {
         <input
           value={ref}
           onChange={e => setRef(e.target.value)}
-          maxLength={120}
           autoFocus
           maxLength={100}
           placeholder={
