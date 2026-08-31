@@ -54,6 +54,28 @@ const MODULE_SEARCH = [
 // sidebar no longer derives anything from the current route — sections open on
 // a click and only on a click.
 
+// Which accordion section is open, remembered across reloads so a refresh does
+// not close what you opened. Per browser, by nature: this is a convenience, not
+// a setting, and there is no server round-trip worth spending on it.
+const SIDEBAR_SECTION_KEY = 'sangoe_sidebar_section'
+
+// The only ids that may be restored. A key can outlive the section it names —
+// a module gets renamed or dropped and the stored value is suddenly a section
+// that no longer exists, leaving every header closed with no way to tell why.
+// Validating on read means a stale value degrades to "all closed" instead.
+const SECTION_IDS = ['hr', 'sales', 'accounts', 'helpdesk', 'inventory', 'purchase', 'tpv']
+
+function readStoredSection() {
+  try {
+    const saved = localStorage.getItem(SIDEBAR_SECTION_KEY)
+    return SECTION_IDS.includes(saved) ? saved : null
+  } catch {
+    // Private windows and blocked site data throw on access rather than
+    // returning null. Start closed; the sidebar still works.
+    return null
+  }
+}
+
 // ── HRMS sidebar structure (paths/APIs/permissions unchanged) ──
 //   HRMS
 //   ├── Dashboard
@@ -264,14 +286,29 @@ export default function Sidebar({ collapsed, onToggle }) {
    * without any bookkeeping. `null` means all closed, which is both the initial
    * state and what clicking an open header returns you to.
    *
-   * Deliberately NOT auto-opened from the current route: the ask was that
-   * everything starts closed and only opens on a click. Reloading inside a
-   * module therefore shows it closed — the trade for a sidebar that always
-   * starts the same way. React state, so it survives navigation within a
-   * session and only resets on a full page load.
+   * Deliberately NOT derived from the current route: sections open on a click
+   * and only on a click. What IS remembered is the last click — the choice is
+   * persisted below, so a refresh does not silently close what you opened.
+   *
+   * Note the consequence, since it is a real one: the stored section is restored
+   * whatever page you land on, so it can come back open on a module you are not
+   * currently in. That is the accepted trade for "a refresh should not undo my
+   * click". Opening from the route instead would fix that but would also open
+   * things you never clicked.
    */
-  const [openSection, setOpenSection] = useState(null)
+  const [openSection, setOpenSection] = useState(readStoredSection)
   const toggleSection = (id) => setOpenSection(cur => (cur === id ? null : id))
+
+  // Persist on every change. Wrapped because storage is not always available —
+  // a private window, cleared site data, or a browser set to block it all throw
+  // on access rather than returning empty. Failing to remember the sidebar must
+  // never take the sidebar down with it.
+  useEffect(() => {
+    try {
+      if (openSection) localStorage.setItem(SIDEBAR_SECTION_KEY, openSection)
+      else localStorage.removeItem(SIDEBAR_SECTION_KEY)
+    } catch { /* not remembering is fine; crashing is not */ }
+  }, [openSection])
 
   // HR's inner groups sit INSIDE the HR section, so they are not part of the
   // accordion — they stay open so that opening HR reveals its pages rather than
