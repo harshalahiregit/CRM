@@ -1,0 +1,1 @@
+import{d as e,aG as s}from"./index-9b_bNU-A.js";const c=a=>{var t;return((t=a.data)==null?void 0:t.data)??a.data},h={list:a=>e.get("/tags",{params:a?{type:a}:{}}).then(c).catch(s),rename:(a,t,n)=>e.put(`/tags/${a}`,{name:t,color:n}).then(c).catch(s),remove:a=>e.delete(`/tags/${a}`).then(c).catch(s)};export{h as t};

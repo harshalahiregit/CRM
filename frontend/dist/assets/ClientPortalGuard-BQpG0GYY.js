@@ -1,0 +1,1 @@
+import{j as r,bG as a}from"./index-9b_bNU-A.js";import{a as e}from"./clientPortalApi-D7Cp7q-F.js";function n({children:t}){return e.has()?t:r.jsx(a,{to:"/portal/login",replace:!0})}export{n as default};

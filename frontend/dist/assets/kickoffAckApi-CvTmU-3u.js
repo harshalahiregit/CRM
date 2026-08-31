@@ -1,0 +1,1 @@
+import{a3 as s}from"./index-9b_bNU-A.js";const n="/api",e=s.create({baseURL:n}),f={show:o=>e.get(`/kickoff/ack/${o}`).then(a=>a.data),acknowledge:(o,a,t,k="acknowledge")=>e.post(`/kickoff/ack/${o}`,{name:a,comment:t,response_type:k}).then(c=>c.data),mom:o=>e.get(`/kickoff/ack/${o}/mom`,{responseType:"blob"}).then(a=>a.data)};export{f as k};
