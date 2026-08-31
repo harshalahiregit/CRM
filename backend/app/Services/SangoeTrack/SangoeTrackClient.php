@@ -12,10 +12,15 @@ use Illuminate\Support\Facades\Log;
 /**
  * HTTP client for the SangoeTrack HRM API (track.sangoe.in).
  *
- * Read-only: this integration never writes to SangoeTrack. The JWT is cached so
- * a sync of N employees costs one login rather than N; a 401 mid-run busts the
- * cache and retries the call once, which covers a token expiring between the
- * cache TTL and its real lifetime.
+ * No longer read-only. Approvals, disbursements and salary changes now go out
+ * through here, and they go through SangoeTrack's own controllers rather than
+ * its tables on purpose: approving an attendance correction there also writes
+ * the attendance row and pushes a notification to the employee's phone. Writing
+ * to the database directly would do neither, and the employee would never learn
+ * their correction was accepted.
+ *
+ * The JWT is cached so N calls cost one login; a 401 mid-run busts the cache and
+ * retries once, covering a token that expired between our TTL and its real one.
  *
  * Response shapes are not contractually guaranteed to us, so every field is read
  * through config('sangoetrack.map') with an ordered list of candidate keys.
@@ -24,6 +29,13 @@ use Illuminate\Support\Facades\Log;
 class SangoeTrackClient
 {
     private const CACHE_KEY = 'sangoetrack:token';
+
+    /**
+     * Endpoints SangoeTrack declared as GET. Everything else there is POST —
+     * including reads — so POST is the default and this is the exception list.
+     * Sending POST to their GET route yields a 405, not a helpful error.
+     */
+    private const GET_ENDPOINTS = ['admin_dashboard'];
 
     public function isConfigured(): bool
     {
@@ -109,6 +121,43 @@ class SangoeTrackClient
     }
 
     /**
+     * Call an endpoint and return its decoded body, with SangoeTrack's own
+     * failure convention translated into an exception.
+     *
+     * They answer a refused request with HTTP 200 and `status: 0` in the body —
+     * so `$response->successful()` is true for "Permission denied", "Leave not
+     * found" and every validation failure. Checking only the HTTP code makes a
+     * rejected approval look like it worked, which is the worst way for this to
+     * fail: the CRM would show success while nothing happened on their side.
+     *
+     * `status` absent is treated as success — some of their endpoints return a
+     * bare object with no envelope at all.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     *
+     * @throws SangoeTrackException
+     */
+    public function call(string $endpointKey, array $payload = []): array
+    {
+        $body = $this->send($endpointKey, $payload)->json() ?? [];
+
+        if (! is_array($body)) {
+            throw new SangoeTrackException('SangoeTrack '.$endpointKey.' returned a non-object response.');
+        }
+
+        if (array_key_exists('status', $body) && (int) $body['status'] === 0) {
+            throw new SangoeTrackException(
+                is_string($body['message'] ?? null) && $body['message'] !== ''
+                    ? $body['message']
+                    : 'SangoeTrack '.$endpointKey.' refused the request.'
+            );
+        }
+
+        return $body;
+    }
+
+    /**
      * Raw POST for diagnostics (sangoetrack:probe). Returns the decoded body
      * exactly as received, with no field mapping applied.
      */
@@ -158,14 +207,32 @@ class SangoeTrackClient
      */
     private function send(string $endpointKey, array $payload): Response
     {
-        $url = $this->url($endpointKey);
+        $url  = $this->url($endpointKey);
+        $verb = in_array($endpointKey, self::GET_ENDPOINTS, true) ? 'get' : 'post';
 
-        $response = $this->http()->withToken($this->login())->post($url, $payload);
+        $response = $this->http()->withToken($this->login())->{$verb}($url, $payload);
 
-        if ($response->status() === 401) {
-            // Cached token outlived its real validity — re-login once and retry.
-            Log::channel('hr')->info('SangoeTrack token rejected, re-authenticating', ['endpoint' => $endpointKey]);
-            $response = $this->http()->withToken($this->login(true))->post($url, $payload);
+        // 401 is the obvious "token expired". 403 is here because SangoeTrack
+        // answers a token it no longer recognises with "Permission denied", not
+        // with a 401: its admin check resolves the user to null and refuses on
+        // that basis, so a dead session is indistinguishable from a real
+        // permission problem by status code alone.
+        //
+        // That matters because SangoeTrack appears to invalidate the previous
+        // token when the same account logs in again. Two clients sharing one
+        // account — which is what we do today — knock each other out, and
+        // without this the CRM would serve a dead token for the full cache TTL
+        // before recovering. Observed in production: every screen returned
+        // "Permission denied" for the better part of an hour.
+        //
+        // Retrying a genuine permission failure costs one extra request and
+        // returns the same error, which is the cheaper mistake of the two.
+        if (in_array($response->status(), [401, 403], true)) {
+            Log::channel('hr')->info('SangoeTrack token rejected, re-authenticating', [
+                'endpoint' => $endpointKey,
+                'status'   => $response->status(),
+            ]);
+            $response = $this->http()->withToken($this->login(true))->{$verb}($url, $payload);
         }
 
         if (! $response->successful()) {

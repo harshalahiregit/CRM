@@ -42,12 +42,100 @@ return [
     */
     'token_ttl' => (int) env('SANGOETRACK_TOKEN_TTL', 50 * 60),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Endpoint map
+    |--------------------------------------------------------------------------
+    |
+    | Verified against the SangoeTrack route table, not guessed. Three of the
+    | five original entries were wrong and would have 404'd on first use:
+    |
+    |   login        was '/login'.  Every route there lives under a {module}
+    |                prefix, so '/api/login' matches nothing — it needs '/Hrm/'.
+    |   leaves       was '/Hrm/leaves'      — the route is 'get-leaves'.
+    |   leave_types  was '/Hrm/leave-types' — the route is 'get-leaves-types'.
+    |
+    | 'attendence-history' keeps their spelling on purpose. It is their route
+    | name; correcting it here would 404.
+    |
+    | Every endpoint below is POST except 'admin_dashboard', which they declared
+    | as GET — see SangoeTrackClient::GET_ENDPOINTS.
+    |
+    */
     'endpoints' => [
-        'login'              => '/login',
+        // ── auth ────────────────────────────────────────────────────────────
+        'login'              => '/Hrm/login',
+
+        // ── employee-facing reads ───────────────────────────────────────────
+        // attendance_history is scoped to the TOKEN HOLDER, not to whoever the
+        // request names: their auth middleware overwrites user_id with the
+        // authenticated user's id. It cannot be used to read another employee's
+        // history — that needs an endpoint we add on their side.
         'attendance_history' => '/Hrm/attendence-history',
-        'leaves'             => '/Hrm/leaves',
-        'leave_types'        => '/Hrm/leave-types',
+        'leaves'             => '/Hrm/get-leaves',
+        'leave_types'        => '/Hrm/get-leaves-types',
         'leave_balance'      => '/Hrm/leave-balance',
+        'holidays'           => '/Hrm/holidays-list',
+        'advance_ledger'     => '/Hrm/advance/ledger',
+
+        // ── admin reads ─────────────────────────────────────────────────────
+        // attendance_details is TODAY ONLY — it accepts no date parameter.
+        'admin_dashboard'          => '/Hrm/admin/dashboard',
+        'admin_attendance_details' => '/Hrm/admin/attendance-details',
+        'admin_pending_approvals'  => '/Hrm/admin/pending-approvals',
+        'admin_pending_settlements' => '/Hrm/admin/pending-settlements',
+        'admin_employees_list'     => '/Hrm/admin/employees-list',
+        'admin_assignable_roles'   => '/Hrm/admin/assignable-roles',
+        'admin_payroll_overview'   => '/Hrm/admin/payroll-overview',
+        'admin_reports'            => '/Hrm/admin/reports',
+        'admin_reports_summary'    => '/Hrm/admin/reports-summary',
+        'admin_demo_requests'      => '/Hrm/admin/demo-requests',
+
+        // ── admin writes ────────────────────────────────────────────────────
+        // These go through their controllers on purpose: approving a correction
+        // also writes the attendance row and pushes a notification to the
+        // employee's phone. Writing to their tables directly would skip both.
+        'admin_approve_leave'         => '/Hrm/admin/approve-reject-leave',
+        'admin_approve_raise'         => '/Hrm/admin/approve-reject-raise',
+        'admin_approve_reimbursement' => '/Hrm/admin/approve-reject-reimbursement',
+        'admin_approve_advance'       => '/Hrm/admin/approve-reject-advance',
+        'admin_disburse_advance'      => '/Hrm/admin/disburse-advance',
+        'admin_review_settlement'     => '/Hrm/admin/review-settlement',
+        'admin_set_salary'            => '/Hrm/admin/set-employee-salary',
+        'admin_create_employee'       => '/Hrm/admin/create-employee',
+        'admin_reset_password'        => '/Hrm/admin/reset-employee-password',
+        'admin_update_demo_request'   => '/Hrm/admin/update-demo-request',
+
+        // ── endpoints added on SangoeTrack for this CRM ─────────────────────
+        // These live under /Hrm/crm/ in a route file of their own on their side,
+        // so nothing the published mobile app calls was touched to add them.
+        'crm_hrm_settings'           => '/Hrm/crm/hrm-settings',
+        'crm_hrm_settings_save'      => '/Hrm/crm/hrm-settings/save',
+        'crm_whatsapp_settings'      => '/Hrm/crm/whatsapp-settings',
+        'crm_whatsapp_settings_save' => '/Hrm/crm/whatsapp-settings/save',
+
+        // ── history ─────────────────────────────────────────────────────────
+        // Read-only, added on their side for this CRM. The mobile API answers
+        // "what is waiting on me" — pending only, today only — so these are the
+        // only way to see what actually happened.
+        //
+        // All accept status / employee / from / to / page / per_page.
+        // Advances also takes `type`; leaves also takes `leave_type`.
+        'history_attendance'     => '/Hrm/crm/history/attendance',
+        'history_corrections'    => '/Hrm/crm/history/corrections',
+        'history_leaves'         => '/Hrm/crm/history/leaves',
+        'history_reimbursements' => '/Hrm/crm/history/reimbursements',
+        'history_advances'       => '/Hrm/crm/history/advances',
+
+        // ── holidays ────────────────────────────────────────────────────────
+        // The write half their API never had. `holidays` (read-only, calendar
+        // shaped) is theirs; these are ours and return rows with ids, so a
+        // holiday can actually be edited or removed.
+        'crm_holidays'        => '/Hrm/crm/holidays',
+        'crm_holiday_create'  => '/Hrm/crm/holidays/create',
+        'crm_holiday_update'  => '/Hrm/crm/holidays/update',
+        'crm_holiday_delete'  => '/Hrm/crm/holidays/delete',
+        'crm_holiday_import'  => '/Hrm/crm/holidays/import',
     ],
 
     /*

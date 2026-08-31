@@ -15,14 +15,25 @@ export function useMoneyFmt(format = fmtINR) {
   return (v) => (moneyHidden ? '••••••' : format(v))
 }
 
-/** The eye toggle — place on any page that shows financial figures. */
+/**
+ * The eye toggle — place on any page that shows financial figures.
+ *
+ * MOBILE ONLY (`md:hidden`). The top bar already carries this exact toggle, on
+ * the same MoneyVisibilityContext, so on desktop the two rendered side by side
+ * read as two separate settings when they are one switch with two handles.
+ * The header's copy is `hidden md:flex`, i.e. it disappears below 768px — this
+ * one takes over there, so the capability is never lost, just never doubled.
+ *
+ * The two are therefore exact complements. Change the breakpoint on either and
+ * you get a gap (no toggle at all on some widths) or the duplicate back.
+ */
 export function MoneyToggle() {
   const { moneyHidden, toggleMoney } = useMoneyVisibility()
   const Icon = moneyHidden ? EyeOff : Eye
   return (
     <button
       onClick={toggleMoney}
-      className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-[rgba(124,58,237,0.08)] transition-colors"
+      className="md:hidden w-9 h-9 rounded-xl flex items-center justify-center hover:bg-[rgba(124,58,237,0.08)] transition-colors"
       style={{ border: '1px solid var(--border)' }}
       title={moneyHidden ? 'Show amounts' : 'Hide amounts'}
     >

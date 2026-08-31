@@ -3,6 +3,8 @@
 require __DIR__.'/auth.php';
 require __DIR__.'/admin.php';
 require __DIR__.'/hr.php';
+// SangoeTrack (track.sangoe.in) — relays only, owns no CRM table.
+require __DIR__.'/sangoetrack.php';
 require __DIR__.'/performance.php';
 require __DIR__.'/leave.php';
 require __DIR__.'/exit.php';

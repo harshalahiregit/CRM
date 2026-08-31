@@ -4,7 +4,8 @@ import { useTheme } from '@/context/ThemeContext'
 import { hrApi } from '@/services/hrApi'
 import {
   LayoutDashboard, ClipboardList, Briefcase, Users,
-  Calendar, FileText, Rocket, Building2, ChevronRight, ArrowLeft, ArrowRight, Network, Boxes, Headset, BadgeCheck, UserCheck
+  Calendar, FileText, Rocket, Building2, ChevronRight, ArrowLeft, ArrowRight, Network, Boxes, Headset, BadgeCheck, UserCheck,
+  Clock, PenLine, CalendarOff, Receipt, Wallet, IndianRupee, Contact, MessageSquare, BarChart3, PartyPopper, Settings
 } from 'lucide-react'
 
 // ── The numbered Recruitment Pipeline (unchanged: same order, routes, full
@@ -39,6 +40,42 @@ const SUPPORTING = [
   { label: 'Recruitment Services', path: '/app/hr/recruitment-services', icon: Network },
   { label: 'Recruiter Desk',       path: '/app/hr/recruiter-workspace',  icon: Headset },
   { label: 'Company Approvals',    path: '/app/hr/company-approvals',    icon: BadgeCheck },
+]
+
+// ── SangoeTrack ────────────────────────────────────────────────────────────
+//
+// Live from track.sangoe.in — the app people actually clock into. These read and
+// write THEIR data; the CRM stores none of it, so nothing here can drift out of
+// step with what an employee sees on their phone.
+//
+// Listed flat, under their own names, rather than behind a group heading: they
+// are things HR does daily, not a sub-system to go hunting for.
+//
+// 'Staff Directory' rather than 'Employees' on purpose — /app/hr/employees is
+// the recruitment-side record and already owns that word. These are the people
+// who punch in, which is a different list, and two identical labels in one
+// sidebar is exactly how someone ends up trusting the wrong screen.
+//
+// Routes are namespaced under /app/hr/track/ so the existing attendance page at
+// /app/hr/attendance keeps working untouched.
+//
+// `ready` gates what the sidebar shows. The full list stays here because it is
+// the agreed shape of this module, but an entry only appears once its page
+// exists — a nav link to a route with no page is a dead link, and a page that
+// renders "coming soon" is worse, because it looks finished from the outside.
+// Flip the flag in the same commit that adds the page.
+const TRACK = [
+  { label: 'Attendance',      path: '/app/hr/track/attendance',     icon: Clock,         ready: true  },
+  { label: 'Corrections',     path: '/app/hr/track/corrections',    icon: PenLine,       ready: true  },
+  { label: 'Leave',           path: '/app/hr/track/leave',          icon: CalendarOff,   ready: true  },
+  { label: 'Reimbursements',  path: '/app/hr/track/reimbursements', icon: Receipt,       ready: true  },
+  { label: 'Advances',        path: '/app/hr/track/advances',       icon: Wallet,        ready: true  },
+  { label: 'Salaries',        path: '/app/hr/track/payroll',        icon: IndianRupee,   ready: true  },
+  { label: 'Staff Directory', path: '/app/hr/track/staff',          icon: Contact,       ready: true  },
+  { label: 'Demo Requests',   path: '/app/hr/track/demo-requests',  icon: MessageSquare, ready: true  },
+  { label: 'Reports',         path: '/app/hr/track/reports',        icon: BarChart3,     ready: true  },
+  { label: 'Holidays',        path: '/app/hr/track/holidays',       icon: PartyPopper,   ready: true  },
+  { label: 'Settings',        path: '/app/hr/track/settings',       icon: Settings,      ready: true  },
 ]
 
 const PHASE_BANDS = [
@@ -237,6 +274,14 @@ export default function HRLayout() {
             <span className="hrnav-div" aria-hidden="true" />
             <span className="hrnav-support">Support</span>
             {SUPPORTING.map(s => (
+              <NavLink key={s.path} to={s.path} title={s.label} className={({ isActive }) => `hrnav-tab${isActive ? ' on' : ''}`}>
+                <s.icon size={13} className="hrnav-ico" />
+                {s.label}
+              </NavLink>
+            ))}
+
+            <span className="hrnav-div" aria-hidden="true" />
+            {TRACK.filter(s => s.ready).map(s => (
               <NavLink key={s.path} to={s.path} title={s.label} className={({ isActive }) => `hrnav-tab${isActive ? ' on' : ''}`}>
                 <s.icon size={13} className="hrnav-ico" />
                 {s.label}
