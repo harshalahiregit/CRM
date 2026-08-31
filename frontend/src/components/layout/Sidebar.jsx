@@ -15,7 +15,7 @@ import { useAuth } from '@/context/AuthContext'
 import { useTheme } from '@/context/ThemeContext'
 import { helpdeskApi } from '@/services/helpdeskApi'
 import sangoeIcon from '@/assets/sangoe-icon.png'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import clsx from 'clsx'
 import { leadApi } from '@/services/leadApi'
 
@@ -53,28 +53,6 @@ const MODULE_SEARCH = [
 // NOTE: PINNED_MODULES was removed with the pinned-header block it fed. The
 // sidebar no longer derives anything from the current route — sections open on
 // a click and only on a click.
-
-// Which accordion section is open, remembered across reloads so a refresh does
-// not close what you opened. Per browser, by nature: this is a convenience, not
-// a setting, and there is no server round-trip worth spending on it.
-const SIDEBAR_SECTION_KEY = 'sangoe_sidebar_section'
-
-// The only ids that may be restored. A key can outlive the section it names —
-// a module gets renamed or dropped and the stored value is suddenly a section
-// that no longer exists, leaving every header closed with no way to tell why.
-// Validating on read means a stale value degrades to "all closed" instead.
-const SECTION_IDS = ['hr', 'sales', 'accounts', 'helpdesk', 'inventory', 'purchase', 'tpv']
-
-function readStoredSection() {
-  try {
-    const saved = localStorage.getItem(SIDEBAR_SECTION_KEY)
-    return SECTION_IDS.includes(saved) ? saved : null
-  } catch {
-    // Private windows and blocked site data throw on access rather than
-    // returning null. Start closed; the sidebar still works.
-    return null
-  }
-}
 
 // ── HRMS sidebar structure (paths/APIs/permissions unchanged) ──
 //   HRMS
@@ -269,46 +247,50 @@ const SUBMODULE_SEARCH = [
   ...TPV_ADMIN_ITEMS.map(i => ({ ...i, module: 'TPV' })),
 ]
 
-export default function Sidebar({ collapsed, onToggle }) {
+export default function Sidebar({ collapsed, onToggle, openSection, toggleSection }) {
   const { user, tenant, logout } = useAuth()
   const { isDark } = useTheme()
   const navigate = useNavigate()
   /**
-   * ONE open module at a time, and nothing open to begin with.
+   * ONE open module at a time. The id is owned by AppShell (see
+   * sidebarSection.js) because two Sidebars are mounted — the mobile drawer and
+   * the desktop one — and they must not disagree about what is open.
    *
-   * This used to be nine independent booleans, every one defaulting to true, so
-   * the sidebar rendered every module's sub-nav at once — several hundred rows
-   * in one scroller. Navigating then shifted content above the scroll position
-   * and you lost your place on every click.
+   * The accordion is true by construction: a single id has nowhere to record a
+   * second open section, so opening one closes the other with no bookkeeping.
    *
-   * Holding a single id instead makes the accordion true by construction: there
-   * is nowhere to record a second open section, so opening one closes the other
-   * without any bookkeeping. `null` means all closed, which is both the initial
-   * state and what clicking an open header returns you to.
+   * SCROLL, on a reload: restoring a section is not enough on its own. Even
+   * fully collapsed the nav is ~24 rows — fourteen links plus ten group labels —
+   * which overflows a laptop viewport, so Inventory, Purchase and TPV sit below
+   * the fold before anything is open. A page load resets scrollTop to 0, so a
+   * restored lower section reopened correctly and was simply never seen; only HR,
+   * being first, looked like it worked. The effect below brings it into view.
    *
-   * Deliberately NOT derived from the current route: sections open on a click
-   * and only on a click. What IS remembered is the last click — the choice is
-   * persisted below, so a refresh does not silently close what you opened.
+   * It adjusts the nav's OWN scrollTop rather than calling scrollIntoView. The
+   * mobile Sidebar is always mounted, just translated off-canvas, and
+   * scrollIntoView on a hidden copy would scroll its ancestors — the window
+   * included. Touching nav.scrollTop can only ever move this one element.
    *
-   * Note the consequence, since it is a real one: the stored section is restored
-   * whatever page you land on, so it can come back open on a module you are not
-   * currently in. That is the accepted trade for "a refresh should not undo my
-   * click". Opening from the route instead would fix that but would also open
-   * things you never clicked.
+   * Nothing is derived from the current route. Sections open on a click and
+   * only on a click; the last click is what gets remembered.
    */
-  const [openSection, setOpenSection] = useState(readStoredSection)
-  const toggleSection = (id) => setOpenSection(cur => (cur === id ? null : id))
-
-  // Persist on every change. Wrapped because storage is not always available —
-  // a private window, cleared site data, or a browser set to block it all throw
-  // on access rather than returning empty. Failing to remember the sidebar must
-  // never take the sidebar down with it.
+  const navRef = useRef(null)
   useEffect(() => {
-    try {
-      if (openSection) localStorage.setItem(SIDEBAR_SECTION_KEY, openSection)
-      else localStorage.removeItem(SIDEBAR_SECTION_KEY)
-    } catch { /* not remembering is fine; crashing is not */ }
-  }, [openSection])
+    if (!openSection) return
+    const nav = navRef.current
+    const el = nav?.querySelector(`[data-section="${openSection}"]`)
+    if (!nav || !el) return
+    const navBox = nav.getBoundingClientRect()
+    const elBox = el.getBoundingClientRect()
+    // Only move if it is actually out of view — a section already on screen
+    // must not twitch on every load.
+    if (elBox.top < navBox.top || elBox.bottom > navBox.bottom) {
+      nav.scrollTop += elBox.top - navBox.top - 8   // 8px of breathing room above
+    }
+    // Mount only: this restores your place on a reload. Re-running it on every
+    // toggle would yank the list around while you are clicking through it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // HR's inner groups sit INSIDE the HR section, so they are not part of the
   // accordion — they stay open so that opening HR reveals its pages rather than
@@ -481,7 +463,7 @@ export default function Sidebar({ collapsed, onToggle }) {
       {/* ── Navigation ─────────────────────────────────────── */}
       {/* min-h-0 lets this flex child shrink so its own overflow scrolls, even
           with the fixed logo/search blocks taking space above it. */}
-      <nav className="flex-1 min-h-0 pb-3 overflow-y-auto scrollbar-hide">
+      <nav ref={navRef} className="flex-1 min-h-0 pb-3 overflow-y-auto scrollbar-hide">
         {/* The pinned open-module block was removed here.
             It duplicated the module's own sub-nav lower down (which is why a
             `pinnedBase` guard existed to hide that copy), and because it was
@@ -560,6 +542,7 @@ export default function Sidebar({ collapsed, onToggle }) {
             {/* HRMS parent toggle */}
             <button
               onClick={() => toggleSection('hr')}
+            data-section="hr"
               title={collapsed ? 'HR' : ''}
               className="nav-3d mb-0.5 w-full"
               style={{ justifyContent: collapsed ? 'center' : undefined, color: '#a78bfa' }}
@@ -653,6 +636,7 @@ export default function Sidebar({ collapsed, onToggle }) {
           {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>Accounts & Finance</p>}
           <button
             onClick={() => toggleSection('accounts')}
+            data-section="accounts"
             title={collapsed ? 'Accounts & Finance' : ''}
             className="nav-3d mb-0.5 w-full"
             style={{ justifyContent: collapsed ? 'center' : undefined, color: '#a78bfa' }}
@@ -682,6 +666,7 @@ export default function Sidebar({ collapsed, onToggle }) {
           {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>Sales & Revenue</p>}
           <button
             onClick={() => toggleSection('sales')}
+            data-section="sales"
             title={collapsed ? 'Sales & Revenue' : ''}
             className="nav-3d mb-0.5 w-full"
             style={{ justifyContent: collapsed ? 'center' : undefined, color: '#a78bfa' }}
@@ -722,6 +707,7 @@ export default function Sidebar({ collapsed, onToggle }) {
           {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#22d3ee' }}>Helpdesk & Support</p>}
           <button
             onClick={() => toggleSection('helpdesk')}
+            data-section="helpdesk"
             title={collapsed ? 'Helpdesk & Support' : ''}
             className="nav-3d mb-0.5 w-full"
             style={{ justifyContent: collapsed ? 'center' : undefined, color: '#22d3ee' }}
@@ -773,6 +759,7 @@ export default function Sidebar({ collapsed, onToggle }) {
           {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#10b981' }}>Inventory</p>}
           <button
             onClick={() => toggleSection('inventory')}
+            data-section="inventory"
             title={collapsed ? 'Inventory' : ''}
             className="nav-3d mb-0.5 w-full"
             style={{ justifyContent: collapsed ? 'center' : undefined, color: '#10b981' }}
@@ -804,6 +791,7 @@ export default function Sidebar({ collapsed, onToggle }) {
           {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>Purchase</p>}
           <button
             onClick={() => toggleSection('purchase')}
+            data-section="purchase"
             title={collapsed ? 'Purchase' : ''}
             className="nav-3d mb-0.5 w-full"
             style={{ justifyContent: collapsed ? 'center' : undefined, color: '#a78bfa' }}
@@ -833,6 +821,7 @@ export default function Sidebar({ collapsed, onToggle }) {
           {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>Thirdparty Vendor</p>}
           <button
             onClick={() => toggleSection('tpv')}
+            data-section="tpv"
             title={collapsed ? 'Thirdparty Vendor' : ''}
             className="nav-3d mb-0.5 w-full"
             style={{ justifyContent: collapsed ? 'center' : undefined, color: '#a78bfa' }}

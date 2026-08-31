@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar'
+import { useSidebarSection } from './sidebarSection'
 import Header from './Header'
 import MobileBottomNav from './MobileBottomNav'
 import CommandPalette from '@/components/CommandPalette'
@@ -10,6 +11,10 @@ import { useTheme } from '@/context/ThemeContext'
 
 export default function AppShell() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  // Owned here, not inside Sidebar: two Sidebars are mounted (the off-canvas
+  // mobile drawer and the desktop one) and they must not disagree about which
+  // accordion section is open. See sidebarSection.js.
+  const { openSection, toggleSection } = useSidebarSection()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const { isDark } = useTheme()
   const { pathname } = useLocation()
@@ -52,13 +57,15 @@ export default function AppShell() {
         )}
         style={{ filter: isDark ? 'none' : 'drop-shadow(4px 0 24px rgba(124,58,237,0.12))' }}
       >
-        <Sidebar collapsed={false} onToggle={() => {}} />
+        <Sidebar collapsed={false} onToggle={() => {}} openSection={openSection} toggleSection={toggleSection} />
       </div>
 
       {/* Desktop sidebar */}
       <Sidebar
         collapsed={sidebarCollapsed}
         onToggle={() => setSidebarCollapsed(c => !c)}
+        openSection={openSection}
+        toggleSection={toggleSection}
       />
 
       {/* Header */}
