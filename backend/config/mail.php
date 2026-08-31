@@ -47,6 +47,11 @@ return [
             'password' => env('MAIL_PASSWORD'),
             'timeout' => null,
             'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
+            // Panel-managed mail hosts (Plesk/cPanel) often present a self-signed
+            // or wrong-hostname cert. When false, Symfony skips peer+hostname
+            // checks while keeping the connection encrypted — mirrors the per-
+            // tenant TenantMailer behaviour so both send paths agree.
+            'verify_peer' => env('MAIL_VERIFY_PEER', true),
         ],
 
         'ses' => [
