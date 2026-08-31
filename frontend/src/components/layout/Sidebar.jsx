@@ -13,7 +13,6 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/context/AuthContext'
 import { useTheme } from '@/context/ThemeContext'
-import { isModuleInstalled } from '@/modules/registry'
 import { helpdeskApi } from '@/services/helpdeskApi'
 import sangoeIcon from '@/assets/sangoe-icon.png'
 import { useState, useEffect } from 'react'
@@ -276,7 +275,6 @@ export default function Sidebar({ collapsed, onToggle }) {
   const [tpvExpanded, setTpvExpanded] = useState(true)
   const [purchaseExpanded, setPurchaseExpanded] = useState(true)
   const [pinOpen, setPinOpen] = useState(true)   // pinned module's sub-list open?
-  const hrInstalled = isModuleInstalled('hr')
   // Admin/staff see Dashboard + Kickoff; a TPV (vendor) login sees Onboarding + Workforce.
   const tpvItems = ['third_party_vendor', 'vendor'].includes(user?.role)
     ? TPV_VENDOR_ITEMS
@@ -552,12 +550,20 @@ export default function Sidebar({ collapsed, onToggle }) {
           </NavLink>
         ))}
 
-        {/* ── HR sub-nav (when installed) ── */}
-        {/* Always rendered now. It used to hide itself while HR was pinned, on the
-            grounds that the pin showed the same thing — but the pin showed a
-            FLATTENED version, so being on an HR page silently swapped the grouped
-            tree for a long undifferentiated list. One tree, one name, either way. */}
-        {hrInstalled && (
+        {/* ── HR sub-nav ── */}
+        {/* Always rendered now, on two counts.
+            It used to hide itself while HR was pinned, on the grounds that the pin
+            showed the same thing — but the pin showed a FLATTENED version, so being
+            on an HR page silently swapped the grouped tree for a long
+            undifferentiated list. One tree, one name, either way.
+            It was also gated on isModuleInstalled('hr'), the only such gate in the
+            app — every other module renders unconditionally. That gate read
+            localStorage, so HR vanished on a new browser, a new machine or a
+            colleague's login and had to be "installed" again from the Modules page.
+            It protected nothing: the routes and the API are not gated, so
+            /app/hr/dashboard always loaded regardless. Removing it makes HR behave
+            like the other eleven modules. Per-tenant module entitlement, if it is
+            wanted, belongs in the database and not in one browser's storage. */}
           <div className="mt-2">
             {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>HR Module</p>}
             {/* HRMS parent toggle */}
@@ -603,7 +609,6 @@ export default function Sidebar({ collapsed, onToggle }) {
                 </>
               )}
           </div>
-        )}
 
         {/* ── ADMIN SECTION (Admin Only) ── */}
         {user?.role === 'admin' && (
