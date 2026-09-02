@@ -36,4 +36,31 @@ class RecordPaymentRequest extends FormRequest
             'payment_type'   => 'nullable|in:received,paid',
         ];
     }
+
+    /**
+     * TDS settles the invoice alongside the cash, so the two together are what
+     * must fit inside the outstanding balance. The `max` on `amount` alone would
+     * happily accept ₹1,00,000 cash plus ₹2,000 TDS against a ₹1,00,000 balance
+     * and over-settle it by the TDS.
+     */
+    public function withValidator($validator): void
+    {
+        $validator->after(function ($validator) {
+            $invoice = $this->route('invoice');
+            if (! $invoice) {
+                return;
+            }
+
+            $settles = (float) $this->input('amount', 0) + (float) $this->input('tds_amount', 0);
+
+            // Half a paisa of tolerance: a percentage-derived TDS is rounded in
+            // the browser, and a rounding crumb must not reject a correct entry.
+            if ($settles > (float) $invoice->balance + 0.005) {
+                $validator->errors()->add(
+                    'amount',
+                    'The payment and TDS together exceed the outstanding balance.'
+                );
+            }
+        });
+    }
 }
