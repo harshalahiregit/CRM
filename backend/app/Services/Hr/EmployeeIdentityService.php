@@ -154,6 +154,59 @@ class EmployeeIdentityService
     }
 
     /**
+     * May this login sign in to the attendance app?
+     *
+     * Three things must all hold, and each is a different question with a
+     * different owner:
+     *
+     *   the CRM account is active   — Staff Management, via users.status
+     *   they are an employee        — there is an hr_employees row linked to them
+     *   HR has granted app access   — hr_employees.app_login_enabled
+     *
+     * Deliberately separate from the CRM login gate. An office admin has a
+     * perfectly good CRM account and no business clocking in from a phone;
+     * equally, revoking app access must not lock somebody out of the CRM.
+     *
+     * WHEN THE CRM SERVES THE APP (Phase 4), a refusal here must be returned as
+     * HTTP 403 with {"status": 0, "message": ...} — never 401. The published app
+     * treats 401 as a dead token: it wipes local storage, including the cached
+     * clock-in state, and bounces to the login screen with no message at all. A
+     * person refused app access would simply see a blank screen and lose an open
+     * shift. 403 shows them the reason.
+     */
+    public function mayUseApp(User $user): bool
+    {
+        if ($user->status !== 'active') {
+            return false;
+        }
+
+        $employee = $this->employeeFor($user);
+
+        return $employee !== null && $employee->app_login_enabled === true;
+    }
+
+    /**
+     * Why app access was refused, in words meant for the person holding the
+     * phone. Null when it is allowed.
+     */
+    public function appRefusalReason(User $user): ?string
+    {
+        if ($user->status !== 'active') {
+            return 'Your account is not active. Contact your administrator.';
+        }
+
+        if ($this->employeeFor($user) === null) {
+            return 'You do not have an employee record. Contact HR.';
+        }
+
+        if (! $this->mayUseApp($user)) {
+            return 'You have not been given access to the attendance app. Contact HR.';
+        }
+
+        return null;
+    }
+
+    /**
      * The employee record for a login, within that login's own tenant.
      *
      * The read half of the link: given the person holding a session, which

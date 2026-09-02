@@ -18,7 +18,9 @@ const EMPTY_FORM = { name:'', email:'', phone:'', dob:'', gender:'', address:'',
   probation_policy_id:'', skip_probation:false, probation_skip_reason:'',
   // #29 — what this person is, and the comment's explicit "option to consider
   // person in org. chart while entering in system".
-  worker_type:'employee', include_in_org_chart:true }
+  worker_type:'employee', include_in_org_chart:true,
+  // Attendance-app access. Off by default — granted, never assumed.
+  app_login_enabled:false }
 
 // Avatar built from initials (no photo store) — consistent across card & list.
 const Avatar = ({ name, dept, size=44 }) => {
@@ -145,7 +147,7 @@ export default function Employees() {
     // than to '': an employee the list endpoint did not return them for would
     // otherwise open with "Show on the org chart" unticked and save it off.
     setForm({ ...EMPTY_FORM, ...Object.fromEntries(Object.keys(EMPTY_FORM).map(k=>[
-      k, emp[k] ?? (k === 'status' ? 'Active' : (k in { worker_type:1, include_in_org_chart:1 } ? EMPTY_FORM[k] : '')),
+      k, emp[k] ?? (k === 'status' ? 'Active' : (k in { worker_type:1, include_in_org_chart:1, app_login_enabled:1 } ? EMPTY_FORM[k] : '')),
     ])) })
     setShowModal(true)
   }
@@ -409,6 +411,23 @@ export default function Employees() {
                     Show on the org chart
                   </label>
                 </div>
+              </div>
+
+              {/* Attendance-app access. HR decides who clocks in on a phone;
+                  Staff Management decides what someone can do inside the CRM.
+                  Two different questions, so two different screens.
+                  Off by default: access is granted, never assumed. */}
+              <div className="rounded-xl px-3 py-2.5" style={{ background:'var(--bg-input)', border:'1px solid var(--border)' }}>
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input type="checkbox" className="mt-0.5" checked={form.app_login_enabled === true}
+                    onChange={e=>setForm({...form,app_login_enabled:e.target.checked})}/>
+                  <span>
+                    <span className="text-xs font-bold block" style={{ color:'var(--text-h)' }}>Can sign in to the attendance app</span>
+                    <span className="text-[11px]" style={{ color:'var(--text-muted)' }}>
+                      Lets this person clock in and out from their phone. Turning it off signs them out of the app; it does not affect their CRM login.
+                    </span>
+                  </span>
+                </label>
               </div>
 
               {/* Work State drives Professional Tax. A saved value that is not in the

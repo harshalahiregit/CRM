@@ -183,4 +183,63 @@ class EmployeeIdentityServiceTest extends TestCase
         $other = $this->user($b->id, 'someone@example.test');
         $this->assertNull($this->svc->employeeFor($other));
     }
+
+    /* ── attendance-app access ───────────────────────────────────────── */
+
+    public function test_app_access_needs_all_three_conditions(): void
+    {
+        $t = $this->tenant('alpha');
+        $e = $this->employee($t->id, 'SNE-1', 'priya@example.test');
+        $user = $this->svc->provision($e)['user'];
+
+        // Linked and active, but HR has not granted access.
+        $this->assertFalse($this->svc->mayUseApp($user->fresh()));
+        $this->assertSame(
+            'You have not been given access to the attendance app. Contact HR.',
+            $this->svc->appRefusalReason($user->fresh())
+        );
+
+        $e->fresh()->update(['app_login_enabled' => true]);
+        $this->assertTrue($this->svc->mayUseApp($user->fresh()));
+        $this->assertNull($this->svc->appRefusalReason($user->fresh()));
+    }
+
+    /** A login with no employee record cannot clock in — an admin, before Phase 1. */
+    public function test_a_login_with_no_employee_record_is_refused(): void
+    {
+        $t = $this->tenant('alpha');
+        $lone = $this->user($t->id, 'admin@example.test');
+
+        $this->assertFalse($this->svc->mayUseApp($lone));
+        $this->assertSame('You do not have an employee record. Contact HR.', $this->svc->appRefusalReason($lone));
+    }
+
+    /** Deactivating the CRM account also stops the app, without HR touching anything. */
+    public function test_an_inactive_account_loses_app_access(): void
+    {
+        $t = $this->tenant('alpha');
+        $e = $this->employee($t->id, 'SNE-1', 'priya@example.test');
+        $user = $this->svc->provision($e)['user'];
+        $e->fresh()->update(['app_login_enabled' => true]);
+
+        $this->assertTrue($this->svc->mayUseApp($user->fresh()));
+
+        $user->update(['status' => 'inactive']);
+        $this->assertFalse($this->svc->mayUseApp($user->fresh()));
+        $this->assertSame('Your account is not active. Contact your administrator.', $this->svc->appRefusalReason($user->fresh()));
+    }
+
+    /** Revoking app access must NOT affect the CRM login. */
+    public function test_revoking_app_access_leaves_the_crm_login_alone(): void
+    {
+        $t = $this->tenant('alpha');
+        $e = $this->employee($t->id, 'SNE-1', 'priya@example.test');
+        $user = $this->svc->provision($e)['user'];
+        $e->fresh()->update(['app_login_enabled' => true]);
+
+        $e->fresh()->update(['app_login_enabled' => false]);
+
+        $this->assertFalse($this->svc->mayUseApp($user->fresh()));
+        $this->assertSame('active', $user->fresh()->status, 'The CRM account must be untouched.');
+    }
 }
