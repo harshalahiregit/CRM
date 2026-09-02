@@ -37,6 +37,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'temp.access' => \App\Http\Middleware\EnsureTemporaryAccessNotExpired::class,
             // Staff permission grid — 'permission:module,capability'.
             'permission' => \App\Http\Middleware\EnsureStaffPermission::class,
+            // The HR queue gate, so a route group carries it rather than each method.
+            'hr.manage' => \App\Http\Middleware\EnsureCanManageHrQueue::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

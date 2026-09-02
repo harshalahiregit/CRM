@@ -15,6 +15,8 @@ use App\Http\Controllers\Api\Hr\EmployeeAssetController;
 use App\Http\Controllers\Api\Hr\EmployeeController;
 use App\Http\Controllers\Api\Hr\AttendanceController;
 use App\Http\Controllers\Api\Hr\MyAttendanceController;
+use App\Http\Controllers\Api\Hr\MyReimbursementController;
+use App\Http\Controllers\Api\Hr\ReimbursementController;
 use App\Http\Controllers\Api\Hr\SangoeTrackSyncController;
 use App\Http\Controllers\Api\Hr\ExitInterviewController;
 use App\Http\Controllers\Api\Hr\OrganizationController;
@@ -456,6 +458,15 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     // employee_id is accepted: the employee is resolved from the token, so these
     // can only ever touch the caller's own record. Being a linked employee is the
     // authorisation — nobody needs a grant to be themselves.
+    // ── My expense claims ───────────────────────────────────────────────
+    // No employee_id anywhere: the claim is found by id AND owner, so a guessed
+    // id returns 404 rather than somebody else's receipts.
+    Route::get('/me/reimbursements',              [MyReimbursementController::class, 'index']);
+    Route::post('/me/reimbursements',             [MyReimbursementController::class, 'store']);
+    Route::get('/me/reimbursements/{id}',         [MyReimbursementController::class, 'show']);
+    Route::post('/me/reimbursements/{id}/reply',  [MyReimbursementController::class, 'reply']);
+    Route::post('/me/reimbursements/{id}/accept', [MyReimbursementController::class, 'accept']);
+
     Route::get('/me/attendance/today',       [MyAttendanceController::class, 'today']);
     Route::post('/me/attendance/check-in',   [MyAttendanceController::class, 'checkIn']);
     Route::post('/me/attendance/check-out',  [MyAttendanceController::class, 'checkOut']);
@@ -470,4 +481,17 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     // captured as a record id.
     Route::post('/attendance/sync-sangoetrack', [SangoeTrackSyncController::class, 'store']);
     Route::patch('/attendance/{attendance}', [AttendanceController::class, 'correct']);
+});
+
+// ── Expense claims, admin side ──────────────────────────────────────────────
+// Gated on the GROUP rather than inside each method: a method that forgets the
+// check is how a list-everything endpoint ends up open, which is exactly what
+// happened in the first draft of ReimbursementController.
+Route::middleware(['auth:sanctum', 'hr.manage'])->prefix('hr')->group(function () {
+    Route::get('/reimbursements',                  [ReimbursementController::class, 'index']);
+    Route::get('/reimbursements/{id}',             [ReimbursementController::class, 'show']);
+    Route::post('/reimbursements/{id}/approve',    [ReimbursementController::class, 'approve']);
+    Route::post('/reimbursements/{id}/decline',    [ReimbursementController::class, 'decline']);
+    Route::post('/reimbursements/{id}/hold',       [ReimbursementController::class, 'hold']);
+    Route::post('/reimbursements/{id}/note',       [ReimbursementController::class, 'note']);
 });
