@@ -295,6 +295,52 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::get('/workforce/medicals',                 [PurchaseWorkforceAdminController::class, 'medicals']);
     Route::get('/workforce/trainings',                [PurchaseWorkforceAdminController::class, 'trainings']);
 
+    // ── Site-wide HSSE registers, shared with TPV ──────────────────────────
+    //
+    // These deliberately point at the SAME controllers TPV uses, because they
+    // read the same tables: safety_observations, toolbox_talks, emergency_drills,
+    // site_visitors, site_vehicles, compliance_evidence. None carries a tpv_
+    // prefix — they are site-wide registers scoped by TENANT, not by which
+    // module you came from. A fire drill is a fire drill whether Purchase or TPV
+    // recorded it, and giving Purchase its own copy would split one site's
+    // safety record into two halves that each look complete.
+    //
+    // Aliased under /purchase only so the URL matches the module the user is
+    // standing in; the gate (role:admin,staff) is identical either way, so this
+    // grants no access that was not already there.
+    $safety   = \App\Http\Controllers\Api\Tpv\SafetyEngagementController::class;
+    $register = \App\Http\Controllers\Api\Tpv\SiteRegisterController::class;
+    $evidence = \App\Http\Controllers\Api\Tpv\EvidenceLockerController::class;
+    $gov      = \App\Http\Controllers\Api\Tpv\GovernanceController::class;
+
+    Route::get('/observations',                      [$safety, 'observations']);
+    Route::post('/observations',                     [$safety, 'storeObservation']);
+    Route::post('/observations/{observation}/close', [$safety, 'closeObservation']);
+    Route::get('/toolbox-talks',                     [$safety, 'talks']);
+    Route::post('/toolbox-talks',                    [$safety, 'storeTalk']);
+
+    Route::get('/drills',                            [$register, 'drills']);
+    Route::post('/drills',                           [$register, 'storeDrill']);
+    Route::get('/visitors',                          [$register, 'visitors']);
+    Route::post('/visitors',                         [$register, 'storeVisitor']);
+    Route::post('/visitors/{visitor}/checkout',      [$register, 'checkoutVisitor']);
+    Route::get('/site-vehicles',                     [$register, 'vehicles']);
+    Route::post('/site-vehicles',                    [$register, 'storeVehicle']);
+    Route::post('/site-vehicles/{vehicle}/checkout', [$register, 'checkoutVehicle']);
+
+    Route::get('/evidence',                          [$evidence, 'index']);
+    Route::post('/evidence',                         [$evidence, 'store']);
+    Route::patch('/evidence/{evidence}',             [$evidence, 'update']);
+    Route::delete('/evidence/{evidence}',            [$evidence, 'destroy']);
+
+    // Purchase's OWN dashboard — counts purchase_* registers. TPV's version is
+    // still reachable below as /governance/shared-dashboard, clearly named, for
+    // the site-wide picture.
+    Route::get('/governance/dashboard',              [PurchaseWorkforceAdminController::class, 'governance']);
+    Route::get('/governance/shared-dashboard',       [$gov, 'dashboard']);
+    Route::get('/governance/report',                 [$gov, 'report']);
+    Route::get('/governance/authority-matrix',       [$gov, 'authorityMatrix']);
+
     // ── Work packages, activities and work authorisation ───────────────────
     // The accountability spine: what a vendor is on site to deliver, the
     // activities inside it, and whether a given worker may do a given activity.

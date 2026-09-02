@@ -214,6 +214,18 @@ class PurchaseWorkforceAdminController extends Controller
         return response()->json($ppe->issue($worker, $data, $request->user()), 201);
     }
 
+    /**
+     * Purchase's own governance dashboard.
+     *
+     * Not TPV's: every figure on that one reads hsse_incidents / vendors /
+     * tpv_workers, so under a Purchase menu it would report numbers that have
+     * nothing to do with the reader's vendors.
+     */
+    public function governance(Request $request, \App\Services\Purchase\PurchaseGovernanceService $gov)
+    {
+        return response()->json($gov->build((int) $request->user()->tenant_id));
+    }
+
     /** The gate decision for a scanned worker. */
     public function gate(Request $request, PurchaseWorker $worker)
     {

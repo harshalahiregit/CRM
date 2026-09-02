@@ -93,8 +93,23 @@ terminate, readiness, gateDecision, summary), `PurchasePpeService`,
 `PurchaseWorkerPpeIssue`, `PurchaseWorkerDocument`, `PurchaseWorkerTraining`,
 `PurchaseWorkerCompetency`).
 
-### 2. Work control
-Work Packages, Work Authorization, Permits (`purchase_work_permits` table exists).
+### 2. Work control  ← DONE
+| Piece | Backend | Frontend |
+|---|---|---|
+| Permit To Work + JSA | ✅ lifecycle columns, JSA table, service, 11 routes | ✅ `PurchasePermits.jsx` |
+| Work packages + activities | ✅ 2 tables, service, controller | ✅ `PurchaseWorkPackages.jsx` |
+| Work authorisation | ✅ derived per call, never stored | ✅ `PurchaseWorkAuthorization.jsx` |
+
+Rules worth keeping (see `PurchasePermitTest`, `PurchaseWorkPackageTest`):
+- No permit approval without a JSA, and none for a non-Active vendor.
+- Rejection remarks are required; `expireLapsed` leaves `Requested` alone.
+- Raising a permit is staff; deciding is admin. Whoever raises must not clear.
+- Residual risk is per JSA STEP — one step can stay high-risk while the rest
+  are low, which a permit-level figure hides.
+- Competency is required only where an ACTIVITY names one, and `Expiring`
+  counts as held (it has not lapsed; refusing would stop covered work).
+- `required:false` checks are advisory — a worker can be authorised while one
+  fails. Work-package assignment and the permit check are both advisory.
 
 ### 3. HSSE / Safety
 Safety Engagement, Safety Strikes, Site Registers, Evidence Locker.

@@ -37,7 +37,8 @@ class EvidenceLockerController extends Controller
         $data = $request->validate([
             'category'    => ['required', Rule::in(ComplianceEvidence::CATEGORIES)],
             'title'       => 'required|string|max:200',
-            'vendor_id'   => 'nullable|integer',
+            'vendor_id'   => 'nullable|integer|exists:vendors,id',
+            'purchase_vendor_id' => 'nullable|integer|exists:purchase_vendors,id',
             'description' => 'nullable|string',
             'file_url'    => 'nullable|url|max:1000',
             'valid_from'  => 'nullable|date',
@@ -55,7 +56,8 @@ class EvidenceLockerController extends Controller
         $data = $request->validate([
             'category'    => ['sometimes', Rule::in(ComplianceEvidence::CATEGORIES)],
             'title'       => 'sometimes|string|max:200',
-            'vendor_id'   => 'nullable|integer',
+            'vendor_id'   => 'nullable|integer|exists:vendors,id',
+            'purchase_vendor_id' => 'nullable|integer|exists:purchase_vendors,id',
             'description' => 'nullable|string',
             'file_url'    => 'nullable|url|max:1000',
             'valid_from'  => 'nullable|date',

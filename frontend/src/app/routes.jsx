@@ -270,6 +270,10 @@ const PurchaseWorkforceAttendance = lazy(() => import('@/modules/purchase/pages/
 const PurchasePermits = lazy(() => import('@/modules/purchase/pages/PurchasePermits'))
 const PurchaseWorkPackages = lazy(() => import('@/modules/purchase/pages/PurchaseWorkPackages'))
 const PurchaseWorkAuthorization = lazy(() => import('@/modules/purchase/pages/PurchaseWorkAuthorization'))
+const PurchaseSafetyEngagement = lazy(() => import('@/modules/purchase/pages/PurchaseSafetyEngagement'))
+const PurchaseSiteRegisters = lazy(() => import('@/modules/purchase/pages/PurchaseSiteRegisters'))
+const PurchaseEvidenceLocker = lazy(() => import('@/modules/purchase/pages/PurchaseEvidenceLocker'))
+const PurchaseGovernanceDashboard = lazy(() => import('@/modules/purchase/pages/PurchaseGovernanceDashboard'))
 const PurchaseCompetency = lazy(() => import('@/modules/purchase/pages/PurchaseCompetency'))
 // Purchase Kickoff — Purchase-owned pages on /api/purchase/kickoff (no TPV/shared reuse).
 const PurchaseKickoffMeetings = lazy(() => import('@/modules/purchase/pages/PurchaseKickoffMeetings'))
@@ -701,6 +705,14 @@ export default function AppRoutes() {
               derived per request and writes nothing. */}
           <Route path="work-packages" element={<S><PurchaseWorkPackages /></S>} />
           <Route path="work-authorization" element={<S><PurchaseWorkAuthorization /></S>} />
+          {/* Site-wide HSSE registers, SHARED with TPV — the same rows, by
+              design. One site has one safety record; two copies would each look
+              complete while being half the truth. */}
+          <Route path="safety" element={<S><PurchaseSafetyEngagement /></S>} />
+          <Route path="site-registers" element={<S><PurchaseSiteRegisters /></S>} />
+          <Route path="evidence" element={<S><PurchaseEvidenceLocker /></S>} />
+          {/* Counts Purchase's OWN registers, not TPV's — see the page header. */}
+          <Route path="governance" element={<S><PurchaseGovernanceDashboard /></S>} />
           {/* Workforce Competency & Skill Matrix — "No Competency, No Work" (mirror of TPV §15). */}
           <Route path="competency" element={<S><PurchaseCompetency /></S>} />
           {/* Kickoff Meetings — Purchase-owned pages on /api/purchase/kickoff (no TPV reuse) */}
