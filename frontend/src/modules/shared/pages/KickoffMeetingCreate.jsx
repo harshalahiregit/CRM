@@ -873,8 +873,34 @@ export default function KickoffMeetingCreate() {
 
       <ErrBanner msg={err} />
 
-      {/* ── Two-column layout ────────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, alignItems: 'start' }}>
+      {/* ── Two-column layout ──────────────────────────────────────────
+          The summary is a READ-ONLY recap; the left column is where all the
+          work happens — agenda rows, action items, decisions, issues, each of
+          which is a multi-column grid of its own. `auto-fit` with `1fr` split
+          the page 50/50, so the recap was as wide as the form and the agenda
+          builder was squeezed into half the screen.
+
+          Now the summary is a fixed narrow rail and the form takes everything
+          else. `minmax(0, 1fr)` on the left is load-bearing: a grid track's
+          default `min-width: auto` refuses to shrink below its content, so the
+          wide inner grids would otherwise push the whole layout sideways
+          instead of the columns reflowing.
+
+          Below ~1100px it collapses to a single column, where the summary
+          stops being sticky and simply follows the form. */}
+      <style>{`
+        .ko-form-grid {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) 300px;
+          gap: 16px;
+          align-items: start;
+        }
+        @media (max-width: 1100px) {
+          .ko-form-grid { grid-template-columns: minmax(0, 1fr); }
+          .ko-form-grid > .ko-summary { position: static !important; }
+        }
+      `}</style>
+      <div className="ko-form-grid">
 
         {/* ── LEFT COLUMN ────────────────────────────────────────────── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -1647,11 +1673,11 @@ export default function KickoffMeetingCreate() {
         </div>{/* end left column */}
 
         {/* ── RIGHT COLUMN — summary card ─────────────────────────────── */}
-        <div style={{ position: 'sticky', top: 16 }}>
-          <div className="pr-glass" style={{ padding: 20 }}>
+        <div className="ko-summary" style={{ position: 'sticky', top: 16 }}>
+          <div className="pr-glass" style={{ padding: 16 }}>
             <SectionTitle icon={CalendarDays}>Meeting Summary</SectionTitle>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {/* Every selected vendor, primary first — the summary must agree
                   with the chips above, not show only the first one. */}
               <SummaryRow label={vendorIds.length > 1 ? `Vendors (${vendorIds.length})` : 'Vendor'}>
@@ -1816,9 +1842,15 @@ function PrevStat({ n, label, tone }) {
 // ── tiny summary row ──────────────────────────────────────────────────────────
 function SummaryRow({ label, children }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, borderBottom: '1px solid var(--border)', paddingBottom: 9 }}>
-      <span style={{ color: 'var(--text-muted)', fontSize: 12, flexShrink: 0 }}>{label}</span>
-      <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-h)', textAlign: 'right' }}>{children}</span>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, borderBottom: '1px solid var(--border)', paddingBottom: 7 }}>
+      <span style={{ color: 'var(--text-muted)', fontSize: 11.5, flexShrink: 0 }}>{label}</span>
+      {/* minWidth 0 + overflowWrap: a flex item will not shrink below its
+          content by default, so a long company name would push past the edge
+          of the narrow rail rather than wrapping inside it. */}
+      <span style={{
+        fontSize: 12, fontWeight: 600, color: 'var(--text-h)', textAlign: 'right',
+        minWidth: 0, overflowWrap: 'anywhere',
+      }}>{children}</span>
     </div>
   )
 }
