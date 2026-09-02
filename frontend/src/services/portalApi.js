@@ -200,7 +200,12 @@ export const portalApi = {
     forWorker:   (workerId)       => api.get(`/portal/ppe/workers/${workerId}`).then(r => r.data),
     issue:       (workerId, data) => api.post(`/portal/ppe/workers/${workerId}/issue`, data).then(r => r.data),
     returnIssue: (issueId, data)  => api.post(`/portal/ppe/issues/${issueId}/return`, data).then(r => r.data),
-    holders:     (productId)      => api.get(`/portal/ppe/item/${productId}/holders`).then(r => r.data),
+    // No holders() on the portal, deliberately. The controller behind it scopes
+    // by TENANT only and returns every worker with that item plus their vendor's
+    // company name — so exposing it to a vendor login would show one vendor another
+    // vendor's workforce. The route was never registered; this method was the only
+    // thing pointing at it, and calling it 404'd. Staff use tpvApi.ppe.holders,
+    // which is correct for an internal screen.
     // Read-only: a vendor sees what its own workers still need, but cannot edit rules.
     workerCompliance: (workerId)  => api.get(`/portal/ppe/compliance/workers/${workerId}`).then(r => r.data),
     // Private file: fetched as a blob so the bearer token is sent.

@@ -492,7 +492,17 @@ export const hrApi = {
       apply:  (formData)    => api.post('/hr/leave/applications', formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data),
       submit: (id)          => api.patch(`/hr/leave/applications/${id}/submit`).then(r => r.data),
       cancel: (id)          => api.patch(`/hr/leave/applications/${id}/cancel`).then(r => r.data),
-      attachmentUrl: (id)   => `${BASE}/hr/leave/applications/${id}/attachment`,
+      /**
+       * The bytes, not a URL.
+       *
+       * This used to hand back `${BASE}/…/attachment` for an <a href>, which the
+       * browser follows WITHOUT the Authorization header — so the route, which is
+       * behind auth:sanctum, answered 401 and the attachment could never be
+       * opened. Fetching as a blob is how every other authenticated download in
+       * this app works.
+       */
+      attachmentBlob: (id) =>
+        api.get(`/hr/leave/applications/${id}/attachment`, { responseType: 'blob' }).then(r => r.data),
       // Day count for a range BEFORE applying. The answer depends on the
       // employee's shift, so the breakdown says which days were excluded and why.
       preview: (data)       => api.post('/hr/leave/applications/preview', data).then(r => r.data),
@@ -598,7 +608,10 @@ export const hrApi = {
       update:      (id, formData) => { formData.append('_method', 'PUT'); return api.post(`/hr/exit/requests/${id}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data) },
       submit:      (id)          => api.patch(`/hr/exit/requests/${id}/submit`).then(r => r.data),
       withdraw:    (id, data)    => api.patch(`/hr/exit/requests/${id}/withdraw`, data).then(r => r.data),
-      attachmentUrl: (id)        => `${BASE}/hr/exit/requests/${id}/attachment`,
+      // Same fix as leave: a bare href reaches a token-protected route with no
+      // token. See the note there.
+      attachmentBlob: (id) =>
+        api.get(`/hr/exit/requests/${id}/attachment`, { responseType: 'blob' }).then(r => r.data),
     },
     // Exit Approval workflow (Phase 3). Submitted → Under Review → Approved / Rejected.
     approvals: {

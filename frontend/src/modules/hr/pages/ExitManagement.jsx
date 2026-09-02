@@ -6,6 +6,7 @@ import {
   PlayCircle, CheckCircle2, XCircle, MessageSquare, FileQuestion,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+import { openAuthedFile } from '@/lib/openAuthedFile'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 import ExitReports from './ExitReports'
 import ExitQuestionnaires from '../components/ExitQuestionnaires'
@@ -450,12 +451,12 @@ function ExitRequests({ showToast }) {
       )}
 
       {/* View drawer */}
-      {view && <ExitRequestDrawer id={view} onClose={()=>setView(null)} onWithdraw={(r)=>setWithdrawing({ id:r.id, reason:'' })} />}
+      {view && <ExitRequestDrawer showToast={showToast} id={view} onClose={()=>setView(null)} onWithdraw={(r)=>setWithdrawing({ id:r.id, reason:'' })} />}
     </div>
   )
 }
 
-function ExitRequestDrawer({ id, onClose, onWithdraw }) {
+function ExitRequestDrawer({ id, onClose, onWithdraw, showToast }) {
   const [r, setR] = useState(null); const [loading, setLoading] = useState(true)
   useEffect(() => { setLoading(true); hrApi.exit.requests.get(id).then(setR).finally(()=>setLoading(false)) }, [id])
 
@@ -488,7 +489,7 @@ function ExitRequestDrawer({ id, onClose, onWithdraw }) {
             {r.reason && <div><p className="label-caps mb-0.5">Reason</p><p className="text-sm" style={{ color:'var(--text-h)' }}>{r.reason}</p></div>}
             {r.employee_remarks && <div><p className="label-caps mb-0.5">Employee Remarks</p><p className="text-sm" style={{ color:'var(--text-h)' }}>{r.employee_remarks}</p></div>}
             {r.hr_remarks && <div><p className="label-caps mb-0.5">HR Remarks</p><p className="text-sm" style={{ color:'var(--text-h)' }}>{r.hr_remarks}</p></div>}
-            {r.has_attachment && <a href={hrApi.exit.requests.attachmentUrl(r.id)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-xs font-bold px-3 py-2 rounded-xl" style={{ background:'rgba(124,58,237,0.1)', color:'#a78bfa' }}><Download size={13}/> Download attachment</a>}
+            {r.has_attachment && <button type="button" onClick={()=>openAuthedFile(hrApi.exit.requests.attachmentBlob, r.id, showToast)} className="inline-flex items-center gap-2 text-xs font-bold px-3 py-2 rounded-xl" style={{ background:'rgba(124,58,237,0.1)', color:'#a78bfa' }}><Download size={13}/> Download attachment</button>}
 
             <div><p className="label-caps mb-2 flex items-center gap-1.5"><Clock size={12}/> Timeline</p>
               <div className="space-y-2.5">{(r.timeline||[]).map((t,i)=>(
@@ -616,7 +617,7 @@ function ExitApprovalDrawer({ id, onClose, onChanged, showToast }) {
             </div>
             {r.reason && <div><p className="label-caps mb-0.5">Reason</p><p className="text-sm" style={{ color:'var(--text-h)' }}>{r.reason}</p></div>}
             {r.hr_remarks && <div><p className="label-caps mb-0.5">HR Remarks</p><p className="text-sm" style={{ color:'var(--text-h)' }}>{r.hr_remarks}</p></div>}
-            {r.has_attachment && <a href={hrApi.exit.requests.attachmentUrl(r.id)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-xs font-bold px-3 py-2 rounded-xl" style={{ background:'rgba(124,58,237,0.1)', color:'#a78bfa' }}><Download size={13}/> Download attachment</a>}
+            {r.has_attachment && <button type="button" onClick={()=>openAuthedFile(hrApi.exit.requests.attachmentBlob, r.id, showToast)} className="inline-flex items-center gap-2 text-xs font-bold px-3 py-2 rounded-xl" style={{ background:'rgba(124,58,237,0.1)', color:'#a78bfa' }}><Download size={13}/> Download attachment</button>}
 
             {/* Review remarks — editable only while Under Review; read-only otherwise. */}
             {(isReview || r.review_remarks) && (
