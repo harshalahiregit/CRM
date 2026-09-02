@@ -318,48 +318,15 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
    * which overflows a laptop viewport, so Inventory, Purchase and TPV sit below
    * the fold before anything is open. A page load resets scrollTop to 0, so a
    * restored lower section reopened correctly and was simply never seen; only HR,
-   * being first, looked like it worked. The effect below brings it into view.
-   *
-   * It adjusts the nav's OWN scrollTop rather than calling scrollIntoView. The
-   * mobile Sidebar is always mounted, just translated off-canvas, and
-   * scrollIntoView on a hidden copy would scroll its ancestors — the window
-   * included. Touching nav.scrollTop can only ever move this one element.
+   * being first, looked like it worked. That is handled by the effect further
+   * down, next to pinnedBase — it needs to know whether the module is pinned
+   * before it can decide where to scroll.
    *
    * Nothing is derived from the current route. Sections open on a click and
    * only on a click; the last click is what gets remembered.
    */
   const navRef = useRef(null)
   const { pathname } = useLocation()
-  /**
-   * Pull the open module's header to the TOP of the sidebar — so the module you
-   * are in sits at the top with its items below it.
-   *
-   * Runs on BOTH openSection AND pathname changes: navigating into a module
-   * (AppShell opens its section from the route) must scroll even when that
-   * section was already the open one, e.g. after a refresh that restored it —
-   * a plain [openSection] dependency would see no change and never fire.
-   *
-   * Deferred to the next frame so the accordion's items have laid out before we
-   * measure. Adjusts the nav's OWN scrollTop rather than scrollIntoView: the
-   * mobile Sidebar is always mounted (just translated off-canvas), and
-   * scrollIntoView on a hidden copy would scroll its ancestors, the window
-   * included. Touching nav.scrollTop can only ever move this one element. The
-   * browser clamps to the real scroll range, so a short last section simply
-   * stops where its content ends.
-   */
-  useEffect(() => {
-    if (!openSection) return          // nothing open: leave the scroll alone
-    const nav = navRef.current
-    if (!nav) return
-    const raf = requestAnimationFrame(() => {
-      const header = nav.querySelector(`[data-section="${openSection}"]`)
-      if (!header) return
-      const navBox = nav.getBoundingClientRect()
-      const headBox = header.getBoundingClientRect()
-      nav.scrollTop += headBox.top - navBox.top - 8
-    })
-    return () => cancelAnimationFrame(raf)
-  }, [openSection, pathname])
 
   // HR's inner groups (Recruitment, HR Records) start closed and open only on a
   // click — and independently of each other, unlike the module accordion above.
@@ -395,6 +362,51 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
   // in the expanded sidebar — the collapsed icon rail shows no pin, so hide
   // nothing there.
   const pinnedBase = !collapsed && activeSubItems.length > 0 ? activeModule?.base : null
+
+  /**
+   * Keep the module you are working in visible in the sidebar.
+   *
+   * Two cases, and conflating them was the bug:
+   *
+   *  - The module is PINNED at the top. Its normal block further down the list
+   *    is hidden, so scrolling that hidden header into view walked the sidebar
+   *    to the bottom — past the pinned block the user had just asked to see.
+   *    Here the answer is simply the top.
+   *
+   *  - No pin (collapsed rail, or a module with no sub-items). Then the open
+   *    section really is somewhere down the list and does need scrolling to.
+   *
+   * Declared AFTER pinnedBase deliberately: it is a dependency, and a const is
+   * not readable above its declaration.
+   *
+   * Runs on BOTH openSection AND pathname changes: navigating into a module
+   * (AppShell opens its section from the route) must scroll even when that
+   * section was already the open one, e.g. after a refresh that restored it —
+   * a plain [openSection] dependency would see no change and never fire.
+   *
+   * Deferred to the next frame so the accordion's items have laid out before we
+   * measure. Adjusts the nav's OWN scrollTop rather than scrollIntoView: the
+   * mobile Sidebar is always mounted (just translated off-canvas), and
+   * scrollIntoView on a hidden copy would scroll its ancestors, the window
+   * included. Touching nav.scrollTop can only ever move this one element.
+   */
+  useEffect(() => {
+    const nav = navRef.current
+    if (!nav) return
+
+    const raf = requestAnimationFrame(() => {
+      if (pinnedBase) { nav.scrollTop = 0; return }
+      if (!openSection) return        // nothing open and no pin: leave it alone
+      const header = nav.querySelector(`[data-section="${openSection}"]`)
+      if (!header) return
+      const navBox = nav.getBoundingClientRect()
+      const headBox = header.getBoundingClientRect()
+      // The browser clamps to the real scroll range, so a short last section
+      // simply stops where its content ends.
+      nav.scrollTop += headBox.top - navBox.top - 8
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [openSection, pathname, pinnedBase])
 
   const [activeLeadsCount, setActiveLeadsCount] = useState(null)
   const [moduleQuery, setModuleQuery] = useState('')
