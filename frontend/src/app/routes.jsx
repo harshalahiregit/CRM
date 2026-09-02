@@ -260,7 +260,6 @@ const PurchaseSettings = lazy(() => import('@/modules/purchase/pages/PurchaseSet
 // Purchase Vendor admin — Purchase-owned pages (no TPV components).
 const PurchaseVendors = lazy(() => import('@/modules/purchase/pages/PurchaseVendors'))
 const PurchaseVendorDetailLayout = lazy(() => import('@/modules/purchase/pages/vendor-detail/PurchaseVendorDetailLayout'))
-const PurchaseVendorOnboardings = lazy(() => import('@/modules/purchase/pages/PurchaseVendorOnboardings'))
 const PurchaseVendorOnboardingWizard = lazy(() => import('@/modules/purchase/pages/PurchaseVendorOnboardingWizard'))
 const PurchaseWorkforce = lazy(() => import('@/modules/purchase/pages/PurchaseWorkforce'))
 // Purchase workforce registration — the mirror of TPV's Workers list + 5-step
@@ -683,7 +682,13 @@ export default function AppRoutes() {
           <Route path="vendors" element={<S><PurchaseVendors /></S>} />
           {/* Vendor Detail workspace — persistent left sidebar + deep-linkable nested tabs */}
           <Route path="vendors/:id/*" element={<S><PurchaseVendorDetailLayout /></S>} />
-          <Route path="onboarding" element={<S><PurchaseVendorOnboardings /></S>} />
+          {/* The SAME onboarding queue TPV uses. It reads its data source, route
+              base and FK name from useVendorModule(), which resolves to Purchase
+              on this path — so the two modules stay identical by construction
+              instead of by two copies drifting apart. The Purchase-only copy it
+              replaces was a bare 5-column table: no KPIs, no search, no status
+              filter, no step progress and no blocking reason. */}
+          <Route path="onboarding" element={<S><TpvOnboardings /></S>} />
           <Route path="onboarding/:id" element={<S><PurchaseVendorOnboardingWizard /></S>} />
           {/* Admin/staff review of vendor-supplied workers. Activation inside is
               admin-only — the button is hidden for staff and the endpoint refuses them. */}

@@ -580,6 +580,15 @@ export const purchaseApi = {
     kickoffPdf:      (id)        => api.get(`/purchase/onboarding/${id}/kickoff`, { responseType: 'blob' }).then(r => r.data),
     acceptKickoff:   (id)        => api.post(`/purchase/onboarding/${id}/kickoff/accept`).then(r => r.data),
     logKickoffEvent: (id, event) => api.post(`/purchase/onboarding/${id}/kickoff/log`, { event }).then(r => r.data),
+    // §10 checklist — WHAT was verified, as against the approval chain's WHO
+    // signed. The rule engine picks the item list from the vendor's risk level
+    // and category, so a Critical vendor draws a longer list than a routine one.
+    checklist:    (id)        => api.get(`/purchase/onboarding/${id}/checklist`).then(r => r.data),
+    // Merged server-side, so sending one item never clears the rest.
+    setChecklist: (id, state) => api.post(`/purchase/onboarding/${id}/checklist`, { state }).then(r => r.data),
+    // The artefact the site gate and the vendor both point at. Lazily generated
+    // on first request for approvals that predate the feature.
+    workStartLetter: (id) => api.get(`/purchase/onboarding/${id}/work-start-letter`, { responseType: 'blob' }).then(r => r.data),
     // Admin decisions (mirror tpvApi.onboarding).
     approve:         (id, remarks = '') => api.post(`/purchase/onboarding/${id}/approve`, { remarks }).then(r => r.data),
     reject:          (id, remarks = '') => api.post(`/purchase/onboarding/${id}/reject`, { remarks }).then(r => r.data),
