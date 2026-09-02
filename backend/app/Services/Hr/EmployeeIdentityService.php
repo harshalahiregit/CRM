@@ -154,6 +154,74 @@ class EmployeeIdentityService
     }
 
     /**
+     * The reverse of provision(): give a LOGIN an employee record.
+     *
+     * Staff Management creates the person, and the old CRM's answer to why is
+     * that tblstaff simply IS the person — payroll, contracts and timesheets all
+     * hang off staff_id and the HR module creates nobody. Sangoe keeps two tables
+     * because hr_employees carries probation, shift and salary, which a login has
+     * no business holding; but they must behave as one record, which means the
+     * two rows are written together or not at all.
+     *
+     * Without this you can produce a login that no HR screen can see and that
+     * cannot clock in — which is exactly the state every admin account is in
+     * today.
+     *
+     * Idempotent, and it prefers linking to creating: an employee already in this
+     * tenant with the same address is that person, not a second one.
+     *
+     * @param  array{department?:string,designation?:string,phone?:string,joining_date?:string}  $details
+     */
+    public function provisionEmployeeFor(User $user, array $details = [], ?User $actor = null): HrEmployee
+    {
+        if ($existing = $this->employeeFor($user)) {
+            return $existing;
+        }
+
+        $email = trim((string) $user->email);
+
+        // An employee record already exists for this person — link it rather than
+        // creating a second one. Matching is tenant-scoped for the same reason
+        // every lookup here is.
+        $match = HrEmployee::where('tenant_id', $user->tenant_id)
+            ->whereNull('user_id')
+            ->where(fn ($q) => $q->where('email', $email)->orWhere('official_email', $email))
+            ->first();
+
+        if ($match) {
+            $match->update(['user_id' => $user->id]);
+
+            Log::channel('hr')->info('Linked an existing employee to a login', [
+                'employee_id' => $match->id, 'user_id' => $user->id, 'by' => $actor?->id,
+            ]);
+
+            return $match->fresh();
+        }
+
+        $employee = HrEmployee::create([
+            'tenant_id'     => $user->tenant_id,
+            'user_id'       => $user->id,
+            'employee_code' => HrEmployee::nextEmployeeCode((int) $user->tenant_id),
+            'name'          => $user->name,
+            'email'         => $email,
+            'phone'         => $details['phone'] ?? $user->phone,
+            'department'    => $details['department'] ?? ($user->department ?: 'Unassigned'),
+            'designation'   => $details['designation'] ?? ($user->designation ?: 'Unassigned'),
+            // The day they were given a login is the best available answer, and a
+            // guess HR can correct beats a NULL that blocks the record from saving.
+            'joining_date'  => $details['joining_date'] ?? now()->toDateString(),
+            'status'        => 'Active',
+        ]);
+
+        Log::channel('hr')->info('Employee record created for a login', [
+            'employee_id' => $employee->id, 'user_id' => $user->id,
+            'code' => $employee->employee_code, 'by' => $actor?->id,
+        ]);
+
+        return $employee;
+    }
+
+    /**
      * May this login sign in to the attendance app?
      *
      * Three things must all hold, and each is a different question with a

@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Services\Auth\SessionService;
+use App\Services\Hr\EmployeeIdentityService;
+use Illuminate\Support\Facades\DB;
 use App\Support\Hr\StaffPermission;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -183,6 +185,14 @@ class StaffManagementController extends Controller
 
         $tenantId = $request->user()->tenant_id;
 
+        // The login and the employee record are written together or not at all.
+        // Staff Management creates the PERSON — the old CRM's tblstaff simply is
+        // the person, and HR extends it. Sangoe keeps two tables because
+        // hr_employees carries probation, shift and salary that a login has no
+        // business holding, but they must behave as one record. Without the
+        // transaction a half-failure leaves a login no HR screen can see and that
+        // cannot clock in, which is the state every admin account is in today.
+        [$staff, $employee] = DB::transaction(function () use ($request, $tenantId) {
         $staff = User::create([
             'tenant_id'     => $tenantId,
             'name'          => $request->name,
@@ -201,10 +211,25 @@ class StaffManagementController extends Controller
             'meta'          => $this->sanitiseMeta($request->meta ?? []),
         ]);
 
+            $employee = app(EmployeeIdentityService::class)->provisionEmployeeFor($staff, [
+                'department'  => $request->department,
+                'designation' => $request->designation,
+                'phone'       => $request->phone,
+            ], $request->user());
+
+            return [$staff, $employee];
+        });
+
+        // Returned as a sibling rather than a relation: User has no employee
+        // relation, and adding one means changing a model three modules share.
         return response()->json([
             'status'  => 'success',
             'message' => 'Staff member created successfully',
             'data'    => $staff,
+            'employee' => [
+                'id'            => $employee->id,
+                'employee_code' => $employee->employee_code,
+            ],
         ], 201);
     }
 
