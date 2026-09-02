@@ -46,7 +46,10 @@ const PURCHASE_GROUPS = [
     { label: 'Catalog',        path: '/app/purchase/catalog',        icon: Package },
   ] },
   { label: 'Meetings', icon: CalendarDays, items: [
-    { label: 'All Meetings', path: '/app/purchase/kickoff', icon: CalendarDays },
+    { label: 'All Meetings',      path: '/app/purchase/kickoff',                          icon: CalendarDays },
+    { label: 'Decision Register', path: '/app/purchase/meetings/registers/decisions',     icon: ShieldCheck },
+    { label: 'Issue Register',    path: '/app/purchase/meetings/registers/issues',        icon: AlertOctagon },
+    { label: 'Open Action Items', path: '/app/purchase/meetings/registers/actions',       icon: ClipboardList },
   ] },
   { label: 'Mobilisation', icon: Rocket, items: [
     { label: 'Onboarding',           path: '/app/purchase/onboarding',         icon: Rocket },

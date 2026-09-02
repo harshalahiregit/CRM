@@ -739,6 +739,12 @@ export default function AppRoutes() {
           <Route path="kickoff" element={<S><PurchaseKickoffMeetings /></S>} />
           <Route path="kickoff/new" element={<S><PurchaseKickoffCreate /></S>} />
           <Route path="kickoff/:id" element={<S><PurchaseKickoffDetail /></S>} />
+          {/* The SAME register screen TPV uses. useMeetingModule() resolves the
+              Purchase engine on this path, so decisions, issues and the open
+              action backlog now read ACROSS meetings here too — previously they
+              were only visible inside the one meeting that produced them. */}
+          <Route path="meetings/registers" element={<S><MeetingRegisters /></S>} />
+          <Route path="meetings/registers/:register" element={<S><MeetingRegisters /></S>} />
           {/* Sidebar tabs pending dedicated pages — placeholders keep nav intact */}
           {/* Vendor Items — Purchase Vendor ↔ Inventory Item mapping */}
           <Route path="vendor-items" element={<S><PurchaseVendorItems /></S>} />

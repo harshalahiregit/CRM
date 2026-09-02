@@ -8,6 +8,8 @@ use App\Http\Requests\Purchase\UpdatePurchaseKickoffRequest;
 use App\Models\Purchase\PurchaseKickoffDocument;
 use App\Models\Purchase\PurchaseKickoffMeeting;
 use App\Services\Purchase\PurchaseKickoffService;
+use App\Services\Purchase\PurchaseMeetingRegisterService;
+use App\Services\Purchase\PurchaseVendorLiveStatusService;
 use App\Support\Purchase\PurchaseKickoffStatus;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -255,6 +257,97 @@ class PurchaseKickoffController extends Controller
         $this->service->delete($kickoff, $request->user());
 
         return response()->json(['message' => 'Deleted']);
+    }
+
+    /* ── Cross-meeting registers ──────────────────────────────────────────
+     *
+     * Purchase could only ever read decisions, issues and actions inside the
+     * one meeting that produced them. These read ACROSS meetings, which is the
+     * only view that answers "what is still open?" — the question that makes a
+     * meeting series a governance record rather than a pile of minutes.
+     *
+     * Parameter names match the shared registers exactly so the same UI drives
+     * both. `project_id` is accepted and ignored: a Purchase meeting is scoped
+     * to a vendor and carries no project, and rejecting the parameter would
+     * break the shared filter bar for no gain.
+     */
+
+    public function decisionRegister(Request $request, PurchaseMeetingRegisterService $registers)
+    {
+        return response()->json($registers->decisions(
+            (int) $request->user()->tenant_id,
+            $request->only(['status', 'vendor', 'meeting_id', 'search', 'from', 'to']),
+        ));
+    }
+
+    public function issueRegister(Request $request, PurchaseMeetingRegisterService $registers)
+    {
+        return response()->json($registers->issues(
+            (int) $request->user()->tenant_id,
+            $request->only(['status', 'severity', 'category', 'vendor', 'meeting_id', 'search', 'from', 'to']),
+        ));
+    }
+
+    public function actionRegister(Request $request, PurchaseMeetingRegisterService $registers)
+    {
+        return response()->json($registers->actions(
+            (int) $request->user()->tenant_id,
+            $request->only(['status', 'priority', 'vendor', 'meeting_id', 'search', 'from', 'to']),
+        ));
+    }
+
+    /** The filter options the three registers offer. */
+    public function registerOptions(Request $request, PurchaseMeetingRegisterService $registers)
+    {
+        return response()->json($registers->options((int) $request->user()->tenant_id));
+    }
+
+    /* ── Participant pickers ──────────────────────────────────────────────
+     *
+     * The meeting form needs people to invite. Purchase had no picker at all,
+     * so attendees could only be typed in as free text — which is why the
+     * participant tables hold names rather than ids.
+     */
+
+    /** Internal staff who can chair, coordinate or attend. */
+    public function staff(Request $request)
+    {
+        return response()->json(
+            \App\Models\User::where('tenant_id', $request->user()->tenant_id)
+                ->whereIn('role', ['admin', 'staff'])
+                ->orderBy('name')
+                ->get(['id', 'name', 'email', 'designation'])
+        );
+    }
+
+    /**
+     * Vendors available as a meeting subject.
+     *
+     * Scoped to this tenant's PURCHASE vendors — the shared engine's picker
+     * lists the shared `vendors` table, whose ids are unrelated to these, so
+     * reusing it would attach a Purchase meeting to another module's company.
+     */
+    public function vendors(Request $request)
+    {
+        return response()->json(
+            \App\Models\Purchase\PurchaseVendor::where('tenant_id', $request->user()->tenant_id)
+                ->orderBy('company_name')
+                ->get(['id', 'company_name', 'purchase_vendor_code', 'status', 'category'])
+        );
+    }
+
+    /**
+     * Every meeting held for one vendor, newest first — the vendor's meeting
+     * history, and the rollup the vendor workspace links to.
+     */
+    public function vendorStatus(Request $request, PurchaseVendorLiveStatusService $status)
+    {
+        $data = $request->validate(['vendor_id' => 'required|integer']);
+
+        return response()->json($status->snapshot(
+            (int) $request->user()->tenant_id,
+            (int) $data['vendor_id']
+        ));
     }
 
     private function assertTenant(Request $request, PurchaseKickoffMeeting $kickoff): void

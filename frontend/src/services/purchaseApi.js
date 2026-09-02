@@ -311,6 +311,22 @@ export const purchaseApi = {
     dashboard: ()         => api.get('/purchase/kickoff/dashboard').then(r => r.data),
     previousSummary: (id) => api.get(`/purchase/kickoff/${id}/previous-summary`).then(r => r.data),
     carryForward: (id)    => api.post(`/purchase/kickoff/${id}/carry-forward`).then(r => r.data),
+    // Cross-meeting registers — decisions, issues and the open-action backlog
+    // read ACROSS every meeting rather than inside one. Method names and
+    // parameters mirror kickoffApi.registers exactly, because the same
+    // MeetingRegisters page renders both modules.
+    registers: {
+      options:   ()            => api.get('/purchase/kickoff/registers/options').then(r => r.data),
+      decisions: (params = {}) => api.get('/purchase/kickoff/registers/decisions', { params }).then(r => r.data),
+      issues:    (params = {}) => api.get('/purchase/kickoff/registers/issues', { params }).then(r => r.data),
+      actions:   (params = {}) => api.get('/purchase/kickoff/registers/actions', { params }).then(r => r.data),
+    },
+    // Participant pickers + the live vendor snapshot a meeting is planned
+    // against. `vendors` lists PURCHASE vendors — the shared engine's picker
+    // reads the separate `vendors` table, whose ids are unrelated.
+    staff:        ()         => api.get('/purchase/kickoff/staff').then(r => r.data),
+    vendors:      ()         => api.get('/purchase/kickoff/vendors').then(r => r.data),
+    vendorStatus: (vendorId) => api.get('/purchase/kickoff/vendor-status', { params: { vendor_id: vendorId } }).then(r => r.data),
     // Agenda builder (Meeting.docx §3/§4).
     agenda: {
       list:         (id)          => api.get(`/purchase/kickoff/${id}/agenda`).then(r => r.data),

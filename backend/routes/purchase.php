@@ -504,6 +504,21 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::get('/meeting-types',                    [PurchaseKickoffController::class, 'meetingTypes']);
     Route::get('/kickoff/stats',                   [PurchaseKickoffController::class, 'stats']);
     Route::get('/kickoff/dashboard',               [PurchaseKickoffController::class, 'dashboard']);
+
+    // Cross-meeting registers and the participant pickers.
+    //
+    // These MUST stay above /kickoff/{kickoff} — that route carries no numeric
+    // constraint, so a two-segment path declared after it would be captured as
+    // a meeting id and 404 on model binding. `stats` and `dashboard` above
+    // already follow the same rule.
+    Route::get('/kickoff/registers/options',       [PurchaseKickoffController::class, 'registerOptions']);
+    Route::get('/kickoff/registers/decisions',     [PurchaseKickoffController::class, 'decisionRegister']);
+    Route::get('/kickoff/registers/issues',        [PurchaseKickoffController::class, 'issueRegister']);
+    Route::get('/kickoff/registers/actions',       [PurchaseKickoffController::class, 'actionRegister']);
+    Route::get('/kickoff/staff',                   [PurchaseKickoffController::class, 'staff']);
+    Route::get('/kickoff/vendors',                 [PurchaseKickoffController::class, 'vendors']);
+    Route::get('/kickoff/vendor-status',           [PurchaseKickoffController::class, 'vendorStatus']);
+
     Route::get('/kickoff',                         [PurchaseKickoffController::class, 'index']);
     Route::post('/kickoff',                        [PurchaseKickoffController::class, 'store']);
     Route::get('/kickoff/{kickoff}',               [PurchaseKickoffController::class, 'show']);
