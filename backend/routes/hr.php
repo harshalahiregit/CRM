@@ -15,6 +15,8 @@ use App\Http\Controllers\Api\Hr\EmployeeAssetController;
 use App\Http\Controllers\Api\Hr\EmployeeController;
 use App\Http\Controllers\Api\Hr\AttendanceController;
 use App\Http\Controllers\Api\Hr\MyAttendanceController;
+use App\Http\Controllers\Api\Hr\AdvanceController;
+use App\Http\Controllers\Api\Hr\MyAdvanceController;
 use App\Http\Controllers\Api\Hr\MyReimbursementController;
 use App\Http\Controllers\Api\Hr\ReimbursementController;
 use App\Http\Controllers\Api\Hr\SangoeTrackSyncController;
@@ -471,6 +473,20 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     // only through a claim the caller owns.
     Route::get('/me/reimbursements/{id}/attachments/{attachmentId}', [MyReimbursementController::class, 'attachment']);
 
+    // ── My advances ─────────────────────────────────────────────────────
+    // Same guarantee as the claims above: no employee_id is accepted anywhere.
+    // 'outstanding' is declared BEFORE /{id} so it is never captured as a record
+    // id — the trap this file already notes for sync-sangoetrack.
+    Route::get('/me/advances',                  [MyAdvanceController::class, 'index']);
+    Route::get('/me/advances/outstanding',      [MyAdvanceController::class, 'outstanding']);
+    Route::post('/me/advances',                 [MyAdvanceController::class, 'store']);
+    Route::get('/me/advances/{id}',             [MyAdvanceController::class, 'show']);
+    Route::post('/me/advances/{id}/reply',      [MyAdvanceController::class, 'reply']);
+    Route::post('/me/advances/{id}/accept',     [MyAdvanceController::class, 'accept']);
+    Route::post('/me/advances/{id}/cancel',     [MyAdvanceController::class, 'cancel']);
+    Route::post('/me/advances/{id}/settlement', [MyAdvanceController::class, 'settle']);
+    Route::get('/me/advances/{id}/attachments/{attachmentId}', [MyAdvanceController::class, 'attachment']);
+
     Route::get('/me/attendance/today',       [MyAttendanceController::class, 'today']);
     Route::post('/me/attendance/check-in',   [MyAttendanceController::class, 'checkIn']);
     Route::post('/me/attendance/check-out',  [MyAttendanceController::class, 'checkOut']);
@@ -498,5 +514,30 @@ Route::middleware(['auth:sanctum', 'hr.manage'])->prefix('hr')->group(function (
     Route::post('/reimbursements/{id}/decline',    [ReimbursementController::class, 'decline']);
     Route::post('/reimbursements/{id}/hold',       [ReimbursementController::class, 'hold']);
     Route::get('/reimbursements/{id}/attachments/{attachmentId}', [ReimbursementController::class, 'attachment']);
+
+
     Route::post('/reimbursements/{id}/note',       [ReimbursementController::class, 'note']);
+});
+
+// ── Advances ───────────────────────────────────────────────────────────────
+// Its own gate, not hr.manage: the three tiers that approve an advance are a
+// line manager, accounts and a director, and none of them are HR.
+Route::middleware(['auth:sanctum', 'hr.advances'])->prefix('hr')->group(function () {
+    // The gate gets you into the queue; it does not get you a rung. Which tier
+    // may act on a given request is decided per request by AdvanceTierService,
+    // and a manager sees only their own reports' requests.
+    //
+    // The settlement routes are declared BEFORE /advances/{id} so 'settlements'
+    // is never matched as a record id.
+    Route::get('/advances',                                [AdvanceController::class, 'index']);
+    Route::get('/advances/settlements',                    [AdvanceController::class, 'settlements']);
+    Route::post('/advances/settlements/{settlementId}/accept', [AdvanceController::class, 'acceptSettlement']);
+    Route::post('/advances/settlements/{settlementId}/reject', [AdvanceController::class, 'rejectSettlement']);
+    Route::get('/advances/{id}',                           [AdvanceController::class, 'show']);
+    Route::post('/advances/{id}/approve',                  [AdvanceController::class, 'approve']);
+    Route::post('/advances/{id}/decline',                  [AdvanceController::class, 'decline']);
+    Route::post('/advances/{id}/hold',                     [AdvanceController::class, 'hold']);
+    Route::post('/advances/{id}/disburse',                 [AdvanceController::class, 'disburse']);
+    Route::post('/advances/{id}/note',                     [AdvanceController::class, 'note']);
+    Route::get('/advances/{id}/attachments/{attachmentId}', [AdvanceController::class, 'attachment']);
 });

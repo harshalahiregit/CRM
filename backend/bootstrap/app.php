@@ -39,6 +39,9 @@ return Application::configure(basePath: dirname(__DIR__))
             'permission' => \App\Http\Middleware\EnsureStaffPermission::class,
             // The HR queue gate, so a route group carries it rather than each method.
             'hr.manage' => \App\Http\Middleware\EnsureCanManageHrQueue::class,
+            // Advances have their own door: the approvers are a line manager,
+            // accounts and a director, none of whom satisfy hr.manage.
+            'hr.advances' => \App\Http\Middleware\EnsureCanAccessAdvances::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

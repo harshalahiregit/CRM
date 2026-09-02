@@ -86,6 +86,47 @@ class AdvanceTierService
         return $this->refusalReason($advance, $actor) === null;
     }
 
+    /**
+     * Narrow a queue to what this person has any business seeing.
+     *
+     * An advance says what somebody is doing and how much they needed, so the
+     * whole tenant's requests are not everybody's reading. Admins, HR, accounts
+     * and directors oversee the process and see all of it; a line manager sees
+     * their own reports and nothing else.
+     */
+    public function scopeQueue($query, User $actor)
+    {
+        if ($actor->isAdmin() || $actor->canManageHrQueue() || $this->holdsAnyTierRole($actor)) {
+            return $query;
+        }
+
+        $me = HrEmployee::where('tenant_id', $actor->tenant_id)->where('user_id', $actor->id)->first();
+
+        if (! $me) {
+            // Reachable only if the gate let somebody through who has no employee
+            // record at all. Nothing is the safe answer, not everything.
+            return $query->whereRaw('1 = 0');
+        }
+
+        return $query->whereIn(
+            'employee_id',
+            HrEmployee::where('tenant_id', $actor->tenant_id)
+                ->where('reporting_manager_id', $me->id)
+                ->select('id')
+        );
+    }
+
+    public function holdsAnyTierRole(User $actor): bool
+    {
+        foreach (self::TIER_ROLES as $roles) {
+            if (in_array((string) $actor->internal_role, $roles, true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /* ── membership ──────────────────────────────────────────────────── */
 
     public function holdsTier(HrAdvance $advance, User $actor, string $tier): bool
