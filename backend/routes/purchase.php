@@ -255,6 +255,12 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::post('/onboarding',                       [PurchaseOnboardingController::class, 'store']);
     Route::get('/onboarding/{onboarding}',           [PurchaseOnboardingController::class, 'show']);
     Route::get('/onboarding/{onboarding}/progress',  [PurchaseOnboardingController::class, 'progress']);
+    // §10 checklist — what was VERIFIED, as distinct from the approval chain's
+    // record of who signed. And the work-start letter, whose path column existed
+    // with nothing ever writing to it.
+    Route::get('/onboarding/{onboarding}/checklist',  [PurchaseOnboardingController::class, 'checklist']);
+    Route::post('/onboarding/{onboarding}/checklist', [PurchaseOnboardingController::class, 'saveChecklist']);
+    Route::get('/onboarding/{onboarding}/work-start-letter', [PurchaseOnboardingController::class, 'workStartLetter']);
     Route::post('/onboarding/{onboarding}/profile',  [PurchaseOnboardingController::class, 'saveProfile']);
     Route::patch('/onboarding/{onboarding}/step',    [PurchaseOnboardingController::class, 'setStep']);
     Route::post('/onboarding/{onboarding}/submit',   [PurchaseOnboardingController::class, 'submit']);

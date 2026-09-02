@@ -23,7 +23,7 @@ class PurchaseOnboarding extends Model
 
     protected $fillable = [
         'tenant_id', 'purchase_vendor_id', 'created_by', 'kickoff_meeting_id', 'current_step', 'profile',
-        'status', 'submitted_at', 'approved_at', 'approved_by', 'remarks', 'work_start_letter_path',
+        'status', 'submitted_at', 'approved_at', 'approved_by', 'remarks', 'work_start_letter_path', 'checklist_state',
         'registration_number', 'hold_reason',
         'kickoff_pdf_path', 'acknowledged', 'acknowledged_by', 'acknowledged_at', 'acknowledged_ip', 'acknowledged_browser', 'acknowledged_device',
         'declaration_accepted_at', 'onboarding_complete', 'completed_at', 'completed_ip', 'completed_browser', 'completed_device',
@@ -39,6 +39,7 @@ class PurchaseOnboarding extends Model
         'declaration_accepted_at' => 'datetime',
         'onboarding_complete'     => 'boolean',
         'completed_at'            => 'datetime',
+            'checklist_state' => 'array',
     ];
 
     protected $appends = ['status_label'];
