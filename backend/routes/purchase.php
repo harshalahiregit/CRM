@@ -522,6 +522,9 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::get('/kickoff/vendors',                 [PurchaseKickoffController::class, 'vendors']);
     Route::get('/kickoff/vendor-status',           [PurchaseKickoffController::class, 'vendorStatus']);
     Route::get('/kickoff/history',                 [PurchaseKickoffController::class, 'history']);
+    // Read-only PREVIEW of carryable items, for the meeting form. The writing
+    // half lives at POST /kickoff/{kickoff}/carry-forward and is unrelated.
+    Route::get('/kickoff/carry-forward',           [PurchaseKickoffController::class, 'carryForwardPreview']);
     // Subjects the SHARED engine supports and Purchase does not. They answer
     // with an empty list rather than 404 — the shared meeting form requests
     // both on mount, and a 404 would read as an error on a working screen.

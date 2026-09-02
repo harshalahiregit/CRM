@@ -38,9 +38,10 @@ use App\Support\Purchase\PurchaseMomIssueStatus;
 class PurchaseVendorLiveStatusService
 {
     /**
+     * @param  int|null  $excludeMeetingId  the meeting being edited, if any — see has_history below.
      * @return array{vendor: ?array, sections: array, has_history: bool}
      */
-    public function snapshot(int $tenantId, int $vendorId): array
+    public function snapshot(int $tenantId, int $vendorId, ?int $excludeMeetingId = null): array
     {
         $vendor = PurchaseVendor::where('tenant_id', $tenantId)->find($vendorId);
         if (! $vendor) {
@@ -62,12 +63,19 @@ class PurchaseVendorLiveStatusService
             $this->gate($tenantId, $vendorId),
         ]));
 
-        // Whether this vendor has any prior meeting. The live-status and
-        // carry-forward panels are only meaningful for a RECURRING vendor — on a
-        // vendor's first meeting there is no history to review or carry forward,
-        // so the UI hides both when this is false.
+        // Whether this vendor has a PRIOR meeting — not merely "a meeting".
+        // The live-status and carry-forward panels are only meaningful for a
+        // RECURRING vendor; on a first meeting there is nothing to review or
+        // carry, so the UI hides both when this is false.
+        //
+        // While EDITING, the meeting being edited is already saved, so counting
+        // it made a vendor's very first meeting look like a repeat and offered
+        // to carry items from the meeting you were sitting in. The caller
+        // passes that meeting so it is excluded.
         $hasHistory = $this->safe(fn () => PurchaseKickoffMeeting::where('tenant_id', $tenantId)
-            ->where('purchase_vendor_id', $vendorId)->exists(), false);
+            ->where('purchase_vendor_id', $vendorId)
+            ->when($excludeMeetingId, fn ($q) => $q->whereKeyNot($excludeMeetingId))
+            ->exists(), false);
 
         return [
             'vendor' => ['id' => $vendor->id, 'name' => $vendor->company_name],

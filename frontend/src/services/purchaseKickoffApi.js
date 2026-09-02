@@ -118,7 +118,11 @@ export const purchaseKickoffApi = {
   remind:    k.remind,
   publish:   k.publish,
   history:   k.history,
-  carryForward: k.carryForward,
+  // The shared page's carryForward is the read-only PREVIEW — GET with subject
+  // params. Purchase's method of that name is the opposite: a POST that writes
+  // carried rows into an existing meeting. Aliasing them would have posted to
+  // /purchase/kickoff/[object Object]/carry-forward.
+  carryForward: (params) => k.carryForwardPreview(params),
   previousSummary: k.previousSummary,
 
   /* ── Minutes ──────────────────────────────────────────────── */
@@ -177,7 +181,7 @@ export const purchaseKickoffApi = {
   registers:    k.registers,
   staff:        k.staff,
   vendors:      k.vendors,
-  vendorStatus: k.vendorStatus,
+  vendorStatus: (vendorId, excludeMeetingId) => k.vendorStatus(vendorId, excludeMeetingId),
   meetingTypes: k.meetingTypes,
   // Subjects the shared engine supports and Purchase does not. The endpoints
   // answer with an empty list rather than 404, so the shared form's pickers

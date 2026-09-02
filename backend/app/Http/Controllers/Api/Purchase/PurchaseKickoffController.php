@@ -361,11 +361,38 @@ class PurchaseKickoffController extends Controller
      */
     public function vendorStatus(Request $request, PurchaseVendorLiveStatusService $status)
     {
-        $data = $request->validate(['vendor_id' => 'required|integer']);
+        $data = $request->validate([
+            'vendor_id' => 'required|integer',
+            // The meeting being edited, so it is not counted as its own history.
+            'exclude_meeting_id' => 'nullable|integer',
+        ]);
 
         return response()->json($status->snapshot(
             (int) $request->user()->tenant_id,
-            (int) $data['vendor_id']
+            (int) $data['vendor_id'],
+            isset($data['exclude_meeting_id']) ? (int) $data['exclude_meeting_id'] : null,
+        ));
+    }
+
+    /**
+     * Preview what a new meeting could carry forward. Read-only — the writing
+     * half is POST /kickoff/{id}/carry-forward, which is a different question.
+     */
+    public function carryForwardPreview(Request $request)
+    {
+        $data = $request->validate([
+            // `subject_type` is accepted for shape-compatibility with the shared
+            // engine's picker and ignored: a Purchase meeting's subject is always
+            // a Purchase vendor.
+            'subject_type' => 'nullable|string',
+            'subject_id' => 'required|integer',
+            'exclude_meeting_id' => 'nullable|integer',
+        ]);
+
+        return response()->json($this->service->carryForwardPreview(
+            (int) $request->user()->tenant_id,
+            (int) $data['subject_id'],
+            isset($data['exclude_meeting_id']) ? (int) $data['exclude_meeting_id'] : null,
         ));
     }
 

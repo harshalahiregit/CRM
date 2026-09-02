@@ -525,11 +525,14 @@ export default function KickoffMeetingCreate() {
   useEffect(() => {
     if (!form.subject_id) { setVendorStatus(null); return }
     let live = true
-    kickoffApi.vendorStatus(form.subject_id)
+    // While editing, exclude THIS meeting from the vendor's history — it is
+    // already saved, so counting it made a vendor's first meeting look like a
+    // repeat and offered to carry items forward from the meeting on screen.
+    kickoffApi.vendorStatus(form.subject_id, editId || undefined)
       .then(d => { if (live) setVendorStatus(d) })
       .catch(() => { if (live) setVendorStatus(null) })
     return () => { live = false }
-  }, [form.subject_id])
+  }, [form.subject_id, editId])
 
   // §18 AI — suggest an agenda from the meeting type + vendor status + open items.
   const [aiBusy, setAiBusy] = useState(false)

@@ -310,7 +310,11 @@ export const purchaseApi = {
     stats:  ()            => api.get('/purchase/kickoff/stats').then(r => r.data),
     dashboard: ()         => api.get('/purchase/kickoff/dashboard').then(r => r.data),
     previousSummary: (id) => api.get(`/purchase/kickoff/${id}/previous-summary`).then(r => r.data),
+    // WRITES carried items into an existing meeting.
     carryForward: (id)    => api.post(`/purchase/kickoff/${id}/carry-forward`).then(r => r.data),
+    // READS what a new meeting could carry — the meeting form's preview. Same
+    // params and response shape as the shared engine's carry-forward.
+    carryForwardPreview: (params = {}) => api.get('/purchase/kickoff/carry-forward', { params }).then(r => r.data),
     // Cross-meeting registers — decisions, issues and the open-action backlog
     // read ACROSS every meeting rather than inside one. Method names and
     // parameters mirror kickoffApi.registers exactly, because the same
@@ -326,7 +330,11 @@ export const purchaseApi = {
     // reads the separate `vendors` table, whose ids are unrelated.
     staff:        ()         => api.get('/purchase/kickoff/staff').then(r => r.data),
     vendors:      ()         => api.get('/purchase/kickoff/vendors').then(r => r.data),
-    vendorStatus: (vendorId) => api.get('/purchase/kickoff/vendor-status', { params: { vendor_id: vendorId } }).then(r => r.data),
+    // excludeMeetingId = the meeting being edited, so it is not counted as
+    // its own history (see kickoffApi.vendorStatus).
+    vendorStatus: (vendorId, excludeMeetingId) => api.get('/purchase/kickoff/vendor-status', {
+      params: { vendor_id: vendorId, exclude_meeting_id: excludeMeetingId || undefined },
+    }).then(r => r.data),
     // Meetings for a vendor (or the whole tenant), newest first — so a
     // recurring meeting is planned against the last one, not from scratch.
     history:      (params = {}) => api.get('/purchase/kickoff/history', { params }).then(r => r.data),

@@ -290,4 +290,93 @@ class PurchaseMeetingParityTest extends TestCase
             $this->assertArrayHasKey($key, $body, "dashboard is missing '{$key}'");
         }
     }
+
+    /**
+     * A vendor's FIRST meeting must not offer carry-forward or live status.
+     *
+     * has_history means "has a PRIOR meeting", not "has a meeting". While
+     * editing, the meeting on screen is already saved, so counting it made a
+     * first meeting look like a repeat — the form offered to carry items
+     * forward from the very meeting being edited.
+     */
+    public function test_first_meeting_reports_no_history_even_while_being_edited(): void
+    {
+        Sanctum::actingAs($this->admin());
+        $vendor = $this->vendor('FirstCo');
+
+        // Before any meeting exists.
+        $this->assertFalse(
+            $this->getJson('/api/purchase/kickoff/vendor-status?vendor_id='.$vendor->id)->assertOk()->json('has_history')
+        );
+
+        $first = $this->meeting($vendor, 'Their first');
+
+        // Editing that first meeting: it is not its own history.
+        $this->assertFalse(
+            $this->getJson("/api/purchase/kickoff/vendor-status?vendor_id={$vendor->id}&exclude_meeting_id={$first->id}")
+                ->assertOk()->json('has_history'),
+            'the meeting being edited was counted as the vendor s own history'
+        );
+
+        // Without the exclusion it legitimately reads true — that is the create
+        // screen asking "has this vendor met before?", and by then they have.
+        $this->assertTrue(
+            $this->getJson('/api/purchase/kickoff/vendor-status?vendor_id='.$vendor->id)->assertOk()->json('has_history')
+        );
+
+        // A SECOND meeting gives the first one real history to carry from.
+        $second = $this->meeting($vendor, 'Their second');
+        $this->assertTrue(
+            $this->getJson("/api/purchase/kickoff/vendor-status?vendor_id={$vendor->id}&exclude_meeting_id={$second->id}")
+                ->assertOk()->json('has_history')
+        );
+    }
+
+    /**
+     * The carry-forward PREVIEW — a different question from the POST that
+     * writes carried rows into an existing meeting. Purchase had only the
+     * writing half, so the form's "Load previous open items" button had
+     * nothing to call.
+     */
+    public function test_carry_forward_preview_is_empty_for_a_first_meeting(): void
+    {
+        Sanctum::actingAs($this->admin());
+        $vendor = $this->vendor('CarryCo');
+
+        $body = $this->getJson('/api/purchase/kickoff/carry-forward?subject_id='.$vendor->id)->assertOk()->json();
+        $this->assertSame([], $body['actions']);
+        $this->assertSame([], $body['issues']);
+        $this->assertNull($body['previous_agenda']);
+        $this->assertNull($body['previous_stats']);
+    }
+
+    /** With a prior meeting it returns that meeting's open items, and only those. */
+    public function test_carry_forward_preview_returns_open_items_from_prior_meetings(): void
+    {
+        Sanctum::actingAs($this->admin());
+        $vendor = $this->vendor('RepeatCo');
+
+        $first = $this->meeting($vendor, 'Round one');
+        $this->action($first, 'Still open from round one');
+        PurchaseMomActionItem::create([
+            'tenant_id' => self::TENANT, 'purchase_kickoff_meeting_id' => $first->id,
+            'action_ref' => 'A-DONE', 'description' => 'Already finished', 'status' => 'Closed',
+        ]);
+
+        $second = $this->meeting($vendor, 'Round two');
+        $this->action($second, 'Raised in round two');
+
+        // Planning round two: only round one's OPEN item is carryable.
+        $body = $this->getJson(
+            "/api/purchase/kickoff/carry-forward?subject_id={$vendor->id}&exclude_meeting_id={$second->id}"
+        )->assertOk()->json();
+
+        $this->assertSame(['Still open from round one'], array_column($body['actions'], 'description'));
+        $this->assertNotNull($body['previous_stats']);
+        $this->assertSame('Round one', $body['previous_stats']['origin']['title']);
+        $this->assertSame(2, $body['previous_stats']['total_actions']);
+        $this->assertSame(1, $body['previous_stats']['closed_actions']);
+        // Each row says where it came from, or it cannot be traced back.
+        $this->assertSame($first->id, $body['actions'][0]['origin']['meeting_id']);
+    }
 }
