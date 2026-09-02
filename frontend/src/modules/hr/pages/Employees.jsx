@@ -387,15 +387,30 @@ export default function Employees() {
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="label">Department *</label>
                   <select className="input-3d text-sm" value={form.department} onChange={e=>setForm({...form,department:e.target.value})}>
-                    <option value="">Select...</option>
+                    <option value="">{deptNames.length ? 'Select...' : 'No departments defined yet'}</option>
                     {deptOptions(form).map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
+                  {/* Both lists come from Organization Setup, and both fields are required —
+                      so an empty workspace could not create an employee at all and gave no
+                      hint why. Say where they come from, and offer the way there. */}
+                  {!deptNames.length && (
+                    <button type="button" onClick={()=>navigate('/app/hr/organization-setup')}
+                      className="text-[10px] mt-1 underline" style={{ color:'#a78bfa' }}>
+                      Add departments in Organization Setup
+                    </button>
+                  )}
                 </div>
                 <div><label className="label">Designation *</label>
                   <select className="input-3d text-sm" value={form.designation} onChange={e=>setForm({...form,designation:e.target.value})}>
-                    <option value="">Select...</option>
+                    <option value="">{desigNames.length ? 'Select...' : 'No designations defined yet'}</option>
                     {desigOptions(form).map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
+                  {!desigNames.length && (
+                    <button type="button" onClick={()=>navigate('/app/hr/organization-setup')}
+                      className="text-[10px] mt-1 underline" style={{ color:'#a78bfa' }}>
+                      Add designations in Organization Setup
+                    </button>
+                  )}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">

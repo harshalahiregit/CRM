@@ -29,9 +29,10 @@ class ReconcileEmployeeLogins extends Command
 {
     protected $signature = 'hr:reconcile-logins
         {--tenant= : Restrict to one tenant id}
-        {--commit : Actually write the links. Without this nothing is changed}';
+        {--commit : Actually write the links. Without this nothing is changed}
+        {--provision : Also CREATE employee records for staff and admin logins that have none}';
 
-    protected $description = 'Pair existing employees with existing logins by email, within a tenant';
+    protected $description = 'Pair employees with logins by email, and optionally create employee records for logins that have none';
 
     public function handle(EmployeeIdentityService $identity): int
     {
@@ -44,9 +45,12 @@ class ReconcileEmployeeLogins extends Command
             ->get();
 
         if ($employees->isEmpty()) {
-            $this->info('Every employee already has a login linked. Nothing to do.');
+            $this->info('Every employee already has a login linked.');
+            $this->newLine();
 
-            return self::SUCCESS;
+            // Not a reason to stop: the interesting case is the other direction,
+            // where a login has no employee record at all.
+            return $this->provisionMissing($identity, $commit);
         }
 
         $this->line($commit
@@ -123,8 +127,85 @@ class ReconcileEmployeeLogins extends Command
             $this->info("Re-run with --commit to write {$counts['link']} link(s).");
         }
 
+        $this->newLine();
+        $second = $this->provisionMissing($identity, $commit);
+
         // A conflict is not a crash, but it does need a person. Exit non-zero so a
         // scripted run does not report success over rows nobody looked at.
-        return $counts['conflict'] > 0 ? self::FAILURE : self::SUCCESS;
+        return ($counts['conflict'] > 0 || $second === self::FAILURE) ? self::FAILURE : self::SUCCESS;
+    }
+
+    /**
+     * The other direction: logins with no employee record at all.
+     *
+     * Linking by email only works when an employee row already exists. Every
+     * account that predates HR — the founding admin above all — has none, so
+     * nothing pairs and "even the admin is an employee" quietly stays false.
+     *
+     * Always REPORTED, so running the command tells the truth about the
+     * workspace. Only written with --provision AND --commit, because creating
+     * records is a bigger action than joining two that already exist.
+     */
+    private function provisionMissing(EmployeeIdentityService $identity, bool $commit): int
+    {
+        $logins = User::query()
+            ->whereIn('role', ['staff', 'admin'])
+            ->when($this->option('tenant'), fn ($q, $t) => $q->where('tenant_id', (int) $t))
+            ->whereNotExists(function ($q) {
+                $q->selectRaw(1)
+                    ->from('hr_employees')
+                    ->whereColumn('hr_employees.user_id', 'users.id');
+            })
+            ->orderBy('tenant_id')->orderBy('id')
+            ->get();
+
+        if ($logins->isEmpty()) {
+            $this->info('Every staff and admin login has an employee record.');
+
+            return self::SUCCESS;
+        }
+
+        $provision = (bool) $this->option('provision');
+
+        $this->line($provision && $commit
+            ? "Creating employee records for {$logins->count()} login(s)…"
+            : "{$logins->count()} login(s) have no employee record.");
+        $this->newLine();
+
+        $rows    = [];
+        $created = 0;
+        $failed  = 0;
+
+        foreach ($logins as $user) {
+            if (! ($provision && $commit)) {
+                $rows[] = [$user->tenant_id, $user->id, $user->name, $user->email, $user->role, 'would create'];
+
+                continue;
+            }
+
+            try {
+                $employee = $identity->provisionEmployeeFor($user, [], $user);
+                $created++;
+                $rows[] = [$user->tenant_id, $user->id, $user->name, $user->email, $user->role, "created {$employee->employee_code}"];
+            } catch (\Throwable $e) {
+                $failed++;
+                $rows[] = [$user->tenant_id, $user->id, $user->name, $user->email, $user->role, 'FAILED: ' . $e->getMessage()];
+            }
+        }
+
+        $this->table(['Tenant', 'User', 'Name', 'Email', 'Role', 'Outcome'], $rows);
+
+        if (! ($provision && $commit)) {
+            $this->newLine();
+            // Department and designation land on 'Unassigned' rather than blocking
+            // the record — both are NOT NULL, and a placeholder HR can correct
+            // beats a login that no HR screen can see.
+            $this->info('Re-run with --provision --commit to create them. Department and designation start as "Unassigned".');
+        } elseif ($created > 0) {
+            $this->newLine();
+            $this->info("Created {$created} employee record(s).");
+        }
+
+        return $failed > 0 ? self::FAILURE : self::SUCCESS;
     }
 }
