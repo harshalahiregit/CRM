@@ -57,7 +57,40 @@ class VendorPortalController extends Controller
         private PpeInventoryService  $ppeService,
         private \App\Services\Tpv\TpvComplianceService $complianceService,
         private TpvWorkPackageService $workPackageService,
+        private \App\Services\NotificationService $notifications,
     ) {
+    }
+
+    /* ── In-app (bell) notifications ─────────────────────────────────────────
+     * A TPV vendor is a real User (role third_party_vendor), so its bell reuses
+     * the shared notifications store, scoped to the authenticated user. Modules
+     * drop rows for the vendor's login user; here the vendor reads its own.
+     */
+
+    public function notifications(Request $request)
+    {
+        $user = $request->user();
+
+        return response()->json([
+            'items'        => $this->notifications->listFor($user->id, $user->tenant_id),
+            'unread_count' => $this->notifications->unreadCount($user->id, $user->tenant_id),
+        ]);
+    }
+
+    public function markNotificationRead(Request $request, int $id)
+    {
+        $user = $request->user();
+        $this->notifications->markRead($id, $user->id, $user->tenant_id);
+
+        return response()->json(['status' => 'success']);
+    }
+
+    public function markAllNotificationsRead(Request $request)
+    {
+        $user = $request->user();
+        $marked = $this->notifications->markAllRead($user->id, $user->tenant_id);
+
+        return response()->json(['status' => 'success', 'marked' => $marked]);
     }
 
     /**
@@ -860,7 +893,7 @@ class VendorPortalController extends Controller
     {
         $this->assertWorkerOwned($request, $worker);
 
-        $worker->load(['vendor', 'medical.recorder:id,name', 'induction.recorder:id,name',
+        $worker->load(['vendor', 'medical.recorder:id,name', 'medicalHistory.recorder:id,name', 'induction.recorder:id,name',
                        'ppeIssues.issuer:id,name', 'creator:id,name', 'auditLogs']);
 
         return response()->json([

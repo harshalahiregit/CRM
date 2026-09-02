@@ -338,6 +338,17 @@ export const purchaseApi = {
     },
     // Stored MOM PDF as a blob for inline view / download.
     momBlob: (id) => api.get(`/purchase/kickoff/${id}/mom`, { responseType: 'blob' }).then(r => r.data),
+    // Labelled supporting documents (multiple upload). actionItemId scopes to an action's evidence.
+    documents:       (id, actionItemId) => api.get(`/purchase/kickoff/${id}/documents`, { params: actionItemId ? { action_item_id: actionItemId } : {} }).then(r => r.data?.data ?? r.data),
+    uploadDocuments: (id, files, labels, actionItemId) => {
+      const fd = new FormData()
+      files.forEach((f) => fd.append('files[]', f))
+      labels.forEach((l) => fd.append('labels[]', l ?? ''))
+      if (actionItemId) fd.append('action_item_id', actionItemId)
+      return upload(`/purchase/kickoff/${id}/documents`, fd)
+    },
+    deleteDocument:  (id, docId) => api.delete(`/purchase/kickoff/${id}/documents/${docId}`).then(r => r.data),
+    documentBlob:    (id, docId) => api.get(`/purchase/kickoff/${id}/documents/${docId}/download`, { responseType: 'blob' }).then(r => r.data),
     // MOM approval lifecycle (Draft → Pending Organizer → Pending Chairperson → Approved → Distributed).
     momSubmit: (id)        => api.post(`/purchase/kickoff/${id}/mom/submit`).then(r => r.data),
     momDecide: (id, data)  => api.post(`/purchase/kickoff/${id}/mom/decide`, data).then(r => r.data),

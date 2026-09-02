@@ -370,8 +370,6 @@ const KickoffMeetings = lazy(() => import('@/modules/shared/pages/KickoffMeeting
 const MeetingRegisters = lazy(() => import('@/modules/shared/pages/MeetingRegisters'))
 const KickoffMeetingCreate = lazy(() => import('@/modules/shared/pages/KickoffMeetingCreate'))
 const KickoffMeetingDetail = lazy(() => import('@/modules/shared/pages/KickoffMeetingDetail'))
-const KickoffAck = lazy(() => import('@/pages/kickoff/KickoffAck'))
-const KickoffMom = lazy(() => import('@/pages/kickoff/KickoffMom'))
 
 // Vendor Self-Service Portal — its own chrome, gated to vendor roles. Every
 // endpoint resolves the vendor from the token (EnsureVendorPortalAccess).
@@ -477,9 +475,6 @@ export default function AppRoutes() {
       {/* Public token-authed screens (no login — the token IS the credential) */}
       <Route path="/scan/:token" element={<S><GateScan /></S>} />
       <Route path="/checklist/:token" element={<S><ChecklistFill /></S>} />
-      <Route path="/kickoff/ack/:token" element={<S><KickoffAck /></S>} />
-      {/* Read-only view of the same minutes — the e-mail's View MOM PDF link. */}
-      <Route path="/kickoff/mom/:token" element={<S><KickoffMom /></S>} />
 
       {/* Protected app routes — internal staff/admin only. Portal-only roles
           (TPV vendor, vendor, company) are bounced to their own portal, so a

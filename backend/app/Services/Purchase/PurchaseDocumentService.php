@@ -168,6 +168,23 @@ class PurchaseDocumentService
             'document_id' => $doc->id, 'tenant_id' => $doc->tenant_id, 'decision' => $decision,
         ]);
 
+        // In-app (bell) notification to the Purchase vendor's portal. Best-effort;
+        // keyed to the PurchaseVendor (its own bell store).
+        $vendor = $doc->vendor;
+        if ($vendor) {
+            $label = $doc->type ?? 'A document';
+            app(PurchaseVendorNotificationService::class)->notify(
+                (int) $vendor->id,
+                (int) $vendor->tenant_id,
+                $decision === 'approve' ? 'document.approved' : 'document.rejected',
+                $decision === 'approve'
+                    ? "Document approved: {$label}"
+                    : "Document rejected: {$label}",
+                $remarks,
+                '/purchase-portal/documents',
+            );
+        }
+
         return $doc->fresh(['reviewer:id,name']);
     }
 

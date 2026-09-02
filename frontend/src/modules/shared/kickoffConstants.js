@@ -8,6 +8,7 @@
 
 // ── Status — App\Support\Shared\KickoffStatus ────────────────────────────────
 export const KO_STATUS = {
+  DRAFT: 'Draft',
   SCHEDULED: 'Scheduled',
   DELAYED: 'Delayed',
   COMPLETED: 'Completed',
@@ -15,6 +16,7 @@ export const KO_STATUS = {
 }
 
 export const KO_STATUS_CONFIG = {
+  [KO_STATUS.DRAFT]:     { label: 'Draft',     color: '#a78bfa', bg: 'rgba(167,139,250,0.15)' },
   [KO_STATUS.SCHEDULED]: { label: 'Scheduled', color: '#0ea5e9', bg: 'rgba(14,165,233,0.15)' },
   [KO_STATUS.DELAYED]:   { label: 'Delayed',   color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
   [KO_STATUS.COMPLETED]: { label: 'Completed', color: '#10b981', bg: 'rgba(16,185,129,0.15)' },
@@ -22,12 +24,15 @@ export const KO_STATUS_CONFIG = {
 }
 export const koStatusCfg = (s) => KO_STATUS_CONFIG[s] || KO_STATUS_CONFIG[KO_STATUS.SCHEDULED]
 
-export const isKoOpen   = (s) => s === KO_STATUS.SCHEDULED || s === KO_STATUS.DELAYED
+// Draft counts as open (still editable, not yet happened).
+export const isKoDraft  = (s) => s === KO_STATUS.DRAFT
+export const isKoOpen   = (s) => s === KO_STATUS.DRAFT || s === KO_STATUS.SCHEDULED || s === KO_STATUS.DELAYED
 export const isKoClosed = (s) => s === KO_STATUS.COMPLETED || s === KO_STATUS.CANCELLED
 
 /** Permitted moves — mirrors KickoffStatus::TRANSITIONS, so the UI only offers
- *  actions the server will accept. */
+ *  actions the server will accept. Draft → Scheduled is "Publish". */
 export const KO_TRANSITIONS = {
+  [KO_STATUS.DRAFT]:     [KO_STATUS.SCHEDULED, KO_STATUS.CANCELLED],
   [KO_STATUS.SCHEDULED]: [KO_STATUS.DELAYED, KO_STATUS.COMPLETED, KO_STATUS.CANCELLED],
   [KO_STATUS.DELAYED]:   [KO_STATUS.SCHEDULED, KO_STATUS.COMPLETED, KO_STATUS.CANCELLED],
   [KO_STATUS.COMPLETED]: [],

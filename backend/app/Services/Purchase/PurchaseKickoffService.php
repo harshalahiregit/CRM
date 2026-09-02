@@ -4,6 +4,7 @@ namespace App\Services\Purchase;
 
 use App\Exceptions\BusinessException;
 use App\Models\Purchase\PurchaseContact;
+use App\Models\Purchase\PurchaseKickoffDocument;
 use App\Models\Purchase\PurchaseKickoffMeeting;
 use App\Models\Purchase\PurchaseKickoffMom;
 use App\Models\Purchase\PurchaseKickoffParticipant;
@@ -115,7 +116,9 @@ class PurchaseKickoffService
             'meeting_type'           => $data['meeting_type'] ?? \App\Support\Purchase\PurchaseMeetingTypeCatalog::DEFAULT,
             'reference'              => $data['reference'] ?? null,
             'agenda'                 => $data['agenda'] ?? null,
-            'status'                 => Status::SCHEDULED,
+            // Born a draft — saving records the meeting but tells nobody. Going
+            // live (invitations) happens on Publish (Draft → Scheduled).
+            'status'                 => Status::DRAFT,
             'priority'               => $data['priority'] ?? null,
             'confidentiality'        => $data['confidentiality'] ?? null,
             'chairperson'            => $data['chairperson'] ?? null,
@@ -125,7 +128,8 @@ class PurchaseKickoffService
             'client_name'            => $data['client_name'] ?? null,
             'scheduled_at'           => $data['scheduled_at'] ?? null,
             'end_at'                 => $data['end_at'] ?? null,
-            'duration_minutes'       => $data['duration_minutes'] ?? null,
+            // Duration is derived from start+end, never taken from the client.
+            'duration_minutes'       => $this->computeDuration($data['scheduled_at'] ?? null, $data['end_at'] ?? null),
             'mode'                   => $data['mode'] ?? null,
             'location'               => $data['location'] ?? null,
             'meeting_platform'       => $data['meeting_platform'] ?? null,
@@ -158,6 +162,16 @@ class PurchaseKickoffService
             throw new BusinessException('A '.Status::label($meeting->status).' meeting can no longer be edited. Reopen it first.');
         }
 
+        $wasPublished = Status::isPublished($meeting->status);
+        $before = [
+            'scheduled_at' => optional($meeting->scheduled_at)->toDateTimeString(),
+            'end_at' => optional($meeting->end_at)->toDateTimeString(),
+            'mode' => $meeting->mode,
+            'location' => $meeting->location,
+        ];
+        $effStart = $data['scheduled_at'] ?? $meeting->scheduled_at;
+        $effEnd = $data['end_at'] ?? $meeting->end_at;
+
         $meeting->update(array_filter([
             'title'             => $data['title'] ?? null,
             'meeting_type'      => $data['meeting_type'] ?? null,
@@ -172,7 +186,8 @@ class PurchaseKickoffService
             'client_name'       => $data['client_name'] ?? null,
             'scheduled_at'      => $data['scheduled_at'] ?? null,
             'end_at'            => $data['end_at'] ?? null,
-            'duration_minutes'  => $data['duration_minutes'] ?? null,
+            // Always derived from the effective start+end — never client-sent.
+            'duration_minutes'  => $this->computeDuration($effStart, $effEnd),
             'mode'              => $data['mode'] ?? null,
             'location'          => $data['location'] ?? null,
             'meeting_platform'  => $data['meeting_platform'] ?? null,
@@ -188,6 +203,18 @@ class PurchaseKickoffService
 
         $meeting->recordAudit('updated', $actor, 'Meeting details updated');
 
+        // A published meeting whose time/place/roster changed re-notifies the roster.
+        $meeting->refresh();
+        $scheduleChanged = $before !== [
+            'scheduled_at' => optional($meeting->scheduled_at)->toDateTimeString(),
+            'end_at' => optional($meeting->end_at)->toDateTimeString(),
+            'mode' => $meeting->mode,
+            'location' => $meeting->location,
+        ];
+        if ($wasPublished && $meeting->scheduled_at && ($scheduleChanged || array_key_exists('participants', $data))) {
+            $this->notifyParticipants($meeting->fresh('participants'), true);
+        }
+
         return $this->find($meeting->id, $actor->tenant_id);
     }
 
@@ -198,6 +225,12 @@ class PurchaseKickoffService
             throw new BusinessException(
                 'Cannot move a '.Status::label($meeting->status).' meeting to '.Status::label($to).'.'
             );
+        }
+
+        // Draft → Scheduled is "Publish": needs a time to invite people to.
+        $isPublishing = $meeting->status === Status::DRAFT && $to === Status::SCHEDULED;
+        if ($isPublishing && ! ($data['scheduled_at'] ?? $meeting->scheduled_at)) {
+            throw new BusinessException('Set the meeting date and time before publishing.');
         }
 
         $changes = ['status' => $to];
@@ -226,13 +259,71 @@ class PurchaseKickoffService
 
         $meeting->update($changes);
 
-        $verb = ['Delayed' => 'delayed', 'Completed' => 'completed', 'Cancelled' => 'cancelled', 'Scheduled' => 'rescheduled'][$to] ?? 'updated';
+        // Publishing sends the invitation to the roster (mandatory) and shares
+        // the join link. Reminders read the live scheduled_at each run.
+        if ($isPublishing) {
+            $this->notifyParticipants($meeting->fresh('participants'), false);
+        }
+
+        $verb = $isPublishing
+            ? 'published'
+            : (['Delayed' => 'delayed', 'Completed' => 'completed', 'Cancelled' => 'cancelled', 'Scheduled' => 'rescheduled'][$to] ?? 'updated');
         $meeting->recordAudit($verb, $actor, ucfirst($verb).($data['delay_reason'] ?? null ? ": {$data['delay_reason']}" : ''));
         Log::channel('purchase')->info('Purchase kickoff '.$verb, [
             'meeting_id' => $meeting->id, 'actor_id' => $actor->id, 'status' => $to,
         ]);
 
         return $this->find($meeting->id, $actor->tenant_id);
+    }
+
+    /**
+     * Derive the meeting duration (minutes) from start+end. Returns null when
+     * either bound is missing or the window is non-positive.
+     */
+    private function computeDuration($scheduledAt, $endAt): ?int
+    {
+        if (empty($scheduledAt) || empty($endAt)) {
+            return null;
+        }
+        try {
+            $minutes = \Illuminate\Support\Carbon::parse($scheduledAt)
+                ->diffInMinutes(\Illuminate\Support\Carbon::parse($endAt), false);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        return $minutes > 0 ? (int) $minutes : null;
+    }
+
+    /**
+     * Invitation e-mail to every participant with an address (sent on publish and
+     * when a published meeting's time/place/roster changes). Carries the join link.
+     */
+    private function notifyParticipants(PurchaseKickoffMeeting $meeting, bool $isUpdate): void
+    {
+        $meeting->loadMissing('participants', 'vendor');
+
+        $vendorName = $meeting->vendor?->company_name;
+        $when = $meeting->scheduled_at ? $meeting->scheduled_at->format('d M Y, g:i A') : 'a date to be confirmed';
+        $where = $meeting->mode === 'online'
+            ? ($meeting->meeting_link ? " Join link: {$meeting->meeting_link}" : '')
+            : ($meeting->location ? " at {$meeting->location}" : '');
+        $subject = ($isUpdate ? 'Updated: ' : 'Invitation: ')."{$meeting->title}";
+        $body = ($isUpdate ? 'The details of this meeting have changed. ' : '')
+            ."You are invited to the kickoff meeting \"{$meeting->title}\""
+            .($vendorName ? " with {$vendorName}" : '')
+            .", scheduled for {$when}.{$where}";
+
+        foreach ($meeting->participants as $participant) {
+            if (! $participant->email) {
+                continue;
+            }
+            $this->notifications->email(
+                $participant->email, $subject, $body,
+                ['category' => 'Purchase', 'purchase_kickoff_meeting_id' => $meeting->id],
+                $meeting->tenant_id,
+            );
+        }
     }
 
     /** The vendor's most recent earlier meeting (for continuity — Meeting.docx §11). */
@@ -502,68 +593,32 @@ class PurchaseKickoffService
     }
 
     /** Publish the minutes for vendor acknowledgement — mints the public token. */
-    public function publishForAck(PurchaseKickoffMeeting $meeting, User $actor): PurchaseKickoffMeeting
+    /**
+     * Distribute the approved minutes to the vendor. Acknowledgement was removed
+     * (parity with the shared engine): the vendor reads the approved minutes in
+     * their logged-in portal — no bearer token, no sign-off step.
+     */
+    public function distributeMom(PurchaseKickoffMeeting $meeting, User $actor): PurchaseKickoffMeeting
     {
         if ($meeting->status !== Status::COMPLETED) {
-            throw new BusinessException('Complete the meeting before sending its minutes for acknowledgement.');
+            throw new BusinessException('Complete the meeting before sending its minutes to the vendor.');
         }
         if (! $meeting->currentMom()->exists()) {
-            throw new BusinessException('Generate or upload the MOM PDF before sending for acknowledgement.');
+            throw new BusinessException('Generate or upload the MOM document before sending it.');
         }
         if (! MomStatus::isDistributable($meeting->mom_status)) {
             throw new BusinessException('The minutes must be approved before they can be sent to the vendor.');
         }
-        if ($meeting->acknowledged_at) {
-            throw new BusinessException('This meeting has already been acknowledged.');
-        }
 
         $meeting->update([
-            'ack_token'          => Str::random(48),
             'mom_status'         => MomStatus::DISTRIBUTED,
             'mom_distributed_at' => $meeting->mom_distributed_at ?? now(),
             'mom_distributed_by' => $meeting->mom_distributed_by ?? $actor->id,
         ]);
         $this->sendMomNotifications($meeting);
-        $meeting->recordAudit('mom_published', $actor, 'Minutes sent to the vendor for acknowledgement');
+        $meeting->recordAudit('mom_distributed', $actor, 'Minutes distributed to the vendor');
 
         return $this->find($meeting->id, $actor->tenant_id);
-    }
-
-    public function resolveByToken(string $token): PurchaseKickoffMeeting
-    {
-        $meeting = PurchaseKickoffMeeting::where('ack_token', $token)->with(['participants', 'vendor'])->first();
-
-        if (! $meeting) {
-            throw new BusinessException('This acknowledgement link is not valid. It may already have been used.', 404);
-        }
-
-        return $meeting;
-    }
-
-    public function acknowledge(PurchaseKickoffMeeting $meeting, array $data, array $meta): PurchaseKickoffMeeting
-    {
-        if ($meeting->acknowledged_at) {
-            throw new BusinessException('These minutes have already been acknowledged.');
-        }
-        if (trim((string) ($data['name'] ?? '')) === '') {
-            throw new BusinessException('Please enter your name to acknowledge the minutes.');
-        }
-
-        $meeting->update([
-            'acknowledged_at'      => now(),
-            'acknowledged_by_name' => $data['name'],
-            'acknowledged_ip'      => $meta['ip'] ?? null,
-            'ack_token'            => null,
-        ]);
-
-        $meeting->recordAudit('acknowledged', null, "Minutes acknowledged by {$data['name']}", [
-            'ip' => $meta['ip'] ?? null,
-        ]);
-        Log::channel('purchase')->info('Purchase kickoff minutes acknowledged', [
-            'meeting_id' => $meeting->id, 'by' => $data['name'], 'ip' => $meta['ip'] ?? null,
-        ]);
-
-        return $meeting->fresh();
     }
 
     public function delete(PurchaseKickoffMeeting $meeting, User $actor): void
@@ -638,6 +693,122 @@ class PurchaseKickoffService
         ];
     }
 
+    /**
+     * Automatic reminders — fires reminder e-mails as each configured lead time
+     * before a published meeting's start is reached (config meetings.reminder_offsets_minutes,
+     * default 24h + 1h). Idempotent via reminders_sent. Mirrors the shared engine.
+     */
+    public function runDueReminders(): int
+    {
+        $offsets = collect(config('meetings.reminder_offsets_minutes', [1440, 60]))
+            ->map(fn ($m) => (int) $m)->filter(fn ($m) => $m > 0)->unique()->sortDesc()->values();
+        if ($offsets->isEmpty()) {
+            return 0;
+        }
+
+        $now = now();
+        $meetings = PurchaseKickoffMeeting::whereIn('status', [Status::SCHEDULED, Status::DELAYED])
+            ->whereNotNull('scheduled_at')
+            ->where('scheduled_at', '>', $now)
+            ->where('scheduled_at', '<=', (clone $now)->addMinutes($offsets->max()))
+            ->with('participants', 'vendor')
+            ->get();
+
+        $sent = 0;
+        foreach ($meetings as $meeting) {
+            $already = collect($meeting->reminders_sent ?? [])->map(fn ($k) => (string) $k);
+            $minutesUntil = (int) round($now->diffInMinutes($meeting->scheduled_at, false));
+            $due = $offsets->filter(fn ($o) => ! $already->contains((string) $o) && $minutesUntil <= $o)->values();
+            if ($due->isEmpty()) {
+                continue;
+            }
+            $this->dispatchAutoReminder($meeting, (int) $due->min());
+            $meeting->reminders_sent = $already->merge($due->map(fn ($o) => (string) $o))->unique()->values()->all();
+            $meeting->saveQuietly();
+            $sent++;
+        }
+
+        return $sent;
+    }
+
+    private function dispatchAutoReminder(PurchaseKickoffMeeting $meeting, int $offsetMinutes): void
+    {
+        $vendorName = $meeting->vendor?->company_name;
+        $when = $meeting->scheduled_at ? $meeting->scheduled_at->format('d M Y, g:i A') : 'a date to be confirmed';
+        $lead = $offsetMinutes >= 1440 ? (intdiv($offsetMinutes, 1440).' day(s)')
+            : ($offsetMinutes >= 60 ? (intdiv($offsetMinutes, 60).' hour(s)') : $offsetMinutes.' minutes');
+        $where = $meeting->mode === 'online'
+            ? ($meeting->meeting_link ? " Join link: {$meeting->meeting_link}" : '')
+            : ($meeting->location ? " at {$meeting->location}" : '');
+        $subject = "Reminder: {$meeting->title} in {$lead}";
+        $body = "This is a reminder that the meeting \"{$meeting->title}\""
+            .($vendorName ? " with {$vendorName}" : '')
+            ." is scheduled for {$when} (in about {$lead}).{$where}";
+
+        foreach ($meeting->participants as $participant) {
+            if (! $participant->email) {
+                continue;
+            }
+            $this->notifications->email(
+                $participant->email, $subject, $body,
+                ['category' => 'Purchase', 'purchase_kickoff_meeting_id' => $meeting->id],
+                $meeting->tenant_id,
+            );
+        }
+        Log::channel('purchase')->info('Purchase kickoff auto-reminder sent', [
+            'meeting_id' => $meeting->id, 'offset_minutes' => $offsetMinutes,
+        ]);
+    }
+
+    /* ── Labelled supporting documents (multiple upload) ────────────────── */
+
+    /**
+     * @param  array<int, \Illuminate\Http\UploadedFile|null>  $files
+     * @param  array<int, string|null>  $labels
+     */
+    public function uploadDocuments(PurchaseKickoffMeeting $meeting, array $files, array $labels, User $actor, ?int $actionItemId = null)
+    {
+        $stored = collect();
+        foreach (array_values($files) as $i => $file) {
+            if (! $file) {
+                continue;
+            }
+            $label = trim((string) ($labels[$i] ?? '')) ?: $file->getClientOriginalName();
+            $path = $file->store("tenant-{$meeting->tenant_id}/meeting-{$meeting->id}/documents", self::DISK);
+
+            $stored->push(PurchaseKickoffDocument::create([
+                'tenant_id' => $meeting->tenant_id,
+                'purchase_kickoff_meeting_id' => $meeting->id,
+                'purchase_mom_action_item_id' => $actionItemId,
+                'label' => mb_substr($label, 0, 160),
+                'original_name' => mb_substr($file->getClientOriginalName(), 0, 255),
+                'path' => $path,
+                'mime' => $file->getClientMimeType(),
+                'size' => $file->getSize(),
+                'uploaded_by' => $actor->id,
+            ]));
+        }
+
+        if ($stored->isNotEmpty()) {
+            $meeting->recordAudit('documents_uploaded', $actor, $stored->count().' document(s) attached');
+        }
+
+        return $stored;
+    }
+
+    public function deleteDocument(PurchaseKickoffMeeting $meeting, PurchaseKickoffDocument $doc, User $actor): void
+    {
+        if ((int) $doc->purchase_kickoff_meeting_id !== (int) $meeting->id) {
+            throw new BusinessException('Document not found.', 404);
+        }
+        if ($doc->path && Storage::disk(self::DISK)->exists($doc->path)) {
+            Storage::disk(self::DISK)->delete($doc->path);
+        }
+        $label = $doc->label;
+        $doc->delete();
+        $meeting->recordAudit('document_deleted', $actor, 'Document removed: '.$label);
+    }
+
     /* ── internals ─────────────────────────────────────────────── */
 
     /** Persist a MOM row and flip the previous current one. */
@@ -677,11 +848,12 @@ class PurchaseKickoffService
         }
 
         $subjectTitle = "Minutes of Meeting Ready: {$meeting->title}";
-        $body = "The Minutes of Meeting (MOM) for \"{$meeting->title}\" have been published and are ready for your review and acknowledgement.\n\nPlease log into the Purchase Vendor Portal (Step 1 Onboarding) to view the document and record your acknowledgement.";
+        $body = "The Minutes of Meeting (MOM) for \"{$meeting->title}\" have been approved and are now available.\n\nPlease log into the Purchase Vendor Portal to view the minutes.";
 
         if ($email) {
             $this->notifications->email($email, $subjectTitle, $body,
-                ['category' => 'Purchase', 'purchase_kickoff_meeting_id' => $meeting->id]);
+                ['category' => 'Purchase', 'purchase_kickoff_meeting_id' => $meeting->id],
+                $meeting->tenant_id);
         }
         if ($phone) {
             $this->notifications->whatsapp($phone, $body, ['category' => 'Purchase', 'purchase_kickoff_meeting_id' => $meeting->id]);

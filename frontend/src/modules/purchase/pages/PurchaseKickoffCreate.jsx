@@ -73,15 +73,23 @@ export default function PurchaseKickoffCreate() {
   }
   const addManual = () => {
     if (!manual.name.trim()) return
+    // Invitations are mandatory to every participant — a manual one needs an email.
+    if (!manual.email.trim()) { setErr('Add an email for the participant — the invitation is sent to everyone.'); return }
     setParticipants(ps => [...ps, { key: `m${Date.now()}`, ...manual }])
     setManual({ name: '', email: '', role: '', organisation: '' })
+    setErr(null)
   }
   const removeParticipant = (key) => setParticipants(ps => ps.filter(p => p.key !== key))
 
   const save = async () => {
     if (!form.purchase_vendor_id) { setErr('Select a purchase vendor.'); return }
+    if (!form.scheduled_at) { setErr('Start time is required.'); return }
+    if (!form.end_at) { setErr('End time is required.'); return }
+    if (form.end_at <= form.scheduled_at) { setErr('End must be after Start.'); return }
+    if (new Date(form.scheduled_at).getTime() < Date.now() - 2 * 60 * 1000) { setErr('The meeting time cannot be in the past.'); return }
     setSaving(true); setErr(null)
     try {
+      const online = form.mode === 'online' || form.mode === 'hybrid'
       const payload = {
         purchase_vendor_id: Number(form.purchase_vendor_id),
         meeting_type: form.meeting_type || 'kickoff',
@@ -90,9 +98,12 @@ export default function PurchaseKickoffCreate() {
         agenda: form.agenda || undefined,
         scheduled_at: form.scheduled_at || undefined,
         end_at: form.end_at || undefined,
-        duration_minutes: Number(form.duration_minutes) || undefined,
+        // Duration is derived from start→end server-side.
         mode: form.mode,
-        location: form.location || undefined,
+        // Online meetings carry a join link; on-site carries a physical location.
+        location: online ? undefined : (form.location || undefined),
+        meeting_link: online ? (form.location || undefined) : undefined,
+        meeting_platform: online ? 'custom' : undefined,
         priority: form.priority || undefined,
         confidentiality: form.confidentiality || undefined,
         chairperson: form.chairperson || undefined,
@@ -141,7 +152,7 @@ export default function PurchaseKickoffCreate() {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 16, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, alignItems: 'start' }}>
         {/* Left — meeting details */}
         <div className="pr-glass" style={{ padding: 22 }}>
           <SectionTitle icon={CalendarDays}>Meeting details</SectionTitle>
@@ -160,19 +171,28 @@ export default function PurchaseKickoffCreate() {
             <Field label="Reference (optional)" full>
               <TextInput value={form.reference} onChange={set('reference')} placeholder="e.g. PO-2026-0042" />
             </Field>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-              <Field label="Start"><TextInput type="datetime-local" value={form.scheduled_at} onChange={set('scheduled_at')} /></Field>
-              <Field label="End"><TextInput type="datetime-local" value={form.end_at} onChange={set('end_at')} /></Field>
-              <Field label="Duration (min)"><TextInput type="number" value={form.duration_minutes} onChange={set('duration_minutes')} /></Field>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
+              <Field label="Start *"><TextInput type="datetime-local" min={pkNowLocal()} value={form.scheduled_at} onChange={set('scheduled_at')} /></Field>
+              <Field label="End *"><TextInput type="datetime-local" min={form.scheduled_at || pkNowLocal()} value={form.end_at} onChange={set('end_at')} /></Field>
+              <Field label="Duration">
+                <div style={{ padding: '10px 12px', borderRadius: 8, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 13, fontWeight: 700 }}>
+                  {(() => {
+                    if (!form.scheduled_at || !form.end_at || form.end_at <= form.scheduled_at) return '—'
+                    const mins = Math.round((new Date(form.end_at) - new Date(form.scheduled_at)) / 60000)
+                    const h = Math.floor(mins / 60); const m = mins % 60
+                    return `${h ? `${h} hr ` : ''}${m ? `${m} min` : (h ? '' : '0 min')}`.trim()
+                  })()}
+                </div>
+              </Field>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.6fr', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
               <Field label="Mode"><SelectInput value={form.mode} onChange={set('mode')} options={PK_MODES} pairs /></Field>
               <Field label={form.mode === 'online' ? 'Meeting link' : 'Location'}>
                 <TextInput value={form.location} onChange={set('location')} placeholder={form.mode === 'online' ? 'https://…' : 'Site office, Gate 1'} />
               </Field>
             </div>
             {/* Governance meta (Meeting.docx §2) */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
               <Field label="Priority"><SelectInput value={form.priority} onChange={set('priority')} pairs options={[['', '—'], ['Low', 'Low'], ['Medium', 'Medium'], ['High', 'High'], ['Urgent', 'Urgent']]} /></Field>
               <Field label="Confidentiality"><SelectInput value={form.confidentiality} onChange={set('confidentiality')} pairs options={[['', '—'], ['Public', 'Public'], ['Internal', 'Internal'], ['Confidential', 'Confidential'], ['Restricted', 'Restricted']]} /></Field>
               <Field label="Chairperson"><TextInput value={form.chairperson} onChange={set('chairperson')} placeholder="Chairperson" /></Field>
@@ -181,9 +201,9 @@ export default function PurchaseKickoffCreate() {
               <Field label="Department"><TextInput value={form.department} onChange={set('department')} placeholder="Department" /></Field>
               <Field label="Client (optional)" full><TextInput value={form.client_name} onChange={set('client_name')} placeholder="Client name" /></Field>
             </div>
-            <Field label="Agenda" full>
-              <textarea value={form.agenda} onChange={set('agenda')} rows={3} placeholder="Scope walk, commercial terms, document checklist"
-                style={{ width: '100%', padding: '9px 12px', background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-h)', fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }} />
+            <Field label="Agenda / notepad" full>
+              <textarea value={form.agenda} onChange={set('agenda')} rows={8} placeholder="Scope walk, commercial terms, document checklist — and any scratch notes"
+                style={{ width: '100%', padding: '9px 12px', background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-h)', fontSize: 13, lineHeight: 1.6, minHeight: 160, resize: 'vertical', boxSizing: 'border-box' }} />
             </Field>
           </div>
         </div>
@@ -239,14 +259,14 @@ export default function PurchaseKickoffCreate() {
             <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 7 }}>Add manually</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <TextInput value={manual.name} onChange={e => setManual(m => ({ ...m, name: e.target.value }))} placeholder="Name" />
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 8 }}>
                 <TextInput value={manual.email} onChange={e => setManual(m => ({ ...m, email: e.target.value }))} placeholder="Email" />
                 <TextInput value={manual.role} onChange={e => setManual(m => ({ ...m, role: e.target.value }))} placeholder="Role" />
               </div>
               <TextInput value={manual.organisation} onChange={e => setManual(m => ({ ...m, organisation: e.target.value }))} placeholder="Organisation" />
-              <button onClick={addManual} disabled={!manual.name.trim()}
-                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '9px 12px', borderRadius: 10, cursor: manual.name.trim() ? 'pointer' : 'not-allowed',
-                  fontSize: 12.5, fontWeight: 700, color: '#a78bfa', background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.35)', opacity: manual.name.trim() ? 1 : 0.6 }}>
+              <button onClick={addManual} disabled={!manual.name.trim() || !manual.email.trim()}
+                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '9px 12px', borderRadius: 10, cursor: (manual.name.trim() && manual.email.trim()) ? 'pointer' : 'not-allowed',
+                  fontSize: 12.5, fontWeight: 700, color: '#a78bfa', background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.35)', opacity: (manual.name.trim() && manual.email.trim()) ? 1 : 0.6 }}>
                 <Plus size={14} /> Add participant
               </button>
             </div>
@@ -255,15 +275,21 @@ export default function PurchaseKickoffCreate() {
       </div>
 
       {/* Footer actions */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, marginTop: 18 }}>
+        <span style={{ fontSize: 11.5, color: 'var(--text-muted)', marginRight: 'auto' }}>
+          Saved as a draft — nobody is notified until you <strong style={{ color: 'var(--text-h)' }}>Publish</strong> it from the meeting page.
+        </span>
         <button onClick={() => navigate('/app/purchase/kickoff')} style={ghostBtn}>Cancel</button>
         <button onClick={save} disabled={saving} style={{ ...solidBtn, opacity: saving ? 0.7 : 1 }}>
-          {saving ? <Loader2 size={15} className="pk-spin" /> : <CalendarDays size={15} />} Schedule meeting
+          {saving ? <Loader2 size={15} className="pk-spin" /> : <CalendarDays size={15} />} Save as Draft
         </button>
       </div>
     </div>
   )
 }
+
+// Local "now" as a datetime-local min value (YYYY-MM-DDTHH:mm).
+const pkNowLocal = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)
 
 const SectionTitle = ({ icon: Icon, children }) => (
   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

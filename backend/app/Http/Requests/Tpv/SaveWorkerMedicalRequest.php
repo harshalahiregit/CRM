@@ -43,10 +43,19 @@ class SaveWorkerMedicalRequest extends FormRequest
             // §16 — fitness certificate + a general supporting document, stored as paths.
             'certificate_path'    => 'nullable|string|max:255',
             'document_path'       => 'nullable|string|max:255',
+            // External-doctor exam: the uploaded prescription/report file. Stored
+            // privately and its path saved to document_path (previously the file
+            // was captured in the UI but never sent — the evidence was lost).
+            'report_file'         => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:10240',
 
             // Examiner's signature captured in-browser as a base64 PNG data URL.
             // Decoded to a stored file (signature_path) in the service.
             'signature_data'      => 'nullable|string',
+
+            // §16 legal capture — geolocation (lat,long) + an optional photo, both
+            // sent by the client; system_ip is stamped server-side, not accepted here.
+            'geo_location'        => 'nullable|string|max:120',
+            'capture_photo'       => 'nullable|string',
         ];
     }
 }

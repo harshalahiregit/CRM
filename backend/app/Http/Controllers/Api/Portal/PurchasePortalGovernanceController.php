@@ -158,7 +158,14 @@ class PurchasePortalGovernanceController extends Controller
 
         $meetings = PurchaseKickoffMeeting::where('tenant_id', $v->tenant_id)
             ->where('purchase_vendor_id', $v->id)
+            // Never expose unpublished drafts to the vendor.
+            ->where('status', '!=', \App\Support\Purchase\PurchaseKickoffStatus::DRAFT)
             ->latest('id')->get();
+
+        // The minutes are the vendor's to see only once approved+distributed.
+        $meetings->each(function ($m) {
+            $m->setAttribute('mom_available', \App\Support\Purchase\PurchaseMomApprovalStatus::isDistributable($m->mom_status));
+        });
 
         return response()->json(['data' => $meetings]);
     }
@@ -168,7 +175,37 @@ class PurchasePortalGovernanceController extends Controller
         $v = $this->vendor($request);
         abort_unless((int) $kickoff->tenant_id === (int) $v->tenant_id && (int) $kickoff->purchase_vendor_id === (int) $v->id, 404, 'Meeting not found');
 
-        return response()->json($kickoff->load(['agendaItems', 'actionItems', 'momDecisions', 'momIssues']));
+        // Point 8 parity: the vendor sees minutes only after approval+distribution.
+        abort_unless(
+            \App\Support\Purchase\PurchaseMomApprovalStatus::isDistributable($kickoff->mom_status),
+            403,
+            'These minutes are not yet available.'
+        );
+
+        return response()->json($kickoff->load(['agendaItems', 'actionItems', 'momDecisions', 'momIssues', 'documents']));
+    }
+
+    /** Download one of a meeting's labelled documents (only after approval). */
+    public function meetingDocument(Request $request, PurchaseKickoffMeeting $kickoff, \App\Models\Purchase\PurchaseKickoffDocument $document)
+    {
+        $v = $this->vendor($request);
+        abort_unless((int) $kickoff->tenant_id === (int) $v->tenant_id && (int) $kickoff->purchase_vendor_id === (int) $v->id, 404, 'Meeting not found');
+        abort_unless(
+            \App\Support\Purchase\PurchaseMomApprovalStatus::isDistributable($kickoff->mom_status),
+            403,
+            'These documents are not yet available.'
+        );
+        abort_unless((int) $document->purchase_kickoff_meeting_id === (int) $kickoff->id, 404, 'Document not found.');
+        abort_unless(
+            $document->path && \Illuminate\Support\Facades\Storage::disk('purchase_kickoff_docs')->exists($document->path),
+            404,
+            'Document file is missing.'
+        );
+
+        return \Illuminate\Support\Facades\Storage::disk('purchase_kickoff_docs')->response(
+            $document->path, $document->original_name, [],
+            $request->boolean('inline') ? 'inline' : 'attachment'
+        );
     }
 
     public function actions(Request $request)

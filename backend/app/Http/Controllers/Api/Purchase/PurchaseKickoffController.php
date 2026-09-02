@@ -5,10 +5,12 @@ namespace App\Http\Controllers\Api\Purchase;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Purchase\StorePurchaseKickoffRequest;
 use App\Http\Requests\Purchase\UpdatePurchaseKickoffRequest;
+use App\Models\Purchase\PurchaseKickoffDocument;
 use App\Models\Purchase\PurchaseKickoffMeeting;
 use App\Services\Purchase\PurchaseKickoffService;
 use App\Support\Purchase\PurchaseKickoffStatus;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 /**
@@ -117,6 +119,66 @@ class PurchaseKickoffController extends Controller
         return response()->json($this->service->uploadMom($kickoff, $request->file('file'), $request->user()));
     }
 
+    /* ── Labelled supporting documents (multiple upload) ────────────────── */
+
+    public function documents(Request $request, PurchaseKickoffMeeting $kickoff)
+    {
+        $this->assertTenant($request, $kickoff);
+        $actionId = $request->integer('action_item_id') ?: null;
+
+        $list = PurchaseKickoffDocument::where('purchase_kickoff_meeting_id', $kickoff->id)
+            ->when($actionId, fn ($q) => $q->where('purchase_mom_action_item_id', $actionId),
+                fn ($q) => $q->whereNull('purchase_mom_action_item_id'))
+            ->with('uploader:id,name')->orderByDesc('id')->get();
+
+        return response()->json(['data' => $list]);
+    }
+
+    public function uploadDocuments(Request $request, PurchaseKickoffMeeting $kickoff)
+    {
+        $this->assertTenant($request, $kickoff);
+        $data = $request->validate([
+            'files'   => 'required|array|min:1',
+            'files.*' => 'file|mimes:pdf,doc,docx,xls,xlsx,png,jpg,jpeg|max:10240',
+            'labels'   => 'nullable|array',
+            'labels.*' => 'nullable|string|max:160',
+            'action_item_id' => 'nullable|integer',
+        ]);
+        $actionId = $data['action_item_id'] ?? null;
+
+        $this->service->uploadDocuments($kickoff, $request->file('files', []), $request->input('labels', []), $request->user(), $actionId);
+
+        $list = PurchaseKickoffDocument::where('purchase_kickoff_meeting_id', $kickoff->id)
+            ->when($actionId, fn ($q) => $q->where('purchase_mom_action_item_id', $actionId),
+                fn ($q) => $q->whereNull('purchase_mom_action_item_id'))
+            ->with('uploader:id,name')->orderByDesc('id')->get();
+
+        return response()->json(['data' => $list], 201);
+    }
+
+    public function deleteDocument(Request $request, PurchaseKickoffMeeting $kickoff, PurchaseKickoffDocument $document)
+    {
+        $this->assertTenant($request, $kickoff);
+        $this->service->deleteDocument($kickoff, $document, $request->user());
+
+        return response()->json(['message' => 'Document removed']);
+    }
+
+    public function downloadDocument(Request $request, PurchaseKickoffMeeting $kickoff, PurchaseKickoffDocument $document)
+    {
+        $this->assertTenant($request, $kickoff);
+        abort_unless((int) $document->purchase_kickoff_meeting_id === (int) $kickoff->id, 404, 'Document not found.');
+        abort_unless(
+            $document->path && Storage::disk('purchase_kickoff_docs')->exists($document->path),
+            404, 'Document file is missing.'
+        );
+
+        return Storage::disk('purchase_kickoff_docs')->response(
+            $document->path, $document->original_name, [],
+            $request->boolean('inline') ? 'inline' : 'attachment'
+        );
+    }
+
     public function generateMom(Request $request, PurchaseKickoffMeeting $kickoff)
     {
         $this->assertTenant($request, $kickoff);
@@ -183,7 +245,7 @@ class PurchaseKickoffController extends Controller
     {
         $this->assertTenant($request, $kickoff);
 
-        return response()->json($this->service->publishForAck($kickoff, $request->user()));
+        return response()->json($this->service->distributeMom($kickoff, $request->user()));
     }
 
     public function destroy(Request $request, PurchaseKickoffMeeting $kickoff)

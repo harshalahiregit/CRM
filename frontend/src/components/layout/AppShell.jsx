@@ -6,6 +6,7 @@ import Header from './Header'
 import MobileBottomNav from './MobileBottomNav'
 import CommandPalette from '@/components/CommandPalette'
 import IdleTimeoutWarning from '@/components/common/IdleTimeoutWarning'
+import AppNotificationToaster from '@/components/notifications/AppNotificationToaster'
 import clsx from 'clsx'
 import { useTheme } from '@/context/ThemeContext'
 
@@ -95,6 +96,8 @@ export default function AppShell() {
       <CommandPalette />
       {/* Idle-timeout warning (session management) */}
       <IdleTimeoutWarning />
+      {/* On-screen notification pop-ups (persistent until the user reacts) */}
+      <AppNotificationToaster />
     </div>
   )
 }

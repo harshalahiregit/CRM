@@ -44,7 +44,41 @@ class PurchasePortalController extends Controller
         private PurchaseDocumentService $documentService,
         private PurchaseKickoffService $kickoffService,
         private \App\Services\Purchase\PurchaseComplianceService $complianceService,
+        private \App\Services\Purchase\PurchaseVendorNotificationService $notifications,
     ) {
+    }
+
+    /* ── In-app (bell) notifications ─────────────────────────────────────────
+     * A Purchase vendor is its OWN Authenticatable (not a User), so its bell
+     * lives in the Purchase-owned purchase_vendor_notifications store, scoped to
+     * the caller resolved from the token. Modules drop rows for the vendor; here
+     * the vendor reads its own.
+     */
+
+    public function notifications(Request $request)
+    {
+        $vendor = $this->purchaseVendor($request);
+
+        return response()->json([
+            'items'        => $this->notifications->listFor((int) $vendor->id, (int) $vendor->tenant_id),
+            'unread_count' => $this->notifications->unreadCount((int) $vendor->id, (int) $vendor->tenant_id),
+        ]);
+    }
+
+    public function markNotificationRead(Request $request, int $id)
+    {
+        $vendor = $this->purchaseVendor($request);
+        $this->notifications->markRead($id, (int) $vendor->id, (int) $vendor->tenant_id);
+
+        return response()->json(['status' => 'success']);
+    }
+
+    public function markAllNotificationsRead(Request $request)
+    {
+        $vendor = $this->purchaseVendor($request);
+        $marked = $this->notifications->markAllRead((int) $vendor->id, (int) $vendor->tenant_id);
+
+        return response()->json(['status' => 'success', 'marked' => $marked]);
     }
 
     /**
@@ -375,6 +409,11 @@ class PurchasePortalController extends Controller
             return response()->json(['meeting' => null]);
         }
 
+        // MoM is the vendor's to see only once approved+distributed (parity with
+        // the shared engine — acknowledgement removed).
+        $momAvailable = $meeting->currentMom()->exists()
+            && \App\Support\Purchase\PurchaseMomApprovalStatus::isDistributable($meeting->mom_status);
+
         return response()->json(['meeting' => [
             'id'              => $meeting->id,
             'title'           => $meeting->title,
@@ -384,25 +423,8 @@ class PurchasePortalController extends Controller
             'mode'            => $meeting->mode,
             'location'        => $meeting->location,
             'meeting_link'    => $meeting->meeting_link,
-            'mom_available'   => $meeting->currentMom()->exists(),
-            'acknowledged_at' => optional($meeting->acknowledged_at)->toIso8601String(),
+            'mom_available'   => $momAvailable,
         ]]);
-    }
-
-    /** Vendor acknowledges their own kickoff MOM (Purchase-owned kickoff engine). */
-    public function acceptKickoff(Request $request)
-    {
-        $meeting = $this->ownKickoff($request);
-        abort_unless($meeting, 404, 'Kickoff not found');
-
-        $vendor = $this->purchaseVendor($request);
-        $ua = \App\Support\UserAgentInfo::parse($request->userAgent());
-
-        $this->kickoffService->acknowledge($meeting, [
-            'name' => $request->user()->name ?? $vendor->company_name,
-        ], ['ip' => $request->ip(), 'browser' => $ua['browser'], 'device' => $ua['device']]);
-
-        return response()->json(['status' => 'acknowledged']);
     }
 
     /** Resolve the Purchase kickoff meeting attached to the caller's own vendor (no URL id). */

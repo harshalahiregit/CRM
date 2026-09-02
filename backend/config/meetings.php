@@ -261,4 +261,17 @@ return [
     */
     'decision_statuses' => ['Active', 'Superseded', 'Rescinded'],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Automatic reminder windows (minutes before the meeting start)
+    |--------------------------------------------------------------------------
+    |
+    | When a meeting is published, reminders are sent automatically at each of
+    | these lead times before scheduled_at (default: 24 hours and 1 hour before).
+    | The scheduled command `kickoff:send-reminders` reads the live start time,
+    | so moving the meeting moves its reminders. Set to [] to disable.
+    |
+    */
+    'reminder_offsets_minutes' => [1440, 60],
+
 ];

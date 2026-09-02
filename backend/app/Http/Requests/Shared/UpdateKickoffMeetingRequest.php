@@ -27,9 +27,12 @@ class UpdateKickoffMeetingRequest extends FormRequest
             'reference' => 'nullable|string|max:80',
             'agenda' => 'nullable|string|max:5000',
 
-            'scheduled_at' => 'nullable|date',
-            'end_at' => 'nullable|date',
-            'duration_minutes' => 'nullable|integer|min:5|max:1440',
+            // Duration is derived server-side from start+end; not accepted here.
+            // "not in the past" is enforced only when the start is actually being
+            // MOVED (see withValidator) so re-editing an existing past meeting to
+            // fix its notes is never blocked.
+            'scheduled_at' => 'sometimes|required|date',
+            'end_at' => 'sometimes|required|date|after:scheduled_at',
             'mode' => 'nullable|string|in:online,onsite,hybrid',
             'location' => 'nullable|string|max:255',
             'planned_date' => 'nullable|date',
@@ -84,7 +87,7 @@ class UpdateKickoffMeetingRequest extends FormRequest
             // Meeting.docx §7 — Agenda -> Discussion -> Decision -> Action, captured
             // per agenda item instead of one meeting-level minutes blob.
             'agenda_items.*.discussion' => 'nullable|string|max:5000',
-            'agenda_items.*.decision' => 'nullable|string|max:2000',
+            'agenda_items.*.decision' => 'nullable|string|max:5000',
             // §9 — supporting documents + previous-discussion reference.
             'agenda_items.*.supporting_documents' => 'nullable|array',
             'agenda_items.*.supporting_documents.*' => 'string|max:255',
@@ -138,5 +141,30 @@ class UpdateKickoffMeetingRequest extends FormRequest
             'attendees.*.side' => 'nullable|string|in:internal,external',
             'attendees.*.attended' => 'nullable|boolean',
         ];
+    }
+
+    /**
+     * Block a past start ONLY when the admin is genuinely moving the time to a
+     * past moment. If scheduled_at is unchanged from what is stored (a common
+     * case when editing minutes on an older meeting), we leave it alone — this
+     * is what previously made re-editing a past meeting impossible.
+     */
+    public function withValidator($validator): void
+    {
+        $validator->after(function ($validator) {
+            if (! $this->filled('scheduled_at')) {
+                return;
+            }
+            $new = \Illuminate\Support\Carbon::parse($this->input('scheduled_at'));
+            $meeting = $this->route('kickoffMeeting');
+            $stored = $meeting && $meeting->scheduled_at
+                ? \Illuminate\Support\Carbon::parse($meeting->scheduled_at)
+                : null;
+
+            $isMoved = ! $stored || ! $new->equalTo($stored);
+            if ($isMoved && $new->lt(now()->subMinutes(2))) {
+                $validator->errors()->add('scheduled_at', 'The meeting start time cannot be in the past.');
+            }
+        });
     }
 }

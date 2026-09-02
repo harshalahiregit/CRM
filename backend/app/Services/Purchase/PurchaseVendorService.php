@@ -68,6 +68,15 @@ class PurchaseVendorService
             'purchase_vendor_id' => $vendor->id, 'tenant_id' => $tenantId,
         ]);
 
+        // Welcome the vendor immediately with login credentials so they can sign
+        // in and complete onboarding — not only at activation (mirrors TPV).
+        if (! empty($vendor->email) && ! $vendor->password) {
+            $plain = $this->portalAuth->provision($vendor->fresh(), $actor);
+            if ($plain) {
+                $this->notifier->onCredentialsIssued($vendor->fresh(), $plain);
+            }
+        }
+
         return $vendor->fresh();
     }
 

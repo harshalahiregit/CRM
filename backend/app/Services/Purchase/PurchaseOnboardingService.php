@@ -27,6 +27,7 @@ class PurchaseOnboardingService
         private PurchaseRegistrationNumberService $registrationNumbers,
         private PurchaseApprovalService $approvals,
         private \App\Services\Notifications\NotificationService $channels,
+        private PurchaseVendorNotificationService $bell,
     ) {
     }
 
@@ -336,6 +337,8 @@ class PurchaseOnboardingService
         // The activation e-mail is sent by PurchaseVendorService (the activation
         // notifier), so we deliberately do NOT also send the onboarding "approved"
         // mail here — that would double-send. Reject/hold/resubmit still notify.
+        // The in-app bell IS dropped here (not an email, so no double-send).
+        $this->bellForStatus($onboarding, Status::APPROVED, $remarks);
 
         return $onboarding;
     }
@@ -480,6 +483,12 @@ class PurchaseOnboardingService
         if ($action === null) {
             throw new BusinessException('Unknown kickoff event.');
         }
+        // A "view" fires on every render of the MOM PDF — record the FIRST view
+        // only so the audit trail is not flooded with identical rows. Download and
+        // print are deliberate clicks and stay auditable each time.
+        if ($event === 'viewed' && $onboarding->auditLogs()->where('action', $action)->exists()) {
+            return;
+        }
         $onboarding->recordAudit($action, $this->actorUser($actor), null, $meta, $this->actorLabel($actor));
     }
 
@@ -525,6 +534,39 @@ class PurchaseOnboardingService
             );
         }
 
+        // Same event, in-app: drop a bell row for the Purchase vendor's portal.
+        $this->bellForStatus($onboarding, $status, $remarks);
+
         Log::channel('purchase')->info("Notification logged for {$company} - Status: {$status}");
+    }
+
+    /**
+     * Drop an in-app (bell) notification onto the Purchase vendor's portal for an
+     * onboarding-status change. Best-effort, keyed to the PurchaseVendor (its own
+     * bell store — it is not a User). Mirrors TpvOnboardingService::bellForStatus.
+     */
+    private function bellForStatus(PurchaseOnboarding $onboarding, string $status, ?string $remarks): void
+    {
+        $vendor = $onboarding->vendor;
+        if (! $vendor) {
+            return;
+        }
+
+        [$type, $title] = match ($status) {
+            Status::APPROVED          => ['onboarding.approved', 'Onboarding approved — you are now an active vendor'],
+            Status::REJECTED          => ['onboarding.rejected', 'Onboarding application rejected'],
+            Status::ON_HOLD           => ['onboarding.on_hold', 'Onboarding placed on hold'],
+            Status::RESUBMIT_REQUIRED => ['onboarding.resubmit', 'Onboarding revision requested'],
+            default                   => ['onboarding.update', 'Onboarding status updated'],
+        };
+
+        $this->bell->notify(
+            (int) $vendor->id,
+            (int) $vendor->tenant_id,
+            $type,
+            $title,
+            $remarks,
+            '/purchase-portal/onboarding',
+        );
     }
 }

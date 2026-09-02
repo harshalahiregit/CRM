@@ -391,6 +391,11 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::post('/kickoff/{kickoff}/mom',          [PurchaseKickoffController::class, 'uploadMom']);
     Route::post('/kickoff/{kickoff}/mom/generate', [PurchaseKickoffController::class, 'generateMom']);
     Route::get('/kickoff/{kickoff}/mom',           [PurchaseKickoffController::class, 'momFile']);
+    // Labelled supporting documents (multiple upload).
+    Route::get('/kickoff/{kickoff}/documents',                        [PurchaseKickoffController::class, 'documents']);
+    Route::post('/kickoff/{kickoff}/documents',                       [PurchaseKickoffController::class, 'uploadDocuments']);
+    Route::get('/kickoff/{kickoff}/documents/{document}/download',    [PurchaseKickoffController::class, 'downloadDocument']);
+    Route::delete('/kickoff/{kickoff}/documents/{document}',          [PurchaseKickoffController::class, 'deleteDocument']);
     // Agenda builder (Meeting.docx §3/§4) — structured items + template / copy-previous.
     Route::get('/kickoff/{kickoff}/agenda',                       [PurchaseMomAgendaController::class, 'index']);
     Route::post('/kickoff/{kickoff}/agenda',                      [PurchaseMomAgendaController::class, 'store']);

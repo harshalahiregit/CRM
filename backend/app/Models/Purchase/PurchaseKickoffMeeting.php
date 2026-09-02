@@ -30,7 +30,7 @@ class PurchaseKickoffMeeting extends Model
         'tenant_id', 'created_by', 'purchase_vendor_id', 'purchase_onboarding_id',
         'reference', 'meeting_no', 'title', 'meeting_type', 'agenda', 'status',
         'priority', 'confidentiality', 'chairperson', 'coordinator', 'organizer', 'department', 'client_name',
-        'scheduled_at', 'end_at', 'duration_minutes', 'mode', 'location',
+        'scheduled_at', 'end_at', 'duration_minutes', 'reminders_sent', 'mode', 'location',
         'original_scheduled_at', 'delay_reason',
         'minutes', 'completed_at',
         'mom_status',
@@ -54,6 +54,7 @@ class PurchaseKickoffMeeting extends Model
         'mom_distributed_at'        => 'datetime',
         'mom_viewed_at'             => 'datetime',
         'duration_minutes'          => 'integer',
+        'reminders_sent'            => 'array',
     ];
 
     /** The ack link is a bearer credential — never leak it in list/show payloads. */
@@ -119,6 +120,14 @@ class PurchaseKickoffMeeting extends Model
     public function momDocuments()
     {
         return $this->hasMany(PurchaseKickoffMom::class, 'purchase_kickoff_meeting_id');
+    }
+
+    /** Labelled meeting-level supporting documents (not per-action evidence). */
+    public function documents()
+    {
+        return $this->hasMany(PurchaseKickoffDocument::class, 'purchase_kickoff_meeting_id')
+            ->whereNull('purchase_mom_action_item_id')
+            ->orderByDesc('id');
     }
 
     /** Structured agenda items (Meeting.docx §3 agenda builder). */

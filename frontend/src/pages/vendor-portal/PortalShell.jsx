@@ -5,6 +5,9 @@ import {
 } from 'lucide-react'
 import { KIT3D_STYLE } from '@/components/ui/kit3d'
 import { resolveNav } from './portalSections'
+import PortalNotificationBell from './PortalNotificationBell'
+import PortalNotificationToaster from './PortalNotificationToaster'
+import { useNotificationFeed } from './useNotificationFeed'
 import './portal.css'
 
 /**
@@ -25,8 +28,11 @@ export default function PortalShell({
   builtRoutes = {},     // { sectionKey: 'route-segment' }
   extraGroups = [],     // [{ group, items: [{ key,label,icon,to,gate }] }]
   renderBanner,         // optional (vendor) => ReactNode  (e.g. temp-access countdown)
+  notificationsApi,     // optional { list, markRead, markAllRead } — powers the bell
 }) {
   const location = useLocation()
+  // One shared notification feed for the bell + the on-screen toaster.
+  const feed = useNotificationFeed(notificationsApi)
   const [vendor, setVendor] = useState(null)
   const [theme, setTheme] = useState(() => localStorage.getItem('crm_theme') || 'dark')
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -116,7 +122,9 @@ export default function PortalShell({
           <div className="portal-header-title">{pageTitle}</div>
 
           <div className="portal-header-right">
-            <button className="portal-icon-btn" title="Notifications"><Bell size={16} /><span className="notif-dot" /></button>
+            {notificationsApi
+              ? <PortalNotificationBell feed={feed} />
+              : <button className="portal-icon-btn" title="Notifications"><Bell size={16} /></button>}
             <button onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} className="portal-icon-btn" title="Toggle theme">
               {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
             </button>
@@ -132,6 +140,9 @@ export default function PortalShell({
 
         <main className="portal-content"><Outlet /></main>
       </div>
+
+      {/* On-screen notification pop-ups (persistent until the vendor reacts). */}
+      {notificationsApi && <PortalNotificationToaster feed={feed} />}
     </div>
   )
 }

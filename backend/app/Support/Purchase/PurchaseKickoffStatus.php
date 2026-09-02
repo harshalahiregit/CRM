@@ -11,24 +11,27 @@ namespace App\Support\Purchase;
  */
 final class PurchaseKickoffStatus
 {
+    public const DRAFT     = 'Draft';
     public const SCHEDULED = 'Scheduled';
     public const DELAYED   = 'Delayed';
     public const COMPLETED = 'Completed';
     public const CANCELLED = 'Cancelled';
 
-    public const ALL = [self::SCHEDULED, self::DELAYED, self::COMPLETED, self::CANCELLED];
+    public const ALL = [self::DRAFT, self::SCHEDULED, self::DELAYED, self::COMPLETED, self::CANCELLED];
 
     public const LABELS = [
+        self::DRAFT     => 'Draft',
         self::SCHEDULED => 'Scheduled',
         self::DELAYED   => 'Delayed',
         self::COMPLETED => 'Completed',
         self::CANCELLED => 'Cancelled',
     ];
 
-    public const OPEN   = [self::SCHEDULED, self::DELAYED];
+    public const OPEN   = [self::DRAFT, self::SCHEDULED, self::DELAYED];
     public const CLOSED = [self::COMPLETED, self::CANCELLED];
 
     public const TRANSITIONS = [
+        self::DRAFT     => [self::SCHEDULED, self::CANCELLED],
         self::SCHEDULED => [self::DELAYED, self::COMPLETED, self::CANCELLED],
         self::DELAYED   => [self::SCHEDULED, self::COMPLETED, self::CANCELLED],
         self::COMPLETED => [],
@@ -58,5 +61,15 @@ final class PurchaseKickoffStatus
     public static function canTransition(?string $from, string $to): bool
     {
         return in_array($to, self::TRANSITIONS[$from] ?? [], true);
+    }
+
+    public static function isDraft(?string $s): bool
+    {
+        return $s === self::DRAFT;
+    }
+
+    public static function isPublished(?string $s): bool
+    {
+        return self::isValid($s) && ! self::isDraft($s);
     }
 }

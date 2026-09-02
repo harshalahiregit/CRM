@@ -59,9 +59,19 @@ class VendorLiveStatusService
             $this->gate($workerIds),
         ]));
 
+        // Whether this vendor has any prior kickoff meeting. The live-status and
+        // carry-forward panels are only meaningful for a RECURRING vendor — on a
+        // vendor's very first meeting there is no history to review or carry, so
+        // the UI hides both when this is false.
+        $hasHistory = $this->safe(fn () => \App\Models\Shared\KickoffMeeting::where('tenant_id', $tenantId)
+            ->where('kickoffable_type', $vendor::class)
+            ->where('kickoffable_id', $vendor->id)
+            ->exists(), false);
+
         return [
             'vendor' => ['id' => $vendor->id, 'name' => $vendor->company_name],
             'sections' => $sections,
+            'has_history' => (bool) $hasHistory,
         ];
     }
 

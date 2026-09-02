@@ -143,7 +143,10 @@ export default function KickoffMeetingCreate() {
   const preVendorId = searchParams.get('vendor')
 
   useEffect(() => {
-    tpvApi.vendors.list().then(r => {
+    // Load ALL vendors for the picker, not just those tagged with the 'tpv'
+    // engagement — an admin scheduling a kickoff must be able to pick any vendor
+    // (a vendor added without the tpv tag was previously invisible here).
+    tpvApi.vendors.list({ engagement: '' }).then(r => {
       const list = r?.data ?? r ?? []
       // A vendor passed via ?vendor= may not be in the (TPV-filtered) picker — fetch
       // it from the shared master and merge so it can be selected.
@@ -628,8 +631,23 @@ export default function KickoffMeetingCreate() {
   const save = async () => {
     if (!form.subject_id)   { setErr('Please select a Third Party Vendor.'); return }
     if (!form.meeting_date) { setErr('Meeting Date is required.'); return }
+    if (!form.meeting_time) { setErr('Start Time is required.'); return }
+    if (!form.meeting_end_time) { setErr('End Time is required.'); return }
+    // End must be after start (duration is derived from the two).
+    if (form.meeting_end_time <= form.meeting_time) { setErr('End Time must be after Start Time.'); return }
+    // No scheduling into the past (the backend enforces this too).
+    {
+      const startTs = new Date(`${form.meeting_date}T${form.meeting_time}`)
+      if (startTs.getTime() < Date.now() - 2 * 60 * 1000) { setErr('The meeting time cannot be in the past.'); return }
+    }
     // Location only required for on-site meetings
     if (form.mode !== 'online' && !form.location) { setErr('City / Location is required.'); return }
+    // The invitation is mandatory to every participant, so each must be reachable —
+    // an e-mail, or a linked Sangoe user / vendor contact (who is notified in-app).
+    {
+      const unreachable = participants.find(p => p.name?.trim() && !p.email?.trim() && !p.user_id && !p.vendor_contact_id)
+      if (unreachable) { setErr(`Add an email for "${unreachable.name}" — the invitation is sent to every participant.`); return }
+    }
     setSaving(true); setErr(null)
     try {
       const scheduled_at = combineDateTime(form.meeting_date, form.meeting_time)
@@ -642,9 +660,10 @@ export default function KickoffMeetingCreate() {
         meeting_type:     form.meeting_type || 'kickoff',
         title:            form.title || undefined,
         scheduled_at,
-        end_at:           form.meeting_end_time ? combineDateTime(form.meeting_date, form.meeting_end_time) : undefined,
+        // End is mandatory; duration is derived from start→end server-side, so
+        // the client no longer sends duration_minutes.
+        end_at:           combineDateTime(form.meeting_date, form.meeting_end_time),
         planned_date:     form.planned_date || undefined,
-        duration_minutes: Number(form.duration_minutes) || undefined,
         mode:             form.mode,
         // On-site and hybrid both have a physical location; online does not.
         location:         form.mode !== 'online' ? form.location         : undefined,
@@ -849,7 +868,7 @@ export default function KickoffMeetingCreate() {
       <ErrBanner msg={err} />
 
       {/* ── Two-column layout ────────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 16, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, alignItems: 'start' }}>
 
         {/* ── LEFT COLUMN ────────────────────────────────────────────── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -890,7 +909,7 @@ export default function KickoffMeetingCreate() {
               </Field>
 
               {/* Meeting details (Meeting.docx §2) */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
                 <Field label="Priority">
                   <SelectInput value={form.priority} onChange={set('priority')} pairs
                     options={[['', '—'], ...mtgPriorities.map(p => [p, p])]} />
@@ -1058,29 +1077,37 @@ export default function KickoffMeetingCreate() {
           <div className="pr-glass" style={{ padding: 20 }}>
             <SectionTitle icon={CalendarDays}>Schedule &amp; Location</SectionTitle>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
               <Field label="Meeting Date *">
-                {/* A meeting cannot be scheduled in the past — the native picker
-                    blocks earlier dates via min (local today, YYYY-MM-DD). */}
-                <TextInput type="date" min={new Date().toLocaleDateString('en-CA')} value={form.meeting_date} onChange={set('meeting_date')} />
+                {/* No past dates for a NEW meeting (min = today). When EDITING we
+                    drop the floor so an already-stored past date can still be
+                    re-selected — the backend blocks only a genuine move to the
+                    past. This was the edit-time bug. */}
+                <TextInput type="date" min={isEdit ? undefined : new Date().toLocaleDateString('en-CA')} value={form.meeting_date} onChange={set('meeting_date')} />
               </Field>
               <Field label="Start Time *">
-                <TextInput type="time" value={form.meeting_time} onChange={set('meeting_time')} />
+                {/* When the meeting is today, the earliest selectable time is now. */}
+                <TextInput type="time" min={form.meeting_date === new Date().toLocaleDateString('en-CA') ? new Date().toTimeString().slice(0, 5) : undefined} value={form.meeting_time} onChange={set('meeting_time')} />
               </Field>
-              <Field label="End Time (optional)">
-                <TextInput type="time" value={form.meeting_end_time} onChange={set('meeting_end_time')} />
+              <Field label="End Time *">
+                {/* End must be after start; duration is computed from the two. */}
+                <TextInput type="time" min={form.meeting_time || undefined} value={form.meeting_end_time} onChange={set('meeting_end_time')} />
               </Field>
-              <Field label="City / Location *">
-                <TextInput value={form.location} onChange={set('location')} placeholder="e.g. Mumbai" />
-              </Field>
-              <Field label="Venue / Address">
-                <TextInput value={form.location_detail} onChange={set('location_detail')} placeholder="e.g. Site office, Gate 1, Building A" />
+              <Field label="Duration">
+                {/* Auto-computed from start→end — no longer a manual field. */}
+                <div style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 13.5, fontWeight: 700 }}>
+                  {(() => {
+                    if (!form.meeting_time || !form.meeting_end_time || form.meeting_end_time <= form.meeting_time) return '—'
+                    const [h1, m1] = form.meeting_time.split(':').map(Number)
+                    const [h2, m2] = form.meeting_end_time.split(':').map(Number)
+                    const mins = (h2 * 60 + m2) - (h1 * 60 + m1)
+                    const h = Math.floor(mins / 60); const m = mins % 60
+                    return `${h ? `${h} hr ` : ''}${m ? `${m} min` : (h ? '' : '0 min')}`.trim()
+                  })()}
+                </div>
               </Field>
               <Field label="Planned Date (optional)">
                 <TextInput type="date" value={form.planned_date} onChange={set('planned_date')} />
-              </Field>
-              <Field label="Duration (minutes)">
-                <TextInput type="number" min={15} step={15} value={form.duration_minutes} onChange={set('duration_minutes')} placeholder="60" />
               </Field>
             </div>
           </div>
@@ -1088,7 +1115,7 @@ export default function KickoffMeetingCreate() {
           {/* Section 3 — Meeting Mode */}
           <div className="pr-glass" style={{ padding: 20 }}>
             <SectionTitle icon={MapPin}>Meeting Mode</SectionTitle>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 12 }}>
               {KO_MODES.map(([val, label]) => {
                 const on = form.mode === val
                 const Icon = val === 'onsite' ? Building2 : Laptop
@@ -1115,7 +1142,7 @@ export default function KickoffMeetingCreate() {
 
             {/* On-site AND hybrid have a physical location. */}
             {form.mode !== 'online' && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 16 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginTop: 16 }}>
                 <Field label="City / Location *">
                   <TextInput value={form.location} onChange={set('location')} placeholder="e.g. Mumbai" />
                 </Field>
@@ -1171,8 +1198,10 @@ export default function KickoffMeetingCreate() {
             )}
 
             {/* §4 live vendor status — current workforce/compliance/incident/… state,
-                each addable as an agenda line (Load template pulls the flagged ones in). */}
-            {vendorStatus?.sections?.length > 0 && (
+                each addable as an agenda line (Load template pulls the flagged ones in).
+                Only shown for a RECURRING vendor: a first-ever meeting has no history
+                worth reviewing, so the panel is hidden until the vendor has met before. */}
+            {vendorStatus?.has_history && vendorStatus?.sections?.length > 0 && (
               <div style={{ marginTop: 18, padding: 14, borderRadius: 12, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
                   <History size={13} style={{ color: '#a78bfa' }} />
@@ -1229,6 +1258,13 @@ export default function KickoffMeetingCreate() {
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {/* Column headers so the compact fields stay labelled even once
+                      the user starts typing (placeholders alone vanish). */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '22px 1fr 0.9fr 0.7fr 0.8fr 30px', gap: 8, padding: '0 2px' }}>
+                    {['', 'Agenda item', 'Owner', 'Min', 'Priority', ''].map((h, hi) => (
+                      <span key={hi} style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '0.03em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>{h}</span>
+                    ))}
+                  </div>
                   {agendaItems.map((a, i) => (
                     <div key={a.id} style={{ padding: '10px 12px', borderRadius: 12, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
                       <div style={{ display: 'grid', gridTemplateColumns: '22px 1fr 0.9fr 0.7fr 0.8fr 30px', gap: 8, alignItems: 'center' }}>
@@ -1247,48 +1283,61 @@ export default function KickoffMeetingCreate() {
                           was settled. Filled in during/after the meeting; the action
                           that comes out of it is captured in the Minutes section and
                           linked back to this row. */}
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8, paddingLeft: 30 }}>
-                        <textarea value={a.discussion} onChange={e => setAgenda(a.id, 'discussion', e.target.value)}
-                          rows={2} placeholder="Discussion — what was said under this item"
-                          style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit', fontSize: 12, lineHeight: 1.5 }} />
-                        <textarea value={a.decision} onChange={e => setAgenda(a.id, 'decision', e.target.value)}
-                          rows={2} placeholder="Decision taken on this item"
-                          style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit', fontSize: 12, lineHeight: 1.5 }} />
+                      {/* Discussion & Decision use the same rich editor as the
+                          Minutes Description, with room to write. Auto-fit so the
+                          two editors stack on a narrow screen instead of squashing. */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10, marginTop: 8, paddingLeft: 30 }}>
+                        <div>
+                          <label style={agLabel}>Discussion</label>
+                          <RichTextEditor value={a.discussion} onChange={v => setAgenda(a.id, 'discussion', v)}
+                            placeholder="What was said under this item…" minHeight={150} />
+                        </div>
+                        <div>
+                          <label style={agLabel}>Decision</label>
+                          <RichTextEditor value={a.decision} onChange={v => setAgenda(a.id, 'decision', v)}
+                            placeholder="Decision taken on this item…" minHeight={150} />
+                        </div>
                       </div>
-                      {/* Meeting.docx §7 — reference to where this topic was last
-                          discussed (a prior meeting no. / MOM item), so a recurring
-                          item carries its history. Backend already stored it; there
-                          was just no input. */}
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8, paddingLeft: 30 }}>
-                        <TextInput value={a.previous_discussion_ref || ''} onChange={e => setAgenda(a.id, 'previous_discussion_ref', e.target.value)}
-                          placeholder="Previous discussion reference (e.g. MTG-2026-0007 · item 3)" />
-                        {/* Meeting.docx §7 — supporting documents for this item, as a
-                            comma-separated list of names/links. Stored as an array. */}
-                        <TextInput value={(a.supporting_documents || []).join(', ')}
-                          onChange={e => setAgenda(a.id, 'supporting_documents', e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
-                          placeholder="Supporting documents (comma-separated)" />
+                      {/* Meeting.docx §7 — where this topic was last discussed, and
+                          the supporting documents for the item. */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10, marginTop: 10, paddingLeft: 30 }}>
+                        <div>
+                          <label style={agLabel}>Previous discussion reference</label>
+                          <TextInput value={a.previous_discussion_ref || ''} onChange={e => setAgenda(a.id, 'previous_discussion_ref', e.target.value)}
+                            placeholder="e.g. MTG-2026-0007 · item 3" />
+                        </div>
+                        <div>
+                          <label style={agLabel}>Supporting documents</label>
+                          <TextInput value={(a.supporting_documents || []).join(', ')}
+                            onChange={e => setAgenda(a.id, 'supporting_documents', e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
+                            placeholder="Comma-separated names / links" />
+                        </div>
                       </div>
                     </div>
                   ))}
                 </div>
               )}
 
-              {/* Free-text agenda notes stay for anything the structured rows don't capture. */}
+              {/* A roomy free-text notepad for anything the structured rows don't
+                  capture — big enough to stay readable with long notes. */}
               <div style={{ marginTop: 14 }}>
-                <Field label="Agenda notes (optional)">
+                <Field label="Notepad / agenda notes (optional)">
                   <textarea
                     value={form.agenda}
                     onChange={set('agenda')}
-                    rows={2}
-                    placeholder="Any extra context, links, or a copied agenda…"
-                    style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }}
+                    rows={8}
+                    placeholder="Scratch notes, extra context, links, or a pasted agenda — anything that doesn't fit the structured rows above…"
+                    style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.6, minHeight: 160 }}
                   />
                 </Field>
               </div>
             </div>
           </div>
 
-          {/* Carry forward — open actions/issues from this vendor's earlier meetings */}
+          {/* Carry forward — open actions/issues from this vendor's earlier meetings.
+              Hidden on a vendor's FIRST meeting: there is nothing to carry until the
+              vendor has had a prior meeting (has_history). */}
+          {vendorStatus?.has_history && (
           <div className="pr-glass" style={{ padding: 20 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, gap: 10, flexWrap: 'wrap' }}>
               <SectionTitle icon={History}>Carry Forward</SectionTitle>
@@ -1322,7 +1371,7 @@ export default function KickoffMeetingCreate() {
                     {carry.previousStats.acknowledged && <MiniTag tone="#10b981">Acknowledged</MiniTag>}
                   </div>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 8 }}>
                   <PrevStat n={carry.previousStats.decisions} label="Decisions" />
                   <PrevStat n={carry.previousStats.open_actions} label="Open actions" tone={carry.previousStats.open_actions ? '#f59e0b' : undefined} />
                   <PrevStat n={carry.previousStats.open_issues} label="Open issues" tone={carry.previousStats.open_issues ? '#ef4444' : undefined} />
@@ -1378,6 +1427,7 @@ export default function KickoffMeetingCreate() {
               )
             )}
           </div>
+          )}
 
           {/* Section 4 — Minutes of Meeting (MOM) */}
           <div className="pr-glass" style={{ padding: 20 }}>
@@ -1420,7 +1470,7 @@ export default function KickoffMeetingCreate() {
                       </button>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
                       {/* Description — full width, rich text */}
                       <div style={{ gridColumn: '1/-1' }}>
                         <label style={{ ...labelStyle, display: 'block', marginBottom: 6 }}>Description *</label>
@@ -1428,7 +1478,7 @@ export default function KickoffMeetingCreate() {
                           value={item.description}
                           onChange={v => setMom(item.id, 'description', v)}
                           placeholder="Describe the action point, decision, or discussion item…"
-                          minHeight={100}
+                          minHeight={180}
                         />
                       </div>
 
@@ -1461,17 +1511,33 @@ export default function KickoffMeetingCreate() {
                         <TextInput value={item.responsible_org} onChange={e => setMom(item.id, 'responsible_org', e.target.value)} placeholder="e.g. Vendor / PMC" />
                       </Field>
 
-                      {/* Agenda item this action came from (Meeting.docx §7) */}
+                      {/* Agenda item this action came from (Meeting.docx §7). The
+                          list is built from the agenda rows above — show a clear
+                          hint instead of a bare "— none —" when none exist yet. */}
                       <Field label="Agenda item">
-                        <SelectInput value={item.agenda_key} onChange={e => setMom(item.id, 'agenda_key', e.target.value)} pairs
-                          options={[['', '— none —'], ...agendaItems.filter(a => a.item.trim()).map(a => [String(a.id), truncate(a.item, 40)])]} />
+                        {(() => {
+                          const opts = agendaItems.filter(a => a.item.trim())
+                          return (
+                            <SelectInput value={item.agenda_key} onChange={e => setMom(item.id, 'agenda_key', e.target.value)} pairs
+                              options={opts.length
+                                ? [['', '— none —'], ...opts.map(a => [String(a.id), truncate(a.item, 40)])]
+                                : [['', 'Add agenda items above first']]} />
+                          )
+                        })()}
                       </Field>
 
-                      {/* Depends on another action (Meeting.docx §8) */}
+                      {/* Depends on another action (Meeting.docx §8) — the other
+                          action rows on this meeting; hint when there are none. */}
                       <Field label="Depends on">
-                        <SelectInput value={item.depends_key} onChange={e => setMom(item.id, 'depends_key', e.target.value)} pairs
-                          options={[['', '— none —'], ...momItems.filter(x => x.id !== item.id && stripHtml(x.description).trim())
-                            .map(x => [String(x.id), (x.action_ref ? x.action_ref + ' · ' : '') + truncate(stripHtml(x.description), 34)])]} />
+                        {(() => {
+                          const others = momItems.filter(x => x.id !== item.id && stripHtml(x.description).trim())
+                          return (
+                            <SelectInput value={item.depends_key} onChange={e => setMom(item.id, 'depends_key', e.target.value)} pairs
+                              options={others.length
+                                ? [['', '— none —'], ...others.map(x => [String(x.id), (x.action_ref ? x.action_ref + ' · ' : '') + truncate(stripHtml(x.description), 34)])]
+                                : [['', 'Add another action to link one']]} />
+                          )
+                        })()}
                       </Field>
 
                       {/* Remarks — full width, rich text */}
@@ -1481,7 +1547,7 @@ export default function KickoffMeetingCreate() {
                           value={item.remarks}
                           onChange={v => setMom(item.id, 'remarks', v)}
                           placeholder="Any additional notes or context…"
-                          minHeight={90}
+                          minHeight={140}
                         />
                       </div>
                     </div>
@@ -1512,15 +1578,20 @@ export default function KickoffMeetingCreate() {
                       <span style={{ fontSize: 11, fontWeight: 800, color: '#a78bfa' }}>Decision {i + 1}</span>
                       <button onClick={() => removeDecision(d.id)} style={{ width: 26, height: 26, borderRadius: 7, border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.06)', color: '#ef4444', cursor: 'pointer' }}><Trash2 size={12} /></button>
                     </div>
-                    <TextInput value={d.decision} onChange={e => setDecision(d.id, 'decision', e.target.value)} placeholder="Decision taken…" />
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
+                    <Field label="Decision *"><TextInput value={d.decision} onChange={e => setDecision(d.id, 'decision', e.target.value)} placeholder="Decision taken…" /></Field>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, marginTop: 10 }}>
                       <Field label="Decision maker"><TextInput value={d.decided_by} onChange={e => setDecision(d.id, 'decided_by', e.target.value)} placeholder="Name" /></Field>
                       <Field label="Impact"><TextInput value={d.impact} onChange={e => setDecision(d.id, 'impact', e.target.value)} placeholder="e.g. Schedule / Cost" /></Field>
                       <Field label="Effective date"><TextInput type="date" value={d.effective_date} onChange={e => setDecision(d.id, 'effective_date', e.target.value)} /></Field>
                       <Field label="Status"><SelectInput value={d.status} onChange={e => setDecision(d.id, 'status', e.target.value)} pairs options={[['Active', 'Active'], ['Superseded', 'Superseded'], ['Rescinded', 'Rescinded']]} /></Field>
                       {/* Agenda item this decision was taken under (Meeting.docx §7) */}
-                      <Field label="Agenda item"><SelectInput value={d.agenda_key} onChange={e => setDecision(d.id, 'agenda_key', e.target.value)} pairs
-                        options={[['', '— none —'], ...agendaItems.filter(a => a.item.trim()).map(a => [String(a.id), truncate(a.item, 40)])]} /></Field>
+                      <Field label="Agenda item">{(() => {
+                        const opts = agendaItems.filter(a => a.item.trim())
+                        return <SelectInput value={d.agenda_key} onChange={e => setDecision(d.id, 'agenda_key', e.target.value)} pairs
+                          options={opts.length
+                            ? [['', '— none —'], ...opts.map(a => [String(a.id), truncate(a.item, 40)])]
+                            : [['', 'Add agenda items above first']]} />
+                      })()}</Field>
                     </div>
                   </div>
                 ))}
@@ -1554,8 +1625,8 @@ export default function KickoffMeetingCreate() {
                       </span>
                       <button onClick={() => removeIssue(it.id)} style={{ width: 26, height: 26, borderRadius: 7, border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.06)', color: '#ef4444', cursor: 'pointer' }}><Trash2 size={12} /></button>
                     </div>
-                    <TextInput value={it.title} onChange={e => setIssue(it.id, 'title', e.target.value)} placeholder="Issue…" />
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
+                    <Field label="Issue *"><TextInput value={it.title} onChange={e => setIssue(it.id, 'title', e.target.value)} placeholder="Describe the issue…" /></Field>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, marginTop: 10 }}>
                       <Field label="Category"><SelectInput value={it.category} onChange={e => setIssue(it.id, 'category', e.target.value)} pairs options={[['', '—'], ...categories.map(c => [c, c])]} /></Field>
                       <Field label="Severity"><SelectInput value={it.severity} onChange={e => setIssue(it.id, 'severity', e.target.value)} pairs options={[['', '—'], ...severities.map(s => [s, s])]} /></Field>
                       <Field label="Owner"><TextInput value={it.owner} onChange={e => setIssue(it.id, 'owner', e.target.value)} placeholder="Name" /></Field>
@@ -1651,8 +1722,13 @@ export default function KickoffMeetingCreate() {
                   background: (saving || generatingLink) ? 'rgba(124,58,237,0.5)' : 'linear-gradient(145deg,#a78bfa,#7C3AED)',
                   boxShadow: (saving || generatingLink) ? 'none' : '0 8px 22px -6px rgba(124,58,237,.6)',
                 }}>
-                {generatingLink ? 'Generating link…' : saving ? 'Saving…' : 'Save Meeting'}
+                {generatingLink ? 'Generating link…' : saving ? 'Saving…' : (isEdit ? 'Save Changes' : 'Save as Draft')}
               </button>
+              {!isEdit && (
+                <div style={{ fontSize: 11.5, color: 'var(--text-muted)', textAlign: 'center', marginTop: -2 }}>
+                  Saved as a draft — nobody is notified until you <strong style={{ color: 'var(--text-h)' }}>Publish</strong> it from the meeting page.
+                </div>
+              )}
               <button onClick={() => navigate('/app/tpv/kickoff')} disabled={saving}
                 style={{
                   display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
@@ -1870,4 +1946,11 @@ const addBtn = {
   borderRadius: 9, border: '1px solid rgba(124,58,237,0.35)',
   background: 'rgba(124,58,237,0.08)', color: '#a78bfa',
   cursor: 'pointer', fontSize: 12.5, fontWeight: 700, whiteSpace: 'nowrap',
+}
+
+// Small uppercase caption used to label the agenda-row sub-fields.
+const agLabel = {
+  fontSize: 10.5, fontWeight: 800, letterSpacing: '0.03em',
+  textTransform: 'uppercase', color: 'var(--text-muted)',
+  display: 'block', marginBottom: 4,
 }

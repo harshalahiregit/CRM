@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Send, Upload, Calendar, ChevronDown, ChevronRight, FileCheck } from 'lucide-react'
+import { Send, Upload, Calendar, ChevronDown, ChevronRight, FileCheck, Video } from 'lucide-react'
 
 /**
  * §32 governance tabs shared by both vendor portals (TPV + Purchase). Purely
@@ -44,18 +44,43 @@ export function MeetingsTab({ gov }) {
           <div style={{ fontSize: 12, color: 'var(--text-muted)', margin: '6px 0 0', paddingLeft: 26 }}>
             {dt(m.scheduled_at)} · {label(m.mode)}{m.location ? ` · ${m.location}` : ''}
           </div>
-          {open === m.id && <MomDetail data={mom[m.id]} />}
+          {/* Join the online meeting straight from the portal (point 11). */}
+          {m.meeting_link && m.mode !== 'onsite' && m.status !== 'Completed' && m.status !== 'Cancelled' && (
+            <div style={{ paddingLeft: 26, marginTop: 8 }}>
+              <a href={m.meeting_link} target="_blank" rel="noopener noreferrer"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 9, fontSize: 12.5, fontWeight: 800, textDecoration: 'none', color: '#fff', background: 'linear-gradient(145deg,#22c55e,#16a34a)' }}>
+                <Video size={14} /> Join meeting
+              </a>
+            </div>
+          )}
+          {open === m.id && <MomDetail data={mom[m.id]} gov={gov} meetingId={m.id} />}
         </div>
       ))}
     </div>
   )
 }
 
-function MomDetail({ data }) {
+function MomDetail({ data, gov, meetingId }) {
   if (!data) return <div style={{ padding: '10px 26px', color: 'var(--text-muted)', fontSize: 12.5 }}>Loading minutes…</div>
   const agenda = data.agenda_items ?? data.agendaItems ?? []
   const items = data.mom_items ?? data.momItems ?? []
   const decisions = data.decisions ?? []
+  const documents = data.documents ?? []
+
+  // Download a supporting document. The minutes are shown as structured info
+  // (never a raw embedded PDF); the file is offered as an explicit download.
+  const download = async (doc) => {
+    if (!gov?.meetingDocument) return
+    try {
+      const blob = await gov.meetingDocument(meetingId, doc.id)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url; a.download = doc.original_name || doc.label
+      document.body.appendChild(a); a.click(); a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 60000)
+    } catch { /* swallow — a failed download must not break the view */ }
+  }
+
   return (
     <div style={{ paddingLeft: 26, marginTop: 10, display: 'grid', gap: 12 }}>
       {agenda.length > 0 && (
@@ -79,6 +104,21 @@ function MomDetail({ data }) {
         <Section title="Decisions">
           {decisions.map((x, i) => <li key={i} style={li}>{x.description || x.decision}</li>)}
         </Section>
+      )}
+      {documents.length > 0 && gov?.meetingDocument && (
+        <div>
+          <div style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 6 }}>Documents</div>
+          <div style={{ display: 'grid', gap: 6 }}>
+            {documents.map((doc) => (
+              <button key={doc.id} onClick={() => download(doc)}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 11px', borderRadius: 9, cursor: 'pointer', textAlign: 'left', background: 'var(--bg-input, #f8fafc)', border: '1px solid var(--border, #e2e8f0)' }}>
+                <FileCheck size={15} style={{ color: '#0891b2', flexShrink: 0 }} />
+                <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: 'var(--text-h)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.label}</span>
+                <span style={{ fontSize: 11, fontWeight: 700, color: '#0891b2' }}>Download</span>
+              </button>
+            ))}
+          </div>
+        </div>
       )}
       {agenda.length + items.length + decisions.length === 0 &&
         <div style={{ color: 'var(--text-muted)', fontSize: 12.5 }}>No minutes captured for this meeting.</div>}

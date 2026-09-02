@@ -6,6 +6,7 @@ use App\Contracts\ProjectDirectoryContract;
 use App\Exceptions\BusinessException;
 use App\Models\Shared\KickoffAttendee;
 use App\Models\Shared\KickoffMeeting;
+use App\Models\Shared\KickoffMeetingDocument;
 use App\Models\Shared\KickoffMeetingSubject;
 use App\Models\Shared\KickoffMomItem;
 use App\Models\Shared\MeetingAgendaItem;
@@ -170,10 +171,13 @@ class KickoffMeetingService
             'title' => $data['title'] ?? $this->defaultTitle($subject),
             'reference' => $data['reference'] ?? null,
             'agenda' => $data['agenda'] ?? null,
-            'status' => Status::SCHEDULED,
+            // Born a draft — saving records the meeting but tells nobody. It goes
+            // live (invitations, reminders, join link) only when it is Published.
+            'status' => Status::DRAFT,
             'scheduled_at' => $data['scheduled_at'] ?? null,
             'end_at' => $data['end_at'] ?? null,
-            'duration_minutes' => $data['duration_minutes'] ?? null,
+            // Duration is derived from start+end, never taken from the client.
+            'duration_minutes' => $this->computeDuration($data['scheduled_at'] ?? null, $data['end_at'] ?? null),
             'priority' => $data['priority'] ?? null,
             'confidentiality' => $data['confidentiality'] ?? null,
             'chairperson' => $data['chairperson'] ?? null,
@@ -231,18 +235,33 @@ class KickoffMeetingService
             'meeting_id' => $meeting->id, 'tenant_id' => $actor->tenant_id, 'actor_id' => $actor->id,
         ]);
 
-        // Meeting.docx §1 puts "Send Invitation" in the lifecycle immediately
-        // after scheduling. Nobody was ever told a meeting existed; the roster
-        // only found out if a coordinator remembered to press Remind.
-        //
-        // Only when there is a date to invite people TO — a meeting drafted
-        // without one is not ready to go out, and $data['send_invitations']
-        // === false lets a caller draft one deliberately.
-        if ($meeting->scheduled_at && ($data['send_invitations'] ?? true)) {
-            $this->invites->sendInvitations($meeting->fresh(['attendees', 'agendaItems']), $actor);
-        }
+        // A draft goes out to NOBODY. Invitations, reminders and the join link
+        // are all deferred to publish() — the explicit "this meeting is real
+        // now" action — so a half-built meeting never emails the roster.
 
         return $this->find($meeting->id, $actor->tenant_id);
+    }
+
+    /**
+     * Derive the meeting duration (minutes) from its start and end. The client
+     * no longer sends a duration — it is always start→end so the two can never
+     * disagree. Returns null when either bound is missing or the window is
+     * non-positive.
+     */
+    private function computeDuration($scheduledAt, $endAt): ?int
+    {
+        if (empty($scheduledAt) || empty($endAt)) {
+            return null;
+        }
+
+        try {
+            $minutes = \Illuminate\Support\Carbon::parse($scheduledAt)
+                ->diffInMinutes(\Illuminate\Support\Carbon::parse($endAt), false);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        return $minutes > 0 ? (int) $minutes : null;
     }
 
     /**
@@ -271,6 +290,21 @@ class KickoffMeetingService
             throw new BusinessException('A '.Status::label($meeting->status).' meeting can no longer be edited. Reopen it first.');
         }
 
+        // Snapshot the schedule-relevant fields so we can tell, after the edit,
+        // whether a PUBLISHED meeting needs its invitations/reminders re-issued.
+        $wasPublished = Status::isPublished($meeting->status);
+        $before = [
+            'scheduled_at' => optional($meeting->scheduled_at)->toDateTimeString(),
+            'end_at' => optional($meeting->end_at)->toDateTimeString(),
+            'mode' => $meeting->mode,
+            'location' => $meeting->location,
+        ];
+
+        // Duration is always derived from the effective start+end, never taken
+        // from the client — the two can therefore never drift apart.
+        $effStart = $data['scheduled_at'] ?? $meeting->scheduled_at;
+        $effEnd = $data['end_at'] ?? $meeting->end_at;
+
         $meeting->update(array_filter([
             'title' => $data['title'] ?? null,
             'meeting_type' => $data['meeting_type'] ?? null,
@@ -278,7 +312,7 @@ class KickoffMeetingService
             'agenda' => $data['agenda'] ?? null,
             'scheduled_at' => $data['scheduled_at'] ?? null,
             'end_at' => $data['end_at'] ?? null,
-            'duration_minutes' => $data['duration_minutes'] ?? null,
+            'duration_minutes' => $this->computeDuration($effStart, $effEnd),
             'priority' => $data['priority'] ?? null,
             'confidentiality' => $data['confidentiality'] ?? null,
             'chairperson' => $data['chairperson'] ?? null,
@@ -331,6 +365,30 @@ class KickoffMeetingService
 
         $meeting->recordAudit('updated', $actor, 'Meeting details updated');
 
+        // Keep the outside world in sync. When a PUBLISHED meeting has its
+        // time/place changed or its roster edited, the people already invited
+        // must get the corrected details — re-send the invitation (the invite
+        // service rebuilds the ledger and re-attaches a fresh .ics), and the
+        // reminder scheduler always reads the current scheduled_at so reminders
+        // move with the meeting automatically. A draft still tells nobody.
+        $meeting->refresh();
+        $scheduleChanged = $before !== [
+            'scheduled_at' => optional($meeting->scheduled_at)->toDateTimeString(),
+            'end_at' => optional($meeting->end_at)->toDateTimeString(),
+            'mode' => $meeting->mode,
+            'location' => $meeting->location,
+        ];
+        $rosterChanged = array_key_exists('attendees', $data);
+        if ($wasPublished && $meeting->scheduled_at && ($scheduleChanged || $rosterChanged)) {
+            try {
+                $this->invites->sendInvitations($meeting->fresh(['attendees', 'agendaItems']), $actor);
+            } catch (\Throwable $e) {
+                Log::channel('tpv')->warning('Kickoff re-invite after edit failed', [
+                    'meeting_id' => $meeting->id, 'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
         return $this->find($meeting->id, $actor->tenant_id);
     }
 
@@ -345,6 +403,13 @@ class KickoffMeetingService
             throw new BusinessException(
                 'Cannot move a '.Status::label($meeting->status).' meeting to '.Status::label($to).'.'
             );
+        }
+
+        // Draft → Scheduled is "Publish": the meeting must have a time to invite
+        // people to before it can go live.
+        $isPublishing = $meeting->status === Status::DRAFT && $to === Status::SCHEDULED;
+        if ($isPublishing && ! ($data['scheduled_at'] ?? $meeting->scheduled_at)) {
+            throw new BusinessException('Set the meeting date and time before publishing.');
         }
 
         $changes = ['status' => $to];
@@ -382,7 +447,23 @@ class KickoffMeetingService
 
         $meeting->update($changes);
 
-        $verb = ['Delayed' => 'delayed', 'Completed' => 'completed', 'Cancelled' => 'cancelled', 'Scheduled' => 'rescheduled'][$to] ?? 'updated';
+        // Publishing is the moment the meeting becomes real to everyone else:
+        // send the invitations (mandatory to the whole roster) and hand out the
+        // join link. Reminders need no explicit scheduling — the reminder
+        // command reads the live scheduled_at each run.
+        if ($isPublishing) {
+            try {
+                $this->invites->sendInvitations($meeting->fresh(['attendees', 'agendaItems']), $actor);
+            } catch (\Throwable $e) {
+                Log::channel('tpv')->warning('Kickoff publish invitation failed', [
+                    'meeting_id' => $meeting->id, 'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        $verb = $isPublishing
+            ? 'published'
+            : (['Delayed' => 'delayed', 'Completed' => 'completed', 'Cancelled' => 'cancelled', 'Scheduled' => 'rescheduled'][$to] ?? 'updated');
         $meeting->recordAudit($verb, $actor, ucfirst($verb).($data['delay_reason'] ?? null ? ": {$data['delay_reason']}" : ''));
         Log::channel('tpv')->info('Kickoff '.$verb, [
             'meeting_id' => $meeting->id, 'actor_id' => $actor->id, 'status' => $to,
@@ -407,6 +488,63 @@ class KickoffMeetingService
         $meeting->recordAudit('mom_uploaded', $actor, 'Minutes of meeting uploaded');
 
         return $this->find($meeting->id, $actor->tenant_id);
+    }
+
+    /* ── Labelled supporting documents (multiple upload) ────────────────────── */
+
+    /**
+     * Attach one or more labelled documents to a meeting. Each file carries its
+     * own label ("what this doc is for"); a missing label falls back to the
+     * original filename.
+     *
+     * @param  array<int, \Illuminate\Http\UploadedFile|null>  $files
+     * @param  array<int, string|null>  $labels
+     * @return \Illuminate\Support\Collection<int, KickoffMeetingDocument>
+     */
+    public function uploadDocuments(KickoffMeeting $meeting, array $files, array $labels, User $actor, ?int $momItemId = null)
+    {
+        $stored = collect();
+
+        foreach (array_values($files) as $i => $file) {
+            if (! $file) {
+                continue;
+            }
+            $label = trim((string) ($labels[$i] ?? '')) ?: $file->getClientOriginalName();
+            $path = $file->store("tenant-{$meeting->tenant_id}/meeting-{$meeting->id}/documents", self::DISK);
+
+            $stored->push(KickoffMeetingDocument::create([
+                'tenant_id' => $meeting->tenant_id,
+                'kickoff_meeting_id' => $meeting->id,
+                'kickoff_mom_item_id' => $momItemId,
+                'label' => mb_substr($label, 0, 160),
+                'original_name' => mb_substr($file->getClientOriginalName(), 0, 255),
+                'path' => $path,
+                'mime' => $file->getClientMimeType(),
+                'size' => $file->getSize(),
+                'uploaded_by' => $actor->id,
+            ]));
+        }
+
+        if ($stored->isNotEmpty()) {
+            $what = $momItemId ? 'evidence file(s) attached to an action' : 'document(s) attached';
+            $meeting->recordAudit('documents_uploaded', $actor, $stored->count().' '.$what);
+        }
+
+        return $stored;
+    }
+
+    /** Remove one attached document (file + row). */
+    public function deleteDocument(KickoffMeeting $meeting, KickoffMeetingDocument $doc, User $actor): void
+    {
+        if ((int) $doc->kickoff_meeting_id !== (int) $meeting->id) {
+            throw new BusinessException('Document not found.', 404);
+        }
+        if ($doc->path && Storage::disk(self::DISK)->exists($doc->path)) {
+            Storage::disk(self::DISK)->delete($doc->path);
+        }
+        $label = $doc->label;
+        $doc->delete();
+        $meeting->recordAudit('document_deleted', $actor, 'Document removed: '.$label);
     }
 
     /* ── MOM approval workflow (Meeting.docx — approve before distribute) ───── */
@@ -590,55 +728,47 @@ class KickoffMeetingService
     }
 
     /**
-     * Publish the minutes for vendor acknowledgement — mints the public token.
-     * Only meaningful once the meeting is Completed; the vendor is acknowledging
-     * what was agreed, and there is nothing to agree to before then.
+     * Distribute the approved minutes to the vendor. Only meaningful once the
+     * meeting is Completed and the minutes approved. There is no acknowledgement
+     * step and no public bearer link any more — the vendor reads the minutes in
+     * their logged-in portal (gated on approval), so this simply marks them
+     * Distributed and sends the notification (e-mail with the minutes inline +
+     * an in-app popup pointing at the portal).
      */
-    public function publishForAck(KickoffMeeting $meeting, User $actor): KickoffMeeting
+    public function distributeMom(KickoffMeeting $meeting, User $actor): KickoffMeeting
     {
         if ($meeting->status !== Status::COMPLETED) {
-            throw new BusinessException('Complete the meeting before sending its minutes for acknowledgement.');
+            throw new BusinessException('Complete the meeting before sending its minutes to the vendor.');
         }
         if (! $meeting->mom_path) {
-            throw new BusinessException('Generate or upload the MOM PDF before sending for acknowledgement.');
+            throw new BusinessException('Generate or upload the MOM document before sending it.');
         }
         // The approval gate: minutes cannot be distributed until they are approved.
-        // Distribution IS this send, so this is where the gate belongs — no caller
-        // (detail page, create page, or the public flow) can bypass it.
+        // Distribution IS this send, so this is where the gate belongs.
         if (! MomApprovalStatus::isDistributable($meeting->mom_status)) {
-            throw new BusinessException('These minutes must be approved before they can be distributed.');
-        }
-        if ($meeting->acknowledged_at) {
-            throw new BusinessException('This meeting has already been acknowledged.');
+            throw new BusinessException('These minutes must be approved before they can be sent to the vendor.');
         }
 
-        // The token is unchanged — the existing public ack flow keeps working.
-        // The window is recorded alongside it so an expired acknowledgement is
-        // distinguishable from one that was never asked for.
         $sentAt = now();
         $meeting->update([
-            'ack_token' => Str::random(48),
-            'acknowledgement_sent_at' => $sentAt,
-            'acknowledgement_deadline' => $sentAt->copy()->addHours(KickoffMeeting::ACK_WINDOW_HOURS),
-            'acknowledgement_status' => KickoffMeeting::ACK_PENDING,
-            // Sending for acknowledgement IS distribution — record it on the MOM
-            // lifecycle, stamping the distributor the first time only so a re-send
-            // does not overwrite who originally issued the minutes.
             'mom_status' => MomApprovalStatus::DISTRIBUTED,
+            // Stamp the distributor the first time only so a re-send does not
+            // overwrite who originally issued the minutes.
             'mom_distributed_at' => $meeting->mom_distributed_at ?? $sentAt,
             'mom_distributed_by' => $meeting->mom_distributed_by ?? $actor->id,
         ]);
 
         $this->sendMomNotifications($meeting);
 
-        $meeting->recordAudit('mom_published', $actor, 'Minutes distributed to the vendor for acknowledgement'
-            .' (valid '.KickoffMeeting::ACK_WINDOW_HOURS.'h)');
+        $meeting->recordAudit('mom_distributed', $actor, 'Minutes distributed to the vendor');
 
         return $this->find($meeting->id, $actor->tenant_id);
     }
 
     /**
-     * Send email + WhatsApp notifications to vendor when MOM is sent for acknowledgement.
+     * Notify the vendor + client + internal roster that the approved minutes are
+     * available. The e-mail carries the full minutes inline; there is no public
+     * read link. The vendor also gets an in-app popup pointing at their portal.
      */
     private function sendMomNotifications(KickoffMeeting $meeting): void
     {
@@ -675,27 +805,16 @@ class KickoffMeetingService
         $meetingDate = optional($meeting->scheduled_at)->format('l, j F Y');
         $dateSuffix = $meetingDate ? ' - '.optional($meeting->scheduled_at)->format('j M Y') : '';
 
-        // Only the recipient who can actually acknowledge is told to. Promising
-        // "Acknowledgment Required" to a vendor whose mail carries no acknowledge
-        // button would be an instruction it cannot follow.
-        $ackSubject = 'Kickoff Meeting Minutes - Acknowledgment Required'.$dateSuffix;
         $readSubject = 'Kickoff Meeting Minutes'.$dateSuffix;
 
-        // The token IS the credential, so the link only exists while the window is
-        // live. Previously it was minted and never sent, which left the public
-        // one-click acknowledgement unreachable from the e-mail.
-        $ackUrl = $meeting->ack_token && ! $meeting->acknowledged_at
-            ? FrontendUrl::to('/kickoff/ack/'.$meeting->ack_token)
-            : null;
+        // Acknowledgement was removed — no ack button, no public read link. The
+        // e-mail carries the minutes inline and the vendor reads them in their
+        // logged-in portal.
+        $ackUrl = null;
+        $portalUrl = FrontendUrl::to('/auth/login?role=third_party_vendor');
 
-        // Every vendor on the meeting gets its OWN read link, built from the
-        // per-vendor token already minted into kickoff_meeting_subjects. A
-        // secondary vendor could not read the minutes at all before this — the
-        // mail only ever went to the vendor named on kickoffable_*.
-        //
-        // The ACKNOWLEDGE button is unchanged: it stays meeting-level and stays
-        // with the primary, so no secondary is handed a credential that would let
-        // it sign on everyone's behalf.
+        // One e-mail per vendor on the meeting (primary + any secondaries). Each
+        // is also given an in-app popup pointing at their portal.
         $sent = [];
 
         foreach ($this->momRecipients($meeting, $vendor, $email) as $r) {
@@ -705,15 +824,12 @@ class KickoffMeetingService
             }
             $sent[strtolower($to)] = true;
 
-            $momUrl = $r['token'] ? FrontendUrl::to('/kickoff/mom/'.$r['token']) : null;
-            $ackHere = $r['is_primary'] ? $ackUrl : null;
-
             $this->notifications->emailHtml(
                 $to,
-                $ackHere ? $ackSubject : $readSubject,
-                $this->renderMomEmail($meeting, $r['vendor'], $ackHere, $meetingDate, $momUrl),
+                $readSubject,
+                $this->renderMomEmail($meeting, $r['vendor'], null, $meetingDate, $portalUrl),
                 ['category' => 'System', 'kickoff_meeting_id' => $meeting->id, 'vendor_id' => $r['vendor']?->id],
-                $this->momPlainText($meeting, $r['vendor'], $ackHere, $meetingDate, $momUrl),
+                $this->momPlainText($meeting, $r['vendor'], null, $meetingDate, $portalUrl),
                 $meeting->tenant_id,
             );
 
@@ -721,6 +837,16 @@ class KickoffMeetingService
                 $meeting, MeetingDistribution::PARTY_VENDOR,
                 $r['vendor']?->company_name ?? 'Vendor', $to,
             );
+
+            // In-app popup to the vendor's portal login (Meeting.docx §13 in-app
+            // copy), so a logged-in vendor is alerted the minutes are ready.
+            if ($r['vendor']?->user_id) {
+                $this->invites->notifyInApp(
+                    $meeting, (int) $r['vendor']->user_id,
+                    'Minutes available: '.$meeting->title,
+                    'The minutes of meeting '.($meeting->meeting_no ?: '#'.$meeting->id).' are now available in your portal.',
+                );
+            }
         }
 
         // The customer the meeting is for (Meeting.docx §13 lists Client as its
@@ -730,15 +856,15 @@ class KickoffMeetingService
             $to = $client['email'];
             if ($to && ! isset($sent[strtolower($to)])) {
                 $sent[strtolower($to)] = true;
-                $row = $this->invites->recordMomRecipient(
+                $this->invites->recordMomRecipient(
                     $meeting, MeetingDistribution::PARTY_CLIENT, $client['name'], $to,
                 );
-                $readUrl = FrontendUrl::to('/kickoff/mom/'.$row->token);
+                // No public read link — the minutes are inline in the e-mail.
                 $this->notifications->emailHtml(
                     $to, $readSubject,
-                    $this->renderMomEmail($meeting, null, null, $meetingDate, $readUrl),
+                    $this->renderMomEmail($meeting, null, null, $meetingDate, null),
                     ['category' => 'System', 'kickoff_meeting_id' => $meeting->id],
-                    $this->momPlainText($meeting, null, null, $meetingDate, $readUrl),
+                    $this->momPlainText($meeting, null, null, $meetingDate, null),
                     $meeting->tenant_id,
                 );
             }
@@ -768,13 +894,13 @@ class KickoffMeetingService
 
             if ($to) {
                 $sent[strtolower($to)] = true;
-                $readUrl = FrontendUrl::to('/kickoff/mom/'.$row->token);
+                // Internal staff read the minutes inline / in-app; no public link.
                 $this->notifications->emailHtml(
                     $to,
                     $readSubject,
-                    $this->renderMomEmail($meeting, null, null, $meetingDate, $readUrl),
+                    $this->renderMomEmail($meeting, null, null, $meetingDate, null),
                     ['category' => 'System', 'kickoff_meeting_id' => $meeting->id],
-                    $this->momPlainText($meeting, null, null, $meetingDate, $readUrl),
+                    $this->momPlainText($meeting, null, null, $meetingDate, null),
                     $meeting->tenant_id,
                 );
             }
@@ -791,11 +917,9 @@ class KickoffMeetingService
         }
 
         if ($phone) {
-            $primaryToken = $this->momTokenFor($meeting, $vendor);
             $this->notifications->whatsapp(
                 $phone,
-                $this->momPlainText($meeting, $vendor, $ackUrl, $meetingDate,
-                    $primaryToken ? FrontendUrl::to('/kickoff/mom/'.$primaryToken) : null),
+                $this->momPlainText($meeting, $vendor, null, $meetingDate, $portalUrl),
                 ['category' => 'System', 'kickoff_meeting_id' => $meeting->id],
             );
         }
@@ -1243,6 +1367,94 @@ class KickoffMeetingService
             'whatsapp' => $whatsapp,
             'sms' => $sms,
         ];
+    }
+
+    /**
+     * Automatic reminders (Meeting.docx §1). Fires reminder e-mails as each
+     * configured lead time before a published meeting's start is reached
+     * (config('meetings.reminder_offsets_minutes') — default 24h and 1h before).
+     *
+     * Idempotent: each fired window is recorded in reminders_sent so a re-run
+     * never double-sends, and because it reads the LIVE scheduled_at, moving a
+     * meeting moves its reminders automatically. When several windows have
+     * already elapsed (e.g. a meeting published only 30 minutes out), only the
+     * tightest is actually e-mailed; the larger ones are marked done silently so
+     * the roster is not hit with a burst of stale reminders.
+     *
+     * @return int number of meetings a reminder was sent for
+     */
+    public function runDueReminders(): int
+    {
+        $offsets = collect(config('meetings.reminder_offsets_minutes', [1440, 60]))
+            ->map(fn ($m) => (int) $m)->filter(fn ($m) => $m > 0)->unique()->sortDesc()->values();
+        if ($offsets->isEmpty()) {
+            return 0;
+        }
+
+        $now = now();
+        $meetings = KickoffMeeting::whereIn('status', [Status::SCHEDULED, Status::DELAYED])
+            ->whereNotNull('scheduled_at')
+            ->where('scheduled_at', '>', $now)
+            ->where('scheduled_at', '<=', (clone $now)->addMinutes($offsets->max()))
+            ->with('attendees', 'kickoffable')
+            ->get();
+
+        $sent = 0;
+        foreach ($meetings as $meeting) {
+            $already = collect($meeting->reminders_sent ?? [])->map(fn ($k) => (string) $k);
+            $minutesUntil = (int) round($now->diffInMinutes($meeting->scheduled_at, false));
+
+            // Windows we have entered but not yet recorded.
+            $due = $offsets->filter(fn ($o) => ! $already->contains((string) $o) && $minutesUntil <= $o)->values();
+            if ($due->isEmpty()) {
+                continue;
+            }
+
+            // E-mail only the tightest due window; the rest are moot — mark done.
+            $this->dispatchAutoReminder($meeting, (int) $due->min());
+            $meeting->reminders_sent = $already->merge($due->map(fn ($o) => (string) $o))->unique()->values()->all();
+            $meeting->saveQuietly();
+            $sent++;
+        }
+
+        return $sent;
+    }
+
+    /** Send one automatic reminder e-mail to every attendee with an address. */
+    private function dispatchAutoReminder(KickoffMeeting $meeting, int $offsetMinutes): void
+    {
+        $subjectName = KickoffSubject::nameOf($meeting->kickoffable);
+        $when = $meeting->scheduled_at ? $meeting->scheduled_at->format('d M Y, g:i A') : 'a date to be confirmed';
+        $lead = $offsetMinutes >= 1440
+            ? (intdiv($offsetMinutes, 1440).' day(s)')
+            : ($offsetMinutes >= 60 ? (intdiv($offsetMinutes, 60).' hour(s)') : $offsetMinutes.' minutes');
+        $where = $meeting->mode === 'online'
+            ? ($meeting->meeting_link ? " Join link: {$meeting->meeting_link}" : '')
+            : ($meeting->location ? " at {$meeting->location}" : '');
+        $subject = "Reminder: {$meeting->title} in {$lead}";
+        $body = "This is a reminder that the meeting \"{$meeting->title}\""
+            .($subjectName ? " with {$subjectName}" : '')
+            ." is scheduled for {$when} (in about {$lead}).{$where}";
+
+        foreach ($meeting->attendees as $attendee) {
+            if (! $attendee->email) {
+                continue;
+            }
+            // Pass the tenant explicitly (5th arg) — the reminder runs in the
+            // scheduler with no authenticated user, so it must name the tenant
+            // itself or the mail would fall back to the .env mailer instead of
+            // the tenant's Settings → Email SMTP.
+            $this->notifications->email(
+                $attendee->email, $subject, $body,
+                ['category' => 'System', 'kickoff_meeting_id' => $meeting->id],
+                $meeting->tenant_id,
+            );
+        }
+
+        Log::channel('tpv')->info('Kickoff auto-reminder sent', [
+            'meeting_id' => $meeting->id, 'offset_minutes' => $offsetMinutes,
+            'recipients' => $meeting->attendees->whereNotNull('email')->count(),
+        ]);
     }
 
     /**

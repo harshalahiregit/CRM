@@ -104,9 +104,22 @@ class TpvWorker extends Model
         return $this->belongsTo(TpvActivity::class, 'activity_id');
     }
 
+    /**
+     * The worker's CURRENT medical — the latest exam. Everything that reads
+     * `worker->medical` (badge gate, work authorization, blockers) wants the most
+     * recent fitness, so this resolves to the newest exam by date (id breaks a
+     * same-date tie). Past exams are kept as history (see medicalHistory()).
+     */
     public function medical()
     {
-        return $this->hasOne(TpvWorkerMedical::class, 'tpv_worker_id');
+        return $this->hasOne(TpvWorkerMedical::class, 'tpv_worker_id')->latestOfMany('exam_date');
+    }
+
+    /** Every medical exam this worker has had, newest first — the history list. */
+    public function medicalHistory()
+    {
+        return $this->hasMany(TpvWorkerMedical::class, 'tpv_worker_id')
+            ->orderByDesc('exam_date')->orderByDesc('id');
     }
 
     public function induction()

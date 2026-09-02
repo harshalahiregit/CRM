@@ -6,22 +6,12 @@ use App\Http\Controllers\Api\Shared\MeetingLinkController;
 use App\Http\Controllers\Api\Shared\MeetingPlatformController;
 use App\Http\Controllers\Api\Shared\MeetingTypeSettingsController;
 use App\Http\Controllers\Api\Shared\PollController;
-use App\Http\Controllers\Api\Shared\PublicKickoffController;
 use App\Http\Controllers\Api\Shared\ReactionController;
 use Illuminate\Support\Facades\Route;
 
-// ── PUBLIC — vendor acknowledgement of kickoff minutes ──────────────────
-// No auth by design: the vendor's signatory has no CRM login. The 48-char token
-// is the bearer credential. Rate-limited per IP; the service burns the token on
-// acknowledgement so the link is single-use.
-Route::prefix('kickoff/ack')->middleware('throttle:60,1')->group(function () {
-    Route::get('/{token}', [PublicKickoffController::class, 'show']);
-    // Read the minutes before signing them. Same token, same throttle, but
-    // read-only and repeatable — it is never burned, so the vendor can reopen
-    // the PDF while deciding. Declared before nothing else can shadow it.
-    Route::get('/{token}/mom', [PublicKickoffController::class, 'mom']);
-    Route::post('/{token}', [PublicKickoffController::class, 'acknowledge']);
-})->where(['token' => '[A-Za-z0-9]{20,64}']);
+// Vendor acknowledgement was removed: minutes are now shared to the vendor in
+// their logged-in portal (gated on MoM approval), so there is no longer a public
+// bearer-token acknowledgement link.
 
 // ── Shared engine (Sanctum + role:admin,staff) ──────────────────────────
 // Kickoff meetings are a SHARED entity — they attach polymorphically to any
@@ -74,6 +64,11 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('kickoff')->grou
     // §13 per-recipient Sent / Viewed / Acknowledged tracker.
     Route::get('/meetings/{kickoffMeeting}/distribution', [KickoffMeetingController::class, 'distribution']);
     Route::post('/meetings/{kickoffMeeting}/mom', [KickoffMeetingController::class, 'uploadMom']);
+    // Labelled supporting documents (multiple upload).
+    Route::get('/meetings/{kickoffMeeting}/documents', [KickoffMeetingController::class, 'documents']);
+    Route::post('/meetings/{kickoffMeeting}/documents', [KickoffMeetingController::class, 'uploadDocuments']);
+    Route::get('/meetings/{kickoffMeeting}/documents/{document}/download', [KickoffMeetingController::class, 'downloadDocument']);
+    Route::delete('/meetings/{kickoffMeeting}/documents/{document}', [KickoffMeetingController::class, 'deleteDocument']);
     Route::post('/meetings/{kickoffMeeting}/mom/generate', [KickoffMeetingController::class, 'generateMom']);
     Route::get('/meetings/{kickoffMeeting}/mom', [KickoffMeetingController::class, 'momFile']);
     // MOM approval workflow — submit → approve/return → (publish = distribute).

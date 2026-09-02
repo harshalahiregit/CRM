@@ -55,6 +55,8 @@ class KickoffMeeting extends Model
         'acknowledgement_comment',
         // Online meeting fields (nullable — only set when mode = 'online')
         'meeting_platform', 'meeting_link', 'meeting_id', 'meeting_passcode', 'meeting_host_link',
+        // Auto-reminder bookkeeping — which reminder windows have already fired.
+        'reminders_sent',
     ];
 
     protected $casts = [
@@ -64,6 +66,7 @@ class KickoffMeeting extends Model
         'completed_at' => 'datetime',
         'acknowledged_at' => 'datetime',
         'duration_minutes' => 'integer',
+        'reminders_sent' => 'array',
         'planned_date' => 'date',
         'acknowledgement_sent_at' => 'datetime',
         'acknowledgement_deadline' => 'datetime',
@@ -184,6 +187,14 @@ class KickoffMeeting extends Model
     public function distributions()
     {
         return $this->hasMany(MeetingDistribution::class, 'kickoff_meeting_id')
+            ->orderByDesc('id');
+    }
+
+    /** Labelled meeting-level supporting documents (not per-action evidence). */
+    public function documents()
+    {
+        return $this->hasMany(KickoffMeetingDocument::class, 'kickoff_meeting_id')
+            ->whereNull('kickoff_mom_item_id')
             ->orderByDesc('id');
     }
 

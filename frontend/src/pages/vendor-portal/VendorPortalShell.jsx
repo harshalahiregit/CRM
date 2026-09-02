@@ -26,6 +26,7 @@ export default function VendorPortalShell() {
       brandTitle="Vendor Portal"
       loadVendor={() => portalApi.me().then(d => d?.vendor ?? null)}
       onLogout={onLogout}
+      notificationsApi={portalApi.notifications}
       renderBanner={(vendor) => <TemporaryAccessBanner vendor={vendor} />}
       builtRoutes={{
         dashboard:  'dashboard',

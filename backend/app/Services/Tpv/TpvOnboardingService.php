@@ -19,6 +19,7 @@ class TpvOnboardingService
         private VendorDocumentService $documentService,
         private RegistrationNumberService $registrationNumbers,
         private \App\Services\Notifications\NotificationService $channels,
+        private \App\Services\NotificationService $bell,
     ) {
     }
 
@@ -340,6 +341,14 @@ class TpvOnboardingService
             throw new BusinessException('Unknown kickoff event.');
         }
 
+        // A "view" fires on every render of the MOM PDF, so logging it each time
+        // floods the audit trail with identical rows. Record the FIRST view only —
+        // "the vendor has seen the MOM" is a one-time fact. Download/print are
+        // deliberate clicks and stay auditable each time.
+        if ($event === 'viewed' && $onboarding->auditLogs()->where('action', $action)->exists()) {
+            return;
+        }
+
         $onboarding->recordAudit($action, $actor, null, $meta);
     }
 
@@ -538,7 +547,9 @@ class TpvOnboardingService
 
         // Activation email is sent by VendorService (TpvActivationNotifier), so we
         // deliberately do NOT dispatch the onboarding "approved" mail here — that
-        // would double-send.
+        // would double-send. The in-app bell IS dropped here (a bell is not an
+        // email, so there is no double-send) so the vendor sees it in the portal.
+        $this->bellForStatus($onboarding, Status::APPROVED, $remarks);
 
         return $onboarding;
     }
@@ -672,7 +683,41 @@ class TpvOnboardingService
             );
         }
 
+        // Same event, in-app: drop a bell row for the vendor's portal login so the
+        // decision surfaces in the portal, not only by email.
+        $this->bellForStatus($onboarding, $status, $remarks);
+
         Log::channel('tpv')->info("Notification alert logged for {$companyName} - Status: {$status}");
+    }
+
+    /**
+     * Drop an in-app (bell) notification onto the vendor's portal login for an
+     * onboarding-status change. Best-effort (the service swallow-logs), keyed to
+     * the vendor's User — a TPV vendor is a real User, so it uses the shared bell.
+     */
+    private function bellForStatus(?TpvOnboarding $onboarding, string $status, ?string $remarks): void
+    {
+        $vendor = $onboarding?->vendor;
+        if (! $vendor || ! $vendor->user_id) {
+            return;
+        }
+
+        [$type, $title] = match ($status) {
+            Status::APPROVED          => ['onboarding.approved', 'Onboarding approved — you can now add your workforce'],
+            Status::REJECTED          => ['onboarding.rejected', 'Onboarding application rejected'],
+            Status::ON_HOLD           => ['onboarding.on_hold', 'Onboarding placed on hold'],
+            Status::RESUBMIT_REQUIRED => ['onboarding.resubmit', 'Onboarding revision requested'],
+            default                   => ['onboarding.update', 'Onboarding status updated'],
+        };
+
+        $this->bell->notify(
+            (int) $vendor->user_id,
+            (int) $vendor->tenant_id,
+            $type,
+            $title,
+            $remarks,
+            '/vendor-portal/onboarding',
+        );
     }
 
     public function destroy(TpvOnboarding $onboarding): void

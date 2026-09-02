@@ -83,12 +83,13 @@ class MeetingDocComplianceTest extends TestCase
     {
         $colleague = $this->colleague();
 
-        return $this->svc()->schedule(array_merge([
+        $payload = array_merge([
             'subject_type' => 'vendor',
             'subject_id' => $this->vendor->id,
             'title' => 'Weekly coordination',
             'meeting_type' => 'weekly_coordination',
             'scheduled_at' => now()->addDay()->toDateTimeString(),
+            'end_at' => now()->addDay()->addHour()->toDateTimeString(),
             'mode' => 'hybrid',
             'organizer' => 'O. Organiser',
             'chairperson' => 'C. Chair',
@@ -100,7 +101,18 @@ class MeetingDocComplianceTest extends TestCase
                 ['name' => 'Vendor Rep', 'email' => 'rep@vendor.test', 'side' => 'external', 'role' => 'Vendor representative'],
                 ['name' => 'Unreachable', 'side' => 'internal', 'role' => 'Management'],
             ],
-        ], $overrides), $this->actor);
+        ], $overrides);
+
+        $m = $this->svc()->schedule($payload, $this->actor);
+
+        // Meetings are now born as drafts; publish so these tests exercise the
+        // live (Scheduled) lifecycle exactly as before the draft/publish split.
+        // An intentionally undated meeting cannot be published — leave it a draft.
+        if (! empty($payload['scheduled_at'])) {
+            $m = $this->svc()->transition($m, KickoffStatus::SCHEDULED, [], $this->actor);
+        }
+
+        return $m;
     }
 
     /* ── §2 — organizer, customer and the rest of the header ──────────── */
@@ -334,7 +346,7 @@ class MeetingDocComplianceTest extends TestCase
         $this->svc()->submitMomForApproval($m->fresh(), $this->actor);
         $this->svc()->decideMom($m->fresh(), 'approve', null, $this->actor);
         $this->svc()->decideMom($m->fresh(), 'approve', null, $this->actor);
-        $this->svc()->publishForAck($m->fresh(), $this->actor);
+        $this->svc()->distributeMom($m->fresh(), $this->actor);
 
         $tracker = $this->svc()->distributionTracker($m->fresh());
 
@@ -464,7 +476,7 @@ class MeetingDocComplianceTest extends TestCase
         $this->svc()->submitMomForApproval($m->fresh(), $this->actor);
         $this->svc()->decideMom($m->fresh(), 'approve', null, $this->actor);
         $this->svc()->decideMom($m->fresh(), 'approve', null, $this->actor);
-        $this->svc()->publishForAck($m->fresh(), $this->actor);
+        $this->svc()->distributeMom($m->fresh(), $this->actor);
 
         $row = MeetingDistribution::where('kickoff_meeting_id', $m->id)
             ->where('kind', MeetingDistribution::KIND_MOM)

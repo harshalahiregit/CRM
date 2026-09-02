@@ -48,6 +48,10 @@ Route::middleware(['auth:sanctum', 'role:vendor,third_party_vendor'])->prefix('p
 // ->middleware() replaces the first and silently drops auth:sanctum.
 Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access'])->prefix('portal')->group(function () {
     Route::get('/me',                    [VendorPortalController::class, 'me']);
+    // In-app (bell) notifications — the vendor reads/clears its own.
+    Route::get('/notifications',             [VendorPortalController::class, 'notifications']);
+    Route::patch('/notifications/{id}/read', [VendorPortalController::class, 'markNotificationRead'])->whereNumber('id');
+    Route::post('/notifications/read-all',   [VendorPortalController::class, 'markAllNotificationsRead']);
     // One-time post-activation welcome banner (dismissal persisted server-side).
     Route::post('/welcome/dismiss',      [VendorPortalController::class, 'dismissWelcomeBanner']);
     Route::get('/onboarding',            [VendorPortalController::class, 'onboarding']);
@@ -164,6 +168,7 @@ Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access'])->prefix('por
     Route::post('/extensions/request',                    [$gov, 'requestExtension']);
     Route::get('/meetings',                               [$gov, 'meetings']);
     Route::get('/meetings/{kickoffMeeting}/mom',          [$gov, 'meetingMom']);
+    Route::get('/meetings/{kickoffMeeting}/documents/{document}/download', [$gov, 'meetingDocument']);
     Route::get('/actions',                                [$gov, 'actions']);
     Route::post('/actions/{momItem}/respond',             [$gov, 'respondAction']);
     Route::get('/ppe-matrix',                             [$gov, 'ppeMatrix']);
@@ -199,6 +204,10 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal'])->prefix('portal/pu
     Route::get('/kb',                                 [PurchasePortalController::class, 'kbArticles']);
     Route::get('/kb/{slug}',                          [PurchasePortalController::class, 'kbArticle']);
     Route::get('/me',                                 [PurchasePortalController::class, 'me']);
+    // In-app (bell) notifications — the vendor reads/clears its own.
+    Route::get('/notifications',                      [PurchasePortalController::class, 'notifications']);
+    Route::patch('/notifications/{id}/read',          [PurchasePortalController::class, 'markNotificationRead'])->whereNumber('id');
+    Route::post('/notifications/read-all',            [PurchasePortalController::class, 'markAllNotificationsRead']);
     // One-time post-activation welcome banner (dismissal persisted server-side).
     Route::post('/welcome/dismiss',                   [PurchasePortalController::class, 'dismissWelcomeBanner']);
     Route::put('/profile',                            [PurchasePortalController::class, 'updateProfile']);
@@ -221,7 +230,7 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal'])->prefix('portal/pu
     Route::get('/documents/{document}/download',      [PurchasePortalController::class, 'downloadDocument']);
 
     Route::get('/kickoff',                            [PurchasePortalController::class, 'kickoff']);
-    Route::post('/kickoff/accept',                    [PurchasePortalController::class, 'acceptKickoff']);
+    // Acknowledgement removed — the vendor just views the approved minutes.
 
     // ── Contacts (own vendor only) ──────────────────────────────────────
     Route::get('/contacts',                           [PurchasePortalContactController::class, 'index']);
@@ -309,6 +318,7 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal'])->prefix('portal/pu
     Route::post('/extensions/request',                [$pgov, 'requestExtension']);
     Route::get('/meetings',                           [$pgov, 'meetings']);
     Route::get('/meetings/{kickoff}/mom',             [$pgov, 'meetingMom']);
+    Route::get('/meetings/{kickoff}/documents/{document}/download', [$pgov, 'meetingDocument']);
     Route::get('/actions',                            [$pgov, 'actions']);
     Route::post('/actions/{action}/respond',          [$pgov, 'respondAction']);
     Route::post('/workers/{worker}/certificates',     [$pgov, 'uploadCertificate']);

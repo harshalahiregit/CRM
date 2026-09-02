@@ -45,7 +45,7 @@ export default function PurchaseKickoffDetail() {
       const res = await purchaseApi.kickoff.publish(id)
       setM(res?.data ?? res)
       setPublished(true)
-    } catch (e) { setErr(e?.response?.data?.message || 'Could not send for acknowledgement.') }
+    } catch (e) { setErr(e?.response?.data?.message || 'Could not send the minutes.') }
   }
 
   if (loading) return <div style={{ padding: 24 }}><style>{KIT3D_STYLE}</style><div className="skeleton" style={{ height: 44, width: 280, borderRadius: 12, background: 'var(--border)' }} /></div>
@@ -71,11 +71,6 @@ export default function PurchaseKickoffDetail() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <h1 style={{ color: 'var(--text-h)', fontSize: 23, fontWeight: 900, margin: 0, letterSpacing: '-0.02em' }}>{m.title}</h1>
             <span style={{ padding: '4px 11px', borderRadius: 999, background: cfg.bg, color: cfg.color, fontSize: 12, fontWeight: 800 }}>{cfg.label}</span>
-            {m.is_acknowledged && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, fontWeight: 700, color: '#10b981' }}>
-                <ShieldCheck size={13} /> Acknowledged by {m.acknowledged_by_name}
-              </span>
-            )}
           </div>
           {m.vendor?.company_name && <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '5px 0 0' }}>Purchase Vendor: <strong style={{ color: 'var(--text-h)' }}>{m.vendor.company_name}</strong></p>}
         </div>
@@ -83,14 +78,16 @@ export default function PurchaseKickoffDetail() {
         <div style={{ display: 'flex', gap: 8, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           {nexts.map(to => {
             const tc = pkStatusCfg(to)
+            const isPublish = m.status === PK_STATUS.DRAFT && to === PK_STATUS.SCHEDULED
+            const primary = to === PK_STATUS.COMPLETED || isPublish
             return (
               <button key={to} onClick={() => setAction({ to })}
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '8px 13px', borderRadius: 10, cursor: 'pointer', fontSize: 12.5, fontWeight: 700,
-                  background: to === PK_STATUS.COMPLETED ? 'linear-gradient(145deg,#34d399,#10b981)' : 'var(--bg-card)',
-                  border: to === PK_STATUS.COMPLETED ? 'none' : `1px solid ${tc.color}55`,
-                  color: to === PK_STATUS.COMPLETED ? '#fff' : tc.color,
-                  boxShadow: to === PK_STATUS.COMPLETED ? '0 8px 20px -6px #10b98188' : 'none' }}>
-                {to === PK_STATUS.COMPLETED && <CheckCircle2 size={14} />}
+                  background: primary ? 'linear-gradient(145deg,#34d399,#10b981)' : 'var(--bg-card)',
+                  border: primary ? 'none' : `1px solid ${tc.color}55`,
+                  color: primary ? '#fff' : tc.color,
+                  boxShadow: primary ? '0 8px 20px -6px #10b98188' : 'none' }}>
+                {(to === PK_STATUS.COMPLETED || isPublish) && (isPublish ? <Send size={14} /> : <CheckCircle2 size={14} />)}
                 {actionLabel(m.status, to)}
               </button>
             )
@@ -100,13 +97,13 @@ export default function PurchaseKickoffDetail() {
 
       {err && <Banner tone="#ef4444" icon={AlertTriangle}>{err}</Banner>}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 16, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, alignItems: 'start' }}>
         {/* Left column */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {/* Schedule */}
           <div className="pr-glass" style={{ padding: 20 }}>
             <SectionTitle icon={CalendarDays}>Schedule</SectionTitle>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginTop: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14, marginTop: 12 }}>
               {m.meeting_no && <Detail icon={FileText} label="Meeting No." value={m.meeting_no} />}
               <Detail icon={Clock} label="Date & time" value={fmtDateTime(m.scheduled_at)} />
               {m.end_at && <Detail icon={Clock} label="End time" value={fmtDateTime(m.end_at)} />}
@@ -143,7 +140,7 @@ export default function PurchaseKickoffDetail() {
           {m.mode === 'online' && (m.meeting_link || m.meeting_platform) && (
             <div className="pr-glass" style={{ padding: 20 }}>
               <SectionTitle icon={Video}>Online meeting</SectionTitle>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginTop: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14, marginTop: 12 }}>
                 {m.meeting_platform && <Detail icon={Video} label="Platform" value={m.meeting_platform} />}
                 {m.meeting_id && <Detail icon={FileText} label="Meeting ID" value={m.meeting_id} />}
                 {m.meeting_passcode && <Detail icon={ShieldCheck} label="Passcode" value={m.meeting_passcode} />}
@@ -210,40 +207,37 @@ export default function PurchaseKickoffDetail() {
           {/* MOM approval workflow */}
           <MomApprovalCard m={m} onUpdated={setM} onError={setErr} />
 
-          {/* Acknowledgement */}
+          {/* Send minutes to the vendor (acknowledgement removed — the vendor
+              reads the approved minutes in their portal). */}
           <div className="pr-glass" style={{ padding: 20 }}>
-            <SectionTitle icon={ShieldCheck}>Vendor acknowledgement</SectionTitle>
-            {m.is_acknowledged ? (
-              <div style={{ marginTop: 12, padding: '14px', borderRadius: 12, background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.32)', textAlign: 'center' }}>
-                <CheckCircle2 size={26} style={{ color: '#10b981' }} />
-                <div style={{ fontSize: 13.5, fontWeight: 800, color: '#10b981', marginTop: 6 }}>Acknowledged</div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>by {m.acknowledged_by_name} · {fmtDateTime(m.acknowledged_at)}</div>
-              </div>
-            ) : m.status !== PK_STATUS.COMPLETED ? (
+            <SectionTitle icon={Send}>Send minutes to vendor</SectionTitle>
+            {m.status !== PK_STATUS.COMPLETED ? (
               <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '12px 0 0', lineHeight: 1.5 }}>
-                Complete the meeting first — the vendor acknowledges the minutes once they're finalised.
+                Complete the meeting first — the minutes are shared once finalised and approved.
               </p>
-            ) : published ? (
-              <div style={{ marginTop: 12, padding: '13px', borderRadius: 12, background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.32)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 800, color: '#a78bfa' }}><Send size={15} /> Sent for acknowledgement</div>
-                <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '6px 0 0', lineHeight: 1.5 }}>
-                  The vendor has been notified. They acknowledge the minutes from the Purchase Vendor Portal (onboarding Step 1).
-                </p>
+            ) : m.mom_status === PK_MOM_STATUS.DISTRIBUTED ? (
+              <div style={{ marginTop: 12, padding: '13px', borderRadius: 12, background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.32)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 800, color: '#10b981' }}><CheckCircle2 size={15} /> Minutes sent to the vendor</div>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '6px 0 0', lineHeight: 1.5 }}>Available in their portal · notified by e-mail.</p>
+                <button onClick={publish} style={{ ...solidBtn, marginTop: 10, justifyContent: 'center' }}><Send size={14} /> Resend notification</button>
               </div>
             ) : (
               <div style={{ marginTop: 12 }}>
                 <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '0 0 12px', lineHeight: 1.5 }}>
-                  Send the minutes to the vendor for acknowledgement. The MOM must be generated and approved first.
+                  Send the approved minutes to the vendor. They read the full minutes in their portal and are notified by e-mail.
                 </p>
                 <button onClick={publish} disabled={!canSend} style={{ ...solidBtn, width: '100%', justifyContent: 'center', opacity: canSend ? 1 : 0.6, cursor: canSend ? 'pointer' : 'not-allowed' }}>
-                  <Send size={15} /> Send for acknowledgement
+                  <Send size={15} /> Send minutes to vendor
                 </button>
                 {!hasMom
-                  ? <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: '8px 0 0' }}>Generate or upload the MOM PDF first.</p>
+                  ? <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: '8px 0 0' }}>Generate or upload the MOM document first.</p>
                   : !momApproved && <p style={{ fontSize: 11, color: '#f59e0b', margin: '8px 0 0' }}>The minutes must be approved before they can be sent.</p>}
               </div>
             )}
           </div>
+
+          {/* Labelled supporting documents — multiple upload */}
+          <PkDocumentsCard meetingId={m.id} onError={setErr} />
 
           {/* Audit trail */}
           {(m.audit_logs || []).length > 0 && (
@@ -432,7 +426,7 @@ function MomApprovalCard({ m, onUpdated, onError }) {
           <div>
             <textarea rows={3} value={note} onChange={e => setNote(e.target.value)} placeholder="What needs to change before approval?"
               style={{ width: '100%', padding: '9px 12px', background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-h)', fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }} />
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 8, marginTop: 8 }}>
               <MomBtn onClick={() => { setShowReturn(false); setNote('') }} icon={XCircle} tone="#94a3b8">Cancel</MomBtn>
               <MomBtn onClick={doReturn} busy={busy === 'return'} icon={RotateCcw} tone="#f59e0b">Return for revision</MomBtn>
             </div>
@@ -440,7 +434,7 @@ function MomApprovalCard({ m, onUpdated, onError }) {
         ) : st === PK_MOM_STATUS.DRAFT ? (
           <MomBtn onClick={submit} busy={busy === 'submit'} icon={Send} tone="#7C3AED" full>Submit for approval</MomBtn>
         ) : awaiting ? (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 8 }}>
             <MomBtn onClick={approve} busy={busy === 'approve'} icon={CheckCircle2} tone="#10b981">{approveLabel}</MomBtn>
             <MomBtn onClick={() => setShowReturn(true)} icon={RotateCcw} tone="#f59e0b">Return</MomBtn>
           </div>
@@ -533,7 +527,7 @@ function ActionItemsCard({ m, onError }) {
         <div style={{ marginTop: 12, padding: 14, borderRadius: 12, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
           <textarea rows={2} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="What needs to be done?"
             style={{ width: '100%', padding: '9px 12px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-h)', fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }} />
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 8, marginTop: 8 }}>
             <div>
               <div style={labelSm}>Owner (Rule 11)</div>
               <select value={form.responsible_participant_id} onChange={e => setForm(f => ({ ...f, responsible_participant_id: e.target.value }))} style={selStyle}>
@@ -752,7 +746,7 @@ function IssueRegisterCard({ m, onError }) {
           <TextInput value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="Issue title" />
           <textarea rows={2} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Describe the issue (optional)"
             style={{ width: '100%', marginTop: 8, padding: '9px 12px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-h)', fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }} />
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 8, marginTop: 8 }}>
             <div>
               <div style={labelSm}>Category</div>
               <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} style={selStyle}>
@@ -910,7 +904,7 @@ function DecisionRegisterCard({ m, onError }) {
             style={{ width: '100%', padding: '9px 12px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-h)', fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }} />
           <textarea rows={2} value={form.impact} onChange={e => setForm(f => ({ ...f, impact: e.target.value }))} placeholder="Impact (optional)"
             style={{ width: '100%', marginTop: 8, padding: '9px 12px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-h)', fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }} />
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 8, marginTop: 8 }}>
             <div>
               <div style={labelSm}>Decided by</div>
               <select value={form.decided_by_participant_id} onChange={e => setForm(f => ({ ...f, decided_by_participant_id: e.target.value }))} style={selStyle}>
@@ -1164,9 +1158,98 @@ function TransitionModal({ m, to, onClose, onDone }) {
 function actionLabel(from, to) {
   if (to === PK_STATUS.COMPLETED) return 'Mark completed'
   if (to === PK_STATUS.DELAYED) return 'Mark delayed'
-  if (to === PK_STATUS.CANCELLED) return 'Cancel meeting'
-  if (to === PK_STATUS.SCHEDULED) return from === PK_STATUS.CANCELLED ? 'Reopen' : 'Reschedule'
+  if (to === PK_STATUS.CANCELLED) return from === PK_STATUS.DRAFT ? 'Discard draft' : 'Cancel meeting'
+  if (to === PK_STATUS.SCHEDULED) {
+    if (from === PK_STATUS.DRAFT) return 'Publish Meeting'
+    return from === PK_STATUS.CANCELLED ? 'Reopen' : 'Reschedule'
+  }
   return to
+}
+
+/* ── Labelled supporting documents (multiple upload) ───────────────────────── */
+function PkDocumentsCard({ meetingId, onError }) {
+  const [docs, setDocs]     = useState([])
+  const [staged, setStaged] = useState([])
+  const [busy, setBusy]     = useState(false)
+
+  const load = () => purchaseApi.kickoff.documents(meetingId).then(d => setDocs(d ?? [])).catch(() => {})
+  useEffect(() => { load() }, [meetingId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const stage = (e) => {
+    const files = Array.from(e.target.files || [])
+    setStaged(prev => [...prev, ...files.map(f => ({ file: f, label: f.name.replace(/\.[^.]+$/, '') }))])
+    e.target.value = ''
+  }
+  const upload = async () => {
+    if (!staged.length) return
+    setBusy(true); onError(null)
+    try {
+      await purchaseApi.kickoff.uploadDocuments(meetingId, staged.map(s => s.file), staged.map(s => s.label))
+      setStaged([]); await load()
+    } catch (e) { onError(e?.response?.data?.message || 'Could not upload the documents.') }
+    finally { setBusy(false) }
+  }
+  const download = async (doc) => {
+    try {
+      const blob = await purchaseApi.kickoff.documentBlob(meetingId, doc.id)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a'); a.href = url; a.download = doc.original_name || doc.label
+      document.body.appendChild(a); a.click(); a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 60000)
+    } catch { onError('Could not download the document.') }
+  }
+  const remove = async (doc) => {
+    try { await purchaseApi.kickoff.deleteDocument(meetingId, doc.id); await load() }
+    catch { onError('Could not remove the document.') }
+  }
+
+  return (
+    <div className="pr-glass" style={{ padding: 20 }}>
+      <SectionTitle icon={FileText}>Documents</SectionTitle>
+      <p style={{ fontSize: 11.5, color: 'var(--text-muted)', margin: '4px 0 12px', lineHeight: 1.5 }}>
+        Attach any number of files — name each one. Shared with the vendor once the minutes are sent.
+      </p>
+      {docs.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginBottom: 12 }}>
+          {docs.map(doc => (
+            <div key={doc.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 11px', borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+              <FileText size={15} style={{ color: '#a78bfa', flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-h)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.label}</div>
+                <div style={{ fontSize: 10.5, color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.original_name}</div>
+              </div>
+              <button onClick={() => download(doc)} title="Download" style={{ width: 30, height: 30, borderRadius: 8, cursor: 'pointer', background: 'rgba(14,165,233,0.1)', border: '1px solid rgba(14,165,233,0.35)', color: '#0ea5e9', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Download size={14} /></button>
+              <button onClick={() => remove(doc)} title="Remove" style={{ width: 30, height: 30, borderRadius: 8, cursor: 'pointer', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Trash2 size={14} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+      {staged.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginBottom: 10 }}>
+          {staged.map((s, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 10, background: 'rgba(124,58,237,0.06)', border: '1px dashed rgba(124,58,237,0.4)' }}>
+              <TextInput value={s.label} onChange={e => setStaged(prev => prev.map((x, idx) => idx === i ? { ...x, label: e.target.value } : x))} placeholder="Name this document" />
+              <button onClick={() => setStaged(prev => prev.filter((_, idx) => idx !== i))} style={{ width: 28, height: 28, borderRadius: 8, cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><XCircle size={14} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <label style={{ flex: staged.length ? 'unset' : 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '9px 12px', borderRadius: 10, cursor: 'pointer', fontSize: 12.5, fontWeight: 700, color: '#a78bfa', background: 'rgba(124,58,237,0.1)', border: '1px dashed rgba(124,58,237,0.4)' }}>
+          <Upload size={14} /> Add files
+          <input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" onChange={stage} style={{ display: 'none' }} />
+        </label>
+        {staged.length > 0 && (
+          <button onClick={upload} disabled={busy} style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '9px 12px', borderRadius: 10, cursor: busy ? 'wait' : 'pointer', fontSize: 12.5, fontWeight: 800, color: '#fff', border: 'none', background: 'linear-gradient(145deg,#a78bfa,#7C3AED)' }}>
+            {busy ? <Loader2 size={14} className="pk-spin" /> : <Upload size={14} />} {busy ? 'Uploading…' : `Upload ${staged.length}`}
+          </button>
+        )}
+      </div>
+      {docs.length === 0 && staged.length === 0 && (
+        <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '10px 0 0', textAlign: 'center' }}>No documents attached yet.</p>
+      )}
+    </div>
+  )
 }
 
 const SectionTitle = ({ icon: Icon, children }) => (

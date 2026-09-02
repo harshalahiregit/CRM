@@ -4,7 +4,7 @@ import {
   ArrowLeft, CalendarDays, Clock, MapPin, Users, CheckCircle2, XCircle,
   Send, Copy, Upload, AlertTriangle, Loader2, FileText, ShieldCheck, History,
   Sparkles, Eye, Download, Video, ExternalLink, ClipboardCheck, ThumbsUp, Undo2, RotateCcw, ListChecks,
-  Plus, Mail, MailCheck, Pencil, Building2, UserCheck, Briefcase, UserX,
+  Plus, Mail, MailCheck, Pencil, Building2, UserCheck, Briefcase, UserX, Trash2,
 } from 'lucide-react'
 import { kickoffApi } from '@/services/kickoffApi'
 import { meetingApi } from '@/services/meetingApi'
@@ -44,15 +44,14 @@ export default function KickoffMeetingDetail() {
   }).catch(() => { setErr('Could not load this meeting.'); setLoad(false) })
   useEffect(() => { load() }, [id])
 
+  // Distribute the approved minutes to the vendor. No public link any more — the
+  // vendor reads them in their portal (and is notified by e-mail + in-app popup).
   const publish = async () => {
     setPublishBusy(true); setErr(null)
     try {
       const res = await kickoffApi.publish(id)
-      // Backend returns the token once; compose the link from origin, as the
-      // worker badge QR does — the API host is not the browser origin.
-      setAckLink(`${window.location.origin}/kickoff/ack/${res.ack_token}`)
-      setM(res.meeting)
-    } catch (e) { setErr(e?.response?.data?.message || 'Could not publish.') }
+      setM(res.meeting ?? res)
+    } catch (e) { setErr(e?.response?.data?.message || 'Could not send the minutes.') }
     finally { setPublishBusy(false) }
   }
 
@@ -78,11 +77,6 @@ export default function KickoffMeetingDetail() {
             <span style={{ padding: '4px 11px', borderRadius: 999, background: cfg.bg, color: cfg.color, fontSize: 12, fontWeight: 800 }}>{cfg.label}</span>
             {m.priority && <span style={{ padding: '3px 9px', borderRadius: 7, fontSize: 11, fontWeight: 800, background: m.priority === 'Urgent' || m.priority === 'High' ? 'rgba(239,68,68,0.14)' : 'rgba(148,163,184,0.15)', color: m.priority === 'Urgent' || m.priority === 'High' ? '#ef4444' : 'var(--text-muted)' }}>{m.priority}</span>}
             {m.confidentiality && m.confidentiality !== 'Public' && <span style={{ padding: '3px 9px', borderRadius: 7, fontSize: 11, fontWeight: 800, background: 'rgba(245,158,11,0.14)', color: '#d97706' }}>{m.confidentiality}</span>}
-            {m.is_acknowledged && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, fontWeight: 700, color: '#10b981' }}>
-                <ShieldCheck size={13} /> Acknowledged by {m.acknowledged_by_name}
-              </span>
-            )}
           </div>
           {/* All vendors on the meeting, primary first. Falls back to the single
               subject for records saved before multi-vendor existed. */}
@@ -96,9 +90,6 @@ export default function KickoffMeetingDetail() {
                   {s.is_primary && m.subject_list?.length > 1 && (
                     <span style={{ fontSize: 9, fontWeight: 800, color: '#a78bfa', marginLeft: 4 }}>PRIMARY</span>
                   )}
-                  {s.acknowledged && (
-                    <span style={{ fontSize: 9, fontWeight: 800, color: '#10b981', marginLeft: 4 }}>ACK</span>
-                  )}
                 </span>
               ))}
             </p>
@@ -108,14 +99,18 @@ export default function KickoffMeetingDetail() {
         <div style={{ display: 'flex', gap: 8, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           {nexts.map(to => {
             const tc = koStatusCfg(to)
+            // The primary call-to-action is green: Publish (Draft→Scheduled) and
+            // Mark completed both read as the confident "advance this" button.
+            const isPublish = m.status === KO_STATUS.DRAFT && to === KO_STATUS.SCHEDULED
+            const primary = to === KO_STATUS.COMPLETED || isPublish
             return (
               <button key={to} onClick={() => setAction({ to })}
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '8px 13px', borderRadius: 10, cursor: 'pointer', fontSize: 12.5, fontWeight: 700,
-                  background: to === KO_STATUS.COMPLETED ? 'linear-gradient(145deg,#34d399,#10b981)' : 'var(--bg-card)',
-                  border: to === KO_STATUS.COMPLETED ? 'none' : `1px solid ${tc.color}55`,
-                  color: to === KO_STATUS.COMPLETED ? '#fff' : tc.color,
-                  boxShadow: to === KO_STATUS.COMPLETED ? '0 8px 20px -6px #10b98188' : 'none' }}>
-                {to === KO_STATUS.COMPLETED && <CheckCircle2 size={14} />}
+                  background: primary ? 'linear-gradient(145deg,#34d399,#10b981)' : 'var(--bg-card)',
+                  border: primary ? 'none' : `1px solid ${tc.color}55`,
+                  color: primary ? '#fff' : tc.color,
+                  boxShadow: primary ? '0 8px 20px -6px #10b98188' : 'none' }}>
+                {(to === KO_STATUS.COMPLETED || isPublish) && (isPublish ? <Send size={14} /> : <CheckCircle2 size={14} />)}
                 {actionLabel(m.status, to)}
               </button>
             )
@@ -125,13 +120,13 @@ export default function KickoffMeetingDetail() {
 
       {err && <Banner tone="#ef4444" icon={AlertTriangle}>{err}</Banner>}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 16, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, alignItems: 'start' }}>
         {/* Left column */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {/* Schedule */}
           <div className="pr-glass" style={{ padding: 20 }}>
             <SectionTitle icon={CalendarDays}>Schedule</SectionTitle>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginTop: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14, marginTop: 12 }}>
               <Detail icon={CalendarDays} label="Type" value={m.meeting_type_label || 'Kickoff Meeting'} />
               <Detail icon={Clock} label="Date & time" value={fmtDateTime(m.scheduled_at)} />
               <Detail icon={Clock} label="Duration" value={m.duration_minutes ? `${m.duration_minutes} min` : '—'} />
@@ -149,7 +144,7 @@ export default function KickoffMeetingDetail() {
                 then never shown again anywhere in the app. */}
             {(m.meeting_type_label || m.chairperson || m.organizer || m.coordinator
               || m.department || m.client_name || m.work_package || m.priority || m.confidentiality) && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 14px', marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '8px 14px', marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
                 <MetaDetail icon={ClipboardCheck} label="Type" value={m.meeting_type_label} />
                 <MetaDetail icon={UserCheck} label="Chairperson" value={m.chairperson} />
                 <MetaDetail icon={UserCheck} label="Organizer" value={m.organizer || m.creator?.name} />
@@ -243,42 +238,41 @@ export default function KickoffMeetingDetail() {
           {/* MOM approval & distribution workflow */}
           <MomApprovalCard m={m} onChanged={(updated) => { setM(updated); setErr(null) }} onError={setErr} />
 
-          {/* Acknowledgement */}
+          {/* Labelled supporting documents — multiple upload, each named */}
+          <DocumentsCard m={m} onError={setErr} />
+
+          {/* Send minutes to the vendor (acknowledgement removed — the vendor
+              reads the approved minutes in their portal). */}
           <div className="pr-glass" style={{ padding: 20 }}>
-            <SectionTitle icon={ShieldCheck}>Vendor acknowledgement</SectionTitle>
-            {m.is_acknowledged ? (
+            <SectionTitle icon={Send}>Send minutes to vendor</SectionTitle>
+            {m.status !== KO_STATUS.COMPLETED ? (
+              <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '12px 0 0', lineHeight: 1.5 }}>
+                Complete the meeting first — the minutes are shared with the vendor once they're finalised and approved.
+              </p>
+            ) : m.mom_status === 'Distributed' ? (
               <div style={{ marginTop: 12, padding: '14px', borderRadius: 12, background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.32)', textAlign: 'center' }}>
                 <CheckCircle2 size={26} style={{ color: '#10b981' }} />
-                <div style={{ fontSize: 13.5, fontWeight: 800, color: '#10b981', marginTop: 6 }}>Acknowledged</div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>by {m.acknowledged_by_name} · {fmtDateTime(m.acknowledged_at)}</div>
+                <div style={{ fontSize: 13.5, fontWeight: 800, color: '#10b981', marginTop: 6 }}>Minutes sent to the vendor</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>Available in their portal · notified by e-mail</div>
+                <button onClick={publish} disabled={publishBusy}
+                  style={{ ...solidBtn, marginTop: 12, justifyContent: 'center', cursor: publishBusy ? 'wait' : 'pointer', opacity: publishBusy ? 0.75 : 1 }}>
+                  {publishBusy ? <Loader2 size={14} className="ko-spin" /> : <Send size={14} />}
+                  {publishBusy ? 'Resending…' : 'Resend notification'}
+                </button>
               </div>
-            ) : m.status !== KO_STATUS.COMPLETED ? (
-              <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '12px 0 0', lineHeight: 1.5 }}>
-                Complete the meeting first — the vendor acknowledges the minutes once they're finalised.
-              </p>
-            ) : ackLink ? (
-              <div style={{ marginTop: 12 }}>
-                <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '0 0 8px', lineHeight: 1.5 }}>
-                  Send this single-use link to the vendor's signatory. It works without a login.
-                </p>
-                <div style={{ display: 'flex', gap: 7 }}>
-                  <input readOnly value={ackLink} style={{ flex: 1, padding: '9px 11px', borderRadius: 9, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)', fontSize: 11.5 }} />
-                  <button onClick={() => navigator.clipboard?.writeText(ackLink)} style={{ padding: '0 12px', borderRadius: 9, cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}><Copy size={14} /></button>
-                </div>
-              </div>
-            ) : !['Approved', 'Distributed'].includes(m.mom_status) ? (
+            ) : m.mom_status !== 'Approved' ? (
               <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '12px 0 0', lineHeight: 1.5 }}>
                 The minutes must be <strong style={{ color: 'var(--text-h)' }}>approved</strong> before they can be sent to the vendor — use the <strong style={{ color: 'var(--text-h)' }}>Minutes approval</strong> card above.
               </p>
             ) : (
               <div style={{ marginTop: 12 }}>
                 <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '0 0 12px', lineHeight: 1.5 }}>
-                  Send the approved minutes to the vendor for acknowledgement — a single-use public link, no login needed.
+                  Send the approved minutes to the vendor. They'll be able to read the full minutes in their portal and will be notified by e-mail and an in-app alert.
                 </p>
                 <button onClick={publish} disabled={publishBusy}
                   style={{ ...solidBtn, width: '100%', justifyContent: 'center', cursor: publishBusy ? 'wait' : 'pointer', opacity: publishBusy ? 0.75 : 1 }}>
                   {publishBusy ? <Loader2 size={15} className="ko-spin" /> : <Send size={15} />}
-                  {publishBusy ? 'Sending…' : 'Send for acknowledgement'}
+                  {publishBusy ? 'Sending…' : 'Send minutes to vendor'}
                 </button>
               </div>
             )}
@@ -413,13 +407,19 @@ function ActionItemsCard({ m, meetingId, onChanged, onError }) {
   )
 }
 
-/* Inline form to progress one action: status move + verification note + evidence. */
+/* Inline form to progress one action: status move + verification note, plus
+   MULTIPLE labelled evidence files (via the documents store, scoped to the action). */
 function ActionProgressForm({ item, meetingId, onDone, onError }) {
   const [status, setStatus] = useState('')
   const [remark, setRemark] = useState('')
-  const [file, setFile]     = useState(null)
   const [busy, setBusy]     = useState(false)
+  const [evDocs, setEvDocs] = useState([])
+  const [evStaged, setEvStaged] = useState([])   // File[]
+  const [evBusy, setEvBusy] = useState(false)
   const nexts = actNextStatuses(item.status)
+
+  const loadEv = () => kickoffApi.documents(meetingId, item.id).then(d => setEvDocs(d ?? [])).catch(() => {})
+  useEffect(() => { loadEv() }, [meetingId, item.id])
 
   const save = async () => {
     setBusy(true)
@@ -427,46 +427,86 @@ function ActionProgressForm({ item, meetingId, onDone, onError }) {
       await kickoffApi.progressAction(meetingId, item.id, {
         status: status || undefined,
         note: remark || undefined,
-        evidence: file || undefined,
       })
       onDone()
     } catch (e) { onError(e?.response?.data?.message || 'Could not update the action.'); setBusy(false) }
   }
 
-  const viewEvidence = async () => {
+  const uploadEv = async () => {
+    if (!evStaged.length) return
+    setEvBusy(true)
     try {
-      const blob = await kickoffApi.actionEvidenceBlob(meetingId, item.id)
-      window.open(URL.createObjectURL(blob), '_blank')
-    } catch { onError('Could not open the evidence file.') }
+      await kickoffApi.uploadDocuments(meetingId, evStaged, evStaged.map(f => f.name.replace(/\.[^.]+$/, '')), item.id)
+      setEvStaged([]); await loadEv()
+    } catch (e) { onError(e?.response?.data?.message || 'Could not upload evidence.') }
+    finally { setEvBusy(false) }
+  }
+
+  const downloadEv = async (doc) => {
+    try {
+      const blob = await kickoffApi.documentBlob(meetingId, doc.id)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a'); a.href = url; a.download = doc.original_name || doc.label
+      document.body.appendChild(a); a.click(); a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 60000)
+    } catch { onError('Could not download the evidence file.') }
+  }
+
+  const removeEv = async (doc) => {
+    try { await kickoffApi.deleteDocument(meetingId, doc.id); await loadEv() }
+    catch { onError('Could not remove the evidence file.') }
   }
 
   return (
     <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)', display: 'grid', gap: 10 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-        <Field label="Move to">
-          <SelectInput value={status} onChange={e => setStatus(e.target.value)} pairs
-            options={[['', 'Keep current'], ...nexts.map(s => [s, actStatusCfg(s).label])]} />
-        </Field>
-        <Field label="Evidence (optional)">
-          <input type="file" onChange={e => setFile(e.target.files?.[0] || null)}
-            style={{ fontSize: 12, color: 'var(--text-muted)' }} accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" />
-        </Field>
-      </div>
+      <Field label="Move to">
+        <SelectInput value={status} onChange={e => setStatus(e.target.value)} pairs
+          options={[['', 'Keep current'], ...nexts.map(s => [s, actStatusCfg(s).label])]} />
+      </Field>
       <Field label="Verification note / remark">
         <textarea value={remark} onChange={e => setRemark(e.target.value)} rows={2}
           placeholder="What was done / verified…"
           style={{ width: '100%', padding: '8px 11px', borderRadius: 8, fontSize: 13, background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-h)', resize: 'vertical', fontFamily: 'inherit' }} />
       </Field>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <button onClick={save} disabled={busy || (!status && !remark && !file)}
-          style={{ padding: '8px 16px', borderRadius: 8, border: 'none', fontWeight: 700, fontSize: 12.5, cursor: busy ? 'wait' : 'pointer', background: 'linear-gradient(135deg,#7C3AED,#6d28d9)', color: '#fff', opacity: (!status && !remark && !file) ? 0.5 : 1 }}>
-          {busy ? 'Saving…' : 'Save update'}
-        </button>
-        {item.evidence_path && (
-          <button onClick={viewEvidence} style={{ padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)', color: '#a78bfa', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-            <Eye size={13} /> Evidence
+
+      {/* Evidence — multiple files */}
+      <div>
+        <label style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '0.03em', textTransform: 'uppercase', color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>Evidence files</label>
+        {evDocs.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+            {evDocs.map(doc => (
+              <span key={doc.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 9px', borderRadius: 8, background: 'var(--bg-input)', border: '1px solid var(--border)', fontSize: 11.5 }}>
+                <button onClick={() => downloadEv(doc)} title="Download" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'transparent', border: 'none', color: '#0ea5e9', cursor: 'pointer', fontWeight: 700, fontSize: 11.5, padding: 0 }}><Download size={12} /> {doc.label}</button>
+                <button onClick={() => removeEv(doc)} title="Remove" style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 0, display: 'inline-flex' }}><Trash2 size={12} /></button>
+              </span>
+            ))}
+          </div>
+        )}
+        {item.evidence_path && evDocs.length === 0 && (
+          <button onClick={async () => { try { const b = await kickoffApi.actionEvidenceBlob(meetingId, item.id); window.open(URL.createObjectURL(b), '_blank') } catch { onError('Could not open the evidence file.') } }}
+            style={{ padding: '5px 10px', borderRadius: 8, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)', color: '#a78bfa', display: 'inline-flex', alignItems: 'center', gap: 5, marginBottom: 8 }}>
+            <Eye size={12} /> Legacy evidence
           </button>
         )}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 11px', borderRadius: 8, cursor: 'pointer', fontSize: 11.5, fontWeight: 700, color: '#a78bfa', background: 'rgba(124,58,237,0.1)', border: '1px dashed rgba(124,58,237,0.4)' }}>
+            <Upload size={12} /> Add files
+            <input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" onChange={e => setEvStaged(prev => [...prev, ...Array.from(e.target.files || [])])} style={{ display: 'none' }} />
+          </label>
+          {evStaged.length > 0 && (
+            <>
+              <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{evStaged.length} selected</span>
+              <button onClick={uploadEv} disabled={evBusy} style={{ padding: '6px 11px', borderRadius: 8, fontSize: 11.5, fontWeight: 800, cursor: evBusy ? 'wait' : 'pointer', border: 'none', color: '#fff', background: 'linear-gradient(145deg,#a78bfa,#7C3AED)' }}>{evBusy ? 'Uploading…' : 'Upload'}</button>
+            </>
+          )}
+        </div>
+      </div>
+
+      <div>
+        <button onClick={save} disabled={busy || (!status && !remark)}
+          style={{ padding: '8px 16px', borderRadius: 8, border: 'none', fontWeight: 700, fontSize: 12.5, cursor: busy ? 'wait' : 'pointer', background: 'linear-gradient(135deg,#7C3AED,#6d28d9)', color: '#fff', opacity: (!status && !remark) ? 0.5 : 1 }}>
+          {busy ? 'Saving…' : 'Save update'}
+        </button>
       </div>
     </div>
   )
@@ -923,6 +963,117 @@ function MomBtn({ onClick, busy, icon: Icon, tone, full, children }) {
   )
 }
 
+/* ── Labelled supporting documents ─────────────────────────────────────────────
+ * Multiple upload — each file is named for what it is ("Signed MoM", "HSE plan").
+ * Uploaded docs are downloadable here and (once minutes are distributed) in the
+ * vendor portal. */
+function DocumentsCard({ m, onError }) {
+  const [docs, setDocs]     = useState([])
+  const [staged, setStaged] = useState([])   // [{ file, label }]
+  const [busy, setBusy]     = useState(false)
+
+  const load = () => kickoffApi.documents(m.id).then(d => setDocs(d ?? [])).catch(() => {})
+  useEffect(() => { load() }, [m.id])
+
+  const stage = (e) => {
+    const files = Array.from(e.target.files || [])
+    setStaged(prev => [...prev, ...files.map(f => ({ file: f, label: f.name.replace(/\.[^.]+$/, '') }))])
+    e.target.value = ''
+  }
+  const setLabel = (i, v) => setStaged(prev => prev.map((s, idx) => idx === i ? { ...s, label: v } : s))
+  const unstage  = (i) => setStaged(prev => prev.filter((_, idx) => idx !== i))
+
+  const upload = async () => {
+    if (!staged.length) return
+    setBusy(true); onError(null)
+    try {
+      await kickoffApi.uploadDocuments(m.id, staged.map(s => s.file), staged.map(s => s.label))
+      setStaged([]); await load()
+    } catch (err) {
+      onError(err?.response?.data?.message || 'Could not upload the documents.')
+    } finally { setBusy(false) }
+  }
+
+  const download = async (doc) => {
+    onError(null)
+    try {
+      const blob = await kickoffApi.documentBlob(m.id, doc.id)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url; a.download = doc.original_name || doc.label
+      document.body.appendChild(a); a.click(); a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 60000)
+    } catch (err) {
+      onError(err?.response?.data?.message || 'Could not download the document.')
+    }
+  }
+
+  const remove = async (doc) => {
+    onError(null)
+    try { await kickoffApi.deleteDocument(m.id, doc.id); await load() }
+    catch (err) { onError(err?.response?.data?.message || 'Could not remove the document.') }
+  }
+
+  const kb = (n) => (n ? `${Math.max(1, Math.round(n / 1024))} KB` : '')
+
+  return (
+    <div className="pr-glass" style={{ padding: 20 }}>
+      <SectionTitle icon={FileText}>Documents</SectionTitle>
+      <p style={{ fontSize: 11.5, color: 'var(--text-muted)', margin: '4px 0 12px', lineHeight: 1.5 }}>
+        Attach any number of files — name each one for what it is. Shared with the vendor once the minutes are sent.
+      </p>
+
+      {/* Existing documents */}
+      {docs.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginBottom: 12 }}>
+          {docs.map(doc => (
+            <div key={doc.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 11px', borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+              <FileText size={15} style={{ color: '#a78bfa', flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-h)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.label}</div>
+                <div style={{ fontSize: 10.5, color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.original_name}{doc.size ? ` · ${kb(doc.size)}` : ''}</div>
+              </div>
+              <button onClick={() => download(doc)} title="Download" style={{ width: 30, height: 30, borderRadius: 8, cursor: 'pointer', background: 'rgba(14,165,233,0.1)', border: '1px solid rgba(14,165,233,0.35)', color: '#0ea5e9', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Download size={14} /></button>
+              <button onClick={() => remove(doc)} title="Remove" style={{ width: 30, height: 30, borderRadius: 8, cursor: 'pointer', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Trash2 size={14} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Staged files awaiting upload, each with an editable label */}
+      {staged.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginBottom: 10 }}>
+          {staged.map((s, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 10, background: 'rgba(124,58,237,0.06)', border: '1px dashed rgba(124,58,237,0.4)' }}>
+              <input value={s.label} onChange={e => setLabel(i, e.target.value)} placeholder="Name this document (what it's for)"
+                style={{ flex: 1, minWidth: 0, padding: '7px 10px', borderRadius: 8, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)', fontSize: 12 }} />
+              <span style={{ fontSize: 10.5, color: 'var(--text-muted)', whiteSpace: 'nowrap', maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.file.name}</span>
+              <button onClick={() => unstage(i)} style={{ width: 28, height: 28, borderRadius: 8, cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><XCircle size={14} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 8 }}>
+        <label style={{ flex: staged.length ? 'unset' : 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '9px 12px', borderRadius: 10, cursor: 'pointer', fontSize: 12.5, fontWeight: 700, color: '#a78bfa', background: 'rgba(124,58,237,0.1)', border: '1px dashed rgba(124,58,237,0.4)' }}>
+          <Upload size={14} /> Add files
+          <input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" onChange={stage} style={{ display: 'none' }} />
+        </label>
+        {staged.length > 0 && (
+          <button onClick={upload} disabled={busy}
+            style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '9px 12px', borderRadius: 10, cursor: busy ? 'wait' : 'pointer', fontSize: 12.5, fontWeight: 800, color: '#fff', border: 'none', background: 'linear-gradient(145deg,#a78bfa,#7C3AED)' }}>
+            {busy ? <Loader2 size={14} className="ko-spin" /> : <Upload size={14} />} {busy ? 'Uploading…' : `Upload ${staged.length} file${staged.length > 1 ? 's' : ''}`}
+          </button>
+        )}
+      </div>
+
+      {docs.length === 0 && staged.length === 0 && (
+        <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '10px 0 0', textAlign: 'center' }}>No documents attached yet.</p>
+      )}
+    </div>
+  )
+}
+
 /* ── MOM approval & distribution (Meeting.docx — approve before distribute) ────
  * The minutes move Draft → Pending Approval → Approved → Distributed. The author
  * submits; an approver approves or returns with a reason; distribution is the
@@ -992,7 +1143,7 @@ function MomApprovalCard({ m, onChanged, onError }) {
       )}
 
       {isPending && !returning && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 8 }}>
           <MomBtn onClick={approve} busy={busy === 'approve'} icon={ThumbsUp} tone="#10b981">{approveLabel}</MomBtn>
           <MomBtn onClick={() => setReturning(true)} busy={false} icon={Undo2} tone="#f59e0b">Return</MomBtn>
         </div>
@@ -1140,7 +1291,12 @@ function HPill({ tone, children }) {
 
 /* ── Transition modal ─────────────────────────────────────────────────────── */
 function TransitionModal({ m, to, onClose, onDone }) {
-  const [form, setForm] = useState({ delay_reason: '', scheduled_at: '', minutes: '' })
+  // Publishing a draft: prefill the drafted time so the admin can confirm or tweak it.
+  const isPublish = m.status === KO_STATUS.DRAFT && to === KO_STATUS.SCHEDULED
+  const draftedLocal = isPublish && m.scheduled_at
+    ? new Date(new Date(m.scheduled_at).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+    : ''
+  const [form, setForm] = useState({ delay_reason: '', scheduled_at: draftedLocal, minutes: '' })
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState(null)
   const tc = koStatusCfg(to)
@@ -1179,7 +1335,17 @@ function TransitionModal({ m, to, onClose, onDone }) {
             </Field>
           </>
         )}
-        {to === KO_STATUS.SCHEDULED && (
+        {to === KO_STATUS.SCHEDULED && isPublish && (
+          <>
+            <p style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.5, margin: '0 0 10px' }}>
+              Publishing sends the invitation e-mail to every participant, schedules the automatic reminders, and shares the join link. Confirm the time below.
+            </p>
+            <Field label="Date & time" full>
+              <TextInput type="datetime-local" min={minDateTime} value={form.scheduled_at} onChange={e => setForm(f => ({ ...f, scheduled_at: e.target.value }))} />
+            </Field>
+          </>
+        )}
+        {to === KO_STATUS.SCHEDULED && !isPublish && (
           <Field label="New date & time" full>
             <TextInput type="datetime-local" min={minDateTime} value={form.scheduled_at} onChange={e => setForm(f => ({ ...f, scheduled_at: e.target.value }))} />
           </Field>
@@ -1324,8 +1490,12 @@ function OnlineMeetingCard({ meeting, linkData, busy, onGenerate }) {
 function actionLabel(from, to) {
   if (to === KO_STATUS.COMPLETED) return 'Mark completed'
   if (to === KO_STATUS.DELAYED) return 'Mark delayed'
-  if (to === KO_STATUS.CANCELLED) return 'Cancel meeting'
-  if (to === KO_STATUS.SCHEDULED) return from === KO_STATUS.CANCELLED ? 'Reopen' : 'Reschedule'
+  if (to === KO_STATUS.CANCELLED) return from === KO_STATUS.DRAFT ? 'Discard draft' : 'Cancel meeting'
+  // Draft → Scheduled is the deliberate "go live" action: publish.
+  if (to === KO_STATUS.SCHEDULED) {
+    if (from === KO_STATUS.DRAFT) return 'Publish Meeting'
+    return from === KO_STATUS.CANCELLED ? 'Reopen' : 'Reschedule'
+  }
   return to
 }
 

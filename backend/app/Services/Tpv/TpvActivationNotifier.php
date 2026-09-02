@@ -55,6 +55,62 @@ class TpvActivationNotifier
         return $this->dispatch($vendor, null, true);
     }
 
+    /**
+     * Welcome + login credentials, sent the moment a vendor is added (self-
+     * registration or admin-add) — BEFORE activation — so the vendor can sign in
+     * and complete their onboarding. Distinct from the activation notice above.
+     *
+     * @param  string  $password  The plaintext to hand over (admin-typed or a
+     *                            freshly generated one). Never a stored hash.
+     */
+    public function onCredentialsIssued(Vendor $vendor, string $password): void
+    {
+        $id = $vendor->id;
+        $pw = $password;
+
+        DB::afterCommit(function () use ($id, $pw) {
+            $fresh = Vendor::find($id);
+            if (! $fresh || ! $fresh->email) {
+                return;
+            }
+            $ctx = $this->context($fresh, $pw);
+            $status = $this->channels->emailHtml(
+                $fresh->email,
+                'Welcome to the '.$ctx['companyName'].' Vendor Portal — your login details',
+                view('emails.tpv.welcome_credentials', $ctx)->render(),
+                ['vendor_id' => $fresh->id, 'event' => 'credentials_issued'],
+                $this->welcomePlainText($fresh, $pw, $ctx),
+                $fresh->tenant_id,
+            );
+            if ($status !== 'sent') {
+                Log::channel('vendor')->warning('TPV welcome-credentials e-mail not delivered', [
+                    'vendor_id' => $fresh->id, 'status' => $status,
+                ]);
+            }
+        });
+    }
+
+    private function welcomePlainText(Vendor $vendor, string $password, array $ctx): string
+    {
+        return implode("\n", [
+            "Hello {$vendor->company_name},",
+            '',
+            'Your vendor account has been created. Sign in to complete your onboarding.',
+            '',
+            "Login URL:      {$ctx['portalUrl']}",
+            "Login ID:       {$vendor->email}",
+            "Password:       {$password}",
+            "TPV Code:       {$vendor->vendor_code}",
+            '',
+            'Please change your password after your first login.',
+            '',
+            "Need help? Contact {$ctx['supportEmail']}",
+            '',
+            'Regards,',
+            $ctx['companyName'],
+        ]);
+    }
+
     /** The most recent notification for the Vendor Detail dashboard. */
     public function latestFor(Vendor $vendor): ?LogEntry
     {

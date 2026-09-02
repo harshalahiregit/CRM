@@ -28,9 +28,13 @@ class StorePurchaseKickoffRequest extends FormRequest
             'organizer'              => 'nullable|string|max:160',
             'department'             => 'nullable|string|max:120',
             'client_name'            => 'nullable|string|max:200',
-            'scheduled_at'           => 'nullable|date',
-            'end_at'                 => 'nullable|date',
-            'duration_minutes'       => 'nullable|integer|min:0|max:1440',
+            // Start + end mandatory and non-past; duration derived server-side.
+            'scheduled_at'           => ['required', 'date', function ($attr, $value, $fail) {
+                if (\Illuminate\Support\Carbon::parse($value)->lt(now()->subMinutes(2))) {
+                    $fail('The meeting start time cannot be in the past.');
+                }
+            }],
+            'end_at'                 => 'required|date|after:scheduled_at',
             'mode'                   => 'nullable|in:online,onsite,hybrid',
             'location'               => 'nullable|string|max:500',
             'meeting_platform'       => 'nullable|string|max:100',

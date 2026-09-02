@@ -1,0 +1,1212 @@
+
+Sangoe TPV — Recommended Complete Module
+Third-Party Vendor, Contractor, Workforce & Risk Management System
+1. Purpose
+Sangoe TPV is a complete lifecycle management system for managing third-party vendors, contractors, subcontractors, service providers and their deployed workforce across projects, sites and operational environments.
+TPV should not be treated as a simple Vendor Master or Vendor CRUD module.
+It should manage the complete lifecycle:
+Vendor Identification → Prequalification → Risk Assessment → Approval → Contract → Onboarding → Mobilisation → Workforce Deployment → Training & Competency → PPE → Work Authorization → Gate Access → Operational Monitoring → Meetings → Compliance → Inspection → Incident/NCR → CAPA → Performance → Renewal/Extension → Offboarding
+The objective is to provide management with a single source of truth for:
+Who the third party is
+What work they are authorized to perform
+Where they are authorized to work
+Which workers are deployed
+Whether those workers are competent and compliant
+Whether required PPE and permits are available
+Whether the vendor is meeting contractual and HSE requirements
+What issues/actions/decisions are outstanding
+How the vendor is performing
+Whether the vendor should continue, be suspended, renewed or exited
+
+2. TPV Core Lifecycle
+Vendor Registration
+        ↓
+Prequalification
+        ↓
+Risk Assessment
+        ↓
+Due Diligence
+        ↓
+Approval
+        ↓
+Contract / Work Order
+        ↓
+Kickoff / Mobilisation
+        ↓
+Onboarding
+        ↓
+Workforce Registration
+        ↓
+Training + Competency + Medical
+        ↓
+PPE + Work Authorization
+        ↓
+Gate / Site Access
+        ↓
+Operational Execution
+        ↓
+Meetings + Monitoring
+        ↓
+Compliance + Inspections + Audits
+        ↓
+Incident / NCR / CAPA / Violations
+        ↓
+Performance Evaluation
+        ↓
+Renewal / Extension / Improvement
+        ↓
+Offboarding / Closure / Blacklisting
+
+3. Recommended TPV Main Navigation
+CONTROL
+Dashboard
+Vendor Master
+Approvals
+Risk & Due Diligence
+Reports & Analytics
+ENGAGEMENT & MOBILISATION
+Prequalification
+Contracts & Work Orders
+Meetings
+Onboarding
+Temporary Vendors
+Work Packages
+WORKFORCE
+Workforce
+Competency & Training
+Medical Fitness
+PPE
+PPE Matrix
+CONTROL OF WORK
+Permits & Work Authorization
+Gate Log / Access
+Inspections & Audits
+COMPLIANCE & INCIDENTS
+Compliance
+Incidents
+NCR
+CAPA
+Strikes & Violations
+PERFORMANCE & CLOSURE
+Vendor Performance
+Renewal & Extension
+Offboarding / Closure
+Documents
+Communications
+Vendor Portal
+Settings
+
+4. Dashboard
+The TPV Dashboard should be the Third-Party Control Tower.
+Executive KPIs
+Total Vendors
+Active Vendors
+Pending Vendors
+Pending Approvals
+Pending Onboarding
+Temporary Vendors
+Expiring Vendors
+Suspended Vendors
+Blacklisted Vendors
+High-Risk Vendors
+Total Workforce
+Workforce Currently On Site
+Compliance %
+Training Compliance %
+PPE Compliance %
+Open NCRs
+Open CAPAs
+Open Actions
+Overdue Actions
+Active Permits
+Gate Violations
+Total Strikes
+Average Vendor Performance Score
+Risk Dashboard
+Show:
+Critical
+High
+Medium
+Low
+with drill-down by:
+Vendor
+Project
+Site
+Department
+Work Package
+Risk Category
+Action Centre
+Display:
+Approvals pending
+Documents pending
+Expiring documents
+Training pending
+Medical pending
+PPE pending
+Workforce pending approval
+CAPA overdue
+NCR overdue
+MOM pending
+Meeting actions overdue
+Permit expiry
+Contract expiry
+Vendor renewal due
+
+5. Vendor Master
+The Vendor Master is the central identity record for every third party.
+Vendor Profile
+Vendor ID
+Vendor Name
+Legal Entity
+Trade Name
+Vendor Type
+Vendor Category
+Vendor Subcategory
+Permanent / Temporary
+Contractor / Subcontractor / Consultant / Service Provider
+Parent Company
+Registered Address
+Site Address
+Contact Persons
+GST
+PAN
+CIN
+Udyam
+Bank Information
+Emergency Contact
+Website
+Internal Sponsor
+Contract Owner
+Project
+Department
+Client
+Vendor Status
+Draft
+Invited
+Registered
+Under Review
+Pending Approval
+Approved
+Active
+Suspended
+Expired
+Closed
+Blacklisted
+Vendor Risk Classification
+Critical
+High
+Medium
+Low
+Risk should be configurable and calculated based on:
+Nature of work
+Hazard level
+Workforce size
+Project criticality
+Contract value
+Site exposure
+Regulatory requirements
+Previous incidents
+Compliance history
+Vendor performance
+
+6. Prequalification
+Prequalification determines whether a vendor is suitable before engagement.
+Areas
+Company
+Legal existence
+Experience
+Financial capability
+Technical capability
+Regional capability
+Manpower capability
+Equipment capability
+HSE
+HSE policy
+HSE organization
+Safety statistics
+Incident history
+Training system
+Risk assessment system
+Emergency preparedness
+Compliance
+Statutory registrations
+Licences
+Insurance
+Labour compliance
+Certifications
+Legal history
+Commercial
+Commercial capability
+Previous clients
+References
+Contract history
+Output
+Prequalification Score
+Example:
+82 / 100 — Qualified
+or
+54 / 100 — Conditional Qualification
+or
+38 / 100 — Not Qualified
+
+7. Risk & Due Diligence
+This should be separate from basic prequalification.
+Risk Assessment
+Assess:
+Operational Risk
+HSE Risk
+Legal Risk
+Financial Risk
+Cyber/Data Risk where applicable
+Reputational Risk
+Environmental Risk
+Workforce Risk
+Security Risk
+Due Diligence
+Company verification
+Document verification
+Licence verification
+Insurance verification
+Background checks
+Previous performance
+Incident history
+Compliance history
+Reference checks
+Risk Outcome
+Low
+Medium
+High
+Critical
+The risk rating should determine the depth of onboarding, approvals, monitoring and periodic review.
+
+8. Contracts & Work Orders
+TPV should connect the vendor relationship to its actual commercial engagement.
+Contract
+Contract ID
+Contract type
+Vendor
+Project
+Scope
+Start date
+End date
+Contract value
+Payment terms
+SLA
+KPI
+Penalties
+Insurance requirements
+HSE clauses
+Compliance clauses
+Renewal terms
+Work Order
+WO number
+Vendor
+Project
+Work package
+Scope
+Location
+Start date
+End date
+Quantity
+Manpower requirement
+Equipment requirement
+Commercial terms
+Contractual obligations should feed into compliance and performance monitoring.
+
+9. Meetings
+Important Design Decision
+Kickoff Meeting should NOT be a separate module.
+It should be one of the configurable Meeting Types under the permanent Meetings function.
+Meetings will be used throughout the project lifecycle.
+Meetings Navigation
+All Meetings
+Calendar
+Upcoming
+Completed
+Pending MOM
+Open Actions
+Decisions
+Issues Raised
+Meeting Templates
+Meeting Types
+Examples:
+Kickoff Meeting
+Weekly Coordination Meeting
+Daily Coordination Meeting
+Monthly Review
+Vendor Review
+HSE Meeting
+Safety Meeting
+Compliance Review
+Progress Review
+Technical Meeting
+Commercial Meeting
+Client Meeting
+Workforce Review
+Incident Review
+NCR Review
+CAPA Review
+Audit Review
+Emergency Meeting
+Management Review
+Closure Meeting
+Custom
+Meeting Creation
+Meeting ID
+Title
+Meeting Type
+Project
+Vendor
+Client
+Work Package
+Department
+Location
+Physical / Online / Hybrid
+Date
+Start Time
+End Time
+Organizer
+Chairperson
+Coordinator
+Priority
+Confidentiality
+Agenda Builder
+Agenda items should contain:
+Agenda number
+Topic
+Description
+Owner
+Priority
+Expected duration
+Supporting documents
+Previous discussion reference
+Meeting Templates
+Templates can automatically create agendas based on meeting type.
+Example:
+Weekly TPV Review Template
+Previous MOM
+Open actions
+Workforce
+Training
+Medical
+PPE
+Compliance
+Safety performance
+Incidents
+NCR
+CAPA
+Gate violations
+Strikes
+Vendor performance
+Project progress
+New issues
+Decisions
+Next actions
+Attendance
+Present
+Absent
+Late
+Excused
+Online
+Offline
+MOM
+Structured MOM should contain:
+Meeting details
+Participants
+Agenda
+Discussion
+Decisions
+Actions
+Issues
+Responsibilities
+Due dates
+Attachments
+Action Engine
+Every action should become a trackable Sangoe action/task.
+Meeting → MOM → Action → Owner → Due Date → Evidence → Verification → Closure
+Statuses:
+Open
+In Progress
+Pending Verification
+Closed
+Reopened
+Cancelled
+Decision Register
+Every major decision should be separately recorded.
+Previous MOM Integration
+When creating a new meeting, Sangoe should automatically show:
+Previous MOM
+Open actions
+Overdue actions
+Pending decisions
+Unresolved issues
+User can select:
+Carry Forward Open Items
+and automatically add them to the new agenda.
+MOM Approval
+Draft → Review → Approval → Final → Distribution → Acknowledgement
+AI-ready Architecture
+Future AI capabilities:
+Agenda generation
+Previous MOM analysis
+Action detection
+Decision detection
+Issue detection
+Automatic MOM generation
+Action classification
+Recurring issue identification
+Follow-up recommendations
+
+10. Onboarding
+Onboarding should convert an approved vendor into an operationally ready vendor.
+Workflow
+Approved → Onboarding Initiated → Documents → Verification → Training → Workforce → Site Requirements → Approval → Active
+Onboarding Checklist
+Configurable by:
+Vendor Type
+Risk Level
+Project
+Site
+Work Type
+Mandatory checklist items should prevent activation until completed.
+
+11. Temporary Vendors
+Temporary vendors require a separate controlled lifecycle.
+Fields
+Vendor
+Purpose
+Sponsor
+Project
+Scope
+Start date
+End date
+Workforce
+Risk level
+Required documents
+Approval
+Access duration
+Controls
+Temporary vendor automatically expires unless an approved extension exists.
+
+12. Approvals
+Central approval engine for TPV.
+Approval Types
+Vendor registration
+Prequalification
+Risk approval
+Vendor activation
+Temporary vendor
+Contract
+Work order
+Workforce
+Worker replacement
+Document exception
+Compliance deviation
+PPE exception
+Permit
+Vendor suspension
+Vendor reactivation
+Vendor renewal
+Vendor closure
+Approval routing should be configurable using:
+Risk
+Project
+Value
+Work type
+Workforce size
+Site
+Department
+
+13. Work Packages
+A vendor can perform multiple work packages.
+Structure:
+Vendor → Project → Work Package → Activity → Workforce
+Example:
+Vendor A
+→ Project X
+→ Electrical Work Package
+→ Cable Installation
+→ Worker 001–025
+This creates clear authorization and accountability.
+
+14. Workforce
+The Workforce module manages people deployed by TPVs.
+Worker Profile
+Worker ID
+Name
+Photo
+Vendor
+Project
+Work Package
+Trade
+Designation
+Mobile
+Identification document reference
+Skill
+Experience
+Competency
+Medical status
+Training status
+PPE status
+Gate access
+Joining date
+Exit date
+Status
+Workforce Lifecycle
+Nomination → Verification → Medical → Training → Induction → Approval → Gate Pass → Active → Exit
+
+15. Competency & Training
+Training
+Site induction
+HSE induction
+Job-specific training
+Toolbox
+Fire
+Work at Height
+Electrical
+Confined Space
+Lifting
+Equipment operation
+Emergency response
+Competency
+Qualification
+Trade certificate
+Licence
+Experience
+Certification
+Expiry
+Skill level
+Skill Matrix
+Worker × Activity × Competency × Validity
+No worker should be authorized for an activity without required competency.
+
+16. Medical Fitness
+Separate medical management should be available where applicable.
+Track
+Medical examination
+Fitness certificate
+Fitness category
+Examination date
+Expiry
+Restrictions
+Approved by
+Supporting document
+Status:
+Fit
+Fit with Restrictions
+Unfit
+Expired
+Pending
+
+17. PPE
+PPE Management
+PPE catalogue
+PPE issue
+PPE replacement
+PPE return
+PPE condition
+PPE stock
+Worker PPE
+Vendor PPE
+Project PPE
+Track:
+Issued → Used → Damaged → Replaced → Returned
+
+18. PPE Matrix
+The PPE Matrix should be rule-based.
+Job + Hazard + Activity → Required PPE
+Example:
+Welding → Arc/Heat → Helmet + Gloves + Face Shield + Protective Clothing
+Matrix should support:
+Mandatory PPE
+Optional PPE
+Conditional PPE
+Quantity
+Replacement frequency
+Verification requirement
+
+19. Permits & Work Authorization
+A vendor being "Active" should NOT automatically mean that all work is authorized.
+Authorization should consider:
+Vendor Approval + Worker Competency + Compliance + PPE + Permit + Work Package
+Permit Types
+Hot Work
+Work at Height
+Confined Space
+Electrical
+Excavation
+Lifting
+Isolation
+Shutdown
+Critical Work
+Other
+
+20. Gate Log / Access Control
+Gate Events
+Worker Entry
+Worker Exit
+Vehicle Entry
+Vehicle Exit
+Equipment Entry
+Equipment Exit
+Material Entry
+Material Exit
+Visitor
+Temporary Access
+Live View
+Management should be able to see:
+Who is currently inside the site?
+Filters:
+Vendor
+Project
+Work Package
+Worker
+Location
+Time
+This should eventually integrate with physical access systems.
+
+21. Compliance
+Central TPV compliance engine.
+Compliance Categories
+Legal
+Labour
+Licences
+Statutory
+Contractual
+HSE
+Training
+Medical
+Risk assessment
+Method statement
+PPE
+Environment
+Waste
+Chemicals
+Pollution
+Environmental requirements
+Quality
+Certifications
+Inspection
+QA/QC
+Security
+Identification
+Background verification
+Access
+Status
+Compliant
+Partially Compliant
+Non-Compliant
+Expiring
+Expired
+Waived
+Under Review
+
+22. Inspections & Audits
+Inspection Types
+Pre-mobilisation inspection
+HSE inspection
+Site inspection
+PPE inspection
+Workforce inspection
+Equipment inspection
+Compliance inspection
+Behavioural safety
+Housekeeping
+Environmental
+Vendor audit
+Workflow
+Plan → Inspect → Finding → Action → CAPA → Verification → Close
+
+23. Incidents
+TPV incidents should connect to the central Sangoe Incident Management capability.
+Types:
+Near Miss
+First Aid
+Medical Treatment
+LTI
+Fatality
+Property Damage
+Fire
+Environmental
+Security
+Unsafe Act
+Unsafe Condition
+Every incident should identify:
+Vendor
+Worker
+Project
+Work Package
+Activity
+Location
+Date/time
+Severity
+
+24. NCR
+NCR Workflow
+Raised → Assigned → Response → Corrective Action → Verification → Closed
+NCR should support:
+Vendor
+Project
+Requirement
+Finding
+Severity
+Evidence
+Responsible person
+Due date
+
+25. CAPA
+CAPA should connect directly to:
+Audit
+Inspection
+Incident
+NCR
+Meeting
+Compliance failure
+Repeated violation
+CAPA
+Problem
+Immediate correction
+Root cause
+Corrective action
+Preventive action
+Owner
+Due date
+Evidence
+Effectiveness verification
+Closure
+
+26. Strikes & Violations
+Configurable violation engine.
+Examples
+PPE violation
+Unauthorized worker
+Expired document
+Unsafe work
+Gate violation
+Security violation
+Environmental violation
+Repeated non-compliance
+Training violation
+Escalation
+Example:
+Warning → Strike 1 → Strike 2 → Strike 3 → Suspension → Blacklist
+Rules must be configurable by project/client.
+
+27. Vendor Performance
+Every active vendor should receive a measurable performance score.
+Performance Dimensions
+Safety
+Compliance
+Quality
+Productivity
+Timeliness
+Workforce
+Training
+Documentation
+Environmental performance
+Security
+Incident performance
+NCR performance
+CAPA closure
+Meeting action closure
+Vendor Performance Index
+Example:
+VPI = 87/100
+Rating:
+A — Excellent
+B — Good
+C — Watch
+D — Poor
+E — Critical
+Performance history should be retained across projects.
+
+28. Renewal & Extension
+Before contract/vendor expiry, Sangoe should initiate renewal workflow.
+Renewal Assessment
+Performance score
+Compliance
+Incidents
+NCR
+CAPA
+Strikes
+Contract performance
+Commercial performance
+Workforce performance
+Client feedback
+Outcome:
+Renew
+Renew with Conditions
+Extend
+Requalify
+Replace
+Suspend
+Exit
+
+29. Offboarding / Closure
+TPV should have a controlled exit process.
+Offboarding Checklist
+Contract closure
+Workforce exit
+Gate access revoked
+ID/pass returned
+Equipment returned
+PPE returned where applicable
+Documents archived
+Open actions closed
+NCR/CAPA closure
+Financial closure
+Asset/material clearance
+Final performance review
+Lessons learned
+Final status:
+Closed
+Replaced
+Suspended
+Blacklisted
+
+30. Documents
+Central TPV Document Vault.
+Document Types
+Company documents
+Contracts
+Licences
+Insurance
+Worker documents
+Competency certificates
+Medical certificates
+Training certificates
+HSE documents
+Audit evidence
+CAPA evidence
+Controls
+Version
+Approval
+Expiry
+Renewal
+Verification
+Document status
+Audit trail
+
+31. Communications
+TPV communications should be traceable.
+Notifications
+Approval
+Document expiry
+Training expiry
+Medical expiry
+Contract expiry
+Permit expiry
+Meeting invitation
+MOM
+Action reminder
+NCR
+CAPA
+Strike
+Suspension
+Renewal
+Channels:
+In-app
+Email
+SMS
+WhatsApp — where integrated
+
+32. Vendor Portal
+Vendors should have their own controlled portal.
+Vendor Can
+Register
+Complete onboarding
+Submit documents
+Add workers
+Upload certificates
+View compliance
+Respond to NCR
+Submit CAPA evidence
+Request approvals
+Request extensions
+View meeting invitations
+View MOM
+Respond to actions
+View workforce status
+View PPE requirements
+View access status
+Vendor should NEVER have unrestricted access to internal Sangoe information.
+
+33. Reports & Analytics
+Operational Reports
+Vendor Master
+Workforce
+Gate
+PPE
+Training
+Medical
+Permits
+Compliance
+Audit
+Inspection
+Incident
+NCR
+CAPA
+Strikes
+Meetings
+MOM
+Actions
+Management Reports
+TPV Risk Report
+Vendor Performance Report
+Top Risk Vendors
+Worst Performing Vendors
+Compliance Exposure Report
+Workforce Exposure Report
+Expiry Report
+Incident Trend
+NCR Trend
+CAPA Closure
+Vendor Benchmarking
+Project-wise Vendor Performance
+Vendor-wise Project Performance
+
+34. TPV Settings
+Admin-configurable:
+Vendor types
+Vendor categories
+Risk levels
+Meeting types
+Meeting templates
+Onboarding templates
+Approval workflows
+Compliance templates
+Document types
+Training types
+Competency requirements
+PPE catalogue
+PPE matrix
+Permit types
+Violation types
+Strike rules
+Performance scoring
+Notification rules
+Expiry rules
+Project-specific rules
+
+35. Core Relationships
+The TPV data model should fundamentally operate around:
+Vendor
+   │
+   ├── Projects
+   │     └── Work Packages
+   │            └── Activities
+   │
+   ├── Contracts
+   │
+   ├── Work Orders
+   │
+   ├── Workforce
+   │     ├── Training
+   │     ├── Competency
+   │     ├── Medical
+   │     ├── PPE
+   │     └── Gate Access
+   │
+   ├── Documents
+   │
+   ├── Meetings
+   │     ├── Agenda
+   │     ├── MOM
+   │     ├── Actions
+   │     ├── Decisions
+   │     └── Issues
+   │
+   ├── Permits
+   │
+   ├── Compliance
+   │
+   ├── Inspections
+   │
+   ├── Incidents
+   │
+   ├── NCR
+   │
+   ├── CAPA
+   │
+   ├── Strikes
+   │
+   ├── Performance
+   │
+   └── Renewal / Offboarding
+
+36. Critical Business Rules
+The TPV engine should enforce rules rather than merely display information.
+Rule 1 — No Approval, No Activation
+A vendor cannot become Active until mandatory approvals are complete.
+Rule 2 — No Mandatory Compliance, No Mobilisation
+Mandatory onboarding requirements must be completed before mobilisation.
+Rule 3 — No Valid Worker Compliance, No Access
+A worker with expired mandatory requirements cannot receive/retain active access.
+Rule 4 — No Competency, No Work Authorization
+A worker cannot be authorized for activities for which competency is missing or expired.
+Rule 5 — No Required PPE, No Work
+Mandatory PPE requirements must be satisfied before applicable work authorization.
+Rule 6 — No Permit, No High-Risk Work
+Applicable high-risk work cannot commence without a valid permit.
+Rule 7 — Temporary Means Temporary
+Temporary vendor/workforce/access records automatically expire unless extended through approval.
+Rule 8 — Expiry Drives Risk
+Document, contract, training, medical, permit and certification expiry should automatically change compliance status.
+Rule 9 — Repeated Violations Escalate
+Strike rules automatically trigger escalation according to configured thresholds.
+Rule 10 — Performance Influences Renewal
+Vendor renewal should consider historical performance, compliance and risk.
+Rule 11 — Every Action Has an Owner
+MOM, audit, NCR, CAPA and inspection actions cannot remain ownerless.
+Rule 12 — Every Closure Requires Evidence Where Configured
+Closure should require supporting evidence for defined action types.
+
+37. TPV Dashboard — Recommended Top-Level View
+The first screen should ultimately show:
+┌───────────────────────────────────────────────────────────────┐
+│ TPV CONTROL TOWER                                             │
+├────────────┬────────────┬────────────┬────────────┬───────────┤
+│ Vendors    │ Workforce  │ Compliance │ High Risk  │ Suspended │
+│ 124        │ 2,846      │ 94.2%      │ 11         │ 3         │
+├────────────┴────────────┴────────────┴────────────┴───────────┤
+│                                                               │
+│  ACTION CENTRE                                                │
+│  • 12 Approvals Pending                                       │
+│  • 18 Documents Expiring                                      │
+│  • 7 CAPA Overdue                                             │
+│  • 11 MOM Actions Overdue                                     │
+│  • 6 Training Expiring                                        │
+│                                                               │
+├───────────────────────────────────────────────────────────────┤
+│ RISK                                                          │
+│ Critical  ███ 3                                               │
+│ High      ████████ 11                                         │
+│ Medium    █████████████ 28                                    │
+│ Low       █████████████████████ 82                            │
+├───────────────────────────────────────────────────────────────┤
+│ PERFORMANCE                                                   │
+│ Top Vendors | At Risk Vendors | Trending Down | Trending Up  │
+└───────────────────────────────────────────────────────────────┘
+
+38. Recommended Final TPV Top Navigation
+For the actual Sangoe UI, I would NOT put all 31 functions as tabs.
+Use the following primary navigation:
+Dashboard
+TPV Control Tower
+Vendors
+Vendor MasterPrequalificationRisk & Due DiligenceTemporary VendorsContracts & Work Orders
+Mobilisation
+MeetingsOnboardingWork PackagesApprovals
+Workforce
+WorkforceCompetency & TrainingMedicalPPEPPE Matrix
+Work Control
+PermitsGate LogInspections & Audits
+Compliance
+ComplianceIncidentsNCRCAPAStrikes & Violations
+Performance
+Vendor PerformanceRenewal & ExtensionOffboarding
+Intelligence
+Reports & AnalyticsDocumentsCommunications
+Ecosystem
+Vendor PortalSettings
+
+39. Most Important Change from the Current UI
+The current UI:
+Dashboard → Kickoff Meeting → Onboarding → Temporary → Approvals → Workforce → PPE → PPE Matrix → Compliance → Gate Log → Strikes
+should evolve into:
+Dashboard → Vendors → Mobilisation → Workforce → Work Control → Compliance → Performance → Intelligence → Ecosystem
+with Meetings as a permanent Mobilisation/Operations function.
+Kickoff is therefore simply:
+Meetings → New Meeting → Meeting Type = Kickoff Meeting
+rather than:
+TPV → Kickoff Meeting
+
+40. Sangoe TPV Positioning
+The module should ultimately be positioned internally as:
+Sangoe TPV — Third-Party Vendor, Contractor & Workforce Governance
+Not merely:
+Vendor Management
+Because its scope is much broader.
+The system combines:
+Vendor Management + Contractor Management + Workforce Management + HSE Compliance + Control of Work + Access Control + Meeting/MOM + Performance Management + Risk Management + Offboarding
+This lifecycle approach is consistent with modern contractor-management architectures, which increasingly connect prequalification, onboarding, operational delivery, access/control, compliance, performance, renewal and exit rather than treating these as isolated processes. (Vedo Group)
+
+41. Future AI Layer
+Once the transactional foundation is stable, TPV can become an intelligent control system.
+AI Vendor Risk Engine
+Predict:
+Vendor risk
+Compliance deterioration
+Potential incidents
+Performance decline
+Renewal risk
+AI Meeting Engine
+Generate agenda
+Analyse previous MOM
+Generate MOM
+Detect actions
+Detect decisions
+Detect recurring issues
+AI Compliance Engine
+Predict upcoming failures
+Identify missing documents
+Identify unusual compliance patterns
+AI Workforce Engine
+Identify competency gaps
+Predict workforce shortage
+Identify expired/expiring qualifications
+AI Performance Engine
+Vendor ranking
+Vendor benchmarking
+Early-warning alerts
+Renewal recommendations
+AI Executive Assistant
+Management could eventually ask:
+"Which TPVs are currently high risk?"
+"Why is Vendor ABC's score falling?"
+"Show me all overdue TPV actions."
+"Which workers are currently inside the site without valid training?"
+"Which vendors should not be renewed?"
+"What were the recurring issues in the last six vendor meetings?"
+and Sangoe should answer directly from the TPV data.
+
+42. Final TPV Architecture
+The final conceptual architecture is:
+IDENTITY
+Vendor → Worker → Project → Work Package
+↓
+QUALIFICATION
+Prequalification → Due Diligence → Risk → Approval
+↓
+ENGAGEMENT
+Contract → Work Order → Scope
+↓
+MOBILISATION
+Kickoff → Meetings → Onboarding → Workforce
+↓
+READINESS
+Training → Competency → Medical → PPE → Compliance
+↓
+CONTROL OF WORK
+Permit → Authorization → Gate → Execution
+↓
+ASSURANCE
+Meetings → Inspections → Audits → Compliance
+↓
+CORRECTIVE CONTROL
+Incident → NCR → CAPA → Strikes
+↓
+PERFORMANCE
+KPI → Score → Benchmark → Risk Trend
+↓
+LIFECYCLE
+Renew → Extend → Suspend → Replace → Offboard
+↓
+INTELLIGENCE
+Dashboard → Analytics → AI → Predictive Risk
+
+The key principle
+TPV should not ask only: "Who is our vendor?"
+It should allow Sangoe to answer, at any moment:
+Who is the vendor?What are they contracted to do?Where are they working?Who are their people?Are those people qualified and compliant?Are they authorized to perform this work?Who is currently inside the site?What meetings, decisions and actions are outstanding?What incidents/NCRs/CAPAs exist?How is the vendor performing?What is their current risk?Should we continue, improve, renew, suspend or exit them?
+That is the level at which I would build Sangoe TPV v1. It also leaves a clean architectural path for the AI/risk-intelligence layer without having to redesign the core module later.

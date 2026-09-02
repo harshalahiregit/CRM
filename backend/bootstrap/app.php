@@ -23,8 +23,12 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->statefulApi();
         
         // Idle-timeout enforcement for tracked sessions — defensive, additive.
+        // ConfigureTenantMail points the mailer at the tenant's Settings → Email
+        // SMTP for the request, so all outgoing mail uses the admin-configured
+        // account rather than .env.
         $middleware->api(append: [
             \App\Http\Middleware\EnforceIdleTimeout::class,
+            \App\Http\Middleware\ConfigureTenantMail::class,
         ]);
 
         // Register custom middleware aliases

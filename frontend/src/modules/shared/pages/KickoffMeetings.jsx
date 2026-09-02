@@ -118,7 +118,7 @@ export default function KickoffMeetings() {
         <div>
           <p className="label-caps" style={{ color: '#a78bfa', margin: 0, fontSize: 11, fontWeight: 800, letterSpacing: '0.08em' }}>PRE-ONBOARDING</p>
           <h1 style={{ color: 'var(--text-h)', fontSize: 24, fontWeight: 900, margin: '2px 0 0', letterSpacing: '-0.02em' }}>Meetings</h1>
-          <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: '4px 0 0' }}>Schedule, track attendance & minutes, and capture vendor acknowledgement.</p>
+          <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: '4px 0 0' }}>Schedule, track attendance & minutes, and share them with the vendor.</p>
         </div>
         <div style={{ display: 'flex', gap: 9 }}>
           <button onClick={load} style={ghostBtn}><RefreshCw size={14} /> Refresh</button>
@@ -265,7 +265,7 @@ export default function KickoffMeetings() {
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1180, fontSize: 12.5 }}>
               <thead>
                 <tr>
-                  {['ID', 'Third Party Vendor', 'Participants', 'Meeting Mode', 'Planned Date', 'MOM Sent', 'Status', 'Acknowledgement', 'Response', 'Attendance', 'Meeting Date', 'Created At'].map(h => (
+                  {['ID', 'Third Party Vendor', 'Participants', 'Meeting Mode', 'Planned Date', 'MOM Sent', 'Status', 'Attendance', 'Meeting Date', 'Created At'].map(h => (
                     <th key={h} style={th}>{h}</th>
                   ))}
                   <th style={{ ...th, textAlign: 'right', position: 'sticky', right: 0, background: 'var(--bg-card)' }}>Actions</th>
@@ -303,18 +303,6 @@ export default function KickoffMeetings() {
                       <td style={td}>{m.planned_date ? fmtDate(m.planned_date) : '—'}</td>
                       <td style={td}><YesNo yes={!!m.mom_path} /></td>
                       <td style={td}><span style={{ padding: '3px 10px', borderRadius: 999, background: cfg.bg, color: cfg.color, fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap' }}>{cfg.label}</span></td>
-                      <td style={td}>
-                        {/* Three states now, not two: an expired 48h window is
-                            not the same as one still waiting for a reply. */}
-                        {m.is_acknowledged
-                          ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#10b981', fontWeight: 700 }}><CheckCircle2 size={13} /> Acknowledged</span>
-                          : m.acknowledgement_expired
-                            ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#ef4444', fontWeight: 700 }}><XCircle size={13} /> Expired</span>
-                            : m.acknowledgement_sent_at
-                              ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#f59e0b', fontWeight: 700 }}><Clock size={13} /> Awaiting</span>
-                              : <span style={{ color: 'var(--text-muted)' }}>Not sent</span>}
-                      </td>
-                      <td style={td}>{m.acknowledged_by_name || '—'}</td>
                       <td style={td}><Attn present={m.attended_count ?? 0} total={m.attendees_count ?? 0} /></td>
                       {/* Meeting Date = when it is/was held. */}
                       <td style={td}>{m.scheduled_at ? fmtDateTime(m.scheduled_at) : '—'}</td>

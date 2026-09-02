@@ -18,6 +18,7 @@ class TpvWorkerMedical extends Model
         'height_cm','weight_kg','bp_systolic','bp_diastolic','vision',
         'screening_responses','screening_score','screening_band',
         'fitness_status','restrictions','signature_path','certificate_path','document_path',
+        'system_ip','geo_location','capture_photo_path',
     ];
 
     protected $casts = [

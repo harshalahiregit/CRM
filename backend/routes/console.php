@@ -106,6 +106,20 @@ Schedule::command('projects:run-note-reminders')
     ->withoutOverlapping()
     ->runInBackground();
 
+// Kickoff meetings: fire automatic reminders (24h + 1h before, per config) for
+// upcoming published meetings. Every fifteen minutes so a 1-hour reminder lands
+// close to the hour; idempotent (reminders_sent), so no-op runs cost one query.
+Schedule::command('kickoff:send-reminders')
+    ->everyFifteenMinutes()
+    ->withoutOverlapping()
+    ->runInBackground();
+
+// Purchase kickoff meetings: the same automatic reminders for the Purchase engine.
+Schedule::command('purchase-kickoff:send-reminders')
+    ->everyFifteenMinutes()
+    ->withoutOverlapping()
+    ->runInBackground();
+
 // Helpdesk: warn on at-risk / breached SLA clocks.
 // Every fifteen minutes — SLA targets are measured in hours, so a quarter-hour of
 // lag is noise against the deadline, and the alert itself is throttled to once per
