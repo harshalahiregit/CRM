@@ -294,6 +294,15 @@ export default function StaffManagementPage() {
                         <div>
                           <div className="flex items-center gap-1.5">
                             <span className="text-sm font-bold" style={{ color: 'var(--text-h)' }}>{member.name}</span>
+                            {/* Admins appear in this list now, so the list has to
+                                say which they are — "who are the admins" should be
+                                answerable from the screen, not the database. */}
+                            {member.role === 'admin' && (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase flex items-center gap-1"
+                                style={{ background:'rgba(16,185,129,0.12)', color:'#10b981', border:'1px solid rgba(16,185,129,0.2)' }}>
+                                <Shield size={9}/> ADMIN
+                              </span>
+                            )}
                             {meta.is_moderator && (
                               <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase flex items-center gap-1"
                                 style={{ background:'rgba(245,158,11,0.12)', color:'#f59e0b', border:'1px solid rgba(245,158,11,0.2)' }}>

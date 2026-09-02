@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { X, Eye, EyeOff, RefreshCw, User, Shield, ChevronRight, ChevronDown, Check } from 'lucide-react'
 import api from '@/lib/api'
+import { useAuth } from '@/context/AuthContext'
 
 // ── Timezones / Groups ──────────────────────────────────────────────────────
 const TIMEZONES = [
@@ -151,11 +152,26 @@ const EMPTY_FORM = {
   staff_signature:'',
   member_departments:[],
   permissions:{},
+  // Administrator. The server ignores this from anyone who is not already an
+  // admin, and the control below is not rendered for them either.
+  administrator:false,
   send_welcome_email:true,
 }
 
 export default function StaffModal({ staff, designations, departments, onClose, onSuccess }) {
   const [activeTab,     setActiveTab]     = useState('profile')
+  const { user: actor } = useAuth()
+
+  // Only an admin may grant or remove administrator access, so only an admin sees
+  // the control. The server enforces this independently — a hidden control is a
+  // courtesy, never a security boundary.
+  const actorIsAdmin = actor?.role === 'admin'
+
+  // Two things the server refuses, surfaced here so somebody is not told "no"
+  // only after pressing save: you cannot remove your own access, and the founding
+  // administrator stays.
+  const editingSelf  = !!staff && actor?.id === staff.id
+  const lockedAdmin  = !!staff && staff.role === 'admin' && editingSelf
   const [formData,      setFormData]      = useState(EMPTY_FORM)
   const [errors,        setErrors]        = useState({})
   const [loading,       setLoading]       = useState(false)
@@ -199,6 +215,7 @@ export default function StaffModal({ staff, designations, departments, onClose, 
         staff_signature:          meta.staff_signature || '',
         member_departments:       meta.member_departments || [],
         permissions:              meta.permissions || {},
+        administrator:            staff?.role === 'admin',
         send_welcome_email:       meta.send_welcome_email !== false,
       })
     }
@@ -271,6 +288,7 @@ export default function StaffModal({ staff, designations, departments, onClose, 
       password: formData.password, internal_role: formData.internal_role,
       department: formData.department, designation: formData.designation,
       status: formData.status,
+      administrator: formData.administrator,
       meta: {
         is_moderator:              formData.is_moderator,
         use_firstname_as_username: formData.use_firstname_as_username,
@@ -374,6 +392,28 @@ export default function StaffModal({ staff, designations, departments, onClose, 
 
             {/* ═══════════════ PROFILE TAB ═══════════════ */}
             {activeTab==='profile' && (<>
+              {actorIsAdmin && (
+                <div className="flex items-center justify-between p-4 rounded-xl mb-4"
+                  style={{ background:'rgba(16,185,129,0.06)', border:'1px solid rgba(16,185,129,0.2)' }}>
+                  <label className={`flex items-center gap-3 ${lockedAdmin?'cursor-not-allowed opacity-60':'cursor-pointer'}`}>
+                    <div onClick={()=>{ if(!lockedAdmin) set('administrator',!formData.administrator) }}
+                      className="w-11 h-6 rounded-full relative transition-all"
+                      style={{ background:formData.administrator?'#10b981':'var(--border)' }}>
+                      <div className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all"
+                        style={{ left:formData.administrator?'22px':'2px' }}/>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold" style={{ color:'var(--text-h)' }}>Administrator</p>
+                      <p className="text-[10px]" style={{ color:'var(--text-muted)' }}>
+                        {lockedAdmin
+                          ? 'You cannot remove your own administrator access.'
+                          : 'Full access to everything, bypassing the permission grid below.'}
+                      </p>
+                    </div>
+                  </label>
+                </div>
+              )}
+
               {/* Moderator + Username */}
               <div className="flex items-center justify-between p-4 rounded-xl"
                 style={{ background:'rgba(124,58,237,0.06)', border:'1px solid rgba(124,58,237,0.15)' }}>
